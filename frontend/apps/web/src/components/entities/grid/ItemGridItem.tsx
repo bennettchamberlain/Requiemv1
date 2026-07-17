@@ -10,6 +10,10 @@ export const ITEM_FRAGMENT = gql(`
     id
     name
     description
+    category
+    brand
+    model
+    currentValue
     file {
       id
       sourceUrl
@@ -60,7 +64,7 @@ export function ItemGridItem({ item, onClick, onSelectInventoryItem }: Props) {
       <EntityGridItem.Content>
         <div className="line-clamp-3 leading-tight min-h-0 shrink-0">{data.description}</div>
 
-        {data.file && (
+        {url && (
           <div className="rounded-sm overflow-hidden min-h-0 grow">
             <img
               src={url}

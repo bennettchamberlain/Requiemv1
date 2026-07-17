@@ -9,7 +9,11 @@ import signal
 import asyncio
 import structlog
 from temporalio.client import Client
-from temporalio.worker import Worker, UnsandboxedWorkflowRunner
+from temporalio.worker import Worker
+from temporalio.worker.workflow_sandbox import (
+    SandboxedWorkflowRunner,
+    SandboxRestrictions,
+)
 
 from .config import settings
 from .llm_config import get_llm_config
@@ -41,6 +45,7 @@ from .system_workflows import (
 
 # Import activities
 from .activities import (
+    resolve_summary_window_activity,
     aggregate_data_activity,
     generate_hourly_summary_activity,
     generate_rollup_summary_activity,
@@ -147,6 +152,7 @@ async def run_worker():
         ]
 
         all_activities = [
+            resolve_summary_window_activity,
             aggregate_data_activity,
             generate_hourly_summary_activity,
             generate_rollup_summary_activity,
@@ -169,6 +175,21 @@ async def run_worker():
             store_action_activity,
         ]
 
+        # The workflow sandbox re-imports workflow modules in a restricted
+        # environment. py-key-value-aio (a transitive pydantic-ai dependency)
+        # installs beartype's `claw` import hook globally at import time, and
+        # that hook hits a circular import when re-run inside the sandbox
+        # (RuntimeError: Failed validating workflow ... -> ImportError:
+        # cannot import name 'claw_state'). The in-module imports_passed_through()
+        # in workflows.py is not enough because the hook is global; pass these
+        # modules through the sandbox so it reuses the host's initialized copies.
+        workflow_runner = SandboxedWorkflowRunner(
+            restrictions=SandboxRestrictions.default.with_passthrough_modules(
+                "beartype",
+                "key_value",
+            )
+        )
+
         # Create workers for each priority level
         # High priority: More concurrent activities, processes critical user-facing work
         worker_high = Worker(
@@ -178,7 +199,7 @@ async def run_worker():
             activities=all_activities,
             max_concurrent_activities=settings.max_concurrent_activities_high,
             activity_executor=None,
-            workflow_runner=UnsandboxedWorkflowRunner(),
+            workflow_runner=workflow_runner,
         )
 
         # Medium priority: Standard concurrency for all automated summaries
@@ -189,7 +210,7 @@ async def run_worker():
             activities=all_activities,
             max_concurrent_activities=settings.max_concurrent_activities_medium,
             activity_executor=None,
-            workflow_runner=UnsandboxedWorkflowRunner(),
+            workflow_runner=workflow_runner,
         )
 
         # Low priority: Limited concurrency for batch operations
@@ -200,7 +221,7 @@ async def run_worker():
             activities=all_activities,
             max_concurrent_activities=settings.max_concurrent_activities_low,
             activity_executor=None,
-            workflow_runner=UnsandboxedWorkflowRunner(),
+            workflow_runner=workflow_runner,
         )
 
         logger.info("workers_configured",

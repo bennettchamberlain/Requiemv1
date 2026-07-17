@@ -1,5 +1,6 @@
 import { createUnionType } from '@nestjs/graphql';
 
+import { ActionType } from './ActionType';
 import { AnswerType } from './AnswerType';
 import { BrowserActivityType } from './BrowserActivityType';
 import { CommunicationType } from './CommunicationType';
@@ -20,6 +21,7 @@ export const SearchResultType = createUnionType({
   name: 'SearchResultType',
   types: () =>
     [
+      ActionType,
       AnswerType,
       BrowserActivityType,
       CommunicationType,
@@ -38,6 +40,8 @@ export const SearchResultType = createUnionType({
     const { type } = GlobalUID.decode(instance.id);
 
     switch (type) {
+      case 'action':
+        return ActionType;
       case 'answer':
         return AnswerType;
       case 'browser-activity':

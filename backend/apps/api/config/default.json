@@ -1,7 +1,7 @@
 {
   "host": "0.0.0.0",
   "port": 3030,
-  "hostname": "memory.ci.localhost",
+  "hostname": "ci-server.localhost",
   "logging": {
     "level": "info"
   },
@@ -42,10 +42,37 @@
       },
       "spotify": {
         "id": "019cbaf2-d789-7723-aada-7e3d709663f5"
+      },
+      "github": {
+        "id": "019d7a32-e4b0-7f01-b5c2-8a1d3e6f9c04"
+      },
+      "steam": {
+        "id": "019d6470-f9e1-720f-a3ce-299842abaece"
       }
     },
     "oauth": {
-      "callbackUrl": "https://memory.ci.localhost/oauth/callback"
+      "callbackUrl": ""
+    },
+    "openid": {
+      "callbackUrl": ""
+    },
+    "oidc": {
+      "issuerUrl": "",
+      "publicBaseUrl": ""
+    },
+    "connect": {
+      "hubOrigins": ""
+    },
+    "portal": {
+      "enabled": false,
+      "issuer": "https://hub.ci.computer",
+      "jwksUri": "https://hub.ci.computer/api/auth/jwks",
+      "audience": "ci-server,ci-hub,ci-import-tools,ci-browser-extension,ci-even"
+    },
+    "hubForwardAuth": {
+      "enabled": false,
+      "secret": "",
+      "maxSkewMs": 300000
     }
   },
   "db": {
@@ -75,18 +102,25 @@
     "ollama": {
       "host": "http://host.docker.internal:11434"
     },
-    "stt": {
-      "host": "http://stt-service:9001"
-    },
-    "tts": {
-      "host": "http://tts-service:9002"
-    },
     "hbpe": {
       "host": "http://hbpe-service:8002"
     },
     "parser": {
       "host": "http://summary-service:8002"
     }
+  },
+  "embedding": {
+    "model": "nomic-embed-text",
+    "batchSize": 32,
+    "concurrency": 4,
+    "coalesceWindowMs": 15,
+    "minTextLength": 3,
+    "types": []
+  },
+  "queues": {
+    "concurrency": 10,
+    "fetchBatchSize": 10,
+    "perQueueConcurrency": 6
   },
   "features": {
     "scheduled.answer.inferencing": true,
@@ -99,9 +133,26 @@
     "new.insights.page": false,
     "require.signup.codes": true,
     "files.page": false,
-    "hbpe": false
+    "insights.page": false,
+    "chat.page": false,
+    "jobs.page": false,
+    "stats.page": false,
+    "tags.page": true,
+    "hbpe": true,
+    "agent.memory.compaction": false,
+    "shared.search": false
   },
   "environment": {
     "database.query.logging": false
+  },
+  "ciPortal": {
+    "url": "",
+    "apiKey": "",
+    "deviceId": ""
+  },
+  "geocoding": {
+    "apiKey": "",
+    "batchSize": 200,
+    "rateLimitPerSecond": 10
   }
 }

@@ -1,10 +1,11 @@
 import { Card, Tooltip } from '@ci/shadcn';
-import { Calendar, Clock, MapPin } from '@ci/shadcn/icons';
+import { Calendar, Clock, MapPin, Play } from '@ci/shadcn/icons';
 
 import { gql, useFragment, type FragmentType } from '@/graphql';
 
 import { useEntityService } from '../../useEntityService';
-import { formatDateTime } from '../utils';
+import { resolveStaticUrl } from '../EntityDetails/EntityDetailScaffold';
+import { eventDisplayTitle, formatEventTimeRange } from '../utils';
 
 interface Props {
   entity: FragmentType<typeof EVENT_FRAGMENT>;
@@ -15,14 +16,25 @@ export const EVENT_FRAGMENT = gql(`
     id
     title
     description
+    sourceSystem
     startTime
     endTime
+    locationName
     location {
       ... on PlaceType {
         id
         name
         properties
       }
+    }
+    previewUrl
+    mediaUrl
+    mediaContentType
+    mediaWidth
+    mediaHeight
+    mediaSize
+    tags {
+      label
     }
   }
 `);
@@ -31,7 +43,14 @@ export function EventCard({ entity }: Props) {
   const data = useFragment(EVENT_FRAGMENT, entity);
   const [, { setActiveEntity }] = useEntityService();
   const hasStartDate = data.startTime;
-  const hasEndDate = data.endTime;
+  const title = eventDisplayTitle({
+    title: data.title,
+    startTime: data.startTime,
+    locationName: data.locationName ?? data.location?.name,
+    mediaContentType: data.mediaContentType,
+  });
+  const thumbUrl = resolveStaticUrl(data.previewUrl);
+  const isVideo = data.mediaContentType?.startsWith('video/') ?? false;
   // const hasOrganizer = data.organizer;
   // const hasRepeating = data.repeatingFrequency;
   // const hasDuration = data.duration;
@@ -42,20 +61,33 @@ export function EventCard({ entity }: Props) {
 
   return (
     <Card
-      className="!gap-2 !py-4 px-6 cursor-pointer hover:shadow-lg transition-shadow duration-200"
-      onClick={() => setActiveEntity({ ...data, __typename: 'EventType' })}
+      className="!gap-2 !px-6 !py-4 cursor-pointer transition-shadow duration-200 hover:shadow-lg"
+      onClick={() => setActiveEntity({ ...data, __typename: 'EventType', bucketStartTime: data.startTime })}
     >
+      {thumbUrl && (
+        <div className="relative -mx-2 mb-1 overflow-hidden rounded-md bg-muted">
+          <img src={thumbUrl} alt={title} loading="lazy" className="h-44 w-full object-cover" />
+          {isVideo && (
+            <span className="absolute inset-0 flex items-center justify-center">
+              <span className="flex size-11 items-center justify-center rounded-full bg-black/55 text-white">
+                <Play className="size-5 translate-x-0.5 fill-current" />
+              </span>
+            </span>
+          )}
+        </div>
+      )}
+
       <div className="flex items-start gap-3">
-        <Calendar className="h-6 w-6 flex-shrink-0 mt-1 text-[var(--primary)]" />
+        {!thumbUrl && <Calendar className="h-6 w-6 flex-shrink-0 mt-1 text-[var(--primary)]" />}
         <div className="flex-1 min-w-0">
           <Tooltip>
             <Tooltip.Trigger asChild>
-              <h3 className="text-lg font-semibold text-card-foreground truncate cursor-default">
-                {data.title}
+              <h3 className="truncate text-lg font-semibold leading-4 text-card-foreground cursor-default">
+                {title || 'Untitled event'}
               </h3>
             </Tooltip.Trigger>
             <Tooltip.Content>
-              <p>{data.title}</p>
+              <p>{title || 'Untitled event'}</p>
             </Tooltip.Content>
           </Tooltip>
           {/*<p className="text-sm text-muted-foreground">{data.category}</p>*/}
@@ -63,32 +95,11 @@ export function EventCard({ entity }: Props) {
       </div>
 
       {hasStartDate && (
-        <div className="flex items-center gap-5">
-          <Clock className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-          <div className="min-w-0">
-            <span className="text-sm font-medium text-muted-foreground">Start:</span>
-            <span className="ml-2 text-sm text-card-foreground">
-              {formatDateTime(
-                'startDate' in data ? (data.startDate as string) : '',
-                'startTime' in data ? (data.startTime as string) : undefined,
-              )}
-            </span>
-          </div>
-        </div>
-      )}
-
-      {hasEndDate && (
-        <div className="flex items-center gap-5">
-          <Clock className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-          <div className="min-w-0">
-            <span className="text-sm font-medium text-muted-foreground">End:</span>
-            <span className="ml-2 text-sm text-card-foreground">
-              {formatDateTime(
-                'endDate' in data ? (data.endDate as string) : '',
-                'endTime' in data ? (data.endTime as string) : undefined,
-              )}
-            </span>
-          </div>
+        <div className="flex items-center gap-2">
+          <Clock className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+          <span className="text-sm tabular-nums text-card-foreground">
+            {formatEventTimeRange(data.startTime, data.endTime)}
+          </span>
         </div>
       )}
 
@@ -123,7 +134,7 @@ export function EventCard({ entity }: Props) {
       {/*)}*/}
 
       {hasLocation && (
-        <div className="flex items-center gap-5">
+        <div className="flex items-center gap-2">
           <MapPin className="h-4 w-4 text-muted-foreground flex-shrink-0" />
           <div className="min-w-0">
             <span className="text-sm font-medium text-muted-foreground">Location:</span>
@@ -157,7 +168,7 @@ export function EventCard({ entity }: Props) {
       {/*)}*/}
 
       {hasDescription && (
-        <div className="pt-3 pb-3">
+        <div className="pt-2">
           <p className="text-sm text-muted-foreground leading-relaxed">{data.description}</p>
         </div>
       )}

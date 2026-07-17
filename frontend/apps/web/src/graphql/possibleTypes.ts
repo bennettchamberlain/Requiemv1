@@ -87,6 +87,7 @@ export interface PossibleTypesResultData {
       "UserType"
     ],
     "SearchResultType": [
+      "ActionType",
       "AnswerType",
       "BrowserActivityType",
       "CommunicationType",

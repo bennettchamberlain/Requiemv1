@@ -103,6 +103,29 @@ type BrowserActivityType implements Node & Taggable {
   url: String!
 }
 
+type BulkGraphEntityMapping {
+  entityId: ID!
+  key: String!
+}
+
+input BulkGraphInput {
+  entities: [GraphEntityInput!]!
+  relationships: [GraphRelationshipInput!]
+}
+
+type BulkGraphPayload {
+  entities: [BulkGraphEntityMapping!]!
+  entitiesProcessed: Int!
+  errors: [String!]!
+  relationshipsProcessed: Int!
+  success: Boolean!
+}
+
+type BulkItemRelationshipResult {
+  inserted: Int!
+  skipped: Int!
+}
+
 type CommunicationConnection implements Connection {
   edges: [CommunicationEdge!]!
   pageInfo: PageInfo!
@@ -236,8 +259,46 @@ input CreateAnswerInput {
   questionId: String!
 }
 
+input CreateBrowserActivityInput {
+  actionType: String
+  category: String
+  containsSensitive: Boolean
+  deviceId: String
+  durationSeconds: Int
+  isIncognito: Boolean
+  pageSummary: String
+  productivityScore: Float
+  properties: JSON
+  scrollDepthPercent: Float
+  sourceId: String
+  sourceSystem: String
+  sourceType: String
+  time: DateTime!
+  title: String
+  url: String!
+}
+
+input CreateCommunicationInput {
+  attachments: [JSON!]
+  communicationType: String!
+  content: String!
+  direction: String
+  fromEntityId: String
+  participantsMetadata: JSON
+  preview: String
+  sourceId: String
+  sourceSystem: String
+  sourceType: String
+  subject: String
+  threadId: String
+  time: DateTime!
+  toEntityIds: [String!]
+}
+
 input CreateConceptInput {
   description: String
+  linkedId: String
+  linkedTable: String
   name: String!
 }
 
@@ -284,9 +345,13 @@ type CreateConnectionSyncJobPayload {
 }
 
 input CreateContentInput {
+  eventId: ID
   externalId: String
   mimetype: String
   sourceData: JSON
+  sourceId: String
+  sourceSystem: String
+  sourceType: String
   sourceUrl: String
   text: String
   title: String
@@ -309,12 +374,31 @@ input CreateEventInput {
   metadata: JSON
   organizerEntityId: ID
   participantEntityIds: [ID!]
+  sharingLevel: String
   sourceId: ID
   sourceSystem: String
   sourceType: String
   startTime: DateTime!
   status: String
   title: String
+}
+
+input CreateInventoryInput {
+  acquiredAt: DateTime
+  brand: String
+  category: String
+  condition: ItemCondition
+  currency: String
+  currentValue: Float
+  description: String
+  identifierCodes: JSON
+  metadata: JSON
+  name: String!
+  purchasePrice: Float
+  sourceId: String
+  sourceSystem: String
+  sourceType: String
+  subcategory: String
 }
 
 input CreateItemInput {
@@ -343,6 +427,8 @@ type CreateNotePayload {
 
 input CreatePersonInput {
   description: String
+  linkedId: String
+  linkedTable: String
   name: String!
 }
 
@@ -396,6 +482,7 @@ type CreateRelationshipPayload {
 input CreateSavedSearchInput {
   description: String
   entityTypes: [String!]
+  filters: SavedSearchFiltersInput
   name: String
   query: String
   tags: [String!]
@@ -456,11 +543,17 @@ type EventType implements Node & Taggable {
   locationCoordinates: JSON
   locationEntityId: ID
   locationName: String
+  mediaContentType: String
+  mediaHeight: Int
+  mediaSize: Float
+  mediaUrl: String
+  mediaWidth: Int
   metadata: JSON
   organizer: PersonType
   organizerEntityId: ID
   participantEntityIds: [ID!]
   participants(after: String, before: String, first: Int, last: Int): PersonConnection!
+  previewUrl: String
   sourceId: ID
   sourceSystem: String
   sourceType: String
@@ -468,21 +561,6 @@ type EventType implements Node & Taggable {
   status: String
   tags: [EntityTagType!]!
   title: String
-}
-
-type FileChunkType implements Node {
-  chunkIndex: Int!
-  chunkerVersion: String!
-  content: String!
-  createdAt: DateTime!
-  file: FileType
-  fileId: ID!
-  id: ID!
-  parserName: String!
-  parserVersion: String!
-  sectionTitle: String
-  sourceLocator: JSON
-  updatedAt: DateTime!
 }
 
 type FileConnection implements Connection {
@@ -504,9 +582,6 @@ type FileType implements Node & Taggable {
   filename: String
   id: ID!
   items(after: String, before: String, first: Int, last: Int): ItemConnection
-  parseError: String
-  parseStatus: String
-  parsedAt: DateTime
   previewUrl: String
   size: Float
   sourceUrl: String
@@ -545,22 +620,20 @@ type ForecastType {
   systemStatus: String!
 }
 
-input IngestUserSnapshotInput {
-  cwd: String
-  deviceId: ID!
-  focusApp: String
-  focusTitle: String
-  fsEventCount: Int!
-  monotonicMs: Float!
-  observedAt: DateTime!
-  payload: JSON!
-  sessionId: ID!
-  snapshotKind: String!
+input GraphEntityInput {
+  description: String
+  entityType: String!
+  key: String!
+  name: String
+  properties: JSON
+  sourceSystem: String!
 }
 
-type IngestUserSnapshotPayload {
-  errorMessage: String
-  success: Boolean!
+input GraphRelationshipInput {
+  fromKey: String!
+  properties: JSON
+  toKey: String!
+  type: String!
 }
 
 type InsightItemType {
@@ -593,6 +666,17 @@ type ItemEdge implements Edge {
   node: ItemType!
 }
 
+input ItemRelationshipInput {
+  fromSourceId: String!
+  fromSourceSystem: String!
+  fromSourceType: String!
+  metadata: JSON
+  relation: String!
+  toSourceId: String!
+  toSourceSystem: String!
+  toSourceType: String!
+}
+
 type ItemType implements Node & Taggable {
   acquiredAt: DateTime
   brand: String
@@ -617,6 +701,39 @@ The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://
 """
 scalar JSON
 
+type KnownPlaceCandidateType {
+  confidence: Float!
+  eventCount: Int!
+  kind: String!
+  label: String!
+  lat: Float!
+  lng: Float!
+  locationId: String
+}
+
+type KnownPlaceCoordinates {
+  lat: Float!
+  lng: Float!
+}
+
+input KnownPlaceCoordinatesInput {
+  lat: Float!
+  lng: Float!
+}
+
+type KnownPlaceType {
+  activeFrom: String
+  activeTo: String
+  aliases: [String!]!
+  confidence: Float!
+  coordinates: KnownPlaceCoordinates
+  id: ID!
+  kind: String!
+  label: String!
+  locationId: String
+  source: String!
+}
+
 type MessageConnection implements Connection {
   edges: [MessageEdge!]!
   pageInfo: PageInfo!
@@ -636,18 +753,31 @@ type MessageType implements Node {
 }
 
 type Mutation {
+  bulkIngestGraph(input: BulkGraphInput!): BulkGraphPayload!
+  bulkIngestItemRelationships(input: [ItemRelationshipInput!]!): BulkItemRelationshipResult!
   createAnswer(input: CreateAnswerInput!): AnswerType!
+  createAnswers(input: [CreateAnswerInput!]!): [AnswerType!]!
+  createBrowserActivities(input: [CreateBrowserActivityInput!]!): [BrowserActivityType!]!
+  createCommunications(input: [CreateCommunicationInput!]!): [CommunicationType!]!
   createConcept(input: CreateConceptInput!): CreateConceptPayload!
+  createConcepts(input: [CreateConceptInput!]!): [ConceptType!]!
   createConnection(input: CreateConnectionInput!): CreateConnectionPayload!
   createConnectionSyncJob(input: CreateConnectionSyncJobInput!): CreateConnectionSyncJobPayload!
   createContent(input: CreateContentInput!): ContentType!
+  createContents(input: [CreateContentInput!]!): [ContentType!]!
   createEvent(input: CreateEventInput!): EventType!
+  createEvents(input: [CreateEventInput!]!): [EventType!]!
+  createInventoryItems(input: [CreateInventoryInput!]!): [ItemType!]!
   createItem(input: CreateItemInput!): CreateItemPayload!
   createNote(input: CreateNoteInput!): CreateNotePayload!
+  createNotes(input: [CreateNoteInput!]!): [NoteType!]!
+  createPeople(input: [CreatePersonInput!]!): [PersonType!]!
   createPerson(input: CreatePersonInput!): CreatePersonPayload!
   createPlace(input: CreatePlaceInput!): PlaceType!
+  createPlaces(input: [CreatePlaceInput!]!): [PlaceType!]!
   createProviderKey(input: CreateProviderKeyInput!): ProviderKeyType!
   createQuestion(input: CreateQuestionInput!): QuestionType!
+  createQuestions(input: [CreateQuestionInput!]!): [QuestionType!]!
   createRelationship(input: CreateRelationshipInput!): CreateRelationshipPayload!
   createSavedSearch(input: CreateSavedSearchInput!): CreateSavedSearchPayload!
   deleteConcept(input: DeleteByIdInput!): DeleteByIdPayload!
@@ -659,7 +789,6 @@ type Mutation {
   deleteProviderKey(id: ID!): Boolean!
   deleteRelationship(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteSavedSearch(input: DeleteByIdInput!): DeleteByIdPayload!
-  ingestUserSnapshot(input: IngestUserSnapshotInput!): IngestUserSnapshotPayload!
 
   """Mark an action as dismissed"""
   markActionAsDismissed(id: ID!): ActionType
@@ -677,19 +806,24 @@ type Mutation {
   removeEvent(id: String!): Boolean!
   removePlace(id: String!): Boolean!
   removeQuestion(id: String!): Boolean!
-  startPairing: StartPairingPayload!
+  setSavedSearchSharing(input: SetSavedSearchSharingInput!): UpdateSavedSearchPayload!
   tagEntities(input: TagEntitiesInput!): [TaggableEntityType!]!
 
   """Manually trigger the HBPE pipeline for the current user"""
   triggerHbpe: String!
   untagEntities(input: TagEntitiesInput!): [TaggableEntityType!]!
   updateAnswer(input: UpdateAnswerInput!): AnswerType
+  updateBrowserActivity(input: UpdateBrowserActivityInput!): BrowserActivityType
+  updateCommunication(input: UpdateCommunicationInput!): CommunicationType
   updateConcept(input: UpdateConceptInput!): UpdateConceptPayload!
   updateConnection(input: UpdateConnectionInput!): UpdateConnectionPayload!
   updateConnectionSyncJob(input: UpdateConnectionSyncJobInput!): UpdateConnectionSyncJobPayload!
   updateContent(input: UpdateContentInput!): ContentType
+  updateCurrentUser(input: UpdateCurrentUserInput!): UserType
   updateEvent(input: UpdateEventInput!): EventType
+  updateFile(input: UpdateFileInput!): FileType
   updateItem(input: UpdateItemInput!): UpdateItemPayload!
+  updateKnownPlace(input: UpdateKnownPlaceInput!): KnownPlaceType!
   updateNote(input: UpdateNoteInput!): UpdateNotePayload!
   updatePerson(input: UpdatePersonInput!): UpdatePersonPayload!
   updatePlace(input: UpdatePlaceInput!): PlaceType
@@ -728,17 +862,6 @@ type PageInfo {
   hasNextPage: Boolean!
   hasPreviousPage: Boolean!
   startCursor: String
-}
-
-type PairingStatusPayload {
-  appletAccessToken: String
-  deviceId: String
-  errorMessage: String
-  status: String!
-  success: Boolean!
-  userEmail: String
-  userId: String
-  userName: String
 }
 
 type PersonConnection implements Connection {
@@ -815,7 +938,7 @@ type ProviderEdge implements Edge {
 }
 
 type ProviderEndpointType {
-  TTL: Float!
+  TTL: Float
   description: String!
   iterationType: String!
   name: String!
@@ -837,12 +960,17 @@ type ProviderThemeType {
 }
 
 type ProviderType implements Node {
+  appSetupUrl: String
+  authType: String
   description: String
   endpoints: [ProviderEndpointType!]!
   id: ID!
+  localOnly: Boolean!
   logoUrl: String
   name: String
+  openidKeyLink: String
   providerKeys: ProviderKeyType
+  scopes: [String!]
   theme: ProviderThemeType
 }
 
@@ -859,11 +987,19 @@ type Query {
   concepts(after: String, before: String, first: Int, last: Int): ConceptConnection!
   connection(id: ID!): ConnectionType
   connectionSyncJob(id: ID!): ConnectionSyncJobType
-  connectionSyncJobs(after: String, before: String, connectionId: ID, first: Int, last: Int): ConnectionSyncJobConnection!
+  connectionSyncJobs(after: String, before: String, connectionId: ID, endpointName: String, first: Int, last: Int, type: String): ConnectionSyncJobConnection!
   connections(after: String, before: String, first: Int, last: Int): ConnectionConnection!
   content(id: ID!): ContentType
   contents(after: String, before: String, first: Int, last: Int): ContentConnection!
   event(id: ID!): EventType
+
+  """
+  Distinct data sources / connectors (event.source_system) present for the user.
+  """
+  eventSources: [String!]!
+
+  """Distinct event types ("how things happened") present for the user."""
+  eventTypes: [String!]!
   events(after: String, before: String, first: Int, last: Int): EventConnection!
 
   """Get actions for the feed, prioritizing unseen actions"""
@@ -875,11 +1011,13 @@ type Query {
   forecast(horizon: String = "24h"): ForecastType
   item(id: ID!): ItemType
   items(after: String, before: String, first: Int, last: Int): ItemConnection!
+  knownPlaceCandidates: [KnownPlaceCandidateType!]!
+  knownPlaces(kind: String): [KnownPlaceType!]!
   me: UserType
   node(id: ID!): Node
   note(id: ID!): NoteType
   notes(after: String, before: String, first: Int, last: Int): NoteConnection!
-  pairingStatus(pairingToken: String!, pollKey: String!): PairingStatusPayload!
+  oAuthCallbackUrl: String!
   people(after: String, before: String, first: Int, last: Int): PersonConnection!
   person(id: ID!): PersonType
   place(id: ID!): PlaceType
@@ -893,6 +1031,7 @@ type Query {
   savedSearch(id: ID!): SavedSearchType
   savedSearches(after: String, before: String, first: Int, last: Int): SavedSearchConnection!
   search(input: SearchInput!): SearchResultConnection!
+  sharedSavedSearch(token: String!): SavedSearchType
   summaries(after: String, before: String, first: Int, last: Int): SummaryConnection!
   summary(id: ID!): SummaryType
   tag(id: ID!): TagType
@@ -957,28 +1096,70 @@ type SavedSearchEdge implements Edge {
   node: SavedSearchType!
 }
 
+input SavedSearchFiltersInput {
+  connectors: [String!]
+  endTime: String
+  eventTypes: [String!]
+  hasLocation: Boolean
+  people: [String!]
+  places: [String!]
+  semantic: Boolean
+  sortBy: String
+  sortOrder: String
+  startTime: String
+}
+
+type SavedSearchFiltersType {
+  connectors: [String!]
+  endTime: String
+  eventTypes: [String!]
+  hasLocation: Boolean
+  people: [String!]
+  places: [String!]
+  semantic: Boolean
+  sortBy: String
+  sortOrder: String
+  startTime: String
+}
+
 type SavedSearchType implements Node {
   createdAt: DateTime!
   description: String
   entityTypes: [String!]
+  filters: SavedSearchFiltersType
   id: ID!
+  isPublic: Boolean!
   name: String
   query: String
+  shareToken: String
   tags: [String!]
   updatedAt: DateTime!
 }
 
 input SearchInput {
+  after: String
+  bbox: [Float!]
+  connectors: [String!]
   endTime: String
+  eventTypes: [String!]
   excludeTypes: [String!]
+  first: Int
+  hasLocation: Boolean
   includeTypes: [String!]
+  people: [String!]
+  places: [String!]
   query: String
+  semantic: Boolean
+  shareToken: String
+  sortBy: String
+  sortOrder: String
   startTime: String
   tags: [String!]
 }
 
 type SearchResultConnection {
   edges: [SearchResultEdge!]!
+  matchingTags: [TagType!]!
   pageInfo: PageInfo!
   totalCount: Int!
 }
@@ -988,14 +1169,11 @@ type SearchResultEdge {
   node: SearchResultType!
 }
 
-union SearchResultType = AnswerType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileChunkType | FileType | ItemType | NoteType | PersonType | PlaceType | ThreadType
+union SearchResultType = ActionType | AnswerType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileType | ItemType | NoteType | PersonType | PlaceType | ThreadType
 
-type StartPairingPayload {
-  errorMessage: String
-  pairingPath: String
-  pairingToken: String
-  pollKey: String
-  success: Boolean!
+input SetSavedSearchSharingInput {
+  id: ID!
+  isPublic: Boolean!
 }
 
 type SummaryConnection implements Connection {
@@ -1100,6 +1278,18 @@ input UpdateAnswerInput {
   id: String!
 }
 
+input UpdateBrowserActivityInput {
+  id: ID!
+  title: String
+  url: String
+}
+
+input UpdateCommunicationInput {
+  content: String
+  id: ID!
+  subject: String
+}
+
 input UpdateConceptInput {
   description: String
   id: String!
@@ -1161,6 +1351,10 @@ input UpdateContentInput {
   url: String
 }
 
+input UpdateCurrentUserInput {
+  timezone: String
+}
+
 input UpdateEventInput {
   category: String
   confidenceScore: Float
@@ -1185,6 +1379,12 @@ input UpdateEventInput {
   title: String
 }
 
+input UpdateFileInput {
+  description: String
+  id: ID!
+  title: String
+}
+
 input UpdateItemInput {
   brand: String
   category: String
@@ -1198,6 +1398,18 @@ input UpdateItemInput {
 type UpdateItemPayload {
   item: ItemType
   success: Boolean!
+}
+
+input UpdateKnownPlaceInput {
+  activeFrom: String
+  activeTo: String
+  aliases: [String!]
+  confidence: Float
+  coordinates: KnownPlaceCoordinatesInput
+  kind: String!
+  label: String!
+  locationId: String
+  source: String
 }
 
 input UpdateNoteInput {
@@ -1264,6 +1476,7 @@ type UpdateRelationshipPayload {
 input UpdateSavedSearchInput {
   description: String
   entityTypes: [String!]
+  filters: SavedSearchFiltersInput
   id: ID!
   name: String
   query: String
@@ -1281,4 +1494,5 @@ type UserType implements Node {
   id: ID!
   name: String!
   onboarded: Boolean!
+  timezone: String!
 }

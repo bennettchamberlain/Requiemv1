@@ -1,14 +1,19 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 
-import { GlobalUID } from '@ci/common';
-import { Images } from '@ci/shadcn/icons';
-import { useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 
-import { FileModal } from '@/components/modals/FileModal';
-import { InventoryItemModal, type InventoryItem } from '@/components/modals/InventoryItemModal';
-import { Empty } from '@/pages/MemoryPage/Components';
+import {
+  DateGroupHeader,
+  Empty,
+  ErrorState,
+  ListSkeleton,
+  formatRowTime,
+  getEntityTimestamp,
+  groupEntitiesByBucket,
+  isChronologicalSort,
+} from '@/pages/MemoryPage/Components';
 
-import { useEntityService } from '../useEntityService';
+import { useEntityService, type EntityItem } from '../useEntityService';
 
 import { AnswerRow } from './rows/AnswerRow';
 import { BrowserActivityRow } from './rows/BrowserActivityRow';
@@ -17,166 +22,159 @@ import { ConceptRow } from './rows/ConceptRow';
 import { ContentRow } from './rows/ContentRow';
 import { EventRow } from './rows/EventRow';
 import { FileRow } from './rows/FileRow';
-import { ItemRow, type ItemInventoryPreview } from './rows/ItemRow';
+import { ItemRow } from './rows/ItemRow';
 import { NoteRow } from './rows/NoteRow';
 import { PersonRow } from './rows/PersonRow';
 import { PlaceRow } from './rows/PlaceRow';
 import { ThreadRow } from './rows/ThreadRow';
-import { SearchTable } from './SearchTable';
 
 export function ListView() {
-  const navigate = useNavigate();
+  const [{ data, loading, hasNextPage, loadingMore, loadMore, error, refetch }, { setActiveEntity }] =
+    useEntityService();
 
-  const [selectedInventoryItem, setSelectedInventoryItem] = useState<InventoryItem | null>(null);
-  const [activeItem, setActiveItem] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
-  const clearActiveItem = () => setActiveItem(null);
+  // Fetch the next server page (cursor-based) when the sentinel scrolls into view.
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
 
-  const [{ data }] = useEntityService();
+    if (!sentinel || !hasNextPage) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          loadMore();
+        }
+      },
+      { root: scrollRef.current, rootMargin: '400px' },
+    );
+
+    observer.observe(sentinel);
+
+    return () => observer.disconnect();
+  }, [hasNextPage, loadMore]);
+
+  // Date-group headers only make sense while results are in chronological order.
+  // Relevance/name sorts interleave dates, so we fall back to a flat list there
+  // (grouping then would emit repeated, out-of-order headers).
+  const [searchParams] = useSearchParams();
+  const grouped = isChronologicalSort(
+    searchParams.get('sortBy'),
+    Boolean(searchParams.get('search')?.trim()),
+  );
+  const groups = useMemo(() => (grouped ? groupEntitiesByBucket(data) : null), [grouped, data]);
+
+  // Every row opens the same shared details drawer (incl. File/Item media).
+  const renderRow = (item: EntityItem) => {
+    const time = formatRowTime(getEntityTimestamp(item));
+
+    switch (item.__typename) {
+      case 'AnswerType':
+        return <AnswerRow key={item.id} answer={item} time={time} onClick={() => setActiveEntity(item)} />;
+
+      case 'BrowserActivityType':
+        return (
+          <BrowserActivityRow
+            key={item.id}
+            browserActivity={item}
+            time={time}
+            onClick={() => setActiveEntity(item)}
+          />
+        );
+
+      case 'CommunicationType':
+        return (
+          <CommunicationRow
+            key={item.id}
+            communication={item}
+            time={time}
+            onClick={() => setActiveEntity(item)}
+          />
+        );
+
+      case 'ConceptType':
+        return <ConceptRow key={item.id} concept={item} time={time} onClick={() => setActiveEntity(item)} />;
+
+      case 'ContentType':
+        return <ContentRow key={item.id} content={item} time={time} onClick={() => setActiveEntity(item)} />;
+
+      case 'EventType':
+        return <EventRow key={item.id} event={item} time={time} onClick={() => setActiveEntity(item)} />;
+
+      case 'FileType':
+        return <FileRow key={item.id} file={item} time={time} onClick={() => setActiveEntity(item)} />;
+
+      case 'ItemType':
+        return <ItemRow key={item.id} item={item} time={time} onClick={() => setActiveEntity(item)} />;
+
+      case 'NoteType':
+        return <NoteRow key={item.id} note={item} time={time} onClick={() => setActiveEntity(item)} />;
+
+      case 'PersonType':
+        return <PersonRow key={item.id} person={item} time={time} onClick={() => setActiveEntity(item)} />;
+
+      case 'PlaceType':
+        return <PlaceRow key={item.id} place={item} time={time} onClick={() => setActiveEntity(item)} />;
+
+      case 'ThreadType':
+        return <ThreadRow key={item.id} thread={item} time={time} onClick={() => setActiveEntity(item)} />;
+
+      default:
+        return null;
+    }
+  };
+
+  // First load (no data yet): skeletons over a bare spinner.
+  if (loading && data.length === 0) {
+    return (
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">
+        <ListSkeleton count={10} />
+      </div>
+    );
+  }
+
+  // Hard error with nothing to show.
+  if (error && data.length === 0) {
+    return (
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">
+        <ErrorState onRetry={refetch} />
+      </div>
+    );
+  }
 
   if (data.length === 0) {
     return (
       <Empty
-        title="No results found"
-        description="Connect your data sources or try a different search to see content here"
-        icon={Images}
+        title="No results"
+        description="Try clearing your filters or searching for something else."
+        icon="🔍"
       />
     );
   }
 
-  const openInventoryModal = (item: ItemInventoryPreview) => {
-    setSelectedInventoryItem({
-      id: item.id,
-      name: item.name,
-      description: item.description,
-      file: item.file,
-    });
-  };
-
   return (
-    <>
-      <SearchTable className="p-4 pt-0">
-        <SearchTable.RowGroup>
-          {data.map((item) => {
-            switch (item.__typename) {
-              case 'AnswerType':
-                return <AnswerRow key={item.id} answer={item} onClick={() => {}} />;
+    <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">
+      <div className="flex flex-col">
+        {groups
+          ? groups.map((group) => (
+              <section key={group.key} className="pb-1">
+                <DateGroupHeader label={group.label} count={group.entities.length} />
+                <div className="flex flex-col">{group.entities.map(renderRow)}</div>
+              </section>
+            ))
+          : data.map(renderRow)}
+      </div>
 
-              case 'BrowserActivityType':
-                return <BrowserActivityRow key={item.id} browserActivity={item} onClick={() => {}} />;
+      {loadingMore && <ListSkeleton count={3} showHeader={false} />}
 
-              case 'CommunicationType':
-                return (
-                  <CommunicationRow
-                    key={item.id}
-                    communication={item}
-                    onClick={() => {
-                      navigate(`/communications/${GlobalUID.parse('communication', item.id)}`);
-                    }}
-                  />
-                );
+      {hasNextPage && <div ref={sentinelRef} className="h-8" />}
 
-              case 'ConceptType':
-                return (
-                  <ConceptRow
-                    key={item.id}
-                    concept={item}
-                    onClick={() => {
-                      navigate(`/concepts/${GlobalUID.parse('concept', item.id)}`);
-                    }}
-                  />
-                );
-
-              case 'ContentType':
-                return (
-                  <ContentRow
-                    key={item.id}
-                    content={item}
-                    onClick={() => {
-                      navigate(`/contents/${GlobalUID.parse('content', item.id)}`);
-                    }}
-                  />
-                );
-
-              case 'EventType':
-                return (
-                  <EventRow
-                    key={item.id}
-                    event={item}
-                    onClick={() => {
-                      navigate(`/events/${GlobalUID.parse('event', item.id)}`);
-                    }}
-                  />
-                );
-
-              case 'FileType':
-                return <FileRow key={item.id} file={item} onClick={() => setActiveItem(item.id)} />;
-
-              case 'ItemType':
-                return <ItemRow key={item.id} item={item} onSelectInventoryItem={openInventoryModal} />;
-
-              case 'NoteType':
-                return (
-                  <NoteRow
-                    key={item.id}
-                    note={item}
-                    onClick={() => {
-                      navigate(`/notes/${GlobalUID.parse('note', item.id)}`);
-                    }}
-                  />
-                );
-
-              case 'PersonType':
-                return (
-                  <PersonRow
-                    key={item.id}
-                    person={item}
-                    onClick={() => {
-                      navigate(`/people/${GlobalUID.parse('person', item.id)}`);
-                    }}
-                  />
-                );
-
-              case 'PlaceType':
-                return (
-                  <PlaceRow
-                    key={item.id}
-                    place={item}
-                    onClick={() => {
-                      navigate(`/places/${GlobalUID.parse('place', item.id)}`);
-                    }}
-                  />
-                );
-
-              case 'ThreadType':
-                return (
-                  <ThreadRow
-                    key={item.id}
-                    thread={item}
-                    onClick={() => {
-                      navigate(`/chat/${GlobalUID.parse('thread', item.id)}`);
-                    }}
-                  />
-                );
-
-              default:
-                return null;
-            }
-          })}
-        </SearchTable.RowGroup>
-      </SearchTable>
-
-      <FileModal fileId={activeItem ?? null} onClose={clearActiveItem} />
-
-      <InventoryItemModal
-        open={selectedInventoryItem != null}
-        onClose={() => setSelectedInventoryItem(null)}
-        item={selectedInventoryItem}
-        create={false}
-        detailPagePath={
-          selectedInventoryItem ? `/items/${GlobalUID.parse('item', selectedInventoryItem.id)}` : undefined
-        }
-      />
-    </>
+      <div className="py-3 text-center text-xs text-muted-foreground">
+        {data.length} loaded{loadingMore ? ' · loading…' : hasNextPage ? '' : ' · end'}
+      </div>
+    </div>
   );
 }

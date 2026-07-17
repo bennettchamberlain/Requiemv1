@@ -2,7 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { Query, Resolver, Args, ID } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { BrowserActivityService } from '@ci/domains/browser-activity';
 import { ConnectionService } from '@ci/domains/connections';
 import { MessageService, ThreadService } from '@ci/domains/conversations';
@@ -42,7 +42,7 @@ import { TagType } from '../types/TagType';
 import { ThreadType } from '../types/ThreadType';
 import { UserType } from '../types/UserType';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => Node)
 export class NodeResolver {
   constructor(

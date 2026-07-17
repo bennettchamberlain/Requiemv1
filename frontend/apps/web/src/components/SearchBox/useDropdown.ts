@@ -7,6 +7,11 @@ type ReturnType = [
   {
     isDropdownPanelVisible: boolean;
     selectedEntityTypes: string[];
+    tags: string[];
+    dateFrom: string;
+    dateTo: string;
+    sortBy: string;
+    sortOrder: string;
   },
   {
     toggleDropdownPanel: () => void;
@@ -14,6 +19,9 @@ type ReturnType = [
     clearEntityTypes: () => void;
     toggleEntityType: (type: string) => void;
     setSelectedEntityTypes: (type: string[]) => void;
+    setTags: (tags: string[]) => void;
+    setDateRange: (from?: string, to?: string) => void;
+    setSort: (sortBy?: string, sortOrder?: string) => void;
   },
 ];
 
@@ -29,34 +37,44 @@ export const AVAILABLE_ENTITY_TYPES = [
   'Thing',
 ];
 
+function sameEntityTypes(a: string[], b: string[]) {
+  return a.length === b.length && a.every((type, index) => type === b[index]);
+}
+
 function useDropdown({ changeSearchParams = true }: { changeSearchParams: boolean }): ReturnType {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [isDropdownPanelVisible, setDropdownPanelVisible] = useState(false);
   const [selectedEntityTypes, setSelectedEntityTypes] = useState<string[]>(AVAILABLE_ENTITY_TYPES);
+  const excludedEntityTypesParam = searchParams.get('excludedEntityTypes') ?? '';
+  const includedEntityTypesParam = searchParams.get('includedEntityTypes') ?? '';
 
   // Sync entity types with URL parameters
   useEffect(() => {
-    const excludedEntityTypes = searchParams.get('excludedEntityTypes')?.split(',').filter(Boolean) || [];
+    const excludedEntityTypes = excludedEntityTypesParam.split(',').filter(Boolean);
     const selectedTypes = AVAILABLE_ENTITY_TYPES.filter((type) => !excludedEntityTypes.includes(type));
 
     if (changeSearchParams) {
-      setSelectedEntityTypes(selectedTypes);
+      setSelectedEntityTypes((prev) => (sameEntityTypes(prev, selectedTypes) ? prev : selectedTypes));
     }
-  }, [searchParams]);
+  }, [changeSearchParams, excludedEntityTypesParam]);
 
   // Sync entity types with URL parameters
   useEffect(() => {
-    const includedEntityTypes = searchParams.get('includedEntityTypes')?.split(',').filter(Boolean) || [];
+    const includedEntityTypes = includedEntityTypesParam.split(',').filter(Boolean);
     if (includedEntityTypes.length > 0) {
       const selectedTypes = AVAILABLE_ENTITY_TYPES.filter((type) => includedEntityTypes.includes(type));
 
       if (changeSearchParams) {
-        setSelectedEntityTypes(selectedTypes);
+        setSelectedEntityTypes((prev) => (sameEntityTypes(prev, selectedTypes) ? prev : selectedTypes));
       }
     }
-  }, [searchParams]);
+  }, [changeSearchParams, includedEntityTypesParam]);
 
+  // Both callbacks must re-capture `setSearchParams` whenever it changes:
+  // react-router's setter closes over the params of the render it was created
+  // in, so a stale instance navigates to a URL rebuilt from those old params,
+  // resurrecting filters (e.g. ?bbox) removed since.
   const clearEntityTypes = useCallback(() => {
     setSelectedEntityTypes(AVAILABLE_ENTITY_TYPES);
 
@@ -67,7 +85,7 @@ function useDropdown({ changeSearchParams = true }: { changeSearchParams: boolea
         return searchParams;
       });
     }
-  }, []);
+  }, [changeSearchParams, setSearchParams]);
 
   const selectAllEntityTypes = useCallback(() => {
     setSelectedEntityTypes([]);
@@ -79,7 +97,7 @@ function useDropdown({ changeSearchParams = true }: { changeSearchParams: boolea
         return searchParams;
       });
     }
-  }, []);
+  }, [changeSearchParams, setSearchParams]);
 
   const toggleEntityType = useCallback(
     (entityType: string) => {
@@ -119,10 +137,92 @@ function useDropdown({ changeSearchParams = true }: { changeSearchParams: boolea
     setDropdownPanelVisible((prev) => !prev);
   }, []);
 
+  // Date range, tags, and sort are read straight from the URL (no inversion logic like entity
+  // types), so derive them per-render and write through setters that update the search params.
+  const tags = searchParams.get('tags')?.split(',').filter(Boolean) || [];
+  const dateFrom = searchParams.get('from') || '';
+  const dateTo = searchParams.get('to') || '';
+  const sortBy = searchParams.get('sortBy') || '';
+  const sortOrder = searchParams.get('sortOrder') || '';
+
+  const setTags = useCallback(
+    (next: string[]) => {
+      if (!changeSearchParams) {
+        return;
+      }
+
+      setSearchParams((params) => {
+        if (next.length === 0) {
+          params.delete('tags');
+        } else {
+          params.set('tags', next.join(','));
+        }
+
+        return params;
+      });
+    },
+    [changeSearchParams, setSearchParams],
+  );
+
+  const setDateRange = useCallback(
+    (from?: string, to?: string) => {
+      if (!changeSearchParams) {
+        return;
+      }
+
+      setSearchParams((params) => {
+        if (from) {
+          params.set('from', from);
+        } else {
+          params.delete('from');
+        }
+
+        if (to) {
+          params.set('to', to);
+        } else {
+          params.delete('to');
+        }
+
+        return params;
+      });
+    },
+    [changeSearchParams, setSearchParams],
+  );
+
+  const setSort = useCallback(
+    (nextSortBy?: string, nextSortOrder?: string) => {
+      if (!changeSearchParams) {
+        return;
+      }
+
+      setSearchParams((params) => {
+        if (nextSortBy) {
+          params.set('sortBy', nextSortBy);
+        } else {
+          params.delete('sortBy');
+        }
+
+        if (nextSortOrder) {
+          params.set('sortOrder', nextSortOrder);
+        } else {
+          params.delete('sortOrder');
+        }
+
+        return params;
+      });
+    },
+    [changeSearchParams, setSearchParams],
+  );
+
   return [
     {
       isDropdownPanelVisible,
       selectedEntityTypes,
+      tags,
+      dateFrom,
+      dateTo,
+      sortBy,
+      sortOrder,
     },
     {
       toggleDropdownPanel,
@@ -130,6 +230,9 @@ function useDropdown({ changeSearchParams = true }: { changeSearchParams: boolea
       clearEntityTypes,
       toggleEntityType,
       setSelectedEntityTypes,
+      setTags,
+      setDateRange,
+      setSort,
     },
   ];
 }

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { SYSTEM_USER, type ServiceContext } from '@ci/common/context';
-import { EmbeddingGenerationService } from '@ci/common/embeddings';
+import { EmbeddingGenerationService, embedSkipReason, shouldEmbedType } from '@ci/common/embeddings';
 import { LoggerService } from '@ci/common/logging';
 import { OnEvent } from '@ci/domains/events';
 import { type Communication, CommunicationService } from '@ci/domains/memory';
@@ -15,6 +15,7 @@ import {
 } from '@ci/domains/memory/events';
 
 import { EmbeddingService } from '../services/EmbeddingService';
+import { IndexSkipService } from '../services/IndexSkipService';
 import { VectorService } from '../services/VectorService';
 import { type WeightedText } from '../types';
 
@@ -24,6 +25,7 @@ export class CommunicationSearchIndexListener {
     private readonly communicationService: CommunicationService,
     private readonly embeddingGenerationService: EmbeddingGenerationService,
     private readonly embeddingService: EmbeddingService,
+    private readonly indexSkipService: IndexSkipService,
     private readonly vectorService: VectorService,
     private readonly logger: LoggerService,
   ) {
@@ -67,6 +69,10 @@ export class CommunicationSearchIndexListener {
         entityType: 'communication',
         entityId: payload.communicationId,
       }),
+      this.indexSkipService.clearSkip({
+        entityType: 'communication',
+        entityId: payload.communicationId,
+      }),
     ]);
   }
 
@@ -90,11 +96,26 @@ export class CommunicationSearchIndexListener {
     }
 
     const searchDocument = this.getSearchDocument(communication);
+    const skipReason = searchDocument == null ? 'empty' : embedSkipReason(searchDocument);
 
-    if (searchDocument == null) {
-      this.logger.log('Communication has no search document, skipping embedding');
+    if (!shouldEmbedType('communication')) {
+      this.logger.log('Communication type not in embed allowlist, skipping embedding');
+    } else if (skipReason != null) {
+      this.logger.log('Skipping low-value communication embedding', {
+        communicationId: communication.id,
+        skipReason,
+      });
+
+      // Persist the skip so the backfill sweep (LEFT JOIN on ci_search.embeddings)
+      // stops re-finding this row on every run — without a marker the sweep never
+      // converges and its no-op jobs starve the other entity types.
+      await this.indexSkipService.recordSkip({
+        entityType: 'communication',
+        entityId: communication.id,
+        reason: skipReason,
+      });
     } else {
-      const embedding = await this.embeddingGenerationService.generateEmbedding(searchDocument);
+      const embedding = await this.embeddingGenerationService.generateEmbedding(searchDocument!);
 
       await this.embeddingService.upsert(
         {
@@ -106,6 +127,12 @@ export class CommunicationSearchIndexListener {
           embedding,
         },
       );
+
+      // An updated communication that became embeddable is no longer skipped.
+      await this.indexSkipService.clearSkip({
+        entityType: 'communication',
+        entityId: communication.id,
+      });
 
       this.logger.log('Generated embedding for communication');
     }
@@ -147,6 +174,13 @@ export class CommunicationSearchIndexListener {
   private getSearchDocument(communication: Communication): string | null {
     const parts = [communication.subject, communication.preview, communication.content];
 
-    return parts.filter((part): part is string => typeof part === 'string' && part.length > 0).join(' ');
+    const document = parts
+      .filter((part): part is string => typeof part === 'string' && part.length > 0)
+      .join(' ');
+
+    // Return null (not '') when there is nothing to embed, so indexUpsert's
+    // `searchDocument == null` guard skips embedding instead of asking the model
+    // to embed an empty string — which throws "Received empty embedding vector".
+    return document.length > 0 ? document : null;
   }
 }

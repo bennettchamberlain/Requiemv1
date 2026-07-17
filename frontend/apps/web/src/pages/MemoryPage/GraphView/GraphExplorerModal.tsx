@@ -1,56 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { Badge, Button, Input, Separator, cn } from '@ci/shadcn';
+import { ENTITY_TYPE_MAP } from '@ci/common/src/constants';
+import { Badge, Button, Input, Label, Slider, cn } from '@ci/shadcn';
 import { AlertCircle, Anchor, Loader2, Sparkles, Users } from '@ci/shadcn/icons';
 import { useSearchParams } from 'react-router-dom';
 
 import { useGraphOverview, type GraphNode, type GraphLink } from '@/api/useGraphOverview';
+import { colorForRawType } from '@/components/entities/entityVisuals';
 import { ForceGraph, ForceGraph3D } from '@/components/ForceGraph';
+import { AVAILABLE_ENTITY_TYPES } from '@/components/SearchBox/useDropdown';
 import { useAuth } from '@/hooks';
 import { Empty } from '@/pages/MemoryPage/Components';
-
-const TYPE_COLOR_PALETTE = [
-  '#38bdf8',
-  '#a855f7',
-  '#f97316',
-  '#22c55e',
-  '#facc15',
-  '#ec4899',
-  '#14b8a6',
-  '#60a5fa',
-  '#f87171',
-  '#c084fc',
-];
+import { useEntityService } from '@/pages/MemoryPage/useEntityService';
 
 const DEFAULT_SPAWN_LIMIT = 10;
 const DEFAULT_HOP_DEPTH = 2;
 const MIN_HOP_DEPTH = 1;
-const MAX_HOP_DEPTH = 5;
+const MAX_HOP_DEPTH = 7;
 
+// Colour nodes/badges by entity type from the shared LifeScope palette.
 function getTypeColor(entityType: string): string {
-  if (!entityType) {
-    return TYPE_COLOR_PALETTE[0];
-  }
-
-  const normalized = entityType.toLowerCase();
-  if (normalized === 'location' || normalized === 'place') {
-    return '#22c55e';
-  }
-
-  let hash = 0;
-  for (let i = 0; i < entityType.length; i += 1) {
-    hash = (hash << 5) - hash + entityType.charCodeAt(i);
-    hash |= 0;
-  }
-
-  const index = Math.abs(hash) % TYPE_COLOR_PALETTE.length;
-
-  return TYPE_COLOR_PALETTE[index];
+  return colorForRawType(entityType);
 }
 
 interface GraphTabPanelProps {
   variant: 'desktop' | 'mobile';
-  searchQuery?: string;
 }
 
 type GraphSearchResponseNode = {
@@ -111,13 +85,79 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
   const trimmedSearchQuery = searchParams?.get('search')?.trim() ?? '';
   const isSearchMode = trimmedSearchQuery.length > 0;
 
+  // Mirror the explorer's entity-type filter (shared via URL with List/Gallery/Map) onto the
+  // graph. Translates the explorer display types to the GraphQL vocabulary the graph endpoints
+  // expect. `undefined` => filter inactive (all types selected); an array (possibly empty) =>
+  // active filter forwarded to the backend.
+  const includedEntityTypesParam = searchParams?.get('includedEntityTypes') ?? '';
+  const excludedEntityTypesParam = searchParams?.get('excludedEntityTypes') ?? '';
+
+  const explorerIncludeTypes = useMemo<string[] | undefined>(() => {
+    const included = includedEntityTypesParam.split(',').filter(Boolean);
+    const excluded = excludedEntityTypesParam.split(',').filter(Boolean);
+
+    const selectedDisplayTypes =
+      included.length > 0
+        ? AVAILABLE_ENTITY_TYPES.filter((type) => included.includes(type))
+        : AVAILABLE_ENTITY_TYPES.filter((type) => !excluded.includes(type));
+
+    if (selectedDisplayTypes.length >= AVAILABLE_ENTITY_TYPES.length) {
+      return undefined;
+    }
+
+    return selectedDisplayTypes
+      .map((type) => ENTITY_TYPE_MAP[type as keyof typeof ENTITY_TYPE_MAP])
+      .filter((type): type is string => Boolean(type));
+  }, [includedEntityTypesParam, excludedEntityTypesParam]);
+
+  // Explorer's `tags` URL param (comma-separated labels). Present (even empty)
+  // means the tag filter is active; absent leaves the graph unfiltered.
+  const rawTags = searchParams?.get('tags');
+  const tagsParam = rawTags ?? undefined;
+
+  // Event-scoped LifeScope dimensions, shared via URL with List/Gallery/Map.
+  // Forwarded to the graph data fetch so the graph reflects the same filtered
+  // subset. Memoized so the hook's effect only re-runs on a real value change.
+  const connectorsParam = searchParams?.get('connectors') ?? '';
+  const peopleParamRaw = searchParams?.get('people') ?? '';
+  const placesParamRaw = searchParams?.get('places') ?? '';
+  const eventTypesParamRaw = searchParams?.get('eventTypes') ?? '';
+  const hasLocationParam = searchParams?.get('hasLocation') === '1';
+  const dateFromParam = searchParams?.get('from') || undefined;
+  const dateToParam = searchParams?.get('to') || undefined;
+
+  const explorerConnectors = useMemo(() => connectorsParam.split(',').filter(Boolean), [connectorsParam]);
+  const explorerPeople = useMemo(() => peopleParamRaw.split(',').filter(Boolean), [peopleParamRaw]);
+  const explorerPlaces = useMemo(() => placesParamRaw.split(',').filter(Boolean), [placesParamRaw]);
+  const explorerEventTypes = useMemo(
+    () => eventTypesParamRaw.split(',').filter(Boolean),
+    [eventTypesParamRaw],
+  );
+
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchNodes, setSearchNodes] = useState<Array<GraphNode & { score?: number | null }>>([]);
   const [searchLinks, setSearchLinks] = useState<GraphLink[]>([]);
 
   const [{ authToken }] = useAuth();
-  const { loading, error, subgraph, userEntityId, quickStats } = useGraphOverview(authToken, { maxDepth: 3 });
+  const { loading, error, subgraph, userEntityId, quickStats, filterMatchedEntityIds, filterScope } =
+    useGraphOverview(authToken, {
+      maxDepth: 3,
+      includeTypes: explorerIncludeTypes,
+      tags: tagsParam,
+      connectors: explorerConnectors,
+      people: explorerPeople,
+      places: explorerPlaces,
+      eventTypes: explorerEventTypes,
+      hasLocation: hasLocationParam,
+      dateFrom: dateFromParam,
+      dateTo: dateToParam,
+    });
+  // A restrictive explorer filter (tags and/or the event-scoped dimensions) is
+  // engaged — the graph scopes to the matched subset instead of the click-driven
+  // interactive view.
+  const isFilterActive = filterScope.tags || filterScope.events;
+  const [, { setActiveEntity }] = useEntityService();
 
   const spawnLimit = useMemo(() => {
     const parsed = Number.parseInt(spawnLimitInput, 10);
@@ -137,12 +177,11 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
     }
   }, [spawnLimitInput]);
 
-  const increaseHopDepth = useCallback(() => {
-    setHopDepth((prev) => Math.min(MAX_HOP_DEPTH, prev + 1));
-  }, []);
-
-  const decreaseHopDepth = useCallback(() => {
-    setHopDepth((prev) => Math.max(MIN_HOP_DEPTH, prev - 1));
+  const handleHopDepthChange = useCallback((values: number[]) => {
+    const [next] = values;
+    if (typeof next === 'number') {
+      setHopDepth(Math.min(MAX_HOP_DEPTH, Math.max(MIN_HOP_DEPTH, next)));
+    }
   }, []);
 
   const baseNodes = subgraph?.nodes ?? [];
@@ -218,6 +257,46 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
         setSearchError(null);
 
         const params = new URLSearchParams({ query: trimmedSearchQuery, limit: '10' });
+        if (explorerIncludeTypes !== undefined) {
+          params.set('includeTypes', explorerIncludeTypes.join(','));
+        }
+
+        // Forward the explorer's restrictive filters so search returns the same
+        // scoped subset as /data and the rest of the explorer. Mirrors the param
+        // contract in useGraphOverview: `tags` present (even empty) marks the tag
+        // filter active; the event-scoped dimensions forward only when set.
+        if (tagsParam !== undefined) {
+          params.set('tags', tagsParam);
+        }
+
+        if (explorerConnectors.length > 0) {
+          params.set('connectors', explorerConnectors.join(','));
+        }
+
+        if (explorerPeople.length > 0) {
+          params.set('people', explorerPeople.join(','));
+        }
+
+        if (explorerPlaces.length > 0) {
+          params.set('places', explorerPlaces.join(','));
+        }
+
+        if (explorerEventTypes.length > 0) {
+          params.set('eventTypes', explorerEventTypes.join(','));
+        }
+
+        if (hasLocationParam) {
+          params.set('hasLocation', '1');
+        }
+
+        if (dateFromParam) {
+          params.set('from', dateFromParam);
+        }
+
+        if (dateToParam) {
+          params.set('to', dateToParam);
+        }
+
         const response = await fetch(`/api/graph/search?${params.toString()}`, {
           headers: {
             Authorization: `Bearer ${authToken}`,
@@ -323,7 +402,21 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
       cancelled = true;
       controller.abort();
     };
-  }, [authToken, isSearchMode, spawnLimit, trimmedSearchQuery]);
+  }, [
+    authToken,
+    isSearchMode,
+    spawnLimit,
+    trimmedSearchQuery,
+    explorerIncludeTypes,
+    tagsParam,
+    explorerConnectors,
+    explorerPeople,
+    explorerPlaces,
+    explorerEventTypes,
+    hasLocationParam,
+    dateFromParam,
+    dateToParam,
+  ]);
 
   useEffect(() => {
     if (!isSearchMode) {
@@ -361,103 +454,6 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
       return searchSeedIds[0] ?? null;
     });
   }, [isSearchMode, searchSeedKey]);
-
-  const availableEntityTypes = useMemo(() => {
-    const types = new Set<string>();
-
-    for (const node of rawNodes) {
-      if (node.entity_type) {
-        types.add(node.entity_type);
-      }
-    }
-
-    return Array.from(types).sort((a, b) => a.localeCompare(b));
-  }, [rawNodes]);
-  const availableEntityTypesKey = useMemo(() => JSON.stringify(availableEntityTypes), [availableEntityTypes]);
-
-  const availableRelationshipTypes = useMemo(() => {
-    const types = new Set<string>();
-
-    for (const link of rawLinks) {
-      if (link.relationship_type) {
-        types.add(link.relationship_type);
-      }
-    }
-
-    return Array.from(types).sort((a, b) => a.localeCompare(b));
-  }, [rawLinks]);
-  const availableRelationshipTypesKey = useMemo(
-    () => JSON.stringify(availableRelationshipTypes),
-    [availableRelationshipTypes],
-  );
-
-  useEffect(() => {
-    if (entityTypesKeyRef.current === availableEntityTypesKey) {
-      return;
-    }
-
-    entityTypesKeyRef.current = availableEntityTypesKey;
-
-    setIncludedEntityTypes((prev) => {
-      if (availableEntityTypes.length === 0) {
-        return prev.length === 0 ? prev : [];
-      }
-
-      const nextSet = new Set(prev.filter((type) => availableEntityTypes.includes(type)));
-
-      if (nextSet.size === 0) {
-        availableEntityTypes.forEach((type) => nextSet.add(type));
-      } else {
-        for (const type of availableEntityTypes) {
-          if (!nextSet.has(type)) {
-            nextSet.add(type);
-          }
-        }
-      }
-
-      const next = availableEntityTypes.filter((type) => nextSet.has(type));
-
-      if (next.length === prev.length && next.every((type, index) => prev[index] === type)) {
-        return prev;
-      }
-
-      return next;
-    });
-  }, [availableEntityTypes, availableEntityTypesKey]);
-
-  useEffect(() => {
-    if (relationshipTypesKeyRef.current === availableRelationshipTypesKey) {
-      return;
-    }
-
-    relationshipTypesKeyRef.current = availableRelationshipTypesKey;
-
-    setIncludedRelationshipTypes((prev) => {
-      if (availableRelationshipTypes.length === 0) {
-        return prev.length === 0 ? prev : [];
-      }
-
-      const nextSet = new Set(prev.filter((type) => availableRelationshipTypes.includes(type)));
-
-      if (nextSet.size === 0) {
-        availableRelationshipTypes.forEach((type) => nextSet.add(type));
-      } else {
-        for (const type of availableRelationshipTypes) {
-          if (!nextSet.has(type)) {
-            nextSet.add(type);
-          }
-        }
-      }
-
-      const next = availableRelationshipTypes.filter((type) => nextSet.has(type));
-
-      if (next.length === prev.length && next.every((type, index) => prev[index] === type)) {
-        return prev;
-      }
-
-      return next;
-    });
-  }, [availableRelationshipTypes, availableRelationshipTypesKey]);
 
   const adjacencyMap = useMemo(() => {
     const map = new Map<string, Set<string>>();
@@ -670,6 +666,141 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
     previousVisibleRef.current = new Set(visibility.ids);
   }, [visibility.ids]);
 
+  // Nodes passing the visibility + explorer-filter gate, BEFORE the in-graph
+  // node-type toggle. The "Node types" / "Relationship types" chips derive from
+  // this set so they reflect the filtered visible graph rather than every loaded
+  // node — yet stay stable under the chip toggles themselves. Deriving them from
+  // the post-toggle visible set would let a deselected type drop out of the chip
+  // list and never come back (a feedback loop), which is why this is pre-toggle.
+  const filterScopedNodeIds = useMemo(() => {
+    const scoped = new Set<string>();
+    const visibilitySet = new Set(visibility.ids);
+
+    for (const node of rawNodes) {
+      if (filterMatchedEntityIds) {
+        if (isSearchMode) {
+          if (!visibilitySet.has(node.id) || !filterMatchedEntityIds.has(node.id)) {
+            continue;
+          }
+        } else if (!filterMatchedEntityIds.has(node.id)) {
+          continue;
+        }
+      } else if (!visibilitySet.has(node.id)) {
+        continue;
+      }
+
+      scoped.add(node.id);
+    }
+
+    return scoped;
+  }, [filterMatchedEntityIds, isSearchMode, rawNodes, visibility.ids]);
+
+  const availableEntityTypes = useMemo(() => {
+    const types = new Set<string>();
+
+    for (const node of rawNodes) {
+      if (filterScopedNodeIds.has(node.id) && node.entity_type) {
+        types.add(node.entity_type);
+      }
+    }
+
+    return Array.from(types).sort((a, b) => a.localeCompare(b));
+  }, [filterScopedNodeIds, rawNodes]);
+  const availableEntityTypesKey = useMemo(() => JSON.stringify(availableEntityTypes), [availableEntityTypes]);
+
+  const availableRelationshipTypes = useMemo(() => {
+    const types = new Set<string>();
+
+    for (const link of rawLinks) {
+      const sourceId = resolveEndpointId(link.source);
+      const targetId = resolveEndpointId(link.target);
+
+      if (
+        link.relationship_type &&
+        sourceId &&
+        targetId &&
+        filterScopedNodeIds.has(sourceId) &&
+        filterScopedNodeIds.has(targetId)
+      ) {
+        types.add(link.relationship_type);
+      }
+    }
+
+    return Array.from(types).sort((a, b) => a.localeCompare(b));
+  }, [filterScopedNodeIds, rawLinks]);
+  const availableRelationshipTypesKey = useMemo(
+    () => JSON.stringify(availableRelationshipTypes),
+    [availableRelationshipTypes],
+  );
+
+  useEffect(() => {
+    if (entityTypesKeyRef.current === availableEntityTypesKey) {
+      return;
+    }
+
+    entityTypesKeyRef.current = availableEntityTypesKey;
+
+    setIncludedEntityTypes((prev) => {
+      if (availableEntityTypes.length === 0) {
+        return prev.length === 0 ? prev : [];
+      }
+
+      const nextSet = new Set(prev.filter((type) => availableEntityTypes.includes(type)));
+
+      if (nextSet.size === 0) {
+        availableEntityTypes.forEach((type) => nextSet.add(type));
+      } else {
+        for (const type of availableEntityTypes) {
+          if (!nextSet.has(type)) {
+            nextSet.add(type);
+          }
+        }
+      }
+
+      const next = availableEntityTypes.filter((type) => nextSet.has(type));
+
+      if (next.length === prev.length && next.every((type, index) => prev[index] === type)) {
+        return prev;
+      }
+
+      return next;
+    });
+  }, [availableEntityTypes, availableEntityTypesKey]);
+
+  useEffect(() => {
+    if (relationshipTypesKeyRef.current === availableRelationshipTypesKey) {
+      return;
+    }
+
+    relationshipTypesKeyRef.current = availableRelationshipTypesKey;
+
+    setIncludedRelationshipTypes((prev) => {
+      if (availableRelationshipTypes.length === 0) {
+        return prev.length === 0 ? prev : [];
+      }
+
+      const nextSet = new Set(prev.filter((type) => availableRelationshipTypes.includes(type)));
+
+      if (nextSet.size === 0) {
+        availableRelationshipTypes.forEach((type) => nextSet.add(type));
+      } else {
+        for (const type of availableRelationshipTypes) {
+          if (!nextSet.has(type)) {
+            nextSet.add(type);
+          }
+        }
+      }
+
+      const next = availableRelationshipTypes.filter((type) => nextSet.has(type));
+
+      if (next.length === prev.length && next.every((type, index) => prev[index] === type)) {
+        return prev;
+      }
+
+      return next;
+    });
+  }, [availableRelationshipTypes, availableRelationshipTypesKey]);
+
   const entityTypeFilterSet = useMemo(() => new Set(includedEntityTypes), [includedEntityTypes]);
   const relationshipTypeFilterSet = useMemo(
     () => new Set(includedRelationshipTypes),
@@ -694,10 +825,13 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
 
   const allowedNodeIds = useMemo(() => {
     const allowed = new Set<string>();
-    const visibilitySet = new Set(visibility.ids);
 
     for (const node of rawNodes) {
-      if (!visibilitySet.has(node.id)) {
+      // `filterScopedNodeIds` already encodes the visibility + explorer-filter
+      // gate (including the search-mode "visibility AND filter match" rule that
+      // drops non-matching expanded neighbors). Here we only layer the in-graph
+      // node-type toggle on top.
+      if (!filterScopedNodeIds.has(node.id)) {
         continue;
       }
 
@@ -717,7 +851,7 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
     }
 
     return allowed;
-  }, [entityTypeFilterSet, isEntityFilterActive, rawNodes, visibility.ids]);
+  }, [entityTypeFilterSet, isEntityFilterActive, filterScopedNodeIds, rawNodes]);
 
   const entityTypesAllSelected = includedEntityTypes.length === availableEntityTypes.length;
   const relationshipTypesAllSelected = includedRelationshipTypes.length === availableRelationshipTypes.length;
@@ -836,6 +970,22 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
       setSelectedNodeId(nodeId);
       setExpandedNodes((prev) => (prev.includes(nodeId) ? prev : [...prev, nodeId]));
 
+      // Open the shared EntityDetails sheet, consistent with the List/Gallery/Map
+      // views. Graph nodes are REST objects, so map them to the GenericEntity
+      // shape that GenericDetails renders. The in-panel sidebar below stays as a
+      // secondary preview.
+      const node = rawNodes.find((item) => item.id === nodeId);
+      if (node) {
+        setActiveEntity({
+          __typename: 'GenericEntity',
+          id: node.id,
+          name: node.name,
+          entityType: node.entity_type,
+          description: node.description,
+          properties: node.properties,
+        });
+      }
+
       setNodeClickCounts((prev) => {
         const totalNeighbors = adjacencyMap.get(nodeId)?.size ?? 0;
         if (totalNeighbors === 0) {
@@ -854,10 +1004,11 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
         return { ...prev, [nodeId]: nextValue };
       });
     },
-    [adjacencyMap, spawnLimit],
+    [adjacencyMap, rawNodes, setActiveEntity, spawnLimit],
   );
 
   const detailGridClass = variant === 'desktop' ? 'grid gap-4 md:grid-cols-3' : 'grid gap-4 grid-cols-1';
+  const graphHeight = variant === 'mobile' ? 440 : 640;
 
   if (dataLoading) {
     return (
@@ -881,59 +1032,178 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
   if (visibleNodes.length === 0) {
     const title = isSearchMode
       ? `No graph nodes found for "${trimmedSearchQuery}"`
-      : 'No graph data available yet';
+      : isFilterActive
+        ? 'No graph nodes match the current filters'
+        : 'Your knowledge graph is still taking shape';
     const description = isSearchMode
-      ? 'Try another search'
-      : 'Start connecting memories to build your knowledge graph.';
+      ? 'Try a different name or keyword — search matches people, places, and concepts.'
+      : isFilterActive
+        ? 'No entities match the active explorer filters. Try broadening or clearing them.'
+        : 'The graph links the entities — people, places, and concepts — drawn out of your memories. It fills in as your imports are processed.';
 
     return (
-      <div className="flex h-[540px] flex-col items-center justify-center rounded-lg border border-dashed border-muted px-4 py-6">
+      <div className="flex h-[540px] flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-muted px-4 py-6 text-center">
         <Empty title={title} description={description} icon={Sparkles} />
+        {!isSearchMode && !isFilterActive && (
+          <p className="max-w-md text-xs text-muted-foreground">
+            Imported emails, messages, and events appear in the <span className="font-medium">List</span>,{' '}
+            <span className="font-medium">Gallery</span>, and <span className="font-medium">Search</span>{' '}
+            views right away — the graph focuses on the people and things they connect.
+          </p>
+        )}
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="space-y-2">
-        <h2 className="text-lg font-semibold">Knowledge Graph</h2>
-        <p className="text-sm text-muted-foreground">
-          Explore how memories, people, places, and events interconnect. Click nodes to reveal additional{' '}
-          neighbors, adjust the batch size, and increase hop depth for wider context.
-        </p>
+    <div className="flex flex-col gap-4">
+      <div className="rounded-lg border bg-muted/20 p-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1 rounded-md border bg-background p-1">
+            <Button
+              type="button"
+              size="sm"
+              variant={viewMode === '2d' ? 'default' : 'ghost'}
+              onClick={() => setViewMode('2d')}
+              aria-pressed={viewMode === '2d'}
+            >
+              2D
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={viewMode === '3d' ? 'default' : 'ghost'}
+              onClick={() => setViewMode('3d')}
+              aria-pressed={viewMode === '3d'}
+            >
+              3D
+            </Button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Label htmlFor="neighbor-limit" className="text-xs font-medium text-muted-foreground">
+              Neighbors
+            </Label>
+            <Input
+              id="neighbor-limit"
+              type="number"
+              inputMode="numeric"
+              min={1}
+              step={1}
+              className="h-8 w-20"
+              value={spawnLimitInput}
+              onChange={(event) => setSpawnLimitInput(event.target.value)}
+              onBlur={handleSpawnLimitBlur}
+            />
+          </div>
+
+          <div className="flex min-w-56 flex-1 items-center gap-3">
+            <Label className="whitespace-nowrap text-xs font-medium text-muted-foreground">Hop depth</Label>
+            <Slider
+              value={[hopDepth]}
+              min={MIN_HOP_DEPTH}
+              max={MAX_HOP_DEPTH}
+              step={1}
+              onValueChange={handleHopDepthChange}
+              aria-label="Hop depth"
+              className="min-w-32 flex-1"
+            />
+            <span className="w-10 text-right text-sm font-medium tabular-nums">{hopDepth}</span>
+          </div>
+
+          <Button
+            type="button"
+            size="sm"
+            variant={anchoringEnabled ? 'default' : 'secondary'}
+            onClick={() => setAnchoringEnabled((prev) => !prev)}
+            aria-pressed={anchoringEnabled}
+          >
+            <Anchor className="mr-2 h-4 w-4" />
+            Anchor
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={traversalEnabled ? 'default' : 'secondary'}
+            onClick={() => setTraversalEnabled((prev) => !prev)}
+            aria-pressed={traversalEnabled}
+          >
+            Traversal
+          </Button>
+        </div>
+
+        {(availableEntityTypes.length > 0 || availableRelationshipTypes.length > 0) && (
+          <div className="mt-3 flex flex-wrap gap-2 border-t border-border/60 pt-3">
+            {availableEntityTypes.length > 0 && (
+              <>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={entityTypesAllSelected ? 'default' : 'secondary'}
+                  onClick={handleEntityTypeSelectAll}
+                >
+                  All nodes
+                </Button>
+                {availableEntityTypes.map((type) => {
+                  const isActive = includedEntityTypes.includes(type);
+
+                  return (
+                    <Button
+                      key={type}
+                      type="button"
+                      size="sm"
+                      variant={isActive ? 'default' : 'secondary'}
+                      onClick={() => handleEntityTypeToggle(type)}
+                      aria-pressed={isActive}
+                    >
+                      <span
+                        className="mr-1.5 h-2 w-2 flex-shrink-0 rounded-full"
+                        style={{ backgroundColor: getTypeColor(type) }}
+                      />
+                      {type}
+                    </Button>
+                  );
+                })}
+              </>
+            )}
+
+            {availableRelationshipTypes.length > 0 && (
+              <>
+                <span className="mx-1 h-7 w-px self-center bg-border" />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={relationshipTypesAllSelected ? 'default' : 'secondary'}
+                  onClick={handleRelationshipTypeSelectAll}
+                >
+                  All links
+                </Button>
+                {availableRelationshipTypes.map((type) => {
+                  const isActive = includedRelationshipTypes.includes(type);
+
+                  return (
+                    <Button
+                      key={type}
+                      type="button"
+                      size="sm"
+                      variant={isActive ? 'default' : 'secondary'}
+                      onClick={() => handleRelationshipTypeToggle(type)}
+                      aria-pressed={isActive}
+                    >
+                      {type}
+                    </Button>
+                  );
+                })}
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="relative overflow-hidden">
         <div
-          className={cn(
-            'absolute z-10 flex items-center gap-2 rounded-md border bg-background/95 p-1 shadow-sm',
-            variant === 'mobile' ? 'right-2 top-2' : 'right-6 top-6',
-          )}
-        >
-          <Button
-            type="button"
-            size="sm"
-            variant={viewMode === '2d' ? 'default' : 'secondary'}
-            onClick={() => setViewMode('2d')}
-            aria-pressed={viewMode === '2d'}
-          >
-            2D
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={viewMode === '3d' ? 'default' : 'secondary'}
-            onClick={() => setViewMode('3d')}
-            aria-pressed={viewMode === '3d'}
-          >
-            3D
-          </Button>
-        </div>
-        <div
-          className={cn(
-            variant === 'mobile' ? 'h-[400px]' : 'h-[520px]',
-            'rounded-lg border bg-background/90 p-2 overflow-hidden',
-          )}
+          className={cn('rounded-lg border bg-background/90 p-2 overflow-hidden')}
+          style={{ height: graphHeight }}
         >
           {viewMode === '2d' ? (
             <ForceGraph
@@ -944,7 +1214,7 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
               selectedNodeId={selectedNodeId ?? undefined}
               onNodeSelect={handleNodeSelect}
               anchoredNodeIds={anchoredNodeIds}
-              height={variant === 'mobile' ? 400 : 520}
+              height={graphHeight}
             />
           ) : (
             <ForceGraph3D
@@ -954,20 +1224,18 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
               selectedNodeId={selectedNodeId ?? undefined}
               onNodeSelect={handleNodeSelect}
               anchoredNodeIds={anchoredNodeIds}
-              height={variant === 'mobile' ? 400 : 520}
+              height={graphHeight}
             />
           )}
         </div>
       </div>
-
-      <Separator />
 
       <div className={detailGridClass}>
         <div className="space-y-4 min-w-0">
           <div className="rounded-lg border bg-muted/30 p-4 overflow-hidden">
             <h3 className="flex items-center gap-2 text-sm font-semibold">
               <Users className="h-4 w-4 text-primary" />
-              Graph Summary
+              Summary
             </h3>
             <dl className="mt-3 space-y-2 text-sm">
               <div className="flex items-center justify-between">
@@ -980,6 +1248,14 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
               </div>
               {quickStats && (
                 <>
+                  {/* Account totals from /api/graph/context — not scoped to the
+                      filtered/searched view above, so label them to avoid
+                      conflating them with the current Nodes/Relationships counts. */}
+                  <div className="border-t border-border/60 pt-2">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      Account-wide
+                    </p>
+                  </div>
                   <div className="flex items-center justify-between">
                     <dt className="text-muted-foreground">Preferences</dt>
                     <dd className="font-medium">{quickStats.totalPreferences}</dd>
@@ -996,156 +1272,10 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
               )}
             </dl>
           </div>
-
-          <div className="rounded-lg border bg-muted/20 p-4 overflow-hidden">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Neighbors per click
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Control how many connected nodes load each time you click.
-            </p>
-            <div className="mt-3 flex items-center gap-2">
-              <Input
-                id="neighbor-limit"
-                type="number"
-                inputMode="numeric"
-                min={1}
-                step={1}
-                className="w-24"
-                value={spawnLimitInput}
-                onChange={(event) => setSpawnLimitInput(event.target.value)}
-                onBlur={handleSpawnLimitBlur}
-              />
-              <span className="text-sm text-muted-foreground">nodes</span>
-            </div>
-            <div className="mt-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Hop depth</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Increase or decrease how many relationship hops are visible from expanded nodes.
-              </p>
-              <div className="mt-2 inline-flex items-center gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  onClick={decreaseHopDepth}
-                  disabled={hopDepth <= MIN_HOP_DEPTH}
-                  aria-label="Decrease hop depth"
-                >
-                  -
-                </Button>
-                <span className="w-10 text-center text-sm font-medium">{hopDepth}</span>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  onClick={increaseHopDepth}
-                  disabled={hopDepth >= MAX_HOP_DEPTH}
-                  aria-label="Increase hop depth"
-                >
-                  +
-                </Button>
-              </div>
-            </div>
-            <div className="mt-3 flex flex-col gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={anchoringEnabled ? 'default' : 'secondary'}
-                  onClick={() => setAnchoringEnabled((prev) => !prev)}
-                >
-                  <Anchor className="mr-2 h-4 w-4" />
-                  {anchoringEnabled ? 'Anchoring on' : 'Anchoring off'}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={traversalEnabled ? 'default' : 'secondary'}
-                  onClick={() => setTraversalEnabled((prev) => !prev)}
-                  aria-pressed={traversalEnabled}
-                >
-                  Traversal
-                </Button>
-              </div>
-              <span className="text-xs text-muted-foreground">
-                Toggle anchoring to keep the current layout steady or let the graph flow freely. Enable
-                traversal to recenter the graph on the node you select.
-              </span>
-            </div>
-            {availableEntityTypes.length > 0 && (
-              <div className="mt-4 space-y-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Node types
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={entityTypesAllSelected ? 'default' : 'secondary'}
-                    disabled={availableEntityTypes.length === 0}
-                    onClick={handleEntityTypeSelectAll}
-                  >
-                    All
-                  </Button>
-                  {availableEntityTypes.map((type) => {
-                    const isActive = includedEntityTypes.includes(type);
-
-                    return (
-                      <Button
-                        key={type}
-                        type="button"
-                        size="sm"
-                        variant={isActive ? 'default' : 'secondary'}
-                        onClick={() => handleEntityTypeToggle(type)}
-                        aria-pressed={isActive}
-                      >
-                        {type}
-                      </Button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-            {availableRelationshipTypes.length > 0 && (
-              <div className="mt-4 space-y-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Relationship types
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={relationshipTypesAllSelected ? 'default' : 'secondary'}
-                    disabled={availableRelationshipTypes.length === 0}
-                    onClick={handleRelationshipTypeSelectAll}
-                  >
-                    All
-                  </Button>
-                  {availableRelationshipTypes.map((type) => {
-                    const isActive = includedRelationshipTypes.includes(type);
-
-                    return (
-                      <Button
-                        key={type}
-                        type="button"
-                        size="sm"
-                        variant={isActive ? 'default' : 'secondary'}
-                        onClick={() => handleRelationshipTypeToggle(type)}
-                        aria-pressed={isActive}
-                      >
-                        {type}
-                      </Button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
         </div>
 
         <div className="md:col-span-2 space-y-3 rounded-lg border bg-muted/10 p-4 overflow-hidden min-w-0">
-          <h3 className="text-sm font-semibold">Entity Details</h3>
+          <h3 className="text-sm font-semibold">Entity details</h3>
           {selectedNode ? (
             <div className="space-y-2 text-sm min-w-0">
               <div className="flex items-center gap-2 min-w-0">

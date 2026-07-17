@@ -42,6 +42,7 @@ export interface UserContext {
     entityId: string;
     name: string;
     type: string;
+    category: string | null;
     strength: number;
     relationship: 'PREFERS' | 'DISLIKES';
   }>;
@@ -57,6 +58,7 @@ type PreferenceRelationshipResult = {
   entityId: string;
   name: string;
   type: string;
+  category: string | null;
   strength: number;
   relationship: 'PREFERS' | 'DISLIKES';
 };
@@ -145,6 +147,40 @@ export class UserContextService {
   }
 
   /**
+   * Resolve the canonical "self" node for a user, plus the name aliases that
+   * refer to them.
+   *
+   * Used by compaction to anchor first-person facts to ONE node (the account's
+   * canonical Person, via ci.users.entity_id) instead of minting duplicate
+   * "the user" / "User" / "<name>" entities per stateless extraction batch.
+   */
+  async getSelfIdentity(userId: string): Promise<{ entityId: string; aliases: string[] } | null> {
+    const entity = await this.resolveUserEntity(userId);
+    if (!entity) {
+      return null;
+    }
+
+    const aliases = new Set<string>(['the user', 'user', 'me', 'myself', 'i', 'self']);
+    const add = (value: unknown): void => {
+      if (typeof value === 'string' && value.trim().length > 0) {
+        aliases.add(value.trim().toLowerCase());
+      }
+    };
+
+    add(entity.name);
+    if (entity.name) {
+      add(entity.name.trim().split(/\s+/)[0]); // first name, e.g. "Alex" from "Alex Rivera"
+    }
+
+    add(await this.getUsernameFromUsersTable(userId));
+    const props = (entity.properties ?? {}) as Record<string, unknown>;
+    add(props['first_name']);
+    add(props['last_name']);
+
+    return { entityId: entity.entity_id, aliases: [...aliases] };
+  }
+
+  /**
    * Format user context as markdown for system prompt
    */
   formatContextForSystemPrompt(context: UserContext): string {
@@ -179,14 +215,18 @@ export class UserContextService {
       if (preferences.length > 0) {
         lines.push('', '## Top Preferences');
         preferences.forEach((pref) => {
-          lines.push(`- ${pref.name} (${pref.type}) - strength: ${pref.strength.toFixed(2)}`);
+          lines.push(
+            `- ${pref.name} (${pref.category ?? pref.type}) - strength: ${pref.strength.toFixed(2)}`,
+          );
         });
       }
 
       if (dislikes.length > 0) {
         lines.push('', '## Dislikes');
         dislikes.forEach((dislike) => {
-          lines.push(`- ${dislike.name} (${dislike.type}) - strength: ${dislike.strength.toFixed(2)}`);
+          lines.push(
+            `- ${dislike.name} (${dislike.category ?? dislike.type}) - strength: ${dislike.strength.toFixed(2)}`,
+          );
         });
       }
     }
@@ -333,6 +373,7 @@ export class UserContextService {
       entityId: string;
       name: string;
       type: string;
+      category: string | null;
       strength: number;
       relationship: 'PREFERS';
     }>
@@ -354,6 +395,7 @@ export class UserContextService {
       entityId: string;
       name: string;
       type: string;
+      category: string | null;
       strength: number;
       relationship: 'DISLIKES';
     }>
@@ -403,12 +445,14 @@ export class UserContextService {
         }
 
         const type = this.extractConceptType(concept);
+        const category = this.extractConceptCategory(concept);
         const name = concept.name ?? type ?? 'Unknown';
 
         return {
           entityId: concept.entity_id,
           name,
           type,
+          category,
           strength: rel.strength ?? 0,
           relationship: relationshipType,
         };
@@ -443,6 +487,21 @@ export class UserContextService {
     }
 
     return node.entity_type ?? 'Concept';
+  }
+
+  /**
+   * Semantic category of a concept (e.g. "food", "activity", "entertainment"),
+   * stored on the concept node's properties. This is the meaningful label for
+   * the LLM — unlike the node `type`, which is usually just "Concept" — and is
+   * what lets the agent answer category-scoped questions ("favorite food").
+   */
+  private extractConceptCategory(node: GraphNodeEntity): string | null {
+    const category = node.properties?.['category'];
+    if (typeof category === 'string' && category.trim().length > 0) {
+      return category.trim();
+    }
+
+    return null;
   }
 
   /**

@@ -16,6 +16,10 @@ const { z } = require('zod');
 
 const UNSAFE_OPERATIONS = new Set(['drop_all_pg_data.sql']);
 
+// dbmate subcommands that only touch the filesystem; creating a migration
+// must not require a running database.
+const OFFLINE_COMMANDS = new Set(['new']);
+
 const schema = z.object({
   type: z.literal('postgres'),
   host: z.string(),
@@ -26,17 +30,22 @@ const schema = z.object({
   sslmode: z.string().optional().default('disable'),
 });
 
-let parsedDb;
+function databaseUrlFromConfig() {
+  let parsedDb;
 
-try {
-  parsedDb = schema.parse(config.get('db'));
-} catch (err) {
-  console.error('Invalid DB config:', err.errors);
-  process.exit(1);
+  try {
+    parsedDb = schema.parse(config.get('db'));
+  } catch (err) {
+    console.error('Invalid DB config:', err.errors);
+    process.exit(1);
+  }
+
+  const { type, host, port, database, username, password, sslmode } = parsedDb;
+
+  return `${type}://${username}:${password}@${host}:${port}/${database}?sslmode=${sslmode}`;
 }
 
-const { type, host, port, database, username, password, sslmode } = parsedDb;
-const DATABASE_URL = `${type}://${username}:${password}@${host}:${port}/${database}?sslmode=${sslmode}`;
+const DATABASE_URL = process.env.DATABASE_URL || databaseUrlFromConfig();
 
 async function waitForDatabase(maxRetries = 30, retryDelay = 1000) {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -77,7 +86,7 @@ const opts = program.opts();
 const forwardArgs = program.args;
 
 (async () => {
-  if (opts.wait !== false) {
+  if (opts.wait !== false && !OFFLINE_COMMANDS.has(forwardArgs[0])) {
     await waitForDatabase();
   }
 
@@ -140,6 +149,20 @@ const forwardArgs = program.args;
         DBMATE_SCHEMA_FILE: './db/postgres/schema.sql',
       },
     });
+
+    // status is null when the child never ran (dbmate missing, wrong arch) or
+    // died on a signal (OOM kill mid-migration). Exiting on it would report
+    // success: compose treats migrate-database as completed and boots the api
+    // against an unmigrated database.
+    if (result.error) {
+      console.error(`Failed to run dbmate: ${result.error.message}`);
+      process.exit(1);
+    }
+
+    if (result.signal) {
+      console.error(`dbmate was terminated by signal ${result.signal}.`);
+      process.exit(1);
+    }
 
     process.exit(result.status);
   }

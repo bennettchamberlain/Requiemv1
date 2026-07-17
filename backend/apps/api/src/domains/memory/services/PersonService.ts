@@ -1,12 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { Brackets, In, Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
 import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import { computeChunkSize } from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
 import { PersonCreatedEvent, PersonUpdatedEvent, PersonRemovedEvent } from '@ci/domains/memory/events';
+import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
 import { type Person, PersonEntity } from '../entities/PersonEntity';
 import { CreatePersonDto, UpdatePersonDto } from '../types';
@@ -22,8 +24,40 @@ export class PersonService {
     this.logger.setContext(PersonService.name);
   }
 
-  async create(context: UserServiceContext, data: CreatePersonDto): Promise<Person> {
-    const instance = await this.personRepository.create({
+  /**
+   * @param options.emitCreated When true (default) a PersonCreatedEvent is sent so
+   *   the row indexes/enriches live. The bulk path passes false: emitting a per-row
+   *   pgboss event for every ingested row is the dominant cost at import volume, so
+   *   bulk-loaded rows are instead swept by the post-load search-index backfill.
+   */
+  async create(
+    context: UserServiceContext,
+    data: CreatePersonDto,
+    options: { emitCreated?: boolean } = {},
+  ): Promise<Person> {
+    const { emitCreated = true } = options;
+
+    // Idempotency: (owner_user_id, entity_type, linked_table, linked_id) is the
+    // stable external key a capture source carries. Resolving-or-creating the
+    // same linked person (a re-sync, a retry) must NOT duplicate it.
+    const linkedWhere =
+      data.linkedTable && data.linkedId
+        ? {
+            entityType: 'Person',
+            linkedTable: data.linkedTable,
+            linkedId: data.linkedId,
+            user: { id: context.userId },
+          }
+        : null;
+
+    if (linkedWhere) {
+      const existing = await this.personRepository.findOne({ where: linkedWhere });
+      if (existing) {
+        return PersonEntity.toEgressType(existing);
+      }
+    }
+
+    const instance = this.personRepository.create({
       id: data.id || uuid7(),
       name: data.name,
       description: data.description,
@@ -38,13 +72,143 @@ export class PersonService {
       properties: data.properties || {},
     });
 
-    const entity = await this.personRepository.save(instance);
+    let entity: PersonEntity;
+    try {
+      entity = await this.personRepository.save(instance);
+    } catch (err) {
+      // Lost a race to a concurrent insert of the same linked key (23505) —
+      // return the winner.
+      if (linkedWhere && (err as { code?: string })?.code === '23505') {
+        const existing = await this.personRepository.findOne({ where: linkedWhere });
+        if (existing) {
+          return PersonEntity.toEgressType(existing);
+        }
+      }
 
-    await this.eventService.send(PersonCreatedEvent, {
-      personId: instance.id,
-    });
+      throw err;
+    }
+
+    if (emitCreated) {
+      await this.eventService.send(PersonCreatedEvent, {
+        personId: entity.id,
+      });
+    }
 
     return PersonEntity.toEgressType(entity);
+  }
+
+  /**
+   * Batch, idempotent people ingest for the importer. Replaces the per-row
+   * findOne + save + PersonCreatedEvent loop with one set-based
+   * INSERT ... ON CONFLICT DO NOTHING (dedup on the (owner_user_id, entity_type,
+   * linked_table, linked_id) provenance key via the existing entities_linked_uniq
+   * partial unique index, which also absorbs a lost insert race) plus one
+   * hydration SELECT. Re-syncing the same linked key returns the existing row
+   * instead of duplicating it. Returns the created-or-existing people in input
+   * order.
+   *
+   * Bulk ingest does NOT emit a per-row PersonCreatedEvent: the per-row pgboss
+   * fan-out was the dominant cost at import volume. Search indexing for
+   * bulk-loaded rows is deferred to the post-load batch embed
+   * (POST /api/maintenance/search-index/backfill). Single-row create() still
+   * emits, so interactive creates index live.
+   */
+  async createMany(context: UserServiceContext, data: CreatePersonDto[]): Promise<Person[]> {
+    if (data.length === 0) {
+      return [];
+    }
+
+    const entities = data.map((item) =>
+      this.personRepository.create({
+        id: item.id || uuid7(),
+        name: item.name,
+        description: item.description,
+        linkedTable: item.linkedTable,
+        linkedId: item.linkedId,
+        entityType: 'Person',
+        searchContent: item.searchContent,
+        lastAccessed: item.lastAccessed,
+        user: {
+          id: context.userId,
+        },
+        properties: item.properties || {},
+      }),
+    );
+
+    // One set-based INSERT keyed on the linked provenance index, split into
+    // param-budget-bounded chunks so a large batch never exceeds Postgres'
+    // 65535 bind-param limit (computeChunkSize is the same helper
+    // bulkInsertIdempotent uses). onConflict targets entities_linked_uniq
+    // exactly (partial on linked_table IS NOT NULL) so a re-synced linked row is
+    // a no-op and a lost insert race is absorbed without throwing. Unlinked rows
+    // (no linked_table/linked_id) fall outside the partial index and always
+    // insert, matching create()'s behaviour.
+    const chunkSize = computeChunkSize(this.personRepository.metadata.columns.length);
+    for (let offset = 0; offset < entities.length; offset += chunkSize) {
+      await this.personRepository
+        .createQueryBuilder()
+        .insert()
+        // Route through `metadata.target` so TS picks the `ObjectLiteral` overload
+        // of `.values()`; passing the entity class narrows to
+        // `_QueryDeepPartialEntity`, which rejects the jsonb `properties` column.
+        .into(this.personRepository.metadata.target)
+        .values(entities.slice(offset, offset + chunkSize))
+        .onConflict(
+          '(owner_user_id, entity_type, linked_table, linked_id) WHERE linked_table IS NOT NULL DO NOTHING',
+        )
+        .execute();
+    }
+
+    // Hydrate the created-or-existing rows in input order: by id for the ones we
+    // (may have) inserted, plus by linked key for any that a concurrent/prior
+    // ingest already owned under a different id.
+    return this.hydrateInInputOrder(context, entities);
+  }
+
+  /**
+   * Resolve each built entity to its canonical persisted row (freshly inserted or
+   * pre-existing under the same linked key), in input order. One SELECT.
+   */
+  private async hydrateInInputOrder(
+    context: UserServiceContext,
+    entities: PersonEntity[],
+  ): Promise<Person[]> {
+    const ids = entities.map((entity) => entity.id);
+
+    const qb = this.personRepository
+      .createQueryBuilder('person')
+      .where('person.entity_type = :entityType', { entityType: 'Person' })
+      .andWhere('person.owner_user_id = :userId', { userId: context.userId })
+      .andWhere(
+        new Brackets((outer) => {
+          outer.where('person.entity_id IN (:...ids)', { ids });
+
+          const linked = entities.filter((entity) => entity.linkedTable && entity.linkedId);
+          linked.forEach((entity, i) => {
+            outer.orWhere(`(person.linked_table = :lt_${i} AND person.linked_id = :li_${i})`, {
+              [`lt_${i}`]: entity.linkedTable,
+              [`li_${i}`]: entity.linkedId,
+            });
+          });
+        }),
+      );
+
+    const rows = await qb.getMany();
+
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    const byLinked = new Map(
+      rows
+        .filter((row) => row.linkedTable && row.linkedId)
+        .map((row) => [`${row.linkedTable} ${row.linkedId}`, row]),
+    );
+
+    return entities.map((entity) => {
+      const linkedKey =
+        entity.linkedTable && entity.linkedId ? `${entity.linkedTable} ${entity.linkedId}` : null;
+      const row = byId.get(entity.id) ?? (linkedKey ? byLinked.get(linkedKey) : undefined) ?? entity;
+
+      return PersonEntity.toEgressType(row);
+    });
   }
 
   async findAll(context: ServiceContext): Promise<Person[]> {
@@ -77,6 +241,39 @@ export class PersonService {
     const map = new Map(entities.map((entity) => [entity.id, PersonEntity.toEgressType(entity)]));
 
     return ids.map((id) => map.get(id) ?? null);
+  }
+
+  /**
+   * Lightweight identifiers for the most-recent people, for the unified
+   * search/explorer feed. Full entities are batch-resolved downstream.
+   */
+  async getEntitiesForPeople(
+    context: ServiceContext,
+    options: { limit?: number; startTime?: Date; endTime?: Date; order?: 'ASC' | 'DESC' } = {},
+  ): Promise<EntityIdentifier<IndexableEntity>[]> {
+    let query = this.personRepository
+      .createQueryBuilder('person')
+      .select('person.id', 'id')
+      .where('person.entity_type = :entityType', { entityType: 'Person' })
+      .andWhere('person.owner_user_id = :userId', { userId: context.userId });
+
+    if (options.startTime) {
+      query = query.andWhere('person.created_at >= :startTime', { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere('person.created_at <= :endTime', { endTime: options.endTime });
+    }
+
+    query = query.orderBy('person.created_at', options.order ?? 'DESC');
+
+    if (options.limit) {
+      query = query.limit(options.limit);
+    }
+
+    const rows = await query.getRawMany<{ id: string }>();
+
+    return rows.map((row) => ({ id: row.id, type: 'person' as IndexableEntity }));
   }
 
   async findById(context: ServiceContext, id: string): Promise<Person | null> {

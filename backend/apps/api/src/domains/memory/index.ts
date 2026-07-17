@@ -24,9 +24,11 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { BrowserActivityModule, BrowserActivityEntity } from '@ci/domains/browser-activity';
 import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
+import { SearchNextModule } from '@ci/domains/search-next';
 import { UserModule, UserEntity } from '@ci/domains/user';
 
 import { GraphController } from './controllers/GraphController';
+import { BaseEntity } from './entities/BaseEntity';
 import { type Communication, CommunicationEntity } from './entities/CommunicationEntity';
 import { type Concept, ConceptEntity } from './entities/ConceptEntity';
 import { ContentEntity } from './entities/ContentEntity';
@@ -49,6 +51,7 @@ import { GraphQueryService } from './services/GraphQueryService';
 import { GraphReadService } from './services/GraphReadService';
 import { GraphUtilityService } from './services/GraphUtilityService';
 import { ItemService } from './services/ItemService';
+import { KnownPlacesService } from './services/KnownPlacesService';
 import { PersonService } from './services/PersonService';
 import { PlaceService } from './services/PlaceService';
 import { UserContextService } from './services/UserContextService';
@@ -59,6 +62,7 @@ import { UserContextService } from './services/UserContextService';
 @Module({
   imports: [
     TypeOrmModule.forFeature([
+      BaseEntity,
       CommunicationEntity,
       ContentEntity,
       EventEntity,
@@ -78,6 +82,7 @@ import { UserContextService } from './services/UserContextService';
     EventsModule,
     FilesModule,
     BrowserActivityModule,
+    SearchNextModule,
   ],
   providers: [
     CommunicationService,
@@ -94,6 +99,7 @@ import { UserContextService } from './services/UserContextService';
     ConceptService,
     FileService,
     PlaceService,
+    KnownPlacesService,
   ],
   controllers: [GraphController],
   exports: [
@@ -110,6 +116,7 @@ import { UserContextService } from './services/UserContextService';
     GraphReadService,
     FileService,
     PlaceService,
+    KnownPlacesService,
   ],
 })
 export class MemoryModule {}
@@ -143,10 +150,17 @@ export {
   GraphReadService,
   FileService,
   PlaceService,
+  KnownPlacesService,
 };
 
 export type { Content } from './entities/ContentEntity';
 export type { CreateEventDto, UpdateEventDto, CreateContentDto, UpdateContentDto } from './types';
+export type {
+  KnownPlace,
+  KnownPlaceKind,
+  KnownPlaceSource,
+  KnownPlaceCandidate,
+} from './services/KnownPlacesService';
 export type { Concept, Event, Item, InventoryCondition, Person, Communication, Place };
 export {
   CommunicationDirection,

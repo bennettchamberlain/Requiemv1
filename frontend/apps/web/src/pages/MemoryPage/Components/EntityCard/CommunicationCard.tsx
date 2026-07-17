@@ -43,6 +43,9 @@ export const COMMUNICATION_FRAGMENT = gql(`
         }
       }
     }
+    tags {
+      label
+    }
   }
 `);
 
@@ -93,22 +96,27 @@ export function CommunicationCard({ entity }: Props) {
 
   return (
     <Card
-      className="!gap-2 !py-4 px-6 cursor-pointer hover:shadow-lg transition-shadow duration-200"
-      onClick={() => setActiveEntity({ ...data, __typename: 'CommunicationType' })}
+      className="!gap-2 !px-6 !py-4 cursor-pointer transition-shadow duration-200 hover:shadow-lg"
+      onClick={() => setActiveEntity({ ...data, __typename: 'CommunicationType', bucketTime: data.time })}
     >
       <div className="flex items-start gap-3">
         {getDirectionIcon()}
         <div className="flex-1 min-w-0">
-          <Tooltip>
-            <Tooltip.Trigger asChild>
-              <h3 className="text-lg font-semibold text-card-foreground truncate cursor-default">
-                {data.subject || `${data.type[0].toUpperCase() + data.type.slice(1)} Communication`}
-              </h3>
-            </Tooltip.Trigger>
-            <Tooltip.Content>
-              <p>{data.subject || `${data.type[0].toUpperCase() + data.type.slice(1)} Communication`}</p>
-            </Tooltip.Content>
-          </Tooltip>
+          {/* Chat-style sources have no subject — render no subject line at all
+              (the message body below is the card's text) instead of a
+              "<Type> Communication" placeholder. */}
+          {data.subject && (
+            <Tooltip>
+              <Tooltip.Trigger asChild>
+                <h3 className="truncate text-lg font-semibold leading-4 text-card-foreground cursor-default">
+                  {data.subject}
+                </h3>
+              </Tooltip.Trigger>
+              <Tooltip.Content>
+                <p>{data.subject}</p>
+              </Tooltip.Content>
+            </Tooltip>
+          )}
           <div className="flex items-center gap-2 flex-wrap">
             {communicationType && (
               <>
@@ -135,7 +143,7 @@ export function CommunicationCard({ entity }: Props) {
       </div>
 
       {participantInfo && (
-        <div className="flex items-center gap-5">
+        <div className="flex items-center gap-2">
           <User className="h-4 w-4 text-muted-foreground flex-shrink-0" />
           <div className="min-w-0">
             <span className="text-sm font-medium text-muted-foreground">{participantInfo.label}:</span>
@@ -144,7 +152,7 @@ export function CommunicationCard({ entity }: Props) {
         </div>
       )}
 
-      <div className="flex items-center gap-5">
+      <div className="flex items-center gap-2">
         <Clock className="h-4 w-4 text-muted-foreground flex-shrink-0" />
         <span className="text-sm text-card-foreground">
           {new Date(data.time).toLocaleString('en-US', DATE_FORMAT_OPTIONS)}

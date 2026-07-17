@@ -78,10 +78,42 @@ export class GraphUtilityService {
     });
   }
 
+  /**
+   * Resolve the set of graph-node `entity_id`s that correspond to a set of
+   * source-record ids (as carried by the tag system).
+   *
+   * Taggable entities live in two id spaces:
+   * - Person/Concept/Place/File records ARE graph nodes, so their tag id is the
+   *   node's own `entity_id`.
+   * - Content/Event/Item/… records live in their own tables, so their tag id is
+   *   the node's `linked_id` (the back-link to the source record).
+   *
+   * Matching on `(entity_id IN ids OR linked_id IN ids)` covers both, returning
+   * the graph `entity_id`s the caller can filter on. Callers must pass uuid ids
+   * — both columns are uuid, so non-uuid source ids never match a node anyway.
+   */
+  async getEntityIdsByLinkedOrEntityIds(ownerUserId: string, ids: string[]): Promise<string[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+
+    const rows = await this.entityRepo
+      .createQueryBuilder('entity')
+      .select('entity.entity_id', 'entity_id')
+      .where('entity.owner_user_id = :ownerUserId', { ownerUserId })
+      .andWhere('entity.is_active = true')
+      .andWhere('(entity.entity_id IN (:...ids) OR entity.linked_id IN (:...ids))', { ids })
+      .limit(2000)
+      .getRawMany<{ entity_id: string }>();
+
+    return rows.map((row) => row.entity_id);
+  }
+
   async queryNodes(
     ownerUserId: string,
     filters: {
       entityType?: string;
+      excludeEntityTypes?: string[];
       nameContains?: string;
       propertyEquals?: Record<string, string | number | boolean>;
     } = {},
@@ -90,15 +122,25 @@ export class GraphUtilityService {
     const limit = Math.min(options.limit ?? 25, 200);
     const offset = options.offset ?? 0;
 
+    // Deterministic order so the capped page (and any offset paging) is stable
+    // across requests; `entity_id` breaks ties on identical timestamps.
     let query = this.entityRepo
       .createQueryBuilder('entity')
       .where('entity.owner_user_id = :ownerUserId', { ownerUserId })
       .andWhere('entity.is_active = true')
+      .orderBy('entity.created_at', 'DESC')
+      .addOrderBy('entity.entity_id', 'ASC')
       .limit(limit)
       .offset(offset);
 
     if (filters.entityType) {
       query = query.andWhere('entity.entity_type = :entityType', { entityType: filters.entityType });
+    }
+
+    if (filters.excludeEntityTypes && filters.excludeEntityTypes.length > 0) {
+      query = query.andWhere('entity.entity_type NOT IN (:...excludeEntityTypes)', {
+        excludeEntityTypes: filters.excludeEntityTypes,
+      });
     }
 
     if (filters.nameContains) {
@@ -595,6 +637,29 @@ export class GraphUtilityService {
         count: parseInt(stat.count, 10),
       })),
     };
+  }
+
+  /**
+   * Count active entities per data source. Provenance is the importer-supplied
+   * `properties.data_source` key (CI-Import-Tools sets it on ingested entities;
+   * this repo passes the payload's properties through untouched). Entities
+   * without the key group under `Unknown`.
+   */
+  async getEntityCountsBySource(ownerUserId: string): Promise<Array<{ source: string; count: number }>> {
+    const rows: Array<{ source: string; count: string }> = await this.entityRepo
+      .createQueryBuilder('entity')
+      .select(`COALESCE(entity.properties ->> 'data_source', 'Unknown')`, 'source')
+      .addSelect('COUNT(*)', 'count')
+      .where('entity.is_active = true')
+      .andWhere('entity.owner_user_id = :ownerUserId', { ownerUserId })
+      .groupBy('source')
+      .orderBy('count', 'DESC')
+      .getRawMany();
+
+    return rows.map((row) => ({
+      source: row.source,
+      count: parseInt(row.count, 10),
+    }));
   }
 
   /**

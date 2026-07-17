@@ -1,11 +1,13 @@
 import { UseGuards } from '@nestjs/common';
-import { Args, ID, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
+import { Args, Float, ID, Int, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
+import { MaxArraySizePipe } from '@ci/common/pipes';
 import { EventService } from '@ci/domains/memory';
 import { type Person } from '@ci/domains/memory';
 
+import { type EventMedia, EventMediaLoader } from '../loaders/EventMediaLoader';
 import { PersonLoader } from '../loaders/PersonLoader';
 import { PlaceLoader } from '../loaders/PlaceLoader';
 import { TagLoader } from '../loaders/TagLoader';
@@ -21,9 +23,10 @@ import { PersonEdge } from '../types/PersonEdge';
 import { PersonType } from '../types/PersonType';
 import { PlaceType } from '../types/PlaceType';
 import { UpdateEventInput } from '../types/UpdateEventInput';
+import { entityOwnerScope } from '../utils/entityOwnerScope';
 import { Paginator } from '../utils/Paginator';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => EventType)
 export class EventResolver {
   constructor(
@@ -31,16 +34,12 @@ export class EventResolver {
     private readonly personLoader: PersonLoader,
     private readonly placeLoader: PlaceLoader,
     private readonly tagLoader: TagLoader,
+    private readonly eventMediaLoader: EventMediaLoader,
   ) {}
 
-  @Mutation(() => EventType)
-  async createEvent(
-    @Context() context: RequestContext,
-    @Args('input') input: CreateEventInput,
-  ): Promise<EventType> {
-    const serviceContext = toServiceContext(context);
-
-    const entity = await this.eventService.create(serviceContext, {
+  /** Map a CreateEventInput (GraphQL) to the service's CreateEventDto. */
+  private toDto(input: CreateEventInput) {
+    return {
       title: input.title,
       description: input.description,
       event_type: input.eventType,
@@ -61,9 +60,42 @@ export class EventResolver {
       is_all_day: input.isAllDay,
       metadata: input.metadata,
       status: input.status,
-    });
+      sharing_level: input.sharingLevel,
+    };
+  }
+
+  @Mutation(() => EventType)
+  async createEvent(
+    @Context() context: RequestContext,
+    @Args('input') input: CreateEventInput,
+  ): Promise<EventType> {
+    const serviceContext = toServiceContext(context);
+
+    const entity = await this.eventService.create(serviceContext, this.toDto(input));
 
     return EventType.toType(entity[0]);
+  }
+
+  /**
+   * Batch create events in one round-trip. Returns the created-or-existing rows
+   * in input order (EventService.create dedups on the
+   * (source_type, source_system, source_id) triple), so a re-import is a no-op.
+   * The clean batch equivalent of N aliased createEvent mutations.
+   */
+  @Mutation(() => [EventType])
+  async createEvents(
+    @Context() context: RequestContext,
+    @Args({ name: 'input', type: () => [CreateEventInput] }, new MaxArraySizePipe())
+    input: CreateEventInput[],
+  ): Promise<EventType[]> {
+    const serviceContext = toServiceContext(context);
+
+    const entities = await this.eventService.create(
+      serviceContext,
+      input.map((i) => this.toDto(i)),
+    );
+
+    return entities.map((e) => EventType.toType(e));
   }
 
   @Mutation(() => EventType, { nullable: true })
@@ -73,7 +105,9 @@ export class EventResolver {
   ): Promise<EventType | null> {
     const serviceContext = toServiceContext(context);
 
-    const entity = await this.eventService.update(serviceContext, input.id, {
+    const id = GlobalUID.parse('event', input.id);
+
+    const entity = await this.eventService.update(serviceContext, id, {
       title: input.title,
       description: input.description,
       event_type: input.eventType,
@@ -136,6 +170,24 @@ export class EventResolver {
     };
   }
 
+  @Query(() => [String], {
+    description: 'Distinct event types ("how things happened") present for the user.',
+  })
+  async eventTypes(@Context() context: RequestContext): Promise<string[]> {
+    const serviceContext = toServiceContext(context);
+
+    return this.eventService.getDistinctEventTypes(serviceContext);
+  }
+
+  @Query(() => [String], {
+    description: 'Distinct data sources / connectors (event.source_system) present for the user.',
+  })
+  async eventSources(@Context() context: RequestContext): Promise<string[]> {
+    const serviceContext = toServiceContext(context);
+
+    return this.eventService.getDistinctEventSources(serviceContext);
+  }
+
   @Query(() => EventType, { nullable: true })
   async event(
     @Context() context: RequestContext,
@@ -155,7 +207,7 @@ export class EventResolver {
     @Context() context: RequestContext,
     @Parent() parent: EventType,
   ): Promise<PersonType | null> {
-    const serviceContext = toServiceContext(context);
+    const serviceContext = entityOwnerScope(context, parent.__source.userId);
 
     if (parent.__source.organizerEntityId == null) {
       return null;
@@ -172,7 +224,7 @@ export class EventResolver {
     @Parent() parent: EventType,
     @Args() pagination: PaginationArgs,
   ): Promise<PersonConnection> {
-    const serviceContext = toServiceContext(context);
+    const serviceContext = entityOwnerScope(context, parent.__source.userId);
 
     const people =
       parent.__source.participantEntityIds == null
@@ -210,7 +262,7 @@ export class EventResolver {
 
   @ResolveField(() => PlaceType, { nullable: true })
   async location(@Context() context: RequestContext, @Parent() parent: EventType): Promise<PlaceType | null> {
-    const serviceContext = toServiceContext(context);
+    const serviceContext = entityOwnerScope(context, parent.__source.userId);
 
     if (parent.__source.locationEntityId == null) {
       return null;
@@ -223,7 +275,7 @@ export class EventResolver {
 
   @ResolveField(() => [EntityTagType])
   async tags(@Context() context: RequestContext, @Parent() parent: EventType): Promise<EntityTagType[]> {
-    const serviceContext = toServiceContext(context);
+    const serviceContext = entityOwnerScope(context, parent.__source.userId);
 
     const tags = await this.tagLoader.load(serviceContext, {
       type: 'event',
@@ -231,5 +283,49 @@ export class EventResolver {
     });
 
     return tags.map((tag) => EntityTagType.toType(tag));
+  }
+
+  /**
+   * Resolve the photo/video linked to this event (null for non-media events).
+   * The six media fields below all read from this one DataLoader call, so a
+   * page of events resolves its media in a single batch.
+   */
+  private resolveMedia(context: RequestContext, parent: EventType): Promise<EventMedia | null> {
+    return this.eventMediaLoader.load(entityOwnerScope(context, parent.__source.userId), parent.__source.id);
+  }
+
+  /** Thumbnail (PREVIEW variant) URL for a photo/video event. */
+  @ResolveField(() => String, { nullable: true })
+  async previewUrl(@Context() context: RequestContext, @Parent() parent: EventType): Promise<string | null> {
+    return (await this.resolveMedia(context, parent))?.previewUrl ?? null;
+  }
+
+  /** Full-resolution (ORIGINAL variant) URL — drives the lightbox / video player. */
+  @ResolveField(() => String, { nullable: true })
+  async mediaUrl(@Context() context: RequestContext, @Parent() parent: EventType): Promise<string | null> {
+    return (await this.resolveMedia(context, parent))?.mediaUrl ?? null;
+  }
+
+  @ResolveField(() => String, { nullable: true })
+  async mediaContentType(
+    @Context() context: RequestContext,
+    @Parent() parent: EventType,
+  ): Promise<string | null> {
+    return (await this.resolveMedia(context, parent))?.contentType ?? null;
+  }
+
+  @ResolveField(() => Int, { nullable: true })
+  async mediaWidth(@Context() context: RequestContext, @Parent() parent: EventType): Promise<number | null> {
+    return (await this.resolveMedia(context, parent))?.width ?? null;
+  }
+
+  @ResolveField(() => Int, { nullable: true })
+  async mediaHeight(@Context() context: RequestContext, @Parent() parent: EventType): Promise<number | null> {
+    return (await this.resolveMedia(context, parent))?.height ?? null;
+  }
+
+  @ResolveField(() => Float, { nullable: true })
+  async mediaSize(@Context() context: RequestContext, @Parent() parent: EventType): Promise<number | null> {
+    return (await this.resolveMedia(context, parent))?.size ?? null;
   }
 }

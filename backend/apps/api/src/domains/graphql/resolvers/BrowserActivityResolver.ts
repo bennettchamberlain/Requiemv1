@@ -1,20 +1,22 @@
 import { UseGuards } from '@nestjs/common';
-import { Args, ID, Parent, Query, Resolver, ResolveField } from '@nestjs/graphql';
+import { Args, ID, Mutation, Parent, Query, Resolver, ResolveField } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
-import { BrowserActivityService } from '@ci/domains/browser-activity';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
+import { MaxArraySizePipe } from '@ci/common/pipes';
+import { BrowserActivityService, type CreateBrowserActivityDto } from '@ci/domains/browser-activity';
 
 import { TagLoader } from '../loaders/TagLoader';
 import { BrowserActivityConnection } from '../types/BrowserActivityConnection';
 import { BrowserActivityEdge } from '../types/BrowserActivityEdge';
 import { BrowserActivityType } from '../types/BrowserActivityType';
+import { CreateBrowserActivityInput } from '../types/CreateBrowserActivityInput';
 import { EntityTagType } from '../types/EntityTagType';
 import { GlobalUID } from '../types/GlobalUID';
 import { PaginationArgs } from '../types/PaginationArgs';
-import { Paginator } from '../utils/Paginator';
+import { UpdateBrowserActivityInput } from '../types/UpdateBrowserActivityInput';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => BrowserActivityType)
 export class BrowserActivityResolver {
   constructor(
@@ -29,14 +31,17 @@ export class BrowserActivityResolver {
   ): Promise<BrowserActivityConnection> {
     const serviceContext = toServiceContext(context);
 
-    const entities = await this.browserActivityService.findAll(serviceContext);
+    const { entities, hasNextPage, hasPreviousPage, totalCount } = await this.browserActivityService.findPage(
+      serviceContext,
+      {
+        first: pagination.first,
+        last: pagination.last,
+        afterId: pagination.after ? GlobalUID.decode(pagination.after).id : null,
+        beforeId: pagination.before ? GlobalUID.decode(pagination.before).id : null,
+      },
+    );
 
-    const { slice, pageInfo, totalCount } = Paginator.paginate(entities, {
-      ...pagination,
-      getId: (entity) => GlobalUID.encode('browser-activity', entity.id),
-    });
-
-    const edges: BrowserActivityEdge[] = slice.map((entity) => {
+    const edges: BrowserActivityEdge[] = entities.map((entity) => {
       const node = BrowserActivityType.toType(entity);
 
       return {
@@ -44,6 +49,13 @@ export class BrowserActivityResolver {
         cursor: node.id,
       };
     });
+
+    const pageInfo = {
+      hasNextPage,
+      hasPreviousPage,
+      startCursor: edges.length > 0 ? edges[0].cursor : null,
+      endCursor: edges.length > 0 ? edges[edges.length - 1].cursor : null,
+    };
 
     return {
       edges,
@@ -62,6 +74,62 @@ export class BrowserActivityResolver {
     const id = GlobalUID.parse('browser-activity', gid);
 
     const entity = await this.browserActivityService.findById(serviceContext, id);
+
+    return entity ? BrowserActivityType.toType(entity) : null;
+  }
+
+  /**
+   * Batch, idempotent browser-activity ingest for the importer. Each input dedupes
+   * on the provenance triple (user, sourceType, sourceSystem, sourceId) so a
+   * re-sync returns the existing activity instead of inserting a duplicate.
+   * Returns created-or-existing rows in input order.
+   */
+  @Mutation(() => [BrowserActivityType])
+  async createBrowserActivities(
+    @Context() context: RequestContext,
+    @Args('input', { type: () => [CreateBrowserActivityInput] }, new MaxArraySizePipe())
+    input: CreateBrowserActivityInput[],
+  ): Promise<BrowserActivityType[]> {
+    const serviceContext = toServiceContext(context);
+
+    const activities = await this.browserActivityService.createMany(
+      serviceContext,
+      input.map((item) => ({
+        time: item.time.toISOString(),
+        url: item.url,
+        title: item.title,
+        action_type: item.actionType as CreateBrowserActivityDto['action_type'],
+        properties: item.properties,
+        duration_seconds: item.durationSeconds,
+        scroll_depth_percent: item.scrollDepthPercent,
+        page_summary: item.pageSummary,
+        category: item.category,
+        productivity_score: item.productivityScore,
+        is_incognito: item.isIncognito,
+        contains_sensitive: item.containsSensitive,
+        device_id: item.deviceId,
+        source_type: item.sourceType,
+        source_system: item.sourceSystem,
+        source_id: item.sourceId,
+      })),
+    );
+
+    return activities.map((activity) => BrowserActivityType.toType(activity));
+  }
+
+  @Mutation(() => BrowserActivityType, { nullable: true })
+  async updateBrowserActivity(
+    @Context() context: RequestContext,
+    @Args('input') input: UpdateBrowserActivityInput,
+  ): Promise<BrowserActivityType | null> {
+    const serviceContext = toServiceContext(context);
+
+    const id = GlobalUID.parse('browser-activity', input.id);
+
+    const entity = await this.browserActivityService.update(serviceContext, id, {
+      title: input.title,
+      url: input.url,
+    });
 
     return entity ? BrowserActivityType.toType(entity) : null;
   }

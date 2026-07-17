@@ -24,12 +24,21 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EventsModule } from '@ci/domains/events';
 
-import { ClientFactory, FacebookClient, GoogleClient, MicrosoftClient, SpotifyClient } from './clients';
+import {
+  ClientFactory,
+  FacebookClient,
+  GitHubClient,
+  GoogleClient,
+  MicrosoftClient,
+  SpotifyClient,
+  SteamClient,
+} from './clients';
 import { ConnectionsController } from './controllers/ConnectionsController';
 import { ProvidersController } from './controllers/ProvidersController';
 import { ConnectionEntity } from './entities/ConnectionEntity';
 import { ProviderEntity } from './entities/ProviderEntity';
 import { ProviderKeyEntity } from './entities/ProviderKeyEntity';
+import { CloudOAuthProxyService } from './services/CloudOAuthProxyService';
 import { ConnectionService } from './services/ConnectionService';
 import { ProviderKeyService } from './services/ProviderKeyService';
 import { ProviderService } from './services/ProviderService';
@@ -42,23 +51,29 @@ import { ProviderService } from './services/ProviderService';
   providers: [
     ClientFactory,
     FacebookClient,
+    GitHubClient,
     GoogleClient,
+    CloudOAuthProxyService,
     ConnectionService,
     ProviderService,
     ProviderKeyService,
     MicrosoftClient,
     SpotifyClient,
+    SteamClient,
   ],
   controllers: [ConnectionsController, ProvidersController],
   exports: [
     ClientFactory,
+    CloudOAuthProxyService,
     ConnectionService,
     ProviderService,
     ProviderKeyService,
     FacebookClient,
+    GitHubClient,
     GoogleClient,
     MicrosoftClient,
     SpotifyClient,
+    SteamClient,
   ],
 })
 export class ConnectionsModule {}
@@ -67,11 +82,11 @@ export class ConnectionsModule {}
 export { ConnectionEntity, ProviderEntity, ProviderKeyEntity };
 
 // Services
-export { ConnectionService, ProviderService, ProviderKeyService };
+export { ConnectionService, ProviderService, ProviderKeyService, CloudOAuthProxyService };
 export { ClientFactory } from './clients';
 
 // Clients
-export { FacebookClient, GoogleClient, MicrosoftClient, SpotifyClient };
+export { FacebookClient, GitHubClient, GoogleClient, MicrosoftClient, SpotifyClient, SteamClient };
 
 // Types
 export type { BaseClient } from './clients/BaseClient';

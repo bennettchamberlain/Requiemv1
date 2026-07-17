@@ -1,8 +1,8 @@
 import { UseGuards } from '@nestjs/common';
-import { Query, ResolveField, Resolver, Args, ID, Parent } from '@nestjs/graphql';
+import { Args, ID, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { FileService } from '@ci/domains/files';
 
 import { FileItemsLoader } from '../loaders/FileItemsLoader';
@@ -17,9 +17,11 @@ import { ItemConnection } from '../types/ItemConnection';
 import { ItemEdge } from '../types/ItemEdge';
 import { ItemType } from '../types/ItemType';
 import { PaginationArgs } from '../types/PaginationArgs';
+import { UpdateFileInput } from '../types/UpdateFileInput';
+import { entityOwnerScope } from '../utils/entityOwnerScope';
 import { Paginator } from '../utils/Paginator';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => FileType)
 export class FileResolver {
   constructor(
@@ -73,15 +75,32 @@ export class FileResolver {
     return entity ? FileType.toType(entity) : null;
   }
 
-  @ResolveField(() => String, { nullable: true })
-  async previewUrl(@Context() context: RequestContext, @Parent() parent: FileType): Promise<string | null> {
+  @Mutation(() => FileType, { nullable: true })
+  async updateFile(
+    @Context() context: RequestContext,
+    @Args('input') input: UpdateFileInput,
+  ): Promise<FileType | null> {
     const serviceContext = toServiceContext(context);
 
+    const id = GlobalUID.parse('file', input.id);
+
+    const entity = await this.fileService.update(serviceContext, id, {
+      title: input.title,
+      description: input.description,
+    });
+
+    return entity ? FileType.toType(entity) : null;
+  }
+
+  @ResolveField(() => String, { nullable: true })
+  async previewUrl(@Context() context: RequestContext, @Parent() parent: FileType): Promise<string | null> {
     const file = parent.__source;
 
     if (file == null) {
       return null;
     }
+
+    const serviceContext = entityOwnerScope(context, file.userId);
 
     const preview = await this.previewLoader.load(serviceContext, file.id);
 
@@ -94,13 +113,13 @@ export class FileResolver {
     @Parent() parent: FileType,
     @Args() pagination: PaginationArgs,
   ): Promise<ItemConnection | null> {
-    const serviceContext = toServiceContext(context);
-
     const file = parent.__source;
 
     if (file == null) {
       return null;
     }
+
+    const serviceContext = entityOwnerScope(context, file.userId);
 
     const fileId = file.id;
 
@@ -133,7 +152,7 @@ export class FileResolver {
 
   @ResolveField(() => [EntityTagType])
   async tags(@Context() context: RequestContext, @Parent() parent: FileType): Promise<EntityTagType[]> {
-    const serviceContext = toServiceContext(context);
+    const serviceContext = entityOwnerScope(context, parent.__source.userId);
 
     const tags = await this.tagLoader.load(serviceContext, {
       type: 'file',

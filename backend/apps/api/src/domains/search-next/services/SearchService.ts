@@ -29,6 +29,28 @@ const TS_RANK_WEIGHTS = '{0.1, 0.2, 0.4, 1.0}';
  */
 const EMBEDDING_BOOST_FACTOR = 0.5;
 
+/**
+ * Default cosine-distance floor for `searchMessages` (naive-RAG message channel).
+ *
+ * Expressed as cosine DISTANCE (embedding <=> query), so smaller = more similar.
+ * 0.5 matches `semanticSearch`'s `distanceThreshold` — anything the semantic mode
+ * would already reject as too far is now also rejected here. This closes gap G5
+ * (memory-and-search plan §3): before the floor, `searchMessages` always unioned
+ * the top-K raw fragments regardless of similarity, injecting recall noise on
+ * sparse corpora where even the closest fragment is unrelated. See plan §5
+ * ("`searchMessages` floor → Yes, start at cosine-distance 0.5").
+ */
+const MESSAGE_DISTANCE_FLOOR = 0.5;
+
+/**
+ * Default top-K for `searchMessages`. K is corpus-dependent: dense corpora
+ * benefit from a larger union, sparse ones from a smaller one. The floor above
+ * does most of the noise-suppression work, so K stays at the historical 10 as
+ * the safe default; deployments tune it via the `maxResults` argument once the
+ * benchmark (PR #1587) is the gate. See plan §4 "Recall tuning: ... per-corpus K".
+ */
+const MESSAGE_DEFAULT_K = 10;
+
 type ScoredRowResult = {
   entity_id: string;
   entity_type: string;
@@ -72,30 +94,31 @@ export class SearchService {
     context: UserServiceContext,
     options: SearchOptions,
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
-    const { mode = 'auto' } = options;
+    const resolvedOptions = this.applyDefaultTypeExclusions(options);
+    const { mode = 'auto' } = resolvedOptions;
 
     let results: EntityIdentifier<IndexableEntity>[];
 
     switch (mode) {
       case 'semantic':
-        results = await this.semanticSearch(context, options);
+        results = await this.semanticSearch(context, resolvedOptions);
         break;
 
       case 'keyword':
-        results = await this.keywordSearch(context, options);
+        results = await this.keywordSearch(context, resolvedOptions);
         break;
 
       case 'boosted':
-        results = await this.boostedKeywordSearch(context, options);
+        results = await this.boostedKeywordSearch(context, resolvedOptions);
         break;
 
       case 'hybrid':
-        results = await this.hybridSearch(context, options);
+        results = await this.hybridSearch(context, resolvedOptions);
         break;
 
       case 'auto':
       default:
-        results = await this.autoSearch(context, options);
+        results = await this.autoSearch(context, resolvedOptions);
         break;
     }
 
@@ -103,6 +126,70 @@ export class SearchService {
       id: result.id,
       type: result.type,
     }));
+  }
+
+  /**
+   * Vector search over raw message embeddings (entity_type = 'message') — the
+   * "naive RAG" retrieval channel that complements entity/graph search. Source
+   * messages carry detail the terse entity serialisation drops, so surfacing the
+   * closest raw fragments alongside the graph lifts recall (see RecallService).
+   *
+   * Cosine distance (<=>), matching semanticSearch — nomic embeddings are
+   * unnormalised, so L2 is meaningless here. Top-K by similarity, gated by a
+   * cosine-distance floor so fragments the semantic mode would reject as too far
+   * are dropped instead of padding the union with noise (gap G5). Callers union
+   * whatever survives the floor and let the answerer filter the rest.
+   *
+   * @param maxResults top-K cap (corpus-tunable; default {@link MESSAGE_DEFAULT_K})
+   * @param distanceFloor max cosine distance to admit (default
+   *   {@link MESSAGE_DISTANCE_FLOOR}); rows with `embedding <=> query >= floor`
+   *   are excluded. Pass a larger value to loosen recall on paraphrase-heavy
+   *   corpora, a smaller one to tighten precision on sparse corpora.
+   */
+  async searchMessages(
+    context: UserServiceContext,
+    query: string,
+    maxResults = MESSAGE_DEFAULT_K,
+    distanceFloor = MESSAGE_DISTANCE_FLOOR,
+  ): Promise<{ id: string; score: number }[]> {
+    const vector = await this.embeddingGenerationService.generateEmbeddingString(query);
+
+    // ORDER BY the raw distance operator (ascending) — NOT `1 - (embedding <=> $2)
+    // DESC` — so the planner can use the HNSW index (embeddings_embedding_hnsw_idx,
+    // vector_cosine_ops). HNSW only accelerates `ORDER BY col <=> const ASC LIMIT k`;
+    // ordering by the derived `score DESC` is mathematically identical but opaque to
+    // the planner, forcing a full Seq Scan + Sort. `embedding IS NOT NULL` matches
+    // the index's partial predicate (the column is nullable). Nearest-distance-first
+    // == highest-similarity-first, so the returned order is unchanged. See the KNN
+    // index-usage finding: without this, semantic search full-scans at corpus scale.
+    const sql = `
+      SELECT entity_id, 1 - (embedding <=> $2) AS score
+      FROM ci_search.embeddings
+      WHERE user_id = $1
+        AND entity_type = 'message'
+        AND embedding IS NOT NULL
+        AND (embedding <=> $2) < $3::double precision
+      ORDER BY embedding <=> $2
+      LIMIT ${maxResults}
+    `;
+
+    const rows = await this.embeddingRepo.query(sql, [context.userId, vector, distanceFloor]);
+
+    return rows.map((row: { entity_id: string; score: string }) => ({
+      id: row.entity_id,
+      score: parseFloat(row.score),
+    }));
+  }
+
+  private applyDefaultTypeExclusions(options: SearchOptions): SearchOptions {
+    if (options.includeTypes || options.excludeTypes) {
+      return options;
+    }
+
+    return {
+      ...options,
+      excludeTypes: ['message'],
+    };
   }
 
   /**
@@ -230,17 +317,26 @@ export class SearchService {
 
     const typeFilter = this.buildTypeFilter(options, 4);
 
+    // Cosine distance (<=>), NOT L2 (<->): embeddings are unnormalised, so the
+    // L2 distance is ~22 and never < 0.5 — the threshold made semantic search
+    // return nothing, and 1 - L2 produced large-negative "scores". With <=>,
+    // (embedding <=> $2) is cosine distance in [0,2] and 1 - it is cosine sim.
+    // ORDER BY the raw `embedding <=> $2` (ascending) rather than `score DESC` so the
+    // HNSW index serves the KNN; `embedding IS NOT NULL` matches its partial predicate.
+    // Nearest-first == highest-similarity-first, so results are unchanged but the query
+    // uses the index instead of a full Seq Scan + Sort at corpus scale.
     const sql = `
       SELECT
         entity_id,
         entity_type,
-        1 - (embedding <-> $2) as score
+        1 - (embedding <=> $2) as score
       FROM
         ci_search.embeddings
       WHERE user_id = $1
-        AND (embedding <-> $2) < $3::double precision
+        AND embedding IS NOT NULL
+        AND (embedding <=> $2) < $3::double precision
         ${typeFilter.clause}
-      ORDER BY score DESC
+      ORDER BY embedding <=> $2
       LIMIT ${maxResults}
     `;
 
@@ -267,15 +363,26 @@ export class SearchService {
 
     const typeFilter = this.buildTypeFilter(options, 3);
 
+    // Same OR-rewriting as boostedKeywordSearch: turn the AND-joined tsquery
+    // from websearch_to_tsquery into an OR-joined one so a 2-3 word query like
+    // "dog breed" matches an entity whose vector has only one of the tokens
+    // (e.g. Mochi's vector has 'dog' but not 'breed').  ts_rank still rewards
+    // entities matching more terms.  Single-term queries are unaffected
+    // (no '&' to replace).
     const sql = `
+      WITH q AS (
+        SELECT replace(websearch_to_tsquery('english', $2)::text, ' & ', ' | ')::tsquery AS tq
+      )
       SELECT
         entity_id,
         entity_type,
-        ts_rank('${TS_RANK_WEIGHTS}', vector, websearch_to_tsquery('english', $2)) as score
+        ts_rank('${TS_RANK_WEIGHTS}', vector, q.tq) as score
       FROM
         ci_search.vectors
+        CROSS JOIN q
       WHERE user_id = $1
-        AND vector @@ websearch_to_tsquery('english', $2)
+        AND q.tq <> ''::tsquery
+        AND vector @@ q.tq
         ${typeFilter.clause}
       ORDER BY score DESC
       LIMIT ${maxResults}
@@ -315,22 +422,34 @@ export class SearchService {
     // Use 'v' table alias since we're joining vectors and embeddings
     const typeFilter = this.buildTypeFilter(options, 4, 'v');
 
-    // Single query that joins vectors and embeddings
-    // Keyword match is required, embedding similarity is used as a boost
+    // The natural-language questions we get from clients ("Where does Jordan
+    // live?") are routed here, but `websearch_to_tsquery` builds an AND-joined
+    // tsquery — every non-stopword has to appear in the SAME entity's vector,
+    // which almost never holds: "jordan" lives in the Person entity, "live"
+    // lives in the Place entity.  Flip the join from `&` to `|` so any token
+    // match qualifies and ts_rank still rewards entities matching more terms,
+    // with the embedding boost discriminating among them.  Single-term queries
+    // are unaffected (no `&` to replace) and phrase queries (`<->`) and
+    // negations (`!`) are preserved by the literal string replace.
     const sql = `
+      WITH q AS (
+        SELECT replace(websearch_to_tsquery('english', $2)::text, ' & ', ' | ')::tsquery AS tq
+      )
       SELECT
         v.entity_id,
         v.entity_type,
-        ts_rank('${TS_RANK_WEIGHTS}', v.vector, websearch_to_tsquery('english', $2))
-          * (1 + ${EMBEDDING_BOOST_FACTOR} * COALESCE(1 - (e.embedding <-> $3::vector), 0)) as score
+        ts_rank('${TS_RANK_WEIGHTS}', v.vector, q.tq)
+          * (1 + ${EMBEDDING_BOOST_FACTOR} * COALESCE(1 - (e.embedding <=> $3::vector), 0)) as score
       FROM
         ci_search.vectors v
+        CROSS JOIN q
       LEFT JOIN ci_search.embeddings e
         ON e.entity_type = v.entity_type
         AND e.entity_id = v.entity_id
         AND e.user_id = $1
       WHERE v.user_id = $1
-        AND v.vector @@ websearch_to_tsquery('english', $2)
+        AND q.tq <> ''::tsquery
+        AND v.vector @@ q.tq
         ${typeFilter.clause}
       ORDER BY score DESC
       LIMIT ${maxResults}

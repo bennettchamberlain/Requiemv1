@@ -2,7 +2,8 @@ import { UseGuards } from '@nestjs/common';
 import { Mutation, Query, Resolver, Args, ID } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
+import { MaxArraySizePipe } from '@ci/common/pipes';
 import { QuestionService } from '@ci/domains/intelligence';
 
 import { CreateQuestionInput } from '../types/CreateQuestionInput';
@@ -14,7 +15,7 @@ import { QuestionType } from '../types/QuestionType';
 import { UpdateQuestionInput } from '../types/UpdateQuestionInput';
 import { Paginator } from '../utils/Paginator';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => QuestionType)
 export class QuestionResolver {
   constructor(private readonly questionService: QuestionService) {}
@@ -32,6 +33,29 @@ export class QuestionResolver {
     });
 
     return QuestionType.toType(entity);
+  }
+
+  /**
+   * Batch equivalent of N {@link createQuestion} calls in one round-trip.
+   * Returns the created questions in input order.
+   */
+  @Mutation(() => [QuestionType])
+  async createQuestions(
+    @Context() context: RequestContext,
+    @Args('input', { type: () => [CreateQuestionInput] }, new MaxArraySizePipe())
+    input: CreateQuestionInput[],
+  ): Promise<QuestionType[]> {
+    const serviceContext = toServiceContext(context);
+
+    const questions = await this.questionService.createMany(
+      serviceContext,
+      input.map((item) => ({
+        text: item.text,
+        category: item.category,
+      })),
+    );
+
+    return questions.map((question) => QuestionType.toType(question));
   }
 
   @Mutation(() => QuestionType, { nullable: true })

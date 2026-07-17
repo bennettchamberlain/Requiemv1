@@ -11,8 +11,9 @@ import {
   Cable,
   Palette,
   ChartPie,
+  Tags,
 } from '@ci/shadcn/icons';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 
 import { useFeatures } from '@/common/feature';
 import { useTheme, ColorPicker } from '@/components/ThemePicker';
@@ -22,6 +23,7 @@ export function NavUser() {
   const [, { logout }] = useAuth();
   const { user } = useCurrentUser();
   const { themeState, setTheme } = useTheme();
+  const location = useLocation();
 
   const { isFeatureEnabled } = useFeatures();
 
@@ -78,7 +80,16 @@ export function NavUser() {
             </Link>
           </DropdownMenu.Item>
 
-          {isFeatureEnabled('new.insights.page') && (
+          {isFeatureEnabled('tags.page') && (
+            <DropdownMenu.Item asChild>
+              <Link to="/tags">
+                <Tags />
+                Tags
+              </Link>
+            </DropdownMenu.Item>
+          )}
+
+          {isFeatureEnabled('insights.page') && isFeatureEnabled('new.insights.page') && (
             <DropdownMenu.Item asChild>
               <Link to="/prompts">
                 <BadgeQuestionMark />
@@ -92,7 +103,7 @@ export function NavUser() {
 
         <DropdownMenu.Group>
           <DropdownMenu.Item asChild>
-            <Link to="/settings">
+            <Link to="/settings/appearance" state={{ backgroundLocation: location }}>
               <Settings2 />
               Settings
             </Link>
@@ -105,12 +116,14 @@ export function NavUser() {
             </Link>
           </DropdownMenu.Item>
 
-          <DropdownMenu.Item asChild>
-            <Link to="/jobs">
-              <ListTodo />
-              Jobs
-            </Link>
-          </DropdownMenu.Item>
+          {isFeatureEnabled('jobs.page') && (
+            <DropdownMenu.Item asChild>
+              <Link to="/jobs">
+                <ListTodo />
+                Jobs
+              </Link>
+            </DropdownMenu.Item>
+          )}
         </DropdownMenu.Group>
 
         <DropdownMenu.Separator />

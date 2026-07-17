@@ -2,7 +2,8 @@ import { UseGuards } from '@nestjs/common';
 import { Mutation, Parent, Query, ResolveField, Resolver, Args, ID } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
+import { MaxArraySizePipe } from '@ci/common/pipes';
 import { ConceptService } from '@ci/domains/memory';
 
 import { TagLoader } from '../loaders/TagLoader';
@@ -20,7 +21,7 @@ import { UpdateConceptInput } from '../types/UpdateConceptInput';
 import { UpdateConceptPayload } from '../types/UpdateConceptPayload';
 import { Paginator } from '../utils/Paginator';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => ConceptType)
 export class ConceptResolver {
   constructor(
@@ -82,6 +83,8 @@ export class ConceptResolver {
     const entity = await this.conceptService.create(serviceContext, {
       name: input.name,
       description: input.description,
+      linkedTable: input.linkedTable,
+      linkedId: input.linkedId,
     });
 
     if (entity == null) {
@@ -96,6 +99,33 @@ export class ConceptResolver {
     };
   }
 
+  /**
+   * Batch, idempotent concept ingest. Each input dedupes on the external
+   * provenance key (linkedTable, linkedId) so a re-sync returns the existing
+   * concept instead of inserting a duplicate. Returns the created-or-existing
+   * concepts in input order.
+   */
+  @Mutation(() => [ConceptType])
+  async createConcepts(
+    @Context() context: RequestContext,
+    @Args('input', { type: () => [CreateConceptInput] }, new MaxArraySizePipe())
+    input: CreateConceptInput[],
+  ): Promise<ConceptType[]> {
+    const serviceContext = toServiceContext(context);
+
+    const concepts = await this.conceptService.createMany(
+      serviceContext,
+      input.map((item) => ({
+        name: item.name,
+        description: item.description,
+        linkedTable: item.linkedTable,
+        linkedId: item.linkedId,
+      })),
+    );
+
+    return concepts.map((concept) => ConceptType.toType(concept));
+  }
+
   @Mutation(() => UpdateConceptPayload)
   async updateConcept(
     @Context() context: RequestContext,
@@ -103,7 +133,9 @@ export class ConceptResolver {
   ): Promise<UpdateConceptPayload> {
     const serviceContext = toServiceContext(context);
 
-    const entity = await this.conceptService.update(serviceContext, input.id, {
+    const id = GlobalUID.parse('concept', input.id);
+
+    const entity = await this.conceptService.update(serviceContext, id, {
       name: input.name,
       description: input.description,
     });

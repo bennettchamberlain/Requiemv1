@@ -58,6 +58,7 @@ export interface CreateEventDto {
   energy_level?: number;
   productivity_impact?: number;
   status?: string;
+  sharing_level?: string;
   is_deleted?: boolean;
   external_sync_status?: string;
   last_synced_at?: Date;
@@ -106,6 +107,7 @@ export interface UpdateEventDto {
   energy_level?: number;
   productivity_impact?: number;
   status?: string;
+  sharing_level?: string;
   is_deleted?: boolean;
   external_sync_status?: string;
   last_synced_at?: Date;
@@ -170,6 +172,11 @@ export interface CreateContentDto {
   source_data?: Record<string, unknown>;
   user_id?: string;
   event_id?: string;
+  // Provenance triple for idempotent batch ingest and event auto-linking. See
+  // content_source_triple_uniq and ContentService.createMany.
+  source_type?: string;
+  source_system?: string;
+  source_id?: string;
   event?: {
     id: string;
   };
@@ -257,11 +264,18 @@ export interface CreateItemDto {
   subcategory?: string;
   brand?: string;
   model?: string;
+  purchasePrice?: number;
   currentValue?: number;
   currency?: string;
+  acquiredAt?: Date;
+  identifierCodes?: Record<string, unknown>;
   condition?: 'new' | 'like_new' | 'good' | 'fair' | 'poor' | 'broken' | 'n/a' | null;
   images?: string[];
   metadata?: Record<string, unknown>;
+  // Provenance triple for idempotent re-ingest (see inventory_source_triple_uniq).
+  sourceType?: string;
+  sourceSystem?: string;
+  sourceId?: string;
 }
 
 export interface UpdateItemDto {
@@ -380,6 +394,10 @@ export interface CreateCommunicationDto {
   is_encrypted?: boolean;
   is_archived?: boolean;
   preview?: string | null;
+  // Provenance triple for idempotent re-ingest (see communications_source_triple_uniq).
+  source_type?: string;
+  source_system?: string;
+  source_id?: string;
 }
 
 export const createCommunicationSchema = z.object({

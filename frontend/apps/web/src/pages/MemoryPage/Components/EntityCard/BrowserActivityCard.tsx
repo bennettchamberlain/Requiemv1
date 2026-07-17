@@ -17,6 +17,9 @@ export const BROWSER_ACTIVITY_FRAGMENT = gql(`
     actionType
     duration
     time
+    tags {
+      label
+    }
   }
 `);
 
@@ -50,33 +53,27 @@ export function BrowserActivityCard({ entity }: Props) {
 
   return (
     <Card
-      className="!gap-2 !py-4 px-6 cursor-pointer hover:shadow-lg transition-shadow duration-200"
-      onClick={() => setActiveEntity({ ...data, __typename: 'BrowserActivityType' })}
+      className="!gap-2 !px-6 !py-4 cursor-pointer transition-shadow duration-200 hover:shadow-lg"
+      onClick={() => setActiveEntity({ ...data, __typename: 'BrowserActivityType', bucketTime: data.time })}
     >
       <div className="flex items-start gap-3">
         <div className="flex-shrink-0 mt-1">
-          <Globe className="h-6 w-6 text-blue-600" />
+          <Globe className="h-6 w-6 text-primary" />
         </div>
         <div className="flex-1 min-w-0">
           <Tooltip>
             <Tooltip.Trigger asChild>
-              <h3 className="text-lg font-semibold text-card-foreground truncate cursor-default">
-                {data.title}
+              <h3 className="truncate text-lg font-semibold leading-4 text-card-foreground cursor-default">
+                {data.title || 'Untitled page'}
               </h3>
             </Tooltip.Trigger>
             <Tooltip.Content>
-              <p>{data.title}</p>
+              <p>{data.title || 'Untitled page'}</p>
             </Tooltip.Content>
           </Tooltip>
           <p className="text-sm text-muted-foreground">{data.actionType}</p>
         </div>
       </div>
-
-      {data.title && (
-        <div className="pt-3 pb-3">
-          <p className="text-sm text-muted-foreground leading-relaxed">{data.title}</p>
-        </div>
-      )}
 
       {/* Browser Activity Specific Metadata */}
       <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">

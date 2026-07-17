@@ -21,7 +21,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     }
 
     throw new InternalServerErrorException(
-      `JwtAuthGuard does not support context type: ${context.getType()}`,
+      `${JwtAuthGuard.name} does not support context type: ${context.getType()}`,
     );
   }
 }

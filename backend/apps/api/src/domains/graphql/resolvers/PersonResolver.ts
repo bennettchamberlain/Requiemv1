@@ -2,7 +2,8 @@ import { UseGuards } from '@nestjs/common';
 import { Mutation, Parent, Query, ResolveField, Resolver, Args, ID } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
+import { MaxArraySizePipe } from '@ci/common/pipes';
 import { CreatePersonPayload } from '@ci/domains/graphql/types/CreatePersonPayload';
 import { DeleteByIdInput } from '@ci/domains/graphql/types/DeleteByIdInput';
 import { DeleteByIdPayload } from '@ci/domains/graphql/types/DeleteByIdPayload';
@@ -20,7 +21,7 @@ import { UpdatePersonInput } from '../types/UpdatePersonInput';
 import { UpdatePersonPayload } from '../types/UpdatePersonPayload';
 import { Paginator } from '../utils/Paginator';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => PersonType)
 export class PersonResolver {
   constructor(
@@ -38,6 +39,8 @@ export class PersonResolver {
     const entity = await this.personService.create(serviceContext, {
       name: input.name,
       description: input.description,
+      linkedTable: input.linkedTable,
+      linkedId: input.linkedId,
     });
 
     if (entity == null) {
@@ -52,6 +55,33 @@ export class PersonResolver {
     };
   }
 
+  /**
+   * Batch create people in one round-trip. Each input resolves-or-creates on the
+   * (linkedTable, linkedId) provenance key, so a re-sync returns the existing
+   * person instead of duplicating it. Returns the created-or-existing people in
+   * input order — the clean batch equivalent of N createPerson mutations.
+   */
+  @Mutation(() => [PersonType])
+  async createPeople(
+    @Context() context: RequestContext,
+    @Args('input', { type: () => [CreatePersonInput] }, new MaxArraySizePipe())
+    input: CreatePersonInput[],
+  ): Promise<PersonType[]> {
+    const serviceContext = toServiceContext(context);
+
+    const people = await this.personService.createMany(
+      serviceContext,
+      input.map((item) => ({
+        name: item.name,
+        description: item.description,
+        linkedTable: item.linkedTable,
+        linkedId: item.linkedId,
+      })),
+    );
+
+    return people.map((person) => PersonType.toType(person));
+  }
+
   @Mutation(() => UpdatePersonPayload)
   async updatePerson(
     @Context() context: RequestContext,
@@ -59,7 +89,9 @@ export class PersonResolver {
   ): Promise<UpdatePersonPayload> {
     const serviceContext = toServiceContext(context);
 
-    const entity = await this.personService.update(serviceContext, input.id, {
+    const id = GlobalUID.parse('person', input.id);
+
+    const entity = await this.personService.update(serviceContext, id, {
       name: input.name,
       description: input.description,
     });

@@ -15,6 +15,8 @@ import { FacebookPhotosTransformService } from './Facebook/transform/TransformFa
 import { FacebookPostsTransformService } from './Facebook/transform/TransformFacebookPosts';
 import { FacebookProfileTransformService } from './Facebook/transform/TransformFacebookProfile';
 import { FacebookVideosTransformService } from './Facebook/transform/TransformFacebookVideos';
+import { syncEvents as syncGitHubEvents } from './GitHub/sync/SyncEvents';
+import { GitHubEventsTransformService } from './GitHub/transform/TransformEvents';
 import { syncCalendar } from './Google/sync/SyncCalendar';
 import { syncContacts } from './Google/sync/SyncContacts';
 import { syncDrive } from './Google/sync/SyncDrive';
@@ -51,6 +53,12 @@ import { SpotifySavedEpisodesTransformService } from './Spotify/transform/Transf
 import { SpotifySavedShowsTransformService } from './Spotify/transform/TransformSavedShows';
 import { SpotifySavedTracksTransformService } from './Spotify/transform/TransformSavedTracks';
 import { SpotifyTopArtistsTransformService } from './Spotify/transform/TransformTopArtists';
+import { syncAchievements as syncSteamAchievements } from './Steam/sync/SyncAchievements';
+import { syncFriends as syncSteamFriends } from './Steam/sync/SyncFriends';
+import { syncOwnedGames } from './Steam/sync/SyncOwnedGames';
+import { SteamAchievementsTransformService } from './Steam/transform/TransformAchievements';
+import { SteamFriendsTransformService } from './Steam/transform/TransformFriends';
+import { SteamOwnedGamesTransformService } from './Steam/transform/TransformOwnedGames';
 
 @Injectable()
 export class EndpointServiceMap {
@@ -82,6 +90,10 @@ export class EndpointServiceMap {
     private readonly spotifySavedShowsTransformService: SpotifySavedShowsTransformService,
     private readonly spotifySavedTracksTransformService: SpotifySavedTracksTransformService,
     private readonly spotifyTopArtistsTransformService: SpotifyTopArtistsTransformService,
+    private readonly steamOwnedGamesTransformService: SteamOwnedGamesTransformService,
+    private readonly steamAchievementsTransformService: SteamAchievementsTransformService,
+    private readonly steamFriendsTransformService: SteamFriendsTransformService,
+    private readonly gitHubEventsTransformService: GitHubEventsTransformService,
   ) {
     this.logger.setContext(EndpointServiceMap.name);
     this.endpointServiceMap = {
@@ -116,6 +128,14 @@ export class EndpointServiceMap {
           'Saved Shows': syncSavedShows,
           'Saved Tracks': syncSavedTracks,
           'Top Artists': syncTopArtists,
+        },
+        Steam: {
+          'Owned Games': syncOwnedGames,
+          Achievements: syncSteamAchievements,
+          Friends: syncSteamFriends,
+        },
+        GitHub: {
+          Events: syncGitHubEvents,
         },
       },
       transform: {
@@ -181,6 +201,18 @@ export class EndpointServiceMap {
           'Top Artists': this.spotifyTopArtistsTransformService.transform.bind(
             this.spotifyTopArtistsTransformService,
           ),
+        },
+        Steam: {
+          'Owned Games': this.steamOwnedGamesTransformService.transform.bind(
+            this.steamOwnedGamesTransformService,
+          ),
+          Achievements: this.steamAchievementsTransformService.transform.bind(
+            this.steamAchievementsTransformService,
+          ),
+          Friends: this.steamFriendsTransformService.transform.bind(this.steamFriendsTransformService),
+        },
+        GitHub: {
+          Events: this.gitHubEventsTransformService.transform.bind(this.gitHubEventsTransformService),
         },
       },
     };

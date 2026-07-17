@@ -24,6 +24,9 @@ import psycopg2.extras
 
 from ci.config import settings
 from ci.database import get_conn
+from ci.model.checkpoints import (
+    user_ckpt_dir, model_exists, HMT_CALIBRATED, HMT_FP32_ONNX, HMT_INT8_ONNX,
+)
 
 log = logging.getLogger(__name__)
 
@@ -78,8 +81,7 @@ def build_histogram(
     buckets = engine.predict(horizon_start=horizon_start)
 
     if system_status is None:
-        checkpoint = Path(settings.models_dir) / "hmt" / "hmt_checkpoint.pt"
-        system_status = "READY" if checkpoint.exists() else "COLD_START"
+        system_status = "READY" if (user_id and model_exists(user_id)) else "COLD_START"
 
     if user_id:
         _log_prediction(user_id, now, horizon_start, buckets)
@@ -104,10 +106,11 @@ def _log_prediction(
     Write all 48 forecast buckets to ci.prediction_log in a single batch.
 
     Non-fatal: any DB error is logged and swallowed so it never affects the
-    API response.  actual_l0/l1/l2 are left NULL; label_unlabeled fills them
-    in the nightly run.
+    API response.  actual_l0/l1/l2 are left NULL here; the nightly
+    ``backfill_actuals`` step (ci.pipeline.actuals_backfill) fills them once the
+    forecast window has elapsed and the day's token_stream labels exist.
     """
-    version = _model_version()
+    version = _model_version(user_id)
     rows = [
         (
             user_id,
@@ -130,15 +133,17 @@ def _log_prediction(
         log.exception("prediction_log write failed (non-fatal)")
 
 
-def _model_version() -> str:
+def _model_version(user_id: Optional[str] = None) -> str:
     """
-    Return a version string for the currently loaded model checkpoint.
+    Return a version string for the user's currently loaded model checkpoint.
 
     Checks for ONNX and PyTorch checkpoints in order of preference and uses
     the filename + Unix mtime so each nightly export gets a distinct version.
     """
-    ckpt_dir = Path(settings.models_dir) / "hmt"
-    for name in ("hmt_int8.onnx", "hmt_fp32.onnx", "hmt_calibrated.pt"):
+    if not user_id:
+        return "unknown"
+    ckpt_dir = user_ckpt_dir(user_id)
+    for name in (HMT_INT8_ONNX, HMT_FP32_ONNX, HMT_CALIBRATED):
         p = ckpt_dir / name
         if p.exists():
             return f"{name}@{int(p.stat().st_mtime)}"

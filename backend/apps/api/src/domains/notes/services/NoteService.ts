@@ -5,7 +5,9 @@ import { v7 as uuidv7 } from 'uuid';
 
 import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import { computeChunkSize } from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
+import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
 import { type Note, NoteEntity } from '../entities/NoteEntity';
 import { NoteCreatedEvent, NoteUpdatedEvent, NoteRemovedEvent } from '../events';
@@ -22,7 +24,19 @@ export class NoteService {
     this.logger.setContext(NoteService.name);
   }
 
-  async create(context: UserServiceContext, data: CreateNoteDto): Promise<Note | null> {
+  /**
+   * @param options.emitCreated When true (default) a NoteCreatedEvent is sent so the
+   *   row indexes/enriches live. The bulk path passes false: emitting a per-row
+   *   pgboss event for every ingested row is the dominant cost at import volume, so
+   *   bulk-loaded rows are instead swept by the post-load search-index backfill.
+   */
+  async create(
+    context: UserServiceContext,
+    data: CreateNoteDto,
+    options: { emitCreated?: boolean } = {},
+  ): Promise<Note | null> {
+    const { emitCreated = true } = options;
+
     const record = this.noteRepository.create({
       id: data.id || uuidv7(),
       ...data,
@@ -31,11 +45,61 @@ export class NoteService {
 
     const entity = await this.noteRepository.save(record);
 
-    await this.eventService.send(NoteCreatedEvent, {
-      noteId: entity.id,
-    });
+    if (emitCreated) {
+      await this.eventService.send(NoteCreatedEvent, {
+        noteId: entity.id,
+      });
+    }
 
     return NoteEntity.toEgressType(entity);
+  }
+
+  /**
+   * Batch notes ingest for the importer. Replaces the per-row save +
+   * NoteCreatedEvent loop with one set-based INSERT plus one hydration SELECT.
+   * Notes have no dedup key, so this is a plain multi-row INSERT — every input
+   * row is inserted. Returns the created notes in input order.
+   *
+   * Bulk ingest does NOT emit a per-row NoteCreatedEvent: the per-row pgboss
+   * fan-out was the dominant cost at import volume. Search indexing for
+   * bulk-loaded rows is deferred to the post-load batch embed
+   * (POST /api/maintenance/search-index/backfill). Single-row create() still
+   * emits, so interactive creates index live.
+   */
+  async createMany(context: UserServiceContext, data: CreateNoteDto[]): Promise<Note[]> {
+    if (data.length === 0) {
+      return [];
+    }
+
+    const entities = data.map((item) =>
+      this.noteRepository.create({
+        id: item.id || uuidv7(),
+        ...item,
+        userId: context.userId,
+      }),
+    );
+
+    // Split into param-budget-bounded chunks so a large batch never exceeds
+    // Postgres' 65535 bind-param limit (computeChunkSize is the same helper
+    // bulkInsertIdempotent uses). Notes have no dedup key, so every chunk is a
+    // plain multi-row INSERT.
+    const chunkSize = computeChunkSize(this.noteRepository.metadata.columns.length);
+    for (let offset = 0; offset < entities.length; offset += chunkSize) {
+      await this.noteRepository
+        .createQueryBuilder()
+        .insert()
+        // Route through `metadata.target` so TS picks the `ObjectLiteral` overload
+        // of `.values()` (matches the other bulk-ingest services).
+        .into(this.noteRepository.metadata.target)
+        .values(entities.slice(offset, offset + chunkSize))
+        .execute();
+    }
+
+    const ids = entities.map((entity) => entity.id);
+    const rows = await this.noteRepository.find({ where: { id: In(ids) } });
+    const byId = new Map(rows.map((row) => [row.id, row]));
+
+    return entities.map((entity) => NoteEntity.toEgressType(byId.get(entity.id) ?? entity));
   }
 
   async findById(context: ServiceContext, id: string): Promise<Note | null> {
@@ -64,6 +128,38 @@ export class NoteService {
     const map = new Map(results.map((entity) => [entity.id, NoteEntity.toEgressType(entity)]));
 
     return ids.map((id) => map.get(id) ?? null);
+  }
+
+  /**
+   * Lightweight identifiers for the most-recent notes, for the unified
+   * search/explorer feed. Full entities are batch-resolved downstream.
+   */
+  async getEntitiesForNotes(
+    context: ServiceContext,
+    options: { limit?: number; startTime?: Date; endTime?: Date; order?: 'ASC' | 'DESC' } = {},
+  ): Promise<EntityIdentifier<IndexableEntity>[]> {
+    let query = this.noteRepository
+      .createQueryBuilder('note')
+      .select('note.id', 'id')
+      .where('note.user_id = :userId', { userId: context.userId });
+
+    if (options.startTime) {
+      query = query.andWhere('note.created_at >= :startTime', { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere('note.created_at <= :endTime', { endTime: options.endTime });
+    }
+
+    query = query.orderBy('note.created_at', options.order ?? 'DESC');
+
+    if (options.limit) {
+      query = query.limit(options.limit);
+    }
+
+    const rows = await query.getRawMany<{ id: string }>();
+
+    return rows.map((row) => ({ id: row.id, type: 'note' as IndexableEntity }));
   }
 
   async findAll(context: ServiceContext): Promise<Note[]> {

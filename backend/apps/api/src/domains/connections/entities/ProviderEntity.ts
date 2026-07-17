@@ -1,5 +1,7 @@
 import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
+import config from '@ci/configuration';
+
 export interface ProviderEndpoint {
   name: string;
   description: string;
@@ -29,6 +31,15 @@ export class ProviderEntity {
   @Column({ type: 'text', name: 'logo_url', nullable: true })
   logoUrl!: string | null;
 
+  @Column({ type: 'text', name: 'auth_type', nullable: true })
+  authType!: string | null;
+
+  @Column({ type: 'text', name: 'openid_key_link', nullable: true })
+  openidKeyLink!: string | null;
+
+  @Column({ type: 'text', name: 'app_setup_url', nullable: true })
+  appSetupUrl!: string | null;
+
   @Column({ type: 'jsonb', default: '{}' })
   theme!: ProviderTheme;
 
@@ -37,6 +48,9 @@ export class ProviderEntity {
 
   @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
   updatedAt!: Date;
+
+  @Column({ type: 'boolean', name: 'local_only', default: false })
+  localOnly!: boolean;
 
   static toEgressType(entity: ProviderEntity): Provider {
     return {
@@ -49,6 +63,13 @@ export class ProviderEntity {
         backgroundColor: entity.theme.backgroundColor ?? null,
         borderColor: entity.theme.borderColor ?? null,
       },
+      authType: entity.authType ?? null,
+      openidKeyLink: entity.openidKeyLink ?? null,
+      appSetupUrl: entity.appSetupUrl ?? null,
+      localOnly:
+        entity.authType === 'oauth2' && (!config.ciPortal.deviceId || !config.ciPortal.apiKey)
+          ? true
+          : (entity.localOnly ?? false),
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };

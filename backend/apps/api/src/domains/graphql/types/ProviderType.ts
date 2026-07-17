@@ -16,8 +16,8 @@ export class ProviderEndpointType {
   @Field(() => String)
   iterationType!: string;
 
-  @Field(() => Number)
-  TTL?: number;
+  @Field(() => Number, { nullable: true })
+  TTL?: number | null;
 }
 
 @ObjectType()
@@ -50,8 +50,23 @@ export class ProviderType {
   @Field(() => String, { nullable: true })
   logoUrl!: string | null;
 
+  @Field(() => String, { nullable: true })
+  authType!: string | null;
+
+  @Field(() => String, { nullable: true })
+  openidKeyLink!: string | null;
+
+  @Field(() => String, { nullable: true })
+  appSetupUrl!: string | null;
+
   @Field(() => ProviderThemeType, { nullable: true })
   theme!: ProviderThemeType | null;
+
+  @Field(() => Boolean)
+  localOnly!: boolean;
+
+  @Field(() => [String], { nullable: true })
+  scopes?: string[];
 
   static toType(provider: Provider): ProviderType {
     return {
@@ -62,7 +77,11 @@ export class ProviderType {
       description: provider.description,
       endpoints: provider.endpoints,
       logoUrl: provider.logoUrl,
+      authType: provider.authType,
+      openidKeyLink: provider.openidKeyLink,
+      appSetupUrl: provider.appSetupUrl,
       theme: provider.theme,
+      localOnly: provider.localOnly,
     };
   }
 }

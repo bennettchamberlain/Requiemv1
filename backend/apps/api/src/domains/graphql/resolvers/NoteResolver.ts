@@ -2,7 +2,8 @@ import { UseGuards } from '@nestjs/common';
 import { ID, Args, Mutation, Parent, Query, Resolver, ResolveField } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
+import { MaxArraySizePipe } from '@ci/common/pipes';
 import { NoteService } from '@ci/domains/notes';
 
 import { TagLoader } from '../loaders/TagLoader';
@@ -20,7 +21,7 @@ import { UpdateNoteInput } from '../types/UpdateNoteInput';
 import { UpdateNotePayload } from '../types/UpdateNotePayload';
 import { Paginator } from '../utils/Paginator';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => NoteType)
 export class NoteResolver {
   constructor(
@@ -50,6 +51,25 @@ export class NoteResolver {
       success: true,
       note: entity ? NoteType.toType(entity) : undefined,
     };
+  }
+
+  @Mutation(() => [NoteType])
+  async createNotes(
+    @Context() context: RequestContext,
+    @Args('input', { type: () => [CreateNoteInput] }, new MaxArraySizePipe())
+    input: CreateNoteInput[],
+  ): Promise<NoteType[]> {
+    const serviceContext = toServiceContext(context);
+
+    const notes = await this.noteService.createMany(
+      serviceContext,
+      input.map((item) => ({
+        title: item.title,
+        content: item.content,
+      })),
+    );
+
+    return notes.map((note) => NoteType.toType(note));
   }
 
   @Mutation(() => UpdateNotePayload)

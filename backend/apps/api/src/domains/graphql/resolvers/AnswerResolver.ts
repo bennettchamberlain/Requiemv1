@@ -2,7 +2,8 @@ import { UseGuards } from '@nestjs/common';
 import { Mutation, Parent, Query, ResolveField, Resolver, Args, ID } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
+import { MaxArraySizePipe } from '@ci/common/pipes';
 import { AnswerService } from '@ci/domains/intelligence';
 
 import { QuestionLoader } from '../loaders/QuestionLoader';
@@ -16,7 +17,7 @@ import { QuestionType } from '../types/QuestionType';
 import { UpdateAnswerInput } from '../types/UpdateAnswerInput';
 import { Paginator } from '../utils/Paginator';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => AnswerType)
 export class AnswerResolver {
   constructor(
@@ -39,6 +40,31 @@ export class AnswerResolver {
     });
 
     return AnswerType.toType(entity);
+  }
+
+  /**
+   * Batch equivalent of N createAnswer calls in a single round-trip. Returns the
+   * created answers in input order.
+   */
+  @Mutation(() => [AnswerType])
+  async createAnswers(
+    @Context() context: RequestContext,
+    @Args('input', { type: () => [CreateAnswerInput] }, new MaxArraySizePipe())
+    input: CreateAnswerInput[],
+  ): Promise<AnswerType[]> {
+    const serviceContext = toServiceContext(context);
+
+    const answers = await this.answerService.createMany(
+      serviceContext,
+      input.map((item) => ({
+        text: item.answer,
+        question: {
+          id: item.questionId,
+        },
+      })),
+    );
+
+    return answers.map((answer) => AnswerType.toType(answer));
   }
 
   @Mutation(() => AnswerType, { nullable: true })

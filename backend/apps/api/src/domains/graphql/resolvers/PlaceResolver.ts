@@ -2,7 +2,8 @@ import { UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Parent, Query, Resolver, ResolveField } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
+import { MaxArraySizePipe } from '@ci/common/pipes';
 import { PlaceService } from '@ci/domains/memory';
 
 import { TagLoader } from '../loaders/TagLoader';
@@ -16,7 +17,7 @@ import { PlaceType } from '../types/PlaceType';
 import { UpdatePlaceInput } from '../types/UpdatePlaceInput';
 import { Paginator } from '../utils/Paginator';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => PlaceType)
 export class PlaceResolver {
   constructor(
@@ -71,6 +72,63 @@ export class PlaceResolver {
     return PlaceType.toType(entity[0]);
   }
 
+  /**
+   * Batch create places in one round-trip. The clean batch equivalent of N
+   * aliased createPlace mutations; returns the created rows in input order.
+   */
+  @Mutation(() => [PlaceType])
+  async createPlaces(
+    @Context() context: RequestContext,
+    @Args('input', { type: () => [CreatePlaceInput] }, new MaxArraySizePipe())
+    input: CreatePlaceInput[],
+  ): Promise<PlaceType[]> {
+    const serviceContext = toServiceContext(context);
+
+    const places = await this.placeService.createMany(
+      serviceContext,
+      input.map((item) => {
+        const properties = item.properties || {};
+
+        if (item.type) {
+          properties.type = item.type;
+        }
+
+        if (item.geoFormat) {
+          properties.geoFormat = item.geoFormat;
+        }
+
+        if (item.geolocation) {
+          properties.geolocation = item.geolocation;
+        }
+
+        if (item.locationBoundary) {
+          properties.locationBoundary = item.locationBoundary;
+        }
+
+        if (item.estimated) {
+          properties.estimated = item.estimated;
+        }
+
+        if (item.tracked) {
+          properties.tracked = item.tracked;
+        }
+
+        if (item.uploaded) {
+          properties.uploaded = item.uploaded;
+        }
+
+        return {
+          name: item.name,
+          entity_type: 'Location',
+          properties,
+          description: item.description,
+        };
+      }),
+    );
+
+    return places.map((place) => PlaceType.toType(place));
+  }
+
   @Mutation(() => PlaceType, { nullable: true })
   async updatePlace(
     @Context() context: RequestContext,
@@ -108,7 +166,9 @@ export class PlaceResolver {
       properties.uploaded = input.uploaded;
     }
 
-    const entity = await this.placeService.update(serviceContext, input.id, {
+    const id = GlobalUID.parse('place', input.id);
+
+    const entity = await this.placeService.update(serviceContext, id, {
       name: input.name,
       properties,
       description: input.description,

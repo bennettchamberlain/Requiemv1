@@ -8,6 +8,7 @@ import { BrowserActivityModule } from '@ci/domains/browser-activity';
 import { ConnectionsModule } from '@ci/domains/connections';
 import { ConversationModule } from '@ci/domains/conversations';
 import { DeviceModule } from '@ci/domains/devices';
+import { EntityResolutionModule } from '@ci/domains/entity-resolution';
 import { EtlModule } from '@ci/domains/etl';
 import { FilesModule } from '@ci/domains/files';
 import { GraphModule } from '@ci/domains/graph';
@@ -25,6 +26,7 @@ import { UserSnapshotsModule } from '@ci/domains/user-snapshots';
 import { GraphQLController } from './controllers/GraphQLController';
 import { ConnectionLoader } from './loaders/ConnectionLoader';
 import { EventLoader } from './loaders/EventLoader';
+import { EventMediaLoader } from './loaders/EventMediaLoader';
 import { FileItemsLoader } from './loaders/FileItemsLoader';
 import { ItemFileLoader } from './loaders/ItemFileLoader';
 import { PersonLoader } from './loaders/PersonLoader';
@@ -48,7 +50,10 @@ import { ContentResolver } from './resolvers/ContentResolver';
 import { EventResolver } from './resolvers/EventResolver';
 import { FileResolver } from './resolvers/FileResolver';
 import { ForecastResolver } from './resolvers/ForecastResolver';
+import { GraphIngestResolver } from './resolvers/GraphIngestResolver';
+import { ItemRelationshipResolver } from './resolvers/ItemRelationshipResolver';
 import { ItemResolver } from './resolvers/ItemResolver';
+import { KnownPlacesResolver } from './resolvers/KnownPlacesResolver';
 import { NodeResolver } from './resolvers/NodeResolver';
 import { NoteResolver } from './resolvers/NoteResolver';
 import { PairingResolver } from './resolvers/PairingResolver';
@@ -82,6 +87,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     DeviceModule,
     PredictionsModule,
     ConversationModule,
+    EntityResolutionModule,
     EtlModule,
     FilesModule,
     GraphModule,
@@ -110,11 +116,15 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     NoteResolver,
     AnswerResolver,
     EventLoader,
+    EventMediaLoader,
     EventResolver,
     FileItemsLoader,
     FileResolver,
+    GraphIngestResolver,
     ItemFileLoader,
+    ItemRelationshipResolver,
     ItemResolver,
+    KnownPlacesResolver,
     PersonLoader,
     PersonResolver,
     PlaceLoader,
@@ -139,6 +149,6 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     UserResolver,
   ],
   controllers: [GraphQLController],
-  exports: [],
+  exports: [NestGraphQLModule],
 })
 export class GraphQLModule {}

@@ -1,5 +1,9 @@
 {
-  "hostname": "HOSTNAME",
+  "hostname": "APP_PUBLIC_HOSTNAME",
+  "port": {
+    "__name": "PORT",
+    "__format": "json"
+  },
   "auth": {
     "jwt": {
       "authTokenSecret": "AUTH_TOKEN_SECRET",
@@ -16,6 +20,30 @@
     },
     "oauth": {
       "callbackUrl": "OAUTH_CALLBACK_URL"
+    },
+    "oidc": {
+      "issuerUrl": "OIDC_ISSUER_URL",
+      "publicBaseUrl": "APP_BASE_URL"
+    },
+    "connect": {
+      "hubOrigins": "CI_HUB_ORIGINS"
+    },
+    "portal": {
+      "enabled": {
+        "__name": "PORTAL_OIDC_ENABLED",
+        "__format": "boolean"
+      },
+      "issuer": "PORTAL_OIDC_ISSUER",
+      "jwksUri": "PORTAL_OIDC_JWKS_URI",
+      "audience": "PORTAL_OIDC_AUDIENCE"
+    },
+    "hubForwardAuth": {
+      "enabled": {
+        "__name": "CI_HUB_FORWARD_AUTH_ENABLED",
+        "__format": "boolean"
+      },
+      "secret": "CI_HUB_FORWARD_AUTH_SECRET",
+      "maxSkewMs": "CI_HUB_FORWARD_AUTH_MAX_SKEW_MS"
     }
   },
   "db": {
@@ -35,17 +63,46 @@
     "ollama": {
       "host": "OLLAMA_HOST"
     },
-    "stt": {
-      "host": "STT_HOST"
-    },
-    "tts": {
-      "host": "TTS_HOST"
-    },
     "hbpe": {
       "host": "HBPE_HOST"
     },
     "parser": {
       "host": "PARSER_HOST"
+    }
+  },
+  "embedding": {
+    "host": "OLLAMA_EMBED_HOST",
+    "model": "CI_EMBED_MODEL",
+    "batchSize": {
+      "__name": "CI_EMBED_BATCH_SIZE",
+      "__format": "json"
+    },
+    "concurrency": {
+      "__name": "CI_EMBED_CONCURRENCY",
+      "__format": "json"
+    },
+    "coalesceWindowMs": {
+      "__name": "CI_EMBED_COALESCE_WINDOW_MS",
+      "__format": "json"
+    },
+    "minTextLength": {
+      "__name": "CI_EMBED_MIN_TEXT_LENGTH",
+      "__format": "json"
+    },
+    "types": "CI_EMBED_TYPES"
+  },
+  "queues": {
+    "concurrency": {
+      "__name": "CI_QUEUE_CONCURRENCY",
+      "__format": "json"
+    },
+    "fetchBatchSize": {
+      "__name": "CI_QUEUE_FETCH_BATCH_SIZE",
+      "__format": "json"
+    },
+    "perQueueConcurrency": {
+      "__name": "CI_QUEUE_PER_QUEUE_CONCURRENCY",
+      "__format": "json"
     }
   },
   "features": {
@@ -59,9 +116,32 @@
     "new.insights.page": "ENABLE_NEW_INSIGHTS_PAGE",
     "require.signup.codes": "ENABLE_REQUIRE_SIGNUP_CODES",
     "files.page": "ENABLE_FILES_PAGE",
-    "hbpe": "ENABLE_HBPE"
+    "insights.page": "ENABLE_INSIGHTS_PAGE",
+    "chat.page": "ENABLE_CHAT_PAGE",
+    "jobs.page": "ENABLE_JOBS_PAGE",
+    "stats.page": "ENABLE_STATS_PAGE",
+    "tags.page": "ENABLE_TAGS_PAGE",
+    "hbpe": "ENABLE_HBPE",
+    "agent.memory.compaction": "ENABLE_AGENT_MEMORY_COMPACTION",
+    "shared.search": "ENABLE_SHARED_SEARCH"
   },
   "environment": {
     "database.query.logging": "DATABASE_QUERY_LOGGING"
+  },
+  "ciPortal": {
+    "url": "CI_CLOUD_URL",
+    "deviceId": "HUB_DEVICE_ID",
+    "apiKey": "HUB_API_KEY"
+  },
+  "geocoding": {
+    "apiKey": "GEOCODING_API_KEY",
+    "batchSize": {
+      "__name": "GEOCODING_BATCH_SIZE",
+      "__format": "json"
+    },
+    "rateLimitPerSecond": {
+      "__name": "GEOCODING_RATE_LIMIT_PER_SECOND",
+      "__format": "json"
+    }
   }
 }

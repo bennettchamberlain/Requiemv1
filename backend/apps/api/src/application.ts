@@ -21,18 +21,24 @@ import { IdFormatGuard } from '@ci/common/guards';
 import { LoggingModule, LoggerService, RequestLoggerMiddleware } from '@ci/common/logging';
 import { BodyParserMiddleware } from '@ci/common/middleware';
 import config from '@ci/configuration';
+import { AgentModule } from '@ci/domains/agent';
 import { AuditModule } from '@ci/domains/audit';
 import { AuthModule } from '@ci/domains/auth';
+import { PortalAuthModule } from '@ci/domains/auth/PortalAuthModule';
 import { BrowserActivityModule } from '@ci/domains/browser-activity';
 import { ConnectionsModule } from '@ci/domains/connections';
 import { DeviceModule } from '@ci/domains/devices';
 import { EtlModule } from '@ci/domains/etl';
 import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
+import { GeocodeModule } from '@ci/domains/geocode';
 import { GraphModule } from '@ci/domains/graph';
 import { GraphQLModule } from '@ci/domains/graphql';
+import { IngestModule } from '@ci/domains/ingest';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { LLMModule } from '@ci/domains/llm';
+import { MaintenanceModule } from '@ci/domains/maintenance';
+import { McpModule } from '@ci/domains/mcp';
 import { MemoryModule } from '@ci/domains/memory';
 import { NotesModule } from '@ci/domains/notes';
 import { OnboardingModule } from '@ci/domains/onboarding';
@@ -42,7 +48,6 @@ import { PositionModule } from '@ci/domains/position';
 import { PredictionsModule } from '@ci/domains/predictions';
 import { SearchIngressModule } from '@ci/domains/search-ingress';
 import { SearchNextModule } from '@ci/domains/search-next';
-import { SpeechModule } from '@ci/domains/speech';
 import { SummariesModule } from '@ci/domains/summaries';
 import { ToolsModule } from '@ci/domains/tools';
 import { UserModule } from '@ci/domains/user';
@@ -59,14 +64,21 @@ import { UserSnapshotsModule } from '@ci/domains/user-snapshots';
       password: config.db.password,
       entities: [path.join(__dirname, 'domains/**/*Entity.{ts,js}')],
       logging: [...(config.environment['database.query.logging'] ? (['error', 'query'] as const) : [])],
+      // Primary app schema is `ci`; tables are referenced schema-qualified, but
+      // user-defined types (e.g. the enum `ci.communication_direction`) are
+      // emitted UNqualified by TypeORM in casts, so `ci` must be on the
+      // search_path for them to resolve. `public` stays for extensions/pgboss.
+      extra: { options: '-c search_path=ci,public' },
     }),
     FeatureModule,
     LoggingModule,
     EventEmitterModule.forRoot(),
     ScheduleModule.forRoot(),
     PairingModule,
+    AgentModule,
     AuditModule,
     AuthModule,
+    PortalAuthModule,
     BrowserActivityModule,
     ConnectionsModule,
     DeviceModule,
@@ -76,17 +88,20 @@ import { UserSnapshotsModule } from '@ci/domains/user-snapshots';
     FilesModule,
     GraphModule,
     GraphQLModule,
+    IngestModule,
     IntelligenceModule,
     LLMModule,
+    McpModule,
     OnboardingModule,
     PositionModule,
     PredictionsModule,
     ToolsModule,
     MemoryModule,
+    GeocodeModule,
+    MaintenanceModule,
     NotesModule,
     SearchIngressModule,
     SearchNextModule,
-    SpeechModule,
     SummariesModule,
     UserModule,
     UserSnapshotsModule,

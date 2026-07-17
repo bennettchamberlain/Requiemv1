@@ -5,8 +5,10 @@ import { v7 as uuid7 } from 'uuid';
 
 import { SYSTEM_USER, type UserServiceContext, type ServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import { bulkInsertIdempotent, INGEST_REFRESH_COLUMNS } from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
 import { ItemCreatedEvent, ItemUpdatedEvent, ItemRemovedEvent } from '@ci/domains/memory/events';
+import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
 import { type Item, ItemEntity } from '../entities/ItemEntity';
 import type { CreateItemDto, UpdateItemDto } from '../types';
@@ -28,16 +30,23 @@ export class ItemService {
     const entity = this.itemRepository.create({
       id,
       userId: context.userId,
+      ownerUserId: context.userId,
       name: data.name,
       description: data.description ?? null,
       category: data.category ?? null,
       subcategory: data.subcategory ?? null,
       brand: data.brand ?? null,
       model: data.model ?? null,
+      purchasePrice: data.purchasePrice ?? null,
       currentValue: data.currentValue ?? null,
       currency: data.currency ?? 'USD',
+      acquiredAt: data.acquiredAt ?? null,
+      identifierCodes: data.identifierCodes ?? {},
       condition: data.condition ?? null,
       metadata: data.metadata ?? {},
+      sourceType: data.sourceType ?? null,
+      sourceSystem: data.sourceSystem ?? null,
+      sourceId: data.sourceId ?? null,
     });
 
     await this.itemRepository.save(entity);
@@ -47,6 +56,69 @@ export class ItemService {
     });
 
     return ItemEntity.toEgressType(entity);
+  }
+
+  /**
+   * Batch, idempotent inventory ingest for the importer. Dedupes on the provenance
+   * triple (source_type, source_system, source_id), scoped to owner_user_id, via
+   * one set-based INSERT ... ON CONFLICT DO NOTHING instead of a per-row findOne +
+   * save loop. Re-syncing the same triple returns the existing row instead of
+   * inserting a duplicate. Paired with the inventory_source_triple_uniq partial
+   * unique index, which also absorbs a lost insert race. An ItemCreatedEvent is
+   * emitted for each newly-inserted row only (the embedding/search pipeline
+   * listens for these).
+   */
+  async createMany(context: UserServiceContext, data: CreateItemDto[]): Promise<Item[]> {
+    if (data.length === 0) {
+      return [];
+    }
+
+    const entities = data.map((item) =>
+      this.itemRepository.create({
+        id: item.id ?? uuid7(),
+        userId: context.userId,
+        ownerUserId: context.userId,
+        name: item.name,
+        description: item.description ?? null,
+        category: item.category ?? null,
+        subcategory: item.subcategory ?? null,
+        brand: item.brand ?? null,
+        model: item.model ?? null,
+        purchasePrice: item.purchasePrice ?? null,
+        currentValue: item.currentValue ?? null,
+        currency: item.currency ?? 'USD',
+        acquiredAt: item.acquiredAt ?? null,
+        identifierCodes: item.identifierCodes ?? {},
+        condition: item.condition ?? null,
+        metadata: item.metadata ?? {},
+        sourceType: item.sourceType ?? null,
+        sourceSystem: item.sourceSystem ?? null,
+        sourceId: item.sourceId ?? null,
+      }),
+    );
+
+    const results = await bulkInsertIdempotent({
+      repository: this.itemRepository,
+      entities,
+      primaryKey: 'id',
+      getTriple: (entity) => ({
+        sourceType: entity.sourceType,
+        sourceSystem: entity.sourceSystem,
+        sourceId: entity.sourceId,
+      }),
+      scope: { ownerUserId: context.userId },
+      conflictTarget: '(owner_user_id, source_type, source_system, source_id) WHERE source_id IS NOT NULL',
+      tripleColumns: ['source_type', 'source_system', 'source_id'],
+      // Centralized refresh contract — currently empty, so conflicts stay
+      // DO NOTHING find-or-return.
+      conflictUpdateColumns: INGEST_REFRESH_COLUMNS.item,
+    });
+
+    // Bulk ingest does NOT emit a per-row ItemCreatedEvent: the per-row pgboss
+    // fan-out was the dominant cost at import volume. Search indexing for
+    // bulk-loaded rows is deferred to the post-load batch embed
+    // (POST /api/maintenance/search-index/backfill).
+    return results.map(({ entity }) => ItemEntity.toEgressType(entity));
   }
 
   async findAll(context: ServiceContext): Promise<Item[]> {
@@ -74,6 +146,38 @@ export class ItemService {
     const map = new Map(entities.map((entity) => [entity.id, ItemEntity.toEgressType(entity)]));
 
     return ids.map((id) => map.get(id) ?? null);
+  }
+
+  /**
+   * Lightweight identifiers for the most-recent inventory items, for the
+   * unified search/explorer feed. Full entities are batch-resolved downstream.
+   */
+  async getEntitiesForItems(
+    context: ServiceContext,
+    options: { limit?: number; startTime?: Date; endTime?: Date; order?: 'ASC' | 'DESC' } = {},
+  ): Promise<EntityIdentifier<IndexableEntity>[]> {
+    let query = this.itemRepository
+      .createQueryBuilder('item')
+      .select('item.id', 'id')
+      .where('item.user_id = :userId', { userId: context.userId });
+
+    if (options.startTime) {
+      query = query.andWhere('item.created_at >= :startTime', { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere('item.created_at <= :endTime', { endTime: options.endTime });
+    }
+
+    query = query.orderBy('item.created_at', options.order ?? 'DESC');
+
+    if (options.limit) {
+      query = query.limit(options.limit);
+    }
+
+    const rows = await query.getRawMany<{ id: string }>();
+
+    return rows.map((row) => ({ id: row.id, type: 'item' as IndexableEntity }));
   }
 
   async findById(context: ServiceContext, id: string): Promise<Item | null> {

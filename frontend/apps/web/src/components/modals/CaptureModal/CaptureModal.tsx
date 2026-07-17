@@ -8,7 +8,6 @@ import { Send, Settings, X } from '@ci/shadcn/icons';
 import { useUploadFile } from '@/api';
 import type { File as FileData, Thread } from '@/api/types';
 import { Chat, type FormData } from '@/components/Chat';
-import { VoiceModeProvider } from '@/components/Chat/VoiceModeProvider';
 import { InlineModal } from '@/components/InlineModal';
 import { ModelSelector } from '@/components/ModelSelector';
 import { useAuth, useChatRequester, useModel } from '@/hooks';
@@ -34,8 +33,6 @@ export function CaptureModal({ open = false, onClose }: Props) {
 
   const [files, setFiles] = useState<FileData[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);
-  const [mobileCaptureMode, setMobileCaptureMode] = useState<CaptureMode>('photo');
-  const [desktopCaptureMode, setDesktopCaptureMode] = useState<CaptureMode>('photo');
   const [selectedModelSupportsVision, setSelectedModelSupportsVision] = useState<boolean | null>(null);
   const [isCheckingModelCapabilities, setIsCheckingModelCapabilities] = useState(false);
   const [capabilityCheckFailed, setCapabilityCheckFailed] = useState(false);
@@ -53,8 +50,6 @@ export function CaptureModal({ open = false, onClose }: Props) {
   const handleClose = useCallback(() => {
     setFiles([]);
     setThreadId(null);
-    setMobileCaptureMode('photo');
-    setDesktopCaptureMode('photo');
     resetUploader();
     stopChatRequest();
 
@@ -65,8 +60,6 @@ export function CaptureModal({ open = false, onClose }: Props) {
     if (!open) {
       setFiles([]);
       setThreadId(null);
-      setMobileCaptureMode('photo');
-      setDesktopCaptureMode('photo');
     }
   }, [open]);
 
@@ -107,7 +100,7 @@ export function CaptureModal({ open = false, onClose }: Props) {
           },
         });
 
-        if (canceled) {
+        if (canceled || !response) {
           return;
         }
 
@@ -161,14 +154,14 @@ export function CaptureModal({ open = false, onClose }: Props) {
   }, [capabilityCheckFailed, isCheckingModelCapabilities, selectedModel, selectedModelSupportsVision, toast]);
 
   const handleCapturedMedia = useCallback(
-    async (file: File) => {
+    async (file: File, mode: CaptureMode) => {
       const isImage = file.type.startsWith('image/');
 
       if (isImage && !ensureImageModelSupported()) {
         return;
       }
 
-      const inventoryCapture = isImage && desktopCaptureMode === 'inventory';
+      const inventoryCapture = isImage && mode === 'inventory';
       const uploaded = await upload([file], {
         inventoryCapture,
         model: selectedModel ?? undefined,
@@ -178,16 +171,16 @@ export function CaptureModal({ open = false, onClose }: Props) {
         toast.success('Inventory analysis started. This may take a moment.');
       }
     },
-    [desktopCaptureMode, ensureImageModelSupported, selectedModel, toast, upload],
+    [ensureImageModelSupported, selectedModel, toast, upload],
   );
 
   const handleMobileFrameCaptured = useCallback(
-    async (file: File) => {
+    async (file: File, mode: CaptureMode) => {
       if (!ensureImageModelSupported()) {
         return;
       }
 
-      const inventoryCapture = mobileCaptureMode === 'inventory';
+      const inventoryCapture = mode === 'inventory';
       const uploaded = await upload([file], {
         inventoryCapture,
         model: selectedModel ?? undefined,
@@ -197,7 +190,7 @@ export function CaptureModal({ open = false, onClose }: Props) {
         toast.success('Inventory analysis started. This may take a moment.');
       }
     },
-    [ensureImageModelSupported, mobileCaptureMode, selectedModel, toast, upload],
+    [ensureImageModelSupported, selectedModel, toast, upload],
   );
 
   const createFileThread = useCallback(async () => {
@@ -212,7 +205,9 @@ export function CaptureModal({ open = false, onClose }: Props) {
       }),
     });
 
-    setThreadId(thread.id);
+    if (thread) {
+      setThreadId(thread.id);
+    }
   }, [authToken, selectedModel]);
 
   useEffect(() => {
@@ -296,10 +291,7 @@ export function CaptureModal({ open = false, onClose }: Props) {
           >
             <Camera.Feed />
             <div className="absolute w-full bottom-0">
-              <Camera.MobileControls
-                onSelectLastCapture={handleSelectLastCapture}
-                onRecordingModeChange={setMobileCaptureMode}
-              />
+              <Camera.MobileControls onSelectLastCapture={handleSelectLastCapture} />
             </div>
           </Camera>
         </InlineModal>
@@ -331,19 +323,17 @@ export function CaptureModal({ open = false, onClose }: Props) {
           </div>
         </div>
 
-        <VoiceModeProvider>
-          <Chat
-            placeholder="Ask about this content..."
-            loading={loading}
-            streaming={streaming}
-            hasStartedReceiving={hasStartedReceiving}
-            readable={stream ?? undefined}
-            onSubmit={handleSubmit}
-            onStop={stopChatRequest}
-          >
-            <Files files={files} />
-          </Chat>
-        </VoiceModeProvider>
+        <Chat
+          placeholder="Ask about this content..."
+          loading={loading}
+          streaming={streaming}
+          hasStartedReceiving={hasStartedReceiving}
+          readable={stream ?? undefined}
+          onSubmit={handleSubmit}
+          onStop={stopChatRequest}
+        >
+          <Files files={files} />
+        </Chat>
       </InlineModal>
     );
   }
@@ -378,7 +368,7 @@ export function CaptureModal({ open = false, onClose }: Props) {
           >
             <Camera.Information />
             <Camera.Feed />
-            <Camera.DesktopControls onRecordingModeChange={setDesktopCaptureMode} />
+            <Camera.DesktopControls />
           </Camera>
         )}
 
@@ -392,28 +382,26 @@ export function CaptureModal({ open = false, onClose }: Props) {
             </div>
 
             <div className="flex-1 margin-4 min-w-0 max-[900px]:max-h-1/2 max-[900px]:border-t max-[900px]:pt-1">
-              <VoiceModeProvider>
-                <Chat
-                  loading={loading}
-                  streaming={streaming}
-                  hasStartedReceiving={hasStartedReceiving}
-                  readable={stream ?? undefined}
-                  onSubmit={handleSubmit}
-                  onStop={stopChatRequest}
-                  placeholder="Ask about this content..."
-                  emptyState={
-                    <div className="text-center text-gray-500 mt-8">
-                      <div className="w-16 h-16 mx-auto mb-4 bg-stone-100 rounded-full flex items-center justify-center">
-                        <Send className="w-8 h-8 text-zinc-400 relative top-0.5 -left-0.5" />
-                      </div>
-                      <p className="text-sm">Start a conversation about this content</p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        Ask questions, get recommendations, or explore ideas
-                      </p>
+              <Chat
+                loading={loading}
+                streaming={streaming}
+                hasStartedReceiving={hasStartedReceiving}
+                readable={stream ?? undefined}
+                onSubmit={handleSubmit}
+                onStop={stopChatRequest}
+                placeholder="Ask about this content..."
+                emptyState={
+                  <div className="text-center text-gray-500 mt-8">
+                    <div className="w-16 h-16 mx-auto mb-4 bg-stone-100 rounded-full flex items-center justify-center">
+                      <Send className="w-8 h-8 text-zinc-400 relative top-0.5 -left-0.5" />
                     </div>
-                  }
-                />
-              </VoiceModeProvider>
+                    <p className="text-sm">Start a conversation about this content</p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Ask questions, get recommendations, or explore ideas
+                    </p>
+                  </div>
+                }
+              />
             </div>
           </div>
         )}

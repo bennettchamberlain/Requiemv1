@@ -1,9 +1,10 @@
 import { UseGuards } from '@nestjs/common';
-import { Args, ID, Parent, Query, Resolver, ResolveField } from '@nestjs/graphql';
+import { Args, ID, Mutation, Parent, Query, Resolver, ResolveField } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
-import { CommunicationService } from '@ci/domains/memory';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
+import { MaxArraySizePipe } from '@ci/common/pipes';
+import { CommunicationService, CommunicationType as CommunicationTypeEnum } from '@ci/domains/memory';
 import { type Person } from '@ci/domains/memory';
 
 import { PersonLoader } from '../loaders/PersonLoader';
@@ -11,15 +12,17 @@ import { TagLoader } from '../loaders/TagLoader';
 import { CommunicationConnection } from '../types/CommunicationConnection';
 import { CommunicationEdge } from '../types/CommunicationEdge';
 import { CommunicationType } from '../types/CommunicationType';
+import { CreateCommunicationInput } from '../types/CreateCommunicationInput';
 import { EntityTagType } from '../types/EntityTagType';
 import { GlobalUID } from '../types/GlobalUID';
 import { PaginationArgs } from '../types/PaginationArgs';
 import { PersonConnection } from '../types/PersonConnection';
 import { PersonEdge } from '../types/PersonEdge';
 import { PersonType } from '../types/PersonType';
+import { UpdateCommunicationInput } from '../types/UpdateCommunicationInput';
 import { Paginator } from '../utils/Paginator';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => CommunicationType)
 export class CommunicationResolver {
   constructor(
@@ -35,14 +38,17 @@ export class CommunicationResolver {
   ): Promise<CommunicationConnection> {
     const serviceContext = toServiceContext(context);
 
-    const entities = await this.communicationService.findAll(serviceContext);
+    const { entities, hasNextPage, hasPreviousPage, totalCount } = await this.communicationService.findPage(
+      serviceContext,
+      {
+        first: pagination.first,
+        last: pagination.last,
+        afterId: pagination.after ? GlobalUID.decode(pagination.after).id : null,
+        beforeId: pagination.before ? GlobalUID.decode(pagination.before).id : null,
+      },
+    );
 
-    const { slice, pageInfo, totalCount } = Paginator.paginate(entities, {
-      ...pagination,
-      getId: (entity) => GlobalUID.encode('communication', entity.id),
-    });
-
-    const edges: CommunicationEdge[] = slice.map((entity) => {
+    const edges: CommunicationEdge[] = entities.map((entity) => {
       const node = CommunicationType.toType(entity);
 
       return {
@@ -50,6 +56,13 @@ export class CommunicationResolver {
         cursor: node.id,
       };
     });
+
+    const pageInfo = {
+      hasNextPage,
+      hasPreviousPage,
+      startCursor: edges.length > 0 ? edges[0].cursor : null,
+      endCursor: edges.length > 0 ? edges[edges.length - 1].cursor : null,
+    };
 
     return {
       edges,
@@ -68,6 +81,63 @@ export class CommunicationResolver {
     const id = GlobalUID.parse('communication', gid);
 
     const entity = await this.communicationService.findById(serviceContext, id);
+
+    return entity ? CommunicationType.toType(entity) : null;
+  }
+
+  /**
+   * Batch, idempotent communication ingest for the importer (net-new write path
+   * outside ETL). Each input dedupes on the provenance triple (user, sourceType,
+   * sourceSystem, sourceId) so a re-sync returns the existing communication
+   * instead of inserting a duplicate. Returns created-or-existing rows in input
+   * order.
+   */
+  @Mutation(() => [CommunicationType])
+  async createCommunications(
+    @Context() context: RequestContext,
+    @Args('input', { type: () => [CreateCommunicationInput] }, new MaxArraySizePipe())
+    input: CreateCommunicationInput[],
+  ): Promise<CommunicationType[]> {
+    const serviceContext = toServiceContext(context);
+
+    const communications = await this.communicationService.createMany(
+      serviceContext,
+      input.map((item) => ({
+        communication_type: item.communicationType as CommunicationTypeEnum,
+        time: item.time,
+        content: item.content,
+        preview: item.preview,
+        subject: item.subject,
+        // `direction` is stored verbatim; the column is plain text. Default to
+        // 'inbound' when the importer omits it.
+        direction: (item.direction ?? 'inbound') as 'inbound' | 'outbound',
+        thread_id: item.threadId,
+        from_entity_id: item.fromEntityId,
+        to_entity_ids: item.toEntityIds,
+        participants_metadata: item.participantsMetadata,
+        attachments: item.attachments,
+        source_type: item.sourceType,
+        source_system: item.sourceSystem,
+        source_id: item.sourceId,
+      })),
+    );
+
+    return communications.map((communication) => CommunicationType.toType(communication));
+  }
+
+  @Mutation(() => CommunicationType, { nullable: true })
+  async updateCommunication(
+    @Context() context: RequestContext,
+    @Args('input') input: UpdateCommunicationInput,
+  ): Promise<CommunicationType | null> {
+    const serviceContext = toServiceContext(context);
+
+    const id = GlobalUID.parse('communication', input.id);
+
+    const entity = await this.communicationService.update(serviceContext, id, {
+      subject: input.subject,
+      content: input.content ?? '',
+    });
 
     return entity ? CommunicationType.toType(entity) : null;
   }

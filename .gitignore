@@ -29,6 +29,10 @@ AGENTS.md
 
 .idea/
 
+# LICENSE copies distributed to build contexts during docker build
+infrastructure/*/LICENSE.md
+backend/apps/*/LICENSE.md
+
 # Playwright
 /test-results/
 /playwright-report/
@@ -36,10 +40,22 @@ AGENTS.md
 /playwright/.cache/
 /playwright/.auth/
 
+# Vitest coverage
+coverage/
+
 .beads/
+
+# Per-worktree overmind sockets created by scripts/dev-stack.ts
+.overmind*.sock
 
 backend/apps/hbpe/src/ci/model/__pycache__/
 
 backend/apps/hbpe/src/ci/tokenizer/__pycache__/
 
 *.pyc
+
+# Local Cloudflare Tunnel config (holds credentials path); keep the example only
+infrastructure/cloudflare/config.yml
+
+# ESLint result cache (speeds up repeat/incremental lint runs)
+.eslintcache

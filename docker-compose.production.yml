@@ -4,7 +4,7 @@ services:
     volumes:
       - secrets:/run/secrets:ro
     environment:
-      ENABLE_HBPE: ${ENABLE_HBPE:-false}
+      ENABLE_HBPE: ${ENABLE_HBPE:-true}
     networks:
       - ci
     extra_hosts:
@@ -36,8 +36,6 @@ services:
     image: ci/gateway
     ports:
       - 8642:8642
-    volumes:
-      - ./infrastructure/gateway/nginx.conf:/etc/nginx/nginx.conf:ro
     networks:
       - ci
     depends_on:
@@ -120,6 +118,6 @@ services:
 
 volumes:
   db-data:
-    name: ci-server-production-db-data
+    name: ${COMPOSE_PROJECT_NAME}-production-db-data
   object-data:
-    name: ci-server-production-object-data
+    name: ${COMPOSE_PROJECT_NAME}-production-object-data

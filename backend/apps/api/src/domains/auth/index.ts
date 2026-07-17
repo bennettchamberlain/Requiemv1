@@ -25,12 +25,22 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import config from '@ci/configuration';
 import { UserModule } from '@ci/domains/user';
 
+import { ApiKeyController } from './controllers/ApiKeyController';
+import { ConnectController } from './controllers/ConnectController';
+import { OidcController } from './controllers/OidcController';
 import { SessionController } from './controllers/SessionController';
 import { SignupController } from './controllers/SignupController';
+import { ApiKeyEntity } from './entities/ApiKeyEntity';
+import { ConnectCodeEntity } from './entities/ConnectCodeEntity';
 import { SessionEntity } from './entities/SessionEntity';
 import { SignupCodeEntity } from './entities/SignupCodeEntity';
+import { ConnectRequestAuthGuard } from './guards/ConnectRequestAuthGuard';
 import { CsrfGuard } from './guards/CsrfGuard';
+import { ApiKeyService } from './services/ApiKeyService';
+import { ApiKeyStrategy } from './services/ApiKeyStrategy';
 import { AuthService } from './services/AuthService';
+import { ConnectCodeService } from './services/ConnectCodeService';
+import { ConnectService } from './services/ConnectService';
 import { CsrfService } from './services/CsrfService';
 import { JwtStrategy } from './services/JwtStrategy';
 import { SignupCodeService } from './services/SignupCodeService';
@@ -40,7 +50,7 @@ import { SignupCodeService } from './services/SignupCodeService';
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([SessionEntity, SignupCodeEntity]),
+    TypeOrmModule.forFeature([SessionEntity, SignupCodeEntity, ApiKeyEntity, ConnectCodeEntity]),
     UserModule,
     PassportModule,
     JwtModule.register({
@@ -50,10 +60,22 @@ import { SignupCodeService } from './services/SignupCodeService';
       },
     }),
   ],
-  providers: [AuthService, JwtStrategy, SignupCodeService, CsrfGuard, CsrfService],
-  controllers: [SessionController, SignupController],
-  exports: [SignupCodeService],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    SignupCodeService,
+    CsrfGuard,
+    CsrfService,
+    ApiKeyService,
+    ApiKeyStrategy,
+    ConnectCodeService,
+    ConnectService,
+    ConnectRequestAuthGuard,
+  ],
+  controllers: [SessionController, SignupController, ApiKeyController, OidcController, ConnectController],
+  exports: [SignupCodeService, ApiKeyService],
 })
 export class AuthModule {}
 
 export { SignupCodeService };
+export { ApiKeyService };

@@ -12,11 +12,13 @@ import type { RequestContext } from '@ci/common/context';
 import { FeatureService } from '@ci/common/feature';
 import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
-import { ToolRegistry, type ToolSchema } from '@ci/domains/tools';
+import { ToolRegistry, intentToolName, type ToolSchema } from '@ci/domains/tools';
 
 import type { OllamaModel } from '../types';
 
-const PROMPT_MODEL = 'gemma3:1b';
+/** Default model used for background inference tasks (extraction, Q&A, etc.).
+ *  Import this constant rather than hardcoding the model name. */
+export const PROMPT_MODEL = 'gemma3:1b';
 const DEMO_VISION_MODEL = 'gemma3:27b';
 const DEMO_TEXT_MODEL = 'qwen3:14b';
 const INTERNAL_MODELS = new Set(['nomic-embed-text', 'nomic-embed-text-v2-moe']);
@@ -141,7 +143,7 @@ export class OllamaService {
     await this.validateModel(context, model);
 
     const inputMessages = messages.slice();
-    const availableTools = enableTools ? this.toolRegistry.getAvailableTools(context) : [];
+    const availableTools = enableTools ? this.toolRegistry.getAgentFacingTools(context) : [];
     const ollamaTools: Tool[] = availableTools.map(this.convertToOllamaTool);
 
     const textChunks: string[] = [];
@@ -277,7 +279,7 @@ export class OllamaService {
     await this.validateModel(context, model);
 
     const inputMessages = messages.slice();
-    const availableTools = enableTools ? this.toolRegistry.getAvailableTools(context) : [];
+    const availableTools = enableTools ? this.toolRegistry.getAgentFacingTools(context) : [];
     const ollamaTools: Tool[] = availableTools.map(this.convertToOllamaTool);
 
     const accumulatedMessages: OllamaMessage[] = [];
@@ -429,7 +431,9 @@ export class OllamaService {
     return {
       type: 'function',
       function: {
-        name: toolSchema.name,
+        // schema.name is the dotted intent id; the LLM must call back with the executable
+        // (underscored) name the ToolRegistry is keyed by.
+        name: intentToolName(toolSchema.name),
         description: toolSchema.description,
         parameters: toolSchema.parameters,
       },

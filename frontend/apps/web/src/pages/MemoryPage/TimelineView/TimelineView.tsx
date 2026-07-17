@@ -1,217 +1,212 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 
-import { useEntityService } from '../../MemoryPage/useEntityService';
-import { Empty, EntityCard } from '../Components';
-import { groupEntitiesByDate, formatDateForDisplay } from '../Components/utils';
+import { cn } from '@ci/shadcn';
+import { useSearchParams } from 'react-router-dom';
 
-export function TimelineView() {
-  const timelineRef = useRef<HTMLDivElement>(null);
-  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const hasInitialScrolledRef = useRef(false);
-  const previousScrollHeightRef = useRef<number>(0);
+import { useEntityService, type EntityItem } from '../../MemoryPage/useEntityService';
+import {
+  DateGroupHeader,
+  Empty,
+  EntityCard,
+  ErrorState,
+  TimelineSkeleton,
+  groupEntitiesByBucket,
+  isChronologicalSort,
+} from '../Components';
+import { countActiveFilters } from '../Components/ExplorerToolbar/filterParams';
 
-  const [{ data, loading }] = useEntityService();
+// Only these entity types render as timeline cards (EntityCard returns null for
+// the rest), and all of them carry a domain timestamp — so filtering here keeps
+// the timeline free of empty cards and undated groups.
+const TIMELINE_TYPES: ReadonlySet<string> = new Set([
+  'BrowserActivityType',
+  'EventType',
+  'CommunicationType',
+]);
 
-  const groupedEntitiesRaw = groupEntitiesByDate(data);
+interface TimelineViewProps {
+  activeEntityId?: string | null;
+  onEntityHover?: (entity: EntityItem | null) => void;
+  onEntitySelect?: (entity: EntityItem) => void;
+  registerTimelineRow?: (entityId: string, element: HTMLDivElement | null) => void;
+}
 
-  // Ensure "today" appears first by explicitly sorting dates with today first
-  const now = new Date();
-  const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const groupedEntities = groupedEntitiesRaw.sort((a, b) => {
-    // If one is today, it should come first
-    if (a.date === todayLocal) {
-      return -1;
-    }
+export function TimelineView({
+  activeEntityId,
+  onEntityHover,
+  onEntitySelect,
+  registerTimelineRow,
+}: TimelineViewProps = {}) {
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const rowRefs = useRef(new globalThis.Map<string, HTMLDivElement>());
 
-    if (b.date === todayLocal) {
-      return 1;
-    }
+  const [{ data, loading, loadingMore, hasNextPage, loadMore, error, refetch }] = useEntityService();
 
-    // Otherwise, sort newest first (reverse chronological)
-    return b.date.localeCompare(a.date);
-  });
+  const timelineData = useMemo(() => data.filter((entity) => TIMELINE_TYPES.has(entity.__typename)), [data]);
 
+  // Shared bucketing keeps the Today / Yesterday / This Week / … headers
+  // identical to the List view — but only while results stay in chronological
+  // order. Relevance/name sorts interleave dates, so we render one continuous,
+  // header-less timeline there instead of repeated, out-of-order headers.
+  const [searchParams] = useSearchParams();
+  const grouped = isChronologicalSort(
+    searchParams.get('sortBy'),
+    Boolean(searchParams.get('search')?.trim()),
+  );
+  const groups = useMemo(
+    () => (grouped ? groupEntitiesByBucket(timelineData) : null),
+    [grouped, timelineData],
+  );
+
+  // Load the next server page when the sentinel nears the viewport. Using the
+  // viewport as root keeps this working regardless of which ancestor scrolls.
   useEffect(() => {
-    if (!scrollContainerRef.current) {
-      scrollContainerRef.current = timelineRef.current?.closest(
-        '[data-slot="scroll-area-viewport"]',
-      ) as HTMLDivElement | null;
+    const sentinel = sentinelRef.current;
+
+    if (!sentinel || !hasNextPage) {
+      return;
     }
-  }, []);
 
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-
-    // Only scroll to "today" on initial load, not when loading more memories
-    if (container && data.length > 0 && !hasInitialScrolledRef.current) {
-      setTimeout(() => {
-        // First try to find the current day's date header
-        const currentDayHeader = container.querySelector('[data-current-day="true"]');
-
-        if (currentDayHeader) {
-          const headerRect = currentDayHeader.getBoundingClientRect();
-          const containerRect = container.getBoundingClientRect();
-          const scrollOffset = headerRect.top - containerRect.top + container.scrollTop - 8; // Small offset for padding
-          container.scrollTo({ top: scrollOffset, behavior: 'smooth' });
-        } else {
-          // Fallback to scrolling to top
-          container.scrollTop = 0;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          loadMore();
         }
+      },
+      { rootMargin: '400px' },
+    );
 
-        hasInitialScrolledRef.current = true;
-        previousScrollHeightRef.current = container.scrollHeight;
-      }, 200);
-    }
-  }, [data.length]);
+    observer.observe(sentinel);
+
+    return () => observer.disconnect();
+  }, [hasNextPage, loadMore]);
 
   useEffect(() => {
-    const container = scrollContainerRef.current;
+    if (!activeEntityId) {
+      return;
+    }
 
-    if (!container || !hasInitialScrolledRef.current) {
-      if (container && data.length > 0) {
-        // Store initial scroll height
-        previousScrollHeightRef.current = container.scrollHeight;
+    rowRefs.current.get(activeEntityId)?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'nearest',
+    });
+  }, [activeEntityId]);
+
+  const setRowRef = useCallback(
+    (entityId: string) => (element: HTMLDivElement | null) => {
+      if (element) {
+        rowRefs.current.set(entityId, element);
+      } else {
+        rowRefs.current.delete(entityId);
       }
 
-      return;
+      registerTimelineRow?.(entityId, element);
+    },
+    [registerTimelineRow],
+  );
+
+  if (loading && timelineData.length === 0) {
+    return (
+      <div className="py-2">
+        <TimelineSkeleton count={5} />
+      </div>
+    );
+  }
+
+  if (error && timelineData.length === 0) {
+    return <ErrorState onRetry={refetch} />;
+  }
+
+  if (timelineData.length === 0) {
+    // Results exist but none are timeline-renderable types — distinguish this
+    // from a truly empty result so the user knows to switch to the List view.
+    if (data.length > 0) {
+      return (
+        <Empty
+          title="No timeline events match this search"
+          description="These results aren't time-based. Switch to List to see them."
+          icon="🗂️"
+        />
+      );
     }
 
-    // Maintain scroll position when new items are loaded
-    const currentScrollTop = container.scrollTop;
-    const currentScrollHeight = container.scrollHeight;
-    const previousScrollHeight = previousScrollHeightRef.current;
+    // Distinguish a genuinely empty memory from one the user has filtered down to
+    // nothing — on the map, the auto-applied "Located" filter is a common cause.
+    const hasFilters = countActiveFilters(searchParams) > 0 || Boolean(searchParams.get('search')?.trim());
 
-    if (currentScrollHeight !== previousScrollHeight && currentScrollTop > 0) {
-      // Use requestAnimationFrame to ensure DOM has updated
-      requestAnimationFrame(() => {
-        if (!container) {
-          return;
-        }
-
-        // Calculate the difference in height (new content added)
-        const heightDifference = container.scrollHeight - previousScrollHeight;
-
-        // If we're near the bottom (loading past events), maintain scroll position
-        // If we're at the top (loading future events), adjust scroll to account for new content at top
-        const { clientHeight } = container;
-        const wasNearBottom = currentScrollTop + clientHeight > previousScrollHeight - 100;
-
-        if (wasNearBottom) {
-          // When loading past events at bottom, maintain scroll position
-          container.scrollTop = currentScrollTop;
-        } else {
-          // When loading future events at top, adjust scroll position by the height difference
-          container.scrollTop = currentScrollTop + heightDifference;
-        }
-
-        previousScrollHeightRef.current = container.scrollHeight;
-      });
-    } else {
-      previousScrollHeightRef.current = currentScrollHeight;
-    }
-  }, [data.length]);
-
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-
-    if (!container) {
-      return;
+    if (hasFilters) {
+      return (
+        <Empty
+          title="No memories match these filters"
+          description="Try removing a filter (or the Located filter on the map) to see more."
+          icon="🔍"
+        />
+      );
     }
 
-    let scrollTimeout: NodeJS.Timeout;
-
-    const handleScroll = () => {
-      clearTimeout(scrollTimeout);
-      scrollTimeout = setTimeout(() => {
-        if (loading) {
-          return;
-        }
-
-        // const { scrollTop, scrollHeight, clientHeight } = container;
-
-        // After reversing: scrolling down (toward bottom) loads past events (older memories)
-        // Scrolling up (toward top) loads future events (newer memories)
-        // if (scrollTop + clientHeight > scrollHeight - 100) {
-        //   loadPastEvents();
-        // }
-
-        // if (scrollTop < 100) {
-        //   loadFutureEvents();
-        // }
-      }, 50);
-    };
-
-    container.addEventListener('scroll', handleScroll, { passive: true });
-
-    return () => {
-      container.removeEventListener('scroll', handleScroll);
-      clearTimeout(scrollTimeout);
-    };
-  }, [loading]);
-
-  if (groupedEntities.length === 0 && !loading) {
     return (
       <Empty
         title="No memories yet"
-        description="Your memories will appear here as they're created."
+        description="Your timeline will fill in as memories are created."
         icon="🧠"
       />
     );
   }
 
-  return (
-    <div ref={timelineRef} className="space-y-6 h-full py-2">
-      {groupedEntities.map(({ date, entities: dayEntities }) => {
-        // Compare using local date to match user's timezone
-        const now = new Date();
-        const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-        const isCurrentDay = date === todayLocal;
+  const renderTimelineRows = (entities: EntityItem[]) => (
+    <div className="space-y-4">
+      {entities.map((entity) => {
+        const active = activeEntityId === entity.id;
 
         return (
-          <div key={date} className="relative">
+          <div
+            key={entity.id}
+            ref={setRowRef(entity.id)}
+            className={cn(
+              'relative rounded-md transition-shadow duration-150',
+              active && 'ring-2 ring-[#58ebbf]/80 ring-offset-0',
+            )}
+            onClickCapture={() => onEntitySelect?.(entity)}
+            onMouseEnter={() => onEntityHover?.(entity)}
+            onMouseLeave={() => onEntityHover?.(null)}
+          >
             <div
-              data-current-day={isCurrentDay}
-              className="flex font-semibold text-lg border-border py-3 mb-4 bg-[#74c5c4] dark:bg-accent pl-3 rounded-r-lg relative z-1"
-            >
-              {formatDateForDisplay(date)}
-            </div>
-
-            <div className="absolute left-[14px] top-0 bottom-0 w-0.5 bg-[#0b5969]" />
-
-            <div className="space-y-4 pl-8">
-              {[...dayEntities].reverse().map((entity) => {
-                const entityDate =
-                  'time' in entity
-                    ? new Date(entity.time as string)
-                    : 'startTime' in entity
-                      ? new Date(entity.startTime as string)
-                      : new Date();
-                const now = new Date();
-                const timeDiff = Math.abs(entityDate.getTime() - now.getTime());
-                const isCurrentTime =
-                  isCurrentDay && !isNaN(entityDate.getTime()) && timeDiff < 24 * 60 * 60 * 1000;
-
-                return (
-                  <div key={entity.id} data-current-time={isCurrentTime} className="relative">
-                    <div className="absolute top-1/2 -left-4.25 transform -translate-x-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-[#179298] border-2 border-[#179298]" />
-
-                    <EntityCard entity={entity} />
-                  </div>
-                );
-              })}
-            </div>
+              className={cn(
+                'absolute left-[-18px] top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full',
+                active
+                  ? 'bg-[#82ffe1] ring-2 ring-[#58ebbf]/60 shadow-glow-ci'
+                  : 'bg-[#58ebbf] shadow-glow-ci',
+              )}
+            />
+            <EntityCard entity={entity} />
           </div>
         );
       })}
+    </div>
+  );
 
-      {loading && (
-        <div className="flex justify-center py-8">
-          <div className="flex items-center gap-3 text-muted-foreground">
-            <div className="w-5 h-5 border-2 border-muted border-t-primary rounded-full animate-spin" />
-            <span>Loading memories...</span>
-          </div>
+  return (
+    <div className="relative py-2">
+      <div className="relative">
+        <div className="absolute bottom-0 left-[14px] top-0 w-0.5 bg-border" />
+
+        <div className="space-y-6">
+          {groups ? (
+            groups.map((group) => (
+              <section key={group.key}>
+                <DateGroupHeader label={group.label} count={group.entities.length} align="right" />
+                <div className="pl-8 pt-2">{renderTimelineRows(group.entities)}</div>
+              </section>
+            ))
+          ) : (
+            <div className="pl-8 pt-2">{renderTimelineRows(timelineData)}</div>
+          )}
         </div>
-      )}
+
+        {loadingMore && <TimelineSkeleton count={2} className="pl-8 pt-2" />}
+
+        {hasNextPage && <div ref={sentinelRef} className="h-8" />}
+      </div>
     </div>
   );
 }

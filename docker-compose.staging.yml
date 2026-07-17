@@ -7,8 +7,6 @@ services:
       DATABASE_HOST: database
       OBJECT_STORE_URL: http://object-store:9000
       OLLAMA_HOST: http://host.docker.internal:11434
-      STT_HOST: http://stt-service:9001
-      TTS_HOST: http://tts-service:9002
       HBPE_HOST: http://hbpe-service:8002
     networks:
       - ci
@@ -75,8 +73,15 @@ services:
       - ./infrastructure/orchestrator/dynamicconfig.yaml:/etc/temporal/config/dynamicconfig/local.yaml:ro
 
   summary-service:
+    # Pass the shared LLM config from .env explicitly (not via env_file) so
+    # host-oriented vars like DATABASE_HOST=localhost don't leak into the container.
     environment:
       DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+      LLM_API_BASE: ${LLM_API_BASE:-http://host.docker.internal:11434/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-ollama}
+      LLM_DEFAULT_CHAT_MODEL: ${LLM_DEFAULT_CHAT_MODEL:-gemma4:latest}
+      SUMMARY_OUTPUT_MODE: ${SUMMARY_OUTPUT_MODE:-native}
+      SUMMARY_OUTPUT_RETRIES: ${SUMMARY_OUTPUT_RETRIES:-3}
 
   #############
   # EPHEMERAL #
@@ -111,6 +116,6 @@ services:
 
 volumes:
   db-data:
-    name: ci-server-staging-db-data
+    name: ${COMPOSE_PROJECT_NAME}-staging-db-data
   object-data:
-    name: ci-server-staging-object-data
+    name: ${COMPOSE_PROJECT_NAME}-staging-object-data

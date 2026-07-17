@@ -21,6 +21,7 @@ from ci.pipeline.bootstrap import (
 )
 from ci.pipeline.nightly_runner import (
     NightlyHBPEWorkflow,
+    backfill_actuals,
     cache_invalidation,
     drift_detection,
     l1_stale_sweep,
@@ -28,8 +29,9 @@ from ci.pipeline.nightly_runner import (
     label_summary_tokens,
     label_unlabeled,
     lora_fine_tune,
+    needs_bootstrap,
 )
-from ci.pipeline.schedule import setup_hbpe_schedules
+from ci.pipeline.schedule import ensure_bootstrap_if_cold, setup_hbpe_schedules
 
 log = structlog.get_logger(__name__)
 
@@ -53,6 +55,11 @@ async def main() -> None:
             # Register nightly schedule (idempotent — safe to call on every restart)
             await setup_hbpe_schedules(client)
 
+            # Cold start: kick off the base-model bootstrap so a fresh appliance
+            # leaves COLD_START on its own (the nightly schedule only does
+            # incremental updates and never trains the base model). Idempotent.
+            await ensure_bootstrap_if_cold(client)
+
             worker = Worker(
                 client,
                 task_queue=settings.task_queue,
@@ -62,7 +69,9 @@ async def main() -> None:
                     label_summary_tokens,
                     l1_stale_sweep,
                     l2_stale_sweep,
+                    needs_bootstrap,
                     lora_fine_tune,
+                    backfill_actuals,
                     drift_detection,
                     cache_invalidation,
                     serialize_token_stream,

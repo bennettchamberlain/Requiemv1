@@ -21,12 +21,22 @@ type GraphLink = {
   properties: Record<string, unknown>;
 };
 
+type TagMatch = {
+  active: boolean;
+  entityIds: string[];
+};
+
 type GraphDataResponse = {
   success: boolean;
   data: {
     nodes: GraphNode[];
     links: GraphLink[];
   };
+  tagMatch?: TagMatch;
+  // Graph `entity_id`s matching the event-scoped explorer filters (connectors /
+  // who / where / how / date range), with `active` following the same
+  // param-presence contract as `tagMatch`.
+  eventMatch?: TagMatch;
 };
 
 type GraphContextDetails = {
@@ -53,6 +63,10 @@ type Subgraph = {
   links: GraphLink[];
 };
 
+// Which restrictive explorer filters contributed to the active match scope.
+// Drives empty-state messaging ("no nodes match the filters" vs "no data yet").
+type FilterScope = { tags: boolean; events: boolean };
+
 type GraphOverviewState = {
   loading: boolean;
   error: string | null;
@@ -60,7 +74,30 @@ type GraphOverviewState = {
   subgraph: Subgraph | null;
   quickStats: GraphContextDetails['quickStats'] | null;
   currentUser: GraphContextDetails['currentUser'] | null;
+  // Graph `entity_id`s the visible graph should scope to — the intersection of
+  // every active restrictive filter (tags ∩ event-scoped dimensions). `null`
+  // when no restrictive filter is active (show the whole interactive graph).
+  filterMatchedEntityIds: Set<string> | null;
+  // Which restrictive dimensions are active, for empty-state messaging.
+  filterScope: FilterScope;
 };
+
+/**
+ * Combine the server's per-dimension match sets into a single scope. Each active
+ * filter restricts the graph; multiple active filters AND together (intersection),
+ * matching the Search path's combinable-filter semantics. Returns `null` when no
+ * restrictive filter is active.
+ */
+function combineMatches(tagMatch?: TagMatch, eventMatch?: TagMatch): Set<string> | null {
+  const tagSet = tagMatch?.active ? new Set(tagMatch.entityIds) : null;
+  const eventSet = eventMatch?.active ? new Set(eventMatch.entityIds) : null;
+
+  if (tagSet && eventSet) {
+    return new Set([...tagSet].filter((id) => eventSet.has(id)));
+  }
+
+  return tagSet ?? eventSet ?? null;
+}
 
 function buildSubgraph(
   data: { nodes: GraphNode[]; links: GraphLink[] },
@@ -102,6 +139,29 @@ function buildSubgraph(
 export interface GraphOverviewOptions {
   maxDepth?: number;
   refreshKey?: number | string;
+  /**
+   * Explorer entity types (GraphQL vocabulary, e.g. `person`, `place`) the user has selected.
+   * Forwarded to `/api/graph/data` so the graph honors the explorer's entity-type filter.
+   *
+   * `undefined` means the filter is inactive (show all). An array — even an empty one — means
+   * the filter is active; an empty array excludes every mappable type (keeping connective nodes).
+   */
+  includeTypes?: string[];
+  // Comma-separated tag labels from the explorer's `tags` URL param. `undefined`
+  // leaves the filter inactive; any string (including '') activates it, honoring
+  // the "filter active = present, even if empty" contract.
+  tags?: string;
+  // Event-scoped LifeScope dimensions, mirroring the explorer's Search filters.
+  // Each is forwarded to `/api/graph/data` only when it carries a value, so an
+  // absent/empty dimension leaves the graph unrestricted by it.
+  connectors?: string[];
+  people?: string[];
+  places?: string[];
+  eventTypes?: string[];
+  hasLocation?: boolean;
+  // Date range (`from`/`to` URL params, ISO strings).
+  dateFrom?: string;
+  dateTo?: string;
 }
 
 export function useGraphOverview(
@@ -110,6 +170,20 @@ export function useGraphOverview(
 ): GraphOverviewState {
   const maxDepth = options.maxDepth ?? 1;
   const refreshKey = options.refreshKey ?? 0;
+  const includeTypesActive = options.includeTypes !== undefined;
+  const includeTypesKey = (options.includeTypes ?? []).join(',');
+  const tags = options.tags;
+
+  // Stable CSV keys for the event-scoped dimensions: arrays change identity each
+  // render, so the effect depends on these joined keys (a change ⇔ a content
+  // change), and the request reads the keys directly. Mirrors `includeTypesKey`.
+  const connectorsKey = (options.connectors ?? []).join(',');
+  const peopleKey = (options.people ?? []).join(',');
+  const placesKey = (options.places ?? []).join(',');
+  const eventTypesKey = (options.eventTypes ?? []).join(',');
+  const hasLocation = options.hasLocation ?? false;
+  const dateFrom = options.dateFrom;
+  const dateTo = options.dateTo;
 
   const [state, setState] = useState<GraphOverviewState>({
     loading: true,
@@ -118,6 +192,8 @@ export function useGraphOverview(
     subgraph: null,
     quickStats: null,
     currentUser: null,
+    filterMatchedEntityIds: null,
+    filterScope: { tags: false, events: false },
   });
 
   useEffect(() => {
@@ -134,22 +210,81 @@ export function useGraphOverview(
           credentials: 'include',
         };
 
+        // Forward each filter only when active (param present), so absent params
+        // leave the backend returning the whole graph.
+        const dataParams = new URLSearchParams();
+        if (includeTypesActive) {
+          dataParams.set('includeTypes', includeTypesKey);
+        }
+
+        if (tags !== undefined) {
+          dataParams.set('tags', tags);
+        }
+
+        // Event-scoped dimensions: forward only when set, so an unused dimension
+        // leaves the graph unrestricted by it.
+        if (connectorsKey) {
+          dataParams.set('connectors', connectorsKey);
+        }
+
+        if (peopleKey) {
+          dataParams.set('people', peopleKey);
+        }
+
+        if (placesKey) {
+          dataParams.set('places', placesKey);
+        }
+
+        if (eventTypesKey) {
+          dataParams.set('eventTypes', eventTypesKey);
+        }
+
+        if (hasLocation) {
+          dataParams.set('hasLocation', '1');
+        }
+
+        if (dateFrom) {
+          dataParams.set('from', dateFrom);
+        }
+
+        if (dateTo) {
+          dataParams.set('to', dateTo);
+        }
+
+        const dataQuery = dataParams.toString();
+        const dataUrl = dataQuery ? `/api/graph/data?${dataQuery}` : '/api/graph/data';
+
         const [contextResponse, graphResponse] = await Promise.all([
           fetchJson<GraphContextResponse>('/api/graph/context', { ...baseInit }),
-          fetchJson<GraphDataResponse>('/api/graph/data', { ...baseInit }),
+          fetchJson<GraphDataResponse>(dataUrl, { ...baseInit }),
         ]);
 
-        if (!contextResponse.success || !contextResponse.context) {
+        if (!contextResponse?.success || !contextResponse.context) {
           throw new Error('Unable to resolve user context');
         }
 
-        if (!graphResponse.success) {
+        if (!graphResponse?.success) {
           throw new Error('Graph data request failed');
         }
 
         const context = contextResponse.context!;
         const userEntityId = context.currentUser.entityId;
-        const subgraph = buildSubgraph(graphResponse.data, userEntityId, maxDepth);
+        const filterMatchedEntityIds = combineMatches(graphResponse.tagMatch, graphResponse.eventMatch);
+        const filterScope: FilterScope = {
+          tags: graphResponse.tagMatch?.active === true,
+          events: graphResponse.eventMatch?.active === true,
+        };
+
+        // The user-seeded BFS prunes anything beyond `maxDepth` hops from the
+        // owner — fine for the click-driven interactive view, but it would drop
+        // filter-matched nodes that sit farther out before the filter is even
+        // applied. When a restrictive filter is active the view scopes to
+        // `filterMatchedEntityIds` directly, so hand the full node/link set
+        // through unpruned and let the client do the scoping.
+        const subgraph =
+          filterScope.tags || filterScope.events
+            ? { nodes: graphResponse.data.nodes, links: graphResponse.data.links }
+            : buildSubgraph(graphResponse.data, userEntityId, maxDepth);
 
         if (!cancelled) {
           setState({
@@ -159,6 +294,8 @@ export function useGraphOverview(
             subgraph,
             quickStats: context.quickStats,
             currentUser: context.currentUser,
+            filterMatchedEntityIds,
+            filterScope,
           });
         }
       } catch (error) {
@@ -180,6 +317,8 @@ export function useGraphOverview(
           quickStats: null,
           currentUser: null,
           error: message,
+          filterMatchedEntityIds: null,
+          filterScope: { tags: false, events: false },
         });
       }
     }
@@ -189,7 +328,21 @@ export function useGraphOverview(
     return () => {
       cancelled = true;
     };
-  }, [authToken, maxDepth, refreshKey]);
+  }, [
+    authToken,
+    maxDepth,
+    refreshKey,
+    includeTypesActive,
+    includeTypesKey,
+    tags,
+    connectorsKey,
+    peopleKey,
+    placesKey,
+    eventTypesKey,
+    hasLocation,
+    dateFrom,
+    dateTo,
+  ]);
 
   return useMemo(() => state, [state]);
 }

@@ -1,8 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { GlobalUID } from '@ci/common';
 import { Images } from '@ci/shadcn/icons';
-import { useNavigate } from 'react-router-dom';
 
 import {
   AnswerGridItem,
@@ -14,26 +12,83 @@ import {
   EventGridItem,
   FileGridItem,
   ItemGridItem,
-  type ItemInventoryPreview,
   NoteGridItem,
   PersonGridItem,
   PlaceGridItem,
   ThreadGridItem,
 } from '@/components/entities';
-import { FileModal } from '@/components/modals/FileModal';
-import { InventoryItemModal, type InventoryItem } from '@/components/modals/InventoryItemModal';
 
-import { Empty } from '../Components';
+import { Empty, ErrorState } from '../Components';
 import { useEntityService } from '../useEntityService';
 
+import { getEntityMedia, type EntityMedia } from './media';
+import { MediaLightbox } from './MediaLightbox';
+import { MediaTile } from './MediaTile';
+
 export function GalleryView() {
-  const navigate = useNavigate();
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
-  const [activeItem, setActiveItem] = useState<string | null>(null);
+  const [{ data, loading, hasNextPage, loadingMore, loadMore, error, refetch }, { setActiveEntity }] =
+    useEntityService();
 
-  const [selectedInventoryItem, setSelectedInventoryItem] = useState<InventoryItem | null>(null);
+  // Ordered list of media-bearing entities (images/video). It drives the
+  // lightbox and lets a tile look up its position for arrow navigation.
+  const mediaEntries = useMemo(
+    () => data.map(getEntityMedia).filter((m): m is EntityMedia => m != null),
+    [data],
+  );
+  const mediaIndexById = useMemo(() => {
+    const map = new Map<string, number>();
+    mediaEntries.forEach((media, i) => map.set(media.entityId, i));
 
-  const [{ data }] = useEntityService();
+    return map;
+  }, [mediaEntries]);
+
+  // Infinite scroll (cursor-based) — mirrors ListView.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+
+    if (!sentinel || !hasNextPage) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          loadMore();
+        }
+      },
+      { root: scrollRef.current, rootMargin: '600px' },
+    );
+
+    observer.observe(sentinel);
+
+    return () => observer.disconnect();
+  }, [hasNextPage, loadMore]);
+
+  if (loading && data.length === 0) {
+    return (
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">
+        <EntityGrid>
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="h-full w-full animate-pulse rounded-lg border bg-card" />
+          ))}
+        </EntityGrid>
+      </div>
+    );
+  }
+
+  // Hard error with nothing to show — mirror List/Timeline rather than letting a
+  // query failure read as "No results found".
+  if (error && data.length === 0) {
+    return (
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">
+        <ErrorState onRetry={refetch} />
+      </div>
+    );
+  }
 
   if (data.length === 0) {
     return (
@@ -45,139 +100,104 @@ export function GalleryView() {
     );
   }
 
-  const clearActiveItem = () => setActiveItem(null);
-
-  const openInventoryModal = (item: ItemInventoryPreview) => {
-    setSelectedInventoryItem({
-      id: item.id,
-      name: item.name,
-      description: item.description,
-      file: item.file,
-    });
-  };
-
   return (
     <>
-      <EntityGrid className="p-4 pt-0">
-        {data.map((item) => {
-          switch (item.__typename) {
-            case 'AnswerType':
-              return <AnswerGridItem key={item.id} answer={item} onClick={() => {}} />;
-
-            case 'BrowserActivityType':
-              return <BrowserActivityGridItem key={item.id} browserActivity={item} onClick={() => {}} />;
-
-            case 'CommunicationType':
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">
+        <EntityGrid>
+          {data.map((item) => {
+            // Media-bearing entities (image/video) render as real thumbnails and
+            // open the lightbox; everything else keeps its clean text tile and
+            // opens the shared details drawer (incl. non-media File/Item).
+            const mediaIdx = mediaIndexById.get(item.id);
+            if (mediaIdx != null) {
               return (
-                <CommunicationGridItem
+                <MediaTile
                   key={item.id}
-                  communication={item}
-                  onClick={() => {
-                    navigate(`/communications/${GlobalUID.parse('communication', item.id)}`);
-                  }}
+                  media={mediaEntries[mediaIdx]}
+                  onClick={() => setLightboxIndex(mediaIdx)}
                 />
               );
+            }
 
-            case 'ConceptType':
-              return (
-                <ConceptGridItem
-                  key={item.id}
-                  concept={item}
-                  onClick={() => {
-                    navigate(`/concepts/${GlobalUID.parse('concept', item.id)}`);
-                  }}
-                />
-              );
+            switch (item.__typename) {
+              case 'AnswerType':
+                return <AnswerGridItem key={item.id} answer={item} onClick={() => setActiveEntity(item)} />;
 
-            case 'ContentType':
-              return (
-                <ContentGridItem
-                  key={item.id}
-                  content={item}
-                  onClick={() => {
-                    navigate(`/content/${GlobalUID.parse('content', item.id)}`);
-                  }}
-                />
-              );
+              case 'BrowserActivityType':
+                return (
+                  <BrowserActivityGridItem
+                    key={item.id}
+                    browserActivity={item}
+                    onClick={() => setActiveEntity(item)}
+                  />
+                );
 
-            case 'EventType':
-              return (
-                <EventGridItem
-                  key={item.id}
-                  event={item}
-                  onClick={() => {
-                    navigate(`/events/${GlobalUID.parse('event', item.id)}`);
-                  }}
-                />
-              );
+              case 'CommunicationType':
+                return (
+                  <CommunicationGridItem
+                    key={item.id}
+                    communication={item}
+                    onClick={() => setActiveEntity(item)}
+                  />
+                );
 
-            case 'FileType':
-              return <FileGridItem key={item.id} file={item} onClick={() => setActiveItem(item.id)} />;
+              case 'ConceptType':
+                return <ConceptGridItem key={item.id} concept={item} onClick={() => setActiveEntity(item)} />;
 
-            case 'ItemType':
-              return <ItemGridItem key={item.id} item={item} onSelectInventoryItem={openInventoryModal} />;
+              case 'ContentType':
+                return <ContentGridItem key={item.id} content={item} onClick={() => setActiveEntity(item)} />;
 
-            case 'NoteType':
-              return (
-                <NoteGridItem
-                  key={item.id}
-                  note={item}
-                  onClick={() => {
-                    navigate(`/notes/${GlobalUID.parse('note', item.id)}`);
-                  }}
-                />
-              );
+              case 'EventType':
+                return <EventGridItem key={item.id} event={item} onClick={() => setActiveEntity(item)} />;
 
-            case 'PersonType':
-              return (
-                <PersonGridItem
-                  key={item.id}
-                  person={item}
-                  onClick={() => {
-                    navigate(`/people/${GlobalUID.parse('person', item.id)}`);
-                  }}
-                />
-              );
+              case 'FileType':
+                return <FileGridItem key={item.id} file={item} onClick={() => setActiveEntity(item)} />;
 
-            case 'PlaceType':
-              return (
-                <PlaceGridItem
-                  key={item.id}
-                  place={item}
-                  onClick={() => {
-                    navigate(`/places/${GlobalUID.parse('place', item.id)}`);
-                  }}
-                />
-              );
+              case 'ItemType':
+                return <ItemGridItem key={item.id} item={item} onClick={() => setActiveEntity(item)} />;
 
-            case 'ThreadType':
-              return (
-                <ThreadGridItem
-                  key={item.id}
-                  thread={item}
-                  onClick={() => {
-                    navigate(`/chat/${GlobalUID.parse('thread', item.id)}`);
-                  }}
-                />
-              );
+              case 'NoteType':
+                return <NoteGridItem key={item.id} note={item} onClick={() => setActiveEntity(item)} />;
 
-            default:
-              return null;
-          }
-        })}
-      </EntityGrid>
+              case 'PersonType':
+                return <PersonGridItem key={item.id} person={item} onClick={() => setActiveEntity(item)} />;
 
-      <FileModal fileId={activeItem ?? null} onClose={clearActiveItem} />
+              case 'PlaceType':
+                return <PlaceGridItem key={item.id} place={item} onClick={() => setActiveEntity(item)} />;
 
-      <InventoryItemModal
-        open={selectedInventoryItem != null}
-        onClose={() => setSelectedInventoryItem(null)}
-        item={selectedInventoryItem}
-        create={false}
-        detailPagePath={
-          selectedInventoryItem ? `/items/${GlobalUID.parse('item', selectedInventoryItem.id)}` : undefined
-        }
-      />
+              case 'ThreadType':
+                return <ThreadGridItem key={item.id} thread={item} onClick={() => setActiveEntity(item)} />;
+
+              default:
+                return null;
+            }
+          })}
+
+          {/* Pulsing placeholders for the page being fetched (mirrors ListView). */}
+          {loadingMore &&
+            Array.from({ length: 4 }).map((_, i) => (
+              <div
+                key={`loading-more-${i}`}
+                className="h-full w-full animate-pulse rounded-lg border bg-card"
+              />
+            ))}
+        </EntityGrid>
+
+        {hasNextPage && <div ref={sentinelRef} className="h-8" />}
+
+        <div className="py-3 text-center text-xs text-muted-foreground">
+          {data.length} loaded{loadingMore ? ' · loading…' : hasNextPage ? '' : ' · end'}
+        </div>
+      </div>
+
+      {lightboxIndex != null && mediaEntries[lightboxIndex] && (
+        <MediaLightbox
+          entries={mediaEntries}
+          index={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+          onIndexChange={setLightboxIndex}
+        />
+      )}
     </>
   );
 }

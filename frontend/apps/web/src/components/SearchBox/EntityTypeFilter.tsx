@@ -1,15 +1,22 @@
 import { useState } from 'react';
 
 import { Button, DropdownMenu } from '@ci/shadcn';
-import { ChevronDown } from '@ci/shadcn/icons';
+import { ChevronDown, Shapes } from '@ci/shadcn/icons';
 
 import { AVAILABLE_ENTITY_TYPES, useDropdown } from './useDropdown';
 
 interface Props {
   modal?: boolean;
+  /**
+   * When set, renders a bare "{label}" trigger (e.g. "What") for the explorer's
+   * filter bar — the applied selection shows as a chip in the drawer's drop
+   * area, not on the button. Omit to keep the standalone "All Entity Types"
+   * wording used elsewhere (e.g. the saved-search editor).
+   */
+  label?: string;
 }
 
-export function EntityTypeFilter({ modal = true }: Props) {
+export function EntityTypeFilter({ modal = true, label }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [{ selectedEntityTypes }, { clearEntityTypes, selectAllEntityTypes, toggleEntityType }] =
     useDropdown();
@@ -22,6 +29,10 @@ export function EntityTypeFilter({ modal = true }: Props) {
   const isNoneSelected = selectedCount === 0;
 
   const getDisplayText = () => {
+    if (label) {
+      return label;
+    }
+
     if (isAllSelected) {
       return 'All Entity Types';
     }
@@ -37,33 +48,43 @@ export function EntityTypeFilter({ modal = true }: Props) {
     return `${selectedCount} Entity Types`;
   };
 
+  const menuLabel = label ? 'Types' : 'Entity Types';
+
   return (
     <DropdownMenu modal={modal} onOpenChange={() => setIsOpen(!isOpen)}>
-      <Trigger>
-        <Button variant="outline">
+      <Trigger asChild>
+        <Button type="button" variant="outline">
+          {label && <Shapes className="mr-2 h-4 w-4 text-muted-foreground" />}
           {getDisplayText()}
-          <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+          <ChevronDown
+            className={`ml-2 h-4 w-4 opacity-50 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          />
         </Button>
       </Trigger>
 
-      <Content
-        id="entity-type-filters"
-        className="fixed bg-background border border-border rounded-md shadow-lg z-[9999] max-h-80 overflow-y-auto w-64"
-      >
-        <div className="flex gap-2">
-          <Label className="p-2 font-medium">Entity Types</Label>
-          <div className="flex gap-2">
+      <Content id="entity-type-filters" align="start" sideOffset={4} className="z-[9999] w-72 p-2">
+        <div className="flex items-center justify-between gap-3 px-1 pb-2">
+          <Label className="text-sm font-medium">{menuLabel}</Label>
+          <div className="flex gap-1.5">
             <Button
+              type="button"
+              variant="ghost"
+              size="sm"
               onClick={clearEntityTypes}
-              className="text-xs px-4 py-1 bg-background text-primary hover:text-background"
+              disabled={isAllSelected}
+              className="h-7 px-2 text-xs"
             >
-              All
+              Select all
             </Button>
             <Button
+              type="button"
+              variant="ghost"
+              size="sm"
               onClick={selectAllEntityTypes}
-              className="text-xs px-4 py-1 bg-background text-primary hover:text-background"
+              disabled={isNoneSelected}
+              className="h-7 px-2 text-xs"
             >
-              None
+              Clear all
             </Button>
           </div>
         </div>
@@ -73,6 +94,7 @@ export function EntityTypeFilter({ modal = true }: Props) {
 
           return (
             <CheckboxItem
+              key={entityType}
               checked={isChecked}
               onClick={(e) => {
                 e.stopPropagation();
