@@ -18,6 +18,7 @@ import config from '@ci/configuration';
 import { BaseOAuth2Client } from '@ci/domains/connections/clients/BaseOAuth2Client';
 
 import { ClientFactory } from '../clients';
+import { SignalClient } from '../clients/SignalClient';
 import { CloudOAuthProxyService } from '../services/CloudOAuthProxyService';
 import { ConnectionService } from '../services/ConnectionService';
 import { ProviderKeyService } from '../services/ProviderKeyService';
@@ -70,13 +71,43 @@ export class ProvidersController {
       throw new NotFoundException();
     }
 
-    const client = this.clientFactory.getClientByProviderId(id) as BaseOAuth2Client | null;
+    const client = this.clientFactory.getClientByProviderId(id);
 
     if (client == null) {
       this.logger.log('Attempted to create a connection without an associated client');
 
       throw new InternalServerErrorException();
     }
+
+    if (provider.authType === 'api_key') {
+      const apiKey = input.apiKey;
+
+      if (!apiKey) {
+        throw new BadRequestException('API key is required for this provider');
+      }
+
+      const signalClient = client as SignalClient;
+      const phoneNumber = await signalClient.resolveAccountFromApiKey(apiKey);
+
+      const connection = await this.connectionService.create(serviceContext, {
+        providerId: provider.id,
+        name: provider.name ?? 'My Connection',
+        accessToken: apiKey,
+        externalId: phoneNumber,
+        schedule: '1 hour',
+        endpoints: input.endpoints,
+      });
+
+      await this.connectionService.update(serviceContext, connection.id, {
+        active: true,
+      });
+
+      return {
+        authorizationUrl: '',
+      };
+    }
+
+    const oauthClient = client as BaseOAuth2Client;
 
     if (provider.authType === 'openid') {
       const apiKey = input.apiKey;
@@ -95,7 +126,7 @@ export class ProvidersController {
         endpoints: input.endpoints,
       });
 
-      const authorizationUrl = await client.getAuthorizationUrl(connection);
+      const authorizationUrl = await oauthClient.getAuthorizationUrl(connection);
 
       return {
         authorizationUrl,
@@ -111,7 +142,6 @@ export class ProvidersController {
       }
     }
 
-    const oauthClient = client as BaseOAuth2Client;
     const connection = await this.connectionService.create(serviceContext, {
       providerId: provider.id,
       name: provider.name ?? 'My Connection', // TODO: We shouldn't require a name here.
@@ -139,7 +169,7 @@ export class ProvidersController {
     const baseCallbackUrl = config.auth.oauth.callbackUrl || `${process.env.APP_PUBLIC_URL}/oauth/callback`;
     const callbackUrl = `${baseCallbackUrl}?connectionId=${connection.id}`;
 
-    const scopes = client.getScopesFromActiveEndpoints(input.endpoints);
+    const scopes = oauthClient.getScopesFromActiveEndpoints(input.endpoints);
     const { authorization_url } = await this.cloudOAuthProxyService.getAuthorizationUrl(
       providerName,
       callbackUrl,

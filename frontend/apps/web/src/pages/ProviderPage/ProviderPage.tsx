@@ -71,7 +71,9 @@ export function ProviderPage() {
     useConnectService();
 
   const isOpenId = provider?.authType === 'openid';
-  const isConnectDisabled = isOpenId && (apiKey == null || apiKey.length === 0);
+  const isApiKey = provider?.authType === 'api_key';
+  const requiresApiKey = isOpenId || isApiKey;
+  const isConnectDisabled = requiresApiKey && (apiKey == null || apiKey.length === 0);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -90,13 +92,20 @@ export function ProviderPage() {
   }, [navigate]);
 
   useEffect(() => {
-    if (!authorizationUrl) {
+    if (authorizationUrl === null) {
+      return;
+    }
+
+    if (authorizationUrl === '') {
+      toast.success(`Connected to ${provider?.name ?? 'provider'}`);
+      navigate('/connect');
+
       return;
     }
 
     // We have to do `window.location` since this is an external URL.
     window.location.href = authorizationUrl;
-  }, [authorizationUrl]);
+  }, [authorizationUrl, navigate, provider?.name, toast]);
 
   useEffect(() => {
     if (!error) {
@@ -184,10 +193,14 @@ export function ProviderPage() {
                   <div className="p-6">
                     <Endpoints provider={provider} setEndpoints={setEndpoints} />
 
-                    {isOpenId && (
+                    {(isOpenId || isApiKey) && (
                       <div className="mt-6 space-y-2">
                         <div className="flex items-center gap-1.5">
-                          <Label htmlFor="openid-api-key">Enter your {provider.name} OpenID API key</Label>
+                          <Label htmlFor="openid-api-key">
+                            {isApiKey
+                              ? `Enter your ${provider.name} REST API key`
+                              : `Enter your ${provider.name} OpenID API key`}
+                          </Label>
                           {provider.openidKeyLink && (
                             <Popover>
                               <Popover.Trigger asChild>
