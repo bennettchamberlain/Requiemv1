@@ -486,8 +486,16 @@ export class SearchResolver {
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
     // who / where / connector are event-only dimensions; restrict to events when set.
     const eventsOnly = eventFilter != null;
+    // Files and document chunks are content, not activity: they're opt-in to the
+    // timeline so a document's many same-timestamp chunks don't bury the default
+    // browse. They appear only when the caller explicitly filters to that type
+    // (includeTypes), never in the unfiltered "recent activity" view.
+    const optIn = (type: IndexableEntity) =>
+      type !== 'file' && type !== 'file-chunk' ? true : (includeTypes?.includes(type) ?? false);
     const wants = (type: IndexableEntity) =>
-      this.matchesTypeFilter(type, includeTypes, excludeTypes) && (!eventsOnly || type === 'event');
+      this.matchesTypeFilter(type, includeTypes, excludeTypes) &&
+      (!eventsOnly || type === 'event') &&
+      optIn(type);
 
     const eventOptions: {
       limit: number;
