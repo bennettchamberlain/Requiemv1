@@ -146,7 +146,10 @@ export class EntityResolutionService {
     return map;
   }
 
-  private addToMap<T extends ResolvedEntity['type']>(
+  // 'file-chunk' is excluded: its resolved entity is a { chunk, file } join with
+  // no top-level `id`, so it's added to the map directly in resolve() rather than
+  // through this id-keyed helper.
+  private addToMap<T extends Exclude<ResolvedEntity['type'], 'file-chunk'>>(
     map: Map<string, ResolvedEntity>,
     type: T,
     entities: (Extract<ResolvedEntity, { type: T }>['entity'] | null)[],

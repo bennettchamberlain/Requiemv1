@@ -680,5 +680,4 @@ export class SearchResolver {
         return ThreadType.toType(resolved.entity);
     }
   }
-  }
 }
