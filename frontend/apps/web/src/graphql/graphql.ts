@@ -633,6 +633,22 @@ export type EventTypeParticipantsArgs = {
   last?: InputMaybe<Scalars['Int']['input']>;
 };
 
+export type FileChunkType = Node & {
+  __typename?: 'FileChunkType';
+  chunkIndex: Scalars['Int']['output'];
+  chunkerVersion: Scalars['String']['output'];
+  content: Scalars['String']['output'];
+  createdAt: Scalars['DateTime']['output'];
+  file?: Maybe<FileType>;
+  fileId: Scalars['ID']['output'];
+  id: Scalars['ID']['output'];
+  parserName: Scalars['String']['output'];
+  parserVersion: Scalars['String']['output'];
+  sectionTitle?: Maybe<Scalars['String']['output']>;
+  sourceLocator?: Maybe<Scalars['JSON']['output']>;
+  updatedAt: Scalars['DateTime']['output'];
+};
+
 export type FileConnection = Connection & {
   __typename?: 'FileConnection';
   edges: Array<FileEdge>;
@@ -655,6 +671,9 @@ export type FileType = Node & Taggable & {
   filename?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   items?: Maybe<ItemConnection>;
+  parseError?: Maybe<Scalars['String']['output']>;
+  parseStatus?: Maybe<Scalars['String']['output']>;
+  parsedAt?: Maybe<Scalars['DateTime']['output']>;
   previewUrl?: Maybe<Scalars['String']['output']>;
   size?: Maybe<Scalars['Float']['output']>;
   sourceUrl?: Maybe<Scalars['String']['output']>;
@@ -711,6 +730,25 @@ export type GraphRelationshipInput = {
   properties?: InputMaybe<Scalars['JSON']['input']>;
   toKey: Scalars['String']['input'];
   type: Scalars['String']['input'];
+};
+
+export type IngestUserSnapshotInput = {
+  cwd?: InputMaybe<Scalars['String']['input']>;
+  deviceId: Scalars['ID']['input'];
+  focusApp?: InputMaybe<Scalars['String']['input']>;
+  focusTitle?: InputMaybe<Scalars['String']['input']>;
+  fsEventCount: Scalars['Int']['input'];
+  monotonicMs: Scalars['Float']['input'];
+  observedAt: Scalars['DateTime']['input'];
+  payload: Scalars['JSON']['input'];
+  sessionId: Scalars['ID']['input'];
+  snapshotKind: Scalars['String']['input'];
+};
+
+export type IngestUserSnapshotPayload = {
+  __typename?: 'IngestUserSnapshotPayload';
+  errorMessage?: Maybe<Scalars['String']['output']>;
+  success: Scalars['Boolean']['output'];
 };
 
 export type InsightItemType = {
@@ -871,6 +909,7 @@ export type Mutation = {
   deleteProviderKey: Scalars['Boolean']['output'];
   deleteRelationship: DeleteByIdPayload;
   deleteSavedSearch: DeleteByIdPayload;
+  ingestUserSnapshot: IngestUserSnapshotPayload;
   /** Mark an action as dismissed */
   markActionAsDismissed?: Maybe<ActionType>;
   /** Mark an action as seen */
@@ -885,6 +924,7 @@ export type Mutation = {
   removePlace: Scalars['Boolean']['output'];
   removeQuestion: Scalars['Boolean']['output'];
   setSavedSearchSharing: UpdateSavedSearchPayload;
+  startPairing: StartPairingPayload;
   tagEntities: Array<TaggableEntityType>;
   /** Manually trigger the HBPE pipeline for the current user */
   triggerHbpe: Scalars['String']['output'];
@@ -1091,6 +1131,11 @@ export type MutationDeleteSavedSearchArgs = {
 };
 
 
+export type MutationIngestUserSnapshotArgs = {
+  input: IngestUserSnapshotInput;
+};
+
+
 export type MutationMarkActionAsDismissedArgs = {
   id: Scalars['ID']['input'];
 };
@@ -1281,6 +1326,18 @@ export type PageInfo = {
   startCursor?: Maybe<Scalars['String']['output']>;
 };
 
+export type PairingStatusPayload = {
+  __typename?: 'PairingStatusPayload';
+  appletAccessToken?: Maybe<Scalars['String']['output']>;
+  deviceId?: Maybe<Scalars['String']['output']>;
+  errorMessage?: Maybe<Scalars['String']['output']>;
+  status: Scalars['String']['output'];
+  success: Scalars['Boolean']['output'];
+  userEmail?: Maybe<Scalars['String']['output']>;
+  userId?: Maybe<Scalars['String']['output']>;
+  userName?: Maybe<Scalars['String']['output']>;
+};
+
 export type PersonConnection = Connection & {
   __typename?: 'PersonConnection';
   edges: Array<PersonEdge>;
@@ -1443,6 +1500,7 @@ export type Query = {
   note?: Maybe<NoteType>;
   notes: NoteConnection;
   oAuthCallbackUrl: Scalars['String']['output'];
+  pairingStatus: PairingStatusPayload;
   people: PersonConnection;
   person?: Maybe<PersonType>;
   place?: Maybe<PlaceType>;
@@ -1642,6 +1700,12 @@ export type QueryNotesArgs = {
   before?: InputMaybe<Scalars['String']['input']>;
   first?: InputMaybe<Scalars['Int']['input']>;
   last?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryPairingStatusArgs = {
+  pairingToken: Scalars['String']['input'];
+  pollKey: Scalars['String']['input'];
 };
 
 
@@ -1912,11 +1976,20 @@ export type SearchResultEdge = {
   node: SearchResultType;
 };
 
-export type SearchResultType = ActionType | AnswerType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileType | ItemType | NoteType | PersonType | PlaceType | ThreadType;
+export type SearchResultType = ActionType | AnswerType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileChunkType | FileType | ItemType | NoteType | PersonType | PlaceType | ThreadType;
 
 export type SetSavedSearchSharingInput = {
   id: Scalars['ID']['input'];
   isPublic: Scalars['Boolean']['input'];
+};
+
+export type StartPairingPayload = {
+  __typename?: 'StartPairingPayload';
+  errorMessage?: Maybe<Scalars['String']['output']>;
+  pairingPath?: Maybe<Scalars['String']['output']>;
+  pairingToken?: Maybe<Scalars['String']['output']>;
+  pollKey?: Maybe<Scalars['String']['output']>;
+  success: Scalars['Boolean']['output'];
 };
 
 export type SummaryConnection = Connection & {
@@ -2407,6 +2480,7 @@ export type SearchBoxQueryQuery = { __typename?: 'Query', search: { __typename?:
           { __typename: 'EventType', id: string }
           & { ' $fragmentRefs'?: { 'SearchResultEventDataFragment': SearchResultEventDataFragment } }
         )
+        | { __typename: 'FileChunkType', id: string }
         | (
           { __typename: 'FileType', id: string }
           & { ' $fragmentRefs'?: { 'SearchResultFileDataFragment': SearchResultFileDataFragment } }
@@ -2810,6 +2884,7 @@ export type SearchQuery = { __typename?: 'Query', search: { __typename?: 'Search
           { __typename: 'EventType', id: string, bucketStartTime: any, mapCoordinates?: any | null, galleryMediaContentType?: string | null, galleryPreviewUrl?: string | null, gallerySourceUrl?: string | null, galleryTitle?: string | null, galleryLocationName?: string | null, tags: Array<{ __typename?: 'EntityTagType', label: string }> }
           & { ' $fragmentRefs'?: { 'EventGridItemDataFragment': EventGridItemDataFragment;'TableEventRowDataFragment': TableEventRowDataFragment;'TimelineEventCardDataFragment': TimelineEventCardDataFragment } }
         )
+        | { __typename: 'FileChunkType', id: string }
         | (
           { __typename: 'FileType', id: string, galleryContentType: string, galleryFilename?: string | null, galleryPreviewUrl?: string | null, gallerySourceUrl?: string | null, tags: Array<{ __typename?: 'EntityTagType', label: string }> }
           & { ' $fragmentRefs'?: { 'FileGridItemDataFragment': FileGridItemDataFragment;'TableFileRowDataFragment': TableFileRowDataFragment } }
