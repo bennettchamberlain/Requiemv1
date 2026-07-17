@@ -83,6 +83,9 @@ export const ConfigSchema = z.object({
       github: z.object({
         id: z.string(),
       }),
+      reddit: z.object({
+        id: z.string(),
+      }),
       spotify: z.object({
         id: z.string(),
       }),

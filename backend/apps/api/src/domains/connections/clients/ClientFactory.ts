@@ -7,6 +7,7 @@ import { FacebookClient } from './FacebookClient';
 import { GitHubClient } from './GitHubClient';
 import { GoogleClient } from './GoogleClient';
 import { MicrosoftClient } from './MicrosoftClient';
+import { RedditClient } from './RedditClient';
 import { SpotifyClient } from './SpotifyClient';
 import { SteamClient } from './SteamClient';
 
@@ -19,6 +20,7 @@ export class ClientFactory {
     private readonly microsoftClient: MicrosoftClient,
     private readonly facebookClient: FacebookClient,
     private readonly gitHubClient: GitHubClient,
+    private readonly redditClient: RedditClient,
     private readonly spotifyClient: SpotifyClient,
     private readonly steamClient: SteamClient,
   ) {
@@ -26,6 +28,7 @@ export class ClientFactory {
     this.providers.set(config.auth.providers.microsoft.id, this.microsoftClient);
     this.providers.set(config.auth.providers.facebook.id, this.facebookClient);
     this.providers.set(config.auth.providers.github.id, this.gitHubClient);
+    this.providers.set(config.auth.providers.reddit.id, this.redditClient);
     this.providers.set(config.auth.providers.spotify.id, this.spotifyClient);
     this.providers.set(config.auth.providers.steam.id, this.steamClient);
   }

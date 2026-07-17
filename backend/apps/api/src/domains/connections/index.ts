@@ -28,6 +28,7 @@ import {
   ClientFactory,
   FacebookClient,
   GitHubClient,
+  RedditClient,
   GoogleClient,
   MicrosoftClient,
   SpotifyClient,
@@ -52,6 +53,7 @@ import { ProviderService } from './services/ProviderService';
     ClientFactory,
     FacebookClient,
     GitHubClient,
+    RedditClient,
     GoogleClient,
     CloudOAuthProxyService,
     ConnectionService,
@@ -70,6 +72,7 @@ import { ProviderService } from './services/ProviderService';
     ProviderKeyService,
     FacebookClient,
     GitHubClient,
+    RedditClient,
     GoogleClient,
     MicrosoftClient,
     SpotifyClient,
@@ -86,7 +89,15 @@ export { ConnectionService, ProviderService, ProviderKeyService, CloudOAuthProxy
 export { ClientFactory } from './clients';
 
 // Clients
-export { FacebookClient, GitHubClient, GoogleClient, MicrosoftClient, SpotifyClient, SteamClient };
+export {
+  FacebookClient,
+  GitHubClient,
+  RedditClient,
+  GoogleClient,
+  MicrosoftClient,
+  SpotifyClient,
+  SteamClient,
+};
 
 // Types
 export type { BaseClient } from './clients/BaseClient';

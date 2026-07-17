@@ -39,6 +39,12 @@ import { syncOutlookMail } from './Microsoft/sync/SyncOutlookMail';
 import { OneDriveTransformService } from './Microsoft/transform/TransformOneDrive';
 import { OutlookCalendarTransformService } from './Microsoft/transform/TransformOutlookCalendar';
 import { OutlookMailTransformService } from './Microsoft/transform/TransformOutlookMail';
+import { syncComments as syncRedditComments } from './Reddit/sync/SyncComments';
+import { syncPosts as syncRedditPosts } from './Reddit/sync/SyncPosts';
+import { syncSaved as syncRedditSaved } from './Reddit/sync/SyncSaved';
+import { RedditCommentsTransformService } from './Reddit/transform/TransformComments';
+import { RedditPostsTransformService } from './Reddit/transform/TransformPosts';
+import { RedditSavedTransformService } from './Reddit/transform/TransformSaved';
 import { syncPlaylists } from './Spotify/sync/SyncPlaylists';
 import { syncRecentlyPlayed } from './Spotify/sync/SyncRecentlyPlayed';
 import { syncSavedAudiobooks } from './Spotify/sync/SyncSavedAudiobooks';
@@ -94,6 +100,9 @@ export class EndpointServiceMap {
     private readonly steamAchievementsTransformService: SteamAchievementsTransformService,
     private readonly steamFriendsTransformService: SteamFriendsTransformService,
     private readonly gitHubEventsTransformService: GitHubEventsTransformService,
+    private readonly redditPostsTransformService: RedditPostsTransformService,
+    private readonly redditCommentsTransformService: RedditCommentsTransformService,
+    private readonly redditSavedTransformService: RedditSavedTransformService,
   ) {
     this.logger.setContext(EndpointServiceMap.name);
     this.endpointServiceMap = {
@@ -136,6 +145,11 @@ export class EndpointServiceMap {
         },
         GitHub: {
           Events: syncGitHubEvents,
+        },
+        Reddit: {
+          Posts: syncRedditPosts,
+          Comments: syncRedditComments,
+          Saved: syncRedditSaved,
         },
       },
       transform: {
@@ -213,6 +227,11 @@ export class EndpointServiceMap {
         },
         GitHub: {
           Events: this.gitHubEventsTransformService.transform.bind(this.gitHubEventsTransformService),
+        },
+        Reddit: {
+          Posts: this.redditPostsTransformService.transform.bind(this.redditPostsTransformService),
+          Comments: this.redditCommentsTransformService.transform.bind(this.redditCommentsTransformService),
+          Saved: this.redditSavedTransformService.transform.bind(this.redditSavedTransformService),
         },
       },
     };

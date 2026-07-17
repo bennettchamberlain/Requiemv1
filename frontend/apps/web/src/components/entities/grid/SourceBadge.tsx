@@ -22,6 +22,9 @@ const SOURCE_LABELS: Record<string, string> = {
   claude: 'Claude',
   chatgpt: 'ChatGPT',
   github_events: 'GitHub',
+  reddit_posts: 'Reddit',
+  reddit_comments: 'Reddit',
+  reddit_saved: 'Reddit',
   // Communication `type` values (CommunicationType.type, not a connector).
   email: 'Email',
   sms: 'SMS',

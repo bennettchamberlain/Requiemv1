@@ -405,8 +405,20 @@ export function ConnectPage() {
               logo="/branding/reddit/logo.svg"
               background="bg-orange-500"
               border="border-orange-400"
-              text="Connect Reddit to track your community discussions, posts, and subreddit interactions. Coming soon."
-              disabled
+              text="Connect Reddit to track your community discussions, posts, and subreddit interactions."
+              {...getCardProps('019e2b55-a4c1-7f02-b8d4-0c3e5a8f6b07', () =>
+                navigate('/providers/019e2b55-a4c1-7f02-b8d4-0c3e5a8f6b07'),
+              )}
+              subtext={
+                connectionsCount['019e2b55-a4c1-7f02-b8d4-0c3e5a8f6b07'] === 1
+                  ? `1 Connection`
+                  : connectionsCount['019e2b55-a4c1-7f02-b8d4-0c3e5a8f6b07'] > 1
+                    ? `${connectionsCount['019e2b55-a4c1-7f02-b8d4-0c3e5a8f6b07']} Connections`
+                    : undefined
+              }
+              className={
+                connectionsCount['019e2b55-a4c1-7f02-b8d4-0c3e5a8f6b07'] > 0 ? 'bg-green-200' : undefined
+              }
             />
             <Card
               logo="/branding/dropbox/logo.svg"

@@ -44,6 +44,7 @@ export class CloudOAuthProxyService {
       [providers.facebook.id]: 'facebook',
       [providers.spotify.id]: 'spotify',
       [providers.github.id]: 'github',
+      [providers.reddit.id]: 'reddit',
     };
 
     return map[providerId];
