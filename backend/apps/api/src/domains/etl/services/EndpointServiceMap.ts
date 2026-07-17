@@ -39,6 +39,10 @@ import { syncOutlookMail } from './Microsoft/sync/SyncOutlookMail';
 import { OneDriveTransformService } from './Microsoft/transform/TransformOneDrive';
 import { OutlookCalendarTransformService } from './Microsoft/transform/TransformOutlookCalendar';
 import { OutlookMailTransformService } from './Microsoft/transform/TransformOutlookMail';
+import { syncChannels as syncSlackChannels } from './Slack/sync/SyncChannels';
+import { syncMessages as syncSlackMessages } from './Slack/sync/SyncMessages';
+import { SlackChannelsTransformService } from './Slack/transform/TransformChannels';
+import { SlackMessagesTransformService } from './Slack/transform/TransformMessages';
 import { syncPlaylists } from './Spotify/sync/SyncPlaylists';
 import { syncRecentlyPlayed } from './Spotify/sync/SyncRecentlyPlayed';
 import { syncSavedAudiobooks } from './Spotify/sync/SyncSavedAudiobooks';
@@ -94,6 +98,8 @@ export class EndpointServiceMap {
     private readonly steamAchievementsTransformService: SteamAchievementsTransformService,
     private readonly steamFriendsTransformService: SteamFriendsTransformService,
     private readonly gitHubEventsTransformService: GitHubEventsTransformService,
+    private readonly slackMessagesTransformService: SlackMessagesTransformService,
+    private readonly slackChannelsTransformService: SlackChannelsTransformService,
   ) {
     this.logger.setContext(EndpointServiceMap.name);
     this.endpointServiceMap = {
@@ -136,6 +142,10 @@ export class EndpointServiceMap {
         },
         GitHub: {
           Events: syncGitHubEvents,
+        },
+        Slack: {
+          Messages: syncSlackMessages,
+          Channels: syncSlackChannels,
         },
       },
       transform: {
@@ -213,6 +223,10 @@ export class EndpointServiceMap {
         },
         GitHub: {
           Events: this.gitHubEventsTransformService.transform.bind(this.gitHubEventsTransformService),
+        },
+        Slack: {
+          Messages: this.slackMessagesTransformService.transform.bind(this.slackMessagesTransformService),
+          Channels: this.slackChannelsTransformService.transform.bind(this.slackChannelsTransformService),
         },
       },
     };

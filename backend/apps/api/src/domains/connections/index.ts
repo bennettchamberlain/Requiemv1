@@ -31,6 +31,7 @@ import {
   GoogleClient,
   MicrosoftClient,
   SpotifyClient,
+  SlackClient,
   SteamClient,
 } from './clients';
 import { ConnectionsController } from './controllers/ConnectionsController';
@@ -59,6 +60,7 @@ import { ProviderService } from './services/ProviderService';
     ProviderKeyService,
     MicrosoftClient,
     SpotifyClient,
+    SlackClient,
     SteamClient,
   ],
   controllers: [ConnectionsController, ProvidersController],
@@ -73,6 +75,7 @@ import { ProviderService } from './services/ProviderService';
     GoogleClient,
     MicrosoftClient,
     SpotifyClient,
+    SlackClient,
     SteamClient,
   ],
 })
@@ -86,7 +89,15 @@ export { ConnectionService, ProviderService, ProviderKeyService, CloudOAuthProxy
 export { ClientFactory } from './clients';
 
 // Clients
-export { FacebookClient, GitHubClient, GoogleClient, MicrosoftClient, SpotifyClient, SteamClient };
+export {
+  FacebookClient,
+  GitHubClient,
+  GoogleClient,
+  MicrosoftClient,
+  SpotifyClient,
+  SlackClient,
+  SteamClient,
+};
 
 // Types
 export type { BaseClient } from './clients/BaseClient';

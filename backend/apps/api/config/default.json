@@ -48,6 +48,9 @@
       },
       "steam": {
         "id": "019d6470-f9e1-720f-a3ce-299842abaece"
+      },
+      "slack": {
+        "id": "019e3c66-b5d2-7f03-c9e5-1a4f6b9d0c08"
       }
     },
     "oauth": {

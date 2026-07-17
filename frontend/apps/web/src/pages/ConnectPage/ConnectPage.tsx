@@ -370,8 +370,20 @@ export function ConnectPage() {
               logo="/branding/slack/logo.svg"
               background="bg-purple-600"
               border="border-purple-500"
-              text="Sync Slack to capture your team communications, channels, and workspace activity. Coming soon."
-              disabled
+              text="Sync Slack to capture your team communications, channels, and workspace activity."
+              {...getCardProps('019e3c66-b5d2-7f03-c9e5-1a4f6b9d0c08', () =>
+                navigate('/providers/019e3c66-b5d2-7f03-c9e5-1a4f6b9d0c08'),
+              )}
+              subtext={
+                connectionsCount['019e3c66-b5d2-7f03-c9e5-1a4f6b9d0c08'] === 1
+                  ? `1 Connection`
+                  : connectionsCount['019e3c66-b5d2-7f03-c9e5-1a4f6b9d0c08'] > 1
+                    ? `${connectionsCount['019e3c66-b5d2-7f03-c9e5-1a4f6b9d0c08']} Connections`
+                    : undefined
+              }
+              className={
+                connectionsCount['019e3c66-b5d2-7f03-c9e5-1a4f6b9d0c08'] > 0 ? 'bg-green-200' : undefined
+              }
             />
             <Card
               logo="/branding/x/logo.svg"
