@@ -5,6 +5,7 @@ import { FileText } from '@ci/shadcn/icons';
 import { gql, useFragment, type FragmentType } from '@/graphql';
 
 import { getFileChunkPreview, getFileChunkSubtitle, getFileChunkTitle } from '../../fileChunks';
+
 import { EntityRow } from './EntityRow';
 
 export const FILE_CHUNK_ROW_FRAGMENT = gql(`
@@ -44,7 +45,9 @@ export function FileChunkRow({ fileChunk, time, onClick }: Props) {
         <>
           {subtitle && <span>{subtitle}</span>}
           {preview && (
-            <span className="line-clamp-2 pl-0 text-muted-foreground/70">{subtitle ? ` · ${preview}` : preview}</span>
+            <span className="line-clamp-2 pl-0 text-muted-foreground/70">
+              {subtitle ? ` · ${preview}` : preview}
+            </span>
           )}
         </>
       }

@@ -690,9 +690,10 @@ export class SearchResolver {
 
   private static getEntityTimestamp(entry: ResolvedEntity): Date | null {
     // File chunks carry a { chunk, file } join; read the chunk's own fields.
-    const entity = (
-      entry.type === 'file-chunk' ? entry.entity.chunk : entry.entity
-    ) as Record<string, unknown>;
+    const entity = (entry.type === 'file-chunk' ? entry.entity.chunk : entry.entity) as Record<
+      string,
+      unknown
+    >;
     // Files/chunks have no domain time/startTime — fall back to createdAt so the
     // timeline sort matches timeOf() (the cursor) rather than sinking to epoch.
     const value = entity.time ?? entity.startTime ?? entity.createdAt ?? null;

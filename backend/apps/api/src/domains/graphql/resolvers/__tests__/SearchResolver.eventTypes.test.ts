@@ -42,14 +42,14 @@ describe('SearchResolver — event-type ("how") filter', () => {
     };
 
     const fileService = { getEntitiesForFiles: jest.fn().mockResolvedValue([]) };
-  const fileChunkService = { getEntitiesForFileChunks: jest.fn().mockResolvedValue([]) };
-  const resolver = new SearchResolver(
+    const fileChunkService = { getEntitiesForFileChunks: jest.fn().mockResolvedValue([]) };
+    const resolver = new SearchResolver(
       browserActivityService as never,
       communicationService as never,
       entityResolutionService as never,
       eventService as never,
-    fileService as never,
-    fileChunkService as never,
+      fileService as never,
+      fileChunkService as never,
       savedSearchService as never,
       searchService as never,
       tagService as never,
