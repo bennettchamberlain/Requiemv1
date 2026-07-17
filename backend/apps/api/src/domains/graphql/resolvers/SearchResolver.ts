@@ -63,7 +63,13 @@ const EMPTY_PAGE_INFO = {
   endCursor: null,
 };
 
-/** The time a result is ordered by (events use startTime, others use time). */
+/**
+ * The time a result is ordered by: events use startTime, timeline types use
+ * time, and types with only a row timestamp (files, document chunks) fall back
+ * to createdAt so they interleave into the browse timeline by upload time rather
+ * than sinking to the epoch. Must stay in lockstep with getEntityTimestamp, or
+ * a result's cursor position won't match its sort position.
+ */
 function timeOf(result: SearchResult): Date {
   if ('time' in result && result.time) {
     return new Date(result.time as string | Date);
@@ -71,6 +77,10 @@ function timeOf(result: SearchResult): Date {
 
   if ('startTime' in result && result.startTime) {
     return new Date(result.startTime as string | Date);
+  }
+
+  if ('createdAt' in result && result.createdAt) {
+    return new Date(result.createdAt as string | Date);
   }
 
   return new Date(0);
@@ -671,8 +681,13 @@ export class SearchResolver {
   }
 
   private static getEntityTimestamp(entry: ResolvedEntity): Date | null {
-    const entity = entry.entity as Record<string, unknown>;
-    const value = entity.time ?? entity.startTime ?? null;
+    // File chunks carry a { chunk, file } join; read the chunk's own fields.
+    const entity = (
+      entry.type === 'file-chunk' ? entry.entity.chunk : entry.entity
+    ) as Record<string, unknown>;
+    // Files/chunks have no domain time/startTime — fall back to createdAt so the
+    // timeline sort matches timeOf() (the cursor) rather than sinking to epoch.
+    const value = entity.time ?? entity.startTime ?? entity.createdAt ?? null;
 
     if (value instanceof Date) {
       return value;
