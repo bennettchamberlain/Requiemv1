@@ -134,6 +134,56 @@ describe('UserService — account deletion', () => {
   });
 
   /**
+   * `remove()` is the FK-unsafe hard delete — not the account-deletion path, and
+   * currently called by nothing. It is still worth pinning because the background purge
+   * job will be written against it, and it shipped with a missing `await` that made its
+   * own existence guard dead code (a Promise is always truthy), so it always reached
+   * the DELETE and emitted a spurious UserRemovedEvent for ids that do not exist.
+   */
+  describe('remove (hard delete)', () => {
+    it('does not delete or emit for a user that does not exist', async () => {
+      const { service, userRepository, eventService } = makeService();
+      userRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.remove(OWN, 'user-1')).resolves.toBe(false);
+      expect(userRepository.delete).not.toHaveBeenCalled();
+      expect(eventService.send).not.toHaveBeenCalled();
+    });
+
+    it('deletes and emits exactly once for a user that does exist', async () => {
+      const { service, userRepository, eventService } = makeService();
+      userRepository.findOne.mockResolvedValue(storedUser);
+
+      await expect(service.remove(OWN, 'user-1')).resolves.toBe(true);
+      expect(userRepository.delete).toHaveBeenCalledWith('user-1');
+      expect(eventService.send).toHaveBeenCalledWith(UserRemovedEvent, { userId: 'user-1' });
+    });
+
+    it('refuses to hard-delete someone else’s account', async () => {
+      const { service, userRepository } = makeService();
+
+      await expect(service.remove(OTHER, 'user-1')).rejects.toThrow(UnauthorizedException);
+      expect(userRepository.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * The one read that must opt INTO deleted rows. A soft-deleted user keeps their
+   * address and `ci.users.email` is UNIQUE across deleted rows, so reading through the
+   * default filter would report a departed user's address as free and signup would hit
+   * a raw constraint violation instead of a clean "already registered".
+   */
+  describe('checkEmailAvailability', () => {
+    it('sees soft-deleted rows, so a departed address is still reported as taken', async () => {
+      const { service, userRepository } = makeService();
+      userRepository.findOne.mockResolvedValue(storedUser);
+
+      await expect(service.checkEmailAvailability('jsmith@example.com')).resolves.toBe(true);
+      expect(userRepository.findOne).toHaveBeenCalledWith(expect.objectContaining({ withDeleted: true }));
+    });
+  });
+
+  /**
    * Auth resolves users through exactly these three methods. If any of them ever opts
    * out of the soft-delete filter with `withDeleted: true`, a deleted account starts
    * authenticating again — the one failure this feature exists to prevent.

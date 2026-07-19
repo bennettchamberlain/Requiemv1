@@ -139,7 +139,10 @@ export class UserService {
       throw new UnauthorizedException();
     }
 
-    const existingUser = this.findById(context, id);
+    // `await` matters: without it this is a Promise, which is always truthy, so the
+    // guard below never fired and `remove()` always reached the DELETE — firing a
+    // spurious UserRemovedEvent for an id that does not exist.
+    const existingUser = await this.findById(context, id);
 
     if (!existingUser) {
       return false;
