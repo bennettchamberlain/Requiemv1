@@ -72,6 +72,19 @@ type AnswerEdge implements Edge {
   node: AnswerType!
 }
 
+enum AnswerForm {
+  attribute
+  boolean
+  existence
+  identity
+  retrieval
+}
+
+enum AnswerSource {
+  peer
+  self
+}
+
 type AnswerType implements Node {
   answer: String!
   answerMethod: String!
@@ -79,6 +92,92 @@ type AnswerType implements Node {
   answeredAt: DateTime!
   id: ID!
   question: QuestionType!
+}
+
+type AskAnswerType {
+  answerSource: AnswerSource!
+  askId: ID!
+  consentBasis: String
+  createdAt: DateTime!
+  disclosedCount: Int!
+  form: AnswerForm!
+  id: ID!
+  items: [DisclosedItemType!]!
+  summary: String
+  withheldCount: Int!
+}
+
+enum AskAuditOutcome {
+  answered
+  auto_answered
+  declined
+  expired
+}
+
+type AskAuditType {
+  askId: ID
+  askerId: ID!
+  consentBasis: String
+  createdAt: DateTime!
+  id: ID!
+  outcome: AskAuditOutcome!
+  query: AskQueryType!
+  responderId: ID!
+}
+
+type AskGrantPayload {
+  grant: AskGrantType
+  success: Boolean!
+}
+
+type AskGrantType {
+  createdAt: DateTime!
+  dataClass: String
+  granteeId: ID!
+  id: ID!
+  mode: GrantMode!
+  purpose: String
+  queryType: String!
+  revokedAt: DateTime
+}
+
+type AskPayload {
+  ask: AskType
+  success: Boolean!
+}
+
+input AskQueryInput {
+  dataClass: String
+  prompt: String!
+  queryType: String!
+}
+
+type AskQueryType {
+  dataClass: String
+  prompt: String!
+  queryType: String!
+}
+
+enum AskStatus {
+  answered
+  answering
+  declined
+  delivered
+  expired
+  sent
+  under_review
+}
+
+type AskType {
+  askerId: ID!
+  consentBasis: String
+  createdAt: DateTime!
+  expiresAt: DateTime
+  id: ID!
+  query: AskQueryType!
+  responderId: ID!
+  status: AskStatus!
+  updatedAt: DateTime!
 }
 
 type BrowserActivityConnection implements Connection {
@@ -257,6 +356,26 @@ type ContentType implements Node & Taggable {
 input CreateAnswerInput {
   answer: String!
   questionId: String!
+}
+
+input CreateAskGrantInput {
+  dataClass: String
+  dataClasses: [String!]
+  granteeId: ID!
+  mode: GrantMode!
+  purpose: String
+  queryType: String!
+}
+
+input CreateAskInput {
+  query: AskQueryInput!
+  responderId: ID!
+}
+
+type CreateAskPayload {
+  ask: AskType
+  decision: String
+  success: Boolean!
 }
 
 input CreateBrowserActivityInput {
@@ -507,6 +626,11 @@ type DeleteByIdPayload {
   success: Boolean!
 }
 
+type DisclosedItemType {
+  id: String!
+  type: String!
+}
+
 interface Edge {
   cursor: String!
   node: Node!
@@ -636,6 +760,12 @@ type ForecastType {
 
   """System status of the HBPE engine (COLD_START, TRAINING, READY)"""
   systemStatus: String!
+}
+
+enum GrantMode {
+  auto
+  block
+  review
 }
 
 input GraphEntityInput {
@@ -789,10 +919,13 @@ type MessageType implements Node {
 }
 
 type Mutation {
+  approveAsk(id: ID!): AskPayload!
   bulkIngestGraph(input: BulkGraphInput!): BulkGraphPayload!
   bulkIngestItemRelationships(input: [ItemRelationshipInput!]!): BulkItemRelationshipResult!
   createAnswer(input: CreateAnswerInput!): AnswerType!
   createAnswers(input: [CreateAnswerInput!]!): [AnswerType!]!
+  createAsk(input: CreateAskInput!): CreateAskPayload!
+  createAskGrant(input: CreateAskGrantInput!): AskGrantPayload!
   createBrowserActivities(input: [CreateBrowserActivityInput!]!): [BrowserActivityType!]!
   createCommunications(input: [CreateCommunicationInput!]!): [CommunicationType!]!
   createConcept(input: CreateConceptInput!): CreateConceptPayload!
@@ -816,6 +949,7 @@ type Mutation {
   createQuestions(input: [CreateQuestionInput!]!): [QuestionType!]!
   createRelationship(input: CreateRelationshipInput!): CreateRelationshipPayload!
   createSavedSearch(input: CreateSavedSearchInput!): CreateSavedSearchPayload!
+  declineAsk(id: ID!): AskPayload!
   deleteConcept(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteConnection(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteConnectionSyncJob(input: DeleteByIdInput!): DeleteByIdPayload!
@@ -843,6 +977,8 @@ type Mutation {
   removeEvent(id: String!): Boolean!
   removePlace(id: String!): Boolean!
   removeQuestion(id: String!): Boolean!
+  revokeAskGrant(id: ID!): AskGrantPayload!
+  runAsk(id: ID!, redactItemIds: [String!]): RunAskPayload!
   setSavedSearchSharing(input: SetSavedSearchSharingInput!): UpdateSavedSearchPayload!
   startPairing: StartPairingPayload!
   tagEntities(input: TagEntitiesInput!): [TaggableEntityType!]!
@@ -1028,6 +1164,11 @@ type Query {
   actions(after: String, before: String, first: Int, last: Int): ActionConnection!
   answer(id: ID!): AnswerType
   answers(after: String, before: String, first: Int, last: Int): AnswerConnection!
+  ask(id: ID!): AskType
+  askAnswer(id: ID!): AskAnswerType
+  askDisclosureHistory: [AskAuditType!]!
+  askInbox: [AskType!]!
+  askOutbox: [AskType!]!
   browserActivities(after: String, before: String, first: Int, last: Int): BrowserActivityConnection!
   browserActivity(id: ID!): BrowserActivityType
   communication(id: ID!): CommunicationType
@@ -1063,6 +1204,7 @@ type Query {
   knownPlaceCandidates: [KnownPlaceCandidateType!]!
   knownPlaces(kind: String): [KnownPlaceType!]!
   me: UserType
+  myAskGrants: [AskGrantType!]!
   node(id: ID!): Node
   note(id: ID!): NoteType
   notes(after: String, before: String, first: Int, last: Int): NoteConnection!
@@ -1133,6 +1275,14 @@ type RelationshipType implements Node {
   toNodeId: ID!
   toNodeType: String!
   type: String!
+}
+
+type RunAskPayload {
+  answer: AskAnswerType
+  ask: AskType
+  disclosedCount: Int
+  success: Boolean!
+  withheldCount: Int
 }
 
 type SavedSearchConnection implements Connection {
