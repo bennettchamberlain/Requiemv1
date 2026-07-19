@@ -38,9 +38,7 @@ export function evaluateGrant(
   }
 
   // Positive grants (auto / review) match strictly on the declared class.
-  const matches = active.filter(
-    (grant) => grant.mode !== 'block' && grantMatchesQuery(grant, query),
-  );
+  const matches = active.filter((grant) => grant.mode !== 'block' && grantMatchesQuery(grant, query));
 
   const auto = matches.find((grant) => grant.mode === 'auto');
   if (auto) {

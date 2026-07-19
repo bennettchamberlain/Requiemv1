@@ -112,7 +112,12 @@ function makeServiceWithRepo(entity: Record<string, unknown>) {
   const grantService = { evaluate: jest.fn() };
   const auditService = { record: jest.fn().mockResolvedValue(undefined) };
   const logger = { setContext: jest.fn() };
-  const service = new AskService(repo as never, grantService as never, auditService as never, logger as never);
+  const service = new AskService(
+    repo as never,
+    grantService as never,
+    auditService as never,
+    logger as never,
+  );
 
   return { service, repo, auditService };
 }
@@ -139,9 +144,7 @@ describe('AskService.complete', () => {
     const result = await service.complete(OWNER, 'ask-1', []);
 
     expect(result.status).toBe('answered'); // delivered → answering → answered
-    expect(auditService.record).toHaveBeenCalledWith(
-      expect.objectContaining({ outcome: 'auto_answered' }),
-    );
+    expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'auto_answered' }));
   });
 
   it('refuses to complete an ask that is not yet answerable', async () => {

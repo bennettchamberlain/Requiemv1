@@ -132,18 +132,12 @@ export class AskService {
    * audit with the disclosed entity ids. Responder-scoped. An auto-authorized
    * ask is first advanced `delivered → answering` so the lifecycle is honored.
    */
-  async complete(
-    context: UserServiceContext,
-    id: string,
-    disclosedEntityIds: string[],
-  ): Promise<Ask> {
+  async complete(context: UserServiceContext, id: string, disclosedEntityIds: string[]): Promise<Ask> {
     const entity = await this.responderOwned(context, id);
 
     const isAuto = entity.status === 'delivered' && entity.consentBasis != null;
     if (entity.status !== 'answering' && !isAuto) {
-      throw new BadRequestException(
-        `Ask ${id} is not ready to answer (status: ${entity.status})`,
-      );
+      throw new BadRequestException(`Ask ${id} is not ready to answer (status: ${entity.status})`);
     }
 
     if (entity.status === 'delivered') {
@@ -252,10 +246,7 @@ export class AskService {
     return AskEntity.toEgressType(saved);
   }
 
-  private async forParticipant(
-    context: UserServiceContext,
-    id: string,
-  ): Promise<AskEntity | null> {
+  private async forParticipant(context: UserServiceContext, id: string): Promise<AskEntity | null> {
     return this.askRepository.findOne({
       where: [
         { id, askerUserId: context.userId },

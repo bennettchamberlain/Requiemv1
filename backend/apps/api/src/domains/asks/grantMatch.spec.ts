@@ -54,10 +54,7 @@ describe('evaluateGrant', () => {
   });
 
   it('block wins over auto (deny-biased precedence)', () => {
-    const grants = [
-      grant({ id: 'a', mode: 'auto' }),
-      grant({ id: 'b', mode: 'block' }),
-    ];
+    const grants = [grant({ id: 'a', mode: 'auto' }), grant({ id: 'b', mode: 'block' })];
     expect(evaluateGrant(ask(), grants, NOW)).toEqual({ decision: 'deny', grantId: 'b' });
   });
 

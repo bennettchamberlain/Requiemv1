@@ -63,7 +63,15 @@ function makeResolver(enabled: boolean) {
     featureService as never,
   );
 
-  return { resolver, askService, grantService, rateLimitService, executorService, answerService, featureService };
+  return {
+    resolver,
+    askService,
+    grantService,
+    rateLimitService,
+    executorService,
+    answerService,
+    featureService,
+  };
 }
 
 describe('AskResolver — feature-flag gating', () => {
@@ -147,13 +155,11 @@ describe('AskResolver — enabled', () => {
     askService.findById = jest.fn().mockResolvedValue(ownAsk);
     askService.complete = jest.fn().mockResolvedValue({ ...ownAsk, status: 'answered' });
     // three matches; owner keeps only e1
-    executorService.execute = jest
-      .fn()
-      .mockResolvedValue([
-        { id: 'e1', type: 'file' },
-        { id: 'e2', type: 'file' },
-        { id: 'e3', type: 'file' },
-      ]);
+    executorService.execute = jest.fn().mockResolvedValue([
+      { id: 'e1', type: 'file' },
+      { id: 'e2', type: 'file' },
+      { id: 'e3', type: 'file' },
+    ]);
 
     const result = await resolver.runAsk(CTX, GlobalUID.encode('ask', 'ask-1'), ['e2', 'e3']);
 

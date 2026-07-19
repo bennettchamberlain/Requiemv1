@@ -59,9 +59,7 @@ export function buildDisclosedAnswer(params: {
   const withheldCount = params.matches.length - kept.length;
   const disclosedCount = kept.length;
 
-  const items = formDisclosesItems(params.form)
-    ? kept.map((item) => ({ id: item.id, type: item.type }))
-    : [];
+  const items = formDisclosesItems(params.form) ? kept.map((item) => ({ id: item.id, type: item.type })) : [];
 
   return {
     form: params.form,
