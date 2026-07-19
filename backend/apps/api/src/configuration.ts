@@ -142,6 +142,9 @@ export const ConfigSchema = z.object({
     hbpe: z.object({
       host: z.string(),
     }),
+    parser: z.object({
+      host: z.string(),
+    }),
   }),
   // Embedding/indexing pipeline knobs. These let a deployment point the embedder
   // at a GPU/alternate-host Ollama and tune throughput for bulk imports without
@@ -181,16 +184,18 @@ export const ConfigSchema = z.object({
       return val;
     }, z.array(z.string()).default([])),
   }),
-  // PGBoss worker tuning. concurrency is the global in-flight job ceiling across
-  // all queues; fetchBatchSize caps how many jobs a single fetch pulls. This
-  // global pool is shared by every queue, so the search-index (embedding) workers
-  // only fill the Ollama coalescing buffer as fast as they get slots — the
-  // default is sized so a post-import backfill drains in hours, not days. Raise
-  // CI_QUEUE_CONCURRENCY / CI_EMBED_CONCURRENCY further (and CI_QUEUE_SUPPRESS the
-  // enrichment queues) to push a large import harder.
+  // PGBoss worker tuning. concurrency is the GLOBAL in-flight job ceiling across
+  // all queues; fetchBatchSize caps how many jobs a single fetch pulls;
+  // perQueueConcurrency caps how many jobs any ONE queue may run at once. The
+  // per-queue cap is sized below the global ceiling so a burst of slow jobs on
+  // one queue (image-description / embedding on the shared Ollama host) can no
+  // longer monopolize the global pool and starve another queue — the observed
+  // search-index backlog stall. Raise CI_QUEUE_CONCURRENCY / CI_EMBED_CONCURRENCY
+  // (and CI_QUEUE_SUPPRESS the enrichment queues) to push a large import harder.
   queues: z.object({
     concurrency: z.coerce.number().int().positive().default(32),
     fetchBatchSize: z.coerce.number().int().positive().default(20),
+    perQueueConcurrency: z.coerce.number().int().positive().default(6),
   }),
   features: z.object({
     'scheduled.answer.inferencing': booleanStringSchema,
@@ -278,6 +283,21 @@ if (!parsed.geocoding.apiKey) {
     '[configuration] No geocoding API key configured (GEOCODING_API_KEY / GOOGLE_MAPS_KEY). ' +
       'Forward-geocode backfills will be skipped until one is set.',
   );
+}
+
+// The field-encryption key protects OAuth access/refresh tokens and provider
+// client secrets at rest. The config default is 64 hex zeros — valid by format
+// but cryptographically useless. Surface it loudly (like the geocode key) so it
+// is never silently run in a real deployment. Refuse to boot outside dev.
+if (/^0{64}$/i.test(parsed.auth.encryption.fieldKey)) {
+  const msg =
+    '[configuration] FIELD_ENCRYPTION_KEY is the all-zero default — OAuth tokens and ' +
+    'provider client secrets would be encrypted with a well-known key. Set a real 256-bit key.';
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(msg);
+  }
+
+  console.warn(msg);
 }
 
 export default parsed;

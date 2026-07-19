@@ -1,4 +1,8 @@
-import { buildCoverage, EmbedCoverageTelemetryService } from './EmbedCoverageTelemetryService';
+import {
+  buildCoverage,
+  EmbedCoverageTelemetryService,
+  UNDER_COVERAGE_THRESHOLD,
+} from './EmbedCoverageTelemetryService';
 
 /**
  * Build a DataSource whose `query` returns COUNT rows keyed on the type being
@@ -97,32 +101,64 @@ function makeService(sourceCounts: Record<string, number>, embeddedCounts: Recor
 }
 
 describe('buildCoverage', () => {
-  it('computes ratio embedded/total and never alarms on a covered type', () => {
+  it('computes ratio embedded/total; a partially-covered type does not alarm but IS under threshold', () => {
+    // 6.5% covered: not a total hole (alarm false), but well under the 90% target.
     expect(buildCoverage(42376, 2743)).toEqual({
       total: 42376,
       embedded: 2743,
       ratio: 2743 / 42376,
       alarm: false,
+      underThreshold: true,
     });
   });
 
-  it('reports ratio 0 and NO alarm for an empty type (no divide-by-zero)', () => {
-    expect(buildCoverage(0, 0)).toEqual({ total: 0, embedded: 0, ratio: 0, alarm: false });
+  it('reports ratio 0 and NO alarm/underThreshold for an empty type (no divide-by-zero)', () => {
+    expect(buildCoverage(0, 0)).toEqual({
+      total: 0,
+      embedded: 0,
+      ratio: 0,
+      alarm: false,
+      underThreshold: false,
+    });
   });
 
-  it('alarms only when there ARE source rows but zero embeddings (gap G2)', () => {
+  it('alarms AND flags underThreshold when there ARE source rows but zero embeddings (gap G2)', () => {
     expect(buildCoverage(366862, 0)).toEqual({
       total: 366862,
       embedded: 0,
       ratio: 0,
       alarm: true,
+      underThreshold: true,
     });
+  });
+
+  it('does not flag a well-covered type (ratio >= threshold)', () => {
+    const coverage = buildCoverage(1000, 950); // 95% >= 90%
+    expect(coverage.alarm).toBe(false);
+    expect(coverage.underThreshold).toBe(false);
+  });
+
+  it('flags underThreshold just below the threshold and not just above it', () => {
+    expect(buildCoverage(1000, 899).underThreshold).toBe(true); // 89.9% < 90%
+    expect(buildCoverage(1000, 900).underThreshold).toBe(false); // exactly 90% is covered
+  });
+
+  it('honours a custom threshold', () => {
+    // 50% coverage: under a 0.9 target, but fine under a 0.4 target.
+    expect(buildCoverage(100, 50, 0.9).underThreshold).toBe(true);
+    expect(buildCoverage(100, 50, 0.4).underThreshold).toBe(false);
+  });
+
+  it('exports a sane default threshold', () => {
+    expect(UNDER_COVERAGE_THRESHOLD).toBeGreaterThan(0);
+    expect(UNDER_COVERAGE_THRESHOLD).toBeLessThanOrEqual(1);
   });
 
   it('clamps ratio to [0, 1] even if embedded transiently exceeds total', () => {
     // A backfill in flight can momentarily embed more rows than the source count
     // snapshot; the ratio must not report > 1.
     expect(buildCoverage(10, 12).ratio).toBe(1);
+    expect(buildCoverage(10, 12).underThreshold).toBe(false);
   });
 });
 
@@ -140,6 +176,7 @@ describe('EmbedCoverageTelemetryService', () => {
       embedded: 0,
       ratio: 0,
       alarm: true,
+      underThreshold: true,
     });
     expect(report.perType.event.ratio).toBeCloseTo(0.0647, 3);
     expect(report.perType.communication.ratio).toBe(1);
@@ -149,8 +186,11 @@ describe('EmbedCoverageTelemetryService', () => {
       expect(coverage.ratio).toBeLessThanOrEqual(1);
     }
 
-    // Only content tripped the zero-coverage alarm.
+    // Only content tripped the zero-coverage alarm...
     expect(report.alarms).toEqual(['content']);
+    // ...but both content (0%) and event (6.5%) are under the coverage target,
+    // while the fully-covered communication type is not.
+    expect(report.underThreshold.sort()).toEqual(['content', 'event']);
     expect(typeof report.computedAt).toBe('string');
   });
 
@@ -174,5 +214,23 @@ describe('EmbedCoverageTelemetryService', () => {
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Embed-coverage alarm'), {
       alarms: ['content'],
     });
+  });
+
+  it('logs a separate below-target warning for partially-covered (non-zero) types', async () => {
+    // 40% covered: not a zero-hole, so it must NOT show up in the alarm warning,
+    // but it IS under the 90% target and should be surfaced separately.
+    const { service, logger } = makeService({ content: 100 }, { content: 40 });
+
+    const report = await service.computeCoverage(['content']);
+
+    expect(report.alarms).toEqual([]);
+    expect(report.underThreshold).toEqual(['content']);
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('below target'), {
+      underThreshold: ['content'],
+    });
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      expect.stringContaining('Embed-coverage alarm'),
+      expect.anything(),
+    );
   });
 });

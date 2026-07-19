@@ -8,6 +8,7 @@ import { AsksModule } from '@ci/domains/asks';
 import { BrowserActivityModule } from '@ci/domains/browser-activity';
 import { ConnectionsModule } from '@ci/domains/connections';
 import { ConversationModule } from '@ci/domains/conversations';
+import { DeviceModule } from '@ci/domains/devices';
 import { EntityResolutionModule } from '@ci/domains/entity-resolution';
 import { EtlModule } from '@ci/domains/etl';
 import { FilesModule } from '@ci/domains/files';
@@ -15,10 +16,13 @@ import { GraphModule } from '@ci/domains/graph';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule } from '@ci/domains/memory';
 import { NotesModule } from '@ci/domains/notes';
+import { PairingModule } from '@ci/domains/pairing';
+import { ParsingModule } from '@ci/domains/parsing';
 import { PredictionsModule } from '@ci/domains/predictions';
 import { SearchNextModule } from '@ci/domains/search-next';
 import { SummariesModule } from '@ci/domains/summaries';
 import { UserModule } from '@ci/domains/user';
+import { UserSnapshotsModule } from '@ci/domains/user-snapshots';
 
 import { GraphQLController } from './controllers/GraphQLController';
 import { ConnectionLoader } from './loaders/ConnectionLoader';
@@ -54,6 +58,7 @@ import { ItemResolver } from './resolvers/ItemResolver';
 import { KnownPlacesResolver } from './resolvers/KnownPlacesResolver';
 import { NodeResolver } from './resolvers/NodeResolver';
 import { NoteResolver } from './resolvers/NoteResolver';
+import { PairingResolver } from './resolvers/PairingResolver';
 import { PersonResolver } from './resolvers/PersonResolver';
 import { PlaceResolver } from './resolvers/PlaceResolver';
 import { ProviderKeyResolver } from './resolvers/ProviderKeyResolver';
@@ -66,6 +71,7 @@ import { SummaryResolver } from './resolvers/SummaryResolver';
 import { TagResolver } from './resolvers/TagResolver';
 import { ThreadResolver } from './resolvers/ThreadResolver';
 import { UserResolver } from './resolvers/UserResolver';
+import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
 
 @Module({
   imports: [
@@ -78,8 +84,10 @@ import { UserResolver } from './resolvers/UserResolver';
       graphiql: false,
     }),
     AsksModule,
+    PairingModule,
     BrowserActivityModule,
     ConnectionsModule,
+    DeviceModule,
     PredictionsModule,
     ConversationModule,
     EntityResolutionModule,
@@ -89,14 +97,17 @@ import { UserResolver } from './resolvers/UserResolver';
     IntelligenceModule,
     MemoryModule,
     NotesModule,
+    ParsingModule,
     SearchNextModule,
     SummariesModule,
     UserModule,
+    UserSnapshotsModule,
   ],
   providers: [
     ActionResolver,
     AskResolver,
     ForecastResolver,
+    PairingResolver,
     BrowserActivityResolver,
     CommunicationResolver,
     ComplexityPlugin,
@@ -138,6 +149,7 @@ import { UserResolver } from './resolvers/UserResolver';
     ThreadLoader,
     ThreadMessagesLoader,
     ThreadResolver,
+    UserSnapshotResolver,
     UserResolver,
   ],
   controllers: [GraphQLController],

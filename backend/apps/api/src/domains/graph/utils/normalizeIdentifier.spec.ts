@@ -18,6 +18,13 @@ describe('normalizeEmail', () => {
     expect(normalizeEmail(null)).toBeNull();
     expect(normalizeEmail(undefined)).toBeNull();
   });
+
+  it('extracts the address from an RFC 5322 mailbox so display names do not fragment identity', () => {
+    expect(normalizeEmail('Bill Hegemon <hegemon.bill@gmail.com>')).toBe('hegemon.bill@gmail.com');
+    expect(normalizeEmail('<Hegemon.Bill@Gmail.com>')).toBe('hegemon.bill@gmail.com');
+    // A bare address (no angle brackets) still normalizes as before.
+    expect(normalizeEmail('hegemon.bill@gmail.com')).toBe('hegemon.bill@gmail.com');
+  });
 });
 
 describe('normalizePhone', () => {
