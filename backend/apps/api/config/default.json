@@ -71,7 +71,7 @@
       "enabled": false,
       "issuer": "https://hub.ci.computer",
       "jwksUri": "https://hub.ci.computer/api/auth/jwks",
-      "audience": "ci-server,ci-hub,ci-import-tools,ci-browser-extension"
+      "audience": "ci-server,ci-hub,ci-import-tools,ci-browser-extension,ci-even"
     },
     "hubForwardAuth": {
       "enabled": false,
@@ -115,6 +115,9 @@
     },
     "hbpe": {
       "host": "http://hbpe-service:8002"
+    },
+    "parser": {
+      "host": "http://summary-service:8002"
     }
   },
   "embedding": {
@@ -127,7 +130,8 @@
   },
   "queues": {
     "concurrency": 10,
-    "fetchBatchSize": 10
+    "fetchBatchSize": 10,
+    "perQueueConcurrency": 6
   },
   "features": {
     "scheduled.answer.inferencing": true,

@@ -16,7 +16,6 @@ import { EntityTagType } from '../types/EntityTagType';
 import { EventType } from '../types/EventType';
 import { GlobalUID } from '../types/GlobalUID';
 import { PaginationArgs } from '../types/PaginationArgs';
-import { Paginator } from '../utils/Paginator';
 
 /**
  * Upper bound on rows accepted by a single createContents call. The batch runs
@@ -174,14 +173,17 @@ export class ContentResolver {
   ): Promise<ContentConnection> {
     const serviceContext = toServiceContext(context);
 
-    const entities = await this.contentService.findAll(serviceContext);
+    const { entities, hasNextPage, hasPreviousPage, totalCount } = await this.contentService.findPage(
+      serviceContext,
+      {
+        first: pagination.first,
+        last: pagination.last,
+        afterId: pagination.after ? GlobalUID.decode(pagination.after).id : null,
+        beforeId: pagination.before ? GlobalUID.decode(pagination.before).id : null,
+      },
+    );
 
-    const { slice, pageInfo, totalCount } = Paginator.paginate(entities, {
-      ...pagination,
-      getId: (entity) => GlobalUID.encode('content', entity.id),
-    });
-
-    const edges: ContentEdge[] = slice.map((entity) => {
+    const edges: ContentEdge[] = entities.map((entity) => {
       const node = ContentType.toType(entity);
 
       return {
@@ -189,6 +191,13 @@ export class ContentResolver {
         cursor: node.id,
       };
     });
+
+    const pageInfo = {
+      hasNextPage,
+      hasPreviousPage,
+      startCursor: edges.length > 0 ? edges[0].cursor : null,
+      endCursor: edges.length > 0 ? edges[edges.length - 1].cursor : null,
+    };
 
     return {
       edges,

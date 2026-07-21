@@ -8,7 +8,10 @@ import { FileService, PreviewGeneratedEvent, type PreviewGeneratedPayload } from
 
 import { OllamaService } from '../services/OllamaService';
 
-const DEFAULT_MODEL = 'llama3.2-vision:11b';
+// Must be a vision-capable model actually present in the target Ollama, or
+// OllamaService.validateModel() throws before every call and 100% of image
+// jobs fail. `llava:7b` is the baseline vision model we ship/pull.
+const DEFAULT_MODEL = 'llava:7b';
 
 const PROMPT = `
   Analyze this image and provide a title and description.

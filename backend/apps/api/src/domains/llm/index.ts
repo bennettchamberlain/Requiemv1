@@ -28,6 +28,7 @@ import { ToolsModule } from '@ci/domains/tools';
 
 import { OllamaController } from './controllers/OllamaController';
 import { AnswerInferenceCron } from './cron/AnswerInferenceCron';
+import { AnswerInferenceListener } from './listeners/AnswerInferenceListener';
 import { CvDetectionsListener } from './listeners/CvDetectionsListener';
 import { ImageDescriptionListener } from './listeners/ImageDescriptionListener';
 import { InventoryListener } from './listeners/InventoryListener';
@@ -40,6 +41,7 @@ import { OllamaService } from './services/OllamaService';
   imports: [ConversationModule, EventsModule, FilesModule, IntelligenceModule, MemoryModule, ToolsModule],
   providers: [
     AnswerInferenceCron,
+    AnswerInferenceListener,
     CvDetectionsListener,
     ImageDescriptionListener,
     InventoryListener,
