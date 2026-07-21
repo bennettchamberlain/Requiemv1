@@ -44,6 +44,10 @@ export class CreateCommunicationInput {
   @Field(() => [GraphQLJSONObject], { nullable: true })
   attachments?: Record<string, unknown>[];
 
+  /** Call duration in seconds. */
+  @Field(() => Number, { nullable: true })
+  durationSeconds?: number;
+
   @Field(() => String, { nullable: true })
   sourceType?: string;
 

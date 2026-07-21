@@ -283,6 +283,7 @@ input CreateCommunicationInput {
   communicationType: String!
   content: String!
   direction: String
+  durationSeconds: Float
   fromEntityId: String
   participantsMetadata: JSON
   preview: String
