@@ -22,10 +22,9 @@ import { CsrfGuard } from '../guards/CsrfGuard';
 import { AuthService } from '../services/AuthService';
 import { CsrfService } from '../services/CsrfService';
 import { JwtPayload, LoginDto } from '../types';
+import { clearCsrfCookie, ensureCsrfCookie, setCsrfCookie } from '../utils/csrfCookie';
 
 const COOKIE_MAX_AGE = parseDuration(config.auth.jwt.refreshTokenExpiration) ?? 0;
-
-const CSRF_COOKIE_NAME = config.auth.cookies.csrfTokenName;
 
 const localStrategySchema = z.object({
   username: z.string(),
@@ -44,13 +43,15 @@ export class SessionController {
    * Issue a pre-auth CSRF token cookie. The frontend should call this before
    * submitting the login form and include the token as an `X-CSRF-Token`
    * header on the POST /authenticate request.
+   *
+   * Reuses a valid existing cookie (only minting when absent/invalid), so the
+   * endpoint is idempotent and safe to call at any time — it can never
+   * invalidate a token already embedded in an open page or another tab.
    */
   @Get('csrf')
   @HttpCode(204)
   issueCsrfToken(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const token = this.csrfService.generateToken();
-
-    this.setCsrfCookie(req, res, token);
+    ensureCsrfCookie(this.csrfService, req, res);
   }
 
   @Post()
@@ -73,7 +74,6 @@ export class SessionController {
     );
 
     const accessToken = await this.authService.issueAccessToken(user.id);
-    const csrfToken = this.csrfService.generateToken();
 
     res.cookie(config.auth.cookies.sessionTokenName, sessionToken, {
       httpOnly: true,
@@ -83,7 +83,10 @@ export class SessionController {
       maxAge: COOKIE_MAX_AGE,
     });
 
-    this.setCsrfCookie(req, res, csrfToken);
+    // Identity boundary: mint a fresh CSRF token (token-fixation hygiene). This
+    // and the other auth boundaries (signup, OIDC sign-in) are the only places
+    // that rotate — everywhere else reuses the existing valid cookie.
+    setCsrfCookie(req, res, this.csrfService.generateToken());
 
     return {
       accessToken,
@@ -126,11 +129,16 @@ export class SessionController {
         path: '/',
         maxAge: COOKIE_MAX_AGE,
       });
-
-      const csrfToken = this.csrfService.generateToken();
-
-      this.setCsrfCookie(req, res, csrfToken);
     }
+
+    // Reuse the existing CSRF token (sliding its maxAge) rather than minting a
+    // new one. Refresh is not an identity change, and rotating here invalidated
+    // every token embedded in an open page — the no-JS connect-consent form
+    // 403'd whenever the SPA's background refresh fired in another tab, and two
+    // tabs refreshing concurrently could 403 each other into a spurious logout
+    // (defeating the session-token grace period above, which exists precisely
+    // to tolerate that concurrency).
+    ensureCsrfCookie(this.csrfService, req, res);
 
     return {
       accessToken,
@@ -158,7 +166,7 @@ export class SessionController {
       path: '/',
     });
 
-    this.clearCsrfCookie(req, res);
+    clearCsrfCookie(req, res);
   }
 
   private getSessionToken(req: Request) {
@@ -175,23 +183,5 @@ export class SessionController {
     } catch {
       throw new UnauthorizedException('Invalid or expired token');
     }
-  }
-
-  private setCsrfCookie(req: Request, res: Response, token: string): void {
-    res.cookie(CSRF_COOKIE_NAME, token, {
-      httpOnly: false,
-      secure: req.secure,
-      sameSite: 'strict',
-      path: '/',
-    });
-  }
-
-  private clearCsrfCookie(req: Request, res: Response): void {
-    res.clearCookie(CSRF_COOKIE_NAME, {
-      httpOnly: false,
-      secure: req.secure,
-      sameSite: 'strict',
-      path: '/',
-    });
   }
 }

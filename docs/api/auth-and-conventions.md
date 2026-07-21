@@ -65,7 +65,9 @@ res.cookie(config.auth.cookies.sessionTokenName, sessionToken, {
 });
 ```
 
-CSRF cookie (`SessionController.ts:180-187`): `httpOnly: false` (JS reads it for the double-submit header), `secure: req.secure`, `sameSite: 'strict'`, no `maxAge`. Default cookie names (`default.json:29-32`): `sessionToken`, `csrfToken`.
+CSRF cookie (`domains/auth/utils/csrfCookie.ts` — the single source of truth for its attributes): `httpOnly: false` (JS reads it for the double-submit header), `secure: req.secure`, `sameSite: 'strict'`, `maxAge` matching the session cookie (7d) so the pair lives and dies together — a browser restart no longer strands a valid session behind a missing csrf cookie. Default cookie names (`default.json:29-32`): `sessionToken`, `csrfToken`.
+
+**Stable-token model** (`CsrfService.ensureToken`): a CSRF token identifies a *browser*, not a request. Every issue/render site (`GET /authenticate/csrf`, refresh, the connect-consent and confirm-account pages) **reuses a valid existing cookie** and only mints when the cookie is absent or invalid; rotation happens **only at identity boundaries** — login, signup, OIDC sign-in (fixation hygiene) — and logout clears it. This keeps all tabs and server-rendered forms converged on one token, so a background session refresh can never invalidate a page rendered earlier (the CI-Server#1740 race). CSRF failures on the no-JS consent/confirm forms self-heal with a one-shot 303 back to their GET (re-rendering against the current cookie); a second consecutive failure means cookies are blocked and surfaces a hard error.
 
 > **Why `secure: req.secure` (not `true`) matters — the plain-HTTP Tailscale case.** Because the flag mirrors the actual connection, cookies still set over plain HTTP (e.g. a `*.ts.net` exposure) rather than being dropped. Combined with `sameSite: 'lax'`, this is what makes Memory login work over unencrypted Tailscale: set `APP_BASE_URL` to the frontend origin, and the lax+non-secure cookie survives the round-trip. On a TLS deployment `req.secure` is `true` (via `trust proxy`) and the cookie is properly `Secure`.
 
@@ -73,11 +75,11 @@ CSRF cookie (`SessionController.ts:180-187`): `httpOnly: false` (JS reads it for
 
 | Endpoint | Method | Guard | Purpose |
 |---|---|---|---|
-| `/authenticate/csrf` | GET (204) | — | Issue a pre-auth `csrfToken` cookie |
-| `/authenticate` | POST (200) | `CsrfGuard` | Login → session cookie + return access token |
-| `/authenticate/refresh` | POST (200) | `CsrfGuard` | Rotate session token, return a new access token |
-| `/authenticate/logout` | POST (204) | — | Invalidate session, clear cookies |
-| `/signup` | POST | `CsrfGuard` | Create account → session cookie + access token |
+| `/authenticate/csrf` | GET (204) | — | Ensure a `csrfToken` cookie (reuses a valid one; idempotent) |
+| `/authenticate` | POST (200) | `CsrfGuard` | Login → session cookie + access token; **rotates** csrf |
+| `/authenticate/refresh` | POST (200) | `CsrfGuard` | Rotate session token, return a new access token; **reuses** csrf (slides maxAge) |
+| `/authenticate/logout` | POST (204) | — | Invalidate session, clear both cookies |
+| `/signup` | POST | `CsrfGuard` | Create account → session cookie + access token; **rotates** csrf |
 
 **Session persistence** (`AuthService.ts:27-51`): the session row stores an **HMAC-SHA256 digest** of the token, IP, and user-agent (keyed by `auth.session.fieldPepper`) — the raw token is never stored. **Refresh with rotation + 30s grace window** (`AuthService.rotateSessionToken`): a valid refresh rotates the session token (old hash → `previous_token`); a token matching the *previous* hash within `session.refreshGracePeriod` yields a new access token without re-rotating, so racing tab refreshes don't invalidate each other.
 

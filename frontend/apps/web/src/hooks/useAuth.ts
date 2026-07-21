@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { createHookContext, fetchJson } from '@ci/common';
+import { createHookContext, fetchJson, FetchJsonError } from '@ci/common';
 import { jwtDecode } from 'jwt-decode';
 import { useNavigate, useLocation } from 'react-router-dom';
 
@@ -25,6 +25,51 @@ function withCsrfHeader(headers?: HeadersInit): HeadersInit {
     ...headers,
     'X-CSRF-Token': token,
   };
+}
+
+/**
+ * Set (or re-validate) the csrf cookie. The endpoint reuses a valid existing
+ * token and only mints when the cookie is absent/invalid, so calling this can
+ * never invalidate another tab or an open server-rendered form.
+ */
+async function primeCsrfCookie(): Promise<void> {
+  await fetch('/api/authenticate/csrf', {
+    credentials: 'include',
+  });
+}
+
+/**
+ * POST /authenticate/refresh with the double-submit CSRF header.
+ *
+ * Primes the csrf cookie first when it is missing (e.g. a cleared cookie with a
+ * still-valid session), and on a 403 — a stale/invalid CSRF token, such as one
+ * signed with a rotated server secret — re-primes and retries exactly once.
+ * A 401 (invalid session) is never retried: that must fall through to login.
+ */
+async function refreshSession(): Promise<AuthResponse | undefined> {
+  if (!getCsrfToken()) {
+    await primeCsrfCookie();
+  }
+
+  try {
+    return await fetchJson<AuthResponse>('/api/authenticate/refresh', {
+      method: 'POST',
+      headers: withCsrfHeader(),
+      credentials: 'include',
+    });
+  } catch (err: unknown) {
+    if (!(err instanceof FetchJsonError) || err.status !== 403) {
+      throw err;
+    }
+
+    await primeCsrfCookie();
+
+    return fetchJson<AuthResponse>('/api/authenticate/refresh', {
+      method: 'POST',
+      headers: withCsrfHeader(),
+      credentials: 'include',
+    });
+  }
 }
 
 interface JwtPayload {
@@ -72,9 +117,7 @@ function useAuth(): ReturnValue {
 
       try {
         // Obtain a pre-auth CSRF token before submitting credentials
-        await fetch('/api/authenticate/csrf', {
-          credentials: 'include',
-        });
+        await primeCsrfCookie();
 
         const data = await fetchJson<AuthResponse>('/api/authenticate', {
           method: 'POST',
@@ -132,9 +175,7 @@ function useAuth(): ReturnValue {
 
       try {
         // Obtain a pre-auth CSRF token before submitting signup
-        await fetch('/api/authenticate/csrf', {
-          credentials: 'include',
-        });
+        await primeCsrfCookie();
 
         const data = await fetchJson<AuthResponse>('/api/signup', {
           method: 'POST',
@@ -166,11 +207,7 @@ function useAuth(): ReturnValue {
     setRefreshError(null);
 
     try {
-      const data = await fetchJson<AuthResponse>('/api/authenticate/refresh', {
-        method: 'POST',
-        headers: withCsrfHeader(),
-        credentials: 'include',
-      });
+      const data = await refreshSession();
 
       setAccessToken(data?.accessToken ?? null);
     } catch (err: unknown) {
@@ -182,11 +219,7 @@ function useAuth(): ReturnValue {
   useEffect(() => {
     (async () => {
       try {
-        const data = await fetchJson<AuthResponse>('/api/authenticate/refresh', {
-          method: 'POST',
-          headers: withCsrfHeader(),
-          credentials: 'include',
-        });
+        const data = await refreshSession();
 
         setAccessToken(data?.accessToken ?? null);
       } catch {

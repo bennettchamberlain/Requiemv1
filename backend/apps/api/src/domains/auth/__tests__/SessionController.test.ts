@@ -33,6 +33,11 @@ const mockCsrfService = {
   generateToken: jest.fn().mockReturnValue(MOCK_CSRF_TOKEN),
   validateToken: jest.fn(),
   verifyToken: jest.fn().mockReturnValue(true),
+  // Mirrors the real implementation on top of the mocked primitives, so tests
+  // exercise the reuse-if-valid contract by steering verifyToken/generateToken.
+  ensureToken: jest.fn((value?: string) =>
+    value && mockCsrfService.verifyToken(value) ? value : mockCsrfService.generateToken(),
+  ),
 };
 
 const mockUserService = {
@@ -149,6 +154,23 @@ describe('SessionController', () => {
         .send({ username: 'bad@example.com', password: 'wrong' })
         .expect(401);
     });
+
+    it('should ROTATE the CSRF token on login (identity boundary)', async () => {
+      // Login is one of the few rotation points; the pre-auth token must not
+      // survive into the authenticated session (token-fixation hygiene).
+      const preAuthToken = 'pre-auth-random.pre-auth-signature';
+
+      const response = await request(app.getHttpServer())
+        .post('/authenticate')
+        .set('Cookie', [`${CSRF_COOKIE_NAME}=${preAuthToken}`])
+        .set('X-CSRF-Token', preAuthToken)
+        .send({ username: 'test@example.com', password: 'password123' })
+        .expect(200);
+
+      const cookies = parseCookies(response);
+      expect(cookies[CSRF_COOKIE_NAME].value).toBe(MOCK_CSRF_TOKEN);
+      expect(cookies[CSRF_COOKIE_NAME].value).not.toBe(preAuthToken);
+    });
   });
 
   describe('POST /authenticate/refresh', () => {
@@ -218,6 +240,27 @@ describe('SessionController', () => {
       expect(cookies[COOKIE_NAME]).toBeUndefined();
       expect(response.body).toEqual({ accessToken: 'access-token-value' });
     });
+
+    it('should REUSE the incoming CSRF token, even when the session rotates (CI-Server#1740)', async () => {
+      // Regression: refresh used to mint a fresh CSRF token on every session
+      // rotation, invalidating tokens embedded in open pages (the no-JS connect
+      // consent form) and racing concurrent tabs into spurious logouts.
+      const existingToken = 'existing-random.existing-signature';
+
+      const response = await request(app.getHttpServer())
+        .post('/authenticate/refresh')
+        .set('Cookie', [`${COOKIE_NAME}=session-token-value`, `${CSRF_COOKIE_NAME}=${existingToken}`])
+        .set('X-CSRF-Token', existingToken)
+        .expect(200);
+
+      const cookies = parseCookies(response);
+      // Session token rotated…
+      expect(cookies[COOKIE_NAME].value).toBe('rotated-session-token');
+      // …but the CSRF token was echoed back unchanged, with a sliding maxAge.
+      expect(cookies[CSRF_COOKIE_NAME].value).toBe(existingToken);
+      expect(cookies[CSRF_COOKIE_NAME].maxAge).toBeDefined();
+      expect(mockCsrfService.generateToken).not.toHaveBeenCalled();
+    });
   });
 
   describe('POST /authenticate/logout', () => {
@@ -282,6 +325,32 @@ describe('SessionController', () => {
       expect(cookies[CSRF_COOKIE_NAME]).toBeDefined();
       expect(cookies[CSRF_COOKIE_NAME].value).toBe(MOCK_CSRF_TOKEN);
     });
+
+    it('should echo a valid existing token instead of minting (idempotent priming)', async () => {
+      const existingToken = 'existing-random.existing-signature';
+
+      const response = await request(app.getHttpServer())
+        .get('/authenticate/csrf')
+        .set('Cookie', [`${CSRF_COOKIE_NAME}=${existingToken}`])
+        .expect(204);
+
+      const cookies = parseCookies(response);
+      expect(cookies[CSRF_COOKIE_NAME].value).toBe(existingToken);
+      expect(mockCsrfService.generateToken).not.toHaveBeenCalled();
+    });
+
+    it('should mint a fresh token when the existing cookie is invalid', async () => {
+      mockCsrfService.verifyToken.mockReturnValue(false);
+
+      const response = await request(app.getHttpServer())
+        .get('/authenticate/csrf')
+        .set('Cookie', [`${CSRF_COOKIE_NAME}=stale-or-foreign-token`])
+        .expect(204);
+
+      const cookies = parseCookies(response);
+      expect(cookies[CSRF_COOKIE_NAME].value).toBe(MOCK_CSRF_TOKEN);
+      expect(mockCsrfService.generateToken).toHaveBeenCalled();
+    });
   });
 
   describe('CSRF validation', () => {
@@ -333,7 +402,7 @@ describe('SessionController', () => {
       expect(cookies[CSRF_COOKIE_NAME].value).toBe(MOCK_CSRF_TOKEN);
     });
 
-    it('should rotate CSRF cookie on session rotation during refresh', async () => {
+    it('should re-set the same CSRF cookie on session rotation during refresh (sliding maxAge)', async () => {
       const response = await request(app.getHttpServer())
         .post('/authenticate/refresh')
         .set('Cookie', [`${COOKIE_NAME}=session-token-value`, `${CSRF_COOKIE_NAME}=${MOCK_CSRF_TOKEN}`])
@@ -343,9 +412,10 @@ describe('SessionController', () => {
       const cookies = parseCookies(response);
       expect(cookies[CSRF_COOKIE_NAME]).toBeDefined();
       expect(cookies[CSRF_COOKIE_NAME].value).toBe(MOCK_CSRF_TOKEN);
+      expect(mockCsrfService.generateToken).not.toHaveBeenCalled();
     });
 
-    it('should not rotate CSRF cookie on grace-period match', async () => {
+    it('should keep the same CSRF token on grace-period match', async () => {
       mockAuthService.rotateSessionToken.mockResolvedValue({ sessionToken: null });
 
       const response = await request(app.getHttpServer())
@@ -354,8 +424,11 @@ describe('SessionController', () => {
         .set('X-CSRF-Token', MOCK_CSRF_TOKEN)
         .expect(200);
 
+      // The cookie is re-set (sliding its maxAge alongside the session), but the
+      // value is the incoming token — never a fresh mint.
       const cookies = parseCookies(response);
-      expect(cookies[CSRF_COOKIE_NAME]).toBeUndefined();
+      expect(cookies[CSRF_COOKIE_NAME].value).toBe(MOCK_CSRF_TOKEN);
+      expect(mockCsrfService.generateToken).not.toHaveBeenCalled();
     });
   });
 });

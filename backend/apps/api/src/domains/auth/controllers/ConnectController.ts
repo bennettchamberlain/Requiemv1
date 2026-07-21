@@ -27,6 +27,7 @@ import {
   renderConnectErrorPage,
   renderConnectRedirectPage,
 } from '../utils/connectConsentPage';
+import { ensureCsrfCookie } from '../utils/csrfCookie';
 
 const SESSION_COOKIE = config.auth.cookies.sessionTokenName;
 const CSRF_COOKIE = config.auth.cookies.csrfTokenName;
@@ -38,6 +39,13 @@ const approveSchema = z.object({
   // CSRF token, submitted as a hidden form field (the consent page has no JS to
   // set a header) and checked against the csrf cookie — signed double-submit.
   csrf: z.string().min(1),
+  // Friendly app name, round-tripped through the form so the CSRF self-heal
+  // redirect can re-render the consent page with the same display name.
+  app_name: z.string().optional(),
+  // Present when this submission came from the one-shot re-render after a CSRF
+  // failure; a second consecutive failure renders a hard error instead of
+  // redirecting again (bounds the retry loop when cookies are blocked).
+  csrf_retry: z.string().optional(),
 });
 
 const exchangeSchema = z.object({
@@ -90,6 +98,7 @@ export class ConnectController {
     @Query('state') state: string | undefined,
     @Query('return') returnUrl: string | undefined,
     @Query('app_name') appName: string | undefined,
+    @Query('csrf_retry') csrfRetry: string | undefined,
     @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
@@ -135,17 +144,15 @@ export class ConnectController {
 
     // The consent page's Allow POST is CSRF-protected (signed double-submit): the
     // same token is set as the csrf cookie AND injected into the form's hidden
-    // field, and /approve checks they match. Mint it here — a signed-in user who
-    // did NOT just bounce through OIDC has no csrf cookie (it is a sameSite=strict
-    // cookie that OIDC/login set), so without this the POST would submit against
-    // an absent cookie and 403.
-    const csrfToken = this.csrfService.generateToken();
-    res.cookie(CSRF_COOKIE, csrfToken, {
-      httpOnly: false,
-      secure: req.secure,
-      sameSite: 'strict',
-      path: '/',
-    });
+    // field, and /approve checks they match. REUSE the browser's existing valid
+    // token (minting only when absent/invalid — e.g. a signed-in user who never
+    // bounced through OIDC/login on this browser has no csrf cookie). Reuse is
+    // what makes this page immune to the SPA's background session refresh: with
+    // every mint site converged on one stable token, a refresh firing in another
+    // tab while this page is open can no longer rotate the cookie out from under
+    // the embedded hidden field (previously a guaranteed 403 once the ~5-minute
+    // access token expired with a Memory tab open).
+    const csrfToken = ensureCsrfCookie(this.csrfService, req, res);
 
     // Per-request nonce: the page's own inline <style> carries it, so an injected
     // inline <style> (which cannot guess the nonce) is refused by CSP.
@@ -180,6 +187,9 @@ export class ConnectController {
           scopes: scopesForApp(app),
           userEmail: session.email,
           nonce: cspNonce,
+          // Round-trips through the form so a second consecutive CSRF failure
+          // (cookies blocked) renders a hard error instead of looping.
+          csrfRetry: csrfRetry != null,
         }),
       );
   }
@@ -193,8 +203,12 @@ export class ConnectController {
    * Failure modes all send the user back to CI-Hub with an `error` (rather than
    * rendering a dead-end JSON error) so they land back on the originating app's
    * interstitial: a lost session → `login_required`, a minting failure →
-   * `server_error`. A bad return origin (can't safely redirect anywhere) and a
-   * bad/absent CSRF token (validateToken throws 403) are the only hard failures.
+   * `server_error`. A bad/absent CSRF token self-heals: a 303 back to the
+   * consent GET re-renders the form against the browser's current cookie, so one
+   * extra click recovers (`csrf_retry` bounds it to a single hop — a second
+   * consecutive failure means cookies are blocked and renders a hard error).
+   * A bad return origin (can't safely redirect anywhere) is the only remaining
+   * hard failure.
    *
    * The hop back to CI-Hub is a rendered meta-refresh page, NOT `res.redirect`:
    * the nginx gateway's `form-action 'self'` would make Chrome refuse to follow
@@ -212,8 +226,46 @@ export class ConnectController {
     }
 
     // Signed double-submit: the hidden `csrf` field must match the csrf cookie.
-    // Throws ForbiddenException (403) on mismatch/absence.
-    this.csrfService.validateToken(req.cookies?.[CSRF_COOKIE], body.csrf);
+    // On mismatch/absence, self-heal: bounce back to the consent GET, which
+    // re-renders the form against the browser's CURRENT cookie (connect()
+    // re-runs the return-URL allowlist and session checks on the way, so the
+    // redirect adds no new trust). The same-origin 303 satisfies the gateway's
+    // `form-action 'self'`; only the cross-origin hop back to CI-Hub needs the
+    // meta-refresh page.
+    try {
+      this.csrfService.validateToken(req.cookies?.[CSRF_COOKIE], body.csrf);
+    } catch {
+      if (body.csrf_retry) {
+        // Second consecutive failure: the re-rendered form ALSO mismatched its
+        // cookie, which means the browser is not storing cookies at all.
+        this.logger.warn(`[Connect] CSRF failed twice for app ${body.app} — cookies appear blocked`);
+        res
+          .status(HttpStatus.FORBIDDEN)
+          .type('html')
+          .send(
+            renderConnectErrorPage(
+              'Your browser appears to be blocking cookies, which this connection flow requires. Enable cookies for this site and try again.',
+            ),
+          );
+
+        return;
+      }
+
+      const retryParams = new URLSearchParams({
+        app: body.app,
+        state: body.state,
+        return: body.return,
+        csrf_retry: '1',
+      });
+
+      if (body.app_name) {
+        retryParams.set('app_name', body.app_name);
+      }
+
+      res.redirect(HttpStatus.SEE_OTHER, `/api/connect?${retryParams.toString()}`);
+
+      return;
+    }
 
     const sendToHub = (url: string) =>
       res.status(HttpStatus.OK).type('html').send(renderConnectRedirectPage(url));

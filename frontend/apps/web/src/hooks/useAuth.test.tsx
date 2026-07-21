@@ -167,4 +167,71 @@ describe('useAuth', () => {
     await waitFor(() => expect(result.current[0].authToken).toBe('stale'));
     expect(result.current[0].expired).toBe(true);
   });
+
+  it('primes the csrf cookie before the mount refresh when the cookie is absent', async () => {
+    // A browser restart used to strand a valid session behind a missing csrf
+    // cookie ("Missing CSRF token" 403 → forced re-login). Priming first (the
+    // endpoint reuses a valid cookie, so this is always safe) closes that gap.
+    const fetchMock = setFetch((url) =>
+      url.endsWith('/api/authenticate/refresh')
+        ? jsonResponse({ accessToken: 'refreshed' })
+        : emptyResponse(),
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current[0].authToken).toBe('refreshed'));
+
+    const urls = fetchMock.mock.calls.map(([input]) => String(input));
+    const csrfIndex = urls.findIndex((url) => url.endsWith('/api/authenticate/csrf'));
+    const refreshIndex = urls.findIndex((url) => url.endsWith('/api/authenticate/refresh'));
+    expect(csrfIndex).toBeGreaterThanOrEqual(0);
+    expect(csrfIndex).toBeLessThan(refreshIndex);
+  });
+
+  it('retries a 403 refresh exactly once after re-priming the csrf cookie', async () => {
+    // A stale/invalid csrf token (e.g. signed with a rotated server secret)
+    // 403s; the server's ensure endpoint replaces it, and one retry recovers
+    // without bouncing the user to login.
+    document.cookie = 'csrfToken=stale-token';
+    let refreshCalls = 0;
+
+    const fetchMock = setFetch((url) => {
+      if (url.endsWith('/api/authenticate/refresh')) {
+        refreshCalls += 1;
+
+        return refreshCalls === 1 ? emptyResponse(false, 403) : jsonResponse({ accessToken: 'recovered' });
+      }
+
+      return emptyResponse();
+    });
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => expect(result.current[0].authToken).toBe('recovered'));
+    expect(refreshCalls).toBe(2);
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/api/authenticate/csrf'))).toBe(
+      true,
+    );
+  });
+
+  it('does not retry a 401 refresh (invalid session must fall through to login)', async () => {
+    document.cookie = 'csrfToken=csrf-abc';
+    let refreshCalls = 0;
+
+    setFetch((url) => {
+      if (url.endsWith('/api/authenticate/refresh')) {
+        refreshCalls += 1;
+
+        return emptyResponse(false, 401);
+      }
+
+      return emptyResponse();
+    });
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => expect(result.current[0].loading).toBe(false));
+    expect(result.current[0].authToken).toBeNull();
+    expect(refreshCalls).toBe(1);
+  });
 });

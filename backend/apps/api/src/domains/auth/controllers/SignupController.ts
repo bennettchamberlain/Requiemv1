@@ -14,10 +14,9 @@ import { AuthService } from '../services/AuthService';
 import { CsrfService } from '../services/CsrfService';
 import { SignupCodeService } from '../services/SignupCodeService';
 import { SignupDto } from '../types';
+import { setCsrfCookie } from '../utils/csrfCookie';
 
 const COOKIE_MAX_AGE = parseDuration(config.auth.jwt.refreshTokenExpiration) ?? 0;
-
-const CSRF_COOKIE_NAME = config.auth.cookies.csrfTokenName;
 
 const signupSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -95,22 +94,13 @@ export class SignupController {
       maxAge: COOKIE_MAX_AGE,
     });
 
-    // Issue a fresh CSRF token for authenticated requests (e.g. /refresh)
-    const csrfToken = this.csrfService.generateToken();
-
-    this.setCsrfCookie(req, res, csrfToken);
+    // Identity boundary: mint a fresh CSRF token for authenticated requests
+    // (e.g. /refresh). Auth boundaries are the only rotation points — see
+    // utils/csrfCookie.ts.
+    setCsrfCookie(req, res, this.csrfService.generateToken());
 
     return {
       accessToken,
     };
-  }
-
-  private setCsrfCookie(req: Request, res: Response, token: string): void {
-    res.cookie(CSRF_COOKIE_NAME, token, {
-      httpOnly: false,
-      secure: req.secure,
-      sameSite: 'strict',
-      path: '/',
-    });
   }
 }

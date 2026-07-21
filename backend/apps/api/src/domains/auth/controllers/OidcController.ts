@@ -13,6 +13,7 @@ import { UserService } from '@ci/domains/user';
 
 import { AuthService } from '../services/AuthService';
 import { CsrfService } from '../services/CsrfService';
+import { ensureCsrfCookie, setCsrfCookie } from '../utils/csrfCookie';
 import {
   OIDC_ORIGIN_BOUNCE_PARAM,
   type OidcCallbackRequestOrigin,
@@ -371,50 +372,8 @@ export class OidcController {
    * JavaScript (gateway CSP); "Create account" is a same-origin form POST.
    */
   @Get('confirm-account')
-  async confirmAccountPage(@Req() req: Request, @Res() res: Response): Promise<void> {
-    let identity: { email: string; name?: string };
-
-    try {
-      identity = this.authService.verifySignupIntentToken(req.cookies?.[SIGNUP_INTENT_COOKIE]);
-    } catch {
-      res.redirect('/login?error=signup_expired');
-
-      return;
-    }
-
-    // CSRF cookie for the confirm POST (double-submit): same value is embedded
-    // in the form's hidden field.
-    const csrfToken = this.csrfService.generateToken();
-    res.cookie(config.auth.cookies.csrfTokenName, csrfToken, {
-      httpOnly: false,
-      secure: req.secure,
-      sameSite: 'strict',
-      path: '/',
-    });
-
-    const cspNonce = randomBytes(16).toString('base64');
-
-    res
-      .type('html')
-      .header(
-        'Content-Security-Policy',
-        `default-src 'none'; style-src 'nonce-${cspNonce}'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
-      )
-      .header('X-Frame-Options', 'DENY')
-      .send(
-        renderSignupConfirmPage({ email: identity.email, csrfToken, cancelUrl: '/login', nonce: cspNonce }),
-      );
-  }
-
-  /**
-   * Create the account after the user confirms. Authorised by the signed
-   * signup-intent cookie (proves the email came from a verified Portal sign-in)
-   * and CSRF-guarded. Then signs the user in and returns to their destination.
-   */
-  @Post('confirm-account')
-  @HttpCode(302)
-  async confirmAccount(
-    @Body() body: { csrf?: string } | undefined,
+  async confirmAccountPage(
+    @Query('csrf_retry') csrfRetry: string | undefined,
     @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
@@ -428,8 +387,71 @@ export class OidcController {
       return;
     }
 
-    // Signed double-submit CSRF: throws ForbiddenException (403) on mismatch.
-    this.csrfService.validateToken(req.cookies?.[config.auth.cookies.csrfTokenName], body?.csrf);
+    // CSRF cookie for the confirm POST (double-submit): same value is embedded
+    // in the form's hidden field. Reuses a valid existing cookie so re-rendering
+    // (or another tab minting) never invalidates an already-open copy of this
+    // page; see utils/csrfCookie.ts.
+    const csrfToken = ensureCsrfCookie(this.csrfService, req, res);
+
+    const cspNonce = randomBytes(16).toString('base64');
+
+    res
+      .type('html')
+      .header(
+        'Content-Security-Policy',
+        `default-src 'none'; style-src 'nonce-${cspNonce}'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
+      )
+      .header('X-Frame-Options', 'DENY')
+      .send(
+        renderSignupConfirmPage({
+          email: identity.email,
+          csrfToken,
+          cancelUrl: '/login',
+          nonce: cspNonce,
+          // Round-trips through the form so a second consecutive CSRF failure
+          // (cookies blocked) lands on /login instead of looping.
+          csrfRetry: csrfRetry != null,
+        }),
+      );
+  }
+
+  /**
+   * Create the account after the user confirms. Authorised by the signed
+   * signup-intent cookie (proves the email came from a verified Portal sign-in)
+   * and CSRF-guarded. Then signs the user in and returns to their destination.
+   */
+  @Post('confirm-account')
+  @HttpCode(302)
+  async confirmAccount(
+    @Body() body: { csrf?: string; csrf_retry?: string } | undefined,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    let identity: { email: string; name?: string };
+
+    try {
+      identity = this.authService.verifySignupIntentToken(req.cookies?.[SIGNUP_INTENT_COOKIE]);
+    } catch {
+      res.redirect('/login?error=signup_expired');
+
+      return;
+    }
+
+    // Signed double-submit CSRF: the hidden `csrf` field must match the csrf
+    // cookie. On failure, self-heal instead of dead-ending on a raw 403: a 303
+    // back to the GET re-renders the page against the browser's current cookie
+    // (the signup-intent cookie is still present), so one extra click recovers.
+    // A second consecutive failure means cookies are blocked — land on /login.
+    try {
+      this.csrfService.validateToken(req.cookies?.[config.auth.cookies.csrfTokenName], body?.csrf);
+    } catch {
+      res.redirect(
+        303,
+        body?.csrf_retry ? '/login?error=csrf' : '/api/authenticate/oidc/confirm-account?csrf_retry=1',
+      );
+
+      return;
+    }
 
     // Create only if it doesn't already exist (guards a double-submit / a
     // concurrent tab that already confirmed).
@@ -469,12 +491,9 @@ export class OidcController {
       maxAge: COOKIE_MAX_AGE,
     });
 
-    res.cookie(config.auth.cookies.csrfTokenName, this.csrfService.generateToken(), {
-      httpOnly: false,
-      secure: req.secure,
-      sameSite: 'strict',
-      path: '/',
-    });
+    // Identity boundary: mint a fresh CSRF token (the only rotation points are
+    // login, signup, and this OIDC sign-in — see utils/csrfCookie.ts).
+    setCsrfCookie(req, res, this.csrfService.generateToken());
 
     // Return to the deep link the user was headed for before being bounced to
     // login (re-validated on read), then clear the one-shot cookie.

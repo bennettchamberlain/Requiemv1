@@ -53,6 +53,20 @@ export class CsrfService {
   }
 
   /**
+   * Return the existing token when it carries a valid signature, otherwise mint
+   * a fresh one.
+   *
+   * A CSRF token identifies a browser, not a request: reusing a valid cookie
+   * keeps every open tab and server-rendered page (consent / confirm-account)
+   * converged on one stable value, so a background session refresh can never
+   * invalidate a form that was rendered earlier. Rotation is reserved for
+   * identity boundaries (login, signup, OIDC sign-in) and logout (clear).
+   */
+  ensureToken(cookieValue: string | undefined): string {
+    return cookieValue && this.verifyToken(cookieValue) ? cookieValue : this.generateToken();
+  }
+
+  /**
    * Verify the HMAC signature of a token.
    */
   verifyToken(token: string): boolean {

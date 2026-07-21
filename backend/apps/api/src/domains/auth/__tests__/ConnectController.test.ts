@@ -38,6 +38,12 @@ const mockCsrfService = {
   // No-op by default (valid). Individual tests override to throw for the
   // mismatch case.
   validateToken: jest.fn(),
+  verifyToken: jest.fn().mockReturnValue(true),
+  // Mirrors the real reuse-if-valid implementation on top of the mocked
+  // primitives, so tests steer behavior via verifyToken/generateToken.
+  ensureToken: jest.fn((value?: string) =>
+    value && mockCsrfService.verifyToken(value) ? value : mockCsrfService.generateToken(),
+  ),
 };
 
 const mockLogger = {
@@ -101,6 +107,7 @@ describe('ConnectController', () => {
     // Valid CSRF by default; the mismatch test overrides this to throw.
     mockCsrfService.generateToken.mockReturnValue('csrf-token-value');
     mockCsrfService.validateToken.mockImplementation(() => undefined);
+    mockCsrfService.verifyToken.mockReturnValue(true);
   });
 
   describe('GET /connect', () => {
@@ -177,6 +184,43 @@ describe('ConnectController', () => {
       // The href is HTML-attribute-escaped (& → &amp;).
       expect(res.text).toContain(`href="${RETURN_URL}?error=access_denied&amp;state=s"`);
     });
+
+    it('REUSES a valid existing csrf cookie instead of minting (CI-Server#1740)', async () => {
+      // The embedded hidden field and the cookie must stay converged with every
+      // other tab: rendering this page may not rotate the browser's token, and a
+      // background session refresh may not invalidate this page. Both hold when
+      // every site reuses the same valid cookie.
+      mockConnectService.resolveSessionUser.mockResolvedValue({
+        userId: 'user-1',
+        email: 'owner@example.com',
+      });
+      const existingToken = 'existing-random.existing-signature';
+
+      const res = await request(app.getHttpServer())
+        .get('/connect')
+        .query({ app: 'urn:app:x', state: 's', return: RETURN_URL })
+        .set('Cookie', [`${SESSION_COOKIE}=tok`, `${config.auth.cookies.csrfTokenName}=${existingToken}`])
+        .expect(200);
+
+      expect(res.text).toContain(`name="csrf" value="${existingToken}"`);
+      expect(mockCsrfService.generateToken).not.toHaveBeenCalled();
+    });
+
+    it('round-trips csrf_retry and app_name into the re-rendered form', async () => {
+      mockConnectService.resolveSessionUser.mockResolvedValue({
+        userId: 'user-1',
+        email: 'owner@example.com',
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/connect')
+        .query({ app: 'urn:app:x', state: 's', return: RETURN_URL, app_name: 'OpenClaw', csrf_retry: '1' })
+        .set('Cookie', [`${SESSION_COOKIE}=tok`])
+        .expect(200);
+
+      expect(res.text).toContain('name="app_name" value="OpenClaw"');
+      expect(res.text).toContain('name="csrf_retry" value="1"');
+    });
   });
 
   describe('POST /connect/approve', () => {
@@ -202,16 +246,42 @@ describe('ConnectController', () => {
       expect(res.text).toContain(`href="${RETURN_URL}?code=the-code&amp;state=s"`);
     });
 
-    it('403s when the CSRF token is missing/mismatched', async () => {
+    it('self-heals a CSRF mismatch: 303 back to the consent GET with csrf_retry (CI-Server#1740)', async () => {
+      // A stale hidden field (e.g. the cookie changed after this page rendered)
+      // must NOT dead-end on raw JSON — the redirect re-renders the consent page
+      // against the browser's current cookie, so one extra click recovers.
       mockCsrfService.validateToken.mockImplementation(() => {
         throw new ForbiddenException('CSRF token mismatch');
       });
 
-      await request(app.getHttpServer())
+      const res = await request(app.getHttpServer())
         .post('/connect/approve')
-        .send({ ...approveBody, csrf: 'wrong' })
+        .send({ ...approveBody, csrf: 'wrong', app_name: 'OpenClaw' })
+        .expect(303);
+
+      const location = new URL(res.headers.location, 'http://localhost');
+      expect(location.pathname).toBe('/api/connect');
+      expect(location.searchParams.get('app')).toBe('urn:app:x');
+      expect(location.searchParams.get('state')).toBe('s');
+      expect(location.searchParams.get('return')).toBe(RETURN_URL);
+      expect(location.searchParams.get('app_name')).toBe('OpenClaw');
+      expect(location.searchParams.get('csrf_retry')).toBe('1');
+      expect(mockConnectService.approve).not.toHaveBeenCalled();
+    });
+
+    it('403s with an HTML error page when CSRF fails on the retry submission (cookies blocked)', async () => {
+      mockCsrfService.validateToken.mockImplementation(() => {
+        throw new ForbiddenException('CSRF token mismatch');
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/connect/approve')
+        .send({ ...approveBody, csrf: 'wrong', csrf_retry: '1' })
         .expect(403);
 
+      expect(res.headers['content-type']).toContain('text/html');
+      expect(res.text).toContain('Unable to connect');
+      expect(res.text).toContain('blocking cookies');
       expect(mockConnectService.approve).not.toHaveBeenCalled();
     });
 
