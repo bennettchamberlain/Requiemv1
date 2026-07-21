@@ -27,7 +27,7 @@ if (!parsedCookieMaxAge || parsedCookieMaxAge <= 0) {
   );
 }
 
-export const AUTH_COOKIE_MAX_AGE = parsedCookieMaxAge;
+const AUTH_COOKIE_MAX_AGE = parsedCookieMaxAge;
 
 /**
  * Session cookie attributes. `httpOnly` keeps it out of reach of scripts;

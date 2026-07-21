@@ -207,6 +207,23 @@ describe('OidcController — confirm-account CSRF', () => {
       expect(mockUserService.create).not.toHaveBeenCalled();
     });
 
+    it('self-heals an absent csrf field rather than dead-ending in the validation pipe', async () => {
+      // The schema deliberately leaves `csrf` optional so absence reaches
+      // CsrfService and takes the self-heal path; a `min(1)` there would 400
+      // in the pipe before the handler ran, defeating the redirect.
+      mockCsrfService.validateToken.mockImplementation(() => {
+        throw new ForbiddenException('Missing CSRF token');
+      });
+
+      const res = await request(app.getHttpServer())
+        .post(CONFIRM_PATH)
+        .set('Cookie', [`${SIGNUP_INTENT_COOKIE}=intent`])
+        .send({})
+        .expect(303);
+
+      expect(res.headers.location).toBe('/api/authenticate/oidc/confirm-account?csrf_retry=1');
+    });
+
     it('rejects a non-string csrf field before it reaches the token comparison', async () => {
       // Without body validation a non-string reaches Buffer.from() inside
       // validateToken and surfaces as a 500 instead of a clean rejection.

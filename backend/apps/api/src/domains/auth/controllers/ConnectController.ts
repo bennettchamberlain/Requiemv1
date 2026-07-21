@@ -39,7 +39,11 @@ const approveSchema = z.object({
   return: z.string().url(),
   // CSRF token, submitted as a hidden form field (the consent page has no JS to
   // set a header) and checked against the csrf cookie — signed double-submit.
-  csrf: z.string().min(1),
+  // Optional on purpose: the schema constrains the *shape* (a string if
+  // present), while a missing or empty token is a CSRF decision owned by
+  // CsrfService. Requiring it here would 400 in the pipe before the handler,
+  // dead-ending exactly the requests the self-heal redirect exists to rescue.
+  csrf: z.string().optional(),
   // Friendly app name, round-tripped through the form so the CSRF self-heal
   // redirect can re-render the consent page with the same display name.
   app_name: z.string().optional(),

@@ -286,6 +286,24 @@ describe('ConnectController', () => {
       expect(mockConnectService.approve).not.toHaveBeenCalled();
     });
 
+    it('self-heals an absent csrf field rather than dead-ending in the validation pipe', async () => {
+      // `csrf` is optional in the schema on purpose, so absence reaches
+      // CsrfService and takes the self-heal path instead of 400-ing in the pipe.
+      mockCsrfService.validateToken.mockImplementation(() => {
+        throw new ForbiddenException('Missing CSRF token');
+      });
+
+      const bodyWithoutCsrf = { app: approveBody.app, state: approveBody.state, return: approveBody.return };
+
+      const res = await request(app.getHttpServer())
+        .post('/connect/approve')
+        .send(bodyWithoutCsrf)
+        .expect(303);
+
+      expect(new URL(res.headers.location, 'http://localhost').searchParams.get('csrf_retry')).toBe('1');
+      expect(mockConnectService.approve).not.toHaveBeenCalled();
+    });
+
     it('propagates a non-CSRF fault instead of mislabelling it as a cookie problem', async () => {
       // The self-heal catch must not swallow unexpected faults: a TypeError here
       // would otherwise surface to the user as "your browser is blocking

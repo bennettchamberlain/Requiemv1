@@ -51,7 +51,12 @@ const SIGNUP_INTENT_MAX_AGE = 10 * 60 * 1000;
  * otherwise surface a non-string as a 500 rather than a clean rejection.
  */
 const confirmAccountSchema = z.object({
-  csrf: z.string().min(1),
+  // Optional on purpose: the schema constrains the *shape* (a string if
+  // present), while whether a token is missing or empty is a CSRF decision that
+  // belongs to CsrfService. Requiring it here would make the pipe reject with a
+  // 400 before the handler runs, dead-ending exactly the requests the self-heal
+  // redirect below exists to rescue.
+  csrf: z.string().optional(),
   // Present when this submission came from the one-shot re-render after a CSRF
   // failure; a second consecutive failure exits to /login instead of looping.
   csrf_retry: z.string().optional(),
@@ -446,8 +451,12 @@ export class OidcController {
    * signup-intent cookie (proves the email came from a verified Portal sign-in)
    * and CSRF-guarded. Then signs the user in and returns to their destination.
    */
+  // No @HttpCode: this handler injects a non-passthrough @Res(), so Nest's
+  // response pipeline (and with it @HttpCode) never runs — the decorator that
+  // used to sit here claimed 302 while `res.redirect` actually emits 303 for
+  // the CSRF self-heal, which is the status that matters (303 is what forces a
+  // POST to be re-issued as a GET).
   @Post('confirm-account')
-  @HttpCode(302)
   async confirmAccount(
     @Body(new ValidationPipe(confirmAccountSchema)) body: ConfirmAccountDto,
     @Req() req: Request,
