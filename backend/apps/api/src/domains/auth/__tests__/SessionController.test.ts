@@ -35,7 +35,9 @@ const mockCsrfService = {
   verifyToken: jest.fn().mockReturnValue(true),
   // Mirrors the real implementation on top of the mocked primitives, so tests
   // exercise the reuse-if-valid contract by steering verifyToken/generateToken.
-  ensureToken: jest.fn((value?: string) =>
+  // The explicit return type is required: the body references `mockCsrfService`
+  // while it is still being initialised, so inference would be circular.
+  ensureToken: jest.fn((value?: string): string =>
     value && mockCsrfService.verifyToken(value) ? value : mockCsrfService.generateToken(),
   ),
 };
