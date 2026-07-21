@@ -104,5 +104,27 @@ describe('CsrfService', () => {
     it('rejects an unsigned but equal pair', () => {
       expect(() => service.validateToken('forged.forged', 'forged.forged')).toThrow(ForbiddenException);
     });
+
+    it('rejects a multi-byte pair as Forbidden rather than throwing RangeError', () => {
+      // 'é' is one JS character but two UTF-8 bytes, so a string-length guard
+      // treats these as equal-length while timingSafeEqual sees 2 bytes vs 1 and
+      // raises RangeError — which escapes the callers' CSRF handling as a 500
+      // and skips the self-heal redirect. Byte-length comparison keeps it a 403.
+      expect(() => service.validateToken('é', 'a')).toThrow(ForbiddenException);
+      expect(() => service.validateToken('a', 'é')).toThrow(ForbiddenException);
+    });
+
+    it('rejects a token whose signature half is multi-byte', () => {
+      // Same hazard inside verifyToken: the signature comes from the cookie, so
+      // it can be multi-byte while matching the expected hex signature's JS
+      // length. Must return false, not throw.
+      const random = 'a'.repeat(64);
+      const multiByteSignature = 'é'.repeat(64);
+
+      expect(service.verifyToken(`${random}.${multiByteSignature}`)).toBe(false);
+      expect(() =>
+        service.validateToken(`${random}.${multiByteSignature}`, `${random}.${multiByteSignature}`),
+      ).toThrow(ForbiddenException);
+    });
   });
 });

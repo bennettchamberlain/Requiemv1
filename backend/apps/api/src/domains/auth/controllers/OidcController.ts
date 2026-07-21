@@ -14,10 +14,12 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { Agent, fetch as undiciFetch } from 'undici';
+import { z } from 'zod';
 
 import { SYSTEM_USER } from '@ci/common/context';
 import { FeatureService } from '@ci/common/feature';
 import { LoggerService } from '@ci/common/logging';
+import { ValidationPipe } from '@ci/common/pipes';
 import config from '@ci/configuration';
 import { UserService } from '@ci/domains/user';
 
@@ -41,6 +43,21 @@ const REDIRECT_COOKIE = 'oidc_redirect';
 // no account yet) and the "create account?" confirmation step.
 const SIGNUP_INTENT_COOKIE = 'oidc_signup_intent';
 const SIGNUP_INTENT_MAX_AGE = 10 * 60 * 1000;
+
+/**
+ * Body of the confirm-account form POST. Mirrors ConnectController's
+ * `approveSchema`: the fields arrive from a no-JS form, so they must be
+ * constrained to strings before reaching the CSRF comparison, which would
+ * otherwise surface a non-string as a 500 rather than a clean rejection.
+ */
+const confirmAccountSchema = z.object({
+  csrf: z.string().min(1),
+  // Present when this submission came from the one-shot re-render after a CSRF
+  // failure; a second consecutive failure exits to /login instead of looping.
+  csrf_retry: z.string().optional(),
+});
+
+type ConfirmAccountDto = z.infer<typeof confirmAccountSchema>;
 
 /**
  * Validate a post-login redirect target — an open-redirect guard. Returns the
@@ -432,7 +449,7 @@ export class OidcController {
   @Post('confirm-account')
   @HttpCode(302)
   async confirmAccount(
-    @Body() body: { csrf?: string; csrf_retry?: string } | undefined,
+    @Body(new ValidationPipe(confirmAccountSchema)) body: ConfirmAccountDto,
     @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
@@ -452,7 +469,7 @@ export class OidcController {
     // (the signup-intent cookie is still present), so one extra click recovers.
     // A second consecutive failure means cookies are blocked — land on /login.
     try {
-      this.csrfService.validateToken(req.cookies?.[config.auth.cookies.csrfTokenName], body?.csrf);
+      this.csrfService.validateToken(req.cookies?.[config.auth.cookies.csrfTokenName], body.csrf);
     } catch (err) {
       // Only CSRF rejections self-heal; anything else must surface as itself.
       if (!(err instanceof ForbiddenException)) {
@@ -461,7 +478,7 @@ export class OidcController {
 
       res.redirect(
         HttpStatus.SEE_OTHER,
-        body?.csrf_retry ? '/login?error=csrf' : '/api/authenticate/oidc/confirm-account?csrf_retry=1',
+        body.csrf_retry ? '/login?error=csrf' : '/api/authenticate/oidc/confirm-account?csrf_retry=1',
       );
 
       return;

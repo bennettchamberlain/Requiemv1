@@ -207,6 +207,19 @@ describe('OidcController — confirm-account CSRF', () => {
       expect(mockUserService.create).not.toHaveBeenCalled();
     });
 
+    it('rejects a non-string csrf field before it reaches the token comparison', async () => {
+      // Without body validation a non-string reaches Buffer.from() inside
+      // validateToken and surfaces as a 500 instead of a clean rejection.
+      await request(app.getHttpServer())
+        .post(CONFIRM_PATH)
+        .set('Cookie', [`${SIGNUP_INTENT_COOKIE}=intent`])
+        .send({ csrf: { nested: 'object' } })
+        .expect(400);
+
+      expect(mockCsrfService.validateToken).not.toHaveBeenCalled();
+      expect(mockUserService.create).not.toHaveBeenCalled();
+    });
+
     it('redirects to login when the signup intent has expired', async () => {
       mockAuthService.verifySignupIntentToken.mockImplementation(() => {
         throw new Error('expired');

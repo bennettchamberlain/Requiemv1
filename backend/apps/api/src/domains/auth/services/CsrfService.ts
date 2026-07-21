@@ -39,11 +39,19 @@ export class CsrfService {
       throw new ForbiddenException('Missing CSRF token');
     }
 
-    if (cookieValue.length !== headerValue.length) {
+    // Compare BYTE lengths, not JS string lengths. `timingSafeEqual` rejects
+    // buffers of differing byte length with a RangeError, and a multi-byte
+    // character makes the two measures disagree ('é' is one JS char but two
+    // bytes) — so a string-length guard lets such a pair through and the throw
+    // escapes as a 500, bypassing the callers' CSRF self-heal handling.
+    const cookieBytes = Buffer.from(cookieValue);
+    const headerBytes = Buffer.from(headerValue);
+
+    if (cookieBytes.length !== headerBytes.length) {
       throw new ForbiddenException('CSRF token mismatch');
     }
 
-    if (!timingSafeEqual(Buffer.from(cookieValue), Buffer.from(headerValue))) {
+    if (!timingSafeEqual(cookieBytes, headerBytes)) {
       throw new ForbiddenException('CSRF token mismatch');
     }
 
@@ -81,11 +89,17 @@ export class CsrfService {
 
     const expectedSignature = this.sign(random);
 
-    if (signature.length !== expectedSignature.length) {
+    // Byte lengths again: the signature half comes from an attacker-settable
+    // cookie, so it may contain multi-byte characters that match the expected
+    // hex signature's JS length while differing in bytes.
+    const signatureBytes = Buffer.from(signature);
+    const expectedBytes = Buffer.from(expectedSignature);
+
+    if (signatureBytes.length !== expectedBytes.length) {
       return false;
     }
 
-    return timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
+    return timingSafeEqual(signatureBytes, expectedBytes);
   }
 
   private sign(value: string): string {
