@@ -4,6 +4,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   Get,
   HttpStatus,
   Post,
@@ -22,12 +23,12 @@ import config from '@ci/configuration';
 import { ConnectRequestAuthGuard } from '../guards/ConnectRequestAuthGuard';
 import { ConnectService, scopesForApp } from '../services/ConnectService';
 import { CsrfService } from '../services/CsrfService';
+import { ensureCsrfCookie } from '../utils/authCookies';
 import {
   renderConnectConsentPage,
   renderConnectErrorPage,
   renderConnectRedirectPage,
 } from '../utils/connectConsentPage';
-import { ensureCsrfCookie } from '../utils/csrfCookie';
 
 const SESSION_COOKIE = config.auth.cookies.sessionTokenName;
 const CSRF_COOKIE = config.auth.cookies.csrfTokenName;
@@ -59,6 +60,37 @@ const revokeSchema = z.object({
 const rotateSchema = z.object({
   app: z.string().min(1),
 });
+
+/**
+ * Build this controller's own consent URL. Used both for the OIDC sign-in bounce
+ * (return here once a session exists) and for the CSRF self-heal hop, so the two
+ * paths cannot drift — notably `csrf_retry` must survive a sign-in bounce, or a
+ * cookie-blocked browser would loop instead of reaching the "enable cookies"
+ * error.
+ */
+function buildConnectUrl(params: {
+  app: string;
+  state: string;
+  returnUrl: string;
+  appName?: string;
+  csrfRetry?: boolean;
+}): string {
+  const query = new URLSearchParams({
+    app: params.app,
+    state: params.state,
+    return: params.returnUrl,
+  });
+
+  if (params.appName) {
+    query.set('app_name', params.appName);
+  }
+
+  if (params.csrfRetry) {
+    query.set('csrf_retry', '1');
+  }
+
+  return `/api/connect?${query.toString()}`;
+}
 
 type ApproveDto = z.infer<typeof approveSchema>;
 type ExchangeDto = z.infer<typeof exchangeSchema>;
@@ -128,14 +160,15 @@ export class ConnectController {
       // Sign in, then return to this exact URL (same-origin path passes the OIDC
       // controller's safeRelativePath guard) with the session cookie set. Carry
       // app_name through the bounce so the consent page can show the friendly
-      // name rather than falling back to the raw URN.
-      const selfParams = new URLSearchParams({ app, state, return: returnUrl });
-
-      if (appName) {
-        selfParams.set('app_name', appName);
-      }
-
-      const selfPath = `/api/connect?${selfParams.toString()}`;
+      // name rather than falling back to the raw URN, and csrf_retry so a
+      // session that expires mid-retry does not reset the self-heal budget.
+      const selfPath = buildConnectUrl({
+        app,
+        state,
+        returnUrl,
+        appName,
+        csrfRetry: csrfRetry != null,
+      });
 
       res.redirect(`/api/authenticate/oidc?redirect=${encodeURIComponent(selfPath)}`);
 
@@ -234,7 +267,13 @@ export class ConnectController {
     // meta-refresh page.
     try {
       this.csrfService.validateToken(req.cookies?.[CSRF_COOKIE], body.csrf);
-    } catch {
+    } catch (err) {
+      // Only CSRF rejections self-heal. Anything else is an unexpected fault and
+      // must surface as itself rather than be mislabelled "cookies are blocked".
+      if (!(err instanceof ForbiddenException)) {
+        throw err;
+      }
+
       if (body.csrf_retry) {
         // Second consecutive failure: the re-rendered form ALSO mismatched its
         // cookie, which means the browser is not storing cookies at all.
@@ -251,18 +290,16 @@ export class ConnectController {
         return;
       }
 
-      const retryParams = new URLSearchParams({
-        app: body.app,
-        state: body.state,
-        return: body.return,
-        csrf_retry: '1',
-      });
-
-      if (body.app_name) {
-        retryParams.set('app_name', body.app_name);
-      }
-
-      res.redirect(HttpStatus.SEE_OTHER, `/api/connect?${retryParams.toString()}`);
+      res.redirect(
+        HttpStatus.SEE_OTHER,
+        buildConnectUrl({
+          app: body.app,
+          state: body.state,
+          returnUrl: body.return,
+          appName: body.app_name,
+          csrfRetry: true,
+        }),
+      );
 
       return;
     }

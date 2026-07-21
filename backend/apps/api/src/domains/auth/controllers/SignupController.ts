@@ -1,12 +1,10 @@
 import { BadRequestException, Body, Controller, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { Request, Response } from 'express';
-import parseDuration from 'parse-duration';
 import { z } from 'zod';
 
 import { SYSTEM_USER } from '@ci/common/context';
 import { FeatureService } from '@ci/common/feature';
 import { ValidationPipe } from '@ci/common/pipes';
-import config from '@ci/configuration';
 import { UserService } from '@ci/domains/user';
 
 import { CsrfGuard } from '../guards/CsrfGuard';
@@ -14,9 +12,7 @@ import { AuthService } from '../services/AuthService';
 import { CsrfService } from '../services/CsrfService';
 import { SignupCodeService } from '../services/SignupCodeService';
 import { SignupDto } from '../types';
-import { setCsrfCookie } from '../utils/csrfCookie';
-
-const COOKIE_MAX_AGE = parseDuration(config.auth.jwt.refreshTokenExpiration) ?? 0;
+import { setCsrfCookie, setSessionCookie } from '../utils/authCookies';
 
 const signupSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -86,17 +82,11 @@ export class SignupController {
 
     const accessToken = await this.authService.issueAccessToken(user.id);
 
-    res.cookie(config.auth.cookies.sessionTokenName, sessionToken, {
-      httpOnly: true,
-      secure: req.secure,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: COOKIE_MAX_AGE,
-    });
+    setSessionCookie(req, res, sessionToken);
 
     // Identity boundary: mint a fresh CSRF token for authenticated requests
     // (e.g. /refresh). Auth boundaries are the only rotation points — see
-    // utils/csrfCookie.ts.
+    // utils/authCookies.ts.
     setCsrfCookie(req, res, this.csrfService.generateToken());
 
     return {

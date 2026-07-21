@@ -140,6 +140,21 @@ describe('ConnectController', () => {
       expect(decodeURIComponent(res.headers.location)).toContain('/api/connect?');
     });
 
+    it('carries csrf_retry through the OIDC sign-in bounce', async () => {
+      // Without this the self-heal budget resets whenever the session expires
+      // mid-retry, so a cookie-blocked browser would loop through sign-in
+      // instead of reaching the "enable cookies" error.
+      mockConnectService.resolveSessionUser.mockResolvedValue(null);
+
+      const res = await request(app.getHttpServer())
+        .get('/connect')
+        .query({ app: 'urn:app:x', state: 's', return: RETURN_URL, csrf_retry: '1' })
+        .expect(302);
+
+      const redirectTarget = decodeURIComponent(res.headers.location.split('redirect=')[1]);
+      expect(redirectTarget).toContain('csrf_retry=1');
+    });
+
     it('renders the no-JS consent page with anti-framing headers when signed in', async () => {
       mockConnectService.resolveSessionUser.mockResolvedValue({
         userId: 'user-1',
@@ -268,6 +283,23 @@ describe('ConnectController', () => {
       expect(location.searchParams.get('return')).toBe(RETURN_URL);
       expect(location.searchParams.get('app_name')).toBe('OpenClaw');
       expect(location.searchParams.get('csrf_retry')).toBe('1');
+      expect(mockConnectService.approve).not.toHaveBeenCalled();
+    });
+
+    it('propagates a non-CSRF fault instead of mislabelling it as a cookie problem', async () => {
+      // The self-heal catch must not swallow unexpected faults: a TypeError here
+      // would otherwise surface to the user as "your browser is blocking
+      // cookies", sending them chasing a non-existent browser setting.
+      mockCsrfService.validateToken.mockImplementation(() => {
+        throw new TypeError('unexpected fault');
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/connect/approve')
+        .send({ ...approveBody, csrf_retry: '1' })
+        .expect(500);
+
+      expect(res.text).not.toContain('blocking cookies');
       expect(mockConnectService.approve).not.toHaveBeenCalled();
     });
 

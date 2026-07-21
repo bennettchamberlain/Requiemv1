@@ -53,19 +53,22 @@ The **JWT passport strategy reads only the `Authorization: Bearer` header** — 
 
 #### Cookie attributes
 
-Session cookie (`SessionController.ts:78-84`, identical in signup + OIDC callback):
+Both cookies are set through `domains/auth/utils/authCookies.ts`, the single source of truth for their attributes — login, signup, and the OIDC callback all call the same helpers rather than repeating the option blocks:
 
 ```ts
+// setSessionCookie()
 res.cookie(config.auth.cookies.sessionTokenName, sessionToken, {
   httpOnly: true,
-  secure: req.secure,     // TLS-derived, NOT hardcoded true
+  secure: req.secure,        // TLS-derived, NOT hardcoded true
   sameSite: 'lax',
   path: '/',
-  maxAge: COOKIE_MAX_AGE, // 7d
+  maxAge: AUTH_COOKIE_MAX_AGE, // 7d, shared with the csrf cookie
 });
 ```
 
-CSRF cookie (`domains/auth/utils/csrfCookie.ts` — the single source of truth for its attributes): `httpOnly: false` (JS reads it for the double-submit header), `secure: req.secure`, `sameSite: 'strict'`, `maxAge` matching the session cookie (7d) so the pair lives and dies together — a browser restart no longer strands a valid session behind a missing csrf cookie. Default cookie names (`default.json:29-32`): `sessionToken`, `csrfToken`.
+`AUTH_COOKIE_MAX_AGE` is derived from `auth.jwt.refreshTokenExpiration` and **throws at startup** if that value is not a parseable positive duration: Express treats `maxAge: 0` as an immediate expiry, so a silent fallback would delete both auth cookies on every response and lock every user out.
+
+CSRF cookie (`domains/auth/utils/authCookies.ts` — the single source of truth for its attributes): `httpOnly: false` (JS reads it for the double-submit header), `secure: req.secure`, `sameSite: 'strict'`, `maxAge` matching the session cookie (7d) so the pair lives and dies together — a browser restart no longer strands a valid session behind a missing csrf cookie. Default cookie names (`default.json:29-32`): `sessionToken`, `csrfToken`.
 
 **Stable-token model** (`CsrfService.ensureToken`): a CSRF token identifies a *browser*, not a request. Every issue/render site (`GET /authenticate/csrf`, refresh, the connect-consent and confirm-account pages) **reuses a valid existing cookie** and only mints when the cookie is absent or invalid; rotation happens **only at identity boundaries** — login, signup, OIDC sign-in (fixation hygiene) — and logout clears it. This keeps all tabs and server-rendered forms converged on one token, so a background session refresh can never invalidate a page rendered earlier (the CI-Server#1740 race). CSRF failures on the no-JS consent/confirm forms self-heal with a one-shot 303 back to their GET (re-rendering against the current cookie); a second consecutive failure means cookies are blocked and surfaces a hard error.
 

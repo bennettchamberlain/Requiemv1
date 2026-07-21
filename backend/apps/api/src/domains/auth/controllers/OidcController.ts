@@ -1,8 +1,7 @@
 import { createHash, randomBytes } from 'crypto';
 
-import { Body, Controller, Get, HttpCode, Post, Query, Req, Res } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, HttpCode, HttpStatus, Post, Query, Req, Res } from '@nestjs/common';
 import { Request, Response } from 'express';
-import parseDuration from 'parse-duration';
 import { Agent, fetch as undiciFetch } from 'undici';
 
 import { SYSTEM_USER } from '@ci/common/context';
@@ -13,7 +12,7 @@ import { UserService } from '@ci/domains/user';
 
 import { AuthService } from '../services/AuthService';
 import { CsrfService } from '../services/CsrfService';
-import { ensureCsrfCookie, setCsrfCookie } from '../utils/csrfCookie';
+import { ensureCsrfCookie, setCsrfCookie, setSessionCookie } from '../utils/authCookies';
 import {
   OIDC_ORIGIN_BOUNCE_PARAM,
   type OidcCallbackRequestOrigin,
@@ -22,7 +21,6 @@ import {
 } from '../utils/oidcCallbackUrl';
 import { renderSignupConfirmPage } from '../utils/signupConfirmPage';
 
-const COOKIE_MAX_AGE = parseDuration(config.auth.jwt.refreshTokenExpiration) ?? 0;
 const STATE_COOKIE = 'oidc_state';
 const PKCE_COOKIE = 'oidc_pkce';
 // Carries the post-login destination (e.g. a /shared/<token> deep link) across
@@ -390,7 +388,7 @@ export class OidcController {
     // CSRF cookie for the confirm POST (double-submit): same value is embedded
     // in the form's hidden field. Reuses a valid existing cookie so re-rendering
     // (or another tab minting) never invalidates an already-open copy of this
-    // page; see utils/csrfCookie.ts.
+    // page; see utils/authCookies.ts.
     const csrfToken = ensureCsrfCookie(this.csrfService, req, res);
 
     const cspNonce = randomBytes(16).toString('base64');
@@ -444,9 +442,14 @@ export class OidcController {
     // A second consecutive failure means cookies are blocked — land on /login.
     try {
       this.csrfService.validateToken(req.cookies?.[config.auth.cookies.csrfTokenName], body?.csrf);
-    } catch {
+    } catch (err) {
+      // Only CSRF rejections self-heal; anything else must surface as itself.
+      if (!(err instanceof ForbiddenException)) {
+        throw err;
+      }
+
       res.redirect(
-        303,
+        HttpStatus.SEE_OTHER,
         body?.csrf_retry ? '/login?error=csrf' : '/api/authenticate/oidc/confirm-account?csrf_retry=1',
       );
 
@@ -483,16 +486,10 @@ export class OidcController {
       this.authService.getSessionMetadata(req),
     );
 
-    res.cookie(config.auth.cookies.sessionTokenName, sessionToken, {
-      httpOnly: true,
-      secure: req.secure,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: COOKIE_MAX_AGE,
-    });
+    setSessionCookie(req, res, sessionToken);
 
     // Identity boundary: mint a fresh CSRF token (the only rotation points are
-    // login, signup, and this OIDC sign-in — see utils/csrfCookie.ts).
+    // login, signup, and this OIDC sign-in — see utils/authCookies.ts).
     setCsrfCookie(req, res, this.csrfService.generateToken());
 
     // Return to the deep link the user was headed for before being bounced to

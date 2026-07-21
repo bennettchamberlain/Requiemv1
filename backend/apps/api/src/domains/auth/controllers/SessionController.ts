@@ -11,7 +11,6 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
-import parseDuration from 'parse-duration';
 import { z } from 'zod';
 
 import { ValidationPipe } from '@ci/common/pipes';
@@ -22,9 +21,13 @@ import { CsrfGuard } from '../guards/CsrfGuard';
 import { AuthService } from '../services/AuthService';
 import { CsrfService } from '../services/CsrfService';
 import { JwtPayload, LoginDto } from '../types';
-import { clearCsrfCookie, ensureCsrfCookie, setCsrfCookie } from '../utils/csrfCookie';
-
-const COOKIE_MAX_AGE = parseDuration(config.auth.jwt.refreshTokenExpiration) ?? 0;
+import {
+  clearCsrfCookie,
+  clearSessionCookie,
+  ensureCsrfCookie,
+  setCsrfCookie,
+  setSessionCookie,
+} from '../utils/authCookies';
 
 const localStrategySchema = z.object({
   username: z.string(),
@@ -75,13 +78,7 @@ export class SessionController {
 
     const accessToken = await this.authService.issueAccessToken(user.id);
 
-    res.cookie(config.auth.cookies.sessionTokenName, sessionToken, {
-      httpOnly: true,
-      secure: req.secure,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: COOKIE_MAX_AGE,
-    });
+    setSessionCookie(req, res, sessionToken);
 
     // Identity boundary: mint a fresh CSRF token (token-fixation hygiene). This
     // and the other auth boundaries (signup, OIDC sign-in) are the only places
@@ -122,13 +119,7 @@ export class SessionController {
     // The browser keeps the cookie from the first concurrent request that
     // performed the real rotation.
     if (sessionToken) {
-      res.cookie(config.auth.cookies.sessionTokenName, sessionToken, {
-        httpOnly: true,
-        secure: req.secure,
-        sameSite: 'lax',
-        path: '/',
-        maxAge: COOKIE_MAX_AGE,
-      });
+      setSessionCookie(req, res, sessionToken);
     }
 
     // Reuse the existing CSRF token (sliding its maxAge) rather than minting a
@@ -159,13 +150,7 @@ export class SessionController {
 
     await this.authService.invalidateSession(userId, token, this.authService.getSessionMetadata(req));
 
-    res.clearCookie(config.auth.cookies.sessionTokenName, {
-      httpOnly: true,
-      secure: req.secure,
-      sameSite: 'lax',
-      path: '/',
-    });
-
+    clearSessionCookie(req, res);
     clearCsrfCookie(req, res);
   }
 

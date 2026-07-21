@@ -133,7 +133,10 @@ const CONSENT_STYLES = /* css */ `
  * by the caller.
  */
 export function renderConnectConsentPage(params: ConnectConsentParams): string {
-  const displayName = escapeHtml(params.appName?.trim() || params.appUrn);
+  // Normalise once: the trimmed name drives both the heading and the hidden
+  // app_name field that carries it through the CSRF self-heal round-trip.
+  const trimmedAppName = params.appName?.trim();
+  const displayName = escapeHtml(trimmedAppName || params.appUrn);
   const appUrn = escapeHtml(params.appUrn);
   const state = escapeHtml(params.state);
   const returnUrl = escapeHtml(params.returnUrl);
@@ -178,9 +181,9 @@ export function renderConnectConsentPage(params: ConnectConsentParams): string {
         <input type="hidden" name="state" value="${state}" />
         <input type="hidden" name="return" value="${returnUrl}" />
         <input type="hidden" name="csrf" value="${csrfToken}" />${
-          params.appName?.trim()
+          trimmedAppName
             ? `
-        <input type="hidden" name="app_name" value="${escapeHtml(params.appName.trim())}" />`
+        <input type="hidden" name="app_name" value="${escapeHtml(trimmedAppName)}" />`
             : ''
         }${
           params.csrfRetry
