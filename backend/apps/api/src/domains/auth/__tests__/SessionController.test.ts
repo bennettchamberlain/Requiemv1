@@ -1,4 +1,10 @@
-import { type INestApplication, type MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
+import {
+  ForbiddenException,
+  type INestApplication,
+  type MiddlewareConsumer,
+  Module,
+  type NestModule,
+} from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import cookieParser from 'cookie-parser';
 import request from 'supertest';
@@ -292,7 +298,11 @@ describe('SessionController', () => {
     });
 
     it('should return 400 when no session cookie is present', async () => {
-      await request(app.getHttpServer()).post('/authenticate/logout').expect(400);
+      await request(app.getHttpServer())
+        .post('/authenticate/logout')
+        .set('Cookie', [`${CSRF_COOKIE_NAME}=${MOCK_CSRF_TOKEN}`])
+        .set('X-CSRF-Token', MOCK_CSRF_TOKEN)
+        .expect(400);
     });
 
     it('should still clear both cookies when the session is already invalid', async () => {
@@ -300,13 +310,34 @@ describe('SessionController', () => {
       // carries a 7-day maxAge, so skipping the clear on an expired session
       // would leave it outliving the session it belongs to, still reusable by
       // ensureToken.
-      const response = await request(app.getHttpServer()).post('/authenticate/logout').expect(400);
+      const response = await request(app.getHttpServer())
+        .post('/authenticate/logout')
+        .set('Cookie', [`${CSRF_COOKIE_NAME}=${MOCK_CSRF_TOKEN}`])
+        .set('X-CSRF-Token', MOCK_CSRF_TOKEN)
+        .expect(400);
 
       const cookies = parseCookies(response);
       for (const name of [COOKIE_NAME, CSRF_COOKIE_NAME]) {
         expect(cookies[name]).toBeDefined();
         expect(cookies[name].value === '' || cookies[name].expires?.getTime() === 0).toBe(true);
       }
+    });
+
+    it('should NOT clear cookies for a credential-less cross-site POST', async () => {
+      // Clearing before validating is only safe behind CsrfGuard. A third-party
+      // page can POST here, but sameSite lax/strict means no cookies ride along,
+      // so the guard rejects before the handler body runs. Without the guard the
+      // clears would already have executed and their deletion Set-Cookie headers
+      // would ship on the error response — a repeatable forced-logout primitive
+      // for any site the victim visits.
+      mockCsrfService.validateToken.mockImplementation(() => {
+        throw new ForbiddenException('Missing CSRF token');
+      });
+
+      const response = await request(app.getHttpServer()).post('/authenticate/logout').expect(403);
+
+      expect(parseCookies(response)).toEqual({});
+      expect(mockAuthService.invalidateSession).not.toHaveBeenCalled();
     });
 
     it('should return 401 when user no longer exists', async () => {

@@ -138,6 +138,7 @@ export class SessionController {
 
   @Post('logout')
   @HttpCode(204)
+  @UseGuards(CsrfGuard)
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     // Clear the cookies FIRST, before any check that can throw. Logging out must
     // always leave the browser clean: previously an already-expired or missing
@@ -145,6 +146,15 @@ export class SessionController {
     // csrf cookie died with the browser session — but it now carries a 7-day
     // maxAge, so it would outlive the session it belongs to and keep being
     // reused by ensureToken.
+    //
+    // CsrfGuard is what makes clearing-before-validating safe. Without it this
+    // ordering hands any third-party page a forced-logout primitive: a
+    // credential-less cross-site POST sends no cookies (lax/strict), so the
+    // handler throws — but the clears have already run and the deletion
+    // Set-Cookie headers ride out on the error response, signing the victim out
+    // repeatably. The guard rejects before the handler body, while a real
+    // browser holding a valid double-submit pair still reaches the clears even
+    // when its session has expired.
     clearSessionCookie(req, res);
     clearCsrfCookie(req, res);
 
