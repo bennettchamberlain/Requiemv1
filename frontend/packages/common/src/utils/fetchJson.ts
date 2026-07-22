@@ -22,17 +22,22 @@ export async function fetchJson<T>(input: RequestInfo, init?: Opts): Promise<T |
   const { timeout, ...rest } = init ?? {};
 
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
-  let controller: AbortController;
   if (timeout != null && rest.signal == null) {
-    controller = new AbortController();
+    const controller = new AbortController();
     timeoutId = setTimeout(() => controller.abort(), timeout);
     rest.signal = controller.signal;
   }
 
-  const res = await fetch(input, rest);
-
-  if (timeoutId != null) {
-    clearTimeout(timeoutId);
+  // clear in `finally`: if fetch() rejects (network error, DNS failure) before
+  // the timeout fires, skipping the clear would leave the timer pending — it
+  // would later abort an already-settled request and keep the event loop alive.
+  let res: Response;
+  try {
+    res = await fetch(input, rest);
+  } finally {
+    if (timeoutId != null) {
+      clearTimeout(timeoutId);
+    }
   }
 
   if (!res.ok) {
