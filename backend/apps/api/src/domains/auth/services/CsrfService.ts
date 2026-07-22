@@ -34,7 +34,19 @@ export class CsrfService {
    *
    * @throws ForbiddenException if validation fails
    */
-  validateToken(cookieValue: string | undefined, headerValue: string | undefined): void {
+  validateToken(cookieValue: unknown, headerValue: unknown): void {
+    // Both arguments are `unknown` rather than `string | undefined` because
+    // neither source is actually type-safe: cookie-parser runs JSONCookies over
+    // every cookie, so a `csrfToken=j:{…}` value arrives as a parsed object (or
+    // number, or boolean), and Express header values can be arrays. Passing
+    // either into Buffer.from() throws a TypeError that escapes as a 500 and
+    // bypasses the callers' self-heal handling, so reject non-strings here as a
+    // plain CSRF failure — which lets the caller re-render and ensureToken
+    // replace the poisoned cookie.
+    if (typeof cookieValue !== 'string' || typeof headerValue !== 'string') {
+      throw new ForbiddenException('Invalid CSRF token');
+    }
+
     if (!cookieValue || !headerValue) {
       throw new ForbiddenException('Missing CSRF token');
     }
@@ -70,14 +82,19 @@ export class CsrfService {
    * invalidate a form that was rendered earlier. Rotation is reserved for
    * identity boundaries (login, signup, OIDC sign-in) and logout (clear).
    */
-  ensureToken(cookieValue: string | undefined): string {
-    return cookieValue && this.verifyToken(cookieValue) ? cookieValue : this.generateToken();
+  ensureToken(cookieValue: unknown): string {
+    return this.verifyToken(cookieValue) ? (cookieValue as string) : this.generateToken();
   }
 
   /**
    * Verify the HMAC signature of a token.
    */
-  verifyToken(token: string): boolean {
+  verifyToken(token: unknown): boolean {
+    // See validateToken: a cookie value is not guaranteed to be a string.
+    if (typeof token !== 'string') {
+      return false;
+    }
+
     const dotIndex = token.indexOf('.');
 
     if (dotIndex === -1) {

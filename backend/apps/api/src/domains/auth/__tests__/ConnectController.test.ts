@@ -140,10 +140,11 @@ describe('ConnectController', () => {
       expect(decodeURIComponent(res.headers.location)).toContain('/api/connect?');
     });
 
-    it('carries csrf_retry through the OIDC sign-in bounce', async () => {
-      // Without this the self-heal budget resets whenever the session expires
-      // mid-retry, so a cookie-blocked browser would loop through sign-in
-      // instead of reaching the "enable cookies" error.
+    it('does NOT carry csrf_retry through the OIDC sign-in bounce', async () => {
+      // Signing in mints a fresh csrf cookie (OidcController.finishLogin), so the
+      // page rendered afterwards is a genuine first attempt whose token matches
+      // by construction. Forwarding a spent retry budget onto it would make its
+      // first real mismatch dead-end instead of self-healing.
       mockConnectService.resolveSessionUser.mockResolvedValue(null);
 
       const res = await request(app.getHttpServer())
@@ -152,7 +153,30 @@ describe('ConnectController', () => {
         .expect(302);
 
       const redirectTarget = decodeURIComponent(res.headers.location.split('redirect=')[1]);
-      expect(redirectTarget).toContain('csrf_retry=1');
+      expect(redirectTarget).toContain('/api/connect?');
+      expect(redirectTarget).not.toContain('csrf_retry');
+    });
+
+    it('ignores a duplicated query key instead of crashing on the array', async () => {
+      // Express yields an array for repeated keys, so an unguarded `.trim()` on
+      // app_name (or escapeHtml on state) would TypeError into a 500.
+      mockConnectService.resolveSessionUser.mockResolvedValue({
+        userId: 'user-1',
+        email: 'owner@example.com',
+      });
+
+      const res = await request(app.getHttpServer())
+        .get(
+          '/connect?app=urn:app:x&state=s&return=' +
+            encodeURIComponent(RETURN_URL) +
+            '&app_name=a&app_name=b',
+        )
+        .set('Cookie', [`${SESSION_COOKIE}=tok`])
+        .expect(200);
+
+      // Falls back to the URN rather than honouring either injected duplicate.
+      expect(res.text).toContain('urn:app:x');
+      expect(res.text).not.toContain('name="app_name"');
     });
 
     it('renders the no-JS consent page with anti-framing headers when signed in', async () => {
@@ -321,7 +345,13 @@ describe('ConnectController', () => {
       expect(mockConnectService.approve).not.toHaveBeenCalled();
     });
 
-    it('403s with an HTML error page when CSRF fails on the retry submission (cookies blocked)', async () => {
+    it('returns the user to CI-Hub with csrf_failed when CSRF fails on the retry submission', async () => {
+      // The Hub interstitial is waiting on this flow; stranding the browser on a
+      // terminal error page would leave it waiting forever.
+      mockConnectService.resolveSessionUser.mockResolvedValue({
+        userId: 'user-1',
+        email: 'owner@example.com',
+      });
       mockCsrfService.validateToken.mockImplementation(() => {
         throw new ForbiddenException('CSRF token mismatch');
       });
@@ -329,11 +359,27 @@ describe('ConnectController', () => {
       const res = await request(app.getHttpServer())
         .post('/connect/approve')
         .send({ ...approveBody, csrf: 'wrong', csrf_retry: '1' })
-        .expect(403);
+        .expect(200);
 
-      expect(res.headers['content-type']).toContain('text/html');
-      expect(res.text).toContain('Unable to connect');
-      expect(res.text).toContain('blocking cookies');
+      expect(res.text).toContain(`url=${RETURN_URL}?error=csrf_failed&amp;state=s"`);
+      expect(mockConnectService.approve).not.toHaveBeenCalled();
+    });
+
+    it('returns to CI-Hub rather than 303-ing into a cross-origin OIDC hop when the session is gone', async () => {
+      // connect() would bounce a signed-out user to the cross-origin issuer, and
+      // Chrome enforces form-action across a form submission's whole redirect
+      // chain — that hop is silently refused, leaving a blank page.
+      mockConnectService.resolveSessionUser.mockResolvedValue(null);
+      mockCsrfService.validateToken.mockImplementation(() => {
+        throw new ForbiddenException('CSRF token mismatch');
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/connect/approve')
+        .send({ ...approveBody, csrf: 'wrong' })
+        .expect(200);
+
+      expect(res.text).toContain(`url=${RETURN_URL}?error=login_required&amp;state=s"`);
       expect(mockConnectService.approve).not.toHaveBeenCalled();
     });
 

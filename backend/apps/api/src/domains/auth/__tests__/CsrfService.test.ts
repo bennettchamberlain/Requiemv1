@@ -68,6 +68,20 @@ describe('CsrfService', () => {
       expect(token).not.toBe('');
     });
 
+    it('mints when cookie-parser produced a non-string (a `j:` JSON cookie)', () => {
+      // cookie-parser runs JSONCookies over every cookie, so `csrfToken=j:{}`
+      // arrives as a parsed object. Calling .indexOf on it used to TypeError
+      // into a 500 on GET /authenticate/csrf, GET /api/connect and
+      // confirm-account — and with the cookie's 7-day maxAge the browser stayed
+      // wedged, with the SPA's own recovery endpoint among the casualties.
+      for (const poisoned of [{}, 5, true, [], null] as unknown[]) {
+        const token = service.ensureToken(poisoned);
+
+        expect(typeof token).toBe('string');
+        expect(service.verifyToken(token)).toBe(true);
+      }
+    });
+
     it('mints a fresh token when the cookie is invalid (e.g. signed with a rotated secret)', () => {
       const invalid = 'deadbeef.deadbeef';
       const token = service.ensureToken(invalid);
@@ -103,6 +117,18 @@ describe('CsrfService', () => {
 
     it('rejects an unsigned but equal pair', () => {
       expect(() => service.validateToken('forged.forged', 'forged.forged')).toThrow(ForbiddenException);
+    });
+
+    it('rejects a non-string value as Forbidden rather than throwing TypeError', () => {
+      // Same JSON-cookie hazard on the validating side: Buffer.from({}) throws a
+      // TypeError, which the callers classify as non-CSRF and re-throw as a 500,
+      // skipping the self-heal that would have replaced the poisoned cookie.
+      const token = service.generateToken();
+
+      for (const poisoned of [{}, 5, true, [], null] as unknown[]) {
+        expect(() => service.validateToken(poisoned, token)).toThrow(ForbiddenException);
+        expect(() => service.validateToken(token, poisoned)).toThrow(ForbiddenException);
+      }
     });
 
     it('rejects a multi-byte pair as Forbidden rather than throwing RangeError', () => {

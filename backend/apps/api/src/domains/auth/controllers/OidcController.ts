@@ -467,7 +467,9 @@ export class OidcController {
     try {
       identity = this.authService.verifySignupIntentToken(req.cookies?.[SIGNUP_INTENT_COOKIE]);
     } catch {
-      res.redirect('/login?error=signup_expired');
+      // 303, not the default 302: this exits a POST, and only 303 guarantees the
+      // browser re-issues it as a GET rather than re-POSTing to /login.
+      res.redirect(HttpStatus.SEE_OTHER, '/login?error=signup_expired');
 
       return;
     }

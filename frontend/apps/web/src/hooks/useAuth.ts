@@ -32,10 +32,21 @@ function withCsrfHeader(headers?: HeadersInit): HeadersInit {
  * token and only mints when the cookie is absent/invalid, so calling this can
  * never invalidate another tab or an open server-rendered form.
  */
-async function primeCsrfCookie(): Promise<void> {
-  await fetch('/api/authenticate/csrf', {
-    credentials: 'include',
-  });
+async function primeCsrfCookie(): Promise<boolean> {
+  try {
+    const res = await fetch('/api/authenticate/csrf', {
+      credentials: 'include',
+    });
+
+    // The status matters: on a non-2xx the cookie was NOT (re)issued, so the
+    // caller must not treat a retry as meaningfully different from the attempt
+    // that just failed. Swallow the error rather than propagating — a priming
+    // blip should not by itself log out a user whose session is still valid;
+    // let the refresh attempt below decide that.
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -62,7 +73,12 @@ async function refreshSession(): Promise<AuthResponse | undefined> {
       throw err;
     }
 
-    await primeCsrfCookie();
+    // Only retry if priming actually replaced the token. Otherwise the retry
+    // would re-send the byte-identical stale header, burn the one-shot budget
+    // on a guaranteed second 403, and log the user out.
+    if (!(await primeCsrfCookie())) {
+      throw err;
+    }
 
     return fetchJson<AuthResponse>('/api/authenticate/refresh', {
       method: 'POST',

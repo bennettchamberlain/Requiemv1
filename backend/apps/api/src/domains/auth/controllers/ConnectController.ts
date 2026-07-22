@@ -48,8 +48,8 @@ const approveSchema = z.object({
   // redirect can re-render the consent page with the same display name.
   app_name: z.string().optional(),
   // Present when this submission came from the one-shot re-render after a CSRF
-  // failure; a second consecutive failure renders a hard error instead of
-  // redirecting again (bounds the retry loop when cookies are blocked).
+  // failure; a second consecutive failure returns to CI-Hub with an error
+  // instead of redirecting again, bounding the retry loop.
   csrf_retry: z.string().optional(),
 });
 
@@ -66,11 +66,23 @@ const rotateSchema = z.object({
 });
 
 /**
+ * Narrow a query-string value to a single string.
+ *
+ * Express's query parser yields an ARRAY when a key is repeated
+ * (`?app_name=a&app_name=b`), so a `@Query()` parameter typed `string` is a lie
+ * an attacker can falsify with one extra query pair. Without this, `.trim()`
+ * and the HTML-escaping helpers throw a TypeError and the consent page 500s.
+ * Repeats are treated as absent rather than "first wins", so an injected
+ * duplicate cannot shadow the value the Hub actually sent.
+ */
+function singleQueryValue(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+/**
  * Build this controller's own consent URL. Used both for the OIDC sign-in bounce
  * (return here once a session exists) and for the CSRF self-heal hop, so the two
- * paths cannot drift — notably `csrf_retry` must survive a sign-in bounce, or a
- * cookie-blocked browser would loop instead of reaching the "enable cookies"
- * error.
+ * cannot drift in how they carry `app`/`state`/`return`/`app_name`.
  */
 function buildConnectUrl(params: {
   app: string;
@@ -130,14 +142,22 @@ export class ConnectController {
    */
   @Get()
   async connect(
-    @Query('app') app: string | undefined,
-    @Query('state') state: string | undefined,
-    @Query('return') returnUrl: string | undefined,
-    @Query('app_name') appName: string | undefined,
-    @Query('csrf_retry') csrfRetry: string | undefined,
+    @Query('app') appParam: unknown,
+    @Query('state') stateParam: unknown,
+    @Query('return') returnUrlParam: unknown,
+    @Query('app_name') appNameParam: unknown,
+    @Query('csrf_retry') csrfRetryParam: unknown,
     @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
+    // Repeated query keys arrive as arrays, so narrow before anything treats
+    // these as strings (see singleQueryValue).
+    const app = singleQueryValue(appParam);
+    const state = singleQueryValue(stateParam);
+    const returnUrl = singleQueryValue(returnUrlParam);
+    const appName = singleQueryValue(appNameParam);
+    const csrfRetry = singleQueryValue(csrfRetryParam);
+
     if (!app || !state || !returnUrl) {
       res
         .status(HttpStatus.BAD_REQUEST)
@@ -164,15 +184,15 @@ export class ConnectController {
       // Sign in, then return to this exact URL (same-origin path passes the OIDC
       // controller's safeRelativePath guard) with the session cookie set. Carry
       // app_name through the bounce so the consent page can show the friendly
-      // name rather than falling back to the raw URN, and csrf_retry so a
-      // session that expires mid-retry does not reset the self-heal budget.
-      const selfPath = buildConnectUrl({
-        app,
-        state,
-        returnUrl,
-        appName,
-        csrfRetry: csrfRetry != null,
-      });
+      // name rather than falling back to the raw URN.
+      //
+      // csrf_retry is deliberately NOT carried: signing in runs
+      // OidcController.finishLogin, which MINTS a fresh csrf cookie, so the page
+      // rendered afterwards is a genuine first attempt with a token that matches
+      // by construction. Forwarding a spent retry budget onto it would make its
+      // first real mismatch dead-end on "your browser is blocking cookies" for a
+      // browser whose cookies work fine.
+      const selfPath = buildConnectUrl({ app, state, returnUrl, appName });
 
       res.redirect(`/api/authenticate/oidc?redirect=${encodeURIComponent(selfPath)}`);
 
@@ -238,12 +258,14 @@ export class ConnectController {
    * key, and 302-redirects the browser back to CI-Hub carrying the one-time code.
    *
    * Failure modes all send the user back to CI-Hub with an `error` (rather than
-   * rendering a dead-end JSON error) so they land back on the originating app's
+   * rendering a dead-end error page) so they land back on the originating app's
    * interstitial: a lost session → `login_required`, a minting failure →
-   * `server_error`. A bad/absent CSRF token self-heals: a 303 back to the
-   * consent GET re-renders the form against the browser's current cookie, so one
-   * extra click recovers (`csrf_retry` bounds it to a single hop — a second
-   * consecutive failure means cookies are blocked and renders a hard error).
+   * `server_error`, an unrecoverable CSRF failure → `csrf_failed`. A bad/absent
+   * CSRF token first self-heals: a 303 back to the consent GET re-renders the
+   * form against the browser's current cookie, so one extra click recovers.
+   * `csrf_retry` bounds that to a single hop, and the second failure returns to
+   * CI-Hub rather than stranding the user on a page with no way back — the Hub's
+   * interstitial is still waiting for this flow to resolve.
    * A bad return origin (can't safely redirect anywhere) is the only remaining
    * hard failure.
    *
@@ -262,34 +284,45 @@ export class ConnectController {
       throw new BadRequestException('Return URL origin is not allowlisted');
     }
 
+    const sendToHub = (url: string) =>
+      res.status(HttpStatus.OK).type('html').send(renderConnectRedirectPage(url));
+
     // Signed double-submit: the hidden `csrf` field must match the csrf cookie.
     // On mismatch/absence, self-heal: bounce back to the consent GET, which
     // re-renders the form against the browser's CURRENT cookie (connect()
     // re-runs the return-URL allowlist and session checks on the way, so the
-    // redirect adds no new trust). The same-origin 303 satisfies the gateway's
-    // `form-action 'self'`; only the cross-origin hop back to CI-Hub needs the
-    // meta-refresh page.
+    // redirect adds no new trust).
     try {
       this.csrfService.validateToken(req.cookies?.[CSRF_COOKIE], body.csrf);
     } catch (err) {
       // Only CSRF rejections self-heal. Anything else is an unexpected fault and
-      // must surface as itself rather than be mislabelled "cookies are blocked".
+      // must surface as itself rather than be mislabelled a CSRF problem.
       if (!(err instanceof ForbiddenException)) {
         throw err;
       }
 
+      // The self-heal hop is a same-origin 303, which the gateway's
+      // `form-action 'self'` permits. But connect() would bounce a signed-OUT
+      // user onward to the cross-origin OIDC issuer, and Chrome enforces
+      // form-action across the whole redirect chain of a form submission — that
+      // hop would be silently refused, leaving a blank page. So when the session
+      // is already gone, go straight back to CI-Hub via the meta-refresh page
+      // (the same reason renderConnectRedirectPage exists) and let the Hub
+      // restart the flow.
+      const session = await this.connectService.resolveSessionUser(req.cookies?.[SESSION_COOKIE]);
+
+      if (!session) {
+        sendToHub(this.connectService.buildDenyUrl(body.return, body.state, 'login_required'));
+
+        return;
+      }
+
       if (body.csrf_retry) {
-        // Second consecutive failure: the re-rendered form ALSO mismatched its
-        // cookie, which means the browser is not storing cookies at all.
-        this.logger.warn(`[Connect] CSRF failed twice for app ${body.app} — cookies appear blocked`);
-        res
-          .status(HttpStatus.FORBIDDEN)
-          .type('html')
-          .send(
-            renderConnectErrorPage(
-              'Your browser appears to be blocking cookies, which this connection flow requires. Enable cookies for this site and try again.',
-            ),
-          );
+        // Second consecutive failure with a live session: re-rendering will not
+        // help. Return to CI-Hub with an error so its interstitial resolves
+        // instead of waiting forever on a callback that will never arrive.
+        this.logger.warn(`[Connect] CSRF failed twice for app ${body.app}; returning to Hub`);
+        sendToHub(this.connectService.buildDenyUrl(body.return, body.state, 'csrf_failed'));
 
         return;
       }
@@ -307,9 +340,6 @@ export class ConnectController {
 
       return;
     }
-
-    const sendToHub = (url: string) =>
-      res.status(HttpStatus.OK).type('html').send(renderConnectRedirectPage(url));
 
     const session = await this.connectService.resolveSessionUser(req.cookies?.[SESSION_COOKIE]);
 

@@ -214,6 +214,34 @@ describe('useAuth', () => {
     );
   });
 
+  it('does not retry a 403 refresh when re-priming the csrf cookie failed', async () => {
+    // A failed prime leaves the same stale token in place, so retrying would
+    // re-send a byte-identical request, burn the one-shot budget on a certain
+    // second 403, and log the user out for no reason.
+    document.cookie = 'csrfToken=stale-token';
+    let refreshCalls = 0;
+
+    setFetch((url) => {
+      if (url.endsWith('/api/authenticate/refresh')) {
+        refreshCalls += 1;
+
+        return emptyResponse(false, 403);
+      }
+
+      if (url.endsWith('/api/authenticate/csrf')) {
+        return emptyResponse(false, 503);
+      }
+
+      return emptyResponse();
+    });
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => expect(result.current[0].loading).toBe(false));
+    expect(refreshCalls).toBe(1);
+    expect(result.current[0].authToken).toBeNull();
+  });
+
   it('does not retry a 401 refresh (invalid session must fall through to login)', async () => {
     document.cookie = 'csrfToken=csrf-abc';
     let refreshCalls = 0;

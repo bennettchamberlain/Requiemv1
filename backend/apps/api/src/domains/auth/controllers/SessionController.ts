@@ -139,6 +139,15 @@ export class SessionController {
   @Post('logout')
   @HttpCode(204)
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    // Clear the cookies FIRST, before any check that can throw. Logging out must
+    // always leave the browser clean: previously an already-expired or missing
+    // session threw here and skipped the clears, which mattered little when the
+    // csrf cookie died with the browser session — but it now carries a 7-day
+    // maxAge, so it would outlive the session it belongs to and keep being
+    // reused by ensureToken.
+    clearSessionCookie(req, res);
+    clearCsrfCookie(req, res);
+
     const token = this.getSessionToken(req);
     const payload = this.validateSessionToken(token);
     const userId = payload.sub;
@@ -149,9 +158,6 @@ export class SessionController {
     }
 
     await this.authService.invalidateSession(userId, token, this.authService.getSessionMetadata(req));
-
-    clearSessionCookie(req, res);
-    clearCsrfCookie(req, res);
   }
 
   private getSessionToken(req: Request) {

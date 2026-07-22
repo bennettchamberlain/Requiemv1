@@ -295,6 +295,20 @@ describe('SessionController', () => {
       await request(app.getHttpServer()).post('/authenticate/logout').expect(400);
     });
 
+    it('should still clear both cookies when the session is already invalid', async () => {
+      // Logging out must always leave the browser clean. The csrf cookie now
+      // carries a 7-day maxAge, so skipping the clear on an expired session
+      // would leave it outliving the session it belongs to, still reusable by
+      // ensureToken.
+      const response = await request(app.getHttpServer()).post('/authenticate/logout').expect(400);
+
+      const cookies = parseCookies(response);
+      for (const name of [COOKIE_NAME, CSRF_COOKIE_NAME]) {
+        expect(cookies[name]).toBeDefined();
+        expect(cookies[name].value === '' || cookies[name].expires?.getTime() === 0).toBe(true);
+      }
+    });
+
     it('should return 401 when user no longer exists', async () => {
       mockUserService.findById.mockResolvedValue(null);
 
@@ -326,6 +340,21 @@ describe('SessionController', () => {
       const cookies = parseCookies(response);
       expect(cookies[CSRF_COOKIE_NAME]).toBeDefined();
       expect(cookies[CSRF_COOKIE_NAME].value).toBe(MOCK_CSRF_TOKEN);
+    });
+
+    it('should pin the csrf cookie attributes the double-submit scheme depends on', async () => {
+      // These now live in one shared helper, so a single edit could silently
+      // break every call site: httpOnly:true would make getCsrfToken() in
+      // useAuth return undefined (breaking login/signup/refresh/logout), and
+      // sameSite:'lax' would drop the defence that actually stops a cross-site
+      // POST against the no-JS consent form.
+      const response = await request(app.getHttpServer()).get('/authenticate/csrf').expect(204);
+
+      const cookie = parseCookies(response)[CSRF_COOKIE_NAME];
+      expect(cookie.httpOnly).toBeFalsy();
+      expect(cookie.sameSite?.toLowerCase()).toBe('strict');
+      expect(cookie.path).toBe('/');
+      expect(cookie.maxAge).toBeDefined();
     });
 
     it('should echo a valid existing token instead of minting (idempotent priming)', async () => {
