@@ -86,9 +86,11 @@ class TestModule implements NestModule {
  * cannot invalidate an open copy), and a CSRF failure self-heals with a 303
  * rather than dead-ending on a raw 403.
  *
- * The 303 assertion is load-bearing: the handler carries `@HttpCode(302)`, and a
- * 302 would leave the request method browser-dependent — only 303 guarantees the
- * POST is re-issued as a GET against the confirm page.
+ * The 303 assertion is load-bearing: the handler injects a non-passthrough
+ * `@Res()`, so Nest's `@HttpCode` never runs and it calls `res.redirect(
+ * HttpStatus.SEE_OTHER, …)` explicitly. A plain 302 would leave the request
+ * method browser-dependent — only 303 guarantees the POST is re-issued as a GET
+ * against the confirm page.
  */
 describe('OidcController — confirm-account CSRF', () => {
   let app: INestApplication;

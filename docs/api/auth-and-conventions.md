@@ -83,7 +83,7 @@ CSRF cookie (`domains/auth/utils/authCookies.ts` — the single source of truth 
 | `/authenticate/csrf` | GET (204) | — | Ensure a `csrfToken` cookie (reuses a valid one; idempotent) |
 | `/authenticate` | POST (200) | `CsrfGuard` | Login → session cookie + access token; **rotates** csrf |
 | `/authenticate/refresh` | POST (200) | `CsrfGuard` | Rotate session token, return a new access token; **reuses** csrf (slides maxAge) |
-| `/authenticate/logout` | POST (204) | — | Invalidate session, clear both cookies |
+| `/authenticate/logout` | POST (204) | `CsrfGuard` | Invalidate session, clear both cookies (client must send the double-submit header) |
 | `/signup` | POST | `CsrfGuard` | Create account → session cookie + access token; **rotates** csrf |
 
 **Session persistence** (`AuthService.ts:27-51`): the session row stores an **HMAC-SHA256 digest** of the token, IP, and user-agent (keyed by `auth.session.fieldPepper`) — the raw token is never stored. **Refresh with rotation + 30s grace window** (`AuthService.rotateSessionToken`): a valid refresh rotates the session token (old hash → `previous_token`); a token matching the *previous* hash within `session.refreshGracePeriod` yields a new access token without re-rotating, so racing tab refreshes don't invalidate each other.
