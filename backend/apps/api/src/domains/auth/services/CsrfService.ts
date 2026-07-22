@@ -35,6 +35,15 @@ export class CsrfService {
    * @throws ForbiddenException if validation fails
    */
   validateToken(cookieValue: unknown, headerValue: unknown): void {
+    // Missing takes precedence over malformed so an absent cookie/header reports
+    // "Missing" rather than "Invalid": a genuinely absent value arrives as
+    // `undefined` (no cookie / no header) or `''` (empty), which the type check
+    // below would otherwise mislabel as invalid. A falsy non-string (e.g. `0`,
+    // `false`) is not "missing" — it falls through to the type check.
+    if (cookieValue == null || cookieValue === '' || headerValue == null || headerValue === '') {
+      throw new ForbiddenException('Missing CSRF token');
+    }
+
     // Both arguments are `unknown` rather than `string | undefined` because
     // neither source is actually type-safe: cookie-parser runs JSONCookies over
     // every cookie, so a `csrfToken=j:{…}` value arrives as a parsed object (or
@@ -45,10 +54,6 @@ export class CsrfService {
     // replace the poisoned cookie.
     if (typeof cookieValue !== 'string' || typeof headerValue !== 'string') {
       throw new ForbiddenException('Invalid CSRF token');
-    }
-
-    if (!cookieValue || !headerValue) {
-      throw new ForbiddenException('Missing CSRF token');
     }
 
     // Compare BYTE lengths, not JS string lengths. `timingSafeEqual` rejects

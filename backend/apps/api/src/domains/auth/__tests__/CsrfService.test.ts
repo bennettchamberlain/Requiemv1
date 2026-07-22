@@ -105,6 +105,24 @@ describe('CsrfService', () => {
       expect(() => service.validateToken(token, undefined)).toThrow(ForbiddenException);
     });
 
+    it('labels a genuinely absent value "Missing" and a malformed one "Invalid"', () => {
+      // Both are 403s, but the message must be accurate: an absent cookie/header
+      // (undefined/null/empty) is "Missing", while a present-but-non-string value
+      // (a `j:` JSON cookie parsed to an object) is "Invalid". The presence check
+      // must run before the type check or "Missing" becomes unreachable.
+      const token = service.generateToken();
+
+      for (const absent of [undefined, null, ''] as unknown[]) {
+        expect(() => service.validateToken(absent, token)).toThrow('Missing CSRF token');
+        expect(() => service.validateToken(token, absent)).toThrow('Missing CSRF token');
+      }
+
+      for (const malformed of [{}, 5, true, []] as unknown[]) {
+        expect(() => service.validateToken(malformed, token)).toThrow('Invalid CSRF token');
+        expect(() => service.validateToken(token, malformed)).toThrow('Invalid CSRF token');
+      }
+    });
+
     it('rejects two DIFFERENT validly-signed tokens (equality, not just signature)', () => {
       // Tokens are not session-bound, so an attacker could harvest a valid
       // token from their own browser; only the cookie↔field equality ties the
