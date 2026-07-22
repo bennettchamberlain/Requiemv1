@@ -162,6 +162,18 @@ describe('OidcController — confirm-account CSRF', () => {
 
       expect(res.text).not.toContain('name="csrf_retry"');
     });
+
+    it('ignores a duplicated csrf_retry (array) so a crafted link cannot burn the self-heal', async () => {
+      // A repeated query key arrives as an array; only a single string counts as
+      // the marker. An array must be treated as absent so the user still gets
+      // their one self-heal retry rather than being forced to /login early.
+      const res = await request(app.getHttpServer())
+        .get(`${CONFIRM_PATH}?csrf_retry=1&csrf_retry=2`)
+        .set('Cookie', [`${SIGNUP_INTENT_COOKIE}=intent`])
+        .expect(200);
+
+      expect(res.text).not.toContain('name="csrf_retry"');
+    });
   });
 
   describe('POST confirm-account', () => {

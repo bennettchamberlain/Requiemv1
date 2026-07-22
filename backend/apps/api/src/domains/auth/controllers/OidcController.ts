@@ -404,7 +404,11 @@ export class OidcController {
    */
   @Get('confirm-account')
   async confirmAccountPage(
-    @Query('csrf_retry') csrfRetry: string | undefined,
+    // `unknown`, not `string`: a repeated query key (`?csrf_retry=1&csrf_retry=2`)
+    // arrives as an array, so only a single string counts as the marker (mirrors
+    // singleQueryValue in ConnectController). Treating an array as present would
+    // let a crafted link prematurely burn the one-shot self-heal for the user.
+    @Query('csrf_retry') csrfRetry: unknown,
     @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
@@ -441,7 +445,7 @@ export class OidcController {
           nonce: cspNonce,
           // Round-trips through the form so a second consecutive CSRF failure
           // (cookies blocked) lands on /login instead of looping.
-          csrfRetry: csrfRetry != null,
+          csrfRetry: typeof csrfRetry === 'string',
         }),
       );
   }
