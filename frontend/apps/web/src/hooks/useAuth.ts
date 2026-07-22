@@ -5,6 +5,7 @@ import {
   buildApiUrl,
   createHookContext,
   fetchJson,
+  FetchJsonError,
   isNativePlatform,
   parseOidcCallbackUrl,
   secureStorageGet,
@@ -51,6 +52,138 @@ function withCsrfHeader(headers?: HeadersInit): HeadersInit {
     ...headers,
     'X-CSRF-Token': token,
   };
+}
+
+/**
+ * Set (or re-validate) the csrf cookie. The endpoint reuses a valid existing
+ * token and only mints when the cookie is absent/invalid, so calling this can
+ * never invalidate another tab or an open server-rendered form.
+ */
+async function primeCsrfCookie(): Promise<boolean> {
+  // Native is cookie-less: its cross-origin webview can neither read nor send the
+  // SameSite cookie, so it captures the signed token from the response BODY and
+  // echoes it as the header (see getCsrfToken). The request must also be
+  // uncredentialed, or it becomes a credentialed cross-origin call and requires an
+  // Access-Control-Allow-Credentials the appliance/proxy may not send. Doing this
+  // here rather than at each call site means login, logout and refresh all inherit it.
+  const native = isNativePlatform();
+
+  try {
+    const res = await fetch(buildApiUrl('/api/authenticate/csrf'), {
+      credentials: native ? 'omit' : 'include',
+    });
+
+    if (native) {
+      const body = (await res.json().catch(() => null)) as { csrfToken?: string } | null;
+      nativeCsrfToken = body?.csrfToken ?? null;
+    }
+
+    // The status matters: on a non-2xx the cookie was NOT (re)issued, so the
+    // caller must not treat a retry as meaningfully different from the attempt
+    // that just failed. Swallow the error rather than propagating — a priming
+    // blip should not by itself log out a user whose session is still valid;
+    // let the refresh attempt below decide that.
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * POST /authenticate/logout with the double-submit CSRF header.
+ *
+ * Logout is CsrfGuard-protected so a cross-site POST cannot force it, which
+ * means a stale or dropped csrf cookie would 403 the request and skip the
+ * server-side teardown (invalidateSession + cookie clears) — leaving a
+ * logged-out UI in front of a live 7-day session that the next mount refresh
+ * would silently resume. Mirror refreshSession: prime the cookie when it is
+ * missing, and on a 403 re-prime and retry exactly once so a request carrying a
+ * valid session always tears that session down. Priming cannot help a
+ * cross-site attacker — the primed cookie is sameSite=strict and unreadable
+ * cross-origin — so this does not reopen the forced-logout hole.
+ */
+async function postLogout(): Promise<void> {
+  if (!getCsrfToken()) {
+    await primeCsrfCookie();
+  }
+
+  const first = await fetch('/api/authenticate/logout', {
+    method: 'POST',
+    headers: withCsrfHeader(),
+    credentials: 'include',
+  });
+
+  if (first.ok || first.status !== 403) {
+    if (!first.ok) {
+      console.error('Logout request failed with status:', first.status);
+    }
+
+    return;
+  }
+
+  // A 403 means the cookie was absent or invalid (the SPA always sends the
+  // cookie value as the header, so the two never merely mismatch), so a
+  // *successful* prime re-issues — and thereby replaces — it with a valid token.
+  // Gate the retry on that success (primeCsrfCookie returns res.ok): a failed
+  // prime leaves the same rejected cookie in place, so the retry would only earn
+  // a second 403.
+  if (!(await primeCsrfCookie())) {
+    console.error('Logout request failed with status:', first.status);
+
+    return;
+  }
+
+  const retry = await fetch('/api/authenticate/logout', {
+    method: 'POST',
+    headers: withCsrfHeader(),
+    credentials: 'include',
+  });
+
+  if (!retry.ok) {
+    console.error('Logout retry failed with status:', retry.status);
+  }
+}
+
+/**
+ * POST /authenticate/refresh with the double-submit CSRF header.
+ *
+ * Primes the csrf cookie first when it is missing (e.g. a cleared cookie with a
+ * still-valid session), and on a 403 — a stale/invalid CSRF token, such as one
+ * signed with a rotated server secret — re-primes and retries exactly once.
+ * A 401 (invalid session) is never retried: that must fall through to login.
+ */
+async function refreshSession(): Promise<AuthResponse | undefined> {
+  if (!getCsrfToken()) {
+    await primeCsrfCookie();
+  }
+
+  try {
+    return await fetchJson<AuthResponse>('/api/authenticate/refresh', {
+      method: 'POST',
+      headers: withCsrfHeader(),
+      credentials: 'include',
+    });
+  } catch (err: unknown) {
+    if (!(err instanceof FetchJsonError) || err.status !== 403) {
+      throw err;
+    }
+
+    // A 403 means the cookie was absent or invalid (the SPA always sends the
+    // cookie value as the header, so the two never merely mismatch), so a
+    // *successful* prime re-issues — and thereby replaces — it with a valid
+    // token. Gate the retry on that success (primeCsrfCookie returns res.ok): a
+    // failed prime leaves the same rejected cookie in place, so the retry would
+    // only burn the one-shot budget on a certain second 403 and log the user out.
+    if (!(await primeCsrfCookie())) {
+      throw err;
+    }
+
+    return fetchJson<AuthResponse>('/api/authenticate/refresh', {
+      method: 'POST',
+      headers: withCsrfHeader(),
+      credentials: 'include',
+    });
+  }
 }
 
 interface JwtPayload {
@@ -159,20 +292,12 @@ function useAuth(): ReturnValue {
       setLoginError(null);
 
       try {
-        // Obtain a pre-auth CSRF token before submitting credentials. Native clients
-        // are cookie-less: they read the signed token from the response body and send
-        // it as the header, with `credentials: 'omit'` so the request isn't a
-        // credentialed cross-origin call (which would require
-        // Access-Control-Allow-Credentials the appliance/proxy may not send).
+        // Obtain a pre-auth CSRF token before submitting credentials. On native this
+        // also captures the token from the response body (primeCsrfCookie handles the
+        // cookie-less path), so `withCsrfHeader` below finds it either way.
         const native = isNativePlatform();
-        const csrfResponse = await fetch(buildApiUrl('/api/authenticate/csrf'), {
-          credentials: native ? 'omit' : 'include',
-        });
 
-        if (native) {
-          const csrfBody = (await csrfResponse.json().catch(() => null)) as { csrfToken?: string } | null;
-          nativeCsrfToken = csrfBody?.csrfToken ?? null;
-        }
+        await primeCsrfCookie();
 
         const data = await fetchJson<AuthResponse>('/api/authenticate', {
           method: 'POST',
@@ -224,15 +349,10 @@ function useAuth(): ReturnValue {
     }
 
     try {
-      const response = await fetch(buildApiUrl('/api/authenticate/logout'), {
-        method: 'POST',
-        headers: withCsrfHeader(),
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        console.error('Logout request failed with status:', response.status);
-      }
+      // Web only — the native branch above already returned. postLogout carries the
+      // prime-and-retry-once handling that keeps a stale CSRF cookie from skipping the
+      // server-side session teardown.
+      await postLogout();
     } catch (error) {
       console.error('Logout failed on server:', error);
     }
@@ -253,9 +373,7 @@ function useAuth(): ReturnValue {
 
       try {
         // Obtain a pre-auth CSRF token before submitting signup
-        await fetch(buildApiUrl('/api/authenticate/csrf'), {
-          credentials: 'include',
-        });
+        await primeCsrfCookie();
 
         const data = await fetchJson<AuthResponse>('/api/signup', {
           method: 'POST',
@@ -293,11 +411,7 @@ function useAuth(): ReturnValue {
     setRefreshError(null);
 
     try {
-      const data = await fetchJson<AuthResponse>('/api/authenticate/refresh', {
-        method: 'POST',
-        headers: withCsrfHeader(),
-        credentials: 'include',
-      });
+      const data = await refreshSession();
 
       setAccessToken(data?.accessToken ?? null);
     } catch (err: unknown) {
@@ -310,7 +424,9 @@ function useAuth(): ReturnValue {
     (async () => {
       try {
         if (isNativePlatform()) {
-          // Native restore: load the stored API key. No cookie refresh applies here.
+          // Native restore: load the stored API key. There is no cookie session to
+          // refresh, so returning here is what keeps a native user signed in across
+          // launches — falling through to refreshSession would log them out.
           const storedKey = await secureStorageGet(API_KEY_STORAGE);
 
           if (storedKey) {
@@ -321,11 +437,7 @@ function useAuth(): ReturnValue {
           return;
         }
 
-        const data = await fetchJson<AuthResponse>('/api/authenticate/refresh', {
-          method: 'POST',
-          headers: withCsrfHeader(),
-          credentials: 'include',
-        });
+        const data = await refreshSession();
 
         setAccessToken(data?.accessToken ?? null);
       } catch {
