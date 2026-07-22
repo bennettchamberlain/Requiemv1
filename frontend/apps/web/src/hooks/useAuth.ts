@@ -81,9 +81,12 @@ async function postLogout(): Promise<void> {
     return;
   }
 
-  // 403 = a stale/absent csrf pair. Re-prime and retry once so the session is
-  // actually invalidated. Only retry when priming replaced the token, otherwise
-  // the retry re-sends the byte-identical stale header for a guaranteed 403.
+  // A 403 means the cookie was absent or invalid (the SPA always sends the
+  // cookie value as the header, so the two never merely mismatch), so a
+  // *successful* prime re-issues — and thereby replaces — it with a valid token.
+  // Gate the retry on that success (primeCsrfCookie returns res.ok): a failed
+  // prime leaves the same rejected cookie in place, so the retry would only earn
+  // a second 403.
   if (!(await primeCsrfCookie())) {
     console.error('Logout request failed with status:', first.status);
 
@@ -125,9 +128,12 @@ async function refreshSession(): Promise<AuthResponse | undefined> {
       throw err;
     }
 
-    // Only retry if priming actually replaced the token. Otherwise the retry
-    // would re-send the byte-identical stale header, burn the one-shot budget
-    // on a guaranteed second 403, and log the user out.
+    // A 403 means the cookie was absent or invalid (the SPA always sends the
+    // cookie value as the header, so the two never merely mismatch), so a
+    // *successful* prime re-issues — and thereby replaces — it with a valid
+    // token. Gate the retry on that success (primeCsrfCookie returns res.ok): a
+    // failed prime leaves the same rejected cookie in place, so the retry would
+    // only burn the one-shot budget on a certain second 403 and log the user out.
     if (!(await primeCsrfCookie())) {
       throw err;
     }
