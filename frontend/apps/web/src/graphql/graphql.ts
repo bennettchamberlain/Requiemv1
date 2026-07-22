@@ -337,6 +337,7 @@ export type CreateCommunicationInput = {
   communicationType: Scalars['String']['input'];
   content: Scalars['String']['input'];
   direction?: InputMaybe<Scalars['String']['input']>;
+  durationSeconds?: InputMaybe<Scalars['Float']['input']>;
   fromEntityId?: InputMaybe<Scalars['String']['input']>;
   participantsMetadata?: InputMaybe<Scalars['JSON']['input']>;
   preview?: InputMaybe<Scalars['String']['input']>;
