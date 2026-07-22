@@ -273,9 +273,12 @@ describe('SessionController', () => {
 
   describe('POST /authenticate/logout', () => {
     it('should clear session token cookie', async () => {
+      // logout is CsrfGuard-protected, so a real request carries the double-submit
+      // pair; send it here rather than relying on the mocked validateToken.
       const response = await request(app.getHttpServer())
         .post('/authenticate/logout')
-        .set('Cookie', [`${COOKIE_NAME}=session-token-value`])
+        .set('Cookie', [`${COOKIE_NAME}=session-token-value`, `${CSRF_COOKIE_NAME}=${MOCK_CSRF_TOKEN}`])
+        .set('X-CSRF-Token', MOCK_CSRF_TOKEN)
         .expect(204);
 
       const cookies = parseCookies(response);
@@ -287,7 +290,8 @@ describe('SessionController', () => {
     it('should invalidate the session in the database', async () => {
       await request(app.getHttpServer())
         .post('/authenticate/logout')
-        .set('Cookie', [`${COOKIE_NAME}=session-token-value`])
+        .set('Cookie', [`${COOKIE_NAME}=session-token-value`, `${CSRF_COOKIE_NAME}=${MOCK_CSRF_TOKEN}`])
+        .set('X-CSRF-Token', MOCK_CSRF_TOKEN)
         .expect(204);
 
       expect(mockAuthService.invalidateSession).toHaveBeenCalledWith(
@@ -345,14 +349,16 @@ describe('SessionController', () => {
 
       await request(app.getHttpServer())
         .post('/authenticate/logout')
-        .set('Cookie', [`${COOKIE_NAME}=session-token-value`])
+        .set('Cookie', [`${COOKIE_NAME}=session-token-value`, `${CSRF_COOKIE_NAME}=${MOCK_CSRF_TOKEN}`])
+        .set('X-CSRF-Token', MOCK_CSRF_TOKEN)
         .expect(401);
     });
 
     it('should clear CSRF token cookie on logout', async () => {
       const response = await request(app.getHttpServer())
         .post('/authenticate/logout')
-        .set('Cookie', [`${COOKIE_NAME}=session-token-value`])
+        .set('Cookie', [`${COOKIE_NAME}=session-token-value`, `${CSRF_COOKIE_NAME}=${MOCK_CSRF_TOKEN}`])
+        .set('X-CSRF-Token', MOCK_CSRF_TOKEN)
         .expect(204);
 
       const cookies = parseCookies(response);

@@ -156,6 +156,77 @@ describe('useAuth', () => {
     );
   });
 
+  it('re-primes and retries logout once on a 403 so the server session is torn down', async () => {
+    // Logout is CsrfGuard-protected, so a stale/dropped csrf cookie 403s and the
+    // server-side invalidateSession + cookie clears are skipped — leaving a live
+    // 7-day session behind a logged-out UI. Priming + one retry recovers it.
+    document.cookie = 'csrfToken=stale-token';
+    let logoutCalls = 0;
+
+    const fetchMock = setFetch((url) => {
+      if (url.endsWith('/api/authenticate/refresh')) {
+        return jsonResponse({ accessToken: 'live' });
+      }
+
+      if (url.endsWith('/api/authenticate/logout')) {
+        logoutCalls += 1;
+
+        return logoutCalls === 1 ? emptyResponse(false, 403) : emptyResponse();
+      }
+
+      return emptyResponse();
+    });
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current[0].authToken).toBe('live'));
+
+    await act(async () => {
+      await result.current[1].logout();
+    });
+
+    expect(logoutCalls).toBe(2);
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/api/authenticate/csrf'))).toBe(
+      true,
+    );
+    expect(result.current[0].authToken).toBeNull();
+  });
+
+  it('does not retry logout when re-priming failed, but still clears local state', async () => {
+    // A failed prime leaves the same stale token in place; retrying would re-send
+    // the byte-identical request for a certain second 403. The client still tears
+    // down its own state so the UI does not strand the user "logged in".
+    document.cookie = 'csrfToken=stale-token';
+    let logoutCalls = 0;
+
+    setFetch((url) => {
+      if (url.endsWith('/api/authenticate/refresh')) {
+        return jsonResponse({ accessToken: 'live' });
+      }
+
+      if (url.endsWith('/api/authenticate/logout')) {
+        logoutCalls += 1;
+
+        return emptyResponse(false, 403);
+      }
+
+      if (url.endsWith('/api/authenticate/csrf')) {
+        return emptyResponse(false, 503);
+      }
+
+      return emptyResponse();
+    });
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current[0].authToken).toBe('live'));
+
+    await act(async () => {
+      await result.current[1].logout();
+    });
+
+    expect(logoutCalls).toBe(1);
+    expect(result.current[0].authToken).toBeNull();
+  });
+
   it('reports an expired token from its decoded exp', async () => {
     vi.mocked(jwtDecode).mockReturnValue({ sub: 'u1', iat: 0, exp: pastExp() });
     setFetch((url) =>

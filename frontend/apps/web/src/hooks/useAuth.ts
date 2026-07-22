@@ -50,6 +50,58 @@ async function primeCsrfCookie(): Promise<boolean> {
 }
 
 /**
+ * POST /authenticate/logout with the double-submit CSRF header.
+ *
+ * Logout is CsrfGuard-protected so a cross-site POST cannot force it, which
+ * means a stale or dropped csrf cookie would 403 the request and skip the
+ * server-side teardown (invalidateSession + cookie clears) — leaving a
+ * logged-out UI in front of a live 7-day session that the next mount refresh
+ * would silently resume. Mirror refreshSession: prime the cookie when it is
+ * missing, and on a 403 re-prime and retry exactly once so a request carrying a
+ * valid session always tears that session down. Priming cannot help a
+ * cross-site attacker — the primed cookie is sameSite=strict and unreadable
+ * cross-origin — so this does not reopen the forced-logout hole.
+ */
+async function postLogout(): Promise<void> {
+  if (!getCsrfToken()) {
+    await primeCsrfCookie();
+  }
+
+  const first = await fetch('/api/authenticate/logout', {
+    method: 'POST',
+    headers: withCsrfHeader(),
+    credentials: 'include',
+  });
+
+  if (first.ok || first.status !== 403) {
+    if (!first.ok) {
+      console.error('Logout request failed with status:', first.status);
+    }
+
+    return;
+  }
+
+  // 403 = a stale/absent csrf pair. Re-prime and retry once so the session is
+  // actually invalidated. Only retry when priming replaced the token, otherwise
+  // the retry re-sends the byte-identical stale header for a guaranteed 403.
+  if (!(await primeCsrfCookie())) {
+    console.error('Logout request failed with status:', first.status);
+
+    return;
+  }
+
+  const retry = await fetch('/api/authenticate/logout', {
+    method: 'POST',
+    headers: withCsrfHeader(),
+    credentials: 'include',
+  });
+
+  if (!retry.ok) {
+    console.error('Logout retry failed with status:', retry.status);
+  }
+}
+
+/**
  * POST /authenticate/refresh with the double-submit CSRF header.
  *
  * Primes the csrf cookie first when it is missing (e.g. a cleared cookie with a
@@ -162,15 +214,7 @@ function useAuth(): ReturnValue {
 
   const logout = useCallback(async () => {
     try {
-      const response = await fetch('/api/authenticate/logout', {
-        method: 'POST',
-        headers: withCsrfHeader(),
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        console.error('Logout request failed with status:', response.status);
-      }
+      await postLogout();
     } catch (error) {
       console.error('Logout failed on server:', error);
     }
