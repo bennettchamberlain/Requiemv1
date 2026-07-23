@@ -335,9 +335,7 @@ describe('CsrfService', () => {
     });
 
     it('rejects an unsigned but equal pair', () => {
-      expect(() => service.validateToken('forged.forged', 'forged.forged', null)).toThrow(
-        ForbiddenException,
-      );
+      expect(() => service.validateToken('forged.forged', 'forged.forged', null)).toThrow(ForbiddenException);
     });
 
     it('rejects a non-string value as Forbidden rather than throwing TypeError', () => {
