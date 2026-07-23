@@ -22,6 +22,8 @@ set -euo pipefail
 # Never enable it against a shared Portal — it will overwrite whatever
 # CI-Marketplace published.
 #
+# Opted in, the run is the original three-phase publish workflow:
+#
 #   Phase 1: POST /api/store/ingest         (upload .tar.gz bundle → pending)
 #   Phase 2: docker push                    (push images to registry)
 #   Phase 3: POST /api/store/publish/:slug  (pending → published)
@@ -51,8 +53,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-# Source .env if STORE_ADMIN_API_KEY is not already set
-if [[ -z "${STORE_ADMIN_API_KEY:-}" && -f "${REPO_ROOT}/.env" ]]; then
+# Source .env for STORE_ADMIN_API_KEY, but only on the opt-in Portal path — it
+# is the sole variable this script reads from there. `set -a` exports every key
+# in a developer's .env, and a plain `source` overwrites values the caller
+# passed in, so any collision with this script's own knobs (REGISTRY, VERSION,
+# GITHUB_TOKEN, TAG_SUFFIX, …) would silently win. Don't run it for the
+# images-only default path, which has nothing to gain from it.
+if [[ "${PUBLISH_TO_PORTAL:-false}" == "true" && -z "${STORE_ADMIN_API_KEY:-}" && -f "${REPO_ROOT}/.env" ]]; then
   set -a
   # shellcheck source=/dev/null
   source "${REPO_ROOT}/.env"
@@ -79,11 +86,20 @@ fi
 # single writer of the ci-memory store entry. When it is opted into, it stays
 # best-effort — pushing images is the part that actually matters for installs,
 # so an unreachable Portal or a missing admin key must NOT abort the push.
+# PORTAL_REQUESTED records the opt-in itself, separately from PORTAL_ENABLED,
+# which the phases below clear as soon as one of them fails. Without it a caller
+# who explicitly asked for a catalog publish would get the images-only success
+# message and exit 0 when the publish never happened.
 PORTAL_ENABLED=false
+PORTAL_REQUESTED=false
+PORTAL_SKIP_REASON='Portal publishing not enabled'
 if [[ "${PUBLISH_TO_PORTAL:-false}" == "true" && "${SKIP_PORTAL:-false}" != "true" ]]; then
+  PORTAL_REQUESTED=true
   if [[ -n "${ADMIN_KEY}" ]]; then
     PORTAL_ENABLED=true
+    PORTAL_SKIP_REASON=''
   else
+    PORTAL_SKIP_REASON='STORE_ADMIN_API_KEY unset'
     echo "  ⚠ PUBLISH_TO_PORTAL=true but STORE_ADMIN_API_KEY is unset — pushing images only." >&2
   fi
 fi
@@ -332,6 +348,15 @@ main() {
   if [[ "$PORTAL_ENABLED" == "true" ]]; then
     log "=== Step 1: Prepare app bundle ==="
 
+    # generate_compose emits the un-suffixed :VERSION tag, which is what a real
+    # install pulls. With TAG_SUFFIX set, Step 3 pushes :VERSION-<arch> instead,
+    # so the bundle would point at a tag that does not exist until
+    # merge-manifests.sh has run.
+    if [[ -n "${TAG_SUFFIX:-}" ]]; then
+      echo "  ⚠ TAG_SUFFIX=${TAG_SUFFIX} is set: images push as :${VERSION}${TAG_SUFFIX}, but the" >&2
+      echo "    bundle references :${VERSION} — merge the manifest lists before installing." >&2
+    fi
+
     BUNDLE_DIR=$(mktemp -d)
     BUNDLE=$(mktemp /tmp/bundle-XXXXXX.tar.gz)
     trap 'rm -rf "$BUNDLE_DIR" "$BUNDLE"' EXIT
@@ -383,10 +408,11 @@ main() {
       log "  ⚠ Portal ingest failed (HTTP ${HTTP_CODE:-none}) at ${PORTAL_API}"
       log "    Skipping catalog registration — images will still be pushed."
       PORTAL_ENABLED=false
+      PORTAL_SKIP_REASON='Portal ingest failed'
     fi
     log ""
   else
-    log "=== Step 2: Upload bundle → pending (SKIPPED) ==="
+    log "=== Step 2: Upload bundle → pending (SKIPPED — ${PORTAL_SKIP_REASON}) ==="
     log ""
   fi
 
@@ -432,6 +458,7 @@ main() {
       # :latest, which we then re-tag as ${REMOTE} (i.e. :${VERSION}) below.
       if ! docker image inspect "${LOCAL_IMAGE}:latest" > /dev/null 2>&1; then
         log "  ⚠ ${LOCAL_IMAGE}:latest not found locally — skipping"
+        PUSH_SKIPPED=$((PUSH_SKIPPED + 1))
         continue
       fi
 
@@ -450,6 +477,13 @@ main() {
 
     if [[ $PUSH_FAILED -gt 0 ]]; then
       fail "${PUSH_FAILED} image(s) failed to push"
+    fi
+
+    # Every image missing locally is not a publish — it is a build that never
+    # ran. Exiting 0 here would green-light the tag pipeline and only surface
+    # later as an opaque "manifest create failed" in merge-manifests.sh.
+    if [[ $PUSH_COUNT -eq 0 ]]; then
+      fail "no images pushed — none of the ${#IMAGE_LOCAL[@]} ci/* images exist locally; run 'make build ENV=production' first"
     fi
 
     log "  Pushed: ${PUSH_COUNT}, skipped: ${PUSH_SKIPPED}"
@@ -476,11 +510,20 @@ main() {
     fi
     log ""
   else
-    log "=== Step 4: Publish → published (SKIPPED) ==="
+    log "=== Step 4: Publish → published (SKIPPED — ${PORTAL_SKIP_REASON}) ==="
     log ""
   fi
 
   # ── Step 5: Verify / summary ───────────────────────────────────────
+  # The summary must describe what actually happened: SKIP_IMAGE_PUSH pushes
+  # nothing, and TAG_SUFFIX means the pushed tag is not bare ${VERSION}.
+  local IMAGE_SUMMARY
+  if [[ "${SKIP_IMAGE_PUSH:-false}" == "true" ]]; then
+    IMAGE_SUMMARY="✓ ${SLUG}@${VERSION}: image push skipped (SKIP_IMAGE_PUSH=true)."
+  else
+    IMAGE_SUMMARY="✓ Images for ${SLUG}@${VERSION}${TAG_SUFFIX:-} pushed to ${REGISTRY}."
+  fi
+
   if [[ "$PORTAL_ENABLED" == "true" ]]; then
     if ! $QUIET; then
       echo "=== Step 5: Verify store listing ==="
@@ -491,8 +534,15 @@ main() {
     else
       echo "  ✓ ${SLUG}@${VERSION}"
     fi
+  elif [[ "$PORTAL_REQUESTED" == "true" ]]; then
+    # Opted in and it did not happen. The images are already pushed, so the
+    # "a broken Portal must not abort the push" rule is satisfied — but the run
+    # did not do what it was asked to, so it must not report success.
+    echo "$IMAGE_SUMMARY"
+    echo "  ✗ PUBLISH_TO_PORTAL=true, but the catalog registration did not complete — see the warnings above." >&2
+    exit 1
   else
-    echo "✓ Images for ${SLUG}@${VERSION} pushed to ${REGISTRY}."
+    echo "$IMAGE_SUMMARY"
     echo "  Bump apps/ci-memory in CI-Marketplace to put this version in the catalog."
   fi
 }

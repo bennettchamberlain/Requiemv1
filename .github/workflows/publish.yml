@@ -119,11 +119,10 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
+      # Shallow: this job only runs merge-manifests.sh, which reads no git
+      # state — VERSION comes from GITHUB_REF below.
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          fetch-tags: true
 
       - name: Resolve VERSION from tag
         run: |

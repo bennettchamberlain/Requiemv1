@@ -545,7 +545,7 @@ publish: init ## Build and push CI-Server images to the container registry
 	@printf "\n"
 
 .PHONY: publish-quiet
-publish-quiet: ## Build and push CI-Server images (quiet mode)
+publish-quiet: ## Push already-built CI-Server images to the registry (quiet mode)
 	@scripts/publish/publish.sh -q
 
 .PHONY: seed
