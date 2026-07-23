@@ -423,10 +423,12 @@ export class OidcController {
     }
 
     // CSRF cookie for the confirm POST (double-submit): same value is embedded
-    // in the form's hidden field. Reuses a valid existing cookie so re-rendering
-    // (or another tab minting) never invalidates an already-open copy of this
-    // page; see utils/authCookies.ts.
-    const csrfToken = ensureCsrfCookie(this.csrfService, req, res);
+    // in the form's hidden field. Reuses a valid existing cookie (of the same
+    // scope) so re-rendering (or another tab minting) never invalidates an
+    // already-open copy of this page; see utils/authCookies.ts. The scope is
+    // usually anon here — first-time sign-in has no session yet — but a browser
+    // already holding a session keeps its bound token.
+    const csrfToken = ensureCsrfCookie(this.csrfService, req, res, this.authService.resolveCsrfScope(req));
 
     const cspNonce = randomBytes(16).toString('base64');
 
@@ -484,7 +486,11 @@ export class OidcController {
     // (the signup-intent cookie is still present), so one extra click recovers.
     // A second consecutive failure means cookies are blocked — land on /login.
     try {
-      this.csrfService.validateToken(req.cookies?.[config.auth.cookies.csrfTokenName], body.csrf);
+      this.csrfService.validateToken(
+        req.cookies?.[config.auth.cookies.csrfTokenName],
+        body.csrf,
+        this.authService.resolveCsrfScope(req),
+      );
     } catch (err) {
       // Only CSRF rejections self-heal; anything else must surface as itself.
       if (!(err instanceof ForbiddenException)) {
@@ -524,16 +530,17 @@ export class OidcController {
    * the confirm-account POST.
    */
   private async finishLogin(req: Request, res: Response, user: { id: string }): Promise<void> {
-    const sessionToken = await this.authService.issueSessionToken(
+    const { sessionToken, sessionId } = await this.authService.issueSessionToken(
       user.id,
       this.authService.getSessionMetadata(req),
     );
 
     setSessionCookie(req, res, sessionToken);
 
-    // Identity boundary: mint a fresh CSRF token (the only rotation points are
-    // login, signup, and this OIDC sign-in — see utils/authCookies.ts).
-    setCsrfCookie(req, res, this.csrfService.generateToken());
+    // Identity boundary: mint a fresh CSRF token bound to the new session (the
+    // only rotation points are login, signup, and this OIDC sign-in — see
+    // utils/authCookies.ts).
+    setCsrfCookie(req, res, this.csrfService.generateToken(sessionId));
 
     // Return to the deep link the user was headed for before being bounced to
     // login (re-validated on read), then clear the one-shot cookie.

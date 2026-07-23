@@ -70,7 +70,19 @@ res.cookie(config.auth.cookies.sessionTokenName, sessionToken, {
 
 CSRF cookie (`domains/auth/utils/authCookies.ts` — the single source of truth for its attributes): `httpOnly: false` (JS reads it for the double-submit header), `secure: req.secure`, `sameSite: 'strict'`, `maxAge` matching the session cookie (7d) so the pair lives and dies together — a browser restart no longer strands a valid session behind a missing csrf cookie. Default cookie names (`default.json:29-32`): `sessionToken`, `csrfToken`.
 
-**Stable-token model** (`CsrfService.ensureToken`): a CSRF token identifies a *browser*, not a request. Every issue/render site (`GET /authenticate/csrf`, refresh, the connect-consent and confirm-account pages) **reuses a valid existing cookie** and only mints when the cookie is absent or invalid; rotation happens **only at identity boundaries** — login, signup, OIDC sign-in (fixation hygiene) — and logout clears it. This keeps all tabs and server-rendered forms converged on one token, so a background session refresh can never invalidate a page rendered earlier (the CI-Server#1740 race). CSRF failures on the no-JS consent/confirm forms self-heal with a one-shot 303 back to their GET (re-rendering against the current cookie). The retry is bounded by a `csrf_retry` marker: a second consecutive failure on the connect flow returns the user to CI-Hub with `error=csrf_failed` rather than stranding them, and a failure with no live session goes straight back to the Hub — `connect()` would otherwise bounce a signed-out user onward to the cross-origin OIDC issuer, which the gateway's `form-action 'self'` blocks mid-redirect-chain.
+**Stable-token model** (`CsrfService.ensureToken`): a CSRF token identifies a *browser and its principal*, not a request. Every issue/render site (`GET /authenticate/csrf`, refresh, the connect-consent and confirm-account pages) **reuses a valid existing same-scope cookie** and only mints when the cookie is absent, invalid, or bound to a different principal; rotation happens **only at identity boundaries** — login, signup, OIDC sign-in (fixation hygiene) — and logout clears it. This keeps all tabs and server-rendered forms converged on one token, so a background session refresh can never invalidate a page rendered earlier (the CI-Server#1740 race). CSRF failures on the no-JS consent/confirm forms self-heal with a one-shot 303 back to their GET (re-rendering against the current cookie). The retry is bounded by a `csrf_retry` marker: a second consecutive failure on the connect flow returns the user to CI-Hub with `error=csrf_failed` rather than stranding them, and a failure with no live session goes straight back to the Hub — `connect()` would otherwise bounce a signed-out user onward to the cross-origin OIDC issuer, which the gateway's `form-action 'self'` blocks mid-redirect-chain.
+
+**Principal binding** (token v2): the token format is `{scope}.{randomHex64}.{hmacHex64}`, where `scope` is the **session id** the token was minted under (the session JWT's `sid` claim, also the `SessionEntity` primary key) or the literal `anon` for a pre-auth mint; the HMAC covers `scope + "\n" + random`, so the scope segment cannot be re-labelled. Validation resolves the request's scope from the session cookie (`AuthService.resolveCsrfScope` — signature-checked but **expiry-ignored**, since the scope identifies the *minting* principal and strict expiry would 403 the very refresh that recovers an expired session) and, after the unchanged double-submit checks (presence → type → cookie↔header equality → HMAC), requires token scope === request scope:
+
+| Request context | Token scope | Result |
+|---|---|---|
+| anonymous | `anon` | accept |
+| anonymous | session-bound | 403 (`bound-token-on-anon-request`) |
+| session A | `anon` | 403 (`anon-token-on-authed-session`) |
+| session A | session A | accept |
+| session A | session B | 403 (`session-mismatch`) |
+
+A harvested or fixated token therefore dies at the first principal boundary it crosses. Legacy 2-segment (v1) tokens fail validation and self-heal: any ensure site re-mints them, and legacy `sid`-less session JWTs count as anonymous until their first refresh rotation embeds the `sid` (the same response's ensure upgrades the CSRF cookie to match). Rejections surface as `CsrfValidationError` (a `ForbiddenException` carrying a machine-readable `reason`), logged by `CsrfGuard` without token values or session ids.
 
 > **Why `secure: req.secure` (not `true`) matters — the plain-HTTP Tailscale case.** Because the flag mirrors the actual connection, cookies still set over plain HTTP (e.g. a `*.ts.net` exposure) rather than being dropped. Combined with `sameSite: 'lax'`, this is what makes Memory login work over unencrypted Tailscale: set `APP_BASE_URL` to the frontend origin, and the lax+non-secure cookie survives the round-trip.
 >
@@ -80,11 +92,11 @@ CSRF cookie (`domains/auth/utils/authCookies.ts` — the single source of truth 
 
 | Endpoint | Method | Guard | Purpose |
 |---|---|---|---|
-| `/authenticate/csrf` | GET (204) | — | Ensure a `csrfToken` cookie (reuses a valid one; idempotent) |
-| `/authenticate` | POST (200) | `CsrfGuard` | Login → session cookie + access token; **rotates** csrf |
-| `/authenticate/refresh` | POST (200) | `CsrfGuard` | Rotate session token, return a new access token; **reuses** csrf (slides maxAge) |
+| `/authenticate/csrf` | GET (204) | — | Ensure a `csrfToken` cookie scoped to the caller's principal (reuses a valid same-scope one; idempotent, always 204) |
+| `/authenticate` | POST (200) | `CsrfGuard` | Login → session cookie + access token; **rotates** csrf, bound to the new session |
+| `/authenticate/refresh` | POST (200) | `CsrfGuard` | Rotate session token, return a new access token; **reuses** csrf (slides maxAge; re-binds a legacy anon token to the session) |
 | `/authenticate/logout` | POST (204) | `CsrfGuard` | Invalidate session, clear both cookies (client must send the double-submit header) |
-| `/signup` | POST | `CsrfGuard` | Create account → session cookie + access token; **rotates** csrf |
+| `/signup` | POST | `CsrfGuard` | Create account → session cookie + access token; **rotates** csrf, bound to the new session |
 
 **Session persistence** (`AuthService.ts:27-51`): the session row stores an **HMAC-SHA256 digest** of the token, IP, and user-agent (keyed by `auth.session.fieldPepper`) — the raw token is never stored. **Refresh with rotation + 30s grace window** (`AuthService.rotateSessionToken`): a valid refresh rotates the session token (old hash → `previous_token`); a token matching the *previous* hash within `session.refreshGracePeriod` yields a new access token without re-rotating, so racing tab refreshes don't invalidate each other.
 
