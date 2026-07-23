@@ -16,8 +16,8 @@ jobs:
   # Each leg builds every companion/* image natively (no QEMU — the HBPE
   # image compiles llama-cpp-python from source, which is intractable under
   # emulation) and pushes it as :<version>-<arch>. The merge job below
-  # combines the two into the :<version> manifest list that the store's
-  # docker-compose.json references.
+  # combines the two into the :<version> manifest list that
+  # CI-Marketplace's apps/ci-memory/docker-compose.json references.
   build:
     name: Build & push (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
@@ -98,15 +98,16 @@ jobs:
 
       - name: Build and push ${{ matrix.arch }} images
         env:
-          # Images only on this leg: the Portal ingest → publish registration
-          # happens once, in the merge job, after the manifest lists exist.
-          SKIP_PORTAL: 'true'
           TAG_SUFFIX: '-${{ matrix.arch }}'
         run: make publish
 
-  # ── Manifest merge + Portal registration ───────────────────────────
-  merge-and-register:
-    name: Merge manifests & publish to CI-Portal
+  # ── Manifest merge ─────────────────────────────────────────────────
+  #
+  # This pipeline publishes images only. The ci-memory store entry is
+  # owned by CI-Marketplace (apps/ci-memory/), whose deploy workflow is
+  # the single writer to the Portal catalog — see issue #1745.
+  merge:
+    name: Merge multi-arch manifests
     runs-on: ubuntu-latest
     needs: build
     permissions:
@@ -115,8 +116,6 @@ jobs:
 
     env:
       REGISTRY: ${{ vars.REGISTRY || 'ghcr.io/companionintelligence' }}
-      PORTAL_API: ${{ vars.DEV_PORTAL_API }}
-      STORE_ADMIN_API_KEY: ${{ secrets.DEV_STORE_ADMIN_API_KEY }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
@@ -145,8 +144,3 @@ jobs:
 
       - name: Merge per-arch tags into multi-arch manifest lists
         run: scripts/publish/merge-manifests.sh
-
-      - name: Register with CI-Portal (ingest → publish)
-        env:
-          SKIP_IMAGE_PUSH: 'true'
-        run: scripts/publish/publish.sh

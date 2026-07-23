@@ -1,31 +1,48 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ── CI-Server → CI-Portal Publish Script ───────────────────────────────
+# ── CI-Server Image Publish Script ─────────────────────────────────────
 #
-# Publishes CI-Server as a single app ("ci-memory") to a CI-Portal
-# store instance using the three-phase publish workflow:
+# Pushes the companion/* images that make up ci-memory to a container
+# registry.
 #
-#   Phase 1: POST /api/store/ingest        (upload .tar.gz bundle → pending)
-#   Phase 2: docker push                   (push images to registry)
+# By default this script pushes images ONLY. The ci-memory entry in the
+# CI-Portal store catalog is owned by CI-Marketplace (apps/ci-memory/),
+# whose deploy workflow ingests and publishes it. CI-Server used to
+# register the same slug from here, which made two repos independent
+# writers of one catalog entry — last write won, and the manifest
+# generated below had silently drifted from the one CI-Marketplace ships
+# (see issue #1745).
+#
+# The Portal phases are kept for local development against a throwaway
+# store, behind an explicit opt-in:
+#
+#   PUBLISH_TO_PORTAL=true ./publish.sh
+#
+# Never enable it against a shared Portal — it will overwrite whatever
+# CI-Marketplace published.
+#
+#   Phase 1: POST /api/store/ingest         (upload .tar.gz bundle → pending)
+#   Phase 2: docker push                    (push images to registry)
 #   Phase 3: POST /api/store/publish/:slug  (pending → published)
 #
 # Usage:
-#   ./publish.sh                    # defaults for local dev
+#   ./publish.sh                    # images only (default)
 #   ./publish.sh -q                 # quiet mode
-#   REGISTRY=portal.prod.example.com ./publish.sh
+#   REGISTRY=ghcr.io/companionintelligence ./publish.sh
 #
 # Environment:
 #   REGISTRY             Docker registry host          (default: portal.ci.localhost)
-#   PORTAL_API           Portal API base URL           (default: https://portal.ci.localhost/api)
-#   STORE_ADMIN_API_KEY  Admin key for publish API     (required)
 #   REGISTRY_USERNAME    Registry login username       (required, unless GITHUB_TOKEN is set)
 #   REGISTRY_PASSWORD    Registry login password       (required, unless GITHUB_TOKEN is set)
 #   GITHUB_TOKEN         Token used as registry password fallback (e.g. inside GitHub Actions)
 #   GITHUB_ACTOR         Username paired with GITHUB_TOKEN          (default: github-actions)
 #   VERSION              Override version              (default: git tag or "latest")
 #   SKIP_IMAGE_PUSH      Skip Step 3 (docker login + image push)    (default: false)
-#   SKIP_PORTAL          Skip Portal ingest/publish (images only)   (default: false)
+#   PUBLISH_TO_PORTAL    Opt in to Portal ingest/publish (local dev) (default: false)
+#   PORTAL_API           Portal API base URL           (default: https://portal.ci.localhost/api)
+#   STORE_ADMIN_API_KEY  Admin key for publish API     (required when PUBLISH_TO_PORTAL=true)
+#   SKIP_PORTAL          Legacy kill switch; still forces the Portal phases off
 #   TAG_SUFFIX           Suffix appended to the pushed version tag, e.g. "-amd64".
 #                        Used by the multi-arch publish workflow: each native
 #                        build leg pushes :VERSION-<arch>, and merge-manifests.sh
@@ -58,14 +75,17 @@ if [[ -z "$SLUG" || "$SLUG" == "null" ]]; then
   exit 1
 fi
 
-# Portal catalog registration (ingest → publish) is best-effort. Pushing the
-# images to the registry is the part that actually matters for installs, so a
-# missing / unreachable Portal must NOT abort the image push. When PORTAL_API
-# or the admin key aren't configured (e.g. DEV_PORTAL_API unset in CI, or an
-# images-only publish), we skip the Portal phases and still push images.
-PORTAL_ENABLED=true
-if [[ -z "${ADMIN_KEY}" || "${SKIP_PORTAL:-false}" == "true" ]]; then
-  PORTAL_ENABLED=false
+# Portal catalog registration is opt-in (see the header): CI-Marketplace is the
+# single writer of the ci-memory store entry. When it is opted into, it stays
+# best-effort — pushing images is the part that actually matters for installs,
+# so an unreachable Portal or a missing admin key must NOT abort the push.
+PORTAL_ENABLED=false
+if [[ "${PUBLISH_TO_PORTAL:-false}" == "true" && "${SKIP_PORTAL:-false}" != "true" ]]; then
+  if [[ -n "${ADMIN_KEY}" ]]; then
+    PORTAL_ENABLED=true
+  else
+    echo "  ⚠ PUBLISH_TO_PORTAL=true but STORE_ADMIN_API_KEY is unset — pushing images only." >&2
+  fi
 fi
 
 # Allow insecure TLS only for local development
@@ -104,17 +124,18 @@ fail() {
 
 # ── Generate docker-compose.json ───────────────────────────────────────
 #
-# Kept in step with CI-Marketplace's apps/ci-memory/docker-compose.json, with
-# one deliberate exception: the database volume.
+# Used only by the opt-in local-dev Portal publish. The manifest real installs
+# receive is CI-Marketplace's apps/ci-memory/docker-compose.json; keep the two
+# in step.
 #
-# CI-Marketplace mounts ${APP_DATA_DIR}/data/db at /home/postgres/pgdata and
-# chowns it to 1000. Those are timescale/timescaledb-ha (Spilo) conventions,
-# left over from the base image infrastructure/database/Dockerfile used before
-# the PG18 upgrade. It is now postgres:18.4-bookworm, where PGDATA lives under
-# /var/lib/postgresql and the server runs as uid 999 — the values below. Do not
-# "resolve" that difference by copying CI-Marketplace's; they no longer match
-# the image, and a database that mounts its volume somewhere PGDATA isn't keeps
-# its real data in the container layer. See issue #1745.
+# The database volume is the one worth not getting wrong. These values track
+# infrastructure/database/Dockerfile, which is postgres:18.4-bookworm: PGDATA
+# lives under /var/lib/postgresql and the server runs as uid 999. Reverting to
+# the /home/postgres/pgdata and uid 1000 of the earlier timescale/timescaledb-ha
+# base does not fail loudly — that image declares VOLUME /var/lib/postgresql, so
+# Docker quietly puts the cluster in an anonymous volume, outside APP_DATA_DIR
+# and outside every backup. CI-Marketplace shipped exactly that from 2026-06-14
+# until CI-Marketplace#739. See issue #1745.
 
 generate_compose() {
   local reg="$1"
@@ -294,7 +315,7 @@ COMPOSE_EOF
 main() {
   if ! $QUIET; then
     echo "╔══════════════════════════════════════╗"
-    echo "║  CI-Server → CI-Portal Publish       ║"
+    echo "║  CI-Server Image Publish             ║"
     echo "║  ${SLUG}@${VERSION}"
     echo "║  Registry: ${REGISTRY}"
     echo "╚══════════════════════════════════════╝"
@@ -304,33 +325,41 @@ main() {
   fi
 
   # ── Step 1: Prepare bundle ──────────────────────────────────────────
-  log "=== Step 1: Prepare app bundle ==="
+  # Only the Portal phases consume the bundle, so skip building it entirely
+  # on the default images-only path. BUNDLE_DIR / BUNDLE are deliberately not
+  # `local`: the EXIT trap below runs after main() returns and would other-
+  # wise see them unset under `set -u`.
+  if [[ "$PORTAL_ENABLED" == "true" ]]; then
+    log "=== Step 1: Prepare app bundle ==="
 
-  BUNDLE_DIR=$(mktemp -d)
-  BUNDLE=$(mktemp /tmp/bundle-XXXXXX.tar.gz)
-  trap "rm -rf '$BUNDLE_DIR' '$BUNDLE'" EXIT
+    BUNDLE_DIR=$(mktemp -d)
+    BUNDLE=$(mktemp /tmp/bundle-XXXXXX.tar.gz)
+    trap 'rm -rf "$BUNDLE_DIR" "$BUNDLE"' EXIT
 
-  # Copy static manifest files
-  cp -r "${SCRIPT_DIR}/manifest/." "${BUNDLE_DIR}/"
+    # Copy static manifest files
+    cp -r "${SCRIPT_DIR}/manifest/." "${BUNDLE_DIR}/"
 
-  # Patch version in config.json
-  local CONFIG="${BUNDLE_DIR}/config.json"
-  local TMP_CONFIG="${BUNDLE_DIR}/config.json.tmp"
-  jq --arg v "$VERSION" '.version = $v' "$CONFIG" > "$TMP_CONFIG" && mv "$TMP_CONFIG" "$CONFIG"
+    # Patch version in config.json
+    local CONFIG="${BUNDLE_DIR}/config.json"
+    local TMP_CONFIG="${BUNDLE_DIR}/config.json.tmp"
+    jq --arg v "$VERSION" '.version = $v' "$CONFIG" > "$TMP_CONFIG" && mv "$TMP_CONFIG" "$CONFIG"
 
-  # Generate docker-compose.json
-  generate_compose "$REGISTRY" "$VERSION" > "${BUNDLE_DIR}/docker-compose.json"
+    # Generate docker-compose.json
+    generate_compose "$REGISTRY" "$VERSION" > "${BUNDLE_DIR}/docker-compose.json"
 
-  log "  config.json version: $(jq -r .version "$CONFIG")"
-  log "  docker-compose.json: $(jq '.services | length' "${BUNDLE_DIR}/docker-compose.json") services"
+    log "  config.json version: $(jq -r .version "$CONFIG")"
+    log "  docker-compose.json: $(jq '.services | length' "${BUNDLE_DIR}/docker-compose.json") services"
 
-  log ${BUNDLE_DIR}
-  # Create .tar.gz (BUNDLE is outside BUNDLE_DIR, so no self-referencing)
-  log ${BUNDLE}
-  tar -czf "$BUNDLE" -C "$BUNDLE_DIR" .
+    # Create .tar.gz (BUNDLE is outside BUNDLE_DIR, so no self-referencing)
+    tar -czf "$BUNDLE" -C "$BUNDLE_DIR" .
 
-  log "  Bundle size: $(du -h "$BUNDLE" | cut -f1)"
-  log ""
+    log "  Bundle size: $(du -h "$BUNDLE" | cut -f1)"
+    log ""
+  else
+    log "=== Step 1: Prepare app bundle (SKIPPED) ==="
+    log "  The ci-memory catalog entry is published by CI-Marketplace."
+    log ""
+  fi
 
   # ── Step 2: Upload bundle (Phase 1) ────────────────────────────────
   local RESULT HTTP_CODE BODY STATUS
@@ -357,8 +386,7 @@ main() {
     fi
     log ""
   else
-    log "=== Step 2: Upload bundle → pending (SKIPPED — Portal not configured) ==="
-    log "  Set PORTAL_API + STORE_ADMIN_API_KEY to register the store bundle."
+    log "=== Step 2: Upload bundle → pending (SKIPPED) ==="
     log ""
   fi
 
@@ -448,7 +476,7 @@ main() {
     fi
     log ""
   else
-    log "=== Step 4: Publish → published (SKIPPED — Portal not configured) ==="
+    log "=== Step 4: Publish → published (SKIPPED) ==="
     log ""
   fi
 
@@ -465,7 +493,7 @@ main() {
     fi
   else
     echo "✓ Images for ${SLUG}@${VERSION} pushed to ${REGISTRY}."
-    echo "  (Portal catalog registration was skipped — set PORTAL_API + STORE_ADMIN_API_KEY to enable.)"
+    echo "  Bump apps/ci-memory in CI-Marketplace to put this version in the catalog."
   fi
 }
 

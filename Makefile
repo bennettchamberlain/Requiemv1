@@ -533,19 +533,19 @@ smoke-api: ## Verify the API image can run `migrate` with production-only depend
 	@printf "\nAPI image can migrate. ✅\n\n"
 
 .PHONY: publish
-publish: init ## Publish CI-Server images and metadata to the CI-Portal store
+publish: init ## Build and push CI-Server images to the container registry
 	@$(MAKE) build ENV=production GPU=$(GPU)
 
 	@$(MAKE) smoke-api
 
-	@printf "$(call task_icon,publish,📦) Publishing to CI-Portal registry...\n\n"
+	@printf "$(call task_icon,publish,📦) Pushing images to registry...\n\n"
 
 	@scripts/publish/publish.sh
 
 	@printf "\n"
 
 .PHONY: publish-quiet
-publish-quiet: ## Publish to CI-Portal store (quiet mode)
+publish-quiet: ## Build and push CI-Server images (quiet mode)
 	@scripts/publish/publish.sh -q
 
 .PHONY: seed
