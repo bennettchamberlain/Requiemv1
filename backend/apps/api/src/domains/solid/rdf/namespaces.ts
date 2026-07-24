@@ -19,6 +19,12 @@ export const PREFIXES = {
   ldp: 'http://www.w3.org/ns/ldp#',
   acl: 'http://www.w3.org/ns/auth/acl#',
   schema: 'http://schema.org/',
+  dcterms: 'http://purl.org/dc/terms/',
+  // CI-native vocabulary. Not (yet) dereferenceable — it exists so the
+  // projection is lossless: every entity type, custom property, and
+  // relationship type round-trips through a stable CI IRI even when there is no
+  // clean standard-vocabulary equivalent.
+  ci: 'https://schema.companionintelligence.com/ns#',
 } as const;
 
 export type Prefix = keyof typeof PREFIXES;
@@ -27,10 +33,14 @@ export type Prefix = keyof typeof PREFIXES;
 export const term = (prefix: Prefix, local: string): string => `${PREFIXES[prefix]}${local}`;
 
 export const RDF = (local: string): string => term('rdf', local);
+export const RDFS = (local: string): string => term('rdfs', local);
+export const XSD = (local: string): string => term('xsd', local);
 export const FOAF = (local: string): string => term('foaf', local);
 export const SOLID = (local: string): string => term('solid', local);
 export const PIM = (local: string): string => term('pim', local);
 export const SCHEMA = (local: string): string => term('schema', local);
+export const DCTERMS = (local: string): string => term('dcterms', local);
+export const CI = (local: string): string => term('ci', local);
 
 /** `rdf:type`, the one predicate both serializers special-case. */
 export const RDF_TYPE = RDF('type');

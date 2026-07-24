@@ -10,17 +10,22 @@
  * The entire surface is gated behind the `solid.protocol` feature flag (off by
  * default), so merging incremental slices to main is safe.
  *
- * Slice 1 (this commit): WebID Profile Documents at `GET /solid/profile/:userId`
- * with Turtle/JSON-LD content negotiation.
+ * Slice 1: WebID Profile Documents at `GET /solid/profile/:userId` (public).
+ * Slice 2: RDF projection of a `ci.entities` row at
+ *   `GET /solid/storage/:userId/entity/:entityId` (authenticated, owner-only).
+ * Both are Turtle/JSON-LD content-negotiated.
  *
  * @module SolidModule
  */
 
 import { Module } from '@nestjs/common';
 
+import { MemoryModule } from '@ci/domains/memory';
 import { UserModule } from '@ci/domains/user';
 
+import { StorageController } from './controllers/StorageController';
 import { WebIdController } from './controllers/WebIdController';
+import { EntityProjectionService } from './services/EntityProjectionService';
 import { ProfileDocumentService } from './services/ProfileDocumentService';
 import { WebIdService } from './services/WebIdService';
 
@@ -28,12 +33,13 @@ import { WebIdService } from './services/WebIdService';
  * @internal
  */
 @Module({
-  imports: [UserModule],
-  controllers: [WebIdController],
-  providers: [WebIdService, ProfileDocumentService],
-  exports: [WebIdService, ProfileDocumentService],
+  imports: [UserModule, MemoryModule],
+  controllers: [WebIdController, StorageController],
+  providers: [WebIdService, ProfileDocumentService, EntityProjectionService],
+  exports: [WebIdService, ProfileDocumentService, EntityProjectionService],
 })
 export class SolidModule {}
 
 export { WebIdService } from './services/WebIdService';
 export { ProfileDocumentService } from './services/ProfileDocumentService';
+export { EntityProjectionService } from './services/EntityProjectionService';

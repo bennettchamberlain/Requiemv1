@@ -9,6 +9,8 @@ import { negotiateRdf } from '../rdf';
 import { ProfileDocumentService } from '../services/ProfileDocumentService';
 import { WebIdService } from '../services/WebIdService';
 
+import { requestOrigin } from './requestOrigin';
+
 /**
  * Serves WebID Profile Documents — the public identity cards of the Solid
  * facade — at `GET /solid/profile/:userId`, content-negotiated between Turtle
@@ -42,7 +44,7 @@ export class WebIdController {
       throw new NotFoundException();
     }
 
-    const origin = this.webIds.resolveOrigin(this.requestOrigin(req));
+    const origin = this.webIds.resolveOrigin(requestOrigin(req));
 
     // System context: this is a public read of a public document, not the
     // authenticated user reading their own row.
@@ -55,20 +57,5 @@ export class WebIdController {
     const serialization = negotiateRdf(req.headers.accept);
 
     res.type(serialization.mediaType).send(serialization.serialize(quads));
-  }
-
-  /**
-   * Best-effort origin of the inbound request, used only when no public origin
-   * is configured (dev). Honours `X-Forwarded-Proto` because the app runs
-   * behind a TLS-terminating reverse proxy where `req.protocol` would read
-   * `http`.
-   */
-  private requestOrigin(req: Request): string {
-    const forwardedProto = req.headers['x-forwarded-proto'];
-    const proto = (Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto)?.split(',')[0]?.trim();
-    const scheme = proto || req.protocol || 'http';
-    const host = req.get('host') ?? '';
-
-    return host ? `${scheme}://${host}` : '';
   }
 }

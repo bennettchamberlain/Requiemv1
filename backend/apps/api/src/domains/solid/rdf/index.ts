@@ -9,7 +9,7 @@
  * @module solid/rdf
  */
 
-export { PREFIXES, RDF, FOAF, SOLID, PIM, SCHEMA, RDF_TYPE, term } from './namespaces';
+export { PREFIXES, RDF, RDFS, XSD, FOAF, SOLID, PIM, SCHEMA, DCTERMS, CI, RDF_TYPE, term } from './namespaces';
 export type { Prefix } from './namespaces';
 export { namedNode, literal, quad, isNamedNode } from './quad';
 export type { NamedNode, Literal, Term, Quad } from './quad';

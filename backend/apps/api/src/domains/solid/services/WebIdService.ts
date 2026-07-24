@@ -51,6 +51,15 @@ export class WebIdService {
   }
 
   /**
+   * IRI of a single entity resource within the user's pod. This URL *is* the
+   * RDF subject the projection describes (the entity is the resource), and it
+   * is the address the matching controller route serves.
+   */
+  entityResourceUrl(origin: string, userId: string, entityId: string): string {
+    return `${this.storageUrl(origin, userId)}entity/${encodeURIComponent(entityId)}`;
+  }
+
+  /**
    * The Solid-OIDC issuer advertised in the profile (`solid:oidcIssuer`). This
    * is CI-Portal, which is becoming the platform IdP. Empty until configured —
    * callers omit the triple in that case rather than emit a broken IRI.
