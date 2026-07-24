@@ -54,7 +54,10 @@ export class SessionController {
   @Get('csrf')
   @HttpCode(204)
   issueCsrfToken(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    ensureCsrfCookie(this.csrfService, req, res);
+    // Scope the token to whoever is asking: an already-signed-in browser gets
+    // (or keeps) a session-bound token, a pre-auth one an anon token. Always
+    // 204 — this endpoint can never fail, it only converges the cookie.
+    ensureCsrfCookie(this.csrfService, req, res, this.authService.resolveCsrfScope(req));
   }
 
   @Post()
@@ -71,7 +74,7 @@ export class SessionController {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const sessionToken = await this.authService.issueSessionToken(
+    const { sessionToken, sessionId } = await this.authService.issueSessionToken(
       user.id,
       this.authService.getSessionMetadata(req),
     );
@@ -80,10 +83,11 @@ export class SessionController {
 
     setSessionCookie(req, res, sessionToken);
 
-    // Identity boundary: mint a fresh CSRF token (token-fixation hygiene). This
-    // and the other auth boundaries (signup, OIDC sign-in) are the only places
-    // that rotate — everywhere else reuses the existing valid cookie.
-    setCsrfCookie(req, res, this.csrfService.generateToken());
+    // Identity boundary: mint a fresh CSRF token bound to the new session
+    // (token-fixation hygiene — the pre-auth token must not survive login).
+    // This and the other auth boundaries (signup, OIDC sign-in) are the only
+    // places that rotate — everywhere else reuses the existing valid cookie.
+    setCsrfCookie(req, res, this.csrfService.generateToken(sessionId));
 
     return {
       accessToken,
@@ -103,7 +107,7 @@ export class SessionController {
       throw new UnauthorizedException('Invalid or expired token');
     }
 
-    const { sessionToken } = await this.authService.rotateSessionToken(
+    const { sessionToken, sessionId } = await this.authService.rotateSessionToken(
       userId,
       token,
       this.authService.getSessionMetadata(req),
@@ -129,7 +133,13 @@ export class SessionController {
     // tabs refreshing concurrently could 403 each other into a spurious logout
     // (defeating the session-token grace period above, which exists precisely
     // to tolerate that concurrency).
-    ensureCsrfCookie(this.csrfService, req, res);
+    //
+    // Scoped to the session the rotation matched (both branches of
+    // RotationResult carry it): in steady state the incoming token is already
+    // bound to it and is reused verbatim; for a legacy browser this is the
+    // upgrade point where the anon-scoped token is re-minted session-bound —
+    // the same response whose rotated JWT first embeds the sid.
+    ensureCsrfCookie(this.csrfService, req, res, sessionId);
 
     return {
       accessToken,
