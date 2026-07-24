@@ -1,4 +1,4 @@
-import { Field, InputType } from '@nestjs/graphql';
+import { Field, InputType, Int } from '@nestjs/graphql';
 import GraphQLJSONObject from 'graphql-type-json';
 
 /**
@@ -45,7 +45,7 @@ export class CreateCommunicationInput {
   attachments?: Record<string, unknown>[];
 
   /** Call duration in seconds. */
-  @Field(() => Number, { nullable: true })
+  @Field(() => Int, { nullable: true })
   durationSeconds?: number;
 
   @Field(() => String, { nullable: true })
