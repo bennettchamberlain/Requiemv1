@@ -67,13 +67,18 @@ export function ProviderPage() {
 
   const provider = data?.provider;
 
-  const [{ authorizationUrl, loading: connectLoading, error, setEndpoints, apiKey, setApiKey }, { connect }] =
+  const [{ authorizationUrl, loading: connectLoading, error, apiKey, setApiKey }, { connect }] =
     useConnectService();
 
   const isOpenId = provider?.authType === 'openid';
   const isConnectDisabled = isOpenId && (apiKey == null || apiKey.length === 0);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  const form = useForm<ConnectFormData>({
+    resolver: formDataResolver(ConnectFormSchema),
+    shouldUnregister: false,
+  });
 
   const handleConnect = useCallback(() => {
     if (!provider) {
@@ -82,8 +87,8 @@ export function ProviderPage() {
 
     const id = GlobalUID.parse('provider', provider.id);
 
-    connect(id);
-  }, [connect, provider]);
+    connect(id, form.getValues('endpoints') || []);
+  }, [connect, provider, form]);
 
   const handleGoBack = useCallback(() => {
     navigate('/connect');
@@ -107,11 +112,6 @@ export function ProviderPage() {
 
     // handleGoBack();
   }, [error]);
-
-  const form = useForm<ConnectFormData>({
-    resolver: formDataResolver(ConnectFormSchema),
-    shouldUnregister: false,
-  });
 
   const backgroundStyle = useMemo(() => {
     if (provider?.theme?.backgroundColor && isHexColor(provider.theme.backgroundColor)) {
@@ -182,7 +182,7 @@ export function ProviderPage() {
                   </div>
 
                   <div className="p-6">
-                    <Endpoints provider={provider} setEndpoints={setEndpoints} />
+                    <Endpoints provider={provider} />
 
                     {isOpenId && (
                       <div className="mt-6 space-y-2">
