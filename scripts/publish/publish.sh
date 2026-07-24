@@ -103,6 +103,18 @@ fail() {
 }
 
 # ── Generate docker-compose.json ───────────────────────────────────────
+#
+# Kept in step with CI-Marketplace's apps/ci-memory/docker-compose.json, with
+# one deliberate exception: the database volume.
+#
+# CI-Marketplace mounts ${APP_DATA_DIR}/data/db at /home/postgres/pgdata and
+# chowns it to 1000. Those are timescale/timescaledb-ha (Spilo) conventions,
+# left over from the base image infrastructure/database/Dockerfile used before
+# the PG18 upgrade. It is now postgres:18.4-bookworm, where PGDATA lives under
+# /var/lib/postgresql and the server runs as uid 999 — the values below. Do not
+# "resolve" that difference by copying CI-Marketplace's; they no longer match
+# the image, and a database that mounts its volume somewhere PGDATA isn't keeps
+# its real data in the container layer. See issue #1745.
 
 generate_compose() {
   local reg="$1"
@@ -118,6 +130,7 @@ generate_compose() {
       "image": "${reg}/companion/gateway:${ver}",
       "isMain": true,
       "internalPort": 8642,
+      "addToMainNetwork": true,
       "restart": "unless-stopped",
       "volumes": [
         { "hostPath": "\${APP_DATA_DIR}/data/secrets", "containerPath": "/run/secrets", "readOnly": true }
@@ -130,6 +143,9 @@ generate_compose() {
       "name": "api",
       "image": "${reg}/companion/api:${ver}",
       "restart": "unless-stopped",
+      "environment": [
+        { "key": "ENABLE_REQUIRE_SIGNUP_CODES", "value": "false" }
+      ],
       "extraHosts": ["host.docker.internal:host-gateway"],
       "volumes": [
         { "hostPath": "\${APP_DATA_DIR}/data/secrets", "containerPath": "/run/secrets", "readOnly": true }
@@ -158,7 +174,8 @@ generate_compose() {
         { "hostPath": "\${APP_DATA_DIR}/data/secrets", "containerPath": "/run/secrets", "readOnly": true }
       ],
       "dependsOn" : {
-        "fix-db-permissions": { "condition": "service_completed_successfully" }
+        "fix-db-permissions": { "condition": "service_completed_successfully" },
+        "setup-secrets": { "condition": "service_completed_successfully" }
       },
       "healthCheck": {
         "test": "pg_isready",
@@ -174,7 +191,10 @@ generate_compose() {
       "volumes": [
         { "hostPath": "\${APP_DATA_DIR}/data/objects", "containerPath": "/data/objects" },
         { "hostPath": "\${APP_DATA_DIR}/data/secrets", "containerPath": "/run/secrets", "readOnly": true }
-      ]
+      ],
+      "dependsOn": {
+        "setup-secrets": { "condition": "service_completed_successfully" }
+      }
     },
     {
       "name": "orchestrator",
@@ -185,7 +205,8 @@ generate_compose() {
       ],
       "dependsOn": {
         "setup-orchestrator": { "condition": "service_completed_successfully" },
-        "database": { "condition": "service_healthy" }
+        "database": { "condition": "service_healthy" },
+        "setup-secrets": { "condition": "service_completed_successfully" }
       }
     },
     {
@@ -198,7 +219,8 @@ generate_compose() {
       ],
       "dependsOn": {
         "database": { "condition": "service_healthy" },
-        "orchestrator": { "condition": "service_started" }
+        "orchestrator": { "condition": "service_started" },
+        "setup-secrets": { "condition": "service_completed_successfully" }
       }
     },
     {
@@ -209,7 +231,8 @@ generate_compose() {
         { "hostPath": "\${APP_DATA_DIR}/data/secrets", "containerPath": "/run/secrets", "readOnly": true }
       ],
       "dependsOn": {
-        "database": { "condition": "service_healthy" }
+        "database": { "condition": "service_healthy" },
+        "setup-secrets": { "condition": "service_completed_successfully" }
       }
     },
     {
@@ -221,7 +244,8 @@ generate_compose() {
       ],
       "dependsOn": {
         "setup-database": { "condition": "service_completed_successfully" },
-        "database": { "condition": "service_healthy" }
+        "database": { "condition": "service_healthy" },
+        "setup-secrets": { "condition": "service_completed_successfully" }
       }
     },
     {
@@ -243,7 +267,8 @@ generate_compose() {
       ],
       "dependsOn": {
         "database": { "condition": "service_healthy" },
-        "orchestrator": { "condition": "service_started" }
+        "orchestrator": { "condition": "service_started" },
+        "setup-secrets": { "condition": "service_completed_successfully" }
       }
     },
     {

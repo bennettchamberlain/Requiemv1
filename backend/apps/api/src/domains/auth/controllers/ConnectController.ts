@@ -21,6 +21,7 @@ import { ValidationPipe } from '@ci/common/pipes';
 import config from '@ci/configuration';
 
 import { ConnectRequestAuthGuard } from '../guards/ConnectRequestAuthGuard';
+import { AuthService } from '../services/AuthService';
 import { ConnectService, scopesForApp } from '../services/ConnectService';
 import { CsrfService } from '../services/CsrfService';
 import { ensureCsrfCookie } from '../utils/authCookies';
@@ -131,6 +132,7 @@ export class ConnectController {
   constructor(
     private readonly connectService: ConnectService,
     private readonly csrfService: CsrfService,
+    private readonly authService: AuthService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(ConnectController.name);
@@ -178,6 +180,11 @@ export class ConnectController {
       return;
     }
 
+    // Resolved before the DB-touching session lookup below: it is a pure JWT
+    // read, and keeping the cheap checks first preserves the request's
+    // fail-fast ordering.
+    const csrfScope = this.authService.resolveCsrfScope(req);
+
     const session = await this.connectService.resolveSessionUser(req.cookies?.[SESSION_COOKIE]);
 
     if (!session) {
@@ -209,7 +216,7 @@ export class ConnectController {
     // tab while this page is open can no longer rotate the cookie out from under
     // the embedded hidden field (previously a guaranteed 403 once the ~5-minute
     // access token expired with a Memory tab open).
-    const csrfToken = ensureCsrfCookie(this.csrfService, req, res);
+    const csrfToken = ensureCsrfCookie(this.csrfService, req, res, csrfScope);
 
     // Per-request nonce: the page's own inline <style> carries it, so an injected
     // inline <style> (which cannot guess the nonce) is refused by CSP.
@@ -287,13 +294,19 @@ export class ConnectController {
     const sendToHub = (url: string) =>
       res.status(HttpStatus.OK).type('html').send(renderConnectRedirectPage(url));
 
-    // Signed double-submit: the hidden `csrf` field must match the csrf cookie.
-    // On mismatch/absence, self-heal: bounce back to the consent GET, which
+    // Signed double-submit: the hidden `csrf` field must match the csrf cookie,
+    // and the token must be bound to the session submitting it. On
+    // mismatch/absence, self-heal: bounce back to the consent GET, which
     // re-renders the form against the browser's CURRENT cookie (connect()
     // re-runs the return-URL allowlist and session checks on the way, so the
-    // redirect adds no new trust).
+    // redirect adds no new trust). The scope resolve is a pure JWT read, kept
+    // ahead of the DB-touching resolveSessionUser in the catch below.
     try {
-      this.csrfService.validateToken(req.cookies?.[CSRF_COOKIE], body.csrf);
+      this.csrfService.validateToken(
+        req.cookies?.[CSRF_COOKIE],
+        body.csrf,
+        this.authService.resolveCsrfScope(req),
+      );
     } catch (err) {
       // Only CSRF rejections self-heal. Anything else is an unexpected fault and
       // must surface as itself rather than be mislabelled a CSRF problem.
