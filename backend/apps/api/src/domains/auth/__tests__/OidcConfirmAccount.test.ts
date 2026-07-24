@@ -28,12 +28,17 @@ const CONFIRM_PATH = '/authenticate/oidc/confirm-account';
 
 const mockUser = { id: 'user-1', name: 'Test User', email: 'new@example.com' };
 
+const MOCK_SESSION_ID = 'session-id-1';
+
 const mockAuthService = {
   verifySignupIntentToken: jest.fn().mockReturnValue({ email: 'new@example.com', name: 'Test User' }),
   issueSignupIntentToken: jest.fn().mockReturnValue('intent-token'),
-  issueSessionToken: jest.fn().mockResolvedValue('session-token-value'),
+  issueSessionToken: jest
+    .fn()
+    .mockResolvedValue({ sessionToken: 'session-token-value', sessionId: MOCK_SESSION_ID }),
   issueAccessToken: jest.fn().mockReturnValue('access-token-value'),
   getSessionMetadata: jest.fn().mockReturnValue({ ip: '127.0.0.1', userAgent: 'test' }),
+  resolveCsrfScope: jest.fn().mockReturnValue(null),
 };
 
 const mockUserService = {
@@ -47,11 +52,14 @@ const mockCsrfService = {
   generateToken: jest.fn().mockReturnValue(MOCK_CSRF_TOKEN),
   validateToken: jest.fn(),
   verifyToken: jest.fn().mockReturnValue(true),
-  // Mirrors the real reuse-if-valid implementation. The explicit return type is
-  // required: the body references `mockCsrfService` while it is still being
-  // initialised, so inference would be circular.
-  ensureToken: jest.fn((value?: string): string =>
-    value && mockCsrfService.verifyToken(value) ? value : mockCsrfService.generateToken(),
+  // Mirrors the real reuse-if-valid implementation (scope matching itself is
+  // unit-tested in CsrfService.test.ts). The explicit return type is required:
+  // the body references `mockCsrfService` while it is still being initialised,
+  // so inference would be circular.
+  ensureToken: jest.fn((value: unknown, _sessionId: string | null): string =>
+    value && mockCsrfService.verifyToken(value)
+      ? (value as string)
+      : mockCsrfService.generateToken(_sessionId),
   ),
 };
 
@@ -120,6 +128,7 @@ describe('OidcController — confirm-account CSRF', () => {
       email: 'new@example.com',
       name: 'Test User',
     });
+    mockAuthService.resolveCsrfScope.mockReturnValue(null);
     mockCsrfService.generateToken.mockReturnValue(MOCK_CSRF_TOKEN);
     mockCsrfService.validateToken.mockImplementation(() => undefined);
     mockCsrfService.verifyToken.mockReturnValue(true);
@@ -243,6 +252,23 @@ describe('OidcController — confirm-account CSRF', () => {
         .expect(303);
 
       expect(res.headers.location).toBe('/api/authenticate/oidc/confirm-account?csrf_retry=1');
+    });
+
+    it('validates against the scope resolved from the session cookie', async () => {
+      // Usually anon (first-time sign-in has no session yet), but a browser
+      // already holding a session must be validated against it.
+      mockAuthService.resolveCsrfScope.mockReturnValue(MOCK_SESSION_ID);
+
+      await request(app.getHttpServer())
+        .post(CONFIRM_PATH)
+        .set('Cookie', [`${SIGNUP_INTENT_COOKIE}=intent`, `${CSRF_COOKIE_NAME}=${MOCK_CSRF_TOKEN}`])
+        .send({ csrf: MOCK_CSRF_TOKEN });
+
+      expect(mockCsrfService.validateToken).toHaveBeenCalledWith(
+        MOCK_CSRF_TOKEN,
+        MOCK_CSRF_TOKEN,
+        MOCK_SESSION_ID,
+      );
     });
 
     it('rejects a non-string csrf field before it reaches the token comparison', async () => {
