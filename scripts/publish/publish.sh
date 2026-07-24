@@ -43,27 +43,45 @@ set -euo pipefail
 #   SKIP_IMAGE_PUSH      Skip Step 3 (docker login + image push)    (default: false)
 #   PUBLISH_TO_PORTAL    Opt in to Portal ingest/publish (local dev) (default: false)
 #   PORTAL_API           Portal API base URL           (default: https://portal.ci.localhost/api)
-#   STORE_ADMIN_API_KEY  Admin key for publish API     (required when PUBLISH_TO_PORTAL=true)
+#   STORE_ADMIN_API_KEY  Admin key for publish API     (required when PUBLISH_TO_PORTAL=true).
+#                        The only value this script reads from ${REPO_ROOT}/.env,
+#                        and only on the opt-in path.
 #   SKIP_PORTAL          Legacy kill switch; still forces the Portal phases off
 #   TAG_SUFFIX           Suffix appended to the pushed version tag, e.g. "-amd64".
 #                        Used by the multi-arch publish workflow: each native
 #                        build leg pushes :VERSION-<arch>, and merge-manifests.sh
 #                        combines them into the :VERSION manifest list.
+#
+# The boolean switches accept true/1/yes/y/on (any case). Registry credentials
+# are never read from .env — pass them in the environment.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-# Source .env for STORE_ADMIN_API_KEY, but only on the opt-in Portal path — it
-# is the sole variable this script reads from there. `set -a` exports every key
-# in a developer's .env, and a plain `source` overwrites values the caller
-# passed in, so any collision with this script's own knobs (REGISTRY, VERSION,
-# GITHUB_TOKEN, TAG_SUFFIX, …) would silently win. Don't run it for the
-# images-only default path, which has nothing to gain from it.
-if [[ "${PUBLISH_TO_PORTAL:-false}" == "true" && -z "${STORE_ADMIN_API_KEY:-}" && -f "${REPO_ROOT}/.env" ]]; then
-  set -a
-  # shellcheck source=/dev/null
-  source "${REPO_ROOT}/.env"
-  set +a
+# Truthiness for this script's env switches. An exact `== "true"` match turns
+# `PUBLISH_TO_PORTAL=1` into a silent images-only run — the opt-in is dropped
+# and the run still exits 0, which is exactly the "reported success without
+# doing the work" failure the summary below exists to prevent.
+is_true() {
+  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    true | 1 | yes | y | on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Read STORE_ADMIN_API_KEY from .env on the opt-in Portal path — it is the sole
+# variable this script wants from there. Extract that one key rather than
+# sourcing the file: `set -a` exports every key in a developer's .env, and a
+# plain `source` overwrites values the caller passed in, so any collision with
+# this script's own knobs (REGISTRY, VERSION, GITHUB_TOKEN, TAG_SUFFIX,
+# SKIP_PORTAL, …) would silently win — including a stale SKIP_PORTAL=true
+# quietly cancelling the opt-in that triggered the read in the first place.
+if is_true "${PUBLISH_TO_PORTAL:-}" && [[ -z "${STORE_ADMIN_API_KEY:-}" && -f "${REPO_ROOT}/.env" ]]; then
+  STORE_ADMIN_API_KEY=$(
+    sed -n 's/^[[:space:]]*\(export[[:space:]]\{1,\}\)\{0,1\}STORE_ADMIN_API_KEY[[:space:]]*=[[:space:]]*//p' \
+      "${REPO_ROOT}/.env" | tail -1 | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/"
+  )
+  export STORE_ADMIN_API_KEY
 fi
 
 # ── Configuration ──────────────────────────────────────────────────────
@@ -93,14 +111,22 @@ fi
 PORTAL_ENABLED=false
 PORTAL_REQUESTED=false
 PORTAL_SKIP_REASON='Portal publishing not enabled'
-if [[ "${PUBLISH_TO_PORTAL:-false}" == "true" && "${SKIP_PORTAL:-false}" != "true" ]]; then
-  PORTAL_REQUESTED=true
-  if [[ -n "${ADMIN_KEY}" ]]; then
-    PORTAL_ENABLED=true
-    PORTAL_SKIP_REASON=''
+if is_true "${PUBLISH_TO_PORTAL:-}"; then
+  if is_true "${SKIP_PORTAL:-}"; then
+    # The legacy kill switch still wins, but it must not win quietly: an
+    # explicit opt-in that vanishes without a word is an hour of "why is the
+    # catalog entry not there?".
+    PORTAL_SKIP_REASON='SKIP_PORTAL overrides PUBLISH_TO_PORTAL'
+    echo "  ⚠ PUBLISH_TO_PORTAL and SKIP_PORTAL are both set — the kill switch wins; pushing images only." >&2
   else
-    PORTAL_SKIP_REASON='STORE_ADMIN_API_KEY unset'
-    echo "  ⚠ PUBLISH_TO_PORTAL=true but STORE_ADMIN_API_KEY is unset — pushing images only." >&2
+    PORTAL_REQUESTED=true
+    if [[ -n "${ADMIN_KEY}" ]]; then
+      PORTAL_ENABLED=true
+      PORTAL_SKIP_REASON=''
+    else
+      PORTAL_SKIP_REASON='STORE_ADMIN_API_KEY unset'
+      echo "  ⚠ PUBLISH_TO_PORTAL is set but STORE_ADMIN_API_KEY is unset — pushing images only." >&2
+    fi
   fi
 fi
 
@@ -417,9 +443,9 @@ main() {
   fi
 
   # ── Step 3: Tag and push images ────────────────────────────────────
-  if [[ "${SKIP_IMAGE_PUSH:-false}" == "true" ]]; then
+  if is_true "${SKIP_IMAGE_PUSH:-}"; then
     log "=== Step 3: Tag and push Docker images (SKIPPED) ==="
-    log "  SKIP_IMAGE_PUSH=true — assuming images already exist in ${REGISTRY}"
+    log "  SKIP_IMAGE_PUSH is set — assuming images already exist in ${REGISTRY}"
     log ""
   else
     log "=== Step 3: Tag and push Docker images ==="
@@ -448,7 +474,10 @@ main() {
       fail "docker login to ${REGISTRY} failed"
     fi
 
-    local PUSH_FAILED=0 PUSH_SKIPPED=0 PUSH_COUNT=0
+    # MISSING is a comma-joined string, not an array: images.sh keeps this
+    # script bash-3.2 compatible, where `${#arr[@]}` on an empty array trips
+    # `set -u`.
+    local PUSH_FAILED=0 PUSH_SKIPPED=0 PUSH_COUNT=0 MISSING=''
     for i in $(seq 0 $((${#IMAGE_LOCAL[@]} - 1))); do
       local LOCAL_IMAGE="${IMAGE_LOCAL[$i]}"
       local REPO="${IMAGE_REMOTE[$i]}"
@@ -459,6 +488,7 @@ main() {
       if ! docker image inspect "${LOCAL_IMAGE}:latest" > /dev/null 2>&1; then
         log "  ⚠ ${LOCAL_IMAGE}:latest not found locally — skipping"
         PUSH_SKIPPED=$((PUSH_SKIPPED + 1))
+        MISSING="${MISSING}${MISSING:+, }${LOCAL_IMAGE}"
         continue
       fi
 
@@ -479,11 +509,15 @@ main() {
       fail "${PUSH_FAILED} image(s) failed to push"
     fi
 
-    # Every image missing locally is not a publish — it is a build that never
-    # ran. Exiting 0 here would green-light the tag pipeline and only surface
-    # later as an opaque "manifest create failed" in merge-manifests.sh.
-    if [[ $PUSH_COUNT -eq 0 ]]; then
-      fail "no images pushed — none of the ${#IMAGE_LOCAL[@]} ci/* images exist locally; run 'make build ENV=production' first"
+    # Any image missing locally is not a publish — it is a build that never
+    # ran, and ci-memory is the whole image set, so a partial push yields an
+    # app that cannot start. Checking only for a completely empty run would
+    # still green-light the tag pipeline whenever 1..n-1 images are missing,
+    # surfacing later as an opaque "manifest create failed" in
+    # merge-manifests.sh (or, worse, a published version whose manifest list
+    # references tags that were never pushed).
+    if [[ $PUSH_SKIPPED -gt 0 ]]; then
+      fail "${PUSH_SKIPPED} of ${#IMAGE_LOCAL[@]} image(s) do not exist locally (${MISSING}) — run 'make build ENV=production' first"
     fi
 
     log "  Pushed: ${PUSH_COUNT}, skipped: ${PUSH_SKIPPED}"
@@ -507,6 +541,7 @@ main() {
     else
       log "  ⚠ Portal publish failed (HTTP ${HTTP_CODE:-none}) — images are pushed but the catalog entry was not finalized."
       PORTAL_ENABLED=false
+      PORTAL_SKIP_REASON='Portal publish failed'
     fi
     log ""
   else
@@ -515,13 +550,17 @@ main() {
   fi
 
   # ── Step 5: Verify / summary ───────────────────────────────────────
-  # The summary must describe what actually happened: SKIP_IMAGE_PUSH pushes
-  # nothing, and TAG_SUFFIX means the pushed tag is not bare ${VERSION}.
+  # The summary must describe what actually happened, on every path:
+  # SKIP_IMAGE_PUSH pushes nothing, and TAG_SUFFIX means the pushed tag is the
+  # per-arch one, not bare ${VERSION} — which is an image tag, not a different
+  # app version, so keep the two apart in the wording.
   local IMAGE_SUMMARY
-  if [[ "${SKIP_IMAGE_PUSH:-false}" == "true" ]]; then
-    IMAGE_SUMMARY="✓ ${SLUG}@${VERSION}: image push skipped (SKIP_IMAGE_PUSH=true)."
+  if is_true "${SKIP_IMAGE_PUSH:-}"; then
+    IMAGE_SUMMARY="✓ ${SLUG}@${VERSION}: image push skipped (SKIP_IMAGE_PUSH is set)."
+  elif [[ -n "${TAG_SUFFIX:-}" ]]; then
+    IMAGE_SUMMARY="✓ Images for ${SLUG}@${VERSION} pushed to ${REGISTRY} as :${VERSION}${TAG_SUFFIX}."
   else
-    IMAGE_SUMMARY="✓ Images for ${SLUG}@${VERSION}${TAG_SUFFIX:-} pushed to ${REGISTRY}."
+    IMAGE_SUMMARY="✓ Images for ${SLUG}@${VERSION} pushed to ${REGISTRY}."
   fi
 
   if [[ "$PORTAL_ENABLED" == "true" ]]; then
@@ -530,7 +569,10 @@ main() {
       curl $CURL_OPTS "${PORTAL_API}/store/${SLUG}" | jq '.' 2>/dev/null \
         || echo "  (listing endpoint returned non-JSON — but publish succeeded)"
       echo ""
-      echo "✓ ${SLUG}@${VERSION} published to ${REGISTRY}"
+      # Not "published to ${REGISTRY}": with SKIP_IMAGE_PUSH set nothing was
+      # pushed there, and the catalog entry went to the Portal either way.
+      echo "$IMAGE_SUMMARY"
+      echo "✓ ${SLUG}@${VERSION} published to the catalog at ${PORTAL_API}"
     else
       echo "  ✓ ${SLUG}@${VERSION}"
     fi
@@ -539,7 +581,7 @@ main() {
     # "a broken Portal must not abort the push" rule is satisfied — but the run
     # did not do what it was asked to, so it must not report success.
     echo "$IMAGE_SUMMARY"
-    echo "  ✗ PUBLISH_TO_PORTAL=true, but the catalog registration did not complete — see the warnings above." >&2
+    echo "  ✗ PUBLISH_TO_PORTAL is set, but the catalog registration did not complete — see the warnings above." >&2
     exit 1
   else
     echo "$IMAGE_SUMMARY"
