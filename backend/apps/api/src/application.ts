@@ -48,6 +48,7 @@ import { PositionModule } from '@ci/domains/position';
 import { PredictionsModule } from '@ci/domains/predictions';
 import { SearchIngressModule } from '@ci/domains/search-ingress';
 import { SearchNextModule } from '@ci/domains/search-next';
+import { SolidModule } from '@ci/domains/solid';
 import { SummariesModule } from '@ci/domains/summaries';
 import { ToolsModule } from '@ci/domains/tools';
 import { UserModule } from '@ci/domains/user';
@@ -102,6 +103,7 @@ import { UserSnapshotsModule } from '@ci/domains/user-snapshots';
     NotesModule,
     SearchIngressModule,
     SearchNextModule,
+    SolidModule,
     SummariesModule,
     UserModule,
     UserSnapshotsModule,
