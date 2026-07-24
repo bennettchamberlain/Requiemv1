@@ -212,12 +212,18 @@ export class AuthService {
    * claim).
    *
    * `ignoreExpiration` is deliberate: the CSRF scope identifies the principal
-   * a token was MINTED for, while session validity is enforced where sessions
-   * are actually consumed (refresh/logout re-verify with expiry; API auth uses
-   * access tokens). Enforcing expiry here would 403 the very
-   * /authenticate/refresh call an expired-session SPA makes to recover — and
-   * burn its one-shot 403 retry on a request that could never succeed. The
-   * signature check still stands, so a forged cookie cannot choose a scope.
+   * a token was MINTED for, and expiry says nothing about that. Session
+   * validity is enforced where sessions are actually consumed — refresh and
+   * logout both re-verify with expiry via validateSessionToken, so an expired
+   * cookie still ends in a 401; API auth uses access tokens.
+   *
+   * What this buys is the ORDER of failure, not the outcome. Enforcing expiry
+   * here would make an expired (or clock-skewed) session cookie resolve to the
+   * anonymous scope, so its session-bound CSRF token would be rejected first
+   * and the request would 403 before ever reaching the 401 that describes the
+   * real problem — spending the SPA's one-shot CSRF retry on a token that was
+   * never the issue. The signature check still stands, so a forged cookie
+   * cannot choose a scope.
    */
   resolveCsrfScope(req: Request): string | null {
     const token: unknown = req.cookies?.[config.auth.cookies.sessionTokenName];
