@@ -337,7 +337,7 @@ Run `make` from the project root to see all available commands with descriptions
 | `make build` | Build images (`ENV=local\|staging\|production`, default `local`; `GPU=cpu\|cuda\|rocm`, default `cpu`) |
 | `make staging` | Run the staging deployment |
 | `make production` | Run the production deployment |
-| `make publish` | Build and push CI-Server images to the container registry (the `ci-memory` catalog entry is owned by CI-Marketplace) |
+| `make publish` | Publish CI-Server images and metadata to the CI-Portal store |
 | `make seed-production` | Seed the production database via an ephemeral proxy |
 
 ### HBPE
