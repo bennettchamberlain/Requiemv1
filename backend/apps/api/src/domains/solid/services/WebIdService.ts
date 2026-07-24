@@ -51,12 +51,20 @@ export class WebIdService {
   }
 
   /**
+   * IRI of the entity container (the LDP `BasicContainer` listing a user's
+   * entities). Trailing slash per LDP container convention.
+   */
+  entityContainerUrl(origin: string, userId: string): string {
+    return `${this.storageUrl(origin, userId)}entity/`;
+  }
+
+  /**
    * IRI of a single entity resource within the user's pod. This URL *is* the
    * RDF subject the projection describes (the entity is the resource), and it
    * is the address the matching controller route serves.
    */
   entityResourceUrl(origin: string, userId: string, entityId: string): string {
-    return `${this.storageUrl(origin, userId)}entity/${encodeURIComponent(entityId)}`;
+    return `${this.entityContainerUrl(origin, userId)}${encodeURIComponent(entityId)}`;
   }
 
   /**

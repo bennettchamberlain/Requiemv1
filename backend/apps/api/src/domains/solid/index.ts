@@ -13,7 +13,9 @@
  * Slice 1: WebID Profile Documents at `GET /solid/profile/:userId` (public).
  * Slice 2: RDF projection of a `ci.entities` row at
  *   `GET /solid/storage/:userId/entity/:entityId` (authenticated, owner-only).
- * Both are Turtle/JSON-LD content-negotiated.
+ * Slice 3: the entity container (LDP BasicContainer) at
+ *   `GET /solid/storage/:userId/entity/` — makes the pod browsable.
+ * All are Turtle/JSON-LD content-negotiated.
  *
  * @module SolidModule
  */
@@ -25,6 +27,7 @@ import { UserModule } from '@ci/domains/user';
 
 import { StorageController } from './controllers/StorageController';
 import { WebIdController } from './controllers/WebIdController';
+import { ContainerService } from './services/ContainerService';
 import { EntityProjectionService } from './services/EntityProjectionService';
 import { ProfileDocumentService } from './services/ProfileDocumentService';
 import { WebIdService } from './services/WebIdService';
@@ -35,11 +38,12 @@ import { WebIdService } from './services/WebIdService';
 @Module({
   imports: [UserModule, MemoryModule],
   controllers: [WebIdController, StorageController],
-  providers: [WebIdService, ProfileDocumentService, EntityProjectionService],
-  exports: [WebIdService, ProfileDocumentService, EntityProjectionService],
+  providers: [WebIdService, ProfileDocumentService, EntityProjectionService, ContainerService],
+  exports: [WebIdService, ProfileDocumentService, EntityProjectionService, ContainerService],
 })
 export class SolidModule {}
 
 export { WebIdService } from './services/WebIdService';
 export { ProfileDocumentService } from './services/ProfileDocumentService';
 export { EntityProjectionService } from './services/EntityProjectionService';
+export { ContainerService } from './services/ContainerService';

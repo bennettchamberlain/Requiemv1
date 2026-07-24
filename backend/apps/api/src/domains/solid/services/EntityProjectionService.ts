@@ -12,6 +12,7 @@ import {
   literal,
   namedNode,
   quad,
+  safeLocalName,
   type NamedNode,
   type Quad,
   type Term,
@@ -69,7 +70,7 @@ export class EntityProjectionService {
 
     // Types: always the lossless CI type, plus a schema.org synonym when known.
     if (node.entity_type) {
-      quads.push(quad(subject, RDF_TYPE, namedNode(CI(this.safeLocalName(node.entity_type)))));
+      quads.push(quad(subject, RDF_TYPE, namedNode(CI(safeLocalName(node.entity_type)))));
       const schemaType = EntityProjectionService.SCHEMA_TYPE[node.entity_type];
       if (schemaType) {
         quads.push(quad(subject, RDF_TYPE, namedNode(schemaType)));
@@ -91,7 +92,7 @@ export class EntityProjectionService {
     for (const [key, value] of Object.entries(node.properties ?? {})) {
       const object = this.scalarLiteral(value);
       if (object) {
-        quads.push(quad(subject, CI(this.safeLocalName(key)), object));
+        quads.push(quad(subject, CI(safeLocalName(key)), object));
       }
     }
 
@@ -138,18 +139,6 @@ export class EntityProjectionService {
 
   private dateLiteral(date: Date): Term {
     return literal(date.toISOString(), { datatype: XSD('dateTime') });
-  }
-
-  /**
-   * Sanitizes a free-text type/property key into a Turtle-safe local name so it
-   * can abbreviate as `ci:<name>`. Non-conforming characters become `_`; an
-   * empty result falls back to `_`. The `ci:` IRI stays stable for a given
-   * input, which is all the projection needs (it is not reversible).
-   */
-  private safeLocalName(raw: string): string {
-    const cleaned = raw.replace(/[^A-Za-z0-9_-]/g, '_').replace(/^[^A-Za-z_]+/, '');
-
-    return cleaned.length > 0 ? cleaned : '_';
   }
 
   /** Narrowing helper for tests/consumers that need the subject IRI. */

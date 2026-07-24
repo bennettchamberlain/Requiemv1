@@ -5,6 +5,7 @@ import type { RequestContext } from '@ci/common/context';
 import type { FeatureService } from '@ci/common/feature';
 import type { GraphNodeEntity, GraphQueryService, RelationshipEntity } from '@ci/domains/memory';
 
+import { ContainerService } from '../../services/ContainerService';
 import { EntityProjectionService } from '../../services/EntityProjectionService';
 import { WebIdService } from '../../services/WebIdService';
 import { StorageController } from '../StorageController';
@@ -43,19 +44,26 @@ const makeRes = (): Response & { type: jest.Mock; send: jest.Mock } => {
   return res as unknown as Response & { type: jest.Mock; send: jest.Mock };
 };
 
-const build = (opts: { enabled?: boolean; node?: GraphNodeEntity | null; rels?: RelationshipEntity[] }) => {
+const build = (opts: {
+  enabled?: boolean;
+  node?: GraphNodeEntity | null;
+  rels?: RelationshipEntity[];
+  getNodes?: jest.Mock;
+}) => {
   const features = {
     isFeatureEnabled: jest.fn().mockResolvedValue(opts.enabled ?? true),
   } as unknown as FeatureService;
   const graph = {
     getNode: jest.fn().mockResolvedValue(opts.node === undefined ? node : opts.node),
     getRelationships: jest.fn().mockResolvedValue(opts.rels ?? []),
+    getNodes: opts.getNodes ?? jest.fn().mockResolvedValue([]),
   } as unknown as GraphQueryService;
   const webIds = new WebIdService();
   const projection = new EntityProjectionService(webIds);
+  const container = new ContainerService(webIds);
 
   return {
-    controller: new StorageController(features, graph, webIds, projection),
+    controller: new StorageController(features, graph, webIds, projection, container),
     features,
     graph,
   };
@@ -120,5 +128,67 @@ describe('StorageController.getEntity', () => {
     expect(res.type).toHaveBeenCalledWith('application/ld+json');
     const doc = JSON.parse(res.send.mock.calls[0][0] as string);
     expect(doc['@graph'][0]['@id']).toBe(`https://ci.example/solid/storage/${OWNER}/entity/${ENTITY}`);
+  });
+});
+
+describe('StorageController.getEntityContainer', () => {
+  const member = (id: string): GraphNodeEntity =>
+    ({ ...node, entity_id: id, name: `E${id}` }) as GraphNodeEntity;
+
+  it('404s for a foreign pod without listing anything', async () => {
+    const getNodes = jest.fn().mockResolvedValue([]);
+    const { controller } = build({ getNodes });
+    await expect(
+      controller.getEntityContainer(OWNER, ctx('someone-else'), makeReq(), makeRes()),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(getNodes).not.toHaveBeenCalled();
+  });
+
+  it('lists the owner\'s entities as an LDP container', async () => {
+    const getNodes = jest.fn().mockResolvedValue([member('a'), member('b')]);
+    const { controller } = build({ getNodes });
+    const res = makeRes();
+    await controller.getEntityContainer(OWNER, ctx(OWNER), makeReq(), res);
+
+    expect(getNodes).toHaveBeenCalledWith(OWNER, { limit: 200, offset: 0 });
+    const body = res.send.mock.calls[0][0] as string;
+    expect(body).toContain('ldp:BasicContainer');
+    expect(body).toContain(`<https://ci.example/solid/storage/${OWNER}/entity/a>`);
+    expect(body).toContain(`<https://ci.example/solid/storage/${OWNER}/entity/b>`);
+    // A non-truncated listing carries no truncation flag.
+    expect(body).not.toContain('truncated');
+  });
+
+  it('stops at a short page without a second query and does not truncate', async () => {
+    // One short page (< 200) => listing is exhausted in a single query.
+    const getNodes = jest.fn().mockResolvedValue([member('a')]);
+    const { controller } = build({ getNodes });
+    await controller.getEntityContainer(OWNER, ctx(OWNER), makeReq(), makeRes());
+    expect(getNodes).toHaveBeenCalledTimes(1);
+  });
+
+  it('pages until a short page and flags nothing when the total is a page multiple', async () => {
+    // Exactly 200 then 0: two queries, exhausted, not truncated.
+    const full = Array.from({ length: 200 }, (_, i) => member(`f${i}`));
+    const getNodes = jest.fn().mockResolvedValueOnce(full).mockResolvedValueOnce([]);
+    const { controller } = build({ getNodes });
+    const res = makeRes();
+    await controller.getEntityContainer(OWNER, ctx(OWNER), makeReq(), res);
+
+    expect(getNodes).toHaveBeenCalledTimes(2);
+    expect(getNodes).toHaveBeenNthCalledWith(2, OWNER, { limit: 200, offset: 200 });
+    expect(res.send.mock.calls[0][0]).not.toContain('truncated');
+  });
+
+  it('truncates and flags when the member cap is reached', async () => {
+    // Five full pages (5 * 200 = 1000 = MAX_MEMBERS) => cap hit, truncated.
+    const fullPage = () => Array.from({ length: 200 }, (_, i) => member(`x${i}`));
+    const getNodes = jest.fn().mockResolvedValue(fullPage());
+    const { controller } = build({ getNodes });
+    const res = makeRes();
+    await controller.getEntityContainer(OWNER, ctx(OWNER), makeReq('text/turtle'), res);
+
+    expect(getNodes).toHaveBeenCalledTimes(5);
+    expect(res.send.mock.calls[0][0]).toContain('ci:truncated');
   });
 });

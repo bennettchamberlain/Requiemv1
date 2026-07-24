@@ -40,6 +40,7 @@ export const SOLID = (local: string): string => term('solid', local);
 export const PIM = (local: string): string => term('pim', local);
 export const SCHEMA = (local: string): string => term('schema', local);
 export const DCTERMS = (local: string): string => term('dcterms', local);
+export const LDP = (local: string): string => term('ldp', local);
 export const CI = (local: string): string => term('ci', local);
 
 /** `rdf:type`, the one predicate both serializers special-case. */
