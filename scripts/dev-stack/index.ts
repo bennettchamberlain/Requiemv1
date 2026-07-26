@@ -32,6 +32,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import dotenv from 'dotenv';
 
 import { CaddyClient, routeId } from './caddy';
+import { keyFromArgv } from './key';
 import { fail, link, note, ok, step, table } from './log';
 
 const ROOT = process.cwd();
@@ -273,39 +274,6 @@ function migrate(dbPort: number, env: NodeJS.ProcessEnv): void {
   console.log('');
 }
 
-// --- key resolution ---------------------------------------------------------
-
-function sanitize(value: string): string {
-  return value.toLowerCase().replace(/[/.]/g, '-');
-}
-
-function gitKey(): string {
-  const git = (...args: string[]) =>
-    spawnSync('git', args, { cwd: ROOT, encoding: 'utf8' }).stdout?.trim() ?? '';
-  const common = git('rev-parse', '--git-common-dir');
-  const top = git('rev-parse', '--show-toplevel');
-  if (!common || !top) {
-    throw new Error('not a git worktree; pass --key to name the stack');
-  }
-
-  const repo = sanitize(path.basename(path.dirname(path.resolve(ROOT, common))));
-  const worktree = sanitize(path.basename(top));
-
-  return worktree === repo ? repo : `${repo}-${worktree}`;
-}
-
-function resolveKey(explicit?: string): string {
-  if (explicit) {
-    return sanitize(explicit);
-  }
-
-  if (process.env.PROJECT_NAME) {
-    return sanitize(process.env.PROJECT_NAME);
-  }
-
-  return gitKey();
-}
-
 // --- lifecycle --------------------------------------------------------------
 
 async function up(key: string): Promise<void> {
@@ -461,8 +429,7 @@ async function down(key: string): Promise<void> {
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const command = argv[0] && !argv[0].startsWith('--') ? argv[0] : 'up';
-  const keyFlag = argv.indexOf('--key');
-  const key = resolveKey(keyFlag !== -1 ? argv[keyFlag + 1] : undefined);
+  const key = keyFromArgv(argv);
 
   if (command === 'down') {
     await down(key);
