@@ -45,6 +45,7 @@ describe('GraphController — explorer filters (graph parity)', () => {
       getEntityIdsBySourceRecordIds?: jest.Mock;
       getRelationships?: jest.Mock;
       getEntitiesForEvents?: jest.Mock;
+      traverseGraph?: jest.Mock;
     } = {},
   ) {
     const graphQuery = {
@@ -54,6 +55,7 @@ describe('GraphController — explorer filters (graph parity)', () => {
       getRelationships: overrides.getRelationships ?? jest.fn(async () => []),
       getEntityIdsByTagSources: overrides.getEntityIdsByTagSources ?? jest.fn(async () => []),
       getEntityIdsBySourceRecordIds: overrides.getEntityIdsBySourceRecordIds ?? jest.fn(async () => []),
+      traverseGraph: overrides.traverseGraph ?? jest.fn(async () => ({ nodes: new Map(), edges: [] })),
     };
 
     const tagService = {
@@ -185,9 +187,86 @@ describe('GraphController — explorer filters (graph parity)', () => {
     });
   });
 
-  // The unfiltered overview is capped at 200 nodes with no inherent ordering, so
-  // a tag/event match beyond the cap would be absent from the node payload even
-  // though the client scopes to its id. The controller recovers those by id.
+  // The frontend BFS-expands the graph from the owner's anchor entity, so the
+  // capped node payload is filled from the anchor's traversed neighborhood
+  // first and only topped up with recently created entities. A recency-only
+  // page drops the (old) anchor once the account outgrows the cap, collapsing
+  // the client's graph to empty.
+  describe('anchor-neighborhood seeding', () => {
+    const anchor = {
+      entity_id: 'anchor',
+      entity_type: 'Person',
+      name: 'Me',
+      description: null,
+      properties: {},
+    };
+
+    function node(id: string, type = 'Concept') {
+      return { entity_id: id, entity_type: type, name: id, description: null, properties: {} };
+    }
+
+    it('includes the anchor and its neighborhood ahead of recent entities', async () => {
+      const getUserEntity = jest.fn(async () => anchor);
+      const traverseGraph = jest.fn(async () => ({
+        nodes: new Map([
+          ['anchor', anchor],
+          ['friend', node('friend', 'Person')],
+        ]),
+        edges: [],
+      }));
+      // The recency page misses the anchor and its neighbor entirely — the
+      // shape of the original bug.
+      const getNodes = jest.fn(async () => [node('recent-1'), node('recent-2')]);
+
+      const { controller } = setup({ getUserEntity, traverseGraph, getNodes });
+
+      const res = await controller.getGraphData(ctx, dataDto());
+
+      expect(traverseGraph).toHaveBeenCalledWith(
+        'user-1',
+        ['anchor'],
+        expect.objectContaining({ maxNodes: 200 }),
+      );
+      expect(res.data.nodes.map((n) => n.id)).toEqual(['anchor', 'friend', 'recent-1', 'recent-2']);
+    });
+
+    it('keeps the anchor under a type filter that excludes it, but drops excluded neighbors', async () => {
+      const getUserEntity = jest.fn(async () => anchor);
+      const traverseGraph = jest.fn(async () => ({
+        nodes: new Map([
+          ['anchor', anchor],
+          ['friend', node('friend', 'Person')],
+          ['cafe', node('cafe', 'Place')],
+        ]),
+        edges: [],
+      }));
+      const getNodes = jest.fn(async () => []);
+
+      const { controller } = setup({ getUserEntity, traverseGraph, getNodes });
+
+      // Selecting only `place` excludes Person — the anchor must survive
+      // anyway, while the Person neighbor is dropped.
+      const res = await controller.getGraphData(ctx, dataDto({ includeTypes: ['place'] }));
+
+      expect(res.data.nodes.map((n) => n.id).sort()).toEqual(['anchor', 'cafe']);
+    });
+
+    it('skips the traversal and serves the recency page when the user has no anchor entity', async () => {
+      const traverseGraph = jest.fn(async () => ({ nodes: new Map(), edges: [] }));
+      const getNodes = jest.fn(async () => [node('recent-1')]);
+
+      const { controller, graphQuery } = setup({ traverseGraph, getNodes });
+
+      const res = await controller.getGraphData(ctx, dataDto());
+
+      expect(graphQuery.traverseGraph).not.toHaveBeenCalled();
+      expect(res.data.nodes.map((n) => n.id)).toEqual(['recent-1']);
+    });
+  });
+
+  // The overview is capped at 200 nodes (anchor neighborhood + recency top-up),
+  // so a tag/event match beyond the cap would be absent from the node payload
+  // even though the client scopes to its id. The controller recovers those by id.
   describe('filter-match node payload', () => {
     it('unions filter-matched nodes the capped overview missed, fetched by id', async () => {
       const getEntitiesForTags = jest.fn(async () => [
