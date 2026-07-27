@@ -23,7 +23,7 @@ set -euo pipefail
 #   REGISTRY_PASSWORD    Registry login password       (required, unless GITHUB_TOKEN is set)
 #   GITHUB_TOKEN         Token used as registry password fallback (e.g. inside GitHub Actions)
 #   GITHUB_ACTOR         Username paired with GITHUB_TOKEN          (default: github-actions)
-#   VERSION              Override version              (default: git tag or "latest")
+#   VERSION              Override version              (default: git tag, else dev-<short-sha>)
 #   SKIP_IMAGE_PUSH      Skip Step 3 (docker login + image push)    (default: false)
 #   SKIP_PORTAL          Skip Portal ingest/publish (images only)   (default: false)
 #   TAG_SUFFIX           Suffix appended to the pushed version tag, e.g. "-amd64".
@@ -83,12 +83,7 @@ fi
 # local dev build — which is exactly how companion/*:latest became a stale
 # amd64-only orphan pointing at no release at all.
 if [[ -z "${VERSION:-}" ]]; then
-  # Strip the leading v exactly as publish.yml does. Without this a local
-  # `make publish` from a tagged commit tags images :v2026.7.27 while CI tags
-  # :2026.7.27 — two shapes for one release, which is how the registry ends up
-  # with tags nothing references.
   VERSION=$(git -C "$REPO_ROOT" describe --tags --exact-match 2>/dev/null || true)
-  VERSION="${VERSION#v}"
   if [[ -z "${VERSION}" ]]; then
     # Checked separately rather than inlined: `VERSION="dev-$(...)"` keeps the
     # literal prefix when the substitution fails, so a non-git checkout would
@@ -101,6 +96,12 @@ if [[ -z "${VERSION:-}" ]]; then
     VERSION="dev-${SHORT_SHA}"
   fi
 fi
+
+# Strip the leading v exactly as publish.yml does — whatever the source, an
+# explicit VERSION=v2026.7.27 included. Without this a local `make publish`
+# tags images :v2026.7.27 while CI tags :2026.7.27 — two shapes for one
+# release, which is how the registry ends up with tags nothing references.
+VERSION="${VERSION#v}"
 
 
 QUIET=false
