@@ -164,7 +164,13 @@ jobs:
           # Re-read tags as late as possible. Releases pushed close together
           # build in parallel, so the checkout's tag list can already be stale
           # by the time this runs, and a newer release must win :latest.
-          git fetch --tags --force --quiet origin
+          #
+          # Non-fatal on purpose: this fetch only refines the :latest decision,
+          # and the step shell is `bash -e`, so an unguarded failure would fail
+          # the job and take the manifest merge and Portal registration with
+          # it. A stale tag list at worst leaves :latest for the next release.
+          git fetch --tags --force --quiet origin \
+            || echo "::warning::tag re-read failed — falling back to the checkout's tag list"
 
           newest=$(git tag --list | grep -E "${release_re}" | sed 's/^v//' | sort -V | tail -1)
 
