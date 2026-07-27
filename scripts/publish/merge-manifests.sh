@@ -15,6 +15,7 @@ set -euo pipefail
 #   REGISTRY             Docker registry host                    (required)
 #   VERSION              Version tag to merge                    (required)
 #   ARCHES               Space-separated arch suffixes           (default: "amd64 arm64")
+#   PUSH_LATEST          Also point :latest at this version      (default: false)
 #   REGISTRY_USERNAME    Registry login username                 (required, unless GITHUB_TOKEN is set)
 #   REGISTRY_PASSWORD    Registry login password                 (required, unless GITHUB_TOKEN is set)
 #   GITHUB_TOKEN         Token used as registry password fallback (e.g. inside GitHub Actions)
@@ -28,6 +29,7 @@ source "${SCRIPT_DIR}/images.sh"
 REGISTRY="${REGISTRY:?REGISTRY is required}"
 VERSION="${VERSION:?VERSION is required}"
 ARCHES="${ARCHES:-amd64 arm64}"
+PUSH_LATEST="${PUSH_LATEST:-false}"
 
 fail() {
   echo "  ✗ $*" >&2
@@ -49,6 +51,9 @@ echo "${REG_PASS}" | docker login "${REGISTRY%%/*}" -u "${REG_USER}" --password-
 
 # ── Merge + verify ──────────────────────────────────────────────────────
 echo "Merging manifest lists for ${#IMAGE_REMOTE[@]} image(s) @ ${VERSION} (${ARCHES})"
+if [[ "${PUSH_LATEST}" == "true" ]]; then
+  echo "PUSH_LATEST=true — :latest will be repointed at ${VERSION}"
+fi
 
 FAILED=0
 for REPO in "${IMAGE_REMOTE[@]}"; do
@@ -59,24 +64,39 @@ for REPO in "${IMAGE_REMOTE[@]}"; do
     SOURCES+=("${TARGET}-${ARCH}")
   done
 
+  # Alias tags share the version's sources, so one imagetools call writes them
+  # all — no extra build, push, or login. Seeded with -t ${TARGET} so the array
+  # is never empty: under `set -u`, expanding an empty array is an error on the
+  # bash 3.2 this directory targets (see images.sh).
+  TAGS=(-t "${TARGET}")
+  VERIFY=("${TARGET}")
+  if [[ "${PUSH_LATEST}" == "true" ]]; then
+    TAGS+=(-t "${REGISTRY}/${REPO}:latest")
+    VERIFY+=("${REGISTRY}/${REPO}:latest")
+  fi
+
   echo ""
   echo "➤ ${TARGET}"
-  if ! docker buildx imagetools create -t "${TARGET}" "${SOURCES[@]}"; then
+  if ! docker buildx imagetools create "${TAGS[@]}" "${SOURCES[@]}"; then
     echo "  ✗ manifest create failed" >&2
     FAILED=$((FAILED + 1))
     continue
   fi
 
-  # Post-publish assertion: the merged tag must resolve for every platform.
-  MANIFEST=$(docker buildx imagetools inspect --raw "${TARGET}")
-  for ARCH in ${ARCHES}; do
-    if ! echo "${MANIFEST}" | jq -e --arg arch "${ARCH}" \
-      '.manifests[]? | select(.platform.os == "linux" and .platform.architecture == $arch)' >/dev/null; then
-      echo "  ✗ ${TARGET} does not resolve for linux/${ARCH}" >&2
-      FAILED=$((FAILED + 1))
-    else
-      echo "  ✓ linux/${ARCH}"
-    fi
+  # Post-publish assertion: every tag written must resolve for every platform.
+  # :latest is checked too — it was a single-arch amd64 manifest for months
+  # precisely because nothing asserted against it.
+  for TAG in "${VERIFY[@]}"; do
+    MANIFEST=$(docker buildx imagetools inspect --raw "${TAG}")
+    for ARCH in ${ARCHES}; do
+      if ! echo "${MANIFEST}" | jq -e --arg arch "${ARCH}" \
+        '.manifests[]? | select(.platform.os == "linux" and .platform.architecture == $arch)' >/dev/null; then
+        echo "  ✗ ${TAG} does not resolve for linux/${ARCH}" >&2
+        FAILED=$((FAILED + 1))
+      else
+        echo "  ✓ ${TAG##*:} linux/${ARCH}"
+      fi
+    done
   done
 done
 

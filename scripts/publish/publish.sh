@@ -75,9 +75,18 @@ else
   CURL_OPTS="-s"
 fi
 
-# Version: git tag (exact match) → fallback to "latest"
+# Version: git tag (exact match) → fallback to a dev tag naming the commit.
+#
+# This must never fall back to "latest". The release pipeline reserves that tag
+# for the newest release (see merge-manifests.sh PUSH_LATEST), and an untagged
+# `make publish` against a real registry would otherwise overwrite it with a
+# local dev build — which is exactly how companion/*:latest became a stale
+# amd64-only orphan pointing at no release at all.
 if [[ -z "${VERSION:-}" ]]; then
-  VERSION=$(git -C "$REPO_ROOT" describe --tags --exact-match 2>/dev/null || echo "latest")
+  VERSION=$(git -C "$REPO_ROOT" describe --tags --exact-match 2>/dev/null || true)
+  if [[ -z "${VERSION}" ]]; then
+    VERSION="dev-$(git -C "$REPO_ROOT" rev-parse --short HEAD)"
+  fi
 fi
 
 

@@ -143,6 +143,26 @@ jobs:
             sudo apt-get install -y jq
           fi
 
+      # :latest tracks the newest release only. Two guards, both earned by this
+      # repo's tag history: the trigger is `tags: ['*']`, and tags like
+      # `0.0.0-test1` and `mobile-v0.1.0-appstoreprep-…` have been pushed here —
+      # neither should move :latest. The newest-check additionally stops a
+      # re-cut or back-tagged older release from regressing it.
+      - name: Decide whether this tag moves :latest
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          version="${tag#v}"
+          release_re='^v?[0-9]{4}\.[0-9]{1,2}\.[0-9]{1,2}(\.[0-9]+)?$'
+          newest=$(git tag --list | grep -E "${release_re}" | sed 's/^v//' | sort -V | tail -1)
+
+          if [[ "${tag}" =~ ${release_re} && "${version}" == "${newest}" ]]; then
+            echo "PUSH_LATEST=true" >> "$GITHUB_ENV"
+            echo "${tag} is the newest release tag — :latest will point at ${version}"
+          else
+            echo "PUSH_LATEST=false" >> "$GITHUB_ENV"
+            echo "::notice::${tag} is not the newest release tag (newest: ${newest}) — leaving :latest alone"
+          fi
+
       - name: Merge per-arch tags into multi-arch manifest lists
         run: scripts/publish/merge-manifests.sh
 

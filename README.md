@@ -340,6 +340,24 @@ Run `make` from the project root to see all available commands with descriptions
 | `make publish` | Publish CI-Server images and metadata to the CI-Portal store |
 | `make seed-production` | Seed the production database via an ephemeral proxy |
 
+### Releasing & image tags
+
+Pushing a git tag triggers `.github/workflows/publish.yml`, which builds every `companion/*` image
+natively per architecture, merges the legs into a multi-arch manifest list, and registers the result
+with CI-Portal.
+
+| Tag | Meaning |
+|---------|-------------|
+| `v<YYYY>.<M>.<D>` | A release. Use `v<YYYY>.<M>.<D>.<N>` for a second release the same day. |
+| `<version>` (no `v`) | What the images are tagged with — the workflow strips the leading `v`, so `v2026.7.27` publishes `companion/*:2026.7.27`. This is the form CI-Marketplace pins. |
+| `latest` | The **newest release tag only**. Repointed by the publish workflow when, and only when, the tag being built is release-shaped *and* sorts newest. A back-tagged or re-cut older release leaves it alone. |
+| `dev-<short-sha>` | What an untagged local `make publish` produces. Never `latest` — see below. |
+
+`:latest` must never be minted by hand. It was a stale, single-arch, three-month-old orphan for exactly
+that reason: `scripts/publish/publish.sh` used to fall back to `VERSION=latest` for untagged commits, so
+any `REGISTRY=ghcr.io/... make publish` from an untagged checkout overwrote it with a local dev build
+pointing at no release at all.
+
 ### HBPE
 
 | Command | Description |
