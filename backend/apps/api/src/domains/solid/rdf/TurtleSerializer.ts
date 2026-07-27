@@ -67,7 +67,8 @@ const renderLiteral = (lit: Literal): string => {
   return lexical;
 };
 
-const renderObject = (object: Term): string => (isNamedNode(object) ? renderIri(object.value) : renderLiteral(object));
+const renderObject = (object: Term): string =>
+  isNamedNode(object) ? renderIri(object.value) : renderLiteral(object);
 
 const renderPredicate = (iri: string): string => (iri === RDF_TYPE ? 'a' : renderIri(iri));
 

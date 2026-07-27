@@ -44,7 +44,9 @@ const makeRes = (): Response & { type: jest.Mock; send: jest.Mock } => {
 };
 
 const build = (opts: { enabled: boolean; found: boolean }) => {
-  const features = { isFeatureEnabled: jest.fn().mockResolvedValue(opts.enabled) } as unknown as FeatureService;
+  const features = {
+    isFeatureEnabled: jest.fn().mockResolvedValue(opts.enabled),
+  } as unknown as FeatureService;
   const users = {
     findById: jest.fn().mockResolvedValue(opts.found ? user : null),
   } as unknown as UserService;
@@ -61,13 +63,17 @@ const build = (opts: { enabled: boolean; found: boolean }) => {
 describe('WebIdController.getProfile', () => {
   it('404s and never touches the user store when the flag is off', async () => {
     const { controller, users } = build({ enabled: false, found: true });
-    await expect(controller.getProfile(user.id, makeReq(), makeRes())).rejects.toBeInstanceOf(NotFoundException);
+    await expect(controller.getProfile(user.id, makeReq(), makeRes())).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
     expect(users.findById).not.toHaveBeenCalled();
   });
 
   it('404s when the user does not exist', async () => {
     const { controller } = build({ enabled: true, found: false });
-    await expect(controller.getProfile('missing', makeReq(), makeRes())).rejects.toBeInstanceOf(NotFoundException);
+    await expect(controller.getProfile('missing', makeReq(), makeRes())).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('reads the profile under a SYSTEM context, not the caller', async () => {

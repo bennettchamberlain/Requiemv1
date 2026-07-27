@@ -82,12 +82,12 @@ describe('StorageController.getEntity', () => {
 
   it('rejects an unauthenticated request', async () => {
     const { controller } = build({});
-    await expect(controller.getEntity(OWNER, ENTITY, ctx(undefined), makeReq(), makeRes())).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    await expect(
+      controller.getEntity(OWNER, ENTITY, ctx(undefined), makeReq(), makeRes()),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
-  it('404s when a caller requests another user\'s pod, without touching the graph', async () => {
+  it("404s when a caller requests another user's pod, without touching the graph", async () => {
     const { controller, graph } = build({});
     await expect(
       controller.getEntity(OWNER, ENTITY, ctx('someone-else'), makeReq(), makeRes()),
@@ -97,16 +97,19 @@ describe('StorageController.getEntity', () => {
 
   it('404s when the entity does not exist', async () => {
     const { controller } = build({ node: null });
-    await expect(controller.getEntity(OWNER, ENTITY, ctx(OWNER), makeReq(), makeRes())).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(
+      controller.getEntity(OWNER, ENTITY, ctx(OWNER), makeReq(), makeRes()),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('reads the graph strictly under the authenticated owner id', async () => {
     const { controller, graph } = build({});
     await controller.getEntity(OWNER, ENTITY, ctx(OWNER), makeReq(), makeRes());
     expect(graph.getNode).toHaveBeenCalledWith(OWNER, ENTITY);
-    expect(graph.getRelationships).toHaveBeenCalledWith(OWNER, { entityIds: [ENTITY], direction: 'outbound' });
+    expect(graph.getRelationships).toHaveBeenCalledWith(OWNER, {
+      entityIds: [ENTITY],
+      direction: 'outbound',
+    });
   });
 
   it('serves Turtle by default with the entity resource as subject', async () => {
@@ -144,7 +147,7 @@ describe('StorageController.getEntityContainer', () => {
     expect(getNodes).not.toHaveBeenCalled();
   });
 
-  it('lists the owner\'s entities as an LDP container', async () => {
+  it("lists the owner's entities as an LDP container", async () => {
     const getNodes = jest.fn().mockResolvedValue([member('a'), member('b')]);
     const { controller } = build({ getNodes });
     const res = makeRes();

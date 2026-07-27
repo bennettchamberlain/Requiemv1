@@ -50,7 +50,10 @@ const parseAccept = (header: string): AcceptEntry[] =>
   header
     .split(',')
     .map((part, order) => {
-      const [type, ...params] = part.trim().split(';').map((s) => s.trim());
+      const [type, ...params] = part
+        .trim()
+        .split(';')
+        .map((s) => s.trim());
       const qParam = params.find((p) => p.startsWith('q='));
       const q = qParam ? Number.parseFloat(qParam.slice(2)) : 1;
 

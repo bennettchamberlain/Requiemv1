@@ -28,7 +28,9 @@ const member = (id: string, overrides: Partial<GraphNodeEntity> = {}): GraphNode
   }) as GraphNodeEntity;
 
 const objectsOf = (quads: Quad[], subject: string, predicate: string): string[] =>
-  quads.filter((q) => q.subject.value === subject && q.predicate.value === predicate).map((q) => q.object.value);
+  quads
+    .filter((q) => q.subject.value === subject && q.predicate.value === predicate)
+    .map((q) => q.object.value);
 
 describe('ContainerService.build', () => {
   it('types the container as an LDP BasicContainer and Container', () => {

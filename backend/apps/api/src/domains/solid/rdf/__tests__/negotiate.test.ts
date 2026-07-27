@@ -19,7 +19,9 @@ describe('negotiateRdf', () => {
   });
 
   it('picks the highest q-value among supported types', () => {
-    expect(negotiateRdf('text/turtle;q=0.5, application/ld+json;q=0.9').mediaType).toBe('application/ld+json');
+    expect(negotiateRdf('text/turtle;q=0.5, application/ld+json;q=0.9').mediaType).toBe(
+      'application/ld+json',
+    );
     expect(negotiateRdf('application/ld+json;q=0.2, text/turtle;q=0.8').mediaType).toBe('text/turtle');
   });
 

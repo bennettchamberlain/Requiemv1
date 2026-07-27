@@ -2,7 +2,19 @@ import { Injectable } from '@nestjs/common';
 
 import type { GraphNodeEntity } from '@ci/domains/memory';
 
-import { CI, DCTERMS, LDP, RDFS, RDF_TYPE, XSD, literal, namedNode, quad, safeLocalName, type Quad } from '../rdf';
+import {
+  CI,
+  DCTERMS,
+  LDP,
+  RDFS,
+  RDF_TYPE,
+  XSD,
+  literal,
+  namedNode,
+  quad,
+  safeLocalName,
+  type Quad,
+} from '../rdf';
 
 import { WebIdService } from './WebIdService';
 

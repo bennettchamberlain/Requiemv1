@@ -42,7 +42,9 @@ const rel = (overrides: Partial<RelationshipEntity> = {}): RelationshipEntity =>
   }) as RelationshipEntity;
 
 const objects = (quads: Quad[], predicate: string): string[] =>
-  quads.filter((q) => q.subject.value === SUBJECT && q.predicate.value === predicate).map((q) => q.object.value);
+  quads
+    .filter((q) => q.subject.value === SUBJECT && q.predicate.value === predicate)
+    .map((q) => q.object.value);
 
 describe('EntityProjectionService.build', () => {
   it('emits both the lossless ci: type and the schema.org synonym', () => {
