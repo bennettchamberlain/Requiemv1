@@ -87,6 +87,10 @@ for REPO in "${IMAGE_REMOTE[@]}"; do
   # :latest is checked too — it was a single-arch amd64 manifest for months
   # precisely because nothing asserted against it.
   for TAG in "${VERIFY[@]}"; do
+    # Deliberately not `|| fail`: a failed inspect leaves MANIFEST empty, the
+    # jq checks below miss, and the tag is counted in FAILED like any other
+    # problem. Aborting here instead would skip the remaining images and hide
+    # how much is broken.
     MANIFEST=$(docker buildx imagetools inspect --raw "${TAG}")
     for ARCH in ${ARCHES}; do
       if ! echo "${MANIFEST}" | jq -e --arg arch "${ARCH}" \
@@ -102,6 +106,12 @@ done
 
 echo ""
 if [[ ${FAILED} -gt 0 ]]; then
+  # Counted per tag × arch, so this exceeds the image count when more than one
+  # tag was written per image.
   fail "${FAILED} manifest problem(s) — see log above"
 fi
-echo "✓ All ${#IMAGE_REMOTE[@]} images publish a manifest list covering: ${ARCHES}"
+if [[ "${PUSH_LATEST}" == "true" ]]; then
+  echo "✓ All ${#IMAGE_REMOTE[@]} images publish :${VERSION} and :latest as manifest lists covering: ${ARCHES}"
+else
+  echo "✓ All ${#IMAGE_REMOTE[@]} images publish a manifest list covering: ${ARCHES}"
+fi

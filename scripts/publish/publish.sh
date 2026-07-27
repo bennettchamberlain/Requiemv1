@@ -83,7 +83,12 @@ fi
 # local dev build — which is exactly how companion/*:latest became a stale
 # amd64-only orphan pointing at no release at all.
 if [[ -z "${VERSION:-}" ]]; then
+  # Strip the leading v exactly as publish.yml does. Without this a local
+  # `make publish` from a tagged commit tags images :v2026.7.27 while CI tags
+  # :2026.7.27 — two shapes for one release, which is how the registry ends up
+  # with tags nothing references.
   VERSION=$(git -C "$REPO_ROOT" describe --tags --exact-match 2>/dev/null || true)
+  VERSION="${VERSION#v}"
   if [[ -z "${VERSION}" ]]; then
     # Checked separately rather than inlined: `VERSION="dev-$(...)"` keeps the
     # literal prefix when the substitution fails, so a non-git checkout would

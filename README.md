@@ -349,7 +349,7 @@ with CI-Portal.
 | Tag | Meaning |
 |---------|-------------|
 | `v<YYYY>.<M>.<D>` | A release. Use `v<YYYY>.<M>.<D>.<N>` for a second release the same day. |
-| `<version>` (no `v`) | What the images are tagged with — the workflow strips the leading `v`, so `v2026.7.27` publishes `companion/*:2026.7.27`. This is the form CI-Marketplace pins. |
+| `<version>` (no `v`) | What the images are tagged with — the leading `v` is stripped by both the workflow and `make publish`, so `v2026.7.27` publishes `companion/*:2026.7.27`. This is the form CI-Marketplace pins. |
 | `latest` | The **newest release tag only**. Repointed by the publish workflow when, and only when, the tag being built is release-shaped *and* sorts newest. A back-tagged or re-cut older release leaves it alone. |
 | `dev-<short-sha>` | What an untagged local `make publish` produces. Never `latest` — see below. |
 
