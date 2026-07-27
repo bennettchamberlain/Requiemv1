@@ -85,7 +85,15 @@ fi
 if [[ -z "${VERSION:-}" ]]; then
   VERSION=$(git -C "$REPO_ROOT" describe --tags --exact-match 2>/dev/null || true)
   if [[ -z "${VERSION}" ]]; then
-    VERSION="dev-$(git -C "$REPO_ROOT" rev-parse --short HEAD)"
+    # Checked separately rather than inlined: `VERSION="dev-$(...)"` keeps the
+    # literal prefix when the substitution fails, so a non-git checkout would
+    # silently publish the malformed tag "dev-" instead of erroring.
+    SHORT_SHA=$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || true)
+    if [[ -z "${SHORT_SHA}" ]]; then
+      echo "  ✗ VERSION is unset and ${REPO_ROOT} is not a git checkout — pass VERSION=<tag> explicitly" >&2
+      exit 1
+    fi
+    VERSION="dev-${SHORT_SHA}"
   fi
 fi
 
