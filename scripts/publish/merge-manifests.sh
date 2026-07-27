@@ -91,7 +91,13 @@ for REPO in "${IMAGE_REMOTE[@]}"; do
     # jq checks below miss, and the tag is counted in FAILED like any other
     # problem. Aborting here instead would skip the remaining images and hide
     # how much is broken.
-    MANIFEST=$(docker buildx imagetools inspect --raw "${TAG}")
+    #
+    # The `|| MANIFEST=''` is what makes that true, and is load-bearing under
+    # `set -e`: a bare assignment takes its command substitution's exit status,
+    # so a failed inspect would kill the script mid-loop — no ✗ line, no
+    # summary, remaining images unchecked. docker's own error still reaches the
+    # log because stderr is not captured.
+    MANIFEST=$(docker buildx imagetools inspect --raw "${TAG}") || MANIFEST=''
     for ARCH in ${ARCHES}; do
       if ! echo "${MANIFEST}" | jq -e --arg arch "${ARCH}" \
         '.manifests[]? | select(.platform.os == "linux" and .platform.architecture == $arch)' >/dev/null; then
