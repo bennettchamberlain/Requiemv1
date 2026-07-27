@@ -491,15 +491,11 @@ export class GraphController {
     if (userEntity) {
       nodeMap.set(userEntity.entity_id, userEntity);
 
-      const { nodes: neighborhood } = await this.graphQuery.traverseGraph(
-        ownerId,
-        [userEntity.entity_id],
-        {
-          maxDepth: ANCHOR_NEIGHBORHOOD_DEPTH,
-          maxNodes: NODE_LIMIT,
-          maxEdges: ANCHOR_NEIGHBORHOOD_EDGE_LIMIT,
-        },
-      );
+      const { nodes: neighborhood } = await this.graphQuery.traverseGraph(ownerId, [userEntity.entity_id], {
+        maxDepth: ANCHOR_NEIGHBORHOOD_DEPTH,
+        maxNodes: NODE_LIMIT,
+        maxEdges: ANCHOR_NEIGHBORHOOD_EDGE_LIMIT,
+      });
 
       for (const node of neighborhood.values()) {
         if (nodeMap.size >= NODE_LIMIT) {
