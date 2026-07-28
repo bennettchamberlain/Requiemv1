@@ -20,6 +20,8 @@ with workflow.unsafe.imports_passed_through():
         MonthlySummaryWorkflow,
         DossierRefreshWorkflow,
         InsightsGenerationWorkflow,
+        ActionsGenerationWorkflow,
+        DEFAULT_MAX_FEED_ACTIONS,
     )
 
 
@@ -430,6 +432,97 @@ class SystemInsightsWorkflow:
             return []
 
 
+@workflow.defn(name="system-actions")
+class SystemActionsWorkflow:
+    """
+    System workflow that generates proactive action cards for all active users.
+
+    Runs hourly and spawns a child workflow per user. Each child checks how many
+    actions are already pending on that user's feed and skips (or generates fewer)
+    when the feed is already full, so this stays cheap on the common case where
+    nobody has worked through their cards since the last run.
+    """
+
+    @workflow.run
+    async def run(self, max_feed_actions: int = DEFAULT_MAX_FEED_ACTIONS) -> Dict[str, Any]:
+        """Execute actions generation for all users."""
+        workflow.logger.info("system_actions_started")
+
+        now = workflow.now()
+        users = await self._get_active_users()
+        workflow.logger.info(f"active_users_fetched count={len(users)}")
+
+        if not users:
+            return {"users_processed": 0, "message": "No active users"}
+
+        results = []
+        skipped_count = 0
+        generated_count = 0
+
+        for user_id in users:
+            try:
+                result = await workflow.execute_child_workflow(
+                    ActionsGenerationWorkflow.run,
+                    args=[
+                        user_id,
+                        "UTC",
+                        7,  # 7 days lookback over summaries/insights
+                        None,  # LLM config created by worker
+                        max_feed_actions,
+                    ],
+                    id=f"actions-{user_id}-{now.isoformat()}",
+                    task_queue=get_task_queue(Priority.MEDIUM),
+                )
+
+                if result.get("skipped"):
+                    skipped_count += 1
+                    results.append({
+                        "user_id": user_id,
+                        "status": "skipped",
+                        "reason": result.get("reason"),
+                    })
+                else:
+                    generated_count += 1
+                    results.append({
+                        "user_id": user_id,
+                        "status": "success",
+                        "action_ids": result.get("action_ids"),
+                        "num_actions": result.get("num_actions"),
+                    })
+            except Exception as e:
+                workflow.logger.error(f"actions_generation_failed user_id={user_id} error={str(e)}")
+                results.append({"user_id": user_id, "status": "error", "error": str(e)})
+
+        workflow.logger.info(
+            f"system_actions_completed total={len(users)} generated={generated_count} skipped={skipped_count}"
+        )
+
+        return {
+            "users_processed": len(users),
+            "users_with_actions": generated_count,
+            "users_skipped": skipped_count,
+            "timestamp": now.isoformat(),
+            "results": results,
+        }
+
+    async def _get_active_users(self) -> List[str]:
+        """Get all active users from database."""
+        try:
+            rows = db.execute_query("SELECT id FROM ci.users WHERE onboarded = true", {})
+            if rows:
+                return [str(row['id']) for row in rows]
+        except Exception:
+            pass
+        try:
+            rows = db.execute_query(
+                "SELECT DISTINCT owner_user_id FROM entities WHERE owner_user_id IS NOT NULL", {}
+            )
+            return [str(row['owner_user_id']) for row in rows]
+        except Exception:
+            workflow.logger.warning("failed_to_fetch_users")
+            return []
+
+
 __all__ = [
     "SystemHourlySummariesWorkflow",
     "SystemDailySummariesWorkflow",
@@ -437,4 +530,5 @@ __all__ = [
     "SystemMonthlySummariesWorkflow",
     "SystemDossierRefreshWorkflow",
     "SystemInsightsWorkflow",
+    "SystemActionsWorkflow",
 ]
