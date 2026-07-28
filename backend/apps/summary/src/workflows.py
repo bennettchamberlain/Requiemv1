@@ -794,17 +794,20 @@ class ActionsGenerationWorkflow:
                 "user_id": user_id,
             }
 
-        # Keep only what fits on the feed. ActionItem.priority is 1-10 with 10 as
-        # "most relevant right now", so sorting descending means a capped run keeps
-        # the best cards rather than whichever ones the model emitted first.
+        # Keep only what fits on the feed, best cards first.
+        #
+        # Lowest priority value wins. ActionItem's field description claims 1-10
+        # with 10 as "most relevant", but the model ignores that and emits rank
+        # order (1 = best, descending relevance), and the rest of the codebase
+        # agrees: ActionService.findAll orders priority ASC and onboarding gives
+        # its marquee card priority 0. Sorting the other way would keep the
+        # weakest cards. The field description is what actually wants fixing.
         if len(generated_actions) > capacity:
             workflow.logger.info(
                 f"actions_truncated_to_capacity generated={len(generated_actions)} capacity={capacity}"
             )
             generated_actions = sorted(
-                generated_actions,
-                key=lambda action: action.get("priority", 5),
-                reverse=True,
+                generated_actions, key=lambda action: action.get("priority", 5)
             )[:capacity]
             actions_data = {**actions_data, "actions": generated_actions}
 
