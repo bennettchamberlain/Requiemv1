@@ -77,7 +77,9 @@ export async function loadGoogleMaps(authToken?: string | null): Promise<void> {
   const apiKey = await resolveGoogleMapsApiKey(authToken);
 
   if (!apiKey) {
-    throw new Error('Google Maps API key is not configured (VITE_GOOGLE_MAPS_API_KEY / GET /api/config/maps).');
+    throw new Error(
+      'Google Maps API key is not configured (VITE_GOOGLE_MAPS_API_KEY / GET /api/config/maps).',
+    );
   }
 
   // If already loading or loaded, return the existing promise
