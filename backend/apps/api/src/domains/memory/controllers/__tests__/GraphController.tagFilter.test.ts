@@ -385,5 +385,4 @@ describe('GraphController — explorer filters (graph parity)', () => {
       expect(res.data.links).toEqual([]);
     });
   });
-
 });
