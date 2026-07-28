@@ -114,13 +114,13 @@ async def run_worker():
 
     logger.info("temporal_worker_starting",
                version=settings.agent_version,
-               model=settings.llm_model)
+               model=settings.llm_model or "auto-discover")
 
     try:
         # Create LLM config once at startup
         logger.info("creating_llm_config")
         llm_config = get_llm_config()
-        logger.info("llm_config_created", model=settings.llm_model)
+        logger.info("llm_config_created", model=llm_config.model.model_name)
 
         # Connect to Temporal
         logger.info("connecting_to_temporal", address=settings.temporal_address)
