@@ -499,7 +499,16 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
         return [] as string[];
       }
 
-      return Array.from(neighbors).sort((a, b) => hashWithSeed(a, nodeId) - hashWithSeed(b, nodeId));
+      // Hash each neighbor once up front. Hashing inside the comparator ran
+      // O(k log k) string hashes per call, which locked up the main thread on
+      // hub nodes with large neighbor sets (this runs on every visibility
+      // recompute, i.e. every node click).
+      const hashes = new Map<string, number>();
+      for (const neighborId of neighbors) {
+        hashes.set(neighborId, hashWithSeed(neighborId, nodeId));
+      }
+
+      return Array.from(neighbors).sort((a, b) => hashes.get(a)! - hashes.get(b)!);
     },
     [adjacencyMap],
   );

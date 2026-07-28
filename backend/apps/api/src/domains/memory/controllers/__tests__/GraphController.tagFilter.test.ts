@@ -332,4 +332,57 @@ describe('GraphController — explorer filters (graph parity)', () => {
       expect(smallRes.truncated).toBe(false);
     });
   });
+
+  // The node payload is capped, so the relationship payload must be too: an
+  // unscoped fetch shipped the account's entire relationship table (100k+ rows
+  // with real imports), whose dangling links the client can never render but
+  // still pays to index — freezing the graph view and blocking navigation
+  // away from it (#1598).
+  describe('relationship payload', () => {
+    it('scopes the relationship fetch to the node payload and drops dangling links', async () => {
+      const getNodes = jest.fn(async () => [
+        { entity_id: 'node-a', entity_type: 'Person', name: 'A', description: null, properties: {} },
+        { entity_id: 'node-b', entity_type: 'Place', name: 'B', description: null, properties: {} },
+      ]);
+      const getRelationships = jest.fn(async () => [
+        // Both endpoints in the payload — kept.
+        {
+          relationship_id: 'r-in',
+          from_entity_id: 'node-a',
+          to_entity_id: 'node-b',
+          relationship_type: 'VISITED',
+          strength: 0.7,
+          properties: {},
+        },
+        // One endpoint outside the capped payload — dangling, dropped.
+        {
+          relationship_id: 'r-dangling',
+          from_entity_id: 'node-a',
+          to_entity_id: 'outside-the-cap',
+          relationship_type: 'RELATED_TO',
+          strength: 0.5,
+          properties: {},
+        },
+      ]);
+
+      const { controller } = setup({ getNodes, getRelationships });
+
+      const res = await controller.getGraphData(ctx, dataDto());
+
+      expect(getRelationships).toHaveBeenCalledWith('user-1', {
+        entityIds: expect.arrayContaining(['node-a', 'node-b']),
+        direction: 'both',
+      });
+      expect(res.data.links.map((link) => link.id)).toEqual(['r-in']);
+    });
+
+    it('skips the relationship fetch entirely when the node payload is empty', async () => {
+      const { controller, graphQuery } = setup();
+
+      const res = await controller.getGraphData(ctx, dataDto());
+
+      expect(graphQuery.getRelationships).not.toHaveBeenCalled();
+      expect(res.data.links).toEqual([]);
+    });
+  });
 });

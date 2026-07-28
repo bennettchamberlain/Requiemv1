@@ -384,10 +384,8 @@ export class GraphController {
     // Connective NER types (Concept/Goal/Tag) are never excluded so the graph stays connected.
     const excludeEntityTypes =
       query.includeTypes === undefined ? [] : graphTypesToExclude(query.includeTypes);
-    const isFiltered = excludeEntityTypes.length > 0;
 
     const nodeMap = await this.assembleOverviewNodes(ownerId, excludeEntityTypes);
-    const relationships = await this.graphQuery.getRelationships(ownerId, {});
     const tagMatch = await this.resolveTagMatch(ctx, ownerId, query.tags);
     const eventMatch = await this.resolveEventMatch(ctx, ownerId, {
       connectors: query.connectors,
@@ -432,12 +430,24 @@ export class GraphController {
     const survivingNodes = Array.from(nodeMap.values());
     const survivingIds = new Set(survivingNodes.map((node) => node.entity_id));
 
-    // Drop links dangling against excluded nodes when filtering; otherwise preserve prior behavior.
-    const links = isFiltered
-      ? relationships.filter(
-          (rel) => survivingIds.has(rel.from_entity_id) && survivingIds.has(rel.to_entity_id),
-        )
-      : relationships;
+    // Fetch only the relationships touching the assembled node payload, and keep
+    // only those whose BOTH endpoints are in it. The previous unscoped fetch
+    // returned the account's entire relationship table — with real imported
+    // data that was easily 100k+ rows, most of them dangling against entities
+    // the capped node payload doesn't contain. The client can never render a
+    // dangling link (both endpoints must be loaded nodes), but it still paid to
+    // index them all, which froze the browser's main thread for minutes and
+    // made the graph view impossible to navigate away from (#1598).
+    const relationships =
+      survivingIds.size > 0
+        ? await this.graphQuery.getRelationships(ownerId, {
+            entityIds: Array.from(survivingIds),
+            direction: 'both',
+          })
+        : [];
+    const links = relationships.filter(
+      (rel) => survivingIds.has(rel.from_entity_id) && survivingIds.has(rel.to_entity_id),
+    );
 
     return {
       success: true,
