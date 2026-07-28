@@ -732,6 +732,36 @@ async def generate_actions_activity(
 
 
 @activity.defn
+async def count_pending_actions_activity(user_id: str) -> int:
+    """
+    Count the actions currently occupying slots on the user's feed.
+
+    The feed shows unseen, undismissed actions first (see ActionService.findForFeed),
+    so those are the ones that consume the feed's card budget. Seen-but-undismissed
+    actions are only used as filler and are not counted here — otherwise a user who
+    stops dismissing would permanently block new generation.
+    """
+    activity.logger.info("counting_pending_actions", user_id=user_id)
+
+    rows = db.execute_query(
+        """
+        SELECT COUNT(*) AS pending
+        FROM ci.actions
+        WHERE user_id = :user_id
+          AND dismissed = false
+          AND seen = false
+        """,
+        {"user_id": str(UUID(user_id))},
+    )
+
+    pending = int(rows[0]["pending"]) if rows else 0
+
+    activity.logger.info("pending_actions_counted", user_id=user_id, pending=pending)
+
+    return pending
+
+
+@activity.defn
 async def store_action_activity(
     user_id: str,
     actions_data: Dict[str, Any],
@@ -943,5 +973,6 @@ __all__ = [
     # Action activities
     "aggregate_action_context_activity",
     "generate_actions_activity",
+    "count_pending_actions_activity",
     "store_action_activity",
 ]

@@ -41,6 +41,7 @@ from .system_workflows import (
     SystemMonthlySummariesWorkflow,
     SystemDossierRefreshWorkflow,
     SystemInsightsWorkflow,
+    SystemActionsWorkflow,
 )
 
 # Import activities
@@ -65,6 +66,7 @@ from .activities import (
     # Action activities
     aggregate_action_context_activity,
     generate_actions_activity,
+    count_pending_actions_activity,
     store_action_activity,
 )
 
@@ -149,6 +151,7 @@ async def run_worker():
             SystemMonthlySummariesWorkflow,
             SystemDossierRefreshWorkflow,
             SystemInsightsWorkflow,
+            SystemActionsWorkflow,
         ]
 
         all_activities = [
@@ -172,6 +175,7 @@ async def run_worker():
             # Action activities
             aggregate_action_context_activity,
             generate_actions_activity,
+            count_pending_actions_activity,
             store_action_activity,
         ]
 
