@@ -1,24 +1,85 @@
 // Google Maps utility functions
 
-// Optional build-time key. Route drawing relies on the billed Directions API,
-// so when this is unset the route layer stays disabled rather than flooding the
-// console with REQUEST_DENIED / "enable Billing" errors.
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+// Optional build-time key (local Vite). Hub-installed Memory images have no
+// baked key — they resolve GOOGLE_MAPS_KEY at runtime via GET /api/config/maps.
+const BUILD_TIME_GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
+let resolvedApiKey: string | null =
+  typeof BUILD_TIME_GOOGLE_MAPS_API_KEY === 'string' && BUILD_TIME_GOOGLE_MAPS_API_KEY.length > 0
+    ? BUILD_TIME_GOOGLE_MAPS_API_KEY
+    : null;
+
+let resolveKeyPromise: Promise<string | null> | null = null;
 let googleMapsLoadingPromise: Promise<void> | null = null;
 
 /**
- * Whether a Google Maps API key is configured. Callers should gate on this
- * before invoking loadGoogleMaps / the Directions API.
+ * Resolve the Maps JS API key: Vite env first, otherwise authenticated
+ * GET /api/config/maps (Hub-injected GOOGLE_MAPS_KEY on the api container).
  */
-export function isGoogleMapsConfigured(): boolean {
-  return typeof GOOGLE_MAPS_API_KEY === 'string' && GOOGLE_MAPS_API_KEY.length > 0;
+export async function resolveGoogleMapsApiKey(authToken?: string | null): Promise<string | null> {
+  if (resolvedApiKey) {
+    return resolvedApiKey;
+  }
+
+  if (!authToken) {
+    return null;
+  }
+
+  if (resolveKeyPromise) {
+    return resolveKeyPromise;
+  }
+
+  resolveKeyPromise = (async () => {
+    try {
+      const res = await fetch('/api/config/maps', {
+        headers: { Authorization: `Bearer ${authToken}` },
+        credentials: 'include',
+      });
+
+      if (!res.ok) {
+        return null;
+      }
+
+      const data = (await res.json()) as { configured?: boolean; apiKey?: string };
+
+      if (data.configured && typeof data.apiKey === 'string' && data.apiKey.trim()) {
+        resolvedApiKey = data.apiKey.trim();
+
+        return resolvedApiKey;
+      }
+
+      return null;
+    } catch {
+      return null;
+    } finally {
+      resolveKeyPromise = null;
+    }
+  })();
+
+  return resolveKeyPromise;
 }
 
 /**
- * Load Google Maps API and return a promise that resolves when ready
+ * Whether a Google Maps API key is already known synchronously (Vite or a
+ * previous runtime resolve). Callers that can await should prefer
+ * {@link resolveGoogleMapsApiKey}.
  */
-export function loadGoogleMaps(): Promise<void> {
+export function isGoogleMapsConfigured(): boolean {
+  return typeof resolvedApiKey === 'string' && resolvedApiKey.length > 0;
+}
+
+/**
+ * Load Google Maps API and return a promise that resolves when ready.
+ * Pass the session access token so Hub-deployed Memory can fetch the key
+ * from `/api/config/maps` when Vite did not bake one in.
+ */
+export async function loadGoogleMaps(authToken?: string | null): Promise<void> {
+  const apiKey = await resolveGoogleMapsApiKey(authToken);
+
+  if (!apiKey) {
+    throw new Error('Google Maps API key is not configured (VITE_GOOGLE_MAPS_API_KEY / GET /api/config/maps).');
+  }
+
   // If already loading or loaded, return the existing promise
   if (googleMapsLoadingPromise) {
     return googleMapsLoadingPromise;
@@ -35,15 +96,6 @@ export function loadGoogleMaps(): Promise<void> {
 
   // Create loading promise
   googleMapsLoadingPromise = new Promise((resolve, reject) => {
-    // Bail out (without touching the network) when no key is configured.
-    if (!isGoogleMapsConfigured()) {
-      reject(new Error('Google Maps API key is not configured (VITE_GOOGLE_MAPS_API_KEY).'));
-
-      return;
-    }
-
-    const apiKey = GOOGLE_MAPS_API_KEY;
-
     // Check if script is already loading
     const existingScripts = document.querySelectorAll('script[src*="maps.googleapis.com"]');
     if (existingScripts.length > 0) {
