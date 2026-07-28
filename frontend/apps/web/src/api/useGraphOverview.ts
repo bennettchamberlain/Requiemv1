@@ -104,6 +104,14 @@ function buildSubgraph(
   seedId: string,
   maxDepth: number,
 ): Subgraph {
+  // A BFS from a seed that isn't in the payload prunes everything reachable
+  // only through it — with lots of data that collapses the graph to empty.
+  // Hand the payload through unpruned instead; the explorer's visibility
+  // expansion still bounds what actually renders.
+  if (!data.nodes.some((node) => node.id === seedId)) {
+    return { nodes: data.nodes, links: data.links };
+  }
+
   const visited = new Set<string>([seedId]);
   const queue: Array<{ id: string; depth: number }> = [{ id: seedId, depth: 0 }];
   const adjacency = new Map<string, GraphLink[]>();

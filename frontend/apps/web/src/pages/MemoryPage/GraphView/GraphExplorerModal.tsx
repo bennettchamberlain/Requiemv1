@@ -217,7 +217,17 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
 
   const rawNodes = combinedNodes;
   const rawLinks = combinedLinks;
-  const effectiveUserEntityId = isSearchMode ? null : userEntityId;
+  // Anchor on the owner's entity only when its node is actually in the loaded
+  // set — seeding visibility from an absent node renders an empty graph even
+  // though data arrived. Without an anchor the expansion effect below falls
+  // back to the first loaded node.
+  const effectiveUserEntityId = useMemo(() => {
+    if (isSearchMode || !userEntityId) {
+      return null;
+    }
+
+    return rawNodes.some((node) => node.id === userEntityId) ? userEntityId : null;
+  }, [isSearchMode, rawNodes, userEntityId]);
   const currentCenterNodeId = traversalEnabled
     ? (selectedNodeId ?? effectiveUserEntityId ?? null)
     : (effectiveUserEntityId ?? null);
