@@ -2,7 +2,8 @@ import { type ReactNode, useState } from 'react';
 
 import { useQuery } from '@apollo/client';
 import { EmptyState, LoadingPage, Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb } from '@ci/shadcn';
+import { Breadcrumb, Button } from '@ci/shadcn';
+import { Plus, Search } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
 import { SavedSearchIcon } from '@/components/icons';
@@ -11,6 +12,7 @@ import { DropdownProvider } from '@/components/SearchBox/useDropdown';
 import { gql } from '@/graphql';
 import { type FragmentType, useFragment } from '@/graphql/fragment-masking';
 
+import { CreateSavedSearchModal } from './CreateSavedSearchModal';
 import { DeleteSavedSearchModal } from './DeleteSavedSearchModal';
 import { EditSavedSearchModal } from './EditSavedSearchModal';
 import { SavedSearchGridItemFragment, SavedSearch } from './SavedSearch';
@@ -45,6 +47,7 @@ export function SavedSearchesPage() {
   const [savedSearchToShare, setSavedSearchToShare] = useState<FragmentType<
     typeof SavedSearchGridItemFragment
   > | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const openSavedSearchEditModal = (
     e: React.MouseEvent,
@@ -85,15 +88,39 @@ export function SavedSearchesPage() {
       <EmptyState
         icon={<SavedSearchIcon size={48} colorized={false} />}
         message={
-          <>
-            <div>You don't have any Saved Searches yet.</div>
-          </>
+          <div className="flex max-w-md flex-col items-center gap-4 text-center">
+            <div>
+              <div className="font-medium">You don't have any Saved Searches yet.</div>
+              <div className="mt-1 text-sm text-muted-foreground">
+                Save a search you are running from Memory's advanced filters, or define one from scratch right
+                here.
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Button onClick={() => setCreating(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                New saved search
+              </Button>
+              <Button variant="outline" asChild>
+                <Link to="/memory?advanced=1">
+                  <Search className="mr-2 h-4 w-4" />
+                  Search Memory
+                </Link>
+              </Button>
+            </div>
+          </div>
         }
       />
     );
   } else {
     content = (
       <PageContent>
+        <div className="flex w-full justify-end">
+          <Button onClick={() => setCreating(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            New saved search
+          </Button>
+        </div>
         <div className="grid w-full gap-4 justify-center grid-cols-[repeat(auto-fill,400px)] auto-rows-[300px]">
           {savedSearches.map((savedSearch) => (
             <SavedSearch
@@ -146,6 +173,12 @@ export function SavedSearchesPage() {
 
       {savedSearchToShare && (
         <ShareSavedSearchModal savedSearch={savedSearchToShare} onClose={() => setSavedSearchToShare(null)} />
+      )}
+
+      {creating && (
+        <DropdownProvider args={[{ changeSearchParams: false }]}>
+          <CreateSavedSearchModal onClose={() => setCreating(false)} />
+        </DropdownProvider>
       )}
     </>
   );
