@@ -15,6 +15,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { RequestContextMiddleware } from '@ci/common/context';
 import { HealthController } from '@ci/common/controllers/HealthController';
+import { MapsConfigController } from '@ci/common/controllers/MapsConfigController';
 import { FeatureModule } from '@ci/common/feature';
 import { GlobalExceptionsFilter } from '@ci/common/filters';
 import { IdFormatGuard } from '@ci/common/guards';
@@ -108,7 +109,7 @@ import { UserSnapshotsModule } from '@ci/domains/user-snapshots';
     UserModule,
     UserSnapshotsModule,
   ],
-  controllers: [HealthController],
+  controllers: [HealthController, MapsConfigController],
   providers: [
     {
       provide: APP_GUARD,
