@@ -31,6 +31,7 @@ with workflow.unsafe.imports_passed_through():
         # Action activities
         aggregate_action_context_activity,
         generate_actions_activity,
+        count_pending_actions_activity,
         store_action_activity,
     )
     from .llm_config import LLMConfig
@@ -39,6 +40,11 @@ with workflow.unsafe.imports_passed_through():
 # ============================================================================
 # Workflow Configuration
 # ============================================================================
+
+# Most actions the feed page shows at once. Mirrors the limit the web client
+# passes to the feedActions query (useActionListService), so generation never
+# builds a backlog the user cannot see.
+DEFAULT_MAX_FEED_ACTIONS = 5
 
 # Activity retry policy: exponential backoff for transient failures
 ACTIVITY_RETRY_POLICY = RetryPolicy(
@@ -705,9 +711,10 @@ class ActionsGenerationWorkflow:
     Workflow to generate proactive action cards from user context.
 
     Steps:
-    1. Aggregate action context (summaries, insights, events, key people)
-    2. Generate action cards using LLM (conversation starters + time suggestions)
-    3. Store actions in database
+    1. Check how much room is left on the user's feed (max_feed_actions cap)
+    2. Aggregate action context (summaries, insights, events, key people)
+    3. Generate action cards using LLM (conversation starters + time suggestions)
+    4. Store actions in database, capped to the remaining feed capacity
     """
 
     @workflow.run
@@ -717,11 +724,34 @@ class ActionsGenerationWorkflow:
         timezone: str = "UTC",
         lookback_days: int = 7,
         llm_config: Optional[LLMConfig] = None,
+        max_feed_actions: int = DEFAULT_MAX_FEED_ACTIONS,
     ) -> Dict[str, Any]:
         """Execute actions generation workflow."""
         workflow.logger.info(f"actions_generation_workflow_started user_id={user_id}")
 
-        # Step 1: Aggregate action-specific context
+        # Step 1: Don't generate past what the feed can show. The feed renders at
+        # most max_feed_actions cards, so once that many are pending anything else
+        # we generate is invisible until the user works through the backlog.
+        pending_actions = await workflow.execute_activity(
+            count_pending_actions_activity,
+            args=[user_id],
+            **get_data_activity_options(),
+        )
+
+        capacity = max_feed_actions - pending_actions
+
+        if capacity <= 0:
+            workflow.logger.info(
+                f"feed_at_action_capacity pending={pending_actions} max={max_feed_actions}"
+            )
+            return {
+                "skipped": True,
+                "reason": "feed_at_capacity",
+                "user_id": user_id,
+                "pending_actions": pending_actions,
+            }
+
+        # Step 2: Aggregate action-specific context
         # This collects summaries, insights, events, and key people
         # rather than raw data like graph deltas
         action_context = await workflow.execute_activity(
@@ -747,16 +777,16 @@ class ActionsGenerationWorkflow:
                 "context_items": total_context,
             }
 
-        # Step 2: Generate action cards (LLM call)
+        # Step 3: Generate action cards (LLM call)
         actions_data = await workflow.execute_activity(
             generate_actions_activity,
             args=[action_context],
             **get_llm_activity_options(),
         )
 
-        num_actions = len(actions_data.get("actions", []))
+        generated_actions = actions_data.get("actions", [])
 
-        if num_actions == 0:
+        if len(generated_actions) == 0:
             workflow.logger.info("no_actions_generated")
             return {
                 "skipped": True,
@@ -764,12 +794,31 @@ class ActionsGenerationWorkflow:
                 "user_id": user_id,
             }
 
-        # Step 3: Store actions in database
+        # Keep only what fits on the feed, best cards first.
+        #
+        # Lowest priority value wins. ActionItem's field description claims 1-10
+        # with 10 as "most relevant", but the model ignores that and emits rank
+        # order (1 = best, descending relevance), and the rest of the codebase
+        # agrees: ActionService.findAll orders priority ASC and onboarding gives
+        # its marquee card priority 0. Sorting the other way would keep the
+        # weakest cards. The field description is what actually wants fixing.
+        if len(generated_actions) > capacity:
+            workflow.logger.info(
+                f"actions_truncated_to_capacity generated={len(generated_actions)} capacity={capacity}"
+            )
+            generated_actions = sorted(
+                generated_actions, key=lambda action: action.get("priority", 5)
+            )[:capacity]
+            actions_data = {**actions_data, "actions": generated_actions}
+
+        # Step 4: Store actions in database
         action_ids = await workflow.execute_activity(
             store_action_activity,
             args=[user_id, actions_data],
             **get_data_activity_options(),
         )
+
+        num_actions = len(action_ids)
 
         workflow.logger.info(
             f"actions_generation_workflow_completed num_actions={num_actions} action_ids={action_ids}"
@@ -780,8 +829,10 @@ class ActionsGenerationWorkflow:
             "action_ids": action_ids,
             "user_id": user_id,
             "num_actions": num_actions,
+            "pending_actions": pending_actions,
+            "capacity": capacity,
             "tokens_used": actions_data.get("tokens_used", 0),
-            "actions": actions_data.get("actions", []),
+            "actions": generated_actions,
         }
 
 
