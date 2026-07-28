@@ -39,6 +39,10 @@ import { syncOutlookMail } from './Microsoft/sync/SyncOutlookMail';
 import { OneDriveTransformService } from './Microsoft/transform/TransformOneDrive';
 import { OutlookCalendarTransformService } from './Microsoft/transform/TransformOutlookCalendar';
 import { OutlookMailTransformService } from './Microsoft/transform/TransformOutlookMail';
+import { syncContacts as syncSignalContacts } from './Signal/sync/SyncContacts';
+import { syncMessages as syncSignalMessages } from './Signal/sync/SyncMessages';
+import { SignalContactsTransformService } from './Signal/transform/TransformContacts';
+import { SignalMessagesTransformService } from './Signal/transform/TransformMessages';
 import { syncPlaylists } from './Spotify/sync/SyncPlaylists';
 import { syncRecentlyPlayed } from './Spotify/sync/SyncRecentlyPlayed';
 import { syncSavedAudiobooks } from './Spotify/sync/SyncSavedAudiobooks';
@@ -94,6 +98,8 @@ export class EndpointServiceMap {
     private readonly steamAchievementsTransformService: SteamAchievementsTransformService,
     private readonly steamFriendsTransformService: SteamFriendsTransformService,
     private readonly gitHubEventsTransformService: GitHubEventsTransformService,
+    private readonly signalMessagesTransformService: SignalMessagesTransformService,
+    private readonly signalContactsTransformService: SignalContactsTransformService,
   ) {
     this.logger.setContext(EndpointServiceMap.name);
     this.endpointServiceMap = {
@@ -136,6 +142,10 @@ export class EndpointServiceMap {
         },
         GitHub: {
           Events: syncGitHubEvents,
+        },
+        Signal: {
+          Messages: syncSignalMessages,
+          Contacts: syncSignalContacts,
         },
       },
       transform: {
@@ -213,6 +223,10 @@ export class EndpointServiceMap {
         },
         GitHub: {
           Events: this.gitHubEventsTransformService.transform.bind(this.gitHubEventsTransformService),
+        },
+        Signal: {
+          Messages: this.signalMessagesTransformService.transform.bind(this.signalMessagesTransformService),
+          Contacts: this.signalContactsTransformService.transform.bind(this.signalContactsTransformService),
         },
       },
     };

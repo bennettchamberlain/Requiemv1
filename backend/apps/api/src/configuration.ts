@@ -89,6 +89,9 @@ export const ConfigSchema = z.object({
       steam: z.object({
         id: z.string(),
       }),
+      signal: z.object({
+        id: z.string(),
+      }),
     }),
     openid: z.object({
       callbackUrl: z.string(),
@@ -145,6 +148,9 @@ export const ConfigSchema = z.object({
     parser: z.object({
       host: z.string(),
     }),
+  }),
+  signalCli: z.object({
+    restUrl: z.string(),
   }),
   // Embedding/indexing pipeline knobs. These let a deployment point the embedder
   // at a GPU/alternate-host Ollama and tune throughput for bulk imports without

@@ -46,6 +46,9 @@
       "github": {
         "id": "019d7a32-e4b0-7f01-b5c2-8a1d3e6f9c04"
       },
+      "signal": {
+        "id": "019e3d77-c6e3-8f14-da06-2b5f7c0e1d19"
+      },
       "steam": {
         "id": "019d6470-f9e1-720f-a3ce-299842abaece"
       }
@@ -108,6 +111,9 @@
     "parser": {
       "host": "http://summary-service:8002"
     }
+  },
+  "signalCli": {
+    "restUrl": "http://127.0.0.1:8080"
   },
   "embedding": {
     "model": "nomic-embed-text",
