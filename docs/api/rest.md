@@ -35,7 +35,7 @@ Grounded in source; every route cites `file:line`.
 | Guard | Accepts | Notes |
 |-------|---------|-------|
 | `JwtOrApiKeyAuthGuard` | Passport `jwt` **or** `api-key` strategy, **or** a Portal-brokered OIDC Bearer when `auth.portal.enabled` (`JwtOrApiKeyAuthGuard.ts:22,30-44`) | The default guard on almost every data route. 401 on failure. |
-| `ApiKeyGuard` | `api-key` strategy only (`ApiKeyGuard.ts:6`) | Agent-facing `/memory/*` routes — machine callers with an `x-api-key`. |
+| `ApiKeyGuard` | `api-key` strategy only (`ApiKeyGuard.ts:6`) | Agent-facing `/memory/*` routes — machine callers with an API key, as `x-api-key` or `Authorization: Bearer <key>`. |
 | `JwtAuthGuard` | `jwt` strategy only (`JwtAuthGuard.ts:6`) | Human-session-only routes (`/onboarding/onboard`, `/_internal/features`). |
 | `HubForwardAuthGuard` | HMAC-signed `X-CI-Hub-User` header, verified against a shared secret; **fails closed** when `auth.hubForwardAuth.enabled` is false (`HubForwardAuthGuard.ts:25-60`) | Only on `GET /audit/forward-auth/whoami`. |
 
@@ -226,7 +226,7 @@ Class-level `JwtOrApiKeyAuthGuard` (`:146`). All GET; each query zod-validated.
 
 ### `MemoryController` (agent-facing) — `memory`  ·  `domains/agent/controllers/MemoryController.ts:47`
 
-**Per-method guards.** The first four are `ApiKeyGuard` (machine callers with `x-api-key`); `compact` is `JwtOrApiKeyAuthGuard`.
+**Per-method guards.** The first four are `ApiKeyGuard` (machine callers with an API key, as `x-api-key` or `Authorization: Bearer <key>`); `compact` is `JwtOrApiKeyAuthGuard`.
 
 | Verb | Path | Handler | Auth | Purpose |
 |------|------|---------|------|---------|

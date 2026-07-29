@@ -66,7 +66,7 @@ src/
 
 | Piece | What it does |
 |---|---|
-| `guards/` | `JwtOrApiKeyAuthGuard` (Bearer JWT ∥ `x-api-key` ∥ Portal OIDC) and friends. No global guard: a route with no guard is public. See [auth-and-conventions.md](../../../docs/api/auth-and-conventions.md). |
+| `guards/` | `JwtOrApiKeyAuthGuard` (Bearer JWT ∥ api key, as `x-api-key` or Bearer ∥ Portal OIDC) and friends. No global guard: a route with no guard is public. See [auth-and-conventions.md](../../../docs/api/auth-and-conventions.md). |
 | `context/` | AsyncLocalStorage request context — auth strategies set `{ userId }`, services read it via `toServiceContext()`, which throws if unauthenticated |
 | `pipes/` | zod-based `ValidationPipe` (the codebase validates with zod, not class-validator) |
 | `middleware/` | `BodyParserMiddleware` — `main.ts` boots with `bodyParser: false` and this applies per-route limits (default 100 KB; `/graphql` gets 10 MB for bulk mutations) |
