@@ -70,7 +70,11 @@ test.describe('MCP endpoint accepts an operator API key', () => {
       const ctx = await playwright.request.newContext({ baseURL });
 
       const initRes = await ctx.post('/api/mcp', {
-        headers: { ...headerFor(rawKey), 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+        headers: {
+          ...headerFor(rawKey),
+          'Content-Type': 'application/json',
+          Accept: 'application/json, text/event-stream',
+        },
         data: INITIALIZE,
       });
 
