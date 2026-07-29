@@ -3,6 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react';
 
 import { cn } from '@ci/shadcn';
 
+import { intensityCeiling, intensityLevel } from './intensity';
 import { useTimelineGridSelection } from './useTimelineGridSelection';
 import type { TimelineGridRange } from './useTimelineGridSelection';
 
@@ -315,19 +316,24 @@ export function TimelineGrid({
 
   const counts = useMemo(() => new Map(data.map((d) => [d.date, d.count])), [data]);
 
-  const maxCount = useMemo(() => {
-    let max = 0;
+  /**
+   * Top of the colour ramp for the visible window. Deliberately not the raw
+   * maximum: a bulk-import day sits orders of magnitude above ordinary activity
+   * and would flatten every real day onto level 1. See {@link intensityCeiling}.
+   */
+  const ceiling = useMemo(() => {
+    const visible: number[] = [];
+
     for (const [key, count] of counts) {
-      if (key >= visibleStartKey && key <= visibleEndKey && count > max) {
-        max = count;
+      if (key >= visibleStartKey && key <= visibleEndKey) {
+        visible.push(count);
       }
     }
 
-    return max;
+    return intensityCeiling(visible);
   }, [counts, visibleStartKey, visibleEndKey]);
 
-  const levelFor = (count: number): number =>
-    count <= 0 || maxCount === 0 ? 0 : Math.max(1, Math.ceil((count / maxCount) * MAX_LEVEL));
+  const levelFor = (count: number): number => intensityLevel(count, ceiling, MAX_LEVEL);
 
   // ── Selection ──
 
