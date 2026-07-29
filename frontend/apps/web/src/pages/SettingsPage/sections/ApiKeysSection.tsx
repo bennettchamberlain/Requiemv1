@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { fetchJson } from '@ci/common';
 import { API_KEY_PROVENANCE_CONNECT } from '@ci/common/src/constants';
-import { Badge, Button, Calendar, Card, Dialog, Input, Label, Popover } from '@ci/shadcn';
+import { Badge, Button, Calendar, Card, Checkbox, Dialog, Input, Label, Popover } from '@ci/shadcn';
 import { CalendarIcon, Check, ClipboardCopy, KeyRound, Lock, Pencil, Plus, Trash, X } from '@ci/shadcn/icons';
 
 import { useAuth } from '@/hooks';
@@ -23,6 +23,20 @@ interface ApiKeyResponse {
 interface CreateApiKeyResponse extends ApiKeyResponse {
   key: string;
 }
+
+/**
+ * Scopes a user-created key can carry, mirroring the canonical list in the API's RequireScopes.
+ *
+ * Enforcement is deny-by-default on a NON-EMPTY selection: a scoped key may only reach routes that
+ * declare one of its scopes. Leaving every box unchecked stores an empty array, which is the
+ * grandfathered "full access" case — and stays the default, because endpoints without a declared
+ * scope (bulk ingest, GraphQL) refuse scoped keys outright.
+ */
+const SCOPE_OPTIONS = [
+  { value: 'memory', label: 'Memory', description: 'Read and write memories (/memory)' },
+  { value: 'intents', label: 'Intents', description: 'The agent intent catalog (/api/intents)' },
+  { value: 'mcp', label: 'MCP', description: 'The Model Context Protocol endpoint (/api/mcp)' },
+] as const;
 
 // Companion Hub mints one key per connected app when you "Connect Memory" from
 // the Hub. These are lifecycle-owned by the Hub — it rotates and revokes them —
@@ -49,6 +63,7 @@ export function ApiKeysSection() {
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState('');
   const [createExpiresAt, setCreateExpiresAt] = useState<Date | undefined>(undefined);
+  const [createScopes, setCreateScopes] = useState<string[]>([]);
   const [createLoading, setCreateLoading] = useState(false);
 
   // Newly created key (shown once)
@@ -91,6 +106,27 @@ export function ApiKeysSection() {
     fetchKeys();
   }, [fetchKeys]);
 
+  /**
+   * Reset the form whenever the dialog closes. Without this a cancelled dialog reopens holding the
+   * previous selection, so a user who once picked scopes could mint a scope-limited key believing
+   * it has full access.
+   */
+  const handleCreateOpenChange = (open: boolean) => {
+    setCreateOpen(open);
+
+    if (!open) {
+      setCreateName('');
+      setCreateExpiresAt(undefined);
+      setCreateScopes([]);
+    }
+  };
+
+  const toggleCreateScope = (scope: string) => {
+    setCreateScopes((current) =>
+      current.includes(scope) ? current.filter((s) => s !== scope) : [...current, scope],
+    );
+  };
+
   const handleCreate = async () => {
     if (!createName.trim()) {
       return;
@@ -103,6 +139,11 @@ export function ApiKeysSection() {
         body.expires_at = createExpiresAt.toISOString();
       }
 
+      // Omitted when empty so the key keeps the grandfathered full-access meaning.
+      if (createScopes.length > 0) {
+        body.scopes = createScopes;
+      }
+
       const data = await fetchJson<CreateApiKeyResponse>('/api/keys', {
         method: 'POST',
         headers: headers(),
@@ -113,6 +154,7 @@ export function ApiKeysSection() {
       setCreateOpen(false);
       setCreateName('');
       setCreateExpiresAt(undefined);
+      setCreateScopes([]);
       await fetchKeys();
     } catch {
       setError('Failed to create API key');
@@ -349,7 +391,7 @@ export function ApiKeysSection() {
       )}
 
       {/* Create dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog open={createOpen} onOpenChange={handleCreateOpenChange}>
         <Dialog.Content>
           <Dialog.Header>
             <Dialog.Title>Create API Key</Dialog.Title>
@@ -396,9 +438,32 @@ export function ApiKeysSection() {
                 </Popover.Content>
               </Popover>
             </div>
+            <div className="grid gap-2">
+              <Label>Access</Label>
+              <div className="space-y-2 rounded-md border p-3">
+                {SCOPE_OPTIONS.map((scope) => (
+                  <label key={scope.value} className="flex cursor-pointer items-start gap-3">
+                    <Checkbox
+                      checked={createScopes.includes(scope.value)}
+                      onCheckedChange={() => toggleCreateScope(scope.value)}
+                      aria-label={scope.label}
+                    />
+                    <span className="grid gap-0.5 text-sm leading-none">
+                      <span className="font-medium">{scope.label}</span>
+                      <span className="text-muted-foreground text-xs">{scope.description}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <p className="text-muted-foreground text-xs">
+                {createScopes.length === 0
+                  ? 'No selection grants full access — the key can reach every endpoint your account can.'
+                  : 'The key is limited to the selected areas and is refused everywhere else, including bulk ingest and GraphQL.'}
+              </p>
+            </div>
           </div>
           <Dialog.Footer>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>
+            <Button variant="outline" onClick={() => handleCreateOpenChange(false)}>
               Cancel
             </Button>
             <Button onClick={handleCreate} disabled={!createName.trim() || createLoading}>

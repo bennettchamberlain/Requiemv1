@@ -14,6 +14,7 @@ import {
 import { z } from 'zod';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
+import { INTENTS_SCOPE, MCP_SCOPE, MEMORY_SCOPE } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 
@@ -36,9 +37,18 @@ const apiKeyName = z
     message: `Key names starting with "${CONNECT_KEY_NAME_PREFIX}" are reserved for connected apps`,
   });
 
+/**
+ * Scopes are validated against the canonical list rather than accepted as free strings.
+ *
+ * Enforcement is deny-by-default on a NON-EMPTY scope array, so a typo ('mcpp') would mint a key
+ * that authenticates fine and is then refused everywhere — a silent, hard-to-diagnose dead key.
+ * An empty array keeps its grandfathered meaning: full user authority.
+ */
+const apiKeyScopes = z.array(z.enum([MEMORY_SCOPE, INTENTS_SCOPE, MCP_SCOPE])).optional();
+
 const createApiKeySchema = z.object({
   name: apiKeyName,
-  scopes: z.array(z.string()).optional(),
+  scopes: apiKeyScopes,
   expires_at: z.string().datetime().optional(),
 });
 
@@ -49,7 +59,7 @@ const createApiKeySchema = z.object({
 // can compare against the key's current name.
 const updateApiKeySchema = z.object({
   name: z.string().min(1).max(255).optional(),
-  scopes: z.array(z.string()).optional(),
+  scopes: apiKeyScopes,
 });
 
 @Controller('keys')
