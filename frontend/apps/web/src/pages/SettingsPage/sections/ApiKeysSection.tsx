@@ -253,7 +253,8 @@ export function ApiKeysSection() {
             Create keys to grant other applications access to your account.
           </p>
         </div>
-        <Button variant="outline" size="icon" onClick={() => setCreateOpen(true)}>
+        {/* Icon-only trigger: without an explicit label it reaches assistive tech as an unnamed button. */}
+        <Button variant="outline" size="icon" aria-label="Create API key" onClick={() => setCreateOpen(true)}>
           <Plus className="h-4 w-4" />
         </Button>
       </div>
