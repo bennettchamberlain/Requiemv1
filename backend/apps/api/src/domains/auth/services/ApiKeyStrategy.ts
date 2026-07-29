@@ -10,6 +10,35 @@ import { UserService } from '@ci/domains/user';
 import { ApiKeyService } from './ApiKeyService';
 
 const API_KEY_HEADER = 'x-api-key';
+const BEARER_PREFIX = 'Bearer ';
+
+/**
+ * Read the api key from `x-api-key`, falling back to `Authorization: Bearer <key>`.
+ *
+ * `x-api-key` is non-standard for MCP: most clients expose a single bearer-token field and cannot
+ * send a custom header at all, which made `/api/mcp` unreachable for them even though the endpoint
+ * and the key were both fine. The Hub already authenticates its MCP surface with Bearer, so
+ * accepting both here also removes a gratuitous difference between the two servers.
+ *
+ * This does not shadow session auth. On guards that chain jwt before api-key, a bearer JWT is
+ * consumed by the jwt strategy first; only values it rejects reach here, and a non-key value simply
+ * fails the hash lookup. The portal OIDC path likewise returns null for anything it cannot verify.
+ */
+function extractApiKey(req: Request): string | undefined {
+  const headerKey = req.get(API_KEY_HEADER);
+
+  if (headerKey) {
+    return headerKey;
+  }
+
+  const authorization = req.get('authorization');
+
+  if (authorization?.startsWith(BEARER_PREFIX)) {
+    return authorization.slice(BEARER_PREFIX.length).trim() || undefined;
+  }
+
+  return undefined;
+}
 
 /**
  * Minimal passport strategy that passes the incoming request to the verify
@@ -49,7 +78,7 @@ export class ApiKeyStrategy extends PassportStrategy(RequestStrategy, 'api-key')
   }
 
   async validate(req: Request) {
-    const apiKey = req.get(API_KEY_HEADER);
+    const apiKey = extractApiKey(req);
 
     if (!apiKey) {
       return null;
