@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 import { expect, test } from '@playwright/test';
 
 /**
@@ -18,6 +20,13 @@ const INITIALIZE = {
   method: 'initialize',
   params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'ci-e2e', version: '1.0' } },
 };
+
+/**
+ * The same file `global-setup.ts` writes. Resolved absolutely: `playwright.request.newContext`
+ * resolves a relative `storageState` against `process.cwd()`, unlike the identical string in
+ * `playwright.e2e.config.ts`, which the runner resolves against the config directory.
+ */
+const AUTH_FILE = path.resolve(__dirname, '../../playwright/.auth/user.json');
 
 /** Streamable HTTP replies as plain JSON or as an SSE `data:` line — accept either. */
 function parseMcpBody(contentType: string, text: string): Record<string, unknown> {
@@ -41,7 +50,7 @@ test.describe('MCP endpoint accepts an operator API key', () => {
   test.beforeAll(async ({ playwright, baseURL }) => {
     // Authenticated via storageState from global-setup; POST /keys is session-guarded and returns
     // the raw key exactly once — the same path a user follows in Settings → API Keys.
-    const ctx = await playwright.request.newContext({ baseURL, storageState: 'playwright/.auth/user.json' });
+    const ctx = await playwright.request.newContext({ baseURL, storageState: AUTH_FILE });
     const res = await ctx.post('/api/keys', { data: { name: 'e2e-mcp' } });
 
     expect(res.ok(), `Key creation failed: ${res.status()} ${await res.text()}`).toBeTruthy();
@@ -56,7 +65,13 @@ test.describe('MCP endpoint accepts an operator API key', () => {
   });
 
   test.afterAll(async ({ playwright, baseURL }) => {
-    const ctx = await playwright.request.newContext({ baseURL, storageState: 'playwright/.auth/user.json' });
+    // beforeAll may have failed before minting anything; a DELETE on `undefined` just adds a 400 to
+    // the failure trace of a run that already has a real error to read.
+    if (!keyId) {
+      return;
+    }
+
+    const ctx = await playwright.request.newContext({ baseURL, storageState: AUTH_FILE });
 
     await ctx.delete(`/api/keys/${keyId}`);
     await ctx.dispose();
