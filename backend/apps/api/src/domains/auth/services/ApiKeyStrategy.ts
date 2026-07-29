@@ -5,12 +5,12 @@ import { Strategy } from 'passport';
 
 import { ContextService, SYSTEM_USER } from '@ci/common/context';
 import { type ApiKeyScopedRequest } from '@ci/common/guards';
+import { extractBearerToken } from '@ci/common/guards/bearerToken';
 import { UserService } from '@ci/domains/user';
 
 import { ApiKeyService } from './ApiKeyService';
 
 const API_KEY_HEADER = 'x-api-key';
-const BEARER_PREFIX = 'Bearer ';
 
 /**
  * Read the api key from `x-api-key`, falling back to `Authorization: Bearer <key>`.
@@ -20,24 +20,24 @@ const BEARER_PREFIX = 'Bearer ';
  * and the key were both fine. The Hub already authenticates its MCP surface with Bearer, so
  * accepting both here also removes a gratuitous difference between the two servers.
  *
+ * Precedence is "first *usable* credential wins": a blank `x-api-key` (a proxy that always sets the
+ * header) falls through to the bearer form rather than 401ing a request that carried a good key.
+ *
  * This does not shadow session auth. On guards that chain jwt before api-key, a bearer JWT is
- * consumed by the jwt strategy first; only values it rejects reach here, and a non-key value simply
- * fails the hash lookup. The portal OIDC path likewise returns null for anything it cannot verify.
+ * consumed by the jwt strategy first; only values it rejects reach here, and a JWT that got this far
+ * fails ApiKeyService's `^[0-9a-f]{64}$` gate before any DB lookup. The portal OIDC path likewise
+ * returns null for anything it cannot verify — note that it is handed this raw key first, but
+ * `jose.jwtVerify` rejects a non-JWS string while parsing, before any JWKS fetch, so the key never
+ * leaves the process.
  */
-function extractApiKey(req: Request): string | undefined {
-  const headerKey = req.get(API_KEY_HEADER);
+function extractApiKey(req: Request): string | null {
+  const headerKey = req.get(API_KEY_HEADER)?.trim();
 
   if (headerKey) {
     return headerKey;
   }
 
-  const authorization = req.get('authorization');
-
-  if (authorization?.startsWith(BEARER_PREFIX)) {
-    return authorization.slice(BEARER_PREFIX.length).trim() || undefined;
-  }
-
-  return undefined;
+  return extractBearerToken(req.get('authorization'));
 }
 
 /**

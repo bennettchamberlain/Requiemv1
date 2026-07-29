@@ -7,7 +7,8 @@ import { ApiKeyStrategy } from '../services/ApiKeyStrategy';
  *
  * The bearer form exists because most MCP clients expose only a bearer-token field and cannot send
  * a custom header, which made `/api/mcp` unreachable for them. These tests pin both forms, the
- * precedence between them, and that a malformed Authorization header is not mistaken for a key.
+ * case-insensitive scheme match, the precedence between them, and that a malformed Authorization
+ * header — or a session JWT — is not mistaken for a key.
  */
 describe('ApiKeyStrategy', () => {
   const VALID_KEY = 'a'.repeat(64);
@@ -64,6 +65,41 @@ describe('ApiKeyStrategy', () => {
 
     expect((req as unknown as { apiKeyScopes: string[] }).apiKeyScopes).toEqual(['mcp']);
     expect((req as unknown as { apiKeyId: string }).apiKeyId).toBe('key-1');
+  });
+
+  it('accepts a lowercase bearer scheme, as RFC 7235 requires', async () => {
+    // passport-jwt lowercases the scheme before comparing (extract_jwt.js:54,60), so `bearer <jwt>`
+    // already authenticates. Matching the scheme case-sensitively here would 401 the same spelling
+    // for a key — an inconsistency between two strategies reading one header.
+    const user = await strategy.validate(requestWith({ authorization: `bearer ${VALID_KEY}` }));
+
+    expect(apiKeyService.validateKey).toHaveBeenCalledWith(VALID_KEY);
+    expect(user).toEqual(USER);
+  });
+
+  it('falls through to the bearer form when x-api-key is blank', async () => {
+    // A proxy that always sets the header must not mask a credential the request did carry.
+    const user = await strategy.validate(
+      requestWith({ 'x-api-key': '   ', authorization: `Bearer ${VALID_KEY}` }),
+    );
+
+    expect(apiKeyService.validateKey).toHaveBeenCalledWith(VALID_KEY);
+    expect(user).toEqual(USER);
+  });
+
+  it('cannot authenticate a session JWT presented as Bearer', async () => {
+    // The safety of accepting the bearer form rests on ApiKeyService's format gate
+    // (`ApiKeyService.ts:344-347`), not on the hash lookup — mirror it so the claim is pinned here,
+    // where a reader of this strategy will look for it.
+    apiKeyService.validateKey.mockImplementation(async (key: string) =>
+      /^[0-9a-f]{64}$/.test(key) ? { userId: USER.id, scopes: [], keyId: 'key-1' } : null,
+    );
+
+    const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTEifQ.c2lnbmF0dXJl';
+    const user = await strategy.validate(requestWith({ authorization: `Bearer ${jwt}` }));
+
+    expect(apiKeyService.validateKey).toHaveBeenCalledWith(jwt);
+    expect(user).toBeNull();
   });
 
   it('ignores a non-Bearer Authorization scheme', async () => {
