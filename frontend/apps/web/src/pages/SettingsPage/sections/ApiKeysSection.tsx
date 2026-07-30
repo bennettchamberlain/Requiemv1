@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { fetchJson } from '@ci/common';
-import { API_KEY_PROVENANCE_CONNECT } from '@ci/common/src/constants';
+import {
+  API_KEY_PROVENANCE_CONNECT,
+  API_KEY_SCOPE_INTENTS,
+  API_KEY_SCOPE_MCP,
+  API_KEY_SCOPE_MEMORY,
+} from '@ci/common/src/constants';
 import { Badge, Button, Calendar, Card, Checkbox, Dialog, Input, Label, Popover } from '@ci/shadcn';
 import { CalendarIcon, Check, ClipboardCopy, KeyRound, Lock, Pencil, Plus, Trash, X } from '@ci/shadcn/icons';
 
@@ -25,17 +30,17 @@ interface CreateApiKeyResponse extends ApiKeyResponse {
 }
 
 /**
- * Scopes a user-created key can carry, mirroring the canonical list in the API's RequireScopes.
+ * Scopes a user-created key can carry, labelled for the create dialog.
  *
  * Enforcement is deny-by-default on a NON-EMPTY selection: a scoped key may only reach routes that
- * declare one of its scopes. Leaving every box unchecked stores an empty array, which is the
- * grandfathered "full access" case — and stays the default, because endpoints without a declared
- * scope (bulk ingest, GraphQL) refuse scoped keys outright.
+ * declare one of its scopes. Leaving every box unchecked omits `scopes` from the request, which the
+ * API reads as the grandfathered "full access" case — and stays the default, because endpoints
+ * without a declared scope (bulk ingest, GraphQL) refuse scoped keys outright.
  */
 const SCOPE_OPTIONS = [
-  { value: 'memory', label: 'Memory', description: 'Read and write memories (/memory)' },
-  { value: 'intents', label: 'Intents', description: 'The agent intent catalog (/api/intents)' },
-  { value: 'mcp', label: 'MCP', description: 'The Model Context Protocol endpoint (/api/mcp)' },
+  { value: API_KEY_SCOPE_MEMORY, label: 'Memory', description: 'Read and write memories (/memory)' },
+  { value: API_KEY_SCOPE_INTENTS, label: 'Intents', description: 'The agent intent catalog (/api/intents)' },
+  { value: API_KEY_SCOPE_MCP, label: 'MCP', description: 'The Model Context Protocol endpoint (/api/mcp)' },
 ] as const;
 
 // Companion Hub mints one key per connected app when you "Connect Memory" from
@@ -151,10 +156,9 @@ export function ApiKeysSection() {
       });
 
       setRevealedKey(data?.key ?? null);
-      setCreateOpen(false);
-      setCreateName('');
-      setCreateExpiresAt(undefined);
-      setCreateScopes([]);
+      // Closing programmatically does not fire the dialog's onOpenChange, so route through the same
+      // handler rather than repeating the field resets, which would otherwise have to stay in sync.
+      handleCreateOpenChange(false);
       await fetchKeys();
     } catch {
       setError('Failed to create API key');
@@ -443,17 +447,28 @@ export function ApiKeysSection() {
               <Label>Access</Label>
               <div className="space-y-2 rounded-md border p-3">
                 {SCOPE_OPTIONS.map((scope) => (
-                  <label key={scope.value} className="flex cursor-pointer items-start gap-3">
+                  // The description is wired up with aria-describedby rather than folded into the
+                  // label: an aria-label naming the checkbox would suppress it entirely, leaving
+                  // assistive tech with "MCP" and no statement of what it unlocks.
+                  <div key={scope.value} className="flex items-start gap-3">
                     <Checkbox
+                      id={`apiKeyScope-${scope.value}`}
+                      aria-describedby={`apiKeyScope-${scope.value}-description`}
                       checked={createScopes.includes(scope.value)}
                       onCheckedChange={() => toggleCreateScope(scope.value)}
-                      aria-label={scope.label}
                     />
-                    <span className="grid gap-0.5 text-sm leading-none">
-                      <span className="font-medium">{scope.label}</span>
-                      <span className="text-muted-foreground text-xs">{scope.description}</span>
-                    </span>
-                  </label>
+                    <div className="grid gap-0.5 text-sm leading-none">
+                      <Label htmlFor={`apiKeyScope-${scope.value}`} className="cursor-pointer font-medium">
+                        {scope.label}
+                      </Label>
+                      <span
+                        id={`apiKeyScope-${scope.value}-description`}
+                        className="text-muted-foreground text-xs"
+                      >
+                        {scope.description}
+                      </span>
+                    </div>
+                  </div>
                 ))}
               </div>
               <p className="text-muted-foreground text-xs">

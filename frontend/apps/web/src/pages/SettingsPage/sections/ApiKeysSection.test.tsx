@@ -79,6 +79,17 @@ describe('ApiKeysSection scope picker', () => {
     expect(createBody()?.scopes).toEqual(['mcp']);
   });
 
+  it('announces what each scope unlocks, not just its name', async () => {
+    render(<ApiKeysSection />);
+    await openCreateDialogAndName();
+
+    // The description has to reach assistive tech as the checkbox's description. Naming the box
+    // with aria-label instead would drop it, leaving "MCP" with no statement of what it grants.
+    const mcp = screen.getByRole('checkbox', { name: 'MCP' });
+
+    expect(mcp).toHaveAccessibleDescription('The Model Context Protocol endpoint (/api/mcp)');
+  });
+
   it('clears the selection when the dialog is cancelled', async () => {
     render(<ApiKeysSection />);
     await openCreateDialogAndName();

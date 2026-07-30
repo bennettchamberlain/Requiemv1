@@ -46,7 +46,7 @@ const apiKeyName = z
  */
 const apiKeyScopes = z.array(z.enum([MEMORY_SCOPE, INTENTS_SCOPE, MCP_SCOPE])).optional();
 
-const createApiKeySchema = z.object({
+export const createApiKeySchema = z.object({
   name: apiKeyName,
   scopes: apiKeyScopes,
   expires_at: z.string().datetime().optional(),
@@ -57,7 +57,7 @@ const createApiKeySchema = z.object({
 // making the grandfathered `app:`-named user keys this release unlocks impossible to
 // edit. ApiKeyService.update enforces the reservation on an actual RENAME, where it
 // can compare against the key's current name.
-const updateApiKeySchema = z.object({
+export const updateApiKeySchema = z.object({
   name: z.string().min(1).max(255).optional(),
   scopes: apiKeyScopes,
 });
