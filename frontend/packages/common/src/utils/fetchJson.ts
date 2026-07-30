@@ -61,21 +61,71 @@ function toIssue(entry: unknown): FetchJsonIssue[] {
   ];
 }
 
-async function parseErrorBody(res: Response): Promise<{ serverMessage?: string; issues: FetchJsonIssue[] }> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
+/**
+ * Read the error body under a hard time bound. The stream is drained through a
+ * reader we own so the timeout can cancel it: abandoning a `res.json()` would
+ * leave the abandoned read holding the connection for the lifetime of the
+ * page, which is the opposite of what the bound is for (and `json()` locks the
+ * body, so it cannot be cancelled afterwards).
+ */
+async function readErrorBody(res: Response): Promise<string | undefined> {
+  const stream = res.body;
+
+  if (typeof stream?.getReader !== 'function') {
+    // Response-like without a readable stream (some runtimes, test doubles):
+    // race text() instead and accept that there is nothing to cancel.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    try {
+      const text = res.text();
+      // A late rejection must not surface as an unhandled rejection once the
+      // timer has won the race.
+      text.catch(() => undefined);
+
+      return await Promise.race([
+        text,
+        new Promise<undefined>((resolve) => {
+          timer = setTimeout(() => resolve(undefined), ERROR_BODY_TIMEOUT_MS);
+        }),
+      ]);
+    } finally {
+      if (timer != null) {
+        clearTimeout(timer);
+      }
+    }
+  }
+
+  const reader = stream.getReader();
+  const timer = setTimeout(() => {
+    // Best effort: releases the underlying connection. Pending reads settle as
+    // done, so the loop below exits with whatever arrived before the bound.
+    void reader.cancel().catch(() => undefined);
+  }, ERROR_BODY_TIMEOUT_MS);
 
   try {
-    const bodyPromise: Promise<unknown> = res.json();
-    // If the timer wins the race, a late body rejection must not become an
-    // unhandled promise rejection.
-    bodyPromise.catch(() => undefined);
+    const decoder = new TextDecoder();
+    let text = '';
 
-    const body = await Promise.race([
-      bodyPromise,
-      new Promise<undefined>((resolve) => {
-        timer = setTimeout(() => resolve(undefined), ERROR_BODY_TIMEOUT_MS);
-      }),
-    ]);
+    for (;;) {
+      const { done, value } = await reader.read();
+
+      if (done) {
+        break;
+      }
+
+      text += decoder.decode(value, { stream: true });
+    }
+
+    return text + decoder.decode();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function parseErrorBody(res: Response): Promise<{ serverMessage?: string; issues: FetchJsonIssue[] }> {
+  try {
+    const text = await readErrorBody(res);
+    const body: unknown = text ? JSON.parse(text) : undefined;
 
     if (typeof body !== 'object' || body == null) {
       return { issues: [] };
@@ -106,10 +156,6 @@ async function parseErrorBody(res: Response): Promise<{ serverMessage?: string; 
 
     // Body wasn't JSON (e.g. a proxy error page) — fall back to the status line
     return { issues: [] };
-  } finally {
-    if (timer != null) {
-      clearTimeout(timer);
-    }
   }
 }
 

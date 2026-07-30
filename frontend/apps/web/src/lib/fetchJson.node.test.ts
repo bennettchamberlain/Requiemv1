@@ -113,19 +113,37 @@ describe('fetchJson error responses', () => {
     expect(err.message).toBe('Fetch failed: 502 Bad Gateway');
   });
 
+  it('cancels a stalled body so the connection is not held open', async () => {
+    vi.useFakeTimers();
+
+    const cancelled = vi.fn();
+    // Headers arrive, then the body stalls; `cancel` fires only if the timeout
+    // releases the stream rather than abandoning an in-flight read.
+    const body = new ReadableStream({ start() {}, cancel: cancelled });
+    stubFetch(new Response(body, { status: 502, statusText: 'Bad Gateway' }));
+
+    const pending = fetchRejection();
+    await vi.advanceTimersByTimeAsync(3_000);
+    await pending;
+
+    expect(cancelled).toHaveBeenCalled();
+  });
+
   it('lets an abort during the error-body read propagate as AbortError', async () => {
+    // Deliberately not via fetchRejection(): that helper is typed for the
+    // FetchJsonError path, and this case must NOT produce one.
     const aborted = {
       ok: false,
       status: 400,
       statusText: 'Bad Request',
-      json: () => Promise.reject(new DOMException('The operation was aborted.', 'AbortError')),
+      text: () => Promise.reject(new DOMException('The operation was aborted.', 'AbortError')),
     };
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(aborted as unknown as Response));
 
-    const err = await fetchRejection();
+    const err: unknown = await fetchJson('/api/signup', { method: 'POST' }).catch((e: unknown) => e);
 
     expect(err).not.toBeInstanceOf(FetchJsonError);
-    expect((err as unknown as Error).name).toBe('AbortError');
+    expect((err as Error).name).toBe('AbortError');
   });
 
   it('returns parsed JSON for 2xx responses', async () => {
