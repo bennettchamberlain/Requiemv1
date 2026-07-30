@@ -161,6 +161,14 @@ type ReturnValue = [
     expired: boolean;
     authToken?: string | null;
     loading: boolean;
+    /**
+     * True only while the mount-time session handshake is in flight — unlike
+     * `loading`, it stays false during a login/signup POST. Route gates must
+     * use this: swapping the tree out mid-submit unmounts the form that is
+     * awaiting the response, discarding what the user typed along with any
+     * error the response was meant to surface.
+     */
+    initializing: boolean;
     error: unknown | null;
   },
   {
@@ -317,6 +325,7 @@ function useAuth(): ReturnValue {
       expired: isExpired(),
       authToken: accessToken,
       loading: loginLoading || initializing,
+      initializing,
       error: loginError ?? refreshError,
     },
     {
