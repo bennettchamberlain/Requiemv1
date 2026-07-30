@@ -14,7 +14,7 @@ import {
 import { z } from 'zod';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { INTENTS_SCOPE, MCP_SCOPE, MEMORY_SCOPE } from '@ci/common/decorators';
+import { API_KEY_CAPABILITIES, INTENTS_SCOPE, MCP_SCOPE, MEMORY_SCOPE } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 
@@ -46,9 +46,17 @@ const apiKeyName = z
  */
 const apiKeyScopes = z.array(z.enum([MEMORY_SCOPE, INTENTS_SCOPE, MCP_SCOPE])).optional();
 
+/**
+ * What the key may DO on the surfaces its scopes reach. Optional on both create and update so a
+ * client that predates the field keeps working: an omitted capability means "unchanged" on update
+ * and the default on create, never a silent reset to the strictest or the widest level.
+ */
+const apiKeyCapability = z.enum(API_KEY_CAPABILITIES).optional();
+
 export const createApiKeySchema = z.object({
   name: apiKeyName,
   scopes: apiKeyScopes,
+  capability: apiKeyCapability,
   expires_at: z.string().datetime().optional(),
 });
 
@@ -60,6 +68,7 @@ export const createApiKeySchema = z.object({
 export const updateApiKeySchema = z.object({
   name: z.string().min(1).max(255).optional(),
   scopes: apiKeyScopes,
+  capability: apiKeyCapability,
 });
 
 @Controller('keys')

@@ -111,6 +111,9 @@ export class ApiKeyStrategy extends PassportStrategy(RequestStrategy, 'api-key')
     // (the MCP session map). Scopes alone cannot tell two keys apart — both chat-agent
     // connect keys carry an identical set on a single-owner appliance.
     scopedRequest.apiKeyId = result.keyId;
+    // ...and WHAT it may do on the surfaces those scopes reach. Scopes decide which tools a key
+    // can see; capability decides which of those it may run.
+    scopedRequest.apiKeyCapability = result.capability;
 
     return user;
   }

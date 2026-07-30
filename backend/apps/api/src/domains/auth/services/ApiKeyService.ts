@@ -6,6 +6,11 @@ import { IsNull, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/common/context';
+import {
+  type ApiKeyCapability,
+  DEFAULT_API_KEY_CAPABILITY,
+  coerceApiKeyCapability,
+} from '@ci/common/decorators';
 import { LoggerService } from '@ci/common/logging';
 
 import { ApiKey, ApiKeyEntity } from '../entities/ApiKeyEntity';
@@ -48,6 +53,9 @@ export class ApiKeyService {
       prefix,
       hashed_key: hashedKey,
       scopes: data.scopes ?? [],
+      // A key nobody expressed an opinion about gets what every key could always do: everything
+      // except destroying data.
+      capability: data.capability ?? DEFAULT_API_KEY_CAPABILITY,
       expires_at: data.expires_at ? new Date(data.expires_at) : null,
       user_id: context.userId,
       // Defaults to null — a key created through the REST API is the user's own.
@@ -251,6 +259,11 @@ export class ApiKeyService {
           'This key is managed by Companion Hub and cannot be renamed or re-scoped. Disconnect the app from Hub instead.',
         );
       }
+      // Capability is deliberately NOT in that list. Renaming or re-scoping a connect key breaks
+      // the Hub's ability to find it again (it revokes by name) and strands the credential;
+      // narrowing what it may do breaks nothing structural — the key still resolves, the app still
+      // authenticates, it simply gets refused the operations the user withheld. That is a decision
+      // about the user's own data, and it is theirs to make without disconnecting the app.
     }
 
     // The `app:` namespace is reserved (see CONNECT_KEY_NAME_PREFIX), but only for
@@ -271,6 +284,10 @@ export class ApiKeyService {
 
     if (data.scopes !== undefined) {
       key.scopes = data.scopes;
+    }
+
+    if (data.capability !== undefined) {
+      key.capability = data.capability;
     }
 
     const saved = await this.apiKeyRepository.save(key);
@@ -341,7 +358,9 @@ export class ApiKeyService {
     return removed;
   }
 
-  async validateKey(rawKey: string): Promise<{ keyId: string; userId: string; scopes: string[] } | null> {
+  async validateKey(
+    rawKey: string,
+  ): Promise<{ keyId: string; userId: string; scopes: string[]; capability: ApiKeyCapability } | null> {
     if (rawKey.length !== API_KEY_HEX_LENGTH || !API_KEY_HEX_REGEX.test(rawKey)) {
       return null;
     }
@@ -350,7 +369,7 @@ export class ApiKeyService {
 
     const key = await this.apiKeyRepository.findOne({
       where: { hashed_key: hashed },
-      select: ['id', 'user_id', 'expires_at', 'scopes'],
+      select: ['id', 'user_id', 'expires_at', 'scopes', 'capability'],
     });
 
     if (!key) {
@@ -365,10 +384,17 @@ export class ApiKeyService {
 
     // `scopes` drives least-privilege enforcement downstream (see
     // enforceApiKeyScopes). An empty array is a legacy full-access key,
-    // preserved as-is. `keyId` identifies WHICH key authenticated: two keys of the
+    // preserved as-is. `capability` is the second axis — which of the reachable tools
+    // this key may run — coerced on read so an unrecognised stored value fails closed
+    // rather than being trusted. `keyId` identifies WHICH key authenticated: two keys of the
     // same user can hold identical scopes (both chat agents do), so anything binding
     // state to a caller's authority needs the key itself, not just its powers.
-    return { keyId: key.id, userId: key.user_id, scopes: key.scopes ?? [] };
+    return {
+      keyId: key.id,
+      userId: key.user_id,
+      scopes: key.scopes ?? [],
+      capability: coerceApiKeyCapability(key.capability),
+    };
   }
 
   private hash(key: string): string {

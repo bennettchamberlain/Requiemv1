@@ -160,3 +160,178 @@ describe('ApiKeysSection scope picker', () => {
     expect(createBody()).not.toHaveProperty('scopes');
   });
 });
+
+/**
+ * Capability is the second axis: scopes say WHICH surfaces a key reaches, capability says what it
+ * may do there. Unlike scopes it is always sent — there is no "unset" reading of an authority
+ * level, and stating it makes the key's powers a decision rather than a default nobody saw.
+ */
+describe('ApiKeysSection capability picker', () => {
+  beforeEach(() => {
+    h.fetchJson.mockReset();
+    h.fetchJson.mockImplementation((_url: string, init?: { method?: string }) =>
+      Promise.resolve(init?.method === 'POST' ? { id: '1', key: 'raw-key' } : []),
+    );
+  });
+
+  it("defaults to 'write' — what every key could already do", async () => {
+    render(<ApiKeysSection />);
+    await openCreateDialogAndName();
+
+    submit();
+
+    await waitFor(() => expect(createBody()).toBeDefined());
+    expect(createBody()?.capability).toBe('write');
+  });
+
+  it('mints at the chosen level, so a read-only key is never wide open in between', async () => {
+    render(<ApiKeysSection />);
+    await openCreateDialogAndName();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Read-only' }));
+    submit();
+
+    await waitFor(() => expect(createBody()).toBeDefined());
+    expect(createBody()?.capability).toBe('read');
+  });
+
+  it('announces what each level permits, not just its name', async () => {
+    render(<ApiKeysSection />);
+    await openCreateDialogAndName();
+
+    // Same reason as the scope checkboxes: an aria-label naming the radio would suppress the
+    // description, leaving "Full access" with no statement of what it permits.
+    expect(screen.getByRole('radio', { name: 'Read, write & delete' })).toHaveAccessibleDescription(
+      'Also delete memories and other stored data. Deletions cannot be undone.',
+    );
+  });
+
+  it('resets to the default when the dialog is cancelled', async () => {
+    render(<ApiKeysSection />);
+    await openCreateDialogAndName();
+    fireEvent.click(screen.getByRole('radio', { name: 'Read, write & delete' }));
+
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+
+    // A 'full' chosen for one key must not silently carry into the next.
+    await openCreateDialogAndName();
+    submit();
+
+    await waitFor(() => expect(createBody()).toBeDefined());
+    expect(createBody()?.capability).toBe('write');
+  });
+});
+
+/** The parsed body of the PATCH to a key, or undefined if none was sent. */
+function patchBody(id: string): Record<string, unknown> | undefined {
+  const call = h.fetchJson.mock.calls.find(
+    ([url, init]) =>
+      url === `/api/keys/${id}` && (init as { method?: string } | undefined)?.method === 'PATCH',
+  );
+
+  return call ? JSON.parse((call[1] as { body: string }).body) : undefined;
+}
+
+describe('ApiKeysSection capability changes', () => {
+  const key = {
+    id: 'k1',
+    name: 'laptop',
+    prefix: 'ab12c',
+    scopes: ['memory'],
+    capability: 'write',
+    expires_at: null,
+    last_used_at: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    managed_by: null,
+  };
+
+  const mockKeys = (rows: unknown[]) => {
+    h.fetchJson.mockReset();
+    h.fetchJson.mockImplementation((_url: string, init?: { method?: string }) =>
+      Promise.resolve(init?.method ? {} : rows),
+    );
+  };
+
+  const openEdit = async (name: string) =>
+    fireEvent.click(await screen.findByRole('button', { name: new RegExp(`edit ${name}`, 'i') }));
+
+  it('badges each key with what it can do, so a row never says only where it reaches', async () => {
+    mockKeys([key, { ...key, id: 'k2', name: 'importer', scopes: [], capability: 'full' }]);
+    render(<ApiKeysSection />);
+
+    expect(await screen.findByText('Read & write')).toBeInTheDocument();
+    // Distinct from the "Full access" scope badge the same row carries for an empty scope set:
+    // that one says where the key reaches, this one says what it may do there.
+    expect(screen.getByText('Read, write & delete')).toBeInTheDocument();
+    expect(screen.getByText('Full access')).toBeInTheDocument();
+  });
+
+  it('narrows a key without a confirmation — tightening only ever removes authority', async () => {
+    mockKeys([key]);
+    render(<ApiKeysSection />);
+    await openEdit('laptop');
+
+    fireEvent.click(await screen.findByRole('radio', { name: 'Read-only' }));
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => expect(patchBody('k1')).toBeDefined());
+    expect(patchBody('k1')?.capability).toBe('read');
+  });
+
+  it('requires a confirmation naming the key before widening it', async () => {
+    mockKeys([key]);
+    render(<ApiKeysSection />);
+    await openEdit('laptop');
+
+    fireEvent.click(await screen.findByRole('radio', { name: 'Read, write & delete' }));
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    // Nothing written yet — Save on a promotion opens the confirmation instead.
+    expect(patchBody('k1')).toBeUndefined();
+    expect(screen.getByText(/“laptop” delete your data/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /grant access/i }));
+
+    await waitFor(() => expect(patchBody('k1')).toBeDefined());
+    expect(patchBody('k1')?.capability).toBe('full');
+  });
+
+  it('backing out of the confirmation writes nothing', async () => {
+    mockKeys([key]);
+    render(<ApiKeysSection />);
+    await openEdit('laptop');
+
+    fireEvent.click(await screen.findByRole('radio', { name: 'Read, write & delete' }));
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^back$/i }));
+
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeInTheDocument();
+    expect(patchBody('k1')).toBeUndefined();
+  });
+
+  // A Hub-managed key's NAME is not the user's to change (Hub revokes by name, so a rename would
+  // strand the connection), but what it may do with the user's own data is.
+  it('lets a Hub-managed key be narrowed without offering a rename', async () => {
+    mockKeys([{ ...key, name: 'app:ci-hermes:ci-marketplace', managed_by: 'connect' }]);
+    render(<ApiKeysSection />);
+    await openEdit('app:ci-hermes:ci-marketplace');
+
+    expect(await screen.findByLabelText(/^name$/i)).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Read-only' }));
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => expect(patchBody('k1')).toBeDefined());
+    expect(patchBody('k1')).toEqual({ capability: 'read' });
+  });
+
+  it('falls back to the column default for a key the API returned without a capability', async () => {
+    // A row from an API that predates the column. Rendering nothing would show an unrestricted key
+    // as if it carried no authority at all.
+    mockKeys([{ ...key, capability: undefined }]);
+    render(<ApiKeysSection />);
+
+    expect(await screen.findByText('Read & write')).toBeInTheDocument();
+  });
+});

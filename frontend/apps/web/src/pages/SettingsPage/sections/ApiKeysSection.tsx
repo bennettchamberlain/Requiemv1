@@ -2,12 +2,30 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { fetchJson } from '@ci/common';
 import {
+  API_KEY_CAPABILITIES,
+  API_KEY_CAPABILITY_FULL,
+  API_KEY_CAPABILITY_READ,
+  API_KEY_CAPABILITY_WRITE,
   API_KEY_PROVENANCE_CONNECT,
   API_KEY_SCOPE_INTENTS,
   API_KEY_SCOPE_MCP,
   API_KEY_SCOPE_MEMORY,
+  DEFAULT_API_KEY_CAPABILITY,
+  isApiKeyCapabilityPromotion,
+  type ApiKeyCapability,
 } from '@ci/common/src/constants';
-import { Badge, Button, Calendar, Card, Checkbox, Dialog, Input, Label, Popover } from '@ci/shadcn';
+import {
+  Badge,
+  Button,
+  Calendar,
+  Card,
+  Checkbox,
+  Dialog,
+  Input,
+  Label,
+  Popover,
+  RadioGroup,
+} from '@ci/shadcn';
 import { CalendarIcon, Check, ClipboardCopy, KeyRound, Lock, Pencil, Plus, Trash, X } from '@ci/shadcn/icons';
 
 import { useAuth } from '@/hooks';
@@ -17,6 +35,8 @@ interface ApiKeyResponse {
   name: string;
   prefix: string;
   scopes: string[];
+  /** What the key may DO on the surfaces its scopes reach: 'read' | 'write' | 'full'. */
+  capability: ApiKeyCapability;
   expires_at: string | null;
   last_used_at: string | null;
   created_at: string;
@@ -57,6 +77,61 @@ const SCOPE_OPTIONS = [
   },
 ] as const;
 
+/**
+ * What a key may DO on the surfaces its scopes reach — a separate axis from the scope checkboxes
+ * above, and a genuine choice where the scopes are a set.
+ *
+ * A radio group rather than a dropdown: these are three levels of authority, not interchangeable
+ * settings, and each needs its consequence stated beside it. A collapsed select would hide exactly
+ * the sentence that makes the choice an informed one.
+ */
+const CAPABILITY_OPTIONS = [
+  {
+    value: API_KEY_CAPABILITY_READ,
+    label: 'Read-only',
+    description: 'Search and read memories. Cannot record or change anything.',
+  },
+  {
+    value: API_KEY_CAPABILITY_WRITE,
+    label: 'Read & write',
+    description: 'Also record new memories and update existing ones.',
+  },
+  {
+    value: API_KEY_CAPABILITY_FULL,
+    // NOT "Full access", even though the stored value is 'full' and CI-Hub labels the same level
+    // that way. On this screen "Full access" already means something else — the badge on a key with
+    // no scopes, i.e. full *surface* — and a row can carry both. Two different powers under one
+    // phrase, side by side, is worse than a small divergence in wording between the two appliances.
+    label: 'Read, write & delete',
+    description: 'Also delete memories and other stored data. Deletions cannot be undone.',
+  },
+] as const;
+
+const CAPABILITY_LABELS: Record<ApiKeyCapability, string> = {
+  [API_KEY_CAPABILITY_READ]: 'Read-only',
+  [API_KEY_CAPABILITY_WRITE]: 'Read & write',
+  [API_KEY_CAPABILITY_FULL]: 'Read, write & delete',
+};
+
+/** Colour carries the same meaning it does elsewhere: neutral for inert, amber for "can destroy
+ *  data". Full access should not look like an ordinary setting. */
+const CAPABILITY_BADGE_CLASS: Record<ApiKeyCapability, string> = {
+  [API_KEY_CAPABILITY_READ]: '',
+  [API_KEY_CAPABILITY_WRITE]: '',
+  [API_KEY_CAPABILITY_FULL]: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400',
+};
+
+/**
+ * Read a key's capability defensively. A key row fetched from an API that predates the column, or
+ * from a rolled-back deploy, has no value — and rendering nothing there would show an unrestricted
+ * key as if it carried no authority at all. Fall back to the level the column defaults to.
+ */
+function capabilityOf(key: { capability?: ApiKeyCapability | null }): ApiKeyCapability {
+  return key.capability && API_KEY_CAPABILITIES.includes(key.capability)
+    ? key.capability
+    : DEFAULT_API_KEY_CAPABILITY;
+}
+
 // Companion Hub mints one key per connected app when you "Connect Memory" from
 // the Hub. These are lifecycle-owned by the Hub — it rotates and revokes them —
 // so the UI badges them and blocks renaming (a rename would orphan the Hub's
@@ -83,6 +158,7 @@ export function ApiKeysSection() {
   const [createName, setCreateName] = useState('');
   const [createExpiresAt, setCreateExpiresAt] = useState<Date | undefined>(undefined);
   const [createScopes, setCreateScopes] = useState<string[]>([]);
+  const [createCapability, setCreateCapability] = useState<ApiKeyCapability>(DEFAULT_API_KEY_CAPABILITY);
   const [createLoading, setCreateLoading] = useState(false);
 
   // Newly created key (shown once)
@@ -93,6 +169,11 @@ export function ApiKeysSection() {
   const [editOpen, setEditOpen] = useState(false);
   const [editKey, setEditKey] = useState<ApiKeyResponse | null>(null);
   const [editName, setEditName] = useState('');
+  const [editCapability, setEditCapability] = useState<ApiKeyCapability>(DEFAULT_API_KEY_CAPABILITY);
+  // A promotion grants authority the key did not have, so it passes through a confirmation naming
+  // the key and what it will be able to do. Held as a step on the same dialog rather than a second
+  // one: one dialog with two faces cannot be left half-open.
+  const [editStep, setEditStep] = useState<'form' | 'confirm'>('form');
   const [editLoading, setEditLoading] = useState(false);
 
   // Delete dialog
@@ -137,6 +218,8 @@ export function ApiKeysSection() {
       setCreateName('');
       setCreateExpiresAt(undefined);
       setCreateScopes([]);
+      // Reset the level too — a 'full' chosen for one key must not silently carry into the next.
+      setCreateCapability(DEFAULT_API_KEY_CAPABILITY);
     }
   };
 
@@ -169,6 +252,10 @@ export function ApiKeysSection() {
         body.scopes = createScopes;
       }
 
+      // Always sent, unlike scopes: there is no "unset" reading of a capability, and stating it
+      // makes the key's authority a decision rather than a default nobody saw.
+      body.capability = createCapability;
+
       const data = await fetchJson<CreateApiKeyResponse>('/api/keys', {
         method: 'POST',
         headers: headers(),
@@ -192,16 +279,32 @@ export function ApiKeysSection() {
       return;
     }
 
+    // Confirm before granting authority the key did not have. A demotion needs no confirmation —
+    // it only ever removes authority, and making that harder would discourage tightening a key.
+    if (editStep === 'form' && isApiKeyCapabilityPromotion(capabilityOf(editKey), editCapability)) {
+      setEditStep('confirm');
+
+      return;
+    }
+
     try {
       setEditLoading(true);
+
+      // A Hub-managed key's name is not the user's to change (the Hub revokes by name, so a rename
+      // would strand the credential) — send only what they may change. Its capability IS theirs:
+      // narrowing it refuses operations without breaking the connection.
+      const body: Record<string, unknown> = { capability: editCapability };
+
+      if (!isHubManagedKey(editKey)) {
+        body.name = editName.trim();
+      }
+
       await fetchJson<ApiKeyResponse>(`/api/keys/${editKey.id}`, {
         method: 'PATCH',
         headers: headers(),
-        body: JSON.stringify({ name: editName.trim() }),
+        body: JSON.stringify(body),
       });
-      setEditOpen(false);
-      setEditKey(null);
-      setEditName('');
+      closeEdit();
       await fetchKeys();
     } catch {
       setError('Failed to update API key');
@@ -234,7 +337,16 @@ export function ApiKeysSection() {
   const openEdit = (key: ApiKeyResponse) => {
     setEditKey(key);
     setEditName(key.name);
+    setEditCapability(capabilityOf(key));
+    setEditStep('form');
     setEditOpen(true);
+  };
+
+  const closeEdit = () => {
+    setEditOpen(false);
+    setEditKey(null);
+    setEditName('');
+    setEditStep('form');
   };
 
   const openDelete = (key: ApiKeyResponse) => {
@@ -375,6 +487,15 @@ export function ApiKeysSection() {
                         </Badge>
                       ))
                     )}
+                    {/* Shown for every key, including Hub-managed and full-surface ones: the scope
+                        badges say where a key reaches, and without this the row never says whether
+                        it can delete what it finds there. */}
+                    <Badge
+                      variant="outline"
+                      className={`text-xs ${CAPABILITY_BADGE_CLASS[capabilityOf(key)]}`}
+                    >
+                      {CAPABILITY_LABELS[capabilityOf(key)]}
+                    </Badge>
                   </div>
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                     <span>
@@ -391,10 +512,10 @@ export function ApiKeysSection() {
                     size="icon"
                     className="h-8 w-8"
                     onClick={() => openEdit(key)}
-                    disabled={isHubManagedKey(key)}
+                    aria-label={`Edit ${key.name}`}
                     title={
                       isHubManagedKey(key)
-                        ? 'Managed by Companion Hub — renaming would break the connection'
+                        ? 'Managed by Companion Hub — you can change what it may do, but not rename it'
                         : undefined
                     }
                   >
@@ -512,6 +633,41 @@ export function ApiKeysSection() {
                 ) : null}
               </div>
             </div>
+            <div className="grid gap-2">
+              <Label>What this key can do</Label>
+              <RadioGroup
+                value={createCapability}
+                onValueChange={(value) => setCreateCapability(value as ApiKeyCapability)}
+                className="space-y-2 rounded-md border p-3"
+              >
+                {CAPABILITY_OPTIONS.map((option) => (
+                  // Same aria-describedby treatment as the scope checkboxes: an aria-label naming
+                  // the radio would suppress the description, leaving assistive tech with
+                  // "Full access" and no statement of what that permits.
+                  <div key={option.value} className="flex items-start gap-3">
+                    <RadioGroup.Item
+                      id={`apiKeyCapability-${option.value}`}
+                      value={option.value}
+                      aria-describedby={`apiKeyCapability-${option.value}-description`}
+                    />
+                    <div className="grid gap-0.5 text-sm leading-none">
+                      <Label
+                        htmlFor={`apiKeyCapability-${option.value}`}
+                        className="cursor-pointer font-medium"
+                      >
+                        {option.label}
+                      </Label>
+                      <span
+                        id={`apiKeyCapability-${option.value}-description`}
+                        className="text-muted-foreground text-xs"
+                      >
+                        {option.description}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </RadioGroup>
+            </div>
           </div>
           <Dialog.Footer>
             <Button variant="outline" onClick={() => handleCreateOpenChange(false)}>
@@ -524,32 +680,114 @@ export function ApiKeysSection() {
         </Dialog.Content>
       </Dialog>
 
-      {/* Edit dialog */}
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+      {/* Edit dialog: rename and/or change what the key may do, with a confirmation before a
+          promotion. Open for Hub-managed keys too — their name is not the user's to change, but
+          what they may do with the user's own data is. */}
+      <Dialog open={editOpen} onOpenChange={(open) => (open ? setEditOpen(true) : closeEdit())}>
         <Dialog.Content>
-          <Dialog.Header>
-            <Dialog.Title>Edit API Key</Dialog.Title>
-            <Dialog.Description>Update the name of your API key.</Dialog.Description>
-          </Dialog.Header>
-          <div className="space-y-4 py-2">
-            <div className="grid gap-2">
-              <Label htmlFor="editApiKeyName">Name</Label>
-              <Input
-                id="editApiKeyName"
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleUpdate()}
-              />
-            </div>
-          </div>
-          <Dialog.Footer>
-            <Button variant="outline" onClick={() => setEditOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleUpdate} disabled={!editName.trim() || editLoading}>
-              {editLoading ? 'Saving…' : 'Save'}
-            </Button>
-          </Dialog.Footer>
+          {editStep === 'form' ? (
+            <>
+              <Dialog.Header>
+                <Dialog.Title>Edit API Key</Dialog.Title>
+                <Dialog.Description>
+                  The key value does not change, so anything using it keeps working — with the access you
+                  choose here.
+                </Dialog.Description>
+              </Dialog.Header>
+              <div className="space-y-4 py-2">
+                <div className="grid gap-2">
+                  <Label htmlFor="editApiKeyName">Name</Label>
+                  <Input
+                    id="editApiKeyName"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleUpdate()}
+                    disabled={editKey ? isHubManagedKey(editKey) : false}
+                    aria-describedby={
+                      editKey && isHubManagedKey(editKey) ? 'editApiKeyName-managed' : undefined
+                    }
+                  />
+                  {editKey && isHubManagedKey(editKey) && (
+                    <span id="editApiKeyName-managed" className="text-muted-foreground text-xs">
+                      Companion Hub revokes this key by name, so renaming it would strand the connection.
+                    </span>
+                  )}
+                </div>
+                <div className="grid gap-2">
+                  <Label>What this key can do</Label>
+                  <RadioGroup
+                    value={editCapability}
+                    onValueChange={(value) => setEditCapability(value as ApiKeyCapability)}
+                    className="space-y-2 rounded-md border p-3"
+                  >
+                    {CAPABILITY_OPTIONS.map((option) => (
+                      // Same aria-describedby treatment as the scope checkboxes: an aria-label naming
+                      // the radio would suppress the description, leaving assistive tech with
+                      // "Full access" and no statement of what that permits.
+                      <div key={option.value} className="flex items-start gap-3">
+                        <RadioGroup.Item
+                          id={`editApiKeyCapability-${option.value}`}
+                          value={option.value}
+                          aria-describedby={`editApiKeyCapability-${option.value}-description`}
+                        />
+                        <div className="grid gap-0.5 text-sm leading-none">
+                          <Label
+                            htmlFor={`editApiKeyCapability-${option.value}`}
+                            className="cursor-pointer font-medium"
+                          >
+                            {option.label}
+                          </Label>
+                          <span
+                            id={`editApiKeyCapability-${option.value}-description`}
+                            className="text-muted-foreground text-xs"
+                          >
+                            {option.description}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </RadioGroup>
+                </div>
+              </div>
+              <Dialog.Footer>
+                <Button variant="outline" onClick={closeEdit}>
+                  Cancel
+                </Button>
+                <Button onClick={handleUpdate} disabled={!editName.trim() || editLoading}>
+                  {editLoading ? 'Saving…' : 'Save'}
+                </Button>
+              </Dialog.Footer>
+            </>
+          ) : (
+            <>
+              <Dialog.Header>
+                {/* The key is named in the title: someone with several keys must not be able to
+                    widen the wrong one because the dialog only said "this key". */}
+                <Dialog.Title>
+                  {editCapability === API_KEY_CAPABILITY_FULL
+                    ? `Let “${editKey?.name}” delete your data?`
+                    : `Let “${editKey?.name}” change your data?`}
+                </Dialog.Title>
+                <Dialog.Description>
+                  {editCapability === API_KEY_CAPABILITY_FULL
+                    ? 'Anything holding this key will be able to delete memories and other stored data. Deletions cannot be undone.'
+                    : 'Anything holding this key will be able to record new memories and update existing ones. It will still be refused deletions.'}
+                </Dialog.Description>
+              </Dialog.Header>
+              <Dialog.Footer>
+                <Button variant="outline" onClick={() => setEditStep('form')}>
+                  Back
+                </Button>
+                <Button
+                  variant={editCapability === API_KEY_CAPABILITY_FULL ? 'destructive' : 'default'}
+                  onClick={handleUpdate}
+                  disabled={editLoading}
+                >
+                  {editLoading ? 'Saving…' : 'Grant access'}
+                </Button>
+              </Dialog.Footer>
+            </>
+          )}
         </Dialog.Content>
       </Dialog>
 

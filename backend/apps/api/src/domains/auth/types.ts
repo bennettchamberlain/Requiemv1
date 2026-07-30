@@ -1,3 +1,5 @@
+import type { ApiKeyCapability } from '@ci/common/decorators';
+
 export interface LoginDto {
   username: string;
   password: string;
@@ -83,12 +85,14 @@ export const CONNECT_KEY_NAME_PREFIX = 'app:';
 export interface CreateApiKeyDto {
   name: string;
   scopes?: string[];
+  capability?: ApiKeyCapability;
   expires_at?: string;
 }
 
 export interface UpdateApiKeyDto {
   name?: string;
   scopes?: string[];
+  capability?: ApiKeyCapability;
 }
 
 export interface ApiKeyResponse {
@@ -96,6 +100,7 @@ export interface ApiKeyResponse {
   name: string;
   prefix: string;
   scopes: string[];
+  capability: ApiKeyCapability;
   expires_at: Date | null;
   last_used_at: Date | null;
   created_at: Date;

@@ -2,7 +2,12 @@ import { type ExecutionContext, ForbiddenException } from '@nestjs/common';
 import type { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 
-import { REQUIRE_SCOPES_KEY } from '@ci/common/decorators';
+import {
+  type ApiKeyCapability,
+  FULL_CAPABILITY,
+  REQUIRE_SCOPES_KEY,
+  coerceApiKeyCapability,
+} from '@ci/common/decorators';
 
 /**
  * Request augmentation set by {@link ApiKeyStrategy} once an api-key has been
@@ -18,6 +23,26 @@ export interface ApiKeyScopedRequest extends Request {
    * session map) must key on this.
    */
   apiKeyId?: string;
+  /**
+   * What the key may DO on the surfaces its scopes reach. The second axis: scopes decide
+   * WHICH tools are visible, capability decides which of THOSE may run. Absent for
+   * non-api-key principals (sessions/JWT/Portal), who carry full authority.
+   */
+  apiKeyCapability?: ApiKeyCapability;
+}
+
+/**
+ * The capability of the caller behind a request — full authority for anything that did not
+ * authenticate with an api key (a session is the user themselves), and otherwise the key's
+ * own level, read strictly: an api-key request that somehow reached here without a capability
+ * is treated as read-only rather than trusted.
+ */
+export function apiKeyCapabilityOf(request: ApiKeyScopedRequest): ApiKeyCapability {
+  if (request.apiKeyScopes === undefined) {
+    return FULL_CAPABILITY;
+  }
+
+  return coerceApiKeyCapability(request.apiKeyCapability);
 }
 
 /**

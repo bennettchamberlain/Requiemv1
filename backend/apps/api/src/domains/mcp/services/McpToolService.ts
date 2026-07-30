@@ -2,8 +2,8 @@ import { ForbiddenException, Injectable, type OnModuleInit } from '@nestjs/commo
 import { z, type ZodTypeAny } from 'zod';
 
 import type { RequestContext } from '@ci/common/context';
-import { INTENTS_SCOPE } from '@ci/common/decorators';
-import { type ApiKeyScopedRequest, isScopeLimitedApiKey } from '@ci/common/guards';
+import { type ApiKeyCapability, INTENTS_SCOPE } from '@ci/common/decorators';
+import { type ApiKeyScopedRequest, apiKeyCapabilityOf, isScopeLimitedApiKey } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { type JSONSchema, ToolRegistry, intentToolName } from '@ci/domains/tools';
 
@@ -11,6 +11,36 @@ import type { McpRegisteredTool } from '../types';
 
 import { GraphQLToolAdapter } from './GraphQLToolAdapter';
 import { McpExecutorService } from './McpExecutorService';
+
+/**
+ * Whether a key at `capability` may run a tool with this privacy label.
+ *
+ * The labels already exist and are derived structurally — a GraphQL query IS a read, a mutation
+ * named `delete*` IS destructive (see GraphQLToolAdapter) — but until now they were advisory:
+ * emitted as MCP annotation hints for the client's benefit, enforced nowhere. A client that
+ * ignored the hint and called `deleteMemory` succeeded. This is where the label starts to mean
+ * something.
+ *
+ * `delete` and `destructive` are treated the same way deliberately. They are separate fields
+ * because they answer different questions, but both answer "can this lose data?" with yes, and
+ * a level that allowed one while refusing the other would be a distinction no user could act on.
+ */
+function capabilityAllows(
+  privacy: { access: string; destructive: boolean },
+  capability: ApiKeyCapability,
+): boolean {
+  if (capability === 'full') {
+    return true;
+  }
+
+  const removesData = privacy.access === 'delete' || privacy.destructive;
+
+  if (capability === 'write') {
+    return !removesData;
+  }
+
+  return privacy.access === 'read' && !removesData;
+}
 
 @Injectable()
 export class McpToolService implements OnModuleInit {
@@ -63,13 +93,21 @@ export class McpToolService implements OnModuleInit {
    * (sessions/JWT, and empty-scope keys such as the bulk importer's) still see every tool.
    */
   getToolsForRequest(req: ApiKeyScopedRequest): McpRegisteredTool[] {
+    // Capability applies to every api-key principal, including empty-scope (full-surface) ones:
+    // "sees every surface" and "may delete on it" are separate grants, and the importer key that
+    // holds no scopes is exactly the credential that should be able to write without deleting.
+    const capability = apiKeyCapabilityOf(req);
+    const withinCapability = (tool: McpRegisteredTool) => capabilityAllows(tool.privacy, capability);
+
     if (!isScopeLimitedApiKey(req)) {
-      return this.getTools();
+      return this.getTools().filter(withinCapability);
     }
 
     const mayRunIntents = this.mayRunIntents(req);
 
-    return this.getTools().filter((tool) => tool.source !== 'graphql' && mayRunIntents);
+    return this.getTools().filter(
+      (tool) => tool.source !== 'graphql' && mayRunIntents && withinCapability(tool),
+    );
   }
 
   /**
@@ -85,6 +123,16 @@ export class McpToolService implements OnModuleInit {
     }
 
     return req.apiKeyScopes?.includes(INTENTS_SCOPE) ?? false;
+  }
+
+  /** The lowest capability that could run this tool — named in the refusal so an operator is told
+   *  which level to grant, rather than being left to guess between 'write' and 'full'. */
+  private capabilityNeededFor(tool: McpRegisteredTool): ApiKeyCapability {
+    if (tool.privacy.access === 'delete' || tool.privacy.destructive) {
+      return 'full';
+    }
+
+    return tool.privacy.access === 'read' ? 'read' : 'write';
   }
 
   getSchemaSDL(): string {
@@ -107,6 +155,17 @@ export class McpToolService implements OnModuleInit {
     // no authorization at all. This is the enforcement point; the catalog filter is only
     // the courtesy of not advertising what would fail.
     const scopeLimited = isScopeLimitedApiKey(context.req);
+    const capability = apiKeyCapabilityOf(context.req);
+
+    // Checked before the surface checks, because it is the answer that does not depend on which
+    // plane the tool lives on: a read-only key is refused `deleteMemory` whether that tool came
+    // from the GraphQL schema or the intent catalog, and the message should say so rather than
+    // blaming the scope.
+    if (!capabilityAllows(tool.privacy, capability)) {
+      throw new ForbiddenException(
+        `Tool "${name}" requires "${this.capabilityNeededFor(tool)}" access, but this API key is "${capability}"`,
+      );
+    }
 
     if (tool.source === 'graphql') {
       if (scopeLimited) {
