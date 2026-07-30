@@ -39,4 +39,17 @@ describe('SignupForm server validation feedback', () => {
 
     expect(screen.getByText('Email already in use')).toBeInTheDocument();
   });
+
+  it('keeps the alert for issues that do not map onto a form field', () => {
+    // Unknown paths (including Object.prototype names) and message-less issues
+    // must not suppress the alert, or the failure would be invisible.
+    h.error = new FetchJsonError(400, 'Bad Request', 'Validation failed', [
+      { path: ['toString'], message: 'not a real field' },
+      { path: ['password'] },
+    ]);
+
+    render(<SignupForm />);
+
+    expect(screen.getByText('Validation failed')).toBeInTheDocument();
+  });
 });

@@ -1,6 +1,6 @@
 import { useEffect, type BaseSyntheticEvent } from 'react';
 
-import { FetchJsonError } from '@ci/common';
+import { FetchJsonError, type FetchJsonIssue } from '@ci/common';
 import {
   Alert,
   Form,
@@ -28,8 +28,17 @@ const SignupFormSchema = s.object({
   signup_code: s.string().optional(),
 });
 
-function isFormField(field: unknown): field is keyof SignupFormData {
-  return typeof field === 'string' && field in SignupFormSchema.shape;
+const signupFields = new Set(Object.keys(SignupFormSchema.shape));
+
+// A server issue maps onto the form only when its path names one of the
+// form's fields and it carries a message; anything else (unknown paths,
+// whole-body issues) falls back to the alert.
+function fieldIssueTarget(issue: FetchJsonIssue): keyof SignupFormData | undefined {
+  const field = issue.path?.[0];
+
+  return typeof field === 'string' && signupFields.has(field) && issue.message
+    ? (field as keyof SignupFormData)
+    : undefined;
 }
 
 export type SignupFormData = s.infer<typeof SignupFormSchema>;
@@ -53,16 +62,16 @@ export function SignupForm({ onSubmit }: SignupFormProps) {
     }
 
     for (const issue of error.issues) {
-      const field = issue.path?.[0];
+      const field = fieldIssueTarget(issue);
 
-      if (isFormField(field) && issue.message) {
+      if (field) {
         form.setError(field, { type: 'server', message: issue.message });
       }
     }
   }, [error, form]);
 
   const hasFieldIssues =
-    error instanceof FetchJsonError && error.issues.some((issue) => isFormField(issue.path?.[0]));
+    error instanceof FetchJsonError && error.issues.some((issue) => fieldIssueTarget(issue) != null);
 
   const handleSubmit = (data: SignupFormData, e?: BaseSyntheticEvent) => onSubmit?.(data, e);
 

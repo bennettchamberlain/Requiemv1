@@ -47,7 +47,11 @@ async function parseErrorBody(res: Response): Promise<{ serverMessage?: string; 
       // NestJS sends `message` as a string, or a string[] for some built-in pipes
       serverMessage:
         typeof message === 'string' ? message : Array.isArray(message) ? message.join('; ') : undefined,
-      issues: Array.isArray(errors) ? (errors as FetchJsonIssue[]) : [],
+      // Keep only object entries: the shape comes off the wire, and a stray
+      // null/primitive would blow up consumers dereferencing issue.path.
+      issues: Array.isArray(errors)
+        ? errors.filter((entry): entry is FetchJsonIssue => typeof entry === 'object' && entry != null)
+        : [],
     };
   } catch {
     // Body wasn't JSON (e.g. a proxy error page) — fall back to the status line

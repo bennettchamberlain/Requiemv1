@@ -52,6 +52,22 @@ describe('fetchJson error responses', () => {
     expect((err as FetchJsonError).issues).toEqual([]);
   });
 
+  it('drops non-object entries from the errors array', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(400, 'Bad Request', {
+          message: 'Validation failed',
+          errors: [null, 'oops', 42, { path: ['email'], message: 'Invalid email address' }],
+        }),
+      ),
+    );
+
+    const err = await fetchJson('/api/signup', { method: 'POST' }).catch((e: unknown) => e);
+
+    expect((err as FetchJsonError).issues).toEqual([{ path: ['email'], message: 'Invalid email address' }]);
+  });
+
   it('falls back to the status line when the body is not JSON', async () => {
     vi.stubGlobal(
       'fetch',
