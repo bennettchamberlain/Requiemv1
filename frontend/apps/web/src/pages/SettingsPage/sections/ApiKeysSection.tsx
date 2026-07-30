@@ -485,20 +485,26 @@ export function ApiKeysSection() {
                   </div>
                 ))}
               </div>
-              <p className="text-muted-foreground text-xs">
-                {createScopes.length === 0
-                  ? 'No selection grants full access — the key can reach every endpoint your account can.'
-                  : 'The key is limited to the selected areas and is refused everywhere else, including bulk ingest and GraphQL.'}
-              </p>
-              {/* MCP without Intents authenticates and opens a session, then advertises zero tools —
-                  which agents report as "this server has no tools" rather than as a permissions
-                  problem. Say so here, at the point of choice, rather than leaving the user to
-                  debug an empty tool list. */}
-              {mcpWithoutIntents ? (
-                <p className="text-xs font-medium text-amber-600 dark:text-amber-500">
-                  MCP alone advertises no tools. Add Intents, or leave every box unchecked for full access.
+              {/* Both lines below restate the consequence of the current selection and change as
+                  boxes are ticked, so they have to be a live region: otherwise the amber warning is
+                  visible-only, and a screen-reader user picks the broken combination in silence —
+                  the exact outcome the warning exists to prevent. */}
+              <div role="status" className="grid gap-2">
+                <p className="text-muted-foreground text-xs">
+                  {createScopes.length === 0
+                    ? 'No selection grants full access — the key can reach every endpoint your account can.'
+                    : 'The key is limited to the selected areas and is refused everywhere else, including bulk ingest and GraphQL.'}
                 </p>
-              ) : null}
+                {/* MCP without Intents authenticates and opens a session, then advertises zero tools
+                    — which agents report as "this server has no tools" rather than as a permissions
+                    problem. Say so here, at the point of choice, rather than leaving the user to
+                    debug an empty tool list. */}
+                {mcpWithoutIntents ? (
+                  <p className="text-xs font-medium text-amber-600 dark:text-amber-500">
+                    MCP alone advertises no tools. Add Intents, or leave every box unchecked for full access.
+                  </p>
+                ) : null}
+              </div>
             </div>
           </div>
           <Dialog.Footer>

@@ -106,6 +106,17 @@ describe('ApiKeysSection scope picker', () => {
     expect(screen.getByText(/MCP alone advertises no tools/i)).toBeInTheDocument();
   });
 
+  it('announces the warning rather than showing it only in amber', async () => {
+    render(<ApiKeysSection />);
+    await openCreateDialogAndName();
+
+    fireEvent.click(screen.getByLabelText('MCP'));
+
+    // The warning appears after render, so it reaches a screen reader only from a live region.
+    // Without one it is visible-only and the broken combination gets picked in silence.
+    expect(screen.getByText(/MCP alone advertises no tools/i).closest('[role="status"]')).toBeInTheDocument();
+  });
+
   it('drops the warning once Intents is added, and when MCP is removed', async () => {
     render(<ApiKeysSection />);
     await openCreateDialogAndName();
