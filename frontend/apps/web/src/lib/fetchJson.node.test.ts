@@ -1,91 +1,136 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // fetchJson lives in @ci/common, which has no test runner of its own; the web
-// app's node project is the nearest place its units can run.
-import { FetchJsonError, fetchJson } from '@ci/common/src/utils/fetchJson';
+// app's node project is the nearest place its units can run. Imported through
+// the package's public entry so the index.ts re-exports are exercised too.
+import { FetchJsonError, fetchJson } from '@ci/common';
 
 function jsonResponse(status: number, statusText: string, body: unknown) {
   return new Response(JSON.stringify(body), { status, statusText });
 }
 
+function stubFetch(res: Response) {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(res));
+}
+
+function fetchRejection(): Promise<FetchJsonError> {
+  return fetchJson('/api/signup', { method: 'POST' }).then(
+    () => {
+      throw new Error('expected fetchJson to reject');
+    },
+    (e: unknown) => e as FetchJsonError,
+  );
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe('fetchJson error responses', () => {
   it('surfaces the server message and field issues from a validation 400', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        jsonResponse(400, 'Bad Request', {
-          message: 'Validation failed',
-          errors: [{ path: ['password'], message: 'Password must be at least 6 characters' }],
-        }),
-      ),
+    stubFetch(
+      jsonResponse(400, 'Bad Request', {
+        message: 'Validation failed',
+        errors: [{ path: ['password'], message: 'Password must be at least 6 characters' }],
+      }),
     );
 
-    const err = await fetchJson('/api/signup', { method: 'POST' }).catch((e: unknown) => e);
+    const err = await fetchRejection();
 
     expect(err).toBeInstanceOf(FetchJsonError);
-    expect((err as FetchJsonError).status).toBe(400);
-    expect((err as FetchJsonError).message).toBe('Validation failed');
-    expect((err as FetchJsonError).issues).toEqual([
-      { path: ['password'], message: 'Password must be at least 6 characters' },
-    ]);
+    expect(err.status).toBe(400);
+    expect(err.message).toBe('Validation failed');
+    expect(err.issues).toEqual([{ path: ['password'], message: 'Password must be at least 6 characters' }]);
   });
 
   it('surfaces a plain NestJS exception message', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        jsonResponse(400, 'Bad Request', {
-          statusCode: 400,
-          message: 'Email already in use',
-          error: 'Bad Request',
-        }),
-      ),
+    stubFetch(
+      jsonResponse(400, 'Bad Request', {
+        statusCode: 400,
+        message: 'Email already in use',
+        error: 'Bad Request',
+      }),
     );
 
-    const err = await fetchJson('/api/signup', { method: 'POST' }).catch((e: unknown) => e);
+    const err = await fetchRejection();
 
-    expect((err as FetchJsonError).message).toBe('Email already in use');
-    expect((err as FetchJsonError).issues).toEqual([]);
+    expect(err.message).toBe('Email already in use');
+    expect(err.issues).toEqual([]);
   });
 
-  it('drops non-object entries from the errors array', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        jsonResponse(400, 'Bad Request', {
-          message: 'Validation failed',
-          errors: [null, 'oops', 42, { path: ['email'], message: 'Invalid email address' }],
-        }),
-      ),
+  it('falls back to a string `error` key when there is no message', async () => {
+    stubFetch(jsonResponse(409, 'Conflict', { error: 'orchestration already running' }));
+
+    const err = await fetchRejection();
+
+    expect(err.message).toBe('orchestration already running');
+  });
+
+  it('normalizes malformed entries in the errors array', async () => {
+    stubFetch(
+      jsonResponse(400, 'Bad Request', {
+        message: 'Validation failed',
+        errors: [
+          null,
+          'oops',
+          42,
+          ['password'],
+          { path: 'password', message: 'string path is dropped' },
+          { path: ['email'], message: { code: 'not_a_string' } },
+          { path: ['email'], message: 'Invalid email address' },
+        ],
+      }),
     );
 
-    const err = await fetchJson('/api/signup', { method: 'POST' }).catch((e: unknown) => e);
+    const err = await fetchRejection();
 
-    expect((err as FetchJsonError).issues).toEqual([{ path: ['email'], message: 'Invalid email address' }]);
+    expect(err.issues).toEqual([
+      { path: undefined, message: 'string path is dropped' },
+      { path: ['email'], message: undefined },
+      { path: ['email'], message: 'Invalid email address' },
+    ]);
   });
 
   it('falls back to the status line when the body is not JSON', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi
-        .fn()
-        .mockResolvedValue(
-          new Response('<html>upstream error</html>', { status: 502, statusText: 'Bad Gateway' }),
-        ),
-    );
+    stubFetch(new Response('<html>upstream error</html>', { status: 502, statusText: 'Bad Gateway' }));
 
-    const err = await fetchJson('/api/signup').catch((e: unknown) => e);
+    const err = await fetchRejection();
 
-    expect((err as FetchJsonError).message).toBe('Fetch failed: 502 Bad Gateway');
-    expect((err as FetchJsonError).issues).toEqual([]);
+    expect(err.message).toBe('Fetch failed: 502 Bad Gateway');
+    expect(err.issues).toEqual([]);
+  });
+
+  it('gives up on a stalled error body instead of hanging', async () => {
+    vi.useFakeTimers();
+    // 502 headers arrive but the body stream never ends (half-open proxy).
+    stubFetch(new Response(new ReadableStream({ start() {} }), { status: 502, statusText: 'Bad Gateway' }));
+
+    const pending = fetchRejection();
+    await vi.advanceTimersByTimeAsync(3_000);
+    const err = await pending;
+
+    expect(err).toBeInstanceOf(FetchJsonError);
+    expect(err.message).toBe('Fetch failed: 502 Bad Gateway');
+  });
+
+  it('lets an abort during the error-body read propagate as AbortError', async () => {
+    const aborted = {
+      ok: false,
+      status: 400,
+      statusText: 'Bad Request',
+      json: () => Promise.reject(new DOMException('The operation was aborted.', 'AbortError')),
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(aborted as unknown as Response));
+
+    const err = await fetchRejection();
+
+    expect(err).not.toBeInstanceOf(FetchJsonError);
+    expect((err as unknown as Error).name).toBe('AbortError');
   });
 
   it('returns parsed JSON for 2xx responses', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, 'OK', { accessToken: 'token' })));
+    stubFetch(jsonResponse(200, 'OK', { accessToken: 'token' }));
 
     await expect(fetchJson('/api/signup')).resolves.toEqual({ accessToken: 'token' });
   });

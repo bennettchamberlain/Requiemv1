@@ -33,29 +33,83 @@ export class FetchJsonError extends Error {
   }
 }
 
+// A stalled error body must not hang callers: the request timeout (if any) was
+// already cleared when headers arrived, and before body parsing existed the
+// error path threw at headers without reading the body — so the read gets its
+// own hard bound.
+const ERROR_BODY_TIMEOUT_MS = 3_000;
+
+// Normalize a wire entry to the declared shape: only plain objects count, and
+// path/message are kept only when their runtime types match.
+function toIssue(entry: unknown): FetchJsonIssue[] {
+  if (typeof entry !== 'object' || entry == null || Array.isArray(entry)) {
+    return [];
+  }
+
+  const { path, message } = entry as { path?: unknown; message?: unknown };
+
+  return [
+    {
+      path: Array.isArray(path)
+        ? path.filter(
+            (segment): segment is string | number =>
+              typeof segment === 'string' || typeof segment === 'number',
+          )
+        : undefined,
+      message: typeof message === 'string' ? message : undefined,
+    },
+  ];
+}
+
 async function parseErrorBody(res: Response): Promise<{ serverMessage?: string; issues: FetchJsonIssue[] }> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
   try {
-    const body: unknown = JSON.parse(await res.text());
+    const bodyPromise: Promise<unknown> = res.json();
+    // If the timer wins the race, a late body rejection must not become an
+    // unhandled promise rejection.
+    bodyPromise.catch(() => undefined);
+
+    const body = await Promise.race([
+      bodyPromise,
+      new Promise<undefined>((resolve) => {
+        timer = setTimeout(() => resolve(undefined), ERROR_BODY_TIMEOUT_MS);
+      }),
+    ]);
 
     if (typeof body !== 'object' || body == null) {
       return { issues: [] };
     }
 
-    const { message, errors } = body as { message?: unknown; errors?: unknown };
+    const { message, errors, error } = body as { message?: unknown; errors?: unknown; error?: unknown };
 
     return {
-      // NestJS sends `message` as a string, or a string[] for some built-in pipes
+      // NestJS sends `message` as a string (or string[] from some built-in
+      // pipes); object payloads thrown with only an `error` key fall back to it.
       serverMessage:
-        typeof message === 'string' ? message : Array.isArray(message) ? message.join('; ') : undefined,
-      // Keep only object entries: the shape comes off the wire, and a stray
-      // null/primitive would blow up consumers dereferencing issue.path.
-      issues: Array.isArray(errors)
-        ? errors.filter((entry): entry is FetchJsonIssue => typeof entry === 'object' && entry != null)
-        : [],
+        typeof message === 'string'
+          ? message
+          : Array.isArray(message)
+            ? message.join('; ')
+            : typeof error === 'string'
+              ? error
+              : undefined,
+      issues: Array.isArray(errors) ? errors.flatMap(toIssue) : [],
     };
-  } catch {
+  } catch (err) {
+    // A caller-supplied signal aborting mid-read is a cancellation, not a
+    // server failure — let it propagate as such. (Name check rather than
+    // instanceof: DOMException does not extend Error in every runtime.)
+    if (err != null && typeof err === 'object' && (err as Error).name === 'AbortError') {
+      throw err;
+    }
+
     // Body wasn't JSON (e.g. a proxy error page) — fall back to the status line
     return { issues: [] };
+  } finally {
+    if (timer != null) {
+      clearTimeout(timer);
+    }
   }
 }
 

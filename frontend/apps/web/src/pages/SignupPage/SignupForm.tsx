@@ -1,6 +1,6 @@
-import { useEffect, type BaseSyntheticEvent } from 'react';
+import { useLayoutEffect, useMemo, type BaseSyntheticEvent } from 'react';
 
-import { FetchJsonError, type FetchJsonIssue } from '@ci/common';
+import { FetchJsonError } from '@ci/common';
 import {
   Alert,
   Form,
@@ -28,20 +28,9 @@ const SignupFormSchema = s.object({
   signup_code: s.string().optional(),
 });
 
-const signupFields = new Set(Object.keys(SignupFormSchema.shape));
-
-// A server issue maps onto the form only when its path names one of the
-// form's fields and it carries a message; anything else (unknown paths,
-// whole-body issues) falls back to the alert.
-function fieldIssueTarget(issue: FetchJsonIssue): keyof SignupFormData | undefined {
-  const field = issue.path?.[0];
-
-  return typeof field === 'string' && signupFields.has(field) && issue.message
-    ? (field as keyof SignupFormData)
-    : undefined;
-}
-
 export type SignupFormData = s.infer<typeof SignupFormSchema>;
+
+const signupFieldNames = Object.keys(SignupFormSchema.shape);
 
 interface SignupFormProps {
   onSubmit?: (data: SignupFormData, e?: BaseSyntheticEvent) => void;
@@ -51,27 +40,64 @@ export function SignupForm({ onSubmit }: SignupFormProps) {
   const [{ loading, error }] = useAuth();
 
   const { isFeatureEnabled } = useFeatures();
+  const codesRequired = isFeatureEnabled('require.signup.codes');
 
   const form = useForm<SignupFormData>({
     resolver: formDataResolver(SignupFormSchema),
   });
 
-  useEffect(() => {
-    if (!(error instanceof FetchJsonError)) {
-      return;
-    }
+  // Server issues are mapped only for submissions made by this mounted form:
+  // useAuth's error slot is app-wide and survives navigation, and a stale
+  // error must not paint field errors onto a pristine remounted form.
+  const hasSubmitted = form.formState.submitCount > 0;
 
-    for (const issue of error.issues) {
-      const field = fieldIssueTarget(issue);
+  const { fieldIssues, unmappedMessages } = useMemo(() => {
+    const fieldIssues: Array<{ field: keyof SignupFormData; message: string }> = [];
+    const unmappedMessages: string[] = [];
 
-      if (field) {
-        form.setError(field, { type: 'server', message: issue.message });
+    if (hasSubmitted && error instanceof FetchJsonError) {
+      // Only fields with a mounted input can display an inline message; the
+      // signup_code input exists solely when the feature flag is on.
+      const rendered = new Set(signupFieldNames.filter((field) => field !== 'signup_code' || codesRequired));
+
+      for (const issue of error.issues) {
+        if (typeof issue.message !== 'string' || !issue.message) {
+          continue;
+        }
+
+        const field = issue.path?.[0];
+
+        if (typeof field === 'string' && rendered.has(field)) {
+          fieldIssues.push({ field: field as keyof SignupFormData, message: issue.message });
+        } else {
+          unmappedMessages.push(issue.message);
+        }
       }
     }
-  }, [error, form]);
 
-  const hasFieldIssues =
-    error instanceof FetchJsonError && error.issues.some((issue) => fieldIssueTarget(issue) != null);
+    return { fieldIssues, unmappedMessages };
+  }, [error, hasSubmitted, codesRequired]);
+
+  // Layout effect so the field errors are committed before the frame in which
+  // the alert is suppressed gets painted — no flash of missing feedback.
+  useLayoutEffect(() => {
+    for (const { field, message } of fieldIssues) {
+      form.setError(field, { type: 'server', message });
+    }
+  }, [fieldIssues, form]);
+
+  // Alert visibility tracks the form's LIVE errors, not a snapshot: when the
+  // resolver clears a server-mapped field error (first keystroke after a
+  // failed submit), the alert takes back over instead of leaving the failure
+  // invisible. Unmapped issues always surface here.
+  const visibleFieldErrorCount = Object.keys(form.formState.errors).length;
+  const showAlert = error != null && (visibleFieldErrorCount === 0 || unmappedMessages.length > 0);
+  const alertMessage =
+    unmappedMessages.length > 0
+      ? unmappedMessages.join('; ')
+      : fieldIssues.length > 0
+        ? fieldIssues.map((issue) => issue.message).join('; ')
+        : (error as Error).message;
 
   const handleSubmit = (data: SignupFormData, e?: BaseSyntheticEvent) => onSubmit?.(data, e);
 
@@ -136,10 +162,10 @@ export function SignupForm({ onSubmit }: SignupFormProps) {
           />
         )}
 
-        {error != null && !hasFieldIssues && (
+        {showAlert && (
           <Alert variant={'destructive'}>
             <AlertCircleIcon />
-            <Alert.Title>{(error as Error).message}</Alert.Title>
+            <Alert.Title>{alertMessage}</Alert.Title>
           </Alert>
         )}
 

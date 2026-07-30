@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import { fetchJson } from '@ci/common';
+import { FetchJsonError, fetchJson } from '@ci/common';
 
 type GraphNode = {
   id: string;
@@ -335,7 +335,7 @@ export function useGraphOverview(
         }
 
         const message =
-          error instanceof Error && /401/.test(error.message)
+          error instanceof FetchJsonError && error.status === 401
             ? 'You need to sign in again to load analytics.'
             : error instanceof Error
               ? error.message
