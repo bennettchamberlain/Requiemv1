@@ -1,9 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
 // fetchJson lives in @ci/common, which has no test runner of its own; the web
 // app's node project is the nearest place its units can run. Imported through
 // the package's public entry so the index.ts re-exports are exercised too.
 import { FetchJsonError, fetchJson } from '@ci/common';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 function jsonResponse(status: number, statusText: string, body: unknown) {
   return new Response(JSON.stringify(body), { status, statusText });

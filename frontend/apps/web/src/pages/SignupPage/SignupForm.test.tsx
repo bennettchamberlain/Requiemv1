@@ -1,7 +1,6 @@
+import { FetchJsonError } from '@ci/common';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-
-import { FetchJsonError } from '@ci/common';
 
 import { SignupForm } from './SignupForm';
 
