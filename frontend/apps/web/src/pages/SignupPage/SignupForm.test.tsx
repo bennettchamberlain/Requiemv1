@@ -29,6 +29,28 @@ function fillAndSubmit() {
 }
 
 describe('SignupForm server validation feedback', () => {
+  it('renders the pristine form when there is no error at all', () => {
+    // The default state: useAuth reports no error. Reading error.message
+    // unguarded here crashed the whole app on every page load.
+    h.error = null;
+
+    render(<SignupForm />);
+
+    expect(screen.getByLabelText('Password')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /sign up/i })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('shows a fallback message for a non-Error rejection', () => {
+    // useAuth stores whatever was thrown; a string or object must not blank
+    // the page or render "undefined" in the alert.
+    h.error = 'boom';
+
+    render(<SignupForm />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Something went wrong. Please try again.');
+  });
+
   it('maps field-level issues onto the inputs after a submission', async () => {
     h.error = new FetchJsonError(400, 'Bad Request', 'Validation failed', [
       { path: ['password'], message: 'Password must be at least 6 characters' },

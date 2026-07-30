@@ -92,12 +92,18 @@ export function SignupForm({ onSubmit }: SignupFormProps) {
   // invisible. Unmapped issues always surface here.
   const visibleFieldErrorCount = Object.keys(form.formState.errors).length;
   const showAlert = error != null && (visibleFieldErrorCount === 0 || unmappedMessages.length > 0);
-  const alertMessage =
-    unmappedMessages.length > 0
+
+  // Computed only when the alert is actually shown: `error` is null on a
+  // normal page load, and an unguarded read here crashes the whole form.
+  const alertMessage = !showAlert
+    ? null
+    : unmappedMessages.length > 0
       ? unmappedMessages.join('; ')
       : fieldIssues.length > 0
         ? fieldIssues.map((issue) => issue.message).join('; ')
-        : (error as Error).message;
+        : error instanceof Error && error.message
+          ? error.message
+          : 'Something went wrong. Please try again.';
 
   const handleSubmit = (data: SignupFormData, e?: BaseSyntheticEvent) => onSubmit?.(data, e);
 
