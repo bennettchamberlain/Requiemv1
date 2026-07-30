@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, type BaseSyntheticEvent } from 'react';
+import { useLayoutEffect, useMemo, useState, type BaseSyntheticEvent } from 'react';
 
 import { FetchJsonError } from '@ci/common';
 import {
@@ -49,11 +49,30 @@ export function SignupForm({ onSubmit }: SignupFormProps) {
   // Server issues are mapped only for submissions made by this mounted form:
   // useAuth's error slot is app-wide and survives navigation, and a stale
   // error must not paint field errors onto a pristine remounted form.
-  const hasSubmitted = form.formState.submitCount > 0;
+  //
+  // Own state rather than formState.submitCount: that value sits behind
+  // react-hook-form's formState proxy, which does not re-render this
+  // component when submitting is the only thing that changed (an error
+  // already in context at submit time would then never be mapped).
+  //
+  // The submitted values are kept, not just a flag: the server's verdict
+  // applies to those exact values, so a field the user has since edited must
+  // stop showing it.
+  const [submittedValues, setSubmittedValues] = useState<SignupFormData | null>(null);
+  const hasSubmitted = submittedValues != null;
+  const currentValues = form.watch();
 
-  const { fieldIssues, unmappedMessages } = useMemo(() => {
+  const { fieldIssues, unmappedMessages, issueMessages } = useMemo(() => {
     const fieldIssues: Array<{ field: keyof SignupFormData; message: string }> = [];
     const unmappedMessages: string[] = [];
+
+    // Every issue message the server sent, ungated: the alert prefers these
+    // over the envelope's generic "Validation failed", which tells the user
+    // nothing about what to change.
+    const issueMessages =
+      error instanceof FetchJsonError
+        ? error.issues.map((issue) => issue.message).filter((message): message is string => !!message)
+        : [];
 
     if (hasSubmitted && error instanceof FetchJsonError) {
       // Only fields with a mounted input can display an inline message; the
@@ -75,16 +94,25 @@ export function SignupForm({ onSubmit }: SignupFormProps) {
       }
     }
 
-    return { fieldIssues, unmappedMessages };
+    return { fieldIssues, unmappedMessages, issueMessages };
   }, [error, hasSubmitted, codesRequired]);
 
   // Layout effect so the field errors are committed before the frame in which
   // the alert is suppressed gets painted — no flash of missing feedback.
+  //
+  // Runs after every render, re-asserting the message if react-hook-form has
+  // cleared it: its own post-submit state update lands after this effect when
+  // the error was already in context at submit time, and would otherwise wipe
+  // the message for good. Skipped once the field's value diverges from what
+  // was submitted — the server judged the old value, so from that point the
+  // resolver owns the field and the alert carries the message instead.
   useLayoutEffect(() => {
     for (const { field, message } of fieldIssues) {
-      form.setError(field, { type: 'server', message });
+      if (currentValues[field] === submittedValues?.[field] && !form.getFieldState(field).error) {
+        form.setError(field, { type: 'server', message });
+      }
     }
-  }, [fieldIssues, form]);
+  });
 
   // Alert visibility tracks the form's LIVE errors, not a snapshot: when the
   // resolver clears a server-mapped field error (first keystroke after a
@@ -95,17 +123,23 @@ export function SignupForm({ onSubmit }: SignupFormProps) {
 
   // Computed only when the alert is actually shown: `error` is null on a
   // normal page load, and an unguarded read here crashes the whole form.
+  // Ordering is most-specific-first — the envelope message ("Validation
+  // failed") is a last resort, never shown when the server said what is wrong.
   const alertMessage = !showAlert
     ? null
     : unmappedMessages.length > 0
       ? unmappedMessages.join('; ')
-      : fieldIssues.length > 0
-        ? fieldIssues.map((issue) => issue.message).join('; ')
+      : issueMessages.length > 0
+        ? issueMessages.join('; ')
         : error instanceof Error && error.message
           ? error.message
           : 'Something went wrong. Please try again.';
 
-  const handleSubmit = (data: SignupFormData, e?: BaseSyntheticEvent) => onSubmit?.(data, e);
+  const handleSubmit = (data: SignupFormData, e?: BaseSyntheticEvent) => {
+    setSubmittedValues(data);
+
+    return onSubmit?.(data, e);
+  };
 
   return (
     <Form {...form}>

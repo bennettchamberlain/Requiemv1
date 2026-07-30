@@ -59,7 +59,12 @@ describe('SignupForm server validation feedback', () => {
     render(<SignupForm />);
     fillAndSubmit();
 
-    expect(await screen.findByText('Password must be at least 6 characters')).toBeInTheDocument();
+    // waitFor polls on a timer; findByText waits on DOM mutations alone and
+    // can miss react-hook-form's submit settling when the mock resolves
+    // without ever yielding to a macrotask.
+    await waitFor(() =>
+      expect(screen.getByText('Password must be at least 6 characters')).toBeInTheDocument(),
+    );
     // Every issue landed on a field, so the generic alert stays hidden.
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
@@ -71,9 +76,12 @@ describe('SignupForm server validation feedback', () => {
 
     render(<SignupForm />);
 
-    // A stale app-wide error surfaces only as the alert, exactly as before.
-    expect(screen.getByRole('alert')).toHaveTextContent('Validation failed');
-    expect(screen.queryByText('Password must be at least 6 characters')).not.toBeInTheDocument();
+    // No field is marked invalid before this form has been submitted...
+    expect(screen.getByLabelText('Password')).toHaveAttribute('aria-invalid', 'false');
+    // ...but the alert still states the actual rule rather than the opaque
+    // "Validation failed" envelope.
+    expect(screen.getByRole('alert')).toHaveTextContent('Password must be at least 6 characters');
+    expect(screen.queryByRole('alert')).not.toHaveTextContent('Validation failed');
   });
 
   it('resurfaces the alert when editing clears a mapped field error', async () => {
@@ -83,7 +91,9 @@ describe('SignupForm server validation feedback', () => {
 
     render(<SignupForm />);
     fillAndSubmit();
-    await screen.findByText('Password must be at least 6 characters');
+    await waitFor(() =>
+      expect(screen.getByText('Password must be at least 6 characters')).toBeInTheDocument(),
+    );
 
     // First keystroke after the failed submit revalidates and clears the
     // server-mapped error; the failure must not become invisible.
@@ -103,7 +113,9 @@ describe('SignupForm server validation feedback', () => {
     render(<SignupForm />);
     fillAndSubmit();
 
-    expect(await screen.findByText('Password must be at least 6 characters')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByText('Password must be at least 6 characters')).toBeInTheDocument(),
+    );
     expect(screen.getByRole('alert')).toHaveTextContent('You must accept the terms');
   });
 
