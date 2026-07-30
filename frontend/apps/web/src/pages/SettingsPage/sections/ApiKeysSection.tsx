@@ -39,8 +39,16 @@ interface CreateApiKeyResponse extends ApiKeyResponse {
  */
 const SCOPE_OPTIONS = [
   { value: API_KEY_SCOPE_MEMORY, label: 'Memory', description: 'Read and write memories (/memory)' },
-  { value: API_KEY_SCOPE_INTENTS, label: 'Intents', description: 'The agent intent catalog (/api/intents)' },
-  { value: API_KEY_SCOPE_MCP, label: 'MCP', description: 'The Model Context Protocol endpoint (/api/mcp)' },
+  {
+    value: API_KEY_SCOPE_INTENTS,
+    label: 'Intents',
+    description: 'The agent intent catalog (/api/intents), and the tools an MCP client sees',
+  },
+  {
+    value: API_KEY_SCOPE_MCP,
+    label: 'MCP',
+    description: 'Reach the Model Context Protocol endpoint (/api/mcp) — pair with Intents to see any tools',
+  },
 ] as const;
 
 // Companion Hub mints one key per connected app when you "Connect Memory" from
@@ -131,6 +139,12 @@ export function ApiKeysSection() {
       current.includes(scope) ? current.filter((s) => s !== scope) : [...current, scope],
     );
   };
+
+  // The one scope combination that looks valid and is not: the server confines a scope-limited key
+  // off the GraphQL data plane, and gates the native intent tools behind `intents`. So `mcp` on its
+  // own leaves the tool list empty. An unscoped key is unaffected — it is not scope-limited.
+  const mcpWithoutIntents =
+    createScopes.includes(API_KEY_SCOPE_MCP) && !createScopes.includes(API_KEY_SCOPE_INTENTS);
 
   const handleCreate = async () => {
     if (!createName.trim()) {
@@ -476,6 +490,15 @@ export function ApiKeysSection() {
                   ? 'No selection grants full access — the key can reach every endpoint your account can.'
                   : 'The key is limited to the selected areas and is refused everywhere else, including bulk ingest and GraphQL.'}
               </p>
+              {/* MCP without Intents authenticates and opens a session, then advertises zero tools —
+                  which agents report as "this server has no tools" rather than as a permissions
+                  problem. Say so here, at the point of choice, rather than leaving the user to
+                  debug an empty tool list. */}
+              {mcpWithoutIntents ? (
+                <p className="text-xs font-medium text-amber-600 dark:text-amber-500">
+                  MCP alone advertises no tools. Add Intents, or leave every box unchecked for full access.
+                </p>
+              ) : null}
             </div>
           </div>
           <Dialog.Footer>
