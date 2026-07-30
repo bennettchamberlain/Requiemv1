@@ -36,9 +36,15 @@ interface CreateApiKeyResponse extends ApiKeyResponse {
  * declare one of its scopes. Leaving every box unchecked omits `scopes` from the request, which the
  * API reads as the grandfathered "full access" case — and stays the default, because endpoints
  * without a declared scope (bulk ingest, GraphQL) refuse scoped keys outright.
+ *
+ * Paths are the ones a client actually calls, which are `/api/`-prefixed across the board — the
+ * gateway rewrites `^/api/(.*)` to `/$1`, so `/api/mcp` and `/api/memory` reach controllers mounted
+ * at `mcp` and `memory`. Quoting the mount points instead would print a path no client uses: the
+ * agent plugins call `/api/memory/{context,recall,turn,write}`, and the MCP examples in
+ * `docs/api/auth-and-conventions.md` connect to `/api/mcp`.
  */
 const SCOPE_OPTIONS = [
-  { value: API_KEY_SCOPE_MEMORY, label: 'Memory', description: 'Read and write memories (/memory)' },
+  { value: API_KEY_SCOPE_MEMORY, label: 'Memory', description: 'Read and write memories (/api/memory)' },
   {
     value: API_KEY_SCOPE_INTENTS,
     label: 'Intents',
