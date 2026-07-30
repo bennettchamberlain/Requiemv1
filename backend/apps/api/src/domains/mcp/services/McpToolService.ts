@@ -5,7 +5,7 @@ import type { RequestContext } from '@ci/common/context';
 import { type ApiKeyCapability, INTENTS_SCOPE } from '@ci/common/decorators';
 import { type ApiKeyScopedRequest, apiKeyCapabilityOf, isScopeLimitedApiKey } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
-import { type JSONSchema, ToolRegistry, intentToolName } from '@ci/domains/tools';
+import { type IntentPrivacy, type JSONSchema, ToolRegistry, intentToolName } from '@ci/domains/tools';
 
 import type { McpRegisteredTool } from '../types';
 
@@ -26,7 +26,11 @@ import { McpExecutorService } from './McpExecutorService';
  * a level that allowed one while refusing the other would be a distinction no user could act on.
  */
 function capabilityAllows(
-  privacy: { access: string; destructive: boolean },
+  // Typed off IntentPrivacy rather than restated as `{ access: string }`: `access` is a closed union
+  // ('read' | 'write' | 'delete'), and a structural copy that widens it to `string` would let a typo
+  // — 'deleted', 'READ' — compile here and silently fall through to the permissive branch. The gate
+  // should not be the one place that stops believing the label's type.
+  privacy: Pick<IntentPrivacy, 'access' | 'destructive'>,
   capability: ApiKeyCapability,
 ): boolean {
   if (capability === 'full') {
