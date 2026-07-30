@@ -67,7 +67,7 @@
       "hubOrigins": ""
     },
     "portal": {
-      "enabled": false,
+      "enabled": true,
       "issuer": "https://hub.ci.computer",
       "jwksUri": "https://hub.ci.computer/api/auth/jwks",
       "audience": "ci-server,ci-hub,ci-import-tools,ci-browser-extension,ci-even,ci-applet"
