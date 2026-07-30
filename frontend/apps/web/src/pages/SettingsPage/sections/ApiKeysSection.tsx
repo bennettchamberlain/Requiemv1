@@ -98,10 +98,12 @@ const CAPABILITY_OPTIONS = [
   },
   {
     value: API_KEY_CAPABILITY_FULL,
-    // NOT "Full access", even though the stored value is 'full' and CI-Hub labels the same level
-    // that way. On this screen "Full access" already means something else — the badge on a key with
-    // no scopes, i.e. full *surface* — and a row can carry both. Two different powers under one
-    // phrase, side by side, is worse than a small divergence in wording between the two appliances.
+    // NOT "Full access". On this screen that phrase already means something else — the badge on a
+    // key with no scopes, i.e. full *surface* — and one row can carry both. Two different powers
+    // under one phrase, side by side, is the ambiguity worth spending words to avoid.
+    //
+    // CI-Hub uses this same wording for the same stored value, so a user who grants an agent access
+    // to both appliances meets one vocabulary rather than two dialects.
     label: 'Read, write & delete',
     description: 'Also delete memories and other stored data. Deletions cannot be undone.',
   },
@@ -113,11 +115,20 @@ const CAPABILITY_LABELS: Record<ApiKeyCapability, string> = {
   [API_KEY_CAPABILITY_FULL]: 'Read, write & delete',
 };
 
-/** Colour carries the same meaning it does elsewhere: neutral for inert, amber for "can destroy
- *  data". Full access should not look like an ordinary setting. */
+/**
+ * Three steps of one escalating scale: inert → ordinary → caution.
+ *
+ * All three are styled. Leaving `read` and `write` unstyled made them render identically, so the
+ * badge distinguished only the top level — on a row carrying several scope badges too, two of the
+ * three answers to "what may this key do" looked the same as each other and as everything beside
+ * them.
+ *
+ * Amber rather than destructive red for `full`, matching CI-Hub: red belongs to the delete action on
+ * the same row, and a key the user deliberately granted delete rights is not an error.
+ */
 const CAPABILITY_BADGE_CLASS: Record<ApiKeyCapability, string> = {
-  [API_KEY_CAPABILITY_READ]: '',
-  [API_KEY_CAPABILITY_WRITE]: '',
+  [API_KEY_CAPABILITY_READ]: 'border-border bg-muted text-muted-foreground',
+  [API_KEY_CAPABILITY_WRITE]: 'border-primary/30 bg-primary/10 text-primary',
   [API_KEY_CAPABILITY_FULL]: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400',
 };
 
