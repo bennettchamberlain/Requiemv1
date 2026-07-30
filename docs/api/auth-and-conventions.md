@@ -117,12 +117,14 @@ curl -H "Authorization: Bearer eyJ…" -H "Content-Type: application/json" \
 
 ### 1.2 API keys (programmatic clients)
 
-Long-lived credentials for non-browser clients (CI-Import-Tools, CI-Connect, mobile App Intents, MCP clients). Passed in the **`x-api-key`** header.
+Long-lived credentials for non-browser clients (CI-Import-Tools, CI-Connect, mobile App Intents, MCP clients). Passed in the **`x-api-key`** header, or as **`Authorization: Bearer <key>`**.
+
+The bearer form exists for MCP clients: most expose a single bearer-token field and cannot send a custom header, which made `/api/mcp` unreachable for them. It also removes a gratuitous difference from the Hub, whose MCP surface is bearer-only. The scheme is matched case-insensitively per RFC 7235 §2.1 (`bearer` works). The two in-process readers — `ApiKeyStrategy` and `JwtOrApiKeyAuthGuard`'s Portal path — share one `extractBearerToken` helper so they cannot drift; the third reader is `passport-jwt`, which does its own parse and has always lowercased the scheme (`extract_jwt.js:54,60`). `x-api-key` wins if both are present — unless it is blank, in which case the bearer form is used, so a proxy that always sets the header cannot mask a good credential. This does not shadow session auth — on `JwtOrApiKeyAuthGuard` the `jwt` strategy consumes bearer JWTs first, and a JWT that reached the api-key strategy would fail the 64-hex format check before any DB lookup.
 
 - **Format:** 32 random bytes → 64 lowercase hex chars (`ApiKeyService.ts:13-14,26`). The strategy rejects anything not matching `/^[0-9a-f]{64}$/` before hitting the DB (`ApiKeyStrategy.ts`, `ApiKeyService.ts:105`).
 - **Storage:** only a **SHA-256 hash** is stored (`ApiKeyService.hash`, `:129-131`); a 5-char `prefix` is stored clear for identification. The raw key is returned **once** at creation and never again.
 - **Validation** (`ApiKeyService.validateKey`, `:104-127`): hash → look up by `hashed_key` → reject if expired → stamp `last_used_at` → return `{ userId }`.
-- **Scopes:** a `text[]` column, settable at create/update, **stored/returned but not currently enforced** — an authenticated key acts with its owner's full user scope.
+- **Scopes:** a `text[]` column, settable at create/update, and **enforced deny-by-default** (`apiKeyScopeEnforcement.ts`): a scope-limited key is confined to routes declaring a scope it holds, and is refused with `ForbiddenException` elsewhere. An **empty** `scopes` array is the grandfathered full-authority case — a key created *without* scopes acts with its owner's full user scope.
 
 #### `/keys` management — `@Controller('keys')`, **every method `JwtAuthGuard`** (browser-session only; you cannot mint keys with a key)
 
@@ -183,12 +185,12 @@ CI-Server uses **per-controller guards**, not a global auth guard.
 | Guard | Extends | Accepts | Typical use |
 |---|---|---|---|
 | `JwtAuthGuard` | `AuthGuard('jwt')` | Access-token bearer only | `/keys`, `/onboarding`, `/_internal` |
-| `ApiKeyGuard` | `AuthGuard('api-key')` | `x-api-key` only | `/memory` (agent write API) |
+| `ApiKeyGuard` | `AuthGuard('api-key')` | `x-api-key` or `Authorization: Bearer <key>` | `/memory` (agent write API) |
 | `JwtOrApiKeyAuthGuard` | `AuthGuard(['jwt','api-key'])` (+ Portal) | Either credential | The default for most resolvers & REST controllers |
 | `CsrfGuard` | `CanActivate` | double-submit CSRF token | login / signup / refresh |
 | `IdFormatGuard` | `CanActivate` (global) | — | id-param format validation |
 
-`JwtOrApiKeyAuthGuard` **precedence** (`:27-47`): (1) Portal token if enabled; else (2) the passport composite `['jwt','api-key']` — **`jwt` runs first** (Authorization bearer), then **`api-key`** (`x-api-key`). Any one success authenticates; none → `UnauthorizedException`. All passport guards override `getRequest` to unwrap **both HTTP and GraphQL** contexts, so the same guard works on REST controllers and GraphQL resolvers (`:49-68`).
+`JwtOrApiKeyAuthGuard` **precedence** (`:27-47`): (1) Portal token if enabled; else (2) the passport composite `['jwt','api-key']` — **`jwt` runs first** (Authorization bearer), then **`api-key`** (`x-api-key`, or a bearer value the `jwt` strategy rejected). Any one success authenticates; none → `UnauthorizedException`. All passport guards override `getRequest` to unwrap **both HTTP and GraphQL** contexts, so the same guard works on REST controllers and GraphQL resolvers (`:49-68`).
 
 ### How `userId` reaches handlers — AsyncLocalStorage
 
@@ -259,7 +261,7 @@ CI-Server exposes a **Model Context Protocol** server so agents (CI-Hermes, CI-O
 - **Path: root `/mcp`** — `@Controller('mcp')` (`McpController.ts:36`). Browser clients reach it at `/api/mcp` through the proxy; there is **no** separate `/api/mcp` controller.
 - **Transport:** `StreamableHTTPServerTransport` (`@modelcontextprotocol/sdk`) — HTTP with an SSE stream for server→client notifications.
 - **Server identity:** name **`companion-memory`**, version **`0.1.0`** (`McpServerService.ts:21-24`).
-- **Auth:** class-guarded by **`JwtOrApiKeyAuthGuard`** — authenticate with an access-token Bearer **or** `x-api-key` (or a Portal token when enabled).
+- **Auth:** class-guarded by **`JwtOrApiKeyAuthGuard`** — authenticate with an access-token Bearer, an API key as **`Authorization: Bearer <key>`** or `x-api-key` (or a Portal token when enabled). Point a standard MCP client at its bearer-token field; see [§1.2](#12-api-keys-programmatic-clients).
 
 ### 5.2 Session lifecycle (JSON-RPC over HTTP)
 
@@ -273,8 +275,9 @@ Each session is bound to the authenticating `userId`; a session id from a *diffe
 
 ```bash
 # Initialize — server returns Mcp-Session-Id
+# `-H "x-api-key: a1b2c…"` is equivalent; MCP clients that only offer a token field use this form.
 curl -i -X POST https://ci-memory.example.com/api/mcp \
-  -H "x-api-key: a1b2c…" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer a1b2c…" -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{
         "protocolVersion":"2025-06-18","capabilities":{},

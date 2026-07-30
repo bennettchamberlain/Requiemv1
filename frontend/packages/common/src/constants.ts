@@ -32,3 +32,15 @@ export const ENTITY_TYPE_MAP = {
  * button the API rejects — the exact drift the provenance column removed.
  */
 export const API_KEY_PROVENANCE_CONNECT = 'connect';
+
+/**
+ * The scopes an api key may carry, mirroring the backend's `RequireScopes` constants.
+ *
+ * Kept here for the same reason as {@link API_KEY_PROVENANCE_CONNECT}: these are API contract
+ * values, not UI copy. The create/update body is validated against exactly this list, so a literal
+ * that drifted would 400 at creation with nothing in the dialog to explain why. The human-readable
+ * label and description for each stay in the component, which is where copy belongs.
+ */
+export const API_KEY_SCOPE_MEMORY = 'memory';
+export const API_KEY_SCOPE_INTENTS = 'intents';
+export const API_KEY_SCOPE_MCP = 'mcp';
