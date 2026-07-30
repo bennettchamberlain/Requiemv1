@@ -14,6 +14,13 @@ ALTER TABLE ci.api_keys
 -- Refuse an unreadable authority level at the door. The application coerces an unrecognised
 -- value to the strictest level on read, but a constraint means it can never be written in the
 -- first place — a typo'd capability is a key whose powers nobody can state.
+--
+-- Dropped first so the whole file is re-runnable, matching the column's own IF NOT EXISTS and the
+-- pattern the other migrations here use. An `ADD CONSTRAINT` that throws on a second run turns a
+-- partially-applied migration — one recovered by hand, or replayed against a restored database —
+-- into a manual repair, and it would do so at exactly the moment someone is already recovering.
+ALTER TABLE ci.api_keys
+  DROP CONSTRAINT IF EXISTS api_keys_capability_check;
 ALTER TABLE ci.api_keys
   ADD CONSTRAINT api_keys_capability_check CHECK (capability IN ('read', 'write', 'full'));
 
