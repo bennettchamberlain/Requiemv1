@@ -24,6 +24,9 @@ jest.mock('jose', () => ({
   createRemoteJWKSet: jest.fn(),
 }));
 
+import { readFileSync } from 'node:fs';
+import { resolve as resolvePath } from 'node:path';
+
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 import { PortalTokenService } from '../services/PortalTokenService';
@@ -97,5 +100,36 @@ describe('PortalTokenService', () => {
 
     expect(await service.verifyAndProvision('bad')).toBeNull();
     expect(userService.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('shipped PORTAL_OIDC_AUDIENCE default', () => {
+  // The suite above mocks `config`, so it cannot catch an audience missing from
+  // the config we actually ship. A first-party client absent from this list gets
+  // a correctly-signed token rejected by jwtVerify, and PortalTokenService
+  // swallows the reason (`catch { return null }`) — so the symptom is a generic
+  // 401 on ingest with nothing in the logs pointing at the cause. Assert the
+  // real default instead.
+  //
+  // Keep in step with CI-Portal's PUBLIC_CLIENTS (createAuth.ts): the portal
+  // issues per-client tokens with `aud === client_id`, so any client registered
+  // there must be accepted here or it can authenticate but not write to memory.
+  it('accepts every first-party client that CI-Portal can issue tokens for', () => {
+    // Read rather than import: the api workspace's tsconfig has no
+    // resolveJsonModule, so a JSON import passes jest (swc) but fails typecheck.
+    const raw = readFileSync(resolvePath(__dirname, '../../../../config/default.json'), 'utf8');
+    const defaults = JSON.parse(raw) as { auth: { portal: { audience: string } } };
+    const audiences = defaults.auth.portal.audience.split(',').map((a) => a.trim());
+
+    expect(audiences).toContain('ci-server');
+    expect(audiences).toContain('ci-hub');
+    expect(audiences).toContain('ci-import-tools');
+    expect(audiences).toContain('ci-browser-extension');
+    expect(audiences).toContain('ci-even');
+    // Companion Memory App (CI-Applet), the desktop capture client.
+    expect(audiences).toContain('ci-applet');
+
+    expect(new Set(audiences).size).toBe(audiences.length);
+    expect(audiences.every((a) => a.length > 0)).toBe(true);
   });
 });
