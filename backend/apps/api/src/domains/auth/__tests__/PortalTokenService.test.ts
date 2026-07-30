@@ -36,6 +36,7 @@ const mockCreateRemoteJWKSet = createRemoteJWKSet as unknown as jest.Mock;
 
 describe('PortalTokenService', () => {
   let userService: { findByEmail: jest.Mock; create: jest.Mock };
+  let logger: { setContext: jest.Mock; debug: jest.Mock };
   let service: PortalTokenService;
 
   beforeEach(() => {
@@ -43,7 +44,8 @@ describe('PortalTokenService', () => {
     mockCreateRemoteJWKSet.mockReset();
     mockCreateRemoteJWKSet.mockReturnValue('JWKS');
     userService = { findByEmail: jest.fn(), create: jest.fn() };
-    service = new PortalTokenService(userService as never);
+    logger = { setContext: jest.fn(), debug: jest.fn() };
+    service = new PortalTokenService(userService as never, logger as never);
   });
 
   it('verifies against the portal JWKS with the configured issuer + audience', async () => {
@@ -101,19 +103,40 @@ describe('PortalTokenService', () => {
     expect(await service.verifyAndProvision('bad')).toBeNull();
     expect(userService.create).not.toHaveBeenCalled();
   });
+
+  // A rejected token used to be indistinguishable from no token at all: the
+  // catch returned a bare null, so a misconfigured audience or issuer surfaced
+  // only as a blanket 401 with nothing to go on. The reason is now logged —
+  // without the token itself.
+  it('logs why a token was rejected instead of failing silently', async () => {
+    const err = Object.assign(new Error('unexpected "aud" claim value'), {
+      code: 'ERR_JWT_CLAIM_VALIDATION_FAILED',
+    });
+    mockJwtVerify.mockRejectedValue(err);
+
+    expect(await service.verifyAndProvision('bad-token')).toBeNull();
+
+    expect(logger.debug).toHaveBeenCalledWith(
+      'Portal token rejected',
+      expect.objectContaining({
+        code: 'ERR_JWT_CLAIM_VALIDATION_FAILED',
+        reason: 'unexpected "aud" claim value',
+      }),
+    );
+    // The token itself must never reach the logs.
+    expect(JSON.stringify(logger.debug.mock.calls)).not.toContain('bad-token');
+  });
 });
 
+// The suite above mocks `config`, so it cannot catch an audience missing from
+// the config we actually ship. A first-party client absent from this list gets
+// a correctly-signed token rejected by jwtVerify — now logged, but still a 401.
+// Assert the real default instead.
+//
+// Keep in step with CI-Portal's PUBLIC_CLIENTS (createAuth.ts): the portal
+// issues per-client tokens with `aud === client_id`, so any client registered
+// there must be accepted here or it can authenticate but not write to memory.
 describe('shipped PORTAL_OIDC_AUDIENCE default', () => {
-  // The suite above mocks `config`, so it cannot catch an audience missing from
-  // the config we actually ship. A first-party client absent from this list gets
-  // a correctly-signed token rejected by jwtVerify, and PortalTokenService
-  // swallows the reason (`catch { return null }`) — so the symptom is a generic
-  // 401 on ingest with nothing in the logs pointing at the cause. Assert the
-  // real default instead.
-  //
-  // Keep in step with CI-Portal's PUBLIC_CLIENTS (createAuth.ts): the portal
-  // issues per-client tokens with `aud === client_id`, so any client registered
-  // there must be accepted here or it can authenticate but not write to memory.
   it('accepts every first-party client that CI-Portal can issue tokens for', () => {
     // Read rather than import: the api workspace's tsconfig has no
     // resolveJsonModule, so a JSON import passes jest (swc) but fails typecheck.
