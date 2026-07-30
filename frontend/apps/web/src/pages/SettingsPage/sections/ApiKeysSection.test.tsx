@@ -206,6 +206,32 @@ describe('ApiKeysSection capability picker', () => {
     );
   });
 
+  // Capability is enforced on routes that declare a scope — which is every route a scope-limited key
+  // can reach. An unscoped key is not scope-limited, so read-only covers less than it says.
+  it('says so when read-only is picked with no areas selected', async () => {
+    render(<ApiKeysSection />);
+    await openCreateDialogAndName();
+
+    expect(screen.queryByText(/still\s+reach GraphQL and bulk ingest/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Read-only' }));
+
+    expect(screen.getByText(/still\s+reach GraphQL and bulk ingest/i)).toBeInTheDocument();
+
+    // Confining the key to an area removes the caveat, because there capability IS enforced.
+    fireEvent.click(screen.getByLabelText('Memory'));
+    expect(screen.queryByText(/still\s+reach GraphQL and bulk ingest/i)).not.toBeInTheDocument();
+  });
+
+  it('does not caveat write or full, which are not narrowed claims', async () => {
+    render(<ApiKeysSection />);
+    await openCreateDialogAndName();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Read, write & delete' }));
+
+    expect(screen.queryByText(/still\s+reach GraphQL and bulk ingest/i)).not.toBeInTheDocument();
+  });
+
   it('resets to the default when the dialog is cancelled', async () => {
     render(<ApiKeysSection />);
     await openCreateDialogAndName();

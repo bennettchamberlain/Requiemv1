@@ -5,6 +5,7 @@ export { JwtAuthGuard } from './JwtAuthGuard';
 export { JwtOrApiKeyAuthGuard } from './JwtOrApiKeyAuthGuard';
 export {
   apiKeyCapabilityOf,
+  enforceApiKeyCapability,
   enforceApiKeyScopes,
   isScopeLimitedApiKey,
   type ApiKeyScopedRequest,

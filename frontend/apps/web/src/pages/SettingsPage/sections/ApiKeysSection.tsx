@@ -89,7 +89,7 @@ const CAPABILITY_OPTIONS = [
   {
     value: API_KEY_CAPABILITY_READ,
     label: 'Read-only',
-    description: 'Search and read memories. Cannot record or change anything.',
+    description: 'Search and read memories. Cannot record, change or delete them.',
   },
   {
     value: API_KEY_CAPABILITY_WRITE,
@@ -234,6 +234,12 @@ export function ApiKeysSection() {
   // own leaves the tool list empty. An unscoped key is unaffected — it is not scope-limited.
   const mcpWithoutIntents =
     createScopes.includes(API_KEY_SCOPE_MCP) && !createScopes.includes(API_KEY_SCOPE_INTENTS);
+
+  // Capability is enforced on the routes that declare a scope — which is every route a scope-limited
+  // key can reach. An unscoped key is not scope-limited, so it also reaches GraphQL and bulk ingest,
+  // where nothing checks its capability. Read-only therefore means less than it says for this one
+  // combination, and the honest place to say so is here, before the key exists.
+  const readWithoutScopes = createCapability === API_KEY_CAPABILITY_READ && createScopes.length === 0;
 
   const handleCreate = async () => {
     if (!createName.trim()) {
@@ -629,6 +635,12 @@ export function ApiKeysSection() {
                 {mcpWithoutIntents ? (
                   <p className="text-xs font-medium text-amber-600 dark:text-amber-500">
                     MCP alone advertises no tools. Add Intents, or leave every box unchecked for full access.
+                  </p>
+                ) : null}
+                {readWithoutScopes ? (
+                  <p className="text-xs font-medium text-amber-600 dark:text-amber-500">
+                    Read-only is enforced on the areas selected above. A key with no areas selected can still
+                    reach GraphQL and bulk ingest — pick the areas it needs to confine it.
                   </p>
                 ) : null}
               </div>

@@ -1,3 +1,5 @@
+import { SetMetadata } from '@nestjs/common';
+
 /**
  * What an API key may DO on the surfaces its scopes let it reach.
  *
@@ -57,3 +59,32 @@ export function coerceApiKeyCapability(value: unknown): ApiKeyCapability {
 export function isCapabilityPromotion(from: ApiKeyCapability, to: ApiKeyCapability): boolean {
   return CAPABILITY_RANK[to] > CAPABILITY_RANK[from];
 }
+
+/** True when `capability` is at least `required` — the one comparison enforcement makes. */
+export function capabilitySatisfies(capability: ApiKeyCapability, required: ApiKeyCapability): boolean {
+  return CAPABILITY_RANK[capability] >= CAPABILITY_RANK[required];
+}
+
+/** Metadata key under which a route's minimum capability is stored. */
+export const REQUIRE_CAPABILITY_KEY = 'require_capability';
+
+/**
+ * Declares the minimum capability an api-key needs to reach a route.
+ *
+ * The companion to {@link RequireScopes}, and it must be applied wherever that is: `@RequireScopes`
+ * marks a route as reachable by a scope-limited key, and a scope-limited key can reach NOTHING else
+ * (deny-by-default), so annotating every scoped route makes capability enforcement complete for
+ * those keys. Miss one and a read-only key can still act there — which is worse than not offering
+ * read-only at all, because the UI has already promised otherwise.
+ *
+ * Stated per route rather than inferred from the HTTP method, which would be wrong here in both
+ * directions: `POST /memory/recall` only searches, and a future `GET` that triggers work would read
+ * as harmless.
+ *
+ * An empty-scope (grandfathered full-access) key is subject to this too, on the routes that declare
+ * it — "reaches every surface" and "may write on it" are separate grants. Routes with no annotation
+ * keep their current behaviour for such keys; only scope-limited keys are fully confined, since only
+ * they are confined to annotated routes in the first place.
+ */
+export const RequireCapability = (capability: ApiKeyCapability) =>
+  SetMetadata(REQUIRE_CAPABILITY_KEY, capability);

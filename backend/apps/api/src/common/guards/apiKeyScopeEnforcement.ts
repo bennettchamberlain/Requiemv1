@@ -5,7 +5,9 @@ import type { Request } from 'express';
 import {
   type ApiKeyCapability,
   FULL_CAPABILITY,
+  REQUIRE_CAPABILITY_KEY,
   REQUIRE_SCOPES_KEY,
+  capabilitySatisfies,
   coerceApiKeyCapability,
 } from '@ci/common/decorators';
 
@@ -110,5 +112,47 @@ export function enforceApiKeyScopes(
 
   if (missing.length > 0) {
     throw new ForbiddenException(`API key is missing required scope(s): ${missing.join(', ')}`);
+  }
+}
+
+/**
+ * Capability enforcement for api-key principals — the second axis, run alongside
+ * {@link enforceApiKeyScopes} from the same guards.
+ *
+ * Scopes decide WHICH routes a key may reach; capability decides what it may do when it gets
+ * there. Without this the two axes would only meet on the MCP tool surface, and a read-only key
+ * carrying `memory` could still `POST /api/memory/write` — a hole the settings UI has already
+ * promised is closed.
+ *
+ * Unlike scopes this is opt-in per route ({@link RequireCapability}), because it applies to
+ * empty-scope keys too and those reach the entire API: a deny-by-default rule here would 403 a
+ * legacy key on every un-annotated route. That is not a gap for a scope-limited key, which cannot
+ * reach an un-annotated route at all.
+ */
+export function enforceApiKeyCapability(
+  reflector: Reflector,
+  context: ExecutionContext,
+  request: ApiKeyScopedRequest,
+): void {
+  // Not an api-key principal (session/JWT/Portal) → full user authority, nothing to enforce.
+  if (request.apiKeyScopes === undefined) {
+    return;
+  }
+
+  const required = reflector.getAllAndOverride<ApiKeyCapability | undefined>(REQUIRE_CAPABILITY_KEY, [
+    context.getHandler(),
+    context.getClass(),
+  ]);
+
+  if (!required) {
+    return;
+  }
+
+  const capability = apiKeyCapabilityOf(request);
+
+  if (!capabilitySatisfies(capability, required)) {
+    throw new ForbiddenException(
+      `This API key is "${capability}" and cannot perform this action, which requires "${required}" access`,
+    );
   }
 }
