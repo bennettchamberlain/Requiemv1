@@ -175,12 +175,16 @@ describe('McpToolService — scope-limited callers', () => {
       expect(tools.map((tool) => tool.name)).not.toContain('delete_person');
     });
 
-    it('applies to an empty-scope key too — full surface is not full authority', () => {
+    it('applies to an empty-scope key too — full surface is not full authority', async () => {
       // The bulk importer holds no scopes and reaches every surface. That is exactly the credential
       // that should be able to write without being able to delete.
       const { service, executor } = buildService();
 
-      expect(
+      // `await` matters: an un-awaited `.rejects` does not gate the test. If the capability gate
+      // regressed and the call RESOLVED, this assertion would not fail — the rejection would surface
+      // later as an unhandled rejection that kills the jest worker, reporting "test suite failed to
+      // run" with no test names, which reads like an infrastructure flake rather than a broken gate.
+      await expect(
         service.executeTool('delete_person', {}, { req: requestWithScopes([], 'write') as Request }),
       ).rejects.toBeInstanceOf(ForbiddenException);
       expect(executor.executeTool).not.toHaveBeenCalled();
