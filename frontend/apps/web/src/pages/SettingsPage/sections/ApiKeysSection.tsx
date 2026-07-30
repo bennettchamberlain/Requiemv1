@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { fetchJson } from '@ci/common';
-import { API_KEY_PROVENANCE_CONNECT } from '@ci/common/src/constants';
-import { Badge, Button, Calendar, Card, Dialog, Input, Label, Popover } from '@ci/shadcn';
+import {
+  API_KEY_PROVENANCE_CONNECT,
+  API_KEY_SCOPE_INTENTS,
+  API_KEY_SCOPE_MCP,
+  API_KEY_SCOPE_MEMORY,
+} from '@ci/common/src/constants';
+import { Badge, Button, Calendar, Card, Checkbox, Dialog, Input, Label, Popover } from '@ci/shadcn';
 import { CalendarIcon, Check, ClipboardCopy, KeyRound, Lock, Pencil, Plus, Trash, X } from '@ci/shadcn/icons';
 
 import { useAuth } from '@/hooks';
@@ -23,6 +28,34 @@ interface ApiKeyResponse {
 interface CreateApiKeyResponse extends ApiKeyResponse {
   key: string;
 }
+
+/**
+ * Scopes a user-created key can carry, labelled for the create dialog.
+ *
+ * Enforcement is deny-by-default on a NON-EMPTY selection: a scoped key may only reach routes that
+ * declare one of its scopes. Leaving every box unchecked omits `scopes` from the request, which the
+ * API reads as the grandfathered "full access" case — and stays the default, because endpoints
+ * without a declared scope (bulk ingest, GraphQL) refuse scoped keys outright.
+ *
+ * Paths are the ones a client actually calls, which are `/api/`-prefixed across the board — the
+ * gateway rewrites `^/api/(.*)` to `/$1`, so `/api/mcp` and `/api/memory` reach controllers mounted
+ * at `mcp` and `memory`. Quoting the mount points instead would print a path no client uses: the
+ * agent plugins call `/api/memory/{context,recall,turn,write}`, and the MCP examples in
+ * `docs/api/auth-and-conventions.md` connect to `/api/mcp`.
+ */
+const SCOPE_OPTIONS = [
+  { value: API_KEY_SCOPE_MEMORY, label: 'Memory', description: 'Read and write memories (/api/memory)' },
+  {
+    value: API_KEY_SCOPE_INTENTS,
+    label: 'Intents',
+    description: 'The agent intent catalog (/api/intents), and the tools an MCP client sees',
+  },
+  {
+    value: API_KEY_SCOPE_MCP,
+    label: 'MCP',
+    description: 'Reach the Model Context Protocol endpoint (/api/mcp) — pair with Intents to see any tools',
+  },
+] as const;
 
 // Companion Hub mints one key per connected app when you "Connect Memory" from
 // the Hub. These are lifecycle-owned by the Hub — it rotates and revokes them —
@@ -49,6 +82,7 @@ export function ApiKeysSection() {
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState('');
   const [createExpiresAt, setCreateExpiresAt] = useState<Date | undefined>(undefined);
+  const [createScopes, setCreateScopes] = useState<string[]>([]);
   const [createLoading, setCreateLoading] = useState(false);
 
   // Newly created key (shown once)
@@ -91,6 +125,33 @@ export function ApiKeysSection() {
     fetchKeys();
   }, [fetchKeys]);
 
+  /**
+   * Reset the form whenever the dialog closes. Without this a cancelled dialog reopens holding the
+   * previous selection, so a user who once picked scopes could mint a scope-limited key believing
+   * it has full access.
+   */
+  const handleCreateOpenChange = (open: boolean) => {
+    setCreateOpen(open);
+
+    if (!open) {
+      setCreateName('');
+      setCreateExpiresAt(undefined);
+      setCreateScopes([]);
+    }
+  };
+
+  const toggleCreateScope = (scope: string) => {
+    setCreateScopes((current) =>
+      current.includes(scope) ? current.filter((s) => s !== scope) : [...current, scope],
+    );
+  };
+
+  // The one scope combination that looks valid and is not: the server confines a scope-limited key
+  // off the GraphQL data plane, and gates the native intent tools behind `intents`. So `mcp` on its
+  // own leaves the tool list empty. An unscoped key is unaffected — it is not scope-limited.
+  const mcpWithoutIntents =
+    createScopes.includes(API_KEY_SCOPE_MCP) && !createScopes.includes(API_KEY_SCOPE_INTENTS);
+
   const handleCreate = async () => {
     if (!createName.trim()) {
       return;
@@ -103,6 +164,11 @@ export function ApiKeysSection() {
         body.expires_at = createExpiresAt.toISOString();
       }
 
+      // Omitted when empty so the key keeps the grandfathered full-access meaning.
+      if (createScopes.length > 0) {
+        body.scopes = createScopes;
+      }
+
       const data = await fetchJson<CreateApiKeyResponse>('/api/keys', {
         method: 'POST',
         headers: headers(),
@@ -110,9 +176,9 @@ export function ApiKeysSection() {
       });
 
       setRevealedKey(data?.key ?? null);
-      setCreateOpen(false);
-      setCreateName('');
-      setCreateExpiresAt(undefined);
+      // Closing programmatically does not fire the dialog's onOpenChange, so route through the same
+      // handler rather than repeating the field resets, which would otherwise have to stay in sync.
+      handleCreateOpenChange(false);
       await fetchKeys();
     } catch {
       setError('Failed to create API key');
@@ -211,7 +277,8 @@ export function ApiKeysSection() {
             Create keys to grant other applications access to your account.
           </p>
         </div>
-        <Button variant="outline" size="icon" onClick={() => setCreateOpen(true)}>
+        {/* Icon-only trigger: without an explicit label it reaches assistive tech as an unnamed button. */}
+        <Button variant="outline" size="icon" aria-label="Create API key" onClick={() => setCreateOpen(true)}>
           <Plus className="h-4 w-4" />
         </Button>
       </div>
@@ -349,7 +416,7 @@ export function ApiKeysSection() {
       )}
 
       {/* Create dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog open={createOpen} onOpenChange={handleCreateOpenChange}>
         <Dialog.Content>
           <Dialog.Header>
             <Dialog.Title>Create API Key</Dialog.Title>
@@ -396,9 +463,58 @@ export function ApiKeysSection() {
                 </Popover.Content>
               </Popover>
             </div>
+            <div className="grid gap-2">
+              <Label>Access</Label>
+              <div className="space-y-2 rounded-md border p-3">
+                {SCOPE_OPTIONS.map((scope) => (
+                  // The description is wired up with aria-describedby rather than folded into the
+                  // label: an aria-label naming the checkbox would suppress it entirely, leaving
+                  // assistive tech with "MCP" and no statement of what it unlocks.
+                  <div key={scope.value} className="flex items-start gap-3">
+                    <Checkbox
+                      id={`apiKeyScope-${scope.value}`}
+                      aria-describedby={`apiKeyScope-${scope.value}-description`}
+                      checked={createScopes.includes(scope.value)}
+                      onCheckedChange={() => toggleCreateScope(scope.value)}
+                    />
+                    <div className="grid gap-0.5 text-sm leading-none">
+                      <Label htmlFor={`apiKeyScope-${scope.value}`} className="cursor-pointer font-medium">
+                        {scope.label}
+                      </Label>
+                      <span
+                        id={`apiKeyScope-${scope.value}-description`}
+                        className="text-muted-foreground text-xs"
+                      >
+                        {scope.description}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* Both lines below restate the consequence of the current selection and change as
+                  boxes are ticked, so they have to be a live region: otherwise the amber warning is
+                  visible-only, and a screen-reader user picks the broken combination in silence —
+                  the exact outcome the warning exists to prevent. */}
+              <div role="status" className="grid gap-2">
+                <p className="text-muted-foreground text-xs">
+                  {createScopes.length === 0
+                    ? 'No selection grants full access — the key can reach every endpoint your account can.'
+                    : 'The key is limited to the selected areas and is refused everywhere else, including bulk ingest and GraphQL.'}
+                </p>
+                {/* MCP without Intents authenticates and opens a session, then advertises zero tools
+                    — which agents report as "this server has no tools" rather than as a permissions
+                    problem. Say so here, at the point of choice, rather than leaving the user to
+                    debug an empty tool list. */}
+                {mcpWithoutIntents ? (
+                  <p className="text-xs font-medium text-amber-600 dark:text-amber-500">
+                    MCP alone advertises no tools. Add Intents, or leave every box unchecked for full access.
+                  </p>
+                ) : null}
+              </div>
+            </div>
           </div>
           <Dialog.Footer>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>
+            <Button variant="outline" onClick={() => handleCreateOpenChange(false)}>
               Cancel
             </Button>
             <Button onClick={handleCreate} disabled={!createName.trim() || createLoading}>
