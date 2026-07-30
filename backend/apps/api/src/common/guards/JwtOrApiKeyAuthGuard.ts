@@ -12,13 +12,8 @@ import { AuthGuard } from '@nestjs/passport';
 import { ContextService } from '@ci/common/context';
 
 import { enforceApiKeyScopes } from './apiKeyScopeEnforcement';
+import { extractBearerToken } from './bearerToken';
 import { PORTAL_TOKEN_VERIFIER, type PortalTokenVerifier } from './PortalTokenVerifier';
-
-function extractBearerToken(request: { headers?: Record<string, unknown> }): string | null {
-  const header = request?.headers?.authorization;
-
-  return typeof header === 'string' && header.startsWith('Bearer ') ? header.slice(7) : null;
-}
 
 @Injectable()
 export class JwtOrApiKeyAuthGuard extends AuthGuard(['jwt', 'api-key']) {
@@ -34,7 +29,7 @@ export class JwtOrApiKeyAuthGuard extends AuthGuard(['jwt', 'api-key']) {
     // strategies during migration (gated by auth.portal.enabled).
     if (this.portalTokenVerifier.enabled) {
       const request = this.getRequest(context);
-      const token = extractBearerToken(request);
+      const token = extractBearerToken(request?.headers?.authorization);
 
       if (token) {
         const user = await this.portalTokenVerifier.verifyAndProvision(token);
