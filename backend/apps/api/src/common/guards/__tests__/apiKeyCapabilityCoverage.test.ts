@@ -1,5 +1,8 @@
 import 'reflect-metadata';
 
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+
 import { REQUIRE_CAPABILITY_KEY, REQUIRE_SCOPES_KEY } from '@ci/common/decorators';
 
 import { IntentsController } from '../../../domains/agent/controllers/IntentsController';
@@ -67,5 +70,42 @@ describe('every api-key-reachable route declares a capability', () => {
     );
 
     expect(scoped.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it('checks every scoped controller in the tree, not just the ones listed here', () => {
+    // The assertions above iterate SCOPED_CONTROLLERS, a hand-written list. That catches a new
+    // ROUTE on a known controller, but a whole new CONTROLLER applying @RequireScopes would never
+    // be looked at — it would grant a scope-limited key a reachable route with no capability
+    // declared, which is the exact hole this suite exists to prevent, arriving by the one door the
+    // suite does not watch.
+    //
+    // So the list is checked against the source tree rather than trusted. Scanning text (not the
+    // Nest container) keeps this a unit test: importing every module to walk the DI graph would
+    // pull in database and queue wiring for an assertion about decorators.
+    const listed = new Set(SCOPED_CONTROLLERS.map((controller) => controller.name));
+    const found = new Set<string>();
+
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+
+        if (entry.isDirectory()) {
+          // The decorator's own definition and its usage examples are not applications of it.
+          if (entry.name !== '__tests__' && entry.name !== 'decorators') {
+            walk(path);
+          }
+
+          continue;
+        }
+
+        if (entry.name.endsWith('.ts') && readFileSync(path, 'utf8').includes('@RequireScopes(')) {
+          found.add(entry.name.replace(/\.ts$/, ''));
+        }
+      }
+    };
+
+    walk(resolve(__dirname, '..', '..', '..'));
+
+    expect([...found].sort()).toEqual([...listed].sort());
   });
 });
