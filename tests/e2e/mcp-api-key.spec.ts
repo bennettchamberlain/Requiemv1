@@ -51,17 +51,20 @@ test.describe('MCP endpoint accepts an operator API key', () => {
     // Authenticated via storageState from global-setup; POST /keys is session-guarded and returns
     // the raw key exactly once — the same path a user follows in Settings → API Keys.
     const ctx = await playwright.request.newContext({ baseURL, storageState: AUTH_FILE });
-    const res = await ctx.post('/api/keys', { data: { name: 'e2e-mcp' } });
 
-    expect(res.ok(), `Key creation failed: ${res.status()} ${await res.text()}`).toBeTruthy();
+    try {
+      const res = await ctx.post('/api/keys', { data: { name: 'e2e-mcp' } });
 
-    const body = (await res.json()) as { key: string; id: string };
+      expect(res.ok(), `Key creation failed: ${res.status()} ${await res.text()}`).toBeTruthy();
 
-    rawKey = body.key;
-    keyId = body.id;
-    expect(rawKey).toBeTruthy();
+      const body = (await res.json()) as { key: string; id: string };
 
-    await ctx.dispose();
+      rawKey = body.key;
+      keyId = body.id;
+      expect(rawKey).toBeTruthy();
+    } finally {
+      await ctx.dispose();
+    }
   });
 
   test.afterAll(async ({ playwright, baseURL }) => {
@@ -73,8 +76,11 @@ test.describe('MCP endpoint accepts an operator API key', () => {
 
     const ctx = await playwright.request.newContext({ baseURL, storageState: AUTH_FILE });
 
-    await ctx.delete(`/api/keys/${keyId}`);
-    await ctx.dispose();
+    try {
+      await ctx.delete(`/api/keys/${keyId}`);
+    } finally {
+      await ctx.dispose();
+    }
   });
 
   for (const [label, headerFor] of [
@@ -84,53 +90,60 @@ test.describe('MCP endpoint accepts an operator API key', () => {
     test(`initialize and tools/list succeed with ${label}`, async ({ playwright, baseURL }) => {
       const ctx = await playwright.request.newContext({ baseURL });
 
-      const initRes = await ctx.post('/api/mcp', {
-        headers: {
-          ...headerFor(rawKey),
-          'Content-Type': 'application/json',
-          Accept: 'application/json, text/event-stream',
-        },
-        data: INITIALIZE,
-      });
+      try {
+        const initRes = await ctx.post('/api/mcp', {
+          headers: {
+            ...headerFor(rawKey),
+            'Content-Type': 'application/json',
+            Accept: 'application/json, text/event-stream',
+          },
+          data: INITIALIZE,
+        });
 
-      expect(initRes.status(), `initialize rejected with ${label}`).toBe(200);
+        expect(initRes.status(), `initialize rejected with ${label}`).toBe(200);
 
-      const sessionId = initRes.headers()['mcp-session-id'];
-      expect(sessionId, 'initialize must issue an Mcp-Session-Id').toBeTruthy();
+        const sessionId = initRes.headers()['mcp-session-id'];
+        expect(sessionId, 'initialize must issue an Mcp-Session-Id').toBeTruthy();
 
-      const initBody = parseMcpBody(initRes.headers()['content-type'] ?? '', await initRes.text());
-      expect((initBody.result as { serverInfo: { name: string } }).serverInfo.name).toBe('companion-memory');
+        const initBody = parseMcpBody(initRes.headers()['content-type'] ?? '', await initRes.text());
+        expect((initBody.result as { serverInfo: { name: string } }).serverInfo.name).toBe(
+          'companion-memory',
+        );
 
-      const listRes = await ctx.post('/api/mcp', {
-        headers: {
-          ...headerFor(rawKey),
-          'Mcp-Session-Id': sessionId,
-          'Content-Type': 'application/json',
-          Accept: 'application/json, text/event-stream',
-        },
-        data: { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
-      });
+        const listRes = await ctx.post('/api/mcp', {
+          headers: {
+            ...headerFor(rawKey),
+            'Mcp-Session-Id': sessionId,
+            'Content-Type': 'application/json',
+            Accept: 'application/json, text/event-stream',
+          },
+          data: { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
+        });
 
-      expect(listRes.status()).toBe(200);
+        expect(listRes.status()).toBe(200);
 
-      const listBody = parseMcpBody(listRes.headers()['content-type'] ?? '', await listRes.text());
-      const { tools } = listBody.result as { tools: Array<{ name: string }> };
+        const listBody = parseMcpBody(listRes.headers()['content-type'] ?? '', await listRes.text());
+        const { tools } = listBody.result as { tools: Array<{ name: string }> };
 
-      expect(tools.length).toBeGreaterThan(0);
-
-      await ctx.dispose();
+        expect(tools.length).toBeGreaterThan(0);
+      } finally {
+        await ctx.dispose();
+      }
     });
   }
 
   test('rejects a request with no credential', async ({ playwright, baseURL }) => {
     const ctx = await playwright.request.newContext({ baseURL });
-    const res = await ctx.post('/api/mcp', {
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
-      data: INITIALIZE,
-    });
 
-    expect(res.status()).toBe(401);
+    try {
+      const res = await ctx.post('/api/mcp', {
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+        data: INITIALIZE,
+      });
 
-    await ctx.dispose();
+      expect(res.status()).toBe(401);
+    } finally {
+      await ctx.dispose();
+    }
   });
 });
