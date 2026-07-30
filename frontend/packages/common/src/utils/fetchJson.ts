@@ -3,18 +3,55 @@ interface Opts extends RequestInit {
 }
 
 /**
+ * Field-level validation issue reported by the API. Mirrors the zod issue
+ * shape the backend ValidationPipe puts in the `errors` array of 400 bodies,
+ * so forms can attach server-side messages to the offending field.
+ */
+export interface FetchJsonIssue {
+  path?: Array<string | number>;
+  message?: string;
+}
+
+/**
  * Error thrown by {@link fetchJson} for non-2xx responses. Carries the HTTP
  * status so callers can branch on it (e.g. useAuth retries a refresh exactly
  * once on 403 — a stale CSRF token — but never on 401, which means the session
- * itself is invalid).
+ * itself is invalid). When the response body is JSON, `message` is the
+ * server's message and `issues` holds any field-level validation errors, so
+ * the backend stays the single source of truth for validation rules.
  */
 export class FetchJsonError extends Error {
   readonly status: number;
 
-  constructor(status: number, statusText: string) {
-    super(`Fetch failed: ${status} ${statusText}`);
+  readonly issues: FetchJsonIssue[];
+
+  constructor(status: number, statusText: string, serverMessage?: string, issues: FetchJsonIssue[] = []) {
+    super(serverMessage || `Fetch failed: ${status} ${statusText}`);
     this.name = 'FetchJsonError';
     this.status = status;
+    this.issues = issues;
+  }
+}
+
+async function parseErrorBody(res: Response): Promise<{ serverMessage?: string; issues: FetchJsonIssue[] }> {
+  try {
+    const body: unknown = JSON.parse(await res.text());
+
+    if (typeof body !== 'object' || body == null) {
+      return { issues: [] };
+    }
+
+    const { message, errors } = body as { message?: unknown; errors?: unknown };
+
+    return {
+      // NestJS sends `message` as a string, or a string[] for some built-in pipes
+      serverMessage:
+        typeof message === 'string' ? message : Array.isArray(message) ? message.join('; ') : undefined,
+      issues: Array.isArray(errors) ? (errors as FetchJsonIssue[]) : [],
+    };
+  } catch {
+    // Body wasn't JSON (e.g. a proxy error page) — fall back to the status line
+    return { issues: [] };
   }
 }
 
@@ -41,7 +78,8 @@ export async function fetchJson<T>(input: RequestInfo, init?: Opts): Promise<T |
   }
 
   if (!res.ok) {
-    throw new FetchJsonError(res.status, res.statusText);
+    const { serverMessage, issues } = await parseErrorBody(res);
+    throw new FetchJsonError(res.status, res.statusText, serverMessage, issues);
   }
 
   const text = await res.text();
