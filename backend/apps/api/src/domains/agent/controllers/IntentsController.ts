@@ -1,6 +1,6 @@
 import { Controller, Get, Param, NotFoundException, UseGuards } from '@nestjs/common';
 
-import { INTENTS_SCOPE, RequireScopes } from '@ci/common/decorators';
+import { INTENTS_SCOPE, READ_CAPABILITY, RequireCapability, RequireScopes } from '@ci/common/decorators';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import {
   IntentCatalogService,
@@ -20,6 +20,8 @@ import {
  */
 @UseGuards(JwtOrApiKeyAuthGuard)
 @RequireScopes(INTENTS_SCOPE)
+// The whole controller is reads — it publishes a catalog and changes nothing.
+@RequireCapability(READ_CAPABILITY)
 @Controller('api/intents')
 export class IntentsController {
   constructor(private readonly catalog: IntentCatalogService) {}

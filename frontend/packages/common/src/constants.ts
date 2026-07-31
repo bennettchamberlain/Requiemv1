@@ -44,3 +44,34 @@ export const API_KEY_PROVENANCE_CONNECT = 'connect';
 export const API_KEY_SCOPE_MEMORY = 'memory';
 export const API_KEY_SCOPE_INTENTS = 'intents';
 export const API_KEY_SCOPE_MCP = 'mcp';
+
+/**
+ * What a key may DO on the surfaces its scopes reach — the second, orthogonal axis (the backend's
+ * `capability` column). Scopes decide WHICH tools a key sees; capability decides which of those it
+ * may run.
+ *
+ * Same three values as CI-Hub uses for the same purpose. A user granting a connected agent access
+ * to both appliances should meet one concept, not two dialects, so these literals are worth keeping
+ * identical even though nothing forces them to be.
+ */
+export const API_KEY_CAPABILITY_READ = 'read';
+export const API_KEY_CAPABILITY_WRITE = 'write';
+export const API_KEY_CAPABILITY_FULL = 'full';
+
+export const API_KEY_CAPABILITIES = [
+  API_KEY_CAPABILITY_READ,
+  API_KEY_CAPABILITY_WRITE,
+  API_KEY_CAPABILITY_FULL,
+] as const;
+
+export type ApiKeyCapability = (typeof API_KEY_CAPABILITIES)[number];
+
+/** What a key gets when nobody said — matches the column default, so the dialog opens on the level
+ *  the server would have chosen anyway. */
+export const DEFAULT_API_KEY_CAPABILITY: ApiKeyCapability = API_KEY_CAPABILITY_WRITE;
+
+/** True when moving to `to` grants authority `from` did not have — the test for whether a change
+ *  needs a confirmation. A demotion only ever removes authority. */
+export function isApiKeyCapabilityPromotion(from: ApiKeyCapability, to: ApiKeyCapability): boolean {
+  return API_KEY_CAPABILITIES.indexOf(to) > API_KEY_CAPABILITIES.indexOf(from);
+}

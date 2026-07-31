@@ -17,8 +17,8 @@ import type { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 
 import { Context, type RequestContext } from '@ci/common/context';
-import { MCP_SCOPE, RequireScopes } from '@ci/common/decorators';
-import { type ApiKeyScopedRequest, JwtOrApiKeyAuthGuard } from '@ci/common/guards';
+import { MCP_SCOPE, READ_CAPABILITY, RequireCapability, RequireScopes } from '@ci/common/decorators';
+import { type ApiKeyScopedRequest, apiKeyCapabilityOf, JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 
 import { McpServerService } from '../services/McpServerService';
@@ -51,6 +51,13 @@ interface SessionEntry {
  * CI-OpenClaw resume, drive, or terminate CI-Hermes's session. Scopes stay in the
  * signature so that re-scoping a key also retires the sessions it opened.
  *
+ * `capability` is in the signature for exactly that last reason. Because the session is
+ * frozen to the opening request, a key narrowed from `full` to `read` would otherwise keep
+ * its old authority until the session expired — the handlers' captured request still says
+ * `full`, so the demotion an operator just made would appear to do nothing for up to the
+ * session TTL. Including it means a changed capability no longer matches the session it
+ * opened, so the next request builds a fresh server at the new level.
+ *
  * JSON-encoded rather than delimiter-joined: scope strings are free-form, so a naive
  * `join(',')` collides `['a,b']` with `['a','b']` — two different authorities, one
  * signature.
@@ -64,7 +71,11 @@ function apiKeyAuthoritySignature(req: ApiKeyScopedRequest): string {
     return JSON.stringify({ principal: 'non-api-key' });
   }
 
-  return JSON.stringify({ keyId: req.apiKeyId ?? null, scopes: [...scopes].sort() });
+  return JSON.stringify({
+    keyId: req.apiKeyId ?? null,
+    scopes: [...scopes].sort(),
+    capability: apiKeyCapabilityOf(req),
+  });
 }
 
 // Scope-limited connect keys need the `mcp` scope to reach MCP (CI-Hermes's key
@@ -72,6 +83,10 @@ function apiKeyAuthoritySignature(req: ApiKeyScopedRequest): string {
 @Controller('mcp')
 @UseGuards(JwtOrApiKeyAuthGuard)
 @RequireScopes(MCP_SCOPE)
+// Reaching the endpoint needs no more than read: a read-only key must be able to initialize, list
+// tools and call the ones that read. WHICH tools it may run is decided per tool inside
+// McpToolService, which is the only place with something specific enough to gate on.
+@RequireCapability(READ_CAPABILITY)
 export class McpController {
   private sessions = new Map<string, SessionEntry>();
 
