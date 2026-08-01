@@ -1,11 +1,15 @@
 name: Publish
 
+# >>> ci-local:gated original triggers below, restore with `ci-local restore`
+# on:
+#   push:
+#     tags:
+#       - '*'
+#
+# # Only one publish run at a time per tag.
+# <<< ci-local:gated
 on:
-  push:
-    tags:
-      - '*'
-
-# Only one publish run at a time per tag.
+  workflow_dispatch:
 concurrency:
   group: publish-${{ github.ref }}
   cancel-in-progress: false
