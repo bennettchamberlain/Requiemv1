@@ -33,9 +33,9 @@ export function FocusAreas() {
   const form = useFormContext();
 
   return (
-    <>
-      <div className="text-center text-2xl mb-4 md:mb-10">Your focus areas</div>
-      <div className="space-y-6 w-full max-w-md mx-auto text-left">
+    <div className="space-y-4 py-2 md:py-4 w-full max-w-md mx-auto text-left">
+      <h1 className="text-2xl text-center font-semibold text-foreground">Your focus areas</h1>
+      <div className="space-y-5">
         {focusAreaOptions.map((item) => (
           <Form.Field
             key={item.id}
@@ -55,7 +55,7 @@ export function FocusAreas() {
                   </Form.Control>
 
                   <Form.Label className="font-medium cursor-pointer">{item.label}</Form.Label>
-                  <Form.Description className="col-start-2 font-light text-muted-foreground">
+                  <Form.Description className="col-start-2 text-muted-foreground">
                     {item.description}
                   </Form.Description>
                 </Form.Item>
@@ -64,6 +64,6 @@ export function FocusAreas() {
           />
         ))}
       </div>
-    </>
+    </div>
   );
 }

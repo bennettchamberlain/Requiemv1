@@ -240,6 +240,9 @@ export function OnboardingPage() {
   const contentMaxWidth =
     currentStepKey === 'connect-source' ? 'max-w-5xl' : 'max-w-lg';
 
+  const verticallyCenterStep =
+    currentStepKey === 'intro' || currentStepKey === 'trust-dial' || currentStepKey === 'run-first-sync';
+
   if (user?.onboarded) {
     return <Navigate to="/feed" replace />;
   }
@@ -260,7 +263,12 @@ export function OnboardingPage() {
           </div>
         </div>
 
-        <div className="flex flex-col items-center flex-1 w-full gap-4 h-full">
+        <div
+          className={cn(
+            'flex flex-col items-center flex-1 w-full h-full',
+            verticallyCenterStep ? 'gap-4' : 'gap-2',
+          )}
+        >
           <div className="self-start px-4 pt-[max(1rem,env(safe-area-inset-top))]">
             <img src={logo} className="w-8 h-8" alt="" />
           </div>
@@ -268,18 +276,24 @@ export function OnboardingPage() {
           <div
             ref={scrollRef}
             className={cn(
-              'flex-1 overflow-y-auto min-h-0 w-full mx-auto px-4 md:px-6',
+              'relative flex-1 overflow-y-auto min-h-0 w-full mx-auto px-4 md:px-6',
               contentMaxWidth,
             )}
           >
             {resumeUpdatedAt && (
-              <div className="mb-4 rounded-lg border border-teal-500/30 bg-teal-500/10 px-3 py-2 text-xs text-foreground text-center">
-                Welcome back — you&apos;re on step {stepIndex + 1} of {stepKeys.length}. Everything
-                you&apos;ve entered is saved.
+              <div className="pointer-events-none absolute inset-x-4 md:inset-x-6 top-2 z-20 flex justify-center">
+                <div className="pointer-events-auto max-w-md rounded-lg border border-green-800/30 bg-background/95 px-3 py-2 text-xs text-foreground text-center shadow-sm backdrop-blur-sm">
+                  Welcome back. Everything you&apos;ve entered is saved.
+                </div>
               </div>
             )}
 
-            <div className="flex flex-col justify-center items-center text-center min-h-full w-full">
+            <div
+              className={cn(
+                'flex flex-col items-center text-center w-full',
+                verticallyCenterStep ? 'justify-center min-h-full' : 'justify-start',
+              )}
+            >
               {stepContent}
             </div>
           </div>
