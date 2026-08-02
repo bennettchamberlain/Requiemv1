@@ -28,7 +28,8 @@ const HOME_PATH_PATTERNS = [
   /[A-Za-z]:\/Users\/[^/\s]+/g, // Windows (forward-slash)
 ];
 
-const SENSITIVE_KEY_PATTERN = /password|secret|token|authorization|cookie|jwt|apikey|api_key|dsn|pepper|private[_-]?key/i;
+const SENSITIVE_KEY_PATTERN =
+  /password|secret|token|authorization|cookie|jwt|apikey|api_key|dsn|pepper|private[_-]?key/i;
 
 const MAX_STRING_LENGTH = 8000;
 

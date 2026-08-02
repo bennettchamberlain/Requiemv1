@@ -38,7 +38,8 @@ if (telemetry.enabled && telemetry.dsn) {
     // differs from CI-Hub's current setting — see
     // CI-Engineering/architecture/subsystems/security-trust-and-ops.md gap #7.
     sendDefaultPii: false,
-    integrations: (defaults) => defaults.filter((integration) => !MANUALLY_HANDLED_INTEGRATIONS.has(integration.name)),
+    integrations: (defaults) =>
+      defaults.filter((integration) => !MANUALLY_HANDLED_INTEGRATIONS.has(integration.name)),
     beforeSend: scrubEvent,
   });
 

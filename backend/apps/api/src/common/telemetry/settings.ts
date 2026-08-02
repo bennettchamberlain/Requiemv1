@@ -58,8 +58,10 @@ export function resolveTelemetrySettings(env: NodeJS.ProcessEnv, component: stri
     dsn,
     component,
     deploymentVersion,
-    environment: read(env, 'SENTRY_ENV') ?? read(env, 'CI_SERVER_ENVIRONMENT') ?? read(env, 'NODE_ENV') ?? 'development',
-    release: read(env, 'SENTRY_RELEASE') ?? (deploymentVersion ? `${component}@${deploymentVersion}` : undefined),
+    environment:
+      read(env, 'SENTRY_ENV') ?? read(env, 'CI_SERVER_ENVIRONMENT') ?? read(env, 'NODE_ENV') ?? 'development',
+    release:
+      read(env, 'SENTRY_RELEASE') ?? (deploymentVersion ? `${component}@${deploymentVersion}` : undefined),
   };
 
   // Order matters: report the *operator's* explicit choice ahead of "no DSN" so

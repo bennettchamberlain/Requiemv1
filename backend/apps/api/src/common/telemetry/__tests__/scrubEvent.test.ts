@@ -5,7 +5,9 @@ import { scrubEvent, scrubString } from '../scrubEvent';
 describe('scrubString', () => {
   it('redacts bearer tokens', () => {
     expect(scrubString('Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.abc.def')).toContain('[Filtered]');
-    expect(scrubString('Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.abc.def')).not.toContain('eyJhbGciOiJIUzI1NiJ9');
+    expect(scrubString('Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.abc.def')).not.toContain(
+      'eyJhbGciOiJIUzI1NiJ9',
+    );
   });
 
   it('redacts labelled secrets', () => {

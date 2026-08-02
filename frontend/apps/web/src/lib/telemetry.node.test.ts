@@ -39,7 +39,9 @@ describe('shouldDropEvent', () => {
   });
 
   it('inspects exception values, not just the message', () => {
-    expect(shouldDropEvent(event({ exception: { values: [{ value: 'Loading chunk 7 failed' }] } }))).toBe(true);
+    expect(shouldDropEvent(event({ exception: { values: [{ value: 'Loading chunk 7 failed' }] } }))).toBe(
+      true,
+    );
   });
 });
 
