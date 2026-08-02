@@ -1,0 +1,44 @@
+/**
+ * CI Planning / Hub brand primary buttons — not the global mint CTA.
+ * Light: ci-planning .btn-primary (#abd4d8 → #70a6af). Dark: brand ramp.
+ */
+:root {
+  --ci-brand-btn-gradient: linear-gradient(135deg, var(--teal-200), #70a6af);
+  --ci-brand-btn-gradient-hover: linear-gradient(135deg, #c7e5e8, var(--teal-200));
+  --ci-brand-btn-fg: var(--ci-primary-ink);
+  --ci-brand-btn-shadow-hover: 0 4px 16px rgba(171, 212, 216, 0.3);
+}
+
+.dark {
+  --ci-brand-btn-gradient: linear-gradient(135deg, var(--teal-600), var(--aqua));
+  --ci-brand-btn-gradient-hover: linear-gradient(135deg, var(--teal-500), var(--aqua-light));
+  --ci-brand-btn-fg: #ffffff;
+  --ci-brand-btn-shadow-hover: 0 4px 16px rgba(15, 113, 122, 0.35);
+}
+
+button.ci-brand-btn-primary[data-slot='button'],
+button.ci-brand-btn-primary.ci-primary-surface[data-slot='button'] {
+  background-color: var(--teal-200) !important;
+  background-image: var(--ci-brand-btn-gradient) !important;
+  border-color: transparent !important;
+  color: var(--ci-brand-btn-fg) !important;
+  box-shadow: none !important;
+}
+
+button.ci-brand-btn-primary[data-slot='button']:hover,
+button.ci-brand-btn-primary.ci-primary-surface[data-slot='button']:hover {
+  background-color: var(--teal-200) !important;
+  background-image: var(--ci-brand-btn-gradient-hover) !important;
+  color: var(--ci-brand-btn-fg) !important;
+  box-shadow: var(--ci-brand-btn-shadow-hover) !important;
+}
+
+.dark button.ci-brand-btn-primary[data-slot='button'],
+.dark button.ci-brand-btn-primary.ci-primary-surface[data-slot='button'] {
+  background-color: var(--teal-600) !important;
+}
+
+.dark button.ci-brand-btn-primary[data-slot='button']:hover,
+.dark button.ci-brand-btn-primary.ci-primary-surface[data-slot='button']:hover {
+  background-color: var(--teal-600) !important;
+}
