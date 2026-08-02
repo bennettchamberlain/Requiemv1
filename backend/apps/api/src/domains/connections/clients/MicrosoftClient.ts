@@ -7,8 +7,7 @@ import type { Connection } from '../entities/ConnectionEntity';
 import { BaseOAuth2Client } from './BaseOAuth2Client';
 
 /** Azure secret IDs are UUIDs; the secret *value* is a long opaque string. */
-const AZURE_SECRET_ID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const AZURE_SECRET_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function trimOAuthCredential(value: string | undefined | null): string | null {
   const trimmed = value?.trim();

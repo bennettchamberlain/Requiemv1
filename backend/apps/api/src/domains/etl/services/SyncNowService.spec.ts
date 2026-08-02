@@ -45,13 +45,16 @@ describe('SyncNowService', () => {
 
       return [];
     });
-    connectionSyncJobService.create.mockImplementation(async (_ctx, data) => ({
-      id: `job-${data.endpointName}`,
-      ...data,
-      status: 'pending',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    } as never));
+    connectionSyncJobService.create.mockImplementation(
+      async (_ctx, data) =>
+        ({
+          id: `job-${data.endpointName}`,
+          ...data,
+          status: 'pending',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }) as never,
+    );
 
     const result = await service.enqueueForUser(context);
 

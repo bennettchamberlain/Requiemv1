@@ -106,9 +106,9 @@ describe('OnboardingService progress', () => {
       updatedAt: new Date(),
     });
 
-    await expect(
-      service.saveProgress(context, { stepKey: 'intro', draft: {} }),
-    ).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.saveProgress(context, { stepKey: 'intro', draft: {} })).rejects.toBeInstanceOf(
+      ConflictException,
+    );
   });
 
   it('throws when user is missing', async () => {

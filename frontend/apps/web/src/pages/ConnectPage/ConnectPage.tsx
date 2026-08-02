@@ -12,8 +12,7 @@ const CAPTURE_DOWNLOAD_URL = 'https://ci.computer/download#capture';
 
 export function ConnectPage() {
   const openDownload = () => window.open(DOWNLOAD_URL, '_blank', 'noopener,noreferrer');
-  const openCaptureDownload = () =>
-    window.open(CAPTURE_DOWNLOAD_URL, '_blank', 'noopener,noreferrer');
+  const openCaptureDownload = () => window.open(CAPTURE_DOWNLOAD_URL, '_blank', 'noopener,noreferrer');
 
   return (
     <>

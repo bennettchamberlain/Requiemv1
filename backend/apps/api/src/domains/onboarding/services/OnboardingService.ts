@@ -138,7 +138,10 @@ export class OnboardingService {
     };
   }
 
-  async saveProgress(context: UserServiceContext, input: OnboardingProgressInput): Promise<OnboardingProgressResponse> {
+  async saveProgress(
+    context: UserServiceContext,
+    input: OnboardingProgressInput,
+  ): Promise<OnboardingProgressResponse> {
     const user = await this.userService.findById(context, context.userId);
 
     if (!user) {

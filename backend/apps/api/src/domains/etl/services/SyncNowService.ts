@@ -61,8 +61,7 @@ export class SyncNowService {
         const hasPendingOrRunning = existing.some(
           (job) =>
             job.status === 'pending' ||
-            (job.status === 'in_progress' &&
-              Date.now() - new Date(job.updatedAt).getTime() < 60 * 60 * 1000),
+            (job.status === 'in_progress' && Date.now() - new Date(job.updatedAt).getTime() < 60 * 60 * 1000),
         );
 
         if (hasPendingOrRunning) {

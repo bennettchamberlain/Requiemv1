@@ -4,9 +4,7 @@ import { buildOnboardingStepKeys } from './constants';
 
 describe('buildOnboardingStepKeys', () => {
   it('includes identity when OIDC name is absent', () => {
-    expect(
-      buildOnboardingStepKeys({ needsIdentity: true, preferenceStepsEnabled: false }),
-    ).toEqual([
+    expect(buildOnboardingStepKeys({ needsIdentity: true, preferenceStepsEnabled: false })).toEqual([
       'intro',
       'identity',
       'time-and-place',
@@ -19,9 +17,7 @@ describe('buildOnboardingStepKeys', () => {
   });
 
   it('skips identity when name came from OIDC', () => {
-    expect(
-      buildOnboardingStepKeys({ needsIdentity: false, preferenceStepsEnabled: false }),
-    ).toEqual([
+    expect(buildOnboardingStepKeys({ needsIdentity: false, preferenceStepsEnabled: false })).toEqual([
       'intro',
       'time-and-place',
       'focus-areas',

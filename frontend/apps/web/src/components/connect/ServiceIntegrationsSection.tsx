@@ -8,7 +8,6 @@ import { useNavigate } from 'react-router-dom';
 import { Card } from '@/pages/ConnectPage/Card';
 import { GET_PROVIDERS, GET_OAUTH_CALLBACK_URL } from '@/queries';
 
-
 const GET_CONNECTIONS = gql`
   query GetConnectionsForOnboarding {
     connections {
@@ -277,9 +276,7 @@ export function ServiceIntegrationsSection({
       <div
         className={cn(
           'grid grid-cols-1 gap-2 md:gap-4',
-          variant === 'onboarding'
-            ? 'sm:grid-cols-2 lg:grid-cols-3'
-            : 'md:grid-cols-2 lg:grid-cols-3',
+          variant === 'onboarding' ? 'sm:grid-cols-2 lg:grid-cols-3' : 'md:grid-cols-2 lg:grid-cols-3',
         )}
       >
         {SERVICE_PROVIDERS.map((config) => {
@@ -293,13 +290,7 @@ export function ServiceIntegrationsSection({
               {...config}
               disabled={cardDisabled}
               onClick={() => handleProviderClick(config.rawId)}
-              subtext={
-                isConnected
-                  ? count === 1
-                    ? '1 Connection'
-                    : `${count} Connections`
-                  : undefined
-              }
+              subtext={isConnected ? (count === 1 ? '1 Connection' : `${count} Connections`) : undefined}
               className={
                 isConnected
                   ? 'ring-2 ring-green-800/35 bg-green-900/[0.08] dark:bg-green-950/45 dark:ring-green-700/45 [&>div:last-child]:text-green-800 dark:[&>div:last-child]:text-green-300'

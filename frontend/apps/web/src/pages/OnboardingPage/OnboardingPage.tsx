@@ -216,8 +216,7 @@ export function OnboardingPage() {
     }
   }, [currentStepKey, form, setTrustMode]);
 
-  const contentMaxWidth =
-    currentStepKey === 'connect-source' ? 'max-w-5xl' : 'max-w-lg';
+  const contentMaxWidth = currentStepKey === 'connect-source' ? 'max-w-5xl' : 'max-w-lg';
 
   const verticallyCenterStep =
     currentStepKey === 'intro' || currentStepKey === 'trust-dial' || currentStepKey === 'run-first-sync';
