@@ -103,6 +103,19 @@ fi
 echo "==> Recreating api + gateway with PR images..."
 run_compose "up -d --force-recreate --no-deps api gateway"
 
+# Gateway gets a new Docker IP on recreate; Hub's Traefik file provider still points at the old one → 502.
+echo "==> Refreshing Traefik upstream for ci-memory gateway..."
+sleep 3
+GATEWAY_IP="$(docker inspect "${COMPOSE_PROJECT}-gateway-1" --format '{{index .NetworkSettings.Networks "ci-os-hub_network" "IPAddress"}}' 2>/dev/null || true)"
+TRAEFIK_APPS="${ROOT_FOLDER_HOST}/state/traefik/dynamic/apps.yml"
+if [[ -n "$GATEWAY_IP" && -f "$TRAEFIK_APPS" ]]; then
+  sed -i "s|url: http://172\\.18\\.0\\.[0-9]\\+:8642|url: http://${GATEWAY_IP}:8642|" "$TRAEFIK_APPS"
+  echo "    Traefik ci-memory upstream -> http://${GATEWAY_IP}:8642"
+else
+  echo "    WARN: could not refresh Traefik apps.yml (gateway IP=${GATEWAY_IP:-missing})"
+  echo "    Restart ci-memory from Hub UI or restart ci-os-hub to regenerate routing."
+fi
+
 echo ""
 echo "==> Deploy complete."
 echo "    docker ps --filter name=${COMPOSE_PROJECT} --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'"
