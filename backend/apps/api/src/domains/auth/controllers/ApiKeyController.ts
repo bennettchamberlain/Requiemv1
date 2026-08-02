@@ -15,7 +15,7 @@ import { z } from 'zod';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { API_KEY_CAPABILITIES, INTENTS_SCOPE, MCP_SCOPE, MEMORY_SCOPE } from '@ci/common/decorators';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrPortalAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 
 import { ApiKeyService } from '../services/ApiKeyService';
@@ -71,11 +71,17 @@ export const updateApiKeySchema = z.object({
   capability: apiKeyCapability,
 });
 
+/**
+ * Guarded by {@link JwtOrPortalAuthGuard}: a session JWT (settings UI) or a
+ * portal OIDC bearer (Companion Capture exchanging its short-lived id_token
+ * for a durable key at sign-in) — never an api key, so a leaked key cannot
+ * mint successors that outlive its revocation.
+ */
 @Controller('keys')
 export class ApiKeyController {
   constructor(private readonly apiKeyService: ApiKeyService) {}
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrPortalAuthGuard)
   @Post()
   async create(
     @Context() context: RequestContext,
@@ -86,7 +92,7 @@ export class ApiKeyController {
     return this.apiKeyService.create(serviceContext, input);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrPortalAuthGuard)
   @Get()
   async findAll(@Context() context: RequestContext) {
     const serviceContext = toServiceContext(context);
@@ -94,7 +100,7 @@ export class ApiKeyController {
     return this.apiKeyService.findAllByUser(serviceContext);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrPortalAuthGuard)
   @Get(':id')
   async findOne(@Context() context: RequestContext, @Param('id') keyId: string) {
     const serviceContext = toServiceContext(context);
@@ -108,7 +114,7 @@ export class ApiKeyController {
     return key;
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrPortalAuthGuard)
   @Patch(':id')
   async update(
     @Context() context: RequestContext,
@@ -126,7 +132,7 @@ export class ApiKeyController {
     return key;
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrPortalAuthGuard)
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Context() context: RequestContext, @Param('id') keyId: string): Promise<void> {
