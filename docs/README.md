@@ -37,6 +37,8 @@ codegen): [graphql-api.md](graphql-api.md).
 
 ## Runbooks (operator procedures)
 
+- [`docs/runbooks/one-off-prod-data-testing.md`](runbooks/one-off-prod-data-testing.md)
+  — one-off PR deploy against Hub production data; env handling, rollback, and production update path.
 - [`backend/apps/api/db/postgres/BULK_LOAD_RUNBOOK.md`](../backend/apps/api/db/postgres/BULK_LOAD_RUNBOOK.md)
   — high-throughput imports: the GraphQL bulk path, index deferral, TimescaleDB-aware loading.
 - [`backend/apps/api/db/postgres/INGEST_RESET_RUNBOOK.md`](../backend/apps/api/db/postgres/INGEST_RESET_RUNBOOK.md)
