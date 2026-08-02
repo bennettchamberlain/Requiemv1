@@ -8,9 +8,12 @@ import { PageContent } from '@/components/layout';
 import { Card } from './Card';
 
 const DOWNLOAD_URL = 'https://ci.computer/download';
+const CAPTURE_DOWNLOAD_URL = 'https://ci.computer/download#capture';
 
 export function ConnectPage() {
   const openDownload = () => window.open(DOWNLOAD_URL, '_blank', 'noopener,noreferrer');
+  const openCaptureDownload = () =>
+    window.open(CAPTURE_DOWNLOAD_URL, '_blank', 'noopener,noreferrer');
 
   return (
     <>
@@ -34,7 +37,7 @@ export function ConnectPage() {
         {/* Browser Extensions Section */}
         <div className="max-w-[1040px] mx-auto mb-8">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">Browser Extensions</h2>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">
+          <p className="text-muted-foreground mb-6">
             Install our browser extensions to automatically capture your web activity and browsing patterns.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-4">
@@ -67,10 +70,42 @@ export function ConnectPage() {
           </div>
         </div>
 
+        {/* Companion Capture */}
+        <div className="max-w-[1040px] mx-auto mb-8">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">Companion Capture</h2>
+          <p className="text-muted-foreground mb-6">
+            Install Companion Capture to record desktop activity, screen context, and local usage on your
+            machine — everything stays on your Hub.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-4">
+            <Card
+              logo="/branding/mac/logo.svg"
+              background="bg-gray-600"
+              border="border-gray-500"
+              text="Download Companion Capture for macOS (Apple Silicon and Intel)."
+              onClick={openCaptureDownload}
+            />
+            <Card
+              logo="/branding/windows/logo.svg"
+              background="bg-blue-600"
+              border="border-blue-500"
+              text="Download Companion Capture for Windows."
+              onClick={openCaptureDownload}
+            />
+            <Card
+              logo="/branding/linux/logo.svg"
+              background="bg-yellow-600"
+              border="border-yellow-500"
+              text="Download Companion Capture for Linux (deb and AppImage)."
+              onClick={openCaptureDownload}
+            />
+          </div>
+        </div>
+
         {/* Devices Section */}
         <div className="max-w-[1040px] mx-auto mb-8">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">Devices</h2>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">
+          <p className="text-muted-foreground mb-6">
             Connect your smart devices and hardware to track usage patterns and environmental data.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-4">
@@ -129,7 +164,7 @@ export function ConnectPage() {
         {/* Service Integrations Section */}
         <div className="max-w-[1040px] mx-auto">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">Service Integrations</h2>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">
+          <p className="text-muted-foreground mb-6">
             Connect your favorite services to automatically sync your data and activities.
           </p>
           <ServiceIntegrationsSection variant="page" />
