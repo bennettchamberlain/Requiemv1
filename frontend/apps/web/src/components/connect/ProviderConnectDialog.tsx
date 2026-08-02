@@ -3,7 +3,6 @@ import { useCallback, useEffect } from 'react';
 import { useQuery } from '@apollo/client';
 import { GlobalUID, LoadingPage } from '@ci/common';
 import {
-  Button,
   Dialog,
   Form,
   formDataResolver,
@@ -16,6 +15,7 @@ import {
 } from '@ci/shadcn';
 import { Info } from '@ci/shadcn/icons';
 
+import { BrandPrimaryButton } from '@/components/BrandPrimaryButton/BrandPrimaryButton';
 import { ONBOARDING_OAUTH_RESUME_KEY } from '@/pages/OnboardingPage/constants';
 import { Endpoints } from '@/pages/ProviderPage/Endpoints';
 import { GET_PROVIDER } from '@/pages/ProviderPage/ProviderPage';
@@ -151,14 +151,14 @@ export function ProviderConnectDialog({
                 </div>
               )}
 
-              <Button
+              <BrandPrimaryButton
                 type="button"
                 className="w-full"
                 disabled={isConnectDisabled || connectLoading}
                 onClick={handleConnect}
               >
                 {connectLoading ? 'Connecting…' : 'Connect'}
-              </Button>
+              </BrandPrimaryButton>
             </form>
           </Form>
         )}
