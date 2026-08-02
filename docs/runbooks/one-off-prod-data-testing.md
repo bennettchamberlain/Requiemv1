@@ -211,6 +211,77 @@ from an unrelease build would break other appliances. See README release policy.
 The deploy scripts read paths only; do not commit or paste `app.env` contents into docs
 or tickets.
 
+## OAuth provider connections (Microsoft, Google, …)
+
+Onboarding and **Connect** use the same OAuth path as production connections.
+
+### Default: CI Cloud OAuth proxy
+
+When a provider has **no** credentials on the box (no `MICROSOFT_CLIENT_ID` /
+`MICROSOFT_CLIENT_SECRET` in env, no saved provider keys in the DB), CI-Memory routes
+OAuth through **CI Portal** (`hub.ci.computer`):
+
+1. User clicks Connect → api calls Portal `/api/oauth/authorize`
+2. User signs in at Microsoft/Google → redirect to Portal `/api/oauth/callback`
+3. Portal exchanges the code and redirects back to the box:
+   `https://<your-host>/oauth/callback?connectionId=…&access_token=…`
+
+**Redirect URIs for the proxy path** (configured on CI Portal's OAuth apps, not on your
+box):
+
+| Provider | Redirect URI on the provider's developer console |
+|----------|-----------------------------------------------------|
+| Microsoft | `https://hub.ci.computer/api/oauth/callback` |
+| Google | `https://hub.ci.computer/api/oauth/callback` |
+
+You do **not** need to add your appliance hostname to Portal's OAuth apps for the default
+flow.
+
+### Error: `invalid_client` / `AADSTS7000215: Invalid client secret`
+
+If Microsoft login succeeds but the browser shows JSON like:
+
+```json
+{"error":"OAuth callback failed","message":"Token exchange failed: … invalid_client … AADSTS7000215 …"}
+```
+
+that response comes from **CI Portal's** callback handler — not from your box. Login and
+redirect worked; **token exchange failed** because Portal's `OAUTH_MICROSOFT_CLIENT_SECRET`
+is wrong (commonly the Azure **Secret ID** GUID was stored instead of the secret
+**Value**, or the secret expired).
+
+**Fix (Portal ops):** update the Cloudflare Worker secret `OAUTH_MICROSOFT_CLIENT_SECRET`
+for production Portal with the Azure app secret **Value** (app
+`79a99e1b-64d1-43cc-a2a7-09b7b0d292e4` is CI Portal's shared Microsoft registration).
+
+Google proxy failures follow the same pattern — check `OAUTH_GOOGLE_CLIENT_SECRET` on Portal.
+
+### Bypass: direct OAuth on this appliance
+
+For dev appliances or when Portal credentials are unavailable, configure your **own**
+Microsoft (or Google) app on the box via the **user-config overlay**:
+
+Path: `{ROOT_FOLDER_HOST}/user-config/ci-marketplace/ci-memory/app.env`
+
+```bash
+# Microsoft — use your Azure app registration
+MICROSOFT_CLIENT_ID=<application-client-id>
+MICROSOFT_CLIENT_SECRET=<secret-value-not-secret-id>
+OAUTH_CALLBACK_URL=https://<your-public-host>/oauth/callback
+```
+
+Register this redirect URI on **your** Azure app (not Portal's):
+
+`https://<your-public-host>/oauth/callback`
+
+Example for core3: `https://ci-memory-core3-bc.companionintelligence.com/oauth/callback`
+
+Restart `api` (and `gateway` if swapped) after editing user-config. With env credentials
+present, the box skips Portal and exchanges the code directly.
+
+Provider keys saved in the UI (per-connection client id/secret) also force the direct
+path for that provider.
+
 ## Testing onboarding on this appliance (2026-08-01)
 
 This run applied:
