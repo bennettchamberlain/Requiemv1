@@ -1,24 +1,35 @@
 /**
- * CI Planning / Hub brand primary buttons — not the global mint CTA.
- * Light: ci-planning .btn-primary (#abd4d8 → #70a6af). Dark: brand ramp.
+ * CI brand primary buttons — deep phthalo green (greener than the teal ramp).
  */
 :root {
-  --ci-brand-btn-gradient: linear-gradient(135deg, var(--teal-200), #70a6af);
-  --ci-brand-btn-gradient-hover: linear-gradient(135deg, #c7e5e8, var(--teal-200));
-  --ci-brand-btn-fg: var(--ci-primary-ink);
-  --ci-brand-btn-shadow-hover: 0 4px 16px rgba(171, 212, 216, 0.3);
+  --ci-phthalo-green: #14532d;
+  --ci-phthalo-green-deep: #052e16;
+  --ci-phthalo-green-mid: #166534;
+  --ci-phthalo-green-bright: #15803d;
+  --ci-brand-btn-gradient: linear-gradient(
+    135deg,
+    var(--ci-phthalo-green-mid),
+    var(--ci-phthalo-green)
+  );
+  --ci-brand-btn-gradient-hover: linear-gradient(
+    135deg,
+    var(--ci-phthalo-green-bright),
+    var(--ci-phthalo-green-mid)
+  );
+  --ci-brand-btn-fg: #f0fdf4;
+  --ci-brand-btn-shadow-hover: 0 4px 16px rgba(20, 83, 45, 0.35);
 }
 
 .dark {
-  --ci-brand-btn-gradient: linear-gradient(135deg, var(--teal-600), var(--aqua));
-  --ci-brand-btn-gradient-hover: linear-gradient(135deg, var(--teal-500), var(--aqua-light));
+  --ci-brand-btn-gradient: linear-gradient(135deg, #15803d, #166534);
+  --ci-brand-btn-gradient-hover: linear-gradient(135deg, #16a34a, #15803d);
   --ci-brand-btn-fg: #ffffff;
-  --ci-brand-btn-shadow-hover: 0 4px 16px rgba(15, 113, 122, 0.35);
+  --ci-brand-btn-shadow-hover: 0 4px 16px rgba(21, 128, 61, 0.35);
 }
 
 button.ci-brand-btn-primary[data-slot='button'],
 button.ci-brand-btn-primary.ci-primary-surface[data-slot='button'] {
-  background-color: var(--teal-200) !important;
+  background-color: var(--ci-phthalo-green) !important;
   background-image: var(--ci-brand-btn-gradient) !important;
   border-color: transparent !important;
   color: var(--ci-brand-btn-fg) !important;
@@ -27,7 +38,7 @@ button.ci-brand-btn-primary.ci-primary-surface[data-slot='button'] {
 
 button.ci-brand-btn-primary[data-slot='button']:hover,
 button.ci-brand-btn-primary.ci-primary-surface[data-slot='button']:hover {
-  background-color: var(--teal-200) !important;
+  background-color: var(--ci-phthalo-green-mid) !important;
   background-image: var(--ci-brand-btn-gradient-hover) !important;
   color: var(--ci-brand-btn-fg) !important;
   box-shadow: var(--ci-brand-btn-shadow-hover) !important;
@@ -35,10 +46,10 @@ button.ci-brand-btn-primary.ci-primary-surface[data-slot='button']:hover {
 
 .dark button.ci-brand-btn-primary[data-slot='button'],
 .dark button.ci-brand-btn-primary.ci-primary-surface[data-slot='button'] {
-  background-color: var(--teal-600) !important;
+  background-color: var(--ci-phthalo-green-mid) !important;
 }
 
 .dark button.ci-brand-btn-primary[data-slot='button']:hover,
 .dark button.ci-brand-btn-primary.ci-primary-surface[data-slot='button']:hover {
-  background-color: var(--teal-600) !important;
+  background-color: var(--ci-phthalo-green-bright) !important;
 }

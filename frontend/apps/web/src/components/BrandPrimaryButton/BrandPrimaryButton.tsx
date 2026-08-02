@@ -4,7 +4,7 @@ import './brand-primary-button.css';
 
 type BrandPrimaryButtonProps = React.ComponentProps<typeof Button>;
 
-/** CI Planning teal gradient primary button (replaces global mint CTA). */
+/** CI phthalo green gradient primary button (replaces global mint CTA). */
 export function BrandPrimaryButton({ className, variant, ...props }: BrandPrimaryButtonProps) {
   const isPrimary = variant == null || variant === 'default';
 
