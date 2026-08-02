@@ -74,13 +74,14 @@
 
 :root {
   --radius: 0.625rem;
-  --ci-primary: #14532d;
-  --ci-primary-mid: #166534;
-  --ci-primary-bright: #15803d;
+  /* Companion phthalo CTA — saturated green falling into a black-green finish. */
+  --ci-phthalo-green: #0a6358;
+  --ci-phthalo-green-deep: #022c2b;
+  --ci-phthalo-green-hover: #0d7a6e;
   --ci-primary-ink: #f0fdf4;
-  --ci-primary-gradient: linear-gradient(135deg, var(--ci-primary-mid), var(--ci-primary));
-  --ci-primary-gradient-hover: linear-gradient(135deg, var(--ci-primary-bright), var(--ci-primary-mid));
-  --shadow-glow-ci: 0 0 20px -4px rgb(20 83 45 / 35%);
+  --ci-primary-gradient: linear-gradient(135deg, var(--ci-phthalo-green), var(--ci-phthalo-green-deep));
+  --ci-primary-gradient-hover: linear-gradient(135deg, var(--ci-phthalo-green-hover), var(--ci-phthalo-green));
+  --shadow-glow-ci: 0 0 20px -4px rgb(2 44 43 / 42%);
   --ci-background-lift: radial-gradient(1200px circle at 50% -20%, oklch(0.5 0.03 220 / 5%), transparent 52%);
   --background: oklch(0.964 0 89.876);
   --foreground: oklch(0.158 0.028 227.251);
@@ -247,7 +248,7 @@
 }
 
 .ci-primary-surface {
-  background-color: var(--ci-primary);
+  background-color: var(--ci-phthalo-green);
   background-image: var(--ci-primary-gradient);
   border-color: transparent;
   color: var(--ci-primary-ink);
@@ -265,7 +266,7 @@
 
 [data-slot='checkbox'][data-state='checked'],
 [data-slot='switch'][data-state='checked'] {
-  background-color: var(--ci-primary);
+  background-color: var(--ci-phthalo-green);
   background-image: var(--ci-primary-gradient);
   border-color: transparent;
   color: var(--ci-primary-ink);

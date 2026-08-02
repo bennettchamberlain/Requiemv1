@@ -23,8 +23,9 @@ export function RunFirstSyncStep() {
       <div className="space-y-2 text-center">
         <h1 className="text-3xl font-bold tracking-tight text-foreground">Your life, unclouded.</h1>
         <p className="text-sm leading-6 text-muted-foreground">
-          Who you know, where you go, everything physical you own and interact with, everything digital that you
-          create and consume:
+          <span className="block">Who you know, where you go,</span>
+          <span className="block">everything physical you own and interact with,</span>
+          <span className="block">everything digital that you create and consume:</span>
         </p>
         <p className="text-sm text-muted-foreground">
           a private, searchable memory — one that belongs to you.

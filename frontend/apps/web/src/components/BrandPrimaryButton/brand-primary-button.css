@@ -1,30 +1,15 @@
 /**
- * CI brand primary buttons — deep phthalo green (greener than the teal ramp).
+ * Companion phthalo CTA — shared with the global primary button surface.
  */
 :root {
-  --ci-phthalo-green: #14532d;
-  --ci-phthalo-green-deep: #052e16;
-  --ci-phthalo-green-mid: #166534;
-  --ci-phthalo-green-bright: #15803d;
-  --ci-brand-btn-gradient: linear-gradient(
-    135deg,
-    var(--ci-phthalo-green-mid),
-    var(--ci-phthalo-green)
-  );
-  --ci-brand-btn-gradient-hover: linear-gradient(
-    135deg,
-    var(--ci-phthalo-green-bright),
-    var(--ci-phthalo-green-mid)
-  );
-  --ci-brand-btn-fg: #f0fdf4;
-  --ci-brand-btn-shadow-hover: 0 4px 16px rgba(20, 83, 45, 0.35);
+  --ci-brand-btn-gradient: var(--ci-primary-gradient);
+  --ci-brand-btn-gradient-hover: var(--ci-primary-gradient-hover);
+  --ci-brand-btn-fg: var(--ci-primary-ink);
+  --ci-brand-btn-shadow-hover: 0 4px 16px rgb(2 44 43 / 42%);
 }
 
 .dark {
-  --ci-brand-btn-gradient: linear-gradient(135deg, #15803d, #166534);
-  --ci-brand-btn-gradient-hover: linear-gradient(135deg, #16a34a, #15803d);
   --ci-brand-btn-fg: #ffffff;
-  --ci-brand-btn-shadow-hover: 0 4px 16px rgba(21, 128, 61, 0.35);
 }
 
 button.ci-brand-btn-primary[data-slot='button'],
@@ -38,7 +23,7 @@ button.ci-brand-btn-primary.ci-primary-surface[data-slot='button'] {
 
 button.ci-brand-btn-primary[data-slot='button']:hover,
 button.ci-brand-btn-primary.ci-primary-surface[data-slot='button']:hover {
-  background-color: var(--ci-phthalo-green-mid) !important;
+  background-color: var(--ci-phthalo-green-hover) !important;
   background-image: var(--ci-brand-btn-gradient-hover) !important;
   color: var(--ci-brand-btn-fg) !important;
   box-shadow: var(--ci-brand-btn-shadow-hover) !important;
@@ -46,10 +31,10 @@ button.ci-brand-btn-primary.ci-primary-surface[data-slot='button']:hover {
 
 .dark button.ci-brand-btn-primary[data-slot='button'],
 .dark button.ci-brand-btn-primary.ci-primary-surface[data-slot='button'] {
-  background-color: var(--ci-phthalo-green-mid) !important;
+  background-color: var(--ci-phthalo-green) !important;
 }
 
 .dark button.ci-brand-btn-primary[data-slot='button']:hover,
 .dark button.ci-brand-btn-primary.ci-primary-surface[data-slot='button']:hover {
-  background-color: var(--ci-phthalo-green-bright) !important;
+  background-color: var(--ci-phthalo-green-hover) !important;
 }
