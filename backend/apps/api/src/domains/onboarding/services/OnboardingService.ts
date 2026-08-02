@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { v7 as uuidv7 } from 'uuid';
 
 import { type UserServiceContext } from '@ci/common/context';
@@ -9,7 +9,12 @@ import { ActionService, AnswerService, QuestionService } from '@ci/domains/intel
 import { ConceptService, PersonService } from '@ci/domains/memory';
 import { UserService } from '@ci/domains/user';
 
-import { OnboardingInput } from '../types';
+import {
+  type OnboardingInput,
+  type OnboardingProgressInput,
+  type OnboardingProgressResponse,
+  type OnboardingStepKey,
+} from '../types';
 
 type PersonInput = NonNullable<OnboardingInput['people']>[number];
 
@@ -25,6 +30,21 @@ type FocusAreaMetadata = {
   name: string;
   description: string;
 };
+
+/*
+ * TODO(settings): Settings follow-up backlog (UI not built in this PR)
+ *
+ * | Field              | Stored at                              | Settings follow-up                                      |
+ * |--------------------|----------------------------------------|---------------------------------------------------------|
+ * | timezone           | ci.users.timezone                      | Already in PreferencesSection — no work                 |
+ * | schedule.*         | self Person properties.schedule        | New Schedule subsection under Preferences               |
+ * | trust_mode         | self Person properties.planner.trust_mode | New Autonomy subsection (reuse TrustDialStep options) |
+ * | name               | ci.users.name                          | Profile subsection for name edit                      |
+ * | focus/people/prefs | Graph (Concept + PREFERS)              | Optional future "About me" — lower priority             |
+ * | connections        | connections domain                     | Already at /connect — link from Settings                |
+ *
+ * Prefer extending updateCurrentUser or adding updateSelfProfile GraphQL; reads from me.entity.properties.
+ */
 
 const FOCUS_AREAS: Record<string, FocusAreaMetadata> = {
   personal_fitness: {
@@ -71,6 +91,12 @@ const RELATIONSHIP_MAP: Record<
   complicated: { type: RelationshipType.KNOWS, bidirectional: true },
 };
 
+const DEFAULT_PROGRESS: OnboardingProgressResponse = {
+  stepKey: 'intro',
+  draft: {},
+  updatedAt: null,
+};
+
 @Injectable()
 export class OnboardingService {
   constructor(
@@ -88,6 +114,58 @@ export class OnboardingService {
     this.logger.setContext(OnboardingService.name);
   }
 
+  async getProgress(context: UserServiceContext): Promise<OnboardingProgressResponse> {
+    const user = await this.userService.findById(context, context.userId);
+
+    if (!user) {
+      throw new NotFoundException();
+    }
+
+    if (user.onboarded) {
+      return DEFAULT_PROGRESS;
+    }
+
+    const progress = user.onboardingProgress;
+
+    if (!progress) {
+      return DEFAULT_PROGRESS;
+    }
+
+    return {
+      stepKey: progress.stepKey as OnboardingStepKey,
+      draft: progress.draft ?? {},
+      updatedAt: progress.updatedAt ?? null,
+    };
+  }
+
+  async saveProgress(context: UserServiceContext, input: OnboardingProgressInput): Promise<OnboardingProgressResponse> {
+    const user = await this.userService.findById(context, context.userId);
+
+    if (!user) {
+      throw new NotFoundException();
+    }
+
+    if (user.onboarded) {
+      throw new ConflictException('Onboarding is already complete');
+    }
+
+    const updatedAt = new Date().toISOString();
+
+    await this.userService.update(context, user.id, {
+      onboardingProgress: {
+        stepKey: input.stepKey,
+        draft: input.draft,
+        updatedAt,
+      },
+    });
+
+    return {
+      stepKey: input.stepKey,
+      draft: input.draft,
+      updatedAt,
+    };
+  }
+
   async onboard(context: UserServiceContext, input: OnboardingInput) {
     const user = await this.userService.findById(context, context.userId);
 
@@ -96,15 +174,30 @@ export class OnboardingService {
     }
 
     if (!user.onboarded) {
-      const person = await this.createPersonForUser(context);
+      // TODO(settings): expose name edit in Settings → Profile once that section exists.
+      if (input.name?.trim()) {
+        await this.userService.update(context, user.id, { name: input.name.trim() });
+      }
+
+      // TODO(settings): timezone already editable in PreferencesSection.
+      if (input.timezone?.trim()) {
+        await this.userService.update(context, user.id, { timezone: input.timezone.trim() });
+      }
+
+      const person = await this.createPersonForUser(context, input);
 
       await Promise.all([
         this.captureFocusAreas(context, person.id, input.focus_areas),
         this.captureConnections(context, person.id, input.people),
         this.capturePreferences(context, person.id, input),
+        this.applySelfEntityPreferences(context, person.id, input),
         this.createInitialActions(context),
         this.captureSurveyResponses(context, input),
       ]);
+
+      await this.userService.update(context, user.id, {
+        onboardingProgress: null,
+      });
 
       await this.userService.onboard(context.userId);
     }
@@ -114,7 +207,7 @@ export class OnboardingService {
     };
   }
 
-  async createPersonForUser(context: UserServiceContext) {
+  async createPersonForUser(context: UserServiceContext, input?: OnboardingInput) {
     const user = await this.userService.findById(context, context.userId);
 
     if (user == null) {
@@ -122,12 +215,13 @@ export class OnboardingService {
     }
 
     const id = uuidv7();
-    const name = user.name ?? user.email;
-    const [firstName, ...restName] = (user.name ?? '').trim().split(/\s+/).filter(Boolean);
+    const displayName = input?.name?.trim() || user.name || user.email;
+    const [firstName, ...restName] = displayName.trim().split(/\s+/).filter(Boolean);
     const lastName = restName.join(' ');
 
     const properties: Record<string, unknown> = {
       email: user.email,
+      is_self: true,
     };
 
     if (firstName.length > 0) {
@@ -138,9 +232,25 @@ export class OnboardingService {
       properties.last_name = lastName;
     }
 
+    if (input?.schedule) {
+      // TODO(settings): Schedule subsection under Preferences — wake/sleep/work hours.
+      properties.schedule = {
+        ...input.schedule,
+        source: 'onboarding',
+      };
+    }
+
+    if (input?.trust_mode) {
+      // TODO(settings): Autonomy subsection — same dial, reads/writes properties.planner.trust_mode.
+      properties.planner = {
+        trust_mode: input.trust_mode,
+        source: 'onboarding',
+      };
+    }
+
     const person = await this.personService.create(context, {
       id,
-      name,
+      name: displayName,
       properties,
       description: 'This is you!',
     });
@@ -150,6 +260,41 @@ export class OnboardingService {
     });
 
     return person;
+  }
+
+  private async applySelfEntityPreferences(
+    context: UserServiceContext,
+    personId: string,
+    input: OnboardingInput,
+  ) {
+    if (!input.schedule && !input.trust_mode) {
+      return;
+    }
+
+    const person = await this.personService.findById(context, personId);
+
+    if (!person) {
+      return;
+    }
+
+    const properties: Record<string, unknown> = { ...(person.properties ?? {}) };
+
+    if (input.schedule) {
+      properties.schedule = {
+        ...input.schedule,
+        source: 'onboarding',
+      };
+    }
+
+    if (input.trust_mode) {
+      properties.planner = {
+        ...((properties.planner as Record<string, unknown> | undefined) ?? {}),
+        trust_mode: input.trust_mode,
+        source: 'onboarding',
+      };
+    }
+
+    await this.personService.update(context, personId, { properties });
   }
 
   private async captureFocusAreas(
@@ -206,7 +351,7 @@ export class OnboardingService {
       return;
     }
 
-    return Promise.all([
+    return Promise.all(
       entries.map(async (entry) => {
         const person = await this.personService.create(context, {
           name: entry.displayName,
@@ -229,7 +374,7 @@ export class OnboardingService {
           },
         });
       }),
-    ]);
+    );
   }
 
   private async capturePreferences(
@@ -291,7 +436,64 @@ export class OnboardingService {
           'Choosing an activity between hiking, bowling, ice skating, or going arcading, which would be your favorite?',
         subcategory: 'Entertainment',
       }),
+
+      this.createScheduleAnswers(context, input),
+      this.createTrustModeAnswer(context, input.trust_mode),
     ]);
+  }
+
+  private async createScheduleAnswers(context: UserServiceContext, input: OnboardingInput) {
+    const schedule = input.schedule;
+
+    if (!schedule) {
+      return;
+    }
+
+    const entries: Array<{ question: string; value: string; subcategory: string }> = [
+      {
+        question: 'What time do you usually wake up?',
+        value: schedule.wake_time,
+        subcategory: 'Schedule',
+      },
+      {
+        question: 'What time do you usually go to bed?',
+        value: schedule.sleep_time,
+        subcategory: 'Schedule',
+      },
+      {
+        question: 'When does your workday usually start?',
+        value: schedule.work_start,
+        subcategory: 'Schedule',
+      },
+      {
+        question: 'When does your workday usually end?',
+        value: schedule.work_end,
+        subcategory: 'Schedule',
+      },
+    ];
+
+    await Promise.all(
+      entries.map(({ question, value, subcategory }) =>
+        this.createPreferenceAnswer(context, value, { question, subcategory }),
+      ),
+    );
+  }
+
+  private async createTrustModeAnswer(context: UserServiceContext, trustMode: OnboardingInput['trust_mode']) {
+    if (!trustMode) {
+      return;
+    }
+
+    const labels: Record<string, string> = {
+      cautious: 'Cautious — review everything yourself',
+      balanced: 'Balanced — high-confidence items auto-promote',
+      hands_off: 'Hands-off — auto-promote and auto-schedule estimate-bearing work',
+    };
+
+    await this.createPreferenceAnswer(context, labels[trustMode] ?? trustMode, {
+      question: 'How much should your companion do on its own?',
+      subcategory: 'Autonomy',
+    });
   }
 
   private async createPreferenceAnswer(

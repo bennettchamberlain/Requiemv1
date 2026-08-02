@@ -45,4 +45,10 @@ export {};
 export { OnboardingService } from './services/OnboardingService';
 
 // Types
-export type {} from './types';
+export type {
+  OnboardingInput,
+  OnboardingProgressInput,
+  OnboardingProgressResponse,
+  OnboardingStepKey,
+} from './types';
+export { ONBOARDING_STEP_KEYS } from './types';
