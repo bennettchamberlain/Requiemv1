@@ -30,6 +30,22 @@ export class SyncNowService {
     const connections = await this.connectionService.findAll(context);
     const activeConnections = connections.filter((c) => c.active && !c.needsReauth);
 
+    const endpointCount = activeConnections.reduce((count, c) => count + c.activeEndpoints.length, 0);
+
+    if (endpointCount === 0) {
+      return { jobIds: [], enqueued: 0, skipped: 0 };
+    }
+
+    const hasActivePipeline = await this.userHasActiveSyncPipeline(context);
+
+    if (hasActivePipeline) {
+      this.logger.log('Skipping sync-now: user already has pending, running, or untransformed sync work', {
+        userId: context.userId,
+      });
+
+      return { jobIds: [], enqueued: 0, skipped: endpointCount };
+    }
+
     const jobIds: string[] = [];
     let skipped = 0;
 
@@ -71,5 +87,23 @@ export class SyncNowService {
       enqueued: jobIds.length,
       skipped,
     };
+  }
+
+  /**
+   * True when the user already has sync work in flight or fetched data awaiting transform.
+   * Enqueueing more jobs in that state stacks heavy calendar transforms in the API process.
+   */
+  private async userHasActiveSyncPipeline(context: UserServiceContext): Promise<boolean> {
+    const [pending, inProgress, awaitingTransform] = await Promise.all([
+      this.connectionSyncJobService.search(context, { status: 'pending', orderBy: 'updated_at:DESC' }),
+      this.connectionSyncJobService.search(context, { status: 'in_progress', orderBy: 'updated_at:DESC' }),
+      this.connectionSyncJobService.search(context, {
+        status: 'success',
+        lastTransformed: null,
+        orderBy: 'updated_at:DESC',
+      }),
+    ]);
+
+    return pending.length > 0 || inProgress.length > 0 || awaitingTransform.length > 0;
   }
 }

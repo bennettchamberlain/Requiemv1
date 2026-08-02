@@ -20,7 +20,7 @@ describe('SyncNowService', () => {
       create: jest.fn(),
     };
 
-    const logger = { setContext: jest.fn() } as unknown as LoggerService;
+    const logger = { setContext: jest.fn(), log: jest.fn() } as unknown as LoggerService;
 
     service = new SyncNowService(
       connectionService as unknown as ConnectionService,
@@ -38,7 +38,13 @@ describe('SyncNowService', () => {
         activeEndpoints: ['gmail', 'calendar'],
       },
     ] as never);
-    connectionSyncJobService.search.mockResolvedValue([]);
+    connectionSyncJobService.search.mockImplementation(async (_ctx, query) => {
+      if (query?.connectionId && query?.endpointName) {
+        return [];
+      }
+
+      return [];
+    });
     connectionSyncJobService.create.mockImplementation(async (_ctx, data) => ({
       id: `job-${data.endpointName}`,
       ...data,
@@ -63,12 +69,42 @@ describe('SyncNowService', () => {
         activeEndpoints: ['gmail'],
       },
     ] as never);
-    connectionSyncJobService.search.mockResolvedValue([{ status: 'pending', updatedAt: new Date() } as never]);
+    connectionSyncJobService.search.mockImplementation(async (_ctx, query) => {
+      if (query?.status === 'pending') {
+        return [{ status: 'pending', updatedAt: new Date() } as never];
+      }
+
+      return [];
+    });
 
     const result = await service.enqueueForUser(context);
 
     expect(result.enqueued).toBe(0);
     expect(result.skipped).toBe(1);
+    expect(connectionSyncJobService.create).not.toHaveBeenCalled();
+  });
+
+  it('skips all endpoints when user has sync work awaiting transform', async () => {
+    connectionService.findAll.mockResolvedValue([
+      {
+        id: 'conn-1',
+        active: true,
+        needsReauth: false,
+        activeEndpoints: ['gmail', 'calendar'],
+      },
+    ] as never);
+    connectionSyncJobService.search.mockImplementation(async (_ctx, query) => {
+      if (query?.status === 'success' && query?.lastTransformed === null) {
+        return [{ status: 'success', lastTransformed: null, updatedAt: new Date() } as never];
+      }
+
+      return [];
+    });
+
+    const result = await service.enqueueForUser(context);
+
+    expect(result.enqueued).toBe(0);
+    expect(result.skipped).toBe(2);
     expect(connectionSyncJobService.create).not.toHaveBeenCalled();
   });
 });
