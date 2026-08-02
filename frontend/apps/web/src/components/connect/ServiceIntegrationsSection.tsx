@@ -34,6 +34,15 @@ export interface ServiceProviderConfig {
   disabled?: boolean;
 }
 
+/** Connection GraphQL historically returned raw UUIDs; accept encoded or raw provider ids. */
+function toRawProviderId(providerId: string): string {
+  try {
+    return GlobalUID.parse('provider', providerId);
+  } catch {
+    return providerId;
+  }
+}
+
 export const SERVICE_PROVIDERS: ServiceProviderConfig[] = [
   {
     rawId: '0198779b-3c33-73da-84e5-82e0df145260',
@@ -197,8 +206,9 @@ export function ServiceIntegrationsSection({
   const [setupProvider, setSetupProvider] = useState<SetupProviderState | null>(null);
 
   const connections =
-    connectionsData?.connections.edges.map((edge: { node: { providerId: string; active: boolean } }) => edge.node) ||
-    [];
+    connectionsData?.connections?.edges?.map(
+      (edge: { node: { providerId: string; active: boolean } }) => edge.node,
+    ) ?? [];
 
   const connectionsCount: Record<string, number> = {};
   connections.forEach((c: { providerId: string; active: boolean }) => {
@@ -206,7 +216,7 @@ export function ServiceIntegrationsSection({
       return;
     }
 
-    const rawId = GlobalUID.parse('provider', c.providerId);
+    const rawId = toRawProviderId(c.providerId);
     connectionsCount[rawId] = (connectionsCount[rawId] ?? 0) + 1;
   });
 

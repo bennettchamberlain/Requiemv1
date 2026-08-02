@@ -19,6 +19,8 @@ export function useOnboardingProgress() {
 
   const fetchProgress = useCallback(async (): Promise<OnboardingProgress | null> => {
     if (!authToken) {
+      setLoading(false);
+
       return null;
     }
 

@@ -109,7 +109,7 @@ export function OnboardingPage() {
   const currentStepKey = stepKeys[stepIndex] ?? 'intro';
 
   const hasConnections =
-    (connectionsData?.connections.edges.filter(
+    (connectionsData?.connections?.edges?.filter(
       (e: { node: { active: boolean } }) => e.node.active,
     ).length ?? 0) > 0;
 

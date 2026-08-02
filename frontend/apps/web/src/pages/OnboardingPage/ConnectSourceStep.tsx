@@ -18,7 +18,7 @@ export function ConnectSourceStep() {
   const { data, refetch } = useQuery(GET_CONNECTIONS_LIGHT, { fetchPolicy: 'cache-and-network' });
 
   const connections =
-    data?.connections.edges.map(
+    data?.connections?.edges?.map(
       (edge: { node: { id: string; name: string | null; active: boolean; needsReauth: boolean } }) => edge.node,
     ) ?? [];
 
