@@ -82,3 +82,61 @@ describe('scrubBrowserEvent', () => {
     expect(scrubBrowserEvent(event({ message: 'real failure' }))).toEqual({ message: 'real failure' });
   });
 });
+
+describe('scrubBrowserEvent — leaks confirmed by adversarial review', () => {
+  it('scrubs fetch/xhr breadcrumb urls, which carry the memory search', () => {
+    const scrubbed = scrubBrowserEvent(
+      event({
+        message: 'boom',
+        breadcrumbs: [
+          { category: 'fetch', data: { url: '/api/graph/search?query=divorce+lawyer&people=alice' } },
+        ],
+      }),
+    );
+
+    expect(scrubbed!.breadcrumbs![0]!.data!.url).toBe('/api/graph/search');
+  });
+
+  it('scrubs console breadcrumb message and arguments', () => {
+    const scrubbed = scrubBrowserEvent(
+      event({
+        message: 'boom',
+        breadcrumbs: [
+          {
+            category: 'console',
+            message: 'token=abc123456 at /Users/liam/x',
+            data: { arguments: ['Bearer abcdefghijkl'] },
+          },
+        ],
+      }),
+    );
+    const crumb = scrubbed!.breadcrumbs![0]!;
+
+    expect(crumb.message).not.toContain('abc123456');
+    expect(crumb.message).toContain('~/x');
+    expect(JSON.stringify(crumb.data!.arguments)).not.toContain('abcdefghijkl');
+  });
+
+  it('scrubs the referer header put there by httpContextIntegration', () => {
+    const scrubbed = scrubBrowserEvent(
+      event({ message: 'boom', request: { headers: { Referer: 'https://x/memory?search=oncology' } } }),
+    );
+
+    expect(scrubbed!.request!.headers!.Referer).toBe('https://x/memory');
+  });
+
+  it('applies the shared secret and home-path rules the browser was missing', () => {
+    const scrubbed = scrubBrowserEvent(
+      event({
+        message: 'failed at /Users/liam/notes with api_key=sk-live-123456',
+        exception: { values: [{ value: 'Bearer eyJhbGciOiJIUzI1NiJ9.a.b rejected' }] },
+        extra: { password: 'hunter2' },
+      }),
+    );
+
+    expect(scrubbed!.message).toContain('~/notes');
+    expect(scrubbed!.message).not.toContain('sk-live-123456');
+    expect(scrubbed!.exception!.values![0]!.value).not.toContain('eyJhbGciOiJIUzI1NiJ9');
+    expect((scrubbed!.extra as Record<string, unknown>).password).toBe('[Filtered]');
+  });
+});

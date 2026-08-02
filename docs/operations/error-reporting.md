@@ -40,15 +40,50 @@ over the DSN.
   `tskey-…`, and credentials in connection URLs → `[Filtered]`
 - Home directories (`/Users/<name>`, `/home/<name>`, `C:\Users\<name>`) → `~`,
   since they leak the account name
-- Object keys matching `password|secret|token|authorization|cookie|jwt|apikey|dsn|pepper|private_key` → `[Filtered]`
-- Request cookies and bodies dropped; query strings filtered
+- Object and header keys matching
+  `password|secret|token|authorization|cookie|jwt|api[-_ ]?key|dsn|pepper|private_key`
+  → `[Filtered]`. The hyphenated form matters: `x-api-key` is the API's own
+  key header, and the SDK ships request headers even with PII disabled.
+- Request cookies and bodies dropped; **query strings removed from
+  `request.query_string`, from `request.url`, and from the `referer` header** —
+  the SDK builds `request.url` from `req.url`, which on a Node server is
+  path+query, so filtering only `query_string` redacts nothing
+- Stack frame `filename` / `abs_path` (absolute paths outside Docker) and
+  captured `vars`; `include_local_variables` is off in the Python services,
+  where frame locals would otherwise be note bodies and memory rows
+- `server_name` (the machine hostname) removed, and `includeServerName: false`
+  set at init — the hostname identifies the household like a home path does
+- Breadcrumbs: message and every `data` value. This matters more than it
+  sounds — the default integrations record fetch/xhr crumbs carrying `data.url`
+  **with the query string**, console crumbs carrying raw arguments, and (in
+  Python) every INFO+ log record. In the Python SDK the shape is
+  `breadcrumbs.values`, not a bare list; both are handled.
+- `logentry.formatted` and `logentry.params`, not just `logentry.message` —
+  `message` is only the printf *format string*, so scrubbing it alone stamps
+  `[Filtered]` on the template while shipping the interpolated user data intact
 - Strings over 8 KB truncated, so a stray blob can't smuggle memory contents out
   inside an exception message
 
-The browser bundle (`frontend/apps/web/src/lib/telemetry.ts`) additionally strips
-the query string and hash from every reported URL and navigation breadcrumb —
-on this app those carry the user's search terms — and drops chunk-load and
-`ResizeObserver` noise.
+The browser bundle (`frontend/apps/web/src/lib/telemetry.ts`) applies the same
+rules and additionally strips the query string and hash from every reported URL,
+breadcrumb URL and `Referer` header — on this app those carry the user's search
+terms — and drops chunk-load and `ResizeObserver` noise.
+
+### The browser consent check
+
+A DSN baked into the bundle at build time cannot be revoked afterwards, so the
+kill switches would not reach the browser on their own. Before calling
+`Sentry.init`, the frontend asks `GET /api/config/telemetry` whether reporting is
+permitted, and **fails closed** if that endpoint is unreachable or says no. This
+is what makes the marketplace "Share crash reports" toggle — which sets
+`CI_TELEMETRY` on the container — actually apply to the web UI.
+
+The build-time DSN is still what gates bundling: with `VITE_SENTRY_DSN` unset the
+whole init path folds to dead code and the SDK is tree-shaken out entirely
+(measured: **0 bytes** without a DSN, **+88.8 kB raw** with one). Keep the
+module-scope `const DSN = import.meta.env.VITE_SENTRY_DSN` shape without optional
+chaining — `import.meta.env.X?.trim()` does not fold under rolldown, which
+silently put the entire SDK back into a sibling repo's DSN-less bundle.
 
 ## Sentry projects
 

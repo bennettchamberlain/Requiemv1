@@ -51,9 +51,125 @@ export function scrubUrl(url: string): string {
   return url.split(/[?#]/)[0] ?? url;
 }
 
+// Kept in lockstep with the backend scrubber at
+// backend/apps/api/src/common/telemetry/scrubEvent.ts and the Python twins in
+// backend/apps/{hbpe,summary}. Duplicated rather than shared because the three
+// live in separate build graphs; change all of them together.
+const SECRET_PATTERNS = [
+  /Bearer\s+[A-Za-z0-9\-._~+/]+=*/gi,
+  /(?:api[-_ ]?key|token|password|secret|jwt|auth)[\s=:"']+[^\s"',}\]]+/gi,
+  /tskey-[A-Za-z0-9-]+/gi,
+  /\b[a-z][a-z0-9+.-]*:\/\/[^\s:@/]+:[^\s@/]+@/gi,
+];
+
+// Windows first — see the note on the backend copy: the macOS pattern otherwise
+// matches inside `C:/Users/<name>` and leaves a stranded `C:~/…`.
+const HOME_PATH_PATTERNS = [
+  /[A-Za-z]:\\Users\\[^\\/\s]+/g, // Windows (backslash)
+  /[A-Za-z]:\/Users\/[^/\s]+/g, // Windows (forward-slash)
+  /\/Users\/[^/\s]+/g, // macOS
+  /\/home\/[^/\s]+/g, // Linux
+];
+
+const SENSITIVE_KEY_PATTERN =
+  /password|secret|token|authorization|cookie|jwt|api[-_ ]?key|dsn|pepper|private[-_]?key/i;
+
+const MAX_STRING_LENGTH = 8000;
+
+export function scrubString(value: string): string {
+  let scrubbed = value;
+
+  for (const pattern of HOME_PATH_PATTERNS) {
+    scrubbed = scrubbed.replace(pattern, '~');
+  }
+
+  for (const pattern of SECRET_PATTERNS) {
+    scrubbed = scrubbed.replace(pattern, '[Filtered]');
+  }
+
+  if (scrubbed.length > MAX_STRING_LENGTH) {
+    return `${scrubbed.slice(0, MAX_STRING_LENGTH)}… [truncated]`;
+  }
+
+  return scrubbed;
+}
+
+export function scrubValue(value: unknown, depth = 0): unknown {
+  if (depth > 8) {
+    return '[Truncated]';
+  }
+
+  if (typeof value === 'string') {
+    return scrubString(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => scrubValue(entry, depth + 1));
+  }
+
+  if (value && typeof value === 'object') {
+    const result: Record<string, unknown> = {};
+
+    for (const [key, nested] of Object.entries(value)) {
+      result[key] = SENSITIVE_KEY_PATTERN.test(key) ? '[Filtered]' : scrubValue(nested, depth + 1);
+    }
+
+    return result;
+  }
+
+  return value;
+}
+
+/** Breadcrumb `data` keys whose value is a URL (fetch/xhr/navigation crumbs). */
+const URL_VALUED_KEYS = new Set(['url', 'from', 'to']);
+
+/** Request headers whose value is a URL the user navigated from. */
+const URL_VALUED_HEADERS = ['referer', 'referrer'];
+
+/**
+ * Scrub one breadcrumb in place.
+ *
+ * The default `breadcrumbsIntegration` records fetch, xhr, console and dom
+ * crumbs. fetch/xhr carry `data.url` with the full query string — and on this
+ * app the query string IS the user's memory search — while console crumbs carry
+ * the joined `message` plus the raw `data.arguments`. Handling only navigation
+ * `from`/`to` left all of that untouched.
+ */
+function scrubBreadcrumb(breadcrumb: Sentry.Breadcrumb): void {
+  if (typeof breadcrumb.message === 'string') {
+    breadcrumb.message = scrubString(breadcrumb.message);
+  }
+
+  if (!breadcrumb.data) {
+    return;
+  }
+
+  for (const [key, value] of Object.entries(breadcrumb.data)) {
+    if (typeof value === 'string' && URL_VALUED_KEYS.has(key)) {
+      breadcrumb.data[key] = scrubUrl(scrubString(value));
+    } else {
+      breadcrumb.data[key] = scrubValue(value);
+    }
+  }
+}
+
 export function scrubBrowserEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent | null {
   if (shouldDropEvent(event)) {
     return null;
+  }
+
+  if (event.message) {
+    event.message = scrubString(event.message);
+  }
+
+  for (const exception of event.exception?.values ?? []) {
+    if (exception.value) {
+      exception.value = scrubString(exception.value);
+    }
+  }
+
+  if (event.extra) {
+    event.extra = scrubValue(event.extra) as Record<string, unknown>;
   }
 
   if (event.request?.url) {
@@ -63,17 +179,23 @@ export function scrubBrowserEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent |
   delete event.request?.cookies;
   delete event.request?.query_string;
 
+  // httpContextIntegration puts `document.referrer` here, and the browser's
+  // default referrer policy keeps the full same-origin URL — query string and
+  // all — which is exactly what scrubUrl exists to remove.
+  if (event.request?.headers) {
+    const headers = scrubValue(event.request.headers) as Record<string, string>;
+
+    for (const [key, value] of Object.entries(headers)) {
+      if (URL_VALUED_HEADERS.includes(key.toLowerCase()) && typeof value === 'string') {
+        headers[key] = scrubUrl(value);
+      }
+    }
+
+    event.request.headers = headers;
+  }
+
   for (const breadcrumb of event.breadcrumbs ?? []) {
-    const from = breadcrumb.data?.from;
-    const to = breadcrumb.data?.to;
-
-    if (typeof from === 'string') {
-      breadcrumb.data!.from = scrubUrl(from);
-    }
-
-    if (typeof to === 'string') {
-      breadcrumb.data!.to = scrubUrl(to);
-    }
+    scrubBreadcrumb(breadcrumb);
   }
 
   return event;
@@ -83,14 +205,63 @@ export function isTelemetryEnabled(): boolean {
   return initialized;
 }
 
-export function initTelemetry(): void {
+// Read at module scope with no optional chaining, so the `if (!DSN) return`
+// below folds to statically dead code and the SDK is tree-shaken out of a
+// DSN-less build entirely. `import.meta.env.X?.trim()` does NOT fold under
+// rolldown (it does under Rollup) — a shape difference that silently put the
+// whole SDK back into CI-Import-Tools' bundle. Keep this shape.
+const DSN = import.meta.env.VITE_SENTRY_DSN;
+
+/**
+ * Ask the appliance whether reporting is permitted right now.
+ *
+ * A DSN baked into the bundle at build time cannot be revoked afterwards, so
+ * without this the `CI_TELEMETRY` / `CI_LOCAL_ONLY` kill switches — including
+ * the marketplace "Share crash reports" toggle — would not apply to the browser.
+ *
+ * Fails CLOSED: if the endpoint is unreachable or malformed we do not report.
+ * The bundle is served by the same origin as the API, so an unreachable API
+ * means the app is broken anyway, and silently reporting against a consent
+ * decision we could not read is the worse failure.
+ */
+async function reportingPermitted(): Promise<boolean> {
+  try {
+    const response = await fetch('/api/config/telemetry', {
+      credentials: 'same-origin',
+      headers: { accept: 'application/json' },
+    });
+
+    if (!response.ok) {
+      return false;
+    }
+
+    return ((await response.json()) as { enabled?: unknown }).enabled === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Start error reporting if permitted. Returns a promise for tests; callers may
+ * ignore it — nothing is reported until consent is confirmed.
+ */
+export async function initTelemetry(): Promise<void> {
   if (initialized || typeof window === 'undefined') {
     return;
   }
 
-  const dsn = import.meta.env.VITE_SENTRY_DSN?.trim();
+  if (!DSN) {
+    return;
+  }
 
-  if (!dsn) {
+  const dsn = DSN.trim();
+
+  if (!dsn || !(await reportingPermitted())) {
+    return;
+  }
+
+  // Re-check: an await elapsed, and a concurrent caller may have won.
+  if (initialized) {
     return;
   }
 

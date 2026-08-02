@@ -116,3 +116,76 @@ describe('scrubEvent', () => {
     expect(scrubEvent(event)).toEqual({ message: 'plain failure' });
   });
 });
+
+describe('scrubEvent — leaks confirmed by adversarial review', () => {
+  it('strips the query string from request.url, not just query_string', () => {
+    // The SDK builds request.url from req.url, which on a Node server is
+    // path+query — so filtering query_string alone redacted nothing.
+    const event = {
+      request: {
+        url: 'https://memory.local/api/graph/search?query=oncologist&people=Dr.%20Chen',
+        query_string: 'query=oncologist',
+      },
+    } as unknown as ErrorEvent;
+
+    const scrubbed = scrubEvent(event)!;
+
+    expect(scrubbed.request!.url).toBe('https://memory.local/api/graph/search');
+    expect(scrubbed.request!.query_string).toBe('[Filtered]');
+  });
+
+  it('strips the query string from the referer header', () => {
+    const event = {
+      request: { headers: { Referer: 'https://memory.local/memory?search=divorce%20lawyer' } },
+    } as unknown as ErrorEvent;
+
+    expect(scrubEvent(event)!.request!.headers!.Referer).toBe('https://memory.local/memory');
+  });
+
+  it('filters the hyphenated x-api-key header', () => {
+    const event = { request: { headers: { 'x-api-key': 'ci_live_abcdef123456' } } } as unknown as ErrorEvent;
+
+    expect(scrubEvent(event)!.request!.headers!['x-api-key']).toBe('[Filtered]');
+  });
+
+  it('removes the machine hostname', () => {
+    const event = { server_name: 'MacBook-Pro-2.local' } as unknown as ErrorEvent;
+
+    expect(scrubEvent(event)!.server_name).toBeUndefined();
+  });
+
+  it('scrubs stack frame paths and captured locals', () => {
+    const event = {
+      exception: {
+        values: [
+          {
+            value: 'boom',
+            stacktrace: {
+              frames: [
+                {
+                  filename: '/Users/liam/devel/ci/x.ts',
+                  abs_path: '/Users/liam/devel/ci/x.ts',
+                  vars: { noteText: '/home/ci/journal', password: 'hunter2' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    } as unknown as ErrorEvent;
+
+    const frame = scrubEvent(event)!.exception!.values![0]!.stacktrace!.frames![0]!;
+
+    expect(frame.filename).toBe('~/devel/ci/x.ts');
+    expect(frame.abs_path).toBe('~/devel/ci/x.ts');
+    expect((frame.vars as Record<string, unknown>).noteText).toBe('~/journal');
+    expect((frame.vars as Record<string, unknown>).password).toBe('[Filtered]');
+  });
+
+  it('collapses Windows home paths in both slash styles', () => {
+    // Regression: the macOS pattern used to match inside `C:/Users/…` first,
+    // leaving a stranded `C:~/…`.
+    expect(scrubString('C:\\Users\\liam\\app.log')).toBe('~\\app.log');
+    expect(scrubString('C:/Users/liam/AppData/ci')).toBe('~/AppData/ci');
+  });
+});

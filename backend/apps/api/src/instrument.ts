@@ -38,6 +38,8 @@ if (telemetry.enabled && telemetry.dsn) {
     // differs from CI-Hub's current setting — see
     // CI-Engineering/architecture/subsystems/security-trust-and-ops.md gap #7.
     sendDefaultPii: false,
+    // The machine hostname identifies the household as surely as a home path.
+    includeServerName: false,
     integrations: (defaults) =>
       defaults.filter((integration) => !MANUALLY_HANDLED_INTEGRATIONS.has(integration.name)),
     beforeSend: scrubEvent,
@@ -58,15 +60,24 @@ export function isTelemetryEnabled(): boolean {
 /**
  * Flush buffered events, bounded so a wedged network can't hold shutdown open.
  * Resolves even when Sentry was never initialised.
+ *
+ * `Sentry.close(timeoutMs)` alone is NOT a real bound: its timeout only limits
+ * how long the transport waits, and the promise still resolves on a later event
+ * loop turn — so a crash handler behind heavy queued synchronous work could
+ * overrun the nominal budget by an unbounded margin. Race it against a real
+ * timer so the caller's exit path always runs on schedule. The timer is
+ * unref'd: it must never be the thing keeping the process alive.
  */
 export async function flushTelemetry(timeoutMs = 2000): Promise<void> {
   if (!telemetry.enabled) {
     return;
   }
 
-  try {
-    await Sentry.close(timeoutMs);
-  } catch {
-    // Never let a reporting failure change how the process exits.
-  }
+  await Promise.race([
+    Sentry.close(timeoutMs).catch(() => undefined),
+    new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, timeoutMs);
+      timer.unref?.();
+    }),
+  ]);
 }

@@ -108,3 +108,119 @@ class TestScrubEvent:
 
     def test_passes_through_clean_event(self):
         assert scrub_event({"message": "plain failure"}) == {"message": "plain failure"}
+
+
+class TestUrlAndHeaderScrubbing:
+    """Regressions for the confirmed leaks found in adversarial review."""
+
+    def test_scrubs_request_url_query_string(self):
+        event = scrub_event(
+            {"request": {"url": "https://memory.local/api/graph/search?query=oncologist&people=Dr.%20Chen"}}
+        )
+
+        assert event["request"]["url"] == "https://memory.local/api/graph/search"
+
+    def test_scrubs_referer_header(self):
+        event = scrub_event(
+            {"request": {"headers": {"Referer": "https://memory.local/memory?search=divorce%20lawyer"}}}
+        )
+
+        assert event["request"]["headers"]["Referer"] == "https://memory.local/memory"
+
+    def test_matches_hyphenated_api_key_header(self):
+        event = scrub_event({"request": {"headers": {"x-api-key": "ci_live_abcdef123456"}}})
+
+        assert event["request"]["headers"]["x-api-key"] == "[Filtered]"
+
+    def test_drops_server_name(self):
+        assert "server_name" not in scrub_event({"server_name": "MacBook-Pro-2.local"})
+
+    def test_collapses_windows_home_paths(self):
+        assert scrub_string("C:\\Users\\liam\\AppData\\ci\\timeline.db") == "~\\AppData\\ci\\timeline.db"
+        assert scrub_string("C:/Users/liam/AppData/ci") == "~/AppData/ci"
+
+
+class TestLogentryScrubbing:
+    def test_scrubs_formatted_and_params_not_just_format_string(self):
+        event = scrub_event(
+            {
+                "logentry": {
+                    "message": "auth to %s failed with token %s",
+                    "formatted": "auth to https://portal.example failed with token tskey-abc123XYZ",
+                    "params": ["https://portal.example", "tskey-abc123XYZ"],
+                }
+            }
+        )
+
+        assert "tskey-abc123XYZ" not in event["logentry"]["formatted"]
+        assert "tskey-abc123XYZ" not in str(event["logentry"]["params"])
+
+
+class TestBreadcrumbScrubbing:
+    def test_scrubs_python_sdk_breadcrumb_shape(self):
+        event = scrub_event(
+            {
+                "breadcrumbs": {
+                    "values": [
+                        {"message": "loaded /home/ci/journal.db", "data": {"token": "abc123456"}},
+                    ]
+                }
+            }
+        )
+        crumb = event["breadcrumbs"]["values"][0]
+
+        assert crumb["message"] == "loaded ~/journal.db"
+        assert crumb["data"]["token"] == "[Filtered]"
+
+    def test_scrubs_breadcrumb_urls(self):
+        event = scrub_event(
+            {"breadcrumbs": {"values": [{"data": {"url": "/api/search?query=private"}}]}}
+        )
+
+        assert event["breadcrumbs"]["values"][0]["data"]["url"] == "/api/search"
+
+    def test_handles_bare_list_breadcrumb_shape(self):
+        event = scrub_event({"breadcrumbs": [{"message": "at /Users/liam/x"}]})
+
+        assert event["breadcrumbs"][0]["message"] == "at ~/x"
+
+
+class TestStackFrameScrubbing:
+    def test_scrubs_frame_paths_and_locals(self):
+        event = scrub_event(
+            {
+                "exception": {
+                    "values": [
+                        {
+                            "value": "boom",
+                            "stacktrace": {
+                                "frames": [
+                                    {
+                                        "filename": "/Users/liam/devel/ci/x.py",
+                                        "abs_path": "/Users/liam/devel/ci/x.py",
+                                        "vars": {"note_text": "/home/ci/journal", "password": "hunter2"},
+                                    }
+                                ]
+                            },
+                        }
+                    ]
+                }
+            }
+        )
+        frame = event["exception"]["values"][0]["stacktrace"]["frames"][0]
+
+        assert frame["filename"] == "~/devel/ci/x.py"
+        assert frame["abs_path"] == "~/devel/ci/x.py"
+        assert frame["vars"]["note_text"] == "~/journal"
+        assert frame["vars"]["password"] == "[Filtered]"
+
+
+class TestInitNeverRaises:
+    def test_malformed_dsn_does_not_crash_startup(self, monkeypatch):
+        import ci.telemetry as telemetry_module
+
+        monkeypatch.setattr(telemetry_module, "_initialized", False)
+        monkeypatch.setenv("SENTRY_DSN", "not-a-dsn")
+
+        # Must return False rather than raising BadDsn out of module import.
+        assert telemetry_module.init_telemetry() is False

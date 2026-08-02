@@ -6,8 +6,10 @@ import './styles/index.css';
 import App from './App.tsx';
 import { initTelemetry } from './lib/telemetry';
 
-// No-op unless VITE_SENTRY_DSN was baked in at build time.
-initTelemetry();
+// No-op unless VITE_SENTRY_DSN was baked in at build time AND the appliance
+// confirms the user has consented. Deliberately not awaited: reporting must
+// never delay first render.
+void initTelemetry();
 
 // Facebook OAuth appends #_=_ to redirect URLs; it can break React Router and cause blank screens.
 // Clear it as early as possible so routing works correctly.
