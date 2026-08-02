@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { useQuery } from '@apollo/client';
 import { LoadingPage, usePageTitle } from '@ci/common';
 import { Button, Form, formDataResolver, cn, formDataSchema as s, useForm } from '@ci/shadcn';
 import { Navigate } from 'react-router-dom';
 
 import logo from '@/assets/logo.png';
 import { useFeatures } from '@/common/feature';
-import { GET_CONNECTIONS_LIGHT } from '@/components/connect/ServiceIntegrationsSection';
 import { ThemeToggle } from '@/components/ThemePicker';
 import { useCurrentUser } from '@/hooks';
 
@@ -85,7 +83,6 @@ export function OnboardingPage() {
   const { user, loading: userLoading } = useCurrentUser();
   const { isFeatureEnabled } = useFeatures();
   const { fetchProgress, saveProgress, loading: progressLoading } = useOnboardingProgress();
-  const { data: connectionsData } = useQuery(GET_CONNECTIONS_LIGHT, { fetchPolicy: 'cache-and-network' });
 
   const preferenceStepsEnabled = isFeatureEnabled('onboarding.preference.steps');
   const needsIdentity = user?.needsIdentityStep ?? user?.name === user?.email;
@@ -107,11 +104,6 @@ export function OnboardingPage() {
   const [resumeUpdatedAt, setResumeUpdatedAt] = useState<string | null>(null);
 
   const currentStepKey = stepKeys[stepIndex] ?? 'intro';
-
-  const hasConnections =
-    (connectionsData?.connections?.edges?.filter(
-      (e: { node: { active: boolean } }) => e.node.active,
-    ).length ?? 0) > 0;
 
   useEffect(() => {
     if (userLoading || hydrated) {
@@ -188,13 +180,6 @@ export function OnboardingPage() {
     void handleNext();
   }, [handleNext]);
 
-  const goToConnect = useCallback(() => {
-    const idx = stepKeys.indexOf('connect-source');
-    if (idx >= 0) {
-      void goToStep(idx);
-    }
-  }, [goToStep, stepKeys]);
-
   const setTrustMode = useCallback(
     (value: NonNullable<OnboardingFormData['trust_mode']>) => {
       form.setValue('trust_mode', value);
@@ -225,17 +210,11 @@ export function OnboardingPage() {
       case 'trust-dial':
         return <TrustDialStep value={form.watch('trust_mode')} onChange={setTrustMode} />;
       case 'run-first-sync':
-        return (
-          <RunFirstSyncStep
-            hasConnections={hasConnections}
-            onBack={handleBack}
-            onGoToConnect={goToConnect}
-          />
-        );
+        return <RunFirstSyncStep />;
       default:
         return <Intro />;
     }
-  }, [currentStepKey, form, goToConnect, handleBack, hasConnections, setTrustMode]);
+  }, [currentStepKey, form, setTrustMode]);
 
   const contentMaxWidth =
     currentStepKey === 'connect-source' ? 'max-w-5xl' : 'max-w-lg';
