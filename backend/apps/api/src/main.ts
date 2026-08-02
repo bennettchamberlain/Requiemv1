@@ -1,3 +1,7 @@
+// Must stay the first import — Sentry patches Node internals on init and has
+// to run before any application module is loaded.
+import './instrument';
+
 import { NestFactory } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
 

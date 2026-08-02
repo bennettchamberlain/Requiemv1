@@ -12,6 +12,7 @@ import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import * as Sentry from '@sentry/nestjs';
 
 import { RequestContextMiddleware } from '@ci/common/context';
 import { HealthController } from '@ci/common/controllers/HealthController';
@@ -54,6 +55,7 @@ import { SummariesModule } from '@ci/domains/summaries';
 import { ToolsModule } from '@ci/domains/tools';
 import { UserModule } from '@ci/domains/user';
 import { UserSnapshotsModule } from '@ci/domains/user-snapshots';
+import { flushTelemetry } from '@ci/instrument';
 
 @Module({
   imports: [
@@ -133,19 +135,26 @@ export class App implements NestModule, OnApplicationBootstrap, OnApplicationShu
   }
 
   onApplicationBootstrap() {
+    // These handlers own the exit path, so they also own reporting the crash:
+    // a bare `process.exit(1)` truncates Sentry's async transport and the report
+    // is lost. Flush (bounded) before exiting; `flushTelemetry` resolves
+    // immediately when reporting is disabled, so the supervisor still restarts
+    // promptly.
     process.on('unhandledRejection', (reason: unknown) => {
       const error =
         reason instanceof Error ? reason : new Error(String(reason ?? 'Unknown unhandled rejection'));
 
       this.logger.error(error, 'Unhandled rejection');
+      Sentry.captureException(error);
 
-      process.exit(1);
+      void flushTelemetry().finally(() => process.exit(1));
     });
 
     process.on('uncaughtException', (error: Error) => {
       this.logger.error(error, 'Uncaught exception');
+      Sentry.captureException(error);
 
-      process.exit(1);
+      void flushTelemetry().finally(() => process.exit(1));
     });
 
     let bindings: string[];
@@ -167,9 +176,11 @@ export class App implements NestModule, OnApplicationBootstrap, OnApplicationShu
     });
   }
 
-  onApplicationShutdown(signal?: string) {
+  async onApplicationShutdown(signal?: string) {
     this.logger.log('Application stopped', {
       signal: signal ?? 'EXIT',
     });
+
+    await flushTelemetry();
   }
 }
