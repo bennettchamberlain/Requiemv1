@@ -169,7 +169,19 @@ Browser                    CI-Server                         CI-Portal (IdP)
 
 ### 1.4 (Optional) Portal-brokered bearer tokens
 
-A migration path, **off by default** (`portal.enabled=false`, `PORTAL_OIDC_ENABLED`). When enabled, `JwtOrApiKeyAuthGuard` first verifies an `Authorization: Bearer` as a **Portal-issued JWT** (against the Portal JWKS) and JIT-provisions the user before falling back to the legacy `jwt`/`api-key` strategies (`JwtOrApiKeyAuthGuard.ts:28-46`). A separate Hub forward-auth path (HMAC-signed `X-CI-Hub-User`) also exists, off by default.
+A migration path gated by `auth.portal.enabled` / `PORTAL_OIDC_ENABLED`. When enabled, `JwtOrApiKeyAuthGuard` first verifies an `Authorization: Bearer` as a **Portal-issued JWT** (against the Portal JWKS) and JIT-provisions the user before falling back to the legacy `jwt`/`api-key` strategies (`JwtOrApiKeyAuthGuard.ts:28-46`). A separate Hub forward-auth path (HMAC-signed `X-CI-Hub-User`) also exists, off by default.
+
+Shipped defaults in `config/default.json` enable Portal OIDC with issuer/JWKS at `https://hub.ci.computer` and an audience list that includes **`ci-applet`** (Companion Capture’s OIDC `client_id`). Capture’s ingest Bearer is the Portal **`id_token`** (`aud=ci-applet`); its opaque `access_token` is for Portal APIs only (`GET /api/users/me/apps`).
+
+### Companion Capture checklist (public Memory URL)
+
+For Capture to upload through a Cloudflare-exposed Memory hostname:
+
+1. **Memory (this server):** `PORTAL_OIDC_ENABLED=true` (or default `auth.portal.enabled`), `PORTAL_OIDC_ISSUER` / `PORTAL_OIDC_JWKS_URI` matching the Portal Capture signs into, and `PORTAL_OIDC_AUDIENCE` containing `ci-applet`.
+2. **Hub edge:** Traefik forward-auth must accept that same Portal Bearer (not only Hub session cookies); otherwise Capture sees a 302 to Hub login HTML and never reaches CI-Server.
+3. **Many Captures → one Memory:** each Capture install registers its own `device_id` via `POST /devices`; they share the same Portal user after JIT provision.
+
+Use Capture `--check-server` and confirm GraphQL returns `__typename` on the Memory origin (not a Hub login page).
 
 ---
 
