@@ -5,6 +5,7 @@ import { useToast } from '@ci/shadcn';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useAuth } from '@/hooks';
+import { ONBOARDING_OAUTH_RESUME_KEY } from '@/pages/OnboardingPage/constants';
 
 export function OAuthCallbackPage() {
   usePageTitle('Complete Connection - Companion Intelligence');
@@ -118,7 +119,8 @@ export function OAuthCallbackPage() {
         toast.error(String(err));
       } finally {
         window.history.replaceState(null, '', window.location.pathname);
-        navigate('/connections');
+        const resumeOnboarding = localStorage.getItem(ONBOARDING_OAUTH_RESUME_KEY);
+        navigate(resumeOnboarding != null ? '/onboarding' : '/connections');
       }
     })();
   }, [

@@ -8,6 +8,7 @@ import { FeaturesProvider, useFeatures } from '@/common/feature';
 import NotFoundPage from '@/components/NotFound';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { RedirectKnownUser } from '@/components/RedirectKnownUser';
+import { RequireOnboarded } from '@/components/RequireOnboarded';
 import { ThemeProvider, BackgroundProvider } from '@/components/ThemePicker';
 import { AuthProvider, CaptureModalProvider, ModelProvider, usePreventOverscroll } from '@/hooks';
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
@@ -125,7 +126,15 @@ function AppRoutes() {
           />
         </Route>
 
-        <Route element={<MainLayout />}>
+        <Route
+          element={
+            <ProtectedRoute>
+              <RequireOnboarded>
+                <MainLayout />
+              </RequireOnboarded>
+            </ProtectedRoute>
+          }
+        >
           {/* Intelligence */}
           <Route
             path="/feed/:id?"
