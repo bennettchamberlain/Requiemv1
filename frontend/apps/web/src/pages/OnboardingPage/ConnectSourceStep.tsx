@@ -1,26 +1,16 @@
 import { useState } from 'react';
 
-import { useQuery } from '@apollo/client';
 import { ExternalLink } from '@ci/shadcn/icons';
 
 import { BrandPrimaryButton } from '@/components/BrandPrimaryButton/BrandPrimaryButton';
 import { ProviderConnectDialog } from '@/components/connect/ProviderConnectDialog';
-import {
-  GET_CONNECTIONS_LIGHT,
-  ServiceIntegrationsSection,
-} from '@/components/connect/ServiceIntegrationsSection';
+import { ServiceIntegrationsSection } from '@/components/connect/ServiceIntegrationsSection';
 import { Card } from '@/pages/ConnectPage/Card';
 
 import { CHROME_EXTENSION_URL, CI_DOWNLOAD_URL, IMPORT_TOOLS_URL } from './constants';
 
 export function ConnectSourceStep() {
   const [dialogProviderId, setDialogProviderId] = useState<string | null>(null);
-  const { data, refetch } = useQuery(GET_CONNECTIONS_LIGHT, { fetchPolicy: 'cache-and-network' });
-
-  const connections =
-    data?.connections?.edges?.map(
-      (edge: { node: { id: string; name: string | null; active: boolean; needsReauth: boolean } }) => edge.node,
-    ) ?? [];
 
   const openDownload = () => window.open(CI_DOWNLOAD_URL, '_blank', 'noopener,noreferrer');
 
@@ -32,23 +22,6 @@ export function ConnectSourceStep() {
           Pull your email and calendar in automatically.
         </p>
       </div>
-
-      {connections.length > 0 && (
-        <div className="space-y-2 rounded-lg border border-border/70 bg-muted/30 p-3 max-w-2xl mx-auto w-full">
-          <p className="text-xs font-semibold text-foreground">Connected sources</p>
-          {connections.map((c: { id: string; name: string | null; active: boolean; needsReauth: boolean }) => (
-            <div
-              key={c.id}
-              className="flex items-center justify-between text-xs rounded-md border border-border px-2 py-1.5"
-            >
-              <span className="text-foreground truncate">{c.name ?? 'Connection'}</span>
-              <span className="text-muted-foreground">
-                {c.needsReauth ? 'Needs reauth' : c.active ? 'Connected' : 'Inactive'}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
 
       <ServiceIntegrationsSection
         variant="onboarding"
@@ -104,12 +77,10 @@ export function ConnectSourceStep() {
         onOpenChange={(open) => {
           if (!open) {
             setDialogProviderId(null);
-            void refetch();
           }
         }}
         onConnected={() => {
           setDialogProviderId(null);
-          void refetch();
         }}
       />
     </div>
