@@ -31,6 +31,7 @@ const InventoryPage = lazy(() => import('@/pages/InventoryPage'));
 const MemoryPage = lazy(() => import('@/pages/MemoryPage'));
 const NotePage = lazy(() => import('@/pages/NotePage'));
 const NotesPage = lazy(() => import('@/pages/NotesPage'));
+const PlanPage = lazy(() => import('@/pages/PlanPage'));
 const OAuthCallbackPage = lazy(() => import('@/pages/OAuthCallbackPage'));
 const OnboardingPage = lazy(() => import('@/pages/OnboardingPage'));
 const OpenIDCallbackPage = lazy(() => import('@/pages/OpenIDCallbackPage'));
@@ -282,6 +283,17 @@ function AppRoutes() {
               </ProtectedRoute>
             }
           />
+
+          {isFeatureEnabled('planning.page') && (
+            <Route
+              path="/plan"
+              element={
+                <ProtectedRoute>
+                  <PlanPage />
+                </ProtectedRoute>
+              }
+            />
+          )}
 
           <Route
             path="/notes"

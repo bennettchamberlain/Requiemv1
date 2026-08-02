@@ -20,6 +20,14 @@ export class UserEntity {
   @Column()
   onboarded!: boolean;
 
+  /**
+   * IANA zone name. The single source of truth for "the user's day" — planning
+   * day boundaries, habit rollover and the owner-local job enqueuer all read it
+   * from here rather than keeping their own copy.
+   */
+  @Column({ type: 'text', nullable: true })
+  timezone!: string | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 
@@ -33,6 +41,7 @@ export class UserEntity {
       email: entity.email,
       entityId: entity.entityId,
       onboarded: entity.onboarded,
+      timezone: entity.timezone,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };

@@ -17,6 +17,7 @@ import {
   PlaceService,
 } from '@ci/domains/memory';
 import { NoteService } from '@ci/domains/notes';
+import { TaskService } from '@ci/domains/planning';
 import { TagService } from '@ci/domains/search-next';
 import { UserService } from '@ci/domains/user';
 
@@ -37,6 +38,7 @@ import { PersonType } from '../types/PersonType';
 import { PlaceType } from '../types/PlaceType';
 import { QuestionType } from '../types/QuestionType';
 import { TagType } from '../types/TagType';
+import { TaskType } from '../types/TaskType';
 import { ThreadType } from '../types/ThreadType';
 import { UserType } from '../types/UserType';
 
@@ -59,6 +61,7 @@ export class NodeResolver {
     private readonly placeService: PlaceService,
     private readonly questionService: QuestionService,
     private readonly tagService: TagService,
+    private readonly taskService: TaskService,
     private readonly threadService: ThreadService,
     private readonly userService: UserService,
   ) {}
@@ -130,6 +133,12 @@ export class NodeResolver {
         const message = await this.messageService.findById(serviceContext, id);
 
         return message ? MessageType.toType(message) : null;
+      }
+
+      case 'task': {
+        const task = await this.taskService.findById(serviceContext, id);
+
+        return task ? TaskType.toType(task) : null;
       }
 
       case 'note': {

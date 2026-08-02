@@ -7,6 +7,7 @@ import {
   LifeBuoy,
   Inbox,
   Lightbulb,
+  ListTodo,
   MessagesSquare,
   Package,
   HardDrive,
@@ -75,6 +76,12 @@ export function SecondaryNavigation() {
           <NavLink to="/saved-searches" label="Saved Searches">
             <FolderSearch2 className="h-6 w-6" strokeWidth={1.25} />
           </NavLink>
+
+          {isFeatureEnabled('planning.page') && (
+            <NavLink to="/plan" label="Plan">
+              <ListTodo className="h-6 w-6" strokeWidth={1.25} />
+            </NavLink>
+          )}
 
           <NavLink to="/notes" label="Notes" end={false}>
             <NotebookPen className="h-6 w-6" strokeWidth={1.25} />

@@ -14,6 +14,7 @@ import { GraphModule } from '@ci/domains/graph';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule } from '@ci/domains/memory';
 import { NotesModule } from '@ci/domains/notes';
+import { PlanningModule } from '@ci/domains/planning';
 import { PredictionsModule } from '@ci/domains/predictions';
 import { SearchNextModule } from '@ci/domains/search-next';
 import { SummariesModule } from '@ci/domains/summaries';
@@ -61,6 +62,7 @@ import { SavedSearchResolver } from './resolvers/SavedSearchResolver';
 import { SearchResolver } from './resolvers/SearchResolver';
 import { SummaryResolver } from './resolvers/SummaryResolver';
 import { TagResolver } from './resolvers/TagResolver';
+import { TaskResolver } from './resolvers/TaskResolver';
 import { ThreadResolver } from './resolvers/ThreadResolver';
 import { UserResolver } from './resolvers/UserResolver';
 
@@ -85,6 +87,7 @@ import { UserResolver } from './resolvers/UserResolver';
     IntelligenceModule,
     MemoryModule,
     NotesModule,
+    PlanningModule,
     SearchNextModule,
     SummariesModule,
     UserModule,
@@ -102,6 +105,7 @@ import { UserResolver } from './resolvers/UserResolver';
     ContentResolver,
     NodeResolver,
     NoteResolver,
+    TaskResolver,
     AnswerResolver,
     EventLoader,
     EventMediaLoader,

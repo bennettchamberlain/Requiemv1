@@ -41,6 +41,7 @@ import { McpModule } from '@ci/domains/mcp';
 import { MemoryModule } from '@ci/domains/memory';
 import { NotesModule } from '@ci/domains/notes';
 import { OnboardingModule } from '@ci/domains/onboarding';
+import { PlanningModule } from '@ci/domains/planning';
 import { PositionModule } from '@ci/domains/position';
 import { PredictionsModule } from '@ci/domains/predictions';
 import { SearchIngressModule } from '@ci/domains/search-ingress';
@@ -86,6 +87,7 @@ import { UserModule } from '@ci/domains/user';
     LLMModule,
     McpModule,
     OnboardingModule,
+    PlanningModule,
     PositionModule,
     PredictionsModule,
     ToolsModule,
