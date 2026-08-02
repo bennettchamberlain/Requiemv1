@@ -35,7 +35,7 @@ export function FocusAreas() {
   return (
     <>
       <div className="text-center text-2xl mb-4 md:mb-10">Your focus areas</div>
-      <div className="space-y-6">
+      <div className="space-y-6 w-full max-w-md mx-auto text-left">
         {focusAreaOptions.map((item) => (
           <Form.Field
             key={item.id}

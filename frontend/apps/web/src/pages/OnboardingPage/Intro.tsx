@@ -75,27 +75,32 @@ function TypingEffect({
 export function Intro() {
   const { user } = useCurrentUser();
 
+  const bodyClassName = 'text-base text-center text-muted-foreground';
+
   const messages = [
     {
       text: `Welcome, ${user?.name}`,
-      className: 'text-2xl mb-4 text-center',
+      className: 'text-2xl mb-4 text-center font-semibold',
       pause: 350,
     },
     {
-      text: "Let's get you started.",
+      text: "Let's get you started — every step is skippable.",
       className: 'text-lg text-center mb-8',
       pause: 400,
     },
     {
       text: "We'll ask you a couple quick questions to help build your initial experience.",
+      className: bodyClassName,
       pause: 150,
     },
     {
       text: 'But this is just the beginning.',
+      className: bodyClassName,
       pause: 150,
     },
     {
       text: 'Your companion will learn more as you interact.',
+      className: bodyClassName,
     },
   ];
 
@@ -106,7 +111,7 @@ export function Intro() {
   }, []);
 
   return (
-    <div className="space-y-3 h-lg md:text-left md:w-sm">
+    <div className="w-full max-w-lg mx-auto space-y-3 text-center px-2">
       {messages.slice(0, completedCount).map((message, index) => (
         <div key={index} className={message.className}>
           {message.text}
