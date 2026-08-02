@@ -84,7 +84,7 @@ export function Intro() {
       pause: 350,
     },
     {
-      text: "Let's get you started — every step is skippable.",
+      text: "Let's get you started.",
       className: 'text-lg text-center mb-8',
       pause: 400,
     },

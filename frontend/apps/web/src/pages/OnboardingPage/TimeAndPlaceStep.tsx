@@ -17,7 +17,7 @@ export function TimeAndPlaceStep() {
       <div className="space-y-2 text-center">
         <h1 className="text-3xl font-bold tracking-tight text-foreground">Time and place</h1>
         <p className="text-sm leading-6 text-muted-foreground">
-          Block your days intelligently. Detected timezone:{' '}
+          Plan your time intentionally. Detected timezone:{' '}
           <span className="text-foreground">{BROWSER_TIMEZONE}</span>
         </p>
       </div>
