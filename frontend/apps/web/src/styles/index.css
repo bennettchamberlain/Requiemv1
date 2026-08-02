@@ -74,13 +74,13 @@
 
 :root {
   --radius: 0.625rem;
-  --ci-mint: #58ebbf;
-  --ci-teal: #409b9b;
-  --ci-mint-hover: #82ffe1;
-  --ci-primary-ink: #041620;
-  --ci-primary-gradient: linear-gradient(135deg, var(--ci-mint), var(--ci-teal));
-  --ci-primary-gradient-hover: linear-gradient(135deg, var(--ci-mint-hover), var(--ci-mint));
-  --shadow-glow-ci: 0 0 20px -4px rgb(88 235 191 / 35%);
+  --ci-primary: #14532d;
+  --ci-primary-mid: #166534;
+  --ci-primary-bright: #15803d;
+  --ci-primary-ink: #f0fdf4;
+  --ci-primary-gradient: linear-gradient(135deg, var(--ci-primary-mid), var(--ci-primary));
+  --ci-primary-gradient-hover: linear-gradient(135deg, var(--ci-primary-bright), var(--ci-primary-mid));
+  --shadow-glow-ci: 0 0 20px -4px rgb(20 83 45 / 35%);
   --ci-background-lift: radial-gradient(1200px circle at 50% -20%, oklch(0.5 0.03 220 / 5%), transparent 52%);
   --background: oklch(0.964 0 89.876);
   --foreground: oklch(0.158 0.028 227.251);
@@ -247,7 +247,7 @@
 }
 
 .ci-primary-surface {
-  background-color: var(--ci-mint);
+  background-color: var(--ci-primary);
   background-image: var(--ci-primary-gradient);
   border-color: transparent;
   color: var(--ci-primary-ink);
@@ -265,7 +265,7 @@
 
 [data-slot='checkbox'][data-state='checked'],
 [data-slot='switch'][data-state='checked'] {
-  background-color: var(--ci-mint);
+  background-color: var(--ci-primary);
   background-image: var(--ci-primary-gradient);
   border-color: transparent;
   color: var(--ci-primary-ink);
