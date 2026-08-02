@@ -20,6 +20,8 @@ export const ONBOARDING_OAUTH_RESUME_KEY = 'onboarding-resume';
 export const CHROME_EXTENSION_URL =
   'https://chromewebstore.google.com/detail/companion-intelligence/bcocflgkdeimninckpmdifcniajoneih?authuser=3&hl=en';
 
+export const CI_DOWNLOAD_URL = 'https://ci.computer/download';
+
 export const IMPORT_TOOLS_URL = 'https://hub.ci.computer/store/ci-import-tools';
 
 export const BROWSER_TIMEZONE = (() => {

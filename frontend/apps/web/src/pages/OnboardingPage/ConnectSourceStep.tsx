@@ -1,16 +1,17 @@
 import { useState } from 'react';
 
 import { useQuery } from '@apollo/client';
-import { Button } from '@ci/shadcn';
 import { ExternalLink } from '@ci/shadcn/icons';
 
+import { BrandPrimaryButton } from '@/components/BrandPrimaryButton/BrandPrimaryButton';
 import { ProviderConnectDialog } from '@/components/connect/ProviderConnectDialog';
 import {
   GET_CONNECTIONS_LIGHT,
   ServiceIntegrationsSection,
 } from '@/components/connect/ServiceIntegrationsSection';
+import { Card } from '@/pages/ConnectPage/Card';
 
-import { CHROME_EXTENSION_URL, IMPORT_TOOLS_URL } from './constants';
+import { CHROME_EXTENSION_URL, CI_DOWNLOAD_URL, IMPORT_TOOLS_URL } from './constants';
 
 export function ConnectSourceStep() {
   const [dialogProviderId, setDialogProviderId] = useState<string | null>(null);
@@ -20,6 +21,8 @@ export function ConnectSourceStep() {
     data?.connections.edges.map(
       (edge: { node: { id: string; name: string | null; active: boolean; needsReauth: boolean } }) => edge.node,
     ) ?? [];
+
+  const openDownload = () => window.open(CI_DOWNLOAD_URL, '_blank', 'noopener,noreferrer');
 
   return (
     <div className="space-y-6 py-6 w-full mx-auto">
@@ -53,26 +56,45 @@ export function ConnectSourceStep() {
         onProviderSelect={(rawId) => setDialogProviderId(rawId)}
       />
 
-      <div className="rounded-lg border border-border/70 bg-muted/20 p-4 space-y-2 max-w-2xl mx-auto w-full">
-        <p className="text-sm text-muted-foreground">
+      <div className="space-y-4 max-w-5xl mx-auto w-full">
+        <p className="text-base md:text-lg leading-7 text-muted-foreground text-center px-2">
           Want your memory to include desktop or mobile browser history? Get the browser extension.
         </p>
-        <Button variant="outline" size="sm" asChild>
-          <a href={CHROME_EXTENSION_URL} target="_blank" rel="noopener noreferrer">
-            Get the browser extension
-            <ExternalLink className="ml-2 h-3.5 w-3.5" />
-          </a>
-        </Button>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
+          <Card
+            logo="/branding/chrome/logo.svg"
+            background="bg-blue-500"
+            border="border-blue-400"
+            text="Install the Chrome extension to automatically track your browsing history, bookmarks, and web activity."
+            onClick={() => window.open(CHROME_EXTENSION_URL, '_blank', 'noopener,noreferrer')}
+          />
+          <Card
+            logo="/branding/firefox/logo.svg"
+            background="bg-orange-500"
+            border="border-orange-400"
+            text="Get the Firefox extension to capture your web browsing patterns and site interactions."
+            disabled
+          />
+          <Card
+            logo="/branding/ios/logo.svg"
+            background="bg-blue-500"
+            border="border-blue-400"
+            text="Download the iOS app to track your mobile usage, screen time, and app interactions on iPhone and iPad."
+            onClick={openDownload}
+          />
+        </div>
       </div>
 
-      <div className="rounded-lg border border-border/70 bg-background/70 p-4 space-y-2 max-w-2xl mx-auto w-full">
-        <p className="text-sm text-muted-foreground">Have local exports? Import tools can seed your memory faster.</p>
-        <Button variant="outline" size="sm" asChild>
+      <div className="rounded-lg border border-border/70 bg-background/70 p-5 space-y-3 max-w-2xl mx-auto w-full">
+        <p className="text-base md:text-lg leading-7 text-muted-foreground">
+          Have local exports? Import tools can seed your memory faster.
+        </p>
+        <BrandPrimaryButton className="w-full sm:w-auto text-base px-5" asChild>
           <a href={IMPORT_TOOLS_URL} target="_blank" rel="noopener noreferrer">
             Get import tools
-            <ExternalLink className="ml-2 h-3.5 w-3.5" />
+            <ExternalLink className="ml-2 h-4 w-4" />
           </a>
-        </Button>
+        </BrandPrimaryButton>
       </div>
 
       <ProviderConnectDialog
