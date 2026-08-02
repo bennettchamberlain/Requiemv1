@@ -27,9 +27,7 @@ import { PORTAL_TOKEN_VERIFIER, type PortalTokenVerifier } from './PortalTokenVe
  */
 @Injectable()
 export class JwtOrPortalAuthGuard extends AuthGuard('jwt') {
-  constructor(
-    @Inject(PORTAL_TOKEN_VERIFIER) private readonly portalTokenVerifier: PortalTokenVerifier,
-  ) {
+  constructor(@Inject(PORTAL_TOKEN_VERIFIER) private readonly portalTokenVerifier: PortalTokenVerifier) {
     super();
   }
 
