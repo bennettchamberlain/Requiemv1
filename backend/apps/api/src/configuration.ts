@@ -238,6 +238,8 @@ export const ConfigSchema = z.object({
      * enabled.
      */
     'shared.search': booleanStringSchema,
+    /** Shows would-you-rather preference steps during onboarding (food/movie/activity). */
+    'onboarding.preference.steps': booleanStringSchema,
   }),
   environment: z.object({
     'database.query.logging': booleanStringSchema,
