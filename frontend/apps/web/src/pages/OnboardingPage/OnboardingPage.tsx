@@ -24,6 +24,7 @@ import { FoodPreferences } from './FoodPreferences';
 import { IdentityStep } from './IdentityStep';
 import { Intro } from './Intro';
 import { MoviePreferences } from './MoviePreferences';
+import { OnboardingButton } from './OnboardingButton';
 import { RunFirstSyncStep } from './RunFirstSyncStep';
 import { SocialConnections } from './SocialConnections';
 import { TimeAndPlaceStep } from './TimeAndPlaceStep';
@@ -293,9 +294,9 @@ export function OnboardingPage() {
               <Button type="button" variant="ghost" onClick={handleSkip}>
                 Skip
               </Button>
-              <Button type="button" className="px-12" onClick={handleNext}>
+              <OnboardingButton type="button" className="px-12" onClick={handleNext}>
                 Next
-              </Button>
+              </OnboardingButton>
             </div>
           )}
 

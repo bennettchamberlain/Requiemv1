@@ -5,6 +5,7 @@ import { Button } from '@ci/shadcn';
 
 import { useAuth } from '@/hooks';
 
+import { OnboardingButton } from './OnboardingButton';
 import { useOnboardService } from './useOnboardService';
 
 interface SyncNowResponse {
@@ -80,9 +81,9 @@ export function RunFirstSyncStep({ hasConnections, onBack, onGoToConnect }: RunF
         </p>
       )}
 
-      <Button type="button" className="w-full" disabled={busy} onClick={() => void runSyncNow()}>
+      <OnboardingButton type="button" className="w-full" disabled={busy} onClick={() => void runSyncNow()}>
         {running ? 'Syncing…' : 'Run my first sync now'}
-      </Button>
+      </OnboardingButton>
 
       {summary && (
         <p className={summary.hasError ? 'text-sm text-destructive' : 'text-sm text-foreground'}>{summary.text}</p>
@@ -100,9 +101,9 @@ export function RunFirstSyncStep({ hasConnections, onBack, onGoToConnect }: RunF
           <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={onBack}>
             Back
           </Button>
-          <Button type="button" size="sm" disabled={busy} onClick={() => void finish()}>
+          <OnboardingButton type="button" size="sm" disabled={busy} onClick={() => void finish()}>
             {submitting ? 'Finishing…' : 'Finish'}
-          </Button>
+          </OnboardingButton>
         </div>
       </div>
     </div>
