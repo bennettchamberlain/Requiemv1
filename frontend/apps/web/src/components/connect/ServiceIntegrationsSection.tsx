@@ -300,17 +300,15 @@ export function ServiceIntegrationsSection({
                     : `${count} Connections`
                   : undefined
               }
-              className={isConnected ? 'bg-green-200 dark:bg-green-900/30' : undefined}
+              className={
+                isConnected
+                  ? 'ring-2 ring-green-800/35 bg-green-900/[0.08] dark:bg-green-950/45 dark:ring-green-700/45 [&>div:last-child]:text-green-800 dark:[&>div:last-child]:text-green-300'
+                  : undefined
+              }
             />
           );
         })}
       </div>
-
-      {disabledWhenConnected && (
-        <p className="text-xs text-muted-foreground mt-3">
-          Already connected sources are disabled here — manage them in Connections after setup.
-        </p>
-      )}
 
       <Dialog open={setupProvider != null} onOpenChange={() => setSetupProvider(null)}>
         <Dialog.Content className="sm:max-w-[500px] [&>button]:cursor-pointer">
