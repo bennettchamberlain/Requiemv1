@@ -19,7 +19,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EventsModule } from '@ci/domains/events';
 
-import { UserEntity, type User } from './entities/UserEntity';
+import { UserEntity } from './entities/UserEntity';
 import { UserService } from './services/UserService';
 
 /**
@@ -39,6 +39,6 @@ export { UserEntity };
 export { UserService };
 
 // Types
-export type { User };
+export type { User, OnboardingProgress } from './entities/UserEntity';
 export type { CreateUserDto, UpdateUserDto } from './types';
 export { UserCreatedEvent, type UserCreatedPayload } from './events';

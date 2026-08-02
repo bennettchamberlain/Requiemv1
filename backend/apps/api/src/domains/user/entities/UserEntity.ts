@@ -1,5 +1,12 @@
 import { Entity, Column, PrimaryColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
+/** Server-persisted onboarding wizard state; cleared when users.onboarded becomes true. */
+export interface OnboardingProgress {
+  stepKey: string;
+  draft: Record<string, unknown>;
+  updatedAt: string;
+}
+
 @Entity({ schema: 'ci', name: 'users' })
 export class UserEntity {
   @PrimaryColumn()
@@ -25,6 +32,9 @@ export class UserEntity {
   @Column({ type: 'text', default: 'UTC' })
   timezone!: string;
 
+  @Column({ type: 'jsonb', name: 'onboarding_progress', nullable: true })
+  onboardingProgress?: OnboardingProgress | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 
@@ -39,6 +49,7 @@ export class UserEntity {
       entityId: entity.entityId,
       onboarded: entity.onboarded,
       timezone: entity.timezone,
+      onboardingProgress: entity.onboardingProgress ?? null,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };

@@ -1,7 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import bcrypt from 'bcrypt';
-import { Repository } from 'typeorm';
+import { QueryDeepPartialEntity, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { ServiceContext, SYSTEM_USER } from '@ci/common/context';
@@ -68,7 +68,7 @@ export class UserService {
       throw new UnauthorizedException();
     }
 
-    await this.userRepository.update(id, data);
+    await this.userRepository.update(id, data as QueryDeepPartialEntity<UserEntity>);
 
     await this.eventService.send(UserUpdatedEvent, {
       userId: id,
