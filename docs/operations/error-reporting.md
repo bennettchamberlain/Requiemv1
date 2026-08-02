@@ -54,15 +54,28 @@ on this app those carry the user's search terms — and drops chunk-load and
 
 One project per component, matching the CI-Hub convention:
 
-| Component | Sentry project | Platform | DSN variable |
-|---|---|---|---|
-| `backend/apps/api` | `ci-server-api` | `node-nestjs` | `SENTRY_DSN_API` |
-| `frontend/apps/web` | `ci-server-web` | `javascript-react` | `VITE_SENTRY_DSN` (build time) |
-| `backend/apps/hbpe` | `ci-server-hbpe` | `python-fastapi` | `SENTRY_DSN_HBPE` |
-| `backend/apps/summary` | `ci-server-summary` | `python-fastapi` | `SENTRY_DSN_SUMMARY` |
+CI-Server reports into the **`ci-memory`** project in the `companion-intelligence`
+org (named for the marketplace app id, matching `ci-import-tools`; CI-Hub's
+`hub-backend` / `hub-frontend` / `hub-desktop` predate the convention).
 
-Compose maps each of those onto the container's `SENTRY_DSN`, so a service only
-ever sees its own.
+Each component still gets its own DSN variable, and every event carries a
+`component` tag, so one project or four both work:
+
+| Component | `component` tag | DSN variable |
+|---|---|---|
+| `backend/apps/api` | `ci-server-api` | `SENTRY_DSN_API` |
+| `frontend/apps/web` | `ci-server-web` | `VITE_SENTRY_DSN` (build time) |
+| `backend/apps/hbpe` | `ci-server-hbpe` | `SENTRY_DSN_HBPE` |
+| `backend/apps/summary` | `ci-server-summary` | `SENTRY_DSN_SUMMARY` |
+
+Point all four at the same `ci-memory` DSN and filter by `component:` in Sentry,
+or split them into per-component projects later without touching any code — the
+env contract is the same either way. Compose maps each variable onto the
+container's `SENTRY_DSN`, so a service only ever sees the one meant for it.
+
+```
+sentry issue list companion-intelligence/ci-memory --query "component:ci-server-hbpe"
+```
 
 ## Enabling it
 
@@ -88,8 +101,8 @@ CI_TELEMETRY=off docker compose --profile production up -d
 ## Verifying
 
 ```bash
-sentry issue list companion-intelligence/ci-server-api --query "is:unresolved"
-sentry issue view CI-SERVER-API-1
+sentry issue list companion-intelligence/ci-memory --query "is:unresolved"
+sentry issue view CI-MEMORY-1
 ```
 
 To confirm reporting is genuinely inert without a DSN, start the API with no
