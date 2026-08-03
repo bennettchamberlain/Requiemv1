@@ -163,7 +163,7 @@ To confirm reporting is genuinely inert without a DSN, start the API with no
 | Path | Role |
 |---|---|
 | `backend/apps/api/src/instrument.ts` | `Sentry.init`; must stay the first import in `main.ts` |
-| `backend/apps/api/src/common/telemetry/settings.ts` | Resolves the opt-out gate from env |
+| `backend/apps/api/src/common/telemetry/settings.ts` | Resolves the telemetry gate from env |
 | `backend/apps/api/src/common/filters/GlobalExceptionsFilter.ts` | Captures unexpected request failures (not 4xx) |
 | `backend/apps/api/src/application.ts` | Crash handlers capture + flush before `process.exit` |
 | `frontend/apps/web/src/main.tsx` | Calls `initTelemetry()` before render |
