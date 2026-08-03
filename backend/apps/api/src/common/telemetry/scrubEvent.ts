@@ -35,7 +35,23 @@ const HOME_PATH_PATTERNS = [
 // forms match too — `x-api-key` is CI-Server's primary API-key header, and the
 // SDK ships request headers even with sendDefaultPii disabled.
 const SENSITIVE_KEY_PATTERN =
-  /password|secret|token|authorization|cookie|jwt|api[-_ ]?key|dsn|pepper|private[-_]?key|hub[-_]user/i;
+  /password|secret|token|authorization|cookie|jwt|api[-_ ]?key|dsn|pepper|private[-_]?key|signature/i;
+
+// Keys that name a PERSON rather than carrying a credential. No value pattern
+// can ever match these — a username is just a word — so the key is the only
+// signal, the same reason we drop `server_name`. This matters behind CI-Hub's
+// Traefik forward-auth: the SDK captures headers that ARRIVED, so a
+// proxy-injected `x-ci-hub-user` reaches the event with no reference in our
+// code at all.
+//
+// Anchored on purpose: `user-agent`, `user_id` and `owner_id` are diagnostic
+// signal worth keeping, and a naive /user|owner/ would eat all three.
+const IDENTITY_KEY_PATTERN = /(?:^|[-_])user$|(?:^|[-_])owner$|username|email|forwarded|^remote-/i;
+
+/** Single predicate so credential and identity coverage cannot diverge. */
+function isSensitiveKey(key: string): boolean {
+  return SENSITIVE_KEY_PATTERN.test(key) || IDENTITY_KEY_PATTERN.test(key);
+}
 
 // Headers whose value is a URL the user navigated from — same query-string
 // exposure as request.url, and not caught by SENSITIVE_KEY_PATTERN.
@@ -88,7 +104,7 @@ function scrubValue(value: unknown, depth = 0): unknown {
     const result: Record<string, unknown> = {};
 
     for (const [key, nested] of Object.entries(value)) {
-      result[key] = SENSITIVE_KEY_PATTERN.test(key) ? '[Filtered]' : scrubValue(nested, depth + 1);
+      result[key] = isSensitiveKey(key) ? '[Filtered]' : scrubValue(nested, depth + 1);
     }
 
     return result;

@@ -265,3 +265,24 @@ describe('scrubEvent — ContextLines source text', () => {
     expect(frame.post_context![0]).not.toContain('abcdefghij');
   });
 });
+
+describe('scrubEvent — identity-bearing keys', () => {
+  // These name a PERSON; no value pattern can match a username. Found by the
+  // Companion-Planning port: `x-ci-hub-user` was covered here but the class
+  // wasn't, and CI-Server sits behind the same Traefik forward-auth, which
+  // injects headers our code never references.
+  it.each(['x-ci-hub-user', 'x-forwarded-user', 'x-ci-owner', 'x-test-owner', 'username', 'email'])(
+    'filters %s',
+    (key) => {
+      const event = { request: { headers: { [key]: 'liam' } } } as unknown as ErrorEvent;
+
+      expect(scrubEvent(event)!.request!.headers![key]).toBe('[Filtered]');
+    },
+  );
+
+  it.each(['user-agent', 'user_id', 'owner_id'])('keeps %s as diagnostic signal', (key) => {
+    const event = { request: { headers: { [key]: 'curl/8' } } } as unknown as ErrorEvent;
+
+    expect(scrubEvent(event)!.request!.headers![key]).toBe('curl/8');
+  });
+});

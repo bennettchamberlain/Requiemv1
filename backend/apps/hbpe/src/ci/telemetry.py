@@ -45,9 +45,23 @@ _HOME_PATTERNS = [
 ]
 
 _SENSITIVE_KEY = re.compile(
-    r"password|secret|token|authorization|cookie|jwt|api[-_ ]?key|dsn|pepper|private[-_]?key|hub[-_]user",
+    r"password|secret|token|authorization|cookie|jwt|api[-_ ]?key|dsn|pepper|private[-_]?key|signature",
     re.IGNORECASE,
 )
+
+# Keys that name a PERSON rather than carrying a credential. No value pattern can
+# match a username, so the key is the only signal — same reason we drop
+# server_name. Anchored so `user-agent`, `user_id` and `owner_id` survive as
+# diagnostic signal.
+_IDENTITY_KEY = re.compile(
+    r"(?:^|[-_])user$|(?:^|[-_])owner$|username|email|forwarded|^remote-",
+    re.IGNORECASE,
+)
+
+
+def _is_sensitive_key(key: str) -> bool:
+    """Single predicate so credential and identity coverage cannot diverge."""
+    return bool(_SENSITIVE_KEY.search(key) or _IDENTITY_KEY.search(key))
 
 _MAX_STRING_LENGTH = 8000
 
@@ -107,7 +121,7 @@ def _scrub_value(value: Any, depth: int = 0) -> Any:
 
     if isinstance(value, dict):
         return {
-            key: "[Filtered]" if _SENSITIVE_KEY.search(str(key)) else _scrub_value(nested, depth + 1)
+            key: "[Filtered]" if _is_sensitive_key(str(key)) else _scrub_value(nested, depth + 1)
             for key, nested in value.items()
         }
 
