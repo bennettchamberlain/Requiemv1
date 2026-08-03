@@ -70,22 +70,8 @@ describe('EntityIdentifierService.upsertForEntity', () => {
 
     expect(insert.calls.orIgnore).toBe(1);
     expect(insert.calls.values).toEqual([
-      {
-        ownerUserId: OWNER,
-        entityId: ENTITY,
-        kind: 'email',
-        valueNormalized: 'john@example.com',
-        rawValue: '  John@Example.COM ',
-        source: null,
-      },
-      {
-        ownerUserId: OWNER,
-        entityId: ENTITY,
-        kind: 'phone',
-        valueNormalized: '4155550100',
-        rawValue: '+1 (415) 555-0100',
-        source: null,
-      },
+      { ownerUserId: OWNER, entityId: ENTITY, kind: 'email', valueNormalized: 'john@example.com' },
+      { ownerUserId: OWNER, entityId: ENTITY, kind: 'phone', valueNormalized: '4155550100' },
     ]);
     expect(inserted).toBe(2);
   });
@@ -100,22 +86,8 @@ describe('EntityIdentifierService.upsertForEntity', () => {
     });
 
     expect(insert.calls.values).toEqual([
-      {
-        ownerUserId: OWNER,
-        entityId: ENTITY,
-        kind: 'email',
-        valueNormalized: 'a@b.com',
-        rawValue: null,
-        source: null,
-      },
-      {
-        ownerUserId: OWNER,
-        entityId: ENTITY,
-        kind: 'phone',
-        valueNormalized: '4155550100',
-        rawValue: '+1 415 555 0100',
-        source: null,
-      },
+      { ownerUserId: OWNER, entityId: ENTITY, kind: 'email', valueNormalized: 'a@b.com' },
+      { ownerUserId: OWNER, entityId: ENTITY, kind: 'phone', valueNormalized: '4155550100' },
     ]);
   });
 
@@ -153,14 +125,7 @@ describe('EntityIdentifierService.upsertForEntity', () => {
     await service.upsertForEntity(OWNER, ENTITY, { emails: 'solo@example.com' });
 
     expect(insert.calls.values).toEqual([
-      {
-        ownerUserId: OWNER,
-        entityId: ENTITY,
-        kind: 'email',
-        valueNormalized: 'solo@example.com',
-        rawValue: null,
-        source: null,
-      },
+      { ownerUserId: OWNER, entityId: ENTITY, kind: 'email', valueNormalized: 'solo@example.com' },
     ]);
   });
 });
@@ -180,38 +145,10 @@ describe('EntityIdentifierService.upsertForEntities', () => {
     expect(insert.calls.valuesCalls).toHaveLength(1);
     expect(insert.calls.orIgnore).toBe(1);
     expect(insert.calls.values).toEqual([
-      {
-        ownerUserId: OWNER,
-        entityId: ENTITY,
-        kind: 'email',
-        valueNormalized: 'john@example.com',
-        rawValue: '  John@Example.COM ',
-        source: null,
-      },
-      {
-        ownerUserId: OWNER,
-        entityId: ENTITY,
-        kind: 'phone',
-        valueNormalized: '4155550100',
-        rawValue: '+1 (415) 555-0100',
-        source: null,
-      },
-      {
-        ownerUserId: OWNER,
-        entityId: ENTITY_2,
-        kind: 'email',
-        valueNormalized: 'jane@example.com',
-        rawValue: null,
-        source: null,
-      },
-      {
-        ownerUserId: OWNER,
-        entityId: ENTITY_2,
-        kind: 'name',
-        valueNormalized: 'jose garcia',
-        rawValue: 'José  GARCÍA',
-        source: null,
-      },
+      { ownerUserId: OWNER, entityId: ENTITY, kind: 'email', valueNormalized: 'john@example.com' },
+      { ownerUserId: OWNER, entityId: ENTITY, kind: 'phone', valueNormalized: '4155550100' },
+      { ownerUserId: OWNER, entityId: ENTITY_2, kind: 'email', valueNormalized: 'jane@example.com' },
+      { ownerUserId: OWNER, entityId: ENTITY_2, kind: 'name', valueNormalized: 'jose garcia' },
     ]);
     expect(inserted).toBe(4);
   });
@@ -227,22 +164,8 @@ describe('EntityIdentifierService.upsertForEntities', () => {
     // Matches the sequential per-entity statements this replaces: the first
     // INSERT claimed the tuple, the second was ignored by ON CONFLICT.
     expect(insert.calls.values).toEqual([
-      {
-        ownerUserId: OWNER,
-        entityId: ENTITY,
-        kind: 'email',
-        valueNormalized: 'shared@example.com',
-        rawValue: null,
-        source: null,
-      },
-      {
-        ownerUserId: OWNER,
-        entityId: ENTITY_2,
-        kind: 'phone',
-        valueNormalized: '4155550100',
-        rawValue: null,
-        source: null,
-      },
+      { ownerUserId: OWNER, entityId: ENTITY, kind: 'email', valueNormalized: 'shared@example.com' },
+      { ownerUserId: OWNER, entityId: ENTITY_2, kind: 'phone', valueNormalized: '4155550100' },
     ]);
   });
 
@@ -255,14 +178,7 @@ describe('EntityIdentifierService.upsertForEntities', () => {
     ]);
 
     expect(insert.calls.values).toEqual([
-      {
-        ownerUserId: OWNER,
-        entityId: ENTITY_2,
-        kind: 'email',
-        valueNormalized: 'good@example.com',
-        rawValue: null,
-        source: null,
-      },
+      { ownerUserId: OWNER, entityId: ENTITY_2, kind: 'email', valueNormalized: 'good@example.com' },
     ]);
     expect(inserted).toBe(1);
   });
