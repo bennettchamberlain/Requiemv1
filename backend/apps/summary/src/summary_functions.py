@@ -9,7 +9,7 @@ import httpx
 import json
 
 from .config import settings
-from .llm_config import LLMConfig
+from .llm_config import LLMConfig, run_agent_sync
 
 
 def count_activities(aggregated_data: Dict[str, Any]) -> Dict[str, int]:
@@ -84,7 +84,9 @@ def generate_hourly_summary(
     prompt = build_data_prompt(aggregated_data, activity_counts)
 
     # Call LLM
-    result = llm_config.agents['hourly'].run_sync(
+    result = run_agent_sync(
+        llm_config,
+        'hourly',
         prompt,
         model_settings={
             "temperature": settings.llm_temperature,
@@ -121,9 +123,7 @@ def generate_rollup_summary(
 
     Pure function for daily/weekly/monthly/seasonal/yearly summaries.
     """
-    # Get appropriate agent
-    agent = llm_config.agents.get(period_type)
-    if not agent:
+    if period_type not in llm_config.agents:
         raise ValueError(f"No agent configured for period_type: {period_type}")
 
     # Build prompt from child summaries
@@ -135,7 +135,9 @@ def generate_rollup_summary(
     prompt = f"Synthesize these summaries into a {period_type} overview:\n\n{combined_text}"
 
     # Call LLM
-    result = agent.run_sync(
+    result = run_agent_sync(
+        llm_config,
+        period_type,
         prompt,
         model_settings={
             "temperature": settings.llm_temperature,
@@ -208,7 +210,9 @@ def generate_user_dossier(
     prompt = "\n".join(prompt_parts)
 
     # Call LLM
-    result = llm_config.agents['dossier'].run_sync(
+    result = run_agent_sync(
+        llm_config,
+        'dossier',
         prompt,
         model_settings={
             "temperature": settings.llm_temperature,
@@ -257,16 +261,13 @@ def generate_insights(
     Pure function that uses LLM to generate actionable insights
     based on graph deltas, events, relationships, and summaries.
     """
-    # Get insights agent
-    agent = llm_config.agents.get('insights')
-    if not agent:
-        raise ValueError("No agent configured for insights generation")
-
     # Build prompt from context
     prompt = _build_insights_prompt(insights_context)
 
     # Call LLM with slightly higher temperature for creativity
-    result = agent.run_sync(
+    result = run_agent_sync(
+        llm_config,
+        'insights',
         prompt,
         model_settings={
             "temperature": 0.7,
@@ -295,6 +296,64 @@ def generate_insights(
     }
 
 
+def generate_single_insight(
+    llm_config: LLMConfig,
+    insights_context: Dict[str, Any],
+    prior_insights: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """
+    Generate ONE proactive insight, distinct from any prior ones.
+
+    Incremental counterpart to generate_insights: the workflow calls this in a
+    loop and stores each insight immediately, so insights surface on the feed
+    as they are generated instead of after the whole batch. Returns
+    `insight: None` when the model signals there is nothing distinct left.
+    """
+    prompt = _build_insights_prompt(insights_context)
+
+    if prior_insights:
+        parts = [
+            prompt,
+            "\n## PREVIOUSLY GENERATED INSIGHTS (do NOT repeat or rephrase these topics)",
+        ]
+        for i, prior in enumerate(prior_insights):
+            parts.append(f"{i + 1}. {prior.get('title', '')}: {prior.get('summary_text', '')}")
+        prompt = "\n".join(parts)
+
+    result = run_agent_sync(
+        llm_config,
+        'insight_single',
+        prompt,
+        model_settings={
+            "temperature": 0.7,
+            "max_tokens": settings.llm_max_tokens,
+        },
+    )
+
+    response = result.output
+    tokens_used = result.usage.total_tokens if result.usage else 0
+
+    if response.insight is None:
+        return {
+            "insight": None,
+            "data_sources_used": response.data_sources_used,
+            "embedding": None,
+            "tokens_used": tokens_used,
+        }
+
+    embedding = generate_embedding(
+        llm_config,
+        f"{response.insight.title}: {response.insight.summary_text}",
+    )
+
+    return {
+        "insight": response.insight.model_dump(),
+        "data_sources_used": response.data_sources_used,
+        "embedding": embedding,
+        "tokens_used": tokens_used,
+    }
+
+
 def generate_actions(
     llm_config: LLMConfig,
     context: Dict[str, Any],
@@ -305,16 +364,13 @@ def generate_actions(
     Pure function that uses LLM to generate conversation starters
     and time management suggestions.
     """
-    # Get action agent
-    agent = llm_config.agents.get('actions')
-    if not agent:
-        raise ValueError("No agent configured for actions generation")
-
     # Build action-specific prompt
     prompt = _build_actions_prompt(context)
 
     # Call LLM with moderate temperature - not too creative to avoid mixing unrelated topics
-    result = agent.run_sync(
+    result = run_agent_sync(
+        llm_config,
+        'actions',
         prompt,
         model_settings={
             "temperature": 0.6,
