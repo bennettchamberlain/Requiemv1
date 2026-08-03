@@ -129,12 +129,8 @@ function SummaryRow({ summary, context, onClick }: SummaryRowProps) {
         <span className="text-xs uppercase tracking-wide text-muted-foreground px-2 py-0.5 rounded bg-muted">
           {summary.periodType}
         </span>
-        {!summary.seen && !summary.dismissed && (
-          <span className="text-xs text-primary font-medium">New</span>
-        )}
-        {summary.dismissed && (
-          <span className="text-xs text-muted-foreground font-medium">Dismissed</span>
-        )}
+        {!summary.seen && !summary.dismissed && <span className="text-xs text-primary font-medium">New</span>}
+        {summary.dismissed && <span className="text-xs text-muted-foreground font-medium">Dismissed</span>}
         {summary.seen && !summary.dismissed && (
           <span className="text-xs text-muted-foreground font-medium">Seen</span>
         )}

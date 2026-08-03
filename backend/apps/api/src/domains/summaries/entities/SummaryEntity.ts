@@ -87,15 +87,11 @@ export class SummaryEntity {
         (structuredContext.key_actions as string[] | undefined) ||
         [];
       const relatedEntityIds =
-        (structuredContext.related_entity_ids as string[] | undefined) ||
-        entity.participants ||
-        [];
+        (structuredContext.related_entity_ids as string[] | undefined) || entity.participants || [];
       const relevanceScore = Number(
         metadata.relevance_score ?? structuredContext.relevance_score ?? entity.confidenceScore ?? 0,
       );
-      const insightTags = Array.isArray(structuredContext.tags)
-        ? (structuredContext.tags as string[])
-        : tags;
+      const insightTags = Array.isArray(structuredContext.tags) ? (structuredContext.tags as string[]) : tags;
 
       insights = [
         {
