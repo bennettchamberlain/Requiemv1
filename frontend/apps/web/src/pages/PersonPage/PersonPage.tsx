@@ -241,7 +241,9 @@ export function PersonPage() {
             <Breadcrumb.Separator className="hidden md:block" />
 
             <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Page>People</Breadcrumb.Page>
+              <Breadcrumb.Link asChild>
+                <Link to="/people">People</Link>
+              </Breadcrumb.Link>
             </Breadcrumb.Item>
 
             {person && (
