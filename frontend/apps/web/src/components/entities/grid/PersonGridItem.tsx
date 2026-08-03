@@ -11,9 +11,6 @@ export const PERSON_FRAGMENT = gql(`
     name
     description
     avatarUrl
-    firstName
-    lastName
-    birthDate
   }
 `);
 
