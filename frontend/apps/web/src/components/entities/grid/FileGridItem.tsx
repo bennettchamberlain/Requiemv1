@@ -3,6 +3,8 @@ import { type MouseEvent, useMemo } from 'react';
 import { FileIcon } from '@/components/icons';
 import { gql, useFragment, type FragmentType } from '@/graphql';
 
+import { resolveFileTileUrl } from '../resolveMediaUrl';
+
 import { EntityGridItem } from './EntityGridItem';
 
 export const FILE_FRAGMENT = gql(`
@@ -27,9 +29,15 @@ interface Props {
 export function FileGridItem({ file, onClick }: Props) {
   const data = useFragment(FILE_FRAGMENT, file);
 
-  const url = useMemo(() => {
-    return data.previewUrl ? `/static${data.previewUrl}` : undefined;
-  }, [data.previewUrl]);
+  const url = useMemo(
+    () =>
+      resolveFileTileUrl({
+        contentType: data.contentType,
+        previewUrl: data.previewUrl,
+        sourceUrl: data.sourceUrl,
+      }),
+    [data.contentType, data.previewUrl, data.sourceUrl],
+  );
 
   return (
     <EntityGridItem className="relative p-0" onClick={onClick}>

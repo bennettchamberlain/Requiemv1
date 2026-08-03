@@ -105,7 +105,7 @@ type Documents = {
     "\n  fragment TableContentRowData on ContentType {\n    id\n    title\n    text\n  }\n": typeof types.TableContentRowDataFragmentDoc,
     "\n  fragment TableEventRowData on EventType {\n    id\n    title\n    description\n    startTime\n    locationName\n    previewUrl\n    mediaContentType\n  }\n": typeof types.TableEventRowDataFragmentDoc,
     "\n  fragment TableFileChunkRowData on FileChunkType {\n    id\n    sectionTitle\n    chunkContent: content\n    sourceLocator\n    file {\n      id\n      filename\n    }\n  }\n": typeof types.TableFileChunkRowDataFragmentDoc,
-    "\n  fragment TableFileRowData on FileType {\n    id\n    filename\n    title\n    previewUrl\n    contentType\n  }\n": typeof types.TableFileRowDataFragmentDoc,
+    "\n  fragment TableFileRowData on FileType {\n    id\n    filename\n    title\n    previewUrl\n    sourceUrl\n    contentType\n  }\n": typeof types.TableFileRowDataFragmentDoc,
     "\n  fragment TableItemRowData on ItemType {\n    id\n    name\n    description\n    file {\n      id\n      sourceUrl\n    }\n  }\n": typeof types.TableItemRowDataFragmentDoc,
     "\n  fragment TableNoteRowData on NoteType {\n    id\n    title\n    content\n  }\n": typeof types.TableNoteRowDataFragmentDoc,
     "\n  fragment TablePersonRowData on PersonType {\n    id\n    name\n    description\n  }\n": typeof types.TablePersonRowDataFragmentDoc,
@@ -227,7 +227,7 @@ const documents: Documents = {
     "\n  fragment TableContentRowData on ContentType {\n    id\n    title\n    text\n  }\n": types.TableContentRowDataFragmentDoc,
     "\n  fragment TableEventRowData on EventType {\n    id\n    title\n    description\n    startTime\n    locationName\n    previewUrl\n    mediaContentType\n  }\n": types.TableEventRowDataFragmentDoc,
     "\n  fragment TableFileChunkRowData on FileChunkType {\n    id\n    sectionTitle\n    chunkContent: content\n    sourceLocator\n    file {\n      id\n      filename\n    }\n  }\n": types.TableFileChunkRowDataFragmentDoc,
-    "\n  fragment TableFileRowData on FileType {\n    id\n    filename\n    title\n    previewUrl\n    contentType\n  }\n": types.TableFileRowDataFragmentDoc,
+    "\n  fragment TableFileRowData on FileType {\n    id\n    filename\n    title\n    previewUrl\n    sourceUrl\n    contentType\n  }\n": types.TableFileRowDataFragmentDoc,
     "\n  fragment TableItemRowData on ItemType {\n    id\n    name\n    description\n    file {\n      id\n      sourceUrl\n    }\n  }\n": types.TableItemRowDataFragmentDoc,
     "\n  fragment TableNoteRowData on NoteType {\n    id\n    title\n    content\n  }\n": types.TableNoteRowDataFragmentDoc,
     "\n  fragment TablePersonRowData on PersonType {\n    id\n    name\n    description\n  }\n": types.TablePersonRowDataFragmentDoc,
@@ -627,7 +627,7 @@ export function gql(source: "\n  fragment TableFileChunkRowData on FileChunkType
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "\n  fragment TableFileRowData on FileType {\n    id\n    filename\n    title\n    previewUrl\n    contentType\n  }\n"): (typeof documents)["\n  fragment TableFileRowData on FileType {\n    id\n    filename\n    title\n    previewUrl\n    contentType\n  }\n"];
+export function gql(source: "\n  fragment TableFileRowData on FileType {\n    id\n    filename\n    title\n    previewUrl\n    sourceUrl\n    contentType\n  }\n"): (typeof documents)["\n  fragment TableFileRowData on FileType {\n    id\n    filename\n    title\n    previewUrl\n    sourceUrl\n    contentType\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
