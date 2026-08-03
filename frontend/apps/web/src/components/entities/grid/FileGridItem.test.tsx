@@ -48,7 +48,9 @@ describe('FileGridItem', () => {
   });
 
   it('falls back to the filename and icon when there is no preview or source', () => {
-    renderWithProviders(<FileGridItem file={makeFile({ filename: 'report.pdf', contentType: 'application/pdf' })} />);
+    renderWithProviders(
+      <FileGridItem file={makeFile({ filename: 'report.pdf', contentType: 'application/pdf' })} />,
+    );
 
     expect(screen.queryByRole('img')).toBeNull();
     expect(screen.getByText('report.pdf')).toBeInTheDocument();

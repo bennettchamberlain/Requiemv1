@@ -4,7 +4,6 @@ import { resolveFileTileUrl } from '@/components/entities/resolveMediaUrl';
 import { FileIcon } from '@/components/icons';
 import { gql, useFragment, type FragmentType } from '@/graphql';
 
-
 import { EntityRow } from './EntityRow';
 
 export const FILE_FRAGMENT = gql(`

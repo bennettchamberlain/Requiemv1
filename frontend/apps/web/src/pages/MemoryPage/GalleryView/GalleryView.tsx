@@ -124,9 +124,7 @@ export function GalleryView() {
                 setLightboxIndex(mediaIdx);
               };
 
-              return (
-                <MediaTile key={item.id} media={mediaEntries[mediaIdx]} onClick={openMedia} />
-              );
+              return <MediaTile key={item.id} media={mediaEntries[mediaIdx]} onClick={openMedia} />;
             }
 
             switch (item.__typename) {
