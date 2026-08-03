@@ -11,8 +11,8 @@ import { gql } from '@/graphql';
 const PAGE_SIZE = 30;
 
 const SEARCH_QUERY = gql(`
-  query Search($query: String!, $includeTypes: [String!], $excludeTypes: [String!], $eventTypes: [String!], $tags: [String!], $startTime: String, $endTime: String, $sortBy: String, $sortOrder: String, $connectors: [String!], $people: [String!], $places: [String!], $hasLocation: Boolean, $bbox: [Float!], $semantic: Boolean, $shareToken: String, $first: Int, $after: String) {
-    search(input: { query: $query, includeTypes: $includeTypes, excludeTypes: $excludeTypes, eventTypes: $eventTypes, tags: $tags, startTime: $startTime, endTime: $endTime, sortBy: $sortBy, sortOrder: $sortOrder, connectors: $connectors, people: $people, places: $places, hasLocation: $hasLocation, bbox: $bbox, semantic: $semantic, shareToken: $shareToken, first: $first, after: $after }) {
+  query Search($query: String!, $includeTypes: [String!], $excludeTypes: [String!], $includeFiles: Boolean, $eventTypes: [String!], $tags: [String!], $startTime: String, $endTime: String, $sortBy: String, $sortOrder: String, $connectors: [String!], $people: [String!], $places: [String!], $hasLocation: Boolean, $bbox: [Float!], $semantic: Boolean, $shareToken: String, $first: Int, $after: String) {
+    search(input: { query: $query, includeTypes: $includeTypes, excludeTypes: $excludeTypes, includeFiles: $includeFiles, eventTypes: $eventTypes, tags: $tags, startTime: $startTime, endTime: $endTime, sortBy: $sortBy, sortOrder: $sortOrder, connectors: $connectors, people: $people, places: $places, hasLocation: $hasLocation, bbox: $bbox, semantic: $semantic, shareToken: $shareToken, first: $first, after: $after }) {
       totalCount
       pageInfo {
         hasNextPage
@@ -175,6 +175,7 @@ function useEntityService({
   searchQuery,
   includeTypes,
   excludeTypes,
+  includeFiles,
   eventTypes,
   tags,
   startTime,
@@ -192,6 +193,9 @@ function useEntityService({
   searchQuery: string;
   includeTypes?: string[];
   excludeTypes?: string[];
+  // Interleave standalone files into the query-less browse without narrowing
+  // the result to files only (the gallery sets this — see SearchInput.includeFiles).
+  includeFiles?: boolean;
   eventTypes?: string[];
   tags?: string[];
   startTime?: string;
@@ -223,6 +227,7 @@ function useEntityService({
         excludeTypes?.map(
           (type) => ENTITY_TYPE_MAP[type as keyof typeof ENTITY_TYPE_MAP] ?? type.toLowerCase(),
         ) || [],
+      includeFiles: includeFiles || undefined,
       eventTypes: eventTypes || [],
       tags: tags && tags.length > 0 ? tags : undefined,
       startTime: startTime || undefined,

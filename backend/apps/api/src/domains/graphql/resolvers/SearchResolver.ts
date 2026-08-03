@@ -286,6 +286,7 @@ export class SearchResolver {
       identifiers = await this.searchByTimedEntities(serviceContext, {
         includeTypes: input.includeTypes,
         excludeTypes: input.excludeTypes,
+        includeFiles: input.includeFiles === true,
         startTime,
         // With no filters at all, bound to "now" so we return recent items, not the entire history.
         endTime: keyset
@@ -457,6 +458,7 @@ export class SearchResolver {
     {
       includeTypes,
       excludeTypes,
+      includeFiles,
       startTime,
       endTime,
       afterTime,
@@ -467,6 +469,8 @@ export class SearchResolver {
     }: {
       includeTypes?: IndexableEntity[];
       excludeTypes?: IndexableEntity[];
+      /** Opt files into the browse alongside the other types (see SearchInput.includeFiles). */
+      includeFiles?: boolean;
       startTime?: Date;
       endTime?: Date;
       // Composite keyset cursor: page strictly past (afterTime, afterId) in
@@ -488,10 +492,23 @@ export class SearchResolver {
     const eventsOnly = eventFilter != null;
     // Files and document chunks are content, not activity: they're opt-in to the
     // timeline so a document's many same-timestamp chunks don't bury the default
-    // browse. They appear only when the caller explicitly filters to that type
-    // (includeTypes), never in the unfiltered "recent activity" view.
-    const optIn = (type: IndexableEntity) =>
-      type !== 'file' && type !== 'file-chunk' ? true : (includeTypes?.includes(type) ?? false);
+    // browse. They appear when the caller explicitly filters to that type
+    // (includeTypes), or — for files only — when the caller sets `includeFiles`
+    // to interleave them with the other types (the gallery does this so
+    // standalone media files, e.g. Capture screenshots without a linked event,
+    // actually show up).
+    const optIn = (type: IndexableEntity) => {
+      if (type !== 'file' && type !== 'file-chunk') {
+        return true;
+      }
+
+      if (type === 'file' && includeFiles === true) {
+        return true;
+      }
+
+      return includeTypes?.includes(type) ?? false;
+    };
+
     const wants = (type: IndexableEntity) =>
       this.matchesTypeFilter(type, includeTypes, excludeTypes) &&
       (!eventsOnly || type === 'event') &&
