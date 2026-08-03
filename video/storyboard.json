@@ -34,7 +34,7 @@
       "kind": "screen",
       "chapter": "first-run",
       "seconds": 4.5,
-      "caption": "It runs on your appliance, not our cloud.",
+      "caption": "It runs on your appliance, not a rented server.",
       "narration": "It opens on hardware you own. Nothing has left home.",
       "shots": [
         {
@@ -56,7 +56,7 @@
       "chapter": "first-run",
       "seconds": 4.5,
       "caption": "Sign in with your Companion account.",
-      "narration": "Sign in through the Portal, or with email if you prefer.",
+      "narration": "Sign in through Companion Portal, or with email if you prefer.",
       "shots": [
         {
           "id": "login-form",
@@ -276,8 +276,8 @@
       "kind": "feature",
       "seconds": 4.5,
       "title": "What it actually is",
-      "caption": "One appliance. One memory. No account.",
-      "narration": "Local database, local embeddings, local models. No account required.",
+      "caption": "One appliance. One memory. No cloud account.",
+      "narration": "Local database, local embeddings, local models. No cloud account required.",
       "items": [
         { "label": "Store", "value": "Postgres + pgvector" },
         { "label": "Models", "value": "Ollama, on device" },
@@ -289,9 +289,9 @@
       "id": "close",
       "kind": "outro",
       "seconds": 4,
-      "cta": "Own your memory.",
+      "cta": "UnCloud your life.",
       "url": "ci.computer",
-      "narration": "Companion Memory, from Companion Intelligence. Own your AI."
+      "narration": "Companion Memory, from Companion Intelligence. UnCloud your life."
     }
   ]
 }
