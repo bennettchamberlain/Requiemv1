@@ -1,7 +1,15 @@
+import { setApiBaseUrl } from '@ci/common';
 import type { ErrorEvent } from '@sentry/react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { scrubBrowserEvent, scrubString, scrubUrl, shouldDropEvent } from './telemetry';
+import {
+  scrubBrowserEvent,
+  scrubServerOrigin,
+  scrubString,
+  scrubUrl,
+  shouldDropEvent,
+  telemetryConfigUrl,
+} from './telemetry';
 import { MAX_STRING_LENGTH, SCRUB_CASES } from './telemetryScrubFixtures';
 
 const event = (partial: Partial<ErrorEvent>) => partial as ErrorEvent;
@@ -212,5 +220,123 @@ describe('scrubBreadcrumb — sensitive keys, not just values', () => {
 
     expect(data.url).toBe('/api/search');
     expect((data.meta as Record<string, unknown>).path).toBe('~/x');
+  });
+});
+
+/** Pretend to be (or not be) the Capacitor WebView for one test. */
+function stubPlatform(native: boolean): void {
+  vi.stubGlobal('window', { Capacitor: { isNativePlatform: () => native } });
+}
+
+describe('telemetryConfigUrl — the consent probe has to reach the appliance', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    setApiBaseUrl('');
+  });
+
+  it('stays relative on web, where the API is same-origin', () => {
+    stubPlatform(false);
+
+    expect(telemetryConfigUrl()).toBe('/api/config/telemetry');
+  });
+
+  // The bug this exists to prevent: Capacitor serves the bundle from
+  // capacitor://localhost (iOS) / https://localhost (Android), so a relative
+  // path resolved against the WebView itself, 404'd, and — because the check
+  // fails closed — silently disabled reporting for the whole mobile app.
+  it('resolves against the configured server on native', () => {
+    stubPlatform(true);
+    setApiBaseUrl('https://companion.example.ts.net');
+
+    expect(telemetryConfigUrl()).toBe('https://companion.example.ts.net/api/config/telemetry');
+  });
+
+  it('returns null on native before a server is configured, so nothing is reported', () => {
+    stubPlatform(true);
+    setApiBaseUrl('');
+
+    expect(telemetryConfigUrl()).toBeNull();
+  });
+
+  it('does not double up slashes when the origin has a trailing one', () => {
+    stubPlatform(true);
+    setApiBaseUrl('https://companion.example.ts.net/');
+
+    expect(telemetryConfigUrl()).toBe('https://companion.example.ts.net/api/config/telemetry');
+  });
+});
+
+describe('scrubServerOrigin — the address of the user’s own appliance', () => {
+  it('is a no-op on web, where there is no configured origin', () => {
+    expect(scrubServerOrigin('failed to fetch /api/x', '')).toBe('failed to fetch /api/x');
+  });
+
+  it('replaces every occurrence, not just the first', () => {
+    expect(
+      scrubServerOrigin('http://10.0.0.4:3000 redirected to http://10.0.0.4:3000/x', 'http://10.0.0.4:3000'),
+    ).toBe('[server] redirected to [server]/x');
+  });
+
+  it('treats the origin literally, so regex metacharacters cannot break it', () => {
+    expect(scrubServerOrigin('a http://h.o+st/x b', 'http://h.o+st')).toBe('a [server]/x b');
+  });
+
+  // A tailnet hostname or LAN IP identifies the user's machine and network, and
+  // sendDefaultPii: false does nothing about it — the SDK cannot know the string
+  // is sensitive. Enabling reporting on native without this would ship it inside
+  // every fetch breadcrumb.
+  it('redacts the origin across message, breadcrumb and exception alike', () => {
+    const origin = 'https://liambook.tailnet.ts.net';
+    const scrubbed = scrubBrowserEvent(
+      event({
+        message: `POST ${origin}/api/graph failed`,
+        exception: { values: [{ value: `connect ECONNREFUSED ${origin}` }] },
+        breadcrumbs: [{ category: 'fetch', data: { url: `${origin}/api/search?q=private` } }],
+      }),
+      origin,
+    );
+
+    expect(scrubbed!.message).toBe('POST [server]/api/graph failed');
+    expect(scrubbed!.exception!.values![0]!.value).toBe('connect ECONNREFUSED [server]');
+    expect(scrubbed!.breadcrumbs![0]!.data!.url).toBe('[server]/api/search');
+  });
+
+  it('leaves events untouched when no origin is passed (web behaviour is unchanged)', () => {
+    const scrubbed = scrubBrowserEvent(event({ message: 'POST https://example.com/api failed' }));
+
+    expect(scrubbed!.message).toBe('POST https://example.com/api failed');
+  });
+});
+
+// A source-order assertion, in the same spirit as the fixture-drift test above.
+// `main.tsx` is a side-effecting entrypoint (it calls `createRoot`), so importing
+// it to observe the ordering is not practical — but the ordering is exactly the
+// kind of thing a tidy-up reorders, and getting it wrong raises no error
+// anywhere. The only symptom is that the mobile app reports nothing, forever.
+describe('main.tsx bootstrap order — the silent one', () => {
+  it('resolves the API origin before starting telemetry', async () => {
+    const [fs, path] = await Promise.all([import('node:fs/promises'), import('node:path')]);
+    const source = await fs.readFile(path.resolve(__dirname, '../main.tsx'), 'utf8');
+
+    // Statement lines only. Both calls are named in the comments that explain
+    // this very ordering, and matching those instead reports the opposite
+    // order — which is precisely how the first draft of this test failed.
+    const statements = source
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && !line.startsWith('//') && !line.startsWith('*'));
+
+    const apiBase = statements.findIndex((line) => line.startsWith('initApiBaseUrl();'));
+    const telemetry = statements.findIndex((line) => line.startsWith('void initTelemetry();'));
+
+    expect(apiBase).toBeGreaterThan(-1);
+    expect(telemetry).toBeGreaterThan(-1);
+
+    // `initTelemetry` builds its consent-probe URL from the API origin, and it
+    // issues that fetch synchronously — before its first `await` yields — so an
+    // origin resolved afterwards arrives too late. Reversed, the probe on native
+    // requests a relative path against `capacitor://localhost`, fails, and
+    // (failing closed) disables reporting for the entire mobile app.
+    expect(apiBase).toBeLessThan(telemetry);
   });
 });
