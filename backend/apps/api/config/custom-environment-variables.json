@@ -144,5 +144,11 @@
       "__name": "GEOCODING_RATE_LIMIT_PER_SECOND",
       "__format": "json"
     }
+  },
+  "peers": {
+    "directoryUrl": "CI_PEER_DIRECTORY_URL",
+    "memoryEndpoint": "CI_PEER_MEMORY_ENDPOINT",
+    "handle": "CI_PEER_HANDLE",
+    "timeoutMs": "CI_PEER_TIMEOUT_MS"
   }
 }

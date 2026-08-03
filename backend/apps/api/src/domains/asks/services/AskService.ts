@@ -43,13 +43,23 @@ export class AskService {
 
   /** Create an ask (asker = caller) and mark it delivered to the responder. */
   async create(context: UserServiceContext, data: CreateAskDto): Promise<Ask> {
-    if (data.responderUserId === context.userId) {
+    const direction = data.direction ?? 'local';
+    const isInbound = direction === 'inbound';
+
+    if (isInbound && !data.peerLinkId) {
+      throw new BadRequestException('An inbound ask must carry its peer link');
+    }
+    // A local ask must be directed at someone else. An inbound peer ask has no
+    // local asker at all, so the self-ask guard does not apply to it.
+    if (!isInbound && data.responderUserId === context.userId) {
       throw new BadRequestException('An ask must be directed at another user');
     }
 
     const record = this.askRepository.create({
       id: data.id ?? uuidv7(),
-      askerUserId: context.userId,
+      askerUserId: isInbound ? null : context.userId,
+      peerLinkId: data.peerLinkId ?? null,
+      direction,
       responderUserId: data.responderUserId,
       query: data.query,
       status: assertAskTransition('sent', 'delivered'),

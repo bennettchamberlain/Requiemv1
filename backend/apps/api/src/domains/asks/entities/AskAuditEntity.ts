@@ -18,8 +18,17 @@ export class AskAuditEntity {
   @Column({ type: 'uuid', name: 'ask_id', nullable: true })
   askId!: string | null;
 
-  @Column({ type: 'uuid', name: 'asker_user_id' })
-  askerUserId!: string;
+  /** NULL when the asker was a peer Companion (see {@link peerLinkId}). */
+  @Column({ type: 'uuid', name: 'asker_user_id', nullable: true })
+  askerUserId!: string | null;
+
+  /** The peer that asked, for an inbound federated ask. FK-less by design. */
+  @Column({ type: 'uuid', name: 'peer_link_id', nullable: true })
+  peerLinkId!: string | null;
+
+  /** The peer's handle at disclosure time, denormalized for the audit view. */
+  @Column({ type: 'text', name: 'peer_handle', nullable: true })
+  peerHandle!: string | null;
 
   @Column({ type: 'uuid', name: 'responder_user_id' })
   responderUserId!: string;
@@ -44,6 +53,8 @@ export class AskAuditEntity {
       id: entity.id,
       askId: entity.askId,
       askerUserId: entity.askerUserId,
+      peerLinkId: entity.peerLinkId,
+      peerHandle: entity.peerHandle,
       responderUserId: entity.responderUserId,
       query: entity.query,
       consentBasis: entity.consentBasis,

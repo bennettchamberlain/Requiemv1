@@ -98,16 +98,28 @@ export interface GrantEvaluation {
   grantId?: string;
 }
 
+/** Whether an ask is local to this box, sent to a peer, or received from one. */
+export type AskDirection = 'local' | 'outbound' | 'inbound';
+
 export interface CreateAskDto {
   id?: string;
   responderUserId: string;
   query: AskQuery;
   expiresAt?: Date | null;
+  /**
+   * Set for a federated ask. When `direction` is `inbound` the asker is the
+   * peer (no local asker id); `outbound` records which peer we sent it to.
+   */
+  peerLinkId?: string | null;
+  direction?: AskDirection;
 }
 
 export interface CreateAskGrantDto {
   id?: string;
-  granteeUserId: string;
+  /** Exactly one of granteeUserId / granteePeerLinkId identifies the grantee. */
+  granteeUserId?: string | null;
+  /** Grant addressed to a linked peer Companion (federated asks). */
+  granteePeerLinkId?: string | null;
   queryType: string;
   dataClass?: string | null;
   scope?: AskGrantScope | null;
@@ -117,7 +129,10 @@ export interface CreateAskGrantDto {
 
 export interface RecordAskAuditDto {
   askId: string;
-  askerUserId: string;
+  /** NULL for an inbound peer ask — the asker is identified by `peerLinkId`. */
+  askerUserId: string | null;
+  peerLinkId?: string | null;
+  peerHandle?: string | null;
   responderUserId: string;
   query: AskQuery;
   consentBasis?: string | null;

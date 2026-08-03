@@ -16,8 +16,17 @@ export class AskGrantEntity {
   @Column({ type: 'uuid', name: 'owner_user_id' })
   ownerUserId!: string;
 
-  @Column({ type: 'uuid', name: 'grantee_user_id' })
-  granteeUserId!: string;
+  /**
+   * The local user this grant is for. Exactly one of `granteeUserId` /
+   * `granteePeerLinkId` is set — a grant addresses either a household member
+   * or a linked peer Companion.
+   */
+  @Column({ type: 'uuid', name: 'grantee_user_id', nullable: true })
+  granteeUserId!: string | null;
+
+  /** The peer link this grant is for (federated asks). */
+  @Column({ type: 'uuid', name: 'grantee_peer_link_id', nullable: true })
+  granteePeerLinkId!: string | null;
 
   @Column({ type: 'text', name: 'query_type' })
   queryType!: string;
@@ -45,6 +54,7 @@ export class AskGrantEntity {
       id: entity.id,
       ownerUserId: entity.ownerUserId,
       granteeUserId: entity.granteeUserId,
+      granteePeerLinkId: entity.granteePeerLinkId,
       queryType: entity.queryType,
       dataClass: entity.dataClass,
       scope: entity.scope,

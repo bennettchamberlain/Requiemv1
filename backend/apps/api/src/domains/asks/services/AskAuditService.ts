@@ -30,6 +30,8 @@ export class AskAuditService {
       id: uuidv7(),
       askId: data.askId,
       askerUserId: data.askerUserId,
+      peerLinkId: data.peerLinkId ?? null,
+      peerHandle: data.peerHandle ?? null,
       responderUserId: data.responderUserId,
       query: data.query,
       consentBasis: data.consentBasis ?? null,

@@ -8,6 +8,8 @@ import type { PortalTokenVerifier } from '@ci/common/guards/PortalTokenVerifier'
 import config from '@ci/configuration';
 import { type User, UserService } from '@ci/domains/user';
 
+import { FederatedIdentityService } from './FederatedIdentityService';
+
 /**
  * Validates CI-Portal-issued OIDC tokens and maps them to a CI-Server user.
  *
@@ -24,7 +26,10 @@ export class PortalTokenService implements PortalTokenVerifier {
   // Lazily built so a disabled/misconfigured portal never blocks startup.
   private jwks?: ReturnType<typeof createRemoteJWKSet>;
 
-  constructor(private readonly userService: UserService) {}
+  constructor(
+    private readonly userService: UserService,
+    private readonly federatedIdentityService: FederatedIdentityService,
+  ) {}
 
   get enabled(): boolean {
     return config.auth.portal.enabled === true;
@@ -67,26 +72,99 @@ export class PortalTokenService implements PortalTokenVerifier {
     return this.provisionUser(payload);
   }
 
-  private async provisionUser(payload: JWTPayload): Promise<User | null> {
-    const sub = payload.sub;
-    if (!sub) {
+  /**
+   * Verify a portal token and return its claims WITHOUT provisioning a local
+   * user. Used by the peer-ask surface: an inbound ask is authenticated as a
+   * *peer's* identity, which must be matched against this box's peer links —
+   * it must never mint a local account (that would let any portal user
+   * accumulate a shadow user on every box they can reach).
+   */
+  async verifyClaims(token: string): Promise<{ issuer: string; subject: string } | null> {
+    if (!this.enabled) {
       return null;
     }
 
-    // Map by email when present (the portal id-token carries it); otherwise a
-    // deterministic shadow address keyed on the stable OIDC subject.
-    const email = typeof payload.email === 'string' ? payload.email : `oidc-${sub}@portal.local`;
-    const name = typeof payload.name === 'string' && payload.name.trim() ? payload.name : email;
+    try {
+      const { payload } = await jwtVerify(token, this.getJwks(), {
+        issuer: config.auth.portal.issuer,
+        audience: config.auth.portal.audience
+          .split(',')
+          .map((a) => a.trim())
+          .filter(Boolean),
+      });
 
-    const existing = await this.userService.findByEmail(email);
-    if (existing) {
-      return existing;
+      const issuer = payload.iss ?? config.auth.portal.issuer;
+
+      return payload.sub && issuer ? { issuer, subject: payload.sub } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Resolve a verified token payload to a local user, keyed on the OIDC
+   * **(issuer, subject)** pair.
+   *
+   * Email is NOT a matching key: it is re-assignable and not unique across
+   * issuers, so matching on it once a second issuer is trusted (a peer box, a
+   * partner IdP) hands the local account to whoever controls that address —
+   * a cross-box account-takeover primitive. Email survives only as a ONE-TIME
+   * link for accounts that pre-date the binding table, and only when the issuer
+   * asserts `email_verified`.
+   */
+  private async provisionUser(payload: JWTPayload): Promise<User | null> {
+    const sub = payload.sub;
+    const issuer = payload.iss ?? config.auth.portal.issuer;
+    if (!sub || !issuer) {
+      return null;
     }
 
-    // Portal-authenticated users have no CI-Server password; set a random one.
-    return this.userService.create(
+    // 1. Established binding wins outright.
+    const boundUserId = await this.federatedIdentityService.findUserId(issuer, sub);
+    if (boundUserId) {
+      return this.userService.findById({ userId: SYSTEM_USER }, boundUserId);
+    }
+
+    const claimedEmail = typeof payload.email === 'string' ? payload.email : undefined;
+    const emailVerified = payload.email_verified === true;
+    // Shadow address keyed on the stable subject when no usable email is present.
+    const email = claimedEmail ?? `oidc-${sub}@portal.local`;
+    const name = typeof payload.name === 'string' && payload.name.trim() ? payload.name : email;
+
+    // 2. One-time link: an account that pre-dates the binding table, matched on
+    //    a VERIFIED email. Every later request for this (iss,sub) takes path 1.
+    if (claimedEmail && emailVerified) {
+      const existing = await this.userService.findByEmail(claimedEmail);
+      if (existing) {
+        await this.federatedIdentityService.bind({
+          userId: existing.id,
+          issuer,
+          subject: sub,
+          email: claimedEmail,
+          bindMethod: 'email_link',
+        });
+
+        return existing;
+      }
+    }
+
+    // 3. Otherwise JIT-provision and bind on (iss,sub). Portal-authenticated
+    //    users have no CI-Server password; set a random one.
+    const created = await this.userService.create(
       { userId: SYSTEM_USER },
       { name, email, password: crypto.randomBytes(32).toString('hex') },
     );
+
+    if (created) {
+      await this.federatedIdentityService.bind({
+        userId: created.id,
+        issuer,
+        subject: sub,
+        email: claimedEmail ?? null,
+        bindMethod: 'sub',
+      });
+    }
+
+    return created;
   }
 }

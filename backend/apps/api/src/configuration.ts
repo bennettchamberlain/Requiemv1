@@ -249,6 +249,19 @@ export const ConfigSchema = z.object({
     deviceId: z.string().optional(),
     apiKey: z.string().optional(),
   }),
+  // Peer federation (CI-Server #1711 Phase 3). `directoryUrl` is CI-Portal's
+  // peer-discovery API base (handle → Companion endpoint + issuer); empty
+  // disables discovery, and with it any outbound ask. Inbound peer asks are
+  // additionally gated by the `ask` feature flag.
+  peers: z.object({
+    directoryUrl: z.string().optional(),
+    /** This box's own Companion endpoint, published to the directory. */
+    memoryEndpoint: z.string().optional(),
+    /** This box's Portal handle. */
+    handle: z.string().optional(),
+    /** Bound on every outbound call to a peer or the directory. */
+    timeoutMs: z.coerce.number().int().positive().default(10_000),
+  }),
   // Forward-geocoding (geodata-plan Phase 1). The key is read from
   // GEOCODING_API_KEY, falling back to the legacy GOOGLE_MAPS_KEY (see
   // custom-environment-variables.json + the fallback transform below).

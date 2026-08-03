@@ -14,4 +14,11 @@ export interface PortalTokenVerifier {
    * null if it is not a valid portal token.
    */
   verifyAndProvision(token: string): Promise<{ id: string } | null>;
+  /**
+   * Verify a portal token and return its OIDC claims WITHOUT provisioning a
+   * local user. Used by the peer-ask surface, where the caller is another
+   * Companion rather than a local user: provisioning there would mint a shadow
+   * account on every box a portal user can reach.
+   */
+  verifyClaims(token: string): Promise<{ issuer: string; subject: string } | null>;
 }

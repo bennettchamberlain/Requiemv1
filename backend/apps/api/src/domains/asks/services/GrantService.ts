@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
@@ -29,10 +29,19 @@ export class GrantService {
 
   /** Create a standing grant owned by the caller. */
   async create(context: UserServiceContext, data: CreateAskGrantDto): Promise<AskGrant> {
+    // Exactly one grantee kind, mirroring the DB CHECK. Allowing both would let
+    // a grant intended for a household member also authorize a peer.
+    const hasUser = data.granteeUserId != null;
+    const hasPeer = data.granteePeerLinkId != null;
+    if (hasUser === hasPeer) {
+      throw new BadRequestException('A grant must name exactly one of granteeUserId / granteePeerLinkId');
+    }
+
     const record = this.grantRepository.create({
       id: data.id ?? uuidv7(),
       ownerUserId: context.userId,
-      granteeUserId: data.granteeUserId,
+      granteeUserId: data.granteeUserId ?? null,
+      granteePeerLinkId: data.granteePeerLinkId ?? null,
       queryType: data.queryType,
       dataClass: data.dataClass ?? null,
       scope: data.scope ?? null,
@@ -78,10 +87,24 @@ export class GrantService {
    * default when nothing matches.
    */
   async evaluate(ask: Ask, now: Date = new Date()): Promise<GrantEvaluation> {
+    // An inbound peer ask is authorized against grants addressed to its PEER
+    // LINK; a local ask against grants addressed to the asking user. Selecting
+    // on exactly one of the two keys is what stops a peer from picking up a
+    // household member's grants (and vice versa).
+    const grantee =
+      ask.direction === 'inbound'
+        ? { granteePeerLinkId: ask.peerLinkId ?? undefined }
+        : { granteeUserId: ask.askerUserId ?? undefined };
+
+    if (Object.values(grantee)[0] == null) {
+      // No identifiable asker → no grant can match; fall through to review.
+      return evaluateGrant(ask.query, [], now);
+    }
+
     const grants = await this.grantRepository.find({
       where: {
         ownerUserId: ask.responderUserId,
-        granteeUserId: ask.askerUserId,
+        ...grantee,
         revokedAt: IsNull(),
       },
     });

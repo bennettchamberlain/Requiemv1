@@ -1,6 +1,6 @@
 import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
-import type { AskQuery, AskStatus } from '../types';
+import type { AskDirection, AskQuery, AskStatus } from '../types';
 
 /**
  * `ci.asks` — an interpersonal question directed at another user's memory.
@@ -12,8 +12,21 @@ export class AskEntity {
   @PrimaryColumn({ type: 'uuid', name: 'id' })
   id!: string;
 
-  @Column({ type: 'uuid', name: 'asker_user_id' })
-  askerUserId!: string;
+  /**
+   * The local user asking. NULL for an inbound peer ask, where the asker is a
+   * peer Companion identified by {@link peerLinkId} instead — minting a shadow
+   * local user per peer would let anyone reachable on the Portal accumulate an
+   * account on every box they can talk to.
+   */
+  @Column({ type: 'uuid', name: 'asker_user_id', nullable: true })
+  askerUserId!: string | null;
+
+  /** The peer this ask came from (inbound) or was sent to (outbound). */
+  @Column({ type: 'uuid', name: 'peer_link_id', nullable: true })
+  peerLinkId!: string | null;
+
+  @Column({ type: 'text', name: 'direction', default: 'local' })
+  direction!: AskDirection;
 
   @Column({ type: 'uuid', name: 'responder_user_id' })
   responderUserId!: string;
@@ -40,6 +53,8 @@ export class AskEntity {
     return {
       id: entity.id,
       askerUserId: entity.askerUserId,
+      peerLinkId: entity.peerLinkId,
+      direction: entity.direction,
       responderUserId: entity.responderUserId,
       query: entity.query,
       status: entity.status,

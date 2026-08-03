@@ -155,5 +155,11 @@
     "apiKey": "",
     "batchSize": 200,
     "rateLimitPerSecond": 10
+  },
+  "peers": {
+    "directoryUrl": "",
+    "memoryEndpoint": "",
+    "handle": "",
+    "timeoutMs": 10000
   }
 }
