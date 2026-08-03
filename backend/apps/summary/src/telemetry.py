@@ -150,9 +150,17 @@ def scrub_event(event: dict, _hint: Optional[dict] = None) -> Optional[dict]:
             for frame in stacktrace.get("frames") or []:
                 if not isinstance(frame, dict):
                     continue
-                for key in ("filename", "abs_path"):
+                for key in ("filename", "abs_path", "context_line"):
                     if isinstance(frame.get(key), str):
                         frame[key] = scrub_string(frame[key])
+                # ContextLines attaches the source around the throw site — real
+                # source text, where hardcoded keys and connection strings live.
+                for key in ("pre_context", "post_context"):
+                    lines = frame.get(key)
+                    if isinstance(lines, list):
+                        frame[key] = [
+                            scrub_string(line) if isinstance(line, str) else line for line in lines
+                        ]
                 if frame.get("vars") is not None:
                     frame["vars"] = _scrub_value(frame["vars"])
 

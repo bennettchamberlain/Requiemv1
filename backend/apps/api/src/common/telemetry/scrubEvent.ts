@@ -122,6 +122,22 @@ export function scrubEvent(event: ErrorEvent): ErrorEvent | null {
           frame.abs_path = scrubString(frame.abs_path);
         }
 
+        // The ContextLines integration attaches the source around the throw
+        // site. That is real source text — hardcoded keys, connection strings
+        // and paths live there — and it sat unscrubbed right beside the
+        // filename we were already careful about.
+        if (typeof frame.context_line === 'string') {
+          frame.context_line = scrubString(frame.context_line);
+        }
+
+        for (const key of ['pre_context', 'post_context'] as const) {
+          const lines = frame[key];
+
+          if (Array.isArray(lines)) {
+            frame[key] = lines.map((line) => (typeof line === 'string' ? scrubString(line) : line));
+          }
+        }
+
         if (frame.vars) {
           frame.vars = scrubValue(frame.vars) as Record<string, unknown>;
         }

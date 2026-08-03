@@ -236,3 +236,31 @@ class TestHubIdentityHeader:
         event = scrub_event({"request": {"headers": {"location": "/memory?search=private"}}})
 
         assert event["request"]["headers"]["location"] == "/memory"
+
+
+class TestContextLines:
+    def test_scrubs_source_context_around_the_throw_site(self):
+        event = scrub_event(
+            {
+                "exception": {
+                    "values": [
+                        {
+                            "stacktrace": {
+                                "frames": [
+                                    {
+                                        "pre_context": ['DIR = "/home/ci/notes"'],
+                                        "context_line": 'client = Client(api_key="sk-live-9988776655")',
+                                        "post_context": ['headers = {"authorization": "Bearer abcdefghij"}'],
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            }
+        )
+        frame = event["exception"]["values"][0]["stacktrace"]["frames"][0]
+
+        assert "sk-live-9988776655" not in frame["context_line"]
+        assert frame["pre_context"][0] == 'DIR = "~/notes"'
+        assert "abcdefghij" not in frame["post_context"][0]

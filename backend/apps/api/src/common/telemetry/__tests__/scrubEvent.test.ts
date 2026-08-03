@@ -231,3 +231,37 @@ describe('shared scrub fixtures', () => {
     );
   });
 });
+
+describe('scrubEvent — ContextLines source text', () => {
+  // The ContextLines integration attaches the source around the throw site.
+  // Found by the CI-OpenClaw port's live-envelope probe: a home path, an API
+  // key and a gateway token survived here while filename/abs_path beside them
+  // were already scrubbed.
+  it('scrubs context_line, pre_context and post_context', () => {
+    const event = {
+      exception: {
+        values: [
+          {
+            value: 'boom',
+            stacktrace: {
+              frames: [
+                {
+                  filename: '/Users/liam/app.ts',
+                  pre_context: ['const dir = "/Users/liam/notes";'],
+                  context_line: 'const client = new Client({ api_key: "sk-live-9988776655" });',
+                  post_context: ['await fetch(url, { headers: { authorization: "Bearer abcdefghij" } });'],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    } as unknown as ErrorEvent;
+
+    const frame = scrubEvent(event)!.exception!.values![0]!.stacktrace!.frames![0]!;
+
+    expect(frame.context_line).not.toContain('sk-live-9988776655');
+    expect(frame.pre_context![0]).toBe('const dir = "~/notes";');
+    expect(frame.post_context![0]).not.toContain('abcdefghij');
+  });
+});

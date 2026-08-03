@@ -40,6 +40,12 @@ if (telemetry.enabled && telemetry.dsn) {
     sendDefaultPii: false,
     // The machine hostname identifies the household as surely as a home path.
     includeServerName: false,
+    // Off by default in @sentry/node today — the localVariables integration
+    // bails without it — but stated explicitly so a future default flip can't
+    // start uploading frame locals, which on this appliance are memory rows,
+    // note bodies and message text. Mirrors include_local_variables=False in
+    // the Python services.
+    includeLocalVariables: false,
     integrations: (defaults) =>
       defaults.filter((integration) => !MANUALLY_HANDLED_INTEGRATIONS.has(integration.name)),
     beforeSend: scrubEvent,
