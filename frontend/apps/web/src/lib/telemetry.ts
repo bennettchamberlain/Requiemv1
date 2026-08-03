@@ -144,13 +144,19 @@ function scrubBreadcrumb(breadcrumb: Sentry.Breadcrumb): void {
     return;
   }
 
-  for (const [key, value] of Object.entries(breadcrumb.data)) {
+  // Pass the whole object, not each value: `scrubValue` only applies the
+  // sensitive-KEY check while walking an object's own entries, so calling it
+  // per-value let a bare `data.token` through — the value alone matches no
+  // secret pattern. Same shape as the request-headers handling below.
+  const data = scrubValue(breadcrumb.data) as Record<string, unknown>;
+
+  for (const [key, value] of Object.entries(data)) {
     if (typeof value === 'string' && URL_VALUED_KEYS.has(key)) {
-      breadcrumb.data[key] = scrubUrl(scrubString(value));
-    } else {
-      breadcrumb.data[key] = scrubValue(value);
+      data[key] = scrubUrl(value);
     }
   }
+
+  breadcrumb.data = data;
 }
 
 export function scrubBrowserEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent | null {

@@ -180,3 +180,37 @@ describe('shared scrub fixtures — parity with the backend scrubber', () => {
     expect(cases(a)).toBe(cases(b));
   });
 });
+
+describe('scrubBreadcrumb — sensitive keys, not just values', () => {
+  // Regression: iterating breadcrumb.data and scrubbing each VALUE skipped the
+  // sensitive-key check, so a bare token (matching no secret pattern on its own)
+  // shipped intact. Caught by the CI-Hermes port, not by the original tests.
+  it.each([
+    ['token', 'abc123456'],
+    ['api_key', 'sk-live-000111'],
+    ['x-api-key', 'ci_live_222333'],
+    ['authorization', 'opaque-value'],
+    ['x-ci-hub-user', 'liam'],
+  ])('filters a bare data.%s', (key, value) => {
+    const scrubbed = scrubBrowserEvent(
+      event({ message: 'boom', breadcrumbs: [{ category: 'fetch', data: { [key]: value } }] }),
+    );
+
+    expect(scrubbed!.breadcrumbs![0]!.data![key]).toBe('[Filtered]');
+  });
+
+  it('still scrubs nested values and keeps url handling', () => {
+    const scrubbed = scrubBrowserEvent(
+      event({
+        message: 'boom',
+        breadcrumbs: [
+          { category: 'fetch', data: { url: '/api/search?q=private', meta: { path: '/Users/liam/x' } } },
+        ],
+      }),
+    );
+    const data = scrubbed!.breadcrumbs![0]!.data!;
+
+    expect(data.url).toBe('/api/search');
+    expect((data.meta as Record<string, unknown>).path).toBe('~/x');
+  });
+});
