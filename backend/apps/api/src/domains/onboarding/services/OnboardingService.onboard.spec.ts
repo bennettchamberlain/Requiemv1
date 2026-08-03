@@ -1,3 +1,4 @@
+import type { FeatureService } from '@ci/common/feature';
 import type { LoggerService } from '@ci/common/logging';
 import type { MessageService, ThreadService } from '@ci/domains/conversations';
 import type { RelationshipService } from '@ci/domains/graph';
@@ -13,6 +14,8 @@ describe('OnboardingService onboard', () => {
   let service: OnboardingService;
   let userService: jest.Mocked<Pick<UserService, 'findById' | 'update' | 'onboard'>>;
   let personService: jest.Mocked<Pick<PersonService, 'create' | 'findById' | 'update'>>;
+  let actionService: jest.Mocked<Pick<ActionService, 'create' | 'findAll'>>;
+  let featureService: jest.Mocked<Pick<FeatureService, 'isFeatureEnabled'>>;
 
   beforeEach(() => {
     userService = {
@@ -27,13 +30,22 @@ describe('OnboardingService onboard', () => {
       update: jest.fn(),
     };
 
+    actionService = {
+      create: jest.fn(),
+      findAll: jest.fn().mockResolvedValue([]),
+    };
+
+    featureService = {
+      isFeatureEnabled: jest.fn().mockResolvedValue(false),
+    };
+
     const logger = { setContext: jest.fn() } as unknown as LoggerService;
 
     service = new OnboardingService(
       userService as unknown as UserService,
       { create: jest.fn().mockResolvedValue({ id: 'thread-1' }) } as unknown as ThreadService,
       { create: jest.fn() } as unknown as MessageService,
-      { create: jest.fn() } as unknown as ActionService,
+      actionService as unknown as ActionService,
       {
         findAll: jest.fn().mockResolvedValue([]),
         create: jest.fn().mockResolvedValue({ id: 'q-1' }),
@@ -42,6 +54,7 @@ describe('OnboardingService onboard', () => {
       { create: jest.fn() } as unknown as ConceptService,
       personService as unknown as PersonService,
       { create: jest.fn() } as unknown as RelationshipService,
+      featureService as unknown as FeatureService,
       logger,
     );
   });
@@ -102,5 +115,33 @@ describe('OnboardingService onboard', () => {
     );
     expect(userService.update).toHaveBeenCalledWith(context, 'user-1', { onboardingProgress: null });
     expect(userService.onboard).toHaveBeenCalledWith('user-1');
+    // Seed actions are deferred ~24h after setup (InitialActionsCron), not created here.
+    expect(actionService.create).not.toHaveBeenCalled();
+  });
+
+  describe('initializeActionsForUser', () => {
+    it('no-ops when the actions feature flag is off', async () => {
+      featureService.isFeatureEnabled.mockResolvedValue(false);
+
+      await expect(service.initializeActionsForUser(context)).resolves.toBe(false);
+      expect(actionService.create).not.toHaveBeenCalled();
+    });
+
+    it('no-ops when the user already has actions', async () => {
+      featureService.isFeatureEnabled.mockResolvedValue(true);
+      actionService.findAll.mockResolvedValue([{ id: 'existing' } as never]);
+
+      await expect(service.initializeActionsForUser(context)).resolves.toBe(false);
+      expect(actionService.create).not.toHaveBeenCalled();
+    });
+
+    it('creates seed actions when enabled and the user has none', async () => {
+      featureService.isFeatureEnabled.mockResolvedValue(true);
+      actionService.findAll.mockResolvedValue([]);
+      actionService.create.mockResolvedValue({ id: 'action-1' } as never);
+
+      await expect(service.initializeActionsForUser(context)).resolves.toBe(true);
+      expect(actionService.create).toHaveBeenCalled();
+    });
   });
 });

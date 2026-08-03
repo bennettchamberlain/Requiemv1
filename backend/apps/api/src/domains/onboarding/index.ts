@@ -25,6 +25,7 @@ import { MemoryModule } from '@ci/domains/memory';
 import { UserModule } from '@ci/domains/user';
 
 import { OnboardingController } from './controllers/OnboardingController';
+import { InitialActionsCron } from './cron/InitialActionsCron';
 import { OnboardingService } from './services/OnboardingService';
 
 /**
@@ -32,7 +33,7 @@ import { OnboardingService } from './services/OnboardingService';
  */
 @Module({
   imports: [ConversationModule, GraphModule, IntelligenceModule, UserModule, MemoryModule],
-  providers: [OnboardingService],
+  providers: [OnboardingService, InitialActionsCron],
   controllers: [OnboardingController],
   exports: [OnboardingService],
 })

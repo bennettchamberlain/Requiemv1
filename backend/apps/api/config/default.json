@@ -147,7 +147,8 @@
     "hbpe": true,
     "agent.memory.compaction": false,
     "shared.search": false,
-    "onboarding.preference.steps": false
+    "onboarding.preference.steps": false,
+    "actions": false
   },
   "environment": {
     "database.query.logging": false

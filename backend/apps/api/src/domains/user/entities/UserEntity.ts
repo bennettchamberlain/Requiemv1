@@ -27,6 +27,10 @@ export class UserEntity {
   @Column()
   onboarded!: boolean;
 
+  /** Set when FTUE completes; drives deferred post-setup jobs (e.g. actions init). */
+  @Column({ type: 'timestamptz', name: 'onboarded_at', nullable: true })
+  onboardedAt?: Date | null;
+
   // IANA timezone name (e.g. 'America/New_York'). Drives local-time bucketing in
   // HBPE + the summary service; defaults to 'UTC' at the DB layer.
   @Column({ type: 'text', default: 'UTC' })
@@ -48,6 +52,7 @@ export class UserEntity {
       email: entity.email,
       entityId: entity.entityId,
       onboarded: entity.onboarded,
+      onboardedAt: entity.onboardedAt ?? null,
       timezone: entity.timezone,
       onboardingProgress: entity.onboardingProgress ?? null,
       createdAt: entity.createdAt,

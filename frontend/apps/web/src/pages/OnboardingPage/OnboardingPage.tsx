@@ -216,10 +216,19 @@ export function OnboardingPage() {
     }
   }, [currentStepKey, form, setTrustMode]);
 
-  const contentMaxWidth = currentStepKey === 'connect-source' ? 'max-w-5xl' : 'max-w-lg';
+  const contentMaxWidth =
+    currentStepKey === 'connect-source'
+      ? 'max-w-5xl'
+      : currentStepKey === 'people'
+        ? 'max-w-2xl'
+        : 'max-w-2xl';
 
+  // Typeform-style: keep the question centered in the viewport. Only denser
+  // multi-card steps scroll from the top so content isn't clipped.
   const verticallyCenterStep =
-    currentStepKey === 'intro' || currentStepKey === 'trust-dial' || currentStepKey === 'run-first-sync';
+    currentStepKey !== 'connect-source' &&
+    currentStepKey !== 'focus-areas' &&
+    currentStepKey !== 'people';
 
   if (user?.onboarded) {
     return <Navigate to="/feed" replace />;
@@ -235,32 +244,27 @@ export function OnboardingPage() {
   return (
     <Form {...form}>
       <form className="relative h-lvh flex flex-col">
-        <div className="absolute top-0 left-0 h-[max(0.5rem,env(safe-area-inset-top))] w-full">
-          <div className="absolute top-full right-2 z-10 text-foreground">
+        <div className="absolute top-0 left-0 h-[max(0.25rem,env(safe-area-inset-top))] w-full">
+          <div className="absolute top-full right-3 z-10 text-foreground">
             <ThemeToggle />
           </div>
         </div>
 
-        <div
-          className={cn(
-            'flex flex-col items-center flex-1 w-full h-full',
-            verticallyCenterStep ? 'gap-4' : 'gap-2',
-          )}
-        >
-          <div className="self-start px-4 pt-[max(1rem,env(safe-area-inset-top))]">
-            <img src={logo} className="w-8 h-8" alt="" />
+        <div className="flex flex-col items-center flex-1 w-full h-full gap-1.5">
+          <div className="self-start px-4 pt-[max(0.5rem,env(safe-area-inset-top))]">
+            <img src={logo} className="w-7 h-7" alt="" />
           </div>
 
           <div
             ref={scrollRef}
             className={cn(
-              'relative flex-1 overflow-y-auto min-h-0 w-full mx-auto px-4 md:px-6',
+              'relative flex-1 overflow-y-auto min-h-0 w-full mx-auto px-5 md:px-8',
               contentMaxWidth,
             )}
           >
             {resumeUpdatedAt && (
-              <div className="pointer-events-none absolute inset-x-4 md:inset-x-6 top-2 z-20 flex justify-center">
-                <div className="pointer-events-auto max-w-md rounded-lg border border-green-800/30 bg-background/95 px-3 py-2 text-xs text-foreground text-center shadow-sm backdrop-blur-sm">
+              <div className="pointer-events-none absolute inset-x-5 md:inset-x-8 top-1 z-20 flex justify-center">
+                <div className="pointer-events-auto max-w-lg rounded-lg border border-green-800/30 bg-background/95 px-4 py-2.5 text-sm text-foreground text-center shadow-sm backdrop-blur-sm">
                   Welcome back. Everything you&apos;ve entered is saved.
                 </div>
               </div>
@@ -268,7 +272,7 @@ export function OnboardingPage() {
 
             <div
               className={cn(
-                'flex flex-col items-center text-center w-full',
+                'flex flex-col items-center text-center w-full py-2',
                 verticallyCenterStep ? 'justify-center min-h-full' : 'justify-start',
               )}
             >
@@ -277,35 +281,40 @@ export function OnboardingPage() {
           </div>
 
           {showNav && (
-            <div className="flex items-center gap-3 px-4">
+            <div className="flex items-center gap-2 sm:gap-3 px-4">
               {stepIndex > 0 && (
-                <Button type="button" variant="ghost" onClick={handleBack}>
+                <Button type="button" variant="ghost" size="lg" className="text-base" onClick={handleBack}>
                   Back
                 </Button>
               )}
-              <Button type="button" variant="ghost" onClick={handleSkip}>
+              <Button type="button" variant="ghost" size="lg" className="text-base" onClick={handleSkip}>
                 Skip
               </Button>
-              <OnboardingButton type="button" className="px-12" onClick={handleNext}>
+              <OnboardingButton
+                type="button"
+                size="lg"
+                className="px-10 sm:px-14 text-base sm:text-lg h-12"
+                onClick={handleNext}
+              >
                 Next
               </OnboardingButton>
             </div>
           )}
 
-          <div className="flex flex-col items-center px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-            <div className="flex justify-center items-center">
+          <div className="flex flex-col items-center gap-1 px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+            <div className="flex justify-center items-center gap-1.5">
               {stepKeys.map((key, i) => (
                 <div
                   key={key}
                   className={cn(
-                    'h-2 w-2 m-2 rounded-full transition-all duration-500',
-                    i === stepIndex ? 'bg-slate-800 scale-115' : 'bg-slate-300',
+                    'h-1.5 w-1.5 rounded-full transition-all duration-500',
+                    i === stepIndex ? 'bg-foreground scale-125' : 'bg-muted-foreground/35',
                   )}
                 />
               ))}
             </div>
             {stepIndex === 0 && (
-              <p className="text-[11px] text-muted-foreground text-center -mt-1">
+              <p className="text-xs sm:text-sm text-muted-foreground text-center">
                 Step {stepIndex + 1} of {stepKeys.length} — every step is skippable
               </p>
             )}

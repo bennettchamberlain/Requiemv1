@@ -140,6 +140,33 @@ export class UserService {
   async onboard(id: string): Promise<void> {
     await this.userRepository.update(id, {
       onboarded: true,
+      onboardedAt: new Date(),
     });
+  }
+
+  /**
+   * Users who finished FTUE at least `minAgeMs` ago and have never received
+   * actions-system seed cards. Used by the deferred initializer cron.
+   */
+  async listUsersReadyForInitialActions(minAgeMs: number, limit: number = 50): Promise<string[]> {
+    const cutoff = new Date(Date.now() - minAgeMs);
+
+    const rows = await this.userRepository
+      .createQueryBuilder('user')
+      .select('user.id', 'id')
+      .where('user.onboarded = TRUE')
+      .andWhere('user.onboardedAt IS NOT NULL')
+      .andWhere('user.onboardedAt <= :cutoff', { cutoff })
+      .andWhere(
+        `NOT EXISTS (
+          SELECT 1 FROM ci.actions action
+          WHERE action.user_id = "user".id
+        )`,
+      )
+      .orderBy('user.onboardedAt', 'ASC')
+      .limit(limit)
+      .getRawMany<{ id: string }>();
+
+    return rows.map((row) => row.id);
   }
 }

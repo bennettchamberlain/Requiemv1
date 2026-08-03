@@ -2,6 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { v7 as uuidv7 } from 'uuid';
 
 import { type UserServiceContext } from '@ci/common/context';
+import { FeatureService } from '@ci/common/feature';
 import { LoggerService } from '@ci/common/logging';
 import { MessageService, ThreadService } from '@ci/domains/conversations';
 import { RelationshipService, RelationshipType } from '@ci/domains/graph';
@@ -109,6 +110,7 @@ export class OnboardingService {
     private readonly conceptService: ConceptService,
     private readonly personService: PersonService,
     private readonly relationshipService: RelationshipService,
+    private readonly featureService: FeatureService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(OnboardingService.name);
@@ -194,9 +196,11 @@ export class OnboardingService {
         this.captureConnections(context, person.id, input.people),
         this.capturePreferences(context, person.id, input),
         this.applySelfEntityPreferences(context, person.id, input),
-        this.createInitialActions(context),
         this.captureSurveyResponses(context, input),
       ]);
+
+      // Actions-system seed cards are deferred ~24h after onboard (see InitialActionsCron)
+      // so the first sync has time to land data before we surface recommendations.
 
       await this.userService.update(context, user.id, {
         onboardingProgress: null,
@@ -518,6 +522,29 @@ export class OnboardingService {
       text: value,
       question,
     });
+  }
+
+  /**
+   * Seed starter action cards for a user. Idempotent: no-ops when the actions
+   * feature is off or the user already has any actions. Called by
+   * {@link InitialActionsCron} ~24h after onboard.
+   *
+   * @returns true when seed cards were created
+   */
+  async initializeActionsForUser(context: UserServiceContext): Promise<boolean> {
+    if (!(await this.featureService.isFeatureEnabled('actions'))) {
+      return false;
+    }
+
+    const existing = await this.actionService.findAll(context);
+
+    if (existing.length > 0) {
+      return false;
+    }
+
+    await this.createInitialActions(context);
+
+    return true;
   }
 
   private async createInitialActions(context: UserServiceContext) {

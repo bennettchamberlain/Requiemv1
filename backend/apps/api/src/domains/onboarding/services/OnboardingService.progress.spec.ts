@@ -1,5 +1,6 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 
+import type { FeatureService } from '@ci/common/feature';
 import type { LoggerService } from '@ci/common/logging';
 import type { MessageService, ThreadService } from '@ci/domains/conversations';
 import type { RelationshipService } from '@ci/domains/graph';
@@ -22,6 +23,7 @@ function createService(userService: jest.Mocked<Pick<UserService, 'findById' | '
     {} as ConceptService,
     {} as PersonService,
     {} as RelationshipService,
+    { isFeatureEnabled: jest.fn().mockResolvedValue(false) } as unknown as FeatureService,
     logger,
   );
 }

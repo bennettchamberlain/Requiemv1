@@ -1,5 +1,7 @@
 import { Checkbox, Form, useFormContext } from '@ci/shadcn';
 
+import { StepHeader } from './StepHeader';
+
 const focusAreaOptions = [
   {
     id: 'personal_fitness',
@@ -33,9 +35,9 @@ export function FocusAreas() {
   const form = useFormContext();
 
   return (
-    <div className="space-y-4 py-2 md:py-4 w-full max-w-md mx-auto text-left">
-      <h1 className="text-2xl text-center font-semibold text-foreground">Your focus areas</h1>
-      <div className="space-y-5">
+    <div className="space-y-6 w-full max-w-xl mx-auto text-left">
+      <StepHeader title="What should we focus on?" description="Pick anything that matters right now." />
+      <div className="space-y-3">
         {focusAreaOptions.map((item) => (
           <Form.Field
             key={item.id}
@@ -43,9 +45,14 @@ export function FocusAreas() {
             name="focus_areas"
             render={({ field }) => {
               return (
-                <Form.Item key={item.id} className="grid grid-cols-[max-content_1fr] items-center gap-x-3">
+                <Form.Item
+                  key={item.id}
+                  className="grid grid-cols-[max-content_1fr] items-start gap-x-4 rounded-xl border border-border/70 px-4 py-3.5 hover:bg-muted/30 transition-colors"
+                >
                   <Form.Control>
                     <Checkbox
+                      className="mt-1 size-5"
+                      checked={field.value?.includes(item.id)}
                       onCheckedChange={(checked) => {
                         return checked
                           ? field.onChange([...(field.value || []), item.id])
@@ -54,10 +61,14 @@ export function FocusAreas() {
                     />
                   </Form.Control>
 
-                  <Form.Label className="font-medium cursor-pointer">{item.label}</Form.Label>
-                  <Form.Description className="col-start-2 text-muted-foreground">
-                    {item.description}
-                  </Form.Description>
+                  <div className="space-y-1">
+                    <Form.Label className="text-lg sm:text-xl font-medium cursor-pointer leading-snug">
+                      {item.label}
+                    </Form.Label>
+                    <Form.Description className="text-base text-muted-foreground leading-snug">
+                      {item.description}
+                    </Form.Description>
+                  </div>
                 </Form.Item>
               );
             }}

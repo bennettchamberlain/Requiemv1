@@ -8,6 +8,7 @@ import { ServiceIntegrationsSection } from '@/components/connect/ServiceIntegrat
 import { Card } from '@/pages/ConnectPage/Card';
 
 import { CHROME_EXTENSION_URL, CI_DOWNLOAD_URL, IMPORT_TOOLS_URL } from './constants';
+import { StepHeader } from './StepHeader';
 
 export function ConnectSourceStep() {
   const [dialogProviderId, setDialogProviderId] = useState<string | null>(null);
@@ -15,13 +16,11 @@ export function ConnectSourceStep() {
   const openDownload = () => window.open(CI_DOWNLOAD_URL, '_blank', 'noopener,noreferrer');
 
   return (
-    <div className="space-y-6 py-6 w-full mx-auto">
-      <div className="space-y-2 text-center">
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">Connect a source</h1>
-        <p className="text-sm leading-6 text-muted-foreground">
-          Pull your email and calendar in automatically.
-        </p>
-      </div>
+    <div className="space-y-6 w-full mx-auto">
+      <StepHeader
+        title="Connect a source"
+        description="Pull your email and calendar in automatically."
+      />
 
       <ServiceIntegrationsSection
         variant="onboarding"
@@ -30,7 +29,7 @@ export function ConnectSourceStep() {
       />
 
       <div className="space-y-4 max-w-5xl mx-auto w-full">
-        <p className="text-base md:text-lg leading-7 text-muted-foreground text-center px-2">
+        <p className="text-lg sm:text-xl leading-snug text-muted-foreground text-center px-2">
           Want your memory to include desktop or mobile browser history? Get the browser extension.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
@@ -58,11 +57,11 @@ export function ConnectSourceStep() {
         </div>
       </div>
 
-      <div className="rounded-lg border border-border/70 bg-background/70 p-5 space-y-3 max-w-2xl mx-auto w-full">
-        <p className="text-base md:text-lg leading-7 text-muted-foreground">
+      <div className="rounded-xl border border-border/70 bg-background/70 p-5 space-y-3 max-w-2xl mx-auto w-full">
+        <p className="text-lg sm:text-xl leading-snug text-muted-foreground">
           Have local exports? Import tools can seed your memory faster.
         </p>
-        <BrandPrimaryButton className="w-full sm:w-auto text-base px-5" asChild>
+        <BrandPrimaryButton className="w-full sm:w-auto text-base sm:text-lg h-12 px-6" asChild>
           <a href={IMPORT_TOOLS_URL} target="_blank" rel="noopener noreferrer">
             Get import tools
             <ExternalLink className="ml-2 h-4 w-4" />

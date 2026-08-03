@@ -3,6 +3,7 @@ import { fetchJson } from '@ci/common';
 import { useAuth } from '@/hooks';
 
 import { OnboardingButton } from './OnboardingButton';
+import { StepHeader } from './StepHeader';
 import { useOnboardService } from './useOnboardService';
 
 export function RunFirstSyncStep() {
@@ -19,24 +20,32 @@ export function RunFirstSyncStep() {
   }
 
   return (
-    <div className="space-y-6 py-6 w-full max-w-md mx-auto">
-      <div className="space-y-2 text-center">
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">Your life, unclouded.</h1>
-        <p className="text-sm leading-6 text-muted-foreground">
-          <span className="block">Who you know, where you go,</span>
-          <span className="block">everything physical you own and interact with,</span>
-          <span className="block">everything digital that you create and consume:</span>
-        </p>
-        <p className="text-sm text-muted-foreground">
-          a private, searchable memory — one that belongs to you.
-        </p>
-      </div>
+    <div className="space-y-8 w-full max-w-2xl mx-auto">
+      <StepHeader
+        title="Your life, unclouded."
+        description={
+          <>
+            <span className="block">Who you know, where you go,</span>
+            <span className="block">everything physical you own and interact with,</span>
+            <span className="block">everything digital that you create and consume:</span>
+            <span className="block mt-3 text-foreground/90">
+              a private, searchable memory — one that belongs to you.
+            </span>
+          </>
+        }
+      />
 
       {error != null && (
-        <p className="text-sm text-destructive">Could not finish setup — please try again.</p>
+        <p className="text-base text-destructive">Could not finish setup — please try again.</p>
       )}
 
-      <OnboardingButton type="button" className="w-full" disabled={submitting} onClick={() => void finish()}>
+      <OnboardingButton
+        type="button"
+        size="lg"
+        className="w-full h-14 text-lg sm:text-xl"
+        disabled={submitting}
+        onClick={() => void finish()}
+      >
         {submitting ? 'Finishing…' : 'Run my first sync and finish'}
       </OnboardingButton>
     </div>

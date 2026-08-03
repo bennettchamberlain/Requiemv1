@@ -1,6 +1,7 @@
 import { cn } from '@ci/shadcn';
 
 import type { OnboardingFormData } from './OnboardingPage';
+import { StepHeader } from './StepHeader';
 
 const TRUST_OPTIONS = [
   { value: 'cautious' as const, label: 'Cautious', hint: 'Review everything yourself' },
@@ -21,28 +22,30 @@ export function TrustDialStep({ value, onChange }: TrustDialStepProps) {
   const selected = value ?? 'balanced';
 
   return (
-    <div className="space-y-6 py-6 w-full max-w-md mx-auto">
-      <div className="space-y-2 text-center">
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">Trust dial</h1>
-        <p className="text-sm leading-6 text-muted-foreground">
-          How much should your companion do on its own?
-        </p>
-      </div>
+    <div className="space-y-8 w-full max-w-xl mx-auto">
+      <StepHeader
+        title="How much trust?"
+        description="How much should your companion do on its own?"
+      />
 
       {/* TODO(settings): Autonomy subsection — same dial, reads/writes self-entity properties.planner.trust_mode */}
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3">
         {TRUST_OPTIONS.map((opt) => (
           <button
             key={opt.value}
             type="button"
             className={cn(
-              'rounded-lg border border-border px-4 py-3 text-left transition-colors',
+              'rounded-xl border border-border px-5 py-4 text-left transition-colors',
               selected === opt.value && 'border-teal-600 bg-teal-500/10',
             )}
             onClick={() => onChange(opt.value)}
           >
-            <span className="block text-sm font-medium text-foreground">{opt.label}</span>
-            <span className="block text-xs text-muted-foreground">{opt.hint}</span>
+            <span className="block text-xl sm:text-2xl font-medium text-foreground leading-tight">
+              {opt.label}
+            </span>
+            <span className="block text-base sm:text-lg text-muted-foreground mt-1 leading-snug">
+              {opt.hint}
+            </span>
           </button>
         ))}
       </div>
