@@ -287,7 +287,13 @@ export async function initTelemetry(): Promise<void> {
 }
 
 export function captureException(error: unknown, context?: Record<string, unknown>): void {
-  if (!initialized) {
+  // `DSN` first, and deliberately not just `initialized`: the latter is a
+  // runtime `let`, so `Sentry.withScope` below stays statically reachable and
+  // drags the whole SDK back into a DSN-less bundle the moment this function
+  // gains a caller. Today it has none, which is the only reason the build
+  // measures 0 bytes without a DSN — this guard makes that hold on purpose
+  // rather than by luck. (CI-WebXR-Time-Machine hit exactly this.)
+  if (!DSN || !initialized) {
     return;
   }
 
