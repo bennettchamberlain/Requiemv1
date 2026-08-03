@@ -92,13 +92,13 @@ export function SchedulePage() {
           </div>
 
           {/* The legend is the thesis: colour encodes certainty, not category. */}
-          <div className="ml-auto flex items-center gap-3 text-[10px] text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-[2px] border border-foreground/25 bg-background" />
+          <div className="ml-auto flex items-center gap-3 text-[11px] text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-[2px] border border-border bg-background" />
               committed
             </span>
-            <span className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-[2px] bg-teal-500/50" />
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-[2px] bg-primary/60" />
               rhythm
             </span>
           </div>

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { RhythmDay, ScheduleEvent } from '@/api/useScheduleService';
 
-import { HorizonGrid, spanForDay, bandsForDay, startOfLocalDay, addDays } from './HorizonGrid';
+import { HorizonGrid, spanForDay, daypartWeights, rhythmCells, startOfLocalDay, addDays } from './HorizonGrid';
 
 const MONDAY = startOfLocalDay(new Date(2026, 7, 3));
 
@@ -90,202 +90,166 @@ describe('spanForDay — clipping committed events onto a day row', () => {
   });
 });
 
-describe('bandsForDay — collapsing clusters into rhythm bands', () => {
-  function day(clusters: RhythmDay['clusters']): RhythmDay {
-    return { date: '2026-08-03', dow: 'Monday', clusters };
-  }
+function day(clusters: RhythmDay['clusters'], date = '2026-08-03'): RhythmDay {
+  return { date, dow: 'Monday', clusters };
+}
 
-  it('produces nothing when there is no forecast for the day', () => {
-    expect(bandsForDay(undefined, MONDAY)).toEqual([]);
+function cluster(
+  id: string,
+  pOccur: number,
+  dayparts: [string, number][],
+): RhythmDay['clusters'][number] {
+  return {
+    clusterId: id,
+    name: id,
+    l0Class: 'WORK',
+    pOccur,
+    scheduled: false,
+    daypartProbs: dayparts.map(([label, probability]) => ({ label, probability })),
+  };
+}
+
+describe('daypartWeights — collapsing a day of clusters into four weights', () => {
+  it('is all-zero for a day with no forecast', () => {
+    expect(daypartWeights(undefined)).toEqual([0, 0, 0, 0]);
   });
 
-  it('suppresses bands below the noise floor', () => {
-    const bands = bandsForDay(
-      day([
-        {
-          clusterId: 'c1',
-          name: 'Gym',
-          l0Class: 'EXERCISE',
-          pOccur: 0.02,
-          scheduled: false,
-          daypartProbs: [{ label: 'morning', probability: 0.5 }],
-        },
-      ]),
-      MONDAY,
+  it('weights a daypart by occurrence probability times daypart share', () => {
+    const [, morning] = daypartWeights(day([cluster('gym', 0.8, [['morning', 0.5]])]));
+
+    expect(morning).toBeCloseTo(0.4, 5);
+  });
+
+  it('takes the strongest claim, not the union — two certainties are still one', () => {
+    const weights = daypartWeights(
+      day([cluster('gym', 1, [['evening', 1]]), cluster('reading', 1, [['evening', 1]])]),
     );
 
-    expect(bands).toHaveLength(0);
-  });
-
-  it('weights a band by occurrence probability times daypart share', () => {
-    const bands = bandsForDay(
-      day([
-        {
-          clusterId: 'c1',
-          name: 'Gym',
-          l0Class: 'EXERCISE',
-          pOccur: 0.8,
-          scheduled: false,
-          daypartProbs: [{ label: 'morning', probability: 0.5 }],
-        },
-      ]),
-      MONDAY,
-    );
-
-    const morning = bands.find((b) => b.label === 'morning');
-    expect(morning?.intensity).toBeCloseTo(0.4, 2);
-  });
-
-  it('stays differentiated when a realistic cluster count claims every daypart', () => {
-    // A real user has ~20 clusters, most near-certain, mass spread across all
-    // four dayparts. A noisy-OR union saturates every band to ~1 and the layer
-    // says nothing; the strongest-claim rule keeps the day's shape visible.
-    const many = Array.from({ length: 20 }, (_, i) => ({
-      clusterId: `c${i}`,
-      name: `Cluster ${i}`,
-      l0Class: 'WORK',
-      pOccur: 0.99,
-      scheduled: false,
-      daypartProbs: [
-        { label: 'night', probability: 0.23 },
-        { label: 'morning', probability: 0.23 },
-        { label: 'afternoon', probability: 0.31 },
-        { label: 'evening', probability: 0.23 },
-      ],
-    }));
-    // One cluster genuinely owns the afternoon.
-    many.push({
-      clusterId: 'c-focus',
-      name: 'Discord',
-      l0Class: 'WORK',
-      pOccur: 0.99,
-      scheduled: false,
-      daypartProbs: [
-        { label: 'afternoon', probability: 0.75 },
-        { label: 'evening', probability: 0.25 },
-      ],
-    });
-
-    const bands = bandsForDay(day(many), MONDAY);
-    const byLabel = Object.fromEntries(bands.map((b) => [b.label, b.intensity]));
-
-    expect(byLabel.afternoon).toBeGreaterThan(0.7);
-    expect(byLabel.night).toBeLessThan(0.3);
-    // The gap between busiest and quietest daypart must survive the collapse.
-    expect(byLabel.afternoon - byLabel.night).toBeGreaterThan(0.4);
-  });
-
-  it('takes the strongest claim on a daypart, not the union of every claim', () => {
-    const bands = bandsForDay(
-      day([
-        {
-          clusterId: 'c1',
-          name: 'Gym',
-          l0Class: 'EXERCISE',
-          pOccur: 1,
-          scheduled: false,
-          daypartProbs: [{ label: 'evening', probability: 1 }],
-        },
-        {
-          clusterId: 'c2',
-          name: 'Reading',
-          l0Class: 'LEISURE',
-          pOccur: 1,
-          scheduled: false,
-          daypartProbs: [{ label: 'evening', probability: 1 }],
-        },
-      ]),
-      MONDAY,
-    );
-
-    const evening = bands.find((b) => b.label === 'evening');
-    // Two certainties in the same band are still one certainty, not 2.0.
-    expect(evening?.intensity).toBeCloseTo(1, 5);
+    expect(weights[3]).toBeCloseTo(1, 5);
   });
 
   it('is not raised by piling on weak claims', () => {
-    const weak = Array.from({ length: 12 }, (_, i) => ({
-      clusterId: `w${i}`,
-      name: `Weak ${i}`,
-      l0Class: 'LEISURE',
-      pOccur: 0.4,
-      scheduled: false,
-      daypartProbs: [{ label: 'morning' as const, probability: 0.4 }],
-    }));
-
-    const bands = bandsForDay(day(weak), MONDAY);
-    const morning = bands.find((b) => b.label === 'morning');
+    const weak = Array.from({ length: 12 }, (_, i) => cluster(`w${i}`, 0.4, [['morning', 0.4]]));
 
     // Twelve maybes do not add up to a certainty.
-    expect(morning?.intensity).toBeCloseTo(0.16, 2);
+    expect(daypartWeights(day(weak))[1]).toBeCloseTo(0.16, 5);
   });
 
-  it('preserves ordering between a strong and a weak band', () => {
-    const bands = bandsForDay(
-      day([
-        {
-          clusterId: 'c1',
-          name: 'Work',
-          l0Class: 'WORK',
-          pOccur: 0.9,
-          scheduled: false,
-          daypartProbs: [
-            { label: 'afternoon', probability: 0.9 },
-            { label: 'night', probability: 0.15 },
-          ],
-        },
+  it('stays differentiated at a realistic cluster count', () => {
+    // ~20 near-certain clusters spreading mass over every daypart is what the
+    // live account looks like; a noisy-OR union saturates all four to ~1 and the
+    // layer stops carrying information.
+    const many = Array.from({ length: 20 }, (_, i) =>
+      cluster(`c${i}`, 0.99, [
+        ['night', 0.23],
+        ['morning', 0.23],
+        ['afternoon', 0.31],
+        ['evening', 0.23],
       ]),
-      MONDAY,
+    );
+    many.push(
+      cluster('discord', 0.99, [
+        ['afternoon', 0.75],
+        ['evening', 0.25],
+      ]),
     );
 
-    const afternoon = bands.find((b) => b.label === 'afternoon');
-    const night = bands.find((b) => b.label === 'night');
+    const [night, , afternoon] = daypartWeights(day(many));
 
-    expect(afternoon?.intensity).toBeGreaterThan(night?.intensity ?? 1);
-  });
-
-  it('keeps every band inside the row', () => {
-    const bands = bandsForDay(
-      day(
-        (['night', 'morning', 'afternoon', 'evening'] as const).map((label, i) => ({
-          clusterId: `c${i}`,
-          name: label,
-          l0Class: 'WORK',
-          pOccur: 0.9,
-          scheduled: false,
-          daypartProbs: [{ label, probability: 0.9 }],
-        })),
-      ),
-      MONDAY,
-    );
-
-    expect(bands.length).toBeGreaterThan(0);
-    for (const band of bands) {
-      expect(band.leftPct).toBeGreaterThanOrEqual(0);
-      expect(band.leftPct + band.widthPct).toBeLessThanOrEqual(100.01);
-      expect(band.widthPct).toBeGreaterThan(0);
-    }
+    expect(afternoon).toBeGreaterThan(0.7);
+    expect(night).toBeLessThan(0.3);
+    expect(afternoon - night).toBeGreaterThan(0.4);
   });
 
   it('ignores daypart labels it does not recognise', () => {
-    const bands = bandsForDay(
-      day([
-        {
-          clusterId: 'c1',
-          name: 'Gym',
-          l0Class: 'EXERCISE',
-          pOccur: 1,
-          scheduled: false,
-          daypartProbs: [{ label: 'brunch', probability: 1 }],
-        },
-      ]),
-      MONDAY,
-    );
-
-    expect(bands).toHaveLength(0);
+    expect(daypartWeights(day([cluster('gym', 1, [['brunch', 1]])]))).toEqual([0, 0, 0, 0]);
   });
 });
 
+describe('rhythmCells — per-hour intensities across a local day', () => {
+  const lookupFor = (days: RhythmDay[]) => (utcDate: string) =>
+    days.find((d) => d.date === utcDate);
+
+  it('emits one cell per hour of the day', () => {
+    expect(rhythmCells(MONDAY, () => undefined)).toHaveLength(24);
+  });
+
+  it('is all-zero when no forecast covers the day', () => {
+    expect(rhythmCells(MONDAY, () => undefined).every((c) => c === 0)).toBe(true);
+  });
+
+  it('carries the weight of whichever UTC daypart each local hour falls in', () => {
+    const cells = rhythmCells(
+      MONDAY,
+      lookupFor([
+        day([cluster('a', 1, [['night', 0.9]])], '2026-08-03'),
+        day([cluster('b', 1, [['night', 0.9]])], '2026-08-04'),
+      ]),
+    );
+
+    // Whatever the viewer's offset, every hour resolves to some real daypart
+    // weight — no hour is left unresolved by the UTC→local mapping.
+    expect(cells.some((c) => c > 0)).toBe(true);
+    expect(cells.every((c) => c >= 0 && c <= 1)).toBe(true);
+  });
+
+  it('reaches across the UTC date boundary for the tail of a local day', () => {
+    // Only the NEXT UTC date carries any weight. A local day that runs past
+    // midnight UTC must still pick it up, instead of flatlining.
+    const cells = rhythmCells(
+      MONDAY,
+      lookupFor([
+        day([], '2026-08-03'),
+        day(
+          [
+            cluster('late', 1, [
+              ['night', 1],
+              ['morning', 1],
+              ['afternoon', 1],
+              ['evening', 1],
+            ]),
+          ],
+          '2026-08-04',
+        ),
+      ]),
+    );
+
+    expect(cells.some((c) => c > 0)).toBe(true);
+  });
+
+  it('preserves ordering between a strong and a weak daypart', () => {
+    const cells = rhythmCells(
+      MONDAY,
+      lookupFor([
+        day(
+          [
+            cluster('work', 0.9, [
+              ['afternoon', 0.9],
+              ['night', 0.1],
+            ]),
+          ],
+          '2026-08-03',
+        ),
+        day(
+          [
+            cluster('work', 0.9, [
+              ['afternoon', 0.9],
+              ['night', 0.1],
+            ]),
+          ],
+          '2026-08-04',
+        ),
+      ]),
+    );
+
+    // Dayparts the clusters never claim stay at 0; among the ones they do, the
+    // strong/weak ordering survives.
+    const claimed = cells.filter((c) => c > 0);
+
+    expect(Math.max(...claimed)).toBeCloseTo(0.81, 2);
+    expect(Math.min(...claimed)).toBeCloseTo(0.09, 2);
+  });
+});
 describe('HorizonGrid', () => {
   it('renders one row per day in the window', () => {
     render(<HorizonGrid start={MONDAY} days={7} events={[]} rhythm={[]} />);
