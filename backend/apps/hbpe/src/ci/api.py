@@ -8,6 +8,8 @@ Lifecycle:
 Endpoints:
   GET /health               — liveness probe
   GET /histogram            — 48-bucket 24h behavioral forecast
+  GET /forecast             — week-horizon per-day occurrence forecast
+  GET /forecast/due         — renewal ("due"/overdue) predictions for periodic clusters
   POST /invalidate/{date}   — manual cache invalidation (for testing / admin)
 
 The engine registry maps user_id → InferenceEngine.  In a single-user
@@ -176,6 +178,67 @@ async def histogram(
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception:
         log.exception("Histogram generation failed")
+        raise HTTPException(status_code=500, detail="Internal error")
+
+
+@app.get("/forecast")
+async def forecast(
+    user_id: str | None = Query(None, description="User UUID"),
+    horizon: str = Query("7d", description="Forecast window (only '7d' supported)"),
+) -> dict:
+    """
+    Week-horizon occurrence forecast: for each of the next 7 days, the L1
+    clusters likely to occur that day with P(occurs) and daypart tendencies.
+
+    Unlike /histogram (bucket occupancy), this predicts *events*: Bernoulli
+    per (day × cluster), driven by the nightly recurrence profiles.
+    """
+    if not user_id:
+        raise HTTPException(status_code=401, detail="user_id is required")
+    if horizon != "7d":
+        raise HTTPException(status_code=400,
+                            detail=f"Unsupported horizon '{horizon}'. Supported: 7d")
+
+    import datetime
+    from ci.pipeline.recurrence import week_forecast, log_occurrence_forecast
+
+    try:
+        now = datetime.datetime.utcnow()
+        days = week_forecast(user_id, days=7)
+        log_occurrence_forecast(user_id, days, predicted_at=now)
+        return {
+            "horizon":      horizon,
+            "generated_at": now.isoformat() + "Z",
+            "days":         days,
+        }
+    except Exception:
+        log.exception("Week forecast failed")
+        raise HTTPException(status_code=500, detail="Internal error")
+
+
+@app.get("/forecast/due")
+async def forecast_due(
+    user_id: str | None = Query(None, description="User UUID"),
+) -> dict:
+    """
+    Renewal predictions for periodic clusters: what's coming due, in how many
+    days, and what's overdue (past its p90 inter-arrival gap) — the
+    month-horizon "haircut due in 6±4 days / it's been 16 days since you saw
+    friends" view.
+    """
+    if not user_id:
+        raise HTTPException(status_code=401, detail="user_id is required")
+
+    import datetime
+    from ci.pipeline.recurrence import due_list
+
+    try:
+        return {
+            "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
+            "due":          due_list(user_id),
+        }
+    except Exception:
+        log.exception("Due list failed")
         raise HTTPException(status_code=500, detail="Internal error")
 
 

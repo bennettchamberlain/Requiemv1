@@ -4,11 +4,12 @@ import { GlobalUID, ErrorPage, LoadingPage, Portal, useDeviceLayout, usePageTitl
 import { Breadcrumb, useToast } from '@ci/shadcn';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 
-import { useActionListService, useForecastService } from '@/api';
+import { useActionListService, useForecastService, useWeekAheadService } from '@/api';
 import { useFeatures } from '@/common/feature';
 import { ForecastStrip } from '@/components/ForecastStrip';
 import { PageContent } from '@/components/layout';
 import { Markdown } from '@/components/Markdown';
+import { WeekAhead } from '@/components/WeekAhead';
 import { type FragmentType } from '@/graphql';
 import { useModalControls } from '@/hooks';
 
@@ -48,6 +49,7 @@ export function FeedPage() {
   const { isFeatureEnabled } = useFeatures();
   const hbpeEnabled = isFeatureEnabled('hbpe');
   const [{ data: forecast, stalled: forecastStalled }] = useForecastService();
+  const { week: weekForecast, due: dueForecast } = useWeekAheadService();
   const [dismissedActionIds, setDismissedActionIds] = useState<Set<string>>(new Set());
   const [dismissedSummaryIds, setDismissedSummaryIds] = useState<Set<string>>(new Set());
   // Session-only hide for rare legacy nested insights (no dedicated summary row).
@@ -365,6 +367,13 @@ export function FeedPage() {
           </div>
         )}
 
+        {hbpeEnabled && weekForecast && (
+          <div className="px-2 pb-4">
+            <h3 className="text-sm font-semibold text-foreground mb-2">Week Ahead</h3>
+            <WeekAhead week={weekForecast} due={dueForecast} />
+          </div>
+        )}
+
         {isModalOpen && <FeedModal onClose={handleModalClose} />}
       </PageContent>
     );
@@ -488,6 +497,13 @@ export function FeedPage() {
             </Carousel>
           )}
         </div>
+
+        {hbpeEnabled && weekForecast && (
+          <>
+            <h2 className="text-2xl font-bold text-foreground">Week Ahead</h2>
+            <WeekAhead week={weekForecast} due={dueForecast} />
+          </>
+        )}
       </PageContent>
 
       {isModalOpen && <FeedModal onClose={handleModalClose} />}

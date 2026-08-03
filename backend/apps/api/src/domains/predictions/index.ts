@@ -12,4 +12,12 @@ import { HbpeService } from './services/HbpeService';
 export class PredictionsModule {}
 
 export { HbpeService };
-export type { ForecastBucket, ForecastResponse } from './types';
+export type {
+  DueItem,
+  DueResponse,
+  ForecastBucket,
+  ForecastResponse,
+  WeekForecastCluster,
+  WeekForecastDay,
+  WeekForecastResponse,
+} from './types';
