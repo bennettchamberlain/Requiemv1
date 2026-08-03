@@ -1,4 +1,4 @@
-"""Tests for the opt-in telemetry gate and the payload scrubber."""
+"""Tests for the opt-out telemetry gate and the payload scrubber."""
 from __future__ import annotations
 
 import pytest
@@ -236,3 +236,45 @@ class TestHubIdentityHeader:
         event = scrub_event({"request": {"headers": {"location": "/memory?search=private"}}})
 
         assert event["request"]["headers"]["location"] == "/memory"
+
+
+class TestContextLines:
+    def test_scrubs_source_context_around_the_throw_site(self):
+        event = scrub_event(
+            {
+                "exception": {
+                    "values": [
+                        {
+                            "stacktrace": {
+                                "frames": [
+                                    {
+                                        "pre_context": ['DIR = "/home/ci/notes"'],
+                                        "context_line": 'client = Client(api_key="sk-live-9988776655")',
+                                        "post_context": ['headers = {"authorization": "Bearer abcdefghij"}'],
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            }
+        )
+        frame = event["exception"]["values"][0]["stacktrace"]["frames"][0]
+
+        assert "sk-live-9988776655" not in frame["context_line"]
+        assert frame["pre_context"][0] == 'DIR = "~/notes"'
+        assert "abcdefghij" not in frame["post_context"][0]
+
+
+class TestIdentityKeys:
+    @pytest.mark.parametrize(
+        "key", ["x-ci-hub-user", "x-forwarded-user", "x-ci-owner", "x-test-owner", "username", "email"]
+    )
+    def test_filters_identity_bearing_keys(self, key):
+        event = scrub_event({"request": {"headers": {key: "liam"}}})
+        assert event["request"]["headers"][key] == "[Filtered]"
+
+    @pytest.mark.parametrize("key", ["user-agent", "user_id", "owner_id"])
+    def test_keeps_diagnostic_keys(self, key):
+        event = scrub_event({"request": {"headers": {key: "curl/8"}}})
+        assert event["request"]["headers"][key] == "curl/8"

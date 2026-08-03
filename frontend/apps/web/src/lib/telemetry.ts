@@ -1,7 +1,7 @@
 /**
  * Browser error reporting.
  *
- * Opt-in and off by default: without `VITE_SENTRY_DSN` baked in at build time
+ * Opt-out — on wherever a DSN is configured. Without `VITE_SENTRY_DSN` at build time
  * nothing initialises and the bundle makes no request to Sentry. `initTelemetry`
  * is safe to call more than once and safe to call when reporting is disabled.
  *
@@ -72,7 +72,23 @@ const HOME_PATH_PATTERNS = [
 ];
 
 const SENSITIVE_KEY_PATTERN =
-  /password|secret|token|authorization|cookie|jwt|api[-_ ]?key|dsn|pepper|private[-_]?key|hub[-_]user/i;
+  /password|secret|token|authorization|cookie|jwt|api[-_ ]?key|dsn|pepper|private[-_]?key|signature/i;
+
+// Keys that name a PERSON rather than carrying a credential. No value pattern
+// can ever match these — a username is just a word — so the key is the only
+// signal, the same reason we drop `server_name`. This matters behind CI-Hub's
+// Traefik forward-auth: the SDK captures headers that ARRIVED, so a
+// proxy-injected `x-ci-hub-user` reaches the event with no reference in our
+// code at all.
+//
+// Anchored on purpose: `user-agent`, `user_id` and `owner_id` are diagnostic
+// signal worth keeping, and a naive /user|owner/ would eat all three.
+const IDENTITY_KEY_PATTERN = /(?:^|[-_])user$|(?:^|[-_])owner$|username|email|forwarded|^remote-/i;
+
+/** Single predicate so credential and identity coverage cannot diverge. */
+function isSensitiveKey(key: string): boolean {
+  return SENSITIVE_KEY_PATTERN.test(key) || IDENTITY_KEY_PATTERN.test(key);
+}
 
 const MAX_STRING_LENGTH = 8000;
 
@@ -111,7 +127,7 @@ export function scrubValue(value: unknown, depth = 0): unknown {
     const result: Record<string, unknown> = {};
 
     for (const [key, nested] of Object.entries(value)) {
-      result[key] = SENSITIVE_KEY_PATTERN.test(key) ? '[Filtered]' : scrubValue(nested, depth + 1);
+      result[key] = isSensitiveKey(key) ? '[Filtered]' : scrubValue(nested, depth + 1);
     }
 
     return result;
@@ -144,13 +160,19 @@ function scrubBreadcrumb(breadcrumb: Sentry.Breadcrumb): void {
     return;
   }
 
-  for (const [key, value] of Object.entries(breadcrumb.data)) {
+  // Pass the whole object, not each value: `scrubValue` only applies the
+  // sensitive-KEY check while walking an object's own entries, so calling it
+  // per-value let a bare `data.token` through — the value alone matches no
+  // secret pattern. Same shape as the request-headers handling below.
+  const data = scrubValue(breadcrumb.data) as Record<string, unknown>;
+
+  for (const [key, value] of Object.entries(data)) {
     if (typeof value === 'string' && URL_VALUED_KEYS.has(key)) {
-      breadcrumb.data[key] = scrubUrl(scrubString(value));
-    } else {
-      breadcrumb.data[key] = scrubValue(value);
+      data[key] = scrubUrl(value);
     }
   }
+
+  breadcrumb.data = data;
 }
 
 export function scrubBrowserEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent | null {
@@ -281,7 +303,13 @@ export async function initTelemetry(): Promise<void> {
 }
 
 export function captureException(error: unknown, context?: Record<string, unknown>): void {
-  if (!initialized) {
+  // `DSN` first, and deliberately not just `initialized`: the latter is a
+  // runtime `let`, so `Sentry.withScope` below stays statically reachable and
+  // drags the whole SDK back into a DSN-less bundle the moment this function
+  // gains a caller. Today it has none, which is the only reason the build
+  // measures 0 bytes without a DSN — this guard makes that hold on purpose
+  // rather than by luck. (CI-WebXR-Time-Machine hit exactly this.)
+  if (!DSN || !initialized) {
     return;
   }
 

@@ -1,11 +1,26 @@
 # Error reporting (Sentry)
 
-CI-Server can report crashes to [Sentry](https://sentry.io). It is **opt-in and
-off by default**: with no DSN configured, no Sentry code initialises and no
-component makes an outbound connection.
+CI-Server reports crashes to [Sentry](https://sentry.io). It is **opt-out**: on
+any build configured with a DSN, reporting is **on by default**, and the user
+turns it off with the **Share crash reports** toggle in the app store (or
+`CI_TELEMETRY=off` directly).
 
-This is the reference implementation for the rest of the first-party fleet —
-CI-Planning and CI-Import-Tools follow the same env contract.
+Two statements are both true here and easy to conflate:
+
+- **Configured with a DSN → reporting is on** unless the user turns it off. That
+  is the shipped appliance: release images carry a DSN.
+- **No DSN → nothing initialises**, and no component makes an outbound
+  connection. That is a source checkout, a local `make dev`, or any build made
+  without `SENTRY_DSN`. It is the absence of configuration, not a privacy
+  setting.
+
+So "opt-out" describes what a user of the appliance experiences. It does not
+mean a DSN-less build quietly reports — it cannot.
+
+This is the reference implementation for the rest of the first-party fleet. The
+same env contract is implemented in CI-Planning, CI-Import-Tools, CI-Hermes,
+CI-OpenClaw, CI-Spellbook, CI-WebXR-Time-Machine and
+CI-Spatial-Companion-WebXR.
 
 ## Privacy posture
 
@@ -148,7 +163,7 @@ To confirm reporting is genuinely inert without a DSN, start the API with no
 | Path | Role |
 |---|---|
 | `backend/apps/api/src/instrument.ts` | `Sentry.init`; must stay the first import in `main.ts` |
-| `backend/apps/api/src/common/telemetry/settings.ts` | Resolves the opt-in gate from env |
+| `backend/apps/api/src/common/telemetry/settings.ts` | Resolves the opt-out gate from env |
 | `backend/apps/api/src/common/filters/GlobalExceptionsFilter.ts` | Captures unexpected request failures (not 4xx) |
 | `backend/apps/api/src/application.ts` | Crash handlers capture + flush before `process.exit` |
 | `frontend/apps/web/src/main.tsx` | Calls `initTelemetry()` before render |

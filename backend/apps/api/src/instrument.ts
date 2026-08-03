@@ -3,7 +3,8 @@
  * Node internals on init and instrumentation applied after the app modules are
  * loaded misses everything they set up at import time.
  *
- * Reporting is opt-in: with no `SENTRY_DSN` this module initialises nothing and
+ * Reporting is opt-out — on wherever a DSN is configured, off when the user
+ * says so. With no `SENTRY_DSN` this module initialises nothing and
  * the process makes no outbound connection. See `common/telemetry/settings.ts`
  * for the kill switches.
  */
@@ -40,6 +41,12 @@ if (telemetry.enabled && telemetry.dsn) {
     sendDefaultPii: false,
     // The machine hostname identifies the household as surely as a home path.
     includeServerName: false,
+    // Off by default in @sentry/node today — the localVariables integration
+    // bails without it — but stated explicitly so a future default flip can't
+    // start uploading frame locals, which on this appliance are memory rows,
+    // note bodies and message text. Mirrors include_local_variables=False in
+    // the Python services.
+    includeLocalVariables: false,
     integrations: (defaults) =>
       defaults.filter((integration) => !MANUALLY_HANDLED_INTEGRATIONS.has(integration.name)),
     beforeSend: scrubEvent,

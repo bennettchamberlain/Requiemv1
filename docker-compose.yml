@@ -22,7 +22,8 @@ services:
       - hbpe-models:/app/models
       - hbpe-corpus:/app/data
     environment:
-      # Error reporting is opt-in — an unset DSN means the service never
+      # Error reporting is opt-out: on wherever a DSN is set. An unset DSN means
+      # there is nothing configured, so the service never
       # contacts Sentry. CI_TELEMETRY=off or CI_LOCAL_ONLY=true disable it even
       # when a DSN is present. See docs/operations/error-reporting.md.
       SENTRY_DSN: ${SENTRY_DSN_HBPE:-}
@@ -72,7 +73,7 @@ services:
     extra_hosts:
       - host.docker.internal:host-gateway
     environment:
-      # Opt-in error reporting; see the note on hbpe-service above.
+      # Opt-out error reporting; see the note on hbpe-service above.
       SENTRY_DSN: ${SENTRY_DSN_SUMMARY:-}
       SENTRY_ENV: ${SENTRY_ENV:-}
       CI_TELEMETRY: ${CI_TELEMETRY:-}
