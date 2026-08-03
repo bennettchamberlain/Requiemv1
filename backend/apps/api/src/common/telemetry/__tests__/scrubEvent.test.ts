@@ -1,6 +1,7 @@
 import type { ErrorEvent } from '@sentry/nestjs';
 
 import { scrubEvent, scrubString } from '../scrubEvent';
+import { MAX_STRING_LENGTH, SCRUB_CASES } from '../scrubFixtures';
 
 describe('scrubString', () => {
   it('redacts bearer tokens', () => {
@@ -206,5 +207,27 @@ describe('scrubEvent — CI-Hub identity header', () => {
     const event = { request: { headers: { location: '/memory?search=private' } } } as unknown as ErrorEvent;
 
     expect(scrubEvent(event)!.request!.headers!.location).toBe('/memory');
+  });
+});
+
+describe('shared scrub fixtures', () => {
+  // The same list is exercised by the web bundle's suite. If a rule is added
+  // here but not there (or vice versa) the copies have drifted.
+  it.each(SCRUB_CASES.map((c) => [c.name, c] as const))('%s', (_name, testCase) => {
+    const actual = scrubString(testCase.input);
+
+    if (testCase.expected !== undefined) {
+      expect(actual).toBe(testCase.expected);
+    }
+
+    for (const forbidden of testCase.mustNotContain ?? []) {
+      expect(actual).not.toContain(forbidden);
+    }
+  });
+
+  it('truncates at the shared limit', () => {
+    expect(scrubString('a'.repeat(MAX_STRING_LENGTH + 1000))).toHaveLength(
+      MAX_STRING_LENGTH + '… [truncated]'.length,
+    );
   });
 });

@@ -1,7 +1,8 @@
 import type { ErrorEvent } from '@sentry/react';
 import { describe, expect, it } from 'vitest';
 
-import { scrubBrowserEvent, scrubUrl, shouldDropEvent } from './telemetry';
+import { scrubBrowserEvent, scrubString, scrubUrl, shouldDropEvent } from './telemetry';
+import { MAX_STRING_LENGTH, SCRUB_CASES } from './telemetryScrubFixtures';
 
 const event = (partial: Partial<ErrorEvent>) => partial as ErrorEvent;
 
@@ -138,5 +139,44 @@ describe('scrubBrowserEvent — leaks confirmed by adversarial review', () => {
     expect(scrubbed!.message).not.toContain('sk-live-123456');
     expect(scrubbed!.exception!.values![0]!.value).not.toContain('eyJhbGciOiJIUzI1NiJ9');
     expect((scrubbed!.extra as Record<string, unknown>).password).toBe('[Filtered]');
+  });
+});
+
+describe('shared scrub fixtures — parity with the backend scrubber', () => {
+  // The identical list lives at
+  // backend/apps/api/src/common/telemetry/scrubFixtures.ts and is run by that
+  // suite too. The browser copy originally shipped with none of these rules.
+  it.each(SCRUB_CASES.map((c) => [c.name, c] as const))('%s', (_name, testCase) => {
+    const actual = scrubString(testCase.input);
+
+    if (testCase.expected !== undefined) {
+      expect(actual).toBe(testCase.expected);
+    }
+
+    for (const forbidden of testCase.mustNotContain ?? []) {
+      expect(actual).not.toContain(forbidden);
+    }
+  });
+
+  it('truncates at the shared limit', () => {
+    expect(scrubString('a'.repeat(MAX_STRING_LENGTH + 1000))).toHaveLength(
+      MAX_STRING_LENGTH + '… [truncated]'.length,
+    );
+  });
+
+  it('the two fixture files have not drifted', async () => {
+    const [fs, path] = await Promise.all([import('node:fs/promises'), import('node:path')]);
+    const here = path.resolve(__dirname, 'telemetryScrubFixtures.ts');
+    const backend = path.resolve(
+      __dirname,
+      '../../../../../backend/apps/api/src/common/telemetry/scrubFixtures.ts',
+    );
+
+    const [a, b] = await Promise.all([fs.readFile(here, 'utf8'), fs.readFile(backend, 'utf8')]);
+
+    // The copy carries one extra header comment; the case list must match.
+    const cases = (source: string) => source.slice(source.indexOf('export interface ScrubCase'));
+
+    expect(cases(a)).toBe(cases(b));
   });
 });
