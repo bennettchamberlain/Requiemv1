@@ -53,7 +53,7 @@ export class PersonService {
     if (linkedWhere) {
       const existing = await this.personRepository.findOne({ where: linkedWhere });
       if (existing) {
-        return PersonEntity.toEgressType(existing);
+        return this.resolveTombstone(existing);
       }
     }
 
@@ -81,7 +81,7 @@ export class PersonService {
       if (linkedWhere && (err as { code?: string })?.code === '23505') {
         const existing = await this.personRepository.findOne({ where: linkedWhere });
         if (existing) {
-          return PersonEntity.toEgressType(existing);
+          return this.resolveTombstone(existing);
         }
       }
 
@@ -166,8 +166,26 @@ export class PersonService {
   }
 
   /**
+   * A linked-key hit on a merge tombstone must resolve to the CANONICAL person
+   * — otherwise a re-sync of the merged-away source re-attaches its data to a
+   * hidden entity. Single hop: merges always point tombstones at a live row.
+   */
+  private async resolveTombstone(entity: PersonEntity): Promise<Person> {
+    if (entity.mergedIntoEntityId == null) {
+      return PersonEntity.toEgressType(entity);
+    }
+
+    const canonical = await this.personRepository.findOne({
+      where: { id: entity.mergedIntoEntityId },
+    });
+
+    return PersonEntity.toEgressType(canonical ?? entity);
+  }
+
+  /**
    * Resolve each built entity to its canonical persisted row (freshly inserted or
-   * pre-existing under the same linked key), in input order. One SELECT.
+   * pre-existing under the same linked key), in input order. One SELECT (plus one
+   * more when any resolved row is a merge tombstone, to follow the pointers).
    */
   private async hydrateInInputOrder(
     context: UserServiceContext,
@@ -202,26 +220,68 @@ export class PersonService {
         .map((row) => [`${row.linkedTable} ${row.linkedId}`, row]),
     );
 
-    return entities.map((entity) => {
-      const linkedKey =
-        entity.linkedTable && entity.linkedId ? `${entity.linkedTable} ${entity.linkedId}` : null;
-      const row = byId.get(entity.id) ?? (linkedKey ? byLinked.get(linkedKey) : undefined) ?? entity;
+    const resolved = entities.map(
+      (entity) =>
+        byId.get(entity.id) ??
+        (entity.linkedTable && entity.linkedId
+          ? byLinked.get(`${entity.linkedTable} ${entity.linkedId}`)
+          : undefined) ??
+        entity,
+    );
 
-      return PersonEntity.toEgressType(row);
-    });
+    // Linked-key hits on merge tombstones must resolve to the canonical rows
+    // (one extra SELECT for the pointer targets, only when any exist).
+    const canonicalIds = [
+      ...new Set(resolved.map((row) => row.mergedIntoEntityId).filter((id): id is string => id != null)),
+    ];
+
+    const canonicalById = new Map<string, PersonEntity>();
+    if (canonicalIds.length > 0) {
+      const canonicalRows = await this.personRepository.find({ where: { id: In(canonicalIds) } });
+      for (const row of canonicalRows) {
+        canonicalById.set(row.id, row);
+      }
+    }
+
+    return resolved.map((row) =>
+      PersonEntity.toEgressType(
+        row.mergedIntoEntityId != null ? (canonicalById.get(row.mergedIntoEntityId) ?? row) : row,
+      ),
+    );
   }
 
-  async findAll(context: ServiceContext): Promise<Person[]> {
-    const entities = await this.personRepository.find({
-      where: {
-        entityType: 'Person',
-        ...(context.userId !== SYSTEM_USER && {
-          user: {
-            id: context.userId,
-          },
+  /**
+   * List people, excluding merge tombstones and deactivated rows. `query`
+   * filters by display name or structured first/last name (ILIKE substring) —
+   * the people index page's search box.
+   */
+  async findAll(context: ServiceContext, options: { query?: string } = {}): Promise<Person[]> {
+    let qb = this.personRepository
+      .createQueryBuilder('person')
+      .where('person.entity_type = :entityType', { entityType: 'Person' })
+      .andWhere('person.is_active IS DISTINCT FROM FALSE')
+      .andWhere('person.merged_into_entity_id IS NULL');
+
+    if (context.userId !== SYSTEM_USER) {
+      qb = qb.andWhere('person.owner_user_id = :userId', { userId: context.userId });
+    }
+
+    const query = options.query?.trim();
+    if (query) {
+      qb = qb.andWhere(
+        new Brackets((outer) => {
+          outer
+            .where('person.name ILIKE :q', { q: `%${query}%` })
+            .orWhere(`person.properties->>'first_name' ILIKE :q`, { q: `%${query}%` })
+            .orWhere(`person.properties->>'last_name' ILIKE :q`, { q: `%${query}%` });
         }),
-      },
-    });
+      );
+    }
+
+    const entities = await qb
+      .orderBy(`NULLIF(btrim(COALESCE(person.name, '')), '')`, 'ASC', 'NULLS LAST')
+      .addOrderBy('person.created_at', 'DESC')
+      .getMany();
 
     return entities.map((entity) => PersonEntity.toEgressType(entity));
   }
@@ -255,7 +315,9 @@ export class PersonService {
       .createQueryBuilder('person')
       .select('person.id', 'id')
       .where('person.entity_type = :entityType', { entityType: 'Person' })
-      .andWhere('person.owner_user_id = :userId', { userId: context.userId });
+      .andWhere('person.owner_user_id = :userId', { userId: context.userId })
+      .andWhere('person.is_active IS DISTINCT FROM FALSE')
+      .andWhere('person.merged_into_entity_id IS NULL');
 
     if (options.startTime) {
       query = query.andWhere('person.created_at >= :startTime', { startTime: options.startTime });
@@ -311,6 +373,63 @@ export class PersonService {
     );
 
     if (result.affected === 0) {
+      return null;
+    }
+
+    await this.eventService.send(PersonUpdatedEvent, {
+      personId: id,
+    });
+
+    return this.findById(context, id);
+  }
+
+  /**
+   * Partial update for the structured-person editor: merges `propertiesPatch`
+   * into the existing properties JSONB (single-statement `properties || patch`,
+   * so concurrent patches to different keys don't clobber each other) and
+   * updates name/description only when provided. A patch key set to null
+   * clears that property.
+   */
+  async patch(
+    context: ServiceContext,
+    id: string,
+    data: { name?: string; description?: string; propertiesPatch?: Record<string, unknown> },
+  ): Promise<Person | null> {
+    const set: Record<string, unknown> = {};
+    if (data.name !== undefined) {
+      set.name = data.name;
+    }
+
+    if (data.description !== undefined) {
+      set.description = data.description;
+    }
+
+    if (data.propertiesPatch && Object.keys(data.propertiesPatch).length > 0) {
+      set.properties = () => `properties || :propertiesPatch::jsonb`;
+    }
+
+    if (Object.keys(set).length === 0) {
+      return this.findById(context, id);
+    }
+
+    let qb = this.personRepository
+      .createQueryBuilder()
+      .update()
+      .set(set)
+      .where('entity_id = :id', { id })
+      .andWhere(`entity_type = 'Person'`);
+
+    if (context.userId !== SYSTEM_USER) {
+      qb = qb.andWhere('owner_user_id = :userId', { userId: context.userId });
+    }
+
+    if (set.properties) {
+      qb = qb.setParameter('propertiesPatch', JSON.stringify(data.propertiesPatch));
+    }
+
+    const result = await qb.execute();
+
+    if ((result.affected ?? 0) === 0) {
       return null;
     }
 

@@ -71,6 +71,13 @@ type ActivityCountsType {
   total: Int!
 }
 
+input AddPersonIdentifierInput {
+  kind: String!
+  label: String
+  personId: ID!
+  value: String!
+}
+
 type AnswerConnection implements Connection {
   edges: [AnswerEdge!]!
   pageInfo: PageInfo!
@@ -437,10 +444,24 @@ type CreateNotePayload {
 }
 
 input CreatePersonInput {
+  avatarUrl: String
+  birthDate: String
+  city: String
+  country: String
   description: String
+  emails: [String!]
+  firstName: String
+  gender: String
+  lastName: String
   linkedId: String
   linkedTable: String
+  middleName: String
   name: String!
+  phones: [String!]
+  postalCode: String
+  region: String
+  streetAddress: String
+  streetAddress2: String
 }
 
 type CreatePersonPayload {
@@ -785,6 +806,16 @@ type KnownPlaceType {
   source: String!
 }
 
+input MergePeopleInput {
+  sourceIds: [ID!]!
+  targetId: ID!
+}
+
+type MergePeoplePayload {
+  person: PersonType
+  success: Boolean!
+}
+
 type MessageConnection implements Connection {
   edges: [MessageEdge!]!
   pageInfo: PageInfo!
@@ -804,6 +835,7 @@ type MessageType implements Node {
 }
 
 type Mutation {
+  addPersonIdentifier(input: AddPersonIdentifierInput!): [PersonIdentifierType!]!
   bulkIngestGraph(input: BulkGraphInput!): BulkGraphPayload!
   bulkIngestItemRelationships(input: [ItemRelationshipInput!]!): BulkItemRelationshipResult!
   createAnswer(input: CreateAnswerInput!): AnswerType!
@@ -853,9 +885,11 @@ type Mutation {
 
   """Mark a summary as seen"""
   markSummaryAsSeen(id: ID!): SummaryType
+  mergePeople(input: MergePeopleInput!): MergePeoplePayload!
   removeAnswer(id: String!): Boolean!
   removeContent(id: String!): Boolean!
   removeEvent(id: String!): Boolean!
+  removePersonIdentifier(input: RemovePersonIdentifierInput!): [PersonIdentifierType!]!
   removePlace(id: String!): Boolean!
   removeQuestion(id: String!): Boolean!
   setSavedSearchSharing(input: SetSavedSearchSharingInput!): UpdateSavedSearchPayload!
@@ -934,21 +968,48 @@ type PersonConnection implements Connection {
   totalCount: Int!
 }
 
+type PersonDuplicateGroupType {
+  people: [PersonType!]!
+  reason: String!
+  value: String!
+}
+
 type PersonEdge implements Edge {
   cursor: String!
   node: PersonType!
 }
 
+type PersonIdentifierType {
+  isPrimary: Boolean!
+  kind: String!
+  label: String
+  rawValue: String
+  source: String
+  value: String!
+  verifiedAt: DateTime
+}
+
+type PersonInteractionStatsType {
+  communicationCount: Int!
+  eventCount: Int!
+  lastInteractionAt: DateTime
+}
+
 type PersonType implements Node & Taggable {
   address: String
   avatarUrl: String
+  birthDate: String
   city: String
   country: String
   description: String
   firstName: String
   gender: String
   id: ID!
+  identifiers: [PersonIdentifierType!]!
+  interactionStats: PersonInteractionStatsType!
+  isSelf: Boolean!
   lastName: String
+  middleName: String
   name: String
   postalCode: String
   region: String
@@ -1114,8 +1175,9 @@ type Query {
   notes(after: String, before: String, first: Int, last: Int): NoteConnection!
   oAuthCallbackUrl: String!
   pairingStatus(pairingToken: String!, pollKey: String!): PairingStatusPayload!
-  people(after: String, before: String, first: Int, last: Int): PersonConnection!
+  people(after: String, before: String, first: Int, last: Int, query: String): PersonConnection!
   person(id: ID!): PersonType
+  personDuplicates(limit: Int): [PersonDuplicateGroupType!]!
   place(id: ID!): PlaceType
   places(after: String, before: String, first: Int, last: Int, query: String): PlaceConnection!
   placesNear(latitude: Float!, limit: Int, longitude: Float!, radiusMeters: Float): [PlaceNearType!]!
@@ -1180,6 +1242,12 @@ type RelationshipType implements Node {
   toNodeId: ID!
   toNodeType: String!
   type: String!
+}
+
+input RemovePersonIdentifierInput {
+  kind: String!
+  personId: ID!
+  value: String!
 }
 
 type SavedSearchConnection implements Connection {
@@ -1529,9 +1597,21 @@ type UpdateNotePayload {
 }
 
 input UpdatePersonInput {
+  avatarUrl: String
+  birthDate: String
+  city: String
+  country: String
   description: String
+  firstName: String
+  gender: String
   id: String!
-  name: String!
+  lastName: String
+  middleName: String
+  name: String
+  postalCode: String
+  region: String
+  streetAddress: String
+  streetAddress2: String
 }
 
 type UpdatePersonPayload {
