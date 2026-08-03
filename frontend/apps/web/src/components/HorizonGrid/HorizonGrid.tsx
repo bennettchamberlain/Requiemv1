@@ -55,6 +55,20 @@ const AXIS_HOURS = [0, 4, 8, 12, 16, 20];
  */
 const DROP_SNAP_MINUTES = 15;
 
+/** Unsnapped instant for a ratio across a day row. Zero when the ratio is unusable. */
+function rawInstant(dayStart: Date, ratio: number): Date {
+  const clamped = Number.isFinite(ratio) ? Math.max(0, Math.min(1, ratio)) : 0;
+
+  return new Date(dayStart.getTime() + clamped * MINUTES_PER_DAY * 60_000);
+}
+
+/** Round an instant to the drop grain. */
+function snapInstant(instant: Date): Date {
+  const grainMs = DROP_SNAP_MINUTES * 60_000;
+
+  return new Date(Math.round(instant.getTime() / grainMs) * grainMs);
+}
+
 /**
  * Local instant for a drop at `ratio` across a day row, snapped to the grain.
  *
@@ -68,6 +82,52 @@ function dropInstant(dayStart: Date, ratio: number): Date {
   const snapped = Math.round(raw / DROP_SNAP_MINUTES) * DROP_SNAP_MINUTES;
 
   return new Date(dayStart.getTime() + Math.min(snapped, MINUTES_PER_DAY - DROP_SNAP_MINUTES) * 60_000);
+}
+
+/** Drag payload for moving an already-committed event. */
+export const EVENT_DRAG_TYPE = 'application/x-ci-event';
+
+interface EventDragPayload {
+  id: string;
+  /** Milliseconds between the event's real start and where the user grabbed it. */
+  grabOffsetMs: number;
+}
+
+/**
+ * Where a dragged event should now start.
+ *
+ * Moves by the delta between grab point and drop point rather than snapping the
+ * event's start to the cursor. Grabbing the middle of a two-hour block and
+ * dropping it on Thursday afternoon should shift it, not make it begin under the
+ * pointer — and for a chip that is only the clipped tail of an overnight event,
+ * a delta is the sole interpretation that does not teleport it a day.
+ */
+function movedStart(dayStart: Date, ratio: number, grabOffsetMs: number): Date {
+  return snapInstant(new Date(rawInstant(dayStart, ratio).getTime() - grabOffsetMs));
+}
+
+/** True when the event is a mirror of a row owned by an external calendar. */
+function isExternallyOwned(event: ScheduleEvent): boolean {
+  return Boolean(event.sourceSystem);
+}
+
+/** Read a drag payload back, tolerating anything that is not ours. */
+function parseEventDrag(raw: string): EventDragPayload | null {
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<EventDragPayload>;
+
+    if (typeof parsed.id !== 'string' || !Number.isFinite(parsed.grabOffsetMs)) {
+      return null;
+    }
+
+    return { id: parsed.id, grabOffsetMs: parsed.grabOffsetMs as number };
+  } catch {
+    return null;
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -232,9 +292,18 @@ interface DayRowProps {
   isToday: boolean;
   nowPct: number | null;
   onDropCandidate?: (candidateId: string, startTime: Date) => void;
+  onMoveEvent?: (eventId: string, startTime: Date) => void;
 }
 
-function DayRow({ dayStart, events, lookup, isToday, nowPct, onDropCandidate }: DayRowProps) {
+function DayRow({
+  dayStart,
+  events,
+  lookup,
+  isToday,
+  nowPct,
+  onDropCandidate,
+  onMoveEvent,
+}: DayRowProps) {
   /** Where a dragged candidate would land, as a percentage across the row. */
   const [dropPct, setDropPct] = useState<number | null>(null);
   const spans = events
@@ -260,12 +329,26 @@ function DayRow({ dayStart, events, lookup, isToday, nowPct, onDropCandidate }: 
   };
 
   const isDropTarget = dropPct !== null;
+  const acceptsDrops = Boolean(onDropCandidate ?? onMoveEvent);
 
   /** Ratio across the lane for a pointer event, from the lane's own box. */
   const ratioFor = (event: { clientX: number; currentTarget: HTMLElement }): number => {
     const box = event.currentTarget.getBoundingClientRect();
 
     return box.width === 0 ? 0 : (event.clientX - box.left) / box.width;
+  };
+
+  /** Which payload is in flight, and whether this row can take it. */
+  const draggedKind = (types: readonly string[]): 'candidate' | 'event' | null => {
+    if (onDropCandidate && types.includes(CANDIDATE_DRAG_TYPE)) {
+      return 'candidate';
+    }
+
+    if (onMoveEvent && types.includes(EVENT_DRAG_TYPE)) {
+      return 'event';
+    }
+
+    return null;
   };
 
   return (
@@ -290,11 +373,13 @@ function DayRow({ dayStart, events, lookup, isToday, nowPct, onDropCandidate }: 
       <div
         className="relative min-w-0 flex-1"
         onDragOver={
-          onDropCandidate
+          acceptsDrops
             ? (e) => {
-                // Only claim the drop when a candidate is what's being dragged;
-                // preventDefault is what marks this element as a valid target.
-                if (!e.dataTransfer.types.includes(CANDIDATE_DRAG_TYPE)) {
+                // Only claim the drop for payloads this row can handle;
+                // preventDefault is what marks the element as a valid target.
+                const kind = draggedKind(e.dataTransfer.types);
+
+                if (!kind) {
                   return;
                 }
 
@@ -306,17 +391,33 @@ function DayRow({ dayStart, events, lookup, isToday, nowPct, onDropCandidate }: 
         }
         onDragLeave={() => setDropPct(null)}
         onDrop={
-          onDropCandidate
+          acceptsDrops
             ? (e) => {
-                const id = e.dataTransfer.getData(CANDIDATE_DRAG_TYPE);
                 setDropPct(null);
 
-                if (!id) {
+                const kind = draggedKind(e.dataTransfer.types);
+
+                if (!kind) {
                   return;
                 }
 
                 e.preventDefault();
-                onDropCandidate(id, dropInstant(dayStart, ratioFor(e)));
+
+                if (kind === 'candidate') {
+                  const id = e.dataTransfer.getData(CANDIDATE_DRAG_TYPE);
+
+                  if (id) {
+                    onDropCandidate?.(id, dropInstant(dayStart, ratioFor(e)));
+                  }
+
+                  return;
+                }
+
+                const payload = parseEventDrag(e.dataTransfer.getData(EVENT_DRAG_TYPE));
+
+                if (payload) {
+                  onMoveEvent?.(payload.id, movedStart(dayStart, ratioFor(e), payload.grabOffsetMs));
+                }
               }
             : undefined
         }
@@ -364,13 +465,50 @@ function DayRow({ dayStart, events, lookup, isToday, nowPct, onDropCandidate }: 
             const isNarrow = widthPct < NARROW_SPAN_PCT;
             const showSpilledLabel = isNarrow && labelRoom(index) > NARROW_SPAN_PCT;
 
+            const movable = Boolean(onMoveEvent);
+
             return (
               <Tooltip key={`${event.id}-${dayStart.toDateString()}`}>
                 <Tooltip.Trigger asChild>
                   <div
+                    draggable={movable}
+                    onDragStart={
+                      movable
+                        ? (e) => {
+                            // Measure against the chip's own box rather than
+                            // walking up to the lane: currentTarget is
+                            // unambiguous, whereas the ancestor chain depends on
+                            // how the tooltip wrapper happens to nest.
+                            const box = e.currentTarget.getBoundingClientRect();
+                            const withinChip =
+                              box.width > 0 ? (e.clientX - box.left) / box.width : 0;
+
+                            // The chip covers [leftPct, leftPct + widthPct) of
+                            // the day, so the grab point in day-minutes follows
+                            // without needing the lane's width at all.
+                            const grabDayRatio =
+                              (leftPct + Math.max(0, Math.min(1, withinChip)) * widthPct) / 100;
+                            const grabbedAt = rawInstant(dayStart, grabDayRatio);
+
+                            // An all-day event has no time to preserve — moving
+                            // it is a change of date, so the offset is zero.
+                            const grabOffsetMs = event.isAllDay
+                              ? 0
+                              : grabbedAt.getTime() - new Date(event.startTime).getTime();
+
+                            e.dataTransfer.setData(
+                              EVENT_DRAG_TYPE,
+                              JSON.stringify({ id: event.id, grabOffsetMs }),
+                            );
+                            e.dataTransfer.setData('text/plain', event.title);
+                            e.dataTransfer.effectAllowed = 'move';
+                          }
+                        : undefined
+                    }
                     className={cn(
                       'absolute top-0 z-[5] h-7 whitespace-nowrap border bg-background text-[11px] leading-[26px]',
                       'border-border text-foreground shadow-sm',
+                      movable && 'cursor-grab active:cursor-grabbing hover:border-primary/60',
                       isNarrow ? 'overflow-visible' : 'overflow-hidden px-2',
                       event.status === 'tentative' && 'border-dashed bg-background/60 text-muted-foreground',
                       continuesFrom ? 'rounded-l-none border-l-0' : 'rounded-l-md',
@@ -401,6 +539,15 @@ function DayRow({ dayStart, events, lookup, isToday, nowPct, onDropCandidate }: 
                     </p>
                     {event.locationName && <p className="text-[10px] opacity-60">{event.locationName}</p>}
                     {event.status === 'tentative' && <p className="text-[10px] opacity-60">Tentative</p>}
+
+                    {/* Say plainly where a move does and does not reach. */}
+                    {movable && isExternallyOwned(event) && (
+                      <p className="border-t border-current/20 pt-1 text-[10px] opacity-60">
+                        {event.externalSyncStatus === 'pending'
+                          ? `Moved here — not yet pushed back to ${event.sourceSystem}.`
+                          : `From ${event.sourceSystem}. Moving it here won't change the source.`}
+                      </p>
+                    )}
                   </div>
                 </Tooltip.Content>
               </Tooltip>
@@ -469,6 +616,11 @@ interface HorizonGridProps {
    * read-only — drops are then simply not accepted.
    */
   onDropCandidate?: (candidateId: string, startTime: Date) => void;
+  /**
+   * Called when an already-committed event is dragged to a new time. Omit and
+   * the chips stay put.
+   */
+  onMoveEvent?: (eventId: string, startTime: Date) => void;
   className?: string;
 }
 
@@ -487,6 +639,7 @@ export function HorizonGrid({
   events,
   rhythm,
   onDropCandidate,
+  onMoveEvent,
   className,
 }: HorizonGridProps) {
   const now = new Date();
@@ -526,6 +679,7 @@ export function HorizonGrid({
               isToday={sameLocalDay(dayStart, today)}
               nowPct={sameLocalDay(dayStart, today) ? nowPct : null}
               onDropCandidate={onDropCandidate}
+              onMoveEvent={onMoveEvent}
             />
           );
         })}
@@ -534,4 +688,4 @@ export function HorizonGrid({
   );
 }
 
-export { spanForDay, daypartWeights, rhythmCells, dropInstant, startOfLocalDay, addDays };
+export { spanForDay, daypartWeights, rhythmCells, dropInstant, movedStart, startOfLocalDay, addDays };

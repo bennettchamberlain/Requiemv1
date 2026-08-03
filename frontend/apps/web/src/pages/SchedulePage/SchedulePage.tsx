@@ -5,6 +5,7 @@ import { Breadcrumb, Button, cn } from '@ci/shadcn';
 import { CalendarRange, ChevronLeft, ChevronRight } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
+import { useRescheduleEvent } from '@/api/useRescheduleEvent';
 import { useScheduleCandidates } from '@/api/useScheduleCandidates';
 import { useScheduleService } from '@/api/useScheduleService';
 import { HorizonGrid } from '@/components/HorizonGrid';
@@ -61,6 +62,15 @@ export function SchedulePage() {
       void accept(candidateId, startTime);
     },
     [accept],
+  );
+
+  const rescheduleEvent = useRescheduleEvent(refetch);
+
+  const handleMove = useCallback(
+    (eventId: string, startTime: Date) => {
+      void rescheduleEvent(eventId, startTime);
+    },
+    [rescheduleEvent],
   );
 
   const goBack = useCallback(() => setWeekOffset((offset) => offset - 1), []);
@@ -147,6 +157,7 @@ export function SchedulePage() {
                   events={events}
                   rhythm={rhythm}
                   onDropCandidate={handleDrop}
+                  onMoveEvent={handleMove}
                 />
 
                 {generatedAt ? (

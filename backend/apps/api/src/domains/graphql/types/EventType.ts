@@ -65,6 +65,13 @@ export class EventType implements Node, Taggable {
   @Field(() => ID, { nullable: true })
   sourceId!: string | null;
 
+  @Field(() => String, {
+    nullable: true,
+    description:
+      "'pending' when the local row has been changed here but not pushed back to `sourceSystem`.",
+  })
+  externalSyncStatus!: string | null;
+
   @Field(() => Float, { nullable: true })
   confidenceScore!: number;
 
@@ -102,6 +109,7 @@ export class EventType implements Node, Taggable {
       organizerEntityId: event.organizerEntityId,
       sourceType: event.sourceType,
       sourceSystem: event.sourceSystem,
+      externalSyncStatus: event.externalSyncStatus,
       sourceId: event.sourceId,
       confidenceScore: event.confidenceScore,
       isRecurring: event.isRecurring,

@@ -33,6 +33,7 @@ const EVENTS: ScheduleEvent[] = [
     status: 'confirmed',
     category: 'WORK',
     locationName: null,
+    sourceSystem: 'google_calendar',
   },
   {
     id: 'e2',
@@ -43,6 +44,7 @@ const EVENTS: ScheduleEvent[] = [
     status: 'confirmed',
     category: 'WORK',
     locationName: null,
+    sourceSystem: null,
   },
 ];
 
@@ -121,6 +123,26 @@ function Surface() {
               },
             ]);
           }}
+          onMoveEvent={(id, startTime) =>
+            setEvents((current) =>
+              current.map((e) => {
+                if (e.id !== id) {
+                  return e;
+                }
+
+                const span = e.endTime
+                  ? new Date(e.endTime).getTime() - new Date(e.startTime).getTime()
+                  : 0;
+
+                return {
+                  ...e,
+                  startTime: startTime.toISOString(),
+                  endTime: span ? new Date(startTime.getTime() + span).toISOString() : e.endTime,
+                  externalSyncStatus: e.sourceSystem ? 'pending' : e.externalSyncStatus,
+                };
+              }),
+            )
+          }
         />
       </div>
 

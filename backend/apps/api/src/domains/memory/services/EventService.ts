@@ -267,6 +267,54 @@ export class EventService {
     return result.map((entity) => EventEntity.toEgressType(entity));
   }
 
+  /**
+   * Move an event to a new time, preserving its duration.
+   *
+   * Separate from `update` because a move carries a consequence a generic field
+   * write does not: an event mirrored from an external calendar
+   * (`source_system` set) is only a local copy, and moving it here does NOT
+   * reach the source. Marking it `pending` records that the local row has drifted
+   * ahead of the calendar it came from, so a future sync-back has something to
+   * find (CI-Server-aan) and the UI can say so honestly.
+   *
+   * All-day events ignore the time component: their "when" is a date.
+   */
+  async reschedule(
+    context: ServiceContext,
+    id: string,
+    startTime: Date,
+    endTime?: Date,
+  ): Promise<Event | null> {
+    const event = await this.eventRepository.findOne({
+      where: {
+        id,
+        ...(context.userId !== SYSTEM_USER && { user: { id: context.userId } }),
+      },
+    });
+
+    if (!event) {
+      return null;
+    }
+
+    // Duration is the thing being preserved: a 90-minute meeting dragged to
+    // Thursday is still 90 minutes, even though the caller only names a start.
+    const priorSpanMs =
+      event.endTime && event.startTime ? event.endTime.getTime() - event.startTime.getTime() : 0;
+
+    event.startTime = startTime;
+    event.endTime = endTime ?? (priorSpanMs > 0 ? new Date(startTime.getTime() + priorSpanMs) : null);
+
+    if (event.sourceSystem) {
+      event.externalSyncStatus = 'pending';
+    }
+
+    await this.eventRepository.save(event);
+
+    await this.signallingEventService.send(EventUpdatedEvent, { eventId: event.id });
+
+    return this.findById(context, id);
+  }
+
   async findAll(context: ServiceContext): Promise<Event[]> {
     const result = await this.eventRepository.find({
       where: {

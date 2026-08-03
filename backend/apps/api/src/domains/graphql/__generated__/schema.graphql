@@ -586,6 +586,11 @@ type EventType implements Node & Taggable {
   durationMinutes: Int
   endTime: DateTime
   eventType: String
+
+  """
+  'pending' when the local row has been changed here but not pushed back to `sourceSystem`.
+  """
+  externalSyncStatus: String
   id: ID!
   isAllDay: Boolean
   isRecurring: Boolean
@@ -900,6 +905,11 @@ type Mutation {
   removeEvent(id: String!): Boolean!
   removePlace(id: String!): Boolean!
   removeQuestion(id: String!): Boolean!
+
+  """
+  Move an event to a new time, keeping its duration. Externally-sourced events are moved locally only and marked pending — the change is not pushed to the source calendar.
+  """
+  rescheduleEvent(endTime: DateTime, id: ID!, startTime: DateTime!): EventType
   setSavedSearchSharing(input: SetSavedSearchSharingInput!): UpdateSavedSearchPayload!
 
   """Defer a candidate until a future instant"""

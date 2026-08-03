@@ -17,6 +17,8 @@ const GET_SCHEDULE = gql(`
       status
       category
       locationName
+      sourceSystem
+      externalSyncStatus
     }
     weekForecast(includeToday: true) {
       generatedAt
@@ -46,6 +48,10 @@ export interface ScheduleEvent {
   status: string;
   category: string | null;
   locationName: string | null;
+  /** Connector this came from, or null when it was created here. */
+  sourceSystem?: string | null;
+  /** 'pending' once a local move has drifted ahead of that source. */
+  externalSyncStatus?: string | null;
 }
 
 export interface RhythmCluster {

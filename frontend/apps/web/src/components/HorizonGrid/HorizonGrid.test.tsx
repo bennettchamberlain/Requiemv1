@@ -9,6 +9,7 @@ import {
   daypartWeights,
   rhythmCells,
   dropInstant,
+  movedStart,
   startOfLocalDay,
   addDays,
 } from './HorizonGrid';
@@ -302,6 +303,52 @@ describe('dropInstant — where a dragged suggestion lands', () => {
   });
 });
 
+describe('movedStart — dragging a committed event to a new time', () => {
+  const NOON_OFFSET = 12 * 60 * 60 * 1000;
+
+  it('moves by the delta between grab and drop, not to the cursor', () => {
+    // Grabbed 30 minutes into the event, dropped at 15:00 → starts at 14:30.
+    const grabOffsetMs = 30 * 60 * 1000;
+
+    const at = movedStart(MONDAY, 15 / 24, grabOffsetMs);
+
+    expect(at.getHours()).toBe(14);
+    expect(at.getMinutes()).toBe(30);
+  });
+
+  it('starts the event at the cursor when it was grabbed by its leading edge', () => {
+    const at = movedStart(MONDAY, 0.5, 0);
+
+    expect(at.getHours()).toBe(12);
+    expect(at.getMinutes()).toBe(0);
+  });
+
+  it('snaps the resulting start to the drop grain', () => {
+    const at = movedStart(MONDAY, (9 * 60 + 7) / 1440, 0);
+
+    expect(at.getMinutes() % 15).toBe(0);
+  });
+
+  it('carries the event onto the row it was dropped on', () => {
+    const thursday = addDays(MONDAY, 3);
+
+    expect(movedStart(thursday, 0.5, 0).getDate()).toBe(thursday.getDate());
+  });
+
+  it('walks an event back a day when it is grabbed past its own start', () => {
+    // The clipped tail of an overnight event: the chip begins at local midnight
+    // but the event began the previous evening, so the grab offset exceeds the
+    // drop position and the new start lands on the day before.
+    const at = movedStart(MONDAY, 0.1, NOON_OFFSET);
+
+    expect(at.getTime()).toBeLessThan(MONDAY.getTime());
+  });
+
+  it('falls back to the start of the day on an unusable coordinate', () => {
+    expect(movedStart(MONDAY, Number.NaN, 0).getTime()).toBe(MONDAY.getTime());
+  });
+});
+
 describe('HorizonGrid', () => {
   it('renders one row per day in the window', () => {
     render(<HorizonGrid start={MONDAY} days={7} events={[]} rhythm={[]} />);
@@ -407,6 +454,88 @@ describe('HorizonGrid — dropping a slate candidate', () => {
     stubLaneWidths(container);
 
     dropAt(lanes(container)[0], 500, null);
+
+    expect(onDrop).not.toHaveBeenCalled();
+  });
+
+  it('moves a committed event to the row and time it was dragged to', () => {
+    const onMove = vi.fn();
+    const { container } = render(
+      <HorizonGrid start={MONDAY} days={7} events={[event()]} rhythm={[]} onMoveEvent={onMove} />,
+    );
+    stubLaneWidths(container);
+
+    const evt = createEvent.drop(lanes(container)[3], {
+      dataTransfer: {
+        types: ['application/x-ci-event'],
+        getData: () => JSON.stringify({ id: 'e1', grabOffsetMs: 0 }),
+        setData: () => {},
+        dropEffect: '',
+        effectAllowed: '',
+      },
+    });
+    Object.defineProperty(evt, 'clientX', { value: 500 });
+    fireEvent(lanes(container)[3], evt);
+
+    expect(onMove).toHaveBeenCalledTimes(1);
+    const [id, at] = onMove.mock.calls[0];
+    expect(id).toBe('e1');
+    expect(at.getDate()).toBe(addDays(MONDAY, 3).getDate());
+    expect(at.getHours()).toBe(12);
+  });
+
+  it('makes event chips draggable only when moving is wired up', () => {
+    const { container: fixed } = render(
+      <HorizonGrid start={MONDAY} days={7} events={[event()]} rhythm={[]} />,
+    );
+    expect(fixed.querySelector('[draggable="true"]')).toBeNull();
+
+    const { container: movable } = render(
+      <HorizonGrid start={MONDAY} days={7} events={[event()]} rhythm={[]} onMoveEvent={() => {}} />,
+    );
+    expect(movable.querySelector('[draggable="true"]')).not.toBeNull();
+  });
+
+  it('ignores an event drag whose payload is not ours', () => {
+    const onMove = vi.fn();
+    const { container } = render(
+      <HorizonGrid start={MONDAY} days={7} events={[event()]} rhythm={[]} onMoveEvent={onMove} />,
+    );
+    stubLaneWidths(container);
+
+    const evt = createEvent.drop(lanes(container)[0], {
+      dataTransfer: {
+        types: ['application/x-ci-event'],
+        getData: () => 'not json',
+        setData: () => {},
+        dropEffect: '',
+        effectAllowed: '',
+      },
+    });
+    Object.defineProperty(evt, 'clientX', { value: 500 });
+    fireEvent(lanes(container)[0], evt);
+
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
+  it('does not take an event drop on a grid that only accepts candidates', () => {
+    const onDrop = vi.fn();
+    const { container } = render(
+      <HorizonGrid start={MONDAY} days={7} events={[event()]} rhythm={[]} onDropCandidate={onDrop} />,
+    );
+    stubLaneWidths(container);
+
+    const evt = createEvent.drop(lanes(container)[0], {
+      dataTransfer: {
+        types: ['application/x-ci-event'],
+        getData: () => JSON.stringify({ id: 'e1', grabOffsetMs: 0 }),
+        setData: () => {},
+        dropEffect: '',
+        effectAllowed: '',
+      },
+    });
+    Object.defineProperty(evt, 'clientX', { value: 500 });
+    fireEvent(lanes(container)[0], evt);
 
     expect(onDrop).not.toHaveBeenCalled();
   });

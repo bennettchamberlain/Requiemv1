@@ -206,6 +206,34 @@ export class EventResolver {
     return entities.map((entity) => EventType.toType(entity));
   }
 
+  /**
+   * Move an event on the calendar. Duration is preserved when `endTime` is
+   * omitted, which is what dragging a chip does.
+   */
+  @Mutation(() => EventType, {
+    nullable: true,
+    description:
+      'Move an event to a new time, keeping its duration. Externally-sourced events are moved ' +
+      'locally only and marked pending — the change is not pushed to the source calendar.',
+  })
+  async rescheduleEvent(
+    @Context() context: RequestContext,
+    @Args('id', { type: () => ID }) gid: string,
+    @Args('startTime', { type: () => Date }) startTime: Date,
+    @Args('endTime', { type: () => Date, nullable: true }) endTime?: Date,
+  ): Promise<EventType | null> {
+    if (endTime && endTime < startTime) {
+      throw new BadRequestException('`endTime` must not precede `startTime`');
+    }
+
+    const serviceContext = toServiceContext(context);
+    const id = GlobalUID.parse('event', gid);
+
+    const entity = await this.eventService.reschedule(serviceContext, id, startTime, endTime);
+
+    return entity ? EventType.toType(entity) : null;
+  }
+
   @Query(() => [String], {
     description: 'Distinct event types ("how things happened") present for the user.',
   })
