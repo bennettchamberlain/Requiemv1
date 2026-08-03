@@ -211,17 +211,38 @@ export class PersonService {
     });
   }
 
-  async findAll(context: ServiceContext): Promise<Person[]> {
-    const entities = await this.personRepository.find({
-      where: {
-        entityType: 'Person',
-        ...(context.userId !== SYSTEM_USER && {
-          user: {
-            id: context.userId,
-          },
+  /**
+   * List people, excluding merge tombstones and deactivated rows. `query`
+   * filters by display name or structured first/last name (ILIKE substring) —
+   * the people index page's search box.
+   */
+  async findAll(context: ServiceContext, options: { query?: string } = {}): Promise<Person[]> {
+    let qb = this.personRepository
+      .createQueryBuilder('person')
+      .where('person.entity_type = :entityType', { entityType: 'Person' })
+      .andWhere('person.is_active IS DISTINCT FROM FALSE')
+      .andWhere('person.merged_into_entity_id IS NULL');
+
+    if (context.userId !== SYSTEM_USER) {
+      qb = qb.andWhere('person.owner_user_id = :userId', { userId: context.userId });
+    }
+
+    const query = options.query?.trim();
+    if (query) {
+      qb = qb.andWhere(
+        new Brackets((outer) => {
+          outer
+            .where('person.name ILIKE :q', { q: `%${query}%` })
+            .orWhere(`person.properties->>'first_name' ILIKE :q`, { q: `%${query}%` })
+            .orWhere(`person.properties->>'last_name' ILIKE :q`, { q: `%${query}%` });
         }),
-      },
-    });
+      );
+    }
+
+    const entities = await qb
+      .orderBy(`NULLIF(btrim(COALESCE(person.name, '')), '')`, 'ASC', 'NULLS LAST')
+      .addOrderBy('person.created_at', 'DESC')
+      .getMany();
 
     return entities.map((entity) => PersonEntity.toEgressType(entity));
   }
@@ -255,7 +276,9 @@ export class PersonService {
       .createQueryBuilder('person')
       .select('person.id', 'id')
       .where('person.entity_type = :entityType', { entityType: 'Person' })
-      .andWhere('person.owner_user_id = :userId', { userId: context.userId });
+      .andWhere('person.owner_user_id = :userId', { userId: context.userId })
+      .andWhere('person.is_active IS DISTINCT FROM FALSE')
+      .andWhere('person.merged_into_entity_id IS NULL');
 
     if (options.startTime) {
       query = query.andWhere('person.created_at >= :startTime', { startTime: options.startTime });
@@ -311,6 +334,63 @@ export class PersonService {
     );
 
     if (result.affected === 0) {
+      return null;
+    }
+
+    await this.eventService.send(PersonUpdatedEvent, {
+      personId: id,
+    });
+
+    return this.findById(context, id);
+  }
+
+  /**
+   * Partial update for the structured-person editor: merges `propertiesPatch`
+   * into the existing properties JSONB (single-statement `properties || patch`,
+   * so concurrent patches to different keys don't clobber each other) and
+   * updates name/description only when provided. A patch key set to null
+   * clears that property.
+   */
+  async patch(
+    context: ServiceContext,
+    id: string,
+    data: { name?: string; description?: string; propertiesPatch?: Record<string, unknown> },
+  ): Promise<Person | null> {
+    const set: Record<string, unknown> = {};
+    if (data.name !== undefined) {
+      set.name = data.name;
+    }
+
+    if (data.description !== undefined) {
+      set.description = data.description;
+    }
+
+    if (data.propertiesPatch && Object.keys(data.propertiesPatch).length > 0) {
+      set.properties = () => `properties || :propertiesPatch::jsonb`;
+    }
+
+    if (Object.keys(set).length === 0) {
+      return this.findById(context, id);
+    }
+
+    let qb = this.personRepository
+      .createQueryBuilder()
+      .update()
+      .set(set)
+      .where('entity_id = :id', { id })
+      .andWhere(`entity_type = 'Person'`);
+
+    if (context.userId !== SYSTEM_USER) {
+      qb = qb.andWhere('owner_user_id = :userId', { userId: context.userId });
+    }
+
+    if (set.properties) {
+      qb = qb.setParameter('propertiesPatch', JSON.stringify(data.propertiesPatch));
+    }
+
+    const result = await qb.execute();
+
+    if ((result.affected ?? 0) === 0) {
       return null;
     }
 

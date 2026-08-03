@@ -50,7 +50,7 @@ type Documents = {
     "\n  fragment FileGridItemData on FileType {\n    id\n    filename\n    previewUrl\n    contentType\n    sourceUrl\n    title\n    description\n    size\n    createdAt\n  }\n": typeof types.FileGridItemDataFragmentDoc,
     "\n  fragment ItemGridItemData on ItemType {\n    id\n    name\n    description\n    category\n    brand\n    model\n    currentValue\n    file {\n      id\n      sourceUrl\n    }\n  }\n": typeof types.ItemGridItemDataFragmentDoc,
     "\n  fragment NoteGridItemData on NoteType {\n    id\n    title\n    content\n    createdAt\n  }\n": typeof types.NoteGridItemDataFragmentDoc,
-    "\n  fragment PersonGridItemData on PersonType {\n    id\n    name\n    description\n    avatarUrl\n  }\n": typeof types.PersonGridItemDataFragmentDoc,
+    "\n  fragment PersonGridItemData on PersonType {\n    id\n    name\n    description\n    avatarUrl\n    firstName\n    lastName\n    birthDate\n  }\n": typeof types.PersonGridItemDataFragmentDoc,
     "\n  fragment PlaceGridItemData on PlaceType {\n    id\n    name\n    description\n    properties\n  }\n": typeof types.PlaceGridItemDataFragmentDoc,
     "\n  fragment ThreadGridItemData on ThreadType {\n    id\n    name\n    description\n  }\n": typeof types.ThreadGridItemDataFragmentDoc,
     "\n  mutation CreateConcept($input: CreateConceptInput!) {\n    createConcept(input: $input) {\n      success\n      concept {\n        id\n        name\n        description\n      }\n    }\n  }\n": typeof types.CreateConceptDocument,
@@ -95,7 +95,7 @@ type Documents = {
     "\n  mutation UpdateFileDetail($input: UpdateFileInput!) {\n    updateFile(input: $input) {\n      id\n      title\n      description\n    }\n  }\n": typeof types.UpdateFileDetailDocument,
     "\n  mutation UpdateItemDetail($input: UpdateItemInput!) {\n    updateItem(input: $input) {\n      success\n      item {\n        id\n        name\n        description\n        category\n        brand\n        model\n        currentValue\n      }\n    }\n  }\n": typeof types.UpdateItemDetailDocument,
     "\n  mutation UpdateNoteDetail($input: UpdateNoteInput!) {\n    updateNote(input: $input) {\n      success\n      note {\n        id\n        title\n        content\n      }\n    }\n  }\n": typeof types.UpdateNoteDetailDocument,
-    "\n  mutation UpdatePersonDetail($input: UpdatePersonInput!) {\n    updatePerson(input: $input) {\n      success\n      person {\n        id\n        name\n        description\n      }\n    }\n  }\n": typeof types.UpdatePersonDetailDocument,
+    "\n  mutation UpdatePersonDetail($input: UpdatePersonInput!) {\n    updatePerson(input: $input) {\n      success\n      person {\n        id\n        name\n        description\n        firstName\n        lastName\n        birthDate\n        avatarUrl\n      }\n    }\n  }\n": typeof types.UpdatePersonDetailDocument,
     "\n  mutation UpdatePlaceDetail($input: UpdatePlaceInput!) {\n    updatePlace(input: $input) {\n      id\n      name\n      description\n      properties\n    }\n  }\n": typeof types.UpdatePlaceDetailDocument,
     "\n  query GetSavedSearch($id: ID!) {\n    savedSearch(id: $id) {\n      id\n      name\n      description\n      query\n      entityTypes\n      tags\n      filters {\n        eventTypes\n        startTime\n        endTime\n        sortBy\n        sortOrder\n        connectors\n        people\n        places\n        hasLocation\n        semantic\n      }\n    }\n  }\n": typeof types.GetSavedSearchDocument,
     "\n  fragment TableAnswerRowData on AnswerType {\n    id\n    answer\n    question {\n      id\n      text\n    }\n  }\n": typeof types.TableAnswerRowDataFragmentDoc,
@@ -119,6 +119,9 @@ type Documents = {
     "\n  mutation DeleteNote($input: DeleteByIdInput!) {\n    deleteNote(input: $input) {\n      success\n      deletedId\n    }\n  }\n": typeof types.DeleteNoteDocument,
     "\n  fragment NoteGridItemFragment on NoteType {\n    id\n    title\n    content\n  }\n": typeof types.NoteGridItemFragmentFragmentDoc,
     "\n  query GetNotes($first: Int, $after: String) {\n    notes(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...NoteGridItemFragment\n        }\n      }\n    }\n  }\n": typeof types.GetNotesDocument,
+    "\n  query GetPeople($query: String) {\n    people(query: $query, first: 500) {\n      totalCount\n      edges {\n        node {\n          id\n          name\n          description\n          firstName\n          lastName\n          avatarUrl\n          birthDate\n          isSelf\n          identifiers {\n            kind\n            value\n            label\n          }\n          interactionStats {\n            eventCount\n            communicationCount\n            lastInteractionAt\n          }\n        }\n      }\n    }\n  }\n": typeof types.GetPeopleDocument,
+    "\n  query GetPersonDuplicates {\n    personDuplicates {\n      reason\n      value\n      people {\n        id\n        name\n        description\n        avatarUrl\n        isSelf\n      }\n    }\n  }\n": typeof types.GetPersonDuplicatesDocument,
+    "\n  mutation MergePeople($input: MergePeopleInput!) {\n    mergePeople(input: $input) {\n      success\n      person {\n        id\n        name\n      }\n    }\n  }\n": typeof types.MergePeopleDocument,
     "\n  query GetPerson($id: ID!) {\n    person(id: $id) {\n      id\n      name\n      description\n      tags {\n        id\n        label\n      }\n    }\n  }\n": typeof types.GetPersonDocument,
     "\n  query GetPlace($id: ID!) {\n    place(id: $id) {\n      id\n      name\n      description\n      properties\n      tags {\n        id\n        label\n      }\n    }\n  }\n": typeof types.GetPlaceDocument,
     "\n  query GetPlaces($query: String) {\n    places(query: $query, first: 500) {\n      totalCount\n      edges {\n        node {\n          id\n          name\n          description\n          placeKind\n          latitude\n          longitude\n          parent {\n            id\n            name\n            placeKind\n          }\n          visitStats {\n            visitCount\n            firstVisitAt\n            lastVisitAt\n          }\n        }\n      }\n    }\n  }\n": typeof types.GetPlacesDocument,
@@ -175,7 +178,7 @@ const documents: Documents = {
     "\n  fragment FileGridItemData on FileType {\n    id\n    filename\n    previewUrl\n    contentType\n    sourceUrl\n    title\n    description\n    size\n    createdAt\n  }\n": types.FileGridItemDataFragmentDoc,
     "\n  fragment ItemGridItemData on ItemType {\n    id\n    name\n    description\n    category\n    brand\n    model\n    currentValue\n    file {\n      id\n      sourceUrl\n    }\n  }\n": types.ItemGridItemDataFragmentDoc,
     "\n  fragment NoteGridItemData on NoteType {\n    id\n    title\n    content\n    createdAt\n  }\n": types.NoteGridItemDataFragmentDoc,
-    "\n  fragment PersonGridItemData on PersonType {\n    id\n    name\n    description\n    avatarUrl\n  }\n": types.PersonGridItemDataFragmentDoc,
+    "\n  fragment PersonGridItemData on PersonType {\n    id\n    name\n    description\n    avatarUrl\n    firstName\n    lastName\n    birthDate\n  }\n": types.PersonGridItemDataFragmentDoc,
     "\n  fragment PlaceGridItemData on PlaceType {\n    id\n    name\n    description\n    properties\n  }\n": types.PlaceGridItemDataFragmentDoc,
     "\n  fragment ThreadGridItemData on ThreadType {\n    id\n    name\n    description\n  }\n": types.ThreadGridItemDataFragmentDoc,
     "\n  mutation CreateConcept($input: CreateConceptInput!) {\n    createConcept(input: $input) {\n      success\n      concept {\n        id\n        name\n        description\n      }\n    }\n  }\n": types.CreateConceptDocument,
@@ -220,7 +223,7 @@ const documents: Documents = {
     "\n  mutation UpdateFileDetail($input: UpdateFileInput!) {\n    updateFile(input: $input) {\n      id\n      title\n      description\n    }\n  }\n": types.UpdateFileDetailDocument,
     "\n  mutation UpdateItemDetail($input: UpdateItemInput!) {\n    updateItem(input: $input) {\n      success\n      item {\n        id\n        name\n        description\n        category\n        brand\n        model\n        currentValue\n      }\n    }\n  }\n": types.UpdateItemDetailDocument,
     "\n  mutation UpdateNoteDetail($input: UpdateNoteInput!) {\n    updateNote(input: $input) {\n      success\n      note {\n        id\n        title\n        content\n      }\n    }\n  }\n": types.UpdateNoteDetailDocument,
-    "\n  mutation UpdatePersonDetail($input: UpdatePersonInput!) {\n    updatePerson(input: $input) {\n      success\n      person {\n        id\n        name\n        description\n      }\n    }\n  }\n": types.UpdatePersonDetailDocument,
+    "\n  mutation UpdatePersonDetail($input: UpdatePersonInput!) {\n    updatePerson(input: $input) {\n      success\n      person {\n        id\n        name\n        description\n        firstName\n        lastName\n        birthDate\n        avatarUrl\n      }\n    }\n  }\n": types.UpdatePersonDetailDocument,
     "\n  mutation UpdatePlaceDetail($input: UpdatePlaceInput!) {\n    updatePlace(input: $input) {\n      id\n      name\n      description\n      properties\n    }\n  }\n": types.UpdatePlaceDetailDocument,
     "\n  query GetSavedSearch($id: ID!) {\n    savedSearch(id: $id) {\n      id\n      name\n      description\n      query\n      entityTypes\n      tags\n      filters {\n        eventTypes\n        startTime\n        endTime\n        sortBy\n        sortOrder\n        connectors\n        people\n        places\n        hasLocation\n        semantic\n      }\n    }\n  }\n": types.GetSavedSearchDocument,
     "\n  fragment TableAnswerRowData on AnswerType {\n    id\n    answer\n    question {\n      id\n      text\n    }\n  }\n": types.TableAnswerRowDataFragmentDoc,
@@ -244,6 +247,9 @@ const documents: Documents = {
     "\n  mutation DeleteNote($input: DeleteByIdInput!) {\n    deleteNote(input: $input) {\n      success\n      deletedId\n    }\n  }\n": types.DeleteNoteDocument,
     "\n  fragment NoteGridItemFragment on NoteType {\n    id\n    title\n    content\n  }\n": types.NoteGridItemFragmentFragmentDoc,
     "\n  query GetNotes($first: Int, $after: String) {\n    notes(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...NoteGridItemFragment\n        }\n      }\n    }\n  }\n": types.GetNotesDocument,
+    "\n  query GetPeople($query: String) {\n    people(query: $query, first: 500) {\n      totalCount\n      edges {\n        node {\n          id\n          name\n          description\n          firstName\n          lastName\n          avatarUrl\n          birthDate\n          isSelf\n          identifiers {\n            kind\n            value\n            label\n          }\n          interactionStats {\n            eventCount\n            communicationCount\n            lastInteractionAt\n          }\n        }\n      }\n    }\n  }\n": types.GetPeopleDocument,
+    "\n  query GetPersonDuplicates {\n    personDuplicates {\n      reason\n      value\n      people {\n        id\n        name\n        description\n        avatarUrl\n        isSelf\n      }\n    }\n  }\n": types.GetPersonDuplicatesDocument,
+    "\n  mutation MergePeople($input: MergePeopleInput!) {\n    mergePeople(input: $input) {\n      success\n      person {\n        id\n        name\n      }\n    }\n  }\n": types.MergePeopleDocument,
     "\n  query GetPerson($id: ID!) {\n    person(id: $id) {\n      id\n      name\n      description\n      tags {\n        id\n        label\n      }\n    }\n  }\n": types.GetPersonDocument,
     "\n  query GetPlace($id: ID!) {\n    place(id: $id) {\n      id\n      name\n      description\n      properties\n      tags {\n        id\n        label\n      }\n    }\n  }\n": types.GetPlaceDocument,
     "\n  query GetPlaces($query: String) {\n    places(query: $query, first: 500) {\n      totalCount\n      edges {\n        node {\n          id\n          name\n          description\n          placeKind\n          latitude\n          longitude\n          parent {\n            id\n            name\n            placeKind\n          }\n          visitStats {\n            visitCount\n            firstVisitAt\n            lastVisitAt\n          }\n        }\n      }\n    }\n  }\n": types.GetPlacesDocument,
@@ -413,7 +419,7 @@ export function gql(source: "\n  fragment NoteGridItemData on NoteType {\n    id
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "\n  fragment PersonGridItemData on PersonType {\n    id\n    name\n    description\n    avatarUrl\n  }\n"): (typeof documents)["\n  fragment PersonGridItemData on PersonType {\n    id\n    name\n    description\n    avatarUrl\n  }\n"];
+export function gql(source: "\n  fragment PersonGridItemData on PersonType {\n    id\n    name\n    description\n    avatarUrl\n    firstName\n    lastName\n    birthDate\n  }\n"): (typeof documents)["\n  fragment PersonGridItemData on PersonType {\n    id\n    name\n    description\n    avatarUrl\n    firstName\n    lastName\n    birthDate\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -593,7 +599,7 @@ export function gql(source: "\n  mutation UpdateNoteDetail($input: UpdateNoteInp
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "\n  mutation UpdatePersonDetail($input: UpdatePersonInput!) {\n    updatePerson(input: $input) {\n      success\n      person {\n        id\n        name\n        description\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation UpdatePersonDetail($input: UpdatePersonInput!) {\n    updatePerson(input: $input) {\n      success\n      person {\n        id\n        name\n        description\n      }\n    }\n  }\n"];
+export function gql(source: "\n  mutation UpdatePersonDetail($input: UpdatePersonInput!) {\n    updatePerson(input: $input) {\n      success\n      person {\n        id\n        name\n        description\n        firstName\n        lastName\n        birthDate\n        avatarUrl\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation UpdatePersonDetail($input: UpdatePersonInput!) {\n    updatePerson(input: $input) {\n      success\n      person {\n        id\n        name\n        description\n        firstName\n        lastName\n        birthDate\n        avatarUrl\n      }\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -686,6 +692,18 @@ export function gql(source: "\n  fragment NoteGridItemFragment on NoteType {\n  
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "\n  query GetNotes($first: Int, $after: String) {\n    notes(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...NoteGridItemFragment\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetNotes($first: Int, $after: String) {\n    notes(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...NoteGridItemFragment\n        }\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query GetPeople($query: String) {\n    people(query: $query, first: 500) {\n      totalCount\n      edges {\n        node {\n          id\n          name\n          description\n          firstName\n          lastName\n          avatarUrl\n          birthDate\n          isSelf\n          identifiers {\n            kind\n            value\n            label\n          }\n          interactionStats {\n            eventCount\n            communicationCount\n            lastInteractionAt\n          }\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetPeople($query: String) {\n    people(query: $query, first: 500) {\n      totalCount\n      edges {\n        node {\n          id\n          name\n          description\n          firstName\n          lastName\n          avatarUrl\n          birthDate\n          isSelf\n          identifiers {\n            kind\n            value\n            label\n          }\n          interactionStats {\n            eventCount\n            communicationCount\n            lastInteractionAt\n          }\n        }\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query GetPersonDuplicates {\n    personDuplicates {\n      reason\n      value\n      people {\n        id\n        name\n        description\n        avatarUrl\n        isSelf\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetPersonDuplicates {\n    personDuplicates {\n      reason\n      value\n      people {\n        id\n        name\n        description\n        avatarUrl\n        isSelf\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation MergePeople($input: MergePeopleInput!) {\n    mergePeople(input: $input) {\n      success\n      person {\n        id\n        name\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation MergePeople($input: MergePeopleInput!) {\n    mergePeople(input: $input) {\n      success\n      person {\n        id\n        name\n      }\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
