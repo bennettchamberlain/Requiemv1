@@ -1,7 +1,7 @@
 """
 Sentry error reporting for the Summary service.
 
-Opt-in and off by default: with no ``SENTRY_DSN`` nothing initialises and the
+Opt-out — on wherever a DSN is configured. With no ``SENTRY_DSN`` nothing initialises and the
 process makes no outbound connection. Two kill switches disable reporting even
 when a DSN has been baked into the image, so an operator can always turn it off
 without a rebuild:

@@ -1,7 +1,7 @@
 /**
  * Browser error reporting.
  *
- * Opt-in and off by default: without `VITE_SENTRY_DSN` baked in at build time
+ * Opt-out — on wherever a DSN is configured. Without `VITE_SENTRY_DSN` at build time
  * nothing initialises and the bundle makes no request to Sentry. `initTelemetry`
  * is safe to call more than once and safe to call when reporting is disabled.
  *

@@ -3,7 +3,8 @@
  * Node internals on init and instrumentation applied after the app modules are
  * loaded misses everything they set up at import time.
  *
- * Reporting is opt-in: with no `SENTRY_DSN` this module initialises nothing and
+ * Reporting is opt-out — on wherever a DSN is configured, off when the user
+ * says so. With no `SENTRY_DSN` this module initialises nothing and
  * the process makes no outbound connection. See `common/telemetry/settings.ts`
  * for the kill switches.
  */

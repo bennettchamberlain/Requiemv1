@@ -1,4 +1,4 @@
-"""Tests for the opt-in telemetry gate and the payload scrubber."""
+"""Tests for the opt-out telemetry gate and the payload scrubber."""
 from __future__ import annotations
 
 import pytest
