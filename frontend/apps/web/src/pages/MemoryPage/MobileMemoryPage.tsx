@@ -6,6 +6,7 @@ import { ChartNetwork, Images, List, Map as MapIcon } from '@ci/shadcn/icons';
 import { Link, useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
+import { FileChunkModal } from '@/components/modals/FileChunkModal/FileChunkModal';
 
 import { useEntityService } from '../MemoryPage/useEntityService';
 
@@ -15,6 +16,7 @@ import {
   ExplorerToolbar,
   MemorySearchField,
 } from './Components/ExplorerToolbar/ExplorerToolbar';
+import { countActiveFilters } from './Components/ExplorerToolbar/filterParams';
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
 import { ListView } from './ListView';
@@ -22,6 +24,12 @@ import { MobileMapView } from './MapView';
 
 export default function MobileMemoryPage() {
   const [{ activeEntity }, { setActiveEntity }] = useEntityService();
+
+  // Document chunks open in their own dialog; every other entity uses the
+  // details sheet (EntityDetails has no FileChunkType branch).
+  const activeChunkEntity = activeEntity?.__typename === 'FileChunkType' ? activeEntity : null;
+  const activeSheetEntity =
+    activeEntity != null && activeEntity.__typename !== 'FileChunkType' ? activeEntity : null;
   const [searchParams, setSearchParams] = useSearchParams();
 
   // The active view lives in the URL (`?view=`) so a query is shareable and
@@ -36,6 +44,7 @@ export default function MobileMemoryPage() {
     });
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const activeFilterCount = countActiveFilters(searchParams);
 
   // Reflect the default view in the URL so the query is shareable/restorable.
   useEffect(() => {
@@ -84,12 +93,19 @@ export default function MobileMemoryPage() {
         <div className="space-y-3">
           {/* The global header search isn't shown on mobile, so the search field
               lives here inline, next to the Advanced toggle; the advanced drawer
-              (Who/What/When/Where/How + tags, semantic, sort, save), chips and
-              result count render below via the shared ExplorerToolbar. */}
+              (Who/What/When/Where/How + tags, semantic, sort, save) renders
+              below via the shared ExplorerToolbar. Applied filters chip inside
+              the drawer's drop area; while it's closed, the count text beside
+              the toggle stands in (mirroring the desktop header search). */}
           <div className="flex items-center gap-2">
             <div className="flex-1">
               <MemorySearchField />
             </div>
+            {activeFilterCount > 0 && (
+              <span className="whitespace-nowrap text-xs text-muted-foreground">
+                {activeFilterCount} {activeFilterCount === 1 ? 'filter' : 'filters'}
+              </span>
+            )}
             <AdvancedSearchToggle open={advancedOpen} onToggle={() => setAdvancedOpen((open) => !open)} />
           </div>
           <ExplorerToolbar open={advancedOpen} />
@@ -128,11 +144,13 @@ export default function MobileMemoryPage() {
           {activeTab === 'graph' && <GraphView variant="mobile" />}
         </>
       </PageContent>
-      {activeEntity && (
+      {activeSheetEntity && (
         <Sheet open={detailsOpen} onOpenChange={toggleactiveEntity}>
-          <EntityDetails entity={activeEntity} />
+          <EntityDetails entity={activeSheetEntity} />
         </Sheet>
       )}
+
+      <FileChunkModal entity={activeChunkEntity} onClose={() => setActiveEntity(null)} />
     </>
   );
 }

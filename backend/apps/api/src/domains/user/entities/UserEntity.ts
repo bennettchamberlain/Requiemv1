@@ -21,12 +21,13 @@ export class UserEntity {
   onboarded!: boolean;
 
   /**
-   * IANA zone name. The single source of truth for "the user's day" — planning
-   * day boundaries, habit rollover and the owner-local job enqueuer all read it
-   * from here rather than keeping their own copy.
+   * IANA zone name (e.g. 'America/New_York'). The single source of truth for
+   * "the user's day" — planning day boundaries, habit rollover, the owner-local
+   * job enqueuer, HBPE bucketing and the summary service all read it from here
+   * rather than keeping their own copy. Defaults to 'UTC' at the DB layer.
    */
-  @Column({ type: 'text', nullable: true })
-  timezone!: string | null;
+  @Column({ type: 'text', default: 'UTC' })
+  timezone!: string;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;

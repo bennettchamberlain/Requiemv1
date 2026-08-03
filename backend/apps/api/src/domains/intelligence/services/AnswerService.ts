@@ -4,6 +4,7 @@ import { In, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, type UserServiceContext, SYSTEM_USER } from '@ci/common/context';
+import { computeChunkSize } from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
 import { AnswerCreatedEvent, AnswerUpdatedEvent, AnswerRemovedEvent } from '@ci/domains/intelligence/events';
 
@@ -11,6 +12,17 @@ import { Answer, AnswerEntity } from '../entities/AnswerEntity';
 import type { CreateAnswerDto, UpdateAnswerDto } from '../types';
 
 import { QuestionService } from './QuestionService';
+
+/**
+ * Hourly UTC per-user answer count. Declared locally so this domain carries
+ * no dependency on aggregating consumers; they enforce the shape structurally
+ * where they consume it.
+ */
+export interface HourlyAnswerCount {
+  userId: string;
+  bucketStart: Date;
+  count: number;
+}
 
 @Injectable()
 export class AnswerService {
@@ -21,7 +33,21 @@ export class AnswerService {
     private readonly questionService: QuestionService,
   ) {}
 
-  async create(context: UserServiceContext, data: CreateAnswerDto): Promise<Answer> {
+  /**
+   * @param options.emitCreated When true (default) an AnswerCreatedEvent is sent so
+   *   the row indexes/enriches live. The bulk path passes false: emitting a per-row
+   *   pgboss event for every ingested row is the dominant cost at import volume, so
+   *   bulk-loaded rows are instead swept by the post-load search-index backfill.
+   *   The feed-queue cleanup is always applied (it's a plain DELETE, not a pgboss
+   *   fan-out) so an answered question leaves the feed regardless of path.
+   */
+  async create(
+    context: UserServiceContext,
+    data: CreateAnswerDto,
+    options: { emitCreated?: boolean } = {},
+  ): Promise<Answer> {
+    const { emitCreated = true } = options;
+
     const instance = this.answerRepository.create({
       id: data.id ?? uuidv7(),
       answer: data.text,
@@ -37,19 +63,76 @@ export class AnswerService {
 
     await this.questionService.removeFromFeedQueue(context.userId, data.question.id);
 
-    await this.eventService.send(AnswerCreatedEvent, {
-      answerId: entity.id,
-    });
+    if (emitCreated) {
+      await this.eventService.send(AnswerCreatedEvent, {
+        answerId: entity.id,
+      });
+    }
 
     return AnswerEntity.toEgressType(entity);
   }
 
   /**
-   * Batch equivalent of N createAnswer calls in a single round-trip. Returns the
-   * created answers in input order.
+   * Batch answers ingest. Replaces the per-row save + feed-queue DELETE +
+   * AnswerCreatedEvent loop with one set-based INSERT, one batched feed-queue
+   * cleanup, and one hydration SELECT. Answers have no dedup key, so every input
+   * row is inserted. Returns the created answers in input order.
+   *
+   * Bulk ingest does NOT emit a per-row AnswerCreatedEvent: the per-row pgboss
+   * fan-out was the dominant cost at import volume. Search indexing for
+   * bulk-loaded rows is deferred to the post-load batch embed
+   * (POST /api/maintenance/search-index/backfill). Single-row create() still
+   * emits, so interactive creates index live. The feed-queue cleanup is still
+   * applied (batched) so answered questions leave the feed.
    */
   async createMany(context: UserServiceContext, data: CreateAnswerDto[]): Promise<Answer[]> {
-    return Promise.all(data.map((item) => this.create(context, item)));
+    if (data.length === 0) {
+      return [];
+    }
+
+    const entities = data.map((item) =>
+      this.answerRepository.create({
+        id: item.id ?? uuidv7(),
+        answer: item.text,
+        question: {
+          id: item.question.id,
+        },
+        user: {
+          id: context.userId,
+        },
+      }),
+    );
+
+    // Split into param-budget-bounded chunks so a large batch never exceeds
+    // Postgres' 65535 bind-param limit (computeChunkSize is the same helper
+    // bulkInsertIdempotent uses). Answers have no dedup key, so every chunk is a
+    // plain multi-row INSERT.
+    const chunkSize = computeChunkSize(this.answerRepository.metadata.columns.length);
+    for (let offset = 0; offset < entities.length; offset += chunkSize) {
+      await this.answerRepository
+        .createQueryBuilder()
+        .insert()
+        // Route through `metadata.target` so TS picks the `ObjectLiteral` overload
+        // of `.values()`; passing the entity class narrows to
+        // `_QueryDeepPartialEntity`, which rejects the jsonb `sessionContext` column.
+        .into(this.answerRepository.metadata.target)
+        .values(entities.slice(offset, offset + chunkSize))
+        .execute();
+    }
+
+    // Batched feed-queue cleanup: drop every answered question from the feed in
+    // one DELETE instead of N per-row removeFromFeedQueue calls.
+    const questionIds = [...new Set(data.map((item) => item.question.id))];
+    await this.questionService.removeManyFromFeedQueue(context.userId, questionIds);
+
+    const ids = entities.map((entity) => entity.id);
+    const rows = await this.answerRepository.find({
+      where: { id: In(ids) },
+      relations: ['user', 'question'],
+    });
+    const byId = new Map(rows.map((row) => [row.id, row]));
+
+    return entities.map((entity) => AnswerEntity.toEgressType(byId.get(entity.id) ?? entity));
   }
 
   async findAll(context: UserServiceContext): Promise<Answer[]> {
@@ -219,5 +302,23 @@ export class AnswerService {
     });
 
     return true;
+  }
+
+  /**
+   * Hourly UTC activity buckets for the activity rollup: answers counted by
+   * `answeredAt`, per user. AnswerEntity models the user only as a relation,
+   * so the FK column is referenced directly.
+   */
+  async aggregateHourlyActivity(): Promise<HourlyAnswerCount[]> {
+    const rows: Array<{ user_id: string; bucket_start: Date; count: number }> = await this.answerRepository
+      .createQueryBuilder('answer')
+      .select('answer.user_id', 'user_id')
+      .addSelect(`date_trunc('hour', answer.answeredAt, 'UTC')`, 'bucket_start')
+      .addSelect('COUNT(*)::int', 'count')
+      .groupBy('user_id')
+      .addGroupBy('bucket_start')
+      .getRawMany();
+
+    return rows.map((row) => ({ userId: row.user_id, bucketStart: row.bucket_start, count: row.count }));
   }
 }

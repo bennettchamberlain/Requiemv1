@@ -12,6 +12,7 @@ from temporalio.common import RetryPolicy
 with workflow.unsafe.imports_passed_through():
     from .database import db
     from .priority import Priority, get_task_queue
+    from .activities import resolve_summary_window_activity
     from .workflows import (
         HourlySummaryWorkflow,
         DailySummaryWorkflow,
@@ -19,6 +20,8 @@ with workflow.unsafe.imports_passed_through():
         MonthlySummaryWorkflow,
         DossierRefreshWorkflow,
         InsightsGenerationWorkflow,
+        ActionsGenerationWorkflow,
+        DEFAULT_MAX_FEED_ACTIONS,
     )
 
 
@@ -126,10 +129,9 @@ class SystemDailySummariesWorkflow:
         """Execute daily summaries for all users."""
         workflow.logger.info("system_daily_summaries_started")
 
-        # Calculate time window (previous day)
+        # Reference instant; per-user local day boundaries are resolved below so
+        # each user's "yesterday" is their local calendar day, not the UTC one.
         now = workflow.now()
-        end_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        start_time = end_time - timedelta(days=1)
 
         users = await self._get_active_users()
         workflow.logger.info(f"active_users_fetched count={len(users)}")
@@ -140,10 +142,16 @@ class SystemDailySummariesWorkflow:
         results = []
         for user_id in users:
             try:
+                window = await workflow.execute_activity(
+                    resolve_summary_window_activity,
+                    args=[user_id, "daily", now.isoformat()],
+                    **get_activity_options(),
+                )
+                start_iso, end_iso, tz = window["start_time"], window["end_time"], window["timezone"]
                 result = await workflow.execute_child_workflow(
                     DailySummaryWorkflow.run,
-                    args=[user_id, start_time.isoformat(), end_time.isoformat(), "UTC", None],
-                    id=f"daily-{user_id}-{end_time.isoformat()}",
+                    args=[user_id, start_iso, end_iso, tz, None],
+                    id=f"daily-{user_id}-{end_iso}",
                     task_queue=get_task_queue(Priority.MEDIUM),
                 )
                 results.append({"user_id": user_id, "status": "success", "result": result})
@@ -155,8 +163,6 @@ class SystemDailySummariesWorkflow:
 
         return {
             "users_processed": len(users),
-            "start_time": start_time.isoformat(),
-            "end_time": end_time.isoformat(),
             "results": results,
         }
 
@@ -192,11 +198,8 @@ class SystemWeeklySummariesWorkflow:
         """Execute weekly summaries for all users."""
         workflow.logger.info("system_weekly_summaries_started")
 
+        # Per-user local Mon–Sun week resolved below (see resolve_summary_window).
         now = workflow.now()
-        # Get start of current week (Monday)
-        days_since_monday = (now.weekday() + 6) % 7
-        end_time = (now - timedelta(days=days_since_monday)).replace(hour=0, minute=0, second=0, microsecond=0)
-        start_time = end_time - timedelta(days=7)
 
         users = await self._get_active_users()
         if not users:
@@ -205,10 +208,16 @@ class SystemWeeklySummariesWorkflow:
         results = []
         for user_id in users:
             try:
+                window = await workflow.execute_activity(
+                    resolve_summary_window_activity,
+                    args=[user_id, "weekly", now.isoformat()],
+                    **get_activity_options(),
+                )
+                start_iso, end_iso, tz = window["start_time"], window["end_time"], window["timezone"]
                 result = await workflow.execute_child_workflow(
                     WeeklySummaryWorkflow.run,
-                    args=[user_id, start_time.isoformat(), end_time.isoformat(), "UTC", None],
-                    id=f"weekly-{user_id}-{end_time.isoformat()}",
+                    args=[user_id, start_iso, end_iso, tz, None],
+                    id=f"weekly-{user_id}-{end_iso}",
                     task_queue=get_task_queue(Priority.MEDIUM),
                 )
                 results.append({"user_id": user_id, "status": "success"})
@@ -243,10 +252,8 @@ class SystemMonthlySummariesWorkflow:
         """Execute monthly summaries for all users."""
         workflow.logger.info("system_monthly_summaries_started")
 
+        # Per-user local calendar month resolved below (see resolve_summary_window).
         now = workflow.now()
-        end_time = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        # Previous month
-        start_time = (end_time - timedelta(days=1)).replace(day=1)
 
         users = await self._get_active_users()
         if not users:
@@ -255,10 +262,16 @@ class SystemMonthlySummariesWorkflow:
         results = []
         for user_id in users:
             try:
+                window = await workflow.execute_activity(
+                    resolve_summary_window_activity,
+                    args=[user_id, "monthly", now.isoformat()],
+                    **get_activity_options(),
+                )
+                start_iso, end_iso, tz = window["start_time"], window["end_time"], window["timezone"]
                 result = await workflow.execute_child_workflow(
                     MonthlySummaryWorkflow.run,
-                    args=[user_id, start_time.isoformat(), end_time.isoformat(), "UTC", None],
-                    id=f"monthly-{user_id}-{end_time.isoformat()}",
+                    args=[user_id, start_iso, end_iso, tz, None],
+                    id=f"monthly-{user_id}-{end_iso}",
                     task_queue=get_task_queue(Priority.MEDIUM),
                 )
                 results.append({"user_id": user_id, "status": "success"})
@@ -419,6 +432,97 @@ class SystemInsightsWorkflow:
             return []
 
 
+@workflow.defn(name="system-actions")
+class SystemActionsWorkflow:
+    """
+    System workflow that generates proactive action cards for all active users.
+
+    Runs hourly and spawns a child workflow per user. Each child checks how many
+    actions are already pending on that user's feed and skips (or generates fewer)
+    when the feed is already full, so this stays cheap on the common case where
+    nobody has worked through their cards since the last run.
+    """
+
+    @workflow.run
+    async def run(self, max_feed_actions: int = DEFAULT_MAX_FEED_ACTIONS) -> Dict[str, Any]:
+        """Execute actions generation for all users."""
+        workflow.logger.info("system_actions_started")
+
+        now = workflow.now()
+        users = await self._get_active_users()
+        workflow.logger.info(f"active_users_fetched count={len(users)}")
+
+        if not users:
+            return {"users_processed": 0, "message": "No active users"}
+
+        results = []
+        skipped_count = 0
+        generated_count = 0
+
+        for user_id in users:
+            try:
+                result = await workflow.execute_child_workflow(
+                    ActionsGenerationWorkflow.run,
+                    args=[
+                        user_id,
+                        "UTC",
+                        7,  # 7 days lookback over summaries/insights
+                        None,  # LLM config created by worker
+                        max_feed_actions,
+                    ],
+                    id=f"actions-{user_id}-{now.isoformat()}",
+                    task_queue=get_task_queue(Priority.MEDIUM),
+                )
+
+                if result.get("skipped"):
+                    skipped_count += 1
+                    results.append({
+                        "user_id": user_id,
+                        "status": "skipped",
+                        "reason": result.get("reason"),
+                    })
+                else:
+                    generated_count += 1
+                    results.append({
+                        "user_id": user_id,
+                        "status": "success",
+                        "action_ids": result.get("action_ids"),
+                        "num_actions": result.get("num_actions"),
+                    })
+            except Exception as e:
+                workflow.logger.error(f"actions_generation_failed user_id={user_id} error={str(e)}")
+                results.append({"user_id": user_id, "status": "error", "error": str(e)})
+
+        workflow.logger.info(
+            f"system_actions_completed total={len(users)} generated={generated_count} skipped={skipped_count}"
+        )
+
+        return {
+            "users_processed": len(users),
+            "users_with_actions": generated_count,
+            "users_skipped": skipped_count,
+            "timestamp": now.isoformat(),
+            "results": results,
+        }
+
+    async def _get_active_users(self) -> List[str]:
+        """Get all active users from database."""
+        try:
+            rows = db.execute_query("SELECT id FROM ci.users WHERE onboarded = true", {})
+            if rows:
+                return [str(row['id']) for row in rows]
+        except Exception:
+            pass
+        try:
+            rows = db.execute_query(
+                "SELECT DISTINCT owner_user_id FROM entities WHERE owner_user_id IS NOT NULL", {}
+            )
+            return [str(row['owner_user_id']) for row in rows]
+        except Exception:
+            workflow.logger.warning("failed_to_fetch_users")
+            return []
+
+
 __all__ = [
     "SystemHourlySummariesWorkflow",
     "SystemDailySummariesWorkflow",
@@ -426,4 +530,5 @@ __all__ = [
     "SystemMonthlySummariesWorkflow",
     "SystemDossierRefreshWorkflow",
     "SystemInsightsWorkflow",
+    "SystemActionsWorkflow",
 ]

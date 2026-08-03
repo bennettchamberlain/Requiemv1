@@ -17,6 +17,7 @@ import {
   PlaceService,
 } from '@ci/domains/memory';
 import { NoteService } from '@ci/domains/notes';
+import { FileChunkService } from '@ci/domains/parsing';
 import { TaskService } from '@ci/domains/planning';
 import { TagService } from '@ci/domains/search-next';
 import { UserService } from '@ci/domains/user';
@@ -28,6 +29,7 @@ import { ConceptType } from '../types/ConceptType';
 import { ConnectionType } from '../types/ConnectionType';
 import { ContentType } from '../types/ContentType';
 import { EventType } from '../types/EventType';
+import { FileChunkType } from '../types/FileChunkType';
 import { FileType } from '../types/FileType';
 import { GlobalUID } from '../types/GlobalUID';
 import { ItemType } from '../types/ItemType';
@@ -53,6 +55,7 @@ export class NodeResolver {
     private readonly connectionService: ConnectionService,
     private readonly contentService: ContentService,
     private readonly eventService: EventService,
+    private readonly fileChunkService: FileChunkService,
     private readonly fileService: FileService,
     private readonly itemService: ItemService,
     private readonly messageService: MessageService,
@@ -115,6 +118,18 @@ export class NodeResolver {
         const event = await this.eventService.findById(serviceContext, id);
 
         return event ? EventType.toType(event) : null;
+      }
+
+      case 'file-chunk': {
+        const chunk = await this.fileChunkService.findByIds([id]).then((results) => results[0] ?? null);
+
+        if (chunk == null) {
+          return null;
+        }
+
+        const file = await this.fileService.findById(serviceContext, chunk.fileId);
+
+        return FileChunkType.toType(chunk, file);
       }
 
       case 'file': {

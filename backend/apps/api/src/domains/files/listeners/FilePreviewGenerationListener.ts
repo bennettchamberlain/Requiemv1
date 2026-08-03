@@ -153,7 +153,15 @@ export class FilePreviewGenerationListener {
     // the *display* orientation, not the stored one. Without this the JPEG
     // bytes are saved as-is and browsers don't reliably honour the tag on
     // derivative JPEGs — photos come back upside-down or sideways.
-    const { data, info } = await sharp(original)
+    //
+    // failOn: 'error' (not the 'warning' default): real phone JPEGs — Samsung
+    // above all — routinely trip warning-level libjpeg quirks ("Corrupt JPEG
+    // data: N extraneous bytes before marker 0xdN", "Invalid SOS parameters
+    // for sequential JPEG") that every mainstream viewer decodes fine; the
+    // default turned them into failed preview jobs (~8% of a sampled Takeout
+    // batch). Verified against an independent decoder that the tolerant decode
+    // is artifact-free. Genuinely undecodable input still throws.
+    const { data, info } = await sharp(original, { failOn: 'error' })
       .rotate()
       .resize(PREVIEW_MAX_DIMENSION, PREVIEW_MAX_DIMENSION, {
         fit: 'inside',
@@ -205,8 +213,9 @@ export class FilePreviewGenerationListener {
       const frame = await fs.readFile(tempOutput);
 
       // ffmpeg already auto-rotates the extracted frame, so .rotate() is a
-      // safety net for any orientation tag still on the JPEG bytes.
-      const { data, info } = await sharp(frame)
+      // safety net for any orientation tag still on the JPEG bytes. Same
+      // failOn: 'error' tolerance as the image path (see generateImagePreview).
+      const { data, info } = await sharp(frame, { failOn: 'error' })
         .rotate()
         .resize(PREVIEW_MAX_DIMENSION, PREVIEW_MAX_DIMENSION, {
           fit: 'inside',

@@ -10,7 +10,10 @@ type Entry = { type: string; id: string; entity: Record<string, unknown> };
 
 function makeResolver() {
   const searchService = { search: jest.fn().mockResolvedValue([] as Identifier[]) };
-  const tagService = { getEntitiesForTags: jest.fn().mockResolvedValue([] as Identifier[]) };
+  const tagService = {
+    getEntitiesForTags: jest.fn().mockResolvedValue([] as Identifier[]),
+    searchByLabel: jest.fn().mockResolvedValue([]),
+  };
   const eventService = { getEntitiesForEvents: jest.fn().mockResolvedValue([] as Identifier[]) };
   const browserActivityService = {
     getEntitiesForBrowserActivities: jest.fn().mockResolvedValue([] as Identifier[]),
@@ -21,11 +24,15 @@ function makeResolver() {
   const entityResolutionService = { resolve: jest.fn().mockResolvedValue(new Map<string, Entry>()) };
   const savedSearchService = { findByShareToken: jest.fn().mockResolvedValue(null) };
 
+  const fileService = { getEntitiesForFiles: jest.fn().mockResolvedValue([]) };
+  const fileChunkService = { getEntitiesForFileChunks: jest.fn().mockResolvedValue([]) };
   const resolver = new SearchResolver(
     browserActivityService as never,
     communicationService as never,
     entityResolutionService as never,
     eventService as never,
+    fileService as never,
+    fileChunkService as never,
     savedSearchService as never,
     searchService as never,
     tagService as never,

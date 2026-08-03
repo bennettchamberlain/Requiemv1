@@ -10,6 +10,7 @@ import {
   ContentGridItem,
   EntityGrid,
   EventGridItem,
+  FileChunkGridItem,
   FileGridItem,
   ItemGridItem,
   NoteGridItem,
@@ -110,13 +111,20 @@ export function GalleryView() {
             // opens the shared details drawer (incl. non-media File/Item).
             const mediaIdx = mediaIndexById.get(item.id);
             if (mediaIdx != null) {
-              return (
-                <MediaTile
-                  key={item.id}
-                  media={mediaEntries[mediaIdx]}
-                  onClick={() => setLightboxIndex(mediaIdx)}
-                />
-              );
+              // FileType (incl. Capture screenshots): open the details sheet so
+              // the sidebar shows EntityMedia + metadata. Other media (e.g.
+              // Event photos) keep the cross-item lightbox.
+              const openMedia = () => {
+                if (item.__typename === 'FileType') {
+                  setActiveEntity(item);
+
+                  return;
+                }
+
+                setLightboxIndex(mediaIdx);
+              };
+
+              return <MediaTile key={item.id} media={mediaEntries[mediaIdx]} onClick={openMedia} />;
             }
 
             switch (item.__typename) {
@@ -149,6 +157,11 @@ export function GalleryView() {
 
               case 'EventType':
                 return <EventGridItem key={item.id} event={item} onClick={() => setActiveEntity(item)} />;
+
+              case 'FileChunkType':
+                return (
+                  <FileChunkGridItem key={item.id} fileChunk={item} onClick={() => setActiveEntity(item)} />
+                );
 
               case 'FileType':
                 return <FileGridItem key={item.id} file={item} onClick={() => setActiveEntity(item)} />;

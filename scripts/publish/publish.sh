@@ -23,8 +23,13 @@ set -euo pipefail
 #   REGISTRY_PASSWORD    Registry login password       (required, unless GITHUB_TOKEN is set)
 #   GITHUB_TOKEN         Token used as registry password fallback (e.g. inside GitHub Actions)
 #   GITHUB_ACTOR         Username paired with GITHUB_TOKEN          (default: github-actions)
-#   VERSION              Override version              (default: git tag or "latest")
+#   VERSION              Override version              (default: git tag, else dev-<short-sha>)
 #   SKIP_IMAGE_PUSH      Skip Step 3 (docker login + image push)    (default: false)
+#   SKIP_PORTAL          Skip Portal ingest/publish (images only)   (default: false)
+#   TAG_SUFFIX           Suffix appended to the pushed version tag, e.g. "-amd64".
+#                        Used by the multi-arch publish workflow: each native
+#                        build leg pushes :VERSION-<arch>, and merge-manifests.sh
+#                        combines them into the :VERSION manifest list.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
@@ -70,10 +75,33 @@ else
   CURL_OPTS="-s"
 fi
 
-# Version: git tag (exact match) → fallback to "latest"
+# Version: git tag (exact match) → fallback to a dev tag naming the commit.
+#
+# This must never fall back to "latest". The release pipeline reserves that tag
+# for the newest release (see merge-manifests.sh PUSH_LATEST), and an untagged
+# `make publish` against a real registry would otherwise overwrite it with a
+# local dev build — which is exactly how companion/*:latest became a stale
+# amd64-only orphan pointing at no release at all.
 if [[ -z "${VERSION:-}" ]]; then
-  VERSION=$(git -C "$REPO_ROOT" describe --tags --exact-match 2>/dev/null || echo "latest")
+  VERSION=$(git -C "$REPO_ROOT" describe --tags --exact-match 2>/dev/null || true)
+  if [[ -z "${VERSION}" ]]; then
+    # Checked separately rather than inlined: `VERSION="dev-$(...)"` keeps the
+    # literal prefix when the substitution fails, so a non-git checkout would
+    # silently publish the malformed tag "dev-" instead of erroring.
+    SHORT_SHA=$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || true)
+    if [[ -z "${SHORT_SHA}" ]]; then
+      echo "  ✗ VERSION is unset and ${REPO_ROOT} is not a git checkout — pass VERSION=<tag> explicitly" >&2
+      exit 1
+    fi
+    VERSION="dev-${SHORT_SHA}"
+  fi
 fi
+
+# Strip the leading v exactly as publish.yml does — whatever the source, an
+# explicit VERSION=v2026.7.27 included. Without this a local `make publish`
+# tags images :v2026.7.27 while CI tags :2026.7.27 — two shapes for one
+# release, which is how the registry ends up with tags nothing references.
+VERSION="${VERSION#v}"
 
 
 QUIET=false
@@ -82,36 +110,10 @@ for arg in "$@"; do
 done
 
 # ── Image Map ──────────────────────────────────────────────────────────
-# Maps: local-image-name → registry-repo-name
-#
-# Local images are built by `make build ENV=production` as ci/<name>.
-# Registry repos use companion/<name> as the public namespace.
-# Parallel arrays instead of associative array (bash 3.2 compat).
+# Shared with merge-manifests.sh — see scripts/publish/images.sh.
 
-IMAGE_LOCAL=(
-  ci/api
-  ci/database
-  ci/gateway
-  ci/object-store
-  ci/orchestrator
-  ci/summary-service
-  ci/setup-database
-  ci/setup-orchestrator
-  ci/setup-secrets
-  ci/hbpe-service
-)
-IMAGE_REMOTE=(
-  companion/api
-  companion/database
-  companion/gateway
-  companion/object-store
-  companion/orchestrator
-  companion/summary-service
-  companion/setup-database
-  companion/setup-orchestrator
-  companion/setup-secrets
-  companion/hbpe-service
-)
+# shellcheck source=scripts/publish/images.sh
+source "${SCRIPT_DIR}/images.sh"
 
 # ── Helpers ────────────────────────────────────────────────────────────
 
@@ -124,6 +126,18 @@ fail() {
 }
 
 # ── Generate docker-compose.json ───────────────────────────────────────
+#
+# Kept in step with CI-Marketplace's apps/ci-memory/docker-compose.json, with
+# one deliberate exception: the database volume.
+#
+# CI-Marketplace mounts ${APP_DATA_DIR}/data/db at /home/postgres/pgdata and
+# chowns it to 1000. Those are timescale/timescaledb-ha (Spilo) conventions,
+# left over from the base image infrastructure/database/Dockerfile used before
+# the PG18 upgrade. It is now postgres:18.4-bookworm, where PGDATA lives under
+# /var/lib/postgresql and the server runs as uid 999 — the values below. Do not
+# "resolve" that difference by copying CI-Marketplace's; they no longer match
+# the image, and a database that mounts its volume somewhere PGDATA isn't keeps
+# its real data in the container layer. See issue #1745.
 
 generate_compose() {
   local reg="$1"
@@ -139,6 +153,7 @@ generate_compose() {
       "image": "${reg}/companion/gateway:${ver}",
       "isMain": true,
       "internalPort": 8642,
+      "addToMainNetwork": true,
       "restart": "unless-stopped",
       "volumes": [
         { "hostPath": "\${APP_DATA_DIR}/data/secrets", "containerPath": "/run/secrets", "readOnly": true }
@@ -151,6 +166,9 @@ generate_compose() {
       "name": "api",
       "image": "${reg}/companion/api:${ver}",
       "restart": "unless-stopped",
+      "environment": [
+        { "key": "ENABLE_REQUIRE_SIGNUP_CODES", "value": "false" }
+      ],
       "extraHosts": ["host.docker.internal:host-gateway"],
       "volumes": [
         { "hostPath": "\${APP_DATA_DIR}/data/secrets", "containerPath": "/run/secrets", "readOnly": true }
@@ -179,7 +197,8 @@ generate_compose() {
         { "hostPath": "\${APP_DATA_DIR}/data/secrets", "containerPath": "/run/secrets", "readOnly": true }
       ],
       "dependsOn" : {
-        "fix-db-permissions": { "condition": "service_completed_successfully" }
+        "fix-db-permissions": { "condition": "service_completed_successfully" },
+        "setup-secrets": { "condition": "service_completed_successfully" }
       },
       "healthCheck": {
         "test": "pg_isready",
@@ -195,7 +214,10 @@ generate_compose() {
       "volumes": [
         { "hostPath": "\${APP_DATA_DIR}/data/objects", "containerPath": "/data/objects" },
         { "hostPath": "\${APP_DATA_DIR}/data/secrets", "containerPath": "/run/secrets", "readOnly": true }
-      ]
+      ],
+      "dependsOn": {
+        "setup-secrets": { "condition": "service_completed_successfully" }
+      }
     },
     {
       "name": "orchestrator",
@@ -206,7 +228,8 @@ generate_compose() {
       ],
       "dependsOn": {
         "setup-orchestrator": { "condition": "service_completed_successfully" },
-        "database": { "condition": "service_healthy" }
+        "database": { "condition": "service_healthy" },
+        "setup-secrets": { "condition": "service_completed_successfully" }
       }
     },
     {
@@ -219,7 +242,8 @@ generate_compose() {
       ],
       "dependsOn": {
         "database": { "condition": "service_healthy" },
-        "orchestrator": { "condition": "service_started" }
+        "orchestrator": { "condition": "service_started" },
+        "setup-secrets": { "condition": "service_completed_successfully" }
       }
     },
     {
@@ -230,7 +254,8 @@ generate_compose() {
         { "hostPath": "\${APP_DATA_DIR}/data/secrets", "containerPath": "/run/secrets", "readOnly": true }
       ],
       "dependsOn": {
-        "database": { "condition": "service_healthy" }
+        "database": { "condition": "service_healthy" },
+        "setup-secrets": { "condition": "service_completed_successfully" }
       }
     },
     {
@@ -242,7 +267,8 @@ generate_compose() {
       ],
       "dependsOn": {
         "setup-database": { "condition": "service_completed_successfully" },
-        "database": { "condition": "service_healthy" }
+        "database": { "condition": "service_healthy" },
+        "setup-secrets": { "condition": "service_completed_successfully" }
       }
     },
     {
@@ -264,7 +290,8 @@ generate_compose() {
       ],
       "dependsOn": {
         "database": { "condition": "service_healthy" },
-        "orchestrator": { "condition": "service_started" }
+        "orchestrator": { "condition": "service_started" },
+        "setup-secrets": { "condition": "service_completed_successfully" }
       }
     },
     {
@@ -394,7 +421,7 @@ main() {
     for i in $(seq 0 $((${#IMAGE_LOCAL[@]} - 1))); do
       local LOCAL_IMAGE="${IMAGE_LOCAL[$i]}"
       local REPO="${IMAGE_REMOTE[$i]}"
-      local REMOTE="${REGISTRY}/${REPO}:${VERSION}"
+      local REMOTE="${REGISTRY}/${REPO}:${VERSION}${TAG_SUFFIX:-}"
 
       # Check local image exists. `make production` builds images tagged
       # :latest, which we then re-tag as ${REMOTE} (i.e. :${VERSION}) below.

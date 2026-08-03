@@ -4,6 +4,7 @@ import { Tooltip } from '@ci/shadcn';
 import {
   BookOpen,
   Brain,
+  ChartColumn,
   LifeBuoy,
   Inbox,
   Lightbulb,
@@ -80,6 +81,12 @@ export function SecondaryNavigation() {
           {isFeatureEnabled('planning.page') && (
             <NavLink to="/plan" label="Plan">
               <ListTodo className="h-6 w-6" strokeWidth={1.25} />
+            </NavLink>
+          )}
+
+          {isFeatureEnabled('stats.page') && (
+            <NavLink to="/stats" label="Stats">
+              <ChartColumn className="h-6 w-6" strokeWidth={1.25} />
             </NavLink>
           )}
 

@@ -1,10 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, IsNull, Repository, type FindOptionsWhere } from 'typeorm';
+import { Brackets, In, Repository, type WhereExpressionBuilder } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import { isUniqueViolation } from '@ci/common/constants';
 import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/context';
+import {
+  bulkInsertIdempotent,
+  INGEST_REFRESH_COLUMNS,
+  keysetPaginate,
+  type KeysetPageArgs,
+  type KeysetPage,
+} from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
 import { ContentCreatedEvent, ContentRemovedEvent, ContentUpdatedEvent } from '@ci/domains/memory/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
@@ -12,6 +18,27 @@ import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next'
 import { Content, ContentEntity } from '../entities/ContentEntity';
 import { EventEntity } from '../entities/EventEntity';
 import { CreateContentDto, SearchContentDto, UpdateContentDto } from '../types';
+
+/** The provenance triple shared by a content row and the event it auto-links to. */
+type Triple = { sourceType: string; sourceSystem: string | null; sourceId: string };
+
+/**
+ * Stable string key for a triple, matching the `IS NOT DISTINCT FROM` semantics
+ * of the lookup (a null source_system is its own bucket). Used to join input rows
+ * to the events fetched in one set-based query.
+ */
+const tripleKey = (t: Triple): string => `${t.sourceType}\u0000${t.sourceSystem ?? ''}\u0000${t.sourceId}`;
+
+/**
+ * Hourly UTC per-user content count. Declared locally so this domain carries
+ * no dependency on aggregating consumers; they enforce the shape structurally
+ * where they consume it.
+ */
+export interface HourlyContentCount {
+  userId: string;
+  bucketStart: Date;
+  count: number;
+}
 
 @Injectable()
 export class ContentService {
@@ -71,97 +98,198 @@ export class ContentService {
   }
 
   /**
-   * Batch, idempotent content ingest for the importer. Each item dedupes on the
-   * provenance triple (user_id, source_type, source_system, source_id) — like
-   * EventService.create / ItemService.createMany — so a re-sync returns the
-   * existing row instead of inserting a duplicate. Paired with the
-   * content_source_triple_uniq partial unique index, which also catches a lost
-   * insert race (23505).
+   * Batch, idempotent content ingest for the importer. Dedupes on the provenance
+   * triple (user_id, source_type, source_system, source_id) — like
+   * EventService.create / ItemService.createMany — via one set-based
+   * INSERT ... ON CONFLICT DO NOTHING instead of the old per-row findOne + save
+   * loop. The old path did, per row, up to 2 SELECTs (triple dedup + event
+   * lookup) and 1 INSERT, fanned out unbounded — ~2M+ round trips at 1M rows.
+   * This path is a fixed handful of statements per batch: one event-link SELECT,
+   * one existence SELECT, one multi-row INSERT, one hydrate SELECT (see
+   * {@link bulkInsertIdempotent}). Paired with the content_source_triple_uniq
+   * partial unique index, which also absorbs a lost insert race (23505).
+   * No fields are refreshed on a re-sync — INGEST_REFRESH_COLUMNS.content is
+   * intentionally empty (find-or-return).
    *
    * Event link: an explicit `event.id` (e.g. the id returned by createEvent)
    * wins. Otherwise, when the item carries a source triple, the matching event in
    * ci.events with the SAME (user_id, source_type, source_system, source_id) is
    * found and content.event_id is set to it, so a content row pushed with the same
    * provenance as its event auto-links. If nothing matches, event_id stays null.
+   * This resolution is now a single set-based lookup over the whole batch rather
+   * than a per-row findOne, preserving the exact semantics (link only on an exact
+   * triple match, scoped to the user; leave NULL otherwise).
+   *
+   * Bulk ingest does NOT emit a per-row ContentCreatedEvent by default: the
+   * per-row pgboss fan-out was the dominant cost at import volume, so search
+   * indexing for bulk-loaded rows is deferred to the post-load batch embed
+   * (POST /api/maintenance/search-index/backfill). The single-record
+   * `createContent` mutation passes `emitCreated: true` so an interactive create
+   * still indexes live — but only rows this call actually INSERTED emit (a re-send
+   * that finds an existing row is a no-op), mirroring EventService/ItemService.
    *
    * Returns the created-or-existing rows in input order.
    */
-  async createMany(context: UserServiceContext, data: CreateContentDto[]): Promise<Content[]> {
-    return Promise.all(
-      data.map(async (item) => {
-        // Idempotency: when the triple is present, return the existing row.
-        const sourceWhere: FindOptionsWhere<ContentEntity> | null =
-          item.source_type && item.source_id
-            ? {
-                userId: context.userId,
-                sourceType: item.source_type,
-                sourceSystem: item.source_system ?? IsNull(),
-                sourceId: item.source_id,
-              }
-            : null;
+  async createMany(
+    context: UserServiceContext,
+    data: CreateContentDto[],
+    options?: { emitCreated?: boolean },
+  ): Promise<Content[]> {
+    if (data.length === 0) {
+      return [];
+    }
 
-        if (sourceWhere) {
-          const existing = await this.contentRepository.findOne({ where: sourceWhere });
-          if (existing) {
-            return ContentEntity.toEgressType(existing);
-          }
+    const emitCreated = options?.emitCreated ?? false;
+
+    // Set-based event auto-link: resolve every triple-carrying row's event in ONE
+    // query up front, so the per-entity `event` relation can be stamped before the
+    // bulk insert (replacing the old per-row resolveEventByTriple findOne).
+    const eventIdByTriple = await this.resolveEventIdsByTriple(context, data);
+
+    const entities = data.map((item) => {
+      // Explicit event wins; otherwise auto-link by the shared provenance triple.
+      let event = item.event;
+      if (!event && item.source_type && item.source_id) {
+        const eventId = eventIdByTriple.get(
+          tripleKey({
+            sourceType: item.source_type,
+            sourceSystem: item.source_system ?? null,
+            sourceId: item.source_id,
+          }),
+        );
+        if (eventId) {
+          event = { id: eventId };
         }
+      }
 
-        // Resolve the event link: explicit event wins; otherwise auto-link by the
-        // shared provenance triple.
-        const event = item.event ?? (await this.resolveEventByTriple(context, item));
+      return this.contentRepository.create({
+        ...item,
+        id: item.id ?? uuidv7(),
+        externalId: item.external_id ?? undefined,
+        sourceUrl: item.source_url ?? undefined,
+        sourceData: item.source_data ?? undefined,
+        sourceType: item.source_type ?? undefined,
+        sourceSystem: item.source_system ?? undefined,
+        sourceId: item.source_id ?? undefined,
+        event,
+        // Owner via the scalar FK column, not the `user` relation (see
+        // ContentEntity.userId — a relation-only write shadowed it to NULL).
+        userId: context.userId,
+      });
+    });
 
-        try {
-          const [created] = await this.create(
-            context,
-            {
-              ...item,
-              event,
-            },
-            { emitCreated: false },
-          );
-
-          return created;
-        } catch (err) {
-          // Lost a race to a concurrent insert of the same triple (the partial-
-          // unique index raised 23505) — fetch and return the winner.
-          if (sourceWhere && isUniqueViolation(err)) {
-            const existing = await this.contentRepository.findOne({ where: sourceWhere });
-            if (existing) {
-              return ContentEntity.toEgressType(existing);
-            }
-          }
-
-          throw err;
-        }
+    const results = await bulkInsertIdempotent({
+      repository: this.contentRepository,
+      entities,
+      primaryKey: 'id',
+      getTriple: (entity) => ({
+        sourceType: entity.sourceType,
+        sourceSystem: entity.sourceSystem,
+        sourceId: entity.sourceId,
       }),
-    );
+      // content_source_triple_uniq is user-scoped (see migration
+      // 20260623120300); scope the existence + hydrate reads to the same user.
+      scope: { userId: context.userId },
+      conflictTarget: '(user_id, source_type, source_system, source_id) WHERE source_id IS NOT NULL',
+      tripleColumns: ['source_type', 'source_system', 'source_id'],
+      // Centralized refresh contract — currently empty, so conflicts stay
+      // DO NOTHING find-or-return.
+      conflictUpdateColumns: INGEST_REFRESH_COLUMNS.content,
+    });
+
+    // Interactive single creates ask to index live (emitCreated:true); emit only
+    // for rows genuinely inserted by THIS call so a re-send is a no-op. The bulk
+    // importer leaves this false — its indexing is deferred to the backfill sweep.
+    if (emitCreated) {
+      for (const { entity, inserted } of results) {
+        if (inserted) {
+          await this.eventService.send(ContentCreatedEvent, { contentId: entity.id });
+        }
+      }
+    }
+
+    return results.map(({ entity }) => ContentEntity.toEgressType(entity));
   }
 
   /**
-   * Find the event sharing this content's provenance triple, scoped to the same
-   * user. Returns the `{ id }` relation shape ContentService.create expects, or
-   * undefined when no triple is present or no event matches.
+   * Set-based event auto-link resolution: given the whole input batch, run ONE
+   * query to find every event in ci.events whose (user_id, source_type,
+   * source_system, source_id) triple matches a triple-carrying input row, and
+   * return a map from triple-key to event id. Replaces the old per-row
+   * resolveEventByTriple findOne. `source_system` is matched with
+   * `IS NOT DISTINCT FROM` so a NULL system equals a NULL system, preserving the
+   * prior `sourceSystem ?? IsNull()` semantics. Only rows with both source_type
+   * and source_id are considered (mirroring the old guard); rows without a triple
+   * never auto-link.
    */
-  private async resolveEventByTriple(
+  private async resolveEventIdsByTriple(
     context: UserServiceContext,
-    item: CreateContentDto,
-  ): Promise<{ id: string } | undefined> {
-    if (!item.source_type || !item.source_id) {
-      return undefined;
+    data: CreateContentDto[],
+  ): Promise<Map<string, string>> {
+    const result = new Map<string, string>();
+
+    // Only rows with a full (source_type, source_id) pair AND no explicit event
+    // need a triple lookup. Dedupe the triples so the OR-list stays compact.
+    const triples = new Map<string, Triple>();
+    for (const item of data) {
+      if (item.event || !item.source_type || !item.source_id) {
+        continue;
+      }
+
+      const triple: Triple = {
+        sourceType: item.source_type,
+        sourceSystem: item.source_system ?? null,
+        sourceId: item.source_id,
+      };
+      triples.set(tripleKey(triple), triple);
     }
 
-    const event = await this.eventRepository.findOne({
-      where: {
-        userId: context.userId,
-        sourceType: item.source_type,
-        sourceSystem: item.source_system ?? IsNull(),
-        sourceId: item.source_id,
-      },
-      select: { id: true },
-    });
+    if (triples.size === 0) {
+      return result;
+    }
 
-    return event ? { id: event.id } : undefined;
+    const distinctTriples = [...triples.values()];
+
+    const events = await this.eventRepository
+      .createQueryBuilder('event')
+      .select(['event.id', 'event.sourceType', 'event.sourceSystem', 'event.sourceId'])
+      .where('event.userId = :userId', { userId: context.userId })
+      .andWhere(
+        new Brackets((qb: WhereExpressionBuilder) => {
+          distinctTriples.forEach((triple, i) => {
+            qb.orWhere(
+              `(event.sourceType = :evt_type_${i}` +
+                ` AND event.sourceSystem IS NOT DISTINCT FROM :evt_system_${i}` +
+                ` AND event.sourceId = :evt_id_${i})`,
+              {
+                [`evt_type_${i}`]: triple.sourceType,
+                [`evt_system_${i}`]: triple.sourceSystem,
+                [`evt_id_${i}`]: triple.sourceId,
+              },
+            );
+          });
+        }),
+      )
+      .getMany();
+
+    for (const event of events) {
+      if (event.sourceType == null || event.sourceId == null) {
+        continue;
+      }
+
+      const key = tripleKey({
+        sourceType: event.sourceType,
+        sourceSystem: event.sourceSystem,
+        sourceId: event.sourceId,
+      });
+      // First match wins — the triple is unique per user via
+      // events_source_triple_uniq, so there is at most one anyway.
+      if (!result.has(key)) {
+        result.set(key, event.id);
+      }
+    }
+
+    return result;
   }
 
   async findAll(context: UserServiceContext): Promise<Content[]> {
@@ -175,6 +303,24 @@ export class ContentService {
     });
 
     return result.map((entity) => ContentEntity.toEgressType(entity));
+  }
+
+  /**
+   * Keyset-paginated page for the GraphQL connection — ordered by (created_at,
+   * id) DESC over the (user_id, created_at) index. Reads one page (+1 sentinel)
+   * instead of the whole 194k-row table and drops the eager `user` join.
+   */
+  async findPage(context: UserServiceContext, args: KeysetPageArgs): Promise<KeysetPage<Content>> {
+    const page = await keysetPaginate(this.contentRepository, args, {
+      alias: 'content',
+      timeProp: 'createdAt',
+      userId: context.userId,
+    });
+
+    return {
+      ...page,
+      entities: page.entities.map((entity) => ContentEntity.toEgressType(entity)),
+    };
   }
 
   async findById(context: ServiceContext, id: string): Promise<Content | null> {
@@ -408,5 +554,23 @@ export class ContentService {
     });
 
     return entities.map((entity) => ContentEntity.toEgressType(entity));
+  }
+
+  /**
+   * Hourly UTC activity buckets for the activity rollup: content counted by
+   * creation time, per user. Rows without an owner are skipped.
+   */
+  async aggregateHourlyActivity(): Promise<HourlyContentCount[]> {
+    const rows: Array<{ user_id: string; bucket_start: Date; count: number }> = await this.contentRepository
+      .createQueryBuilder('content')
+      .select('content.userId', 'user_id')
+      .addSelect(`date_trunc('hour', content.createdAt, 'UTC')`, 'bucket_start')
+      .addSelect('COUNT(*)::int', 'count')
+      .where('content.userId IS NOT NULL')
+      .groupBy('user_id')
+      .addGroupBy('bucket_start')
+      .getRawMany();
+
+    return rows.map((row) => ({ userId: row.user_id, bucketStart: row.bucket_start, count: row.count }));
   }
 }

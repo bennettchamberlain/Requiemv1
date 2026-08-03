@@ -2,7 +2,7 @@
 /*  THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)  */
 /* ------------------------------------------------------- */
 
- 
+/* eslint-disable */
 export interface PossibleTypesResultData {
         possibleTypes: {
           [key: string]: string[]
@@ -71,6 +71,7 @@ export interface PossibleTypesResultData {
       "ContentType",
       "EntityTagType",
       "EventType",
+      "FileChunkType",
       "FileType",
       "ItemType",
       "MessageType",
@@ -96,6 +97,7 @@ export interface PossibleTypesResultData {
       "ConceptType",
       "ContentType",
       "EventType",
+      "FileChunkType",
       "FileType",
       "ItemType",
       "NoteType",

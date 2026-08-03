@@ -46,6 +46,9 @@
       "github": {
         "id": "019d7a32-e4b0-7f01-b5c2-8a1d3e6f9c04"
       },
+      "signal": {
+        "id": "019e3d77-c6e3-8f14-da06-2b5f7c0e1d19"
+      },
       "steam": {
         "id": "019d6470-f9e1-720f-a3ce-299842abaece"
       }
@@ -60,11 +63,19 @@
       "issuerUrl": "",
       "publicBaseUrl": ""
     },
+    "connect": {
+      "hubOrigins": ""
+    },
     "portal": {
-      "enabled": false,
+      "enabled": true,
       "issuer": "https://hub.ci.computer",
       "jwksUri": "https://hub.ci.computer/api/auth/jwks",
-      "audience": "ci-server,ci-hub,ci-import-tools,ci-browser-extension"
+      "audience": "ci-server,ci-hub,ci-import-tools,ci-browser-extension,ci-even,ci-applet"
+    },
+    "hubForwardAuth": {
+      "enabled": false,
+      "secret": "",
+      "maxSkewMs": 300000
     }
   },
   "db": {
@@ -96,7 +107,13 @@
     },
     "hbpe": {
       "host": "http://hbpe-service:8002"
+    },
+    "parser": {
+      "host": "http://summary-service:8002"
     }
+  },
+  "signalCli": {
+    "restUrl": "http://127.0.0.1:8080"
   },
   "embedding": {
     "model": "nomic-embed-text",
@@ -108,7 +125,8 @@
   },
   "queues": {
     "concurrency": 10,
-    "fetchBatchSize": 10
+    "fetchBatchSize": 10,
+    "perQueueConcurrency": 6
   },
   "features": {
     "scheduled.answer.inferencing": true,
@@ -121,11 +139,13 @@
     "new.insights.page": false,
     "require.signup.codes": true,
     "files.page": false,
-    "insights.page": false,
+    "insights.page": true,
     "chat.page": false,
     "jobs.page": false,
     "planning.enabled": false,
     "planning.page": false,
+    "stats.page": false,
+    "tags.page": true,
     "hbpe": true,
     "agent.memory.compaction": false,
     "shared.search": false

@@ -29,6 +29,17 @@ import { FileVariant, type CreateFileDto, type UpdateFileDto, type UploadFileDto
 const BUCKET_REGION = config.staticfiles.bucket ?? 'us-east-1';
 const SIGNATURE_URL = config.staticfiles.auth.signatureUrl ?? config.staticfiles.storageUrl;
 
+/**
+ * Hourly UTC per-user file count. Declared locally so this domain carries no
+ * dependency on aggregating consumers; they enforce the shape structurally
+ * where they consume it.
+ */
+export interface HourlyFileCount {
+  userId: string;
+  bucketStart: Date;
+  count: number;
+}
+
 @Injectable()
 export class FileService implements OnModuleInit {
   private s3 = new S3Client({
@@ -224,7 +235,14 @@ export class FileService implements OnModuleInit {
    */
   async getEntitiesForFiles(
     context: ServiceContext,
-    options: { limit?: number; startTime?: Date; endTime?: Date; order?: 'ASC' | 'DESC' } = {},
+    options: {
+      limit?: number;
+      startTime?: Date;
+      endTime?: Date;
+      afterTime?: Date;
+      afterId?: string;
+      order?: 'ASC' | 'DESC';
+    } = {},
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
     let query = this.fileRepository
       .createQueryBuilder('file')
@@ -240,7 +258,16 @@ export class FileService implements OnModuleInit {
       query = query.andWhere('file.created_at <= :endTime', { endTime: options.endTime });
     }
 
-    query = query.orderBy('file.created_at', options.order ?? 'DESC');
+    // Composite keyset: page strictly past (afterTime, afterId) in (created_at DESC, id DESC).
+    if (options.afterTime && options.afterId) {
+      query = query.andWhere(
+        '(file.created_at < :afterTime OR (file.created_at = :afterTime AND file.id < :afterId))',
+        { afterTime: options.afterTime, afterId: options.afterId },
+      );
+    }
+
+    // Deterministic tiebreak so same-timestamp rows page consistently.
+    query = query.orderBy('file.created_at', options.order ?? 'DESC').addOrderBy('file.id', 'DESC');
 
     if (options.limit) {
       query = query.limit(options.limit);
@@ -330,6 +357,25 @@ export class FileService implements OnModuleInit {
   }
 
   async upload(context: UserServiceContext, file: UploadFileDto): Promise<SignedFile> {
+    const { file: uploaded } = await this.uploadWithDedupInfo(context, file);
+
+    return uploaded;
+  }
+
+  /**
+   * Same upload pipeline as {@link upload} (hash-dedup against the store,
+   * create + FileUploadedEvent fan-out for new content), but ALSO reports
+   * whether the content was deduplicated against an already-stored file —
+   * `deduped: true` means no new file row/object was created and `file` is the
+   * pre-existing one. Extracted so the batch `POST /v1/files` endpoint can
+   * honor its per-input `{ filename, sha256, id, deduped }` contract without
+   * forking the pipeline; `upload` (and thus `POST /files/upload`) delegates
+   * here and behaves exactly as before.
+   */
+  async uploadWithDedupInfo(
+    context: UserServiceContext,
+    file: UploadFileDto,
+  ): Promise<{ file: SignedFile; deduped: boolean }> {
     const { inventoryCapture = false, skipDescription = false, model, ...uploadData } = file;
     const hash = await this.getFileHash(uploadData);
 
@@ -351,7 +397,7 @@ export class FileService implements OnModuleInit {
           });
         }
 
-        return existing;
+        return { file: existing, deduped: true };
       }
     }
 
@@ -368,7 +414,7 @@ export class FileService implements OnModuleInit {
       model,
     });
 
-    return created;
+    return { file: created, deduped: false };
   }
 
   async getFileContent(context: ServiceContext, key: string): Promise<Uint8Array> {
@@ -504,5 +550,25 @@ export class FileService implements OnModuleInit {
       ...FileEntity.toEgressType(file),
       url: parsedUrl.pathname + parsedUrl.search,
     };
+  }
+
+  /**
+   * Hourly UTC activity buckets for the activity rollup: files counted by
+   * creation time, per user. Soft-deleted files are excluded automatically by
+   * the query builder (FileEntity has a @DeleteDateColumn); ownerless rows are
+   * skipped.
+   */
+  async aggregateHourlyActivity(): Promise<HourlyFileCount[]> {
+    const rows: Array<{ user_id: string; bucket_start: Date; count: number }> = await this.fileRepository
+      .createQueryBuilder('file')
+      .select('file.userId', 'user_id')
+      .addSelect(`date_trunc('hour', file.createdAt, 'UTC')`, 'bucket_start')
+      .addSelect('COUNT(*)::int', 'count')
+      .where('file.userId IS NOT NULL')
+      .groupBy('user_id')
+      .addGroupBy('bucket_start')
+      .getRawMany();
+
+    return rows.map((row) => ({ userId: row.user_id, bucketStart: row.bucket_start, count: row.count }));
   }
 }

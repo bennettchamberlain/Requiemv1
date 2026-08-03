@@ -1,5 +1,6 @@
 import { Catch, ArgumentsHost, HttpException, HttpStatus } from '@nestjs/common';
 import { BaseExceptionFilter } from '@nestjs/core';
+import * as Sentry from '@sentry/nestjs';
 
 import { LoggerService } from '@ci/common/logging';
 
@@ -34,6 +35,14 @@ export class GlobalExceptionsFilter extends BaseExceptionFilter {
       this.logger.warn(error);
     } else {
       this.logger.error(error);
+      // Only unexpected failures are worth a Sentry event — 401/404/429 are
+      // normal traffic and would drown the real defects. No-op when reporting
+      // is disabled (see common/telemetry/settings.ts).
+      Sentry.withScope((scope) => {
+        scope.setTag('context_type', contextType);
+        scope.setTag('http_status', String(status));
+        Sentry.captureException(error);
+      });
     }
 
     if (contextType === 'graphql') {

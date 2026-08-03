@@ -3,6 +3,13 @@ import { createHash } from 'crypto';
 import { Body, Controller, Get, HttpCode, Post, UseGuards } from '@nestjs/common';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
+import {
+  MEMORY_SCOPE,
+  READ_CAPABILITY,
+  RequireCapability,
+  RequireScopes,
+  WRITE_CAPABILITY,
+} from '@ci/common/decorators';
 import { ApiKeyGuard, JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
@@ -66,6 +73,8 @@ export class MemoryController {
    * called once per session (system_prompt_block), not per turn.
    */
   @UseGuards(ApiKeyGuard)
+  @RequireScopes(MEMORY_SCOPE)
+  @RequireCapability(READ_CAPABILITY)
   @Get('context')
   async context(@Context() context: RequestContext) {
     const serviceContext = toServiceContext(context);
@@ -98,6 +107,10 @@ export class MemoryController {
    * entity IDs into readable names and content.
    */
   @UseGuards(ApiKeyGuard)
+  @RequireScopes(MEMORY_SCOPE)
+  // A POST that only searches — the reason capability is declared per route rather than inferred
+  // from the HTTP method, which would lock a read-only key out of the one thing it exists to do.
+  @RequireCapability(READ_CAPABILITY)
   @Post('recall')
   async recall(@Context() context: RequestContext, @Body(new ValidationPipe(recallSchema)) input: RecallDto) {
     return this.recallService.recall(toServiceContext(context), {
@@ -115,6 +128,8 @@ export class MemoryController {
    *   - Hermes 'on_memory_write'
    */
   @UseGuards(ApiKeyGuard)
+  @RequireScopes(MEMORY_SCOPE)
+  @RequireCapability(WRITE_CAPABILITY)
   @HttpCode(201)
   @Post('write')
   async write(
@@ -132,6 +147,8 @@ export class MemoryController {
    *   - Hermes 'sync_turn'
    */
   @UseGuards(ApiKeyGuard)
+  @RequireScopes(MEMORY_SCOPE)
+  @RequireCapability(WRITE_CAPABILITY)
   @HttpCode(201)
   @Post('turn')
   async turn(@Context() context: RequestContext, @Body(new ValidationPipe(turnSchema)) input: TurnDto) {
@@ -196,7 +213,14 @@ export class MemoryController {
    * unprocessed fragments.  The LLM call runs in the background; the response
    * returns immediately with the number of queued fragments.
    */
+  // JWT/session principals (the browser settings UI) are unaffected by scope
+  // enforcement (no api-key scopes); an API key must carry the 'memory' scope,
+  // matching the other memory endpoints so an intentionally non-memory key
+  // can't compact.
   @UseGuards(JwtOrApiKeyAuthGuard)
+  @RequireScopes(MEMORY_SCOPE)
+  // Compaction promotes raw fragments into the knowledge graph, so it writes.
+  @RequireCapability(WRITE_CAPABILITY)
   @HttpCode(200)
   @Post('compact')
   async compact(@Context() context: RequestContext) {

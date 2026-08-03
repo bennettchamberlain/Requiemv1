@@ -7,7 +7,10 @@ services:
       - ci
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready"]
+      # -U is required: pg_isready otherwise defaults the role to $USER (root
+      # in this image), and every 5s probe logs a FATAL "role root does not
+      # exist". The probe still passed, but the noise buries real errors.
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -18,6 +21,15 @@ services:
     volumes:
       - hbpe-models:/app/models
       - hbpe-corpus:/app/data
+    environment:
+      # Error reporting is opt-in — an unset DSN means the service never
+      # contacts Sentry. CI_TELEMETRY=off or CI_LOCAL_ONLY=true disable it even
+      # when a DSN is present. See docs/operations/error-reporting.md.
+      SENTRY_DSN: ${SENTRY_DSN_HBPE:-}
+      SENTRY_ENV: ${SENTRY_ENV:-}
+      CI_TELEMETRY: ${CI_TELEMETRY:-}
+      CI_LOCAL_ONLY: ${CI_LOCAL_ONLY:-}
+      CI_SERVER_VERSION: ${CI_SERVER_VERSION:-}
     networks:
       - ci
     depends_on:
@@ -59,6 +71,13 @@ services:
     image: ci/summary-service
     extra_hosts:
       - host.docker.internal:host-gateway
+    environment:
+      # Opt-in error reporting; see the note on hbpe-service above.
+      SENTRY_DSN: ${SENTRY_DSN_SUMMARY:-}
+      SENTRY_ENV: ${SENTRY_ENV:-}
+      CI_TELEMETRY: ${CI_TELEMETRY:-}
+      CI_LOCAL_ONLY: ${CI_LOCAL_ONLY:-}
+      CI_SERVER_VERSION: ${CI_SERVER_VERSION:-}
     networks:
       - ci
     depends_on:

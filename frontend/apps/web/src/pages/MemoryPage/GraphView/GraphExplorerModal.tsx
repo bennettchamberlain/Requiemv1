@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ENTITY_TYPE_MAP } from '@ci/common/src/constants';
-import { Badge, Button, Input, Label, Separator, Slider, cn } from '@ci/shadcn';
+import { Badge, Button, Input, Label, Slider, cn } from '@ci/shadcn';
 import { AlertCircle, Anchor, Loader2, Sparkles, Users } from '@ci/shadcn/icons';
 import { useSearchParams } from 'react-router-dom';
 
@@ -217,7 +217,17 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
 
   const rawNodes = combinedNodes;
   const rawLinks = combinedLinks;
-  const effectiveUserEntityId = isSearchMode ? null : userEntityId;
+  // Anchor on the owner's entity only when its node is actually in the loaded
+  // set — seeding visibility from an absent node renders an empty graph even
+  // though data arrived. Without an anchor the expansion effect below falls
+  // back to the first loaded node.
+  const effectiveUserEntityId = useMemo(() => {
+    if (isSearchMode || !userEntityId) {
+      return null;
+    }
+
+    return rawNodes.some((node) => node.id === userEntityId) ? userEntityId : null;
+  }, [isSearchMode, rawNodes, userEntityId]);
   const currentCenterNodeId = traversalEnabled
     ? (selectedNodeId ?? effectiveUserEntityId ?? null)
     : (effectiveUserEntityId ?? null);
@@ -489,7 +499,16 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
         return [] as string[];
       }
 
-      return Array.from(neighbors).sort((a, b) => hashWithSeed(a, nodeId) - hashWithSeed(b, nodeId));
+      // Hash each neighbor once up front. Hashing inside the comparator ran
+      // O(k log k) string hashes per call, which locked up the main thread on
+      // hub nodes with large neighbor sets (this runs on every visibility
+      // recompute, i.e. every node click).
+      const hashes = new Map<string, number>();
+      for (const neighborId of neighbors) {
+        hashes.set(neighborId, hashWithSeed(neighborId, nodeId));
+      }
+
+      return Array.from(neighbors).sort((a, b) => hashes.get(a)! - hashes.get(b)!);
     },
     [adjacencyMap],
   );
@@ -1057,18 +1076,6 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold">Knowledge Graph</h2>
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span>
-            <span className="font-medium text-foreground">{visibleNodes.length}</span> nodes
-          </span>
-          <span>
-            <span className="font-medium text-foreground">{visibleLinks.length}</span> relationships
-          </span>
-        </div>
-      </div>
-
       <div className="rounded-lg border bg-muted/20 p-3">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1 rounded-md border bg-background p-1">
@@ -1242,14 +1249,12 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
         </div>
       </div>
 
-      <Separator />
-
       <div className={detailGridClass}>
         <div className="space-y-4 min-w-0">
           <div className="rounded-lg border bg-muted/30 p-4 overflow-hidden">
             <h3 className="flex items-center gap-2 text-sm font-semibold">
               <Users className="h-4 w-4 text-primary" />
-              Graph Summary
+              Summary
             </h3>
             <dl className="mt-3 space-y-2 text-sm">
               <div className="flex items-center justify-between">
@@ -1289,7 +1294,7 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
         </div>
 
         <div className="md:col-span-2 space-y-3 rounded-lg border bg-muted/10 p-4 overflow-hidden min-w-0">
-          <h3 className="text-sm font-semibold">Entity Details</h3>
+          <h3 className="text-sm font-semibold">Entity details</h3>
           {selectedNode ? (
             <div className="space-y-2 text-sm min-w-0">
               <div className="flex items-center gap-2 min-w-0">

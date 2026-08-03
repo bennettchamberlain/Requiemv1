@@ -47,6 +47,16 @@ type ActionType implements Node & Taggable {
   updatedAt: DateTime!
 }
 
+"""
+Activity count for one local calendar day, rolled up from hourly UTC buckets
+"""
+type ActivityBucketType {
+  count: Int!
+
+  """Local calendar day, yyyy-MM-dd, in the user profile timezone"""
+  date: String!
+}
+
 type ActivityCountsType {
   activities: Int
   apiLogs: Int
@@ -103,16 +113,27 @@ type BrowserActivityType implements Node & Taggable {
   url: String!
 }
 
+type BulkGraphEntityMapping {
+  entityId: ID!
+  key: String!
+}
+
 input BulkGraphInput {
   entities: [GraphEntityInput!]!
   relationships: [GraphRelationshipInput!]
 }
 
 type BulkGraphPayload {
+  entities: [BulkGraphEntityMapping!]!
   entitiesProcessed: Int!
   errors: [String!]!
   relationshipsProcessed: Int!
   success: Boolean!
+}
+
+type BulkItemRelationshipResult {
+  inserted: Int!
+  skipped: Int!
 }
 
 type CommunicationConnection implements Connection {
@@ -272,6 +293,7 @@ input CreateCommunicationInput {
   communicationType: String!
   content: String!
   direction: String
+  durationSeconds: Int
   fromEntityId: String
   participantsMetadata: JSON
   preview: String
@@ -578,6 +600,21 @@ type EventType implements Node & Taggable {
   title: String
 }
 
+type FileChunkType implements Node {
+  chunkIndex: Int!
+  chunkerVersion: String!
+  content: String!
+  createdAt: DateTime!
+  file: FileType
+  fileId: ID!
+  id: ID!
+  parserName: String!
+  parserVersion: String!
+  sectionTitle: String
+  sourceLocator: JSON
+  updatedAt: DateTime!
+}
+
 type FileConnection implements Connection {
   edges: [FileEdge!]!
   pageInfo: PageInfo!
@@ -597,6 +634,9 @@ type FileType implements Node & Taggable {
   filename: String
   id: ID!
   items(after: String, before: String, first: Int, last: Int): ItemConnection
+  parseError: String
+  parseStatus: String
+  parsedAt: DateTime
   previewUrl: String
   size: Float
   sourceUrl: String
@@ -651,6 +691,24 @@ input GraphRelationshipInput {
   type: String!
 }
 
+input IngestUserSnapshotInput {
+  cwd: String
+  deviceId: ID!
+  focusApp: String
+  focusTitle: String
+  fsEventCount: Int!
+  monotonicMs: Float!
+  observedAt: DateTime!
+  payload: JSON!
+  sessionId: ID!
+  snapshotKind: String!
+}
+
+type IngestUserSnapshotPayload {
+  errorMessage: String
+  success: Boolean!
+}
+
 type InsightItemType {
   keyActions: [String!]!
   relatedEntityIds: [String!]
@@ -679,6 +737,17 @@ type ItemConnection implements Connection {
 type ItemEdge implements Edge {
   cursor: String!
   node: ItemType!
+}
+
+input ItemRelationshipInput {
+  fromSourceId: String!
+  fromSourceSystem: String!
+  fromSourceType: String!
+  metadata: JSON
+  relation: String!
+  toSourceId: String!
+  toSourceSystem: String!
+  toSourceType: String!
 }
 
 type ItemType implements Node & Taggable {
@@ -758,6 +827,7 @@ type MessageType implements Node {
 
 type Mutation {
   bulkIngestGraph(input: BulkGraphInput!): BulkGraphPayload!
+  bulkIngestItemRelationships(input: [ItemRelationshipInput!]!): BulkItemRelationshipResult!
 
   """
   Mark a task done. Idempotent — the original completion instant is preserved.
@@ -804,6 +874,7 @@ type Mutation {
   deleteRelationship(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteSavedSearch(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteTask(input: DeleteByIdInput!): DeleteByIdPayload!
+  ingestUserSnapshot(input: IngestUserSnapshotInput!): IngestUserSnapshotPayload!
 
   """Mark an action as dismissed"""
   markActionAsDismissed(id: ID!): ActionType
@@ -825,6 +896,7 @@ type Mutation {
   """Move a completed task back to open."""
   reopenTask(id: ID!): TaskType
   setSavedSearchSharing(input: SetSavedSearchSharingInput!): UpdateSavedSearchPayload!
+  startPairing: StartPairingPayload!
   tagEntities(input: TagEntitiesInput!): [TaggableEntityType!]!
 
   """Manually trigger the HBPE pipeline for the current user"""
@@ -837,6 +909,7 @@ type Mutation {
   updateConnection(input: UpdateConnectionInput!): UpdateConnectionPayload!
   updateConnectionSyncJob(input: UpdateConnectionSyncJobInput!): UpdateConnectionSyncJobPayload!
   updateContent(input: UpdateContentInput!): ContentType
+  updateCurrentUser(input: UpdateCurrentUserInput!): UserType
   updateEvent(input: UpdateEventInput!): EventType
   updateFile(input: UpdateFileInput!): FileType
   updateItem(input: UpdateItemInput!): UpdateItemPayload!
@@ -880,6 +953,17 @@ type PageInfo {
   hasNextPage: Boolean!
   hasPreviousPage: Boolean!
   startCursor: String
+}
+
+type PairingStatusPayload {
+  appletAccessToken: String
+  deviceId: String
+  errorMessage: String
+  status: String!
+  success: Boolean!
+  userEmail: String
+  userId: String
+  userName: String
 }
 
 type PersonConnection implements Connection {
@@ -995,6 +1079,20 @@ type ProviderType implements Node {
 type Query {
   action(id: ID!): ActionType
   actions(after: String, before: String, first: Int, last: Int): ActionConnection!
+
+  """
+  Precomputed activity counts per local calendar day, with day boundaries in the user profile timezone. Eventually consistent: refreshed from the source tables every 15 minutes.
+  """
+  activityTimeline(
+    """Inclusive last day, yyyy-MM-dd"""
+    end: String!
+
+    """Restrict to these activity sources; all sources when omitted"""
+    sources: [String!]
+
+    """Inclusive first day, yyyy-MM-dd"""
+    start: String!
+  ): [ActivityBucketType!]!
   answer(id: ID!): AnswerType
   answers(after: String, before: String, first: Int, last: Int): AnswerConnection!
   browserActivities(after: String, before: String, first: Int, last: Int): BrowserActivityConnection!
@@ -1036,6 +1134,7 @@ type Query {
   note(id: ID!): NoteType
   notes(after: String, before: String, first: Int, last: Int): NoteConnection!
   oAuthCallbackUrl: String!
+  pairingStatus(pairingToken: String!, pollKey: String!): PairingStatusPayload!
   people(after: String, before: String, first: Int, last: Int): PersonConnection!
   person(id: ID!): PersonType
   place(id: ID!): PlaceType
@@ -1188,6 +1287,7 @@ input SearchInput {
 
 type SearchResultConnection {
   edges: [SearchResultEdge!]!
+  matchingTags: [TagType!]!
   pageInfo: PageInfo!
   totalCount: Int!
 }
@@ -1197,11 +1297,19 @@ type SearchResultEdge {
   node: SearchResultType!
 }
 
-union SearchResultType = ActionType | AnswerType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileType | ItemType | NoteType | PersonType | PlaceType | ThreadType
+union SearchResultType = ActionType | AnswerType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileChunkType | FileType | ItemType | NoteType | PersonType | PlaceType | ThreadType
 
 input SetSavedSearchSharingInput {
   id: ID!
   isPublic: Boolean!
+}
+
+type StartPairingPayload {
+  errorMessage: String
+  pairingPath: String
+  pairingToken: String
+  pollKey: String
+  success: Boolean!
 }
 
 type SummaryConnection implements Connection {
@@ -1440,6 +1548,10 @@ input UpdateContentInput {
   url: String
 }
 
+input UpdateCurrentUserInput {
+  timezone: String
+}
+
 input UpdateEventInput {
   category: String
   confidenceScore: Float
@@ -1606,4 +1718,5 @@ type UserType implements Node {
   id: ID!
   name: String!
   onboarded: Boolean!
+  timezone: String!
 }

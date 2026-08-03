@@ -67,13 +67,20 @@ export function ProviderPage() {
 
   const provider = data?.provider;
 
-  const [{ authorizationUrl, loading: connectLoading, error, setEndpoints, apiKey, setApiKey }, { connect }] =
+  const [{ authorizationUrl, loading: connectLoading, error, apiKey, setApiKey }, { connect }] =
     useConnectService();
 
   const isOpenId = provider?.authType === 'openid';
-  const isConnectDisabled = isOpenId && (apiKey == null || apiKey.length === 0);
+  const isApiKey = provider?.authType === 'api_key';
+  const requiresApiKey = isOpenId || isApiKey;
+  const isConnectDisabled = requiresApiKey && (apiKey == null || apiKey.length === 0);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  const form = useForm<ConnectFormData>({
+    resolver: formDataResolver(ConnectFormSchema),
+    shouldUnregister: false,
+  });
 
   const handleConnect = useCallback(() => {
     if (!provider) {
@@ -82,21 +89,28 @@ export function ProviderPage() {
 
     const id = GlobalUID.parse('provider', provider.id);
 
-    connect(id);
-  }, [connect, provider]);
+    connect(id, form.getValues('endpoints') || []);
+  }, [connect, provider, form]);
 
   const handleGoBack = useCallback(() => {
     navigate('/connect');
   }, [navigate]);
 
   useEffect(() => {
-    if (!authorizationUrl) {
+    if (authorizationUrl === null) {
+      return;
+    }
+
+    if (authorizationUrl === '') {
+      toast.success(`Connected to ${provider?.name ?? 'provider'}`);
+      navigate('/connect');
+
       return;
     }
 
     // We have to do `window.location` since this is an external URL.
     window.location.href = authorizationUrl;
-  }, [authorizationUrl]);
+  }, [authorizationUrl, navigate, provider?.name, toast]);
 
   useEffect(() => {
     if (!error) {
@@ -107,11 +121,6 @@ export function ProviderPage() {
 
     // handleGoBack();
   }, [error]);
-
-  const form = useForm<ConnectFormData>({
-    resolver: formDataResolver(ConnectFormSchema),
-    shouldUnregister: false,
-  });
 
   const backgroundStyle = useMemo(() => {
     if (provider?.theme?.backgroundColor && isHexColor(provider.theme.backgroundColor)) {
@@ -182,12 +191,16 @@ export function ProviderPage() {
                   </div>
 
                   <div className="p-6">
-                    <Endpoints provider={provider} setEndpoints={setEndpoints} />
+                    <Endpoints provider={provider} />
 
-                    {isOpenId && (
+                    {(isOpenId || isApiKey) && (
                       <div className="mt-6 space-y-2">
                         <div className="flex items-center gap-1.5">
-                          <Label htmlFor="openid-api-key">Enter your {provider.name} OpenID API key</Label>
+                          <Label htmlFor="openid-api-key">
+                            {isApiKey
+                              ? `Enter your ${provider.name} REST API key`
+                              : `Enter your ${provider.name} OpenID API key`}
+                          </Label>
                           {provider.openidKeyLink && (
                             <Popover>
                               <Popover.Trigger asChild>

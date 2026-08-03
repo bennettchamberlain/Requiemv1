@@ -51,6 +51,8 @@ import { OneDriveTransformService } from './services/Microsoft/transform/Transfo
 import { OutlookCalendarTransformService } from './services/Microsoft/transform/TransformOutlookCalendar';
 import { OutlookMailTransformService } from './services/Microsoft/transform/TransformOutlookMail';
 import { PromoteService } from './services/PromoteService';
+import { SignalContactsTransformService } from './services/Signal/transform/TransformContacts';
+import { SignalMessagesTransformService } from './services/Signal/transform/TransformMessages';
 import { SpotifyPlaylistsTransformService } from './services/Spotify/transform/TransformPlaylists';
 import { SpotifyRecentlyPlayedTransformService } from './services/Spotify/transform/TransformRecentlyPlayed';
 import { SpotifySavedAudiobooksTransformService } from './services/Spotify/transform/TransformSavedAudiobooks';
@@ -107,6 +109,8 @@ import { SteamOwnedGamesTransformService } from './services/Steam/transform/Tran
     SpotifySavedTracksTransformService,
     SpotifyTopArtistsTransformService,
     GitHubEventsTransformService,
+    SignalMessagesTransformService,
+    SignalContactsTransformService,
     SteamOwnedGamesTransformService,
     SteamAchievementsTransformService,
     SteamFriendsTransformService,

@@ -22,8 +22,14 @@ This repository serves as the web interface to the Companion Intelligence server
 
 ## Docs
 
+Full index: [`docs/README.md`](docs/README.md)
+
+- **API reference:** [`docs/api/`](docs/api/README.md) — the three surfaces (GraphQL, REST, MCP), auth & conventions, and the bulk-ingest contract, all file:line-cited. The [GraphiQL IDE + codegen workflow](docs/graphql-api.md) is documented separately.
+- **Architecture:** [`docs/architecture/architecture.md`](docs/architecture/architecture.md) (platform, services, data flows) and [`docs/architecture/Database.md`](docs/architecture/Database.md) (schemas, idempotency design, indexing, hypertables, migration workflow).
+- **Backend developer guide:** [`backend/apps/api/README.md`](backend/apps/api/README.md) — domain/module layout, common infrastructure, the event bus, config system, DB workflow.
+- **Runbooks:** [bulk load](backend/apps/api/db/postgres/BULK_LOAD_RUNBOOK.md) · [ingest reset](backend/apps/api/db/postgres/INGEST_RESET_RUNBOOK.md).
+- **Features:** [`docs/saved-search-sharing.md`](docs/saved-search-sharing.md) (sharing + filter capture + read-only viewer).
 - **User-facing:** the [Companion Memory page on docs.ci.computer](https://docs.ci.computer/docs/first-party-apps/digital-memory-server) (in [CI-Docs](https://github.com/companionintelligence/CI-Docs)) covers the Explorer, search & filters, saved searches, and sharing — with screenshots.
-- **Internals:** [`docs/architecture/architecture.md`](docs/architecture/architecture.md) (platform & data model), [`docs/architecture/Database.md`](docs/architecture/Database.md), [`docs/saved-search-sharing.md`](docs/saved-search-sharing.md) (sharing + filter capture + read-only viewer).
 
 This is a Yarn workspace monorepo with the following structure:
 
@@ -333,6 +339,24 @@ Run `make` from the project root to see all available commands with descriptions
 | `make production` | Run the production deployment |
 | `make publish` | Publish CI-Server images and metadata to the CI-Portal store |
 | `make seed-production` | Seed the production database via an ephemeral proxy |
+
+### Releasing & image tags
+
+Pushing a git tag triggers `.github/workflows/publish.yml`, which builds every `companion/*` image
+natively per architecture, merges the legs into a multi-arch manifest list, and registers the result
+with CI-Portal.
+
+| Tag | Meaning |
+|---------|-------------|
+| `v<YYYY>.<M>.<D>` | A release. Use `v<YYYY>.<M>.<D>.<N>` for a second release the same day. |
+| `<version>` (no `v`) | What the images are tagged with — the leading `v` is stripped by both the workflow and `make publish`, so `v2026.7.27` publishes `companion/*:2026.7.27`. This is the form CI-Marketplace pins. |
+| `latest` | The **newest release tag only**. Repointed by the publish workflow when, and only when, the tag being built is release-shaped *and* sorts newest. A back-tagged or re-cut older release leaves it alone. |
+| `dev-<short-sha>` | What an untagged local `make publish` produces. Never `latest` — see below. |
+
+`:latest` must never be minted by hand. It was a stale, single-arch, three-month-old orphan for exactly
+that reason: `scripts/publish/publish.sh` used to fall back to `VERSION=latest` for untagged commits, so
+any `REGISTRY=ghcr.io/... make publish` from an untagged checkout overwrote it with a local dev build
+pointing at no release at all.
 
 ### HBPE
 

@@ -25,6 +25,9 @@
       "issuerUrl": "OIDC_ISSUER_URL",
       "publicBaseUrl": "APP_BASE_URL"
     },
+    "connect": {
+      "hubOrigins": "CI_HUB_ORIGINS"
+    },
     "portal": {
       "enabled": {
         "__name": "PORTAL_OIDC_ENABLED",
@@ -33,6 +36,14 @@
       "issuer": "PORTAL_OIDC_ISSUER",
       "jwksUri": "PORTAL_OIDC_JWKS_URI",
       "audience": "PORTAL_OIDC_AUDIENCE"
+    },
+    "hubForwardAuth": {
+      "enabled": {
+        "__name": "CI_HUB_FORWARD_AUTH_ENABLED",
+        "__format": "boolean"
+      },
+      "secret": "CI_HUB_FORWARD_AUTH_SECRET",
+      "maxSkewMs": "CI_HUB_FORWARD_AUTH_MAX_SKEW_MS"
     }
   },
   "db": {
@@ -54,6 +65,9 @@
     },
     "hbpe": {
       "host": "HBPE_HOST"
+    },
+    "parser": {
+      "host": "PARSER_HOST"
     }
   },
   "embedding": {
@@ -85,6 +99,10 @@
     "fetchBatchSize": {
       "__name": "CI_QUEUE_FETCH_BATCH_SIZE",
       "__format": "json"
+    },
+    "perQueueConcurrency": {
+      "__name": "CI_QUEUE_PER_QUEUE_CONCURRENCY",
+      "__format": "json"
     }
   },
   "features": {
@@ -103,6 +121,8 @@
     "jobs.page": "ENABLE_JOBS_PAGE",
     "planning.enabled": "ENABLE_PLANNING",
     "planning.page": "ENABLE_PLANNING_PAGE",
+    "stats.page": "ENABLE_STATS_PAGE",
+    "tags.page": "ENABLE_TAGS_PAGE",
     "hbpe": "ENABLE_HBPE",
     "agent.memory.compaction": "ENABLE_AGENT_MEMORY_COMPACTION",
     "shared.search": "ENABLE_SHARED_SEARCH"

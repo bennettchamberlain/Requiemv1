@@ -16,6 +16,7 @@ import path from 'node:path';
 import dotenv from 'dotenv';
 
 import { CaddyClient } from './caddy';
+import { keyFromArgv } from './key';
 import { fail } from './log';
 
 const ROOT = process.cwd();
@@ -24,17 +25,6 @@ dotenv.config({
   path: path.join(ROOT, '.env'),
   quiet: true,
 });
-
-function resolveKey(argv: string[]): string {
-  const i = argv.indexOf('--key');
-  const raw = i !== -1 ? argv[i + 1] : process.env.PROJECT_NAME;
-
-  if (!raw) {
-    throw new Error('pass --key <name> (or set PROJECT_NAME)');
-  }
-
-  return raw.toLowerCase().replace(/[/.]/g, '-');
-}
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
@@ -45,7 +35,7 @@ async function main(): Promise<void> {
   if (command === 'down') {
     await caddy.releaseOauth();
   } else {
-    await caddy.claimOauth(resolveKey(argv));
+    await caddy.claimOauth(keyFromArgv(argv));
   }
 }
 

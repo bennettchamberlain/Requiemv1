@@ -34,6 +34,41 @@ logger = structlog.get_logger()
 
 
 # ============================================================================
+# Timezone / Window Activities
+# ============================================================================
+
+@activity.defn
+async def resolve_summary_window_activity(
+    user_id: str,
+    period_type: str,    # 'daily' | 'weekly' | 'monthly'
+    reference_iso: str,  # ISO timestamp, typically workflow.now()
+) -> Dict[str, str]:
+    """
+    Resolve the user-local ``[start, end)`` window (as UTC instants) and timezone
+    for the last complete period before ``reference_iso``.
+
+    Boundaries are computed in the user's ``ci.users.timezone`` so a GMT-5 user's
+    "yesterday" is their local yesterday, not the UTC one.  Runs in an activity
+    (not the workflow sandbox) so ``zoneinfo`` and DB access are safe.
+    """
+    from .timezone_utils import get_user_timezone, local_period_window
+
+    tz = get_user_timezone(user_id)
+    reference = datetime.fromisoformat(reference_iso.replace("Z", "+00:00"))
+    start, end = local_period_window(reference, tz, period_type)
+    logger.info(
+        "resolved_summary_window",
+        user_id=str(user_id)[:8], period=period_type, tz=tz,
+        start=start.isoformat(), end=end.isoformat(),
+    )
+    return {
+        "start_time": start.isoformat(),
+        "end_time": end.isoformat(),
+        "timezone": tz,
+    }
+
+
+# ============================================================================
 # Data Aggregation Activities
 # ============================================================================
 
@@ -697,6 +732,36 @@ async def generate_actions_activity(
 
 
 @activity.defn
+async def count_pending_actions_activity(user_id: str) -> int:
+    """
+    Count the actions currently occupying slots on the user's feed.
+
+    The feed shows unseen, undismissed actions first (see ActionService.findForFeed),
+    so those are the ones that consume the feed's card budget. Seen-but-undismissed
+    actions are only used as filler and are not counted here — otherwise a user who
+    stops dismissing would permanently block new generation.
+    """
+    activity.logger.info("counting_pending_actions", user_id=user_id)
+
+    rows = db.execute_query(
+        """
+        SELECT COUNT(*) AS pending
+        FROM ci.actions
+        WHERE user_id = :user_id
+          AND dismissed = false
+          AND seen = false
+        """,
+        {"user_id": str(UUID(user_id))},
+    )
+
+    pending = int(rows[0]["pending"]) if rows else 0
+
+    activity.logger.info("pending_actions_counted", user_id=user_id, pending=pending)
+
+    return pending
+
+
+@activity.defn
 async def store_action_activity(
     user_id: str,
     actions_data: Dict[str, Any],
@@ -908,5 +973,6 @@ __all__ = [
     # Action activities
     "aggregate_action_context_activity",
     "generate_actions_activity",
+    "count_pending_actions_activity",
     "store_action_activity",
 ]

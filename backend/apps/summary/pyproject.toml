@@ -30,10 +30,17 @@ dependencies = [
     # Logging
     "structlog",
 
+    # Error reporting — inert unless SENTRY_DSN is set. src/telemetry.py also
+    # tolerates the package being absent so a slimmed install still boots.
+    "sentry-sdk>=2.20",
+
     # API / HTTP
     "fastapi",
     "uvicorn",
     "python-multipart",
+
+    # Document parsing
+    "markitdown[all]",
 ]
 
 [project.optional-dependencies]

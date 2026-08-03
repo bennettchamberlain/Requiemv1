@@ -19,6 +19,7 @@ const EMPTY_CONNECTION: SearchResultConnection = {
   edges: [],
   pageInfo: { hasNextPage: false, hasPreviousPage: false, startCursor: null, endCursor: null },
   totalCount: 0,
+  matchingTags: [],
 };
 
 function makeResolver() {
@@ -33,6 +34,8 @@ function makeResolver() {
     {} as never, // communicationService
     {} as never, // entityResolutionService
     {} as never, // eventService
+    {} as never, // fileService
+    {} as never, // fileChunkService
     savedSearchService as never,
     {} as never, // searchService
     {} as never, // tagService

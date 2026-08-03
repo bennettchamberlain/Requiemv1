@@ -13,7 +13,7 @@ from pydantic_ai import Agent, NativeOutput, PromptedOutput, ToolOutput
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
-from .config import settings
+from .config import resolve_llm_model, settings
 
 logger = structlog.get_logger()
 
@@ -169,8 +169,10 @@ class Summarizer:
         import httpx
         http_client = httpx.AsyncClient(timeout=180.0)  # 3 minutes
 
+        # Configured (Hub-injected) model, else discovered from the endpoint.
+        self.model_name = resolve_llm_model()
         self.model = OpenAIChatModel(
-            settings.llm_model,
+            self.model_name,
             provider=OpenAIProvider(
                 base_url=settings.llm_api_base,
                 api_key=settings.llm_api_key,
@@ -292,7 +294,7 @@ class Summarizer:
             ),
         )
 
-        logger.info("pydantic_ai_initialized", model=settings.llm_model, base_url=settings.llm_api_base)
+        logger.info("pydantic_ai_initialized", model=self.model_name, base_url=settings.llm_api_base)
 
     def generate_hourly_summary(self, aggregated_data: Dict[str, Any]) -> Dict[str, Any]:
         """Generate hourly summary from aggregated data."""
@@ -313,7 +315,7 @@ class Summarizer:
         # Build prompt
         prompt = self._build_data_prompt(aggregated_data, activity_counts)
         logger.info("calling_llm_for_summary",
-                   model=settings.llm_model,
+                   model=self.model_name,
                    base_url=settings.llm_api_base,
                    prompt_length=len(prompt))
 
@@ -441,7 +443,7 @@ class Summarizer:
 
         logger.info(
             "calling_llm_for_insights",
-            model=settings.llm_model,
+            model=self.model_name,
             prompt_length=len(prompt),
         )
 
@@ -487,7 +489,7 @@ class Summarizer:
 
         logger.info(
             "calling_llm_for_actions",
-            model=settings.llm_model,
+            model=self.model_name,
             prompt_length=len(prompt),
         )
 

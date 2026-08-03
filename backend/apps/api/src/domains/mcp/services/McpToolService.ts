@@ -1,14 +1,50 @@
-import { Injectable, type OnModuleInit } from '@nestjs/common';
+import { ForbiddenException, Injectable, type OnModuleInit } from '@nestjs/common';
 import { z, type ZodTypeAny } from 'zod';
 
 import type { RequestContext } from '@ci/common/context';
+import { type ApiKeyCapability, INTENTS_SCOPE } from '@ci/common/decorators';
+import { type ApiKeyScopedRequest, apiKeyCapabilityOf, isScopeLimitedApiKey } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
-import { type JSONSchema, ToolRegistry, intentToolName } from '@ci/domains/tools';
+import { type IntentPrivacy, type JSONSchema, ToolRegistry, intentToolName } from '@ci/domains/tools';
 
 import type { McpRegisteredTool } from '../types';
 
 import { GraphQLToolAdapter } from './GraphQLToolAdapter';
 import { McpExecutorService } from './McpExecutorService';
+
+/**
+ * Whether a key at `capability` may run a tool with this privacy label.
+ *
+ * The labels already exist and are derived structurally — a GraphQL query IS a read, a mutation
+ * named `delete*` IS destructive (see GraphQLToolAdapter) — but until now they were advisory:
+ * emitted as MCP annotation hints for the client's benefit, enforced nowhere. A client that
+ * ignored the hint and called `deleteMemory` succeeded. This is where the label starts to mean
+ * something.
+ *
+ * `delete` and `destructive` are treated the same way deliberately. They are separate fields
+ * because they answer different questions, but both answer "can this lose data?" with yes, and
+ * a level that allowed one while refusing the other would be a distinction no user could act on.
+ */
+function capabilityAllows(
+  // Typed off IntentPrivacy rather than restated as `{ access: string }`: `access` is a closed union
+  // ('read' | 'write' | 'delete'), and a structural copy that widens it to `string` would let a typo
+  // — 'deleted', 'READ' — compile here and silently fall through to the permissive branch. The gate
+  // should not be the one place that stops believing the label's type.
+  privacy: Pick<IntentPrivacy, 'access' | 'destructive'>,
+  capability: ApiKeyCapability,
+): boolean {
+  if (capability === 'full') {
+    return true;
+  }
+
+  const removesData = privacy.access === 'delete' || privacy.destructive;
+
+  if (capability === 'write') {
+    return !removesData;
+  }
+
+  return privacy.access === 'read' && !removesData;
+}
 
 @Injectable()
 export class McpToolService implements OnModuleInit {
@@ -38,6 +74,71 @@ export class McpToolService implements OnModuleInit {
     return [...this.tools.values()];
   }
 
+  /**
+   * The tools this caller can actually execute.
+   *
+   * A scope-limited key reaches MCP with the `mcp` scope alone, but the tools behind
+   * this endpoint are not one undifferentiated capability — they are the same two data
+   * planes the REST routes gate separately, so MCP gates them the same way rather than
+   * letting the transport become a way around the scopes:
+   *
+   * - GraphQL-derived tools run against the resolvers that serve `/graphql`, which
+   *   declare no `@RequireScopes` — deny-by-default already rejects a scope-limited key
+   *   on every one of them. Advertising them anyway would hand the model a catalog where
+   *   each call fails with an opaque `Forbidden resource`.
+   * - Native intents execute through the ToolRegistry, which performs NO authorization of
+   *   its own; `knowledge.search` alone reads across the whole personal graph. They are
+   *   the MCP face of the intent catalog, so they require the same {@link INTENTS_SCOPE}
+   *   the REST catalog does — otherwise an `mcp`-only key, 403'd on `/api/intents`, would
+   *   execute those very intents here.
+   *
+   * Both chat-agent connect keys already carry `intents` (see `scopesForApp`), so this
+   * confines the hole without narrowing any key in the field. Full-authority principals
+   * (sessions/JWT, and empty-scope keys such as the bulk importer's) still see every tool.
+   */
+  getToolsForRequest(req: ApiKeyScopedRequest): McpRegisteredTool[] {
+    // Capability applies to every api-key principal, including empty-scope (full-surface) ones:
+    // "sees every surface" and "may delete on it" are separate grants, and the importer key that
+    // holds no scopes is exactly the credential that should be able to write without deleting.
+    const capability = apiKeyCapabilityOf(req);
+    const withinCapability = (tool: McpRegisteredTool) => capabilityAllows(tool.privacy, capability);
+
+    if (!isScopeLimitedApiKey(req)) {
+      return this.getTools().filter(withinCapability);
+    }
+
+    const mayRunIntents = this.mayRunIntents(req);
+
+    return this.getTools().filter(
+      (tool) => tool.source !== 'graphql' && mayRunIntents && withinCapability(tool),
+    );
+  }
+
+  /**
+   * Whether this caller may execute native intents — i.e. it is a full-authority
+   * principal, or a scope-limited key carrying {@link INTENTS_SCOPE}.
+   *
+   * The single source of truth for that question, so the tools, the executor, and the
+   * intent-catalog resource cannot disagree about who gets the intent plane.
+   */
+  mayRunIntents(req: ApiKeyScopedRequest): boolean {
+    if (!isScopeLimitedApiKey(req)) {
+      return true;
+    }
+
+    return req.apiKeyScopes?.includes(INTENTS_SCOPE) ?? false;
+  }
+
+  /** The lowest capability that could run this tool — named in the refusal so an operator is told
+   *  which level to grant, rather than being left to guess between 'write' and 'full'. */
+  private capabilityNeededFor(tool: McpRegisteredTool): ApiKeyCapability {
+    if (tool.privacy.access === 'delete' || tool.privacy.destructive) {
+      return 'full';
+    }
+
+    return tool.privacy.access === 'read' ? 'read' : 'write';
+  }
+
   getSchemaSDL(): string {
     return this.graphqlAdapter.getSchemaSDL();
   }
@@ -52,7 +153,31 @@ export class McpToolService implements OnModuleInit {
       throw new Error(`Tool not found: ${name}`);
     }
 
+    // Belt-and-braces: getToolsForRequest already hides what this caller may not run,
+    // but a client can name any tool directly, and the layers below do not re-check —
+    // the GraphQL resolvers raise a bare `Forbidden resource`, and ToolRegistry performs
+    // no authorization at all. This is the enforcement point; the catalog filter is only
+    // the courtesy of not advertising what would fail.
+    const scopeLimited = isScopeLimitedApiKey(context.req);
+    const capability = apiKeyCapabilityOf(context.req);
+
+    // Checked before the surface checks, because it is the answer that does not depend on which
+    // plane the tool lives on: a read-only key is refused `deleteMemory` whether that tool came
+    // from the GraphQL schema or the intent catalog, and the message should say so rather than
+    // blaming the scope.
+    if (!capabilityAllows(tool.privacy, capability)) {
+      throw new ForbiddenException(
+        `Tool "${name}" requires "${this.capabilityNeededFor(tool)}" access, but this API key is "${capability}"`,
+      );
+    }
+
     if (tool.source === 'graphql') {
+      if (scopeLimited) {
+        throw new ForbiddenException(
+          `Tool "${name}" reads the knowledge graph directly, which this scope-limited API key cannot access`,
+        );
+      }
+
       const graphqlTool = this.graphqlAdapter.getTools().find((t) => t.name === name);
 
       if (!graphqlTool) {
@@ -60,6 +185,12 @@ export class McpToolService implements OnModuleInit {
       }
 
       return this.executorService.executeTool(graphqlTool, args, context);
+    }
+
+    if (!this.mayRunIntents(context.req)) {
+      throw new ForbiddenException(
+        `Tool "${name}" runs a CI intent, which requires the "${INTENTS_SCOPE}" scope this API key does not carry`,
+      );
     }
 
     // Native tool execution
@@ -80,6 +211,9 @@ export class McpToolService implements OnModuleInit {
         name: tool.name,
         description: tool.description,
         inputSchema: tool.inputSchema,
+        // Carry the synthesized label so auto-wrapped CRUD is advertised (and gated) with the same
+        // privacy metadata as native intents rather than slipping through unlabelled.
+        privacy: tool.privacy,
         source: 'graphql',
       });
     }
@@ -105,6 +239,7 @@ export class McpToolService implements OnModuleInit {
         name: toolName,
         description: schema.description,
         inputSchema: this.jsonSchemaToZodShape(schema.parameters),
+        privacy: schema.privacy,
         source: 'native',
       });
     }

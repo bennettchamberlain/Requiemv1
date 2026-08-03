@@ -4,7 +4,7 @@ import { DataSource, In, IsNull, Repository, type FindOptionsOrder, type FindOpt
 import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/context';
-import { bulkInsertIdempotent } from '@ci/common/persistence';
+import { bulkInsertIdempotent, INGEST_REFRESH_COLUMNS } from '@ci/common/persistence';
 import { EventService as SignallingEventService } from '@ci/domains/events';
 import { EventCreatedEvent, EventUpdatedEvent, EventRemovedEvent } from '@ci/domains/memory/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
@@ -36,6 +36,17 @@ interface Options {
   hasLocation?: boolean;
   /** "Where" (viewport): bounding box [minLon, minLat, maxLon, maxLat] (EPSG:4326). */
   bbox?: number[];
+}
+
+/**
+ * Hourly UTC per-user event count. Declared locally so this domain carries no
+ * dependency on aggregating consumers; they enforce the shape structurally
+ * where they consume it.
+ */
+export interface HourlyEventCount {
+  userId: string;
+  bucketStart: Date;
+  count: number;
 }
 
 @Injectable()
@@ -210,6 +221,9 @@ export class EventService {
       // 20260620213807); the arbiter must match it exactly.
       conflictTarget: '(source_type, source_system, source_id) WHERE source_id IS NOT NULL',
       tripleColumns: ['source_type', 'source_system', 'source_id'],
+      // Centralized refresh contract — currently empty, so conflicts stay
+      // DO NOTHING find-or-return.
+      conflictUpdateColumns: INGEST_REFRESH_COLUMNS.event,
     });
 
     // Bulk ingest does NOT emit a per-row EventCreatedEvent: the per-row pgboss
@@ -635,5 +649,49 @@ export class EventService {
       .getRawMany();
 
     return results.map((row: { event_type: string }) => row.event_type);
+  }
+
+  /**
+   * Timeline totals for the stats page: how many events the user's timeline
+   * holds and the earliest/latest `start_time` across them (the span of
+   * remembered history).
+   */
+  async getTimelineStats(context: ServiceContext): Promise<{
+    totalEvents: number;
+    earliest: Date | null;
+    latest: Date | null;
+  }> {
+    const row: { total: string; earliest: Date | null; latest: Date | null } | undefined =
+      await this.dataSource
+        .getRepository(EventEntity)
+        .createQueryBuilder('event')
+        .select('COUNT(*)', 'total')
+        .addSelect('MIN(event.start_time)', 'earliest')
+        .addSelect('MAX(event.start_time)', 'latest')
+        .where('event.user_id = :userId', { userId: context.userId })
+        .getRawOne();
+
+    return {
+      totalEvents: row ? parseInt(row.total, 10) : 0,
+      earliest: row?.earliest ?? null,
+      latest: row?.latest ?? null,
+    };
+  }
+
+  /**
+   * Hourly UTC activity buckets for the activity rollup: events counted by
+   * `startTime`, per user.
+   */
+  async aggregateHourlyActivity(): Promise<HourlyEventCount[]> {
+    const rows: Array<{ user_id: string; bucket_start: Date; count: number }> = await this.eventRepository
+      .createQueryBuilder('event')
+      .select('event.userId', 'user_id')
+      .addSelect(`date_trunc('hour', event.startTime, 'UTC')`, 'bucket_start')
+      .addSelect('COUNT(*)::int', 'count')
+      .groupBy('user_id')
+      .addGroupBy('bucket_start')
+      .getRawMany();
+
+    return rows.map((row) => ({ userId: row.user_id, bucketStart: row.bucket_start, count: row.count }));
   }
 }
