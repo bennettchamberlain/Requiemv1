@@ -1,7 +1,14 @@
-import { type ReactNode, lazy } from 'react';
+import { type ReactNode, lazy, useEffect } from 'react';
 
-import { DeviceLayoutProvider } from '@ci/common';
-import { BrowserRouter as Router, Routes, Route, useLocation, type Location } from 'react-router-dom';
+import { DeviceLayoutProvider, getApiBaseUrl, isNativePlatform } from '@ci/common';
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  useLocation,
+  useNavigate,
+  type Location,
+} from 'react-router-dom';
 
 import { ApolloProvider } from '@/api/ApolloProvider';
 import { FeaturesProvider, useFeatures } from '@/common/feature';
@@ -10,7 +17,13 @@ import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { RedirectKnownUser } from '@/components/RedirectKnownUser';
 import { RequireOnboarded } from '@/components/RequireOnboarded';
 import { ThemeProvider, BackgroundProvider } from '@/components/ThemePicker';
-import { AuthProvider, CaptureModalProvider, ModelProvider, usePreventOverscroll } from '@/hooks';
+import {
+  AuthProvider,
+  CaptureModalProvider,
+  ModelProvider,
+  useNativeShell,
+  usePreventOverscroll,
+} from '@/hooks';
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
 import FeedPage from '@/pages/FeedPage';
 import LoginPage from '@/pages/LoginPage';
@@ -41,6 +54,7 @@ const ProviderPage = lazy(() => import('@/pages/ProviderPage'));
 const SearchPage = lazy(() => import('@/pages/SearchPage'));
 const FilesPage = lazy(() => import('@/pages/FilesPage'));
 const SavedSearchesPage = lazy(() => import('@/pages/SavedSearchesPage'));
+const ServerSettingsPage = lazy(() => import('@/pages/ServerSettingsPage'));
 const SharedSearchPage = lazy(() => import('@/pages/SharedSearchPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 const StatsPage = lazy(() => import('@/pages/StatsPage'));
@@ -74,7 +88,20 @@ function Providers({ children }: { children: ReactNode }) {
 function AppRoutes() {
   const { isFeatureEnabled } = useFeatures();
   const location = useLocation();
+  const navigate = useNavigate();
   const backgroundLocation = (location.state as { backgroundLocation?: Location } | null)?.backgroundLocation;
+
+  // Native shell wiring (splash dismiss, Android back button). Inert on web.
+  useNativeShell();
+
+  // On the native app the API origin must be configured before anything else can
+  // load. If we're running natively with no server set, route to the setup screen.
+  // Inert on web (isNativePlatform() is false there).
+  useEffect(() => {
+    if (isNativePlatform() && !getApiBaseUrl() && location.pathname !== '/server') {
+      navigate('/server', { replace: true });
+    }
+  }, [location.pathname, navigate]);
 
   return (
     <>
@@ -107,6 +134,8 @@ function AppRoutes() {
         />
 
         <Route element={<CenteredLayout />}>
+          <Route path="/server" element={<ServerSettingsPage />} />
+
           <Route
             path="/login"
             element={

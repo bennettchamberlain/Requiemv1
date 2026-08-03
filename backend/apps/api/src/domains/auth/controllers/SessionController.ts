@@ -52,12 +52,22 @@ export class SessionController {
    * invalidate a token already embedded in an open page or another tab.
    */
   @Get('csrf')
-  @HttpCode(204)
+  @HttpCode(200)
   issueCsrfToken(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    // Scope the token to whoever is asking: an already-signed-in browser gets
-    // (or keeps) a session-bound token, a pre-auth one an anon token. Always
-    // 204 — this endpoint can never fail, it only converges the cookie.
-    ensureCsrfCookie(this.csrfService, req, res, this.authService.resolveCsrfScope(req));
+    // Scope the token to whoever is asking: an already-signed-in browser gets (or
+    // keeps) a session-bound token, a pre-auth one an anon token. `ensureCsrfCookie`
+    // reuses a still-valid cookie rather than rotating, and returns the token on the
+    // response.
+    const token = ensureCsrfCookie(this.csrfService, req, res, this.authService.resolveCsrfScope(req));
+
+    // Also return that token in the body (so this is 200, not 204). Browser clients
+    // ignore it and rely on the SameSite cookie (double-submit), but a cookie-less
+    // native client — whose cross-origin webview can neither read nor send that
+    // cookie — reads it here and echoes it as the `x-csrf-token` header, which
+    // CsrfGuard accepts on its own when no cookie is present. A native request is
+    // anon-scoped (no session cookie), so the anon token it receives is exactly what
+    // the guard's cookie-less branch verifies.
+    return { csrfToken: token };
   }
 
   @Post()

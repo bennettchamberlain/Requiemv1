@@ -1,0 +1,33 @@
+# PWA icon output from `@capacitor/assets generate` — unused by the native build
+# (icons live in ios/ and android/; the source artwork is in assets/).
+icons/
+
+# Dependencies (this workspace uses the node-modules linker — see .yarnrc.yml).
+# yarn.lock IS committed (pins Capacitor versions + anchors this as a standalone
+# Yarn project), but the cache / install state are not.
+node_modules/
+.yarn/*
+!.yarn/patches
+!.yarn/releases
+!.yarn/plugins
+
+# The generated ios/ and android/ native projects ARE committed, but their build
+# artifacts and copied web assets are not.
+ios/App/Pods/
+ios/App/build/
+ios/App/DerivedData/
+ios/DerivedData/
+ios/App/App/public/
+ios/App/App/capacitor.config.json
+
+android/.gradle/
+android/build/
+android/app/build/
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/local.properties
+android/.idea/
+android/capacitor-cordova-android-plugins/
+
+*.log
+.DS_Store

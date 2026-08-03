@@ -66,8 +66,19 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # plus a separate pg-boss pool), and the Python sidecars. At 100 the
 # orchestrator alone could pin ~76 slots and the API would fail to connect
 # with SQLSTATE 53300.
+#
+# wal_level=logical (+ replication slots/senders) enables logical replication,
+# which the PowerSync local-first sync engine consumes. These are safe defaults if
+# PowerSync is unused; raise the slot/sender counts if you add more replication
+# consumers. See infrastructure/powersync/.
+#
+# Both sets are required and independent: dropping max_connections breaks the
+# orchestrator, dropping wal_level breaks PowerSync.
 CMD ["postgres", \
      "-c", "shared_preload_libraries=timescaledb", \
-     "-c", "max_connections=200"]
+     "-c", "max_connections=200", \
+     "-c", "wal_level=logical", \
+     "-c", "max_replication_slots=10", \
+     "-c", "max_wal_senders=10"]
 
 EXPOSE 5432

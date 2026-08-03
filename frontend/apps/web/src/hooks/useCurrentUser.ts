@@ -22,15 +22,17 @@ const USER_DATA_QUERY = gql(`
 `);
 
 export function useCurrentUser() {
-  const [{ authToken }] = useAuth();
+  // `authenticated` is true for a web JWT session OR a native API key, so the `me`
+  // query runs (and gates "logged in") under either credential.
+  const [{ authenticated }] = useAuth();
 
   const { data, loading, error, refetch } = useQuery(USER_DATA_QUERY, {
-    skip: !authToken,
+    skip: !authenticated,
   });
 
   return {
     user: data?.me || null,
-    loading: loading || (!!authToken && !data && !error),
+    loading: loading || (authenticated && !data && !error),
     error,
     refetch,
   };

@@ -89,6 +89,30 @@ services:
     restart: unless-stopped
     profiles: [ "local", "staging", "production" ]
 
+  # Local-first sync engine. Reads CI-Server Postgres via logical replication
+  # (the `database` image enables wal_level=logical) and serves filtered, per-user
+  # buckets to on-device SQLite. Config in infrastructure/powersync/. See that
+  # directory's README for required env (URIs + the base64url JWT secret) and for
+  # pinning the image version. NOTE: verify the image tag/command against the
+  # PowerSync release you deploy.
+  powersync:
+    image: journeyapps/powersync-service:1.23.0
+    command: ["start", "-r", "unified"]
+    volumes:
+      - ./infrastructure/powersync:/config:ro
+    environment:
+      - POWERSYNC_CONFIG_PATH=/config/powersync.yaml
+      - POWERSYNC_REPLICATION_URI=${POWERSYNC_REPLICATION_URI}
+      - POWERSYNC_STORAGE_URI=${POWERSYNC_STORAGE_URI}
+      - POWERSYNC_JWT_SECRET_B64URL=${POWERSYNC_JWT_SECRET_B64URL}
+    networks:
+      - ci
+    depends_on:
+      database:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles: [ "local", "staging", "production" ]
+
   #############
   # EPHEMERAL #
   #############

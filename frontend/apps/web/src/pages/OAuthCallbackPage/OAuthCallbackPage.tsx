@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-import { LoadingPage, usePageTitle } from '@ci/common';
+import { apiKeyHeaders, buildApiUrl, LoadingPage, usePageTitle } from '@ci/common';
 import { useToast } from '@ci/shadcn';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 
@@ -99,9 +99,10 @@ export function OAuthCallbackPage() {
             }
           : { flow: 'direct' as const, state, code };
 
-        const response = await fetch(`/api/connections/complete`, {
+        const response = await fetch(buildApiUrl(`/api/connections/complete`), {
           method: 'POST',
           headers: {
+            ...apiKeyHeaders(),
             'Content-Type': 'application/json',
             Authorization: `Bearer ${authToken}`,
           },
