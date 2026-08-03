@@ -7,7 +7,7 @@ import structlog
 from typing import Optional
 from datetime import datetime
 
-from .config import settings
+from .config import resolve_llm_model, settings
 from .database import db
 
 logger = structlog.get_logger()
@@ -70,7 +70,7 @@ class AgentRegistration:
                 "api_logs"
             ],
             "llm_config": {
-                "model": settings.llm_model,
+                "model": resolve_llm_model(),
                 "temperature": settings.llm_temperature,
                 "max_tokens": settings.llm_max_tokens
             }

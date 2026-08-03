@@ -1,11 +1,15 @@
 name: Publish
 
+# >>> ci-local:gated original triggers below, restore with `ci-local restore`
+# on:
+#   push:
+#     tags:
+#       - '*'
+#
+# # Only one publish run at a time per tag.
+# <<< ci-local:gated
 on:
-  push:
-    tags:
-      - '*'
-
-# Only one publish run at a time per tag.
+  workflow_dispatch:
 concurrency:
   group: publish-${{ github.ref }}
   cancel-in-progress: false
@@ -109,6 +113,13 @@ jobs:
     name: Merge manifests & publish to CI-Portal
     runs-on: ubuntu-latest
     needs: build
+    # Deliberately NOT given a shared concurrency group to serialize releases.
+    # A group holds only one pending entry: a third release arriving would
+    # cancel the queued second one, and a cancelled merge leaves a tag with
+    # per-arch images but no manifest list — unpullable for anything pinning
+    # it. That is strictly worse than the narrow :latest ordering window the
+    # tag re-read below closes. The workflow-level group is keyed per tag,
+    # which is the correct scope.
     permissions:
       contents: read
       packages: write
@@ -141,6 +152,38 @@ jobs:
           if ! command -v jq >/dev/null 2>&1; then
             sudo apt-get update
             sudo apt-get install -y jq
+          fi
+
+      # :latest tracks the newest release only. Two guards, both earned by this
+      # repo's tag history: the trigger is `tags: ['*']`, and tags like
+      # `0.0.0-test1` and `mobile-v0.1.0-appstoreprep-…` have been pushed here —
+      # neither should move :latest. The newest-check additionally stops a
+      # re-cut or back-tagged older release from regressing it.
+      - name: Decide whether this tag moves :latest
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          version="${tag#v}"
+          release_re='^v?[0-9]{4}\.[0-9]{1,2}\.[0-9]{1,2}(\.[0-9]+)?$'
+
+          # Re-read tags as late as possible. Releases pushed close together
+          # build in parallel, so the checkout's tag list can already be stale
+          # by the time this runs, and a newer release must win :latest.
+          #
+          # Non-fatal on purpose: this fetch only refines the :latest decision,
+          # and the step shell is `bash -e`, so an unguarded failure would fail
+          # the job and take the manifest merge and Portal registration with
+          # it. A stale tag list at worst leaves :latest for the next release.
+          git fetch --tags --force --quiet origin \
+            || echo "::warning::tag re-read failed — falling back to the checkout's tag list"
+
+          newest=$(git tag --list | grep -E "${release_re}" | sed 's/^v//' | sort -V | tail -1)
+
+          if [[ "${tag}" =~ ${release_re} && "${version}" == "${newest}" ]]; then
+            echo "PUSH_LATEST=true" >> "$GITHUB_ENV"
+            echo "${tag} is the newest release tag — :latest will point at ${version}"
+          else
+            echo "PUSH_LATEST=false" >> "$GITHUB_ENV"
+            echo "::notice::${tag} is not the newest release tag (newest: ${newest}) — leaving :latest alone"
           fi
 
       - name: Merge per-arch tags into multi-arch manifest lists

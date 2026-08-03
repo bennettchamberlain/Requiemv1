@@ -363,8 +363,20 @@ export function ConnectPage() {
               logo="/branding/signal/logo.svg"
               background="bg-blue-600"
               border="border-blue-500"
-              text="Link Signal for secure messaging and communication tracking. Coming soon."
-              disabled
+              text="Link Signal for secure messaging and communication tracking."
+              {...getCardProps('019e3d77-c6e3-8f14-da06-2b5f7c0e1d19', () =>
+                navigate('/providers/019e3d77-c6e3-8f14-da06-2b5f7c0e1d19'),
+              )}
+              subtext={
+                connectionsCount['019e3d77-c6e3-8f14-da06-2b5f7c0e1d19'] === 1
+                  ? `1 Connection`
+                  : connectionsCount['019e3d77-c6e3-8f14-da06-2b5f7c0e1d19'] > 1
+                    ? `${connectionsCount['019e3d77-c6e3-8f14-da06-2b5f7c0e1d19']} Connections`
+                    : undefined
+              }
+              className={
+                connectionsCount['019e3d77-c6e3-8f14-da06-2b5f7c0e1d19'] > 0 ? 'bg-green-200' : undefined
+              }
             />
             <Card
               logo="/branding/slack/logo.svg"

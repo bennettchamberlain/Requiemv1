@@ -5,6 +5,12 @@ import { createRoot } from 'react-dom/client';
 
 import './styles/index.css';
 import App from './App.tsx';
+import { initTelemetry } from './lib/telemetry';
+
+// No-op unless VITE_SENTRY_DSN was baked in at build time AND the appliance
+// confirms the user has consented. Deliberately not awaited: reporting must
+// never delay first render.
+void initTelemetry();
 
 // Resolve the API origin before anything renders. No-op on web (stays same-origin);
 // on the native Capacitor shell this loads the user-configured server URL so Apollo

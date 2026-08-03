@@ -42,8 +42,9 @@ import { ConnectorFilter } from '@/components/SearchBox/ConnectorFilter';
 import { EntityTypeFilter } from '@/components/SearchBox/EntityTypeFilter';
 import { isFilterDrag, readFilterDrag, type FilterDragKind } from '@/components/SearchBox/filterDrag';
 import { AVAILABLE_ENTITY_TYPES, DropdownProvider, useDropdown } from '@/components/SearchBox/useDropdown';
-import { gql, type FragmentType } from '@/graphql';
+import { type FragmentType } from '@/graphql';
 
+import { CREATE_SAVED_SEARCH } from '../../../SavedSearchesPage/CreateSavedSearchModal';
 import type { SavedSearchGridItemFragment } from '../../../SavedSearchesPage/SavedSearch';
 import { ShareSavedSearchModal } from '../../../SavedSearchesPage/ShareSavedSearchModal';
 import { buildSavedSearchFilters } from '../../savedSearchFilters';
@@ -70,20 +71,6 @@ const SORT_OPTIONS = [
 
 const START_OF_DAY_TIME = '00:00';
 const END_OF_DAY_TIME = '23:59';
-
-const CREATE_SAVED_SEARCH = gql(`
-  mutation CreateSavedSearch($input: CreateSavedSearchInput!) {
-    createSavedSearch(input: $input) {
-      success
-      savedSearch {
-        id
-        # Full grid fragment (incl. isPublic/shareToken/filters) so the created
-        # search can be handed straight to the share modal from "Save & share".
-        ...SavedSearchGridItemFragment
-      }
-    }
-  }
-`);
 
 function localDateInputValue(date: Date): string {
   const year = date.getFullYear();

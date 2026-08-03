@@ -11,14 +11,9 @@ import { AuthGuard } from '@nestjs/passport';
 
 import { ContextService } from '@ci/common/context';
 
-import { enforceApiKeyScopes } from './apiKeyScopeEnforcement';
+import { enforceApiKeyCapability, enforceApiKeyScopes } from './apiKeyScopeEnforcement';
+import { extractBearerToken } from './bearerToken';
 import { PORTAL_TOKEN_VERIFIER, type PortalTokenVerifier } from './PortalTokenVerifier';
-
-function extractBearerToken(request: { headers?: Record<string, unknown> }): string | null {
-  const header = request?.headers?.authorization;
-
-  return typeof header === 'string' && header.startsWith('Bearer ') ? header.slice(7) : null;
-}
 
 @Injectable()
 export class JwtOrApiKeyAuthGuard extends AuthGuard(['jwt', 'api-key']) {
@@ -34,7 +29,7 @@ export class JwtOrApiKeyAuthGuard extends AuthGuard(['jwt', 'api-key']) {
     // strategies during migration (gated by auth.portal.enabled).
     if (this.portalTokenVerifier.enabled) {
       const request = this.getRequest(context);
-      const token = extractBearerToken(request);
+      const token = extractBearerToken(request?.headers?.authorization);
 
       if (token) {
         const user = await this.portalTokenVerifier.verifyAndProvision(token);
@@ -56,7 +51,11 @@ export class JwtOrApiKeyAuthGuard extends AuthGuard(['jwt', 'api-key']) {
     // `req.apiKeyScopes`. A scope-limited key is confined to routes that grant
     // one of its scopes; empty-scope/legacy keys and JWT principals are unaffected.
     if (ok) {
-      enforceApiKeyScopes(this.reflector, context, this.getRequest(context));
+      const request = this.getRequest(context);
+
+      enforceApiKeyScopes(this.reflector, context, request);
+      // Second axis: scopes got the key to this route, capability decides whether it may act here.
+      enforceApiKeyCapability(this.reflector, context, request);
     }
 
     return ok;

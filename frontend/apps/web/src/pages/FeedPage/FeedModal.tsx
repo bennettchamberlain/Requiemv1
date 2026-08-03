@@ -1,15 +1,14 @@
 import { useCallback, useMemo, type ReactNode } from 'react';
 
 import { ErrorPage, LoadingPage, useDeviceLayout } from '@ci/common';
-import { Button, Dialog, Popover, cn } from '@ci/shadcn';
-import { Settings, X } from '@ci/shadcn/icons';
+import { Button, Dialog, cn } from '@ci/shadcn';
+import { X } from '@ci/shadcn/icons';
 import { useParams } from 'react-router-dom';
 
 import { useActionService, useThreadService } from '@/api';
 import { Chat } from '@/components/Chat';
 import { InlineModal } from '@/components/InlineModal';
 import { Markdown } from '@/components/Markdown';
-import { ModelSelector } from '@/components/ModelSelector';
 import { Tag } from '@/components/Tag';
 import { useChatRequester } from '@/hooks';
 
@@ -88,18 +87,9 @@ export function FeedModal({ onClose }: Props) {
     return (
       <InlineModal open onClose={onClose}>
         <div className="flex items-center justify-between border-b bg-stone-50 dark:bg-secondary gap-2 p-2 pt-[max(1rem,env(safe-area-inset-top))]">
-          <div className="flex-1">
-            <Popover>
-              <Popover.Trigger>
-                <Button className="flex-1" variant="ghost" size="icon">
-                  <Settings />
-                </Button>
-              </Popover.Trigger>
-              <Popover.Content className="p-2 relative left-2 w-auto">
-                <ModelSelector withToggles />
-              </Popover.Content>
-            </Popover>
-          </div>
+          {/* Spacer balancing the close button so the title stays centred. The
+              model selector that used to sit here now lives in Settings ▸ Model. */}
+          <div className="flex-1" />
 
           <div className="font-bold">{action?.title}</div>
 
@@ -149,8 +139,6 @@ export function FeedModal({ onClose }: Props) {
               </div>
             )}
           </div>
-
-          <ModelSelector withToggles />
 
           <div className="flex items-center justify-end">
             <Button variant="ghost" size="icon" onClick={onClose}>

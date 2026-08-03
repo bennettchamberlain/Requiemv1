@@ -16,11 +16,10 @@ export const ENDPOINTS_FRAGMENT = gql(`
 
 interface EndpointsProps {
   provider: FragmentType<typeof ENDPOINTS_FRAGMENT>;
-  setEndpoints: (endpoints: string[]) => void;
   startEndpoints?: string[];
 }
 
-export function Endpoints({ provider, setEndpoints, startEndpoints }: EndpointsProps) {
+export function Endpoints({ provider, startEndpoints }: EndpointsProps) {
   const { endpoints } = useFragment(ENDPOINTS_FRAGMENT, provider);
   const form = useFormContext();
 
@@ -43,15 +42,11 @@ export function Endpoints({ provider, setEndpoints, startEndpoints }: EndpointsP
                     <Checkbox
                       checked={field.value?.includes(item.name)}
                       onCheckedChange={(checked) => {
-                        if (checked) {
-                          setEndpoints([...(field.value || []), item.name]);
-                        } else {
-                          setEndpoints(field.value?.filter((value: string) => value !== item.name));
-                        }
+                        const next = checked
+                          ? [...(field.value || []), item.name]
+                          : (field.value || []).filter((value: string) => value !== item.name);
 
-                        return checked
-                          ? field.onChange([...(field.value || []), item.name])
-                          : field.onChange(field.value?.filter((value: string) => value !== item.name));
+                        field.onChange(next);
                       }}
                     />
                   </Form.Control>

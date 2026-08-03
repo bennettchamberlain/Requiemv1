@@ -128,6 +128,16 @@ const EVENT_MATCH_EVENT_LIMIT = 2000;
  * `getGraphData`); a full page signals the overview is truncated. */
 const NODE_LIMIT = 200;
 
+/** How many hops out from the owner's anchor entity the overview traversal
+ * reaches when seeding the node budget. Matches the client's `maxDepth: 3`
+ * subgraph, so everything the client would BFS to is in the payload. */
+const ANCHOR_NEIGHBORHOOD_DEPTH = 3;
+
+/** Edge budget for the anchor-neighborhood traversal (the traversal's hard
+ * cap). Edges aren't returned from it — the overview ships all relationships
+ * separately — this only bounds how far the traversal can expand. */
+const ANCHOR_NEIGHBORHOOD_EDGE_LIMIT = 500;
+
 /** Intersect the active filter matches into a single allowed-id set, mirroring
  * the client's `combineMatches`: each active filter ANDs together, and an
  * inactive filter contributes no constraint. Returns `null` when no filter is
@@ -374,10 +384,8 @@ export class GraphController {
     // Connective NER types (Concept/Goal/Tag) are never excluded so the graph stays connected.
     const excludeEntityTypes =
       query.includeTypes === undefined ? [] : graphTypesToExclude(query.includeTypes);
-    const isFiltered = excludeEntityTypes.length > 0;
 
-    const nodes = await this.graphQuery.getNodes(ownerId, { limit: NODE_LIMIT, excludeEntityTypes });
-    const relationships = await this.graphQuery.getRelationships(ownerId, {});
+    const nodeMap = await this.assembleOverviewNodes(ownerId, excludeEntityTypes);
     const tagMatch = await this.resolveTagMatch(ctx, ownerId, query.tags);
     const eventMatch = await this.resolveEventMatch(ctx, ownerId, {
       connectors: query.connectors,
@@ -389,23 +397,12 @@ export class GraphController {
       to: query.to,
     });
 
-    // The base overview is capped at NODE_LIMIT with no inherent ordering, so a
-    // restrictive filter match that sits beyond the cap would be absent from the
+    // The base overview is capped at NODE_LIMIT, so a restrictive filter match
+    // outside the anchor neighborhood / recency window would be absent from the
     // node payload even though the client knows (via tagMatch/eventMatch) it
     // should render. `truncated` reports the cap was hit so the client can
     // surface that the overview is partial.
-    const truncated = nodes.length >= NODE_LIMIT;
-
-    // The frontend seeds its subgraph from the owner's entity node. A type filter can exclude it
-    // (e.g. the user is a Person and Person is deselected), which would collapse the graph to
-    // empty — so always keep the anchor node regardless of the filter.
-    const nodeMap = new Map(nodes.map((node) => [node.entity_id, node]));
-    if (isFiltered) {
-      const userEntity = await this.graphQuery.getUserEntity(ownerId);
-      if (userEntity && !nodeMap.has(userEntity.entity_id)) {
-        nodeMap.set(userEntity.entity_id, userEntity);
-      }
-    }
+    const truncated = nodeMap.size >= NODE_LIMIT;
 
     // Union in any filter-matched nodes the capped overview missed. The
     // tag/event match sets are resolved independently of the NODE_LIMIT cap, so
@@ -433,12 +430,24 @@ export class GraphController {
     const survivingNodes = Array.from(nodeMap.values());
     const survivingIds = new Set(survivingNodes.map((node) => node.entity_id));
 
-    // Drop links dangling against excluded nodes when filtering; otherwise preserve prior behavior.
-    const links = isFiltered
-      ? relationships.filter(
-          (rel) => survivingIds.has(rel.from_entity_id) && survivingIds.has(rel.to_entity_id),
-        )
-      : relationships;
+    // Fetch only the relationships touching the assembled node payload, and keep
+    // only those whose BOTH endpoints are in it. The previous unscoped fetch
+    // returned the account's entire relationship table — with real imported
+    // data that was easily 100k+ rows, most of them dangling against entities
+    // the capped node payload doesn't contain. The client can never render a
+    // dangling link (both endpoints must be loaded nodes), but it still paid to
+    // index them all, which froze the browser's main thread for minutes and
+    // made the graph view impossible to navigate away from (#1598).
+    const relationships =
+      survivingIds.size > 0
+        ? await this.graphQuery.getRelationships(ownerId, {
+            entityIds: Array.from(survivingIds),
+            direction: 'both',
+          })
+        : [];
+    const links = relationships.filter(
+      (rel) => survivingIds.has(rel.from_entity_id) && survivingIds.has(rel.to_entity_id),
+    );
 
     return {
       success: true,
@@ -465,6 +474,70 @@ export class GraphController {
       eventMatch,
       truncated,
     };
+  }
+
+  /**
+   * Assemble the capped node payload for the graph overview. The frontend seeds
+   * its subgraph from the owner's anchor entity, so a purely recency-ordered
+   * page is the wrong shape: once the account outgrows NODE_LIMIT the anchor
+   * (usually among the oldest entities) and its neighborhood fall off the page
+   * and the client renders an empty graph. Fill the budget from the anchor's
+   * graph neighborhood first, then top up with the most recently created
+   * entities.
+   *
+   * The anchor itself is always kept, even when the explorer's entity-type
+   * filter would exclude it (e.g. the user is a Person and Person is
+   * deselected) — dropping it would collapse the client's anchor-seeded
+   * subgraph to empty.
+   */
+  private async assembleOverviewNodes(
+    ownerId: string,
+    excludeEntityTypes: string[],
+  ): Promise<Map<string, GraphNodeEntity>> {
+    const excludedTypes = new Set(excludeEntityTypes);
+    const nodeMap = new Map<string, GraphNodeEntity>();
+
+    const userEntity = await this.graphQuery.getUserEntity(ownerId);
+    if (userEntity) {
+      nodeMap.set(userEntity.entity_id, userEntity);
+
+      const { nodes: neighborhood } = await this.graphQuery.traverseGraph(ownerId, [userEntity.entity_id], {
+        maxDepth: ANCHOR_NEIGHBORHOOD_DEPTH,
+        maxNodes: NODE_LIMIT,
+        maxEdges: ANCHOR_NEIGHBORHOOD_EDGE_LIMIT,
+      });
+
+      for (const node of neighborhood.values()) {
+        if (nodeMap.size >= NODE_LIMIT) {
+          break;
+        }
+
+        if (excludedTypes.has(node.entity_type)) {
+          continue;
+        }
+
+        nodeMap.set(node.entity_id, node);
+      }
+    }
+
+    if (nodeMap.size < NODE_LIMIT) {
+      const recentNodes = await this.graphQuery.getNodes(ownerId, {
+        limit: NODE_LIMIT,
+        excludeEntityTypes,
+      });
+
+      for (const node of recentNodes) {
+        if (nodeMap.size >= NODE_LIMIT) {
+          break;
+        }
+
+        if (!nodeMap.has(node.entity_id)) {
+          nodeMap.set(node.entity_id, node);
+        }
+      }
+    }
+
+    return nodeMap;
   }
 
   @Get('search')

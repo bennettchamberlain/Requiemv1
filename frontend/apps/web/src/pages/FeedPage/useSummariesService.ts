@@ -42,6 +42,7 @@ interface GetSummariesQueryVariables {
 
 interface MarkSummaryAsSeenMutationResult {
   markSummaryAsSeen?: {
+    __typename?: 'SummaryType';
     id: string;
     seen: boolean;
   } | null;
@@ -134,7 +135,16 @@ export function useSummariesService(first?: number) {
   const summaries: SummaryNode[] = data?.summaries?.edges.map(({ node }) => node) || [];
 
   const markSummaryAsSeen = async (id: string) => {
-    await markSeenMutation({ variables: { id } });
+    await markSeenMutation({
+      variables: { id },
+      optimisticResponse: {
+        markSummaryAsSeen: {
+          __typename: 'SummaryType',
+          id,
+          seen: true,
+        },
+      },
+    });
   };
 
   const markSummaryAsDismissed = async (id: string) => {

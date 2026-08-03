@@ -59,3 +59,7 @@ infrastructure/cloudflare/config.yml
 
 # ESLint result cache (speeds up repeat/incremental lint runs)
 .eslintcache
+
+# Local hot-swap compose override (live-testing branch builds against the
+# Hub-installed app); machine-specific, never committed
+.hotswap/

@@ -387,13 +387,14 @@ describe('ApiKeyService.validateKey', () => {
 
   beforeEach(() => jest.clearAllMocks());
 
-  it('returns userId and scopes for a live key', async () => {
+  it('returns userId, scopes and capability for a live key', async () => {
     const repo = makeRepo();
     repo.findOne.mockResolvedValueOnce({
       id: 'k1',
       user_id: 'owner-1',
       expires_at: null,
       scopes: ['memory'],
+      capability: 'write',
     });
     const service = makeService(repo);
 
@@ -401,15 +402,44 @@ describe('ApiKeyService.validateKey', () => {
       keyId: 'k1',
       userId: 'owner-1',
       scopes: ['memory'],
+      capability: 'write',
     });
   });
 
   it('defaults a null scopes column to empty (legacy full-access)', async () => {
     const repo = makeRepo();
-    repo.findOne.mockResolvedValueOnce({ id: 'k1', user_id: 'owner-1', expires_at: null, scopes: null });
+    repo.findOne.mockResolvedValueOnce({
+      id: 'k1',
+      user_id: 'owner-1',
+      expires_at: null,
+      scopes: null,
+      capability: 'write',
+    });
     const service = makeService(repo);
 
-    expect(await service.validateKey(validRaw)).toEqual({ keyId: 'k1', userId: 'owner-1', scopes: [] });
+    expect(await service.validateKey(validRaw)).toEqual({
+      keyId: 'k1',
+      userId: 'owner-1',
+      scopes: [],
+      capability: 'write',
+    });
+  });
+
+  it('reads an unrecognised stored capability as read-only, not as the default', async () => {
+    // A CHECK constraint keeps the column to the three known values, but a rolled-back deploy could
+    // leave one this build does not understand. An authority level we cannot read is not one to
+    // guess in the caller's favour.
+    const repo = makeRepo();
+    repo.findOne.mockResolvedValueOnce({
+      id: 'k1',
+      user_id: 'owner-1',
+      expires_at: null,
+      scopes: [],
+      capability: 'superuser',
+    });
+    const service = makeService(repo);
+
+    expect((await service.validateKey(validRaw))?.capability).toBe('read');
   });
 
   it('rejects an expired key', async () => {

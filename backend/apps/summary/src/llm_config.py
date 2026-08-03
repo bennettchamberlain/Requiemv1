@@ -12,7 +12,7 @@ from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
-from .config import settings
+from .config import resolve_llm_model, settings
 from .summarizer import (
     wrap_output,
     HourlySummaryResponse,
@@ -49,9 +49,10 @@ def create_llm_config() -> LLMConfig:
     # Create HTTP client with long timeout for LLM calls
     http_client = httpx.AsyncClient(timeout=180.0)
 
-    # Create model pointing to self-hosted endpoint
+    # Create model pointing to self-hosted endpoint. The model name is the
+    # configured (Hub-injected) one, else discovered from the endpoint.
     model = OpenAIChatModel(
-        settings.llm_model,
+        resolve_llm_model(),
         provider=OpenAIProvider(
             base_url=settings.llm_api_base,
             api_key=settings.llm_api_key,

@@ -1,11 +1,16 @@
 """
 Configuration management for CI-Summary Service.
 """
+import logging
 import os
-from typing import Optional
+from functools import lru_cache
+from typing import List, Optional
 
+import httpx
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 def _require_env(name: str) -> str:
@@ -16,10 +21,13 @@ def _require_env(name: str) -> str:
 
 
 def _llm_model_from_env() -> str:
-    # Fall back to the shared Ollama base model so an unset env (e.g. the
-    # production secrets path) still names a model the endpoint actually serves.
-    model = os.getenv("SUMMARY_LLM_MODEL") or os.getenv("LLM_DEFAULT_CHAT_MODEL") or os.getenv("LLM_MODEL", "gemma4:latest")
-    return model
+    # The configured chat model, normally injected by CI Hub via
+    # hub_integration.inference (LLM_DEFAULT_CHAT_MODEL). Empty when nothing is
+    # configured — there is deliberately NO hardcoded model fallback here:
+    # a baked-in tag can name a model the endpoint doesn't serve (this is how
+    # "gemma4:latest" 404'd every summary in production). When unset, the
+    # model is discovered from the endpoint at startup (see resolve_llm_model).
+    return os.getenv("SUMMARY_LLM_MODEL") or os.getenv("LLM_DEFAULT_CHAT_MODEL") or os.getenv("LLM_MODEL") or ""
 
 
 class Settings(BaseSettings):
@@ -114,3 +122,71 @@ class Settings(BaseSettings):
 
 # Global settings instance
 settings = Settings()
+
+
+def _served_model_ids() -> List[str]:
+    """Model ids served by the OpenAI-compatible endpoint (GET /models)."""
+    url = f"{settings.llm_api_base.rstrip('/')}/models"
+    response = httpx.get(url, headers={"Authorization": f"Bearer {settings.llm_api_key}"}, timeout=10.0)
+    response.raise_for_status()
+    return [model["id"] for model in response.json().get("data", []) if model.get("id")]
+
+
+def _is_served(model: str, served: List[str]) -> bool:
+    # Ollama aliases a bare model name to its ":latest" tag, so treat
+    # "name" as served when "name:latest" (or any "name:tag") is listed.
+    return any(tag == model or tag.startswith(f"{model}:") for tag in served)
+
+
+def _pick_chat_model(served: List[str]) -> Optional[str]:
+    # /models has no capability metadata, so exclude embedding models by name.
+    for tag in served:
+        if "embed" not in tag.lower():
+            return tag
+    return None
+
+
+@lru_cache(maxsize=1)
+def resolve_llm_model() -> str:
+    """
+    The chat model the service should use.
+
+    The configured model (CI Hub-injected LLM_DEFAULT_CHAT_MODEL, or an
+    operator-set SUMMARY_LLM_MODEL / LLM_MODEL) wins when the endpoint serves
+    it. Otherwise the model is discovered from the endpoint's /models listing,
+    so the service always names a model that actually exists — never a
+    hardcoded default.
+    """
+    configured = settings.llm_model
+
+    try:
+        served = _served_model_ids()
+    except Exception as exc:
+        if configured:
+            # Endpoint not reachable yet: trust the configured model rather
+            # than failing startup — it is validated per-request anyway.
+            logger.warning("Could not list models at %s (%s); using configured model %r unvalidated.", settings.llm_api_base, exc, configured)
+            return configured
+        raise RuntimeError(
+            f"No LLM model configured and model discovery at {settings.llm_api_base} failed ({exc}). "
+            "Set LLM_DEFAULT_CHAT_MODEL (normally injected by CI Hub) or make the endpoint reachable."
+        ) from exc
+
+    if configured:
+        if _is_served(configured, served):
+            return configured
+        fallback = _pick_chat_model(served)
+        if fallback:
+            logger.warning("Configured model %r is not served by %s; using available model %r instead.", configured, settings.llm_api_base, fallback)
+            return fallback
+        logger.warning("Configured model %r is not served by %s and no alternative chat model is available; keeping it.", configured, settings.llm_api_base)
+        return configured
+
+    discovered = _pick_chat_model(served)
+    if not discovered:
+        raise RuntimeError(
+            f"No LLM model configured and {settings.llm_api_base} serves no chat model. "
+            "Pull a model via CI Hub or set LLM_DEFAULT_CHAT_MODEL."
+        )
+    logger.info("No LLM model configured; discovered %r from %s.", discovered, settings.llm_api_base)
+    return discovered

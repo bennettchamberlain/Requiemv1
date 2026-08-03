@@ -3,7 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { GqlExecutionContext } from '@nestjs/graphql';
 import { AuthGuard } from '@nestjs/passport';
 
-import { enforceApiKeyScopes } from './apiKeyScopeEnforcement';
+import { enforceApiKeyCapability, enforceApiKeyScopes } from './apiKeyScopeEnforcement';
 
 @Injectable()
 export class ApiKeyGuard extends AuthGuard('api-key') {
@@ -20,7 +20,11 @@ export class ApiKeyGuard extends AuthGuard('api-key') {
     const ok = (await super.canActivate(context)) as boolean;
 
     if (ok) {
-      enforceApiKeyScopes(this.reflector, context, this.getRequest(context));
+      const request = this.getRequest(context);
+
+      enforceApiKeyScopes(this.reflector, context, request);
+      // Second axis: scopes got the key to this route, capability decides whether it may act here.
+      enforceApiKeyCapability(this.reflector, context, request);
     }
 
     return ok;

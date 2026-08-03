@@ -2,7 +2,14 @@ import { type ExecutionContext, ForbiddenException } from '@nestjs/common';
 import type { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 
-import { REQUIRE_SCOPES_KEY } from '@ci/common/decorators';
+import {
+  type ApiKeyCapability,
+  FULL_CAPABILITY,
+  REQUIRE_CAPABILITY_KEY,
+  REQUIRE_SCOPES_KEY,
+  capabilitySatisfies,
+  coerceApiKeyCapability,
+} from '@ci/common/decorators';
 
 /**
  * Request augmentation set by {@link ApiKeyStrategy} once an api-key has been
@@ -18,6 +25,26 @@ export interface ApiKeyScopedRequest extends Request {
    * session map) must key on this.
    */
   apiKeyId?: string;
+  /**
+   * What the key may DO on the surfaces its scopes reach. The second axis: scopes decide
+   * WHICH tools are visible, capability decides which of THOSE may run. Absent for
+   * non-api-key principals (sessions/JWT/Portal), who carry full authority.
+   */
+  apiKeyCapability?: ApiKeyCapability;
+}
+
+/**
+ * The capability of the caller behind a request — full authority for anything that did not
+ * authenticate with an api key (a session is the user themselves), and otherwise the key's
+ * own level, read strictly: an api-key request that somehow reached here without a capability
+ * is treated as read-only rather than trusted.
+ */
+export function apiKeyCapabilityOf(request: ApiKeyScopedRequest): ApiKeyCapability {
+  if (request.apiKeyScopes === undefined) {
+    return FULL_CAPABILITY;
+  }
+
+  return coerceApiKeyCapability(request.apiKeyCapability);
 }
 
 /**
@@ -85,5 +112,47 @@ export function enforceApiKeyScopes(
 
   if (missing.length > 0) {
     throw new ForbiddenException(`API key is missing required scope(s): ${missing.join(', ')}`);
+  }
+}
+
+/**
+ * Capability enforcement for api-key principals — the second axis, run alongside
+ * {@link enforceApiKeyScopes} from the same guards.
+ *
+ * Scopes decide WHICH routes a key may reach; capability decides what it may do when it gets
+ * there. Without this the two axes would only meet on the MCP tool surface, and a read-only key
+ * carrying `memory` could still `POST /api/memory/write` — a hole the settings UI has already
+ * promised is closed.
+ *
+ * Unlike scopes this is opt-in per route ({@link RequireCapability}), because it applies to
+ * empty-scope keys too and those reach the entire API: a deny-by-default rule here would 403 a
+ * legacy key on every un-annotated route. That is not a gap for a scope-limited key, which cannot
+ * reach an un-annotated route at all.
+ */
+export function enforceApiKeyCapability(
+  reflector: Reflector,
+  context: ExecutionContext,
+  request: ApiKeyScopedRequest,
+): void {
+  // Not an api-key principal (session/JWT/Portal) → full user authority, nothing to enforce.
+  if (request.apiKeyScopes === undefined) {
+    return;
+  }
+
+  const required = reflector.getAllAndOverride<ApiKeyCapability | undefined>(REQUIRE_CAPABILITY_KEY, [
+    context.getHandler(),
+    context.getClass(),
+  ]);
+
+  if (!required) {
+    return;
+  }
+
+  const capability = apiKeyCapabilityOf(request);
+
+  if (!capabilitySatisfies(capability, required)) {
+    throw new ForbiddenException(
+      `This API key is "${capability}" and cannot perform this action, which requires "${required}" access`,
+    );
   }
 }

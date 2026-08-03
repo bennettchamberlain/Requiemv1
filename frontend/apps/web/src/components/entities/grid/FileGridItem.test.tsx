@@ -32,8 +32,25 @@ describe('FileGridItem', () => {
     expect(screen.getByRole('img')).toHaveAttribute('src', '/static/p/thumb.jpg');
   });
 
-  it('falls back to the filename and icon when there is no preview', () => {
-    renderWithProviders(<FileGridItem file={makeFile({ filename: 'report.pdf' })} />);
+  it('falls back to sourceUrl for image/png when preview is missing', () => {
+    renderWithProviders(
+      <FileGridItem
+        file={makeFile({
+          filename: 'capture.png',
+          contentType: 'image/png',
+          previewUrl: null,
+          sourceUrl: '/u/shot.png',
+        })}
+      />,
+    );
+
+    expect(screen.getByRole('img')).toHaveAttribute('src', '/static/u/shot.png');
+  });
+
+  it('falls back to the filename and icon when there is no preview or source', () => {
+    renderWithProviders(
+      <FileGridItem file={makeFile({ filename: 'report.pdf', contentType: 'application/pdf' })} />,
+    );
 
     expect(screen.queryByRole('img')).toBeNull();
     expect(screen.getByText('report.pdf')).toBeInTheDocument();

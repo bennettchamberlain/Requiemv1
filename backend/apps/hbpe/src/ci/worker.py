@@ -13,6 +13,7 @@ from temporalio.client import Client
 from temporalio.worker import Worker
 
 from ci.config import settings
+from ci.telemetry import init_telemetry
 from ci.pipeline.bootstrap import (
     BootstrapHBPEWorkflow,
     calibrate_and_export_onnx,
@@ -37,6 +38,9 @@ log = structlog.get_logger(__name__)
 
 
 async def main() -> None:
+    # No-op unless SENTRY_DSN is set — see ci/telemetry.py.
+    init_telemetry()
+
     # Init database connection pool early to fail fast
     from ci.database import init_db
     init_db()

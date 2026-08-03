@@ -284,6 +284,10 @@ dburl: ## Print this worktree's PostgreSQL connection URL (for DataGrip, psql, e
 url: ## Print this worktree's stack URL
 	@echo "https://$(PROJECT_NAME).localhost"
 
+.PHONY: urls
+urls: ## Show the URLs this worktree's running stack serves (read live from Caddy)
+	@yarn tsx scripts/dev-stack/urls.ts --key $(PROJECT_NAME)
+
 .PHONY: dev
 dev: ## Run the development environment locally
 	@printf "$(call task_icon,dev,🧑‍💻) Starting development environment...\n\n"

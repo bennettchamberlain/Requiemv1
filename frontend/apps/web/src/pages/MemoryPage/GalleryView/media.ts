@@ -1,3 +1,5 @@
+import { resolveMediaUrl } from '@/components/entities/resolveMediaUrl';
+
 import { eventDisplayTitle } from '../Components/utils';
 import type { EntityItem } from '../useEntityService';
 
@@ -18,16 +20,6 @@ export interface EntityMedia {
   fullUrl: string;
   /** Human label for caption / alt text. */
   title: string;
-}
-
-// External URLs are used directly; relative paths are served from the object
-// store under /static (mirrors ContentGridItem and FileModal).
-function resolveMediaUrl(value?: string | null): string | undefined {
-  if (!value) {
-    return undefined;
-  }
-
-  return /^https?:\/\//.test(value) ? value : `/static${value}`;
 }
 
 function mediaKind(contentType?: string | null): EntityMediaKind | null {
