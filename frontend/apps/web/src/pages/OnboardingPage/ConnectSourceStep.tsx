@@ -17,10 +17,7 @@ export function ConnectSourceStep() {
 
   return (
     <div className="space-y-6 w-full mx-auto">
-      <StepHeader
-        title="Connect a source"
-        description="Pull your email and calendar in automatically."
-      />
+      <StepHeader title="Connect a source" description="Pull your email and calendar in automatically." />
 
       <ServiceIntegrationsSection
         variant="onboarding"

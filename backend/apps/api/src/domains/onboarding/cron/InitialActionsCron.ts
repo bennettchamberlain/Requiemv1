@@ -56,9 +56,7 @@ export class InitialActionsCron {
 
     for (const userId of userIds) {
       try {
-        const created = await this.onboardingService.initializeActionsForUser(
-          toServiceContext({ userId }),
-        );
+        const created = await this.onboardingService.initializeActionsForUser(toServiceContext({ userId }));
 
         if (created) {
           initialized += 1;

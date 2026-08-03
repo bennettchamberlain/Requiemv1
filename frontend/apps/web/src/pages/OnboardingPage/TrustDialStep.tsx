@@ -23,10 +23,7 @@ export function TrustDialStep({ value, onChange }: TrustDialStepProps) {
 
   return (
     <div className="space-y-8 w-full max-w-xl mx-auto">
-      <StepHeader
-        title="How much trust?"
-        description="How much should your companion do on its own?"
-      />
+      <StepHeader title="How much trust?" description="How much should your companion do on its own?" />
 
       {/* TODO(settings): Autonomy subsection — same dial, reads/writes self-entity properties.planner.trust_mode */}
       <div className="flex flex-col gap-3">

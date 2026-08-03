@@ -389,9 +389,7 @@ export function FeedPage() {
 
         {(actionsEnabled || Boolean(question)) && (
           <>
-            <h2 className="text-2xl font-bold text-foreground">
-              {actionsEnabled ? 'Actions' : 'Questions'}
-            </h2>
+            <h2 className="text-2xl font-bold text-foreground">{actionsEnabled ? 'Actions' : 'Questions'}</h2>
 
             {isActionsRowEmpty ? (
               <div className="flex min-h-[220px] items-center justify-center">

@@ -44,10 +44,7 @@ export function SocialConnections() {
 
   return (
     <div className="space-y-6 w-full max-w-2xl mx-auto">
-      <StepHeader
-        title="Who are you usually around?"
-        description="Let's start with up to 6 for now."
-      />
+      <StepHeader title="Who are you usually around?" description="Let's start with up to 6 for now." />
 
       <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_max-content_max-content] items-center gap-3 px-1 mx-auto">
         {fields.map((field, index) => (

@@ -226,9 +226,7 @@ export function OnboardingPage() {
   // Typeform-style: keep the question centered in the viewport. Only denser
   // multi-card steps scroll from the top so content isn't clipped.
   const verticallyCenterStep =
-    currentStepKey !== 'connect-source' &&
-    currentStepKey !== 'focus-areas' &&
-    currentStepKey !== 'people';
+    currentStepKey !== 'connect-source' && currentStepKey !== 'focus-areas' && currentStepKey !== 'people';
 
   if (user?.onboarded) {
     return <Navigate to="/feed" replace />;

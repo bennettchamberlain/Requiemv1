@@ -34,12 +34,7 @@ export function TimeAndPlaceStep() {
             <Form.Item>
               <Form.Label className="text-base">Usually wake up</Form.Label>
               <Form.Control>
-                <Input
-                  type="time"
-                  className="h-12 text-lg"
-                  {...field}
-                  value={field.value ?? '07:00'}
-                />
+                <Input type="time" className="h-12 text-lg" {...field} value={field.value ?? '07:00'} />
               </Form.Control>
             </Form.Item>
           )}
@@ -51,12 +46,7 @@ export function TimeAndPlaceStep() {
             <Form.Item>
               <Form.Label className="text-base">Usually go to bed</Form.Label>
               <Form.Control>
-                <Input
-                  type="time"
-                  className="h-12 text-lg"
-                  {...field}
-                  value={field.value ?? '21:00'}
-                />
+                <Input type="time" className="h-12 text-lg" {...field} value={field.value ?? '21:00'} />
               </Form.Control>
             </Form.Item>
           )}
@@ -75,12 +65,7 @@ export function TimeAndPlaceStep() {
             <Form.Item>
               <Form.Label className="text-base">Workday start</Form.Label>
               <Form.Control>
-                <Input
-                  type="time"
-                  className="h-12 text-lg"
-                  {...field}
-                  value={field.value ?? '09:00'}
-                />
+                <Input type="time" className="h-12 text-lg" {...field} value={field.value ?? '09:00'} />
               </Form.Control>
             </Form.Item>
           )}
@@ -92,12 +77,7 @@ export function TimeAndPlaceStep() {
             <Form.Item>
               <Form.Label className="text-base">Workday end</Form.Label>
               <Form.Control>
-                <Input
-                  type="time"
-                  className="h-12 text-lg"
-                  {...field}
-                  value={field.value ?? '18:00'}
-                />
+                <Input type="time" className="h-12 text-lg" {...field} value={field.value ?? '18:00'} />
               </Form.Control>
             </Form.Item>
           )}
