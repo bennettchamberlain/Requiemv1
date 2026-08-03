@@ -57,6 +57,22 @@ function isSensitiveKey(key: string): boolean {
 // exposure as request.url, and not caught by SENSITIVE_KEY_PATTERN.
 const URL_VALUED_HEADERS = ['referer', 'referrer', 'location'];
 
+/**
+ * Breadcrumb `data` keys that are a bare query string or fragment.
+ *
+ * `nativeNodeFetchIntegration` — a @sentry/node default that survives our
+ * integrations callback — sanitises `data.url` and then attaches the raw query
+ * and fragment beside it as these keys. They match no key pattern, and their
+ * values match no secret pattern, so they were copied verbatim.
+ *
+ * Dropped rather than scrubbed: on this appliance a query string is the user's
+ * own search terms or entity ids, and the sanitised `data.url` beside it
+ * already identifies the failing call. Note `tracesSampleRate: 0` does NOT
+ * prevent this — undici instrumentation runs in `setupOnce` regardless, and
+ * sampling gates span creation only.
+ */
+const DROPPED_BREADCRUMB_DATA_KEYS = ['http.query', 'http.fragment'];
+
 const MAX_STRING_LENGTH = 8000;
 
 /**
@@ -207,7 +223,13 @@ export function scrubEvent(event: ErrorEvent): ErrorEvent | null {
       }
 
       if (breadcrumb.data) {
-        breadcrumb.data = scrubValue(breadcrumb.data) as Record<string, unknown>;
+        const data = scrubValue(breadcrumb.data) as Record<string, unknown>;
+
+        for (const key of DROPPED_BREADCRUMB_DATA_KEYS) {
+          delete data[key];
+        }
+
+        breadcrumb.data = data;
       }
     }
   }

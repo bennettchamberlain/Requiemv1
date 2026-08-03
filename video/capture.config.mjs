@@ -96,23 +96,23 @@
  *    uses it — every selector was chosen to resolve at both widths.
  */
 
-const BASE_URL = process.env.APP_URL ?? "http://localhost:5173";
+const BASE_URL = process.env.APP_URL ?? 'http://localhost:5173';
 
 // Matches .env.default / .github/workflows/e2e.yml. Throwaway dev credentials
 // for an ephemeral, seeded database — not a secret.
-const EMAIL = process.env.AUTH_DEFAULT_USER_EMAIL ?? "jsmith@example.com";
-const PASSWORD = process.env.AUTH_DEFAULT_USER_PASSWORD ?? "]60.a6{CJ}lB*rHAp;w;";
+const EMAIL = process.env.AUTH_DEFAULT_USER_EMAIL ?? 'jsmith@example.com';
+const PASSWORD = process.env.AUTH_DEFAULT_USER_PASSWORD ?? ']60.a6{CJ}lB*rHAp;w;';
 
-const LOGGED_OUT = process.env.VIDEO_LOGGED_OUT === "1";
+const LOGGED_OUT = process.env.VIDEO_LOGGED_OUT === '1';
 
 export default {
   baseURL: BASE_URL,
 
   // The app defaults to `system` (ThemeProvider defaultTheme="system"), so the
   // context's colorScheme is what actually picks dark mode. CI apps film dark.
-  colorScheme: "dark",
-  locale: "en-US",
-  timezoneId: "UTC",
+  colorScheme: 'dark',
+  locale: 'en-US',
+  timezoneId: 'UTC',
 
   // See hazard 2. Real timers, real clock — unless you have pinned the seed.
   fixedTime: process.env.VIDEO_FIXED_TIME ?? false,
@@ -120,7 +120,7 @@ export default {
   async onContext(context, { viewport }) {
     // An unstyled or logo-less capture reads as a UI regression but is usually a
     // dead asset. Say so loudly.
-    context.on("requestfailed", (req) => {
+    context.on('requestfailed', (req) => {
       if (/\/static\/|\/branding\/|arcgisonline|fonts\.(googleapis|gstatic)/.test(req.url())) {
         console.warn(`  ! asset failed (${viewport}): ${req.url()}`);
       }
@@ -137,20 +137,20 @@ export default {
     const api = context.request;
     await api.get(`${BASE_URL}/api/authenticate/csrf`);
     const { cookies } = await context.storageState();
-    const csrf = cookies.find((c) => c.name === "csrfToken")?.value;
+    const csrf = cookies.find((c) => c.name === 'csrfToken')?.value;
     if (!csrf) {
       throw new Error(
-        "capture login failed: /api/authenticate/csrf set no csrfToken cookie — is the API up on :3030 and is Vite proxying /api to it?"
+        'capture login failed: /api/authenticate/csrf set no csrfToken cookie — is the API up on :3030 and is Vite proxying /api to it?',
       );
     }
 
     const res = await api.post(`${BASE_URL}/api/authenticate`, {
-      headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
       data: { username: EMAIL, password: PASSWORD },
     });
     if (!res.ok()) {
       throw new Error(
-        `capture login failed (${res.status()}) for ${EMAIL} — did the seed run? ${await res.text()}`
+        `capture login failed (${res.status()}) for ${EMAIL} — did the seed run? ${await res.text()}`,
       );
     }
   },
