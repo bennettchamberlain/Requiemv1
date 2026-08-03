@@ -107,6 +107,7 @@ interface SummaryRowProps {
     summaryText: string;
     keyInsights: string[];
     seen: boolean;
+    dismissed: boolean;
   };
   context: string;
   onClick: () => void;
@@ -120,14 +121,19 @@ function SummaryRow({ summary, context, onClick }: SummaryRowProps) {
       className={cn(
         'w-full text-left rounded-xl border border-border bg-card p-4 space-y-2',
         'hover:bg-muted/40 transition-colors duration-150',
-        !summary.seen && 'border-l-2 border-l-primary',
+        !summary.seen && !summary.dismissed && 'border-l-2 border-l-primary',
+        summary.dismissed && 'opacity-75',
       )}
     >
       <div className="flex items-center gap-2">
         <span className="text-xs uppercase tracking-wide text-muted-foreground px-2 py-0.5 rounded bg-muted">
           {summary.periodType}
         </span>
-        {!summary.seen && <span className="text-xs text-primary font-medium">New</span>}
+        {!summary.seen && !summary.dismissed && <span className="text-xs text-primary font-medium">New</span>}
+        {summary.dismissed && <span className="text-xs text-muted-foreground font-medium">Dismissed</span>}
+        {summary.seen && !summary.dismissed && (
+          <span className="text-xs text-muted-foreground font-medium">Seen</span>
+        )}
       </div>
 
       {summary.title && <p className="text-sm font-semibold text-foreground">{summary.title}</p>}

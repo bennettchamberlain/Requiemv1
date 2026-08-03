@@ -55,7 +55,7 @@ export function SummaryDetailPage() {
             <Breadcrumb.Separator className="hidden md:block" />
             <Breadcrumb.Item>
               <Breadcrumb.Link asChild>
-                <Link to="/feed">Insights</Link>
+                <Link to="/insights">Insights</Link>
               </Breadcrumb.Link>
             </Breadcrumb.Item>
             {summary && (
@@ -85,9 +85,11 @@ export function SummaryDetailPage() {
                 <span className="font-medium">Period:</span> {formatDate(summary.periodStart)} -{' '}
                 {formatDate(summary.periodEnd)}
               </div>
-              <div>
-                <span className="font-medium">Total Activities:</span> {summary.activityCounts.total}
-              </div>
+              {summary.periodType !== 'insight' && (
+                <div>
+                  <span className="font-medium">Total Activities:</span> {summary.activityCounts.total}
+                </div>
+              )}
             </div>
 
             {summary.tags && summary.tags.length > 0 && (
@@ -102,9 +104,24 @@ export function SummaryDetailPage() {
           </div>
 
           <Card className="p-6">
-            <h2 className="text-xl font-semibold text-foreground">Summary</h2>
+            <h2 className="text-xl font-semibold text-foreground">
+              {summary.periodType === 'insight' ? 'Insight' : 'Summary'}
+            </h2>
             <p className="text-base text-foreground leading-relaxed">{summary.summaryText}</p>
           </Card>
+
+          {summary.periodType === 'insight' &&
+            summary.insights?.[0]?.keyActions &&
+            summary.insights[0].keyActions.length > 0 && (
+              <Card className="p-6">
+                <h2 className="text-xl font-semibold text-foreground">Suggested Actions</h2>
+                <ul className="list-disc pl-6 space-y-2 text-base text-foreground">
+                  {summary.insights[0].keyActions.map((action: string, idx: number) => (
+                    <li key={idx}>{action}</li>
+                  ))}
+                </ul>
+              </Card>
+            )}
 
           {summary.keyInsights && summary.keyInsights.length > 0 && (
             <Card className="p-6">
