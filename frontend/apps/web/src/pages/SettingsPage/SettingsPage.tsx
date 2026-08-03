@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect } from 'react';
 
 import { LoadingPage, Portal, usePageTitle } from '@ci/common';
 import { Button, ScrollArea } from '@ci/shadcn';
-import { Braces, ExternalLink, Globe, Key, KeyRound, Palette, X } from '@ci/shadcn/icons';
+import { Braces, Cpu, ExternalLink, Globe, Key, KeyRound, Palette, X } from '@ci/shadcn/icons';
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 
 const AppearanceSection = lazy(() =>
@@ -11,6 +11,7 @@ const AppearanceSection = lazy(() =>
 const PreferencesSection = lazy(() =>
   import('./sections/PreferencesSection').then((m) => ({ default: m.PreferencesSection })),
 );
+const ModelSection = lazy(() => import('./sections/ModelSection').then((m) => ({ default: m.ModelSection })));
 const ApiKeysSection = lazy(() =>
   import('./sections/ApiKeysSection').then((m) => ({ default: m.ApiKeysSection })),
 );
@@ -85,6 +86,11 @@ export function SettingsPage() {
                 Preferences
               </NavLink>
 
+              <NavLink to="/settings/model" state={{ backgroundLocation }} className={navLinkClass}>
+                <Cpu className="h-4 w-4" />
+                Model
+              </NavLink>
+
               <NavLink to="/settings/api-keys" state={{ backgroundLocation }} className={navLinkClass}>
                 <KeyRound className="h-4 w-4" />
                 API Keys
@@ -120,6 +126,7 @@ export function SettingsPage() {
                     <Route index element={<Navigate to="appearance" replace />} />
                     <Route path="appearance" element={<AppearanceSection />} />
                     <Route path="preferences" element={<PreferencesSection />} />
+                    <Route path="model" element={<ModelSection />} />
                     <Route path="api-keys" element={<ApiKeysSection />} />
                     <Route path="oauth" element={<OAuthSection />} />
                   </Routes>
