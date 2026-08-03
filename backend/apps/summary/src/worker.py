@@ -16,6 +16,7 @@ from temporalio.worker.workflow_sandbox import (
 )
 
 from .config import settings
+from .telemetry import init_telemetry
 from .llm_config import get_llm_config
 from .database import db
 from .agent_registration import agent_registration
@@ -263,6 +264,9 @@ async def run_worker():
 
 def main():
     """Main entry point for worker."""
+    # No-op unless SENTRY_DSN is set — see telemetry.py.
+    init_telemetry()
+
     # Register signal handlers
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)

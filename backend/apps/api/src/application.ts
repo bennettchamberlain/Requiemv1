@@ -12,10 +12,12 @@ import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import * as Sentry from '@sentry/nestjs';
 
 import { RequestContextMiddleware } from '@ci/common/context';
 import { HealthController } from '@ci/common/controllers/HealthController';
 import { MapsConfigController } from '@ci/common/controllers/MapsConfigController';
+import { TelemetryConfigController } from '@ci/common/controllers/TelemetryConfigController';
 import { FeatureModule } from '@ci/common/feature';
 import { GlobalExceptionsFilter } from '@ci/common/filters';
 import { IdFormatGuard } from '@ci/common/guards';
@@ -54,6 +56,7 @@ import { SummariesModule } from '@ci/domains/summaries';
 import { ToolsModule } from '@ci/domains/tools';
 import { UserModule } from '@ci/domains/user';
 import { UserSnapshotsModule } from '@ci/domains/user-snapshots';
+import { flushTelemetry, isTelemetryEnabled } from '@ci/instrument';
 
 @Module({
   imports: [
@@ -109,7 +112,7 @@ import { UserSnapshotsModule } from '@ci/domains/user-snapshots';
     UserModule,
     UserSnapshotsModule,
   ],
-  controllers: [HealthController, MapsConfigController],
+  controllers: [HealthController, MapsConfigController, TelemetryConfigController],
   providers: [
     {
       provide: APP_GUARD,
@@ -133,19 +136,37 @@ export class App implements NestModule, OnApplicationBootstrap, OnApplicationShu
   }
 
   onApplicationBootstrap() {
+    // These handlers own the exit path, so they also own reporting the crash:
+    // a bare `process.exit(1)` truncates Sentry's async transport and the report
+    // is lost.
+    //
+    // But deferring the exit to a promise continuation puts it behind the event
+    // loop, so with reporting OFF — the shipped default — we exit synchronously
+    // exactly as before, and telemetry cannot change crash timing at all. Only
+    // when a DSN is configured do we take the bounded flush first.
+    const exitAfterReporting = () => {
+      if (!isTelemetryEnabled()) {
+        process.exit(1);
+      }
+
+      void flushTelemetry().finally(() => process.exit(1));
+    };
+
     process.on('unhandledRejection', (reason: unknown) => {
       const error =
         reason instanceof Error ? reason : new Error(String(reason ?? 'Unknown unhandled rejection'));
 
       this.logger.error(error, 'Unhandled rejection');
+      Sentry.captureException(error);
 
-      process.exit(1);
+      exitAfterReporting();
     });
 
     process.on('uncaughtException', (error: Error) => {
       this.logger.error(error, 'Uncaught exception');
+      Sentry.captureException(error);
 
-      process.exit(1);
+      exitAfterReporting();
     });
 
     let bindings: string[];
@@ -167,9 +188,11 @@ export class App implements NestModule, OnApplicationBootstrap, OnApplicationShu
     });
   }
 
-  onApplicationShutdown(signal?: string) {
+  async onApplicationShutdown(signal?: string) {
     this.logger.log('Application stopped', {
       signal: signal ?? 'EXIT',
     });
+
+    await flushTelemetry();
   }
 }
