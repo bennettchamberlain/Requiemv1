@@ -136,7 +136,46 @@ describe('bandsForDay — collapsing clusters into rhythm bands', () => {
     expect(morning?.intensity).toBeCloseTo(0.4, 2);
   });
 
-  it('saturates at 1 rather than summing past it when behaviours stack', () => {
+  it('stays differentiated when a realistic cluster count claims every daypart', () => {
+    // A real user has ~20 clusters, most near-certain, mass spread across all
+    // four dayparts. A noisy-OR union saturates every band to ~1 and the layer
+    // says nothing; the strongest-claim rule keeps the day's shape visible.
+    const many = Array.from({ length: 20 }, (_, i) => ({
+      clusterId: `c${i}`,
+      name: `Cluster ${i}`,
+      l0Class: 'WORK',
+      pOccur: 0.99,
+      scheduled: false,
+      daypartProbs: [
+        { label: 'night', probability: 0.23 },
+        { label: 'morning', probability: 0.23 },
+        { label: 'afternoon', probability: 0.31 },
+        { label: 'evening', probability: 0.23 },
+      ],
+    }));
+    // One cluster genuinely owns the afternoon.
+    many.push({
+      clusterId: 'c-focus',
+      name: 'Discord',
+      l0Class: 'WORK',
+      pOccur: 0.99,
+      scheduled: false,
+      daypartProbs: [
+        { label: 'afternoon', probability: 0.75 },
+        { label: 'evening', probability: 0.25 },
+      ],
+    });
+
+    const bands = bandsForDay(day(many), MONDAY);
+    const byLabel = Object.fromEntries(bands.map((b) => [b.label, b.intensity]));
+
+    expect(byLabel.afternoon).toBeGreaterThan(0.7);
+    expect(byLabel.night).toBeLessThan(0.3);
+    // The gap between busiest and quietest daypart must survive the collapse.
+    expect(byLabel.afternoon - byLabel.night).toBeGreaterThan(0.4);
+  });
+
+  it('takes the strongest claim on a daypart, not the union of every claim', () => {
     const bands = bandsForDay(
       day([
         {
@@ -160,9 +199,25 @@ describe('bandsForDay — collapsing clusters into rhythm bands', () => {
     );
 
     const evening = bands.find((b) => b.label === 'evening');
-    expect(evening?.intensity).toBeLessThanOrEqual(1);
-    // Two certainties in the same band stay at ceiling, not 2.0.
+    // Two certainties in the same band are still one certainty, not 2.0.
     expect(evening?.intensity).toBeCloseTo(1, 5);
+  });
+
+  it('is not raised by piling on weak claims', () => {
+    const weak = Array.from({ length: 12 }, (_, i) => ({
+      clusterId: `w${i}`,
+      name: `Weak ${i}`,
+      l0Class: 'LEISURE',
+      pOccur: 0.4,
+      scheduled: false,
+      daypartProbs: [{ label: 'morning' as const, probability: 0.4 }],
+    }));
+
+    const bands = bandsForDay(day(weak), MONDAY);
+    const morning = bands.find((b) => b.label === 'morning');
+
+    // Twelve maybes do not add up to a certainty.
+    expect(morning?.intensity).toBeCloseTo(0.16, 2);
   });
 
   it('preserves ordering between a strong and a weak band', () => {

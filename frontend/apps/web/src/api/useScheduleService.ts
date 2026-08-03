@@ -18,7 +18,7 @@ const GET_SCHEDULE = gql(`
       category
       locationName
     }
-    weekForecast {
+    weekForecast(includeToday: true) {
       generatedAt
       days {
         date

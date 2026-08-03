@@ -18,8 +18,20 @@ export class HbpeService {
     return this.get<ForecastResponse>(`/histogram?horizon=${horizon}&user_id=${context.userId}`);
   }
 
-  async getWeekForecast(context: UserServiceContext): Promise<WeekForecastResponse> {
-    return this.get<WeekForecastResponse>(`/forecast?horizon=7d&user_id=${context.userId}`);
+  /**
+   * @param includeToday start the window at today rather than tomorrow. The
+   *   schedule grid needs it (its first row is today); the feed's Week Ahead
+   *   card does not, and leaving it false preserves that card's semantics.
+   */
+  async getWeekForecast(
+    context: UserServiceContext,
+    includeToday = false,
+  ): Promise<WeekForecastResponse> {
+    const todayParam = includeToday ? '&include_today=true' : '';
+
+    return this.get<WeekForecastResponse>(
+      `/forecast?horizon=7d&user_id=${context.userId}${todayParam}`,
+    );
   }
 
   async getDueList(context: UserServiceContext): Promise<DueResponse> {

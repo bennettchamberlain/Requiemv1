@@ -185,6 +185,11 @@ async def histogram(
 async def forecast(
     user_id: str | None = Query(None, description="User UUID"),
     horizon: str = Query("7d", description="Forecast window (only '7d' supported)"),
+    include_today: bool = Query(
+        False,
+        description="Start the window at today (UTC) instead of tomorrow. For "
+                    "calendar surfaces that must render a row for today.",
+    ),
 ) -> dict:
     """
     Week-horizon occurrence forecast: for each of the next 7 days, the L1
@@ -192,6 +197,11 @@ async def forecast(
 
     Unlike /histogram (bucket occupancy), this predicts *events*: Bernoulli
     per (day × cluster), driven by the nightly recurrence profiles.
+
+    The window starts tomorrow by default — today is partly elapsed, so its
+    occurrence probability is a statement about a day already half-spent.
+    `include_today` shifts the window back one day for the schedule grid, whose
+    first row is today and would otherwise render empty.
     """
     if not user_id:
         raise HTTPException(status_code=401, detail="user_id is required")
@@ -204,8 +214,16 @@ async def forecast(
 
     try:
         now = datetime.datetime.utcnow()
-        days = week_forecast(user_id, days=7)
-        log_occurrence_forecast(user_id, days, predicted_at=now)
+        today = now.date()
+        start = today if include_today else today + datetime.timedelta(days=1)
+        days = week_forecast(user_id, days=7, start=start)
+
+        # Only log days that are still wholly in the future. Scoring a partly
+        # elapsed day against an occurrence prediction issued mid-day would bias
+        # the reliability curve (CI-Server-h0m), so today never enters the log.
+        loggable = [d for d in days if d["date"] > today.isoformat()]
+        log_occurrence_forecast(user_id, loggable, predicted_at=now)
+
         return {
             "horizon":      horizon,
             "generated_at": now.isoformat() + "Z",

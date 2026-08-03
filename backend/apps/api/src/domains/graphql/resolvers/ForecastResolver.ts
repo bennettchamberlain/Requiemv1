@@ -46,13 +46,17 @@ export class ForecastResolver {
     nullable: true,
     description: 'Fetch the HBPE week-horizon occurrence forecast (per-day cluster probabilities)',
   })
-  async weekForecast(@Context() context: RequestContext): Promise<WeekForecastType | null> {
+  async weekForecast(
+    @Context() context: RequestContext,
+    @Args('includeToday', { type: () => Boolean, nullable: true, defaultValue: false })
+    includeToday: boolean,
+  ): Promise<WeekForecastType | null> {
     if (!(await this.featureService.isFeatureEnabled('hbpe'))) {
       return null;
     }
 
     try {
-      const response = await this.hbpeService.getWeekForecast(toServiceContext(context));
+      const response = await this.hbpeService.getWeekForecast(toServiceContext(context), includeToday);
 
       return WeekForecastType.toType(response);
     } catch (err) {

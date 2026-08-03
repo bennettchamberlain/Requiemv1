@@ -129,10 +129,18 @@ interface RhythmBand {
 /**
  * Collapse a day's clusters into four placed bands.
  *
- * Each cluster contributes `pOccur × daypartProb` to the daypart it favours, so
- * a near-certain behaviour with a tight daypart inks darker than a diffuse
- * maybe. Bands are positioned by their true UTC instant, split at local midnight
- * when the offset pushes one across the boundary.
+ * A band's weight is the STRONGEST single claim on that daypart —
+ * `max(pOccur × daypartProb)` — not the union of every claim.
+ *
+ * The union reads better in theory and is useless in practice: a real user has
+ * ~20 discovered clusters, most with p_occur near 1 and probability mass spread
+ * across all four dayparts, so a noisy-OR saturates every band to ~1.0 and the
+ * layer degenerates into "everything, always". Taking the max asks the question
+ * that actually carries information — how strongly does the most-expected
+ * behaviour claim this part of the day — and leaves the bands differentiated.
+ *
+ * Bands are positioned by their true UTC instant, split at local midnight when
+ * the offset pushes one across the boundary.
  */
 function bandsForDay(day: RhythmDay | undefined, dayStart: Date): RhythmBand[] {
   if (!day) {
@@ -146,9 +154,7 @@ function bandsForDay(day: RhythmDay | undefined, dayStart: Date): RhythmBand[] {
       const idx = DAYPART_NAMES.indexOf(entry.label as (typeof DAYPART_NAMES)[number]);
 
       if (idx >= 0) {
-        // Union-ish accumulation: two independent behaviours in the same band
-        // raise it, but it saturates rather than exceeding 1.
-        weight[idx] = 1 - (1 - weight[idx]) * (1 - cluster.pOccur * entry.probability);
+        weight[idx] = Math.max(weight[idx], cluster.pOccur * entry.probability);
       }
     }
   }

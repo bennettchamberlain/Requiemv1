@@ -1166,7 +1166,7 @@ type Query {
   """
   Fetch the HBPE week-horizon occurrence forecast (per-day cluster probabilities)
   """
-  weekForecast: WeekForecastType
+  weekForecast(includeToday: Boolean = false): WeekForecastType
 }
 
 type QuestionConnection implements Connection {
