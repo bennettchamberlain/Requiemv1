@@ -28,6 +28,14 @@ export interface EntitySource {
    * `undefined` for single-type tables.
    */
   discriminator?: { column: string; value: string };
+  /**
+   * Extra SQL predicate (over source alias `s`) the BACKFILL sweep applies so
+   * rows that must never (re-)index are not treated as "missing". Used by the
+   * ci.entities-backed types to exclude merge tombstones: a merge deletes the
+   * tombstone's embedding+vector, and without this filter the sweep would
+   * re-find and re-index it via PersonCreatedEvent.
+   */
+  backfillPredicate?: string;
 }
 
 /**
@@ -63,6 +71,7 @@ export const ENTITY_SOURCE_MAP: Readonly<Record<IndexableEntity, EntitySource>> 
     table: 'entities',
     idColumn: 'entity_id',
     discriminator: { column: 'entity_type', value: 'Concept' },
+    backfillPredicate: 's.merged_into_entity_id IS NULL',
   },
   content: { schema: 'ci', table: 'content', idColumn: 'id' },
   event: { schema: 'ci', table: 'events', idColumn: 'event_id' },
@@ -71,6 +80,7 @@ export const ENTITY_SOURCE_MAP: Readonly<Record<IndexableEntity, EntitySource>> 
     table: 'entities',
     idColumn: 'entity_id',
     discriminator: { column: 'entity_type', value: 'File' },
+    backfillPredicate: 's.merged_into_entity_id IS NULL',
   },
   'file-chunk': { schema: 'ci', table: 'file_chunks', idColumn: 'id' },
   item: { schema: 'ci', table: 'inventory', idColumn: 'object_id' },
@@ -81,12 +91,14 @@ export const ENTITY_SOURCE_MAP: Readonly<Record<IndexableEntity, EntitySource>> 
     table: 'entities',
     idColumn: 'entity_id',
     discriminator: { column: 'entity_type', value: 'Person' },
+    backfillPredicate: 's.merged_into_entity_id IS NULL',
   },
   place: {
     schema: 'ci',
     table: 'entities',
     idColumn: 'entity_id',
     discriminator: { column: 'entity_type', value: 'Location' },
+    backfillPredicate: 's.merged_into_entity_id IS NULL',
   },
   thread: { schema: 'ci', table: 'threads', idColumn: 'thread_id' },
 };

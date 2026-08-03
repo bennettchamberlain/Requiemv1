@@ -149,7 +149,10 @@ export class GeocodeBatchListener {
           if (outcome.status === 'OK' && outcome.point && outcome.confidence !== null) {
             // PostGIS Point.coordinates is [lng, lat] (GeoJSON order).
             const [lng, lat] = outcome.point.coordinates;
-            const place = await this.linkPlace(context, candidate.location_name, lat, lng);
+            const place = await this.linkPlace(context, candidate.location_name, lat, lng, {
+              placeId: outcome.placeId,
+              components: outcome.components,
+            });
 
             await this.eventService.update(context, candidate.event_id, {
               location_coordinates: outcome.point,
@@ -269,7 +272,10 @@ export class GeocodeBatchListener {
           if (outcome.status === 'OK' && outcome.placeName) {
             const lat = Number(candidate.lat);
             const lng = Number(candidate.lng);
-            const place = await this.linkPlace(context, outcome.placeName, lat, lng);
+            const place = await this.linkPlace(context, outcome.placeName, lat, lng, {
+              placeId: outcome.placeId,
+              components: outcome.components,
+            });
 
             await this.eventService.update(context, candidate.event_id, {
               location_name: outcome.placeName,
@@ -419,9 +425,16 @@ export class GeocodeBatchListener {
     name: string,
     lat: number,
     lng: number,
+    resolution: { placeId?: string | null; components?: Record<string, unknown> | null } = {},
   ): Promise<{ id: string } | null> {
     try {
-      return await this.placeService.findOrCreateForGeocode(context, { name, lat, lng });
+      return await this.placeService.findOrCreateForGeocode(context, {
+        name,
+        lat,
+        lng,
+        placeId: resolution.placeId ?? null,
+        components: resolution.components ?? null,
+      });
     } catch (error) {
       this.logger.warn('Failed to find-or-create place for geocoded event', {
         userId: context.userId,

@@ -77,9 +77,10 @@ function decodeGlobalId(globalId: string): string {
   }
 }
 
-export function useActionListService(limit: number = 5) {
+export function useActionListService(limit: number = 5, options?: { skip?: boolean }) {
   const { data, loading, error, refetch } = useQuery<FeedActionsQueryResult>(GET_FEED_ACTIONS, {
     variables: { limit },
+    skip: options?.skip === true,
   });
 
   const [markAsSeen] = useMutation(MARK_ACTION_AS_SEEN);

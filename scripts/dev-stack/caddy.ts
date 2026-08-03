@@ -182,6 +182,20 @@ export class CaddyClient {
     }
   }
 
+  /** Whether the admin API answers at all. config() deliberately swallows a dead
+   * admin socket and returns {}, which is indistinguishable from "running but
+   * unconfigured" — callers that need to tell the two apart (to say "start Caddy"
+   * versus "no stacks up") probe with this first. */
+  async reachable(): Promise<boolean> {
+    try {
+      const res = await this.request('GET', '/config/');
+
+      return res.status === 200;
+    } catch {
+      return false;
+    }
+  }
+
   async config(): Promise<CaddyConfig> {
     // A plain GET on /config/ always returns 200 (literal `null` when
     // unconfigured), so we read whole-config state rather than probing deep
@@ -228,10 +242,13 @@ export class CaddyClient {
     }
   }
 
-  async routeById(id: string): Promise<CaddyRoute | undefined> {
-    const server = await this.server();
+  /** Every route currently hanging off the shared :443 server. */
+  async routes(): Promise<CaddyRoute[]> {
+    return (await this.server())?.routes ?? [];
+  }
 
-    return (server?.routes ?? []).find((r) => r['@id'] === id);
+  async routeById(id: string): Promise<CaddyRoute | undefined> {
+    return (await this.routes()).find((r) => r['@id'] === id);
   }
 
   async hasRoute(id: string): Promise<boolean> {

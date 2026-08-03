@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-import { LoadingPage, usePageTitle } from '@ci/common';
+import { apiKeyHeaders, buildApiUrl, LoadingPage, usePageTitle } from '@ci/common';
 import { useToast } from '@ci/shadcn';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
@@ -62,9 +62,10 @@ export function OpenIDCallbackPage() {
         // check_authentication against Steam and create the connection.
         const params = Object.fromEntries(searchParams.entries());
 
-        const response = await fetch(`/api/connections/openid/complete`, {
+        const response = await fetch(buildApiUrl(`/api/connections/openid/complete`), {
           method: 'POST',
           headers: {
+            ...apiKeyHeaders(),
             'Content-Type': 'application/json',
             Authorization: `Bearer ${authToken}`,
           },

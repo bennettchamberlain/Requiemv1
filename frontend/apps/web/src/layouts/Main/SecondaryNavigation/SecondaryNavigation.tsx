@@ -11,8 +11,10 @@ import {
   MessagesSquare,
   Package,
   HardDrive,
+  MapPin,
   NotebookPen,
   FolderSearch2,
+  Users,
 } from '@ci/shadcn/icons';
 
 import { useFeatures } from '@/common/feature';
@@ -59,6 +61,14 @@ export function SecondaryNavigation() {
 
           <NavLink to="/memory" label="Memory">
             <Brain className="h-6 w-6" strokeWidth={1.25} />
+          </NavLink>
+
+          <NavLink to="/people" label="People">
+            <Users className="h-6 w-6" strokeWidth={1.25} />
+          </NavLink>
+
+          <NavLink to="/places" label="Places">
+            <MapPin className="h-6 w-6" strokeWidth={1.25} />
           </NavLink>
 
           {isFeatureEnabled('insights.page') && (

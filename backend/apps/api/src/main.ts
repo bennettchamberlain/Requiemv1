@@ -1,3 +1,7 @@
+// Must stay the first import — Sentry patches Node internals on init and has
+// to run before any application module is loaded.
+import './instrument';
+
 import { NestFactory } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
 
@@ -15,6 +19,25 @@ import config from '@ci/configuration';
 
   app.useLogger(logger);
   app.use(cookieParser());
+
+  // The web app is served same-origin behind the proxy, so it needs no CORS. The
+  // native Capacitor app is a different origin (its webview serves from
+  // capacitor://localhost on iOS and http(s)://localhost on Android), so it must
+  // be explicitly allowed. Operators can extend this with CORS_ALLOWED_ORIGINS
+  // (comma-separated) for additional cross-origin clients.
+  const nativeAppOrigins = [
+    'capacitor://localhost',
+    'ionic://localhost',
+    'http://localhost',
+    'https://localhost',
+  ];
+
+  app.enableCors({
+    origin: [...nativeAppOrigins, ...config.cors.allowedOrigins],
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-API-Key'],
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+  });
 
   const express = app.getHttpAdapter().getInstance();
 

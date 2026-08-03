@@ -13,7 +13,7 @@ from pydantic_ai import Agent, NativeOutput, PromptedOutput, ToolOutput
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
-from .config import settings
+from .config import resolve_llm_model, settings
 
 logger = structlog.get_logger()
 
@@ -133,6 +133,19 @@ class InsightsResponse(BaseModel):
     data_sources_used: List[str] = Field(default_factory=list, description="Which data sources informed these insights")
 
 
+class SingleInsightResponse(BaseModel):
+    """One insight per LLM call, so each can be stored (and shown) as it lands.
+
+    `insight` is null when the model judges that no further distinct,
+    high-quality insight exists — the generation loop's stop signal.
+    """
+    insight: Optional[InsightItem] = Field(
+        default=None,
+        description="The single most valuable NEW insight not covered by previously generated ones, or null if none remains",
+    )
+    data_sources_used: List[str] = Field(default_factory=list, description="Which data sources informed this insight")
+
+
 class ActionItem(BaseModel):
     """A proactive action card suggestion.
 
@@ -169,8 +182,10 @@ class Summarizer:
         import httpx
         http_client = httpx.AsyncClient(timeout=180.0)  # 3 minutes
 
+        # Configured (Hub-injected) model, else discovered from the endpoint.
+        self.model_name = resolve_llm_model()
         self.model = OpenAIChatModel(
-            settings.llm_model,
+            self.model_name,
             provider=OpenAIProvider(
                 base_url=settings.llm_api_base,
                 api_key=settings.llm_api_key,
@@ -292,7 +307,7 @@ class Summarizer:
             ),
         )
 
-        logger.info("pydantic_ai_initialized", model=settings.llm_model, base_url=settings.llm_api_base)
+        logger.info("pydantic_ai_initialized", model=self.model_name, base_url=settings.llm_api_base)
 
     def generate_hourly_summary(self, aggregated_data: Dict[str, Any]) -> Dict[str, Any]:
         """Generate hourly summary from aggregated data."""
@@ -313,7 +328,7 @@ class Summarizer:
         # Build prompt
         prompt = self._build_data_prompt(aggregated_data, activity_counts)
         logger.info("calling_llm_for_summary",
-                   model=settings.llm_model,
+                   model=self.model_name,
                    base_url=settings.llm_api_base,
                    prompt_length=len(prompt))
 
@@ -441,7 +456,7 @@ class Summarizer:
 
         logger.info(
             "calling_llm_for_insights",
-            model=settings.llm_model,
+            model=self.model_name,
             prompt_length=len(prompt),
         )
 
@@ -487,7 +502,7 @@ class Summarizer:
 
         logger.info(
             "calling_llm_for_actions",
-            model=settings.llm_model,
+            model=self.model_name,
             prompt_length=len(prompt),
         )
 

@@ -2,6 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { Parent, Query, ResolveField, Resolver, Args, ID, Mutation, Int } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
+import { FeatureService } from '@ci/common/feature';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { ActionService } from '@ci/domains/intelligence';
 
@@ -23,13 +24,26 @@ export class ActionResolver {
     private readonly actionService: ActionService,
     private readonly tagLoader: TagLoader,
     private readonly threadLoader: ThreadLoader,
+    private readonly featureService: FeatureService,
   ) {}
+
+  private async isActionsEnabled(): Promise<boolean> {
+    return this.featureService.isFeatureEnabled('actions');
+  }
 
   @Query(() => ActionConnection)
   async actions(
     @Context() context: RequestContext,
     @Args() pagination: PaginationArgs,
   ): Promise<ActionConnection> {
+    if (!(await this.isActionsEnabled())) {
+      return {
+        edges: [],
+        pageInfo: { hasNextPage: false, hasPreviousPage: false, startCursor: null, endCursor: null },
+        totalCount: 0,
+      };
+    }
+
     const serviceContext = toServiceContext(context);
 
     const entities = await this.actionService.findAll(serviceContext);
@@ -60,6 +74,10 @@ export class ActionResolver {
     @Context() context: RequestContext,
     @Args('id', { type: () => ID }) gid: string,
   ): Promise<ActionType | null> {
+    if (!(await this.isActionsEnabled())) {
+      return null;
+    }
+
     const serviceContext = toServiceContext(context);
 
     const id = GlobalUID.parse('action', gid);
@@ -99,6 +117,10 @@ export class ActionResolver {
     @Context() context: RequestContext,
     @Args('limit', { type: () => Int, defaultValue: 5 }) limit: number,
   ): Promise<ActionType[]> {
+    if (!(await this.isActionsEnabled())) {
+      return [];
+    }
+
     const serviceContext = toServiceContext(context);
 
     const entities = await this.actionService.findForFeed(serviceContext, limit);
@@ -111,6 +133,10 @@ export class ActionResolver {
     @Context() context: RequestContext,
     @Args('id', { type: () => ID }) gid: string,
   ): Promise<ActionType | null> {
+    if (!(await this.isActionsEnabled())) {
+      return null;
+    }
+
     const serviceContext = toServiceContext(context);
 
     const id = GlobalUID.parse('action', gid);
@@ -125,6 +151,10 @@ export class ActionResolver {
     @Context() context: RequestContext,
     @Args('id', { type: () => ID }) gid: string,
   ): Promise<ActionType | null> {
+    if (!(await this.isActionsEnabled())) {
+      return null;
+    }
+
     const serviceContext = toServiceContext(context);
     const id = GlobalUID.parse('action', gid);
     const entity = await this.actionService.markAsDismissed(serviceContext, id);

@@ -16,6 +16,7 @@ from temporalio.worker.workflow_sandbox import (
 )
 
 from .config import settings
+from .telemetry import init_telemetry
 from .llm_config import get_llm_config
 from .database import db
 from .agent_registration import agent_registration
@@ -41,6 +42,7 @@ from .system_workflows import (
     SystemMonthlySummariesWorkflow,
     SystemDossierRefreshWorkflow,
     SystemInsightsWorkflow,
+    SystemActionsWorkflow,
 )
 
 # Import activities
@@ -61,10 +63,12 @@ from .activities import (
     get_last_insight_time_activity,
     aggregate_insights_context_activity,
     generate_insights_activity,
+    generate_single_insight_activity,
     store_insight_activity,
     # Action activities
     aggregate_action_context_activity,
     generate_actions_activity,
+    count_pending_actions_activity,
     store_action_activity,
 )
 
@@ -114,13 +118,13 @@ async def run_worker():
 
     logger.info("temporal_worker_starting",
                version=settings.agent_version,
-               model=settings.llm_model)
+               model=settings.llm_model or "auto-discover")
 
     try:
         # Create LLM config once at startup
         logger.info("creating_llm_config")
         llm_config = get_llm_config()
-        logger.info("llm_config_created", model=settings.llm_model)
+        logger.info("llm_config_created", model=llm_config.model.model_name)
 
         # Connect to Temporal
         logger.info("connecting_to_temporal", address=settings.temporal_address)
@@ -149,6 +153,7 @@ async def run_worker():
             SystemMonthlySummariesWorkflow,
             SystemDossierRefreshWorkflow,
             SystemInsightsWorkflow,
+            SystemActionsWorkflow,
         ]
 
         all_activities = [
@@ -168,10 +173,12 @@ async def run_worker():
             get_last_insight_time_activity,
             aggregate_insights_context_activity,
             generate_insights_activity,
+            generate_single_insight_activity,
             store_insight_activity,
             # Action activities
             aggregate_action_context_activity,
             generate_actions_activity,
+            count_pending_actions_activity,
             store_action_activity,
         ]
 
@@ -259,6 +266,9 @@ async def run_worker():
 
 def main():
     """Main entry point for worker."""
+    # No-op unless SENTRY_DSN is set — see telemetry.py.
+    init_telemetry()
+
     # Register signal handlers
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)

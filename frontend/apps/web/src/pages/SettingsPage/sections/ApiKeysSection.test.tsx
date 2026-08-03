@@ -1,0 +1,363 @@
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { ApiKeysSection } from './ApiKeysSection';
+
+// ApiKeysSection reads useAuth from the @/hooks barrel and talks to /api/keys through fetchJson.
+const h = vi.hoisted(() => ({
+  fetchJson: vi.fn(),
+}));
+
+vi.mock('@/hooks', () => ({
+  useAuth: () => [{ authToken: 'token' }, {}],
+}));
+
+vi.mock('@ci/common', () => ({
+  fetchJson: h.fetchJson,
+}));
+
+/** The parsed body of the key-creation POST, or undefined if it was never sent. */
+function createBody(): Record<string, unknown> | undefined {
+  const call = h.fetchJson.mock.calls.find(
+    ([url, init]) => url === '/api/keys' && (init as { method?: string } | undefined)?.method === 'POST',
+  );
+
+  return call ? JSON.parse((call[1] as { body: string }).body) : undefined;
+}
+
+async function openCreateDialogAndName() {
+  fireEvent.click(await screen.findByRole('button', { name: /create api key/i }));
+  fireEvent.change(await screen.findByLabelText(/^name$/i), { target: { value: 'laptop' } });
+}
+
+function submit() {
+  fireEvent.click(screen.getByRole('button', { name: /^create$/i }));
+}
+
+describe('ApiKeysSection scope picker', () => {
+  beforeEach(() => {
+    h.fetchJson.mockReset();
+    // Route by method rather than a blanket resolve: the component refetches the list right after
+    // creating, and handing that GET the create response makes it render-crash on keys.map.
+    h.fetchJson.mockImplementation((_url: string, init?: { method?: string }) =>
+      Promise.resolve(init?.method === 'POST' ? { id: '1', key: 'raw-key' } : []),
+    );
+  });
+
+  it('omits scopes when nothing is selected, preserving the full-access default', async () => {
+    render(<ApiKeysSection />);
+    await openCreateDialogAndName();
+
+    submit();
+
+    await waitFor(() => expect(createBody()).toBeDefined());
+    // Absent rather than an empty array — an omitted field keeps the grandfathered meaning.
+    expect(createBody()).not.toHaveProperty('scopes');
+  });
+
+  it('sends only the selected scopes', async () => {
+    render(<ApiKeysSection />);
+    await openCreateDialogAndName();
+
+    fireEvent.click(screen.getByLabelText('MCP'));
+    submit();
+
+    await waitFor(() => expect(createBody()).toBeDefined());
+    expect(createBody()?.scopes).toEqual(['mcp']);
+  });
+
+  it('accumulates scopes and drops one when unchecked', async () => {
+    render(<ApiKeysSection />);
+    await openCreateDialogAndName();
+
+    fireEvent.click(screen.getByLabelText('Memory'));
+    fireEvent.click(screen.getByLabelText('MCP'));
+    fireEvent.click(screen.getByLabelText('Memory'));
+    submit();
+
+    await waitFor(() => expect(createBody()).toBeDefined());
+    expect(createBody()?.scopes).toEqual(['mcp']);
+  });
+
+  it('announces what each scope unlocks, not just its name', async () => {
+    render(<ApiKeysSection />);
+    await openCreateDialogAndName();
+
+    // The description has to reach assistive tech as the checkbox's description. Naming the box
+    // with aria-label instead would drop it, leaving "MCP" with no statement of what it grants.
+    const mcp = screen.getByRole('checkbox', { name: 'MCP' });
+
+    expect(mcp).toHaveAccessibleDescription(
+      'Reach the Model Context Protocol endpoint (/api/mcp) — pair with Intents to see any tools',
+    );
+  });
+
+  // A key with `mcp` and no `intents` authenticates, opens a session, and advertises zero tools.
+  // Agents surface that as "this server has no tools", so the dialog has to say it up front —
+  // otherwise the picker's most obvious selection is also its most broken one.
+  it('warns that MCP without Intents advertises no tools', async () => {
+    render(<ApiKeysSection />);
+    await openCreateDialogAndName();
+
+    expect(screen.queryByText(/advertises no tools/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('MCP'));
+
+    expect(screen.getByText(/MCP alone advertises no tools/i)).toBeInTheDocument();
+  });
+
+  it('announces the warning rather than showing it only in amber', async () => {
+    render(<ApiKeysSection />);
+    await openCreateDialogAndName();
+
+    fireEvent.click(screen.getByLabelText('MCP'));
+
+    // The warning appears after render, so it reaches a screen reader only from a live region.
+    // Without one it is visible-only and the broken combination gets picked in silence.
+    expect(screen.getByText(/MCP alone advertises no tools/i).closest('[role="status"]')).toBeInTheDocument();
+  });
+
+  it('drops the warning once Intents is added, and when MCP is removed', async () => {
+    render(<ApiKeysSection />);
+    await openCreateDialogAndName();
+
+    fireEvent.click(screen.getByLabelText('MCP'));
+    fireEvent.click(screen.getByLabelText('Intents'));
+
+    expect(screen.queryByText(/advertises no tools/i)).not.toBeInTheDocument();
+
+    // Removing Intents brings it back — the pair is what matters, not the order they were picked.
+    fireEvent.click(screen.getByLabelText('Intents'));
+    expect(screen.getByText(/MCP alone advertises no tools/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('MCP'));
+    expect(screen.queryByText(/advertises no tools/i)).not.toBeInTheDocument();
+  });
+
+  // Memory alone must not trigger it — the warning is specific to the MCP tool surface.
+  it('does not warn for a scope selection that has nothing to do with MCP', async () => {
+    render(<ApiKeysSection />);
+    await openCreateDialogAndName();
+
+    fireEvent.click(screen.getByLabelText('Memory'));
+
+    expect(screen.queryByText(/advertises no tools/i)).not.toBeInTheDocument();
+  });
+
+  it('clears the selection when the dialog is cancelled', async () => {
+    render(<ApiKeysSection />);
+    await openCreateDialogAndName();
+    fireEvent.click(screen.getByLabelText('MCP'));
+
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+
+    // Reopening must not carry the previous selection: a stale scope would mint a
+    // limited key while the user believed it had full access.
+    await openCreateDialogAndName();
+    submit();
+
+    await waitFor(() => expect(createBody()).toBeDefined());
+    expect(createBody()).not.toHaveProperty('scopes');
+  });
+});
+
+/**
+ * Capability is the second axis: scopes say WHICH surfaces a key reaches, capability says what it
+ * may do there. Unlike scopes it is always sent — there is no "unset" reading of an authority
+ * level, and stating it makes the key's powers a decision rather than a default nobody saw.
+ */
+describe('ApiKeysSection capability picker', () => {
+  beforeEach(() => {
+    h.fetchJson.mockReset();
+    h.fetchJson.mockImplementation((_url: string, init?: { method?: string }) =>
+      Promise.resolve(init?.method === 'POST' ? { id: '1', key: 'raw-key' } : []),
+    );
+  });
+
+  it("defaults to 'write' — what every key could already do", async () => {
+    render(<ApiKeysSection />);
+    await openCreateDialogAndName();
+
+    submit();
+
+    await waitFor(() => expect(createBody()).toBeDefined());
+    expect(createBody()?.capability).toBe('write');
+  });
+
+  it('mints at the chosen level, so a read-only key is never wide open in between', async () => {
+    render(<ApiKeysSection />);
+    await openCreateDialogAndName();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Read-only' }));
+    submit();
+
+    await waitFor(() => expect(createBody()).toBeDefined());
+    expect(createBody()?.capability).toBe('read');
+  });
+
+  it('announces what each level permits, not just its name', async () => {
+    render(<ApiKeysSection />);
+    await openCreateDialogAndName();
+
+    // Same reason as the scope checkboxes: an aria-label naming the radio would suppress the
+    // description, leaving "Full access" with no statement of what it permits.
+    expect(screen.getByRole('radio', { name: 'Read, write & delete' })).toHaveAccessibleDescription(
+      'Also delete memories and other stored data. Deletions cannot be undone.',
+    );
+  });
+
+  // Capability is enforced on routes that declare a scope — which is every route a scope-limited key
+  // can reach. An unscoped key is not scope-limited, so read-only covers less than it says.
+  it('says so when read-only is picked with no areas selected', async () => {
+    render(<ApiKeysSection />);
+    await openCreateDialogAndName();
+
+    expect(screen.queryByText(/still\s+reach GraphQL and bulk ingest/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Read-only' }));
+
+    expect(screen.getByText(/still\s+reach GraphQL and bulk ingest/i)).toBeInTheDocument();
+
+    // Confining the key to an area removes the caveat, because there capability IS enforced.
+    fireEvent.click(screen.getByLabelText('Memory'));
+    expect(screen.queryByText(/still\s+reach GraphQL and bulk ingest/i)).not.toBeInTheDocument();
+  });
+
+  it('does not caveat write or full, which are not narrowed claims', async () => {
+    render(<ApiKeysSection />);
+    await openCreateDialogAndName();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Read, write & delete' }));
+
+    expect(screen.queryByText(/still\s+reach GraphQL and bulk ingest/i)).not.toBeInTheDocument();
+  });
+
+  it('resets to the default when the dialog is cancelled', async () => {
+    render(<ApiKeysSection />);
+    await openCreateDialogAndName();
+    fireEvent.click(screen.getByRole('radio', { name: 'Read, write & delete' }));
+
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+
+    // A 'full' chosen for one key must not silently carry into the next.
+    await openCreateDialogAndName();
+    submit();
+
+    await waitFor(() => expect(createBody()).toBeDefined());
+    expect(createBody()?.capability).toBe('write');
+  });
+});
+
+/** The parsed body of the PATCH to a key, or undefined if none was sent. */
+function patchBody(id: string): Record<string, unknown> | undefined {
+  const call = h.fetchJson.mock.calls.find(
+    ([url, init]) =>
+      url === `/api/keys/${id}` && (init as { method?: string } | undefined)?.method === 'PATCH',
+  );
+
+  return call ? JSON.parse((call[1] as { body: string }).body) : undefined;
+}
+
+describe('ApiKeysSection capability changes', () => {
+  const key = {
+    id: 'k1',
+    name: 'laptop',
+    prefix: 'ab12c',
+    scopes: ['memory'],
+    capability: 'write',
+    expires_at: null,
+    last_used_at: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    managed_by: null,
+  };
+
+  const mockKeys = (rows: unknown[]) => {
+    h.fetchJson.mockReset();
+    h.fetchJson.mockImplementation((_url: string, init?: { method?: string }) =>
+      Promise.resolve(init?.method ? {} : rows),
+    );
+  };
+
+  const openEdit = async (name: string) =>
+    fireEvent.click(await screen.findByRole('button', { name: new RegExp(`edit ${name}`, 'i') }));
+
+  it('badges each key with what it can do, so a row never says only where it reaches', async () => {
+    mockKeys([key, { ...key, id: 'k2', name: 'importer', scopes: [], capability: 'full' }]);
+    render(<ApiKeysSection />);
+
+    expect(await screen.findByText('Read & write')).toBeInTheDocument();
+    // Distinct from the "Full access" scope badge the same row carries for an empty scope set:
+    // that one says where the key reaches, this one says what it may do there.
+    expect(screen.getByText('Read, write & delete')).toBeInTheDocument();
+    expect(screen.getByText('Full access')).toBeInTheDocument();
+  });
+
+  it('narrows a key without a confirmation — tightening only ever removes authority', async () => {
+    mockKeys([key]);
+    render(<ApiKeysSection />);
+    await openEdit('laptop');
+
+    fireEvent.click(await screen.findByRole('radio', { name: 'Read-only' }));
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => expect(patchBody('k1')).toBeDefined());
+    expect(patchBody('k1')?.capability).toBe('read');
+  });
+
+  it('requires a confirmation naming the key before widening it', async () => {
+    mockKeys([key]);
+    render(<ApiKeysSection />);
+    await openEdit('laptop');
+
+    fireEvent.click(await screen.findByRole('radio', { name: 'Read, write & delete' }));
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    // Nothing written yet — Save on a promotion opens the confirmation instead.
+    expect(patchBody('k1')).toBeUndefined();
+    expect(screen.getByText(/“laptop” delete your data/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /grant access/i }));
+
+    await waitFor(() => expect(patchBody('k1')).toBeDefined());
+    expect(patchBody('k1')?.capability).toBe('full');
+  });
+
+  it('backing out of the confirmation writes nothing', async () => {
+    mockKeys([key]);
+    render(<ApiKeysSection />);
+    await openEdit('laptop');
+
+    fireEvent.click(await screen.findByRole('radio', { name: 'Read, write & delete' }));
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^back$/i }));
+
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeInTheDocument();
+    expect(patchBody('k1')).toBeUndefined();
+  });
+
+  // A Hub-managed key's NAME is not the user's to change (Hub revokes by name, so a rename would
+  // strand the connection), but what it may do with the user's own data is.
+  it('lets a Hub-managed key be narrowed without offering a rename', async () => {
+    mockKeys([{ ...key, name: 'app:ci-hermes:ci-marketplace', managed_by: 'connect' }]);
+    render(<ApiKeysSection />);
+    await openEdit('app:ci-hermes:ci-marketplace');
+
+    expect(await screen.findByLabelText(/^name$/i)).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Read-only' }));
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => expect(patchBody('k1')).toBeDefined());
+    expect(patchBody('k1')).toEqual({ capability: 'read' });
+  });
+
+  it('falls back to the column default for a key the API returned without a capability', async () => {
+    // A row from an API that predates the column. Rendering nothing would show an unrestricted key
+    // as if it carried no authority at all.
+    mockKeys([{ ...key, capability: undefined }]);
+    render(<ApiKeysSection />);
+
+    expect(await screen.findByText('Read & write')).toBeInTheDocument();
+  });
+});

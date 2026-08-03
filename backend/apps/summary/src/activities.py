@@ -25,8 +25,8 @@ from .summary_functions import (
     generate_hourly_summary,
     generate_rollup_summary,
     generate_user_dossier,
-    generate_user_dossier,
     generate_insights,
+    generate_single_insight,
     generate_actions,
 )
 
@@ -639,7 +639,16 @@ async def generate_insights_activity(
     try:
         insights_data = generate_insights(llm_config, insights_context)
     except Exception as exc:
-        activity.logger.warning("insights_generation_failed_nonfatal", error=str(exc))
+        # Loud on purpose: this swallow is the reason "insights never show up"
+        # went undiagnosed. The workflow still skips gracefully, but the error
+        # (with traceback) must be visible in the logs.
+        activity.logger.error(
+            "insights_generation_failed_nonfatal error=%s error_type=%s output_mode=%s",
+            exc,
+            type(exc).__name__,
+            settings.output_mode,
+            exc_info=True,
+        )
         return {
             "insights": [],
             "data_sources_used": [],
@@ -658,6 +667,46 @@ async def generate_insights_activity(
     )
 
     return insights_data
+
+
+@activity.defn
+async def generate_single_insight_activity(
+    insights_context: Dict[str, Any],
+    prior_insights: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """
+    Generate ONE insight, distinct from the prior ones (incremental generation).
+
+    The workflow loops over this activity and stores each insight as it lands,
+    so insights appear on the feed one by one. A failure here is loud but
+    non-fatal: any insights already stored this run stay stored, and the loop
+    simply ends.
+    """
+    activity.logger.info(
+        "generating_single_insight num_prior=%d", len(prior_insights)
+    )
+    activity.heartbeat("Calling LLM for single insight generation")
+
+    llm_config = get_llm_config()
+
+    try:
+        return generate_single_insight(llm_config, insights_context, prior_insights)
+    except Exception as exc:
+        activity.logger.error(
+            "single_insight_generation_failed_nonfatal error=%s error_type=%s output_mode=%s",
+            exc,
+            type(exc).__name__,
+            settings.output_mode,
+            exc_info=True,
+        )
+        return {
+            "insight": None,
+            "data_sources_used": [],
+            "embedding": None,
+            "tokens_used": 0,
+            "skipped": True,
+            "reason": "generation_failed",
+        }
 
 
 @activity.defn
@@ -713,7 +762,13 @@ async def generate_actions_activity(
     try:
         actions_data = generate_actions(llm_config, action_context)
     except Exception as exc:
-        activity.logger.warning("actions_generation_failed_nonfatal", error=str(exc))
+        activity.logger.error(
+            "actions_generation_failed_nonfatal error=%s error_type=%s output_mode=%s",
+            exc,
+            type(exc).__name__,
+            settings.output_mode,
+            exc_info=True,
+        )
         return {
             "actions": [],
             "tokens_used": 0,
@@ -729,6 +784,36 @@ async def generate_actions_activity(
     )
 
     return actions_data
+
+
+@activity.defn
+async def count_pending_actions_activity(user_id: str) -> int:
+    """
+    Count the actions currently occupying slots on the user's feed.
+
+    The feed shows unseen, undismissed actions first (see ActionService.findForFeed),
+    so those are the ones that consume the feed's card budget. Seen-but-undismissed
+    actions are only used as filler and are not counted here — otherwise a user who
+    stops dismissing would permanently block new generation.
+    """
+    activity.logger.info("counting_pending_actions", user_id=user_id)
+
+    rows = db.execute_query(
+        """
+        SELECT COUNT(*) AS pending
+        FROM ci.actions
+        WHERE user_id = :user_id
+          AND dismissed = false
+          AND seen = false
+        """,
+        {"user_id": str(UUID(user_id))},
+    )
+
+    pending = int(rows[0]["pending"]) if rows else 0
+
+    activity.logger.info("pending_actions_counted", user_id=user_id, pending=pending)
+
+    return pending
 
 
 @activity.defn
@@ -939,9 +1024,11 @@ __all__ = [
     "get_last_insight_time_activity",
     "aggregate_insights_context_activity",
     "generate_insights_activity",
+    "generate_single_insight_activity",
     "store_insight_activity",
     # Action activities
     "aggregate_action_context_activity",
     "generate_actions_activity",
+    "count_pending_actions_activity",
     "store_action_activity",
 ]

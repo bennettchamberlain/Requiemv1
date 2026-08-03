@@ -1,7 +1,15 @@
 import { type ReactNode, useState } from 'react';
 
 import { isReference, type Reference, useMutation, useQuery } from '@apollo/client';
-import { GlobalUID, LoadingPage, Portal, usePageTitle, EmptyState } from '@ci/common';
+import {
+  apiKeyHeaders,
+  buildApiUrl,
+  GlobalUID,
+  LoadingPage,
+  Portal,
+  usePageTitle,
+  EmptyState,
+} from '@ci/common';
 import {
   Breadcrumb,
   Card,
@@ -9,7 +17,6 @@ import {
   Button,
   Dialog,
   Input,
-  Select,
   useToast,
   Form,
   useForm,
@@ -23,7 +30,6 @@ import { PageContent } from '@/components/layout';
 import { gql, makeFragmentData } from '@/graphql';
 import { useAuth } from '@/hooks';
 import { Endpoints, ENDPOINTS_FRAGMENT } from '@/pages/ProviderPage/Endpoints';
-import { useConnectService } from '@/pages/ProviderPage/useConnectService';
 
 export interface Provider {
   readonly id: string;
@@ -294,8 +300,6 @@ export function ConnectionPage() {
   const [modalLoading, setModalLoading] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
 
-  const [{ endpoints, setEndpoints }] = useConnectService();
-
   const { data, loading } = useQuery(GET_CONNECTION, {
     variables: {
       id: GlobalUID.encode('connection', id!),
@@ -380,7 +384,7 @@ export function ConnectionPage() {
             id: connection.id,
             name: editFormData.name || '',
             schedule: editFormData.schedule || '1 hour',
-            activeEndpoints: endpoints,
+            activeEndpoints: form.getValues('endpoints') || [],
             ...(editFormData.accessToken ? { accessToken: editFormData.accessToken } : {}),
           },
         },
@@ -427,10 +431,11 @@ export function ConnectionPage() {
   const handleReauthConnection = async () => {
     try {
       const response = await fetch(
-        `/api/connections/${GlobalUID.parse('connection', connection!.id)}/connect`,
+        buildApiUrl(`/api/connections/${GlobalUID.parse('connection', connection!.id)}/connect`),
         {
           method: 'GET',
           headers: {
+            ...apiKeyHeaders(),
             Authorization: `Bearer ${authToken}`,
           },
         },
@@ -690,31 +695,6 @@ export function ConnectionPage() {
                     />
                   </div>
                 )}
-
-                <div className="grid gap-2">
-                  <Label htmlFor="edit-schedule">Sync Schedule</Label>
-                  <Select
-                    value={editFormData.schedule}
-                    onValueChange={(value) => setEditFormData({ ...editFormData, schedule: value })}
-                    disabled={modalLoading}
-                  >
-                    <Select.Trigger id="edit-schedule">
-                      <Select.Value />
-                    </Select.Trigger>
-                    <Select.Content>
-                      <Select.Item value="1 min">1 Minute</Select.Item>
-                      <Select.Item value="5 min">5 Minutes</Select.Item>
-                      <Select.Item value="10 min">10 Minutes</Select.Item>
-                      <Select.Item value="30 min">30 Minutes</Select.Item>
-                      <Select.Item value="1 hour">1 Hour</Select.Item>
-                      <Select.Item value="2 hours">2 Hours</Select.Item>
-                      <Select.Item value="6 hours">6 Hours</Select.Item>
-                      <Select.Item value="12 hours">12 Hours</Select.Item>
-                      <Select.Item value="daily">Daily</Select.Item>
-                      <Select.Item value="weekly">Weekly</Select.Item>
-                    </Select.Content>
-                  </Select>
-                </div>
               </div>
 
               {connection?.provider && (
@@ -722,7 +702,6 @@ export function ConnectionPage() {
                   <div className="grid gap-2">Endpoints</div>
                   <Endpoints
                     provider={makeFragmentData(connection.provider, ENDPOINTS_FRAGMENT)}
-                    setEndpoints={setEndpoints}
                     startEndpoints={connection.activeEndpoints}
                   />
                 </>

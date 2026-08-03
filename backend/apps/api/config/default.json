@@ -5,6 +5,9 @@
   "logging": {
     "level": "info"
   },
+  "cors": {
+    "allowedOrigins": []
+  },
   "auth": {
     "local": {
       "saltRounds": 10
@@ -46,6 +49,9 @@
       "github": {
         "id": "019d7a32-e4b0-7f01-b5c2-8a1d3e6f9c04"
       },
+      "signal": {
+        "id": "019e3d77-c6e3-8f14-da06-2b5f7c0e1d19"
+      },
       "steam": {
         "id": "019d6470-f9e1-720f-a3ce-299842abaece"
       }
@@ -58,16 +64,17 @@
     },
     "oidc": {
       "issuerUrl": "",
-      "publicBaseUrl": ""
+      "publicBaseUrl": "",
+      "nativeRedirectScheme": "companion"
     },
     "connect": {
       "hubOrigins": ""
     },
     "portal": {
-      "enabled": false,
+      "enabled": true,
       "issuer": "https://hub.ci.computer",
       "jwksUri": "https://hub.ci.computer/api/auth/jwks",
-      "audience": "ci-server,ci-hub,ci-import-tools,ci-browser-extension,ci-even"
+      "audience": "ci-server,ci-hub,ci-import-tools,ci-browser-extension,ci-even,ci-applet"
     },
     "hubForwardAuth": {
       "enabled": false,
@@ -98,6 +105,13 @@
   "graphql": {
     "maxQueryComplexity": 150
   },
+  "powersync": {
+    "url": "",
+    "jwtSecret": "",
+    "audience": "powersync",
+    "tokenTtl": "300s",
+    "jwtKid": "ci-powersync-hs256"
+  },
   "services": {
     "ollama": {
       "host": "http://host.docker.internal:11434"
@@ -108,6 +122,9 @@
     "parser": {
       "host": "http://summary-service:8002"
     }
+  },
+  "signalCli": {
+    "restUrl": "http://127.0.0.1:8080"
   },
   "embedding": {
     "model": "nomic-embed-text",
@@ -130,10 +147,10 @@
     "enable.system.prompt": true,
     "enable.inventory.page": false,
     "advanced.theme.tab": false,
-    "new.insights.page": false,
+    "new.insights.page": true,
     "require.signup.codes": true,
     "files.page": false,
-    "insights.page": false,
+    "insights.page": true,
     "chat.page": false,
     "jobs.page": false,
     "stats.page": false,
@@ -141,7 +158,9 @@
     "hbpe": true,
     "agent.memory.compaction": false,
     "shared.search": false,
-    "ask": false
+    "ask": false,
+    "onboarding.preference.steps": false,
+    "actions": false
   },
   "environment": {
     "database.query.logging": false

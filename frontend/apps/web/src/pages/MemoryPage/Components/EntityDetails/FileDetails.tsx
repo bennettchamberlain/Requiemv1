@@ -2,6 +2,7 @@ import { useMutation } from '@apollo/client';
 import { Download } from '@ci/shadcn/icons';
 
 import { FILE_FRAGMENT } from '@/components/entities/grid/FileGridItem';
+import { resolveFileTileUrl, resolveMediaUrl } from '@/components/entities/resolveMediaUrl';
 import { gql, useFragment } from '@/graphql';
 
 import type { MemoryEntityOf } from '../../useEntityService';
@@ -49,7 +50,15 @@ export function FileDetails({ entity }: Props) {
   const [updateFile] = useMutation(UPDATE_FILE);
 
   const isVideo = data.contentType?.startsWith('video/') ?? false;
-  const mediaSrc = resolveStaticUrl(isVideo ? data.sourceUrl : (data.previewUrl ?? data.sourceUrl));
+  // Video playback needs the original; images prefer preview then source (same
+  // fallback as gallery tiles so Capture screenshots show before preview gen).
+  const mediaSrc = isVideo
+    ? resolveMediaUrl(data.sourceUrl)
+    : resolveFileTileUrl({
+        contentType: data.contentType,
+        previewUrl: data.previewUrl,
+        sourceUrl: data.sourceUrl,
+      });
   const downloadUrl = resolveStaticUrl(data.sourceUrl);
 
   return (

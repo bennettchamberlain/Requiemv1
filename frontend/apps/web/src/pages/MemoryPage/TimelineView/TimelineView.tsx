@@ -118,6 +118,10 @@ export function TimelineView({
   }
 
   if (timelineData.length === 0) {
+    const isMapView = searchParams.get('view') === 'map';
+    // Narrow map side panel needs horizontal padding so copy isn't flush to the edge.
+    const emptyClassName = isMapView ? 'px-4' : undefined;
+
     // Results exist but none are timeline-renderable types — distinguish this
     // from a truly empty result so the user knows to switch to the List view.
     if (data.length > 0) {
@@ -126,6 +130,7 @@ export function TimelineView({
           title="No timeline events match this search"
           description="These results aren't time-based. Switch to List to see them."
           icon="🗂️"
+          className={emptyClassName}
         />
       );
     }
@@ -138,8 +143,13 @@ export function TimelineView({
       return (
         <Empty
           title="No memories match these filters"
-          description="Try removing a filter (or the Located filter on the map) to see more."
+          description={
+            isMapView
+              ? 'Try removing a filter, or clear Located, to see more.'
+              : 'Try removing a filter (or the Located filter on the map) to see more.'
+          }
           icon="🔍"
+          className={emptyClassName}
         />
       );
     }
@@ -149,6 +159,7 @@ export function TimelineView({
         title="No memories yet"
         description="Your timeline will fill in as memories are created."
         icon="🧠"
+        className={emptyClassName}
       />
     );
   }

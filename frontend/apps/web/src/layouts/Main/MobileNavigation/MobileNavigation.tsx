@@ -4,7 +4,7 @@ import { Portal } from '@ci/common';
 import { Camera, Inbox, MonitorCog, Search, type LucideIcon } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
-import logo from '@/assets/logo.svg';
+import logo from '@/assets/logo.png';
 import { useFeatures } from '@/common/feature';
 import { CaptureModal } from '@/components/modals/CaptureModal';
 import { useCaptureModal } from '@/hooks';

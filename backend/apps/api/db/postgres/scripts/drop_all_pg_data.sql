@@ -33,11 +33,13 @@ BEGIN
     END LOOP;
 
     -- 3. Handle circular dependency between users and entities
-    -- users -> entities (entity_id, person_entity_id)
+    -- users -> entities (entity_id)
     -- entities -> users (owner_user_id)
+    -- (person_entity_id was a dead duplicate column, dropped by
+    -- 20260803211455_add_person_identity_and_merge.)
 
     -- Break the link from users to entities
-    UPDATE ci.users SET entity_id = NULL, person_entity_id = NULL;
+    UPDATE ci.users SET entity_id = NULL;
 
     -- Now we can delete entities
     DELETE FROM ci.entities;

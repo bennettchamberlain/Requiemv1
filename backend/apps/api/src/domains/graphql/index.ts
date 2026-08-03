@@ -5,6 +5,7 @@ import { Module } from '@nestjs/common';
 import { GraphQLModule as NestGraphQLModule } from '@nestjs/graphql';
 
 import { AsksModule } from '@ci/domains/asks';
+import { ActivityModule } from '@ci/domains/activity';
 import { BrowserActivityModule } from '@ci/domains/browser-activity';
 import { ConnectionsModule } from '@ci/domains/connections';
 import { ConversationModule } from '@ci/domains/conversations';
@@ -30,8 +31,11 @@ import { EventLoader } from './loaders/EventLoader';
 import { EventMediaLoader } from './loaders/EventMediaLoader';
 import { FileItemsLoader } from './loaders/FileItemsLoader';
 import { ItemFileLoader } from './loaders/ItemFileLoader';
+import { PersonIdentifiersLoader } from './loaders/PersonIdentifiersLoader';
+import { PersonInteractionStatsLoader } from './loaders/PersonInteractionStatsLoader';
 import { PersonLoader } from './loaders/PersonLoader';
 import { PlaceLoader } from './loaders/PlaceLoader';
+import { PlaceVisitStatsLoader } from './loaders/PlaceVisitStatsLoader';
 import { PreviewLoader } from './loaders/PreviewLoader';
 import { ProviderKeyLoader } from './loaders/ProviderKeyLoader';
 import { ProviderLoader } from './loaders/ProviderLoader';
@@ -41,6 +45,7 @@ import { ThreadLoader } from './loaders/ThreadLoader';
 import { ThreadMessagesLoader } from './loaders/ThreadMessagesLoader';
 import { ComplexityPlugin } from './plugins/ComplexityPlugin';
 import { ActionResolver } from './resolvers/ActionResolver';
+import { ActivityResolver } from './resolvers/ActivityResolver';
 import { AnswerResolver } from './resolvers/AnswerResolver';
 import { AskResolver } from './resolvers/AskResolver';
 import { BrowserActivityResolver } from './resolvers/BrowserActivityResolver';
@@ -85,6 +90,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     }),
     AsksModule,
     PairingModule,
+    ActivityModule,
     BrowserActivityModule,
     ConnectionsModule,
     DeviceModule,
@@ -106,6 +112,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
   providers: [
     ActionResolver,
     AskResolver,
+    ActivityResolver,
     ForecastResolver,
     PairingResolver,
     BrowserActivityResolver,
@@ -129,9 +136,12 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     ItemRelationshipResolver,
     ItemResolver,
     KnownPlacesResolver,
+    PersonIdentifiersLoader,
+    PersonInteractionStatsLoader,
     PersonLoader,
     PersonResolver,
     PlaceLoader,
+    PlaceVisitStatsLoader,
     PlaceResolver,
     PreviewLoader,
     ProviderResolver,

@@ -53,31 +53,50 @@ The **JWT passport strategy reads only the `Authorization: Bearer` header** — 
 
 #### Cookie attributes
 
-Session cookie (`SessionController.ts:78-84`, identical in signup + OIDC callback):
+Both cookies are set through `domains/auth/utils/authCookies.ts`, the single source of truth for their attributes — login, signup, and the OIDC callback all call the same helpers rather than repeating the option blocks:
 
 ```ts
+// setSessionCookie()
 res.cookie(config.auth.cookies.sessionTokenName, sessionToken, {
   httpOnly: true,
-  secure: req.secure,     // TLS-derived, NOT hardcoded true
+  secure: req.secure,        // TLS-derived, NOT hardcoded true
   sameSite: 'lax',
   path: '/',
-  maxAge: COOKIE_MAX_AGE, // 7d
+  maxAge: AUTH_COOKIE_MAX_AGE, // 7d, shared with the csrf cookie
 });
 ```
 
-CSRF cookie (`SessionController.ts:180-187`): `httpOnly: false` (JS reads it for the double-submit header), `secure: req.secure`, `sameSite: 'strict'`, no `maxAge`. Default cookie names (`default.json:29-32`): `sessionToken`, `csrfToken`.
+`AUTH_COOKIE_MAX_AGE` is derived from `auth.jwt.refreshTokenExpiration` and **throws at startup** if that value is not a parseable positive duration: Express treats `maxAge: 0` as an immediate expiry, so a silent fallback would delete both auth cookies on every response and lock every user out.
 
-> **Why `secure: req.secure` (not `true`) matters — the plain-HTTP Tailscale case.** Because the flag mirrors the actual connection, cookies still set over plain HTTP (e.g. a `*.ts.net` exposure) rather than being dropped. Combined with `sameSite: 'lax'`, this is what makes Memory login work over unencrypted Tailscale: set `APP_BASE_URL` to the frontend origin, and the lax+non-secure cookie survives the round-trip. On a TLS deployment `req.secure` is `true` (via `trust proxy`) and the cookie is properly `Secure`.
+CSRF cookie (`domains/auth/utils/authCookies.ts` — the single source of truth for its attributes): `httpOnly: false` (JS reads it for the double-submit header), `secure: req.secure`, `sameSite: 'strict'`, `maxAge` matching the session cookie (7d) so the pair lives and dies together — a browser restart no longer strands a valid session behind a missing csrf cookie. Default cookie names (`default.json:29-32`): `sessionToken`, `csrfToken`.
+
+**Stable-token model** (`CsrfService.ensureToken`): a CSRF token identifies a *browser and its principal*, not a request. Every issue/render site (`GET /authenticate/csrf`, refresh, the connect-consent and confirm-account pages) **reuses a valid existing same-scope cookie** and only mints when the cookie is absent, invalid, or bound to a different principal; rotation happens **only at identity boundaries** — login, signup, OIDC sign-in (fixation hygiene) — and logout clears it. This keeps all tabs and server-rendered forms converged on one token, so a background session refresh can never invalidate a page rendered earlier (the CI-Server#1740 race). CSRF failures on the no-JS consent/confirm forms self-heal with a one-shot 303 back to their GET (re-rendering against the current cookie). The retry is bounded by a `csrf_retry` marker: a second consecutive failure on the connect flow returns the user to CI-Hub with `error=csrf_failed` rather than stranding them, and a failure with no live session goes straight back to the Hub — `connect()` would otherwise bounce a signed-out user onward to the cross-origin OIDC issuer, which the gateway's `form-action 'self'` blocks mid-redirect-chain.
+
+**Principal binding** (token v2): the token format is `{scope}.{randomHex64}.{hmacHex64}`, where `scope` is the **session id** the token was minted under (the session JWT's `sid` claim, also the `SessionEntity` primary key) or the literal `anon` for a pre-auth mint; the HMAC covers `scope + "\n" + random`, so the scope segment cannot be re-labelled. Validation resolves the request's scope from the session cookie (`AuthService.resolveCsrfScope` — signature-checked but **expiry-ignored**, since the scope identifies the *minting* principal and expiry says nothing about that; session validity is still enforced where sessions are consumed, so an expired cookie on `/authenticate/refresh` ends in a 401 either way. Ignoring expiry here only fixes the ORDER of failure: otherwise an expired or clock-skewed cookie resolves to the anonymous scope, its session-bound token is rejected first, and the 403 spends the SPA's one-shot CSRF retry on a token that was never the problem) and, after the unchanged double-submit checks (presence → type → cookie↔header equality → HMAC), requires token scope === request scope:
+
+| Request context | Token scope | Result |
+|---|---|---|
+| anonymous | `anon` | accept |
+| anonymous | session-bound | 403 (`bound-token-on-anon-request`) |
+| session A | `anon` | 403 (`anon-token-on-authed-session`) |
+| session A | session A | accept |
+| session A | session B | 403 (`session-mismatch`) |
+
+A harvested or fixated token therefore dies at the first principal boundary it crosses. Legacy 2-segment (v1) tokens fail validation and self-heal: any ensure site re-mints them, and legacy `sid`-less session JWTs count as anonymous until their first refresh rotation embeds the `sid` (the same response's ensure upgrades the CSRF cookie to match). Rejections surface as `CsrfValidationError` (a `ForbiddenException` carrying a machine-readable `reason`), logged by `CsrfGuard` without token values or session ids.
+
+> **Why `secure: req.secure` (not `true`) matters — the plain-HTTP Tailscale case.** Because the flag mirrors the actual connection, cookies still set over plain HTTP (e.g. a `*.ts.net` exposure) rather than being dropped. Combined with `sameSite: 'lax'`, this is what makes Memory login work over unencrypted Tailscale: set `APP_BASE_URL` to the frontend origin, and the lax+non-secure cookie survives the round-trip.
+>
+> **`secure` depends on the gateway deriving the client's scheme.** `infrastructure/gateway/nginx.conf` listens plain on `8642`, so it used to set `proxy_set_header X-Forwarded-Proto $scheme` and overwrite whatever the edge put there. With `trust proxy 1` that made `req.secure` `false` on *every* request, including HTTPS ones — so `sessionToken` and `csrfToken`, both 7-day persistent, went out without `Secure` on an origin reached over TLS, readable (and writable, giving session/CSRF fixation) by any on-path attacker. The gateway now derives `$client_proto` and forwards *that*. Deployment testing on core-2 showed `X-Forwarded-Proto` alone is not enough: behind the Hub's Cloudflare tunnel the chain is Cloudflare → cloudflared → **Hub Traefik** → gateway, and Traefik overwrites `X-Forwarded-Proto` with its own plain-`http` entrypoint scheme, so it arrives as `http` on a genuine HTTPS request. Cloudflare's `CF-Visitor: {"scheme":"https"}` carries the true client scheme and survives that hop, so `$client_proto` **prefers `CF-Visitor`**, then a correctly-set `X-Forwarded-Proto` (first token, for a non-Cloudflare edge), then `$scheme` (a direct plain-HTTP LAN / Tailscale exposure, which keeps working unencrypted). Two consequences worth remembering: an appliance running an older gateway image still has the gap until it updates, and `resolveOidcOriginBounce` deliberately still compares host only for that reason.
 
 #### Flows — `@Controller('authenticate')` (`SessionController.ts:35`)
 
 | Endpoint | Method | Guard | Purpose |
 |---|---|---|---|
-| `/authenticate/csrf` | GET (204) | — | Issue a pre-auth `csrfToken` cookie |
-| `/authenticate` | POST (200) | `CsrfGuard` | Login → session cookie + return access token |
-| `/authenticate/refresh` | POST (200) | `CsrfGuard` | Rotate session token, return a new access token |
-| `/authenticate/logout` | POST (204) | — | Invalidate session, clear cookies |
-| `/signup` | POST | `CsrfGuard` | Create account → session cookie + access token |
+| `/authenticate/csrf` | GET (204) | — | Ensure a `csrfToken` cookie scoped to the caller's principal (reuses a valid same-scope one; idempotent, always 204) |
+| `/authenticate` | POST (200) | `CsrfGuard` | Login → session cookie + access token; **rotates** csrf, bound to the new session |
+| `/authenticate/refresh` | POST (200) | `CsrfGuard` | Rotate session token, return a new access token; **reuses** csrf (slides maxAge; re-binds a legacy anon token to the session) |
+| `/authenticate/logout` | POST (204) | `CsrfGuard` | Invalidate session, clear both cookies (client must send the double-submit header) |
+| `/signup` | POST | `CsrfGuard` | Create account → session cookie + access token; **rotates** csrf, bound to the new session |
 
 **Session persistence** (`AuthService.ts:27-51`): the session row stores an **HMAC-SHA256 digest** of the token, IP, and user-agent (keyed by `auth.session.fieldPepper`) — the raw token is never stored. **Refresh with rotation + 30s grace window** (`AuthService.rotateSessionToken`): a valid refresh rotates the session token (old hash → `previous_token`); a token matching the *previous* hash within `session.refreshGracePeriod` yields a new access token without re-rotating, so racing tab refreshes don't invalidate each other.
 
@@ -98,12 +117,14 @@ curl -H "Authorization: Bearer eyJ…" -H "Content-Type: application/json" \
 
 ### 1.2 API keys (programmatic clients)
 
-Long-lived credentials for non-browser clients (CI-Import-Tools, CI-Connect, mobile App Intents, MCP clients). Passed in the **`x-api-key`** header.
+Long-lived credentials for non-browser clients (CI-Import-Tools, CI-Connect, mobile App Intents, MCP clients). Passed in the **`x-api-key`** header, or as **`Authorization: Bearer <key>`**.
+
+The bearer form exists for MCP clients: most expose a single bearer-token field and cannot send a custom header, which made `/api/mcp` unreachable for them. It also removes a gratuitous difference from the Hub, whose MCP surface is bearer-only. The scheme is matched case-insensitively per RFC 7235 §2.1 (`bearer` works). The two in-process readers — `ApiKeyStrategy` and `JwtOrApiKeyAuthGuard`'s Portal path — share one `extractBearerToken` helper so they cannot drift; the third reader is `passport-jwt`, which does its own parse and has always lowercased the scheme (`extract_jwt.js:54,60`). `x-api-key` wins if both are present — unless it is blank, in which case the bearer form is used, so a proxy that always sets the header cannot mask a good credential. This does not shadow session auth — on `JwtOrApiKeyAuthGuard` the `jwt` strategy consumes bearer JWTs first, and a JWT that reached the api-key strategy would fail the 64-hex format check before any DB lookup.
 
 - **Format:** 32 random bytes → 64 lowercase hex chars (`ApiKeyService.ts:13-14,26`). The strategy rejects anything not matching `/^[0-9a-f]{64}$/` before hitting the DB (`ApiKeyStrategy.ts`, `ApiKeyService.ts:105`).
 - **Storage:** only a **SHA-256 hash** is stored (`ApiKeyService.hash`, `:129-131`); a 5-char `prefix` is stored clear for identification. The raw key is returned **once** at creation and never again.
 - **Validation** (`ApiKeyService.validateKey`, `:104-127`): hash → look up by `hashed_key` → reject if expired → stamp `last_used_at` → return `{ userId }`.
-- **Scopes:** a `text[]` column, settable at create/update, **stored/returned but not currently enforced** — an authenticated key acts with its owner's full user scope.
+- **Scopes:** a `text[]` column, settable at create/update, and **enforced deny-by-default** (`apiKeyScopeEnforcement.ts`): a scope-limited key is confined to routes declaring a scope it holds, and is refused with `ForbiddenException` elsewhere. An **empty** `scopes` array is the grandfathered full-authority case — a key created *without* scopes acts with its owner's full user scope.
 
 #### `/keys` management — `@Controller('keys')`, **every method `JwtAuthGuard`** (browser-session only; you cannot mint keys with a key)
 
@@ -164,12 +185,12 @@ CI-Server uses **per-controller guards**, not a global auth guard.
 | Guard | Extends | Accepts | Typical use |
 |---|---|---|---|
 | `JwtAuthGuard` | `AuthGuard('jwt')` | Access-token bearer only | `/keys`, `/onboarding`, `/_internal` |
-| `ApiKeyGuard` | `AuthGuard('api-key')` | `x-api-key` only | `/memory` (agent write API) |
+| `ApiKeyGuard` | `AuthGuard('api-key')` | `x-api-key` or `Authorization: Bearer <key>` | `/memory` (agent write API) |
 | `JwtOrApiKeyAuthGuard` | `AuthGuard(['jwt','api-key'])` (+ Portal) | Either credential | The default for most resolvers & REST controllers |
 | `CsrfGuard` | `CanActivate` | double-submit CSRF token | login / signup / refresh |
 | `IdFormatGuard` | `CanActivate` (global) | — | id-param format validation |
 
-`JwtOrApiKeyAuthGuard` **precedence** (`:27-47`): (1) Portal token if enabled; else (2) the passport composite `['jwt','api-key']` — **`jwt` runs first** (Authorization bearer), then **`api-key`** (`x-api-key`). Any one success authenticates; none → `UnauthorizedException`. All passport guards override `getRequest` to unwrap **both HTTP and GraphQL** contexts, so the same guard works on REST controllers and GraphQL resolvers (`:49-68`).
+`JwtOrApiKeyAuthGuard` **precedence** (`:27-47`): (1) Portal token if enabled; else (2) the passport composite `['jwt','api-key']` — **`jwt` runs first** (Authorization bearer), then **`api-key`** (`x-api-key`, or a bearer value the `jwt` strategy rejected). Any one success authenticates; none → `UnauthorizedException`. All passport guards override `getRequest` to unwrap **both HTTP and GraphQL** contexts, so the same guard works on REST controllers and GraphQL resolvers (`:49-68`).
 
 ### How `userId` reaches handlers — AsyncLocalStorage
 
@@ -240,7 +261,7 @@ CI-Server exposes a **Model Context Protocol** server so agents (CI-Hermes, CI-O
 - **Path: root `/mcp`** — `@Controller('mcp')` (`McpController.ts:36`). Browser clients reach it at `/api/mcp` through the proxy; there is **no** separate `/api/mcp` controller.
 - **Transport:** `StreamableHTTPServerTransport` (`@modelcontextprotocol/sdk`) — HTTP with an SSE stream for server→client notifications.
 - **Server identity:** name **`companion-memory`**, version **`0.1.0`** (`McpServerService.ts:21-24`).
-- **Auth:** class-guarded by **`JwtOrApiKeyAuthGuard`** — authenticate with an access-token Bearer **or** `x-api-key` (or a Portal token when enabled).
+- **Auth:** class-guarded by **`JwtOrApiKeyAuthGuard`** — authenticate with an access-token Bearer, an API key as **`Authorization: Bearer <key>`** or `x-api-key` (or a Portal token when enabled). Point a standard MCP client at its bearer-token field; see [§1.2](#12-api-keys-programmatic-clients).
 
 ### 5.2 Session lifecycle (JSON-RPC over HTTP)
 
@@ -254,8 +275,9 @@ Each session is bound to the authenticating `userId`; a session id from a *diffe
 
 ```bash
 # Initialize — server returns Mcp-Session-Id
+# `-H "x-api-key: a1b2c…"` is equivalent; MCP clients that only offer a token field use this form.
 curl -i -X POST https://ci-memory.example.com/api/mcp \
-  -H "x-api-key: a1b2c…" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer a1b2c…" -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{
         "protocolVersion":"2025-06-18","capabilities":{},

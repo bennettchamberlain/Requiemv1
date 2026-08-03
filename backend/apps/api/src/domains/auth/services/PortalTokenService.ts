@@ -5,6 +5,7 @@ import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 
 import { SYSTEM_USER } from '@ci/common/context';
 import type { PortalTokenVerifier } from '@ci/common/guards/PortalTokenVerifier';
+import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 import { type User, UserService } from '@ci/domains/user';
 
@@ -29,7 +30,10 @@ export class PortalTokenService implements PortalTokenVerifier {
   constructor(
     private readonly userService: UserService,
     private readonly federatedIdentityService: FederatedIdentityService,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(PortalTokenService.name);
+  }
 
   get enabled(): boolean {
     return config.auth.portal.enabled === true;
@@ -64,8 +68,23 @@ export class PortalTokenService implements PortalTokenVerifier {
           .map((a) => a.trim())
           .filter(Boolean),
       }));
-    } catch {
-      // Wrong signer / issuer / audience / expired — not a valid portal token.
+    } catch (error) {
+      // Wrong signer / issuer / audience / expired — not a valid portal token,
+      // so fall through to the legacy strategies.
+      //
+      // Log the reason. Returning a bare null made every rejection identical to
+      // "no portal token present", which is why a misconfigured audience or
+      // issuer surfaced only as a blanket 401 with nothing to go on — the
+      // single hardest thing to diagnose in this auth path. `jose` codes are
+      // specific (ERR_JWT_EXPIRED, ERR_JWT_CLAIM_VALIDATION_FAILED,
+      // ERR_JWKS_NO_MATCHING_KEY), and none of them contain the token.
+      this.logger.debug('Portal token rejected', {
+        code: (error as { code?: string })?.code ?? 'unknown',
+        reason: (error as Error)?.message,
+        issuer: config.auth.portal.issuer,
+        audience: config.auth.portal.audience,
+      });
+
       return null;
     }
 

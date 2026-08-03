@@ -133,4 +133,3 @@ export interface PossibleTypesResultData {
   }
 };
       export default result;
-    

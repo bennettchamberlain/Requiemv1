@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { apiKeyHeaders, buildApiUrl } from '@ci/common';
 import { ENTITY_TYPE_MAP } from '@ci/common/src/constants';
 import { Badge, Button, Input, Label, Slider, cn } from '@ci/shadcn';
 import { AlertCircle, Anchor, Loader2, Sparkles, Users } from '@ci/shadcn/icons';
@@ -217,7 +218,17 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
 
   const rawNodes = combinedNodes;
   const rawLinks = combinedLinks;
-  const effectiveUserEntityId = isSearchMode ? null : userEntityId;
+  // Anchor on the owner's entity only when its node is actually in the loaded
+  // set — seeding visibility from an absent node renders an empty graph even
+  // though data arrived. Without an anchor the expansion effect below falls
+  // back to the first loaded node.
+  const effectiveUserEntityId = useMemo(() => {
+    if (isSearchMode || !userEntityId) {
+      return null;
+    }
+
+    return rawNodes.some((node) => node.id === userEntityId) ? userEntityId : null;
+  }, [isSearchMode, rawNodes, userEntityId]);
   const currentCenterNodeId = traversalEnabled
     ? (selectedNodeId ?? effectiveUserEntityId ?? null)
     : (effectiveUserEntityId ?? null);
@@ -297,8 +308,9 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
           params.set('to', dateToParam);
         }
 
-        const response = await fetch(`/api/graph/search?${params.toString()}`, {
+        const response = await fetch(buildApiUrl(`/api/graph/search?${params.toString()}`), {
           headers: {
+            ...apiKeyHeaders(),
             Authorization: `Bearer ${authToken}`,
           },
           signal: controller.signal,
@@ -489,7 +501,16 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
         return [] as string[];
       }
 
-      return Array.from(neighbors).sort((a, b) => hashWithSeed(a, nodeId) - hashWithSeed(b, nodeId));
+      // Hash each neighbor once up front. Hashing inside the comparator ran
+      // O(k log k) string hashes per call, which locked up the main thread on
+      // hub nodes with large neighbor sets (this runs on every visibility
+      // recompute, i.e. every node click).
+      const hashes = new Map<string, number>();
+      for (const neighborId of neighbors) {
+        hashes.set(neighborId, hashWithSeed(neighborId, nodeId));
+      }
+
+      return Array.from(neighbors).sort((a, b) => hashes.get(a)! - hashes.get(b)!);
     },
     [adjacencyMap],
   );

@@ -27,8 +27,12 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 
 from ci.pipeline.histogram_api import build_histogram
+from ci.telemetry import init_telemetry
 
 log = logging.getLogger(__name__)
+
+# No-op unless SENTRY_DSN is set — see ci/telemetry.py.
+init_telemetry()
 
 # Global engine registry: user_id → InferenceEngine
 _engines: dict = {}

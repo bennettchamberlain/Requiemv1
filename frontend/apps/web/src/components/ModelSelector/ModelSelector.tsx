@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 
-import { Select, Toggle, useToast } from '@ci/shadcn';
+import { Select, Toggle, cn, useToast } from '@ci/shadcn';
 import { Brain, Eye, Wrench } from '@ci/shadcn/icons';
 
 import { useModel } from '@/hooks';
@@ -8,9 +8,19 @@ import { useModel } from '@/hooks';
 interface Props {
   withToggles?: boolean;
   visionOnly?: boolean;
+  /**
+   * Width/appearance of the select trigger. Defaults to the compact toolbar
+   * width; Settings passes a full-width class so it lines up with the other
+   * controls in the section.
+   */
+  triggerClassName?: string;
 }
 
-export function ModelSelector({ withToggles = false, visionOnly = false }: Props) {
+export function ModelSelector({
+  withToggles = false,
+  visionOnly = false,
+  triggerClassName = 'w-[150px]',
+}: Props) {
   const { toast } = useToast();
 
   const [
@@ -64,7 +74,7 @@ export function ModelSelector({ withToggles = false, visionOnly = false }: Props
 
   const selector = (
     <Select value={currentModel ?? undefined} onValueChange={handleSelectModel}>
-      <Select.Trigger className="w-[150px]">
+      <Select.Trigger className={cn(triggerClassName)}>
         <Select.Value placeholder="Active model" />
       </Select.Trigger>
       <Select.Content>

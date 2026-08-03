@@ -38,7 +38,7 @@ Request/response envelope is standard GraphQL-over-HTTP:
 
 ## 2. Auth & context
 
-**Every resolver class is guarded** by `@UseGuards(JwtOrApiKeyAuthGuard)` — there are no unguarded resolvers; unauthenticated → 401 surfaced as a GraphQL error. Accepted credentials (any one): **JWT Bearer** (`Authorization: Bearer`), **API key** (`x-api-key`), or **Portal OIDC Bearer** (when `auth.portal.enabled`). See [auth-and-conventions.md](auth-and-conventions.md) for the full model.
+**Every resolver class is guarded** by `@UseGuards(JwtOrApiKeyAuthGuard)` — there are no unguarded resolvers; unauthenticated → 401 surfaced as a GraphQL error. Accepted credentials (any one): **JWT Bearer** (`Authorization: Bearer`), **API key** (`x-api-key` or `Authorization: Bearer <key>`), or **Portal OIDC Bearer** (when `auth.portal.enabled`). See [auth-and-conventions.md](auth-and-conventions.md) for the full model.
 
 `userId` reaches resolvers via an `AsyncLocalStorage` request context: each strategy calls `ContextService.set({ userId })`; resolvers read it with `@Context()` and convert with `toServiceContext(context)`, which **throws `UnauthorizedException` if `userId` is missing**. Services then scope every query to `user.id = context.userId`.
 
