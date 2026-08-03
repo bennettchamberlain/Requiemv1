@@ -26,18 +26,7 @@ export class PersonType implements Node, Taggable {
   firstName!: string | null;
 
   @Field(() => String, { nullable: true })
-  middleName!: string | null;
-
-  @Field(() => String, { nullable: true })
   lastName!: string | null;
-
-  /** ISO date (YYYY-MM-DD). */
-  @Field(() => String, { nullable: true })
-  birthDate!: string | null;
-
-  /** True for the user's own person entity. */
-  @Field(() => Boolean)
-  isSelf!: boolean;
 
   @Field(() => String, { nullable: true })
   gender!: string | null;
@@ -77,10 +66,7 @@ export class PersonType implements Node, Taggable {
       name: person.name,
       description: person.description,
       firstName: person.firstName,
-      middleName: person.middleName,
       lastName: person.lastName,
-      birthDate: person.birthDate,
-      isSelf: person.isSelf,
       gender: person.gender,
       address: person.address,
       streetAddress: person.streetAddress,

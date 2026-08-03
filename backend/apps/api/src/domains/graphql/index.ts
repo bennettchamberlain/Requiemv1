@@ -30,8 +30,6 @@ import { EventLoader } from './loaders/EventLoader';
 import { EventMediaLoader } from './loaders/EventMediaLoader';
 import { FileItemsLoader } from './loaders/FileItemsLoader';
 import { ItemFileLoader } from './loaders/ItemFileLoader';
-import { PersonIdentifiersLoader } from './loaders/PersonIdentifiersLoader';
-import { PersonInteractionStatsLoader } from './loaders/PersonInteractionStatsLoader';
 import { PersonLoader } from './loaders/PersonLoader';
 import { PlaceLoader } from './loaders/PlaceLoader';
 import { PlaceVisitStatsLoader } from './loaders/PlaceVisitStatsLoader';
@@ -132,8 +130,6 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     ItemRelationshipResolver,
     ItemResolver,
     KnownPlacesResolver,
-    PersonIdentifiersLoader,
-    PersonInteractionStatsLoader,
     PersonLoader,
     PersonResolver,
     PlaceLoader,

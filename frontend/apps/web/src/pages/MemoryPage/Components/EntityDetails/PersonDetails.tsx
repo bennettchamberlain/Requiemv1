@@ -15,10 +15,6 @@ const UPDATE_PERSON = gql(`
         id
         name
         description
-        firstName
-        lastName
-        birthDate
-        avatarUrl
       }
     }
   }
@@ -40,24 +36,12 @@ export function PersonDetails({ entity }: Props) {
       taggable
       editFields={[
         { key: 'name', label: 'Name', value: data.name ?? '' },
-        { key: 'firstName', label: 'First name', value: data.firstName ?? '' },
-        { key: 'lastName', label: 'Last name', value: data.lastName ?? '' },
-        { key: 'birthDate', label: 'Birthday (YYYY-MM-DD)', value: data.birthDate ?? '' },
-        { key: 'avatarUrl', label: 'Avatar URL', value: data.avatarUrl ?? '' },
         { key: 'description', label: 'Description', value: data.description ?? '', multiline: true },
       ]}
       onSave={async (values) => {
         await updatePerson({
           variables: {
-            input: {
-              id: entity.id,
-              name: values.name,
-              description: values.description,
-              firstName: values.firstName,
-              lastName: values.lastName,
-              birthDate: values.birthDate,
-              avatarUrl: values.avatarUrl,
-            },
+            input: { id: entity.id, name: values.name, description: values.description },
           },
         });
       }}
