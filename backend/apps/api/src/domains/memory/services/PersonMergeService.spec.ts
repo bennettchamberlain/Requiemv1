@@ -179,11 +179,15 @@ describe('PersonMergeService', () => {
     // Target keeps its own name.
     expect(propertiesUpdate[0].params?.[3]).toBe('Dana');
 
-    // Sources tombstoned and their embeddings dropped.
+    // Sources tombstoned and their search rows dropped from BOTH stores
+    // (embedding = semantic, vectors = keyword), with tags re-pointed.
     const tombstone = statementsMatching(harness, 'SET merged_into_entity_id');
     expect(tombstone).toHaveLength(1);
     expect(tombstone[0].params).toEqual([USER, [SOURCE_A, SOURCE_B], TARGET]);
     expect(statementsMatching(harness, 'DELETE FROM ci_search.embeddings')).toHaveLength(1);
+    expect(statementsMatching(harness, 'DELETE FROM ci_search.vectors')).toHaveLength(1);
+    expect(statementsMatching(harness, 'UPDATE ci_search.entity_tag')).toHaveLength(1);
+    expect(statementsMatching(harness, 'DELETE FROM ci_search.entity_tag')).toHaveLength(1);
 
     // One audit row per source.
     expect(statementsMatching(harness, 'INSERT INTO ci.entity_merges')).toHaveLength(2);
@@ -199,5 +203,21 @@ describe('PersonMergeService', () => {
 
     const identifierUpdate = statementsMatching(harness, 'UPDATE ci.entity_identifiers')[0];
     expect(identifierUpdate.params?.[1]).toEqual([SOURCE_A]);
+  });
+
+  it("never lets a source's is_self flag leak onto a non-self target", async () => {
+    // SOURCE_A is a floating self-flagged stub (NOT the row users.entity_id
+    // points at, so the self-source guard does not reject it).
+    const harness = makeHarness([
+      personRow(TARGET, { name: 'Dana' }),
+      personRow(SOURCE_A, { properties: { is_self: true, first_name: 'Dana' } }),
+    ]);
+
+    await harness.service.mergePeople(CONTEXT, [SOURCE_A], TARGET);
+
+    const propertiesUpdate = statementsMatching(harness, 'SET properties =');
+    const folded = JSON.parse(propertiesUpdate[0].params?.[2] as string) as Record<string, unknown>;
+    expect(folded.is_self).toBeUndefined();
+    expect(folded.first_name).toBe('Dana');
   });
 });

@@ -53,7 +53,7 @@ export class PersonService {
     if (linkedWhere) {
       const existing = await this.personRepository.findOne({ where: linkedWhere });
       if (existing) {
-        return PersonEntity.toEgressType(existing);
+        return this.resolveTombstone(existing);
       }
     }
 
@@ -81,7 +81,7 @@ export class PersonService {
       if (linkedWhere && (err as { code?: string })?.code === '23505') {
         const existing = await this.personRepository.findOne({ where: linkedWhere });
         if (existing) {
-          return PersonEntity.toEgressType(existing);
+          return this.resolveTombstone(existing);
         }
       }
 
@@ -166,8 +166,26 @@ export class PersonService {
   }
 
   /**
+   * A linked-key hit on a merge tombstone must resolve to the CANONICAL person
+   * — otherwise a re-sync of the merged-away source re-attaches its data to a
+   * hidden entity. Single hop: merges always point tombstones at a live row.
+   */
+  private async resolveTombstone(entity: PersonEntity): Promise<Person> {
+    if (entity.mergedIntoEntityId == null) {
+      return PersonEntity.toEgressType(entity);
+    }
+
+    const canonical = await this.personRepository.findOne({
+      where: { id: entity.mergedIntoEntityId },
+    });
+
+    return PersonEntity.toEgressType(canonical ?? entity);
+  }
+
+  /**
    * Resolve each built entity to its canonical persisted row (freshly inserted or
-   * pre-existing under the same linked key), in input order. One SELECT.
+   * pre-existing under the same linked key), in input order. One SELECT (plus one
+   * more when any resolved row is a merge tombstone, to follow the pointers).
    */
   private async hydrateInInputOrder(
     context: UserServiceContext,
@@ -202,13 +220,34 @@ export class PersonService {
         .map((row) => [`${row.linkedTable} ${row.linkedId}`, row]),
     );
 
-    return entities.map((entity) => {
-      const linkedKey =
-        entity.linkedTable && entity.linkedId ? `${entity.linkedTable} ${entity.linkedId}` : null;
-      const row = byId.get(entity.id) ?? (linkedKey ? byLinked.get(linkedKey) : undefined) ?? entity;
+    const resolved = entities.map(
+      (entity) =>
+        byId.get(entity.id) ??
+        (entity.linkedTable && entity.linkedId
+          ? byLinked.get(`${entity.linkedTable} ${entity.linkedId}`)
+          : undefined) ??
+        entity,
+    );
 
-      return PersonEntity.toEgressType(row);
-    });
+    // Linked-key hits on merge tombstones must resolve to the canonical rows
+    // (one extra SELECT for the pointer targets, only when any exist).
+    const canonicalIds = [
+      ...new Set(resolved.map((row) => row.mergedIntoEntityId).filter((id): id is string => id != null)),
+    ];
+
+    const canonicalById = new Map<string, PersonEntity>();
+    if (canonicalIds.length > 0) {
+      const canonicalRows = await this.personRepository.find({ where: { id: In(canonicalIds) } });
+      for (const row of canonicalRows) {
+        canonicalById.set(row.id, row);
+      }
+    }
+
+    return resolved.map((row) =>
+      PersonEntity.toEgressType(
+        row.mergedIntoEntityId != null ? (canonicalById.get(row.mergedIntoEntityId) ?? row) : row,
+      ),
+    );
   }
 
   /**

@@ -143,12 +143,48 @@ export class PersonMergeService {
         [ownerUserId, sources, targetId],
       );
 
-      // Tombstones must stop matching in semantic search; the target re-indexes
-      // via the PersonUpdatedEvent emitted after commit.
+      // Tombstones must stop matching in search. Person search rows live in
+      // TWO stores (PersonSearchIndexListener writes both): the embedding
+      // (semantic) and the ci_search.vectors tsvector row (keyword / boosted
+      // keyword, queried with no join back to ci.entities) — delete both. The
+      // target re-indexes via the PersonUpdatedEvent emitted after commit, and
+      // the backfill sweep skips tombstones (merged_into_entity_id filter in
+      // the entity source map).
       await em.query(
         `DELETE FROM ci_search.embeddings
           WHERE user_id = $1 AND entity_id = ANY($2::uuid[])`,
         [ownerUserId, sources],
+      );
+
+      await em.query(
+        `DELETE FROM ci_search.vectors
+          WHERE user_id = $1 AND entity_id = ANY($2::uuid[])`,
+        [ownerUserId, sources],
+      );
+
+      // Tags: move each source's tag links to the target, skipping links the
+      // target already has (entity_tag_unique_entry) and collapsing duplicate
+      // claims across sources to one row; leftovers are dropped with the
+      // tombstone.
+      await em.query(
+        `UPDATE ci_search.entity_tag t
+            SET entity_id = $2
+          WHERE t.entity_type = 'person' AND t.entity_id = ANY($1::uuid[])
+            AND NOT EXISTS (
+              SELECT 1 FROM ci_search.entity_tag d
+               WHERE d.entity_type = 'person' AND d.entity_id = $2 AND d.tag_id = t.tag_id)
+            AND t.id IN (
+              SELECT DISTINCT ON (tag_id) id
+                FROM ci_search.entity_tag
+               WHERE entity_type = 'person' AND entity_id = ANY($1::uuid[])
+               ORDER BY tag_id, id ASC)`,
+        [sources, targetId],
+      );
+
+      await em.query(
+        `DELETE FROM ci_search.entity_tag
+          WHERE entity_type = 'person' AND entity_id = ANY($1::uuid[])`,
+        [sources],
       );
 
       for (const id of sources) {
@@ -393,8 +429,12 @@ function foldProperties(
     }
   }
 
-  // A tombstone's self flag must never leak onto the target.
-  if (out.is_self !== true && out.is_self !== 'true') {
+  // A tombstone's self flag must never leak onto the target: gate on the
+  // TARGET's original value, not the folded output (the scalar fold above may
+  // have already copied a source's is_self into `out`).
+  if (target.is_self === true || target.is_self === 'true') {
+    out.is_self = target.is_self;
+  } else {
     delete out.is_self;
   }
 

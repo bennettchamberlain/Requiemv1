@@ -1,4 +1,4 @@
-import { UseGuards } from '@nestjs/common';
+import { BadRequestException, ConflictException, UseGuards } from '@nestjs/common';
 import { Mutation, Parent, Query, ResolveField, Resolver, Args, ID, Int } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
@@ -242,13 +242,30 @@ export class PersonResolver {
 
     const personId = GlobalUID.parse('person', input.personId);
     const kind = parseIdentifierKind(input.kind);
-    if (kind != null) {
-      await this.entityIdentifierService.addForEntity(
-        serviceContext.userId,
-        personId,
-        kind,
-        input.value,
-        input.label,
+    if (kind == null) {
+      throw new BadRequestException(
+        `Unknown identifier kind "${input.kind}" — expected email, phone, or name`,
+      );
+    }
+
+    const owningEntityId = await this.entityIdentifierService.addForEntity(
+      serviceContext.userId,
+      personId,
+      kind,
+      input.value,
+      input.label,
+    );
+
+    if (owningEntityId == null) {
+      throw new BadRequestException(`"${input.value}" does not normalize to a usable ${kind}`);
+    }
+
+    if (owningEntityId !== personId) {
+      // First-writer-wins: the tuple already belongs to another entity and the
+      // claim was deliberately NOT stolen. Surface it — the right fix is a
+      // merge, not a silent re-point.
+      throw new ConflictException(
+        'That identifier already belongs to another person. Merge the two people instead of re-assigning it.',
       );
     }
 
@@ -269,9 +286,13 @@ export class PersonResolver {
 
     const personId = GlobalUID.parse('person', input.personId);
     const kind = parseIdentifierKind(input.kind);
-    if (kind != null) {
-      await this.entityIdentifierService.removeForEntity(serviceContext.userId, personId, kind, input.value);
+    if (kind == null) {
+      throw new BadRequestException(
+        `Unknown identifier kind "${input.kind}" — expected email, phone, or name`,
+      );
     }
+
+    await this.entityIdentifierService.removeForEntity(serviceContext.userId, personId, kind, input.value);
 
     this.personIdentifiersLoader.clear(serviceContext, personId);
 

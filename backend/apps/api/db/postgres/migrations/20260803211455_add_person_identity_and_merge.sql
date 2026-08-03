@@ -77,6 +77,12 @@ CREATE INDEX IF NOT EXISTS events_participants_gin_idx
   ON ci.events USING GIN (participant_entity_ids)
   WHERE participant_entity_ids IS NOT NULL;
 
+-- Companion btree for the organizer side of "events with person X"
+-- (PersonActivityService, EventService people filter) — was also unindexed.
+CREATE INDEX IF NOT EXISTS events_organizer_idx
+  ON ci.events (organizer_entity_id)
+  WHERE organizer_entity_id IS NOT NULL;
+
 ALTER TABLE ci.users
   DROP COLUMN IF EXISTS person_entity_id;
 
@@ -84,6 +90,7 @@ ALTER TABLE ci.users
 ALTER TABLE ci.users
   ADD COLUMN IF NOT EXISTS person_entity_id UUID;
 
+DROP INDEX IF EXISTS ci.events_organizer_idx;
 DROP INDEX IF EXISTS ci.events_participants_gin_idx;
 
 DROP INDEX IF EXISTS ci.entity_merges_target_idx;

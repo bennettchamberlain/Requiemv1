@@ -135,8 +135,7 @@ function PersonRow({ person, onOpen }: { person: PersonNode; onOpen: () => void 
 
       <div className="hidden shrink-0 text-right text-sm text-muted-foreground sm:block">
         <div>
-          {person.interactionStats.eventCount} events · {person.interactionStats.communicationCount}{' '}
-          messages
+          {person.interactionStats.eventCount} events · {person.interactionStats.communicationCount} messages
         </div>
         {lastSeen && <div>Last seen {lastSeen}</div>}
       </div>
@@ -153,20 +152,30 @@ function DuplicateGroupCard({
 }) {
   const [mergePeople, { loading }] = useMutation(MERGE_PEOPLE);
   const [pendingTargetId, setPendingTargetId] = useState<string | null>(null);
+  const [mergeError, setMergeError] = useState<string | null>(null);
 
   // The self person (if present) is always the preferred merge target — the
-  // backend refuses to merge it away.
+  // backend refuses to merge it away, so when the group contains "You" the
+  // other members must not be offered as targets.
   const orderedPeople = useMemo(
     () => [...group.people].sort((a, b) => Number(b.isSelf) - Number(a.isSelf)),
     [group.people],
   );
+  const hasSelf = orderedPeople.some((person) => person.isSelf);
 
   const merge = async (targetId: string) => {
     const sourceIds = group.people.map((person) => person.id).filter((id) => id !== targetId);
 
-    await mergePeople({ variables: { input: { targetId, sourceIds } } });
-    await onMerged();
-    setPendingTargetId(null);
+    try {
+      await mergePeople({ variables: { input: { targetId, sourceIds } } });
+      setPendingTargetId(null);
+      setMergeError(null);
+      await onMerged();
+    } catch (error) {
+      // Keep the dialog open and show what went wrong instead of silently
+      // closing on failure.
+      setMergeError(error instanceof Error ? error.message : 'The merge failed. Please try again.');
+    }
   };
 
   const pendingTarget = orderedPeople.find((person) => person.id === pendingTargetId);
@@ -203,14 +212,19 @@ function DuplicateGroupCard({
               )}
             </div>
 
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={loading}
-              onClick={() => setPendingTargetId(person.id)}
-            >
-              Keep this one
-            </Button>
+            {(!hasSelf || person.isSelf) && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={loading}
+                onClick={() => {
+                  setMergeError(null);
+                  setPendingTargetId(person.id);
+                }}
+              >
+                Keep this one
+              </Button>
+            )}
           </div>
         ))}
       </div>
@@ -230,17 +244,21 @@ function DuplicateGroupCard({
               {`The other ${group.people.length - 1 === 1 ? 'person' : `${group.people.length - 1} people`} in this group will be merged into "${pendingTarget?.name || 'Unnamed'}". Their events, messages and contact methods move over; this cannot be undone from the UI.`}
             </AlertDialog.Description>
           </AlertDialog.Header>
+          {mergeError && <div className="text-sm text-destructive">{mergeError}</div>}
           <AlertDialog.Footer>
             <AlertDialog.Cancel disabled={loading}>Cancel</AlertDialog.Cancel>
             <AlertDialog.Action
               disabled={loading || pendingTargetId == null}
-              onClick={() => {
+              onClick={(e) => {
+                // Radix auto-closes on Action click; keep the dialog open so a
+                // failure (or the in-flight state) stays visible.
+                e.preventDefault();
                 if (pendingTargetId != null) {
                   void merge(pendingTargetId);
                 }
               }}
             >
-              Merge
+              {loading ? 'Merging…' : 'Merge'}
             </AlertDialog.Action>
           </AlertDialog.Footer>
         </AlertDialog.Content>
@@ -255,23 +273,30 @@ export function PeoplePage() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
 
-  const { data, loading, refetch } = useQuery(GET_PEOPLE, {
+  const { data, previousData, loading, error, refetch } = useQuery(GET_PEOPLE, {
     variables: { query: searchQuery.trim() === '' ? null : searchQuery.trim() },
   });
   const {
     data: duplicatesData,
+    error: duplicatesError,
     refetch: refetchDuplicates,
   } = useQuery(GET_PERSON_DUPLICATES);
 
-  const people = useMemo(() => (data?.people.edges ?? []).map((edge) => edge.node), [data]);
+  // Keep the previous result on screen while a new query variable is in
+  // flight — swapping to a full-page loader would unmount the search input and
+  // drop focus on the first keystroke of every new query.
+  const view = data ?? previousData;
+  const people = useMemo(() => (view?.people.edges ?? []).map((edge) => edge.node), [view]);
   const duplicateGroups = duplicatesData?.personDuplicates ?? [];
 
   const onMerged = async () => Promise.all([refetch(), refetchDuplicates()]);
 
   let content: ReactNode | null = null;
 
-  if (loading && data == null) {
+  if (loading && view == null) {
     content = <LoadingPage />;
+  } else if (error && view == null) {
+    content = <EmptyState message={`Couldn't load people: ${error.message}`} />;
   } else {
     content = (
       <PageContent>
@@ -282,10 +307,14 @@ export function PeoplePage() {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="max-w-md"
           />
-          <div className="text-sm text-muted-foreground">
-            {data?.people.totalCount ?? 0} people
-          </div>
+          <div className="text-sm text-muted-foreground">{view?.people.totalCount ?? 0} people</div>
         </div>
+
+        {duplicatesError && (
+          <div className="text-sm text-muted-foreground">
+            Duplicate suggestions are unavailable right now ({duplicatesError.message}).
+          </div>
+        )}
 
         {duplicateGroups.length > 0 && (
           <Card>
@@ -295,8 +324,8 @@ export function PeoplePage() {
                 Possible duplicates
               </Card.Title>
               <Card.Description>
-                These people share an email, phone number or name. Review and merge the ones that are
-                the same person.
+                These people share an email, phone number or name. Review and merge the ones that are the same
+                person.
               </Card.Description>
             </Card.Header>
             <Card.Content className="flex flex-col gap-3">
@@ -316,11 +345,7 @@ export function PeoplePage() {
         ) : (
           <div className="flex flex-col gap-2">
             {people.map((person) => (
-              <PersonRow
-                key={person.id}
-                person={person}
-                onOpen={() => navigate(`/people/${person.id}`)}
-              />
+              <PersonRow key={person.id} person={person} onOpen={() => navigate(`/people/${person.id}`)} />
             ))}
           </div>
         )}
