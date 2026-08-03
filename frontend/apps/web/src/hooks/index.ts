@@ -5,6 +5,7 @@ export { useCounter } from './useCounter';
 export { useCurrentUser } from './useCurrentUser';
 export { useModalControls } from './useModalControls';
 export { ModelProvider, useModel } from './useModel';
+export { useLocationTracking, isLocationTrackingEnabled } from './useLocationTracking';
 export { useNativeShell } from './useNativeShell';
 export { usePreventOverscroll } from './usePreventOverscroll';
 export { useRecentSearches } from './useRecentSearches';

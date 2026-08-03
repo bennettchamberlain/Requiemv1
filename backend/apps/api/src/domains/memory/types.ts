@@ -1,6 +1,8 @@
 import type { Point } from 'typeorm';
 import { z } from 'zod';
 
+import type { PlaceKind } from './entities/PlaceEntity';
+
 export const createContentSchema = z.object({
   type: z.string().optional(),
   title: z.string().optional(),
@@ -224,6 +226,10 @@ export interface CreatePlaceDto {
   parent?: {
     id: string;
   };
+  /** Typed place columns (issue #1811) — entity-field names for repository.create. */
+  locationPoint?: Point;
+  placeKind?: PlaceKind;
+  parentPlaceId?: string;
 }
 
 export interface UpdatePlaceDto {
@@ -244,6 +250,11 @@ export interface UpdatePlaceDto {
   parent?: {
     id: string;
   };
+  /** Typed place columns (issue #1811). */
+  latitude?: number;
+  longitude?: number;
+  place_kind?: PlaceKind | null;
+  parent_place_id?: string | null;
 }
 
 export interface CreateFileDto {

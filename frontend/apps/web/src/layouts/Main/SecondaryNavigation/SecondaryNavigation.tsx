@@ -11,6 +11,7 @@ import {
   MessagesSquare,
   Package,
   HardDrive,
+  MapPin,
   NotebookPen,
   FolderSearch2,
   Users,
@@ -64,6 +65,10 @@ export function SecondaryNavigation() {
 
           <NavLink to="/people" label="People">
             <Users className="h-6 w-6" strokeWidth={1.25} />
+          </NavLink>
+
+          <NavLink to="/places" label="Places">
+            <MapPin className="h-6 w-6" strokeWidth={1.25} />
           </NavLink>
 
           {isFeatureEnabled('insights.page') && (

@@ -474,8 +474,12 @@ input CreatePlaceInput {
   estimated: Boolean
   geoFormat: String
   geolocation: JSON
+  latitude: Float
   locationBoundary: JSON
+  longitude: Float
   name: String!
+  parentId: String
+  placeKind: String
   properties: JSON
   tracked: Boolean
   type: String
@@ -1025,6 +1029,11 @@ type PlaceEdge implements Edge {
   node: PlaceType!
 }
 
+type PlaceNearType {
+  distanceMeters: Float!
+  place: PlaceType!
+}
+
 type PlaceType implements Node & Taggable {
   description: String
   entityType: String!
@@ -1032,13 +1041,25 @@ type PlaceType implements Node & Taggable {
   geoFormat: String
   geolocation: JSON
   id: ID!
+  latitude: Float
   locationBoundary: JSON
+  longitude: Float
   name: String
+  parent: PlaceType
+  parentId: ID
+  placeKind: String
   properties: JSON!
   tags: [EntityTagType!]!
   tracked: Boolean
   type: String
   uploaded: Boolean
+  visitStats: PlaceVisitStatsType!
+}
+
+type PlaceVisitStatsType {
+  firstVisitAt: DateTime
+  lastVisitAt: DateTime
+  visitCount: Int!
 }
 
 """A single label→probability entry from the HBPE histogram"""
@@ -1158,7 +1179,8 @@ type Query {
   person(id: ID!): PersonType
   personDuplicates(limit: Int): [PersonDuplicateGroupType!]!
   place(id: ID!): PlaceType
-  places(after: String, before: String, first: Int, last: Int): PlaceConnection!
+  places(after: String, before: String, first: Int, last: Int, query: String): PlaceConnection!
+  placesNear(latitude: Float!, limit: Int, longitude: Float!, radiusMeters: Float): [PlaceNearType!]!
   provider(id: ID!): ProviderType
   providers(after: String, before: String, first: Int, last: Int): ProviderConnection!
   question(id: ID!): QuestionType
@@ -1603,8 +1625,12 @@ input UpdatePlaceInput {
   geoFormat: String
   geolocation: JSON
   id: String!
+  latitude: Float
   locationBoundary: JSON
+  longitude: Float
   name: String!
+  parentId: String
+  placeKind: String
   properties: JSON
   tracked: Boolean
   type: String

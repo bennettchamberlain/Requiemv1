@@ -50,6 +50,21 @@ export class PlaceType implements Node, Taggable {
   @Field(() => Boolean, { nullable: true })
   uploaded!: boolean | null;
 
+  /** Full-precision latitude from the typed location_point (legacy fallbacks applied). */
+  @Field(() => Number, { nullable: true })
+  latitude!: number | null;
+
+  @Field(() => Number, { nullable: true })
+  longitude!: number | null;
+
+  /** Geographic level: room|building|venue|address|neighborhood|city|region|country|continent|planet|other. */
+  @Field(() => String, { nullable: true })
+  placeKind!: string | null;
+
+  /** Containing place (venue -> city -> region -> country chain). */
+  @Field(() => ID, { nullable: true })
+  parentId!: string | null;
+
   @Field(() => [EntityTagType])
   tags!: EntityTagType[];
 
@@ -69,6 +84,10 @@ export class PlaceType implements Node, Taggable {
       tracked: place.tracked,
       properties: place.properties,
       uploaded: place.uploaded,
+      latitude: place.latitude ?? null,
+      longitude: place.longitude ?? null,
+      placeKind: place.placeKind ?? null,
+      parentId: place.parentPlaceId ? GlobalUID.encode('place', place.parentPlaceId) : null,
       tags: [], // Hydrated by resolver
     };
   }

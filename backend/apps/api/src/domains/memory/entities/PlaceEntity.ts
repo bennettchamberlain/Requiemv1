@@ -9,9 +9,25 @@ import {
   AfterLoad,
   Repository,
   SelectQueryBuilder,
+  type Point,
+  type Polygon,
 } from 'typeorm';
 
 import { UserEntity, type User } from '@ci/domains/user';
+
+/** Geographic level of a place, room -> planet (issue #1811). */
+export type PlaceKind =
+  | 'room'
+  | 'building'
+  | 'venue'
+  | 'address'
+  | 'neighborhood'
+  | 'city'
+  | 'region'
+  | 'country'
+  | 'continent'
+  | 'planet'
+  | 'other';
 
 @Entity({ schema: 'ci', name: 'entities' })
 export class PlaceEntity {
@@ -30,8 +46,40 @@ export class PlaceEntity {
   @Column({ type: 'jsonb', default: '{}' })
   properties!: Record<string, unknown>;
 
+  /** Full-precision coordinates (GeoJSON Point, [lng, lat], SRID 4326). */
+  @Column({
+    type: 'geography',
+    nullable: true,
+    srid: 4326,
+    spatialFeatureType: 'Point',
+    name: 'location_point',
+  })
+  locationPoint!: Point | null;
+
+  /** Optional polygon footprint (GeoJSON Polygon, SRID 4326). */
+  @Column({
+    type: 'geography',
+    nullable: true,
+    srid: 4326,
+    spatialFeatureType: 'Polygon',
+    name: 'location_boundary',
+  })
+  boundary!: Polygon | null;
+
+  @Column({ type: 'text', name: 'place_kind', nullable: true })
+  placeKind!: PlaceKind | null;
+
+  /** Containing place (venue -> city -> region -> country chain). */
+  @Column({ type: 'uuid', name: 'parent_place_id', nullable: true })
+  parentPlaceId!: string | null;
+
   // Backward compatibility fields - populated from properties JSONB after load
   type!: string | null;
+
+  /** Latitude/longitude from locationPoint, falling back to legacy properties shapes. */
+  latitude!: number | null;
+
+  longitude!: number | null;
 
   geoFormat!: string | null;
 
@@ -47,8 +95,33 @@ export class PlaceEntity {
 
   @AfterLoad()
   loadPropertiesFromJsonb() {
+    this.latitude = null;
+    this.longitude = null;
+
+    if (this.locationPoint?.coordinates?.length === 2) {
+      this.longitude = this.locationPoint.coordinates[0];
+      this.latitude = this.locationPoint.coordinates[1];
+    }
+
     if (!this.properties) {
       return;
+    }
+
+    // Legacy fallbacks: geocode-created rows ({lat, lng}) and LifeScope-style
+    // rows (geolocation = [lng, lat]).
+    if (this.latitude == null || this.longitude == null) {
+      const lat = this.properties.lat;
+      const lng = this.properties.lng;
+      if (typeof lat === 'number' && typeof lng === 'number') {
+        this.latitude = lat;
+        this.longitude = lng;
+      } else {
+        const geo = this.properties.geolocation;
+        if (Array.isArray(geo) && typeof geo[0] === 'number' && typeof geo[1] === 'number') {
+          this.longitude = geo[0];
+          this.latitude = geo[1];
+        }
+      }
     }
 
     this.type = (this.properties.type as string) || null;
@@ -109,6 +182,12 @@ export class PlaceEntity {
       tracked: entity.tracked || null,
       properties: entity.properties || {},
       uploaded: entity.uploaded || null,
+      locationPoint: entity.locationPoint || null,
+      boundary: entity.boundary || null,
+      placeKind: entity.placeKind || null,
+      parentPlaceId: entity.parentPlaceId || null,
+      latitude: entity.latitude ?? null,
+      longitude: entity.longitude ?? null,
       userId: entity.user?.id || null,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,

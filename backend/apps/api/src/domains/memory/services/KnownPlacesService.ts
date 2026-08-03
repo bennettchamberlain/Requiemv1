@@ -6,6 +6,8 @@ import { v7 as uuidv7 } from 'uuid';
 import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 
+import { PlaceService } from './PlaceService';
+
 /** Role a known place plays in the user's life. */
 export type KnownPlaceKind = 'home' | 'work' | 'school' | 'social' | 'other';
 
@@ -152,6 +154,7 @@ export class KnownPlacesService {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly logger: LoggerService,
+    private readonly placeService: PlaceService,
   ) {
     this.logger.setContext(KnownPlacesService.name);
   }
@@ -300,9 +303,36 @@ export class KnownPlacesService {
       source?: KnownPlaceSource;
     },
   ): Promise<KnownPlace> {
-    // A known place is an existing Location entity; confirming requires one.
-    if (!input.locationId) {
-      throw new Error('updateKnownPlace requires a locationId (the ci.entities Location to mark).');
+    // A known place is a Location entity. Grid-cluster candidates from
+    // knownPlaceCandidates carry no locationId — create the Location from the
+    // confirmed label + centroid so every candidate is confirmable (previously
+    // they were dead ends).
+    let locationId = input.locationId ?? null;
+    if (!locationId) {
+      const centroid =
+        input.coordinates && Number.isFinite(input.coordinates.lat) && Number.isFinite(input.coordinates.lng)
+          ? input.coordinates
+          : null;
+
+      if (!centroid || !input.label.trim()) {
+        throw new Error(
+          'updateKnownPlace requires a locationId, or a label plus coordinates to create the Location from.',
+        );
+      }
+
+      // Reuse an existing known place of the same kind before minting a new
+      // Location: re-confirming after an edited label or a drifted cluster
+      // centroid must not create a second "Home".
+      locationId = await this.findExistingKnownPlaceLocation(context, input.kind);
+
+      if (!locationId) {
+        const created = await this.placeService.createKnownPlaceLocation(context, {
+          name: input.label.trim(),
+          lat: centroid.lat,
+          lng: centroid.lng,
+        });
+        locationId = created.id;
+      }
     }
 
     const relationshipType = relationshipForKind(input.kind);
@@ -323,17 +353,12 @@ export class KnownPlacesService {
       ...(coordinates ? { coordinates: [coordinates.lng, coordinates.lat] } : {}),
     };
 
-    const relationshipId = await this.upsertSelfRelationship(
-      context.userId,
-      input.locationId,
-      relationshipType,
-      {
-        strength,
-        startDate: input.activeFrom ?? null,
-        endDate: input.activeTo ?? null,
-        properties,
-      },
-    );
+    const relationshipId = await this.upsertSelfRelationship(context.userId, locationId, relationshipType, {
+      strength,
+      startDate: input.activeFrom ?? null,
+      endDate: input.activeTo ?? null,
+      properties,
+    });
 
     const place = await this.getKnownPlaceById(context, relationshipId);
     if (!place) {
@@ -341,6 +366,39 @@ export class KnownPlacesService {
     }
 
     return place;
+  }
+
+  /**
+   * The Location already confirmed for this kind, when the kind is
+   * single-valued (home / work). Re-confirming such a kind must re-point the
+   * SAME known place rather than creating a sibling Location + a second active
+   * relationship, which is what an edited label or a drifted cluster centroid
+   * would otherwise produce.
+   */
+  private async findExistingKnownPlaceLocation(
+    context: UserServiceContext,
+    kind: KnownPlaceKind,
+  ): Promise<string | null> {
+    if (kind !== 'home' && kind !== 'work') {
+      return null;
+    }
+
+    const relationshipType = relationshipForKind(kind);
+
+    const rows: Array<{ to_entity_id: string }> = await this.dataSource.query(
+      `SELECT r.to_entity_id
+         FROM ci.relationships r
+         JOIN ci.users u ON u.entity_id = r.from_entity_id
+        WHERE u.id = $1
+          AND r.owner_user_id = $1
+          AND r.relationship_type = $2
+          AND r.is_active = TRUE
+        ORDER BY r.updated_at DESC
+        LIMIT 1`,
+      [context.userId, relationshipType],
+    );
+
+    return rows[0]?.to_entity_id ?? null;
   }
 
   // ---------------------------------------------------------------------------

@@ -156,7 +156,9 @@ export function PlacePage() {
             <Breadcrumb.Separator className="hidden md:block" />
 
             <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Page>Places</Breadcrumb.Page>
+              <Breadcrumb.Link asChild>
+                <Link to="/places">Places</Link>
+              </Breadcrumb.Link>
             </Breadcrumb.Item>
 
             {place && (

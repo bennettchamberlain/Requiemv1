@@ -34,6 +34,7 @@ import { PersonIdentifiersLoader } from './loaders/PersonIdentifiersLoader';
 import { PersonInteractionStatsLoader } from './loaders/PersonInteractionStatsLoader';
 import { PersonLoader } from './loaders/PersonLoader';
 import { PlaceLoader } from './loaders/PlaceLoader';
+import { PlaceVisitStatsLoader } from './loaders/PlaceVisitStatsLoader';
 import { PreviewLoader } from './loaders/PreviewLoader';
 import { ProviderKeyLoader } from './loaders/ProviderKeyLoader';
 import { ProviderLoader } from './loaders/ProviderLoader';
@@ -136,6 +137,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     PersonLoader,
     PersonResolver,
     PlaceLoader,
+    PlaceVisitStatsLoader,
     PlaceResolver,
     PreviewLoader,
     ProviderResolver,
