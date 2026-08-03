@@ -4,7 +4,7 @@ Temporal workflows for summary generation.
 Workflows are durable, fault-tolerant orchestrations that coordinate
 activities and maintain state across failures and restarts.
 """
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 from datetime import timedelta
 from temporalio import workflow
 from temporalio.common import RetryPolicy
@@ -27,6 +27,7 @@ with workflow.unsafe.imports_passed_through():
         get_last_insight_time_activity,
         aggregate_insights_context_activity,
         generate_insights_activity,
+        generate_single_insight_activity,
         store_insight_activity,
         # Action activities
         aggregate_action_context_activity,
@@ -45,6 +46,10 @@ with workflow.unsafe.imports_passed_through():
 # passes to the feedActions query (useActionListService), so generation never
 # builds a backlog the user cannot see.
 DEFAULT_MAX_FEED_ACTIONS = 5
+
+# Hard cap on the incremental insight loop (the prompt targets 3-5; the model
+# usually stops earlier by returning a null insight).
+MAX_INSIGHTS_PER_RUN = 5
 
 # Activity retry policy: exponential backoff for transient failures
 ACTIVITY_RETRY_POLICY = RetryPolicy(
@@ -663,16 +668,65 @@ class InsightsGenerationWorkflow:
             f"context_aggregated total_items={total_context_items} has_dossier={has_dossier}"
         )
 
-        # Step 4: Generate insights (LLM call)
-        insights_data = await workflow.execute_activity(
-            generate_insights_activity,
-            args=[insights_context],
-            **get_llm_activity_options(),
-        )
+        # Steps 4+5: Generate insights ONE AT A TIME, storing each immediately.
+        # Each iteration is its own LLM activity followed by its own write, so
+        # insights become visible in ci.summaries (and on the feed) as they are
+        # generated — a slow model streams them out instead of blocking the
+        # whole batch, and a mid-run failure keeps everything stored so far.
+        summary_ids: List[str] = []
+        prior_insights: List[Dict[str, Any]] = []
+        data_sources_used: set = set()
+        total_tokens = 0
 
-        # Check if any insights were generated
-        num_insights = insights_data.get("num_insights", 0)
-        if num_insights == 0:
+        for _ in range(MAX_INSIGHTS_PER_RUN):
+            single = await workflow.execute_activity(
+                generate_single_insight_activity,
+                args=[insights_context, prior_insights],
+                **get_llm_activity_options(),
+            )
+
+            total_tokens += single.get("tokens_used", 0)
+            insight = single.get("insight")
+
+            if not insight:
+                # Model signalled it has nothing distinct left (or generation
+                # failed non-fatally) — stop the loop, keep what we have.
+                break
+
+            new_title = str(insight.get("title", "")).strip().lower()
+            if new_title and any(
+                str(prior.get("title", "")).strip().lower() == new_title
+                for prior in prior_insights
+            ):
+                workflow.logger.info(f"duplicate_insight_stopping title={insight.get('title')}")
+                break
+
+            stored_ids = await workflow.execute_activity(
+                store_insight_activity,
+                args=[
+                    user_id,
+                    {
+                        "insights": [insight],
+                        "data_sources_used": single.get("data_sources_used", []),
+                        "embedding": single.get("embedding"),
+                        "tokens_used": single.get("tokens_used", 0),
+                    },
+                    since.isoformat(),
+                    now.isoformat(),
+                    timezone,
+                ],
+                **get_data_activity_options(),
+            )
+
+            summary_ids.extend(stored_ids)
+            prior_insights.append(insight)
+            data_sources_used.update(single.get("data_sources_used", []))
+
+            workflow.logger.info(
+                f"insight_stored_incrementally count={len(summary_ids)} summary_ids={stored_ids}"
+            )
+
+        if not summary_ids:
             workflow.logger.info("no_insights_generated")
             return {
                 "skipped": True,
@@ -680,24 +734,17 @@ class InsightsGenerationWorkflow:
                 "user_id": user_id,
             }
 
-        # Step 5: Store insights (one row per insight)
-        summary_ids = await workflow.execute_activity(
-            store_insight_activity,
-            args=[user_id, insights_data, since.isoformat(), now.isoformat(), timezone],
-            **get_data_activity_options(),
-        )
-
         workflow.logger.info(
-            f"insights_generation_workflow_completed num_insights={num_insights} summary_ids={summary_ids}"
+            f"insights_generation_workflow_completed num_insights={len(summary_ids)} summary_ids={summary_ids}"
         )
 
         return {
             "skipped": False,
             "summary_ids": summary_ids,
             "user_id": user_id,
-            "num_insights": num_insights,
-            "tokens_used": insights_data.get("tokens_used", 0),
-            "data_sources_used": insights_data.get("data_sources_used", []),
+            "num_insights": len(summary_ids),
+            "tokens_used": total_tokens,
+            "data_sources_used": sorted(data_sources_used),
         }
 
 
