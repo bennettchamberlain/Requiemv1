@@ -15,7 +15,7 @@ import type { ErrorEvent } from '@sentry/nestjs';
 
 const SECRET_PATTERNS = [
   /Bearer\s+[A-Za-z0-9\-._~+/]+=*/gi,
-  /(?:api[_-]?key|token|password|secret|jwt|auth)[\s=:"']+[^\s"',}\]]+/gi,
+  /(?:api[-_ ]?key|token|password|secret|jwt|auth)[\s=:"']+[^\s"',}\]]+/gi,
   /tskey-[A-Za-z0-9-]+/gi,
   // Postgres/Redis/AMQP URLs carry credentials in the authority section.
   /\b[a-z][a-z0-9+.-]*:\/\/[^\s:@/]+:[^\s@/]+@/gi,
@@ -35,11 +35,11 @@ const HOME_PATH_PATTERNS = [
 // forms match too — `x-api-key` is CI-Server's primary API-key header, and the
 // SDK ships request headers even with sendDefaultPii disabled.
 const SENSITIVE_KEY_PATTERN =
-  /password|secret|token|authorization|cookie|jwt|api[-_ ]?key|dsn|pepper|private[-_]?key/i;
+  /password|secret|token|authorization|cookie|jwt|api[-_ ]?key|dsn|pepper|private[-_]?key|hub[-_]user/i;
 
 // Headers whose value is a URL the user navigated from — same query-string
 // exposure as request.url, and not caught by SENSITIVE_KEY_PATTERN.
-const URL_VALUED_HEADERS = ['referer', 'referrer'];
+const URL_VALUED_HEADERS = ['referer', 'referrer', 'location'];
 
 const MAX_STRING_LENGTH = 8000;
 

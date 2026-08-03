@@ -189,3 +189,22 @@ describe('scrubEvent — leaks confirmed by adversarial review', () => {
     expect(scrubString('C:/Users/liam/AppData/ci')).toBe('~/AppData/ci');
   });
 });
+
+describe('scrubEvent — CI-Hub identity header', () => {
+  it('filters x-ci-hub-user, which carries the household username', () => {
+    const event = {
+      request: { headers: { 'x-ci-hub-user': 'liam', 'x-ci-hub-user-signature': 'abc' } },
+    } as unknown as ErrorEvent;
+
+    const headers = scrubEvent(event)!.request!.headers!;
+
+    expect(headers['x-ci-hub-user']).toBe('[Filtered]');
+    expect(headers['x-ci-hub-user-signature']).toBe('[Filtered]');
+  });
+
+  it('strips the query string from a location redirect header', () => {
+    const event = { request: { headers: { location: '/memory?search=private' } } } as unknown as ErrorEvent;
+
+    expect(scrubEvent(event)!.request!.headers!.location).toBe('/memory');
+  });
+});

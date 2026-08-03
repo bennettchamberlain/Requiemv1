@@ -224,3 +224,15 @@ class TestInitNeverRaises:
 
         # Must return False rather than raising BadDsn out of module import.
         assert telemetry_module.init_telemetry() is False
+
+
+class TestHubIdentityHeader:
+    def test_filters_ci_hub_user_header(self):
+        event = scrub_event({"request": {"headers": {"x-ci-hub-user": "liam"}}})
+
+        assert event["request"]["headers"]["x-ci-hub-user"] == "[Filtered]"
+
+    def test_strips_query_from_location_header(self):
+        event = scrub_event({"request": {"headers": {"location": "/memory?search=private"}}})
+
+        assert event["request"]["headers"]["location"] == "/memory"

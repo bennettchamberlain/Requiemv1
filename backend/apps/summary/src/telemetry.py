@@ -28,7 +28,7 @@ _TRUTHY = {"on", "true", "1", "yes", "enabled"}
 
 _SECRET_PATTERNS = [
     re.compile(r"Bearer\s+[A-Za-z0-9\-._~+/]+=*", re.IGNORECASE),
-    re.compile(r"(?:api[_-]?key|token|password|secret|jwt|auth)[\s=:\"']+[^\s\"',}\]]+", re.IGNORECASE),
+    re.compile(r"(?:api[-_ ]?key|token|password|secret|jwt|auth)[\s=:\"']+[^\s\"',}\]]+", re.IGNORECASE),
     re.compile(r"tskey-[A-Za-z0-9-]+", re.IGNORECASE),
     # Connection URLs carry credentials in the authority section.
     re.compile(r"\b[a-z][a-z0-9+.\-]*://[^\s:@/]+:[^\s@/]+@", re.IGNORECASE),
@@ -45,7 +45,7 @@ _HOME_PATTERNS = [
 ]
 
 _SENSITIVE_KEY = re.compile(
-    r"password|secret|token|authorization|cookie|jwt|api[-_ ]?key|dsn|pepper|private[-_]?key",
+    r"password|secret|token|authorization|cookie|jwt|api[-_ ]?key|dsn|pepper|private[-_]?key|hub[-_]user",
     re.IGNORECASE,
 )
 
@@ -54,7 +54,7 @@ _MAX_STRING_LENGTH = 8000
 # Headers and breadcrumb keys whose value is a URL — the query string carries
 # the user's own search terms, so it must go even though the key itself looks
 # innocuous.
-_URL_VALUED_HEADERS = {"referer", "referrer"}
+_URL_VALUED_HEADERS = {"referer", "referrer", "location"}
 _URL_VALUED_KEYS = {"url", "from", "to"}
 
 _initialized = False

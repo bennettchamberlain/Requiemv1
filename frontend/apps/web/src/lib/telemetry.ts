@@ -72,7 +72,7 @@ const HOME_PATH_PATTERNS = [
 ];
 
 const SENSITIVE_KEY_PATTERN =
-  /password|secret|token|authorization|cookie|jwt|api[-_ ]?key|dsn|pepper|private[-_]?key/i;
+  /password|secret|token|authorization|cookie|jwt|api[-_ ]?key|dsn|pepper|private[-_]?key|hub[-_]user/i;
 
 const MAX_STRING_LENGTH = 8000;
 
@@ -124,7 +124,7 @@ export function scrubValue(value: unknown, depth = 0): unknown {
 const URL_VALUED_KEYS = new Set(['url', 'from', 'to']);
 
 /** Request headers whose value is a URL the user navigated from. */
-const URL_VALUED_HEADERS = ['referer', 'referrer'];
+const URL_VALUED_HEADERS = ['referer', 'referrer', 'location'];
 
 /**
  * Scrub one breadcrumb in place.
