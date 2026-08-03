@@ -21,6 +21,7 @@ import {
   AuthProvider,
   CaptureModalProvider,
   ModelProvider,
+  useLocationTracking,
   useNativeShell,
   usePreventOverscroll,
 } from '@/hooks';
@@ -50,6 +51,7 @@ const OnboardingPage = lazy(() => import('@/pages/OnboardingPage'));
 const OpenIDCallbackPage = lazy(() => import('@/pages/OpenIDCallbackPage'));
 const PersonPage = lazy(() => import('@/pages/PersonPage'));
 const PlacePage = lazy(() => import('@/pages/PlacePage'));
+const PlacesPage = lazy(() => import('@/pages/PlacesPage'));
 const ProviderPage = lazy(() => import('@/pages/ProviderPage'));
 const SearchPage = lazy(() => import('@/pages/SearchPage'));
 const FilesPage = lazy(() => import('@/pages/FilesPage'));
@@ -93,6 +95,10 @@ function AppRoutes() {
 
   // Native shell wiring (splash dismiss, Android back button). Inert on web.
   useNativeShell();
+
+  // Browser location tracking (issue #1811): records ci.position fixes while
+  // the user has enabled it in Settings -> Location. Inert when disabled.
+  useLocationTracking();
 
   // On the native app the API origin must be configured before anything else can
   // load. If we're running natively with no server set, route to the setup screen.
@@ -395,6 +401,15 @@ function AppRoutes() {
             element={
               <ProtectedRoute>
                 <PersonPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/places"
+            element={
+              <ProtectedRoute>
+                <PlacesPage />
               </ProtectedRoute>
             }
           />

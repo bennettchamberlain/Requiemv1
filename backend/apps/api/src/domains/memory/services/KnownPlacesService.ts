@@ -6,6 +6,8 @@ import { v7 as uuidv7 } from 'uuid';
 import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 
+import { PlaceService } from './PlaceService';
+
 /** Role a known place plays in the user's life. */
 export type KnownPlaceKind = 'home' | 'work' | 'school' | 'social' | 'other';
 
@@ -152,6 +154,7 @@ export class KnownPlacesService {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly logger: LoggerService,
+    private readonly placeService: PlaceService,
   ) {
     this.logger.setContext(KnownPlacesService.name);
   }
@@ -300,9 +303,29 @@ export class KnownPlacesService {
       source?: KnownPlaceSource;
     },
   ): Promise<KnownPlace> {
-    // A known place is an existing Location entity; confirming requires one.
-    if (!input.locationId) {
-      throw new Error('updateKnownPlace requires a locationId (the ci.entities Location to mark).');
+    // A known place is a Location entity. Grid-cluster candidates from
+    // knownPlaceCandidates carry no locationId — create the Location from the
+    // confirmed label + centroid so every candidate is confirmable (previously
+    // they were dead ends).
+    let locationId = input.locationId ?? null;
+    if (!locationId) {
+      const centroid =
+        input.coordinates && Number.isFinite(input.coordinates.lat) && Number.isFinite(input.coordinates.lng)
+          ? input.coordinates
+          : null;
+
+      if (!centroid || !input.label.trim()) {
+        throw new Error(
+          'updateKnownPlace requires a locationId, or a label plus coordinates to create the Location from.',
+        );
+      }
+
+      const created = await this.placeService.findOrCreateForGeocode(context, {
+        name: input.label.trim(),
+        lat: centroid.lat,
+        lng: centroid.lng,
+      });
+      locationId = created.id;
     }
 
     const relationshipType = relationshipForKind(input.kind);
@@ -323,17 +346,12 @@ export class KnownPlacesService {
       ...(coordinates ? { coordinates: [coordinates.lng, coordinates.lat] } : {}),
     };
 
-    const relationshipId = await this.upsertSelfRelationship(
-      context.userId,
-      input.locationId,
-      relationshipType,
-      {
-        strength,
-        startDate: input.activeFrom ?? null,
-        endDate: input.activeTo ?? null,
-        properties,
-      },
-    );
+    const relationshipId = await this.upsertSelfRelationship(context.userId, locationId, relationshipType, {
+      strength,
+      startDate: input.activeFrom ?? null,
+      endDate: input.activeTo ?? null,
+      properties,
+    });
 
     const place = await this.getKnownPlaceById(context, relationshipId);
     if (!place) {

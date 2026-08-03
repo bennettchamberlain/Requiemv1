@@ -1,0 +1,310 @@
+import { type ReactNode, useMemo, useState } from 'react';
+
+import { useMutation, useQuery } from '@apollo/client';
+import { EmptyState, LoadingPage, Portal, usePageTitle } from '@ci/common';
+import { Badge, Breadcrumb, Button, Card, Input } from '@ci/shadcn';
+import { MapPin } from '@ci/shadcn/icons';
+import { Link, useNavigate } from 'react-router-dom';
+
+import { PageContent } from '@/components/layout';
+import { Map } from '@/components/Map';
+import { gql } from '@/graphql';
+import type { GetPlacesQuery } from '@/graphql/graphql';
+
+const GET_PLACES = gql(`
+  query GetPlaces($query: String) {
+    places(query: $query, first: 500) {
+      totalCount
+      edges {
+        node {
+          id
+          name
+          description
+          placeKind
+          latitude
+          longitude
+          parent {
+            id
+            name
+            placeKind
+          }
+          visitStats {
+            visitCount
+            firstVisitAt
+            lastVisitAt
+          }
+        }
+      }
+    }
+  }
+`);
+
+const GET_KNOWN_PLACES = gql(`
+  query GetKnownPlaces {
+    knownPlaces {
+      id
+      locationId
+      label
+      kind
+      confidence
+      source
+    }
+    knownPlaceCandidates {
+      locationId
+      label
+      kind
+      lat
+      lng
+      eventCount
+      confidence
+    }
+  }
+`);
+
+const CONFIRM_KNOWN_PLACE = gql(`
+  mutation ConfirmKnownPlace($input: UpdateKnownPlaceInput!) {
+    updateKnownPlace(input: $input) {
+      id
+      label
+      kind
+    }
+  }
+`);
+
+type PlaceNode = GetPlacesQuery['places']['edges'][number]['node'];
+
+const KIND_LABELS: Record<string, string> = {
+  room: 'Room',
+  building: 'Building',
+  venue: 'Venue',
+  address: 'Address',
+  neighborhood: 'Neighborhood',
+  city: 'City',
+  region: 'Region',
+  country: 'Country',
+  continent: 'Continent',
+  planet: 'Planet',
+  other: 'Place',
+};
+
+function formatDate(value: string | Date | null | undefined): string | null {
+  if (value == null) {
+    return null;
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+
+  return Number.isNaN(date.getTime()) ? null : date.toLocaleDateString();
+}
+
+function PlaceRow({ place, onOpen }: { place: PlaceNode; onOpen: () => void }) {
+  const lastVisit = formatDate(place.visitStats.lastVisitAt);
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="flex w-full items-center gap-3 rounded-md border bg-card p-3 text-left transition hover:bg-accent"
+    >
+      <MapPin className="h-5 w-5 shrink-0 text-muted-foreground" />
+
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="truncate font-medium">{place.name || 'Unnamed place'}</span>
+          {place.placeKind && <Badge variant="secondary">{KIND_LABELS[place.placeKind] ?? place.placeKind}</Badge>}
+        </div>
+
+        <div className="truncate text-sm text-muted-foreground">
+          {[place.parent?.name, place.description].filter(Boolean).join(' · ') || '—'}
+        </div>
+      </div>
+
+      <div className="hidden shrink-0 text-right text-sm text-muted-foreground sm:block">
+        <div>
+          {place.visitStats.visitCount} {place.visitStats.visitCount === 1 ? 'visit' : 'visits'}
+        </div>
+        {lastVisit && <div>Last {lastVisit}</div>}
+      </div>
+    </button>
+  );
+}
+
+function KnownPlacesCard() {
+  const { data, refetch } = useQuery(GET_KNOWN_PLACES);
+  const [confirmKnownPlace, { loading }] = useMutation(CONFIRM_KNOWN_PLACE);
+
+  const knownPlaces = data?.knownPlaces ?? [];
+  const confirmedLocationIds = useMemo(
+    () => new Set(knownPlaces.map((place) => place.locationId)),
+    [knownPlaces],
+  );
+  const candidates = (data?.knownPlaceCandidates ?? []).filter(
+    (candidate) => candidate.locationId == null || !confirmedLocationIds.has(candidate.locationId),
+  );
+
+  if (knownPlaces.length === 0 && candidates.length === 0) {
+    return null;
+  }
+
+  const confirm = async (candidate: (typeof candidates)[number]) => {
+    await confirmKnownPlace({
+      variables: {
+        input: {
+          label: candidate.label,
+          kind: candidate.kind,
+          locationId: candidate.locationId,
+          coordinates: { lat: candidate.lat, lng: candidate.lng },
+          confidence: candidate.confidence,
+          source: 'inferred',
+        },
+      },
+    });
+    await refetch();
+  };
+
+  return (
+    <Card>
+      <Card.Header>
+        <Card.Title className="text-base">Known places</Card.Title>
+        <Card.Description>
+          Frequent places detected from your events. Confirm them so home and work anchor your memory.
+        </Card.Description>
+      </Card.Header>
+      <Card.Content className="flex flex-col gap-3">
+        {knownPlaces.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {knownPlaces.map((place) => (
+              <Badge key={place.id} variant="secondary" className="capitalize">
+                {place.kind}: {place.label}
+              </Badge>
+            ))}
+          </div>
+        )}
+
+        {candidates.slice(0, 6).map((candidate) => (
+          <div
+            key={`${candidate.label}:${candidate.lat}:${candidate.lng}`}
+            className="flex items-center gap-3"
+          >
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-medium">{candidate.label}</div>
+              <div className="text-sm text-muted-foreground">
+                {candidate.eventCount} events · looks like <span className="capitalize">{candidate.kind}</span>
+              </div>
+            </div>
+            <Button size="sm" variant="outline" disabled={loading} onClick={() => void confirm(candidate)}>
+              Confirm {candidate.kind}
+            </Button>
+          </div>
+        ))}
+      </Card.Content>
+    </Card>
+  );
+}
+
+export function PlacesPage() {
+  usePageTitle('Places - Companion Intelligence');
+
+  const navigate = useNavigate();
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const { data, loading } = useQuery(GET_PLACES, {
+    variables: { query: searchQuery.trim() === '' ? null : searchQuery.trim() },
+  });
+
+  const places = useMemo(() => (data?.places.edges ?? []).map((edge) => edge.node), [data]);
+
+  const locatedPlaces = useMemo(
+    () =>
+      places.filter(
+        (place): place is PlaceNode & { latitude: number; longitude: number } =>
+          typeof place.latitude === 'number' && typeof place.longitude === 'number',
+      ),
+    [places],
+  );
+
+  const mapCenter = useMemo<[number, number]>(() => {
+    if (locatedPlaces.length === 0) {
+      return [37.7749, -122.4194];
+    }
+
+    const lat = locatedPlaces.reduce((sum, place) => sum + place.latitude, 0) / locatedPlaces.length;
+    const lng = locatedPlaces.reduce((sum, place) => sum + place.longitude, 0) / locatedPlaces.length;
+
+    return [lat, lng];
+  }, [locatedPlaces]);
+
+  let content: ReactNode | null = null;
+
+  if (loading && data == null) {
+    content = <LoadingPage />;
+  } else {
+    content = (
+      <PageContent>
+        <div className="flex items-center gap-2">
+          <Input
+            placeholder="Search places by name..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="max-w-md"
+          />
+          <div className="text-sm text-muted-foreground">{data?.places.totalCount ?? 0} places</div>
+        </div>
+
+        <KnownPlacesCard />
+
+        {locatedPlaces.length > 0 && (
+          <div className="h-72 overflow-hidden rounded-md border">
+            <Map center={mapCenter} zoom={locatedPlaces.length === 1 ? 13 : 3}>
+              {locatedPlaces.slice(0, 300).map((place) => (
+                <Map.Marker
+                  key={place.id}
+                  variant="place"
+                  position={[place.latitude, place.longitude]}
+                  onClick={() => navigate(`/places/${place.id}`)}
+                />
+              ))}
+            </Map>
+          </div>
+        )}
+
+        {places.length === 0 ? (
+          <EmptyState message="No places found" />
+        ) : (
+          <div className="flex flex-col gap-2">
+            {places.map((place) => (
+              <PlaceRow key={place.id} place={place} onOpen={() => navigate(`/places/${place.id}`)} />
+            ))}
+          </div>
+        )}
+      </PageContent>
+    );
+  }
+
+  return (
+    <>
+      <Portal.Slot id="breadcrumbs">
+        <Breadcrumb>
+          <Breadcrumb.List>
+            <Breadcrumb.Item className="hidden md:block">
+              <Breadcrumb.Link asChild>
+                <Link to="/feed">Companion</Link>
+              </Breadcrumb.Link>
+            </Breadcrumb.Item>
+
+            <Breadcrumb.Separator className="hidden md:block" />
+
+            <Breadcrumb.Item className="hidden md:block">
+              <Breadcrumb.Page className="flex items-center gap-1">
+                <MapPin className="h-4 w-4" />
+                Places
+              </Breadcrumb.Page>
+            </Breadcrumb.Item>
+          </Breadcrumb.List>
+        </Breadcrumb>
+      </Portal.Slot>
+
+      {content}
+    </>
+  );
+}

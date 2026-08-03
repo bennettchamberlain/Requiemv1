@@ -8,9 +8,34 @@ import { computeChunkSize } from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
-import { PlaceEntity, type Place } from '../entities/PlaceEntity';
+import { PlaceEntity, type Place, type PlaceKind } from '../entities/PlaceEntity';
 import { PlaceCreatedEvent, PlaceUpdatedEvent, PlaceRemovedEvent } from '../events';
 import type { CreatePlaceDto, UpdatePlaceDto } from '../types';
+
+/** One Google-style address component ({long_name, short_name, types[]}). */
+interface AddressComponent {
+  long_name?: string;
+  short_name?: string;
+  types?: string[];
+}
+
+/** Aggregated event stats for a place (PlaceType.visitStats). */
+export interface PlaceVisitStats {
+  visitCount: number;
+  firstVisitAt: Date | null;
+  lastVisitAt: Date | null;
+}
+
+/**
+ * Geocode address components -> hierarchy levels, most-specific first. Only
+ * admin levels city and above become shared hierarchy nodes; street-level
+ * detail stays on the place itself.
+ */
+const COMPONENT_HIERARCHY: Array<{ componentType: string; kind: PlaceKind }> = [
+  { componentType: 'locality', kind: 'city' },
+  { componentType: 'administrative_area_level_1', kind: 'region' },
+  { componentType: 'country', kind: 'country' },
+];
 
 @Injectable()
 export class PlaceService {
@@ -42,7 +67,15 @@ export class PlaceService {
    */
   async findOrCreateForGeocode(
     context: UserServiceContext,
-    input: { name: string; lat: number; lng: number },
+    input: {
+      name: string;
+      lat: number;
+      lng: number;
+      /** Geocode provider's stable place id — the strongest dedupe key. */
+      placeId?: string | null;
+      /** Provider address components ({address_components: [...]}) for hierarchy. */
+      components?: Record<string, unknown> | null;
+    },
   ): Promise<{ id: string; created: boolean }> {
     const trimmedName = input.name.trim();
     if (!trimmedName) {
@@ -53,23 +86,50 @@ export class PlaceService {
     // round(numeric, 3) used in the partial unique index.
     const latR = Number(input.lat.toFixed(3));
     const lngR = Number(input.lng.toFixed(3));
+    const placeId = input.placeId?.trim() || null;
+
+    // 1. Provider place_id is the primary identity when available: venue
+    // renames and name variants converge on the same row.
+    if (placeId) {
+      const byPlaceId: Array<{ entity_id: string }> = await this.placeRepository.manager.query(
+        `SELECT entity_id
+           FROM ci.entities
+          WHERE entity_type = 'Location'
+            AND owner_user_id = $1
+            AND properties->>'place_id' = $2
+          LIMIT 1`,
+        [context.userId, placeId],
+      );
+
+      if (byPlaceId.length > 0) {
+        const id = byPlaceId[0].entity_id;
+        await this.enrichResolvedPlace(context, id, input.lat, input.lng, placeId);
+        await this.ensureHierarchy(context, id, input.components ?? null);
+
+        return { id, created: false };
+      }
+    }
 
     const newId = uuidv7();
-    const properties = {
+    const properties: Record<string, unknown> = {
       source: 'reverse_geocode',
       type: 'address',
       lat: latR,
       lng: lngR,
+      ...(placeId ? { place_id: placeId } : {}),
     };
 
-    // INSERT ... ON CONFLICT DO NOTHING: races safely with concurrent callers
-    // for the same key. Loser sees zero rows affected; both fall through to
-    // the SELECT below and return the same id.
+    // 2. INSERT ... ON CONFLICT DO NOTHING keyed on the name+3dp-cell index:
+    // races safely with concurrent callers for the same key. Loser sees zero
+    // rows affected; both fall through to the SELECT below and return the same
+    // id. location_point carries FULL precision (the 3dp rounding lives only in
+    // the dedup key).
     await this.placeRepository.manager.query(
-      `INSERT INTO ci.entities (entity_id, entity_type, owner_user_id, name, properties)
-       VALUES ($1, 'Location', $2, $3, $4::jsonb)
+      `INSERT INTO ci.entities (entity_id, entity_type, owner_user_id, name, properties, location_point, place_kind)
+       VALUES ($1, 'Location', $2, $3, $4::jsonb,
+               ST_SetSRID(ST_MakePoint($5, $6), 4326)::geography, 'address')
        ON CONFLICT DO NOTHING`,
-      [newId, context.userId, trimmedName, JSON.stringify(properties)],
+      [newId, context.userId, trimmedName, JSON.stringify(properties), input.lng, input.lat],
     );
 
     // Read back the canonical row (whether we inserted or hit a conflict).
@@ -99,11 +159,241 @@ export class PlaceService {
 
     const { entity_id, was_new } = rows[0];
 
+    if (!was_new) {
+      // Pre-existing row matched by name+cell: enrich it with what this
+      // resolution knows (full-precision point if missing, the place_id claim).
+      await this.enrichResolvedPlace(context, entity_id, input.lat, input.lng, placeId);
+    }
+
+    await this.ensureHierarchy(context, entity_id, input.components ?? null);
+
     if (was_new) {
       await this.eventService.send(PlaceCreatedEvent, { placeId: entity_id });
     }
 
     return { id: entity_id, created: was_new };
+  }
+
+  /**
+   * Backfill full-precision location_point (only when missing) and stamp the
+   * provider place_id claim (only when unclaimed — entities_place_provider_id_uniq
+   * makes a duplicate claim a no-op via the WHERE guard, never an error).
+   */
+  private async enrichResolvedPlace(
+    context: UserServiceContext,
+    entityId: string,
+    lat: number,
+    lng: number,
+    placeId: string | null,
+  ): Promise<void> {
+    await this.placeRepository.manager.query(
+      `UPDATE ci.entities
+          SET location_point = COALESCE(location_point, ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography),
+              place_kind = COALESCE(place_kind, 'address')
+        WHERE entity_id = $1 AND owner_user_id = $2`,
+      [entityId, context.userId, lng, lat],
+    );
+
+    if (placeId) {
+      await this.placeRepository.manager.query(
+        `UPDATE ci.entities e
+            SET properties = properties || jsonb_build_object('place_id', $3::text)
+          WHERE e.entity_id = $1 AND e.owner_user_id = $2
+            AND e.properties->>'place_id' IS NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM ci.entities other
+               WHERE other.owner_user_id = $2
+                 AND other.entity_type = 'Location'
+                 AND other.properties->>'place_id' = $3
+                 AND other.entity_id <> $1
+            )`,
+        [entityId, context.userId, placeId],
+      );
+    }
+  }
+
+  /**
+   * Build the geographic containment chain for a resolved place from the
+   * geocode provider's address components: find-or-create city -> region ->
+   * country nodes (deduped per parent via entities_admin_place_uniq) and link
+   * parent_place_id pointers, then hang the place under the most specific
+   * admin node found. Best-effort: any failure leaves the place unparented
+   * rather than failing the geocode.
+   */
+  async ensureHierarchy(
+    context: UserServiceContext,
+    entityId: string,
+    components: Record<string, unknown> | null,
+  ): Promise<void> {
+    const list = (components as { address_components?: unknown } | null)?.address_components;
+    if (!Array.isArray(list) || list.length === 0) {
+      return;
+    }
+
+    try {
+      // Extract one name per hierarchy level, most-specific first.
+      const levels: Array<{ kind: PlaceKind; name: string }> = [];
+      for (const { componentType, kind } of COMPONENT_HIERARCHY) {
+        const match = (list as AddressComponent[]).find(
+          (component) =>
+            Array.isArray(component.types) &&
+            component.types.includes(componentType) &&
+            typeof component.long_name === 'string' &&
+            component.long_name.trim() !== '',
+        );
+
+        if (match) {
+          levels.push({ kind, name: match.long_name!.trim() });
+        }
+      }
+
+      if (levels.length === 0) {
+        return;
+      }
+
+      // Walk top-down (country -> region -> city), find-or-create each node and
+      // chain parents as we go.
+      let parentId: string | null = null;
+      for (const level of [...levels].reverse()) {
+        parentId = await this.findOrCreateAdminPlace(context, level.kind, level.name, parentId);
+      }
+
+      // Hang the place under the most specific admin node (never itself — an
+      // admin-level place can resolve to its own hierarchy node).
+      if (parentId && parentId !== entityId) {
+        await this.placeRepository.manager.query(
+          `UPDATE ci.entities
+              SET parent_place_id = $3
+            WHERE entity_id = $1 AND owner_user_id = $2 AND parent_place_id IS NULL`,
+          [entityId, context.userId, parentId],
+        );
+      }
+    } catch {
+      // Hierarchy is enrichment — never fail the resolution over it.
+    }
+  }
+
+  /**
+   * Find-or-create one admin-level hierarchy node, keyed on
+   * (owner, kind, lower(name), parent) via entities_admin_place_uniq. Also
+   * links the node's own parent pointer when it was created unparented first.
+   */
+  private async findOrCreateAdminPlace(
+    context: UserServiceContext,
+    kind: PlaceKind,
+    name: string,
+    parentId: string | null,
+  ): Promise<string> {
+    const newId = uuidv7();
+
+    await this.placeRepository.manager.query(
+      `INSERT INTO ci.entities (entity_id, entity_type, owner_user_id, name, properties, place_kind, parent_place_id)
+       VALUES ($1, 'Location', $2, $3, $4::jsonb, $5, $6)
+       ON CONFLICT DO NOTHING`,
+      [newId, context.userId, name, JSON.stringify({ source: 'geocode_hierarchy' }), kind, parentId],
+    );
+
+    const rows: Array<{ entity_id: string }> = await this.placeRepository.manager.query(
+      `SELECT entity_id
+         FROM ci.entities
+        WHERE entity_type = 'Location'
+          AND owner_user_id = $1
+          AND place_kind = $2
+          AND lower(btrim(name)) = lower(btrim($3))
+          AND COALESCE(parent_place_id, '00000000-0000-0000-0000-000000000000'::uuid)
+              = COALESCE($4::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
+        LIMIT 1`,
+      [context.userId, kind, name, parentId],
+    );
+
+    if (rows.length === 0) {
+      throw new Error(`findOrCreateAdminPlace: failed to resolve ${kind} "${name}"`);
+    }
+
+    return rows[0].entity_id;
+  }
+
+  /**
+   * Places within `radiusMeters` of a point, nearest first. Runs on the
+   * partial GIST index over location_point (geography ST_DWithin measures
+   * meters directly).
+   */
+  async placesNear(
+    context: UserServiceContext,
+    input: { lat: number; lng: number; radiusMeters: number; limit?: number },
+  ): Promise<Array<Place & { distanceMeters: number }>> {
+    const limit = Math.min(Math.max(input.limit ?? 25, 1), 200);
+    const radius = Math.min(Math.max(input.radiusMeters, 1), 20_000_000);
+
+    const rows: Array<{ entity_id: string; distance_meters: string }> =
+      await this.placeRepository.manager.query(
+        `SELECT entity_id,
+                ST_Distance(location_point, ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography) AS distance_meters
+           FROM ci.entities
+          WHERE entity_type = 'Location'
+            AND owner_user_id = $1
+            AND location_point IS NOT NULL
+            AND ST_DWithin(location_point, ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography, $4)
+          ORDER BY distance_meters ASC
+          LIMIT $5`,
+        [context.userId, input.lng, input.lat, radius, limit],
+      );
+
+    if (rows.length === 0) {
+      return [];
+    }
+
+    const places = await this.findByIds(
+      context,
+      rows.map((row) => row.entity_id),
+    );
+
+    const out: Array<Place & { distanceMeters: number }> = [];
+    rows.forEach((row, index) => {
+      const place = places[index];
+      if (place) {
+        out.push({ ...place, distanceMeters: Number(row.distance_meters) });
+      }
+    });
+
+    return out;
+  }
+
+  /**
+   * Aggregated visit stats for a batch of places from events.location_entity_id
+   * (indexed by events_location_entity_idx). One grouped query per batch.
+   */
+  async getVisitStats(context: ServiceContext, placeIds: string[]): Promise<Map<string, PlaceVisitStats>> {
+    const out = new Map<string, PlaceVisitStats>();
+    if (placeIds.length === 0) {
+      return out;
+    }
+
+    for (const id of placeIds) {
+      out.set(id, { visitCount: 0, firstVisitAt: null, lastVisitAt: null });
+    }
+
+    const rows: Array<{ place_id: string; n: string; first_at: Date | null; last_at: Date | null }> =
+      await this.placeRepository.manager.query(
+        `SELECT location_entity_id AS place_id,
+                COUNT(*) AS n,
+                MIN(start_time) AS first_at,
+                MAX(start_time) AS last_at
+           FROM ci.events
+          WHERE user_id = $1 AND location_entity_id = ANY($2::uuid[])
+          GROUP BY location_entity_id`,
+        [context.userId, placeIds],
+      );
+
+    for (const row of rows) {
+      out.set(row.place_id, {
+        visitCount: Number(row.n),
+        firstVisitAt: row.first_at,
+        lastVisitAt: row.last_at,
+      });
+    }
+
+    return out;
   }
 
   /**
@@ -207,16 +497,25 @@ export class PlaceService {
     return entities.map((entity) => PlaceEntity.toEgressType(byId.get(entity.id) ?? entity));
   }
 
-  async findAll(context: UserServiceContext): Promise<Place[]> {
-    return this.placeRepository.find({
-      where: {
-        entityType: 'Location',
-        user: {
-          id: context.userId,
-        },
-      },
-      relations: ['user'],
-    });
+  /** List places; `query` filters by name (ILIKE substring). */
+  async findAll(context: UserServiceContext, options: { query?: string } = {}): Promise<Place[]> {
+    let qb = this.placeRepository
+      .createQueryBuilder('place')
+      .leftJoinAndSelect('place.user', 'user')
+      .where('place.entity_type = :entityType', { entityType: 'Location' })
+      .andWhere('place.owner_user_id = :userId', { userId: context.userId });
+
+    const query = options.query?.trim();
+    if (query) {
+      qb = qb.andWhere('place.name ILIKE :q', { q: `%${query}%` });
+    }
+
+    const rows = await qb
+      .orderBy(`NULLIF(btrim(COALESCE(place.name, '')), '')`, 'ASC', 'NULLS LAST')
+      .addOrderBy('place.created_at', 'DESC')
+      .getMany();
+
+    return rows.map((row) => PlaceEntity.toEgressType(row));
   }
 
   async findById(context: ServiceContext, id: string): Promise<Place | null> {
@@ -288,7 +587,7 @@ export class PlaceService {
   }
 
   async update(context: ServiceContext, id: string, data: UpdatePlaceDto): Promise<Place | null> {
-    const { properties, ...rest } = data;
+    const { properties, latitude, longitude, place_kind, parent_place_id, ...rest } = data;
 
     const place = await this.placeRepository.findOne({
       where: {
@@ -304,6 +603,20 @@ export class PlaceService {
     if (place) {
       const props = Object.assign({}, place.properties, { ...properties });
 
+      // Typed place columns: only touch what was provided.
+      const typed: Partial<Pick<PlaceEntity, 'locationPoint' | 'placeKind' | 'parentPlaceId'>> = {};
+      if (typeof latitude === 'number' && typeof longitude === 'number') {
+        typed.locationPoint = { type: 'Point', coordinates: [longitude, latitude] };
+      }
+
+      if (place_kind !== undefined) {
+        typed.placeKind = place_kind;
+      }
+
+      if (parent_place_id !== undefined) {
+        typed.parentPlaceId = parent_place_id;
+      }
+
       const result = await this.placeRepository.update(
         {
           id,
@@ -315,6 +628,7 @@ export class PlaceService {
         },
         {
           ...rest,
+          ...typed,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           properties: props as any, // TypeORM will handle JSON serialization
         },

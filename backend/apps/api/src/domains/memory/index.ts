@@ -154,6 +154,8 @@ export {
 };
 
 export type { Content } from './entities/ContentEntity';
+export type { PlaceKind } from './entities/PlaceEntity';
+export type { PlaceVisitStats } from './services/PlaceService';
 export type { CreateEventDto, UpdateEventDto, CreateContentDto, UpdateContentDto } from './types';
 export type {
   KnownPlace,
