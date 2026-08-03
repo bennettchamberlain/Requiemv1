@@ -183,11 +183,14 @@ describe('CandidateService', () => {
       await setup();
       repo.findOne.mockResolvedValue(baseCandidate());
 
-      const result = await service.accept(ctx, 'cand-1', start);
+      const { candidate, event } = await service.accept(ctx, 'cand-1', start);
 
       expect(events.create).toHaveBeenCalledTimes(1);
-      expect(result.status).toBe('accepted');
-      expect(result.promotedEventId).toBe('event-9');
+      expect(candidate.status).toBe('accepted');
+      expect(candidate.promotedEventId).toBe('event-9');
+      // The minted event comes back with the candidate so the caller need not
+      // re-query to render what was just placed.
+      expect(event.id).toBe('event-9');
     });
 
     it('writes the event as committed fact, not as a prediction', async () => {

@@ -839,6 +839,8 @@ type MessageType implements Node {
 }
 
 type Mutation {
+  """Accept a candidate at a chosen time, minting a real event"""
+  acceptCandidate(endTime: DateTime, id: ID!, startTime: DateTime!): EventType!
   bulkIngestGraph(input: BulkGraphInput!): BulkGraphPayload!
   bulkIngestItemRelationships(input: [ItemRelationshipInput!]!): BulkItemRelationshipResult!
   createAnswer(input: CreateAnswerInput!): AnswerType!
@@ -866,6 +868,11 @@ type Mutation {
   createQuestions(input: [CreateQuestionInput!]!): [QuestionType!]!
   createRelationship(input: CreateRelationshipInput!): CreateRelationshipPayload!
   createSavedSearch(input: CreateSavedSearchInput!): CreateSavedSearchPayload!
+
+  """
+  Reject a candidate. reason: not_now | wrong_time | not_like_this | never
+  """
+  declineCandidate(id: ID!, reason: String = "not_now"): ScheduleCandidateType!
   deleteConcept(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteConnection(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteConnectionSyncJob(input: DeleteByIdInput!): DeleteByIdPayload!
@@ -894,7 +901,15 @@ type Mutation {
   removePlace(id: String!): Boolean!
   removeQuestion(id: String!): Boolean!
   setSavedSearchSharing(input: SetSavedSearchSharingInput!): UpdateSavedSearchPayload!
+
+  """Defer a candidate until a future instant"""
+  snoozeCandidate(id: ID!, until: DateTime!): ScheduleCandidateType!
   startPairing: StartPairingPayload!
+
+  """
+  Refresh the slate from current actions and insight key_actions. Idempotent; returns rows written.
+  """
+  syncScheduleSuggestions: Int!
   tagEntities(input: TagEntitiesInput!): [TaggableEntityType!]!
 
   """Manually trigger the HBPE pipeline for the current user"""
@@ -1154,6 +1169,9 @@ type Query {
   relationships(after: String, before: String, first: Int, last: Int): RelationshipConnection!
   savedSearch(id: ID!): SavedSearchType
   savedSearches(after: String, before: String, first: Int, last: Int): SavedSearchConnection!
+
+  """Open schedule candidates whose plausible window overlaps [from, to)"""
+  scheduleCandidates(from: DateTime!, to: DateTime!): [ScheduleCandidateType!]!
   search(input: SearchInput!): SearchResultConnection!
   sharedSavedSearch(token: String!): SavedSearchType
   summaries(after: String, before: String, first: Int, last: Int): SummaryConnection!
@@ -1187,6 +1205,15 @@ type QuestionType implements Node {
   isSeedQuestion: Boolean
   questionType: String
   text: String!
+}
+
+"""Where a candidate came from — the "because" behind a suggestion"""
+type RationaleSourceType {
+  id: ID!
+
+  """summary | insight | answer | item | relationship | due | action"""
+  kind: String!
+  note: String
 }
 
 type RelationshipConnection implements Connection {
@@ -1263,6 +1290,31 @@ type SavedSearchType implements Node {
   shareToken: String
   tags: [String!]
   updatedAt: DateTime!
+}
+
+"""A proposed activity — the "possible" layer of the schedule"""
+type ScheduleCandidateType {
+  confidence: Float
+  description: String
+  durationMinutes: Int
+  energyCost: Int
+
+  """Best-slot score; null until the solver runs"""
+  fitScore: Float
+  generator: String
+  id: ID!
+  l0Class: String
+
+  """The sentence shown to the user. Never empty."""
+  rationale: String!
+  rationaleSources: [RationaleSourceType!]!
+  status: String!
+
+  """exact | day | week | month | season"""
+  timeFlex: String!
+  title: String!
+  windowEnd: DateTime!
+  windowStart: DateTime!
 }
 
 input SearchInput {

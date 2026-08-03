@@ -914,6 +914,8 @@ export type MessageType = Node & {
 
 export type Mutation = {
   __typename?: 'Mutation';
+  /** Accept a candidate at a chosen time, minting a real event */
+  acceptCandidate: EventType;
   bulkIngestGraph: BulkGraphPayload;
   bulkIngestItemRelationships: BulkItemRelationshipResult;
   createAnswer: AnswerType;
@@ -941,6 +943,8 @@ export type Mutation = {
   createQuestions: Array<QuestionType>;
   createRelationship: CreateRelationshipPayload;
   createSavedSearch: CreateSavedSearchPayload;
+  /** Reject a candidate. reason: not_now | wrong_time | not_like_this | never */
+  declineCandidate: ScheduleCandidateType;
   deleteConcept: DeleteByIdPayload;
   deleteConnection: DeleteByIdPayload;
   deleteConnectionSyncJob: DeleteByIdPayload;
@@ -965,7 +969,11 @@ export type Mutation = {
   removePlace: Scalars['Boolean']['output'];
   removeQuestion: Scalars['Boolean']['output'];
   setSavedSearchSharing: UpdateSavedSearchPayload;
+  /** Defer a candidate until a future instant */
+  snoozeCandidate: ScheduleCandidateType;
   startPairing: StartPairingPayload;
+  /** Refresh the slate from current actions and insight key_actions. Idempotent; returns rows written. */
+  syncScheduleSuggestions: Scalars['Int']['output'];
   tagEntities: Array<TaggableEntityType>;
   /** Manually trigger the HBPE pipeline for the current user */
   triggerHbpe: Scalars['String']['output'];
@@ -989,6 +997,13 @@ export type Mutation = {
   updateQuestion?: Maybe<QuestionType>;
   updateRelationship: UpdateRelationshipPayload;
   updateSavedSearch: UpdateSavedSearchPayload;
+};
+
+
+export type MutationAcceptCandidateArgs = {
+  endTime?: InputMaybe<Scalars['DateTime']['input']>;
+  id: Scalars['ID']['input'];
+  startTime: Scalars['DateTime']['input'];
 };
 
 
@@ -1127,6 +1142,12 @@ export type MutationCreateSavedSearchArgs = {
 };
 
 
+export type MutationDeclineCandidateArgs = {
+  id: Scalars['ID']['input'];
+  reason?: InputMaybe<Scalars['String']['input']>;
+};
+
+
 export type MutationDeleteConceptArgs = {
   input: DeleteByIdInput;
 };
@@ -1224,6 +1245,12 @@ export type MutationRemoveQuestionArgs = {
 
 export type MutationSetSavedSearchSharingArgs = {
   input: SetSavedSearchSharingInput;
+};
+
+
+export type MutationSnoozeCandidateArgs = {
+  id: Scalars['ID']['input'];
+  until: Scalars['DateTime']['input'];
 };
 
 
@@ -1560,6 +1587,8 @@ export type Query = {
   relationships: RelationshipConnection;
   savedSearch?: Maybe<SavedSearchType>;
   savedSearches: SavedSearchConnection;
+  /** Open schedule candidates whose plausible window overlaps [from, to) */
+  scheduleCandidates: Array<ScheduleCandidateType>;
   search: SearchResultConnection;
   sharedSavedSearch?: Maybe<SavedSearchType>;
   summaries: SummaryConnection;
@@ -1849,6 +1878,12 @@ export type QuerySavedSearchesArgs = {
 };
 
 
+export type QueryScheduleCandidatesArgs = {
+  from: Scalars['DateTime']['input'];
+  to: Scalars['DateTime']['input'];
+};
+
+
 export type QuerySearchArgs = {
   input: SearchInput;
 };
@@ -1923,6 +1958,15 @@ export type QuestionType = Node & {
   isSeedQuestion?: Maybe<Scalars['Boolean']['output']>;
   questionType?: Maybe<Scalars['String']['output']>;
   text: Scalars['String']['output'];
+};
+
+/** Where a candidate came from — the "because" behind a suggestion */
+export type RationaleSourceType = {
+  __typename?: 'RationaleSourceType';
+  id: Scalars['ID']['output'];
+  /** summary | insight | answer | item | relationship | due | action */
+  kind: Scalars['String']['output'];
+  note?: Maybe<Scalars['String']['output']>;
 };
 
 export type RelationshipConnection = Connection & {
@@ -2006,6 +2050,29 @@ export type SavedSearchType = Node & {
   shareToken?: Maybe<Scalars['String']['output']>;
   tags?: Maybe<Array<Scalars['String']['output']>>;
   updatedAt: Scalars['DateTime']['output'];
+};
+
+/** A proposed activity — the "possible" layer of the schedule */
+export type ScheduleCandidateType = {
+  __typename?: 'ScheduleCandidateType';
+  confidence?: Maybe<Scalars['Float']['output']>;
+  description?: Maybe<Scalars['String']['output']>;
+  durationMinutes?: Maybe<Scalars['Int']['output']>;
+  energyCost?: Maybe<Scalars['Int']['output']>;
+  /** Best-slot score; null until the solver runs */
+  fitScore?: Maybe<Scalars['Float']['output']>;
+  generator?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  l0Class?: Maybe<Scalars['String']['output']>;
+  /** The sentence shown to the user. Never empty. */
+  rationale: Scalars['String']['output'];
+  rationaleSources: Array<RationaleSourceType>;
+  status: Scalars['String']['output'];
+  /** exact | day | week | month | season */
+  timeFlex: Scalars['String']['output'];
+  title: Scalars['String']['output'];
+  windowEnd: Scalars['DateTime']['output'];
+  windowStart: Scalars['DateTime']['output'];
 };
 
 export type SearchInput = {
@@ -2478,6 +2545,44 @@ export type GetForecastQueryVariables = Exact<{
 
 
 export type GetForecastQuery = { __typename?: 'Query', forecast?: { __typename?: 'ForecastType', horizon: string, generatedAt: string, systemStatus: string, buckets: Array<{ __typename?: 'ForecastBucketType', bucketIndex: number, startTime: string, q10: number, q50: number, q90: number, l0Probs: Array<{ __typename?: 'ProbabilityEntryType', label: string, probability: number }>, l1Probs: Array<{ __typename?: 'ProbabilityEntryType', label: string, probability: number }>, l2Probs?: Array<{ __typename?: 'ProbabilityEntryType', label: string, probability: number }> | null }> } | null };
+
+export type GetScheduleCandidatesQueryVariables = Exact<{
+  from: Scalars['DateTime']['input'];
+  to: Scalars['DateTime']['input'];
+}>;
+
+
+export type GetScheduleCandidatesQuery = { __typename?: 'Query', scheduleCandidates: Array<{ __typename?: 'ScheduleCandidateType', id: string, title: string, description?: string | null, rationale: string, windowStart: any, windowEnd: any, timeFlex: string, durationMinutes?: number | null, l0Class?: string | null, fitScore?: number | null, status: string, generator?: string | null, confidence?: number | null, rationaleSources: Array<{ __typename?: 'RationaleSourceType', kind: string, id: string, note?: string | null }> }> };
+
+export type SyncScheduleSuggestionsMutationVariables = Exact<{ [key: string]: never; }>;
+
+
+export type SyncScheduleSuggestionsMutation = { __typename?: 'Mutation', syncScheduleSuggestions: number };
+
+export type AcceptCandidateMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  startTime: Scalars['DateTime']['input'];
+  endTime?: InputMaybe<Scalars['DateTime']['input']>;
+}>;
+
+
+export type AcceptCandidateMutation = { __typename?: 'Mutation', acceptCandidate: { __typename?: 'EventType', id: string, title?: string | null, startTime: any, endTime?: any | null, status?: string | null } };
+
+export type DeclineCandidateMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  reason?: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type DeclineCandidateMutation = { __typename?: 'Mutation', declineCandidate: { __typename?: 'ScheduleCandidateType', id: string, status: string } };
+
+export type SnoozeCandidateMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  until: Scalars['DateTime']['input'];
+}>;
+
+
+export type SnoozeCandidateMutation = { __typename?: 'Mutation', snoozeCandidate: { __typename?: 'ScheduleCandidateType', id: string, status: string } };
 
 export type GetScheduleQueryVariables = Exact<{
   from: Scalars['DateTime']['input'];
@@ -3262,6 +3367,11 @@ export const GetFeedActionsDocument = {"kind":"Document","definitions":[{"kind":
 export const MarkActionAsSeenDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MarkActionAsSeen"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"markActionAsSeen"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"seen"}}]}}]}}]} as unknown as DocumentNode<MarkActionAsSeenMutation, MarkActionAsSeenMutationVariables>;
 export const MarkActionAsDismissedDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MarkActionAsDismissed"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"markActionAsDismissed"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"dismissed"}}]}}]}}]} as unknown as DocumentNode<MarkActionAsDismissedMutation, MarkActionAsDismissedMutationVariables>;
 export const GetForecastDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetForecast"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"horizon"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"forecast"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"horizon"},"value":{"kind":"Variable","name":{"kind":"Name","value":"horizon"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"horizon"}},{"kind":"Field","name":{"kind":"Name","value":"generatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"systemStatus"}},{"kind":"Field","name":{"kind":"Name","value":"buckets"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bucketIndex"}},{"kind":"Field","name":{"kind":"Name","value":"startTime"}},{"kind":"Field","name":{"kind":"Name","value":"l0Probs"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"probability"}}]}},{"kind":"Field","name":{"kind":"Name","value":"l1Probs"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"probability"}}]}},{"kind":"Field","name":{"kind":"Name","value":"l2Probs"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"probability"}}]}},{"kind":"Field","name":{"kind":"Name","value":"q10"}},{"kind":"Field","name":{"kind":"Name","value":"q50"}},{"kind":"Field","name":{"kind":"Name","value":"q90"}}]}}]}}]}}]} as unknown as DocumentNode<GetForecastQuery, GetForecastQueryVariables>;
+export const GetScheduleCandidatesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetScheduleCandidates"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"from"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"DateTime"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"to"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"DateTime"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"scheduleCandidates"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"from"},"value":{"kind":"Variable","name":{"kind":"Name","value":"from"}}},{"kind":"Argument","name":{"kind":"Name","value":"to"},"value":{"kind":"Variable","name":{"kind":"Name","value":"to"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"rationale"}},{"kind":"Field","name":{"kind":"Name","value":"rationaleSources"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"kind"}},{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"note"}}]}},{"kind":"Field","name":{"kind":"Name","value":"windowStart"}},{"kind":"Field","name":{"kind":"Name","value":"windowEnd"}},{"kind":"Field","name":{"kind":"Name","value":"timeFlex"}},{"kind":"Field","name":{"kind":"Name","value":"durationMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"l0Class"}},{"kind":"Field","name":{"kind":"Name","value":"fitScore"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"generator"}},{"kind":"Field","name":{"kind":"Name","value":"confidence"}}]}}]}}]} as unknown as DocumentNode<GetScheduleCandidatesQuery, GetScheduleCandidatesQueryVariables>;
+export const SyncScheduleSuggestionsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"SyncScheduleSuggestions"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"syncScheduleSuggestions"}}]}}]} as unknown as DocumentNode<SyncScheduleSuggestionsMutation, SyncScheduleSuggestionsMutationVariables>;
+export const AcceptCandidateDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"AcceptCandidate"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"startTime"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"DateTime"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"endTime"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"DateTime"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"acceptCandidate"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}},{"kind":"Argument","name":{"kind":"Name","value":"startTime"},"value":{"kind":"Variable","name":{"kind":"Name","value":"startTime"}}},{"kind":"Argument","name":{"kind":"Name","value":"endTime"},"value":{"kind":"Variable","name":{"kind":"Name","value":"endTime"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"startTime"}},{"kind":"Field","name":{"kind":"Name","value":"endTime"}},{"kind":"Field","name":{"kind":"Name","value":"status"}}]}}]}}]} as unknown as DocumentNode<AcceptCandidateMutation, AcceptCandidateMutationVariables>;
+export const DeclineCandidateDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DeclineCandidate"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"reason"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"declineCandidate"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}},{"kind":"Argument","name":{"kind":"Name","value":"reason"},"value":{"kind":"Variable","name":{"kind":"Name","value":"reason"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"status"}}]}}]}}]} as unknown as DocumentNode<DeclineCandidateMutation, DeclineCandidateMutationVariables>;
+export const SnoozeCandidateDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"SnoozeCandidate"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"until"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"DateTime"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"snoozeCandidate"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}},{"kind":"Argument","name":{"kind":"Name","value":"until"},"value":{"kind":"Variable","name":{"kind":"Name","value":"until"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"status"}}]}}]}}]} as unknown as DocumentNode<SnoozeCandidateMutation, SnoozeCandidateMutationVariables>;
 export const GetScheduleDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetSchedule"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"from"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"DateTime"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"to"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"DateTime"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"eventsInRange"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"from"},"value":{"kind":"Variable","name":{"kind":"Name","value":"from"}}},{"kind":"Argument","name":{"kind":"Name","value":"to"},"value":{"kind":"Variable","name":{"kind":"Name","value":"to"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"startTime"}},{"kind":"Field","name":{"kind":"Name","value":"endTime"}},{"kind":"Field","name":{"kind":"Name","value":"isAllDay"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"category"}},{"kind":"Field","name":{"kind":"Name","value":"locationName"}}]}},{"kind":"Field","name":{"kind":"Name","value":"weekForecast"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"includeToday"},"value":{"kind":"BooleanValue","value":true}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"generatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"days"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"date"}},{"kind":"Field","name":{"kind":"Name","value":"dow"}},{"kind":"Field","name":{"kind":"Name","value":"clusters"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"clusterId"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"l0Class"}},{"kind":"Field","name":{"kind":"Name","value":"pOccur"}},{"kind":"Field","name":{"kind":"Name","value":"scheduled"}},{"kind":"Field","name":{"kind":"Name","value":"daypartProbs"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"probability"}}]}}]}}]}}]}}]}}]} as unknown as DocumentNode<GetScheduleQuery, GetScheduleQueryVariables>;
 export const TagEntitiesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"TagEntities"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"TagEntitiesInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"tagEntities"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"InlineFragment","typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Node"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}}]}},{"kind":"InlineFragment","typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Taggable"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"tags"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}}]}}]}}]}}]}}]} as unknown as DocumentNode<TagEntitiesMutation, TagEntitiesMutationVariables>;
 export const UntagEntitiesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UntagEntities"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"TagEntitiesInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"untagEntities"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"InlineFragment","typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Node"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}}]}},{"kind":"InlineFragment","typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Taggable"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"tags"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}}]}}]}}]}}]}}]} as unknown as DocumentNode<UntagEntitiesMutation, UntagEntitiesMutationVariables>;

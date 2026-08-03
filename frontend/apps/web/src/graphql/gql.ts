@@ -22,6 +22,11 @@ type Documents = {
     "\n  mutation MarkActionAsSeen($id: ID!) {\n    markActionAsSeen(id: $id) {\n      id\n      seen\n    }\n  }\n": typeof types.MarkActionAsSeenDocument,
     "\n  mutation MarkActionAsDismissed($id: ID!) {\n    markActionAsDismissed(id: $id) {\n      id\n      dismissed\n    }\n  }\n": typeof types.MarkActionAsDismissedDocument,
     "\n  query GetForecast($horizon: String) {\n    forecast(horizon: $horizon) {\n      horizon\n      generatedAt\n      systemStatus\n      buckets {\n        bucketIndex\n        startTime\n        l0Probs { label probability }\n        l1Probs { label probability }\n        l2Probs { label probability }\n        q10\n        q50\n        q90\n      }\n    }\n  }\n": typeof types.GetForecastDocument,
+    "\n  query GetScheduleCandidates($from: DateTime!, $to: DateTime!) {\n    scheduleCandidates(from: $from, to: $to) {\n      id\n      title\n      description\n      rationale\n      rationaleSources { kind id note }\n      windowStart\n      windowEnd\n      timeFlex\n      durationMinutes\n      l0Class\n      fitScore\n      status\n      generator\n      confidence\n    }\n  }\n": typeof types.GetScheduleCandidatesDocument,
+    "\n  mutation SyncScheduleSuggestions {\n    syncScheduleSuggestions\n  }\n": typeof types.SyncScheduleSuggestionsDocument,
+    "\n  mutation AcceptCandidate($id: ID!, $startTime: DateTime!, $endTime: DateTime) {\n    acceptCandidate(id: $id, startTime: $startTime, endTime: $endTime) {\n      id\n      title\n      startTime\n      endTime\n      status\n    }\n  }\n": typeof types.AcceptCandidateDocument,
+    "\n  mutation DeclineCandidate($id: ID!, $reason: String) {\n    declineCandidate(id: $id, reason: $reason) { id status }\n  }\n": typeof types.DeclineCandidateDocument,
+    "\n  mutation SnoozeCandidate($id: ID!, $until: DateTime!) {\n    snoozeCandidate(id: $id, until: $until) { id status }\n  }\n": typeof types.SnoozeCandidateDocument,
     "\n  query GetSchedule($from: DateTime!, $to: DateTime!) {\n    eventsInRange(from: $from, to: $to) {\n      id\n      title\n      startTime\n      endTime\n      isAllDay\n      status\n      category\n      locationName\n    }\n    weekForecast(includeToday: true) {\n      generatedAt\n      days {\n        date\n        dow\n        clusters {\n          clusterId\n          name\n          l0Class\n          pOccur\n          scheduled\n          daypartProbs { label probability }\n        }\n      }\n    }\n  }\n": typeof types.GetScheduleDocument,
     "\n  mutation TagEntities($input: TagEntitiesInput!) {\n    tagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": typeof types.TagEntitiesDocument,
     "\n  mutation UntagEntities($input: TagEntitiesInput!) {\n    untagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": typeof types.UntagEntitiesDocument,
@@ -146,6 +151,11 @@ const documents: Documents = {
     "\n  mutation MarkActionAsSeen($id: ID!) {\n    markActionAsSeen(id: $id) {\n      id\n      seen\n    }\n  }\n": types.MarkActionAsSeenDocument,
     "\n  mutation MarkActionAsDismissed($id: ID!) {\n    markActionAsDismissed(id: $id) {\n      id\n      dismissed\n    }\n  }\n": types.MarkActionAsDismissedDocument,
     "\n  query GetForecast($horizon: String) {\n    forecast(horizon: $horizon) {\n      horizon\n      generatedAt\n      systemStatus\n      buckets {\n        bucketIndex\n        startTime\n        l0Probs { label probability }\n        l1Probs { label probability }\n        l2Probs { label probability }\n        q10\n        q50\n        q90\n      }\n    }\n  }\n": types.GetForecastDocument,
+    "\n  query GetScheduleCandidates($from: DateTime!, $to: DateTime!) {\n    scheduleCandidates(from: $from, to: $to) {\n      id\n      title\n      description\n      rationale\n      rationaleSources { kind id note }\n      windowStart\n      windowEnd\n      timeFlex\n      durationMinutes\n      l0Class\n      fitScore\n      status\n      generator\n      confidence\n    }\n  }\n": types.GetScheduleCandidatesDocument,
+    "\n  mutation SyncScheduleSuggestions {\n    syncScheduleSuggestions\n  }\n": types.SyncScheduleSuggestionsDocument,
+    "\n  mutation AcceptCandidate($id: ID!, $startTime: DateTime!, $endTime: DateTime) {\n    acceptCandidate(id: $id, startTime: $startTime, endTime: $endTime) {\n      id\n      title\n      startTime\n      endTime\n      status\n    }\n  }\n": types.AcceptCandidateDocument,
+    "\n  mutation DeclineCandidate($id: ID!, $reason: String) {\n    declineCandidate(id: $id, reason: $reason) { id status }\n  }\n": types.DeclineCandidateDocument,
+    "\n  mutation SnoozeCandidate($id: ID!, $until: DateTime!) {\n    snoozeCandidate(id: $id, until: $until) { id status }\n  }\n": types.SnoozeCandidateDocument,
     "\n  query GetSchedule($from: DateTime!, $to: DateTime!) {\n    eventsInRange(from: $from, to: $to) {\n      id\n      title\n      startTime\n      endTime\n      isAllDay\n      status\n      category\n      locationName\n    }\n    weekForecast(includeToday: true) {\n      generatedAt\n      days {\n        date\n        dow\n        clusters {\n          clusterId\n          name\n          l0Class\n          pOccur\n          scheduled\n          daypartProbs { label probability }\n        }\n      }\n    }\n  }\n": types.GetScheduleDocument,
     "\n  mutation TagEntities($input: TagEntitiesInput!) {\n    tagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": types.TagEntitiesDocument,
     "\n  mutation UntagEntities($input: TagEntitiesInput!) {\n    untagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": types.UntagEntitiesDocument,
@@ -296,6 +306,26 @@ export function gql(source: "\n  mutation MarkActionAsDismissed($id: ID!) {\n   
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "\n  query GetForecast($horizon: String) {\n    forecast(horizon: $horizon) {\n      horizon\n      generatedAt\n      systemStatus\n      buckets {\n        bucketIndex\n        startTime\n        l0Probs { label probability }\n        l1Probs { label probability }\n        l2Probs { label probability }\n        q10\n        q50\n        q90\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetForecast($horizon: String) {\n    forecast(horizon: $horizon) {\n      horizon\n      generatedAt\n      systemStatus\n      buckets {\n        bucketIndex\n        startTime\n        l0Probs { label probability }\n        l1Probs { label probability }\n        l2Probs { label probability }\n        q10\n        q50\n        q90\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query GetScheduleCandidates($from: DateTime!, $to: DateTime!) {\n    scheduleCandidates(from: $from, to: $to) {\n      id\n      title\n      description\n      rationale\n      rationaleSources { kind id note }\n      windowStart\n      windowEnd\n      timeFlex\n      durationMinutes\n      l0Class\n      fitScore\n      status\n      generator\n      confidence\n    }\n  }\n"): (typeof documents)["\n  query GetScheduleCandidates($from: DateTime!, $to: DateTime!) {\n    scheduleCandidates(from: $from, to: $to) {\n      id\n      title\n      description\n      rationale\n      rationaleSources { kind id note }\n      windowStart\n      windowEnd\n      timeFlex\n      durationMinutes\n      l0Class\n      fitScore\n      status\n      generator\n      confidence\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation SyncScheduleSuggestions {\n    syncScheduleSuggestions\n  }\n"): (typeof documents)["\n  mutation SyncScheduleSuggestions {\n    syncScheduleSuggestions\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation AcceptCandidate($id: ID!, $startTime: DateTime!, $endTime: DateTime) {\n    acceptCandidate(id: $id, startTime: $startTime, endTime: $endTime) {\n      id\n      title\n      startTime\n      endTime\n      status\n    }\n  }\n"): (typeof documents)["\n  mutation AcceptCandidate($id: ID!, $startTime: DateTime!, $endTime: DateTime) {\n    acceptCandidate(id: $id, startTime: $startTime, endTime: $endTime) {\n      id\n      title\n      startTime\n      endTime\n      status\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation DeclineCandidate($id: ID!, $reason: String) {\n    declineCandidate(id: $id, reason: $reason) { id status }\n  }\n"): (typeof documents)["\n  mutation DeclineCandidate($id: ID!, $reason: String) {\n    declineCandidate(id: $id, reason: $reason) { id status }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation SnoozeCandidate($id: ID!, $until: DateTime!) {\n    snoozeCandidate(id: $id, until: $until) { id status }\n  }\n"): (typeof documents)["\n  mutation SnoozeCandidate($id: ID!, $until: DateTime!) {\n    snoozeCandidate(id: $id, until: $until) { id status }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

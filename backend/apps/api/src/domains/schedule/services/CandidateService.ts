@@ -5,7 +5,7 @@ import { v7 as uuidv7 } from 'uuid';
 
 import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { EventService } from '@ci/domains/memory';
+import { type Event, EventService } from '@ci/domains/memory';
 
 import { EventCandidateEntity, type EventCandidate } from '../entities/EventCandidateEntity';
 import type { CreateCandidateDto, DeclineReason } from '../types';
@@ -129,7 +129,7 @@ export class CandidateService {
     id: string,
     startTime: Date,
     endTime?: Date,
-  ): Promise<EventCandidate> {
+  ): Promise<{ candidate: EventCandidate; event: Event }> {
     const candidate = await this.candidateRepository.findOne({
       where: { id, userId: context.userId },
     });
@@ -179,7 +179,7 @@ export class CandidateService {
 
     this.logger.log('Candidate accepted', { candidateId: candidate.id, eventId: event.id });
 
-    return EventCandidateEntity.toEgressType(saved);
+    return { candidate: EventCandidateEntity.toEgressType(saved), event };
   }
 
   /**

@@ -69,6 +69,8 @@ interface ScheduleResult {
   generatedAt: string | null;
   loading: boolean;
   error: boolean;
+  /** Re-read committed time — call after something is placed on the grid. */
+  refetch: () => void;
 }
 
 interface QueryData {
@@ -86,7 +88,7 @@ interface QueryData {
  * the page still has something true to show without it.
  */
 export function useScheduleService(from: Date, to: Date): ScheduleResult {
-  const { data, loading, error } = useQuery<QueryData>(GET_SCHEDULE, {
+  const { data, loading, error, refetch } = useQuery<QueryData>(GET_SCHEDULE, {
     variables: { from: from.toISOString(), to: to.toISOString() },
     pollInterval: REFRESH_INTERVAL_MS,
     fetchPolicy: 'cache-and-network',
@@ -98,5 +100,8 @@ export function useScheduleService(from: Date, to: Date): ScheduleResult {
     generatedAt: data?.weekForecast?.generatedAt ?? null,
     loading,
     error: Boolean(error),
+    refetch: () => {
+      void refetch();
+    },
   };
 }

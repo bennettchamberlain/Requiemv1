@@ -1,6 +1,9 @@
+import { useState } from 'react';
+
 import { cn, Tooltip } from '@ci/shadcn';
 
 import type { RhythmDay, ScheduleEvent } from '@/api/useScheduleService';
+import { CANDIDATE_DRAG_TYPE } from '@/components/TaskSlate';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -45,6 +48,27 @@ const NARROW_SPAN_PCT = 7;
 /** Quarter-day guides, so the eye can find noon without counting. */
 const GUIDE_HOURS = [6, 12, 18];
 const AXIS_HOURS = [0, 4, 8, 12, 16, 20];
+
+/**
+ * Dropping snaps to this grain. Finer would imply a precision the suggestion
+ * does not have; coarser would fight the user placing something after lunch.
+ */
+const DROP_SNAP_MINUTES = 15;
+
+/**
+ * Local instant for a drop at `ratio` across a day row, snapped to the grain.
+ *
+ * A non-finite ratio (a drop event carrying no usable coordinate) falls back to
+ * the start of the day rather than producing an Invalid Date, which would
+ * otherwise travel all the way to the accept mutation.
+ */
+function dropInstant(dayStart: Date, ratio: number): Date {
+  const clamped = Number.isFinite(ratio) ? Math.max(0, Math.min(1, ratio)) : 0;
+  const raw = clamped * MINUTES_PER_DAY;
+  const snapped = Math.round(raw / DROP_SNAP_MINUTES) * DROP_SNAP_MINUTES;
+
+  return new Date(dayStart.getTime() + Math.min(snapped, MINUTES_PER_DAY - DROP_SNAP_MINUTES) * 60_000);
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -207,9 +231,12 @@ interface DayRowProps {
   lookup: (utcDate: string) => RhythmDay | undefined;
   isToday: boolean;
   nowPct: number | null;
+  onDropCandidate?: (candidateId: string, startTime: Date) => void;
 }
 
-function DayRow({ dayStart, events, lookup, isToday, nowPct }: DayRowProps) {
+function DayRow({ dayStart, events, lookup, isToday, nowPct, onDropCandidate }: DayRowProps) {
+  /** Where a dragged candidate would land, as a percentage across the row. */
+  const [dropPct, setDropPct] = useState<number | null>(null);
   const spans = events
     .map((event) => spanForDay(event, dayStart))
     .filter((span): span is EventSpan => span !== null)
@@ -232,6 +259,15 @@ function DayRow({ dayStart, events, lookup, isToday, nowPct }: DayRowProps) {
     return until - (current.leftPct + current.widthPct);
   };
 
+  const isDropTarget = dropPct !== null;
+
+  /** Ratio across the lane for a pointer event, from the lane's own box. */
+  const ratioFor = (event: { clientX: number; currentTarget: HTMLElement }): number => {
+    const box = event.currentTarget.getBoundingClientRect();
+
+    return box.width === 0 ? 0 : (event.clientX - box.left) / box.width;
+  };
+
   return (
     <div
       className={cn(
@@ -239,6 +275,7 @@ function DayRow({ dayStart, events, lookup, isToday, nowPct }: DayRowProps) {
         // Today is marked with a rail rather than a wash — a filled row drowns
         // its own rhythm lane, which is the thing you most want to read there.
         isToday ? 'bg-accent/15 ring-1 ring-inset ring-primary/25' : 'hover:bg-accent/15',
+        isDropTarget && 'bg-primary/10 ring-1 ring-inset ring-primary/60',
       )}
     >
       <div className="w-10 shrink-0 pt-0.5 text-right">
@@ -250,7 +287,58 @@ function DayRow({ dayStart, events, lookup, isToday, nowPct }: DayRowProps) {
         </div>
       </div>
 
-      <div className="relative min-w-0 flex-1">
+      <div
+        className="relative min-w-0 flex-1"
+        onDragOver={
+          onDropCandidate
+            ? (e) => {
+                // Only claim the drop when a candidate is what's being dragged;
+                // preventDefault is what marks this element as a valid target.
+                if (!e.dataTransfer.types.includes(CANDIDATE_DRAG_TYPE)) {
+                  return;
+                }
+
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                setDropPct(Math.max(0, Math.min(1, ratioFor(e))) * 100);
+              }
+            : undefined
+        }
+        onDragLeave={() => setDropPct(null)}
+        onDrop={
+          onDropCandidate
+            ? (e) => {
+                const id = e.dataTransfer.getData(CANDIDATE_DRAG_TYPE);
+                setDropPct(null);
+
+                if (!id) {
+                  return;
+                }
+
+                e.preventDefault();
+                onDropCandidate(id, dropInstant(dayStart, ratioFor(e)));
+              }
+            : undefined
+        }
+      >
+        {/* Where it would land, and at what time. */}
+        {dropPct !== null && (
+          <>
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-y-0 z-20 w-0.5 bg-primary"
+              style={{ left: `${dropPct}%` }}
+            />
+            <div
+              aria-hidden
+              className="pointer-events-none absolute -top-1 z-20 -translate-x-1/2 rounded bg-primary px-1 py-px text-[10px] text-primary-foreground tabular-nums"
+              style={{ left: `${dropPct}%` }}
+            >
+              {formatClock(dropInstant(dayStart, dropPct / 100))}
+            </div>
+          </>
+        )}
+
         {/* Quarter-day guides — find noon without counting. */}
         {GUIDE_HOURS.map((hour) => (
           <div
@@ -376,6 +464,11 @@ interface HorizonGridProps {
   days: number;
   events: ScheduleEvent[];
   rhythm: RhythmDay[];
+  /**
+   * Called when a slate candidate is dropped on a day. Omit to make the grid
+   * read-only — drops are then simply not accepted.
+   */
+  onDropCandidate?: (candidateId: string, startTime: Date) => void;
   className?: string;
 }
 
@@ -388,7 +481,14 @@ interface HorizonGridProps {
  * The whole grid sits on its own card: PageContent paints a background texture,
  * and hairline content read directly against it is close to unreadable.
  */
-export function HorizonGrid({ start, days, events, rhythm, className }: HorizonGridProps) {
+export function HorizonGrid({
+  start,
+  days,
+  events,
+  rhythm,
+  onDropCandidate,
+  className,
+}: HorizonGridProps) {
   const now = new Date();
   const today = startOfLocalDay(now);
   const rhythmByDate = new Map(rhythm.map((day) => [day.date, day]));
@@ -425,6 +525,7 @@ export function HorizonGrid({ start, days, events, rhythm, className }: HorizonG
               lookup={lookup}
               isToday={sameLocalDay(dayStart, today)}
               nowPct={sameLocalDay(dayStart, today) ? nowPct : null}
+              onDropCandidate={onDropCandidate}
             />
           );
         })}
@@ -433,4 +534,4 @@ export function HorizonGrid({ start, days, events, rhythm, className }: HorizonG
   );
 }
 
-export { spanForDay, daypartWeights, rhythmCells, startOfLocalDay, addDays };
+export { spanForDay, daypartWeights, rhythmCells, dropInstant, startOfLocalDay, addDays };

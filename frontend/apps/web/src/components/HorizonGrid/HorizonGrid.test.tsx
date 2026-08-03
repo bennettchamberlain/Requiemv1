@@ -1,9 +1,17 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { createEvent, fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { RhythmDay, ScheduleEvent } from '@/api/useScheduleService';
 
-import { HorizonGrid, spanForDay, daypartWeights, rhythmCells, startOfLocalDay, addDays } from './HorizonGrid';
+import {
+  HorizonGrid,
+  spanForDay,
+  daypartWeights,
+  rhythmCells,
+  dropInstant,
+  startOfLocalDay,
+  addDays,
+} from './HorizonGrid';
 
 const MONDAY = startOfLocalDay(new Date(2026, 7, 3));
 
@@ -250,6 +258,50 @@ describe('rhythmCells — per-hour intensities across a local day', () => {
     expect(Math.min(...claimed)).toBeCloseTo(0.09, 2);
   });
 });
+describe('dropInstant — where a dragged suggestion lands', () => {
+  it('maps the middle of a row to midday', () => {
+    expect(dropInstant(MONDAY, 0.5).getHours()).toBe(12);
+  });
+
+  it('snaps to a quarter hour rather than implying false precision', () => {
+    // 09:07 worth of ratio should land on 09:00, not 09:07.
+    const ratio = (9 * 60 + 7) / 1440;
+
+    const at = dropInstant(MONDAY, ratio);
+    expect(at.getHours()).toBe(9);
+    expect(at.getMinutes() % 15).toBe(0);
+  });
+
+  it('rounds to the nearer quarter, not always down', () => {
+    const ratio = (9 * 60 + 13) / 1440;
+
+    expect(dropInstant(MONDAY, ratio).getMinutes()).toBe(15);
+  });
+
+  it('clamps a drop before the row to the start of the day', () => {
+    expect(dropInstant(MONDAY, -0.4).getTime()).toBe(MONDAY.getTime());
+  });
+
+  it('never spills a drop past the end of the row into the next day', () => {
+    const at = dropInstant(MONDAY, 1.4);
+
+    expect(at.getDate()).toBe(MONDAY.getDate());
+    expect(at.getTime()).toBeLessThan(addDays(MONDAY, 1).getTime());
+  });
+
+  it('lands on the row it was dropped on, not on today', () => {
+    const thursday = addDays(MONDAY, 3);
+
+    expect(dropInstant(thursday, 0.5).getDate()).toBe(thursday.getDate());
+  });
+
+  it('falls back to the start of the day rather than an invalid instant', () => {
+    // A drop event with no usable coordinate must not send Invalid Date to the
+    // accept mutation.
+    expect(dropInstant(MONDAY, Number.NaN).getTime()).toBe(MONDAY.getTime());
+  });
+});
+
 describe('HorizonGrid', () => {
   it('renders one row per day in the window', () => {
     render(<HorizonGrid start={MONDAY} days={7} events={[]} rhythm={[]} />);
@@ -282,5 +334,88 @@ describe('HorizonGrid', () => {
     render(<HorizonGrid start={MONDAY} days={7} events={[event()]} rhythm={[]} />);
 
     expect(screen.getByText('Standup')).toBeInTheDocument();
+  });
+});
+
+describe('HorizonGrid — dropping a slate candidate', () => {
+  /** jsdom gives every element a zero-width box; give the lanes a real one. */
+  function stubLaneWidths(container: HTMLElement, width = 1000, left = 0) {
+    for (const lane of container.querySelectorAll('.relative.min-w-0.flex-1')) {
+      lane.getBoundingClientRect = () => ({ width, left, right: left + width }) as DOMRect;
+    }
+  }
+
+  function dataTransfer(candidateId: string | null) {
+    return {
+      types: candidateId === null ? [] : ['application/x-ci-candidate'],
+      getData: () => candidateId ?? '',
+      setData: () => {},
+      dropEffect: '',
+      effectAllowed: '',
+    };
+  }
+
+  function lanes(container: HTMLElement) {
+    return [...container.querySelectorAll('.relative.min-w-0.flex-1')] as HTMLElement[];
+  }
+
+  /**
+   * jsdom implements no DragEvent, so React Testing Library falls back to a
+   * plain Event and silently drops clientX. Define it by hand.
+   */
+  function dropAt(lane: HTMLElement, clientX: number, candidateId: string | null) {
+    const evt = createEvent.drop(lane, { dataTransfer: dataTransfer(candidateId) });
+    Object.defineProperty(evt, 'clientX', { value: clientX });
+    fireEvent(lane, evt);
+  }
+
+  it('reports the day and time the card was dropped on', () => {
+    const onDrop = vi.fn();
+    const { container } = render(
+      <HorizonGrid start={MONDAY} days={7} events={[]} rhythm={[]} onDropCandidate={onDrop} />,
+    );
+    stubLaneWidths(container);
+
+    // Wednesday (third row), halfway across → midday.
+    dropAt(lanes(container)[2], 500, 'cand-7');
+
+    expect(onDrop).toHaveBeenCalledTimes(1);
+    const [id, at] = onDrop.mock.calls[0];
+    expect(id).toBe('cand-7');
+    expect(at.getDate()).toBe(addDays(MONDAY, 2).getDate());
+    expect(at.getHours()).toBe(12);
+  });
+
+  it('places the card where it was dropped, not at the start of the day', () => {
+    const onDrop = vi.fn();
+    const { container } = render(
+      <HorizonGrid start={MONDAY} days={7} events={[]} rhythm={[]} onDropCandidate={onDrop} />,
+    );
+    stubLaneWidths(container);
+
+    // 75% across → 18:00.
+    dropAt(lanes(container)[0], 750, 'cand-1');
+
+    expect(onDrop.mock.calls[0][1].getHours()).toBe(18);
+  });
+
+  it('ignores a drop carrying no candidate', () => {
+    const onDrop = vi.fn();
+    const { container } = render(
+      <HorizonGrid start={MONDAY} days={7} events={[]} rhythm={[]} onDropCandidate={onDrop} />,
+    );
+    stubLaneWidths(container);
+
+    dropAt(lanes(container)[0], 500, null);
+
+    expect(onDrop).not.toHaveBeenCalled();
+  });
+
+  it('accepts no drops at all when the grid is read-only', () => {
+    const { container } = render(<HorizonGrid start={MONDAY} days={7} events={[]} rhythm={[]} />);
+    stubLaneWidths(container);
+
+    // No handler is attached, so this must not throw.
+    expect(() => dropAt(lanes(container)[0], 500, 'cand-1')).not.toThrow();
   });
 });

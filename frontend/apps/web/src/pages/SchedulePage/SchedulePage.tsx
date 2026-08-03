@@ -5,9 +5,11 @@ import { Breadcrumb, Button, cn } from '@ci/shadcn';
 import { CalendarRange, ChevronLeft, ChevronRight } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
+import { useScheduleCandidates } from '@/api/useScheduleCandidates';
 import { useScheduleService } from '@/api/useScheduleService';
 import { HorizonGrid } from '@/components/HorizonGrid';
 import { PageContent } from '@/components/layout';
+import { TaskSlate } from '@/components/TaskSlate';
 
 const DAYS_IN_VIEW = 7;
 
@@ -43,7 +45,23 @@ export function SchedulePage() {
     return { start: from, end: addDays(from, DAYS_IN_VIEW) };
   }, [weekOffset]);
 
-  const { events, rhythm, generatedAt, loading, error } = useScheduleService(start, end);
+  const { events, rhythm, generatedAt, loading, error, refetch } = useScheduleService(start, end);
+
+  // Placing a candidate mints an event, so the committed lane has to re-read.
+  const {
+    candidates,
+    loading: candidatesLoading,
+    accept,
+    decline,
+    snooze,
+  } = useScheduleCandidates(start, end, refetch);
+
+  const handleDrop = useCallback(
+    (candidateId: string, startTime: Date) => {
+      void accept(candidateId, startTime);
+    },
+    [accept],
+  );
 
   const goBack = useCallback(() => setWeekOffset((offset) => offset - 1), []);
   const goForward = useCallback(() => setWeekOffset((offset) => offset + 1), []);
@@ -110,27 +128,47 @@ export function SchedulePage() {
           <p className="text-sm text-muted-foreground">Could not load the schedule. Try again shortly.</p>
         )}
 
-        {isEmpty && !error && (
+        {isEmpty && !error && candidates.length === 0 && (
           <EmptyState
             icon={<CalendarRange size={48} strokeWidth={1} />}
             message="Nothing here yet. Connect a calendar and your week will start to fill in."
           />
         )}
 
-        {!isEmpty && !error && (
+        {(!isEmpty || candidates.length > 0) && !error && (
           <>
-            <HorizonGrid start={start} days={DAYS_IN_VIEW} events={events} rhythm={rhythm} />
+            {/* The slate sits beside the week on a wide screen and beneath it on
+                a narrow one — dragging needs both visible at once. */}
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
+              <div className="min-w-0 flex-1">
+                <HorizonGrid
+                  start={start}
+                  days={DAYS_IN_VIEW}
+                  events={events}
+                  rhythm={rhythm}
+                  onDropCandidate={handleDrop}
+                />
 
-            {generatedAt ? (
-              <p className="pt-2 text-[10px] text-muted-foreground">
-                Rhythm from your own patterns, updated{' '}
-                {new Date(generatedAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}.
-              </p>
-            ) : (
-              <p className="pt-2 text-[10px] text-muted-foreground">
-                Rhythm layer unavailable — showing committed time only.
-              </p>
-            )}
+                {generatedAt ? (
+                  <p className="pt-2 text-[10px] text-muted-foreground">
+                    Rhythm from your own patterns, updated{' '}
+                    {new Date(generatedAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}.
+                  </p>
+                ) : (
+                  <p className="pt-2 text-[10px] text-muted-foreground">
+                    Rhythm layer unavailable — showing committed time only.
+                  </p>
+                )}
+              </div>
+
+              <TaskSlate
+                candidates={candidates}
+                loading={candidatesLoading}
+                onDecline={decline}
+                onSnooze={snooze}
+                className="w-full xl:w-80 xl:shrink-0"
+              />
+            </div>
           </>
         )}
       </PageContent>

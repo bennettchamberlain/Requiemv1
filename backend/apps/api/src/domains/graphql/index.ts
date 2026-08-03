@@ -19,6 +19,7 @@ import { NotesModule } from '@ci/domains/notes';
 import { PairingModule } from '@ci/domains/pairing';
 import { ParsingModule } from '@ci/domains/parsing';
 import { PredictionsModule } from '@ci/domains/predictions';
+import { ScheduleModule } from '@ci/domains/schedule';
 import { SearchNextModule } from '@ci/domains/search-next';
 import { SummariesModule } from '@ci/domains/summaries';
 import { UserModule } from '@ci/domains/user';
@@ -66,6 +67,7 @@ import { ProviderResolver } from './resolvers/ProviderResolver';
 import { QuestionResolver } from './resolvers/QuestionResolver';
 import { RelationshipResolver } from './resolvers/RelationshipResolver';
 import { SavedSearchResolver } from './resolvers/SavedSearchResolver';
+import { ScheduleCandidateResolver } from './resolvers/ScheduleCandidateResolver';
 import { SearchResolver } from './resolvers/SearchResolver';
 import { SummaryResolver } from './resolvers/SummaryResolver';
 import { TagResolver } from './resolvers/TagResolver';
@@ -99,6 +101,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     NotesModule,
     ParsingModule,
     SearchNextModule,
+    ScheduleModule,
     SummariesModule,
     UserModule,
     UserSnapshotsModule,
@@ -107,6 +110,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     ActionResolver,
     ActivityResolver,
     ForecastResolver,
+    ScheduleCandidateResolver,
     PairingResolver,
     BrowserActivityResolver,
     CommunicationResolver,
