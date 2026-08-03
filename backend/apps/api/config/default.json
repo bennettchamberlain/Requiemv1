@@ -136,7 +136,7 @@
     "enable.system.prompt": true,
     "enable.inventory.page": false,
     "advanced.theme.tab": false,
-    "new.insights.page": false,
+    "new.insights.page": true,
     "require.signup.codes": true,
     "files.page": false,
     "insights.page": true,
