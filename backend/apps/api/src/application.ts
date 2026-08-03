@@ -10,7 +10,8 @@ import {
 } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
-import { ScheduleModule } from '@nestjs/schedule';
+// Aliased: our own schedule domain (@ci/domains/schedule) exports a ScheduleModule too.
+import { ScheduleModule as NestCronModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import * as Sentry from '@sentry/nestjs';
 
@@ -50,6 +51,7 @@ import { PairingModule } from '@ci/domains/pairing';
 import { ParsingModule } from '@ci/domains/parsing';
 import { PositionModule } from '@ci/domains/position';
 import { PredictionsModule } from '@ci/domains/predictions';
+import { ScheduleModule } from '@ci/domains/schedule';
 import { SearchIngressModule } from '@ci/domains/search-ingress';
 import { SearchNextModule } from '@ci/domains/search-next';
 import { SummariesModule } from '@ci/domains/summaries';
@@ -78,7 +80,7 @@ import { flushTelemetry, isTelemetryEnabled } from '@ci/instrument';
     FeatureModule,
     LoggingModule,
     EventEmitterModule.forRoot(),
-    ScheduleModule.forRoot(),
+    NestCronModule.forRoot(),
     PairingModule,
     ActivityModule,
     AgentModule,
@@ -106,6 +108,7 @@ import { flushTelemetry, isTelemetryEnabled } from '@ci/instrument';
     GeocodeModule,
     MaintenanceModule,
     NotesModule,
+    ScheduleModule,
     SearchIngressModule,
     SearchNextModule,
     SummariesModule,

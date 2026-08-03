@@ -1120,6 +1120,11 @@ type Query {
   eventTypes: [String!]!
   events(after: String, before: String, first: Int, last: Int): EventConnection!
 
+  """
+  Events overlapping [from, to) — calendar read path. Excludes cancelled/no-show; keeps tentative.
+  """
+  eventsInRange(from: DateTime!, to: DateTime!): [EventType!]!
+
   """Get actions for the feed, prioritizing unseen actions"""
   feedActions(limit: Int! = 5): [ActionType!]!
   file(id: ID!): FileType

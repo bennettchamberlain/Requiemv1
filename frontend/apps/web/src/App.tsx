@@ -37,6 +37,7 @@ const OpenIDCallbackPage = lazy(() => import('@/pages/OpenIDCallbackPage'));
 const PersonPage = lazy(() => import('@/pages/PersonPage'));
 const PlacePage = lazy(() => import('@/pages/PlacePage'));
 const ProviderPage = lazy(() => import('@/pages/ProviderPage'));
+const SchedulePage = lazy(() => import('@/pages/SchedulePage'));
 const SearchPage = lazy(() => import('@/pages/SearchPage'));
 const FilesPage = lazy(() => import('@/pages/FilesPage'));
 const SavedSearchesPage = lazy(() => import('@/pages/SavedSearchesPage'));
@@ -205,6 +206,17 @@ function AppRoutes() {
               element={
                 <ProtectedRoute>
                   <StatsPage />
+                </ProtectedRoute>
+              }
+            />
+          )}
+
+          {isFeatureEnabled('schedule.page') && (
+            <Route
+              path="/schedule"
+              element={
+                <ProtectedRoute>
+                  <SchedulePage />
                 </ProtectedRoute>
               }
             />

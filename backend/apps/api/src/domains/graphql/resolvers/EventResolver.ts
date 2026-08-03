@@ -1,4 +1,4 @@
-import { UseGuards } from '@nestjs/common';
+import { BadRequestException, UseGuards } from '@nestjs/common';
 import { Args, Float, ID, Int, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
@@ -25,6 +25,9 @@ import { PlaceType } from '../types/PlaceType';
 import { UpdateEventInput } from '../types/UpdateEventInput';
 import { entityOwnerScope } from '../utils/entityOwnerScope';
 import { Paginator } from '../utils/Paginator';
+
+/** Widest window eventsInRange will serve — a quarter, enough for the month view. */
+const MAX_RANGE_DAYS = 92;
 
 @UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => EventType)
@@ -168,6 +171,39 @@ export class EventResolver {
       pageInfo,
       totalCount,
     };
+  }
+
+  /**
+   * Committed time in a window — the schedule surface's read path.
+   *
+   * Returns the full set rather than a Connection: the date range is already the
+   * bound, and a calendar that paginated its own week would be a strange object.
+   * MAX_RANGE_DAYS keeps that from becoming an unbounded scan.
+   */
+  @Query(() => [EventType], {
+    description:
+      'Events overlapping [from, to) — calendar read path. Excludes cancelled/no-show; keeps tentative.',
+  })
+  async eventsInRange(
+    @Context() context: RequestContext,
+    @Args('from', { type: () => Date }) from: Date,
+    @Args('to', { type: () => Date }) to: Date,
+  ): Promise<EventType[]> {
+    if (to <= from) {
+      throw new BadRequestException('`to` must be after `from`');
+    }
+
+    const spanDays = (to.getTime() - from.getTime()) / 86_400_000;
+
+    if (spanDays > MAX_RANGE_DAYS) {
+      throw new BadRequestException(`Range too wide: ${Math.ceil(spanDays)}d exceeds ${MAX_RANGE_DAYS}d`);
+    }
+
+    const serviceContext = toServiceContext(context);
+
+    const entities = await this.eventService.findInRange(serviceContext, from, to);
+
+    return entities.map((entity) => EventType.toType(entity));
   }
 
   @Query(() => [String], {

@@ -234,6 +234,39 @@ export class EventService {
     return results.map(({ entity }) => EventEntity.toEgressType(entity));
   }
 
+  /**
+   * Events overlapping [from, to) — the calendar read path.
+   *
+   * Deliberately NOT the "starts within the window" filter used by
+   * getEntitiesForEvents (the search path). A calendar must show an event that
+   * began before the window and runs into it: a Sunday-night flight still
+   * occupies Monday morning. So the predicate is interval overlap, with an
+   * open-ended event (no end_time) treated as an instant at start_time.
+   *
+   * Cancelled and no-show rows are excluded — they are not occupied time — but
+   * `tentative` is kept, because a maybe on the calendar is still a claim on the
+   * slot and the schedule surface renders it as such.
+   */
+  async findInRange(context: ServiceContext, from: Date, to: Date): Promise<Event[]> {
+    const query = this.dataSource
+      .getRepository(EventEntity)
+      .createQueryBuilder('event')
+      .where('event.is_deleted = false')
+      .andWhere("event.status NOT IN ('cancelled', 'no_show')")
+      .andWhere('event.start_time < :to', { to })
+      .andWhere('COALESCE(event.end_time, event.start_time) >= :from', { from })
+      .orderBy('event.start_time', 'ASC')
+      .addOrderBy('event.event_id', 'ASC');
+
+    if (context.userId !== SYSTEM_USER) {
+      query.andWhere('event.user_id = :userId', { userId: context.userId });
+    }
+
+    const result = await query.getMany();
+
+    return result.map((entity) => EventEntity.toEgressType(entity));
+  }
+
   async findAll(context: ServiceContext): Promise<Event[]> {
     const result = await this.eventRepository.find({
       where: {

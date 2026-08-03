@@ -4,6 +4,7 @@ import { Tooltip } from '@ci/shadcn';
 import {
   BookOpen,
   Brain,
+  CalendarRange,
   ChartColumn,
   LifeBuoy,
   Inbox,
@@ -56,6 +57,12 @@ export function SecondaryNavigation() {
           <NavLink to="/feed" label="Feed" badgeCount={feedBadgeCount}>
             <Inbox className="h-6 w-6" strokeWidth={1.25} />
           </NavLink>
+
+          {isFeatureEnabled('schedule.page') && (
+            <NavLink to="/schedule" label="Schedule">
+              <CalendarRange className="h-6 w-6" strokeWidth={1.25} />
+            </NavLink>
+          )}
 
           <NavLink to="/memory" label="Memory">
             <Brain className="h-6 w-6" strokeWidth={1.25} />

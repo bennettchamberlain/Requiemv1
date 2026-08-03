@@ -223,6 +223,10 @@ export const ConfigSchema = z.object({
     /** Enables the memory stats page (`/stats`): timeline totals plus entity
      * breakdowns by data source and by tag. */
     'stats.page': booleanStringSchema,
+    /** Wholesale gate for the Schedule surface (`/schedule` + nav entry point):
+     * committed events, the HBPE rhythm layer, and proposed candidates. Off by
+     * default while the proposer is still being tuned. */
+    'schedule.page': booleanStringSchema,
     /** The standalone all-tags browse page (`/tags`). Restored — on by default —
      * after #1512 removed it and left no way to see every tag in the system.
      * Chips open the explorer filtered by the tag (`/memory?tags=<label>`). */
