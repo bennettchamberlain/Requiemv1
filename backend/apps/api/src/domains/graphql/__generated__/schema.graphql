@@ -1576,6 +1576,7 @@ type UserType implements Node {
   entity: PersonType
   id: ID!
   name: String!
+  needsIdentityStep: Boolean!
   onboarded: Boolean!
   timezone: String!
 }

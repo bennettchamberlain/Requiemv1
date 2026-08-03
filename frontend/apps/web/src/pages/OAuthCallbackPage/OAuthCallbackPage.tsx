@@ -5,6 +5,7 @@ import { useToast } from '@ci/shadcn';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useAuth } from '@/hooks';
+import { ONBOARDING_OAUTH_RESUME_KEY } from '@/pages/OnboardingPage/constants';
 
 export function OAuthCallbackPage() {
   usePageTitle('Complete Connection - Companion Intelligence');
@@ -32,25 +33,28 @@ export function OAuthCallbackPage() {
 
   const isCloudProxyCallback = !!accessToken;
 
+  const returnPath =
+    localStorage.getItem(ONBOARDING_OAUTH_RESUME_KEY) != null ? '/onboarding' : '/connections';
+
   // Handle OAuth errors and missing params
   useEffect(() => {
     if (error || errorDescription) {
       toast.error(errorDescription || error || 'OAuth error');
-      navigate('/connections');
+      navigate(returnPath);
 
       return;
     }
 
     if (isCloudProxyCallback && (!connectionId || !userProviderId)) {
       toast.error('Missing OAuth credentials from provider');
-      navigate('/connections');
+      navigate(returnPath);
 
       return;
     }
 
     if (!isCloudProxyCallback && (!code || !state)) {
       toast.error('Missing OAuth credentials');
-      navigate('/connections');
+      navigate(returnPath);
 
       return;
     }
@@ -64,6 +68,7 @@ export function OAuthCallbackPage() {
     state,
     toast,
     navigate,
+    returnPath,
   ]);
 
   // Redirect to login if session was lost during the OAuth redirect.
@@ -118,7 +123,7 @@ export function OAuthCallbackPage() {
         toast.error(String(err));
       } finally {
         window.history.replaceState(null, '', window.location.pathname);
-        navigate('/connections');
+        navigate(returnPath);
       }
     })();
   }, [
@@ -135,6 +140,7 @@ export function OAuthCallbackPage() {
     state,
     toast,
     navigate,
+    returnPath,
   ]);
 
   return <LoadingPage />;

@@ -11,6 +11,7 @@ const USER_DATA_QUERY = gql(`
       name
       email
       onboarded
+      needsIdentityStep
       timezone
 
       entity {

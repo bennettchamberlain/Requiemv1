@@ -52,7 +52,7 @@ export function Endpoints({ provider, startEndpoints }: EndpointsProps) {
                   </Form.Control>
 
                   <Form.Label className="font-medium cursor-pointer">{item.name}</Form.Label>
-                  <Form.Label className="col-start-2 font-light text-muted-foreground cursor-pointer leading-normal">
+                  <Form.Label className="col-start-2 text-muted-foreground cursor-pointer leading-normal font-normal">
                     {item.description}
                   </Form.Label>
                 </Form.Item>

@@ -9,6 +9,18 @@ import { ProviderKeyService } from '../services/ProviderKeyService';
 import { BaseClient } from './BaseClient';
 import type { TokenExchange, TokenResponse } from './types';
 
+function formatTokenExchangeError(errorDetails: unknown): string {
+  if (typeof errorDetails === 'string') {
+    return errorDetails;
+  }
+
+  try {
+    return JSON.stringify(errorDetails);
+  } catch {
+    return String(errorDetails);
+  }
+}
+
 export abstract class BaseOAuth2Client extends BaseClient {
   @Inject(ProviderKeyService)
   protected readonly providerKeyService!: ProviderKeyService;
@@ -173,7 +185,7 @@ export abstract class BaseOAuth2Client extends BaseClient {
         endpoint: this.tokenEndpoint,
       });
 
-      throw new Error('Token exchange failed');
+      throw new Error(`Token exchange failed: ${formatTokenExchangeError(errorDetails)}`);
     }
 
     let tokenData: TokenResponse;
@@ -229,13 +241,13 @@ export abstract class BaseOAuth2Client extends BaseClient {
           errorDetails = await tokenResponse.text();
         }
 
-        this.logger.error('Token exchange failed', {
+        this.logger.error('Token refresh failed', {
           status: tokenResponse.status,
           error: errorDetails,
           endpoint: this.tokenEndpoint,
         });
 
-        throw new Error('Token exchange failed');
+        throw new Error(`Token refresh failed: ${formatTokenExchangeError(errorDetails)}`);
       }
 
       let tokenData: TokenResponse;

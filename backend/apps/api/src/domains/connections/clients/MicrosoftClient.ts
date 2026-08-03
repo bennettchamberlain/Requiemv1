@@ -6,6 +6,27 @@ import type { Connection } from '../entities/ConnectionEntity';
 
 import { BaseOAuth2Client } from './BaseOAuth2Client';
 
+/** Azure secret IDs are UUIDs; the secret *value* is a long opaque string. */
+const AZURE_SECRET_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function trimOAuthCredential(value: string | undefined | null): string | null {
+  const trimmed = value?.trim();
+
+  return trimmed || null;
+}
+
+function assertMicrosoftClientSecretLooksValid(clientSecret: string): void {
+  if (!AZURE_SECRET_ID_PATTERN.test(clientSecret)) {
+    return;
+  }
+
+  throw new Error(
+    'Microsoft client secret looks like an Azure secret ID (UUID), not the secret value. ' +
+      'In Azure Portal → App registrations → Certificates & secrets, create or copy the Value column ' +
+      '(shown only once when the secret is created), not the Secret ID.',
+  );
+}
+
 @Injectable()
 export class MicrosoftClient extends BaseOAuth2Client {
   constructor(readonly logger: LoggerService) {
@@ -49,11 +70,15 @@ export class MicrosoftClient extends BaseOAuth2Client {
     const clientIdFromEnv = process.env[clientIdVariable];
     const clientSecretFromEnv = process.env[clientSecretVariable];
     const keys = await super.getClientCredentials(connection);
-    const clientId = keys?.clientId ?? clientIdFromEnv ?? null;
-    const clientSecret = keys?.clientSecret ?? clientSecretFromEnv ?? null;
+    const clientId = trimOAuthCredential(keys?.clientId ?? clientIdFromEnv ?? null);
+    const clientSecret = trimOAuthCredential(keys?.clientSecret ?? clientSecretFromEnv ?? null);
 
     if (!clientId && !clientSecret) {
       return null;
+    }
+
+    if (clientSecret) {
+      assertMicrosoftClientSecretLooksValid(clientSecret);
     }
 
     if (!clientId) {

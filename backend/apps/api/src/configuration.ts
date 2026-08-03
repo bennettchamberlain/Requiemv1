@@ -238,6 +238,14 @@ export const ConfigSchema = z.object({
      * enabled.
      */
     'shared.search': booleanStringSchema,
+    /** Shows would-you-rather preference steps during onboarding (food/movie/activity). */
+    'onboarding.preference.steps': booleanStringSchema,
+    /**
+     * Wholesale gate for the Actions system: feed action cards, action GraphQL/REST,
+     * feed badge contribution from actions, and the deferred (~24h post-setup) seed
+     * initializer. Off by default.
+     */
+    actions: booleanStringSchema,
   }),
   environment: z.object({
     'database.query.logging': booleanStringSchema,
