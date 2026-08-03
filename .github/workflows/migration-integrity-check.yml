@@ -16,6 +16,10 @@ name: Migrations
 on:
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check-versions:
     name: Check migration version collisions
