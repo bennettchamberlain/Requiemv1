@@ -30,17 +30,42 @@ interface Harness {
  * - admin-node INSERT/SELECT pairs -> deterministic per-kind ids
  * - enrich/parent UPDATEs -> recorded
  */
-function makeHarness(options: { byPlaceIdRows?: Array<{ entity_id: string }>; wasNew?: boolean }): Harness {
+function makeHarness(options: {
+  byPlaceIdRows?: Array<{ entity_id: string }>;
+  wasNew?: boolean;
+  /** Simulate the read-back missing (INSERT swallowed by another unique index). */
+  readBackMisses?: boolean;
+  /** place_id rows served AFTER the read-back miss (the race winner). */
+  raceWinnerRows?: Array<{ entity_id: string }>;
+  /** Serve an existing unparented admin node for the adoption UPDATE. */
+  adoptedAdminId?: string | null;
+}): Harness {
   const statements: Array<{ sql: string; params: unknown[] | undefined }> = [];
+  let placeIdLookups = 0;
 
   const query = jest.fn(async (sql: string, params?: unknown[]) => {
     statements.push({ sql, params });
 
     if (sql.includes(`properties->>'place_id' = $2`) && sql.trimStart().startsWith('SELECT')) {
+      placeIdLookups += 1;
+      // The first lookup is step 1; a second one is the post-read-back-miss
+      // resolution of the concurrent winner.
+      if (placeIdLookups > 1 && options.raceWinnerRows) {
+        return options.raceWinnerRows;
+      }
+
       return options.byPlaceIdRows ?? [];
     }
 
+    if (sql.includes('SET parent_place_id = $4') && sql.includes('parent_place_id IS NULL')) {
+      return options.adoptedAdminId ? [{ entity_id: options.adoptedAdminId }] : [];
+    }
+
     if (sql.includes('was_new')) {
+      if (options.readBackMisses) {
+        return [];
+      }
+
       const insertedId = params?.[0] as string;
 
       return options.wasNew === false
@@ -99,8 +124,10 @@ describe('PlaceService.findOrCreateForGeocode (place_id + hierarchy)', () => {
     const enrich = statementsMatching(harness, 'COALESCE(location_point');
     expect(enrich).toHaveLength(1);
     expect(enrich[0].params).toEqual([EXISTING, USER, -122.0841234, 37.4221234]);
-    // Hierarchy: city, region, country nodes created/resolved.
-    expect(statementsMatching(harness, 'AND place_kind = $2')).toHaveLength(3);
+    // Hierarchy: city, region, country nodes created/resolved (the keyed
+    // read-back SELECT runs once per level; COALESCE(parent_place_id is unique
+    // to it, unlike the adoption UPDATE which also filters on place_kind).
+    expect(statementsMatching(harness, 'COALESCE(parent_place_id,')).toHaveLength(3);
     expect(harness.send).not.toHaveBeenCalled();
   });
 
@@ -164,11 +191,60 @@ describe('PlaceService.findOrCreateForGeocode (place_id + hierarchy)', () => {
       components: COMPONENTS,
     });
 
-    const adminSelects = statementsMatching(harness, 'AND place_kind = $2');
+    const adminSelects = statementsMatching(harness, 'COALESCE(parent_place_id,');
     expect(adminSelects.map((statement) => statement.params?.[1])).toEqual(['country', 'region', 'city']);
     // The region node is parented under the country node, the city under the region.
     expect(adminSelects[1].params?.[3]).toBe('admin:country:united states');
     expect(adminSelects[2].params?.[3]).toBe('admin:region:california');
+  });
+
+  it('resolves the concurrent winner when the INSERT conflicts on the place_id index', async () => {
+    // Two callers resolve the same NEW place_id with different name-cells: the
+    // loser's INSERT is swallowed by entities_place_provider_id_uniq, so the
+    // name+cell read-back finds nothing. It must fall back to the place_id
+    // lookup rather than throwing and losing the event's place link.
+    const harness = makeHarness({
+      readBackMisses: true,
+      raceWinnerRows: [{ entity_id: EXISTING }],
+    });
+
+    const result = await harness.service.findOrCreateForGeocode(CONTEXT, {
+      name: 'Blue Bottle Coffee, 66 Mint St',
+      lat: 37.7822,
+      lng: -122.4058,
+      placeId: 'ChIJraced',
+    });
+
+    expect(result).toEqual({ id: EXISTING, created: false });
+    expect(harness.send).not.toHaveBeenCalled();
+  });
+
+  it('still throws when the read-back misses and there is no place_id to resolve', async () => {
+    const harness = makeHarness({ readBackMisses: true });
+
+    await expect(
+      harness.service.findOrCreateForGeocode(CONTEXT, { name: 'Nowhere', lat: 1, lng: 2 }),
+    ).rejects.toThrow(/failed to find or create place/);
+  });
+
+  it('adopts an existing unparented admin node instead of duplicating it', async () => {
+    // A prior resolution created "Mountain View" with no parent (partial
+    // address_components); this one knows the region, so the existing node must
+    // be re-parented, not duplicated.
+    const harness = makeHarness({ wasNew: true, adoptedAdminId: 'admin:city:mountain view' });
+
+    await harness.service.findOrCreateForGeocode(CONTEXT, {
+      name: 'Googleplex',
+      lat: 37.4,
+      lng: -122.1,
+      components: COMPONENTS,
+    });
+
+    const adoptions = statementsMatching(harness, 'parent_place_id IS NULL');
+    expect(adoptions.length).toBeGreaterThan(0);
+    // The venue hangs under the adopted city node.
+    const parentLink = statementsMatching(harness, 'SET parent_place_id = $3');
+    expect(parentLink[0].params?.[2]).toBe('admin:city:mountain view');
   });
 
   it('skips hierarchy quietly when no components are available', async () => {
@@ -180,7 +256,7 @@ describe('PlaceService.findOrCreateForGeocode (place_id + hierarchy)', () => {
       lng: 2,
     });
 
-    expect(statementsMatching(harness, 'AND place_kind = $2')).toHaveLength(0);
+    expect(statementsMatching(harness, 'COALESCE(parent_place_id,')).toHaveLength(0);
     expect(statementsMatching(harness, 'SET parent_place_id')).toHaveLength(0);
   });
 });

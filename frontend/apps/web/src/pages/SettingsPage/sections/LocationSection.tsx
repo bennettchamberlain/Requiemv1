@@ -18,19 +18,23 @@ interface PositionStats {
  * LifeScope locations settings rebuilt on the position store.
  */
 export function LocationSection() {
-  const [{ authToken }] = useAuth();
-  const { enabled, setEnabled } = useLocationTracking();
+  const [{ authToken, authenticated }] = useAuth();
+  // State-only: the app-level instance in AppRoutes owns the geolocation
+  // watcher. Registering a second watcher here would double-post every fix
+  // while this page is open.
+  const { enabled, setEnabled } = useLocationTracking({ watch: false });
   const [stats, setStats] = useState<PositionStats | null>(null);
   const [confirming, setConfirming] = useState(false);
 
   const refreshStats = useCallback(async () => {
-    if (!authToken) {
+    // Native authenticates by API key with no JWT — gate on `authenticated`.
+    if (!authenticated) {
       return;
     }
 
     try {
       const data = await fetchJson<PositionStats>('/api/position/stats', {
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
       });
       if (data) {
         setStats(data);
@@ -38,7 +42,7 @@ export function LocationSection() {
     } catch {
       // Stats are informational; leave the section usable without them.
     }
-  }, [authToken]);
+  }, [authToken, authenticated]);
 
   useEffect(() => {
     void refreshStats();

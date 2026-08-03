@@ -48,6 +48,10 @@ const GET_KNOWN_PLACES = gql(`
       kind
       confidence
       source
+      coordinates {
+        lat
+        lng
+      }
     }
     knownPlaceCandidates {
       locationId
@@ -111,7 +115,9 @@ function PlaceRow({ place, onOpen }: { place: PlaceNode; onOpen: () => void }) {
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="truncate font-medium">{place.name || 'Unnamed place'}</span>
-          {place.placeKind && <Badge variant="secondary">{KIND_LABELS[place.placeKind] ?? place.placeKind}</Badge>}
+          {place.placeKind && (
+            <Badge variant="secondary">{KIND_LABELS[place.placeKind] ?? place.placeKind}</Badge>
+          )}
         </div>
 
         <div className="truncate text-sm text-muted-foreground">
@@ -129,17 +135,55 @@ function PlaceRow({ place, onOpen }: { place: PlaceNode; onOpen: () => void }) {
   );
 }
 
+/** Rough metres between two lat/lng pairs (equirectangular is plenty here). */
+function distanceMeters(aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const x = toRad(bLng - aLng) * Math.cos(toRad((aLat + bLat) / 2));
+  const y = toRad(bLat - aLat);
+
+  return Math.sqrt(x * x + y * y) * 6371000;
+}
+
+/** A candidate within this radius of a confirmed place is that place. */
+const CONFIRMED_MATCH_METERS = 150;
+
 function KnownPlacesCard() {
   const { data, refetch } = useQuery(GET_KNOWN_PLACES);
   const [confirmKnownPlace, { loading }] = useMutation(CONFIRM_KNOWN_PLACE);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
 
-  const knownPlaces = data?.knownPlaces ?? [];
+  const knownPlaces = useMemo(() => data?.knownPlaces ?? [], [data]);
   const confirmedLocationIds = useMemo(
     () => new Set(knownPlaces.map((place) => place.locationId)),
     [knownPlaces],
   );
-  const candidates = (data?.knownPlaceCandidates ?? []).filter(
-    (candidate) => candidate.locationId == null || !confirmedLocationIds.has(candidate.locationId),
+
+  // Grid-cluster candidates always carry locationId: null and are regenerated
+  // by every buildKnownPlaces call, so an id-only filter would show a
+  // just-confirmed cluster forever. Also drop candidates that match a confirmed
+  // place by label or by proximity to its coordinates.
+  const candidates = useMemo(
+    () =>
+      (data?.knownPlaceCandidates ?? []).filter((candidate) => {
+        if (candidate.locationId != null && confirmedLocationIds.has(candidate.locationId)) {
+          return false;
+        }
+
+        return !knownPlaces.some((place) => {
+          if (place.label.trim().toLowerCase() === candidate.label.trim().toLowerCase()) {
+            return true;
+          }
+
+          const coordinates = place.coordinates;
+
+          return (
+            coordinates != null &&
+            distanceMeters(coordinates.lat, coordinates.lng, candidate.lat, candidate.lng) <=
+              CONFIRMED_MATCH_METERS
+          );
+        });
+      }),
+    [data, knownPlaces, confirmedLocationIds],
   );
 
   if (knownPlaces.length === 0 && candidates.length === 0) {
@@ -147,19 +191,26 @@ function KnownPlacesCard() {
   }
 
   const confirm = async (candidate: (typeof candidates)[number]) => {
-    await confirmKnownPlace({
-      variables: {
-        input: {
-          label: candidate.label,
-          kind: candidate.kind,
-          locationId: candidate.locationId,
-          coordinates: { lat: candidate.lat, lng: candidate.lng },
-          confidence: candidate.confidence,
-          source: 'inferred',
+    try {
+      setConfirmError(null);
+      await confirmKnownPlace({
+        variables: {
+          input: {
+            label: candidate.label,
+            kind: candidate.kind,
+            locationId: candidate.locationId,
+            coordinates: { lat: candidate.lat, lng: candidate.lng },
+            confidence: candidate.confidence,
+            source: 'inferred',
+          },
         },
-      },
-    });
-    await refetch();
+      });
+      await refetch();
+    } catch (error) {
+      setConfirmError(
+        error instanceof Error ? error.message : 'Could not confirm that place. Please try again.',
+      );
+    }
   };
 
   return (
@@ -171,6 +222,8 @@ function KnownPlacesCard() {
         </Card.Description>
       </Card.Header>
       <Card.Content className="flex flex-col gap-3">
+        {confirmError && <div className="text-sm text-destructive">{confirmError}</div>}
+
         {knownPlaces.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {knownPlaces.map((place) => (
@@ -189,7 +242,8 @@ function KnownPlacesCard() {
             <div className="min-w-0 flex-1">
               <div className="truncate font-medium">{candidate.label}</div>
               <div className="text-sm text-muted-foreground">
-                {candidate.eventCount} events · looks like <span className="capitalize">{candidate.kind}</span>
+                {candidate.eventCount} events · looks like{' '}
+                <span className="capitalize">{candidate.kind}</span>
               </div>
             </div>
             <Button size="sm" variant="outline" disabled={loading} onClick={() => void confirm(candidate)}>
@@ -208,11 +262,15 @@ export function PlacesPage() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
 
-  const { data, loading } = useQuery(GET_PLACES, {
+  const { data, previousData, loading, error } = useQuery(GET_PLACES, {
     variables: { query: searchQuery.trim() === '' ? null : searchQuery.trim() },
   });
 
-  const places = useMemo(() => (data?.places.edges ?? []).map((edge) => edge.node), [data]);
+  // Keep the previous result rendered while a new query variable is in flight;
+  // swapping to a full-page loader would unmount the search input and drop
+  // focus on the first keystroke of every new query.
+  const view = data ?? previousData;
+  const places = useMemo(() => (view?.places.edges ?? []).map((edge) => edge.node), [view]);
 
   const locatedPlaces = useMemo(
     () =>
@@ -236,8 +294,10 @@ export function PlacesPage() {
 
   let content: ReactNode | null = null;
 
-  if (loading && data == null) {
+  if (loading && view == null) {
     content = <LoadingPage />;
+  } else if (error && view == null) {
+    content = <EmptyState message={`Couldn't load places: ${error.message}`} />;
   } else {
     content = (
       <PageContent>
@@ -248,7 +308,7 @@ export function PlacesPage() {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="max-w-md"
           />
-          <div className="text-sm text-muted-foreground">{data?.places.totalCount ?? 0} places</div>
+          <div className="text-sm text-muted-foreground">{view?.places.totalCount ?? 0} places</div>
         </div>
 
         <KnownPlacesCard />

@@ -320,12 +320,19 @@ export class KnownPlacesService {
         );
       }
 
-      const created = await this.placeService.findOrCreateForGeocode(context, {
-        name: input.label.trim(),
-        lat: centroid.lat,
-        lng: centroid.lng,
-      });
-      locationId = created.id;
+      // Reuse an existing known place of the same kind before minting a new
+      // Location: re-confirming after an edited label or a drifted cluster
+      // centroid must not create a second "Home".
+      locationId = await this.findExistingKnownPlaceLocation(context, input.kind);
+
+      if (!locationId) {
+        const created = await this.placeService.createKnownPlaceLocation(context, {
+          name: input.label.trim(),
+          lat: centroid.lat,
+          lng: centroid.lng,
+        });
+        locationId = created.id;
+      }
     }
 
     const relationshipType = relationshipForKind(input.kind);
@@ -359,6 +366,39 @@ export class KnownPlacesService {
     }
 
     return place;
+  }
+
+  /**
+   * The Location already confirmed for this kind, when the kind is
+   * single-valued (home / work). Re-confirming such a kind must re-point the
+   * SAME known place rather than creating a sibling Location + a second active
+   * relationship, which is what an edited label or a drifted cluster centroid
+   * would otherwise produce.
+   */
+  private async findExistingKnownPlaceLocation(
+    context: UserServiceContext,
+    kind: KnownPlaceKind,
+  ): Promise<string | null> {
+    if (kind !== 'home' && kind !== 'work') {
+      return null;
+    }
+
+    const relationshipType = relationshipForKind(kind);
+
+    const rows: Array<{ to_entity_id: string }> = await this.dataSource.query(
+      `SELECT r.to_entity_id
+         FROM ci.relationships r
+         JOIN ci.users u ON u.entity_id = r.from_entity_id
+        WHERE u.id = $1
+          AND r.owner_user_id = $1
+          AND r.relationship_type = $2
+          AND r.is_active = TRUE
+        ORDER BY r.updated_at DESC
+        LIMIT 1`,
+      [context.userId, relationshipType],
+    );
+
+    return rows[0]?.to_entity_id ?? null;
   }
 
   // ---------------------------------------------------------------------------

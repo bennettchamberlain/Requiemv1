@@ -1,4 +1,4 @@
-import { UseGuards } from '@nestjs/common';
+import { BadRequestException, UseGuards } from '@nestjs/common';
 import { Args, Float, ID, Int, Mutation, Parent, Query, Resolver, ResolveField } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
@@ -35,12 +35,21 @@ const PLACE_KINDS: PlaceKind[] = [
   'other',
 ];
 
-function parsePlaceKind(raw: string | undefined): PlaceKind | undefined {
+/**
+ * Validate a caller-supplied place kind. Unknown values are rejected rather
+ * than silently dropped — the DB has a matching valid_place_kind CHECK, and a
+ * discarded write with a success payload is indistinguishable from a stored one.
+ */
+function parsePlaceKind(raw: string | undefined | null): PlaceKind | undefined {
   if (raw == null) {
     return undefined;
   }
 
-  return (PLACE_KINDS as string[]).includes(raw) ? (raw as PlaceKind) : undefined;
+  if (!(PLACE_KINDS as string[]).includes(raw)) {
+    throw new BadRequestException(`Unknown placeKind "${raw}" — expected one of: ${PLACE_KINDS.join(', ')}`);
+  }
+
+  return raw as PlaceKind;
 }
 
 @UseGuards(JwtOrApiKeyAuthGuard)
@@ -98,7 +107,7 @@ export class PlaceResolver {
       ...(typeof input.latitude === 'number' && typeof input.longitude === 'number'
         ? { locationPoint: { type: 'Point' as const, coordinates: [input.longitude, input.latitude] } }
         : {}),
-      ...(parsePlaceKind(input.placeKind) ? { placeKind: parsePlaceKind(input.placeKind) } : {}),
+      ...(input.placeKind != null ? { placeKind: parsePlaceKind(input.placeKind) } : {}),
       ...(input.parentId ? { parentPlaceId: GlobalUID.parse('place', input.parentId) } : {}),
     });
 
@@ -158,7 +167,7 @@ export class PlaceResolver {
           ...(typeof item.latitude === 'number' && typeof item.longitude === 'number'
             ? { locationPoint: { type: 'Point' as const, coordinates: [item.longitude, item.latitude] } }
             : {}),
-          ...(parsePlaceKind(item.placeKind) ? { placeKind: parsePlaceKind(item.placeKind) } : {}),
+          ...(item.placeKind != null ? { placeKind: parsePlaceKind(item.placeKind) } : {}),
           ...(item.parentId ? { parentPlaceId: GlobalUID.parse('place', item.parentId) } : {}),
         };
       }),
@@ -213,7 +222,10 @@ export class PlaceResolver {
       ...(typeof input.latitude === 'number' && typeof input.longitude === 'number'
         ? { latitude: input.latitude, longitude: input.longitude }
         : {}),
-      ...(parsePlaceKind(input.placeKind) ? { place_kind: parsePlaceKind(input.placeKind) } : {}),
+      // An explicit empty string clears the kind; a value is validated.
+      ...(input.placeKind !== undefined
+        ? { place_kind: input.placeKind === '' ? null : parsePlaceKind(input.placeKind) }
+        : {}),
       ...(input.parentId !== undefined
         ? { parent_place_id: input.parentId ? GlobalUID.parse('place', input.parentId) : null }
         : {}),

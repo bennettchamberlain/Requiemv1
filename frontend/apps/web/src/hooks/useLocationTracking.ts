@@ -40,8 +40,9 @@ function haversineMeters(aLat: number, aLng: number, bLat: number, bLng: number)
  * The enable flag is per-device (localStorage): location consent is a property
  * of the device, not the account. Toggled from Settings -> Location.
  */
-export function useLocationTracking() {
-  const [{ authToken }] = useAuth();
+export function useLocationTracking(options: { watch?: boolean } = {}) {
+  const { watch = true } = options;
+  const [{ authToken, authenticated }] = useAuth();
   const [enabled, setEnabledState] = useState<boolean>(() => isLocationTrackingEnabled());
   const lastSent = useRef<{ lat: number; lng: number; at: number } | null>(null);
 
@@ -69,11 +70,23 @@ export function useLocationTracking() {
   }, []);
 
   useEffect(() => {
-    if (!enabled || !authToken || typeof navigator === 'undefined' || !navigator.geolocation) {
+    // Gate on `authenticated`, NOT on authToken: the native shell authenticates
+    // with an API key (fetchJson attaches x-api-key itself) and never populates
+    // a JWT, so an authToken gate would silently disable tracking on mobile.
+    if (!watch || !enabled || !authenticated || typeof navigator === 'undefined' || !navigator.geolocation) {
       return;
     }
 
+    // The one-shot getCurrentPosition below can resolve long after the effect
+    // is torn down (it blocks on the permission prompt), so a disabled toggle
+    // must not still record a fix.
+    let cancelled = false;
+
     const send = (position: GeolocationPosition) => {
+      if (cancelled) {
+        return;
+      }
+
       const { latitude, longitude, accuracy, altitude, heading, speed } = position.coords;
       const now = Date.now();
 
@@ -90,7 +103,7 @@ export function useLocationTracking() {
       void fetchJson('/api/position', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify([
@@ -122,8 +135,11 @@ export function useLocationTracking() {
       maximumAge: 60_000,
     });
 
-    return () => navigator.geolocation.clearWatch(watchId);
-  }, [enabled, authToken]);
+    return () => {
+      cancelled = true;
+      navigator.geolocation.clearWatch(watchId);
+    };
+  }, [watch, enabled, authenticated, authToken]);
 
   return { enabled, setEnabled };
 }

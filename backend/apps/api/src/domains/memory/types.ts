@@ -253,7 +253,7 @@ export interface UpdatePlaceDto {
   /** Typed place columns (issue #1811). */
   latitude?: number;
   longitude?: number;
-  place_kind?: PlaceKind;
+  place_kind?: PlaceKind | null;
   parent_place_id?: string | null;
 }
 

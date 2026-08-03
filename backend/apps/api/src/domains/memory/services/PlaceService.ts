@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
+import { isUniqueViolation } from '@ci/common/constants';
 import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/context';
 import { computeChunkSize } from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
@@ -149,7 +150,33 @@ export class PlaceService {
     );
 
     if (rows.length === 0) {
-      // Unreachable in steady state: either the INSERT succeeded, or a
+      // The INSERT was swallowed by a conflict on a DIFFERENT unique index than
+      // the name+cell one this SELECT is keyed on — in practice
+      // entities_place_provider_id_uniq: a concurrent caller committed the same
+      // NEW place_id under a different name or coordinate cell between our
+      // step-1 lookup and this INSERT. The winner's row is the canonical place,
+      // so resolve it by place_id rather than failing the whole resolution.
+      if (placeId) {
+        const winner: Array<{ entity_id: string }> = await this.placeRepository.manager.query(
+          `SELECT entity_id
+             FROM ci.entities
+            WHERE entity_type = 'Location'
+              AND owner_user_id = $1
+              AND properties->>'place_id' = $2
+            LIMIT 1`,
+          [context.userId, placeId],
+        );
+
+        if (winner.length > 0) {
+          const id = winner[0].entity_id;
+          await this.enrichResolvedPlace(context, id, input.lat, input.lng, placeId);
+          await this.ensureHierarchy(context, id, input.components ?? null);
+
+          return { id, created: false };
+        }
+      }
+
+      // Otherwise unreachable in steady state: either the INSERT succeeded, or a
       // conflicting row already existed and the SELECT finds it. If we hit
       // this, the unique index and SELECT predicate have drifted apart.
       throw new Error(
@@ -175,9 +202,50 @@ export class PlaceService {
   }
 
   /**
+   * Create the Location backing a user-confirmed known place (home/work/...).
+   *
+   * Deliberately NOT routed through findOrCreateForGeocode: that path's
+   * identity is the geocode namespace (`properties.source = 'reverse_geocode'`,
+   * keyed on name + 3dp cell), and a hand-labelled cluster centroid is neither
+   * geocoded nor stable under relabelling. Stamping it `known_place` keeps it
+   * out of that dedupe namespace so a re-labelled confirm can't silently
+   * collide with — or fork from — a geocoded place.
+   */
+  async createKnownPlaceLocation(
+    context: UserServiceContext,
+    input: { name: string; lat: number; lng: number },
+  ): Promise<{ id: string }> {
+    const id = uuidv7();
+
+    await this.placeRepository.manager.query(
+      `INSERT INTO ci.entities (entity_id, entity_type, owner_user_id, name, properties, location_point, place_kind)
+       VALUES ($1, 'Location', $2, $3, $4::jsonb,
+               ST_SetSRID(ST_MakePoint($5, $6), 4326)::geography, 'venue')`,
+      [
+        id,
+        context.userId,
+        input.name.trim(),
+        JSON.stringify({ source: 'known_place', lat: input.lat, lng: input.lng }),
+        input.lng,
+        input.lat,
+      ],
+    );
+
+    await this.eventService.send(PlaceCreatedEvent, { placeId: id });
+
+    return { id };
+  }
+
+  /**
    * Backfill full-precision location_point (only when missing) and stamp the
-   * provider place_id claim (only when unclaimed — entities_place_provider_id_uniq
-   * makes a duplicate claim a no-op via the WHERE guard, never an error).
+   * provider place_id claim (only when unclaimed).
+   *
+   * The claim's NOT EXISTS guard is check-then-write across two statements, so
+   * two concurrent resolutions of the same place_id against different rows can
+   * both pass it and the loser raises 23505 on
+   * entities_place_provider_id_uniq. That IS the intended outcome (one row owns
+   * the id) — swallow it so the caller still gets its place link, matching the
+   * "duplicate claim is a no-op, never an error" contract.
    */
   private async enrichResolvedPlace(
     context: UserServiceContext,
@@ -195,20 +263,28 @@ export class PlaceService {
     );
 
     if (placeId) {
-      await this.placeRepository.manager.query(
-        `UPDATE ci.entities e
-            SET properties = properties || jsonb_build_object('place_id', $3::text)
-          WHERE e.entity_id = $1 AND e.owner_user_id = $2
-            AND e.properties->>'place_id' IS NULL
-            AND NOT EXISTS (
-              SELECT 1 FROM ci.entities other
-               WHERE other.owner_user_id = $2
-                 AND other.entity_type = 'Location'
-                 AND other.properties->>'place_id' = $3
-                 AND other.entity_id <> $1
-            )`,
-        [entityId, context.userId, placeId],
-      );
+      try {
+        await this.placeRepository.manager.query(
+          `UPDATE ci.entities e
+              SET properties = properties || jsonb_build_object('place_id', $3::text)
+            WHERE e.entity_id = $1 AND e.owner_user_id = $2
+              AND e.properties->>'place_id' IS NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM ci.entities other
+                 WHERE other.owner_user_id = $2
+                   AND other.entity_type = 'Location'
+                   AND other.properties->>'place_id' = $3
+                   AND other.entity_id <> $1
+              )`,
+          [entityId, context.userId, placeId],
+        );
+      } catch (error) {
+        if (!isUniqueViolation(error)) {
+          throw error;
+        }
+        // Another row won the claim between the guard and the write — exactly
+        // what the guard was trying to detect.
+      }
     }
   }
 
@@ -284,6 +360,34 @@ export class PlaceService {
     name: string,
     parentId: string | null,
   ): Promise<string> {
+    // Adopt an existing UNPARENTED node of the same kind+name before inserting.
+    // Providers return partial address_components (a result with locality but
+    // no admin_area_level_1 is common outside the US), so the same city can be
+    // resolved first without a parent and later with one; without this the
+    // keyed lookup below would miss and mint a duplicate city node.
+    if (parentId) {
+      const adopted: Array<{ entity_id: string }> = await this.placeRepository.manager.query(
+        `UPDATE ci.entities
+            SET parent_place_id = $4
+          WHERE entity_id = (
+            SELECT entity_id
+              FROM ci.entities
+             WHERE entity_type = 'Location'
+               AND owner_user_id = $1
+               AND place_kind = $2
+               AND lower(btrim(name)) = lower(btrim($3))
+               AND parent_place_id IS NULL
+             ORDER BY created_at ASC
+             LIMIT 1)
+          RETURNING entity_id`,
+        [context.userId, kind, name, parentId],
+      );
+
+      if (adopted.length > 0) {
+        return adopted[0].entity_id;
+      }
+    }
+
     const newId = uuidv7();
 
     await this.placeRepository.manager.query(
@@ -416,6 +520,10 @@ export class PlaceService {
       dataArray.map(async (item) => {
         const id = item.id ?? uuidv7();
 
+        if (item.parentPlaceId) {
+          await this.assertParentPlace(context, id, item.parentPlaceId);
+        }
+
         const place = await this.placeRepository.create({
           ...item,
           entityType: 'Location',
@@ -432,6 +540,11 @@ export class PlaceService {
             placeId: place.id,
           });
         }
+
+        // save() does not fire @AfterLoad, so the derived fields (latitude,
+        // longitude, type, geoFormat, ...) would egress as null even though
+        // they were just persisted. Populate them from the saved row.
+        placeResult.loadPropertiesFromJsonb();
 
         return PlaceEntity.toEgressType(placeResult);
       }),
@@ -586,6 +699,39 @@ export class PlaceService {
     return rows.map((row) => ({ id: row.id, type: 'place' as IndexableEntity }));
   }
 
+  /**
+   * Validate a caller-supplied parent place id before it reaches the
+   * parent_place_id FK. GlobalUIDs are unsigned base64, so the id is fully
+   * client-controlled: an unchecked value can reference a nonexistent row (FK
+   * violation surfacing as a 500 and doubling as an existence oracle), ANOTHER
+   * user's entity (cross-tenant edge that their delete would silently mutate
+   * via ON DELETE SET NULL), a non-Location entity, or the place itself.
+   */
+  private async assertParentPlace(
+    context: ServiceContext,
+    placeId: string | null,
+    parentPlaceId: string,
+  ): Promise<string> {
+    if (placeId != null && parentPlaceId === placeId) {
+      throw new BadRequestException('A place cannot be its own parent');
+    }
+
+    const rows: Array<{ entity_id: string }> = await this.placeRepository.manager.query(
+      `SELECT entity_id
+         FROM ci.entities
+        WHERE entity_id = $1 AND entity_type = 'Location'
+          AND ($2::uuid IS NULL OR owner_user_id = $2)
+        LIMIT 1`,
+      [parentPlaceId, context.userId === SYSTEM_USER ? null : context.userId],
+    );
+
+    if (rows.length === 0) {
+      throw new BadRequestException('Parent place not found');
+    }
+
+    return rows[0].entity_id;
+  }
+
   async update(context: ServiceContext, id: string, data: UpdatePlaceDto): Promise<Place | null> {
     const { properties, latitude, longitude, place_kind, parent_place_id, ...rest } = data;
 
@@ -610,11 +756,13 @@ export class PlaceService {
       }
 
       if (place_kind !== undefined) {
-        typed.placeKind = place_kind;
+        typed.placeKind = place_kind ?? null;
       }
 
       if (parent_place_id !== undefined) {
-        typed.parentPlaceId = parent_place_id;
+        typed.parentPlaceId = parent_place_id
+          ? await this.assertParentPlace(context, id, parent_place_id)
+          : null;
       }
 
       const result = await this.placeRepository.update(
@@ -663,6 +811,20 @@ export class PlaceService {
     if (!place) {
       return false;
     }
+
+    // Re-parent children to the deleted node's own parent BEFORE deleting.
+    // parent_place_id is ON DELETE SET NULL, and nulling an admin child's
+    // parent can collide with a parentless same-name node on
+    // entities_admin_place_uniq — which would abort the cascade and make the
+    // place undeletable. Grafting also preserves the containment chain
+    // (city keeps its country when the region is removed).
+    await this.placeRepository.manager.query(
+      `UPDATE ci.entities
+          SET parent_place_id = $3
+        WHERE parent_place_id = $1
+          AND ($2::uuid IS NULL OR owner_user_id = $2)`,
+      [id, context.userId === SYSTEM_USER ? null : context.userId, place.parentPlaceId ?? null],
+    );
 
     await this.placeRepository.delete({
       id,
