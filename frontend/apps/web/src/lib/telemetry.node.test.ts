@@ -307,3 +307,36 @@ describe('scrubServerOrigin — the address of the user’s own appliance', () =
     expect(scrubbed!.message).toBe('POST https://example.com/api failed');
   });
 });
+
+// A source-order assertion, in the same spirit as the fixture-drift test above.
+// `main.tsx` is a side-effecting entrypoint (it calls `createRoot`), so importing
+// it to observe the ordering is not practical — but the ordering is exactly the
+// kind of thing a tidy-up reorders, and getting it wrong raises no error
+// anywhere. The only symptom is that the mobile app reports nothing, forever.
+describe('main.tsx bootstrap order — the silent one', () => {
+  it('resolves the API origin before starting telemetry', async () => {
+    const [fs, path] = await Promise.all([import('node:fs/promises'), import('node:path')]);
+    const source = await fs.readFile(path.resolve(__dirname, '../main.tsx'), 'utf8');
+
+    // Statement lines only. Both calls are named in the comments that explain
+    // this very ordering, and matching those instead reports the opposite
+    // order — which is precisely how the first draft of this test failed.
+    const statements = source
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && !line.startsWith('//') && !line.startsWith('*'));
+
+    const apiBase = statements.findIndex((line) => line.startsWith('initApiBaseUrl();'));
+    const telemetry = statements.findIndex((line) => line.startsWith('void initTelemetry();'));
+
+    expect(apiBase).toBeGreaterThan(-1);
+    expect(telemetry).toBeGreaterThan(-1);
+
+    // `initTelemetry` builds its consent-probe URL from the API origin, and it
+    // issues that fetch synchronously — before its first `await` yields — so an
+    // origin resolved afterwards arrives too late. Reversed, the probe on native
+    // requests a relative path against `capacitor://localhost`, fails, and
+    // (failing closed) disables reporting for the entire mobile app.
+    expect(apiBase).toBeLessThan(telemetry);
+  });
+});
