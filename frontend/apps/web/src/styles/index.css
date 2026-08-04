@@ -144,6 +144,20 @@
   --warning-foreground: #ffffff;
   --info: #0284c7;
   --info-foreground: #ffffff;
+  /* Activity palette — categorical identity for the schedule surface.
+     Seven hues in a fixed, validated order (see HorizonGrid/activityPalette.ts);
+     --activity-none is the deliberate non-hue for unsorted/local. Absolute
+     rather than derived from the user's theme hue: a class's colour is a
+     learned association and must survive re-picking a theme. */
+  --activity-1: #2a78d6;
+  --activity-2: #eb6834;
+  --activity-3: #1baf7a;
+  --activity-4: #eda100;
+  --activity-5: #e87ba4;
+  --activity-6: #008300;
+  --activity-7: #4a3aa7;
+  --activity-none: oklch(0.554 0.046 257.526);
+
   --gradient-brand: linear-gradient(135deg, #0f717a, #00a9a7);
   --gradient-hero: linear-gradient(135deg, #e8f9f8, #abd4d8);
   --gradient-aurora: radial-gradient(120% 90% at 50% -10%, rgba(80, 150, 150, 0.1), transparent 60%);
@@ -193,6 +207,18 @@
   --warning-foreground: #422006;
   --info: #38bdf8;
   --info-foreground: #082f49;
+  /* Activity palette — the same seven hues re-stepped for the dark surface
+     (not an automatic flip). Validated against the dark card in both the stock
+     teal theme and a custom-hue one. */
+  --activity-1: #3987e5;
+  --activity-2: #d95926;
+  --activity-3: #199e70;
+  --activity-4: #c98500;
+  --activity-5: #d55181;
+  --activity-6: #008300;
+  --activity-7: #9085e9;
+  --activity-none: oklch(0.676 0.019 253.397);
+
   --gradient-aurora: radial-gradient(120% 90% at 50% -10%, rgba(64, 155, 155, 0.28), transparent 60%);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);

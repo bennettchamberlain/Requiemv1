@@ -139,9 +139,9 @@ interface TaskSlateProps {
  */
 export function TaskSlate({ candidates, loading, onDecline, onSnooze, className }: TaskSlateProps) {
   return (
-    <div className={cn('rounded-xl border border-border bg-card p-3 md:p-4', className)}>
+    <div className={cn('flex flex-col rounded-xl border border-border bg-card p-3 md:p-4', className)}>
       <div className="mb-3 flex items-baseline justify-between gap-2">
-        <h3 className="text-sm font-medium text-foreground">The slate</h3>
+        <h3 className="text-sm font-medium text-foreground">Possibilities</h3>
         <span className="text-[11px] text-muted-foreground">
           {candidates.length > 0 ? 'drag onto a day' : 'unplaced'}
         </span>
@@ -157,8 +157,11 @@ export function TaskSlate({ candidates, loading, onDecline, onSnooze, className 
         </p>
       )}
 
+      {/* Grows into whatever height the week grid sets and scrolls inside it,
+          so the two panels stay the same box. The cap keeps a long backlog from
+          driving the pair taller than the grid instead. */}
       {candidates.length > 0 && (
-        <ul className="flex max-h-[28rem] flex-col gap-2 overflow-y-auto pr-1">
+        <ul className="flex max-h-[32rem] min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
           {candidates.map((candidate) => (
             <CandidateCard
               key={candidate.id}

@@ -1,9 +1,22 @@
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 
 import { cn, Tooltip } from '@ci/shadcn';
 
 import type { RhythmDay, ScheduleEvent } from '@/api/useScheduleService';
 import { CANDIDATE_DRAG_TYPE } from '@/components/TaskSlate';
+
+import {
+  type ActivityClass,
+  type ColorMode,
+  CLASS_LABEL,
+  chipBorder,
+  chipFill,
+  classColor,
+  classifyEvent,
+  eventColor,
+  normalizeClass,
+  sourceOf,
+} from './activityPalette';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -230,24 +243,39 @@ function spanForDay(event: ScheduleEvent, dayStart: Date): EventSpan | null {
  * "everything, always". The max asks the question that carries information: how
  * hard does the most-expected behaviour pull on this part of the day.
  */
-function daypartWeights(day: RhythmDay | undefined): number[] {
-  const weight = [0, 0, 0, 0];
+function daypartClaims(day: RhythmDay | undefined): RhythmClaim[] {
+  const claims: RhythmClaim[] = [
+    { weight: 0, l0Class: 'UNKNOWN' },
+    { weight: 0, l0Class: 'UNKNOWN' },
+    { weight: 0, l0Class: 'UNKNOWN' },
+    { weight: 0, l0Class: 'UNKNOWN' },
+  ];
 
   if (!day) {
-    return weight;
+    return claims;
   }
 
   for (const cluster of day.clusters) {
     for (const entry of cluster.daypartProbs) {
       const idx = DAYPART_NAMES.indexOf(entry.label as DaypartName);
+      const weight = cluster.pOccur * entry.probability;
 
-      if (idx >= 0) {
-        weight[idx] = Math.max(weight[idx], cluster.pOccur * entry.probability);
+      // The winning cluster carries the daypart's colour as well as its
+      // weight — the class of the behaviour that pulls hardest is the honest
+      // label for the cell, for the same reason the weight is a max and not a
+      // union.
+      if (idx >= 0 && weight > claims[idx].weight) {
+        claims[idx] = { weight, l0Class: normalizeClass(cluster.l0Class) };
       }
     }
   }
 
-  return weight;
+  return claims;
+}
+
+/** Weights alone — the shape the layout maths and its tests work in. */
+function daypartWeights(day: RhythmDay | undefined): number[] {
+  return daypartClaims(day).map((claim) => claim.weight);
 }
 
 /**
@@ -259,21 +287,29 @@ function daypartWeights(day: RhythmDay | undefined): number[] {
  * actually sits. It also makes the UTC offset fall out for free — each hour asks
  * which UTC daypart it lands in, so no band has to be split at local midnight.
  */
-function rhythmCells(dayStart: Date, lookup: (utcDate: string) => RhythmDay | undefined): number[] {
-  const weightCache = new Map<string, number[]>();
+function rhythmClaims(
+  dayStart: Date,
+  lookup: (utcDate: string) => RhythmDay | undefined,
+): RhythmClaim[] {
+  const claimCache = new Map<string, RhythmClaim[]>();
 
   return Array.from({ length: HOURS_PER_DAY }, (_, hour) => {
     const instant = new Date(dayStart.getTime() + hour * 3_600_000);
     const key = utcDateKey(instant);
 
-    if (!weightCache.has(key)) {
-      weightCache.set(key, daypartWeights(lookup(key)));
+    if (!claimCache.has(key)) {
+      claimCache.set(key, daypartClaims(lookup(key)));
     }
 
     const idx = Math.floor(instant.getUTCHours() / DAYPART_HOURS);
 
-    return weightCache.get(key)?.[idx] ?? 0;
+    return claimCache.get(key)?.[idx] ?? { weight: 0, l0Class: 'UNKNOWN' };
   });
+}
+
+/** Intensities alone — the shape the layout maths and its tests work in. */
+function rhythmCells(dayStart: Date, lookup: (utcDate: string) => RhythmDay | undefined): number[] {
+  return rhythmClaims(dayStart, lookup).map((claim) => claim.weight);
 }
 
 /** Top behaviours for a day, for the row tooltip. */
@@ -283,6 +319,12 @@ function topClusters(day: RhythmDay | undefined, limit = 4): RhythmCluster[] {
 
 type RhythmCluster = RhythmDay['clusters'][number];
 
+/** One rhythm slot: how hard it pulls, and which behaviour is doing the pulling. */
+interface RhythmClaim {
+  weight: number;
+  l0Class: ActivityClass;
+}
+
 // ── Row ───────────────────────────────────────────────────────────────────────
 
 interface DayRowProps {
@@ -291,6 +333,7 @@ interface DayRowProps {
   lookup: (utcDate: string) => RhythmDay | undefined;
   isToday: boolean;
   nowPct: number | null;
+  colorMode: ColorMode;
   onDropCandidate?: (candidateId: string, startTime: Date) => void;
   onMoveEvent?: (eventId: string, startTime: Date) => void;
 }
@@ -301,6 +344,7 @@ function DayRow({
   lookup,
   isToday,
   nowPct,
+  colorMode,
   onDropCandidate,
   onMoveEvent,
 }: DayRowProps) {
@@ -311,9 +355,9 @@ function DayRow({
     .filter((span): span is EventSpan => span !== null)
     .sort((a, b) => a.leftPct - b.leftPct);
 
-  const cells = rhythmCells(dayStart, lookup);
+  const claims = rhythmClaims(dayStart, lookup);
   const clusters = topClusters(lookup(utcDateKey(dayStart)));
-  const hasRhythm = cells.some((c) => c >= RHYTHM_NOISE_FLOOR);
+  const hasRhythm = claims.some((c) => c.weight >= RHYTHM_NOISE_FLOOR);
 
   /**
    * Room to the right of a narrow block before the next one starts. A tick with
@@ -466,6 +510,7 @@ function DayRow({
             const showSpilledLabel = isNarrow && labelRoom(index) > NARROW_SPAN_PCT;
 
             const movable = Boolean(onMoveEvent);
+            const color = eventColor(event, colorMode);
 
             return (
               <Tooltip key={`${event.id}-${dayStart.toDateString()}`}>
@@ -506,15 +551,26 @@ function DayRow({
                         : undefined
                     }
                     className={cn(
-                      'absolute top-0 z-[5] h-7 whitespace-nowrap border bg-background text-[11px] leading-[26px]',
-                      'border-border text-foreground shadow-sm',
-                      movable && 'cursor-grab active:cursor-grabbing hover:border-primary/60',
+                      'absolute top-0 z-[5] h-7 whitespace-nowrap border text-[11px] leading-[26px]',
+                      'text-foreground shadow-sm',
+                      movable && 'cursor-grab active:cursor-grabbing hover:brightness-110',
                       isNarrow ? 'overflow-visible' : 'overflow-hidden px-2',
-                      event.status === 'tentative' && 'border-dashed bg-background/60 text-muted-foreground',
+                      event.status === 'tentative' && 'border-dashed text-muted-foreground',
                       continuesFrom ? 'rounded-l-none border-l-0' : 'rounded-l-md',
                       continuesTo ? 'rounded-r-none border-r-0' : 'rounded-r-md',
                     )}
-                    style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+                    style={{
+                      left: `${leftPct}%`,
+                      width: `${widthPct}%`,
+                      // A chip too narrow to hold text is nothing BUT its
+                      // colour, so it takes the hue at full strength; a wide one
+                      // is tinted glass with the hue held on its edges.
+                      backgroundColor: isNarrow ? color : chipFill(color),
+                      borderColor: chipBorder(color),
+                      // The leading edge is where the eye lands when scanning a
+                      // row, and it survives at any width.
+                      ...(continuesFrom ? {} : { borderLeftWidth: '3px', borderLeftColor: color }),
+                    }}
                   >
                     {isNarrow ? (
                       showSpilledLabel && (
@@ -540,6 +596,17 @@ function DayRow({
                     {event.locationName && <p className="text-[10px] opacity-60">{event.locationName}</p>}
                     {event.status === 'tentative' && <p className="text-[10px] opacity-60">Tentative</p>}
 
+                    {/* Name what the colour is saying, so hue never has to
+                        carry identity on its own. */}
+                    <p className="flex items-center gap-1.5 text-[10px] opacity-60">
+                      <span
+                        aria-hidden
+                        className="h-2 w-2 shrink-0 rounded-[2px]"
+                        style={{ backgroundColor: color }}
+                      />
+                      {colorMode === 'source' ? sourceOf(event) : CLASS_LABEL[classifyEvent(event)]}
+                    </p>
+
                     {/* Say plainly where a move does and does not reach. */}
                     {movable && isExternallyOwned(event) && (
                       <p className="border-t border-current/20 pt-1 text-[10px] opacity-60">
@@ -562,18 +629,31 @@ function DayRow({
                 density. A continuous fill of near-equal weight looks like a
                 slab and says nothing. */}
             <div className="mt-1.5 flex h-2 gap-[2px]" aria-label="Predicted rhythm">
-              {cells.map((intensity, hour) => (
-                <div
-                  key={hour}
-                  className={cn(
-                    'flex-1 rounded-[2px]',
-                    intensity >= RHYTHM_NOISE_FLOOR ? 'bg-primary' : 'bg-foreground/[0.06]',
-                  )}
-                  style={{
-                    opacity: intensity >= RHYTHM_NOISE_FLOOR ? cellOpacity(intensity) : undefined,
-                  }}
-                />
-              ))}
+              {claims.map((claim, hour) => {
+                const lit = claim.weight >= RHYTHM_NOISE_FLOOR;
+
+                return (
+                  <div
+                    key={hour}
+                    className={cn('flex-1 rounded-[2px]', !lit && 'bg-foreground/[0.06]')}
+                    style={
+                      lit
+                        ? {
+                            // In type mode the cell wears the class of the
+                            // behaviour that claims it, which is what turns the
+                            // lane from a density bar into a reading of the day.
+                            // Source mode has nothing to say here — a prediction
+                            // has no calendar — so it stays on the theme colour
+                            // rather than inventing an answer.
+                            backgroundColor:
+                              colorMode === 'type' ? classColor(claim.l0Class) : 'var(--primary)',
+                            opacity: cellOpacity(claim.weight),
+                          }
+                        : undefined
+                    }
+                  />
+                );
+              })}
             </div>
           </Tooltip.Trigger>
           {hasRhythm && (
@@ -587,7 +667,16 @@ function DayRow({
                 ) : (
                   clusters.map((cluster) => (
                     <div key={cluster.clusterId} className="flex items-center justify-between gap-2">
-                      <span className="truncate text-[10px] opacity-75">{cluster.name}</span>
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        {colorMode === 'type' && (
+                          <span
+                            aria-hidden
+                            className="h-2 w-2 shrink-0 rounded-[2px]"
+                            style={{ backgroundColor: classColor(normalizeClass(cluster.l0Class)) }}
+                          />
+                        )}
+                        <span className="truncate text-[10px] opacity-75">{cluster.name}</span>
+                      </span>
                       <span className="shrink-0 text-[10px] tabular-nums opacity-60">
                         {Math.round(cluster.pOccur * 100)}%
                       </span>
@@ -621,6 +710,14 @@ interface HorizonGridProps {
    * the chips stay put.
    */
   onMoveEvent?: (eventId: string, startTime: Date) => void;
+  /** What hue encodes: activity class, or the calendar it came from. */
+  colorMode?: ColorMode;
+  /**
+   * Provenance note, rendered inside the card. It lives here rather than under
+   * the card so the grid and the panel beside it are the same two boxes, ending
+   * on the same line.
+   */
+  footer?: ReactNode;
   className?: string;
 }
 
@@ -640,6 +737,8 @@ export function HorizonGrid({
   rhythm,
   onDropCandidate,
   onMoveEvent,
+  colorMode = 'type',
+  footer,
   className,
 }: HorizonGridProps) {
   const now = new Date();
@@ -649,7 +748,9 @@ export function HorizonGrid({
   const nowPct = ((now.getHours() * 60 + now.getMinutes()) / MINUTES_PER_DAY) * 100;
 
   return (
-    <div className={cn('rounded-xl border border-border bg-card p-3 md:p-4', className)}>
+    <div
+      className={cn('flex flex-col rounded-xl border border-border bg-card p-3 md:p-4', className)}
+    >
       {/* Time axis */}
       <div className="flex items-center gap-3 pb-2">
         <div className="w-10 shrink-0" />
@@ -666,7 +767,9 @@ export function HorizonGrid({
         </div>
       </div>
 
-      <div className="flex flex-col gap-0.5">
+      {/* The rows share the leftover height evenly, so the card fills its
+          column instead of leaving the panel beside it hanging. */}
+      <div className="flex flex-1 flex-col gap-0.5">
         {Array.from({ length: days }, (_, i) => {
           const dayStart = addDays(start, i);
 
@@ -678,12 +781,15 @@ export function HorizonGrid({
               lookup={lookup}
               isToday={sameLocalDay(dayStart, today)}
               nowPct={sameLocalDay(dayStart, today) ? nowPct : null}
+              colorMode={colorMode}
               onDropCandidate={onDropCandidate}
               onMoveEvent={onMoveEvent}
             />
           );
         })}
       </div>
+
+      {footer && <div className="pt-2 text-[10px] text-muted-foreground">{footer}</div>}
     </div>
   );
 }
