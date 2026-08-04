@@ -53,6 +53,12 @@ const SNOOZE_CANDIDATE = gql(`
   }
 `);
 
+const BREAK_DOWN_TASKS = gql(`
+  mutation BreakDownTasks($text: String!) {
+    breakDownTasks(text: $text) { id title }
+  }
+`);
+
 export interface CandidateSource {
   kind: string;
   id: string;
@@ -84,6 +90,12 @@ interface Result {
   accept: (id: string, startTime: Date, endTime?: Date) => Promise<void>;
   decline: (id: string, reason: DeclineReason) => Promise<void>;
   snooze: (id: string, until: Date) => Promise<void>;
+  /**
+   * Split a free-text note into candidates. Resolves with how many landed, so
+   * the caller can say "nothing came back" rather than clearing the box on a
+   * generation that produced nothing.
+   */
+  breakDown: (text: string) => Promise<number>;
 }
 
 /**
@@ -107,6 +119,7 @@ export function useScheduleCandidates(from: Date, to: Date, onPlaced?: () => voi
   const [acceptCandidate] = useMutation(ACCEPT_CANDIDATE);
   const [declineCandidate] = useMutation(DECLINE_CANDIDATE);
   const [snoozeCandidate] = useMutation(SNOOZE_CANDIDATE);
+  const [breakDownTasks] = useMutation(BREAK_DOWN_TASKS);
 
   // Once per mount, not per render or per week-navigation: the projection is
   // cheap but it is still a write, and it does not depend on the window.
@@ -153,11 +166,22 @@ export function useScheduleCandidates(from: Date, to: Date, onPlaced?: () => voi
     [snoozeCandidate, refetch],
   );
 
+  const breakDown = useCallback(
+    async (text: string) => {
+      const result = await breakDownTasks({ variables: { text } });
+      await refetch();
+
+      return (result.data as { breakDownTasks?: unknown[] } | null)?.breakDownTasks?.length ?? 0;
+    },
+    [breakDownTasks, refetch],
+  );
+
   return {
     candidates: data?.scheduleCandidates ?? [],
     loading,
     accept,
     decline,
     snooze,
+    breakDown,
   };
 }

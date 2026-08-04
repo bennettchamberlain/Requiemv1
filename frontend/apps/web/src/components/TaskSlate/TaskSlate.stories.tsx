@@ -97,3 +97,26 @@ export const Empty: Story = {
 export const Loading: Story = {
   args: { candidates: [], loading: true, onDecline: () => {}, onSnooze: () => {} },
 };
+
+/** Type a note, watch it split. The delay stands in for the model round-trip. */
+export const WithBrainDump: Story = {
+  args: {
+    candidates: CANDIDATES.slice(0, 1),
+    loading: false,
+    onDecline: () => {},
+    onSnooze: () => {},
+    onBreakDown: async (text: string) =>
+      new Promise((resolve) => setTimeout(() => resolve(text.split(/[,;\n]/).filter(Boolean).length), 900)),
+  },
+};
+
+/** The generation that returns nothing must not eat what you typed. */
+export const BrainDumpFindsNothing: Story = {
+  args: {
+    candidates: [],
+    loading: false,
+    onDecline: () => {},
+    onSnooze: () => {},
+    onBreakDown: async () => new Promise((resolve) => setTimeout(() => resolve(0), 700)),
+  },
+};

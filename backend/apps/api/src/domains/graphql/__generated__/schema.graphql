@@ -846,6 +846,11 @@ type MessageType implements Node {
 type Mutation {
   """Accept a candidate at a chosen time, minting a real event"""
   acceptCandidate(endTime: DateTime, id: ID!, startTime: DateTime!): EventType!
+
+  """
+  Break free text into schedule candidates. Adds to the slate; schedules nothing.
+  """
+  breakDownTasks(text: String!): [ScheduleCandidateType!]!
   bulkIngestGraph(input: BulkGraphInput!): BulkGraphPayload!
   bulkIngestItemRelationships(input: [ItemRelationshipInput!]!): BulkItemRelationshipResult!
   createAnswer(input: CreateAnswerInput!): AnswerType!

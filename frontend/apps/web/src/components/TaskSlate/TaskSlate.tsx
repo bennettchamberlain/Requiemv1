@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import { Button, cn, Tooltip } from '@ci/shadcn';
-import { Clock, GripVertical, Lightbulb, ListTodo, X } from '@ci/shadcn/icons';
+import { Clock, GripVertical, Lightbulb, ListTodo, Loader2, Sparkles, X } from '@ci/shadcn/icons';
 
 import type { DeclineReason, ScheduleCandidate } from '@/api/useScheduleCandidates';
 
@@ -123,11 +123,95 @@ function CandidateCard({ candidate, onDecline, onSnooze }: CardProps) {
   );
 }
 
+/**
+ * Free-text in, cards out.
+ *
+ * Notes go in the way you'd say them ("dentist, prep Thursday's deck, call Mum
+ * back") and come back as separate draggable cards. It is a way to GET things
+ * onto the slate, not onto the calendar — the split is the only thing being
+ * automated, and placing a card is still a drag.
+ *
+ * The box keeps its text until something actually lands, so a failed or empty
+ * generation never eats what you typed.
+ */
+function BrainDump({ onSubmit }: { onSubmit: (text: string) => Promise<number> }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  const submit = useCallback(async () => {
+    const trimmed = text.trim();
+
+    if (trimmed.length === 0 || busy) {
+      return;
+    }
+
+    setBusy(true);
+    setNote(null);
+
+    try {
+      const added = await onSubmit(trimmed);
+
+      if (added > 0) {
+        setText('');
+        setNote(`Added ${added} ${added === 1 ? 'card' : 'cards'}.`);
+      } else {
+        setNote('Nothing came back — try naming the tasks more plainly.');
+      }
+    } catch {
+      setNote('Could not break that down. Try again shortly.');
+    } finally {
+      setBusy(false);
+    }
+  }, [text, busy, onSubmit]);
+
+  return (
+    <div className="mb-3">
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          // Enter submits, Shift+Enter breaks the line: a brain dump is usually
+          // one line, and reaching for a button breaks the flow of typing.
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            void submit();
+          }
+        }}
+        rows={2}
+        disabled={busy}
+        aria-label="What do you need to do?"
+        placeholder="What do you need to do? Type it however it comes out…"
+        className={cn(
+          'w-full resize-y rounded-lg border border-border bg-background px-2.5 py-2',
+          'text-[13px] leading-snug text-foreground placeholder:text-muted-foreground/70',
+          'focus:border-primary/60 focus:outline-none disabled:opacity-60',
+        )}
+      />
+
+      <div className="mt-1.5 flex items-center gap-2">
+        <Button size="sm" className="h-7 text-xs" disabled={busy || text.trim().length === 0} onClick={() => void submit()}>
+          {busy ? (
+            <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" strokeWidth={1.5} />
+          ) : (
+            <Sparkles className="mr-1 h-3.5 w-3.5" strokeWidth={1.5} />
+          )}
+          {busy ? 'Splitting…' : 'Break into tasks'}
+        </Button>
+
+        {note && <span className="text-[11px] text-muted-foreground">{note}</span>}
+      </div>
+    </div>
+  );
+}
+
 interface TaskSlateProps {
   candidates: ScheduleCandidate[];
   loading: boolean;
   onDecline: (id: string, reason: DeclineReason) => void;
   onSnooze: (id: string, until: Date) => void;
+  /** Omit to hide the brain-dump box (the read-only stories do). */
+  onBreakDown?: (text: string) => Promise<number>;
   className?: string;
 }
 
@@ -137,7 +221,14 @@ interface TaskSlateProps {
  * Everything here is draggable onto a day; that drag is the only way something
  * becomes committed time. Nothing schedules itself.
  */
-export function TaskSlate({ candidates, loading, onDecline, onSnooze, className }: TaskSlateProps) {
+export function TaskSlate({
+  candidates,
+  loading,
+  onDecline,
+  onSnooze,
+  onBreakDown,
+  className,
+}: TaskSlateProps) {
   return (
     <div className={cn('flex flex-col rounded-xl border border-border bg-card p-3 md:p-4', className)}>
       <div className="mb-3 flex items-baseline justify-between gap-2">
@@ -147,13 +238,16 @@ export function TaskSlate({ candidates, loading, onDecline, onSnooze, className 
         </span>
       </div>
 
+      {onBreakDown && <BrainDump onSubmit={onBreakDown} />}
+
       {loading && candidates.length === 0 && (
         <p className="text-[12px] text-muted-foreground">Gathering suggestions…</p>
       )}
 
       {!loading && candidates.length === 0 && (
         <p className="text-[12px] leading-relaxed text-muted-foreground">
-          Nothing waiting. Suggestions appear here as your feed and insights turn up things worth doing.
+          Nothing waiting yet. Type what you need to do above, or wait for your feed and insights to turn
+          something up.
         </p>
       )}
 
