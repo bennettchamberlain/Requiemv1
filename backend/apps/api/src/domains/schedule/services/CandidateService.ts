@@ -8,10 +8,32 @@ import { LoggerService } from '@ci/common/logging';
 import { type Event, EventService } from '@ci/domains/memory';
 
 import { EventCandidateEntity, type EventCandidate } from '../entities/EventCandidateEntity';
-import type { CreateCandidateDto, DeclineReason } from '../types';
+import { type CreateCandidateDto, type DeclineReason, USER_AUTHORED_GENERATOR_PREFIX } from '../types';
 
 /** Reasons that retire a candidate permanently rather than just for now. */
 const PERMANENT_DECLINES: ReadonlySet<DeclineReason> = new Set(['never']);
+
+/**
+ * Something the user typed themselves leads the slate — they asked for it, so
+ * it should not queue behind a week of machine suggestions.
+ *
+ * Done here rather than as a CASE in the ORDER BY for two reasons. The query
+ * has no LIMIT and already materialises every matching row, so this is exactly
+ * equivalent to sorting in SQL. And it has to hold once a scorer starts
+ * populating `fit_score`: hand-written tasks have none, and `NULLS LAST` would
+ * otherwise push them to the very back the moment scoring lands.
+ *
+ * Order WITHIN each group is whatever the query returned, preserved by
+ * concatenating two filters rather than sorting.
+ */
+function partitionUserAuthoredFirst(rows: EventCandidateEntity[]): EventCandidateEntity[] {
+  const isUserAuthored = (row: EventCandidateEntity): boolean =>
+    row.generator?.startsWith(USER_AUTHORED_GENERATOR_PREFIX) === true;
+
+  const authored = rows.filter(isUserAuthored);
+
+  return authored.length === 0 ? rows : [...authored, ...rows.filter((row) => !isUserAuthored(row))];
+}
 
 @Injectable()
 export class CandidateService {
@@ -42,7 +64,14 @@ export class CandidateService {
         "(candidate.status = 'open' OR (candidate.status = 'snoozed' AND candidate.snoozed_until <= NOW()))",
       )
       .orderBy('candidate.fit_score', 'DESC', 'NULLS LAST')
-      .addOrderBy('candidate.candidate_id', 'ASC');
+      // Newest first, so a task just added lands at the front of the rail
+      // instead of behind everything already sitting there. Was ASC, which is
+      // what made a new card append to the back.
+      .addOrderBy('candidate.created_at', 'DESC')
+      // Deterministic final tiebreak: two rows can share a created_at, and the
+      // order must not shuffle between page loads. candidate_id is uuidv7, so
+      // DESC keeps the newest-first reading.
+      .addOrderBy('candidate.candidate_id', 'DESC');
 
     if (context.userId !== SYSTEM_USER) {
       query.andWhere('candidate.user_id = :userId', { userId: context.userId });
@@ -50,7 +79,7 @@ export class CandidateService {
 
     const result = await query.getMany();
 
-    return result.map((entity) => EventCandidateEntity.toEgressType(entity));
+    return partitionUserAuthoredFirst(result).map((entity) => EventCandidateEntity.toEgressType(entity));
   }
 
   async findById(context: ServiceContext, id: string): Promise<EventCandidate | null> {

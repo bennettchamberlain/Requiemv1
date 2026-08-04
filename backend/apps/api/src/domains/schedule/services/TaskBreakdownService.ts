@@ -5,7 +5,7 @@ import { type RequestContext, type UserServiceContext } from '@ci/common/context
 import { LoggerService } from '@ci/common/logging';
 import { OllamaService, PROMPT_MODEL } from '@ci/domains/llm';
 
-import type { CreateCandidateDto } from '../types';
+import { type CreateCandidateDto, USER_AUTHORED_GENERATOR_PREFIX } from '../types';
 
 import { CandidateService } from './CandidateService';
 
@@ -213,7 +213,7 @@ export class TaskBreakdownService {
       duration_minutes: task.duration_minutes ?? DEFAULT_DURATION_MINUTES,
       l0_class: task.l0_class,
       dedupe_key: `braindump:${batch}:${index}`,
-      generator: 'braindump/llm',
+      generator: `${USER_AUTHORED_GENERATOR_PREFIX}llm`,
       // Not a prediction — the user asked for these. High, but not 1.0: the
       // split itself is the model's guess even when the content is not.
       confidence: 0.9,

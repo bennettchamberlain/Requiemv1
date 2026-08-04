@@ -136,6 +136,40 @@ describe('CandidateService', () => {
 
       expect(qb.calls.orderBy?.[0]).toEqual(['candidate.fit_score', 'DESC', 'NULLS LAST']);
     });
+
+    it('breaks ties newest-first so a task just added lands at the front', async () => {
+      await setup();
+
+      await service.findInRange(ctx, from, to);
+
+      expect(qb.calls.addOrderBy?.[0]).toEqual(['candidate.created_at', 'DESC']);
+      // Deterministic final tiebreak — two rows can share a created_at.
+      expect(qb.calls.addOrderBy?.[1]).toEqual(['candidate.candidate_id', 'DESC']);
+    });
+
+    it('puts what the user typed ahead of what the machine proposed', async () => {
+      await setup([
+        baseCandidate({ id: 'sugg-1', generator: 'adapter/action' }),
+        baseCandidate({ id: 'typed-1', generator: 'braindump/llm' }),
+        baseCandidate({ id: 'sugg-2', generator: 'adapter/insight' }),
+        baseCandidate({ id: 'typed-2', generator: 'braindump/llm' }),
+      ]);
+
+      const found = await service.findInRange(ctx, from, to);
+
+      expect(found.map((c) => c.id)).toEqual(['typed-1', 'typed-2', 'sugg-1', 'sugg-2']);
+    });
+
+    it('leaves the query order untouched when nothing was user-authored', async () => {
+      await setup([
+        baseCandidate({ id: 'sugg-1', generator: 'adapter/action' }),
+        baseCandidate({ id: 'sugg-2', generator: null }),
+      ]);
+
+      const found = await service.findInRange(ctx, from, to);
+
+      expect(found.map((c) => c.id)).toEqual(['sugg-1', 'sugg-2']);
+    });
   });
 
   describe('upsert', () => {

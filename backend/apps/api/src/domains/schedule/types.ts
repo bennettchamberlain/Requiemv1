@@ -9,6 +9,19 @@ import type { RhythmKind, RhythmSource, RhythmStrength } from './entities/Rhythm
  */
 export type DeclineReason = 'not_now' | 'wrong_time' | 'not_like_this' | 'never';
 
+/**
+ * Generator prefix for anything the user typed themselves.
+ *
+ * Deliberately NOT under `adapter/`: SuggestionSyncService retires stale
+ * `adapter/` rows whose source action was dismissed, and a hand-written task
+ * has no upstream source to go stale.
+ *
+ * Lives here rather than beside the service that writes it because
+ * CandidateService sorts on it and TaskBreakdownService stamps it — putting it
+ * on either one would make the two import each other.
+ */
+export const USER_AUTHORED_GENERATOR_PREFIX = 'braindump/';
+
 export interface CreateCandidateDto {
   title: string;
   description?: string;
