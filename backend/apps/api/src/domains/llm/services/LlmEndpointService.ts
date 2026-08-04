@@ -1,14 +1,22 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 
 import { Injectable, OnModuleInit } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 
+import {
+  containerSharedConfigPath,
+  readSharedConfig,
+  sharedConfigPath,
+  syncAppEnvLlmVars,
+  writeSharedConfig,
+  type LlmBackendKind,
+  type PersistedLlmEndpointSettings,
+} from './llmEndpointShared';
 import { OpenAiCompatChatDriver } from './OpenAiCompatChatDriver';
 
-export type LlmBackendKind = 'ollama' | 'openai_compatible';
+export type { LlmBackendKind };
 
 /** User-facing LLM endpoint settings (backend kind + port). */
 export interface LlmEndpointSettings {
@@ -22,10 +30,6 @@ export interface LlmEndpointView extends LlmEndpointSettings {
   hostGateway: string;
   /** True when Hub/env injected LLM_* and settings cannot override. */
   locked: boolean;
-}
-
-interface PersistedLlmEndpointSettings extends LlmEndpointSettings {
-  hostGateway?: string;
 }
 
 interface ResolvedLlmEndpoint {
@@ -177,8 +181,9 @@ export class LlmEndpointService implements OnModuleInit {
     }
 
     const hostGateway = this.resolved.hostGateway;
+    const persisted = { ...settings, hostGateway };
     this.apply(buildResolved(settings, hostGateway, false));
-    this.persist({ ...settings, hostGateway });
+    this.persist(persisted);
 
     return this.getView();
   }
@@ -194,15 +199,15 @@ export class LlmEndpointService implements OnModuleInit {
     }
 
     if (fromFile) {
-      this.apply(buildResolved(fromFile.settings, fromFile.hostGateway, false));
+      this.apply(buildResolved(fromFile.settings, fromFile.hostGateway, false), { syncAppEnv: false });
 
       return;
     }
 
-    this.apply(buildResolved(fromEnv.settings, fromEnv.hostGateway, false));
+    this.apply(buildResolved(fromEnv.settings, fromEnv.hostGateway, false), { syncAppEnv: false });
   }
 
-  private apply(resolved: ResolvedLlmEndpoint): void {
+  private apply(resolved: ResolvedLlmEndpoint, options: { syncAppEnv?: boolean } = {}): void {
     this.resolved = resolved;
     this.openAiDriver =
       resolved.apiBase && isForeignApiBase(resolved.apiBase, resolved.ollamaHost)
@@ -216,28 +221,40 @@ export class LlmEndpointService implements OnModuleInit {
       apiBase: resolved.apiBase ?? null,
       locked: resolved.locked,
     });
+
+    if (options.syncAppEnv !== false && !resolved.locked) {
+      try {
+        syncAppEnvLlmVars({
+          backend: resolved.settings.backend,
+          hostGateway: resolved.hostGateway,
+          port: resolved.settings.port,
+          apiKey: resolved.apiKey,
+        });
+      } catch (error) {
+        this.logger.warn('Failed to sync LLM vars to app.env', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
   }
 
-  private configPath(): string {
-    return process.env.LLM_ENDPOINT_CONFIG_PATH?.trim() || join(process.cwd(), '.llm-endpoint.json');
+  private configPaths(): string[] {
+    const paths = [containerSharedConfigPath(), join(process.cwd(), '.llm-endpoint.json')];
+    const hostShared = sharedConfigPath();
+
+    if (hostShared) {
+      paths.unshift(hostShared);
+    }
+
+    return [...new Set(paths)];
   }
 
   private readPersisted(): { settings: LlmEndpointSettings; hostGateway: string } | null {
-    const path = this.configPath();
+    for (const path of this.configPaths()) {
+      const parsed = readSharedConfig(path);
 
-    if (!existsSync(path)) {
-      return null;
-    }
-
-    try {
-      const parsed = JSON.parse(readFileSync(path, 'utf8')) as PersistedLlmEndpointSettings;
-
-      if (parsed.backend !== 'ollama' && parsed.backend !== 'openai_compatible') {
-        return null;
-      }
-
-      if (!Number.isFinite(parsed.port) || parsed.port <= 0 || parsed.port > 65535) {
-        return null;
+      if (!parsed) {
+        continue;
       }
 
       return {
@@ -248,27 +265,23 @@ export class LlmEndpointService implements OnModuleInit {
         },
         hostGateway: parsed.hostGateway?.trim() || inferHostGateway(),
       };
-    } catch (error) {
-      this.logger.warn('Failed to read persisted LLM endpoint settings', {
-        path,
-        error: error instanceof Error ? error.message : String(error),
-      });
-
-      return null;
     }
+
+    return null;
   }
 
   private persist(settings: PersistedLlmEndpointSettings): void {
-    const path = this.configPath();
+    const paths = this.configPaths();
 
-    try {
-      mkdirSync(dirname(path), { recursive: true });
-      writeFileSync(path, JSON.stringify(settings, null, 2));
-    } catch (error) {
-      this.logger.warn('Failed to persist LLM endpoint settings', {
-        path,
-        error: error instanceof Error ? error.message : String(error),
-      });
+    for (const path of paths) {
+      try {
+        writeSharedConfig(path, settings);
+      } catch (error) {
+        this.logger.warn('Failed to persist LLM endpoint settings', {
+          path,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   }
 }
