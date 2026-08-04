@@ -2,6 +2,16 @@ import config from '@ci/configuration';
 
 import { LlmEndpointService } from '../LlmEndpointService';
 
+jest.mock('../llmEndpointShared', () => {
+  const actual = jest.requireActual('../llmEndpointShared');
+
+  return {
+    ...actual,
+    readSharedConfig: jest.fn(() => null),
+    writeSharedConfig: jest.fn(),
+  };
+});
+
 jest.mock('@ci/configuration', () => ({
   __esModule: true,
   default: {
@@ -19,6 +29,11 @@ describe('LlmEndpointService', () => {
     error: jest.fn(),
     debug: jest.fn(),
   };
+
+  beforeEach(() => {
+    (config as { llm: { apiBase?: string; apiKey: string } }).llm.apiBase = undefined;
+    (config as { llm: { apiBase?: string; apiKey: string } }).llm.apiKey = 'ollama';
+  });
 
   it('defaults to Ollama on the inferred host gateway', () => {
     const service = new LlmEndpointService(logger as never);
