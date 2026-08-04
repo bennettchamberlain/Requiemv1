@@ -3,7 +3,7 @@ import { Fragment } from 'react';
 import { cn, Tooltip } from '@ci/shadcn';
 
 import type { DueForecast, DueItem, WeekForecast, WeekForecastCluster } from '@/api/useWeekAheadService';
-import { L0_BG } from '@/components/ForecastStrip/ForecastStrip';
+import { l0Background } from '@/components/ForecastStrip/ForecastStrip';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -112,13 +112,16 @@ function GridCell({
     <Tooltip>
       <Tooltip.Trigger asChild>
         <div
+          data-l0={row.l0Class}
           className={cn(
             'h-6 rounded-sm cursor-default transition-transform duration-100 hover:scale-110 hover:z-10 relative',
-            L0_BG[row.l0Class] ?? 'bg-gray-400',
             // A booked event is known, not predicted — ring it and keep it solid.
             scheduled && 'ring-2 ring-inset ring-foreground/60',
           )}
-          style={{ opacity: scheduled ? Math.max(0.85, prob) : Math.max(MIN_CELL_OPACITY, prob) }}
+          style={{
+            backgroundColor: l0Background(row.l0Class),
+            opacity: scheduled ? Math.max(0.85, prob) : Math.max(MIN_CELL_OPACITY, prob),
+          }}
         />
       </Tooltip.Trigger>
       <Tooltip.Content side="top" sideOffset={4}>
@@ -144,7 +147,11 @@ function DueRow({ item }: { item: DueItem }) {
         item.overdue && 'bg-destructive/10 text-destructive',
       )}
     >
-      <div className={cn('w-2 h-2 shrink-0 rounded-sm', L0_BG[item.l0Class] ?? 'bg-gray-400')} />
+      <div
+        data-l0={item.l0Class}
+        className="w-2 h-2 shrink-0 rounded-sm"
+        style={{ backgroundColor: l0Background(item.l0Class) }}
+      />
       <span className={cn('flex items-center gap-1 truncate text-xs', item.overdue && 'font-medium')}>
         <span className="truncate">{item.name}</span>
         {scheduled && (

@@ -5,7 +5,7 @@ import type { Meta, StoryObj } from '@storybook/react';
 import type { ScheduleCandidate } from '@/api/useScheduleCandidates';
 import type { RhythmDay, ScheduleEvent } from '@/api/useScheduleService';
 import { HorizonGrid } from '@/components/HorizonGrid';
-import type { ColorMode } from '@/components/HorizonGrid/activityPalette';
+import type { ColorMode } from '@/lib/activityPalette';
 
 import { TaskSlate } from './TaskSlate';
 

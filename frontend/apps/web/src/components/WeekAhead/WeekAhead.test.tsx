@@ -82,8 +82,10 @@ describe('WeekAhead', () => {
     expect(screen.getByText('Deep Focus')).toBeInTheDocument();
     expect(screen.getByText('Gym Session')).toBeInTheDocument();
 
-    // Cells carry the L0 class colour and probability as opacity
-    const workCells = container.querySelectorAll('.bg-blue-500');
+    // Cells carry the L0 class and probability as opacity. Selected by the class
+    // itself rather than by the colour it happens to render as — the palette is
+    // shared with the schedule surface and free to be re-stepped.
+    const workCells = container.querySelectorAll('[data-l0="WORK"]');
     expect(workCells).toHaveLength(7);
     expect((workCells[0] as HTMLElement).style.opacity).toBe('0.9');
     expect((workCells[1] as HTMLElement).style.opacity).toBe('0.1');
@@ -98,7 +100,7 @@ describe('WeekAhead', () => {
     // 8 label cells + 8×7 grid cells; the lowest-probability clusters are dropped
     expect(screen.queryByText('Cluster 11')).toBeInTheDocument();
     expect(screen.queryByText('Cluster 0')).not.toBeInTheDocument();
-    expect(container.querySelectorAll('[class*="bg-"]').length).toBeGreaterThanOrEqual(56);
+    expect(container.querySelectorAll('[data-l0]')).toHaveLength(56);
   });
 
   it('shows overdue items with the deviation message and upcoming items with a due window', () => {

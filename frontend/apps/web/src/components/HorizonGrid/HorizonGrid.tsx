@@ -4,7 +4,6 @@ import { cn, Tooltip } from '@ci/shadcn';
 
 import type { RhythmDay, ScheduleEvent } from '@/api/useScheduleService';
 import { CANDIDATE_DRAG_TYPE } from '@/components/TaskSlate';
-
 import {
   type ActivityClass,
   type ColorMode,
@@ -16,7 +15,7 @@ import {
   eventColor,
   normalizeClass,
   sourceOf,
-} from './activityPalette';
+} from '@/lib/activityPalette';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 

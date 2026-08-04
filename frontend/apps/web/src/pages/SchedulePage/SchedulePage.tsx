@@ -5,10 +5,15 @@ import { Breadcrumb, Button, cn } from '@ci/shadcn';
 import { CalendarRange, ChevronLeft, ChevronRight } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
+import { useWeekAheadService } from '@/api';
 import { useRescheduleEvent } from '@/api/useRescheduleEvent';
 import { useScheduleCandidates } from '@/api/useScheduleCandidates';
 import { type RhythmDay, type ScheduleEvent, useScheduleService } from '@/api/useScheduleService';
+import { useFeatures } from '@/common/feature';
 import { HorizonGrid } from '@/components/HorizonGrid';
+import { PageContent } from '@/components/layout';
+import { TaskSlate } from '@/components/TaskSlate';
+import { WeekAhead } from '@/components/WeekAhead';
 import {
   type ActivityClass,
   type ColorMode,
@@ -19,9 +24,7 @@ import {
   normalizeClass,
   sourceColor,
   sourceOf,
-} from '@/components/HorizonGrid/activityPalette';
-import { PageContent } from '@/components/layout';
-import { TaskSlate } from '@/components/TaskSlate';
+} from '@/lib/activityPalette';
 
 const DAYS_IN_VIEW = 7;
 
@@ -117,6 +120,13 @@ export function SchedulePage() {
   }, [weekOffset]);
 
   const { events, rhythm, generatedAt, loading, error, refetch } = useScheduleService(start, end);
+
+  // The week-ahead panel is HBPE's own forecast, so it follows the same flag the
+  // feed gated it behind. It reports a fixed forward horizon rather than the
+  // window the arrows move, so it does not re-read as you page through weeks.
+  const { isFeatureEnabled } = useFeatures();
+  const hbpeEnabled = isFeatureEnabled('hbpe');
+  const { week: weekForecast, due: dueForecast } = useWeekAheadService();
 
   // Placing a candidate mints an event, so the committed lane has to re-read.
   const {
@@ -269,6 +279,22 @@ export function SchedulePage() {
               />
             </div>
           </>
+        )}
+
+        {/* Below the week, at a coarser grain: which of your own behaviours
+            recur on which days, and what is coming due. It sat on the feed,
+            where it was a forecast among unrelated cards; here it is the same
+            seven days the grid above shows, read by behaviour instead of by
+            clock — and it shares the grid's colour vocabulary, so a class means
+            the same thing in both. */}
+        {hbpeEnabled && weekForecast && (
+          <div className="rounded-xl border border-border bg-card p-3 md:p-4">
+            <div className="mb-3 flex items-baseline justify-between gap-2">
+              <h3 className="text-sm font-medium text-foreground">Week ahead</h3>
+              <span className="text-[11px] text-muted-foreground">what usually recurs</span>
+            </div>
+            <WeekAhead week={weekForecast} due={dueForecast} />
+          </div>
         )}
       </PageContent>
     </>

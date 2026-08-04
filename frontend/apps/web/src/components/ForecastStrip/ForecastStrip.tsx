@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 
 import type { ForecastBucket, ProbabilityEntry } from '@/api/useForecastService';
 import { useFeatures } from '@/common/feature';
+import { classColor, normalizeClass } from '@/lib/activityPalette';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -12,16 +13,21 @@ const MINUTES_PER_DAY = 24 * 60;
 
 // ── Colour mapping ────────────────────────────────────────────────────────────
 
-export const L0_BG: Record<string, string> = {
-  WORK: 'bg-blue-500',
-  EXERCISE: 'bg-green-500',
-  SOCIAL: 'bg-orange-500',
-  ERRAND: 'bg-yellow-500',
-  LEISURE: 'bg-purple-500',
-  TRANSIT: 'bg-teal-500',
-  SLEEP: 'bg-indigo-500',
-  UNKNOWN: 'bg-gray-400',
-};
+/**
+ * The L0 class colour, as a CSS value for `background-color`.
+ *
+ * Delegates to the shared activity palette rather than carrying its own map:
+ * this strip, the week-ahead grid, and the schedule surface all render the same
+ * eight classes, and they now sit on the same page — two vocabularies would have
+ * meant WORK being one colour in one panel and another six inches away.
+ *
+ * (The map this replaced was raw Tailwind 500s: green/teal for EXERCISE/TRANSIT
+ * and purple/indigo for LEISURE/SLEEP were near-indistinguishable pairs, and
+ * none of it was checked for colourblind separation. The shared palette is.)
+ */
+export function l0Background(l0Class: string | null | undefined): string {
+  return classColor(normalizeClass(l0Class));
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -140,8 +146,11 @@ function SlotTooltip({ bucket, localMin }: { bucket: ForecastBucket; localMin: n
             <span className="w-14 shrink-0 text-right text-[10px] opacity-75">{label}</span>
             <div className="flex-1 h-1.5 rounded-full bg-current/20 overflow-hidden">
               <div
-                className={cn('h-full rounded-full', L0_BG[label] ?? 'bg-gray-400')}
-                style={{ width: `${Math.round(probability * 100)}%` }}
+                className="h-full rounded-full"
+                style={{
+                  width: `${Math.round(probability * 100)}%`,
+                  backgroundColor: l0Background(label),
+                }}
               />
             </div>
             <span className="w-7 shrink-0 text-[10px] opacity-75 tabular-nums">
@@ -189,8 +198,6 @@ function ForecastSlot({
   const isReady = systemStatus === 'READY';
   const dominant = dominantL0(bucket.l0Probs);
 
-  // Standard styling for READY state
-  const color = isReady ? (L0_BG[dominant] ?? 'bg-gray-400') : 'bg-primary/60';
   const isEmpty = bucket.l0Probs.length === 0;
   const targetOpacity = isEmpty ? 0.08 : Math.max(0.2, Math.min(1, bucket.q50));
 
@@ -201,12 +208,15 @@ function ForecastSlot({
           className={cn(
             'flex-1 h-8 cursor-default transition-all duration-100',
             isReady && 'hover:scale-y-[1.3] hover:z-10 relative',
-            color,
+            // Before the engine is READY there is no class to name, so the strip
+            // stays on the theme colour rather than picking a hue at random.
+            !isReady && 'bg-primary/60',
             isFirst && 'rounded-l-full',
             isLast && 'rounded-r-full',
           )}
           style={{
             opacity: isReady ? targetOpacity : undefined,
+            backgroundColor: isReady ? l0Background(dominant) : undefined,
           }}
         />
       </Tooltip.Trigger>
@@ -228,7 +238,7 @@ function Legend() {
     <div className="flex flex-wrap gap-x-3 gap-y-1">
       {LEGEND_CLASSES.map((cls) => (
         <div key={cls} className="flex items-center gap-1">
-          <div className={cn('w-2 h-2 rounded-sm', L0_BG[cls])} />
+          <div className="w-2 h-2 rounded-sm" style={{ backgroundColor: l0Background(cls) }} />
           <span className="text-[10px] text-muted-foreground">{cls}</span>
         </div>
       ))}

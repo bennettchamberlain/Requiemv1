@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ScheduleEvent } from '@/api/useScheduleService';
-
 import {
   ACTIVITY_CLASSES,
   classifyEvent,
@@ -10,7 +9,7 @@ import {
   sourceColor,
   sourceOf,
   LOCAL_SOURCE,
-} from './activityPalette';
+} from '@/lib/activityPalette';
 
 function event(overrides: Partial<ScheduleEvent> = {}): ScheduleEvent {
   return {
