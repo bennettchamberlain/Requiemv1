@@ -149,4 +149,18 @@ describeWithDb('TaskService — tenant isolation (integration)', () => {
   it('rejects an out-of-range priority at the database, not just in the app', async () => {
     await expect(service.create(alice, { title: 'Bad', priority: 99 })).rejects.toThrow();
   });
+
+  it("will not let one user parent a task onto another user's task", async () => {
+    const bobsTask = await service.create(bob, { title: "Bob's task" });
+
+    await expect(
+      service.create(alice, { title: "Alice's subtask", parentId: bobsTask!.id }),
+    ).rejects.toThrow();
+
+    const aliceTask = await service.create(alice, { title: "Alice's other task" });
+
+    await expect(
+      service.update(alice, aliceTask!.id, { parentId: bobsTask!.id }),
+    ).rejects.toThrow();
+  });
 });
