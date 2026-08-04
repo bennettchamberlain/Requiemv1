@@ -33,6 +33,7 @@
   --color-destructive: var(--destructive);
   --color-border: var(--border);
   --color-input: var(--input);
+  --color-input-fill: var(--input-fill);
   --color-ring: var(--ring);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
@@ -73,6 +74,10 @@
 }
 
 :root {
+  /* Browser-drawn control chrome (time/date spinners and their picker popups, the
+     calendar indicator glyph, select menus) follows color-scheme, not our tokens.
+     Without this, dark mode still got the light-scheme black clock icon. */
+  color-scheme: light;
   --radius: 0.625rem;
   /* Companion phthalo CTA — saturated green falling into a black-green finish. */
   --ci-phthalo-green: #0a6358;
@@ -100,6 +105,11 @@
   --destructive: oklch(0.621 0.22 26.968);
   --border: oklch(0.929 0.013 255.508);
   --input: oklch(0.929 0.013 255.508);
+  /* --input is the input *border* token, so on dark themes it is a light colour and
+     is unusable as an opaque fill (it lands ~1.2:1 against --foreground). --input-fill
+     is the fill counterpart: identical here, dimmed to a tint under .dark. Derived via
+     var() so ThemePicker's generated/overridden palettes carry through automatically. */
+  --input-fill: var(--input);
   --ring: oklch(0.704 0.04 256.993);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
@@ -154,6 +164,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   /* Dark ground: greener teal between Portal cursor glow (#066c80) and phthalo CTA (#0a6358). */
   --ci-phthalo-green: #58ebbf;
   --ci-phthalo-green-deep: #0f717a;
@@ -180,6 +191,11 @@
   --destructive: oklch(0.696 0.157 21.99);
   --border: oklch(0.477 0.062 204.345);
   --input: oklch(0.636 0.051 224.103);
+  /* Pre-rendered equivalent of the color-mix upgrade below. Stated statically here
+     rather than as a same-block fallback declaration because the minifier drops a
+     duplicated property and then derives its own fallback — which resolves to
+     `var(--input)`, the light border colour this token exists to avoid. */
+  --input-fill: oklch(0.299 0.039 194.4);
   --ring: oklch(0.85 0.141 169.678);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
@@ -206,6 +222,15 @@
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
   --shadow-lg: 0 12px 30px rgba(0, 0, 0, 0.45);
+}
+
+/* Upgrade the dark input fill to a live mix so ThemePicker's generated palettes and
+   per-token overrides carry through instead of being pinned to the stock teal. Kept
+   in its own rule so the static value in .dark survives as the fallback. */
+@supports (color: color-mix(in lab, red, red)) {
+  .dark {
+    --input-fill: color-mix(in oklab, var(--input) 20%, var(--background));
+  }
 }
 
 @layer base {
@@ -237,10 +262,12 @@
     font-weight: 400;
   }
   /* Chrome/Safari paint autofilled inputs with their own opaque light background
-     and dark text, ignoring bg-input — which looks broken on the dark theme
-     (e.g. the Create API Key name field). Repaint the fill to match the input
-     background and force the themed text color; the 9999s transition defers the
-     UA background repaint indefinitely. */
+     and dark text, ignoring the input's own background — which looks broken on the
+     dark theme (e.g. the Create API Key name field). Repaint the fill to match the
+     input background and force the themed text color; the 9999s transition defers
+     the UA background repaint indefinitely. Must use --input-fill, not --input:
+     the latter is the border token and is light on dark themes, so painting it
+     here reintroduced the very unreadable field this rule exists to fix. */
   input:-webkit-autofill,
   input:-webkit-autofill:hover,
   input:-webkit-autofill:focus,
@@ -248,8 +275,8 @@
   textarea:-webkit-autofill,
   select:-webkit-autofill {
     -webkit-text-fill-color: var(--foreground);
-    -webkit-box-shadow: 0 0 0 1000px var(--input) inset;
-    box-shadow: 0 0 0 1000px var(--input) inset;
+    -webkit-box-shadow: 0 0 0 1000px var(--input-fill) inset;
+    box-shadow: 0 0 0 1000px var(--input-fill) inset;
     caret-color: var(--foreground);
     transition: background-color 9999s ease-in-out 0s;
   }
