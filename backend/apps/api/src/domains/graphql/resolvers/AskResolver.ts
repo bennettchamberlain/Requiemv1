@@ -1,10 +1,11 @@
-import { ForbiddenException, NotFoundException, UseGuards } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException, UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { FeatureService } from '@ci/common/feature';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import {
+  type Ask,
   AskAnswerService,
   AskAuditService,
   AskExecutorService,
@@ -135,6 +136,17 @@ export class AskResolver {
     // Only the responder (memory owner) may produce the answer for their ask.
     if (ask.responderUserId !== serviceContext.userId) {
       throw new ForbiddenException('Only the responder may run this ask');
+    }
+
+    // CHECK BEFORE ACT. `complete()` validates the lifecycle, but it runs at the
+    // END — so without this gate an ask that was `declined` (or is still in
+    // `under_review`) would still have its query executed and its answer
+    // PERSISTED, and only then be rejected. There is no transaction, so that
+    // row survives the thrown error and is readable by the asker via
+    // `askAnswer`, which is visible to either participant. Refusing up front is
+    // what keeps the grant decision authoritative.
+    if (!isAnswerable(ask)) {
+      throw new BadRequestException(`Ask ${gid} is not ready to answer (status: ${ask.status})`);
     }
 
     const identifiers = await this.executorService.execute(ask);
@@ -292,4 +304,14 @@ export class AskResolver {
   private async enabled(): Promise<boolean> {
     return this.featureService.isFeatureEnabled('ask');
   }
+}
+
+/**
+ * The same predicate `AskService.complete` enforces: an ask is answerable once
+ * the owner has approved it (`answering`), or when a standing grant already
+ * authorized it (`delivered` carrying a consent basis). Kept in sync with
+ * AskService.complete — both must agree or the gate is bypassable.
+ */
+function isAnswerable(ask: Ask): boolean {
+  return ask.status === 'answering' || (ask.status === 'delivered' && ask.consentBasis != null);
 }

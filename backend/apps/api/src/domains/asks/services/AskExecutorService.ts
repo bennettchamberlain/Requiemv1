@@ -10,6 +10,7 @@ import {
 } from '@ci/domains/search-next';
 
 import { type Ask } from '../entities/AskEntity';
+import { canonicalDataClass } from '../grantMatch';
 import type { AskQuery } from '../types';
 
 /** Coarse data-class → candidate entity-type hints (validated against the taxonomy). */
@@ -71,7 +72,14 @@ function toIncludeTypes(query: AskQuery): IndexableEntity[] | undefined {
     return undefined;
   }
 
-  const hints = CLASS_TYPE_HINTS[query.dataClass.toLowerCase()];
+  // Same canonical form the grant evaluator matched on — if these diverged, a
+  // peer could satisfy one and evade the other.
+  const canonical = canonicalDataClass(query.dataClass);
+  if (canonical == null) {
+    return undefined;
+  }
+
+  const hints = CLASS_TYPE_HINTS[canonical];
   if (hints == null) {
     return undefined; // unknown class → unfiltered (still responder-scoped)
   }

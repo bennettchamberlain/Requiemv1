@@ -58,6 +58,22 @@ function isActive(grant: AskGrant, now: Date): boolean {
 }
 
 /**
+ * Canonical form of a data class, used for BOTH grant matching and query
+ * execution.
+ *
+ * These two must agree exactly. The executor resolves its entity-type hints
+ * with `dataClass.toLowerCase()`, so if grant matching compared raw strings a
+ * peer could send `dataClass: 'Photos'` — evading a `block` grant pinned to
+ * `photos` while still resolving to the photo entity types downstream. Any
+ * normalization added here MUST be mirrored by every consumer of `dataClass`.
+ */
+export function canonicalDataClass(value: string | null | undefined): string | null {
+  const trimmed = value?.trim().toLowerCase();
+
+  return trimmed ? trimmed : null;
+}
+
+/**
  * Whether a positive (auto/review) grant covers a query. Strict on class: a
  * grant pinned to (or scoped to a set of) data classes only covers asks whose
  * declared class is that class / in that set.
@@ -67,8 +83,11 @@ function grantMatchesQuery(grant: AskGrant, query: AskQuery): boolean {
     return false;
   }
 
+  const queryClass = canonicalDataClass(query.dataClass);
+  const grantClass = canonicalDataClass(grant.dataClass);
+
   // A grant that pins a specific data_class only covers asks in that class.
-  if (grant.dataClass != null && grant.dataClass !== query.dataClass) {
+  if (grantClass != null && grantClass !== queryClass) {
     return false;
   }
 
@@ -77,7 +96,8 @@ function grantMatchesQuery(grant: AskGrant, query: AskQuery): boolean {
   // omits the `dataClasses` key entirely, leaving `scopedClasses` undefined).
   const scopedClasses = grant.scope?.dataClasses;
   if (scopedClasses != null) {
-    if (query.dataClass == null || !scopedClasses.includes(query.dataClass)) {
+    const allowed = scopedClasses.map(canonicalDataClass).filter((c): c is string => c != null);
+    if (queryClass == null || !allowed.includes(queryClass)) {
       return false;
     }
   }
@@ -96,7 +116,7 @@ function blockCoversQuery(grant: AskGrant, query: AskQuery): boolean {
     return false;
   }
 
-  if (query.dataClass == null) {
+  if (canonicalDataClass(query.dataClass) == null) {
     return true;
   }
 

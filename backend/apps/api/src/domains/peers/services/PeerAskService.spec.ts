@@ -31,15 +31,27 @@ function makeService(opts: { links?: unknown[]; decision?: string } = {}) {
   const peerLinkService = {
     findActiveByPeerIdentity: jest.fn().mockResolvedValue(opts.links ?? [link()]),
   };
+  const baseAsk = {
+    id: 'ask-1',
+    askerUserId: null,
+    responderUserId: 'owner-1',
+    peerLinkId: 'link-1',
+    direction: 'inbound',
+    consentBasis: null,
+    query: { queryType: 'content', prompt: 'q?' },
+  };
   const askService = {
-    create: jest.fn().mockResolvedValue({
-      id: 'ask-1',
-      askerUserId: null,
-      responderUserId: 'owner-1',
-      peerLinkId: 'link-1',
-      direction: 'inbound',
-      query: { queryType: 'content', prompt: 'q?' },
-    }),
+    create: jest.fn().mockResolvedValue(baseAsk),
+    // The lifecycle must actually be persisted — a denied peer ask that stays
+    // `delivered` would remain actionable in the owner's inbox.
+    systemTransition: jest
+      .fn()
+      .mockImplementation((_id: string, to: string) => Promise.resolve({ ...baseAsk, status: to })),
+    setConsentBasis: jest
+      .fn()
+      .mockImplementation((_id: string, basis: string | null) =>
+        Promise.resolve({ ...baseAsk, consentBasis: basis }),
+      ),
   };
   const grantService = {
     evaluate: jest.fn().mockResolvedValue({ decision: opts.decision ?? 'auto', grantId: 'g1' }),
@@ -118,14 +130,36 @@ describe('PeerAskService.handle', () => {
     );
   });
 
+  it('SECURITY: a denied ask is transitioned to declined, not left actionable in the inbox', async () => {
+    const { service, askService } = makeService({ decision: 'deny' });
+
+    await service.handle(PEER, body({ archetype: 'content', subject: 'x' }));
+
+    // Left at `delivered`, listInbox would surface it as approvable — letting
+    // the owner override their own block grant without realising it.
+    expect(askService.systemTransition).toHaveBeenCalledWith('ask-1', 'declined', {
+      consentBasis: 'g1',
+    });
+  });
+
   it('queues for owner review when no standing grant matches', async () => {
-    const { service, executorService } = makeService({ decision: 'review' });
+    const { service, executorService, askService } = makeService({ decision: 'review' });
 
     const result = await service.handle(PEER, body({ archetype: 'content', subject: 'x' }));
 
     expect(result.status).toBe('pending_review');
     // Nothing executed against the owner's memory without consent.
     expect(executorService.execute).not.toHaveBeenCalled();
+    // And it is moved into the review queue rather than left in limbo.
+    expect(askService.systemTransition).toHaveBeenCalledWith('ask-1', 'under_review');
+  });
+
+  it('records which grant auto-authorized an ask as its consent basis', async () => {
+    const { service, askService } = makeService({ decision: 'auto' });
+
+    await service.handle(PEER, body({ archetype: 'content', subject: 'x' }));
+
+    expect(askService.setConsentBasis).toHaveBeenCalledWith('ask-1', 'g1');
   });
 
   it('answers a relationship ask as a boolean with NO item references', async () => {
@@ -136,6 +170,37 @@ describe('PeerAskService.handle', () => {
     expect(result.status).toBe('answered');
     expect(result.answer?.form).toBe('boolean');
     expect(result.answer?.items).toEqual([]);
+  });
+
+  it('SECURITY: a boolean answer carries no cardinality (no keyword-count oracle)', async () => {
+    const { service, executorService } = makeService();
+    // Several matches behind a yes/no question.
+    executorService.execute.mockResolvedValue([
+      { id: 'e1', type: 'file' },
+      { id: 'e2', type: 'file' },
+      { id: 'e3', type: 'event' },
+    ]);
+
+    const result = await service.handle(PEER, body({ archetype: 'relationship', subject: 'Carol' }));
+
+    // Emitting 3 here would let a peer re-ask with varied terms and read match
+    // counts back out of the responder's whole corpus.
+    expect(result.answer?.disclosedCount).toBeUndefined();
+    expect(result.answer?.withheldCount).toBeUndefined();
+    expect(JSON.stringify(result.answer)).not.toContain('e1');
+  });
+
+  it('an existence answer DOES carry a count — that is what the form means', async () => {
+    const { service, executorService } = makeService();
+    executorService.execute.mockResolvedValue([
+      { id: 'e1', type: 'file' },
+      { id: 'e2', type: 'file' },
+    ]);
+
+    const result = await service.handle(PEER, body({ archetype: 'content', subject: 'beach' }));
+
+    expect(result.answer?.form).toBe('existence');
+    expect(result.answer?.disclosedCount).toBe(2);
   });
 
   it('answers an availability ask from the calendar without touching the search index', async () => {
@@ -162,6 +227,50 @@ describe('PeerAskService.handle', () => {
     expect(result.answer?.items).toBeUndefined();
     // Availability never runs the memory search executor.
     expect(executorService.execute).not.toHaveBeenCalled();
+  });
+});
+
+describe('availability window', () => {
+  const WINDOW = { from: '2026-08-07T12:00:00.000Z', to: '2026-08-07T13:00:00.000Z' };
+
+  it('SECURITY: selects OVERLAPPING events, not just ones starting inside the window', async () => {
+    const { service, eventRepository } = makeService();
+
+    await service.handle(PEER, body({ archetype: 'availability', ...WINDOW }));
+
+    // A 09:00–17:00 meeting starts before this window. Filtering on
+    // `startTime BETWEEN from AND to` would miss it entirely and report the
+    // owner free straight through a four-hour meeting.
+    const where = eventRepository.find.mock.calls[0][0].where;
+    expect(Array.isArray(where)).toBe(true);
+    expect(where[0]).toEqual(
+      expect.objectContaining({ startTime: expect.anything(), endTime: expect.anything() }),
+    );
+    // and the query is capped
+    expect(eventRepository.find.mock.calls[0][0].take).toBeGreaterThan(0);
+  });
+
+  it('rejects an inverted window', async () => {
+    const { service } = makeService();
+
+    await expect(
+      service.handle(PEER, body({ archetype: 'availability', from: WINDOW.to, to: WINDOW.from })),
+    ).rejects.toThrow();
+  });
+
+  it('rejects an unbounded window (a peer cannot make us merge a whole calendar)', async () => {
+    const { service } = makeService();
+
+    await expect(
+      service.handle(
+        PEER,
+        body({
+          archetype: 'availability',
+          from: '1970-01-01T00:00:00.000Z',
+          to: '2100-01-01T00:00:00.000Z',
+        }),
+      ),
+    ).rejects.toThrow();
   });
 });
 

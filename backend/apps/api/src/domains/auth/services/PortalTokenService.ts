@@ -152,9 +152,25 @@ export class PortalTokenService implements PortalTokenVerifier {
 
     // 2. One-time link: an account that pre-dates the binding table, matched on
     //    a VERIFIED email. Every later request for this (iss,sub) takes path 1.
+    //
+    //    "One-time" is enforced, not just intended: the link is allowed ONLY
+    //    while the target account has no federated identity at all. Without that
+    //    check, a *second* (iss,sub) presenting the same verified address would
+    //    also adopt the account — which is exactly the email-is-not-an-identity
+    //    takeover this binding exists to prevent, merely requiring the attacker
+    //    to control a verified address at any trusted issuer.
     if (claimedEmail && emailVerified) {
       const existing = await this.userService.findByEmail(claimedEmail);
       if (existing) {
+        const alreadyFederated = await this.federatedIdentityService.listForUser(existing.id);
+        if (alreadyFederated.length > 0) {
+          this.logger.warn(
+            `refusing email link for ${issuer}#${sub}: user already bound to another identity`,
+          );
+
+          return null;
+        }
+
         await this.federatedIdentityService.bind({
           userId: existing.id,
           issuer,

@@ -68,7 +68,7 @@ export {
   AskExecutorService,
   AskAnswerService,
 };
-export { evaluateGrant } from './grantMatch';
+export { evaluateGrant, canonicalDataClass } from './grantMatch';
 export { inferAnswerForm, buildDisclosedAnswer, formDisclosesItems } from './disclosure';
 export {
   ASK_TRANSITIONS,

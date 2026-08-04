@@ -81,6 +81,23 @@ describe('evaluateGrant', () => {
     });
   });
 
+  it('SECURITY: canonicalizes dataClass so a scoped block cannot be evaded by casing', () => {
+    // The executor resolves entity-type hints with dataClass.toLowerCase(), so
+    // if matching compared raw strings, 'Photos' would evade a block pinned to
+    // 'photos' while still resolving to photo entities downstream.
+    const grants = [
+      grant({ id: 'block-photos', mode: 'block', queryType: 'content', dataClass: 'photos' }),
+      grant({ id: 'auto-content', mode: 'auto', queryType: 'content', dataClass: null }),
+    ];
+
+    for (const variant of ['photos', 'Photos', 'PHOTOS', '  photos  ']) {
+      expect(evaluateGrant(ask({ queryType: 'content', dataClass: variant }), grants, NOW)).toEqual({
+        decision: 'deny',
+        grantId: 'block-photos',
+      });
+    }
+  });
+
   it('treats an empty scope.dataClasses as "no classes permitted" (matches nothing)', () => {
     const emptyScoped = grant({ mode: 'auto', scope: { dataClasses: [] } });
     expect(evaluateGrant(ask({ dataClass: 'beach' }), [emptyScoped], NOW)).toEqual({

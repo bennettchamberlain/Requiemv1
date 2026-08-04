@@ -36,8 +36,8 @@ const mockCreateRemoteJWKSet = createRemoteJWKSet as unknown as jest.Mock;
 
 describe('PortalTokenService', () => {
   let userService: { findByEmail: jest.Mock; create: jest.Mock; findById: jest.Mock };
-  let federatedIdentityService: { findUserId: jest.Mock; bind: jest.Mock };
-  let logger: { setContext: jest.Mock; debug: jest.Mock };
+  let federatedIdentityService: { findUserId: jest.Mock; bind: jest.Mock; listForUser: jest.Mock };
+  let logger: { setContext: jest.Mock; debug: jest.Mock; warn: jest.Mock };
   let service: PortalTokenService;
 
   beforeEach(() => {
@@ -45,8 +45,12 @@ describe('PortalTokenService', () => {
     mockCreateRemoteJWKSet.mockReset();
     mockCreateRemoteJWKSet.mockReturnValue('JWKS');
     userService = { findByEmail: jest.fn(), create: jest.fn(), findById: jest.fn() };
-    federatedIdentityService = { findUserId: jest.fn().mockResolvedValue(null), bind: jest.fn() };
-    logger = { setContext: jest.fn(), debug: jest.fn() };
+    federatedIdentityService = {
+      findUserId: jest.fn().mockResolvedValue(null),
+      bind: jest.fn(),
+      listForUser: jest.fn().mockResolvedValue([]),
+    };
+    logger = { setContext: jest.fn(), debug: jest.fn(), warn: jest.fn() };
     service = new PortalTokenService(
       userService as never,
       federatedIdentityService as never,
@@ -113,6 +117,26 @@ describe('PortalTokenService', () => {
     expect(federatedIdentityService.bind).toHaveBeenCalledWith(
       expect.objectContaining({ userId: 'u-existing', bindMethod: 'email_link' }),
     );
+  });
+
+  it('SECURITY: email_link is ONE-TIME — a second (iss,sub) cannot adopt a federated account', async () => {
+    // The account already has a federated identity, so the email path must not
+    // hand it to a different subject that merely proves the same address.
+    mockJwtVerify.mockResolvedValue({
+      payload: {
+        iss: 'https://hub.test',
+        sub: 'second-sub',
+        email: 'liam@ci.computer',
+        email_verified: true,
+      },
+    });
+    userService.findByEmail.mockResolvedValue({ id: 'u-existing' });
+    federatedIdentityService.listForUser.mockResolvedValue([
+      { id: 'fed-1', userId: 'u-existing', issuer: 'https://hub.test', subject: 'first-sub' },
+    ]);
+
+    expect(await service.verifyAndProvision('t')).toBeNull();
+    expect(federatedIdentityService.bind).not.toHaveBeenCalled();
   });
 
   it('SECURITY: an unverified email never adopts an existing account', async () => {
