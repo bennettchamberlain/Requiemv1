@@ -43,16 +43,64 @@ const L0_CLASSES = [
 
 const L0_SET = new Set<string>(L0_CLASSES);
 
+/**
+ * `title` is deliberately NOT `.min(1)`. It was, and one task with an empty
+ * title failed the whole-array parse and discarded every sibling with it —
+ * measured against the live model, a generation whose FIRST task had
+ * `"title": ""` and whose second was perfectly good yielded nothing at all.
+ * Emptiness is a per-task question, answered in the cleaning loop, which can
+ * often salvage the row from `detail`.
+ */
 const taskSchema = z.object({
-  title: z.string().min(1),
+  title: z.string(),
   detail: z.string().optional(),
   duration_minutes: z.number().optional(),
   l0_class: z.string().optional(),
 });
 
+/**
+ * Items are held as `unknown` and validated ONE AT A TIME below, so a single
+ * malformed task costs that task and not the batch.
+ */
 const responseSchema = z.object({
-  tasks: z.array(taskSchema),
+  tasks: z.array(z.unknown()),
 });
+
+/**
+ * The response shape, as a JSON Schema handed to Ollama's structured-output
+ * grammar.
+ *
+ * `format: 'json'` alone only guarantees the output PARSES — the model stays
+ * free to invent key names, and `PROMPT_MODEL` (gemma3:1b) reliably does:
+ * measured against the live model, "I want to make lunch" came back as
+ * `{"tasks:**[": "  "}` and `{"tasks": {"2:": "Make lunch"}}` in 3 of 8 runs.
+ * Both are valid JSON and neither survives validation, so the user saw
+ * "nothing came back" about half the time. Constraining generation to this
+ * schema removed every shape failure in the same test.
+ *
+ * Kept structurally in step with `responseSchema` above — that zod schema is
+ * still the authority, because a schema-constrained model can (and does) emit
+ * empty strings for required fields.
+ */
+const RESPONSE_JSON_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    tasks: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          detail: { type: 'string' },
+          duration_minutes: { type: 'integer' },
+          l0_class: { type: 'string', enum: [...L0_CLASSES] },
+        },
+        required: ['title'],
+      },
+    },
+  },
+  required: ['tasks'],
+};
 
 type ParsedTask = z.infer<typeof taskSchema>;
 
@@ -128,10 +176,19 @@ export class TaskBreakdownService {
       throw new BadRequestException(`Keep it under ${MAX_INPUT_CHARS} characters`);
     }
 
-    const tasks = await this.extract(context, trimmed);
+    // One retry. Even schema-constrained, a 1B model occasionally returns a
+    // task whose title is the empty string and nothing to salvage it from; a
+    // second sample is far cheaper than making the user retype the note.
+    let tasks = await this.extract(context, trimmed);
 
     if (tasks.length === 0) {
-      this.logger.warn('Task breakdown produced nothing usable', { chars: trimmed.length });
+      tasks = await this.extract(context, trimmed);
+    }
+
+    if (tasks.length === 0) {
+      this.logger.warn('Task breakdown produced nothing usable after a retry', {
+        chars: trimmed.length,
+      });
 
       return [];
     }
@@ -179,13 +236,21 @@ export class TaskBreakdownService {
       context,
       [{ role: 'user', content: PROMPT_HEADER + text }],
       // No tools: this is a pure text transform and a tool call here would only
-      // be the model wandering off. `format: 'json'` is the only sampling
-      // control OllamaService.chat forwards — temperature is not plumbed
-      // through, so the prompt does the constraining instead.
-      { model: PROMPT_MODEL, enableTools: false, format: 'json' },
+      // be the model wandering off. The schema (not the bare 'json' string) is
+      // what makes the output usable — see RESPONSE_JSON_SCHEMA.
+      { model: PROMPT_MODEL, enableTools: false, format: RESPONSE_JSON_SCHEMA },
     );
 
-    return TaskBreakdownService.parseTasks(response.message.content);
+    const content = response.message.content;
+    const tasks = TaskBreakdownService.parseTasks(content);
+
+    // Keep the evidence. Silently returning [] on a bad generation is what made
+    // "nothing came back" impossible to diagnose from the logs alone.
+    if (tasks.length === 0) {
+      this.logger.warn('Model returned no usable tasks', { content: content?.slice(0, 500) });
+    }
+
+    return tasks;
   }
 
   /**
@@ -222,14 +287,27 @@ export class TaskBreakdownService {
 
     const cleaned: ParsedTask[] = [];
 
-    for (const task of parsed.tasks) {
-      const title = task.title.trim().replace(/\.$/, '');
+    for (const item of parsed.tasks) {
+      const candidate = taskSchema.safeParse(item);
+
+      if (!candidate.success) {
+        continue;
+      }
+
+      const task = candidate.data;
+      const rawDetail = task.detail?.trim() ?? '';
+
+      // A schema-constrained model still emits `"title": ""` and puts the task
+      // in `detail` — measured, not hypothetical. It clearly identified the
+      // task and only filed it in the wrong field, so promote the detail rather
+      // than discard the row. Only a task with NEITHER is genuinely empty.
+      const title = (task.title.trim() || rawDetail).replace(/\.$/, '');
 
       if (title.length === 0) {
         continue;
       }
 
-      const detail = task.detail?.trim();
+      const detail = rawDetail;
       const l0 = task.l0_class?.trim().toUpperCase();
       const duration = task.duration_minutes;
 

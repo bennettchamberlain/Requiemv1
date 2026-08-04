@@ -11,8 +11,20 @@ import { TaskBreakdownService } from '../TaskBreakdownService';
 const CONTEXT = { userId: 'user-1' } as UserServiceContext & RequestContext;
 const AT = new Date('2026-08-04T09:00:00.000Z');
 
-function makeService(content: string) {
+function makeService(content: string | string[]) {
   const upserted: CreateCandidateDto[][] = [];
+  const replies = Array.isArray(content) ? [...content] : null;
+  // Typed via <return, args> rather than named parameters so the `format`
+  // argument is inspectable in the assertions below without tripping
+  // no-unused-vars on placeholders.
+  const chat = jest.fn<
+    Promise<{ message: { role: string; content: string } }>,
+    [unknown, unknown, { format?: Record<string, unknown> }]
+  >(() =>
+    Promise.resolve({
+      message: { role: 'assistant', content: replies ? (replies.shift() ?? '') : (content as string) },
+    }),
+  );
 
   const candidateService = {
     upsert: (_ctx: unknown, proposals: CreateCandidateDto[]) => {
@@ -22,15 +34,14 @@ function makeService(content: string) {
     },
   } as unknown as CandidateService;
 
-  const ollamaService = {
-    chat: () => Promise.resolve({ message: { role: 'assistant', content } }),
-  } as unknown as OllamaService;
+  const ollamaService = { chat } as unknown as OllamaService;
 
   const logger = { setContext() {}, log() {}, warn() {}, debug() {}, error() {} } as unknown as LoggerService;
 
   return {
     service: new TaskBreakdownService(candidateService, ollamaService, logger),
     upserted,
+    chat,
   };
 }
 
@@ -101,13 +112,37 @@ describe('TaskBreakdownService.parseTasks', () => {
     expect(TaskBreakdownService.parseTasks(`{"tasks":[${many}]}`)).toHaveLength(12);
   });
 
-  it('skips an empty title and trims a trailing period', () => {
+  it('skips a task with neither a title nor a detail, and trims a trailing period', () => {
     const tasks = TaskBreakdownService.parseTasks(
       '{"tasks":[{"title":"   "},{"title":"Prep the deck."}]}',
     );
 
     expect(tasks).toHaveLength(1);
     expect(tasks[0].title).toBe('Prep the deck');
+  });
+
+  it('keeps the good tasks when one sibling is malformed', () => {
+    // The whole-array parse used to be all-or-nothing, so a single bad task
+    // discarded every good one beside it. Observed live: a generation whose
+    // first task had an empty title and whose second was fine returned nothing.
+    const tasks = TaskBreakdownService.parseTasks(
+      '{"tasks":[{"nope":1},{"title":"Prep the deck"},{"title":42},{"title":"Call Mum"}]}',
+    );
+
+    expect(tasks.map((t) => t.title)).toEqual(['Prep the deck', 'Call Mum']);
+  });
+
+  it('promotes the detail when the model leaves the title empty', () => {
+    // Measured against gemma3:1b: even schema-constrained it emits
+    // `"title": ""` and files the task under `detail`. It identified the task
+    // and only put it in the wrong field, so the row is salvageable.
+    const tasks = TaskBreakdownService.parseTasks(
+      '{"tasks":[{"title":"","detail":"Pick up groceries.","duration_minutes":20}]}',
+    );
+
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].title).toBe('Pick up groceries');
+    expect(tasks[0].duration_minutes).toBe(20);
   });
 });
 
@@ -165,5 +200,40 @@ describe('TaskBreakdownService.breakDown', () => {
 
     await expect(service.breakDown(CONTEXT, 'something', AT)).resolves.toEqual([]);
     expect(upserted).toHaveLength(0);
+  });
+
+  it('re-samples once when the first generation yields nothing', async () => {
+    // A 1B model returns an unusable shape often enough that one bad roll must
+    // not cost the user their note. Second sample wins.
+    const { service, upserted, chat } = makeService([
+      '{"tasks":[{"title":""}]}',
+      '{"tasks":[{"title":"Make lunch"}]}',
+    ]);
+
+    const written = await service.breakDown(CONTEXT, 'I want to make lunch', AT);
+
+    expect(chat).toHaveBeenCalledTimes(2);
+    expect(written).toHaveLength(1);
+    expect(upserted[0][0].title).toBe('Make lunch');
+  });
+
+  it('does not re-sample when the first generation is usable', async () => {
+    const { service, chat } = makeService('{"tasks":[{"title":"Make lunch"}]}');
+
+    await service.breakDown(CONTEXT, 'I want to make lunch', AT);
+
+    expect(chat).toHaveBeenCalledTimes(1);
+  });
+
+  it('constrains generation with a JSON schema, not the bare json flag', async () => {
+    // The bare flag only guarantees the output parses; the model stays free to
+    // invent key names, which is exactly how "nothing came back" happened.
+    const { service, chat } = makeService('{"tasks":[{"title":"Make lunch"}]}');
+
+    await service.breakDown(CONTEXT, 'I want to make lunch', AT);
+
+    const { format } = chat.mock.calls[0][2];
+    expect(typeof format).toBe('object');
+    expect(format?.required).toEqual(['tasks']);
   });
 });

@@ -28,7 +28,14 @@ interface PromptOptions {
   signal?: AbortSignal;
   enableTools?: boolean;
   enableThinking?: boolean;
-  format?: string;
+  /**
+   * `'json'` asks for syntactically valid JSON and nothing more — the model is
+   * still free to invent key names, which small models reliably do. A JSON
+   * Schema object instead constrains generation to that shape via grammar, so
+   * the caller gets the fields it asked for rather than valid-but-unusable
+   * JSON. Prefer the schema form for anything that will be parsed.
+   */
+  format?: string | Record<string, unknown>;
 }
 
 interface ValidateModelOptions {
