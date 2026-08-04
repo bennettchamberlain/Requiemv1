@@ -7,6 +7,7 @@ import {
   HorizonGrid,
   spanForDay,
   daypartWeights,
+  describes,
   rhythmCells,
   dropInstant,
   movedStart,
@@ -20,6 +21,7 @@ function event(overrides: Partial<ScheduleEvent> = {}): ScheduleEvent {
   return {
     id: 'e1',
     title: 'Standup',
+    description: null,
     startTime: new Date(2026, 7, 3, 9, 0).toISOString(),
     endTime: new Date(2026, 7, 3, 9, 30).toISOString(),
     isAllDay: false,
@@ -51,6 +53,7 @@ describe('spanForDay — clipping committed events onto a day row', () => {
   it('shows an overnight event on the day it runs into, flagged as continuing from', () => {
     const overnight = event({
       title: 'Flight → SFO',
+      description: null,
       startTime: new Date(2026, 7, 2, 22, 0).toISOString(),
       endTime: new Date(2026, 7, 3, 6, 0).toISOString(),
     });
@@ -117,6 +120,29 @@ function cluster(
     daypartProbs: dayparts.map(([label, probability]) => ({ label, probability })),
   };
 }
+
+describe('describes — whether the event text adds anything to the title', () => {
+  it('shows the text when the title is a bare category word', () => {
+    // The case that prompted this: candidates minted from ci.actions inherit
+    // the action's title verbatim, which is often just "Action" or "Goal",
+    // leaving what the thing actually is unread in the description.
+    expect(
+      describes(event({ title: 'Action', description: 'Send Liam the Q3 numbers before the review' })),
+    ).toBe(true);
+  });
+
+  it('stays quiet when there is no text', () => {
+    expect(describes(event({ description: null }))).toBe(false);
+    expect(describes(event({ description: '   ' }))).toBe(false);
+  });
+
+  it('stays quiet when the text only restates the title', () => {
+    // Several producers copy the title into the description; the same line
+    // twice in one tooltip reads as a bug, not as detail.
+    expect(describes(event({ title: 'Standup', description: 'Standup' }))).toBe(false);
+    expect(describes(event({ title: 'Standup', description: '  standup ' }))).toBe(false);
+  });
+});
 
 describe('daypartWeights — collapsing a day of clusters into four weights', () => {
   it('is all-zero for a day with no forecast', () => {
@@ -368,6 +394,7 @@ describe('HorizonGrid', () => {
   it('renders an overnight event on both days it touches', () => {
     const overnight = event({
       title: 'Red-eye',
+      description: null,
       startTime: new Date(2026, 7, 3, 22, 0).toISOString(),
       endTime: new Date(2026, 7, 4, 6, 0).toISOString(),
     });

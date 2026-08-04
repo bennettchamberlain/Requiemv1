@@ -11,6 +11,7 @@ const GET_SCHEDULE = gql(`
     eventsInRange(from: $from, to: $to) {
       id
       title
+      description
       startTime
       endTime
       isAllDay
@@ -42,6 +43,12 @@ const GET_SCHEDULE = gql(`
 export interface ScheduleEvent {
   id: string;
   title: string;
+  /**
+   * The event's own text. Worth showing because a title is often a bare
+   * category word ("Action", "Goal") inherited from whatever produced it, while
+   * the description carries what the thing actually is.
+   */
+  description: string | null;
   startTime: string;
   endTime: string | null;
   isAllDay: boolean;

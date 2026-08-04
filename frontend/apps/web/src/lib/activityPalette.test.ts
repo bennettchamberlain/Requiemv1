@@ -15,6 +15,7 @@ function event(overrides: Partial<ScheduleEvent> = {}): ScheduleEvent {
   return {
     id: 'e1',
     title: 'Standup',
+    description: null,
     startTime: new Date(2026, 7, 3, 9, 0).toISOString(),
     endTime: new Date(2026, 7, 3, 9, 30).toISOString(),
     isAllDay: false,

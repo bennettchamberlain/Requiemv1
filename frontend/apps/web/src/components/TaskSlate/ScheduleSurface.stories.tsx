@@ -36,6 +36,7 @@ function ev(
   return {
     id,
     title,
+    description: null,
     startTime: at(day, hour),
     endTime: at(day, hour + hours),
     isAllDay: false,
@@ -57,6 +58,12 @@ const EVENTS: ScheduleEvent[] = [
   ev('e3', 'Morning run', 1, 7, 1, 'gym_workout', null),
   ev('e4', 'Dentist', 2, 11, 1, 'doctor_visit', 'outlook'),
   ev('e5', 'Engineering Strategy', 4, 16, 1, 'WORK', null),
+  // Reproduces the real complaint: a title inherited from ci.actions that is a
+  // bare category word, with what it actually is sitting in the description.
+  {
+    ...ev('e9', 'Action', 1, 11, 1, null, null),
+    description: 'Send Liam the Q3 numbers before the review on Thursday',
+  },
   ev('e6', 'Flight → SFO', 5, 18, 4, null, 'outlook'),
   ev('e7', 'Dinner with Liam', 5, 12, 2, null, null),
   ev('e8', 'Reading', 6, 20, 2, 'LEISURE', 'apple_calendar'),
@@ -204,6 +211,7 @@ function Surface({ colorMode = 'type' }: { colorMode?: ColorMode }) {
             {
               id: `placed-${id}`,
               title: placed.title,
+              description: placed.description ?? null,
               startTime: startTime.toISOString(),
               endTime: new Date(startTime.getTime() + 30 * 60_000).toISOString(),
               isAllDay: false,

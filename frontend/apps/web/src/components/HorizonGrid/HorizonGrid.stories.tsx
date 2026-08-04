@@ -35,6 +35,7 @@ function event(
   return {
     id,
     title,
+    description: null,
     startTime: at(dayOffset, startHour),
     endTime: at(dayOffset, endHour),
     isAllDay: false,

@@ -159,7 +159,12 @@ export class SuggestionSyncService {
       const sources: RationaleSource[] = [{ kind: 'action', id: action.id }];
 
       return {
-        title: action.title ?? 'Untitled action',
+        // A titleless action used to become the literal card "Untitled action",
+        // which tells the user nothing and buries the real content in the
+        // description. Derive a title from the text the same way insight
+        // key_actions already do. A title the source DID supply is respected as
+        // given — renaming someone else's row is not ours to do.
+        title: action.title?.trim() || splitLabelled(action.text ?? '').title || 'Untitled action',
         description: action.text ?? undefined,
         rationale: firstSentence(action.text) || 'Surfaced in your feed.',
         rationale_sources: sources,

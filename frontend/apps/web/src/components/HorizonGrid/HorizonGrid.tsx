@@ -119,6 +119,23 @@ function isExternallyOwned(event: ScheduleEvent): boolean {
   return Boolean(event.sourceSystem);
 }
 
+/**
+ * True when the description says something the title does not.
+ *
+ * Suppressed when it merely restates the title — several producers copy the
+ * title into the description, and repeating one line twice in a tooltip reads
+ * as a bug rather than as detail.
+ */
+function describes(event: ScheduleEvent): boolean {
+  const description = event.description?.trim();
+
+  if (!description) {
+    return false;
+  }
+
+  return description.toLowerCase() !== (event.title ?? '').trim().toLowerCase();
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function localMinutes(date: Date): number {
@@ -571,7 +588,7 @@ function DayRow({
                   </div>
                 </Tooltip.Trigger>
                 <Tooltip.Content side="top">
-                  <div className="space-y-1 text-left">
+                  <div className="max-w-64 space-y-1 text-left">
                     <p className="text-xs font-medium">{event.title}</p>
                     <p className="text-[10px] opacity-75">
                       {event.isAllDay
@@ -580,6 +597,15 @@ function DayRow({
                             event.endTime ? ` – ${formatClock(new Date(event.endTime))}` : ''
                           }`}
                     </p>
+
+                    {/* What the thing actually is. Titles arrive from whatever
+                        produced the event and are often a bare category word
+                        ("Action", "Goal"); the description is where the real
+                        text lives, so it is worth the space. */}
+                    {describes(event) && (
+                      <p className="text-[11px] leading-snug opacity-90">{event.description}</p>
+                    )}
+
                     {event.locationName && <p className="text-[10px] opacity-60">{event.locationName}</p>}
                     {event.status === 'tentative' && <p className="text-[10px] opacity-60">Tentative</p>}
 
@@ -779,4 +805,13 @@ export function HorizonGrid({
   );
 }
 
-export { spanForDay, daypartWeights, rhythmCells, dropInstant, movedStart, startOfLocalDay, addDays };
+export {
+  spanForDay,
+  daypartWeights,
+  describes,
+  rhythmCells,
+  dropInstant,
+  movedStart,
+  startOfLocalDay,
+  addDays,
+};
