@@ -28,6 +28,7 @@ import { MemoryModule } from '@ci/domains/memory';
 import { SearchNextModule } from '@ci/domains/search-next';
 import { UserModule } from '@ci/domains/user';
 
+import { SyncNowController } from './controllers/SyncNowController';
 import { ConnectionSyncJobEntity } from './entities/ConnectionSyncJobEntity';
 import { SyncOrchestrator } from './listeners/SyncOrchestrator';
 import { ConnectionSyncJobService } from './services/ConnectionSyncJobService';
@@ -63,6 +64,7 @@ import { SpotifyTopArtistsTransformService } from './services/Spotify/transform/
 import { SteamAchievementsTransformService } from './services/Steam/transform/TransformAchievements';
 import { SteamFriendsTransformService } from './services/Steam/transform/TransformFriends';
 import { SteamOwnedGamesTransformService } from './services/Steam/transform/TransformOwnedGames';
+import { SyncNowService } from './services/SyncNowService';
 
 /**
  * @internal
@@ -81,6 +83,7 @@ import { SteamOwnedGamesTransformService } from './services/Steam/transform/Tran
   ],
   providers: [
     ConnectionSyncJobService,
+    SyncNowService,
     EndpointServiceMap,
     PromoteService,
     SyncOrchestrator,
@@ -115,7 +118,8 @@ import { SteamOwnedGamesTransformService } from './services/Steam/transform/Tran
     SteamAchievementsTransformService,
     SteamFriendsTransformService,
   ],
-  exports: [ConnectionSyncJobService],
+  controllers: [SyncNowController],
+  exports: [ConnectionSyncJobService, SyncNowService],
 })
 export class EtlModule {}
 

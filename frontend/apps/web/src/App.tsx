@@ -1,15 +1,30 @@
-import { type ReactNode, lazy } from 'react';
+import { type ReactNode, lazy, useEffect } from 'react';
 
-import { DeviceLayoutProvider } from '@ci/common';
-import { BrowserRouter as Router, Routes, Route, useLocation, type Location } from 'react-router-dom';
+import { DeviceLayoutProvider, getApiBaseUrl, isNativePlatform } from '@ci/common';
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  useLocation,
+  useNavigate,
+  type Location,
+} from 'react-router-dom';
 
 import { ApolloProvider } from '@/api/ApolloProvider';
 import { FeaturesProvider, useFeatures } from '@/common/feature';
 import NotFoundPage from '@/components/NotFound';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { RedirectKnownUser } from '@/components/RedirectKnownUser';
+import { RequireOnboarded } from '@/components/RequireOnboarded';
 import { ThemeProvider, BackgroundProvider } from '@/components/ThemePicker';
-import { AuthProvider, CaptureModalProvider, ModelProvider, usePreventOverscroll } from '@/hooks';
+import {
+  AuthProvider,
+  CaptureModalProvider,
+  ModelProvider,
+  useLocationTracking,
+  useNativeShell,
+  usePreventOverscroll,
+} from '@/hooks';
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
 import FeedPage from '@/pages/FeedPage';
 import LoginPage from '@/pages/LoginPage';
@@ -35,12 +50,15 @@ const PlanPage = lazy(() => import('@/pages/PlanPage'));
 const OAuthCallbackPage = lazy(() => import('@/pages/OAuthCallbackPage'));
 const OnboardingPage = lazy(() => import('@/pages/OnboardingPage'));
 const OpenIDCallbackPage = lazy(() => import('@/pages/OpenIDCallbackPage'));
+const PeoplePage = lazy(() => import('@/pages/PeoplePage'));
 const PersonPage = lazy(() => import('@/pages/PersonPage'));
 const PlacePage = lazy(() => import('@/pages/PlacePage'));
+const PlacesPage = lazy(() => import('@/pages/PlacesPage'));
 const ProviderPage = lazy(() => import('@/pages/ProviderPage'));
 const SearchPage = lazy(() => import('@/pages/SearchPage'));
 const FilesPage = lazy(() => import('@/pages/FilesPage'));
 const SavedSearchesPage = lazy(() => import('@/pages/SavedSearchesPage'));
+const ServerSettingsPage = lazy(() => import('@/pages/ServerSettingsPage'));
 const SharedSearchPage = lazy(() => import('@/pages/SharedSearchPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 const StatsPage = lazy(() => import('@/pages/StatsPage'));
@@ -74,7 +92,24 @@ function Providers({ children }: { children: ReactNode }) {
 function AppRoutes() {
   const { isFeatureEnabled } = useFeatures();
   const location = useLocation();
+  const navigate = useNavigate();
   const backgroundLocation = (location.state as { backgroundLocation?: Location } | null)?.backgroundLocation;
+
+  // Native shell wiring (splash dismiss, Android back button). Inert on web.
+  useNativeShell();
+
+  // Browser location tracking (issue #1811): records ci.position fixes while
+  // the user has enabled it in Settings -> Location. Inert when disabled.
+  useLocationTracking();
+
+  // On the native app the API origin must be configured before anything else can
+  // load. If we're running natively with no server set, route to the setup screen.
+  // Inert on web (isNativePlatform() is false there).
+  useEffect(() => {
+    if (isNativePlatform() && !getApiBaseUrl() && location.pathname !== '/server') {
+      navigate('/server', { replace: true });
+    }
+  }, [location.pathname, navigate]);
 
   return (
     <>
@@ -107,6 +142,8 @@ function AppRoutes() {
         />
 
         <Route element={<CenteredLayout />}>
+          <Route path="/server" element={<ServerSettingsPage />} />
+
           <Route
             path="/login"
             element={
@@ -126,7 +163,15 @@ function AppRoutes() {
           />
         </Route>
 
-        <Route element={<MainLayout />}>
+        <Route
+          element={
+            <ProtectedRoute>
+              <RequireOnboarded>
+                <MainLayout />
+              </RequireOnboarded>
+            </ProtectedRoute>
+          }
+        >
           {/* Intelligence */}
           <Route
             path="/feed/:id?"
@@ -365,10 +410,28 @@ function AppRoutes() {
           />
 
           <Route
+            path="/people"
+            element={
+              <ProtectedRoute>
+                <PeoplePage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
             path="/people/:id"
             element={
               <ProtectedRoute>
                 <PersonPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/places"
+            element={
+              <ProtectedRoute>
+                <PlacesPage />
               </ProtectedRoute>
             }
           />

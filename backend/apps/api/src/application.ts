@@ -50,6 +50,7 @@ import { PairingModule } from '@ci/domains/pairing';
 import { ParsingModule } from '@ci/domains/parsing';
 import { PlanningModule } from '@ci/domains/planning';
 import { PositionModule } from '@ci/domains/position';
+import { PowerSyncModule } from '@ci/domains/powersync';
 import { PredictionsModule } from '@ci/domains/predictions';
 import { SearchIngressModule } from '@ci/domains/search-ingress';
 import { SearchNextModule } from '@ci/domains/search-next';
@@ -102,6 +103,7 @@ import { flushTelemetry, isTelemetryEnabled } from '@ci/instrument';
     OnboardingModule,
     PlanningModule,
     PositionModule,
+    PowerSyncModule,
     PredictionsModule,
     ToolsModule,
     MemoryModule,

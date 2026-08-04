@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 
 import { LoggerService } from '@ci/common/logging';
 import { computeChunkSize } from '@ci/common/persistence';
@@ -18,6 +18,8 @@ export interface IdentifierKey {
 export interface EntityIdentifierBatchEntry {
   entityId: string;
   raw: { emails?: unknown; phones?: unknown; names?: unknown };
+  /** Provenance stamped onto newly-inserted identifier rows (import:<sourceSystem>, user, ...). */
+  source?: string;
 }
 
 /**
@@ -106,6 +108,10 @@ export class EntityIdentifierService {
               entityId: entry.entityId,
               kind,
               valueNormalized,
+              // Keep the source's original form when it differs from the
+              // normalized one — cheap provenance for the contact-method UI.
+              rawValue: candidate === valueNormalized ? null : candidate,
+              source: entry.source ?? null,
             }),
           );
         }
@@ -216,6 +222,117 @@ export class EntityIdentifierService {
     }
 
     return out;
+  }
+
+  /**
+   * All identifiers claimed by the given entities, for the contact-methods
+   * read surface (PersonType.identifiers). Returns a Map entity_id -> rows,
+   * ordered kind then value for stable display.
+   */
+  async listForEntities(
+    ownerUserId: string,
+    entityIds: string[],
+  ): Promise<Map<string, EntityIdentifierEntity[]>> {
+    const out = new Map<string, EntityIdentifierEntity[]>();
+    if (entityIds.length === 0) {
+      return out;
+    }
+
+    const rows = await this.repository.find({
+      where: { ownerUserId, entityId: In(entityIds) },
+      order: { kind: 'ASC', valueNormalized: 'ASC' },
+    });
+
+    for (const row of rows) {
+      const list = out.get(row.entityId);
+      if (list) {
+        list.push(row);
+      } else {
+        out.set(row.entityId, [row]);
+      }
+    }
+
+    return out;
+  }
+
+  /**
+   * User-asserted identifier add (the addPersonIdentifier mutation). Normalizes
+   * with the shared rule and upserts under source='user' with verified_at=now()
+   * — a user assertion IS a verification. If the (kind, value) tuple is already
+   * claimed by ANOTHER entity, the claim is NOT stolen (first-writer-wins, same
+   * as ingest); the existing owner's id is returned so the caller can surface
+   * "already belongs to X" (a merge is the right fix, not a silent re-point).
+   *
+   * Returns the entity id the identifier resolves to after the call (the given
+   * entity on success, the prior claimant on conflict), or null when the value
+   * doesn't normalize to a usable identifier.
+   */
+  async addForEntity(
+    ownerUserId: string,
+    entityId: string,
+    kind: IdentifierKind,
+    rawValue: string,
+    label?: string | null,
+  ): Promise<string | null> {
+    const valueNormalized = normalizeIdentifier(kind, rawValue);
+    if (valueNormalized == null) {
+      return null;
+    }
+
+    await this.repository
+      .createQueryBuilder()
+      .insert()
+      .into(EntityIdentifierEntity)
+      .values({
+        ownerUserId,
+        entityId,
+        kind,
+        valueNormalized,
+        rawValue: rawValue === valueNormalized ? null : rawValue,
+        label: label ?? null,
+        source: 'user',
+        verifiedAt: () => 'now()',
+      })
+      .orIgnore()
+      .execute();
+
+    const row = await this.repository.findOne({
+      where: { ownerUserId, kind, valueNormalized },
+    });
+
+    if (row && row.entityId === entityId && (row.label !== (label ?? null) || row.verifiedAt == null)) {
+      // The tuple already existed for this same entity (a machine-asserted
+      // row): promote it to user-verified and apply the label.
+      await this.repository.update(
+        { ownerUserId, kind, valueNormalized },
+        { label: label ?? row.label, source: 'user', verifiedAt: new Date() },
+      );
+    }
+
+    return row?.entityId ?? null;
+  }
+
+  /**
+   * Remove an identifier claim from an entity. Scoped to the entity so a stale
+   * UI can never delete another entity's claim. Returns true when a row was
+   * deleted.
+   */
+  async removeForEntity(
+    ownerUserId: string,
+    entityId: string,
+    kind: IdentifierKind,
+    value: string,
+  ): Promise<boolean> {
+    const valueNormalized = normalizeIdentifier(kind, value) ?? value;
+
+    const result = await this.repository.delete({
+      ownerUserId,
+      entityId,
+      kind,
+      valueNormalized,
+    });
+
+    return (result.affected ?? 0) > 0;
   }
 }
 

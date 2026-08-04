@@ -3,7 +3,8 @@
  * Node internals on init and instrumentation applied after the app modules are
  * loaded misses everything they set up at import time.
  *
- * Reporting is opt-in: with no `SENTRY_DSN` this module initialises nothing and
+ * Reporting is opt-out — on wherever a DSN is configured, off when the user
+ * says so. With no `SENTRY_DSN` this module initialises nothing and
  * the process makes no outbound connection. See `common/telemetry/settings.ts`
  * for the kill switches.
  */
@@ -20,7 +21,21 @@ export const COMPONENT = 'ci-server-api';
 // (application.ts) which log, capture, flush and control the exit code. Drop
 // Sentry's equivalents so a crash is reported exactly once and our handler —
 // not the SDK's — decides when the process dies.
-const MANUALLY_HANDLED_INTEGRATIONS = new Set(['OnUncaughtException', 'OnUnhandledRejection']);
+//
+// `ContextLines` is dropped for a different reason: it attaches seven lines of
+// source either side of every frame, and a denylist cannot close that channel.
+// We do scrub those lines, but `scrubString` only catches home paths and
+// *prefixed* credentials (`api_key=…`) — a bare IP, an email or an opaque key
+// literal sitting in a source line matches nothing. CI-Hub proved this on the
+// wire: with the scrubber applied, its probe still recovered an API key, a
+// client IP and a user email from `frames[].pre_context`. Stack frames, line
+// numbers and the release SHA survive, so triage keeps everything but the
+// inline snippet.
+const MANUALLY_HANDLED_INTEGRATIONS = new Set([
+  'OnUncaughtException',
+  'OnUnhandledRejection',
+  'ContextLines',
+]);
 
 export const telemetry = resolveTelemetrySettings(process.env, COMPONENT);
 
@@ -40,6 +55,12 @@ if (telemetry.enabled && telemetry.dsn) {
     sendDefaultPii: false,
     // The machine hostname identifies the household as surely as a home path.
     includeServerName: false,
+    // Off by default in @sentry/node today — the localVariables integration
+    // bails without it — but stated explicitly so a future default flip can't
+    // start uploading frame locals, which on this appliance are memory rows,
+    // note bodies and message text. Mirrors include_local_variables=False in
+    // the Python services.
+    includeLocalVariables: false,
     integrations: (defaults) =>
       defaults.filter((integration) => !MANUALLY_HANDLED_INTEGRATIONS.has(integration.name)),
     beforeSend: scrubEvent,

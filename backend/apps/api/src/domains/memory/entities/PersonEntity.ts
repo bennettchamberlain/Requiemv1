@@ -40,6 +40,16 @@ export class PersonEntity {
   @Column({ type: 'uuid', name: 'owner_user_id', nullable: true })
   userId?: string | null;
 
+  @Column({ type: 'boolean', name: 'is_active', default: true })
+  isActive!: boolean;
+
+  /**
+   * Non-NULL marks this row as a merge tombstone pointing at the canonical
+   * person (see PersonMergeService). Read paths exclude tombstones.
+   */
+  @Column({ type: 'uuid', name: 'merged_into_entity_id', nullable: true })
+  mergedIntoEntityId!: string | null;
+
   @ManyToOne(() => UserEntity, { nullable: true })
   @JoinColumn({ name: 'owner_user_id' })
   user?: UserEntity;
@@ -49,7 +59,13 @@ export class PersonEntity {
 
   firstName!: string | null;
 
+  middleName!: string | null;
+
   lastName!: string | null;
+
+  birthDate!: string | null;
+
+  isSelf!: boolean;
 
   gender!: string | null;
 
@@ -79,7 +95,10 @@ export class PersonEntity {
   loadPropertiesFromJsonb() {
     this.type = (this.properties?.type as string) || null;
     this.firstName = (this.properties?.first_name as string) || null;
+    this.middleName = (this.properties?.middle_name as string) || null;
     this.lastName = (this.properties?.last_name as string) || null;
+    this.birthDate = (this.properties?.birth_date as string) || null;
+    this.isSelf = this.properties?.is_self === true || this.properties?.is_self === 'true';
     this.gender = (this.properties?.gender as string) || null;
     this.address = (this.properties?.address as string) || null;
     this.streetAddress = (this.properties?.street_address as string) || null;
@@ -111,7 +130,12 @@ export class PersonEntity {
       description: entity.description,
       properties: entity.properties,
       firstName: entity.firstName,
+      middleName: entity.middleName,
       lastName: entity.lastName,
+      birthDate: entity.birthDate,
+      isSelf: entity.isSelf,
+      isActive: entity.isActive,
+      mergedIntoEntityId: entity.mergedIntoEntityId,
       type: entity.type,
       gender: entity.gender,
       address: entity.address,

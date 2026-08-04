@@ -75,6 +75,10 @@ export interface GeocodeOutcome {
   lowConfidence?: boolean;
   normalizedAddress?: string | null;
   locationType?: string | null;
+  /** Provider's stable place id — the strongest place-dedupe key. */
+  placeId?: string | null;
+  /** Provider address components ({address_components: [...]}) for hierarchy. */
+  components?: Record<string, unknown> | null;
 }
 
 /** Outcome of a reverse-geocode attempt (coords -> place name). */
@@ -87,6 +91,10 @@ export interface ReverseGeocodeOutcome {
   cached: boolean;
   /** Whether a retry is worthwhile (transient provider failure). */
   retryable: boolean;
+  /** Provider's stable place id — the strongest place-dedupe key. */
+  placeId?: string | null;
+  /** Provider address components ({address_components: [...]}) for hierarchy. */
+  components?: Record<string, unknown> | null;
 }
 
 /** Options controlling a single {@link GeocodeService.geocode} call. */
@@ -227,6 +235,8 @@ export class GeocodeService {
         lowConfidence: confidence <= LOW_CONFIDENCE_THRESHOLD,
         normalizedAddress: result.normalizedAddress ?? null,
         locationType: result.locationType ?? null,
+        placeId: result.placeId ?? null,
+        components: result.components ?? null,
       };
     }
 
@@ -276,6 +286,8 @@ export class GeocodeService {
           placeName: cached.status === 'OK' ? (cached.normalizedAddress ?? null) : null,
           cached: true,
           retryable: false,
+          placeId: cached.placeId ?? null,
+          components: cached.components ?? null,
         };
       }
     }
@@ -303,7 +315,14 @@ export class GeocodeService {
     await this.writeCache(cacheKey, queryHash, result);
 
     if (result.status === 'OK' && result.normalizedAddress) {
-      return { status: 'OK', placeName: result.normalizedAddress, cached: false, retryable: false };
+      return {
+        status: 'OK',
+        placeName: result.normalizedAddress,
+        cached: false,
+        retryable: false,
+        placeId: result.placeId ?? null,
+        components: result.components ?? null,
+      };
     }
 
     // Negative result (ZERO_RESULTS / REQUEST_DENIED / INVALID_REQUEST) — cached
@@ -324,6 +343,8 @@ export class GeocodeService {
         lowConfidence: confidence <= LOW_CONFIDENCE_THRESHOLD,
         normalizedAddress: row.normalizedAddress,
         locationType: row.locationType,
+        placeId: row.placeId ?? null,
+        components: row.components ?? null,
       };
     }
 

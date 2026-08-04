@@ -18,6 +18,7 @@ import { UserService } from '@ci/domains/user';
 import { OidcController } from '../controllers/OidcController';
 import { AuthService } from '../services/AuthService';
 import { CsrfService } from '../services/CsrfService';
+import { OidcNativeCodeService } from '../services/OidcNativeCodeService';
 
 import { parseCookies } from './utils/parseCookies';
 
@@ -64,6 +65,11 @@ const mockCsrfService = {
 
 const mockFeatureService = { isFeatureEnabled: jest.fn().mockResolvedValue(false) };
 
+// Required by OidcController's constructor (the native deep-link one-time-code
+// exchange). Unused by the confirm-account flow tested here, but Nest resolves the
+// whole constructor, so the provider has to exist.
+const mockOidcNativeCodeService = { issue: jest.fn(), redeem: jest.fn() };
+
 const mockLogger = {
   setContext: jest.fn(),
   log: jest.fn(),
@@ -79,6 +85,7 @@ const mockLogger = {
     { provide: UserService, useValue: mockUserService },
     { provide: CsrfService, useValue: mockCsrfService },
     { provide: FeatureService, useValue: mockFeatureService },
+    { provide: OidcNativeCodeService, useValue: mockOidcNativeCodeService },
     { provide: LoggerService, useValue: mockLogger },
   ],
 })

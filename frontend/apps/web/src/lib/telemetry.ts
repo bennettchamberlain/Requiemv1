@@ -1,7 +1,7 @@
 /**
  * Browser error reporting.
  *
- * Opt-in and off by default: without `VITE_SENTRY_DSN` baked in at build time
+ * Opt-out — on wherever a DSN is configured. Without `VITE_SENTRY_DSN` at build time
  * nothing initialises and the bundle makes no request to Sentry. `initTelemetry`
  * is safe to call more than once and safe to call when reporting is disabled.
  *
@@ -10,11 +10,19 @@
  * user's own search terms over their memories.
  */
 
+import { buildApiUrl, getApiBaseUrl, isNativePlatform } from '@ci/common';
 import * as Sentry from '@sentry/react';
 
 let initialized = false;
 
-const COMPONENT = 'ci-server-web';
+/**
+ * Which client the event came from. The native shell ships the very same bundle
+ * as the browser app, so without this every crash on a phone would be
+ * indistinguishable from one on a desktop.
+ */
+function componentTag(): string {
+  return isNativePlatform() ? 'ci-server-mobile' : 'ci-server-web';
+}
 
 /** Noise that says nothing about a defect: a stale chunk after a redeploy. */
 const CHUNK_LOAD_PATTERNS = [
@@ -72,12 +80,50 @@ const HOME_PATH_PATTERNS = [
 ];
 
 const SENSITIVE_KEY_PATTERN =
-  /password|secret|token|authorization|cookie|jwt|api[-_ ]?key|dsn|pepper|private[-_]?key|hub[-_]user/i;
+  /password|secret|token|authorization|cookie|jwt|api[-_ ]?key|dsn|pepper|private[-_]?key|signature/i;
+
+// Keys that name a PERSON rather than carrying a credential. No value pattern
+// can ever match these — a username is just a word — so the key is the only
+// signal, the same reason we drop `server_name`. This matters behind CI-Hub's
+// Traefik forward-auth: the SDK captures headers that ARRIVED, so a
+// proxy-injected `x-ci-hub-user` reaches the event with no reference in our
+// code at all.
+//
+// Anchored on purpose: `user-agent`, `user_id` and `owner_id` are diagnostic
+// signal worth keeping, and a naive /user|owner/ would eat all three.
+const IDENTITY_KEY_PATTERN = /(?:^|[-_])user$|(?:^|[-_])owner$|username|email|forwarded|^remote-/i;
+
+/** Single predicate so credential and identity coverage cannot diverge. */
+function isSensitiveKey(key: string): boolean {
+  return SENSITIVE_KEY_PATTERN.test(key) || IDENTITY_KEY_PATTERN.test(key);
+}
 
 const MAX_STRING_LENGTH = 8000;
 
-export function scrubString(value: string): string {
-  let scrubbed = value;
+/**
+ * Replace the user's own appliance origin with a placeholder.
+ *
+ * Only native has one to replace — on web the API is same-origin and the base
+ * stays `''`. On a phone it is whatever the user typed on the server-settings
+ * screen, routinely a tailnet hostname or a LAN IP, and both identify their
+ * machine and their network. Turning reporting on for native without this would
+ * ship that address to Sentry inside every fetch breadcrumb and every "Failed to
+ * fetch" message; `sendDefaultPii: false` does nothing to prevent it, because
+ * the SDK has no idea the string is sensitive.
+ *
+ * Split/join rather than a regex: the origin is user input, so a regex would
+ * need escaping to be safe.
+ */
+export function scrubServerOrigin(value: string, serverOrigin: string): string {
+  if (!serverOrigin) {
+    return value;
+  }
+
+  return value.split(serverOrigin).join('[server]');
+}
+
+export function scrubString(value: string, serverOrigin = ''): string {
+  let scrubbed = scrubServerOrigin(value, serverOrigin);
 
   for (const pattern of HOME_PATH_PATTERNS) {
     scrubbed = scrubbed.replace(pattern, '~');
@@ -94,24 +140,24 @@ export function scrubString(value: string): string {
   return scrubbed;
 }
 
-export function scrubValue(value: unknown, depth = 0): unknown {
+export function scrubValue(value: unknown, depth = 0, serverOrigin = ''): unknown {
   if (depth > 8) {
     return '[Truncated]';
   }
 
   if (typeof value === 'string') {
-    return scrubString(value);
+    return scrubString(value, serverOrigin);
   }
 
   if (Array.isArray(value)) {
-    return value.map((entry) => scrubValue(entry, depth + 1));
+    return value.map((entry) => scrubValue(entry, depth + 1, serverOrigin));
   }
 
   if (value && typeof value === 'object') {
     const result: Record<string, unknown> = {};
 
     for (const [key, nested] of Object.entries(value)) {
-      result[key] = SENSITIVE_KEY_PATTERN.test(key) ? '[Filtered]' : scrubValue(nested, depth + 1);
+      result[key] = isSensitiveKey(key) ? '[Filtered]' : scrubValue(nested, depth + 1, serverOrigin);
     }
 
     return result;
@@ -135,41 +181,47 @@ const URL_VALUED_HEADERS = ['referer', 'referrer', 'location'];
  * the joined `message` plus the raw `data.arguments`. Handling only navigation
  * `from`/`to` left all of that untouched.
  */
-function scrubBreadcrumb(breadcrumb: Sentry.Breadcrumb): void {
+function scrubBreadcrumb(breadcrumb: Sentry.Breadcrumb, serverOrigin = ''): void {
   if (typeof breadcrumb.message === 'string') {
-    breadcrumb.message = scrubString(breadcrumb.message);
+    breadcrumb.message = scrubString(breadcrumb.message, serverOrigin);
   }
 
   if (!breadcrumb.data) {
     return;
   }
 
-  for (const [key, value] of Object.entries(breadcrumb.data)) {
+  // Pass the whole object, not each value: `scrubValue` only applies the
+  // sensitive-KEY check while walking an object's own entries, so calling it
+  // per-value let a bare `data.token` through — the value alone matches no
+  // secret pattern. Same shape as the request-headers handling below.
+  const data = scrubValue(breadcrumb.data, 0, serverOrigin) as Record<string, unknown>;
+
+  for (const [key, value] of Object.entries(data)) {
     if (typeof value === 'string' && URL_VALUED_KEYS.has(key)) {
-      breadcrumb.data[key] = scrubUrl(scrubString(value));
-    } else {
-      breadcrumb.data[key] = scrubValue(value);
+      data[key] = scrubUrl(value);
     }
   }
+
+  breadcrumb.data = data;
 }
 
-export function scrubBrowserEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent | null {
+export function scrubBrowserEvent(event: Sentry.ErrorEvent, serverOrigin = ''): Sentry.ErrorEvent | null {
   if (shouldDropEvent(event)) {
     return null;
   }
 
   if (event.message) {
-    event.message = scrubString(event.message);
+    event.message = scrubString(event.message, serverOrigin);
   }
 
   for (const exception of event.exception?.values ?? []) {
     if (exception.value) {
-      exception.value = scrubString(exception.value);
+      exception.value = scrubString(exception.value, serverOrigin);
     }
   }
 
   if (event.extra) {
-    event.extra = scrubValue(event.extra) as Record<string, unknown>;
+    event.extra = scrubValue(event.extra, 0, serverOrigin) as Record<string, unknown>;
   }
 
   if (event.request?.url) {
@@ -183,7 +235,7 @@ export function scrubBrowserEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent |
   // default referrer policy keeps the full same-origin URL — query string and
   // all — which is exactly what scrubUrl exists to remove.
   if (event.request?.headers) {
-    const headers = scrubValue(event.request.headers) as Record<string, string>;
+    const headers = scrubValue(event.request.headers, 0, serverOrigin) as Record<string, string>;
 
     for (const [key, value] of Object.entries(headers)) {
       if (URL_VALUED_HEADERS.includes(key.toLowerCase()) && typeof value === 'string') {
@@ -195,7 +247,7 @@ export function scrubBrowserEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent |
   }
 
   for (const breadcrumb of event.breadcrumbs ?? []) {
-    scrubBreadcrumb(breadcrumb);
+    scrubBreadcrumb(breadcrumb, serverOrigin);
   }
 
   return event;
@@ -224,9 +276,42 @@ const DSN = import.meta.env.VITE_SENTRY_DSN;
  * means the app is broken anyway, and silently reporting against a consent
  * decision we could not read is the worse failure.
  */
+const TELEMETRY_CONFIG_PATH = '/api/config/telemetry';
+
+/**
+ * Where to ask about consent — or `null` when there is nobody to ask.
+ *
+ * On the web the bundle is served by the API's own origin, so a relative path is
+ * correct. The native shell is not: Capacitor serves the bundle from
+ * `capacitor://localhost` (iOS) or `https://localhost` (Android), so a relative
+ * path resolves to the WebView itself and can only 404. Because this check fails
+ * closed, that silently disabled reporting for the entire mobile app — the DSN
+ * was baked in, the SDK shipped, and no event could ever be sent. Resolving
+ * through `buildApiUrl` points the probe at the server the user configured.
+ *
+ * Returns `null` on native before any server has been configured (first launch,
+ * or the user cleared it). There is no appliance to ask, so we must not report.
+ */
+export function telemetryConfigUrl(): string | null {
+  if (isNativePlatform() && !getApiBaseUrl()) {
+    return null;
+  }
+
+  return buildApiUrl(TELEMETRY_CONFIG_PATH);
+}
+
 async function reportingPermitted(): Promise<boolean> {
+  const url = telemetryConfigUrl();
+
+  if (!url) {
+    return false;
+  }
+
   try {
-    const response = await fetch('/api/config/telemetry', {
+    const response = await fetch(url, {
+      // On native this request is cross-origin to the user's own appliance;
+      // `same-origin` keeps cookies off it. The endpoint is unauthenticated by
+      // design, so nothing is lost, and on web the behaviour is unchanged.
       credentials: 'same-origin',
       headers: { accept: 'application/json' },
     });
@@ -273,15 +358,27 @@ export async function initTelemetry(): Promise<void> {
     // Errors only — no tracing, no session replay, no PII.
     tracesSampleRate: 0,
     sendDefaultPii: false,
-    beforeSend: scrubBrowserEvent,
+    // Read the origin per event rather than capturing it once here. Today
+    // `/server` is only routed to when no origin is set yet (App.tsx), so in
+    // practice it cannot change after init — but `persistApiBaseUrl()` applies
+    // a new origin immediately to the running session, so the moment that
+    // screen is linked from Settings a value captured here would go stale and
+    // silently stop matching the very string it exists to redact.
+    beforeSend: (event) => scrubBrowserEvent(event, getApiBaseUrl()),
   });
 
   initialized = true;
-  Sentry.setTag('component', COMPONENT);
+  Sentry.setTag('component', componentTag());
 }
 
 export function captureException(error: unknown, context?: Record<string, unknown>): void {
-  if (!initialized) {
+  // `DSN` first, and deliberately not just `initialized`: the latter is a
+  // runtime `let`, so `Sentry.withScope` below stays statically reachable and
+  // drags the whole SDK back into a DSN-less bundle the moment this function
+  // gains a caller. Today it has none, which is the only reason the build
+  // measures 0 bytes without a DSN — this guard makes that hold on purpose
+  // rather than by luck. (CI-WebXR-Time-Machine hit exactly this.)
+  if (!DSN || !initialized) {
     return;
   }
 

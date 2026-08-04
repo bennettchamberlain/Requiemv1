@@ -207,6 +207,11 @@ export class CsrfService {
    * Verify the format and HMAC signature of a token, scope-agnostic: a `true`
    * here means "this server minted it", not "it belongs to this request" —
    * scope binding is validateToken/ensureToken's job.
+   *
+   * This scope-agnostic check is exactly what the cookie-less NATIVE path needs:
+   * CsrfGuard has no session cookie to bind against, so it requires only that the
+   * header token was minted by us. The `unknown` input tolerates a possibly-absent
+   * header, which reads as "not verified" rather than throwing.
    */
   verifyToken(token: unknown): boolean {
     const parsed = this.parseToken(token);

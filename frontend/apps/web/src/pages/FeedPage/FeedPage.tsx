@@ -25,7 +25,6 @@ import { useFeedQuestionService, type FeedQuestion } from './useFeedQuestionServ
 import { useSummariesService } from './useSummariesService';
 
 type CarouselProps = Partial<ComponentProps<typeof Carousel>>;
-const DISMISSED_INSIGHTS_STORAGE_KEY = 'feed:dismissed-insights:v1';
 const MAX_INSIGHT_SUMMARY_CARDS = 20;
 
 export function FeedPage() {
@@ -36,8 +35,11 @@ export function FeedPage() {
   const navigate = useNavigate();
 
   const { id: actionId } = useParams<{ id?: string }>();
+  const { isFeatureEnabled } = useFeatures();
+  const hbpeEnabled = isFeatureEnabled('hbpe');
+  const actionsEnabled = isFeatureEnabled('actions');
   const [{ data: actions, loading, error }, { markActionAsSeen, markActionAsDismissed }] =
-    useActionListService(5);
+    useActionListService(5, { skip: !actionsEnabled });
   const [
     { data: summaries, loading: summariesLoading, error: summariesError },
     { markSummaryAsSeen, markSummaryAsDismissed },
@@ -46,34 +48,11 @@ export function FeedPage() {
     { question, submitting: questionSubmitting, error: questionError },
     { submitAnswer: submitQuestionAnswer },
   ] = useFeedQuestionService();
-  const { isFeatureEnabled } = useFeatures();
-  const hbpeEnabled = isFeatureEnabled('hbpe');
   const [{ data: forecast, stalled: forecastStalled }] = useForecastService();
   const [dismissedActionIds, setDismissedActionIds] = useState<Set<string>>(new Set());
   const [dismissedSummaryIds, setDismissedSummaryIds] = useState<Set<string>>(new Set());
-  const [dismissedInsightIds, setDismissedInsightIds] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(DISMISSED_INSIGHTS_STORAGE_KEY);
-      if (!raw) {
-        return;
-      }
-
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) {
-        return;
-      }
-
-      setDismissedInsightIds(new Set(parsed.filter((value): value is string => typeof value === 'string')));
-    } catch {
-      setDismissedInsightIds(new Set());
-    }
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem(DISMISSED_INSIGHTS_STORAGE_KEY, JSON.stringify(Array.from(dismissedInsightIds)));
-  }, [dismissedInsightIds]);
+  // Session-only hide for rare legacy nested insights (no dedicated summary row).
+  const [dismissedLegacyInsightIds, setDismissedLegacyInsightIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (questionError == null) {
@@ -84,34 +63,68 @@ export function FeedPage() {
   }, [questionError, toast]);
 
   const visibleActions = useMemo(
-    () => actions.filter((action) => !action.dismissed && !dismissedActionIds.has(action.id)),
-    [actions, dismissedActionIds],
+    () =>
+      actionsEnabled
+        ? actions.filter((action) => !action.dismissed && !dismissedActionIds.has(action.id))
+        : [],
+    [actions, actionsEnabled, dismissedActionIds],
   );
 
-  const visibleSummaries = useMemo(
+  const activeSummaries = useMemo(
     () => summaries.filter((summary) => !summary.dismissed && !dismissedSummaryIds.has(summary.id)),
     [summaries, dismissedSummaryIds],
   );
-  const visibleInsights = useMemo(
-    () =>
-      visibleSummaries.flatMap((summary) =>
-        summary.insights
-          .map((insight, idx) => ({
-            id: `${summary.id}:${idx}`,
-            summarySeen: summary.seen,
-            insight,
-          }))
-          .filter((item) => !dismissedInsightIds.has(item.id)),
-      ),
-    [dismissedInsightIds, visibleSummaries],
+  const insightPeriodSummaries = useMemo(
+    () => activeSummaries.filter((summary) => summary.periodType === 'insight'),
+    [activeSummaries],
   );
+  const visibleSummaries = useMemo(
+    () => activeSummaries.filter((summary) => summary.periodType !== 'insight'),
+    [activeSummaries],
+  );
+  const visibleInsights = useMemo(() => {
+    const fromInsightRows = insightPeriodSummaries.map((summary) => {
+      const insight = summary.insights[0] ?? {
+        title: summary.title || 'Proactive Insight',
+        summaryText: summary.summaryText,
+        keyActions: [] as string[],
+        relevanceScore: 0,
+        tags: summary.tags,
+        relatedEntityIds: null as string[] | null,
+      };
+
+      return {
+        id: summary.id,
+        summaryId: summary.id,
+        isSeen: summary.seen,
+        insight,
+        dismissMode: 'summary' as const,
+      };
+    });
+
+    const fromNested = visibleSummaries.flatMap((summary) =>
+      summary.insights
+        .map((insight, idx) => ({
+          id: `${summary.id}:${idx}`,
+          summaryId: summary.id,
+          isSeen: summary.seen,
+          insight,
+          dismissMode: 'legacy' as const,
+        }))
+        .filter((item) => !dismissedLegacyInsightIds.has(item.id)),
+    );
+
+    return [...fromInsightRows, ...fromNested];
+  }, [dismissedLegacyInsightIds, insightPeriodSummaries, visibleSummaries]);
   const mixedInsightSummaryCards = useMemo(() => {
     const mixed: Array<
       | {
           kind: 'insight';
           id: string;
           insightId: string;
+          summaryId: string;
           isSeen: boolean;
+          dismissMode: 'summary' | 'legacy';
           insight: (typeof visibleInsights)[number]['insight'];
         }
       | {
@@ -129,7 +142,9 @@ export function FeedPage() {
           kind: 'insight',
           id: `insight:${insight.id}`,
           insightId: insight.id,
-          isSeen: insight.summarySeen,
+          summaryId: insight.summaryId,
+          isSeen: insight.isSeen,
+          dismissMode: insight.dismissMode,
           insight: insight.insight,
         });
       }
@@ -218,9 +233,19 @@ export function FeedPage() {
     [markSummaryAsDismissed],
   );
 
-  const handleInsightDismiss = useCallback((insightId: string) => {
-    setDismissedInsightIds((prev) => new Set(prev).add(insightId));
-  }, []);
+  const handleInsightDismiss = useCallback(
+    async (insightId: string, summaryId: string, dismissMode: 'summary' | 'legacy') => {
+      if (dismissMode === 'legacy') {
+        setDismissedLegacyInsightIds((prev) => new Set(prev).add(insightId));
+
+        return;
+      }
+
+      setDismissedSummaryIds((prev) => new Set(prev).add(summaryId));
+      await markSummaryAsDismissed(summaryId);
+    },
+    [markSummaryAsDismissed],
+  );
 
   const handleModalClose = useCallback(() => {
     navigate('/feed', { replace: true });
@@ -244,7 +269,7 @@ export function FeedPage() {
     [submitQuestionAnswer],
   );
 
-  if (loading) {
+  if (actionsEnabled && loading) {
     return (
       <PageContent>
         <LoadingPage />
@@ -252,7 +277,7 @@ export function FeedPage() {
     );
   }
 
-  if (error) {
+  if (actionsEnabled && error) {
     return (
       <PageContent>
         <ErrorPage error={error} />
@@ -309,7 +334,10 @@ export function FeedPage() {
                   key={card.id}
                   insight={card.insight as FragmentType<typeof INSIGHT_CARD_FRAGMENT>}
                   isSeen={card.isSeen}
-                  onDismiss={() => handleInsightDismiss(card.insightId)}
+                  onClick={() => void handleSummaryClick(card.summaryId)}
+                  onDismiss={() =>
+                    void handleInsightDismiss(card.insightId, card.summaryId, card.dismissMode)
+                  }
                 />
               ) : (
                 <SummaryCard
@@ -383,43 +411,49 @@ export function FeedPage() {
           </>
         )}
 
-        <h2 className="text-2xl font-bold text-foreground">Actions</h2>
+        {(actionsEnabled || Boolean(question)) && (
+          <>
+            <h2 className="text-2xl font-bold text-foreground">{actionsEnabled ? 'Actions' : 'Questions'}</h2>
 
-        {isActionsRowEmpty ? (
-          <div className="flex min-h-[220px] items-center justify-center">
-            <p className="text-center text-lg font-medium text-muted-foreground opacity-70">All Caught Up!</p>
-          </div>
-        ) : (
-          <Carousel {...carouselProps} initialIndex={selectedActionCardIndex}>
-            {actionCards.map((card) =>
-              card.kind === 'question' ? (
-                <QuestionCard
-                  key={card.id}
-                  question={card.question as FeedQuestion}
-                  submitting={questionSubmitting}
-                  onSubmit={handleQuestionSubmit}
-                  className="hover:shadow-lg transition-shadow duration-200"
-                />
-              ) : (
-                <BentoCard
-                  key={card.id}
-                  title={card.action.title}
-                  description={
-                    <div className="prose dark:prose-invert">
-                      <Markdown>{card.action.text}</Markdown>
-                    </div>
-                  }
-                  tags={card.action.tags}
-                  imageUrl={card.action.imageUrl}
-                  onClick={() => void handleCardClick(card.action.id)}
-                  onDismiss={() => void handleActionDismiss(card.action.id)}
-                  dismissLabel="Dismiss action"
-                  showUnseenIndicator={!card.action.seen}
-                  className="hover:shadow-lg transition-shadow duration-200"
-                />
-              ),
+            {isActionsRowEmpty ? (
+              <div className="flex min-h-[220px] items-center justify-center">
+                <p className="text-center text-lg font-medium text-muted-foreground opacity-70">
+                  All Caught Up!
+                </p>
+              </div>
+            ) : (
+              <Carousel {...carouselProps} initialIndex={selectedActionCardIndex}>
+                {actionCards.map((card) =>
+                  card.kind === 'question' ? (
+                    <QuestionCard
+                      key={card.id}
+                      question={card.question as FeedQuestion}
+                      submitting={questionSubmitting}
+                      onSubmit={handleQuestionSubmit}
+                      className="hover:shadow-lg transition-shadow duration-200"
+                    />
+                  ) : (
+                    <BentoCard
+                      key={card.id}
+                      title={card.action.title}
+                      description={
+                        <div className="prose dark:prose-invert">
+                          <Markdown>{card.action.text}</Markdown>
+                        </div>
+                      }
+                      tags={card.action.tags}
+                      imageUrl={card.action.imageUrl}
+                      onClick={() => void handleCardClick(card.action.id)}
+                      onDismiss={() => void handleActionDismiss(card.action.id)}
+                      dismissLabel="Dismiss action"
+                      showUnseenIndicator={!card.action.seen}
+                      className="hover:shadow-lg transition-shadow duration-200"
+                    />
+                  ),
+                )}
+              </Carousel>
             )}
-          </Carousel>
+          </>
         )}
 
         <h2 className="text-2xl font-bold text-foreground">Insights & Summaries</h2>
@@ -445,7 +479,10 @@ export function FeedPage() {
                     key={card.id}
                     insight={card.insight as FragmentType<typeof INSIGHT_CARD_FRAGMENT>}
                     isSeen={card.isSeen}
-                    onDismiss={() => handleInsightDismiss(card.insightId)}
+                    onClick={() => void handleSummaryClick(card.summaryId)}
+                    onDismiss={() =>
+                      void handleInsightDismiss(card.insightId, card.summaryId, card.dismissMode)
+                    }
                     className="hover:shadow-lg transition-shadow duration-200 h-110"
                   />
                 ) : (

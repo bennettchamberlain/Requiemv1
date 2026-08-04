@@ -231,3 +231,98 @@ describe('shared scrub fixtures', () => {
     );
   });
 });
+
+describe('scrubEvent — ContextLines source text', () => {
+  // The ContextLines integration attaches the source around the throw site.
+  // Found by the CI-OpenClaw port's live-envelope probe: a home path, an API
+  // key and a gateway token survived here while filename/abs_path beside them
+  // were already scrubbed.
+  it('scrubs context_line, pre_context and post_context', () => {
+    const event = {
+      exception: {
+        values: [
+          {
+            value: 'boom',
+            stacktrace: {
+              frames: [
+                {
+                  filename: '/Users/liam/app.ts',
+                  pre_context: ['const dir = "/Users/liam/notes";'],
+                  context_line: 'const client = new Client({ api_key: "sk-live-9988776655" });',
+                  post_context: ['await fetch(url, { headers: { authorization: "Bearer abcdefghij" } });'],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    } as unknown as ErrorEvent;
+
+    const frame = scrubEvent(event)!.exception!.values![0]!.stacktrace!.frames![0]!;
+
+    expect(frame.context_line).not.toContain('sk-live-9988776655');
+    expect(frame.pre_context![0]).toBe('const dir = "~/notes";');
+    expect(frame.post_context![0]).not.toContain('abcdefghij');
+  });
+});
+
+describe('scrubEvent — identity-bearing keys', () => {
+  // These name a PERSON; no value pattern can match a username. Found by the
+  // Companion-Planning port: `x-ci-hub-user` was covered here but the class
+  // wasn't, and CI-Server sits behind the same Traefik forward-auth, which
+  // injects headers our code never references.
+  it.each(['x-ci-hub-user', 'x-forwarded-user', 'x-ci-owner', 'x-test-owner', 'username', 'email'])(
+    'filters %s',
+    (key) => {
+      const event = { request: { headers: { [key]: 'liam' } } } as unknown as ErrorEvent;
+
+      expect(scrubEvent(event)!.request!.headers![key]).toBe('[Filtered]');
+    },
+  );
+
+  it.each(['user-agent', 'user_id', 'owner_id'])('keeps %s as diagnostic signal', (key) => {
+    const event = { request: { headers: { [key]: 'curl/8' } } } as unknown as ErrorEvent;
+
+    expect(scrubEvent(event)!.request!.headers![key]).toBe('curl/8');
+  });
+});
+
+describe('scrubEvent — outgoing-fetch breadcrumb query strings', () => {
+  // nativeNodeFetchIntegration sanitises data.url and then attaches the raw
+  // query and fragment beside it. Neither key nor value matches any pattern, so
+  // they shipped verbatim — including the user's own address and the Maps key
+  // from GoogleGeocodeProvider, whose bare `key=` the secret regex never caught.
+  it('drops http.query and http.fragment', () => {
+    const event = {
+      breadcrumbs: [
+        {
+          category: 'http',
+          data: {
+            url: 'https://maps.googleapis.com/maps/api/geocode/json',
+            'http.query': '?address=1600+Amphitheatre+Pkwy&key=AIzaSyD-abc123',
+            'http.fragment': '#section',
+            'http.method': 'GET',
+            status_code: 500,
+          },
+        },
+      ],
+    } as unknown as ErrorEvent;
+
+    const data = scrubEvent(event)!.breadcrumbs![0]!.data!;
+
+    expect(data['http.query']).toBeUndefined();
+    expect(data['http.fragment']).toBeUndefined();
+    // The diagnostic signal beside them must survive.
+    expect(data.url).toBe('https://maps.googleapis.com/maps/api/geocode/json');
+    expect(data['http.method']).toBe('GET');
+    expect(data.status_code).toBe(500);
+  });
+
+  it('drops a query carrying a user_id the anchored identity rule spares by design', () => {
+    const event = {
+      breadcrumbs: [{ category: 'http', data: { 'http.query': '?horizon=7&user_id=0198779b-182c-716e' } }],
+    } as unknown as ErrorEvent;
+
+    expect(scrubEvent(event)!.breadcrumbs![0]!.data!['http.query']).toBeUndefined();
+  });
+});

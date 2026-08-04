@@ -1,7 +1,7 @@
 """
 Sentry error reporting for the Summary service.
 
-Opt-in and off by default: with no ``SENTRY_DSN`` nothing initialises and the
+Opt-out — on wherever a DSN is configured. With no ``SENTRY_DSN`` nothing initialises and the
 process makes no outbound connection. Two kill switches disable reporting even
 when a DSN has been baked into the image, so an operator can always turn it off
 without a rebuild:
@@ -45,9 +45,23 @@ _HOME_PATTERNS = [
 ]
 
 _SENSITIVE_KEY = re.compile(
-    r"password|secret|token|authorization|cookie|jwt|api[-_ ]?key|dsn|pepper|private[-_]?key|hub[-_]user",
+    r"password|secret|token|authorization|cookie|jwt|api[-_ ]?key|dsn|pepper|private[-_]?key|signature",
     re.IGNORECASE,
 )
+
+# Keys that name a PERSON rather than carrying a credential. No value pattern can
+# match a username, so the key is the only signal — same reason we drop
+# server_name. Anchored so `user-agent`, `user_id` and `owner_id` survive as
+# diagnostic signal.
+_IDENTITY_KEY = re.compile(
+    r"(?:^|[-_])user$|(?:^|[-_])owner$|username|email|forwarded|^remote-",
+    re.IGNORECASE,
+)
+
+
+def _is_sensitive_key(key: str) -> bool:
+    """Single predicate so credential and identity coverage cannot diverge."""
+    return bool(_SENSITIVE_KEY.search(key) or _IDENTITY_KEY.search(key))
 
 _MAX_STRING_LENGTH = 8000
 
@@ -107,7 +121,7 @@ def _scrub_value(value: Any, depth: int = 0) -> Any:
 
     if isinstance(value, dict):
         return {
-            key: "[Filtered]" if _SENSITIVE_KEY.search(str(key)) else _scrub_value(nested, depth + 1)
+            key: "[Filtered]" if _is_sensitive_key(str(key)) else _scrub_value(nested, depth + 1)
             for key, nested in value.items()
         }
 
@@ -150,9 +164,17 @@ def scrub_event(event: dict, _hint: Optional[dict] = None) -> Optional[dict]:
             for frame in stacktrace.get("frames") or []:
                 if not isinstance(frame, dict):
                     continue
-                for key in ("filename", "abs_path"):
+                for key in ("filename", "abs_path", "context_line"):
                     if isinstance(frame.get(key), str):
                         frame[key] = scrub_string(frame[key])
+                # ContextLines attaches the source around the throw site — real
+                # source text, where hardcoded keys and connection strings live.
+                for key in ("pre_context", "post_context"):
+                    lines = frame.get(key)
+                    if isinstance(lines, list):
+                        frame[key] = [
+                            scrub_string(line) if isinstance(line, str) else line for line in lines
+                        ]
                 if frame.get("vars") is not None:
                     frame["vars"] = _scrub_value(frame["vars"])
 

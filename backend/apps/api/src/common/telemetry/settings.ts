@@ -1,7 +1,8 @@
 /**
  * Telemetry (Sentry) settings resolution.
  *
- * Error reporting on the appliance is **opt-in and off by default**: with no
+ * Error reporting on the appliance is **opt-out** — on wherever a DSN is
+ * configured, and the user turns it off. With no
  * `SENTRY_DSN` nothing is initialised and no network call is ever made. Two
  * kill switches disable reporting even when a DSN has been baked into an image
  * (which is how Hub-installed Memory receives one), so an operator can always

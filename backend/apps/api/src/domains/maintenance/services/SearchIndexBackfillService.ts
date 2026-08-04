@@ -361,6 +361,9 @@ export class SearchIndexBackfillService {
     const discriminator = source.discriminator
       ? `AND s."${source.discriminator.column}" = '${source.discriminator.value}'`
       : '';
+    // Rows the sweep must never treat as missing (e.g. merge tombstones, whose
+    // index rows were deliberately deleted).
+    const excluded = source.backfillPredicate ? `AND ${source.backfillPredicate}` : '';
     const timeColumn = TIME_PAGED_TYPES[entityType];
 
     if (timeColumn != null) {
@@ -374,6 +377,7 @@ export class SearchIndexBackfillService {
           WHERE e.entity_id IS NULL
             AND k.entity_id IS NULL
             ${discriminator}
+            ${excluded}
             AND ($2::timestamptz IS NULL
                  OR (s."${timeColumn}", s."${source.idColumn}") > ($2::timestamptz, $3::uuid))
           ORDER BY s."${timeColumn}", s."${source.idColumn}"
@@ -392,6 +396,7 @@ export class SearchIndexBackfillService {
         WHERE e.entity_id IS NULL
           AND k.entity_id IS NULL
           ${discriminator}
+          ${excluded}
           AND ($2::uuid IS NULL OR s."${source.idColumn}" > $2::uuid)
         ORDER BY s."${source.idColumn}"
         LIMIT $3`,

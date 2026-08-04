@@ -5,7 +5,8 @@ services:
       - secrets:/run/secrets:ro
     environment:
       ENABLE_HBPE: ${ENABLE_HBPE:-true}
-      # Error reporting is opt-in — an unset DSN means the API never contacts
+      # Error reporting is opt-out: on wherever a DSN is set. An unset DSN is not
+      # a privacy setting, it is no configuration — the API then never contacts
       # Sentry. CI_TELEMETRY=off or CI_LOCAL_ONLY=true disable it even when a
       # DSN is present. See docs/operations/error-reporting.md.
       SENTRY_DSN: ${SENTRY_DSN_API:-}

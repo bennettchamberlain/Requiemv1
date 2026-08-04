@@ -133,6 +133,19 @@ class InsightsResponse(BaseModel):
     data_sources_used: List[str] = Field(default_factory=list, description="Which data sources informed these insights")
 
 
+class SingleInsightResponse(BaseModel):
+    """One insight per LLM call, so each can be stored (and shown) as it lands.
+
+    `insight` is null when the model judges that no further distinct,
+    high-quality insight exists — the generation loop's stop signal.
+    """
+    insight: Optional[InsightItem] = Field(
+        default=None,
+        description="The single most valuable NEW insight not covered by previously generated ones, or null if none remains",
+    )
+    data_sources_used: List[str] = Field(default_factory=list, description="Which data sources informed this insight")
+
+
 class ActionItem(BaseModel):
     """A proactive action card suggestion.
 

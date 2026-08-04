@@ -29,7 +29,8 @@ function addHeaderToFiles(filePaths: string[]) {
         '',
       );
 
-      const newContent = HEADER + content.trimStart();
+      // Keep a trailing newline so regenerate stays stable under Prettier/EOF checks.
+      const newContent = `${HEADER}${content.trimStart()}`.replace(/\s*$/, '\n');
 
       fs.writeFileSync(fullPath, newContent, 'utf-8');
     } catch (error) {
