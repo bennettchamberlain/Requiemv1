@@ -16,7 +16,7 @@
   "exposable": true,
   "dynamic_config": true,
   "cihub_app_version": 1,
-  "min_hub_version": "v0.2.27",
+  "min_hub_version": "v0.2.48",
   "hub_integration": {
     "memory": {
       "provider": {
