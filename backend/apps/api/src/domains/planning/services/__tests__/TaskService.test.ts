@@ -1,3 +1,4 @@
+import { NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 
@@ -223,6 +224,57 @@ describe('TaskService', () => {
       await service.create(ALICE, { title: 'New' } as never);
 
       expect(signalling.send).toHaveBeenCalledWith(TaskCreatedEvent, { taskId: expect.any(String) });
+    });
+
+    it("rejects a parentId that isn't one of the caller's own tasks", async () => {
+      // parent_id's FK targets ci.tasks(id) with no user_id component, so
+      // without this check the database would happily attach a task under
+      // another tenant's row — and ON DELETE CASCADE would let that tenant
+      // delete it later just by deleting their own task.
+      await expect(
+        service.create(ALICE, { title: 'Subtask', parentId: 'not-mine' } as never),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(repository.create).not.toHaveBeenCalled();
+    });
+
+    it("creates when the parentId is one of the caller's own tasks", async () => {
+      await setup([makeTask({ id: 'parent-1' })]);
+
+      await service.create(ALICE, { title: 'Subtask', parentId: 'parent-1' } as never);
+
+      expect(repository.findOne).toHaveBeenCalledWith({
+        where: { id: 'parent-1', userId: ALICE.userId },
+        select: { id: true },
+      });
+
+      const [created] = repository.create.mock.calls[0] as [Partial<TaskEntity>];
+
+      expect(created.parentId).toBe('parent-1');
+    });
+  });
+
+  describe('update', () => {
+    it("rejects reparenting onto a task the caller doesn't own", async () => {
+      await setup([makeTask()]);
+      repository.findOne
+        .mockResolvedValueOnce(makeTask()) // the task being updated
+        .mockResolvedValueOnce(null); // parent ownership check
+
+      await expect(service.update(ALICE, 'task-1', { parentId: 'not-mine' })).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('allows reparenting onto a task the caller owns', async () => {
+      await setup([makeTask()]);
+      repository.findOne
+        .mockResolvedValueOnce(makeTask()) // the task being updated
+        .mockResolvedValueOnce(makeTask({ id: 'parent-1' })); // parent ownership check
+
+      const result = await service.update(ALICE, 'task-1', { parentId: 'parent-1' });
+
+      expect(result?.parentId).toBe('parent-1');
     });
   });
 

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
@@ -33,7 +33,29 @@ export class TaskService {
     this.logger.setContext(TaskService.name);
   }
 
+  /**
+   * `parent_id`'s FK targets `ci.tasks(id)` with no `user_id` component, so the
+   * database alone will happily attach a task under another tenant's row.
+   * `ON DELETE CASCADE` makes that more than a display glitch: the parent
+   * owner deleting their own task would silently delete a subtask they never
+   * had access to. Confirm the parent is one of the caller's own tasks first.
+   */
+  private async assertOwnsParent(context: UserServiceContext, parentId: string): Promise<void> {
+    const parent = await this.taskRepository.findOne({
+      where: { id: parentId, userId: context.userId },
+      select: { id: true },
+    });
+
+    if (parent == null) {
+      throw new NotFoundException(`Parent task ${parentId} not found`);
+    }
+  }
+
   async create(context: UserServiceContext, data: CreateTaskDto): Promise<Task | null> {
+    if (data.parentId != null) {
+      await this.assertOwnsParent(context, data.parentId);
+    }
+
     const record = this.taskRepository.create({
       ...data,
       id: data.id || uuidv7(),
@@ -119,6 +141,10 @@ export class TaskService {
 
     if (record == null) {
       return null;
+    }
+
+    if (data.parentId != null) {
+      await this.assertOwnsParent(context, data.parentId);
     }
 
     Object.assign(record, data);
