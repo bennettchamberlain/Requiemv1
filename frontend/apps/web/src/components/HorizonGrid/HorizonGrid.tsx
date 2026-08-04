@@ -3,7 +3,6 @@ import { type ReactNode, useState } from 'react';
 import { cn, Tooltip } from '@ci/shadcn';
 
 import type { RhythmDay, ScheduleEvent } from '@/api/useScheduleService';
-import { CANDIDATE_DRAG_TYPE } from '@/components/TaskSlate';
 import {
   type ActivityClass,
   type ColorMode,
@@ -16,6 +15,12 @@ import {
   normalizeClass,
   sourceOf,
 } from '@/lib/activityPalette';
+import {
+  CANDIDATE_DRAG_TYPE,
+  EVENT_DRAG_TYPE,
+  EVENT_EXTERNAL_DRAG_TYPE,
+  parseEventDrag,
+} from '@/lib/scheduleDrag';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -96,15 +101,6 @@ function dropInstant(dayStart: Date, ratio: number): Date {
   return new Date(dayStart.getTime() + Math.min(snapped, MINUTES_PER_DAY - DROP_SNAP_MINUTES) * 60_000);
 }
 
-/** Drag payload for moving an already-committed event. */
-export const EVENT_DRAG_TYPE = 'application/x-ci-event';
-
-interface EventDragPayload {
-  id: string;
-  /** Milliseconds between the event's real start and where the user grabbed it. */
-  grabOffsetMs: number;
-}
-
 /**
  * Where a dragged event should now start.
  *
@@ -121,25 +117,6 @@ function movedStart(dayStart: Date, ratio: number, grabOffsetMs: number): Date {
 /** True when the event is a mirror of a row owned by an external calendar. */
 function isExternallyOwned(event: ScheduleEvent): boolean {
   return Boolean(event.sourceSystem);
-}
-
-/** Read a drag payload back, tolerating anything that is not ours. */
-function parseEventDrag(raw: string): EventDragPayload | null {
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as Partial<EventDragPayload>;
-
-    if (typeof parsed.id !== 'string' || !Number.isFinite(parsed.grabOffsetMs)) {
-      return null;
-    }
-
-    return { id: parsed.id, grabOffsetMs: parsed.grabOffsetMs as number };
-  } catch {
-    return null;
-  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -540,10 +517,21 @@ function DayRow({
                               ? 0
                               : grabbedAt.getTime() - new Date(event.startTime).getTime();
 
+                            const external = isExternallyOwned(event);
+
                             e.dataTransfer.setData(
                               EVENT_DRAG_TYPE,
-                              JSON.stringify({ id: event.id, grabOffsetMs }),
+                              JSON.stringify({ id: event.id, grabOffsetMs, externallyOwned: external }),
                             );
+
+                            // Also as a KEY, because `types` is the only part of
+                            // the payload readable during dragover: it lets the
+                            // Possibilities rail decline a mirrored calendar row
+                            // instead of promising a drop it will refuse.
+                            if (external) {
+                              e.dataTransfer.setData(EVENT_EXTERNAL_DRAG_TYPE, '1');
+                            }
+
                             e.dataTransfer.setData('text/plain', event.title);
                             e.dataTransfer.effectAllowed = 'move';
                           }

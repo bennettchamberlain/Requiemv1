@@ -13,6 +13,9 @@ import { type CreateCandidateDto, type DeclineReason, USER_AUTHORED_GENERATOR_PR
 /** Reasons that retire a candidate permanently rather than just for now. */
 const PERMANENT_DECLINES: ReadonlySet<DeclineReason> = new Set(['never']);
 
+/** Fresh window for a returned candidate whose original one has already closed. */
+const RETURNED_WINDOW_DAYS = 7;
+
 /**
  * Something the user typed themselves leads the slate — they asked for it, so
  * it should not queue behind a week of machine suggestions.
@@ -209,6 +212,56 @@ export class CandidateService {
     this.logger.log('Candidate accepted', { candidateId: candidate.id, eventId: event.id });
 
     return { candidate: EventCandidateEntity.toEgressType(saved), event };
+  }
+
+  /**
+   * Take a placed task back off the calendar and return it to the slate — the
+   * inverse of {@link accept}, and the only way out of committed time that is
+   * not a deletion.
+   *
+   * Scoped to events this system minted from a candidate, found by the
+   * `promoted_event_id` backlink. An event mirrored from a synced calendar has
+   * no candidate, so it cannot be dragged back: the schedule surface never
+   * silently mutates a row another system owns, and un-committing a Google
+   * event here would either lie about the source or destroy it.
+   */
+  async returnToSlate(context: UserServiceContext, eventId: string): Promise<EventCandidate> {
+    const candidate = await this.candidateRepository.findOne({
+      where: { userId: context.userId, promotedEventId: eventId },
+    });
+
+    if (!candidate) {
+      throw new NotFoundException(
+        `Event ${eventId} did not come from a suggestion, so there is nothing to return it to`,
+      );
+    }
+
+    // The event goes first: a candidate that claims `open` while still holding a
+    // promoted_event_id would violate the table's promotion-consistency check,
+    // and accept() writes in the same order for the same reason.
+    await this.eventService.remove(context, eventId);
+
+    candidate.status = 'open';
+    candidate.promotedEventId = null;
+    candidate.feedbackAt = null;
+    candidate.feedbackReason = null;
+    candidate.snoozedUntil = null;
+
+    // A candidate whose plausible window has already closed would come back
+    // invisible — findInRange only surfaces windows overlapping the view. Give
+    // an expired one a fresh week rather than returning it to a grave. A window
+    // still open is left alone: it may carry real meaning ("before Friday").
+    const now = new Date();
+    if (candidate.windowEnd <= now) {
+      candidate.windowStart = now;
+      candidate.windowEnd = new Date(now.getTime() + RETURNED_WINDOW_DAYS * 86_400_000);
+    }
+
+    const saved = await this.candidateRepository.save(candidate);
+
+    this.logger.log('Candidate returned to the slate', { candidateId: candidate.id, eventId });
+
+    return EventCandidateEntity.toEgressType(saved);
   }
 
   /**

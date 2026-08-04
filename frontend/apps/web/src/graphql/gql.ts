@@ -29,6 +29,7 @@ type Documents = {
     "\n  mutation DeclineCandidate($id: ID!, $reason: String) {\n    declineCandidate(id: $id, reason: $reason) { id status }\n  }\n": typeof types.DeclineCandidateDocument,
     "\n  mutation SnoozeCandidate($id: ID!, $until: DateTime!) {\n    snoozeCandidate(id: $id, until: $until) { id status }\n  }\n": typeof types.SnoozeCandidateDocument,
     "\n  mutation BreakDownTasks($text: String!) {\n    breakDownTasks(text: $text) { id title }\n  }\n": typeof types.BreakDownTasksDocument,
+    "\n  mutation ReturnEventToSlate($eventId: ID!) {\n    returnEventToSlate(eventId: $eventId) { id status }\n  }\n": typeof types.ReturnEventToSlateDocument,
     "\n  query GetSchedule($from: DateTime!, $to: DateTime!) {\n    eventsInRange(from: $from, to: $to) {\n      id\n      title\n      startTime\n      endTime\n      isAllDay\n      status\n      category\n      locationName\n      sourceSystem\n      externalSyncStatus\n    }\n    weekForecast(includeToday: true) {\n      generatedAt\n      days {\n        date\n        dow\n        clusters {\n          clusterId\n          name\n          l0Class\n          pOccur\n          scheduled\n          daypartProbs { label probability }\n        }\n      }\n    }\n  }\n": typeof types.GetScheduleDocument,
     "\n  mutation TagEntities($input: TagEntitiesInput!) {\n    tagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": typeof types.TagEntitiesDocument,
     "\n  mutation UntagEntities($input: TagEntitiesInput!) {\n    untagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": typeof types.UntagEntitiesDocument,
@@ -160,6 +161,7 @@ const documents: Documents = {
     "\n  mutation DeclineCandidate($id: ID!, $reason: String) {\n    declineCandidate(id: $id, reason: $reason) { id status }\n  }\n": types.DeclineCandidateDocument,
     "\n  mutation SnoozeCandidate($id: ID!, $until: DateTime!) {\n    snoozeCandidate(id: $id, until: $until) { id status }\n  }\n": types.SnoozeCandidateDocument,
     "\n  mutation BreakDownTasks($text: String!) {\n    breakDownTasks(text: $text) { id title }\n  }\n": types.BreakDownTasksDocument,
+    "\n  mutation ReturnEventToSlate($eventId: ID!) {\n    returnEventToSlate(eventId: $eventId) { id status }\n  }\n": types.ReturnEventToSlateDocument,
     "\n  query GetSchedule($from: DateTime!, $to: DateTime!) {\n    eventsInRange(from: $from, to: $to) {\n      id\n      title\n      startTime\n      endTime\n      isAllDay\n      status\n      category\n      locationName\n      sourceSystem\n      externalSyncStatus\n    }\n    weekForecast(includeToday: true) {\n      generatedAt\n      days {\n        date\n        dow\n        clusters {\n          clusterId\n          name\n          l0Class\n          pOccur\n          scheduled\n          daypartProbs { label probability }\n        }\n      }\n    }\n  }\n": types.GetScheduleDocument,
     "\n  mutation TagEntities($input: TagEntitiesInput!) {\n    tagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": types.TagEntitiesDocument,
     "\n  mutation UntagEntities($input: TagEntitiesInput!) {\n    untagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": types.UntagEntitiesDocument,
@@ -338,6 +340,10 @@ export function gql(source: "\n  mutation SnoozeCandidate($id: ID!, $until: Date
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "\n  mutation BreakDownTasks($text: String!) {\n    breakDownTasks(text: $text) { id title }\n  }\n"): (typeof documents)["\n  mutation BreakDownTasks($text: String!) {\n    breakDownTasks(text: $text) { id title }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation ReturnEventToSlate($eventId: ID!) {\n    returnEventToSlate(eventId: $eventId) { id status }\n  }\n"): (typeof documents)["\n  mutation ReturnEventToSlate($eventId: ID!) {\n    returnEventToSlate(eventId: $eventId) { id status }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

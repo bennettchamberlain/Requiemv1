@@ -75,7 +75,7 @@ describe('CandidateService', () => {
     save: jest.Mock;
     create: jest.Mock;
   };
-  let events: { create: jest.Mock };
+  let events: { create: jest.Mock; remove: jest.Mock };
   let qb: ReturnType<typeof makeQueryBuilder>;
 
   async function setup(many: unknown[] = []) {
@@ -85,7 +85,7 @@ describe('CandidateService', () => {
       save: jest.fn(async (entity: EventCandidateEntity) => entity),
       create: jest.fn((entity: EventCandidateEntity) => entity),
     };
-    events = { create: jest.fn(async () => [{ id: 'event-9' }]) };
+    events = { create: jest.fn(async () => [{ id: 'event-9' }]), remove: jest.fn(async () => true) };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -169,6 +169,71 @@ describe('CandidateService', () => {
       const found = await service.findInRange(ctx, from, to);
 
       expect(found.map((c) => c.id)).toEqual(['sugg-1', 'sugg-2']);
+    });
+  });
+
+  describe('returnToSlate', () => {
+    it('deletes the event it minted and reopens the candidate', async () => {
+      await setup();
+      repo.findOne.mockResolvedValue(
+        baseCandidate({
+          id: 'cand-9',
+          status: 'accepted',
+          promotedEventId: 'event-9',
+          feedbackReason: 'not_now',
+          feedbackAt: new Date('2026-08-01T00:00:00Z'),
+          windowEnd: new Date('2099-01-01T00:00:00Z'),
+        }),
+      );
+
+      const returned = await service.returnToSlate(ctx, 'event-9');
+
+      expect(events.remove).toHaveBeenCalledWith(ctx, 'event-9');
+      expect(returned.status).toBe('open');
+      expect(returned.promotedEventId).toBeNull();
+      expect(returned.feedbackReason).toBeNull();
+      expect(returned.feedbackAt).toBeNull();
+    });
+
+    it('refuses an event that did not come from a suggestion', async () => {
+      // A mirrored calendar row has no candidate behind it. Un-committing it
+      // here would either lie about the source or destroy it.
+      await setup();
+      repo.findOne.mockResolvedValue(null);
+
+      await expect(service.returnToSlate(ctx, 'event-from-google')).rejects.toThrow(NotFoundException);
+      expect(events.remove).not.toHaveBeenCalled();
+    });
+
+    it('gives a candidate whose window has closed a fresh one', async () => {
+      // Otherwise it returns invisible: findInRange only surfaces windows that
+      // overlap the view.
+      await setup();
+      repo.findOne.mockResolvedValue(
+        baseCandidate({
+          status: 'accepted',
+          promotedEventId: 'event-9',
+          windowStart: new Date('2020-01-01T00:00:00Z'),
+          windowEnd: new Date('2020-01-08T00:00:00Z'),
+        }),
+      );
+
+      const returned = await service.returnToSlate(ctx, 'event-9');
+
+      expect(new Date(returned.windowEnd).getTime()).toBeGreaterThan(Date.now());
+    });
+
+    it('leaves a still-open window alone', async () => {
+      // It may carry real meaning — "before Friday" is not ours to overwrite.
+      await setup();
+      const windowEnd = new Date('2099-01-01T00:00:00Z');
+      repo.findOne.mockResolvedValue(
+        baseCandidate({ status: 'accepted', promotedEventId: 'event-9', windowEnd }),
+      );
+
+      const returned = await service.returnToSlate(ctx, 'event-9');
+
+      expect(new Date(returned.windowEnd).getTime()).toBe(windowEnd.getTime());
     });
   });
 

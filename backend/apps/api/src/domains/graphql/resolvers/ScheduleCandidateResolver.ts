@@ -95,6 +95,25 @@ export class ScheduleCandidateResolver {
     return EventType.toType(event);
   }
 
+  /**
+   * The inverse of {@link acceptCandidate}: take a placed task off the calendar
+   * and put it back among the possibilities. Only events minted from a
+   * candidate qualify — a mirrored calendar row has no candidate to return to.
+   */
+  @Mutation(() => ScheduleCandidateType, {
+    description: 'Return a placed event to the slate, deleting the event it minted',
+  })
+  async returnEventToSlate(
+    @Context() context: RequestContext,
+    @Args('eventId', { type: () => ID }) eventId: string,
+  ): Promise<ScheduleCandidateType> {
+    const candidate = await this.candidateService.returnToSlate(toServiceContext(context), eventId);
+
+    this.logger.log('Event returned to the slate', { eventId, candidateId: candidate.id });
+
+    return ScheduleCandidateType.toType(candidate);
+  }
+
   @Mutation(() => ScheduleCandidateType, {
     description: 'Reject a candidate. reason: not_now | wrong_time | not_like_this | never',
   })

@@ -1,12 +1,17 @@
 import { useCallback, useState } from 'react';
 
 import { Button, cn, Tooltip } from '@ci/shadcn';
-import { Clock, GripVertical, Lightbulb, ListTodo, Loader2, Sparkles, X } from '@ci/shadcn/icons';
+import { Clock, GripVertical, Lightbulb, ListTodo, Loader2, Sparkles, Trash2, X } from '@ci/shadcn/icons';
 
 import type { DeclineReason, ScheduleCandidate } from '@/api/useScheduleCandidates';
+import {
+  CANDIDATE_DRAG_TYPE,
+  EVENT_DRAG_TYPE,
+  isExternallyOwnedDrag,
+  parseEventDrag,
+} from '@/lib/scheduleDrag';
 
-/** MIME-ish key for the drag payload. Kept here so the grid can read the same one. */
-export const CANDIDATE_DRAG_TYPE = 'application/x-ci-candidate';
+export { CANDIDATE_DRAG_TYPE };
 
 const SOURCE_LABEL: Record<string, string> = {
   action: 'action',
@@ -31,9 +36,11 @@ interface CardProps {
   candidate: ScheduleCandidate;
   onDecline: (id: string, reason: DeclineReason) => void;
   onSnooze: (id: string, until: Date) => void;
+  /** Lets the rail reveal the dismiss zone only while a card is in flight. */
+  onDragStateChange?: (dragging: boolean) => void;
 }
 
-function CandidateCard({ candidate, onDecline, onSnooze }: CardProps) {
+function CandidateCard({ candidate, onDecline, onSnooze, onDragStateChange }: CardProps) {
   const [expanded, setExpanded] = useState(false);
   const kind = candidate.rationaleSources[0]?.kind ?? 'action';
 
@@ -46,7 +53,11 @@ function CandidateCard({ candidate, onDecline, onSnooze }: CardProps) {
         // rather than to an opaque id.
         e.dataTransfer.setData('text/plain', candidate.title);
         e.dataTransfer.effectAllowed = 'move';
+        onDragStateChange?.(true);
       }}
+      // Fires however the drag ends — dropped, cancelled, or released over
+      // nothing — so the dismiss zone cannot be left stranded on screen.
+      onDragEnd={() => onDragStateChange?.(false)}
       className={cn(
         // A fixed-width tile in the rail: cards must be uniform for the row to
         // scan, and `shrink-0` is what keeps them from compressing to slivers
@@ -217,6 +228,54 @@ function BrainDump({ onSubmit }: { onSubmit: (text: string) => Promise<number> }
   );
 }
 
+/**
+ * The zone a card is dragged onto to dismiss it.
+ *
+ * Present ONLY while a candidate is in flight, and an explicit target rather
+ * than "anywhere that is not a day". Treating every failed drop as a dismissal
+ * would turn letting go in empty space — or changing your mind and releasing
+ * over the rail itself — into silent data loss, which is a poor trade for
+ * saving one click over the ✕ already on each card.
+ */
+function DismissZone({ onDismiss }: { onDismiss: (id: string) => void }) {
+  const [over, setOver] = useState(false);
+
+  return (
+    <div
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes(CANDIDATE_DRAG_TYPE)) {
+          return;
+        }
+
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        setOver(true);
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        setOver(false);
+
+        const id = e.dataTransfer.getData(CANDIDATE_DRAG_TYPE);
+
+        if (id) {
+          e.preventDefault();
+          onDismiss(id);
+        }
+      }}
+      className={cn(
+        'flex w-full shrink-0 items-center justify-center gap-1.5 rounded-lg border border-dashed',
+        'text-[11px] transition-colors sm:w-40',
+        over
+          ? 'border-destructive/70 bg-destructive/10 text-destructive'
+          : 'border-border text-muted-foreground',
+      )}
+    >
+      <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden />
+      drop to dismiss
+    </div>
+  );
+}
+
 interface TaskSlateProps {
   candidates: ScheduleCandidate[];
   loading: boolean;
@@ -224,6 +283,12 @@ interface TaskSlateProps {
   onSnooze: (id: string, until: Date) => void;
   /** Omit to hide the brain-dump box (the read-only stories do). */
   onBreakDown?: (text: string) => Promise<number>;
+  /**
+   * Called when a committed event is dragged off the week and back onto the
+   * rail — the inverse of dropping a card on a day. Omit and the rail takes no
+   * event drops.
+   */
+  onReturnEvent?: (eventId: string) => void;
   className?: string;
 }
 
@@ -244,16 +309,72 @@ export function TaskSlate({
   onDecline,
   onSnooze,
   onBreakDown,
+  onReturnEvent,
   className,
 }: TaskSlateProps) {
   const hasCards = candidates.length > 0;
+  /** A candidate is in flight from this rail — offer somewhere to drop it. */
+  const [draggingCard, setDraggingCard] = useState(false);
+  /** A committed event is hovering the rail and can be taken back. */
+  const [returnable, setReturnable] = useState(false);
+
+  // A mirrored calendar row has no candidate behind it, so it is not
+  // returnable — and that is legible during dragover only because the grid
+  // stamps it as a separate type key.
+  const eventDrag = (types: readonly string[]): boolean =>
+    Boolean(onReturnEvent) && types.includes(EVENT_DRAG_TYPE) && !isExternallyOwnedDrag(types);
 
   return (
-    <div className={cn('rounded-xl border border-border bg-card p-3 md:p-4', className)}>
+    <div
+      onDragOver={
+        onReturnEvent
+          ? (e) => {
+              if (!eventDrag(e.dataTransfer.types)) {
+                return;
+              }
+
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'move';
+              setReturnable(true);
+            }
+          : undefined
+      }
+      onDragLeave={() => setReturnable(false)}
+      onDrop={
+        onReturnEvent
+          ? (e) => {
+              setReturnable(false);
+
+              if (!eventDrag(e.dataTransfer.types)) {
+                return;
+              }
+
+              // Belt and braces: eventDrag already rejected an externally-owned
+              // drag from its type key, but the payload is authoritative and is
+              // finally readable here.
+              const payload = parseEventDrag(e.dataTransfer.getData(EVENT_DRAG_TYPE));
+
+              if (payload && !payload.externallyOwned) {
+                e.preventDefault();
+                onReturnEvent(payload.id);
+              }
+            }
+          : undefined
+      }
+      className={cn(
+        'rounded-xl border bg-card p-3 transition-colors md:p-4',
+        returnable ? 'border-primary/60 ring-1 ring-inset ring-primary/40' : 'border-border',
+        className,
+      )}
+    >
       <div className="mb-2.5 flex items-baseline justify-between gap-2">
         <h3 className="text-sm font-medium text-foreground">Possibilities</h3>
         <span className="text-[11px] text-muted-foreground">
-          {hasCards ? 'drag one onto a day below' : 'unplaced'}
+          {returnable
+            ? 'drop to take it off the week'
+            : hasCards
+              ? 'drag one onto a day below'
+              : 'unplaced'}
         </span>
       </div>
 
@@ -284,10 +405,13 @@ export function TaskSlate({
                 candidate={candidate}
                 onDecline={onDecline}
                 onSnooze={onSnooze}
+                onDragStateChange={setDraggingCard}
               />
             ))}
           </ul>
         )}
+
+        {draggingCard && <DismissZone onDismiss={(id) => onDecline(id, 'not_now')} />}
       </div>
     </div>
   );

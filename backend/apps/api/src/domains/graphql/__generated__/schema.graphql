@@ -915,6 +915,9 @@ type Mutation {
   Move an event to a new time, keeping its duration. Externally-sourced events are moved locally only and marked pending — the change is not pushed to the source calendar.
   """
   rescheduleEvent(endTime: DateTime, id: ID!, startTime: DateTime!): EventType
+
+  """Return a placed event to the slate, deleting the event it minted"""
+  returnEventToSlate(eventId: ID!): ScheduleCandidateType!
   setSavedSearchSharing(input: SetSavedSearchSharingInput!): UpdateSavedSearchPayload!
 
   """Defer a candidate until a future instant"""

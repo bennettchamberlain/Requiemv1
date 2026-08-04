@@ -154,6 +154,34 @@ function Surface({ colorMode = 'type' }: { colorMode?: ColorMode }) {
         loading={false}
         onDecline={(id) => setSlate((rest) => rest.filter((c) => c.id !== id))}
         onSnooze={(id) => setSlate((rest) => rest.filter((c) => c.id !== id))}
+        onReturnEvent={(eventId) => {
+          const placed = events.find((e) => e.id === eventId);
+
+          if (!placed) {
+            return;
+          }
+
+          setEvents((rest) => rest.filter((e) => e.id !== eventId));
+          setSlate((rest) => [
+            {
+              id: `returned-${eventId}`,
+              title: placed.title,
+              description: null,
+              rationale: 'Taken back off the week.',
+              rationaleSources: [{ kind: 'answer', id: eventId, note: null }],
+              windowStart: START.toISOString(),
+              windowEnd: at(6, 23),
+              timeFlex: 'week',
+              durationMinutes: 30,
+              l0Class: placed.category,
+              fitScore: null,
+              status: 'open',
+              generator: 'braindump/llm',
+              confidence: 0.9,
+            },
+            ...rest,
+          ]);
+        }}
       />
 
       <HorizonGrid

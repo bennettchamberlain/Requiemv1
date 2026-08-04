@@ -126,6 +126,7 @@ export function SchedulePage() {
     decline,
     snooze,
     breakDown,
+    returnEvent,
   } = useScheduleCandidates(start, end, refetch);
 
   const handleDrop = useCallback(
@@ -249,6 +250,7 @@ export function SchedulePage() {
                 onDecline={decline}
                 onSnooze={snooze}
                 onBreakDown={breakDown}
+                onReturnEvent={returnEvent}
               />
 
               <HorizonGrid

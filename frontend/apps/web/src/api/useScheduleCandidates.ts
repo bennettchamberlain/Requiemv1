@@ -59,6 +59,12 @@ const BREAK_DOWN_TASKS = gql(`
   }
 `);
 
+const RETURN_EVENT_TO_SLATE = gql(`
+  mutation ReturnEventToSlate($eventId: ID!) {
+    returnEventToSlate(eventId: $eventId) { id status }
+  }
+`);
+
 export interface CandidateSource {
   kind: string;
   id: string;
@@ -96,6 +102,11 @@ interface Result {
    * generation that produced nothing.
    */
   breakDown: (text: string) => Promise<number>;
+  /**
+   * Take a placed event off the week and back onto the slate. Only events this
+   * system minted from a candidate qualify; the server rejects the rest.
+   */
+  returnEvent: (eventId: string) => Promise<void>;
 }
 
 /**
@@ -120,6 +131,7 @@ export function useScheduleCandidates(from: Date, to: Date, onPlaced?: () => voi
   const [declineCandidate] = useMutation(DECLINE_CANDIDATE);
   const [snoozeCandidate] = useMutation(SNOOZE_CANDIDATE);
   const [breakDownTasks] = useMutation(BREAK_DOWN_TASKS);
+  const [returnEventToSlate] = useMutation(RETURN_EVENT_TO_SLATE);
 
   // Once per mount, not per render or per week-navigation: the projection is
   // cheap but it is still a write, and it does not depend on the window.
@@ -176,6 +188,17 @@ export function useScheduleCandidates(from: Date, to: Date, onPlaced?: () => voi
     [breakDownTasks, refetch],
   );
 
+  // Un-placing deletes the event it minted, so the committed lane has to
+  // re-read exactly as it does after a placement.
+  const returnEvent = useCallback(
+    async (eventId: string) => {
+      await returnEventToSlate({ variables: { eventId } });
+      await refetch();
+      onPlaced?.();
+    },
+    [returnEventToSlate, refetch, onPlaced],
+  );
+
   return {
     candidates: data?.scheduleCandidates ?? [],
     loading,
@@ -183,5 +206,6 @@ export function useScheduleCandidates(from: Date, to: Date, onPlaced?: () => voi
     decline,
     snooze,
     breakDown,
+    returnEvent,
   };
 }
