@@ -237,11 +237,20 @@ export function SchedulePage() {
 
         {(!isEmpty || candidates.length > 0) && !error && (
           <>
-            {/* Possibilities sit beside the week on a wide screen and beneath it
-                on a narrow one — dragging needs both visible at once. The row
-                stretches, so the two cards are one box height and end on the
-                same line. */}
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-stretch">
+            {/* Possibilities as a rail above the week, both full width. The
+                week is what the page is about, so it gets the whole page; the
+                rail stays one card deep above it and a drag runs downward onto
+                a day, which is the shorter and more obvious gesture than the
+                sideways one a column beside the grid asked for. */}
+            <div className="flex flex-col gap-4">
+              <TaskSlate
+                candidates={candidates}
+                loading={candidatesLoading}
+                onDecline={decline}
+                onSnooze={snooze}
+                onBreakDown={breakDown}
+              />
+
               <HorizonGrid
                 start={start}
                 days={DAYS_IN_VIEW}
@@ -250,7 +259,6 @@ export function SchedulePage() {
                 colorMode={colorMode}
                 onDropCandidate={handleDrop}
                 onMoveEvent={handleMove}
-                className="min-w-0 flex-1"
                 footer={
                   generatedAt
                     ? `Rhythm from your own patterns, updated ${new Date(generatedAt).toLocaleDateString(
@@ -259,15 +267,6 @@ export function SchedulePage() {
                       )}.`
                     : 'Rhythm layer unavailable — showing committed time only.'
                 }
-              />
-
-              <TaskSlate
-                candidates={candidates}
-                loading={candidatesLoading}
-                onDecline={decline}
-                onSnooze={snooze}
-                onBreakDown={breakDown}
-                className="w-full xl:w-80 xl:shrink-0"
               />
             </div>
           </>

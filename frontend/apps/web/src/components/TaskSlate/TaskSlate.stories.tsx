@@ -74,7 +74,7 @@ const meta: Meta<Props> = {
   parameters: { layout: 'centered' },
   decorators: [
     (Story) => (
-      <div style={{ width: 340 }}>
+      <div style={{ width: 900 }}>
         <Story />
       </div>
     ),

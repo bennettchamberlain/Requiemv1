@@ -48,8 +48,11 @@ function CandidateCard({ candidate, onDecline, onSnooze }: CardProps) {
         e.dataTransfer.effectAllowed = 'move';
       }}
       className={cn(
-        'group relative cursor-grab rounded-lg border border-border bg-background p-2.5 pl-7',
-        'transition-colors hover:border-primary/50 active:cursor-grabbing',
+        // A fixed-width tile in the rail: cards must be uniform for the row to
+        // scan, and `shrink-0` is what keeps them from compressing to slivers
+        // as the backlog grows.
+        'group relative flex w-60 shrink-0 flex-col rounded-lg border border-border bg-background',
+        'cursor-grab p-2.5 pl-7 transition-colors hover:border-primary/50 active:cursor-grabbing',
       )}
     >
       <GripVertical
@@ -104,7 +107,9 @@ function CandidateCard({ candidate, onDecline, onSnooze }: CardProps) {
         <span className={cn('flex-1', expanded ? '' : 'line-clamp-2')}>{candidate.rationale}</span>
       </button>
 
-      <div className="mt-1.5 flex flex-wrap items-center gap-1">
+      {/* Pushed to the card's foot so the tag strip lines up across the rail
+          even when one card's rationale runs longer than its neighbour's. */}
+      <div className="mt-auto flex flex-wrap items-center gap-1 pt-1.5">
         {candidate.rationaleSources.slice(0, 3).map((source) => (
           <span
             key={`${source.kind}-${source.id}`}
@@ -166,7 +171,9 @@ function BrainDump({ onSubmit }: { onSubmit: (text: string) => Promise<number> }
   }, [text, busy, onSubmit]);
 
   return (
-    <div className="mb-3">
+    // Fixed-width and first in the row, so it stays put while the cards scroll
+    // past it — the place you type should not move.
+    <div className="flex w-full shrink-0 flex-col sm:w-72">
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -183,14 +190,19 @@ function BrainDump({ onSubmit }: { onSubmit: (text: string) => Promise<number> }
         aria-label="What do you need to do?"
         placeholder="What do you need to do? Type it however it comes out…"
         className={cn(
-          'w-full resize-y rounded-lg border border-border bg-background px-2.5 py-2',
+          'w-full flex-1 resize-none rounded-lg border border-border bg-background px-2.5 py-2',
           'text-[13px] leading-snug text-foreground placeholder:text-muted-foreground/70',
           'focus:border-primary/60 focus:outline-none disabled:opacity-60',
         )}
       />
 
-      <div className="mt-1.5 flex items-center gap-2">
-        <Button size="sm" className="h-7 text-xs" disabled={busy || text.trim().length === 0} onClick={() => void submit()}>
+      <div className="mt-1.5 flex min-h-6 items-center gap-2">
+        <Button
+          size="sm"
+          className="h-6 shrink-0 text-xs"
+          disabled={busy || text.trim().length === 0}
+          onClick={() => void submit()}
+        >
           {busy ? (
             <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" strokeWidth={1.5} />
           ) : (
@@ -199,7 +211,7 @@ function BrainDump({ onSubmit }: { onSubmit: (text: string) => Promise<number> }
           {busy ? 'Splitting…' : 'Break into tasks'}
         </Button>
 
-        {note && <span className="text-[11px] text-muted-foreground">{note}</span>}
+        {note && <span className="text-[11px] leading-tight text-muted-foreground">{note}</span>}
       </div>
     </div>
   );
@@ -216,7 +228,12 @@ interface TaskSlateProps {
 }
 
 /**
- * Unplaced suggestions, ranked by fit.
+ * Unplaced suggestions, ranked by fit — a rail across the top of the week.
+ *
+ * Laid out as a row rather than a column because it sits above a full-width
+ * grid: a tall column of cards beside the week squeezed both, and the days are
+ * what the page is actually about. As a rail it stays one card deep, the week
+ * gets the whole width, and every card is still a short drag from its day.
  *
  * Everything here is draggable onto a day; that drag is the only way something
  * becomes committed time. Nothing schedules itself.
@@ -229,43 +246,49 @@ export function TaskSlate({
   onBreakDown,
   className,
 }: TaskSlateProps) {
+  const hasCards = candidates.length > 0;
+
   return (
-    <div className={cn('flex flex-col rounded-xl border border-border bg-card p-3 md:p-4', className)}>
-      <div className="mb-3 flex items-baseline justify-between gap-2">
+    <div className={cn('rounded-xl border border-border bg-card p-3 md:p-4', className)}>
+      <div className="mb-2.5 flex items-baseline justify-between gap-2">
         <h3 className="text-sm font-medium text-foreground">Possibilities</h3>
         <span className="text-[11px] text-muted-foreground">
-          {candidates.length > 0 ? 'drag onto a day' : 'unplaced'}
+          {hasCards ? 'drag one onto a day below' : 'unplaced'}
         </span>
       </div>
 
-      {onBreakDown && <BrainDump onSubmit={onBreakDown} />}
+      {/* The compose box holds the left edge; the cards scroll horizontally past
+          it. `items-stretch` is what makes a short card match a tall one, so the
+          rail reads as one band rather than a ragged edge. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
+        {onBreakDown && <BrainDump onSubmit={onBreakDown} />}
 
-      {loading && candidates.length === 0 && (
-        <p className="text-[12px] text-muted-foreground">Gathering suggestions…</p>
-      )}
+        {loading && !hasCards && (
+          <p className="self-center text-[12px] text-muted-foreground">Gathering suggestions…</p>
+        )}
 
-      {!loading && candidates.length === 0 && (
-        <p className="text-[12px] leading-relaxed text-muted-foreground">
-          Nothing waiting yet. Type what you need to do above, or wait for your feed and insights to turn
-          something up.
-        </p>
-      )}
+        {!loading && !hasCards && (
+          <p className="max-w-md self-center text-[12px] leading-relaxed text-muted-foreground">
+            Nothing waiting yet. Type what you need to do, or wait for your feed and insights to turn
+            something up.
+          </p>
+        )}
 
-      {/* Grows into whatever height the week grid sets and scrolls inside it,
-          so the two panels stay the same box. The cap keeps a long backlog from
-          driving the pair taller than the grid instead. */}
-      {candidates.length > 0 && (
-        <ul className="flex max-h-[32rem] min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
-          {candidates.map((candidate) => (
-            <CandidateCard
-              key={candidate.id}
-              candidate={candidate}
-              onDecline={onDecline}
-              onSnooze={onSnooze}
-            />
-          ))}
-        </ul>
-      )}
+        {hasCards && (
+          // Negative margin + padding so a card's focus ring and hover border
+          // are not clipped by the scroll container's own edge.
+          <ul className="-my-1 flex min-w-0 flex-1 gap-2 overflow-x-auto py-1">
+            {candidates.map((candidate) => (
+              <CandidateCard
+                key={candidate.id}
+                candidate={candidate}
+                onDecline={onDecline}
+                onSnooze={onSnooze}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

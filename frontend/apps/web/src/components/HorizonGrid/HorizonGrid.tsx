@@ -766,9 +766,7 @@ export function HorizonGrid({
         </div>
       </div>
 
-      {/* The rows share the leftover height evenly, so the card fills its
-          column instead of leaving the panel beside it hanging. */}
-      <div className="flex flex-1 flex-col gap-0.5">
+      <div className="flex flex-col gap-0.5">
         {Array.from({ length: days }, (_, i) => {
           const dayStart = addDays(start, i);
 

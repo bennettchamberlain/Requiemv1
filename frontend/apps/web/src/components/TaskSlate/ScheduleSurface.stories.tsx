@@ -148,14 +148,20 @@ function Surface({ colorMode = 'type' }: { colorMode?: ColorMode }) {
   const [slate, setSlate] = useState(CANDIDATES);
 
   return (
-    <div className="flex flex-col gap-4 xl:flex-row xl:items-stretch">
+    <div className="flex flex-col gap-4">
+      <TaskSlate
+        candidates={slate}
+        loading={false}
+        onDecline={(id) => setSlate((rest) => rest.filter((c) => c.id !== id))}
+        onSnooze={(id) => setSlate((rest) => rest.filter((c) => c.id !== id))}
+      />
+
       <HorizonGrid
         start={START}
         days={7}
         events={events}
         rhythm={RHYTHM}
         colorMode={colorMode}
-        className="min-w-0 flex-1"
         footer="Rhythm from your own patterns, updated Aug 4."
         onDropCandidate={(id, startTime) => {
           const placed = slate.find((c) => c.id === id);
@@ -199,14 +205,6 @@ function Surface({ colorMode = 'type' }: { colorMode?: ColorMode }) {
             }),
           )
         }
-      />
-
-      <TaskSlate
-        candidates={slate}
-        loading={false}
-        onDecline={(id) => setSlate((rest) => rest.filter((c) => c.id !== id))}
-        onSnooze={(id) => setSlate((rest) => rest.filter((c) => c.id !== id))}
-        className="w-full xl:w-80 xl:shrink-0"
       />
     </div>
   );
