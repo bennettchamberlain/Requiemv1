@@ -70,6 +70,7 @@ export class PeerAskService {
     if (links.length === 0) {
       throw new ForbiddenException('No peer link');
     }
+
     // Multi-user household: refuse rather than answer as an arbitrary member.
     if (links.length > 1) {
       throw new ForbiddenException('Ambiguous peer link');

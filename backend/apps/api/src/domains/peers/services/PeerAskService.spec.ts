@@ -1,5 +1,6 @@
-import { PeerAskService, toAskQuery } from './PeerAskService';
 import type { PeerAskBody } from '../protocol';
+
+import { PeerAskService, toAskQuery } from './PeerAskService';
 
 const PEER = { issuer: 'https://hub.test', subject: 'peer-sub' };
 
@@ -18,6 +19,7 @@ function link(overrides: Record<string, unknown> = {}) {
     createdAt: new Date(),
     updatedAt: new Date(),
     revokedAt: null,
+    ...overrides,
   } as never;
 }
 

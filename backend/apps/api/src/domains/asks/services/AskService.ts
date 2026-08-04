@@ -49,6 +49,7 @@ export class AskService {
     if (isInbound && !data.peerLinkId) {
       throw new BadRequestException('An inbound ask must carry its peer link');
     }
+
     // A local ask must be directed at someone else. An inbound peer ask has no
     // local asker at all, so the self-ask guard does not apply to it.
     if (!isInbound && data.responderUserId === context.userId) {

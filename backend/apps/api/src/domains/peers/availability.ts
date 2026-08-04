@@ -53,7 +53,6 @@ export function computeFreeBusy(
       continue;
     }
 
-    let end: number;
     if (event.isAllDay) {
       // An all-day event blocks the entire day it starts on.
       const dayStart = new Date(event.startTime);
@@ -65,7 +64,8 @@ export function computeFreeBusy(
     }
 
     const rawEnd = event.endTime?.getTime();
-    end = rawEnd != null && Number.isFinite(rawEnd) && rawEnd > start ? rawEnd : start + defaultDurationMs;
+    const end =
+      rawEnd != null && Number.isFinite(rawEnd) && rawEnd > start ? rawEnd : start + defaultDurationMs;
 
     spans.push(clamp(start, end, windowStart, windowEnd));
   }
@@ -92,8 +92,10 @@ export function computeFreeBusy(
     if (span.start > cursor) {
       free.push({ start: cursor, end: span.start });
     }
+
     cursor = Math.max(cursor, span.end);
   }
+
   if (cursor < windowEnd) {
     free.push({ start: cursor, end: windowEnd });
   }

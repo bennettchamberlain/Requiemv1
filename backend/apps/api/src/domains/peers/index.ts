@@ -11,8 +11,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AsksModule } from '@ci/domains/asks';
 import { AuthModule } from '@ci/domains/auth';
-import { MemoryModule } from '@ci/domains/memory';
-import { EventEntity } from '@ci/domains/memory';
+import { MemoryModule, EventEntity } from '@ci/domains/memory';
 
 import { PeerAskController } from './controllers/PeerAskController';
 import { PeerLinkEntity } from './entities/PeerLinkEntity';
