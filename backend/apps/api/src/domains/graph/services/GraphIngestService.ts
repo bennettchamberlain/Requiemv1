@@ -99,8 +99,10 @@ function stableJson(value: unknown): string {
       for (const k of Object.keys(v as Record<string, unknown>).sort()) {
         sorted[k] = (v as Record<string, unknown>)[k];
       }
+
       return sorted;
     }
+
     return v;
   });
 }
@@ -342,6 +344,7 @@ export class GraphIngestService {
       // another source's or the enrichment pass's nodes.
       const toWrite = distinct.filter((p) => {
         const current = existingByCoord.get(coordKey(p.entityType, p.linkedTable, p.linkedId));
+
         return current === undefined || isStale(current, p.row);
       });
       if (toWrite.length > 0) {
