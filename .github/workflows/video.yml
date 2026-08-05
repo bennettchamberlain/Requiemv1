@@ -49,11 +49,9 @@ jobs:
       # and the frontend reads flags at runtime from /api/_internal/features, so
       # setting them here is enough — no rebuild.
       #
-      # features.actions ships FALSE. FeedPage.tsx:414-416 gates the whole
-      # actions block on it AND renders the heading as
-      # `actionsEnabled ? 'Actions' : 'Questions'`, so with the default the feed
-      # shot's `h2:text-is("Actions")` can never match and the seeded actions
-      # (scripts/seed-database/seed-actions.ts) never appear.
+      # features.actions ships TRUE by default. FeedPage gates the actions carousel
+      # on it; set ENABLE_ACTIONS=false to hide. Video capture keeps this explicit
+      # so storyboard shots stay stable if the default ever changes again.
       ENABLE_ACTIONS: 'true'
       # features.require.signup.codes ships TRUE and .env.default:65 leaves the
       # override commented out. The fresh-user capture passes below sign up a
