@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import path from 'node:path';
+import { createRequire } from 'node:module';
 
 import { render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -8,10 +8,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 // `--primary` must resolve to phthalo-mist (#0a6358 light, #c5e8dc dark).
 // We assert against the shared token CSS and in jsdom after mounting under those tokens.
 
-const TOKENS_CSS = path.resolve(
-  import.meta.dirname,
-  '../../../../../../../ci-common/packages/tokens/src/globals.css',
-);
+const require = createRequire(import.meta.url);
+const TOKENS_CSS = require.resolve('@companionintelligence/tokens/globals.css');
 
 const CANON = {
   light: [10, 99, 88], // #0a6358
