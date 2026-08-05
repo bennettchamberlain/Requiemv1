@@ -287,7 +287,7 @@ export const ConfigSchema = z.object({
     /**
      * Wholesale gate for the Actions system: feed action cards, action GraphQL/REST,
      * feed badge contribution from actions, and the deferred (~24h post-setup) seed
-     * initializer. Off by default.
+     * initializer. On by default; set ENABLE_ACTIONS=false to disable.
      */
     actions: booleanStringSchema,
   }),
