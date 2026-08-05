@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { apiKeyHeaders, buildApiUrl } from '@ci/common';
 import { useToast } from '@ci/shadcn';
 
 import type { FormData } from '@/components/Chat';
@@ -74,10 +75,11 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
       let success = false;
 
       try {
-        const res = await fetch('/api/llm/generate', {
+        const res = await fetch(buildApiUrl('/api/llm/generate'), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            ...apiKeyHeaders(),
             Authorization: `Bearer ${authToken}`,
           },
           body: JSON.stringify({

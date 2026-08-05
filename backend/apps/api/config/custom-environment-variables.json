@@ -4,6 +4,14 @@
     "__name": "PORT",
     "__format": "json"
   },
+  "cors": {
+    "allowedOrigins": "CORS_ALLOWED_ORIGINS"
+  },
+  "powersync": {
+    "url": "POWERSYNC_URL",
+    "jwtSecret": "POWERSYNC_JWT_SECRET",
+    "audience": "POWERSYNC_AUDIENCE"
+  },
   "auth": {
     "jwt": {
       "authTokenSecret": "AUTH_TOKEN_SECRET",
@@ -23,7 +31,8 @@
     },
     "oidc": {
       "issuerUrl": "OIDC_ISSUER_URL",
-      "publicBaseUrl": "APP_BASE_URL"
+      "publicBaseUrl": "APP_BASE_URL",
+      "nativeRedirectScheme": "OIDC_NATIVE_REDIRECT_SCHEME"
     },
     "connect": {
       "hubOrigins": "CI_HUB_ORIGINS"
@@ -123,7 +132,9 @@
     "tags.page": "ENABLE_TAGS_PAGE",
     "hbpe": "ENABLE_HBPE",
     "agent.memory.compaction": "ENABLE_AGENT_MEMORY_COMPACTION",
-    "shared.search": "ENABLE_SHARED_SEARCH"
+    "shared.search": "ENABLE_SHARED_SEARCH",
+    "onboarding.preference.steps": "ENABLE_ONBOARDING_PREFERENCE_STEPS",
+    "actions": "ENABLE_ACTIONS"
   },
   "environment": {
     "database.query.logging": "DATABASE_QUERY_LOGGING"

@@ -53,7 +53,7 @@ export class ConnectionType {
       tokenExpiry: connection.tokenExpiry,
       syncState: connection.syncState,
       activeEndpoints: connection.activeEndpoints,
-      providerId: connection.providerId,
+      providerId: GlobalUID.encode('provider', connection.providerId),
       needsReauth: connection.needsReauth,
       externalId: connection.externalId,
     };

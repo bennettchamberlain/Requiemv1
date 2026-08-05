@@ -32,4 +32,19 @@ export class CreatePlaceInput {
 
   @Field({ nullable: true })
   uploaded?: boolean;
+
+  /** Full-precision coordinates for the typed location_point column. */
+  @Field(() => Number, { nullable: true })
+  latitude?: number;
+
+  @Field(() => Number, { nullable: true })
+  longitude?: number;
+
+  /** room|building|venue|address|neighborhood|city|region|country|continent|planet|other. */
+  @Field({ nullable: true })
+  placeKind?: string;
+
+  /** GlobalUID of the containing place. */
+  @Field({ nullable: true })
+  parentId?: string;
 }

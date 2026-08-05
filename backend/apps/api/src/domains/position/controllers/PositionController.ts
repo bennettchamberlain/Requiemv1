@@ -59,6 +59,18 @@ export class PositionController {
     }
   }
 
+  /**
+   * Aggregate counts for the location settings UI. Declared BEFORE the ':id'
+   * route so the static segment isn't captured by the param route.
+   */
+  @UseGuards(JwtOrApiKeyAuthGuard)
+  @Get('stats')
+  async stats(@Context() context: RequestContext) {
+    const serviceContext = toServiceContext(context);
+
+    return this.positionService.getStats(serviceContext);
+  }
+
   @UseGuards(JwtOrApiKeyAuthGuard)
   @Get(':id')
   async findById(@Context() context: RequestContext, @Param('id') id: string) {

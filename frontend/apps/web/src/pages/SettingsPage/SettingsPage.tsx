@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect } from 'react';
 
 import { LoadingPage, Portal, usePageTitle } from '@ci/common';
 import { Button, ScrollArea } from '@ci/shadcn';
-import { Braces, Cpu, ExternalLink, Globe, Key, KeyRound, Palette, X } from '@ci/shadcn/icons';
+import { Braces, Cpu, ExternalLink, Globe, Key, KeyRound, MapPin, Palette, User, X } from '@ci/shadcn/icons';
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 
 const AppearanceSection = lazy(() =>
@@ -12,10 +12,16 @@ const PreferencesSection = lazy(() =>
   import('./sections/PreferencesSection').then((m) => ({ default: m.PreferencesSection })),
 );
 const ModelSection = lazy(() => import('./sections/ModelSection').then((m) => ({ default: m.ModelSection })));
+const LocationSection = lazy(() =>
+  import('./sections/LocationSection').then((m) => ({ default: m.LocationSection })),
+);
 const ApiKeysSection = lazy(() =>
   import('./sections/ApiKeysSection').then((m) => ({ default: m.ApiKeysSection })),
 );
 const OAuthSection = lazy(() => import('./sections/OAuthSection').then((m) => ({ default: m.OAuthSection })));
+const AccountSection = lazy(() =>
+  import('./sections/AccountSection').then((m) => ({ default: m.AccountSection })),
+);
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   [
@@ -91,6 +97,11 @@ export function SettingsPage() {
                 Model
               </NavLink>
 
+              <NavLink to="/settings/location" state={{ backgroundLocation }} className={navLinkClass}>
+                <MapPin className="h-4 w-4" />
+                Location
+              </NavLink>
+
               <NavLink to="/settings/api-keys" state={{ backgroundLocation }} className={navLinkClass}>
                 <KeyRound className="h-4 w-4" />
                 API Keys
@@ -99,6 +110,11 @@ export function SettingsPage() {
               <NavLink to="/settings/oauth" state={{ backgroundLocation }} className={navLinkClass}>
                 <Key className="h-4 w-4" />
                 OAuth Credentials
+              </NavLink>
+
+              <NavLink to="/settings/account" state={{ backgroundLocation }} className={navLinkClass}>
+                <User className="h-4 w-4" />
+                Account
               </NavLink>
 
               {/* GraphiQL is a full-page IDE served by the API, so it opens in a
@@ -127,8 +143,10 @@ export function SettingsPage() {
                     <Route path="appearance" element={<AppearanceSection />} />
                     <Route path="preferences" element={<PreferencesSection />} />
                     <Route path="model" element={<ModelSection />} />
+                    <Route path="location" element={<LocationSection />} />
                     <Route path="api-keys" element={<ApiKeysSection />} />
                     <Route path="oauth" element={<OAuthSection />} />
+                    <Route path="account" element={<AccountSection />} />
                   </Routes>
                 </Suspense>
               </div>

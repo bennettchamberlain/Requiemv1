@@ -115,6 +115,13 @@ const MARK_SUMMARY_AS_DISMISSED = gql`
   }
 `;
 
+/**
+ * Insights are generated one at a time by a background workflow and stored as
+ * they land, so the feed polls to pick them up as they appear. There is no
+ * subscription infrastructure; polling is the proportional mechanism.
+ */
+const SUMMARIES_POLL_INTERVAL_MS = 45_000;
+
 export function useSummariesService(first?: number) {
   const { data, loading, error, refetch } = useQuery<GetSummariesQueryResult, GetSummariesQueryVariables>(
     GET_SUMMARIES,
@@ -122,6 +129,9 @@ export function useSummariesService(first?: number) {
       variables: { first },
       fetchPolicy: 'cache-and-network',
       notifyOnNetworkStatusChange: true,
+      pollInterval: SUMMARIES_POLL_INTERVAL_MS,
+      // Don't burn requests while the tab is in the background.
+      skipPollAttempt: () => document.hidden,
     },
   );
   const [markSeenMutation] = useMutation<MarkSummaryAsSeenMutationResult, MarkSummaryAsSeenMutationVariables>(
@@ -155,7 +165,11 @@ export function useSummariesService(first?: number) {
   return [
     {
       data: summaries,
-      loading: loading,
+      // Only surface loading before the first result: polls also flip Apollo's
+      // loading flag (notifyOnNetworkStatusChange), and consumers swap their
+      // whole view for a spinner on it — without this guard the page would
+      // flash on every poll.
+      loading: loading && data === undefined,
       error: error,
     },
     {

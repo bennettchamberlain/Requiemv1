@@ -35,8 +35,11 @@ export function FeedPage() {
   const navigate = useNavigate();
 
   const { id: actionId } = useParams<{ id?: string }>();
+  const { isFeatureEnabled } = useFeatures();
+  const hbpeEnabled = isFeatureEnabled('hbpe');
+  const actionsEnabled = isFeatureEnabled('actions');
   const [{ data: actions, loading, error }, { markActionAsSeen, markActionAsDismissed }] =
-    useActionListService(5);
+    useActionListService(5, { skip: !actionsEnabled });
   const [
     { data: summaries, loading: summariesLoading, error: summariesError },
     { markSummaryAsSeen, markSummaryAsDismissed },
@@ -45,8 +48,6 @@ export function FeedPage() {
     { question, submitting: questionSubmitting, error: questionError },
     { submitAnswer: submitQuestionAnswer },
   ] = useFeedQuestionService();
-  const { isFeatureEnabled } = useFeatures();
-  const hbpeEnabled = isFeatureEnabled('hbpe');
   const [{ data: forecast, stalled: forecastStalled }] = useForecastService();
   const [dismissedActionIds, setDismissedActionIds] = useState<Set<string>>(new Set());
   const [dismissedSummaryIds, setDismissedSummaryIds] = useState<Set<string>>(new Set());
@@ -62,8 +63,11 @@ export function FeedPage() {
   }, [questionError, toast]);
 
   const visibleActions = useMemo(
-    () => actions.filter((action) => !action.dismissed && !dismissedActionIds.has(action.id)),
-    [actions, dismissedActionIds],
+    () =>
+      actionsEnabled
+        ? actions.filter((action) => !action.dismissed && !dismissedActionIds.has(action.id))
+        : [],
+    [actions, actionsEnabled, dismissedActionIds],
   );
 
   const activeSummaries = useMemo(
@@ -265,7 +269,7 @@ export function FeedPage() {
     [submitQuestionAnswer],
   );
 
-  if (loading) {
+  if (actionsEnabled && loading) {
     return (
       <PageContent>
         <LoadingPage />
@@ -273,7 +277,7 @@ export function FeedPage() {
     );
   }
 
-  if (error) {
+  if (actionsEnabled && error) {
     return (
       <PageContent>
         <ErrorPage error={error} />
@@ -407,43 +411,49 @@ export function FeedPage() {
           </>
         )}
 
-        <h2 className="text-2xl font-bold text-foreground">Actions</h2>
+        {(actionsEnabled || Boolean(question)) && (
+          <>
+            <h2 className="text-2xl font-bold text-foreground">{actionsEnabled ? 'Actions' : 'Questions'}</h2>
 
-        {isActionsRowEmpty ? (
-          <div className="flex min-h-[220px] items-center justify-center">
-            <p className="text-center text-lg font-medium text-muted-foreground opacity-70">All Caught Up!</p>
-          </div>
-        ) : (
-          <Carousel {...carouselProps} initialIndex={selectedActionCardIndex}>
-            {actionCards.map((card) =>
-              card.kind === 'question' ? (
-                <QuestionCard
-                  key={card.id}
-                  question={card.question as FeedQuestion}
-                  submitting={questionSubmitting}
-                  onSubmit={handleQuestionSubmit}
-                  className="hover:shadow-lg transition-shadow duration-200"
-                />
-              ) : (
-                <BentoCard
-                  key={card.id}
-                  title={card.action.title}
-                  description={
-                    <div className="prose dark:prose-invert">
-                      <Markdown>{card.action.text}</Markdown>
-                    </div>
-                  }
-                  tags={card.action.tags}
-                  imageUrl={card.action.imageUrl}
-                  onClick={() => void handleCardClick(card.action.id)}
-                  onDismiss={() => void handleActionDismiss(card.action.id)}
-                  dismissLabel="Dismiss action"
-                  showUnseenIndicator={!card.action.seen}
-                  className="hover:shadow-lg transition-shadow duration-200"
-                />
-              ),
+            {isActionsRowEmpty ? (
+              <div className="flex min-h-[220px] items-center justify-center">
+                <p className="text-center text-lg font-medium text-muted-foreground opacity-70">
+                  All Caught Up!
+                </p>
+              </div>
+            ) : (
+              <Carousel {...carouselProps} initialIndex={selectedActionCardIndex}>
+                {actionCards.map((card) =>
+                  card.kind === 'question' ? (
+                    <QuestionCard
+                      key={card.id}
+                      question={card.question as FeedQuestion}
+                      submitting={questionSubmitting}
+                      onSubmit={handleQuestionSubmit}
+                      className="hover:shadow-lg transition-shadow duration-200"
+                    />
+                  ) : (
+                    <BentoCard
+                      key={card.id}
+                      title={card.action.title}
+                      description={
+                        <div className="prose dark:prose-invert">
+                          <Markdown>{card.action.text}</Markdown>
+                        </div>
+                      }
+                      tags={card.action.tags}
+                      imageUrl={card.action.imageUrl}
+                      onClick={() => void handleCardClick(card.action.id)}
+                      onDismiss={() => void handleActionDismiss(card.action.id)}
+                      dismissLabel="Dismiss action"
+                      showUnseenIndicator={!card.action.seen}
+                      className="hover:shadow-lg transition-shadow duration-200"
+                    />
+                  ),
+                )}
+              </Carousel>
             )}
-          </Carousel>
+          </>
         )}
 
         <h2 className="text-2xl font-bold text-foreground">Insights & Summaries</h2>

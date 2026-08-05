@@ -1,0 +1,410 @@
+{
+  "$schema": "https://raw.githubusercontent.com/companionintelligence/CI-Common/main/packages/video-kit/schema/storyboard.schema.json",
+  "app": {
+    "id": "ci-memory",
+    "name": "Companion Memory",
+    "repo": "companionintelligence/CI-Server",
+    "marketplaceId": "ci-memory",
+    "website": "ci.computer"
+  },
+  "meta": {
+    "fps": 30,
+    "transitionSeconds": 0.5
+  },
+  "chapters": {
+    "first-run": "First run",
+    "memory": "Your memory",
+    "insights": "What it notices",
+    "sources": "Your sources"
+  },
+  "media": {
+    "music": null,
+    "musicVolume": 0.14
+  },
+  "scenes": [
+    {
+      "id": "open",
+      "kind": "intro",
+      "seconds": 4,
+      "title": "Companion Memory",
+      "caption": "Your data. Your hardware. Your AI.",
+      "narration": "Companion Memory. The private brain of your appliance."
+    },
+    {
+      "id": "front-door",
+      "kind": "screen",
+      "chapter": "first-run",
+      "seconds": 4.5,
+      "caption": "It runs on your appliance, not a rented server.",
+      "narration": "It opens on hardware you own. Nothing has left home.",
+      "shots": [
+        {
+          "id": "splash-screen",
+          "url": "ci-memory.local",
+          "alt": "The logged-out splash page for Companion Memory",
+          "motion": "push-in",
+          "capture": {
+            "path": "/",
+            "waitFor": "h1:has-text(\"Companion Intelligence\")",
+            "settle": 400
+          }
+        }
+      ]
+    },
+    {
+      "id": "sign-in",
+      "kind": "screen",
+      "chapter": "first-run",
+      "seconds": 4.5,
+      "caption": "Sign in with your Companion account.",
+      "narration": "Sign in through Companion Portal, or with email if you prefer.",
+      "shots": [
+        {
+          "id": "login-form",
+          "url": "ci-memory.local/login",
+          "alt": "The login card with the email form revealed and filled in",
+          "motion": "push-in",
+          "capture": {
+            "path": "/login",
+            "waitFor": "a:has-text(\"Sign in with Companion account\")",
+            "before": [
+              { "click": "button:has-text(\"Sign in with email instead\")" },
+              { "waitFor": "input[name=\"email\"]" },
+              { "fill": ["input[name=\"email\"]", "jsmith@example.com"] },
+              { "fill": ["input[name=\"password\"]", "correct horse battery staple"] }
+            ],
+            "settle": 400
+          }
+        }
+      ]
+    },
+    {
+      "id": "first-run-focus",
+      "kind": "screen",
+      "chapter": "first-run",
+      "seconds": 5.5,
+      "caption": "Tell it what you actually care about.",
+      "narration": "First run asks what matters to you, then builds around that.",
+      "shots": [
+        {
+          "id": "onboarding-focus",
+          "url": "ci-memory.local/onboarding",
+          "alt": "The onboarding focus-areas checklist, with two areas ticked",
+          "motion": "push-in",
+          "capture": {
+            "path": "/onboarding",
+            "waitFor": "button:has-text(\"Next\")",
+            "before": [
+              { "click": "button:has-text(\"Next\")" },
+              { "waitFor": "h1:has-text(\"Time and place\")" },
+              { "click": "button:has-text(\"Next\")" },
+              { "waitFor": "h1:has-text(\"What should we focus on?\")" },
+              { "click": "[data-slot=\"checkbox\"] >> nth=0" },
+              { "click": "[data-slot=\"checkbox\"] >> nth=2" }
+            ],
+            "settle": 400
+          }
+        }
+      ]
+    },
+    {
+      "id": "first-run-import",
+      "kind": "screen",
+      "chapter": "first-run",
+      "seconds": 5.5,
+      "caption": "Connect a source, or bring an export.",
+      "narration": "Import the exports you already own, then connect what keeps producing.",
+      "shots": [
+        {
+          "id": "onboarding-connect",
+          "url": "ci-memory.local/onboarding",
+          "alt": "The onboarding connect-source step, offering providers, the browser extension and the import tools",
+          "motion": "drift-down",
+          "capture": {
+            "path": "/onboarding",
+            "waitFor": "button:has-text(\"Next\")",
+            "before": [
+              { "click": "button:has-text(\"Next\")" },
+              { "waitFor": "h1:has-text(\"Time and place\")" },
+              { "click": "button:has-text(\"Next\")" },
+              { "waitFor": "h1:has-text(\"What should we focus on?\")" },
+              { "click": "button:has-text(\"Next\")" },
+              { "waitFor": "h1:has-text(\"Who are you usually around?\")" },
+              { "click": "button:has-text(\"Next\")" },
+              { "waitFor": "h1:has-text(\"Connect a source\")" }
+            ],
+            "settle": 400
+          }
+        }
+      ]
+    },
+    {
+      "id": "feed",
+      "kind": "screen",
+      "chapter": "memory",
+      "seconds": 5,
+      "caption": "The feed is what changed while you were out.",
+      "narration": "The feed surfaces what changed, and what still needs you.",
+      "shots": [
+        {
+          "id": "feed-overview",
+          "url": "ci-memory.local/feed",
+          "alt": "The feed, with the actions carousel above insights and summaries",
+          "motion": "push-in",
+          "capture": {
+            "path": "/feed",
+            "waitFor": "h2:text-is(\"Actions\")",
+            "before": [{ "waitFor": "h2:text-is(\"Insights & Summaries\")" }],
+            "mask": ["[aria-label=\"24-hour behavioral forecast strip\"]", "time"],
+            "settle": 600
+          }
+        }
+      ]
+    },
+    {
+      "id": "memory-list",
+      "kind": "screen",
+      "chapter": "memory",
+      "seconds": 5,
+      "caption": "One list. Every kind of thing you keep.",
+      "narration": "Everything you keep, in one list, newest first.",
+      "shots": [
+        {
+          "id": "memory-list-view",
+          "url": "ci-memory.local/memory",
+          "alt": "The memory explorer list view, grouped by date",
+          "motion": "drift-down",
+          "capture": {
+            "path": "/memory?view=list",
+            "waitFor": "div[role=\"button\"]",
+            "mask": ["time"],
+            "settle": 600
+          }
+        }
+      ]
+    },
+    {
+      "id": "memory-detail",
+      "kind": "screen",
+      "chapter": "memory",
+      "seconds": 6.5,
+      "caption": "Open a row and the whole record is there.",
+      "narration": "Open any row and the whole record is there: sources, people, places, dates.",
+      "shots": [
+        {
+          "id": "memory-detail-sheet",
+          "url": "ci-memory.local/memory",
+          "alt": "The entity details sheet open over the list, showing one event's full record",
+          "motion": "push-in",
+          "capture": {
+            "path": "/memory?view=list&includedEntityTypes=Event",
+            "waitFor": "div[role=\"button\"]",
+            "before": [
+              { "click": "div[role=\"button\"] >> nth=0" },
+              { "waitFor": "[data-slot=\"sheet-content\"] [data-slot=\"sheet-title\"]" }
+            ],
+            "mask": ["time"],
+            "settle": 700
+          }
+        }
+      ]
+    },
+    {
+      "id": "memory-gallery",
+      "kind": "screen",
+      "chapter": "memory",
+      "seconds": 5.5,
+      "caption": "Or the same memory, laid out as a grid.",
+      "narration": "The gallery spreads that same store into a grid you can scan at a glance.",
+      "shots": [
+        {
+          "id": "memory-gallery-view",
+          "url": "ci-memory.local/memory?view=gallery",
+          "alt": "The memory explorer gallery view, a dense grid of typed entity cards",
+          "motion": "push-in",
+          "capture": {
+            "path": "/memory?view=gallery",
+            "waitFor": "main .grid.gap-4 > *",
+            "mask": ["time"],
+            "settle": 800
+          }
+        }
+      ]
+    },
+    {
+      "id": "memory-search",
+      "kind": "screen",
+      "chapter": "memory",
+      "seconds": 5,
+      "caption": "Search runs on the box. Nothing is uploaded.",
+      "narration": "Search narrows the whole store in place, and never leaves the appliance.",
+      "shots": [
+        {
+          "id": "memory-search-results",
+          "url": "ci-memory.local/memory?search=roadmap",
+          "alt": "The memory explorer filtered down to results matching roadmap",
+          "motion": "push-in",
+          "capture": {
+            "path": "/memory?view=list&search=roadmap",
+            "waitFor": "div[role=\"button\"]",
+            "mask": ["time"],
+            "settle": 600
+          }
+        }
+      ]
+    },
+    {
+      "id": "memory-map",
+      "kind": "screen",
+      "chapter": "memory",
+      "seconds": 4.5,
+      "caption": "Anything with a place gets one.",
+      "narration": "Anything that happened somewhere also lands on the map.",
+      "shots": [
+        {
+          "id": "memory-map-view",
+          "url": "ci-memory.local/memory?view=map",
+          "alt": "The memory explorer map view with located events plotted",
+          "motion": "push-in",
+          "capture": {
+            "path": "/memory?view=map",
+            "waitFor": ".leaflet-container",
+            "mask": ["time", ".leaflet-control-attribution"],
+            "settle": 1200
+          }
+        }
+      ]
+    },
+    {
+      "id": "memory-graph",
+      "kind": "screen",
+      "chapter": "memory",
+      "seconds": 6.5,
+      "caption": "The fourth view: how it all connects.",
+      "narration": "The graph shows how your people, places and ideas actually connect, computed locally.",
+      "shots": [
+        {
+          "id": "memory-graph-view",
+          "url": "ci-memory.local/memory?view=graph",
+          "alt": "The memory explorer graph view, hop-depth and neighbour controls above the force graph",
+          "motion": "push-in",
+          "capture": {
+            "path": "/memory?view=graph",
+            "waitFor": "[aria-label=\"Hop depth\"]",
+            "mask": ["time"],
+            "settle": 2500
+          }
+        }
+      ]
+    },
+    {
+      "id": "people",
+      "kind": "screen",
+      "chapter": "memory",
+      "seconds": 5.5,
+      "caption": "Everyone your memory has met.",
+      "narration": "It builds a directory of the people in your life, and spots the duplicates.",
+      "shots": [
+        {
+          "id": "people-directory",
+          "url": "ci-memory.local/people",
+          "alt": "The people directory, with the search box, the total count and the duplicate-merge suggestions",
+          "motion": "drift-down",
+          "capture": {
+            "path": "/people",
+            "waitFor": "input[placeholder=\"Search people by name...\"]",
+            "mask": ["time"],
+            "settle": 600
+          }
+        }
+      ]
+    },
+    {
+      "id": "insights",
+      "kind": "screen",
+      "chapter": "insights",
+      "seconds": 7,
+      "caption": "It reads the week and writes it up.",
+      "narration": "Your appliance reads the week and writes the summary itself, without sending anything out.",
+      "shots": [
+        {
+          "id": "insights-list",
+          "url": "ci-memory.local/insights",
+          "alt": "The insights and summaries page, listing the daily and weekly summaries it generated",
+          "motion": "push-in",
+          "capture": {
+            "path": "/insights",
+            "waitFor": "h2:has-text(\"Insights & Summaries\")",
+            "mask": ["time"],
+            "settle": 600
+          }
+        }
+      ]
+    },
+    {
+      "id": "insight-detail",
+      "kind": "screen",
+      "chapter": "insights",
+      "seconds": 6.5,
+      "caption": "Every summary shows its evidence.",
+      "narration": "Every summary opens up: the evidence behind it, the events, the patterns it found.",
+      "shots": [
+        {
+          "id": "insight-detail-view",
+          "url": "ci-memory.local/insights",
+          "alt": "One daily summary opened in full, with its period, tags and activity breakdown",
+          "motion": "drift-down",
+          "capture": {
+            "path": "/insights/01936cb0-0000-7000-8000-000000000003",
+            "waitFor": "h1:has-text(\"Daily Summary\")",
+            "mask": ["time"],
+            "settle": 500
+          }
+        }
+      ]
+    },
+    {
+      "id": "sources",
+      "kind": "screen",
+      "chapter": "sources",
+      "seconds": 5,
+      "caption": "Connect a source once. It keeps arriving.",
+      "narration": "Connect a source once. New activity keeps arriving.",
+      "shots": [
+        {
+          "id": "connect-providers",
+          "url": "ci-memory.local/connect",
+          "alt": "The connect page listing browser extensions, devices and providers",
+          "motion": "drift-down",
+          "capture": {
+            "path": "/connect",
+            "waitFor": "text=Browser Extensions",
+            "settle": 600
+          }
+        }
+      ]
+    },
+    {
+      "id": "recap",
+      "kind": "feature",
+      "seconds": 4.5,
+      "title": "What it actually is",
+      "caption": "One appliance. One memory. No cloud account.",
+      "narration": "Local database, local models, no cloud account.",
+      "items": [
+        { "label": "Store", "value": "Postgres + pgvector" },
+        { "label": "Models", "value": "Ollama, on device" },
+        { "label": "Ingest", "value": "capture, import, connect" },
+        { "label": "Egress", "value": "none by default" }
+      ]
+    },
+    {
+      "id": "close",
+      "kind": "outro",
+      "seconds": 4,
+      "cta": "UnCloud your life.",
+      "url": "ci.computer",
+      "narration": "Companion Memory. UnCloud your life."
+    }
+  ]
+}

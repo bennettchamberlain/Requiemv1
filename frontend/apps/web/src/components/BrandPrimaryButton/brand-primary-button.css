@@ -1,0 +1,31 @@
+/**
+ * Companion phthalo CTA — shared with the global primary button surface.
+ */
+:root {
+  --ci-brand-btn-gradient: var(--gradient-button);
+  --ci-brand-btn-gradient-hover: linear-gradient(135deg, var(--phthalo-hover), var(--phthalo-deep));
+  --ci-brand-btn-fg: var(--ci-button-foreground);
+  --ci-brand-btn-shadow-hover: 0 4px 16px rgb(2 44 43 / 42%);
+}
+
+.dark {
+  --ci-brand-btn-fg: var(--ci-button-foreground);
+  --ci-brand-btn-shadow-hover: 0 4px 16px rgb(88 235 191 / 35%);
+}
+
+button.ci-brand-btn-primary[data-slot='button'],
+button.ci-brand-btn-primary.ci-primary-surface[data-slot='button'] {
+  background-color: var(--ci-phthalo-green) !important;
+  background-image: var(--ci-brand-btn-gradient) !important;
+  border-color: transparent !important;
+  color: var(--ci-brand-btn-fg) !important;
+  box-shadow: none !important;
+}
+
+button.ci-brand-btn-primary[data-slot='button']:hover,
+button.ci-brand-btn-primary.ci-primary-surface[data-slot='button']:hover {
+  background-color: var(--ci-phthalo-green-hover) !important;
+  background-image: var(--ci-brand-btn-gradient-hover) !important;
+  color: var(--foreground) !important;
+  box-shadow: var(--ci-brand-btn-shadow-hover) !important;
+}

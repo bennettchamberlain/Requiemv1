@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Apple Privacy Manifest — REQUIRED for App Store submission since 2024-05-01.
+
+  Two independent things live here:
+  1. NSPrivacyAccessedAPITypes — "required-reason" APIs the app's own code and the
+     bundled Capacitor plugins call. These MUST be declared with an approved reason
+     code or the build is rejected at upload with an automated email.
+       • UserDefaults (CA92.1): Capacitor core + @capacitor/app / status-bar /
+         splash-screen / local-notifications read/write the app's OWN UserDefaults.
+       • File timestamp (C617.1): WKWebView local asset serving and file access
+         inside the app container read file modification times.
+       • Disk space (E174.1): WKWebView cache/file writes check available space.
+     (System boot time is NOT used by first-party code or the wired plugins — omitted.)
+
+  2. NSPrivacyCollectedDataTypes — data the DEVELOPER collects. Companion is a client
+     for the user's OWN self-hosted CI-Server: captured content is transmitted only to
+     that user-controlled appliance, which the developer (Lifescope) has no access to.
+     So the manifest declares no developer collection. NOTE: the App Store Connect
+     "App Privacy" nutrition label is a SEPARATE artifact — declare the transmitted
+     categories there honestly and explain the self-hosted architecture in review
+     notes. If a Lifescope-hosted demo server is stood up for App Review, data flowing
+     to THAT instance is developer-accessible and must be reflected in the label.
+
+  Tracking: the app shows no ads, runs no analytics SDKs, and links no third-party
+  identifiers, so tracking is false with no tracking domains.
+-->
+<plist version="1.0">
+<dict>
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>C617.1</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryDiskSpace</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>E174.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

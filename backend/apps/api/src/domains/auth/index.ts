@@ -25,6 +25,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import config from '@ci/configuration';
 import { UserModule } from '@ci/domains/user';
 
+import { AccountController } from './controllers/AccountController';
 import { ApiKeyController } from './controllers/ApiKeyController';
 import { ConnectController } from './controllers/ConnectController';
 import { OidcController } from './controllers/OidcController';
@@ -43,6 +44,7 @@ import { ConnectCodeService } from './services/ConnectCodeService';
 import { ConnectService } from './services/ConnectService';
 import { CsrfService } from './services/CsrfService';
 import { JwtStrategy } from './services/JwtStrategy';
+import { OidcNativeCodeService } from './services/OidcNativeCodeService';
 import { SignupCodeService } from './services/SignupCodeService';
 
 /**
@@ -68,11 +70,19 @@ import { SignupCodeService } from './services/SignupCodeService';
     CsrfService,
     ApiKeyService,
     ApiKeyStrategy,
+    OidcNativeCodeService,
     ConnectCodeService,
     ConnectService,
     ConnectRequestAuthGuard,
   ],
-  controllers: [SessionController, SignupController, ApiKeyController, OidcController, ConnectController],
+  controllers: [
+    SessionController,
+    SignupController,
+    AccountController,
+    ApiKeyController,
+    OidcController,
+    ConnectController,
+  ],
   exports: [SignupCodeService, ApiKeyService],
 })
 export class AuthModule {}
