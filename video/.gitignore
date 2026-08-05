@@ -1,0 +1,12 @@
+# rendered videos — regenerate with `ci-video render`
+out/
+
+# generated compositions — regenerate with `ci-video build`. They contain a
+# symlink into ../../assets and are rewritten on every build, so committing
+# them is pure churn.
+build/
+
+# playwright auth state
+.auth/
+
+node_modules/

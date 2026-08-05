@@ -393,6 +393,12 @@ describe('SessionController', () => {
       mockCsrfService.validateToken.mockImplementation(() => {
         throw new ForbiddenException('Missing CSRF token');
       });
+      // This request carries NO cookie, so CsrfGuard takes its cookie-less branch and
+      // calls verifyToken (not validateToken). The shared mock defaults verifyToken to
+      // true, which would wave the request through; the real service returns false for
+      // an absent header, so mirror that here — otherwise the test passes for the wrong
+      // reason and stops covering the forced-logout primitive it exists to prevent.
+      mockCsrfService.verifyToken.mockReturnValue(false);
 
       const response = await request(app.getHttpServer()).post('/authenticate/logout').expect(403);
 
@@ -426,13 +432,15 @@ describe('SessionController', () => {
   });
 
   describe('GET /authenticate/csrf', () => {
-    it('should set an CSRF token cookie', async () => {
-      const response = await request(app.getHttpServer()).get('/authenticate/csrf').expect(204);
+    it('should set a CSRF token cookie and return the token in the body', async () => {
+      const response = await request(app.getHttpServer()).get('/authenticate/csrf').expect(200);
 
       expect(mockCsrfService.generateToken).toHaveBeenCalled();
       const cookies = parseCookies(response);
       expect(cookies[CSRF_COOKIE_NAME]).toBeDefined();
       expect(cookies[CSRF_COOKIE_NAME].value).toBe(MOCK_CSRF_TOKEN);
+      // Body token lets cookie-less native clients echo it as the x-csrf-token header.
+      expect(response.body.csrfToken).toBe(MOCK_CSRF_TOKEN);
     });
 
     it('should pin the csrf cookie attributes the double-submit scheme depends on', async () => {
@@ -441,7 +449,9 @@ describe('SessionController', () => {
       // useAuth return undefined (breaking login/signup/refresh/logout), and
       // sameSite:'lax' would drop the defence that actually stops a cross-site
       // POST against the no-JS consent form.
-      const response = await request(app.getHttpServer()).get('/authenticate/csrf').expect(204);
+      // 200, not 204: the endpoint also returns the token in the body so cookie-less
+      // native clients can echo it as the x-csrf-token header (see the test above).
+      const response = await request(app.getHttpServer()).get('/authenticate/csrf').expect(200);
 
       const cookie = parseCookies(response)[CSRF_COOKIE_NAME];
       expect(cookie.httpOnly).toBeFalsy();
@@ -456,10 +466,13 @@ describe('SessionController', () => {
       const response = await request(app.getHttpServer())
         .get('/authenticate/csrf')
         .set('Cookie', [`${CSRF_COOKIE_NAME}=${existingToken}`])
-        .expect(204);
+        .expect(200);
 
       const cookies = parseCookies(response);
       expect(cookies[CSRF_COOKIE_NAME].value).toBe(existingToken);
+      // The body echoes the SAME reused token, so a native client priming twice does
+      // not end up holding a token the cookie no longer matches.
+      expect(response.body.csrfToken).toBe(existingToken);
       expect(mockCsrfService.generateToken).not.toHaveBeenCalled();
     });
 
@@ -469,7 +482,7 @@ describe('SessionController', () => {
       const response = await request(app.getHttpServer())
         .get('/authenticate/csrf')
         .set('Cookie', [`${CSRF_COOKIE_NAME}=stale-or-foreign-token`])
-        .expect(204);
+        .expect(200);
 
       const cookies = parseCookies(response);
       expect(cookies[CSRF_COOKIE_NAME].value).toBe(MOCK_CSRF_TOKEN);
@@ -482,9 +495,13 @@ describe('SessionController', () => {
       // would downgrade the binding on every prime.
       mockAuthService.resolveCsrfScope.mockReturnValue(MOCK_SESSION_ID);
 
-      await request(app.getHttpServer()).get('/authenticate/csrf').expect(204);
+      // 200, not 204: the endpoint also returns the token in the body so cookie-less
+      // native clients can read it (see the native test below). The scope binding —
+      // the point of this test — is unaffected.
+      const response = await request(app.getHttpServer()).get('/authenticate/csrf').expect(200);
 
       expect(mockCsrfService.ensureToken).toHaveBeenCalledWith(undefined, MOCK_SESSION_ID);
+      expect(response.body.csrfToken).toBe(MOCK_CSRF_TOKEN);
     });
   });
 
@@ -495,8 +512,10 @@ describe('SessionController', () => {
         throw new ForbiddenException('Missing CSRF token');
       });
 
+      // Browser request (carries the CSRF cookie) → strict double-submit path.
       await request(app.getHttpServer())
         .post('/authenticate')
+        .set('Cookie', [`${CSRF_COOKIE_NAME}=${MOCK_CSRF_TOKEN}`])
         .send({ username: 'test@example.com', password: 'password123' })
         .expect(403);
     });
@@ -509,7 +528,30 @@ describe('SessionController', () => {
 
       await request(app.getHttpServer())
         .post('/authenticate/refresh')
-        .set('Cookie', [`${COOKIE_NAME}=session-token-value`])
+        .set('Cookie', [`${COOKIE_NAME}=session-token-value`, `${CSRF_COOKIE_NAME}=${MOCK_CSRF_TOKEN}`])
+        .expect(403);
+    });
+
+    it('should accept a cookie-less request with a validly-signed CSRF header (native)', async () => {
+      mockCsrfService.verifyToken.mockReturnValueOnce(true);
+
+      await request(app.getHttpServer())
+        .post('/authenticate')
+        .set('X-CSRF-Token', MOCK_CSRF_TOKEN)
+        .send({ username: 'test@example.com', password: 'password123' })
+        .expect(200);
+
+      expect(mockCsrfService.verifyToken).toHaveBeenCalledWith(MOCK_CSRF_TOKEN);
+      expect(mockCsrfService.validateToken).not.toHaveBeenCalled();
+    });
+
+    it('should reject a cookie-less request whose CSRF header token is invalid', async () => {
+      mockCsrfService.verifyToken.mockReturnValueOnce(false);
+
+      await request(app.getHttpServer())
+        .post('/authenticate')
+        .set('X-CSRF-Token', 'tampered.token')
+        .send({ username: 'test@example.com', password: 'password123' })
         .expect(403);
     });
 

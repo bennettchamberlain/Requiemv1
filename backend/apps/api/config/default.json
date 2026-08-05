@@ -5,6 +5,9 @@
   "logging": {
     "level": "info"
   },
+  "cors": {
+    "allowedOrigins": []
+  },
   "auth": {
     "local": {
       "saltRounds": 10
@@ -61,7 +64,8 @@
     },
     "oidc": {
       "issuerUrl": "",
-      "publicBaseUrl": ""
+      "publicBaseUrl": "",
+      "nativeRedirectScheme": "companion"
     },
     "connect": {
       "hubOrigins": ""
@@ -100,6 +104,13 @@
   },
   "graphql": {
     "maxQueryComplexity": 150
+  },
+  "powersync": {
+    "url": "",
+    "jwtSecret": "",
+    "audience": "powersync",
+    "tokenTtl": "300s",
+    "jwtKid": "ci-powersync-hs256"
   },
   "services": {
     "ollama": {
@@ -147,7 +158,9 @@
     "tags.page": true,
     "hbpe": true,
     "agent.memory.compaction": false,
-    "shared.search": false
+    "shared.search": false,
+    "onboarding.preference.steps": false,
+    "actions": false
   },
   "environment": {
     "database.query.logging": false

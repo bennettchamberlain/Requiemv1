@@ -1,7 +1,15 @@
 import { type ReactNode, useState } from 'react';
 
 import { isReference, type Reference, useMutation, useQuery } from '@apollo/client';
-import { GlobalUID, LoadingPage, Portal, usePageTitle, EmptyState } from '@ci/common';
+import {
+  apiKeyHeaders,
+  buildApiUrl,
+  GlobalUID,
+  LoadingPage,
+  Portal,
+  usePageTitle,
+  EmptyState,
+} from '@ci/common';
 import {
   Breadcrumb,
   Card,
@@ -423,10 +431,11 @@ export function ConnectionPage() {
   const handleReauthConnection = async () => {
     try {
       const response = await fetch(
-        `/api/connections/${GlobalUID.parse('connection', connection!.id)}/connect`,
+        buildApiUrl(`/api/connections/${GlobalUID.parse('connection', connection!.id)}/connect`),
         {
           method: 'GET',
           headers: {
+            ...apiKeyHeaders(),
             Authorization: `Bearer ${authToken}`,
           },
         },

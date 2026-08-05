@@ -88,6 +88,20 @@ export class PersonSearchIndexListener {
       return;
     }
 
+    // Merge tombstones must never (re-)enter the search index — the merge
+    // deleted their embedding + vector rows on purpose. Remove any stale rows
+    // defensively in case an update event raced the merge.
+    if (person.mergedIntoEntityId != null) {
+      this.logger.log('Person is a merge tombstone, removing from search index', {
+        personId: person.id,
+      });
+
+      await this.embeddingService.remove(context, { entityType: 'person', entityId: person.id });
+      await this.vectorService.remove(context, { entityType: 'person', entityId: person.id });
+
+      return;
+    }
+
     if (person.userId == null) {
       this.logger.warn('Person has no associated user, cannot index');
 

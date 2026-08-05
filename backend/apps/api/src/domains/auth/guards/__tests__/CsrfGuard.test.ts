@@ -48,6 +48,10 @@ function ctxFor(req: {
 describe('CsrfGuard', () => {
   const mockCsrfService = {
     validateToken: jest.fn(),
+    // The cookie-less native branch (header present, no cookie) verifies the header
+    // token alone via verifyToken. Default it to a rejection so no test accidentally
+    // relies on it passing; the native cases override it explicitly.
+    verifyToken: jest.fn().mockReturnValue(false),
   };
 
   const mockLogger = {
@@ -198,5 +202,41 @@ describe('CsrfGuard', () => {
 
     expect(() => guard.canActivate(ctxFor({}))).toThrow(TypeError);
     expect(mockLogger.warn).not.toHaveBeenCalled();
+  });
+
+  // The cookie-less native path: header present, no cookie. The guard verifies the
+  // header token alone (no session cookie to bind a scope to) and never calls the
+  // scope-bound validateToken.
+  describe('cookie-less native requests (header, no cookie)', () => {
+    it('admits a request whose header token was minted by us', () => {
+      mockCsrfService.verifyToken.mockReturnValue(true);
+
+      const ctx = ctxFor({ cookies: {}, headers: { 'x-csrf-token': 'native-token' } });
+
+      expect(guard.canActivate(ctx)).toBe(true);
+      expect(mockCsrfService.verifyToken).toHaveBeenCalledWith('native-token');
+      expect(mockCsrfService.validateToken).not.toHaveBeenCalled();
+    });
+
+    it('rejects a header token we did not mint', () => {
+      mockCsrfService.verifyToken.mockReturnValue(false);
+
+      const ctx = ctxFor({ cookies: {}, headers: { 'x-csrf-token': 'forged' } });
+
+      expect(() => guard.canActivate(ctx)).toThrow(ForbiddenException);
+      expect(mockCsrfService.validateToken).not.toHaveBeenCalled();
+    });
+
+    it('does NOT take the native path when neither cookie nor header is present', () => {
+      // No header means this is not native — it must reach validateToken so a
+      // genuinely malformed/pre-auth request is reported as a "missing" rejection.
+      mockCsrfService.validateToken.mockImplementation(() => {
+        throw new CsrfValidationError('missing', 'Missing CSRF token');
+      });
+
+      expect(() => guard.canActivate(ctxFor({ cookies: {}, headers: {} }))).toThrow(ForbiddenException);
+      expect(mockCsrfService.verifyToken).not.toHaveBeenCalled();
+      expect(mockCsrfService.validateToken).toHaveBeenCalled();
+    });
   });
 });

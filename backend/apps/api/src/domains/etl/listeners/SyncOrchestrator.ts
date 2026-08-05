@@ -389,7 +389,7 @@ export class SyncOrchestrator {
           orderBy: 'updated_at:DESC',
         },
       )
-    ).slice(0, 10);
+    ).slice(0, 2);
 
     for (const { id } of syncJobsToTransform) {
       await this.eventService.send(ConnectionSyncJobTransformEvent, {
@@ -450,9 +450,17 @@ export class SyncOrchestrator {
         connectionSyncJobId: syncJob.id,
       });
     } catch (err) {
-      this.logger.error('Error executing sync job', {
+      this.logger.error('Error transforming sync job', {
         connectionSyncJobId: syncJob.id,
         error: err instanceof Error ? err.message : 'Unknown error',
+      });
+
+      // Mark transformed so a failed/heavy job does not re-queue forever after API OOM restarts.
+      await this.connectionSyncJobService.update({ userId: SYSTEM_USER }, syncJob.id, {
+        lastTransformed: new Date(),
+        error: {
+          transformError: err instanceof Error ? err.message : 'Unknown error',
+        },
       });
     }
   }

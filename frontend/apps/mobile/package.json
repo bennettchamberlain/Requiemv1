@@ -1,0 +1,33 @@
+{
+  "name": "@ci/fe-mobile",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Native iOS + Android shell (Capacitor) wrapping the @ci/fe-web build as a thin client. Standalone project (NOT a yarn workspace — see README) so the root Yarn PnP install stays intact; it consumes the web build via webDir, not as a dependency.",
+  "packageManager": "yarn@4.9.1",
+  "scripts": {
+    "build:web": "cd ../../.. && VITE_DISABLE_PWA=true yarn workspace @ci/fe-web build",
+    "sync": "cap sync",
+    "build": "yarn build:web && yarn sync",
+    "add:ios": "cap add ios",
+    "add:android": "cap add android",
+    "open:ios": "cap open ios",
+    "open:android": "cap open android",
+    "run:ios": "cap run ios",
+    "run:android": "cap run android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/app": "^7.0.0",
+    "@capacitor/browser": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/ios": "^7.0.0",
+    "@capacitor/local-notifications": "^7.0.0",
+    "@capacitor/splash-screen": "^7.0.0",
+    "@capacitor/status-bar": "^7.0.0",
+    "capacitor-secure-storage-plugin": "^0.11.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.0.0",
+    "typescript": "^5.8.3"
+  }
+}

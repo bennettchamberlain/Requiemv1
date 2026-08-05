@@ -115,13 +115,42 @@ Each component still gets its own DSN variable, and every event carries a
 |---|---|---|
 | `backend/apps/api` | `ci-server-api` | `SENTRY_DSN_API` |
 | `frontend/apps/web` | `ci-server-web` | `VITE_SENTRY_DSN` (build time) |
+| `frontend/apps/mobile` | `ci-server-mobile` | `VITE_SENTRY_DSN` (build time — same bundle) |
 | `backend/apps/hbpe` | `ci-server-hbpe` | `SENTRY_DSN_HBPE` |
 | `backend/apps/summary` | `ci-server-summary` | `SENTRY_DSN_SUMMARY` |
 
-Point all four at the same `ci-memory` DSN and filter by `component:` in Sentry,
+Point them all at the same `ci-memory` DSN and filter by `component:` in Sentry,
 or split them into per-component projects later without touching any code — the
 env contract is the same either way. Compose maps each variable onto the
 container's `SENTRY_DSN`, so a service only ever sees the one meant for it.
+
+### The native shell
+
+The Capacitor app has no bundle and no DSN of its own — it ships the very same
+`@ci/fe-web` build. It is the *runtime* that differs, so the `component` tag is
+resolved per session from `isNativePlatform()` rather than being a build-time
+constant. Two things follow, neither of which the web path ever has to think
+about:
+
+- **The consent probe is not same-origin.** Capacitor serves the bundle from
+  `capacitor://localhost` (iOS) or `https://localhost` (Android), so a relative
+  `GET /api/config/telemetry` resolves against the WebView itself. It goes
+  through `buildApiUrl()` against the server the user configured, and returns
+  `null` — reporting off — before any server has been configured. This also means
+  `initApiBaseUrl()` **must** run before `initTelemetry()` in `main.tsx`: the
+  probe issues its fetch before its first `await` yields, so an origin resolved
+  after it is too late. Reversing those two lines silently disables reporting for
+  the entire mobile app, with no error raised anywhere.
+- **The server origin is itself sensitive.** On web the API is same-origin and
+  there is nothing to conceal; on a phone it is whatever the user typed, and that
+  is routinely a tailnet hostname or a LAN IP identifying their machine and their
+  network. `beforeSend` replaces it with `[server]` wherever it appears —
+  messages, exception values, breadcrumb URLs. `sendDefaultPii: false` does not
+  cover this, because the SDK cannot know the string is sensitive.
+
+Native Swift/Java crashes are **not** captured; only errors that reach the JS
+layer are. Capturing those needs `@sentry/capacitor` plus a privacy-manifest
+update, and is deliberately outside this integration.
 
 ```
 sentry issue list companion-intelligence/ci-memory --query "component:ci-server-hbpe"
@@ -163,7 +192,7 @@ To confirm reporting is genuinely inert without a DSN, start the API with no
 | Path | Role |
 |---|---|
 | `backend/apps/api/src/instrument.ts` | `Sentry.init`; must stay the first import in `main.ts` |
-| `backend/apps/api/src/common/telemetry/settings.ts` | Resolves the opt-out gate from env |
+| `backend/apps/api/src/common/telemetry/settings.ts` | Resolves the telemetry gate from env |
 | `backend/apps/api/src/common/filters/GlobalExceptionsFilter.ts` | Captures unexpected request failures (not 4xx) |
 | `backend/apps/api/src/application.ts` | Crash handlers capture + flush before `process.exit` |
 | `frontend/apps/web/src/main.tsx` | Calls `initTelemetry()` before render |

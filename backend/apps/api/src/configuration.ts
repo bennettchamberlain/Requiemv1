@@ -22,6 +22,24 @@ export const ConfigSchema = z.object({
   logging: z.object({
     level: z.string(),
   }),
+  // Cross-origin allowlist for non-same-origin clients — notably the native
+  // Capacitor app, whose webview origin is capacitor://localhost (iOS) or
+  // http(s)://localhost (Android). The web app is served same-origin behind the
+  // proxy and needs no entry here. The fixed native origins are always allowed in
+  // main.ts; this list is the operator-extensible addition, parsed from a
+  // comma-separated CORS_ALLOWED_ORIGINS env var.
+  cors: z.object({
+    allowedOrigins: z.preprocess((val) => {
+      if (typeof val === 'string') {
+        return val
+          .split(',')
+          .map((o) => o.trim())
+          .filter((o) => o.length > 0);
+      }
+
+      return val;
+    }, z.array(z.string()).default([])),
+  }),
   auth: z.object({
     local: z.object({
       saltRounds: z.number(),
@@ -106,6 +124,16 @@ export const ConfigSchema = z.object({
       // this stable origin instead of the inbound request host — so reaching the app at its
       // local *.localhost route still yields a publicly-reachable callback for CI-Portal.
       publicBaseUrl: z.string().optional().default(''),
+      // Custom URL scheme the native (Capacitor) app registers so the OIDC callback
+      // can deep-link the sign-in result back into the app. Must match the scheme in
+      // the iOS Info.plist / Android intent-filter and @ci/common's OIDC_NATIVE_SCHEME.
+      // Validated as an RFC-3986 scheme token (letter, then letters/digits/+/-/.) so a
+      // misconfigured value (empty, contains `://`, …) fails fast instead of silently
+      // producing a broken `${scheme}://oidc/callback` deep link.
+      nativeRedirectScheme: z
+        .string()
+        .regex(/^[a-zA-Z][a-zA-Z0-9+.-]*$/, 'must be a valid URL scheme, e.g. "companion"')
+        .default('companion'),
     }),
     // App-connect flow (CI-Hub brokers connecting agent apps to Companion Memory).
     // `hubOrigins` is a comma-separated allowlist of CI-Hub origins that the
@@ -137,6 +165,22 @@ export const ConfigSchema = z.object({
   }),
   graphql: z.object({
     maxQueryComplexity: z.number().int(),
+  }),
+  // Local-first sync (PowerSync). The server issues short-lived client tokens via
+  // /api/powersync/token; the sync engine runs in the `powersync` container. Empty
+  // url/jwtSecret = feature scaffolded but not enabled (the endpoint returns 503).
+  // See infrastructure/powersync/README.md.
+  powersync: z.object({
+    /** Public URL of the PowerSync service the client connects to. */
+    url: z.string().default(''),
+    /** Shared HS256 secret the PowerSync service's client_auth trusts. */
+    jwtSecret: z.string().default(''),
+    /** Audience claim the PowerSync service expects. */
+    audience: z.string().default('powersync'),
+    /** Client token lifetime (the SDK refreshes via fetchCredentials). */
+    tokenTtl: z.string().default('300s'),
+    /** Key id set in the JWT header, matched against the PowerSync jwks entry. */
+    jwtKid: z.string().default('ci-powersync-hs256'),
   }),
   services: z.object({
     ollama: z.object({
@@ -242,6 +286,14 @@ export const ConfigSchema = z.object({
      * enabled.
      */
     'shared.search': booleanStringSchema,
+    /** Shows would-you-rather preference steps during onboarding (food/movie/activity). */
+    'onboarding.preference.steps': booleanStringSchema,
+    /**
+     * Wholesale gate for the Actions system: feed action cards, action GraphQL/REST,
+     * feed badge contribution from actions, and the deferred (~24h post-setup) seed
+     * initializer. Off by default.
+     */
+    actions: booleanStringSchema,
   }),
   environment: z.object({
     'database.query.logging': booleanStringSchema,

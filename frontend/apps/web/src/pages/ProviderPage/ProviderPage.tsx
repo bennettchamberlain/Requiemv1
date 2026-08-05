@@ -45,6 +45,8 @@ const GET_PROVIDER = gql(`
   }
 `);
 
+export { GET_PROVIDER };
+
 export const ConnectFormSchema = s.object({
   endpoints: s.array(s.string()).nullable().default(null),
 });

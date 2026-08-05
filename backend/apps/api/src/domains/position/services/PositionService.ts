@@ -35,6 +35,41 @@ export class PositionService {
     this.logger.setContext(PositionService.name);
   }
 
+  /**
+   * Aggregate position counts for the location settings UI: total fixes,
+   * per-provider counts (the browser tracker writes provider='browser'), and
+   * the most recent fix time.
+   */
+  async getStats(context: UserServiceContext): Promise<{
+    total: number;
+    byProvider: Record<string, number>;
+    lastFixAt: Date | null;
+  }> {
+    const rows: Array<{ provider: string | null; n: string; last_at: Date | null }> =
+      await this.positionRepository.manager.query(
+        `SELECT provider, COUNT(*) AS n, MAX(time) AS last_at
+           FROM ci.position
+          WHERE user_id = $1
+          GROUP BY provider`,
+        [context.userId],
+      );
+
+    const byProvider: Record<string, number> = {};
+    let total = 0;
+    let lastFixAt: Date | null = null;
+
+    for (const row of rows) {
+      const count = Number(row.n);
+      total += count;
+      byProvider[row.provider ?? 'unknown'] = count;
+      if (row.last_at && (lastFixAt == null || row.last_at > lastFixAt)) {
+        lastFixAt = row.last_at;
+      }
+    }
+
+    return { total, byProvider, lastFixAt };
+  }
+
   async create(
     context: UserServiceContext,
     data: CreatePositionDto[],

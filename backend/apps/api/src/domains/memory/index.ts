@@ -35,9 +35,24 @@ import { ContentEntity } from './entities/ContentEntity';
 import { type Event, EventEntity } from './entities/EventEntity';
 import { FileEntity } from './entities/FileEntity';
 import { GraphNodeEntity } from './entities/GraphNodeEntity';
-import { type Item, type InventoryCondition, ItemEntity } from './entities/ItemEntity';
+import {
+  type Item,
+  type InventoryCondition,
+  type InventoryIdentityMethod,
+  type InventoryLifecycleState,
+  ItemEntity,
+} from './entities/ItemEntity';
+import {
+  type ObjectObservation,
+  ObjectObservationEntity,
+  type ObservationResolutionMethod,
+  type ObservationSourceKind,
+} from './entities/ObjectObservationEntity';
 import { type Person, PersonEntity } from './entities/PersonEntity';
 import { type Place, PlaceEntity } from './entities/PlaceEntity';
+import { type ProductModel, ProductModelEntity } from './entities/ProductModelEntity';
+import { type Receipt, ReceiptEntity, type ReceiptExtractionState } from './entities/ReceiptEntity';
+import { type ReceiptLineItem, ReceiptLineItemEntity } from './entities/ReceiptLineItemEntity';
 import { RelationshipEntity } from './entities/RelationshipEntity';
 import { ThingEntity } from './entities/ThingEntity';
 import { GraphEventListener } from './listeners/GraphEventListener';
@@ -52,6 +67,9 @@ import { GraphReadService } from './services/GraphReadService';
 import { GraphUtilityService } from './services/GraphUtilityService';
 import { ItemService } from './services/ItemService';
 import { KnownPlacesService } from './services/KnownPlacesService';
+import { PersonActivityService } from './services/PersonActivityService';
+import { PersonDuplicateService } from './services/PersonDuplicateService';
+import { PersonMergeService } from './services/PersonMergeService';
 import { PersonService } from './services/PersonService';
 import { PlaceService } from './services/PlaceService';
 import { UserContextService } from './services/UserContextService';
@@ -72,6 +90,10 @@ import { UserContextService } from './services/UserContextService';
       ThingEntity,
       GraphNodeEntity,
       ItemEntity,
+      ProductModelEntity,
+      ReceiptEntity,
+      ReceiptLineItemEntity,
+      ObjectObservationEntity,
       RelationshipEntity,
       FileEntity,
       BrowserActivityEntity,
@@ -96,6 +118,9 @@ import { UserContextService } from './services/UserContextService';
     UserContextService,
     GraphEventListener,
     PersonService,
+    PersonActivityService,
+    PersonDuplicateService,
+    PersonMergeService,
     ConceptService,
     FileService,
     PlaceService,
@@ -109,6 +134,9 @@ import { UserContextService } from './services/UserContextService';
     GraphEventService,
     ItemService,
     PersonService,
+    PersonActivityService,
+    PersonDuplicateService,
+    PersonMergeService,
     ConceptService,
     UserContextService,
     GraphUtilityService,
@@ -127,9 +155,13 @@ export {
   EventEntity,
   FileEntity,
   ItemEntity,
+  ObjectObservationEntity,
   PersonEntity,
   ConceptEntity,
   PlaceEntity,
+  ProductModelEntity,
+  ReceiptEntity,
+  ReceiptLineItemEntity,
   ThingEntity,
   GraphNodeEntity,
   RelationshipEntity,
@@ -143,6 +175,9 @@ export {
   GraphEventService,
   ItemService,
   PersonService,
+  PersonActivityService,
+  PersonDuplicateService,
+  PersonMergeService,
   ConceptService,
   UserContextService,
   GraphUtilityService,
@@ -154,6 +189,11 @@ export {
 };
 
 export type { Content } from './entities/ContentEntity';
+export type { PlaceKind } from './entities/PlaceEntity';
+export type { PlaceVisitStats } from './services/PlaceService';
+export type { PersonDuplicateGroup, DuplicateReason } from './services/PersonDuplicateService';
+export type { PersonInteractionStats } from './services/PersonActivityService';
+export type { MergeCounts } from './services/PersonMergeService';
 export type { CreateEventDto, UpdateEventDto, CreateContentDto, UpdateContentDto } from './types';
 export type {
   KnownPlace,
@@ -162,6 +202,17 @@ export type {
   KnownPlaceCandidate,
 } from './services/KnownPlacesService';
 export type { Concept, Event, Item, InventoryCondition, Person, Communication, Place };
+export type {
+  InventoryIdentityMethod,
+  InventoryLifecycleState,
+  ObjectObservation,
+  ObservationResolutionMethod,
+  ObservationSourceKind,
+  ProductModel,
+  Receipt,
+  ReceiptExtractionState,
+  ReceiptLineItem,
+};
 export {
   CommunicationDirection,
   CommunicationType,

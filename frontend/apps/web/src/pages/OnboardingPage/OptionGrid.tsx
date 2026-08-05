@@ -30,21 +30,21 @@ export function OptionGrid({ options, defaultValue = '', onValueChange }: Props)
     <RadioGroup
       value={selectedValue}
       onValueChange={handleValueChange}
-      className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6"
+      className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 w-full"
     >
       {options.map((option) => (
         <Label
           htmlFor={option.id}
           key={option.id}
           className={cn(
-            'flex flex-col cursor-pointer rounded-xl border-2 gap-0 overflow-hidden',
-            selectedValue === option.id ? 'border-teal-700' : '',
+            'flex flex-col cursor-pointer rounded-2xl border-2 gap-0 overflow-hidden transition-colors',
+            selectedValue === option.id ? 'border-teal-700' : 'border-border/80',
           )}
         >
           <RadioGroup.Item value={option.id} id={option.id} className="sr-only" />
 
           <div
-            className="aspect-square bg-cover bg-center w-full md:w-64"
+            className="aspect-[4/3] sm:aspect-square bg-cover bg-center w-full"
             style={{
               backgroundImage: `
               url(${option.imageUrl})
@@ -52,7 +52,7 @@ export function OptionGrid({ options, defaultValue = '', onValueChange }: Props)
             }}
           />
 
-          <div className="flex flex-row items-center justify-center h-12 gap-2">
+          <div className="flex flex-row items-center justify-center h-14 gap-2 text-lg sm:text-xl font-medium">
             {selectedValue === option.id && <Check className="h-5 w-5 text-teal-700" />}
             {option.title}
           </div>

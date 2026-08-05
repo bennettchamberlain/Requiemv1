@@ -63,6 +63,7 @@ from .activities import (
     get_last_insight_time_activity,
     aggregate_insights_context_activity,
     generate_insights_activity,
+    generate_single_insight_activity,
     store_insight_activity,
     # Action activities
     aggregate_action_context_activity,
@@ -172,6 +173,7 @@ async def run_worker():
             get_last_insight_time_activity,
             aggregate_insights_context_activity,
             generate_insights_activity,
+            generate_single_insight_activity,
             store_insight_activity,
             # Action activities
             aggregate_action_context_activity,
