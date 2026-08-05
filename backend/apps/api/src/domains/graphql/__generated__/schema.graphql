@@ -1315,6 +1315,7 @@ input SearchInput {
   excludeTypes: [String!]
   first: Int
   hasLocation: Boolean
+  includeFiles: Boolean
   includeTypes: [String!]
   people: [String!]
   places: [String!]
