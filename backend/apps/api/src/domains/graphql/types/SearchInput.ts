@@ -21,6 +21,16 @@ export class SearchInput {
   @Field(() => [String], { nullable: true })
   includeTypes?: IndexableEntity[];
 
+  /**
+   * Opt files into the unfiltered timed browse without restricting the result
+   * to files only (which is what `includeTypes: ['file']` would do). Files are
+   * normally excluded from "recent activity" so documents don't bury the feed,
+   * but media surfaces like the gallery need standalone files (e.g. Capture
+   * screenshots, which have no linked event) interleaved with everything else.
+   */
+  @Field(() => Boolean, { nullable: true })
+  includeFiles?: boolean;
+
   @Field(() => [String], { nullable: true })
   tags?: string[];
 

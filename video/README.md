@@ -5,18 +5,43 @@
 Generates a **16:9 desktop cut** and a **9:16 mobile cut** of Companion Memory's FTUE and major
 screens, from this repo's own UI. Both are produced from [`storyboard.json`](storyboard.json).
 
+**Videos are built locally, on demand, and the MP4s are not stored.** There is no GitHub Actions
+job, no schedule, no uploaded artifact, and no committed `.mp4`. A cut is a build output: render
+one when you need it, use it, then delete it. What lives in git is the *input* — the storyboard,
+the narration audio, and the screenshots under `assets/shots/`.
+
+> ⚠️ **No shots are committed yet.** `assets/shots/` holds only a `.gitkeep`, so the only cut this
+> repo can produce today is 18 narrated scenes over 15 "capture pending" slates, and `npm run check`
+> fails. Standing the stage up and committing all 30 PNGs (15 shots × 2 viewports) is the
+> outstanding work; everything else in this directory is ready.
+
+The one command, run from a CI-Engineering checkout on the same machine:
+
+```bash
+node tools/make-videos.mjs companion-memory            # build both cuts from committed shots
+node tools/make-videos.mjs companion-memory --capture  # re-capture the shots first (needs the stage, below)
+node tools/make-videos.mjs --list                      # what else it can build
+```
+
+It resolves video-kit from the CI-Common checkout on disk, so there is no npm registry, no token,
+and no `403` — which is the reason CI never managed to produce a video in the first place.
+
 ## Quick start
+
+Everything below is what the runner does, spelled out — reach for it when you are debugging a
+single shot rather than building a whole cut.
 
 ```bash
 npm install
 npx playwright install --with-deps chromium
 npm run doctor        # verify node / ffmpeg / playwright / hyperframes / fonts
 
-# with the stage up (see below) — four passes, each explicitly scoped:
-npm run capture -- --only feed-overview,memory-list-view,memory-detail-sheet,memory-gallery-view,memory-search-results,memory-map-view,memory-graph-view,people-directory,insights-list,insight-detail-view,connect-providers
+# with the stage up (see below) — five passes, each explicitly scoped:
+npm run capture -- --only feed-overview,memory-list-view,memory-detail-sheet,memory-search-results,memory-map-view,memory-graph-view,people-directory,insights-list,insight-detail-view,connect-providers
 VIDEO_LOGGED_OUT=1 npm run capture -- --only splash-screen,login-form
 VIDEO_FRESH_USER=1 npm run capture -- --only onboarding-focus
 VIDEO_FRESH_USER=1 npm run capture -- --only onboarding-connect
+VIDEO_FRESH_USER=1 npm run capture -- --only onboarding-trust
 
 npm run build         # storyboard.json -> build/{landscape,portrait}/index.html
 npm run check         # HyperFrames gate: lint, runtime, layout, motion, contrast
@@ -46,27 +71,30 @@ WEB_PORT=5173 API_PROXY_TARGET=http://localhost:3030 yarn workspace @ci/fe-web d
 ```
 
 Those last two lines are the exact processes `playwright.e2e.config.ts` declares in its
-`webServer` block; `.github/workflows/video.yml` runs the same sequence.
+`webServer` block.
 
 **Skipping the seed makes every screen in this video an empty state.**
 
-Two feature flags are part of the stage, not the app defaults —
-`.github/workflows/video.yml` sets both on the job:
+You only need the stage to **re-capture**. Building a cut from the shots already committed under
+`assets/shots/` needs none of it — that is the point of committing them.
+
+One feature flag is part of the stage, not the app defaults. Export it before capturing:
 
 | Variable | Why |
 |---|---|
-| `ENABLE_ACTIONS=true` | `features.actions` ships `false`, which hides the feed's actions carousel *and* renames its heading to "Questions". The seed already loads real actions. |
 | `ENABLE_REQUIRE_SIGNUP_CODES=false` | The fresh-account passes sign up through `/api/signup`, which 400s while signup codes are required. |
+| ~~`ENABLE_ACTIONS=true`~~ | No longer required. `features.actions` now ships `true` (`config/default.json:162`), so the feed's actions carousel and its "Actions" heading are on by default. Harmless if you still set it. |
 
-Capture runs four times on purpose, and **every pass names its shots explicitly** — including the
+Capture runs five times on purpose, and **every pass names its shots explicitly** — including the
 first. `ci-video capture` exits 1 if any single shot fails, so an unscoped first pass (which would
-attempt all fifteen shots as `jsmith`, four of them unreachable for that identity) aborts the job
-before the other three passes run and leaves `assets/shots/` empty.
+attempt all fifteen shots as `jsmith`, five of them unreachable for that identity) dies before the
+other four passes run and leaves `assets/shots/` empty. The five passes in the Quick start block
+above are the authoritative list.
 
 1. **authenticated** — the seeded `jsmith`; the eleven shots behind `ProtectedRoute`. Not `/`,
    `/login` or `/onboarding`, which redirect this identity to `/feed`;
 2. **`VIDEO_LOGGED_OUT=1`** — `/` and `/login`, which redirect a signed-in user to `/feed`;
-3. **`VIDEO_FRESH_USER=1`** ×2 — the seeded user is already onboarded, so the wizard is only
+3. **`VIDEO_FRESH_USER=1`** ×3 — the seeded user is already onboarded, so the wizard is only
    reachable from a throwaway account. One capture invocation per onboarding shot, because
    onboarding progress is persisted per user and a shared account would resume mid-wizard.
 
@@ -79,9 +107,9 @@ captions, narration, and which screens appear. The **capture spec for each shot 
 file**, so the script and the screenshots cannot drift apart.
 
 Adding a beat is: add a scene, add its shot's `capture` block, add the shot id to the right pass in
-[`.github/workflows/video.yml`](../.github/workflows/video.yml), `npm run capture -- --only <id>`,
-then `npm run build && npm run render`. Forgetting the workflow list is caught by `npm run check`,
-which fails on a shot with no PNG.
+the Quick start block above, `npm run capture -- --only <id>`, then `npm run build && npm run
+render`. Forgetting to add it to a pass is caught by `npm run check`, which fails on a shot with
+no PNG. Commit the new PNG.
 
 **`before` runs after `waitFor`, not before it.** video-kit's engine order is
 `goto` → `waitForSelector(capture.waitFor)` → the `before` actions → shutter, so `before` means
@@ -98,9 +126,17 @@ picked up automatically from `assets/audio/<sceneId>.mp3`; regenerate it from th
 
 ## What is committed
 
-`assets/shots/*.png` and `assets/audio/*.mp3` **are** committed — they are the record of what the
-product looked like, and captures are byte-stable, so a diff in them means the UI genuinely
-changed. `out/` is not committed.
+`assets/shots/*.png` and `assets/audio/*.mp3` are **meant** to be committed — they are the record
+of what the product looked like, and captures are byte-stable, so a diff in them means the UI
+genuinely changed. They are also what lets anyone render a cut without standing up the whole
+appliance.
+
+Today only the audio is there. **`assets/shots/` is empty apart from `.gitkeep` — all 30 PNGs are
+still outstanding** (15 shots × 2 viewports; `npm run status` lists them). `video/.gitignore` does
+*not* exclude them, so committing the output of the five capture passes above is all it takes.
+
+`out/` is **not** committed, and the MP4s are not stored anywhere else either — no artifacts, no
+release assets. Re-render when you need one.
 
 See [CI-Engineering `projects/product-video-pipeline/`](https://github.com/companionintelligence/CI-Engineering/tree/main/projects/product-video-pipeline)
 for the full contract.

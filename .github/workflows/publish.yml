@@ -41,6 +41,9 @@ jobs:
     env:
       REGISTRY: ${{ vars.REGISTRY || 'ghcr.io/companionintelligence' }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Required for yarn install in `make publish` → init: @companionintelligence/tokens
+      # lives on npm.pkg.github.com (.yarnrc.yml maps the scope to NODE_AUTH_TOKEN).
+      NODE_AUTH_TOKEN: ${{ secrets.GHPR_READ_TOKEN || secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Checkout repository

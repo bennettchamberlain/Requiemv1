@@ -60,6 +60,10 @@ export const OnboardingFormSchema = s.object({
 
 export type OnboardingFormData = s.input<typeof OnboardingFormSchema>;
 
+const EMPTY_PERSON = { first: '', last: '', relationship: '' } as const;
+
+const DEFAULT_PEOPLE = [EMPTY_PERSON, EMPTY_PERSON, EMPTY_PERSON] as OnboardingFormData['people'];
+
 const DEFAULT_FORM_VALUES: OnboardingFormData = {
   name: null,
   timezone: BROWSER_TIMEZONE,
@@ -71,11 +75,19 @@ const DEFAULT_FORM_VALUES: OnboardingFormData = {
   },
   trust_mode: 'balanced',
   focus_areas: null,
-  people: null,
+  people: DEFAULT_PEOPLE,
   food_preference: null,
   movie_preference: null,
   activity_preference: null,
 };
+
+function normalizePeopleDraft(people: OnboardingFormData['people']): OnboardingFormData['people'] {
+  if (people == null || people.length === 0) {
+    return DEFAULT_PEOPLE;
+  }
+
+  return people;
+}
 
 export function OnboardingPage() {
   usePageTitle('Onboarding - Companion Intelligence');
@@ -116,7 +128,11 @@ export function OnboardingPage() {
 
     void (async () => {
       const progress = await fetchProgress();
-      const draft = { ...DEFAULT_FORM_VALUES, ...(progress?.draft ?? {}) } as OnboardingFormData;
+      const mergedDraft = { ...DEFAULT_FORM_VALUES, ...(progress?.draft ?? {}) } as OnboardingFormData;
+      const draft = {
+        ...mergedDraft,
+        people: normalizePeopleDraft(mergedDraft.people),
+      };
       form.reset(draft);
 
       if (progress?.updatedAt) {
@@ -264,7 +280,9 @@ export function OnboardingPage() {
           </div>
 
           {showWelcomeBackBanner && (
-            <div className={cn('w-full mx-auto px-5 md:px-8 -mt-1 mb-1 flex justify-center', contentMaxWidth)}>
+            <div
+              className={cn('w-full mx-auto px-5 md:px-8 -mt-1 mb-1 flex justify-center', contentMaxWidth)}
+            >
               <div className="max-w-lg rounded-lg border border-green-800/30 bg-background/95 px-4 py-2.5 text-sm text-foreground text-center shadow-sm backdrop-blur-sm">
                 Welcome back. Everything you&apos;ve entered is saved.
               </div>
