@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Not, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/common/context';
@@ -102,50 +102,92 @@ export class CandidateService {
    * A collision with a row the user already acted on is left untouched: once
    * something is declined, accepted, or snoozed, a later generation run must not
    * resurrect it. Only `open` rows get refreshed with new reasoning.
+   *
+   * One `INSERT ... ON CONFLICT DO UPDATE ... WHERE status = 'open'` per
+   * proposal rather than a read-then-write pair: `event_candidates_dedupe_uniq`
+   * is a real unique index, and the schedule page fires a sync on every mount,
+   * so two tabs (or a remount racing itself) would otherwise both see no row and
+   * both insert — the loser raising an unhandled 23505. The conflict action's
+   * WHERE is what carries the do-not-resurrect rule into the database: a
+   * collision with a non-open row updates nothing and returns nothing.
    */
   async upsert(context: UserServiceContext, proposals: CreateCandidateDto[]): Promise<EventCandidate[]> {
-    const written: EventCandidateEntity[] = [];
+    const writtenIds: string[] = [];
 
     for (const proposal of proposals) {
-      const existing = await this.candidateRepository.findOne({
-        where: { userId: context.userId, dedupeKey: proposal.dedupe_key },
-      });
+      const rows: Array<{ candidate_id: string }> = await this.candidateRepository.query(
+        `INSERT INTO ci.event_candidates AS candidate (
+           candidate_id, user_id, title, description, rationale, rationale_sources,
+           window_start, window_end, time_flex, duration_minutes, constraints,
+           l0_class, l1_cluster_id, energy_cost, dedupe_key, generator, confidence, status
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, 'open')
+         ON CONFLICT (user_id, dedupe_key) DO UPDATE SET
+           title             = EXCLUDED.title,
+           description       = EXCLUDED.description,
+           rationale         = EXCLUDED.rationale,
+           rationale_sources = EXCLUDED.rationale_sources,
+           window_start      = EXCLUDED.window_start,
+           window_end        = EXCLUDED.window_end,
+           time_flex         = EXCLUDED.time_flex,
+           duration_minutes  = EXCLUDED.duration_minutes,
+           constraints       = EXCLUDED.constraints,
+           l0_class          = EXCLUDED.l0_class,
+           l1_cluster_id     = EXCLUDED.l1_cluster_id,
+           energy_cost       = EXCLUDED.energy_cost,
+           generator         = EXCLUDED.generator,
+           confidence        = EXCLUDED.confidence,
+           updated_at        = NOW()
+         WHERE candidate.status = 'open'
+         RETURNING candidate_id`,
+        [
+          uuidv7(),
+          context.userId,
+          proposal.title,
+          proposal.description ?? null,
+          proposal.rationale,
+          JSON.stringify(proposal.rationale_sources ?? []),
+          proposal.window_start,
+          proposal.window_end,
+          proposal.time_flex ?? 'week',
+          proposal.duration_minutes ?? null,
+          JSON.stringify(proposal.constraints ?? {}),
+          proposal.l0_class ?? null,
+          proposal.l1_cluster_id ?? null,
+          proposal.energy_cost ?? null,
+          proposal.dedupe_key,
+          proposal.generator ?? null,
+          proposal.confidence ?? null,
+        ],
+      );
 
-      if (existing && existing.status !== 'open') {
+      const id = rows[0]?.candidate_id;
+
+      if (!id) {
         this.logger.debug('Skipping candidate the user already acted on', {
           dedupeKey: proposal.dedupe_key,
-          status: existing.status,
         });
 
         continue;
       }
 
-      const entity = this.candidateRepository.create({
-        ...(existing ?? {}),
-        id: existing?.id ?? uuidv7(),
-        userId: context.userId,
-        title: proposal.title,
-        description: proposal.description ?? null,
-        rationale: proposal.rationale,
-        rationaleSources: proposal.rationale_sources ?? [],
-        windowStart: proposal.window_start,
-        windowEnd: proposal.window_end,
-        timeFlex: proposal.time_flex ?? 'week',
-        durationMinutes: proposal.duration_minutes ?? null,
-        constraints: proposal.constraints ?? {},
-        l0Class: proposal.l0_class ?? null,
-        l1ClusterId: proposal.l1_cluster_id ?? null,
-        energyCost: proposal.energy_cost ?? null,
-        dedupeKey: proposal.dedupe_key,
-        generator: proposal.generator ?? null,
-        confidence: proposal.confidence ?? null,
-        status: 'open',
-      });
-
-      written.push(await this.candidateRepository.save(entity));
+      writtenIds.push(id);
     }
 
-    return written.map((entity) => EventCandidateEntity.toEgressType(entity));
+    if (writtenIds.length === 0) {
+      return [];
+    }
+
+    // One read for the whole batch, then re-ordered to match the proposals:
+    // RETURNING the id alone keeps the write path free of column mapping, and
+    // the callers render what came back in the order they asked for it.
+    const saved = await this.candidateRepository.find({ where: { id: In(writtenIds) } });
+    const byId = new Map(saved.map((entity) => [entity.id, entity]));
+
+    return writtenIds
+      .map((id) => byId.get(id))
+      .filter((entity): entity is EventCandidateEntity => entity !== undefined)
+      .map((entity) => EventCandidateEntity.toEgressType(entity));
   }
 
   /**
@@ -154,7 +196,15 @@ export class CandidateService {
    * This is the only path from possible to committed, and it is always driven by
    * an explicit user action — there is no auto-accept anywhere in the system.
    * The event is written first so the candidate never claims a promotion that
-   * does not exist (the table's promotion-consistency check enforces the pair).
+   * does not exist (the table's promotion-consistency check enforces that
+   * direction).
+   *
+   * The claim on the candidate is a conditional UPDATE, not a save: a
+   * double-click sends two acceptCandidate mutations that would both pass a
+   * plain in-memory status check and both mint an event, the second overwriting
+   * the first's backlink and orphaning a real calendar row nothing points at.
+   * Only one UPDATE can move the row onto `accepted`; the loser deletes the
+   * event it just minted and fails.
    */
   async accept(
     context: UserServiceContext,
@@ -201,17 +251,31 @@ export class CandidateService {
       },
     });
 
-    candidate.status = 'accepted';
-    candidate.promotedEventId = event.id;
-    candidate.feedbackAt = new Date();
-    candidate.feedbackReason = null;
-    candidate.snoozedUntil = null;
+    const promotion = {
+      status: 'accepted' as const,
+      promotedEventId: event.id,
+      feedbackAt: new Date(),
+      feedbackReason: null,
+      snoozedUntil: null,
+    };
 
-    const saved = await this.candidateRepository.save(candidate);
+    const claim = await this.candidateRepository.update(
+      { id, userId: context.userId, status: Not('accepted') },
+      promotion,
+    );
+
+    if ((claim.affected ?? 0) === 0) {
+      // A concurrent accept promoted this candidate while we were minting. The
+      // event we just created belongs to nothing, so take it back out rather
+      // than leaving an unreturnable row on the user's calendar.
+      await this.eventService.remove(context, event.id);
+
+      throw new BadRequestException(`Candidate ${id} was already accepted`);
+    }
 
     this.logger.log('Candidate accepted', { candidateId: candidate.id, eventId: event.id });
 
-    return { candidate: EventCandidateEntity.toEgressType(saved), event };
+    return { candidate: EventCandidateEntity.toEgressType({ ...candidate, ...promotion }), event };
   }
 
   /**
@@ -236,11 +300,14 @@ export class CandidateService {
       );
     }
 
-    // The event goes first: a candidate that claims `open` while still holding a
-    // promoted_event_id would violate the table's promotion-consistency check,
-    // and accept() writes in the same order for the same reason.
-    await this.eventService.remove(context, eventId);
-
+    // The candidate goes first, in one write that drops `accepted` and the
+    // backlink together. Deleting the event first would leave a window in which
+    // the row still claims a promotion the event no longer honours — Postgres
+    // resolves the ON DELETE SET NULL by updating this row to
+    // (accepted, promoted_event_id = NULL), and a crash there strands an
+    // accepted candidate that no view surfaces and no path can return.
+    // Clearing first fails the other way: the card is back on the slate and the
+    // event is still on the calendar, which the user can see and act on.
     candidate.status = 'open';
     candidate.promotedEventId = null;
     candidate.feedbackAt = null;
@@ -259,6 +326,8 @@ export class CandidateService {
 
     const saved = await this.candidateRepository.save(candidate);
 
+    await this.eventService.remove(context, eventId);
+
     this.logger.log('Candidate returned to the slate', { candidateId: candidate.id, eventId });
 
     return EventCandidateEntity.toEgressType(saved);
@@ -276,6 +345,14 @@ export class CandidateService {
 
     if (!candidate) {
       throw new NotFoundException(`Candidate ${id} not found`);
+    }
+
+    // Same guard as snooze(): moving an accepted row off `accepted` while it
+    // still holds promoted_event_id violates the promotion-consistency check,
+    // and would abandon the event it minted with nothing pointing at it.
+    // returnToSlate is the way back out of committed time.
+    if (candidate.status === 'accepted') {
+      throw new BadRequestException(`Candidate ${id} was already accepted`);
     }
 
     candidate.status = PERMANENT_DECLINES.has(reason) ? 'never' : 'declined';

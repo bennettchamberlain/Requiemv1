@@ -72,11 +72,31 @@ const AXIS_HOURS = [0, 4, 8, 12, 16, 20];
  */
 const DROP_SNAP_MINUTES = 15;
 
+/**
+ * The instant `minutes` of WALL CLOCK into the day `dayStart` opens.
+ *
+ * Deliberately not `dayStart.getTime() + minutes * 60_000`. Chips are positioned
+ * by wall clock (`localMinutes`), so on a DST transition day absolute-millisecond
+ * arithmetic disagrees with what the user is looking at: on a 23-hour day the
+ * visual noon guide books 13:00, and the right-hand end of the row lands on the
+ * following date. Setting the clock on the row's own calendar date keeps both
+ * readings in agreement whatever the day's real length.
+ */
+function atLocalMinutes(dayStart: Date, minutes: number): Date {
+  const whole = Math.floor(minutes);
+  const at = new Date(dayStart);
+  at.setHours(Math.floor(whole / 60), whole % 60, 0, 0);
+
+  // The sub-minute remainder is a fraction of a pointer position rather than a
+  // crossing, so adding it as elapsed time cannot straddle a transition.
+  return new Date(at.getTime() + Math.round((minutes - whole) * 60_000));
+}
+
 /** Unsnapped instant for a ratio across a day row. Zero when the ratio is unusable. */
 function rawInstant(dayStart: Date, ratio: number): Date {
   const clamped = Number.isFinite(ratio) ? Math.max(0, Math.min(1, ratio)) : 0;
 
-  return new Date(dayStart.getTime() + clamped * MINUTES_PER_DAY * 60_000);
+  return atLocalMinutes(dayStart, clamped * MINUTES_PER_DAY);
 }
 
 /** Round an instant to the drop grain. */
@@ -98,7 +118,10 @@ function dropInstant(dayStart: Date, ratio: number): Date {
   const raw = clamped * MINUTES_PER_DAY;
   const snapped = Math.round(raw / DROP_SNAP_MINUTES) * DROP_SNAP_MINUTES;
 
-  return new Date(dayStart.getTime() + Math.min(snapped, MINUTES_PER_DAY - DROP_SNAP_MINUTES) * 60_000);
+  // Capped one grain short of the row's end so a drop at the far right stays on
+  // the day it was made on. The cap is in wall-clock minutes, so it holds on a
+  // 23- or 25-hour day too — 23:45 is the last slot of every calendar date.
+  return atLocalMinutes(dayStart, Math.min(snapped, MINUTES_PER_DAY - DROP_SNAP_MINUTES));
 }
 
 /**
@@ -225,6 +248,78 @@ function spanForDay(event: ScheduleEvent, dayStart: Date): EventSpan | null {
   };
 }
 
+/** Height of one chip lane, and the gap between two stacked lanes, in pixels. */
+const LANE_HEIGHT_PX = 28;
+const LANE_GAP_PX = 2;
+
+/** Percentage slack that counts as "touching" rather than overlapping. */
+const LANE_EPSILON_PCT = 1e-9;
+
+/**
+ * Give every span the lowest lane that is free where it starts.
+ *
+ * Drawn into a single strip, two events at 09:00 land exactly on top of one
+ * another and the one sorted first is buried: unreachable by pointer, its
+ * tooltip can never open, and a drag that looks like it grabbed it grabbed the
+ * other. Double-booked and back-to-back meetings are the normal case for a
+ * calendar, and the page's headline gesture is "drag the chip you want", so the
+ * row grows downward instead of letting chips occlude each other.
+ *
+ * Spans arrive sorted by left edge, so a greedy sweep is exact: a lane is free
+ * when the last chip placed in it ends at or before this one starts. Touching
+ * edges are not an overlap — a 10:00 meeting still follows a 09:00 one on one
+ * line.
+ */
+function packLanes(spans: EventSpan[]): number[] {
+  const laneEnds: number[] = [];
+
+  return spans.map((span) => {
+    const right = span.leftPct + span.widthPct;
+    const lane = laneEnds.findIndex((end) => end <= span.leftPct + LANE_EPSILON_PCT);
+
+    if (lane === -1) {
+      laneEnds.push(right);
+
+      return laneEnds.length - 1;
+    }
+
+    // Belt and braces against an unsorted caller: a lane's end never walks back.
+    laneEnds[lane] = Math.max(laneEnds[lane], right);
+
+    return lane;
+  });
+}
+
+/**
+ * One line saying everything the chip's tooltip says.
+ *
+ * The tooltip is the only place an event's time, place and activity class
+ * appear, and it is hover-driven — so without this the chip has no accessible
+ * name at all, and a narrow one has no text of any kind. That would leave hue
+ * as the sole carrier of identity, which is exactly the precondition the
+ * palette's contrast budget depends on not happening.
+ */
+function chipLabel(event: ScheduleEvent, colorMode: ColorMode): string {
+  const start = new Date(event.startTime);
+  const end = event.endTime ? new Date(event.endTime) : null;
+
+  const parts = [
+    event.title,
+    event.isAllDay ? 'all day' : `${formatClock(start)}${end ? ` to ${formatClock(end)}` : ''}`,
+    colorMode === 'source' ? sourceOf(event) : CLASS_LABEL[classifyEvent(event)],
+  ];
+
+  if (event.locationName) {
+    parts.push(event.locationName);
+  }
+
+  if (event.status === 'tentative') {
+    parts.push('tentative');
+  }
+
+  return parts.join(', ');
+}
+
 /**
  * The four daypart weights for one forecast day.
  *
@@ -280,10 +375,7 @@ function daypartWeights(day: RhythmDay | undefined): number[] {
  * actually sits. It also makes the UTC offset fall out for free — each hour asks
  * which UTC daypart it lands in, so no band has to be split at local midnight.
  */
-function rhythmClaims(
-  dayStart: Date,
-  lookup: (utcDate: string) => RhythmDay | undefined,
-): RhythmClaim[] {
+function rhythmClaims(dayStart: Date, lookup: (utcDate: string) => RhythmDay | undefined): RhythmClaim[] {
   const claimCache = new Map<string, RhythmClaim[]>();
 
   return Array.from({ length: HOURS_PER_DAY }, (_, hour) => {
@@ -308,6 +400,26 @@ function rhythmCells(dayStart: Date, lookup: (utcDate: string) => RhythmDay | un
 /** Top behaviours for a day, for the row tooltip. */
 function topClusters(day: RhythmDay | undefined, limit = 4): RhythmCluster[] {
   return [...(day?.clusters ?? [])].sort((a, b) => b.pOccur - a.pOccur).slice(0, limit);
+}
+
+/**
+ * Text equivalent of the rhythm lane.
+ *
+ * The lane encodes everything it says in hue and opacity across 24 empty cells,
+ * with the words only in a hover tooltip. Naming it as an image, with the same
+ * behaviours the tooltip lists, is what makes the layer legible to anyone not
+ * using a mouse.
+ */
+function rhythmLabel(dayStart: Date, clusters: RhythmCluster[]): string {
+  const day = dayStart.toLocaleDateString([], { weekday: 'long' });
+
+  if (clusters.length === 0) {
+    return `Predicted rhythm for ${day}: no established pattern yet.`;
+  }
+
+  const listed = clusters.map((c) => `${c.name} ${Math.round(c.pOccur * 100)}%`).join(', ');
+
+  return `Predicted rhythm for ${day}: ${listed}.`;
 }
 
 type RhythmCluster = RhythmDay['clusters'][number];
@@ -348,18 +460,26 @@ function DayRow({
     .filter((span): span is EventSpan => span !== null)
     .sort((a, b) => a.leftPct - b.leftPct);
 
+  const lanes = packLanes(spans);
+  const laneCount = Math.max(1, ...lanes.map((lane) => lane + 1));
+
   const claims = rhythmClaims(dayStart, lookup);
   const clusters = topClusters(lookup(utcDateKey(dayStart)));
   const hasRhythm = claims.some((c) => c.weight >= RHYTHM_NOISE_FLOOR);
+
+  const dayLabel = dayStart.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
 
   /**
    * Room to the right of a narrow block before the next one starts. A tick with
    * its label spilling into empty space is readable; one spilling under the next
    * event is not, so the label is dropped and the tooltip carries it instead.
+   *
+   * Only spans sharing the lane can be spilled onto — a chip a lane below sits
+   * at a different height and never collides with the text.
    */
   const labelRoom = (index: number): number => {
     const current = spans[index];
-    const next = spans[index + 1];
+    const next = spans.slice(index + 1).find((_, i) => lanes[index + 1 + i] === lanes[index]);
     const until = next ? next.leftPct : 100;
 
     return until - (current.leftPct + current.widthPct);
@@ -390,6 +510,8 @@ function DayRow({
 
   return (
     <div
+      role="listitem"
+      aria-label={dayLabel}
       className={cn(
         'flex items-stretch gap-3 rounded-lg px-2 py-2 transition-colors',
         // Today is marked with a rail rather than a wash — a filled row drowns
@@ -496,8 +618,15 @@ function DayRow({
           />
         )}
 
-        {/* Committed lane — solid chips. Certainty reads as a filled surface. */}
-        <div className="relative h-7">
+        {/* Committed lane — solid chips. Certainty reads as a filled surface.
+            One row of lanes per column of concurrent events, so nothing hides
+            behind anything else. */}
+        <div
+          role="list"
+          aria-label={`Committed time on ${dayLabel}`}
+          className="relative"
+          style={{ height: laneCount * LANE_HEIGHT_PX + (laneCount - 1) * LANE_GAP_PX }}
+        >
           {spans.map(({ event, leftPct, widthPct, continuesFrom, continuesTo }, index) => {
             const isNarrow = widthPct < NARROW_SPAN_PCT;
             const showSpilledLabel = isNarrow && labelRoom(index) > NARROW_SPAN_PCT;
@@ -509,6 +638,18 @@ function DayRow({
               <Tooltip key={`${event.id}-${dayStart.toDateString()}`}>
                 <Tooltip.Trigger asChild>
                   <div
+                    role="listitem"
+                    // Focusable so the tooltip — the only place the time, place
+                    // and activity class are written down — can be opened
+                    // without a pointer.
+                    tabIndex={0}
+                    aria-label={chipLabel(event, colorMode)}
+                    // A chip with no room for text of its own is otherwise a
+                    // bare colour swatch, and hue alone is not allowed to carry
+                    // identity here. Wide chips already show their title, so
+                    // they skip it rather than stack a native tooltip on the
+                    // Radix one.
+                    title={isNarrow && !showSpilledLabel ? event.title : undefined}
                     draggable={movable}
                     onDragStart={
                       movable
@@ -518,8 +659,7 @@ function DayRow({
                             // unambiguous, whereas the ancestor chain depends on
                             // how the tooltip wrapper happens to nest.
                             const box = e.currentTarget.getBoundingClientRect();
-                            const withinChip =
-                              box.width > 0 ? (e.clientX - box.left) / box.width : 0;
+                            const withinChip = box.width > 0 ? (e.clientX - box.left) / box.width : 0;
 
                             // The chip covers [leftPct, leftPct + widthPct) of
                             // the day, so the grab point in day-minutes follows
@@ -555,8 +695,8 @@ function DayRow({
                         : undefined
                     }
                     className={cn(
-                      'absolute top-0 z-[5] h-7 whitespace-nowrap border text-[11px] leading-[26px]',
-                      'text-foreground shadow-sm',
+                      'absolute z-[5] whitespace-nowrap border text-[11px] leading-[26px]',
+                      'text-foreground shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring',
                       movable && 'cursor-grab active:cursor-grabbing hover:brightness-110',
                       isNarrow ? 'overflow-visible' : 'overflow-hidden px-2',
                       event.status === 'tentative' && 'border-dashed text-muted-foreground',
@@ -566,6 +706,8 @@ function DayRow({
                     style={{
                       left: `${leftPct}%`,
                       width: `${widthPct}%`,
+                      top: lanes[index] * (LANE_HEIGHT_PX + LANE_GAP_PX),
+                      height: LANE_HEIGHT_PX,
                       // A chip too narrow to hold text is nothing BUT its
                       // colour, so it takes the hue at full strength; a wide one
                       // is tinted glass with the hue held on its edges.
@@ -641,7 +783,16 @@ function DayRow({
             {/* Discrete cells, not a bar: the gaps are what let the eye read
                 density. A continuous fill of near-equal weight looks like a
                 slab and says nothing. */}
-            <div className="mt-1.5 flex h-2 gap-[2px]" aria-label="Predicted rhythm">
+            <div
+              className="mt-1.5 flex h-2 gap-[2px]"
+              // Named as an image with the behaviours spelled out: the cells
+              // carry no text, so `role="img"` collapsing them to one node
+              // loses nothing and gains a name most screen readers will read.
+              // A lane with no signal in it is decoration and says so.
+              {...(hasRhythm
+                ? { role: 'img', 'aria-label': rhythmLabel(dayStart, clusters) }
+                : { 'aria-hidden': true })}
+            >
               {claims.map((claim, hour) => {
                 const lit = claim.weight >= RHYTHM_NOISE_FLOOR;
 
@@ -762,6 +913,8 @@ export function HorizonGrid({
 
   return (
     <div
+      role="group"
+      aria-label="Schedule"
       className={cn('flex flex-col rounded-xl border border-border bg-card p-3 md:p-4', className)}
     >
       {/* Time axis */}
@@ -780,7 +933,7 @@ export function HorizonGrid({
         </div>
       </div>
 
-      <div className="flex flex-col gap-0.5">
+      <div role="list" aria-label="Days" className="flex flex-col gap-0.5">
         {Array.from({ length: days }, (_, i) => {
           const dayStart = addDays(start, i);
 
@@ -807,6 +960,7 @@ export function HorizonGrid({
 
 export {
   spanForDay,
+  packLanes,
   daypartWeights,
   describes,
   rhythmCells,

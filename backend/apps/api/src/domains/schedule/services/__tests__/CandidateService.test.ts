@@ -1,7 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, Not } from 'typeorm';
 
 import type { UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
@@ -72,8 +72,11 @@ describe('CandidateService', () => {
   let service: CandidateService;
   let repo: {
     findOne: jest.Mock;
+    find: jest.Mock;
     save: jest.Mock;
     create: jest.Mock;
+    update: jest.Mock;
+    query: jest.Mock;
   };
   let events: { create: jest.Mock; remove: jest.Mock };
   let qb: ReturnType<typeof makeQueryBuilder>;
@@ -82,8 +85,13 @@ describe('CandidateService', () => {
     qb = makeQueryBuilder(many);
     repo = {
       findOne: jest.fn(),
+      find: jest.fn(async () => []),
       save: jest.fn(async (entity: EventCandidateEntity) => entity),
       create: jest.fn((entity: EventCandidateEntity) => entity),
+      // The conditional claim in accept() — one row moved off 'open' by default.
+      update: jest.fn(async () => ({ affected: 1 })),
+      // The raw INSERT ... ON CONFLICT in upsert() returns the id it wrote.
+      query: jest.fn(async () => [{ candidate_id: 'cand-1' }]),
     };
     events = { create: jest.fn(async () => [{ id: 'event-9' }]), remove: jest.fn(async () => true) };
 
@@ -195,6 +203,39 @@ describe('CandidateService', () => {
       expect(returned.feedbackAt).toBeNull();
     });
 
+    it('clears the candidate before deleting the event, never after', async () => {
+      // Ordering is the whole bug, so this asserts the sequence rather than the
+      // end state. promoted_event_id is ON DELETE SET NULL: deleting first makes
+      // Postgres resolve that referential action against a row still claiming
+      // 'accepted', which is a state no view surfaces and no path can return —
+      // and which the promotion-consistency check used to reject outright,
+      // aborting the DELETE and making the event permanently undeletable.
+      await setup();
+      const candidate = baseCandidate({
+        id: 'cand-9',
+        status: 'accepted',
+        promotedEventId: 'event-9',
+        windowEnd: new Date('2099-01-01T00:00:00Z'),
+      });
+      repo.findOne.mockResolvedValue(candidate);
+
+      let statusAtDelete: string | undefined;
+      let backlinkAtDelete: string | null | undefined;
+      events.remove.mockImplementation(async () => {
+        statusAtDelete = candidate.status;
+        backlinkAtDelete = candidate.promotedEventId;
+
+        return true;
+      });
+
+      await service.returnToSlate(ctx, 'event-9');
+
+      expect(repo.save).toHaveBeenCalled();
+      expect(repo.save.mock.invocationCallOrder[0]).toBeLessThan(events.remove.mock.invocationCallOrder[0]);
+      expect(statusAtDelete).toBe('open');
+      expect(backlinkAtDelete).toBeNull();
+    });
+
     it('refuses an event that did not come from a suggestion', async () => {
       // A mirrored calendar row has no candidate behind it. Un-committing it
       // here would either lie about the source or destroy it.
@@ -238,40 +279,61 @@ describe('CandidateService', () => {
   });
 
   describe('upsert', () => {
+    const proposal = (overrides: Record<string, unknown> = {}) => ({
+      title: 'Strength session',
+      rationale: 'Updated reasoning.',
+      window_start: new Date('2026-08-03T00:00:00Z'),
+      window_end: new Date('2026-08-10T00:00:00Z'),
+      dedupe_key: 'strength-session',
+      ...overrides,
+    });
+
     it('refreshes an existing open candidate rather than duplicating it', async () => {
       await setup();
-      repo.findOne.mockResolvedValue(baseCandidate({ id: 'existing-1' }));
+      repo.query.mockResolvedValue([{ candidate_id: 'existing-1' }]);
+      repo.find.mockResolvedValue([baseCandidate({ id: 'existing-1', rationale: 'Updated reasoning.' })]);
 
-      const [result] = await service.upsert(ctx, [
-        {
-          title: 'Strength session',
-          rationale: 'Updated reasoning.',
-          window_start: new Date('2026-08-03T00:00:00Z'),
-          window_end: new Date('2026-08-10T00:00:00Z'),
-          dedupe_key: 'strength-session',
-        },
-      ]);
+      const [result] = await service.upsert(ctx, [proposal()]);
 
       expect(result.id).toBe('existing-1');
       expect(result.rationale).toBe('Updated reasoning.');
     });
 
-    it('refuses to resurrect a candidate the user already declined', async () => {
+    it('writes atomically, so two tabs syncing at once cannot both insert', async () => {
+      // A findOne-then-save pair races event_candidates_dedupe_uniq: both
+      // callers see no row, both insert, and the loser raises an unhandled
+      // 23505. The conflict clause is what makes the second caller an update.
       await setup();
-      repo.findOne.mockResolvedValue(baseCandidate({ status: 'never' }));
 
-      const result = await service.upsert(ctx, [
-        {
-          title: 'Strength session',
-          rationale: 'Trying again.',
-          window_start: new Date('2026-08-03T00:00:00Z'),
-          window_end: new Date('2026-08-10T00:00:00Z'),
-          dedupe_key: 'strength-session',
-        },
-      ]);
+      await service.upsert(ctx, [proposal()]);
+
+      const [sql] = repo.query.mock.calls[0];
+      expect(String(sql)).toContain('ON CONFLICT (user_id, dedupe_key) DO UPDATE');
+      expect(repo.findOne).not.toHaveBeenCalled();
+      expect(repo.save).not.toHaveBeenCalled();
+    });
+
+    it('carries the do-not-resurrect rule into the conflict clause', async () => {
+      // Suppression cannot live in a prior read — by the time the write lands,
+      // another writer may have moved the row. Only 'open' rows get refreshed.
+      await setup();
+
+      await service.upsert(ctx, [proposal()]);
+
+      const [sql] = repo.query.mock.calls[0];
+      expect(String(sql)).toContain("WHERE candidate.status = 'open'");
+    });
+
+    it('refuses to resurrect a candidate the user already declined', async () => {
+      // The conflict clause matched a non-open row, so nothing was updated and
+      // nothing came back.
+      await setup();
+      repo.query.mockResolvedValue([]);
+
+      const result = await service.upsert(ctx, [proposal({ rationale: 'Trying again.' })]);
 
       expect(result).toHaveLength(0);
-      expect(repo.save).not.toHaveBeenCalled();
+      expect(repo.find).not.toHaveBeenCalled();
     });
   });
 
@@ -345,6 +407,32 @@ describe('CandidateService', () => {
       expect(events.create).not.toHaveBeenCalled();
     });
 
+    it('claims the candidate with a conditional write, not a blind save', async () => {
+      // The in-memory status check above cannot stop a double-click: both
+      // requests read 'open' before either writes. Only the database can.
+      await setup();
+      repo.findOne.mockResolvedValue(baseCandidate());
+
+      await service.accept(ctx, 'cand-1', start);
+
+      const [criteria, values] = repo.update.mock.calls[0];
+      expect(criteria).toMatchObject({ id: 'cand-1', userId: 'user-1' });
+      expect(criteria.status).toEqual(Not('accepted'));
+      expect(values).toMatchObject({ status: 'accepted', promotedEventId: 'event-9' });
+      expect(repo.save).not.toHaveBeenCalled();
+    });
+
+    it('loses a concurrent accept cleanly and takes its orphan event back out', async () => {
+      await setup();
+      repo.findOne.mockResolvedValue(baseCandidate());
+      repo.update.mockResolvedValue({ affected: 0 }); // another accept got there first
+
+      await expect(service.accept(ctx, 'cand-1', start)).rejects.toThrow(BadRequestException);
+      // Otherwise a real calendar row survives with no candidate pointing at it,
+      // which returnToSlate can never find.
+      expect(events.remove).toHaveBeenCalledWith(ctx, 'event-9');
+    });
+
     it('throws when the candidate does not belong to the viewer', async () => {
       await setup();
       repo.findOne.mockResolvedValue(null);
@@ -372,6 +460,17 @@ describe('CandidateService', () => {
 
       expect(result.status).toBe('declined');
       expect(result.feedbackReason).toBe('wrong_time');
+    });
+
+    it('refuses to decline something already accepted', async () => {
+      // Moving it off 'accepted' while it still holds promoted_event_id trips
+      // the promotion-consistency check and abandons the event it minted.
+      // returnToSlate is the way back out. snooze() guards the same way.
+      await setup();
+      repo.findOne.mockResolvedValue(baseCandidate({ status: 'accepted', promotedEventId: 'event-9' }));
+
+      await expect(service.decline(ctx, 'cand-1', 'never')).rejects.toThrow(BadRequestException);
+      expect(repo.save).not.toHaveBeenCalled();
     });
   });
 

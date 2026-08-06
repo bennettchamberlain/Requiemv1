@@ -6,6 +6,10 @@ import type { RhythmKind, RhythmSource, RhythmStrength } from './entities/Rhythm
  * `wrong_time`    — the idea is right, the window is not
  * `not_like_this` — the idea is close but the framing is off
  * `never`         — retire permanently
+ *
+ * Callers reach this through GraphQL as a plain String; DECLINE_REASONS in
+ * ScheduleCandidateResolver is the runtime list any such value is checked
+ * against, and must be kept in step with this union.
  */
 export type DeclineReason = 'not_now' | 'wrong_time' | 'not_like_this' | 'never';
 

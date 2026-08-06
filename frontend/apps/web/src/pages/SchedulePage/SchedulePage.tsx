@@ -6,7 +6,7 @@ import { CalendarRange, ChevronLeft, ChevronRight } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
 import { useRescheduleEvent } from '@/api/useRescheduleEvent';
-import { useScheduleCandidates } from '@/api/useScheduleCandidates';
+import { type DeclineReason, useScheduleCandidates } from '@/api/useScheduleCandidates';
 import { type RhythmDay, type ScheduleEvent, useScheduleService } from '@/api/useScheduleService';
 import { HorizonGrid } from '@/components/HorizonGrid';
 import { PageContent } from '@/components/layout';
@@ -44,6 +44,28 @@ function formatRange(start: Date, end: Date): string {
   const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
 
   return `${start.toLocaleDateString([], opts)} – ${addDays(end, -1).toLocaleDateString([], opts)}`;
+}
+
+/**
+ * What the grid's footer is allowed to claim about the rhythm layer.
+ *
+ * `weekForecast` takes no date arguments, so the layer only ever describes the
+ * seven days from today. Saying "updated <date>" over a lane that has nothing
+ * to draw reads as "the model has learned nothing about you" — a different and
+ * much worse statement than "this view cannot fetch that week".
+ */
+function rhythmFooter(generatedAt: string | null, coversWindow: boolean): string {
+  if (!generatedAt) {
+    return 'Rhythm layer unavailable — showing committed time only.';
+  }
+
+  if (!coversWindow) {
+    return 'Rhythm only reaches seven days out — this window shows committed time only.';
+  }
+
+  const updated = new Date(generatedAt).toLocaleDateString([], { month: 'short', day: 'numeric' });
+
+  return `Rhythm from your own patterns, updated ${updated}.`;
 }
 
 /** One swatch + word. The word is why hue never carries identity alone. */
@@ -116,12 +138,16 @@ export function SchedulePage() {
     return { start: from, end: addDays(from, DAYS_IN_VIEW) };
   }, [weekOffset]);
 
-  const { events, rhythm, generatedAt, loading, error, refetch } = useScheduleService(start, end);
+  const { events, rhythm, generatedAt, rhythmCoversWindow, loading, error, refetch } = useScheduleService(
+    start,
+    end,
+  );
 
   // Placing a candidate mints an event, so the committed lane has to re-read.
   const {
     candidates,
     loading: candidatesLoading,
+    error: candidatesError,
     accept,
     decline,
     snooze,
@@ -129,27 +155,65 @@ export function SchedulePage() {
     returnEvent,
   } = useScheduleCandidates(start, end, refetch);
 
+  /**
+   * Whatever a drag or a card button asked the server to do, and it refused.
+   *
+   * Every one of these mutations is fire-and-forget from the user's point of
+   * view — the card stays on the rail, or the chip snaps back — so without this
+   * a rejection is only ever visible in the console.
+   */
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const run = useCallback((work: Promise<unknown>, message: string) => {
+    setActionError(null);
+    work.catch(() => setActionError(message));
+  }, []);
+
   const handleDrop = useCallback(
     (candidateId: string, startTime: Date) => {
-      void accept(candidateId, startTime);
+      run(accept(candidateId, startTime), 'Could not put that on the calendar. Try again shortly.');
     },
-    [accept],
+    [accept, run],
   );
 
   const rescheduleEvent = useRescheduleEvent(refetch);
 
   const handleMove = useCallback(
     (eventId: string, startTime: Date) => {
-      void rescheduleEvent(eventId, startTime);
+      run(rescheduleEvent(eventId, startTime), 'Could not move that. Try again shortly.');
     },
-    [rescheduleEvent],
+    [rescheduleEvent, run],
+  );
+
+  const handleDecline = useCallback(
+    (id: string, reason: DeclineReason) => {
+      run(decline(id, reason), 'Could not dismiss that suggestion. Try again shortly.');
+    },
+    [decline, run],
+  );
+
+  const handleSnooze = useCallback(
+    (id: string, until: Date) => {
+      run(snooze(id, until), 'Could not snooze that suggestion. Try again shortly.');
+    },
+    [snooze, run],
+  );
+
+  const handleReturnEvent = useCallback(
+    (eventId: string) => {
+      run(returnEvent(eventId), 'Could not take that off the week. Try again shortly.');
+    },
+    [returnEvent, run],
   );
 
   const goBack = useCallback(() => setWeekOffset((offset) => offset - 1), []);
   const goForward = useCallback(() => setWeekOffset((offset) => offset + 1), []);
   const goToday = useCallback(() => setWeekOffset(0), []);
 
-  const isEmpty = !loading && events.length === 0 && rhythm.length === 0;
+  // `errorPolicy: 'all'` means an error and usable data can arrive together, so
+  // the surface is gated on whether anything resolved rather than on `error`.
+  const hasAnything = events.length > 0 || rhythm.length > 0 || candidates.length > 0;
+  const isEmpty = !loading && !hasAnything && !error && !candidatesError;
 
   return (
     <>
@@ -223,20 +287,30 @@ export function SchedulePage() {
           </div>
         </div>
 
-        {loading && events.length === 0 && <LoadingPage />}
+        {loading && !hasAnything && <LoadingPage />}
 
-        {error && !loading && (
-          <p className="text-sm text-muted-foreground">Could not load the schedule. Try again shortly.</p>
+        {actionError && (
+          <p role="alert" className="text-sm text-destructive">
+            {actionError}
+          </p>
         )}
 
-        {isEmpty && !error && candidates.length === 0 && (
+        {error && !loading && (
+          <p role="alert" className="text-sm text-muted-foreground">
+            {hasAnything
+              ? 'Part of this week could not be loaded — what is shown may be incomplete.'
+              : 'Could not load the schedule. Try again shortly.'}
+          </p>
+        )}
+
+        {isEmpty && (
           <EmptyState
             icon={<CalendarRange size={48} strokeWidth={1} />}
             message="Nothing here yet. Connect a calendar and your week will start to fill in."
           />
         )}
 
-        {(!isEmpty || candidates.length > 0) && !error && (
+        {(hasAnything || candidatesError) && (
           <>
             {/* Possibilities as a rail above the week, both full width. The
                 week is what the page is about, so it gets the whole page; the
@@ -247,10 +321,11 @@ export function SchedulePage() {
               <TaskSlate
                 candidates={candidates}
                 loading={candidatesLoading}
-                onDecline={decline}
-                onSnooze={snooze}
+                error={candidatesError}
+                onDecline={handleDecline}
+                onSnooze={handleSnooze}
                 onBreakDown={breakDown}
-                onReturnEvent={returnEvent}
+                onReturnEvent={handleReturnEvent}
               />
 
               <HorizonGrid
@@ -261,19 +336,11 @@ export function SchedulePage() {
                 colorMode={colorMode}
                 onDropCandidate={handleDrop}
                 onMoveEvent={handleMove}
-                footer={
-                  generatedAt
-                    ? `Rhythm from your own patterns, updated ${new Date(generatedAt).toLocaleDateString(
-                        [],
-                        { month: 'short', day: 'numeric' },
-                      )}.`
-                    : 'Rhythm layer unavailable — showing committed time only.'
-                }
+                footer={rhythmFooter(generatedAt, rhythmCoversWindow)}
               />
             </div>
           </>
         )}
-
       </PageContent>
     </>
   );

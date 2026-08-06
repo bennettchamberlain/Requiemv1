@@ -160,10 +160,7 @@ describe('SuggestionSyncService — projecting actions and insights onto the sla
   });
 
   it('reads key_actions from structured_context when content lacks them', async () => {
-    await setup(
-      [],
-      [insight({ content: {}, structuredContext: { key_actions: ['Book the room'] } })],
-    );
+    await setup([], [insight({ content: {}, structuredContext: { key_actions: ['Book the room'] } })]);
 
     await service.sync(ctx);
 

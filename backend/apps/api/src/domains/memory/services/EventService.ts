@@ -49,6 +49,38 @@ export interface HourlyEventCount {
   count: number;
 }
 
+/**
+ * How far before `from` an event may have started and still be returned by the
+ * calendar range read.
+ *
+ * The overlap predicate `COALESCE(end_time, start_time) >= :from` is an
+ * expression no index covers, and the only applicable index —
+ * events_user_time_idx (user_id, start_time DESC) — can serve the `< :to` upper
+ * bound but has nothing to stop at underneath, so the scan costs O(every event
+ * the user owns before `to`) regardless of how narrow the window is. On a 200k
+ * row table a 7-day window measured as a 2273-buffer seq scan (24.9ms); adding a
+ * lower bound on start_time turns it into a 190-buffer bitmap index scan (2.4ms).
+ * ci.events also holds photo/video rows, so this grows with every day of use.
+ *
+ * The bound is a bounded-lookback trade, not a free win: an event that started
+ * more than this long before the window and is *still* running is dropped. A
+ * quarter is the same span MAX_RANGE_DAYS lets a caller request in one go, and
+ * nothing this appliance ingests — calendar entries, photos, visits, trips —
+ * occupies a single unbroken span that long.
+ */
+const MAX_EVENT_LOOKBACK_DAYS = 92;
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Hard row cap for one calendar range read. The resolver's MAX_RANGE_DAYS bounds
+ * the *span* a caller may ask for but not the row count, and a quarter-wide
+ * request over a photo-heavy library can run to six figures of serialised nodes.
+ * This is a backstop against that, not a pagination scheme: results are ordered
+ * start_time ASC, so a truncated response is the earliest prefix of the window.
+ */
+const MAX_RANGE_EVENTS = 2000;
+
 @Injectable()
 export class EventService {
   constructor(
@@ -108,6 +140,32 @@ export class EventService {
 
     if (item.sharing_level) {
       toCreate.sharingLevel = item.sharing_level;
+    }
+
+    // Provenance: who minted this event and from what. `repository.create()`
+    // reads columns by propertyName and silently drops any key it does not
+    // recognise, so a snake_case DTO key that is not renamed here is not a
+    // no-op — it is a lost write. These four are the trail an event promoted
+    // from a schedule candidate carries; without them a suggested event is
+    // indistinguishable from a hand-created one.
+    //
+    // Compared against `undefined` rather than truthiness: `is_predicted: false`
+    // is the meaningful assertion "the user committed to this, HBPE may train on
+    // it", and 0 is a legal energy_level.
+    if (item.is_predicted !== undefined) {
+      toCreate.isPredicted = item.is_predicted;
+    }
+
+    if (item.inference_sources) {
+      toCreate.inferenceSources = item.inference_sources;
+    }
+
+    if (item.created_by) {
+      toCreate.createdBy = item.created_by;
+    }
+
+    if (item.energy_level !== undefined) {
+      toCreate.energyLevel = item.energy_level;
     }
 
     return toCreate;
@@ -246,17 +304,27 @@ export class EventService {
    * Cancelled and no-show rows are excluded — they are not occupied time — but
    * `tentative` is kept, because a maybe on the calendar is still a claim on the
    * slot and the schedule surface renders it as such.
+   *
+   * Bounded on both sides and capped: see MAX_EVENT_LOOKBACK_DAYS for why the
+   * overlap predicate alone cannot use an index, and MAX_RANGE_EVENTS for the
+   * row cap.
    */
   async findInRange(context: ServiceContext, from: Date, to: Date): Promise<Event[]> {
+    // Sargable floor for events_user_time_idx: the planner can now range-scan
+    // (user_id, start_time) instead of walking the user's whole history.
+    const lowerBound = new Date(from.getTime() - MAX_EVENT_LOOKBACK_DAYS * DAY_MS);
+
     const query = this.dataSource
       .getRepository(EventEntity)
       .createQueryBuilder('event')
       .where('event.is_deleted = false')
       .andWhere("event.status NOT IN ('cancelled', 'no_show')")
+      .andWhere('event.start_time >= :lowerBound', { lowerBound })
       .andWhere('event.start_time < :to', { to })
       .andWhere('COALESCE(event.end_time, event.start_time) >= :from', { from })
       .orderBy('event.start_time', 'ASC')
-      .addOrderBy('event.event_id', 'ASC');
+      .addOrderBy('event.event_id', 'ASC')
+      .take(MAX_RANGE_EVENTS);
 
     if (context.userId !== SYSTEM_USER) {
       query.andWhere('event.user_id = :userId', { userId: context.userId });

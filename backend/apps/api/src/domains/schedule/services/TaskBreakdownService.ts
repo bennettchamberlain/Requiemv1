@@ -21,6 +21,17 @@ const MAX_TASKS = 12;
 /** Bound the input so one paste cannot blow the context window. */
 const MAX_INPUT_CHARS = 4000;
 
+/**
+ * Ceiling on one brain dump's worth of generation, shared by BOTH samples.
+ *
+ * The same order as the 10s HbpeService allows itself, with headroom for a cold
+ * model: gemma3:1b splits a dump in a second or two once resident, but the first
+ * call after a restart pays the load. Past that the honest reading is that the
+ * model is not coming back, and the user is better told "nothing came back" than
+ * left watching a spinner on a note they just typed.
+ */
+const BREAKDOWN_TIMEOUT_MS = 15_000;
+
 /** Durations outside this are the model hallucinating, not estimating. */
 const MIN_DURATION_MINUTES = 5;
 const MAX_DURATION_MINUTES = 8 * 60;
@@ -160,11 +171,15 @@ export class TaskBreakdownService {
    * @param at Instant the dump was written — anchors both the plausible window
    *   and the dedupe key. Injected rather than read from the clock so the same
    *   call is reproducible in a test.
+   * @param budgetMs Total time both samples may spend on the model. Injected for
+   *   the same reason as `at`: a test can prove the deadline is real without
+   *   sitting out the real one.
    */
   async breakDown(
     context: UserServiceContext & RequestContext,
     text: string,
     at: Date = new Date(),
+    budgetMs: number = BREAKDOWN_TIMEOUT_MS,
   ): Promise<Awaited<ReturnType<CandidateService['upsert']>>> {
     const trimmed = text.trim();
 
@@ -179,10 +194,17 @@ export class TaskBreakdownService {
     // One retry. Even schema-constrained, a 1B model occasionally returns a
     // task whose title is the empty string and nothing to salvage it from; a
     // second sample is far cheaper than making the user retype the note.
-    let tasks = await this.extract(context, trimmed);
+    //
+    // Both samples draw on ONE deadline rather than getting a fresh one each,
+    // so the retry cannot double what the user waits: the second sample gets
+    // only what the first left of the budget, and is skipped outright once that
+    // budget is spent.
+    const deadline = AbortSignal.timeout(budgetMs);
 
-    if (tasks.length === 0) {
-      tasks = await this.extract(context, trimmed);
+    let tasks = await this.extract(context, trimmed, deadline);
+
+    if (tasks.length === 0 && !deadline.aborted) {
+      tasks = await this.extract(context, trimmed, deadline);
     }
 
     if (tasks.length === 0) {
@@ -231,17 +253,33 @@ export class TaskBreakdownService {
   }
 
   /** Call the model and return the tasks that survive validation. */
-  private async extract(context: RequestContext, text: string): Promise<ParsedTask[]> {
-    const response = await this.ollamaService.chat(
-      context,
-      [{ role: 'user', content: PROMPT_HEADER + text }],
-      // No tools: this is a pure text transform and a tool call here would only
-      // be the model wandering off. The schema (not the bare 'json' string) is
-      // what makes the output usable — see RESPONSE_JSON_SCHEMA.
-      { model: PROMPT_MODEL, enableTools: false, format: RESPONSE_JSON_SCHEMA },
-    );
+  private async extract(context: RequestContext, text: string, signal: AbortSignal): Promise<ParsedTask[]> {
+    let content: string;
 
-    const content = response.message.content;
+    try {
+      const response = await this.ollamaService.chat(
+        context,
+        [{ role: 'user', content: PROMPT_HEADER + text }],
+        // No tools: this is a pure text transform and a tool call here would only
+        // be the model wandering off. The schema (not the bare 'json' string) is
+        // what makes the output usable — see RESPONSE_JSON_SCHEMA.
+        { model: PROMPT_MODEL, enableTools: false, format: RESPONSE_JSON_SCHEMA, signal },
+      );
+
+      content = response.message.content;
+    } catch (err) {
+      // Ollama unreachable, the model never pulled, or a load that outran the
+      // deadline — the likeliest failure by far for a local 1B model, and none
+      // of them are the user's problem. Same contract parseTasks already keeps
+      // for a malformed generation: nothing came back, not a 500 on a note that
+      // has just been typed and would otherwise be lost.
+      this.logger.warn('Task breakdown generation failed', {
+        err: err instanceof Error ? err.message : String(err),
+      });
+
+      return [];
+    }
+
     const tasks = TaskBreakdownService.parseTasks(content);
 
     // Keep the evidence. Silently returning [] on a bad generation is what made

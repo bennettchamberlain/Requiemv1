@@ -98,6 +98,12 @@ export class EventCandidateEntity {
   @Column({ type: 'timestamptz', name: 'snoozed_until', nullable: true })
   snoozedUntil!: Date | null;
 
+  /**
+   * The real event this candidate became. Only an `accepted` row may hold one
+   * (`candidate_promotion_consistent`), but an accepted row may also hold null:
+   * the column is `ON DELETE SET NULL`, so this goes null when the event is
+   * deleted out from under it, and the status stays `accepted`.
+   */
   @Column({ type: 'uuid', name: 'promoted_event_id', nullable: true })
   promotedEventId!: string | null;
 

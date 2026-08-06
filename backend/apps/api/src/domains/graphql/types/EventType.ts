@@ -67,8 +67,7 @@ export class EventType implements Node, Taggable {
 
   @Field(() => String, {
     nullable: true,
-    description:
-      "'pending' when the local row has been changed here but not pushed back to `sourceSystem`.",
+    description: "'pending' when the local row has been changed here but not pushed back to `sourceSystem`.",
   })
   externalSyncStatus!: string | null;
 

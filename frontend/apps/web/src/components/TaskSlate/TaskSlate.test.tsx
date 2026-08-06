@@ -86,17 +86,12 @@ describe('TaskSlate — taking a committed event back off the week', () => {
     // getData is blanked during dragover, so returnability rides as a type KEY.
     // Without it the rail would promise "drop to take it off the week" and then
     // silently do nothing — a worse way to find out than never offering.
-    const { container } = render(
-      <TaskSlate candidates={[candidate()]} {...NOOP} onReturnEvent={() => {}} />,
-    );
+    const { container } = render(<TaskSlate candidates={[candidate()]} {...NOOP} onReturnEvent={() => {}} />);
 
     const mine = dragEventOn(panel(container), 'dragOver', [EVENT_DRAG_TYPE]);
     expect(mine.defaultPrevented).toBe(true);
 
-    const theirs = dragEventOn(panel(container), 'dragOver', [
-      EVENT_DRAG_TYPE,
-      EVENT_EXTERNAL_DRAG_TYPE,
-    ]);
+    const theirs = dragEventOn(panel(container), 'dragOver', [EVENT_DRAG_TYPE, EVENT_EXTERNAL_DRAG_TYPE]);
     expect(theirs.defaultPrevented).toBe(false);
   });
 

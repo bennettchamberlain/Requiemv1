@@ -5,6 +5,14 @@
  * BOTH directions: HorizonGrid accepts candidates from TaskSlate, and TaskSlate
  * accepts committed events back from HorizonGrid. Declaring each key on the
  * component that emits it would make the two import each other.
+ *
+ * KNOWN GAP — this protocol is native HTML5 drag-and-drop, which has no keyboard
+ * affordance in any browser and does not fire on touch at all. Chips and cards
+ * are focusable and carry their full detail as an accessible name, so the week
+ * can be READ without a pointer; committing or rescheduling time still cannot be
+ * DONE without one. Closing it needs an interaction model this module does not
+ * have — a "move to…" command, or arrow-key nudging with a live region — not a
+ * new payload key. Until then the schedule surface is pointer-only for writes.
  */
 
 /** A suggestion being dragged out of Possibilities. Payload: the candidate id. */

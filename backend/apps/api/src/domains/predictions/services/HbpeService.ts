@@ -23,15 +23,10 @@ export class HbpeService {
    *   schedule grid needs it (its first row is today); the feed's Week Ahead
    *   card does not, and leaving it false preserves that card's semantics.
    */
-  async getWeekForecast(
-    context: UserServiceContext,
-    includeToday = false,
-  ): Promise<WeekForecastResponse> {
+  async getWeekForecast(context: UserServiceContext, includeToday = false): Promise<WeekForecastResponse> {
     const todayParam = includeToday ? '&include_today=true' : '';
 
-    return this.get<WeekForecastResponse>(
-      `/forecast?horizon=7d&user_id=${context.userId}${todayParam}`,
-    );
+    return this.get<WeekForecastResponse>(`/forecast?horizon=7d&user_id=${context.userId}${todayParam}`);
   }
 
   async getDueList(context: UserServiceContext): Promise<DueResponse> {

@@ -6,6 +6,7 @@ import type { RhythmDay, ScheduleEvent } from '@/api/useScheduleService';
 import {
   HorizonGrid,
   spanForDay,
+  packLanes,
   daypartWeights,
   describes,
   rhythmCells,
@@ -16,6 +17,33 @@ import {
 } from './HorizonGrid';
 
 const MONDAY = startOfLocalDay(new Date(2026, 7, 3));
+
+/**
+ * Run `fn` with the process timezone pinned, restoring it afterwards.
+ *
+ * Anything asserting on the UTC→local mapping, or on a day that is not 24 hours
+ * long, has to name the zone it means. CI runs in UTC, where a local day IS a
+ * UTC day and no calendar day ever changes length — so those cases are vacuous
+ * unless the zone is chosen rather than inherited from the machine. Node
+ * re-reads `process.env.TZ` on the next Date operation, which is all this needs.
+ *
+ * Build every Date inside the callback: one created outside carries the offset
+ * that was in force when it was constructed.
+ */
+function withTimeZone<T>(timeZone: string, fn: () => T): T {
+  const previous = process.env.TZ;
+  process.env.TZ = timeZone;
+
+  try {
+    return fn();
+  } finally {
+    if (previous === undefined) {
+      delete process.env.TZ;
+    } else {
+      process.env.TZ = previous;
+    }
+  }
+}
 
 function event(overrides: Partial<ScheduleEvent> = {}): ScheduleEvent {
   return {
@@ -102,15 +130,64 @@ describe('spanForDay — clipping committed events onto a day row', () => {
   });
 });
 
+describe('packLanes — keeping overlapping events reachable', () => {
+  /** The spans one day's worth of events produce, in the order the row uses. */
+  function spansFor(...events: ScheduleEvent[]) {
+    return events
+      .map((e) => spanForDay(e, MONDAY))
+      .filter((s): s is NonNullable<typeof s> => s !== null)
+      .sort((a, b) => a.leftPct - b.leftPct);
+  }
+
+  /** An event on MONDAY, by local hour. */
+  function block(id: string, fromHour: number, toHour: number): ScheduleEvent {
+    return event({
+      id,
+      title: id,
+      startTime: new Date(2026, 7, 3, fromHour, 0).toISOString(),
+      endTime: new Date(2026, 7, 3, toHour, 0).toISOString(),
+    });
+  }
+
+  it('puts a lone event on the first lane', () => {
+    expect(packLanes(spansFor(block('a', 9, 10)))).toEqual([0]);
+  });
+
+  it('splits two events that overlap onto separate lanes', () => {
+    // Drawn into one strip, the second buries the first: unreachable by
+    // pointer, and its tooltip can never open.
+    expect(packLanes(spansFor(block('a', 9, 12), block('b', 10, 13)))).toEqual([0, 1]);
+  });
+
+  it('leaves back-to-back events on one lane — touching edges are not an overlap', () => {
+    expect(packLanes(spansFor(block('a', 9, 10), block('b', 10, 11)))).toEqual([0, 0]);
+  });
+
+  it('opens a third lane for a three-way double-booking', () => {
+    expect(packLanes(spansFor(block('a', 9, 12), block('b', 10, 13), block('c', 11, 14)))).toEqual([0, 1, 2]);
+  });
+
+  it('reuses a lane once the chip occupying it has ended', () => {
+    // b overlaps a and takes lane 1; c starts after a ends, so lane 0 is free.
+    expect(packLanes(spansFor(block('a', 9, 11), block('b', 10, 15), block('c', 12, 13)))).toEqual([0, 1, 0]);
+  });
+
+  it('reuses a freed lane rather than opening a new one', () => {
+    // b sits inside a's long block and takes lane 1; c starts after b's chip has
+    // ended, so lane 1 is the lowest one free by then — a third is not needed.
+    expect(packLanes(spansFor(block('a', 9, 17), block('b', 10, 11), block('c', 12, 13)))).toEqual([0, 1, 1]);
+  });
+
+  it('is empty for a day with nothing on it', () => {
+    expect(packLanes([])).toEqual([]);
+  });
+});
+
 function day(clusters: RhythmDay['clusters'], date = '2026-08-03'): RhythmDay {
   return { date, dow: 'Monday', clusters };
 }
 
-function cluster(
-  id: string,
-  pOccur: number,
-  dayparts: [string, number][],
-): RhythmDay['clusters'][number] {
+function cluster(id: string, pOccur: number, dayparts: [string, number][]): RhythmDay['clusters'][number] {
   return {
     clusterId: id,
     name: id,
@@ -202,8 +279,7 @@ describe('daypartWeights — collapsing a day of clusters into four weights', ()
 });
 
 describe('rhythmCells — per-hour intensities across a local day', () => {
-  const lookupFor = (days: RhythmDay[]) => (utcDate: string) =>
-    days.find((d) => d.date === utcDate);
+  const lookupFor = (days: RhythmDay[]) => (utcDate: string) => days.find((d) => d.date === utcDate);
 
   it('emits one cell per hour of the day', () => {
     expect(rhythmCells(MONDAY, () => undefined)).toHaveLength(24);
@@ -231,50 +307,64 @@ describe('rhythmCells — per-hour intensities across a local day', () => {
   it('reaches across the UTC date boundary for the tail of a local day', () => {
     // Only the NEXT UTC date carries any weight. A local day that runs past
     // midnight UTC must still pick it up, instead of flatlining.
-    const cells = rhythmCells(
-      MONDAY,
-      lookupFor([
-        day([], '2026-08-03'),
-        day(
-          [
-            cluster('late', 1, [
-              ['night', 1],
-              ['morning', 1],
-              ['afternoon', 1],
-              ['evening', 1],
-            ]),
-          ],
-          '2026-08-04',
-        ),
-      ]),
+    //
+    // The zone is pinned because the assertion is ABOUT the offset: under UTC a
+    // local day IS a UTC day, there is no tail reaching past midnight, and the
+    // case proves nothing. New York in August is UTC-4, so local 20:00 onward
+    // falls in the next UTC date's `night` daypart — and only those four hours.
+    const cells = withTimeZone('America/New_York', () =>
+      rhythmCells(
+        startOfLocalDay(new Date(2026, 7, 3)),
+        lookupFor([
+          day([], '2026-08-03'),
+          day(
+            [
+              cluster('late', 1, [
+                ['night', 1],
+                ['morning', 1],
+                ['afternoon', 1],
+                ['evening', 1],
+              ]),
+            ],
+            '2026-08-04',
+          ),
+        ]),
+      ),
     );
 
-    expect(cells.some((c) => c > 0)).toBe(true);
+    expect(cells.slice(0, 20)).toEqual(Array.from({ length: 20 }, () => 0));
+    expect(cells.slice(20)).toEqual([1, 1, 1, 1]);
   });
 
   it('preserves ordering between a strong and a weak daypart', () => {
-    const cells = rhythmCells(
-      MONDAY,
-      lookupFor([
-        day(
-          [
-            cluster('work', 0.9, [
-              ['afternoon', 0.9],
-              ['night', 0.1],
-            ]),
-          ],
-          '2026-08-03',
-        ),
-        day(
-          [
-            cluster('work', 0.9, [
-              ['afternoon', 0.9],
-              ['night', 0.1],
-            ]),
-          ],
-          '2026-08-04',
-        ),
-      ]),
+    // Pinned for the same reason as the case above: which local hours reach
+    // which daypart is exactly what varies by offset. Left to the machine, a
+    // far-eastern zone (Chatham is UTC+12:45) slides the whole row off the
+    // afternoon band and the strong claim never appears at all.
+    const cells = withTimeZone('America/New_York', () =>
+      rhythmCells(
+        startOfLocalDay(new Date(2026, 7, 3)),
+        lookupFor([
+          day(
+            [
+              cluster('work', 0.9, [
+                ['afternoon', 0.9],
+                ['night', 0.1],
+              ]),
+            ],
+            '2026-08-03',
+          ),
+          day(
+            [
+              cluster('work', 0.9, [
+                ['afternoon', 0.9],
+                ['night', 0.1],
+              ]),
+            ],
+            '2026-08-04',
+          ),
+        ]),
+      ),
     );
 
     // Dayparts the clusters never claim stay at 0; among the ones they do, the
@@ -283,8 +373,15 @@ describe('rhythmCells — per-hour intensities across a local day', () => {
 
     expect(Math.max(...claimed)).toBeCloseTo(0.81, 2);
     expect(Math.min(...claimed)).toBeCloseTo(0.09, 2);
+
+    // At UTC-4 the UTC afternoon band (12:00–17:59Z) is local 08:00–13:59, and
+    // UTC night is local 20:00–23:59 plus the 00:00–01:59 tail of the same band
+    // the previous UTC date opened.
+    expect(cells[10]).toBeCloseTo(0.81, 2);
+    expect(cells[22]).toBeCloseTo(0.09, 2);
   });
 });
+
 describe('dropInstant — where a dragged suggestion lands', () => {
   it('maps the middle of a row to midday', () => {
     expect(dropInstant(MONDAY, 0.5).getHours()).toBe(12);
@@ -326,6 +423,82 @@ describe('dropInstant — where a dragged suggestion lands', () => {
     // A drop event with no usable coordinate must not send Invalid Date to the
     // accept mutation.
     expect(dropInstant(MONDAY, Number.NaN).getTime()).toBe(MONDAY.getTime());
+  });
+});
+
+describe('dropInstant / movedStart — days that are not 24 hours long', () => {
+  // New York springs forward on Sun 08 Mar 2026 (a 23-hour day) and falls back
+  // on Sun 01 Nov 2026 (a 25-hour day). The row is still drawn as 1440 minutes
+  // of wall clock, so a drop has to land on the time the user is pointing at
+  // rather than that many milliseconds after midnight.
+  const ZONE = 'America/New_York';
+
+  it('books the visual noon guide at noon on a spring-forward day', () => {
+    withTimeZone(ZONE, () => {
+      const springForward = startOfLocalDay(new Date(2026, 2, 8));
+
+      // Adding 12h of elapsed time to midnight lands on 13:00 here.
+      expect(dropInstant(springForward, 0.5).getHours()).toBe(12);
+    });
+  });
+
+  it('books the visual noon guide at noon on a fall-back day', () => {
+    withTimeZone(ZONE, () => {
+      const fallBack = startOfLocalDay(new Date(2026, 10, 1));
+
+      // ...and 11:00 here, for the mirror-image reason.
+      expect(dropInstant(fallBack, 0.5).getHours()).toBe(12);
+    });
+  });
+
+  it('never spills a right-edge drop onto the next date across a spring-forward', () => {
+    withTimeZone(ZONE, () => {
+      const springForward = startOfLocalDay(new Date(2026, 2, 8));
+      const at = dropInstant(springForward, 1.4);
+
+      // The clamp is one grain short of the row's end. On a 23-hour day a
+      // millisecond clamp overshoots and books 00:45 the FOLLOWING day, which
+      // is the same invariant the non-DST case above asserts.
+      expect(at.getDate()).toBe(8);
+      expect(at.getHours()).toBe(23);
+      expect(at.getMinutes()).toBe(45);
+      expect(at.getTime()).toBeLessThan(addDays(springForward, 1).getTime());
+    });
+  });
+
+  it('never spills a right-edge drop onto the next date across a fall-back', () => {
+    withTimeZone(ZONE, () => {
+      const fallBack = startOfLocalDay(new Date(2026, 10, 1));
+      const at = dropInstant(fallBack, 1.4);
+
+      expect(at.getDate()).toBe(1);
+      expect(at.getTime()).toBeLessThan(addDays(fallBack, 1).getTime());
+    });
+  });
+
+  it('moves an event to the wall-clock time it was dropped on, DST or not', () => {
+    withTimeZone(ZONE, () => {
+      const springForward = startOfLocalDay(new Date(2026, 2, 8));
+      const at = movedStart(springForward, 15 / 24, 0);
+
+      expect(at.getDate()).toBe(8);
+      expect(at.getHours()).toBe(15);
+      expect(at.getMinutes()).toBe(0);
+    });
+  });
+
+  it('keeps a drop in the hour the clock skips on the day it was made', () => {
+    withTimeZone(ZONE, () => {
+      const springForward = startOfLocalDay(new Date(2026, 2, 8));
+
+      // 02:00–03:00 does not exist on this date. Whatever it normalises to, it
+      // must stay on the row it was dropped on.
+      const at = dropInstant(springForward, (2 * 60 + 30) / 1440);
+
+      expect(at.getDate()).toBe(8);
+      expect(at.getTime()).toBeGreaterThanOrEqual(springForward.getTime());
+      expect(at.getTime()).toBeLessThan(addDays(springForward, 1).getTime());
+    });
   });
 });
 
@@ -408,6 +581,126 @@ describe('HorizonGrid', () => {
     render(<HorizonGrid start={MONDAY} days={7} events={[event()]} rhythm={[]} />);
 
     expect(screen.getByText('Standup')).toBeInTheDocument();
+  });
+
+  it('stacks overlapping events so neither is buried under the other', () => {
+    // Two chips in one strip means the second is drawn over the first, which is
+    // then unreachable by pointer — on a page whose whole gesture is "drag the
+    // chip you want", that moves an event the user cannot see.
+    const standup = event({
+      title: 'Standup',
+      startTime: new Date(2026, 7, 3, 9, 0).toISOString(),
+      endTime: new Date(2026, 7, 3, 12, 0).toISOString(),
+    });
+    const review = event({
+      id: 'e2',
+      title: 'Design review',
+      startTime: new Date(2026, 7, 3, 10, 0).toISOString(),
+      endTime: new Date(2026, 7, 3, 13, 0).toISOString(),
+    });
+
+    render(<HorizonGrid start={MONDAY} days={7} events={[standup, review]} rhythm={[]} />);
+
+    const first = screen.getByLabelText(/^Standup,/);
+    const second = screen.getByLabelText(/^Design review,/);
+
+    expect(first).toBeVisible();
+    expect(second).toBeVisible();
+    expect(first.style.top).not.toBe(second.style.top);
+  });
+
+  it('keeps back-to-back events on one line', () => {
+    const standup = event({
+      title: 'Standup',
+      startTime: new Date(2026, 7, 3, 9, 0).toISOString(),
+      endTime: new Date(2026, 7, 3, 10, 0).toISOString(),
+    });
+    const triage = event({
+      id: 'e2',
+      title: 'Triage',
+      startTime: new Date(2026, 7, 3, 10, 0).toISOString(),
+      endTime: new Date(2026, 7, 3, 11, 0).toISOString(),
+    });
+
+    render(<HorizonGrid start={MONDAY} days={7} events={[standup, triage]} rhythm={[]} />);
+
+    expect(screen.getByLabelText(/^Standup,/).style.top).toBe(screen.getByLabelText(/^Triage,/).style.top);
+  });
+});
+
+describe('HorizonGrid — reachable without a pointer', () => {
+  it('gives every chip a focusable handle and a name that carries the tooltip', () => {
+    render(<HorizonGrid start={MONDAY} days={7} events={[event()]} rhythm={[]} onMoveEvent={() => {}} />);
+
+    const chip = screen.getByLabelText(/^Standup,/);
+
+    expect(chip).toHaveAttribute('tabindex', '0');
+    // Time and activity class live only in the hover tooltip otherwise.
+    expect(chip.getAttribute('aria-label')).toContain('work');
+    expect(chip.getAttribute('aria-label')).toMatch(/\d/);
+  });
+
+  it('names an all-day event as such rather than inventing a time', () => {
+    render(<HorizonGrid start={MONDAY} days={7} events={[event({ isAllDay: true })]} rhythm={[]} />);
+
+    expect(screen.getByLabelText(/^Standup, all day/)).toBeInTheDocument();
+  });
+
+  it('titles a chip too narrow to show any text of its own', () => {
+    // 30 minutes is 2% of a 24-hour row, and the 10:00 block leaves no room to
+    // spill the label into — so without this the chip is a bare colour swatch,
+    // which is the one thing the palette's contrast budget forbids.
+    const triage = event({
+      id: 'e2',
+      title: 'Triage',
+      startTime: new Date(2026, 7, 3, 10, 0).toISOString(),
+      endTime: new Date(2026, 7, 3, 10, 30).toISOString(),
+    });
+
+    render(<HorizonGrid start={MONDAY} days={7} events={[event(), triage]} rhythm={[]} />);
+
+    expect(screen.getByTitle('Standup')).toBeInTheDocument();
+  });
+
+  it('gives the rhythm lane a text equivalent instead of colour alone', () => {
+    const rhythm = [
+      {
+        date: '2026-08-03',
+        dow: 'Monday',
+        clusters: [
+          {
+            clusterId: 'c1',
+            name: 'Deep work',
+            l0Class: 'WORK',
+            pOccur: 0.9,
+            scheduled: false,
+            daypartProbs: [
+              { label: 'night', probability: 0.9 },
+              { label: 'morning', probability: 0.9 },
+              { label: 'afternoon', probability: 0.9 },
+              { label: 'evening', probability: 0.9 },
+            ],
+          },
+        ],
+      },
+    ];
+
+    render(<HorizonGrid start={MONDAY} days={7} events={[]} rhythm={rhythm} />);
+
+    expect(screen.getByRole('img', { name: /Deep work 90%/ })).toBeInTheDocument();
+  });
+
+  it('leaves a rhythm lane with no signal in it out of the accessibility tree', () => {
+    render(<HorizonGrid start={MONDAY} days={7} events={[]} rhythm={[]} />);
+
+    expect(screen.queryAllByRole('img')).toHaveLength(0);
+  });
+
+  it('names the grid and its day rows', () => {
+    render(<HorizonGrid start={MONDAY} days={7} events={[]} rhythm={[]} />);
+
+    expect(screen.getByRole('group', { name: 'Schedule' })).toBeInTheDocument();
+    expect(screen.getAllByRole('listitem', { name: /August 3/ })).not.toHaveLength(0);
   });
 });
 

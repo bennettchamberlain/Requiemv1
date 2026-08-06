@@ -279,6 +279,12 @@ function DismissZone({ onDismiss }: { onDismiss: (id: string) => void }) {
 interface TaskSlateProps {
   candidates: ScheduleCandidate[];
   loading: boolean;
+  /**
+   * The suggestions could not be fetched. Distinct from an empty slate, and it
+   * has to be: "nothing waiting yet" is a claim about the user's life, and
+   * making it on the strength of a failed request is a lie.
+   */
+  error?: boolean;
   onDecline: (id: string, reason: DeclineReason) => void;
   onSnooze: (id: string, until: Date) => void;
   /** Omit to hide the brain-dump box (the read-only stories do). */
@@ -306,6 +312,7 @@ interface TaskSlateProps {
 export function TaskSlate({
   candidates,
   loading,
+  error = false,
   onDecline,
   onSnooze,
   onBreakDown,
@@ -340,27 +347,34 @@ export function TaskSlate({
           : undefined
       }
       onDragLeave={() => setReturnable(false)}
-      onDrop={
-        onReturnEvent
-          ? (e) => {
-              setReturnable(false);
+      onDrop={(e) => {
+        setReturnable(false);
 
-              if (!eventDrag(e.dataTransfer.types)) {
-                return;
-              }
+        if (!e.dataTransfer.types.includes(EVENT_DRAG_TYPE)) {
+          return;
+        }
 
-              // Belt and braces: eventDrag already rejected an externally-owned
-              // drag from its type key, but the payload is authoritative and is
-              // finally readable here.
-              const payload = parseEventDrag(e.dataTransfer.getData(EVENT_DRAG_TYPE));
+        // Refusing an event drag is not the same as ignoring it. The grid also
+        // stamps `text/plain` with the event's title, and the brain-dump
+        // textarea inside this panel is a native drop target for that — so
+        // falling through on the refusal path pastes the event title into
+        // whatever the user was typing. Swallow the browser's default action
+        // for ANY event drag before deciding what to do with it.
+        e.preventDefault();
 
-              if (payload && !payload.externallyOwned) {
-                e.preventDefault();
-                onReturnEvent(payload.id);
-              }
-            }
-          : undefined
-      }
+        if (!eventDrag(e.dataTransfer.types)) {
+          return;
+        }
+
+        // Belt and braces: eventDrag already rejected an externally-owned drag
+        // from its type key, but the payload is authoritative and is finally
+        // readable here.
+        const payload = parseEventDrag(e.dataTransfer.getData(EVENT_DRAG_TYPE));
+
+        if (payload && !payload.externallyOwned) {
+          onReturnEvent?.(payload.id);
+        }
+      }}
       className={cn(
         'rounded-xl border bg-card p-3 transition-colors md:p-4',
         returnable ? 'border-primary/60 ring-1 ring-inset ring-primary/40' : 'border-border',
@@ -370,11 +384,7 @@ export function TaskSlate({
       <div className="mb-2.5 flex items-baseline justify-between gap-2">
         <h3 className="text-sm font-medium text-foreground">Possibilities</h3>
         <span className="text-[11px] text-muted-foreground">
-          {returnable
-            ? 'drop to take it off the week'
-            : hasCards
-              ? 'drag one onto a day below'
-              : 'unplaced'}
+          {returnable ? 'drop to take it off the week' : hasCards ? 'drag one onto a day below' : 'unplaced'}
         </span>
       </div>
 
@@ -388,7 +398,13 @@ export function TaskSlate({
           <p className="self-center text-[12px] text-muted-foreground">Gathering suggestions…</p>
         )}
 
-        {!loading && !hasCards && (
+        {!loading && !hasCards && error && (
+          <p role="alert" className="max-w-md self-center text-[12px] leading-relaxed text-destructive">
+            Could not load your suggestions. Try again shortly.
+          </p>
+        )}
+
+        {!loading && !hasCards && !error && (
           <p className="max-w-md self-center text-[12px] leading-relaxed text-muted-foreground">
             Nothing waiting yet. Type what you need to do, or wait for your feed and insights to turn
             something up.

@@ -228,9 +228,7 @@ function Surface({ colorMode = 'type' }: { colorMode?: ColorMode }) {
                 return e;
               }
 
-              const span = e.endTime
-                ? new Date(e.endTime).getTime() - new Date(e.startTime).getTime()
-                : 0;
+              const span = e.endTime ? new Date(e.endTime).getTime() - new Date(e.startTime).getTime() : 0;
 
               return {
                 ...e,

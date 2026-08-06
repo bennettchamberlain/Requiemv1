@@ -70,10 +70,20 @@ CREATE TABLE ci.event_candidates (
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     CONSTRAINT candidate_window_ordered CHECK (window_start < window_end),
-    -- An accepted candidate must point at the event it became; an open one must not.
+    -- Only an accepted candidate may point at an event: an open, snoozed or
+    -- declined row holds no promotion.
+    --
+    -- The converse deliberately does NOT hold. `accepted` with a NULL
+    -- promoted_event_id is legal and means "the event this became has since been
+    -- deleted". It has to be legal, because promoted_event_id is ON DELETE SET
+    -- NULL and Postgres implements that referential action as a real UPDATE on
+    -- this row, which a plain (non-deferrable) CHECK is evaluated against.
+    -- Requiring accepted => NOT NULL would make deleting the event violate the
+    -- constraint and abort the DELETE — leaving every event ever minted from a
+    -- candidate permanently undeletable, through returnToSlate and through the
+    -- ordinary removeEvent path alike.
     CONSTRAINT candidate_promotion_consistent CHECK (
-        (status = 'accepted' AND promoted_event_id IS NOT NULL)
-        OR (status <> 'accepted' AND promoted_event_id IS NULL)
+        status = 'accepted' OR promoted_event_id IS NULL
     )
 );
 

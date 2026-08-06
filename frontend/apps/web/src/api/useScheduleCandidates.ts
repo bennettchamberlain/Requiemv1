@@ -90,9 +90,36 @@ export interface ScheduleCandidate {
 
 export type DeclineReason = 'not_now' | 'wrong_time' | 'not_like_this' | 'never';
 
+/**
+ * How long a suggestion sync stays good for.
+ *
+ * The projection is a write and it does not depend on the window, so it must
+ * not run again just because the page remounted — route back and forth a few
+ * times and the old once-per-mount ref fired once per visit. Throttled rather
+ * than once-ever so a tab left open all day still picks up new actions and
+ * insights.
+ */
+const SYNC_THROTTLE_MS = 5 * 60_000;
+
+/**
+ * Module scope on purpose: a ref is per component instance and so resets on
+ * every mount, which is the thing being guarded against.
+ */
+let lastSyncedAt = 0;
+
+/** Test seam — forget the throttle so a case starts from a cold page load. */
+export function resetSuggestionSyncThrottle(): void {
+  lastSyncedAt = 0;
+}
+
 interface Result {
   candidates: ScheduleCandidate[];
   loading: boolean;
+  /**
+   * The candidates query failed. Without this a failed fetch is indistinguishable
+   * from an empty slate, and the rail cheerfully reports "nothing waiting yet".
+   */
+  error: boolean;
   accept: (id: string, startTime: Date, endTime?: Date) => Promise<void>;
   decline: (id: string, reason: DeclineReason) => Promise<void>;
   snooze: (id: string, until: Date) => Promise<void>;
@@ -113,7 +140,7 @@ interface Result {
  * The slate: everything the system thinks is worth doing but that has not been
  * given a time yet.
  *
- * Refreshes itself from actions and insights once per mount — the sync is
+ * Refreshes itself from actions and insights on a throttle — the sync is
  * idempotent by dedupe key, and a slate that only fills after a manual button
  * press is a slate nobody sees. Accept/decline/snooze refetch so the grid and
  * the slate never disagree about what is still open.
@@ -121,9 +148,9 @@ interface Result {
 export function useScheduleCandidates(from: Date, to: Date, onPlaced?: () => void): Result {
   const variables = { from: from.toISOString(), to: to.toISOString() };
 
-  const { data, loading, refetch } = useQuery<{ scheduleCandidates: ScheduleCandidate[] }>(
+  const { data, loading, error, refetch } = useQuery<{ scheduleCandidates: ScheduleCandidate[] }>(
     GET_CANDIDATES,
-    { variables, fetchPolicy: 'cache-and-network' },
+    { variables, fetchPolicy: 'cache-and-network', errorPolicy: 'all' },
   );
 
   const [syncSuggestions] = useMutation(SYNC_SUGGESTIONS);
@@ -133,16 +160,22 @@ export function useScheduleCandidates(from: Date, to: Date, onPlaced?: () => voi
   const [breakDownTasks] = useMutation(BREAK_DOWN_TASKS);
   const [returnEventToSlate] = useMutation(RETURN_EVENT_TO_SLATE);
 
-  // Once per mount, not per render or per week-navigation: the projection is
-  // cheap but it is still a write, and it does not depend on the window.
+  // Not per render, not per week-navigation, and not per mount either: the
+  // projection is a write, it does not depend on the window, and a remount
+  // (route change, StrictMode's double-invoke) is not new information. The ref
+  // still guards the double-invoke within one mount, before the timestamp below
+  // has been read back by the second pass.
   const synced = useRef(false);
 
   useEffect(() => {
-    if (synced.current) {
+    const now = Date.now();
+
+    if (synced.current || now - lastSyncedAt < SYNC_THROTTLE_MS) {
       return;
     }
 
     synced.current = true;
+    lastSyncedAt = now;
     syncSuggestions()
       .then(() => refetch())
       .catch(() => {
@@ -202,6 +235,7 @@ export function useScheduleCandidates(from: Date, to: Date, onPlaced?: () => voi
   return {
     candidates: data?.scheduleCandidates ?? [],
     loading,
+    error: Boolean(error),
     accept,
     decline,
     snooze,

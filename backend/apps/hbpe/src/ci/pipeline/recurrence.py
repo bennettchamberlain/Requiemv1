@@ -20,13 +20,21 @@ nightly from ``hbpe.token_stream``:
 Forecast math
 -------------
 Occurrence probability uses a discrete renewal process over the empirical gap
-distribution.  The hazard ``h(g) = P(gap == g | gap >= g)`` (Laplace-smoothed)
-drives a small dynamic program over "days since last occurrence", so that a
-possible occurrence on Tuesday correctly *resets* the clock for Wednesday —
-without this, frequent clusters get badly underestimated late in the week.
-The renewal estimate is blended with the day-of-week base rate, weighted by
-``periodicity_confidence``: clusters with regular intervals trust the hazard;
-ad-hoc clusters fall back to "how often does this happen on a Tuesday".
+distribution.  The hazard ``h(g) = P(gap == g | gap >= g)`` — each g smoothed
+with its own Beta prior, so the smoothing strength does not depend on the
+largest gap ever observed — drives a small dynamic program over "days since
+last occurrence", so that a possible occurrence on Tuesday correctly *resets*
+the clock for Wednesday; without this, frequent clusters get badly
+underestimated late in the week.
+
+The gap distribution answers *how often*; the day-of-week histogram answers
+*which day*, and it is never switched off.  It enters as a mean-1 multiplicative
+lift on the hazard, so "gym every Monday" keeps pointing at Monday even when
+``days_since_last`` has run past every observed gap — out there the empirical
+hazard is pure prior and flat, and the lift is the only structure left.  The
+result is then blended with the day-of-week base rate weighted by
+``periodicity_confidence``: ad-hoc clusters fall back to "how often does this
+happen on a Tuesday".
 
 Due predictions only make sense for clusters with periodic structure
 (confidence >= DUE_CONFIDENCE_MIN): due_in = median gap − days since last,
@@ -55,10 +63,18 @@ log = logging.getLogger(__name__)
 HISTORY_DAYS        = 180   # profile lookback window
 MIN_INTERVALS_CONF  = 4     # intervals needed before confidence can exceed 0
 MAX_INTERVALS_KEPT  = 64    # cap stored raw gaps (most recent kept)
-HAZARD_ALPHA        = 0.5   # Laplace smoothing for the empirical hazard
+HAZARD_ALPHA        = 0.05  # Beta prior (pseudo-counts) on each per-gap Bernoulli
 DUE_CONFIDENCE_MIN  = 0.5   # clusters below this get no due prediction
 FORECAST_P_FLOOR    = 0.01  # don't log/return occurrence probs below this
 MODEL_VERSION       = "recurrence-v1"
+
+# Day-of-week smoothing. The DoW histogram is the only signal that survives once
+# the renewal DP runs past the largest observed gap, so it has to be both present
+# (never weighted to zero) and honest about small samples.
+DOW_LIFT_PRIOR  = 0.25  # per-weekday Dirichlet prior for the hazard's DoW shape
+DOW_PRIOR_WEEKS = 3.0   # pseudo-weeks smoothing the DoW base rate
+DOW_MIN_DAYS    = 4     # occurrence days before DoW evidence counts at face value
+DOW_P_MAX       = 0.95  # a statistical DoW rate never reads as certainty
 
 BUCKETS_PER_DAY   = 48
 BUCKETS_PER_PART  = 12      # 4 dayparts × 12 half-hour buckets
@@ -177,8 +193,15 @@ def build_recurrence_profiles(user_id: str, history_days: int = HISTORY_DAYS) ->
     Upserts one row per L1 cluster observed in the window and deletes profiles
     for clusters no longer observed (or deactivated).  Idempotent.
 
+    An empty read is a no-op: "no occurrences this run" (a token_stream
+    serialization gap, a misconfigured window, a partially-completed nightly)
+    is not evidence that the user has no clusters, and pruning on it would wipe
+    every profile — and with it every /forecast and /forecast/due answer — until
+    enough history reappears.
+
     Returns ``{"user_id", "profiles", "periodic"}`` — total profiles written and
-    how many have periodicity_confidence >= DUE_CONFIDENCE_MIN.
+    how many have periodicity_confidence >= DUE_CONFIDENCE_MIN — plus
+    ``"skipped": True`` when there was nothing to rebuild from.
     """
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -195,6 +218,12 @@ def build_recurrence_profiles(user_id: str, history_days: int = HISTORY_DAYS) ->
         dates.append(date)
         parts.append(list(dayparts or []))
 
+    if not by_cluster:
+        # Nothing read → nothing to rebuild from, and nothing to prune against.
+        log.warning("recurrence profiles user=%s: no occurrences in window, "
+                    "leaving existing profiles untouched", user_id[:8])
+        return {"user_id": user_id, "profiles": 0, "periodic": 0, "skipped": True}
+
     periodic = 0
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -207,17 +236,11 @@ def build_recurrence_profiles(user_id: str, history_days: int = HISTORY_DAYS) ->
                     "history": history_days, **s,
                 })
             # Drop profiles for clusters that vanished from the window
-            if by_cluster:
-                cur.execute(
-                    """DELETE FROM hbpe.recurrence_profiles
-                       WHERE user_id = %s AND NOT (l1_cluster_id = ANY(%s::uuid[]))""",
-                    (user_id, list(by_cluster.keys())),
-                )
-            else:
-                cur.execute(
-                    "DELETE FROM hbpe.recurrence_profiles WHERE user_id = %s",
-                    (user_id,),
-                )
+            cur.execute(
+                """DELETE FROM hbpe.recurrence_profiles
+                   WHERE user_id = %s AND NOT (l1_cluster_id = ANY(%s::uuid[]))""",
+                (user_id, list(by_cluster.keys())),
+            )
 
     log.info("recurrence profiles user=%s written=%d periodic=%d",
              user_id[:8], len(by_cluster), periodic)
@@ -255,9 +278,17 @@ def _hazard(gaps: list[int]) -> np.ndarray:
     """
     Smoothed discrete hazard h(g) = P(gap == g | gap >= g) for g in [1, G].
 
-    Laplace smoothing (HAZARD_ALPHA) keeps the hazard defined for gaps never
-    observed; the array is long enough that the DP can run past the largest
-    observed gap without index errors.
+    Each h(g) is its own Bernoulli — "given the gap has reached g, does it end
+    today?" — so it is smoothed with its own Beta(α, α) prior rather than with a
+    Dirichlet spread over the whole tail.  That matters: a prior proportional to
+    the array length would scale with max(gaps), so one 120-day vacation gap
+    would swamp 25 real weekly observations and flatten the hazard.  The array
+    is still sized off max(gaps) so the DP can run past the largest observed gap
+    without index errors, but that length no longer touches the estimate.
+
+    Past the observed support (at_risk == 0) the hazard is the prior mean, 0.5:
+    "we have never survived this long, so we have nothing to say" — the DoW lift
+    in _renewal_probs is what supplies the structure there.
     """
     G = max(gaps) * 2 + 7
     counts = np.zeros(G + 1)
@@ -266,11 +297,33 @@ def _hazard(gaps: list[int]) -> np.ndarray:
     h = np.zeros(G + 1)
     for g in range(1, G + 1):
         at_risk = counts[g:].sum()
-        h[g] = (counts[g] + HAZARD_ALPHA) / (at_risk + HAZARD_ALPHA * (G - g + 1))
+        h[g] = (counts[g] + HAZARD_ALPHA) / (at_risk + 2.0 * HAZARD_ALPHA)
     return h
 
 
-def _renewal_probs(gaps: list[int], days_since_last: int, horizon: int) -> list[float]:
+def _dow_lift(dow_counts: list[int], n_days: int) -> np.ndarray:
+    """
+    Multiplicative day-of-week factor on the hazard, normalized to mean 1.
+
+    A metronomic "gym every Monday" cluster puts all its mass on one weekday:
+    the lift raises Monday's hazard and damps the other six.  This is what keeps
+    the forecast pointed at the right day once ``days_since_last`` exceeds every
+    observed gap — there the empirical hazard is flat prior, so the lift is the
+    only structure left and it dominates by construction.
+
+    Shrunk toward 1 (no weekday preference) for small samples.
+    """
+    counts = np.asarray(dow_counts, dtype=np.float64)
+    total = float(counts.sum())
+    if total <= 0 or counts.size == 0:
+        return np.ones(max(counts.size, 7))
+    share = (counts + DOW_LIFT_PRIOR) / (total + counts.size * DOW_LIFT_PRIOR)
+    shrink = min(1.0, n_days / float(DOW_MIN_DAYS))
+    return 1.0 + shrink * (counts.size * share - 1.0)
+
+
+def _renewal_probs(gaps: list[int], days_since_last: int, horizon: int,
+                   day_lift: list[float] | None = None) -> list[float]:
     """
     P(cluster occurs on each of the next *horizon* days) via a renewal DP.
 
@@ -280,6 +333,10 @@ def _renewal_probs(gaps: list[int], days_since_last: int, horizon: int) -> list[
     State: distribution over "days since last occurrence" at the start of each
     forecast day.  An occurrence resets the state to 1 the following day, so a
     likely Tuesday occurrence correctly feeds Wednesday's probability.
+
+    ``day_lift`` optionally scales the hazard per forecast day (see _dow_lift),
+    turning the process into a seasonal renewal: *how often* comes from the gap
+    distribution, *which day* from the day-of-week histogram.
     """
     h = _hazard(gaps)
     G = len(h) - 1
@@ -287,12 +344,13 @@ def _renewal_probs(gaps: list[int], days_since_last: int, horizon: int) -> list[
     dist[min(max(days_since_last, 1), G)] = 1.0
 
     probs: list[float] = []
-    for _ in range(horizon):
-        p_today = float((dist * h).sum())
+    for i in range(horizon):
+        h_i = h if day_lift is None else np.clip(h * day_lift[i], 0.0, 1.0)
+        p_today = float((dist * h_i).sum())
         probs.append(p_today)
         nxt = np.zeros(G + 1)
         nxt[1] = p_today                       # occurred → clock resets
-        survived = dist * (1.0 - h)            # didn't occur → gap grows
+        survived = dist * (1.0 - h_i)          # didn't occur → gap grows
         nxt[2:] += survived[1:-1]
         nxt[G] += survived[G]                  # absorb at max gap
         dist = nxt
@@ -301,9 +359,27 @@ def _renewal_probs(gaps: list[int], days_since_last: int, horizon: int) -> list[
 
 # ── Calendar-declared recurrence (RRULE) ───────────────────────────────────────
 
+def _parse_until(value) -> datetime.date | None:
+    """UNTIL → date. Accepts 20260101T000000Z / 20260101 / ISO / date(time)."""
+    if isinstance(value, datetime.datetime):
+        return value.date()
+    if isinstance(value, datetime.date):
+        return value
+    s = str(value or "").strip().split("T", 1)[0].rstrip("Zz")
+    if not s:
+        return None
+    try:
+        if len(s) == 8 and s.isdigit():
+            return datetime.date(int(s[0:4]), int(s[4:6]), int(s[6:8]))
+        return datetime.date.fromisoformat(s)
+    except ValueError:
+        return None
+
+
 def parse_recurrence(pattern) -> dict | None:
     """
-    Normalize ci.events.recurrence_pattern into {freq, interval, byday}.
+    Normalize ci.events.recurrence_pattern into
+    {freq, interval, byday, until, count}.
 
     Accepts the shapes importers emit: a structured dict
     (``{"freq": "WEEKLY", "interval": 2, "byday": ["MO", "WE"]}``) or an
@@ -312,6 +388,10 @@ def parse_recurrence(pattern) -> dict | None:
     ints (Mon=0). Returns None for anything unparseable — callers fall back to
     the statistical estimate, so a weird pattern degrades to "no calendar hint"
     rather than an error.
+
+    ``until``/``count`` carry the series' termination; dropping them would make
+    every ended series recur forever (a standup from a job the user left still
+    pinning p=1.0 cells and suppressing that cluster's overdue flag).
     """
     if not pattern:
         return None
@@ -341,7 +421,16 @@ def parse_recurrence(pattern) -> dict | None:
     byday = sorted({_WEEKDAY_IDX[c] for c in
                     (str(d).strip().upper()[-2:] for d in (raw or []))
                     if c in _WEEKDAY_IDX})
-    return {"freq": freq, "interval": interval, "byday": byday}
+
+    try:
+        count = int(parts.get("COUNT") or 0) or None
+    except (TypeError, ValueError):
+        count = None
+    if count is not None and count < 1:
+        count = None
+
+    return {"freq": freq, "interval": interval, "byday": byday,
+            "until": _parse_until(parts.get("UNTIL")), "count": count}
 
 
 def expand_occurrences(rule: dict | None, series_start: datetime.date,
@@ -352,13 +441,22 @@ def expand_occurrences(rule: dict | None, series_start: datetime.date,
     Day-by-day membership test over the (short) forecast window — no calendar
     arithmetic beyond weekday / day-of-month, which keeps DST and month-length
     edge cases out of a spike.
+
+    UNTIL truncates the window; COUNT is counted from *series_start* (that is
+    what RFC 5545 means), so a rule carrying one scans from the series start and
+    stops at the COUNT-th occurrence — which also bounds the scan.
     """
     if not rule or win_end < win_start:
         return []
     freq, interval, byday = rule["freq"], rule["interval"], rule["byday"]
+    until, count = rule.get("until"), rule.get("count")
+    stop = min(win_end, until) if until else win_end
     out: list[datetime.date] = []
-    d = max(win_start, series_start)
-    while d <= win_end:
+    # COUNT needs the occurrences already consumed before the window, so the
+    # scan has to start at the series start rather than at the window.
+    d = series_start if count else max(win_start, series_start)
+    seen = 0
+    while d <= stop:
         delta = (d - series_start).days
         hit = False
         if delta >= 0:
@@ -371,7 +469,11 @@ def expand_occurrences(rule: dict | None, series_start: datetime.date,
                 months = (d.year - series_start.year) * 12 + (d.month - series_start.month)
                 hit = d.day == series_start.day and months % interval == 0
         if hit:
-            out.append(d)
+            seen += 1
+            if d >= win_start:
+                out.append(d)
+            if count and seen >= count:
+                break
         d += datetime.timedelta(days=1)
     return out
 
@@ -477,17 +579,37 @@ def week_forecast(
     day_cluster_probs: list[list[dict]] = [[] for _ in range(days)]
     for p in profiles:
         gaps = list(p["intervals_days"] or [])
-        if not gaps or p["n_occurrence_days"] < 2:
+        n_days = int(p["n_occurrence_days"] or 0)
+        if not gaps or n_days < 2:
             continue
         conf = float(p["periodicity_confidence"] or 0.0)
         since = max((start - p["last_seen"]).days, 1)
-        renewal = _renewal_probs(gaps, since, days)
 
-        # Day-of-week base rate: occurrences on that DoW / weeks observed
+        # The day-of-week histogram feeds the forecast twice, and is never
+        # switched off: as a multiplicative lift on the hazard (so the DP knows
+        # *which* day, which is exactly what a metronomic weekly habit needs —
+        # past its largest observed gap the lift is all that keeps the forecast
+        # off a flat ~7%/day) and as the base-rate fallback below for clusters
+        # whose gaps are too irregular to trust the phase.
         dow_counts = list(p["dow_counts"])
+        lift = _dow_lift(dow_counts, n_days)
+        day_lift = [float(lift[(start + datetime.timedelta(days=i)).weekday()])
+                    for i in range(days)]
+        renewal = _renewal_probs(gaps, since, days, day_lift=day_lift)
+
+        # Day-of-week base rate: occurrences on that DoW per week observed,
+        # smoothed toward the cluster's overall daily rate and discounted for
+        # small samples — `c / weeks` is a rate, not a probability, and two
+        # observations a week apart must not clamp to near-certainty.
         span_days = max((p["last_seen"] - p["first_seen"]).days + 1, 7)
         weeks = max(span_days / 7.0, 1.0)
-        dow_rate = [min(c / weeks, 1.0) for c in dow_counts]
+        base = min(n_days / span_days, 1.0)
+        evidence = min(1.0, n_days / float(DOW_MIN_DAYS))
+        dow_rate = [
+            evidence * min((c + DOW_PRIOR_WEEKS * base) / (weeks + DOW_PRIOR_WEEKS),
+                           DOW_P_MAX)
+            for c in dow_counts
+        ]
 
         dp_counts = np.asarray(p["daypart_counts"], dtype=np.float64)
         dp_total = dp_counts.sum()
@@ -580,10 +702,14 @@ def due_list(user_id: str) -> list[dict]:
     # Shortest RRULE-implied cadence per cluster (Layer 3 seeding source).
     cadence: dict[str, float] = {}
     for e in upcoming:
-        if e.get("is_recurring"):
-            c = _rrule_cadence_days(parse_recurrence(e.get("recurrence_pattern")))
-            if c and c < cadence.get(e["cluster_id"], float("inf")):
-                cadence[e["cluster_id"]] = c
+        if not e.get("is_recurring"):
+            continue
+        rule = parse_recurrence(e.get("recurrence_pattern"))
+        if rule and rule.get("until") and rule["until"] < today:
+            continue                      # series already ended — no cadence
+        c = _rrule_cadence_days(rule)
+        if c and c < cadence.get(e["cluster_id"], float("inf")):
+            cadence[e["cluster_id"]] = c
 
     out = []
     for p in _load_profiles(user_id):

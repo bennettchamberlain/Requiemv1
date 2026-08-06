@@ -26,6 +26,7 @@ function makeQueryBuilder(many: unknown[]) {
     andWhere: record('andWhere'),
     orderBy: record('orderBy'),
     addOrderBy: record('addOrderBy'),
+    take: record('take'),
     getMany: jest.fn(async () => many),
     calls,
   };
@@ -86,6 +87,45 @@ describe('EventService.findInRange — the calendar read path', () => {
     const params = (qb.calls.andWhere ?? []).map(([, bind]) => bind);
     expect(params).toContainEqual({ to });
     expect(params).toContainEqual({ from });
+  });
+
+  it('floors start_time so the index range is bounded on both sides', async () => {
+    await setup();
+
+    await service.findInRange(ctx, from, to);
+
+    // COALESCE(end_time, start_time) is an expression no index covers, so
+    // without this floor the only usable index — (user_id, start_time DESC) —
+    // has nothing to stop at and the scan walks the user's whole history.
+    expect(clauseWith('event.start_time >= :lowerBound')).toBeDefined();
+  });
+
+  it('sets the floor a bounded lookback before the window, not at its start', async () => {
+    await setup();
+
+    await service.findInRange(ctx, from, to);
+
+    const bind = (qb.calls.andWhere ?? [])
+      .map(([, params]) => params as { lowerBound?: Date } | undefined)
+      .find((params) => params?.lowerBound);
+
+    // A flight that took off before `from` and lands inside the window must
+    // still be returned, so the floor sits a quarter behind `from` — flooring
+    // at `from` itself would silently drop every in-progress event.
+    expect(bind?.lowerBound).toEqual(new Date('2026-05-03T00:00:00Z'));
+    expect(bind?.lowerBound?.getTime()).toBeLessThan(from.getTime());
+  });
+
+  it('caps the number of rows one range read can return', async () => {
+    await setup();
+
+    await service.findInRange(ctx, from, to);
+
+    // MAX_RANGE_DAYS bounds the span a caller may ask for but not the row
+    // count; a quarter over a photo-heavy library is six figures of nodes.
+    const [take] = qb.calls.take?.[0] ?? [];
+    expect(typeof take).toBe('number');
+    expect(take).toBe(2000);
   });
 
   it('excludes cancelled and no-show but keeps tentative', async () => {

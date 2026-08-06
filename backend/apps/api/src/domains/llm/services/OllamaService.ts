@@ -51,6 +51,39 @@ interface ValidateModelResult {
   enableTools: boolean;
 }
 
+/**
+ * Settle with `promise`, or reject the moment `signal` aborts — whichever comes
+ * first. Without a signal the promise is handed back untouched, so a caller that
+ * passes none is completely unaffected.
+ *
+ * Racing is the only way to honour a signal on a non-streaming request: the
+ * ollama client builds its own AbortController on the STREAMING path only, and
+ * posts a one-shot request with no signal at all, so there is nothing for it to
+ * cancel. The socket is left to the runtime; what the race buys is that the
+ * caller stops waiting on a host that is down or a model still loading.
+ */
+function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) {
+    return promise;
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason ?? new Error('Aborted'));
+
+    if (signal.aborted) {
+      onAbort();
+
+      return;
+    }
+
+    signal.addEventListener('abort', onAbort, { once: true });
+
+    // Attaching a rejection handler here also keeps a late failure on an
+    // already-abandoned request from surfacing as an unhandled rejection.
+    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
+  });
+}
+
 @Injectable()
 export class OllamaService {
   private readonly ollama = new Ollama({
@@ -278,10 +311,23 @@ export class OllamaService {
     return stream as typeof stream & { messages: OllamaMessage[] };
   }
 
+  /**
+   * `signal` is optional and additive: it now bounds the whole call — the model
+   * lookup included, since that is its own round trip to a host that may be
+   * down — rather than being dropped from the parameter type as it used to be.
+   */
   async chat(
     context: RequestContext,
     messages: OllamaMessage[],
-    { model, enableTools = false, format }: Omit<PromptOptions, 'signal'>,
+    options: PromptOptions,
+  ): Promise<ChatResponse> {
+    return abortable(this.runChat(context, messages, options), options.signal);
+  }
+
+  private async runChat(
+    context: RequestContext,
+    messages: OllamaMessage[],
+    { model, enableTools = false, format }: PromptOptions,
   ): Promise<ChatResponse> {
     await this.validateModel(context, model);
 
