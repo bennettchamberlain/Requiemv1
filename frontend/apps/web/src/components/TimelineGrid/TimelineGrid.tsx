@@ -317,21 +317,19 @@ export function TimelineGrid({
   const counts = useMemo(() => new Map(data.map((d) => [d.date, d.count])), [data]);
 
   /**
-   * Top of the colour ramp for the visible window. Deliberately not the raw
-   * maximum: a bulk-import day sits orders of magnitude above ordinary activity
-   * and would flatten every real day onto level 1. See {@link intensityCeiling}.
+   * Top of the colour ramp. Deliberately not the raw maximum: a bulk-import day
+   * sits orders of magnitude above ordinary activity and would flatten every
+   * real day onto level 1. See {@link intensityCeiling}.
+   *
+   * Taken over the whole history rather than the visible window, so that a day
+   * keeps the same shade however the user scrolls, and so the small-sample
+   * fallback in {@link intensityCeiling} is judged against everything we know.
+   * Scoped to the window it would be judged against whatever few active days
+   * happen to be on screen — scrolling to a sparse stretch holding the import
+   * day and little else would take the import at face value and bring the flat
+   * grid straight back.
    */
-  const ceiling = useMemo(() => {
-    const visible: number[] = [];
-
-    for (const [key, count] of counts) {
-      if (key >= visibleStartKey && key <= visibleEndKey) {
-        visible.push(count);
-      }
-    }
-
-    return intensityCeiling(visible);
-  }, [counts, visibleStartKey, visibleEndKey]);
+  const ceiling = useMemo(() => intensityCeiling(counts.values()), [counts]);
 
   const levelFor = (count: number): number => intensityLevel(count, ceiling, MAX_LEVEL);
 

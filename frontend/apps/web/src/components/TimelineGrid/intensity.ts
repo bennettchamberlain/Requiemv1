@@ -12,6 +12,28 @@
  * backfills, migrations — all clamp to full intensity, and the levels below
  * spread across the range real activity actually occupies.
  *
+ * This is a trade, not a free win, and the cost is real: daily activity counts
+ * are right-skewed, so the fence sits below the raw maximum on ordinary
+ * histories too, and the genuinely busiest days saturate together at the top
+ * level. It is *not* true that a history without a bulk import scales as it did
+ * before. On the ORDINARY fixture in the tests — no import anywhere — the raw
+ * maximum is 500 and the ceiling is 180, so 180, 260, 340 and 500 are all
+ * rendered identically — 4 of its 18 active days. On a full year of measured
+ * log-normal activity it is closer to the top 10%. That is accepted
+ * deliberately: distinguishing a 4-entry day from a 90-entry day is what the
+ * grid is read for, and distinguishing the busiest day of the year from the
+ * third-busiest is not.
+ *
+ * A high percentile (p95/p98) of the non-zero counts compresses less of that
+ * tail, and was measured before settling on the fence, but it fails the case
+ * this module exists for. Because CI-Import-Tools imports arrive per source, a
+ * user typically gets several import days, not one, and a percentile can only
+ * discount a fixed share of the sample: with 18 ordinary days plus 3 import
+ * days, p95 puts the ceiling at 22,000 (the flat grid, back verbatim) where the
+ * fence puts it at 500; with 120 ordinary days plus 8 import days, p95 gives
+ * 18,000 against the fence's 49. The fence adapts to how many outliers there
+ * are; a percentile assumes the answer up front.
+ *
  * Kept React-free so it can be unit-tested in the fast node vitest project.
  */
 
@@ -49,9 +71,13 @@ function quantile(sorted: number[], q: number): number {
  * toward zero and flag ordinary days as outliers.
  *
  * Returns 0 when there is no activity at all, in which case every cell is
- * level 0. With too few active days to characterise a distribution, or when
- * nothing exceeds the fence, this is just the plain maximum — so a history
- * without a bulk import scales exactly as it did before.
+ * level 0. Below {@link MIN_SAMPLE_FOR_OUTLIERS} active days the quartiles are
+ * noise, so the plain maximum is used and nothing is clamped.
+ *
+ * Otherwise the result is the largest active day at or below the fence, which
+ * on real (right-skewed) activity is usually *below* the raw maximum even with
+ * no import present — see the module comment for why that compression is
+ * accepted. It equals the raw maximum only when no day clears the fence.
  */
 export function intensityCeiling(counts: Iterable<number>): number {
   const active: number[] = [];

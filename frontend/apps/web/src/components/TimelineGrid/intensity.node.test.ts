@@ -25,20 +25,34 @@ describe('intensityCeiling', () => {
   it('ignores zero-count days when taking the quartiles', () => {
     const withEmptyDays = [...ORDINARY, ...Array.from({ length: 200 }, () => 0)];
 
-    expect(intensityCeiling(withEmptyDays)).toBe(intensityCeiling(ORDINARY));
+    expect(intensityCeiling(ORDINARY)).toBe(180);
+    expect(intensityCeiling(withEmptyDays)).toBe(180);
   });
 
-  it('clamps a bulk-import day to the highest ordinary day', () => {
-    const ceiling = intensityCeiling([...ORDINARY, 18_000]);
+  it('compresses the top of an ordinary history, with no import anywhere', () => {
+    // The documented cost of the fence. Daily counts are right-skewed, so the
+    // fence lands below the raw maximum even on a clean history: Q1 = 15,
+    // Q3 = 112.5, fence = 258.75, and the largest day at or under it is 180.
+    // Pinned so that changing the scaling strategy is a deliberate, visible
+    // edit rather than a silent reshading of everyone's grid.
+    const ceiling = intensityCeiling(ORDINARY);
 
-    expect(ceiling).toBeLessThanOrEqual(500);
-    expect(ceiling).toBeGreaterThan(0);
-    // The import must not set the top of the ramp.
-    expect(ceiling).not.toBe(18_000);
+    expect(ceiling).toBe(180);
+    expect(ceiling).toBeLessThan(Math.max(...ORDINARY));
+    // These four are indistinguishable at the top of the ramp. That is the
+    // trade, not a bug — see the module comment.
+    expect(ORDINARY.filter((count) => count >= ceiling)).toEqual([180, 260, 340, 500]);
+  });
+
+  it('keeps a bulk-import day off the top of the ramp', () => {
+    // Note the ceiling is 340, not the highest ordinary day (500): the import
+    // widens the upper quartile, which moves the fence.
+    expect(intensityCeiling([...ORDINARY, 18_000])).toBe(340);
   });
 
   it('is unmoved by how extreme the outlier is', () => {
-    expect(intensityCeiling([...ORDINARY, 18_000])).toBe(intensityCeiling([...ORDINARY, 900_000]));
+    expect(intensityCeiling([...ORDINARY, 18_000])).toBe(340);
+    expect(intensityCeiling([...ORDINARY, 900_000])).toBe(340);
   });
 
   it('never lets an outlier become the ceiling, however many there are', () => {
@@ -49,6 +63,7 @@ describe('intensityCeiling', () => {
     const imports = [18_000, 22_000, 31_000];
     const ceiling = intensityCeiling([...ORDINARY, ...imports]);
 
+    expect(ceiling).toBe(500);
     expect(imports).not.toContain(ceiling);
     expect(ceiling).toBeLessThanOrEqual(Math.max(...ORDINARY));
   });
