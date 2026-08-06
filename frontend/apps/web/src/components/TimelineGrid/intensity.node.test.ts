@@ -97,9 +97,7 @@ describe('intensityLevel', () => {
     const counts = [...ORDINARY, 18_000];
     const ceiling = intensityCeiling(counts);
 
-    expect(intensityLevel(10, ceiling, MAX_LEVEL)).toBeLessThan(
-      intensityLevel(500, ceiling, MAX_LEVEL),
-    );
+    expect(intensityLevel(10, ceiling, MAX_LEVEL)).toBeLessThan(intensityLevel(500, ceiling, MAX_LEVEL));
   });
 
   it('is monotonic across the ordinary range', () => {
