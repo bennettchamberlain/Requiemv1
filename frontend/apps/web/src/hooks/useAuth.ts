@@ -257,6 +257,14 @@ type ReturnValue = [
   {
     expired: boolean;
     authToken?: string | null;
+    /**
+     * Who the current session token belongs to (its `sub` claim), or null when
+     * there is no JWT — including on native, which authenticates with a keystore
+     * API key instead. Unlike `authToken` this is stable across the rotation
+     * `useAutoRefreshToken` performs, so per-user caches keyed on it survive a
+     * token refresh and drop only on a real identity change.
+     */
+    subject: string | null;
     /** True when authenticated by EITHER a web JWT session or a native API key. */
     authenticated: boolean;
     loading: boolean;
@@ -553,6 +561,7 @@ function useAuth(): ReturnValue {
       // no short-lived JWT to age out); web keeps the JWT expiry check.
       expired: nativeApiKey ? false : isExpired(),
       authToken: accessToken,
+      subject: decoded?.sub ?? null,
       authenticated: Boolean(accessToken) || Boolean(nativeApiKey),
       loading: loginLoading || initializing,
       initializing,

@@ -19,7 +19,7 @@ type ReturnValue = {
 };
 
 function useFeatures(): ReturnValue {
-  const [{ authToken, initializing }] = useAuth();
+  const [{ authToken, initializing, subject }] = useAuth();
 
   const [features, setFeatures] = useState<Features>({});
   const [globalFeatures, setGlobalFeatures] = useState<Features>({});
@@ -33,6 +33,11 @@ function useFeatures(): ReturnValue {
   const [userSettled, setUserSettled] = useState(false);
   const [globalSettled, setGlobalSettled] = useState(false);
 
+  // Mirrors `subject` for the async fetch below to read back. The fetch closure
+  // captures the subject of the render that created it, which may be a session
+  // ago by the time the response lands.
+  const liveSubject = useRef(subject);
+
   const fetchFeatures = useCallback(
     async (force = false) => {
       if (!authToken) {
@@ -43,12 +48,21 @@ function useFeatures(): ReturnValue {
         return;
       }
 
+      const forSubject = subject;
+
       try {
         const data = await fetchJson<Features>('/api/_internal/features', {
           headers: {
             Authorization: `Bearer ${authToken}`,
           },
         });
+
+        // The session can end, or change hands, while this is in flight — and
+        // the reset effect below has already cleared the cache by then. A late
+        // response must not land on top of that.
+        if (liveSubject.current !== forSubject) {
+          return;
+        }
 
         if (data) {
           setFeatures(data);
@@ -57,10 +71,14 @@ function useFeatures(): ReturnValue {
       } catch (err) {
         console.error('Failed to fetch features', err);
       } finally {
-        setUserSettled(true);
+        // Same reasoning: settling here would report the *new* session's flags
+        // as known on the strength of a fetch made for the previous one.
+        if (liveSubject.current === forSubject) {
+          setUserSettled(true);
+        }
       }
     },
-    [authToken],
+    [authToken, subject],
   );
 
   const fetchGlobalFeatures = useCallback(async (force = false) => {
@@ -81,6 +99,27 @@ function useFeatures(): ReturnValue {
       setGlobalSettled(true);
     }
   }, []);
+
+  // Per-user flags belong to the session that fetched them, and this provider
+  // outlives any one session — it sits above the router, so logging out and back
+  // in as someone else never unmounts it. Without this the `hasFetched` guard
+  // below would skip the refetch and answer the second user with the first one's
+  // flags, and `loading` would report false over them.
+  //
+  // Keyed on the subject rather than the token: useAutoRefreshToken rotates the
+  // JWT every few minutes for the *same* user, and treating that as a new
+  // identity would drop the flags, take the gated routes back out of the table,
+  // and flash the very 404-then-page transition this hook exists to prevent.
+  //
+  // Declared ahead of the fetch effect so a changed identity is cleared before
+  // the fetch that replaces it runs. On mount it is a no-op: the values it
+  // assigns are the ones already there.
+  useEffect(() => {
+    liveSubject.current = subject;
+    hasFetched.current = false;
+    setFeatures({});
+    setUserSettled(false);
+  }, [subject]);
 
   useEffect(() => {
     fetchFeatures();
