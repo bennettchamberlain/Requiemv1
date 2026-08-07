@@ -103,6 +103,21 @@ describe('labelBox', () => {
     expect(box.right).toBe(100 + 6);
   });
 
+  it('is only as tall as the circle when there is no label to make room for', () => {
+    // Hover-only dots reserving a full line box would push each other apart for text that is never
+    // drawn — spreading the layout is the exact cost dropping their labels was meant to avoid.
+    const box = labelBox(node(0, 0, '', { radius: 4, labelWidth: 0 }));
+
+    expect(box.bottom - box.top).toBe(8);
+  });
+
+  it('does not separate two unlabelled dots that are merely near each other', () => {
+    const a = node(400, 300, '', { radius: 4, labelWidth: 0 });
+    const b = node(400, 312, '', { radius: 4, labelWidth: 0 });
+
+    expect(relaxLabelCollisions([a, b])).toBe(0);
+  });
+
   it('is at least as tall as the line box, so a small dot still owns its text', () => {
     const box = labelBox(node(0, 0, 'Abdul Ameer', { radius: 2 }));
 

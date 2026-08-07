@@ -106,7 +106,7 @@ export function ContentPage() {
                 throw new Error('Update was rejected');
               }
             }}
-          />{' '}
+          />
         </div>
 
         <EntityRelationshipCards entityId={id!} />

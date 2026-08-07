@@ -92,7 +92,10 @@ const MIN_OVERLAP_PX = 0.5;
 
 /** The full extent of a node as drawn: the circle, plus the label running off to its right. */
 export function labelBox(node: CollidableNode): Box {
-  const halfHeight = Math.max(node.radius, LABEL_HALF_HEIGHT_PX);
+  // A node with no label is just its circle, vertically as well as horizontally. Reserving a line
+  // box for text that is never drawn would push hover-only dots apart for nothing — and spreading
+  // the layout is exactly what dropping their labels was meant to avoid.
+  const halfHeight = node.labelWidth > 0 ? Math.max(node.radius, LABEL_HALF_HEIGHT_PX) : node.radius;
 
   return {
     left: node.x - node.radius,

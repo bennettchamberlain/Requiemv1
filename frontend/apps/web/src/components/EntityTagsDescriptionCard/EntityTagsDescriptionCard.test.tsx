@@ -179,6 +179,43 @@ describe('EntityTagsDescriptionCard', () => {
     expect(target!.tagName.toLowerCase()).toBe('textarea');
   });
 
+  it('restores a tag and reports it when the removal fails', async () => {
+    untagEntities.mockRejectedValueOnce(new Error('nope'));
+
+    const { container } = render(
+      <EntityTagsDescriptionCard {...BASE} tags={['colleague']} description={null} editMode />,
+    );
+
+    // TagInput drops the tag optimistically and puts it back only on an explicit `false`, so
+    // swallowing the failure would leave the screen disagreeing with the server.
+    fireEvent.click(container.querySelector('button[type="button"]')!);
+
+    await waitFor(() => {
+      expect(toastError).toHaveBeenCalledWith("Couldn't remove tag “colleague”.");
+      expect(screen.getByText('colleague')).toBeInTheDocument();
+    });
+  });
+
+  it('shows the placeholder as soon as the last tag is removed', async () => {
+    const { container, rerender } = render(
+      <EntityTagsDescriptionCard {...BASE} tags={['colleague']} description={null} editMode />,
+    );
+
+    fireEvent.click(container.querySelector('button[type="button"]')!);
+
+    await waitFor(() => {
+      expect(untagEntities).toHaveBeenCalled();
+    });
+
+    // Leaving edit mode before the page query refetches: the prop is still stale, so without a
+    // local count this renders the empty bordered box the placeholder exists to replace.
+    rerender(
+      <EntityTagsDescriptionCard {...BASE} tags={['colleague']} description={null} editMode={false} />,
+    );
+
+    expect(screen.getByText('No tags yet')).toBeInTheDocument();
+  });
+
   it('renders type-specific detail above the tags', () => {
     render(
       <EntityTagsDescriptionCard {...BASE} tags={[]} description={null} editMode={false}>

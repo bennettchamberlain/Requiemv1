@@ -56,15 +56,15 @@ export function EntityTagsDescriptionCard({
   const { tagEntities, untagEntities } = useTagEntityService();
   const { toast } = useToast();
 
-  // Mirrors whether the entity has any tags. Read from local state rather than the `tags` prop so
-  // that adding the first tag and leaving edit mode does not flash the "no tags" placeholder while
-  // the page's query catches up.
-  const [hasTags, setHasTags] = useState(tags.length > 0);
+  // How many tags the entity has, tracked locally as well as from the prop: an add or a remove has
+  // to flip the placeholder immediately, or leaving edit mode shows the empty bordered box this
+  // component exists to replace until the page's query catches up.
+  const [tagCount, setTagCount] = useState(tags.length);
   const [draft, setDraft] = useState(description ?? '');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    setHasTags(tags.length > 0);
+    setTagCount(tags.length);
   }, [tags.length]);
 
   // A new entity, or a description changed elsewhere, replaces the draft. In practice this fires
@@ -105,7 +105,7 @@ export function EntityTagsDescriptionCard({
         <div className="space-y-2">
           <Label>Tags</Label>
 
-          {!editMode && !hasTags ? (
+          {!editMode && tagCount === 0 ? (
             <p className="text-sm italic text-muted-foreground">No tags yet</p>
           ) : (
             <TagInput
@@ -115,7 +115,7 @@ export function EntityTagsDescriptionCard({
               onTagAdded={async (label) => {
                 try {
                   await tagEntities([globalId], [label]);
-                  setHasTags(true);
+                  setTagCount((count) => count + 1);
 
                   return true;
                 } catch {
@@ -125,7 +125,19 @@ export function EntityTagsDescriptionCard({
                 }
               }}
               onTagRemoved={async (label) => {
-                await untagEntities([globalId], [label]);
+                try {
+                  await untagEntities([globalId], [label]);
+                  setTagCount((count) => Math.max(0, count - 1));
+
+                  return true;
+                } catch {
+                  // TagInput removes optimistically and restores only on an explicit `false`.
+                  // Swallowing this would leave the tag gone from the screen but still on the
+                  // entity — the UI quietly disagreeing with the server.
+                  toast.error(`Couldn't remove tag “${label}”.`);
+
+                  return false;
+                }
               }}
             />
           )}
