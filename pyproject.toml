@@ -1,0 +1,124 @@
+# ─────────────────────────────────────────────────────────────────────
+# Python workspace root
+#
+# This file is a container, not a distribution: `package = false` means
+# nothing here is ever built, packaged, or published. Every real Python
+# component is a workspace member with its own pyproject.toml.
+#
+# Naming convention. A member's distribution is named ci-<name> and its
+# import package is ci.<name> (PEP 420 namespace), so `ci` is a shared
+# namespace that no single member owns. That means no member may ship a
+# src/ci/__init__.py — adding one makes every other ci.* package
+# unimportable, and the failure looks like an unrelated ImportError.
+#
+# Layout. Services live in backend/apps/<name>, shared libraries in
+# backend/packages/<name>, mirroring frontend/packages/* on the JS side.
+#
+# The lockfile. There is exactly one uv.lock, here, covering every
+# member. Never resolve a merge conflict in it by hand: take either
+# side, then run `uv lock` to regenerate. CI runs `uv sync --locked`,
+# which fails if the lock does not match the manifests.
+#
+# Python version. .python-version pins the interpreter and uv downloads
+# it on demand, so Python is not listed in .tool-versions. That keeps
+# asdf out of the loop; uv is the only thing that needs to provision it.
+# ─────────────────────────────────────────────────────────────────────
+
+[project]
+name = "ci-server"
+version = "0.0.0"
+description = "Workspace root for the CI-Server Python services"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.uv]
+package = false
+required-version = ">=0.9"
+
+[tool.uv.workspace]
+members = [
+    "backend/packages/*",
+]
+
+# Tooling for the whole workspace, installed by `uv sync --all-packages`.
+# Dependency groups are never published into a wheel, so members do not
+# declare their own copies of the linters or the test runner.
+[dependency-groups]
+dev = [
+    "mypy>=1.19",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "ruff>=0.14",
+]
+
+# ── Ruff ─────────────────────────────────────────────────────────────
+# One config for every member. Ruff discovers files from the working
+# directory, so `uv run ruff check` at the root covers the workspace
+# without a member list to keep in sync.
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+# Ruff's default file selection includes Markdown, so an unqualified
+# `ruff format` at the root rewrites every doc in docs/. Keep it to
+# Python; Markdown is not ours to reformat.
+include = ["*.py", "*.pyi", "**/pyproject.toml"]
+
+# Members join the workspace one commit at a time, and each adoption
+# commit brings its own service up to the rules below. This list must be
+# empty before the branch lands.
+#
+# extend-exclude, not exclude: plain `exclude` replaces Ruff's built-in
+# defaults, which is how .venv and node_modules end up being scanned.
+extend-exclude = [
+    "backend/apps/hbpe",
+    "backend/apps/summary",
+]
+
+[tool.ruff.lint]
+select = [
+    "ASYNC", # flake8-async — both services are async end to end
+    "B",     # flake8-bugbear
+    "E",     # pycodestyle errors
+    "F",     # pyflakes
+    "I",     # isort
+    "RUF",   # ruff-specific rules
+    "UP",    # pyupgrade
+]
+ignore = [
+    # The formatter already enforces line length on code. Leaving E501 on
+    # only flags comments, docstrings, and URLs it cannot wrap for us.
+    "E501",
+    # Box-drawing and typographic characters in comment banners are house
+    # style here, matching the Makefile and the TypeScript sources.
+    "RUF001",
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["ci"]
+
+# ── Mypy ─────────────────────────────────────────────────────────────
+# Strict by default, so new code is born typed. Services that predate the
+# workspace are relaxed by module rather than by path, so the exemption
+# travels with the code if it moves and shrinks as annotations land.
+#
+# `files` grows as each member joins. Mypy is not run until there is a
+# member to check.
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+namespace_packages = true
+explicit_package_bases = true
+warn_unused_configs = true
+files = []
+
+# ── Pytest ───────────────────────────────────────────────────────────
+
+[tool.pytest.ini_options]
+testpaths = ["backend"]
+asyncio_default_fixture_loop_scope = "function"

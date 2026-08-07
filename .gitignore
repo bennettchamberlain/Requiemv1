@@ -22,7 +22,6 @@ node_modules
 .pnp.*
 .aider*
 .env
-.venv
 
 .specstory/
 AGENTS.md
@@ -48,11 +47,15 @@ coverage/
 # Per-worktree overmind sockets created by scripts/dev-stack.ts
 .overmind*.sock
 
-backend/apps/hbpe/src/ci/model/__pycache__/
-
-backend/apps/hbpe/src/ci/tokenizer/__pycache__/
-
-*.pyc
+# Python (uv workspace). One virtual environment at the root, shared by
+# every member; uv.lock beside it is committed.
+.venv/
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
 
 # Local Cloudflare Tunnel config (holds credentials path); keep the example only
 infrastructure/cloudflare/config.yml

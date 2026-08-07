@@ -392,6 +392,19 @@ tunnel: ## Expose this running stack at https://dev.companionintelligence.com vi
 	@printf "$(YELLOW)Exposing https://dev.companionintelligence.com publicly — confirm Cloudflare Access is enabled. Ctrl-C to stop.$(RESET)\n"
 	cloudflared tunnel --config infrastructure/cloudflare/config.yml run
 
+.PHONY: format
+format: ## Format the source, both stacks
+	@printf "$(call task_icon,format,🧹) Formatting source...\n\n"
+
+	@yarn format
+
+	@printf "\n"
+
+	@uv run ruff format .
+	@uv run ruff check --fix .
+
+	@printf "\nSource successfully formatted.\n\n"
+
 .PHONY: graphql
 graphql: ## Generate GraphQL schema and frontend types
 	@printf "$(call task_icon,graphql,🏷️) Generating GraphQL...\n"
@@ -435,6 +448,17 @@ health: ## Check the repository for prerequisites
 		exit 1; \
 	else \
 		printf "$(GREEN)✓$(RESET) Yarn version matches ($$current_yarn)\n\n"; \
+	fi
+
+	@# uv provisions its own interpreter from .python-version, so there is no
+	@# separate Python check here. The floor is `required-version` in
+	@# pyproject.toml, which uv enforces itself on every invocation.
+	@UV=$$(which uv 2>/dev/null); \
+	if [ -z "$$UV" ]; then \
+		printf "$(RED)✗$(RESET) You do not have 'uv' installed or it is not in your path. Install it with 'brew install uv'.\n\n"; \
+		exit 1; \
+	else \
+		printf "$(GREEN)✓$(RESET) uv found at $$UV ($$(uv --version | cut -d' ' -f2))\n\n"; \
 	fi
 
 	@# Report on per-stack data volumes (convention: <project>-local-*). Purely
@@ -481,6 +505,9 @@ init: ## Initialize repository after checkout
 	@printf "\n"
 	@yarn prepare
 
+	@printf "\n"
+	@uv sync --all-packages
+
 	@if [ ! -f .env ]; then \
 		printf "Copying dotenv template file... "; \
 		cp -v .env.default .env; \
@@ -494,6 +521,24 @@ install: ## Install project dependencies
 	@yarn install
 
 	@printf "\n"
+
+	@uv sync --all-packages
+
+	@printf "\n"
+
+.PHONY: lint
+lint: ## Check the source for lint and formatting errors, both stacks
+	@printf "$(call task_icon,lint,🔎) Checking source...\n\n"
+
+	@yarn lint
+	@yarn format:check
+
+	@printf "\n"
+
+	@uv run ruff check .
+	@uv run ruff format --check .
+
+	@printf "\nNo lint errors found.\n\n"
 
 .PHONY: migrate
 migrate: ## Run database migrations

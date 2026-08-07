@@ -3,5 +3,6 @@
     "oxlint --fix --no-error-on-unmatched-pattern",
     "eslint --fix",
     "prettier --write"
-  ]
+  ],
+  "*.py": ["uv run ruff check --fix", "uv run ruff format"]
 }
