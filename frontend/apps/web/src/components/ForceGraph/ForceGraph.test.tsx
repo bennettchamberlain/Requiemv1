@@ -31,6 +31,7 @@ const NAMES = [
 ];
 
 const CENTER_ID = 'person-center';
+const HUB_ID = 'person-hub';
 
 function buildGraph(names: string[]): { nodes: GraphNode[]; links: GraphLink[] } {
   const nodes: GraphNode[] = [
@@ -334,5 +335,154 @@ describe('ForceGraph', () => {
     const textX = Number.parseFloat(group.querySelector('text')!.getAttribute('x')!);
 
     expect(textX).toBeCloseTo(radius + LABEL_GAP_PX, 5);
+  });
+
+  describe('expanded past the focused node', () => {
+    /** The reported shape: the subject touches one hub, and the hub touches everybody else. */
+    function buildTwoHopGraph(names: string[]): { nodes: GraphNode[]; links: GraphLink[] } {
+      const person = (id: string, name: string): GraphNode => ({
+        id,
+        entity_id: id,
+        entity_type: 'PersonType',
+        name,
+        description: null,
+        properties: {},
+      });
+      const link = (id: string, source: string, target: string): GraphLink => ({
+        id,
+        relationship_id: id,
+        source,
+        target,
+        relationship_type: 'KNOWS',
+        strength: 0.5,
+        properties: {},
+      });
+
+      return {
+        nodes: [
+          person(CENTER_ID, 'Abdul Ameer'),
+          person(HUB_ID, 'Hanzla Mateen'),
+          ...names.map((name, index) => person(`person-${index}`, name)),
+        ],
+        links: [
+          link('link-hub', CENTER_ID, HUB_ID),
+          ...names.map((_, index) => link(`link-${index}`, HUB_ID, `person-${index}`)),
+        ],
+      };
+    }
+
+    const contextGroups = () =>
+      screen.getAllByTestId('force-node').filter((group) => group.getAttribute('data-context') === 'true');
+
+    it('names the focused node and its own connections, and nobody else', async () => {
+      const { nodes, links } = buildTwoHopGraph(NAMES);
+
+      render(
+        <ForceGraph
+          nodes={nodes}
+          links={links}
+          centerNodeId={CENTER_ID}
+          selectedNodeId={CENTER_ID}
+          focusHops={1}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(screen.getAllByTestId('force-node')).toHaveLength(nodes.length);
+      });
+
+      const named = screen
+        .getAllByTestId('force-node')
+        .map((group) => group.querySelector('text')?.textContent ?? '')
+        .filter((label) => label !== '');
+
+      // 15 of these 17 people are on the page because Hanzla knows them, not because Abdul does.
+      // Drawing all 17 names is what made a page about one person read as a page about another.
+      expect(named.sort()).toEqual(['Abdul Ameer', 'Hanzla Mateen']);
+      expect(contextGroups()).toHaveLength(NAMES.length);
+    });
+
+    it('fades the context ring rather than dropping it', async () => {
+      const { nodes, links } = buildTwoHopGraph(NAMES);
+
+      render(<ForceGraph nodes={nodes} links={links} centerNodeId={CENTER_ID} focusHops={1} />);
+
+      await waitFor(() => {
+        expect(screen.getAllByTestId('force-node')).toHaveLength(nodes.length);
+      });
+
+      // Still on screen and still countable — the wider neighbourhood is worth showing, just not
+      // worth drawing as though the page were about it.
+      for (const group of contextGroups()) {
+        expect(Number.parseFloat(group.getAttribute('opacity') ?? '1')).toBeLessThan(1);
+      }
+    });
+
+    it('draws a context node smaller than the same node would be up close', async () => {
+      const { nodes, links } = buildTwoHopGraph(NAMES);
+      const radiusOf = (label: string) => {
+        const group = screen
+          .getAllByTestId('force-node')
+          .find((candidate) => candidate.querySelector('title')?.textContent?.startsWith(label));
+
+        return Number.parseFloat(group?.querySelector('circle')?.getAttribute('r') ?? '0');
+      };
+
+      const { rerender } = render(
+        <ForceGraph nodes={nodes} links={links} centerNodeId={CENTER_ID} focusHops={1} />,
+      );
+
+      await waitFor(() => {
+        expect(screen.getAllByTestId('force-node')).toHaveLength(nodes.length);
+      });
+
+      const asContext = radiusOf('Aqsa Anwar');
+
+      rerender(<ForceGraph nodes={nodes} links={links} centerNodeId={CENTER_ID} />);
+
+      await waitFor(() => {
+        expect(radiusOf('Aqsa Anwar')).toBeGreaterThan(asContext);
+      });
+    });
+
+    it('brings a context node back to full weight under the pointer', async () => {
+      const { nodes, links } = buildTwoHopGraph(NAMES);
+
+      render(<ForceGraph nodes={nodes} links={links} centerNodeId={CENTER_ID} focusHops={1} />);
+
+      await waitFor(() => {
+        expect(screen.getAllByTestId('force-node')).toHaveLength(nodes.length);
+      });
+
+      const distant = contextGroups()[0];
+      fireEvent.pointerEnter(distant);
+
+      await waitFor(() => {
+        // Receding is not the same as being unreachable: pointing at the ring still explores it.
+        expect(distant).toHaveAttribute('opacity', '1');
+        expect(distant.querySelector('text')?.textContent ?? '').not.toBe('');
+      });
+    });
+
+    it('weights every node equally when no focus was asked for', async () => {
+      // The graph explorer is a browser, not a page about one entity; it centres on whatever the
+      // viewer last clicked and must not fade the rest of the graph out from under them.
+      const { nodes, links } = buildTwoHopGraph(NAMES);
+
+      render(<ForceGraph nodes={nodes} links={links} centerNodeId={CENTER_ID} />);
+
+      await waitFor(() => {
+        expect(screen.getAllByTestId('force-node')).toHaveLength(nodes.length);
+      });
+
+      expect(contextGroups()).toHaveLength(0);
+
+      const named = screen
+        .getAllByTestId('force-node')
+        .map((group) => group.querySelector('text')?.textContent ?? '')
+        .filter((label) => label !== '');
+
+      expect(named).toHaveLength(nodes.length);
+    });
   });
 });

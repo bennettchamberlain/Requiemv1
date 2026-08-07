@@ -6,12 +6,17 @@ import { colorForRawType } from '@/components/entities/entityVisuals';
 
 import { clampScale, fitTransform } from './fitTransform';
 import {
+  CONTEXT_LINK_OPACITY,
+  CONTEXT_NODE_OPACITY,
+  CONTEXT_NODE_SCALE,
   LABEL_GAP_PX,
   LABEL_HALF_HEIGHT_PX,
   type LabelMeasurer,
   estimateLabelWidth,
   MAX_LABEL_CHARS,
   graphHeightForNodeCount,
+  hopDistances,
+  isContextNode,
   labelWidthPx,
   nodeRadius,
   relaxLabelCollisions,
@@ -40,6 +45,8 @@ type ForceNode = GraphNode & {
   labelHalfHeight: number;
   /** Never moved to resolve a label overlap. */
   pinned: boolean;
+  /** On screen as context rather than as part of the focused node's own graph. */
+  context: boolean;
 };
 
 type SimulationLink = {
@@ -59,6 +66,14 @@ interface ForceGraphProps {
   selectedNodeId?: string | null;
   onNodeSelect?: (nodeId: string) => void;
   anchoredNodeIds?: string[];
+  /**
+   * Hops from `centerNodeId` that count as the focused node's own graph. Anything further is drawn
+   * as context: dimmed, smaller and unlabelled, so an entity page reads as being about its entity
+   * even when the neighbourhood it pulls in belongs to somebody else.
+   *
+   * Omit to weight every node equally, which is what a general graph browser wants.
+   */
+  focusHops?: number;
 }
 
 /**
@@ -216,6 +231,7 @@ function ForceGraphBase({
   selectedNodeId,
   onNodeSelect,
   anchoredNodeIds = [],
+  focusHops,
   height,
 }: ForceGraphProps) {
   const { ref, width } = useContainerWidth(720);
@@ -292,6 +308,23 @@ function ForceGraphBase({
   }, [renderLinks]);
 
   /**
+   * How far each node sits from the focused one, which is what separates its own connections from
+   * the neighbourhood they drag in behind them.
+   *
+   * Keyed on the link set rather than on the selection, for the same reason `standingLabels` is:
+   * this feeds the layout, and recomputing it on a click would relay the whole graph out.
+   */
+  const hopDistanceById = useMemo(
+    () => (focusHops === undefined ? new Map<string, number>() : hopDistances(centerNodeId, renderLinks)),
+    [centerNodeId, focusHops, renderLinks],
+  );
+
+  const isContext = useCallback(
+    (nodeId: string) => isContextNode(hopDistanceById.get(nodeId), focusHops),
+    [focusHops, hopDistanceById],
+  );
+
+  /**
    * Which nodes carry a standing label.
    *
    * Anchored on `centerNodeId` ONLY. This feeds the layout effect, and the graph explorer passes its
@@ -300,8 +333,8 @@ function ForceGraphBase({
    * node still gets its label at render time, which costs nothing and moves nothing.
    */
   const standingLabels = useMemo(
-    () => standingLabelIds(nodes, (id) => degreeById.get(id) ?? 0, [centerNodeId]),
-    [centerNodeId, degreeById, nodes],
+    () => standingLabelIds(nodes, (id) => degreeById.get(id) ?? 0, [centerNodeId], (id) => !isContext(id)),
+    [centerNodeId, degreeById, isContext, nodes],
   );
 
   useEffect(() => {
@@ -381,12 +414,16 @@ function ForceGraphBase({
       const labelled = standingLabels.has(node.id);
       const label = labelled ? truncateLabel(fullLabel) : '';
       const degree = degreeById.get(node.id) ?? 0;
+      const context = isContext(node.id);
 
       const shape = {
         degree,
-        // Degree only — selection/highlight enlarge a node at RENDER time. Baking them in here
-        // would rebuild the whole layout on every click for a few pixels on a single node.
-        radius: nodeRadius(degree),
+        context,
+        // Degree and distance only — selection/highlight enlarge a node at RENDER time. Baking those
+        // in here would rebuild the whole layout on every click for a few pixels on a single node.
+        // Distance is different: it is fixed for the life of the picture, and the collision pass has
+        // to reserve the radius the renderer will actually draw.
+        radius: nodeRadius(degree) * (context ? CONTEXT_NODE_SCALE : 1),
         label,
         fullLabel,
         labelWidth: label ? labelWidthPx(fullLabel, MAX_LABEL_CHARS, measure) : 0,
@@ -613,6 +650,7 @@ function ForceGraphBase({
     canvasHeight,
     centerNodeId,
     degreeById,
+    isContext,
     nodes,
     nodesKey,
     renderLinks,
@@ -809,6 +847,9 @@ function ForceGraphBase({
 
               const touchesHovered =
                 hoveredNodeId != null && (link.sourceId === hoveredNodeId || link.targetId === hoveredNodeId);
+              // A link with either end out in the context ring runs away from the focused node
+              // rather than describing it, so it recedes with the node it leads to.
+              const contextual = isContext(link.sourceId) || isContext(link.targetId);
 
               return (
                 <line
@@ -818,7 +859,15 @@ function ForceGraphBase({
                   x2={target.x}
                   y2={target.y}
                   markerEnd="url(#arrowhead)"
-                  opacity={hoveredNodeId == null ? 1 : touchesHovered ? 1 : 0.12}
+                  opacity={
+                    hoveredNodeId == null
+                      ? contextual
+                        ? CONTEXT_LINK_OPACITY
+                        : 1
+                      : touchesHovered
+                        ? 1
+                        : 0.12
+                  }
                   strokeWidth={touchesHovered ? 2 : undefined}
                 >
                   <title>{link.relationship_type.split('_').join(' ').toLowerCase()}</title>
@@ -837,14 +886,17 @@ function ForceGraphBase({
               const isSelected = node.id === selectedNodeId;
               const isHovered = node.id === hoveredNodeId;
               const dimmed = isDimmed(node.id);
-              const radius = nodeRadius(
-                node.degree,
-                isSelected ? 'selected' : isHighlighted ? 'highlighted' : 'none',
-              );
+              const emphasised = isSelected || isHighlighted || isHovered;
+              // Context recedes until the viewer asks about it. Pointing at a faded node brings it
+              // back to full weight along with its name, which is what makes the ring explorable
+              // rather than merely quiet.
+              const contextual = node.context && !emphasised;
+              const radius =
+                nodeRadius(node.degree, isSelected ? 'selected' : isHighlighted ? 'highlighted' : 'none') *
+                (contextual ? CONTEXT_NODE_SCALE : 1);
               const baseColor = getTypeColor(node.entity_type);
               const fillColor = isSelected ? 'hsl(var(--primary))' : baseColor;
               const opacity = isSelected ? 1 : isHighlighted ? 0.95 : 0.85;
-              const emphasised = isSelected || isHighlighted || isHovered;
 
               return (
                 <g
@@ -853,7 +905,8 @@ function ForceGraphBase({
                   className="cursor-pointer"
                   data-force-node
                   data-testid="force-node"
-                  opacity={dimmed ? 0.2 : 1}
+                  data-context={node.context ? 'true' : undefined}
+                  opacity={dimmed ? 0.2 : contextual ? CONTEXT_NODE_OPACITY : 1}
                   onPointerEnter={() => setHoveredNodeId(node.id)}
                   onPointerLeave={() => setHoveredNodeId((current) => (current === node.id ? null : current))}
                   onClick={(clickEvent) => {

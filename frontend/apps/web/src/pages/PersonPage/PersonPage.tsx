@@ -49,7 +49,15 @@ const ALLOWED_TYPES = {
 };
 const MIN_HOP_DEPTH = 1;
 const MAX_HOP_DEPTH = 5;
-const DEFAULT_HOP_DEPTH = 2;
+/**
+ * One hop, so the graph on a person's page is that person's connections.
+ *
+ * Two hops looks richer and is actively misleading: the node budget is spent breadth-first, so a
+ * person with a single relationship gets 1 node of their own and 23 belonging to whoever they are
+ * connected to. The page then draws somebody else's network under this person's name. Every other
+ * entity page already defaults to 1 (see `EntityGraph`); the "+" control still expands.
+ */
+const DEFAULT_HOP_DEPTH = 1;
 const MIN_NODE_LIMIT = 10;
 const MAX_NODE_LIMIT = 100;
 const NODE_LIMIT_STEP = 5;

@@ -5,6 +5,8 @@ import {
   MAX_LABEL_CHARS,
   type CollidableNode,
   graphHeightForNodeCount,
+  hopDistances,
+  isContextNode,
   labelBox,
   labelWidthPx,
   LABEL_ALL_THRESHOLD,
@@ -275,6 +277,115 @@ describe('standingLabelIds', () => {
 
     // All degrees tied — a stable sort has to keep this deterministic.
     expect(first).toEqual(second);
+  });
+
+  it('does not name the nodes that are only on screen as context', () => {
+    const nodes = graph(25);
+    const direct = new Set(['n0', 'n1']);
+    const labelled = standingLabelIds(nodes, degreeOf, ['n0'], (id) => direct.has(id));
+
+    // The reported picture: 25 nodes on a page about one of them, 23 of which belong to a
+    // neighbour. Naming all 25 is what made it unreadable.
+    expect([...labelled].sort()).toEqual(['n0', 'n1']);
+  });
+
+  it('spends the label budget on the eligible nodes, not on the whole graph', () => {
+    const nodes = graph(200);
+    // Well over the threshold in total, comfortably under it once context is excluded.
+    const direct = new Set(Array.from({ length: 6 }, (_, i) => `n${i}`));
+    const labelled = standingLabelIds(nodes, degreeOf, [], (id) => direct.has(id));
+
+    expect(labelled.size).toBe(6);
+  });
+
+  it('still falls back to the busiest when even the eligible nodes overflow', () => {
+    const nodes = graph(200);
+    const labelled = standingLabelIds(nodes, degreeOf, [], (id) => degreeOf(id) < 100);
+
+    expect(labelled.size).toBe(PROMINENT_LABEL_COUNT);
+    // Busiest of the ELIGIBLE ones — n99, not n199.
+    expect(labelled.has('n99')).toBe(true);
+    expect(labelled.has('n199')).toBe(false);
+  });
+
+  it('names an anchor even where it would not be eligible on its own', () => {
+    // The centre node is the reason the graph is on screen; a filter must not silently drop it.
+    const labelled = standingLabelIds(graph(25), degreeOf, ['n7'], () => false);
+
+    expect([...labelled]).toEqual(['n7']);
+  });
+});
+
+describe('hopDistances', () => {
+  const link = (sourceId: string, targetId: string) => ({ sourceId, targetId });
+
+  it('measures out from the focused node', () => {
+    // The reported shape: the subject touches one hub, and the hub touches everyone else.
+    const distances = hopDistances('audrey', [
+      link('audrey', 'hub'),
+      link('hub', 'a'),
+      link('hub', 'b'),
+      link('a', 'c'),
+    ]);
+
+    expect(distances.get('audrey')).toBe(0);
+    expect(distances.get('hub')).toBe(1);
+    expect(distances.get('a')).toBe(2);
+    expect(distances.get('c')).toBe(3);
+  });
+
+  it('follows a link in either direction, because the picture is undirected', () => {
+    const distances = hopDistances('target', [link('source', 'target')]);
+
+    expect(distances.get('source')).toBe(1);
+  });
+
+  it('takes the shortest route rather than the first one found', () => {
+    const distances = hopDistances('start', [
+      link('start', 'long-1'),
+      link('long-1', 'long-2'),
+      link('long-2', 'end'),
+      link('start', 'end'),
+    ]);
+
+    expect(distances.get('end')).toBe(1);
+  });
+
+  it('leaves an unreachable node out rather than guessing at a distance', () => {
+    const distances = hopDistances('start', [link('elsewhere', 'orphan')]);
+
+    expect(distances.has('orphan')).toBe(false);
+  });
+
+  it('terminates on a cycle', () => {
+    const distances = hopDistances('a', [link('a', 'b'), link('b', 'c'), link('c', 'a')]);
+
+    expect(distances.get('c')).toBe(1);
+    expect(distances.size).toBe(3);
+  });
+
+  it('reports nothing when there is no focused node', () => {
+    expect(hopDistances(null, [link('a', 'b')]).size).toBe(0);
+    expect(hopDistances(undefined, [link('a', 'b')]).size).toBe(0);
+    expect(hopDistances('', [link('a', 'b')]).size).toBe(0);
+  });
+});
+
+describe('isContextNode', () => {
+  it('treats anything past the focused neighbourhood as context', () => {
+    expect(isContextNode(2, 1)).toBe(true);
+    expect(isContextNode(1, 1)).toBe(false);
+    expect(isContextNode(0, 1)).toBe(false);
+  });
+
+  it('holds nothing back when the caller has not asked for a focus', () => {
+    expect(isContextNode(5, undefined)).toBe(false);
+  });
+
+  it('leaves a node with no measured distance at full weight', () => {
+    // Either the caller opted out or the edge budget trimmed the node loose. Drawing one orphan at
+    // full weight is a cosmetic oddity; fading an entire graph by accident is a broken page.
+    expect(isContextNode(undefined, 1)).toBe(false);
   });
 });
 

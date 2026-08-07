@@ -97,6 +97,83 @@ export function nodeRadius(degree: number, emphasis: NodeEmphasis = 'none'): num
   return base;
 }
 
+/**
+ * Hop distance from the focused node, by breadth-first search over the links treated as undirected.
+ *
+ * Returns an empty map when there is no focus, which is how a caller opts out of any notion of near
+ * and far.
+ */
+export function hopDistances(
+  centerId: string | null | undefined,
+  links: readonly { sourceId: string; targetId: string }[],
+): Map<string, number> {
+  const distances = new Map<string, number>();
+
+  if (typeof centerId !== 'string' || centerId === '') {
+    return distances;
+  }
+
+  const adjacency = new Map<string, string[]>();
+  const connect = (from: string, to: string) => {
+    const existing = adjacency.get(from);
+    if (existing) {
+      existing.push(to);
+    } else {
+      adjacency.set(from, [to]);
+    }
+  };
+
+  for (const link of links) {
+    connect(link.sourceId, link.targetId);
+    connect(link.targetId, link.sourceId);
+  }
+
+  distances.set(centerId, 0);
+  const queue = [centerId];
+
+  // Index-walked rather than shifted: a shift is O(n) on a real array, and this runs on every
+  // change to the link set.
+  for (let head = 0; head < queue.length; head += 1) {
+    const current = queue[head];
+    const distance = distances.get(current) ?? 0;
+
+    for (const neighbor of adjacency.get(current) ?? []) {
+      if (!distances.has(neighbor)) {
+        distances.set(neighbor, distance + 1);
+        queue.push(neighbor);
+      }
+    }
+  }
+
+  return distances;
+}
+
+/** How much of its normal radius a context node keeps. */
+export const CONTEXT_NODE_SCALE = 0.62;
+/** How much of its normal ink a context node keeps — enough to read as present, not as subject. */
+export const CONTEXT_NODE_OPACITY = 0.4;
+/** How much of its normal ink a link keeps when it runs out past the focused neighbourhood. */
+export const CONTEXT_LINK_OPACITY = 0.35;
+
+/**
+ * Whether a node is context rather than subject.
+ *
+ * A page about one entity that expands past its own connections fills up with whichever hub sits
+ * next to it — on a person with a single link, two hops is 1 neighbour and 23 of THEIR neighbours.
+ * Those 23 are worth showing, but not worth drawing as though the page were about them.
+ *
+ * A node with no distance is never context. It means either that the caller opted out or that the
+ * node is unreachable from the centre (possible once the edge budget trims links), and drawing an
+ * orphan at full weight is a cosmetic oddity where fading a whole graph by accident is a broken page.
+ */
+export function isContextNode(distance: number | undefined, focusHops: number | undefined): boolean {
+  if (focusHops === undefined || distance === undefined) {
+    return false;
+  }
+
+  return distance > focusHops;
+}
+
 export type CollidableNode = {
   x: number;
   y: number;
@@ -258,26 +335,35 @@ export const PROMINENT_LABEL_COUNT = 12;
  *
  * `alwaysLabel` is for nodes the viewer has explicitly put at the centre of the picture — they are
  * named regardless of how busy they are, because they are the reason the graph is on screen.
+ *
+ * `isEligible` filters out nodes that are on screen as context rather than as subject. Naming them
+ * is what makes an expanded graph unreadable: they are the majority, they are the reason the label
+ * budget runs out, and the name of someone two hops away is the least useful text on the page. They
+ * still give up their name on hover.
  */
 export function standingLabelIds(
   nodes: readonly { id: string }[],
   degreeOf: (id: string) => number,
   alwaysLabel: readonly (string | null | undefined)[] = [],
+  isEligible: (id: string) => boolean = () => true,
 ): Set<string> {
-  if (nodes.length <= LABEL_ALL_THRESHOLD) {
-    return new Set(nodes.map((node) => node.id));
-  }
-
   // Only anchors that are actually in the graph. An id that is not — a centre node trimmed out of
   // the subgraph, say — would otherwise hold a slot that no label is ever drawn in.
   const present = new Set(nodes.map((node) => node.id));
-  const labelled = new Set(
-    alwaysLabel.filter((id): id is string => typeof id === 'string' && present.has(id)),
-  );
+  const anchors = alwaysLabel.filter((id): id is string => typeof id === 'string' && present.has(id));
+  const eligible = nodes.filter((node) => isEligible(node.id));
+
+  // The threshold is about how many labels would be DRAWN, so it counts the eligible ones. A graph
+  // of 200 nodes where only 8 are direct connections can name all 8 comfortably.
+  if (eligible.length <= LABEL_ALL_THRESHOLD) {
+    return new Set([...anchors, ...eligible.map((node) => node.id)]);
+  }
+
+  const labelled = new Set(anchors);
 
   // Busiest first. Array.prototype.sort is stable, so ties keep the incoming order and the same
   // graph always labels the same nodes.
-  const byDegree = [...nodes].sort((a, b) => degreeOf(b.id) - degreeOf(a.id));
+  const byDegree = [...eligible].sort((a, b) => degreeOf(b.id) - degreeOf(a.id));
   const budget = labelled.size + PROMINENT_LABEL_COUNT;
 
   for (const node of byDegree) {
