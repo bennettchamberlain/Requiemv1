@@ -30,7 +30,13 @@ export type LabelMeasurer = (label: string) => number;
 export const estimateLabelWidth: LabelMeasurer = (label) => label.length * LABEL_CHAR_PX;
 /** Gap between the edge of the circle and the start of the text. */
 export const LABEL_GAP_PX = 4;
-/** Half the line box of a `text-xs` label, measured about the node centre. */
+/**
+ * Fallback half-height of a label's line box, about the node centre.
+ *
+ * Same caveat as LABEL_CHAR_PX: it is a model, and the real box is taller. `text-xs` resolves to
+ * 12.75px/17px in this app, and the rendered extent measures ~18.2px — so a 16px model let every
+ * separated pair keep a ~2.2px vertical overlap. Anything with a DOM measures instead.
+ */
 export const LABEL_HALF_HEIGHT_PX = 8;
 /**
  * Longest label drawn in full. Past this the layout spends more space on one name than the picture
@@ -98,6 +104,8 @@ export type CollidableNode = {
   radius: number;
   /** Drawn width of the label, already truncated. Zero for an unlabelled node. */
   labelWidth: number;
+  /** Half the drawn line box. Falls back to `LABEL_HALF_HEIGHT_PX` when nothing measured it. */
+  labelHalfHeight?: number;
   /** Pinned nodes (the centre node, user-anchored nodes) are never moved to resolve an overlap. */
   pinned?: boolean;
 };
@@ -118,7 +126,8 @@ export function labelBox(node: CollidableNode): Box {
   // A node with no label is just its circle, vertically as well as horizontally. Reserving a line
   // box for text that is never drawn would push hover-only dots apart for nothing — and spreading
   // the layout is exactly what dropping their labels was meant to avoid.
-  const halfHeight = node.labelWidth > 0 ? Math.max(node.radius, LABEL_HALF_HEIGHT_PX) : node.radius;
+  const halfHeight =
+    node.labelWidth > 0 ? Math.max(node.radius, node.labelHalfHeight ?? LABEL_HALF_HEIGHT_PX) : node.radius;
 
   return {
     left: node.x - node.radius,

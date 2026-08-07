@@ -7,6 +7,7 @@ import { colorForRawType } from '@/components/entities/entityVisuals';
 import { clampScale, fitTransform } from './fitTransform';
 import {
   LABEL_GAP_PX,
+  LABEL_HALF_HEIGHT_PX,
   type LabelMeasurer,
   estimateLabelWidth,
   MAX_LABEL_CHARS,
@@ -35,6 +36,8 @@ type ForceNode = GraphNode & {
   fullLabel: string;
   /** Drawn width of `label`, which is the horizontal room the layout has to reserve. */
   labelWidth: number;
+  /** Half the drawn line box, measured from the live font. */
+  labelHalfHeight: number;
   /** Never moved to resolve a label overlap. */
   pinned: boolean;
 };
@@ -70,7 +73,9 @@ interface ForceGraphProps {
  * Returns null where there is no canvas to measure with (the `node` test project), leaving callers
  * on the estimate.
  */
-function createTextMeasurer(sample: SVGTextElement | null): LabelMeasurer | null {
+type TextMetricsProbe = { width: LabelMeasurer; halfHeight: number };
+
+function createTextMeasurer(sample: SVGTextElement | null): TextMetricsProbe | null {
   if (typeof document === 'undefined' || !sample) {
     return null;
   }
@@ -90,21 +95,30 @@ function createTextMeasurer(sample: SVGTextElement | null): LabelMeasurer | null
 
   context.font = font;
 
+  // Ascenders and descenders both, so the box covers the tallest and deepest glyphs a name can
+  // contain rather than whatever the first label happened to use.
+  const vertical = context.measureText('Mgjpq');
+  const measuredHeight = (vertical.actualBoundingBoxAscent || 0) + (vertical.actualBoundingBoxDescent || 0);
+  const halfHeight = measuredHeight > 0 ? measuredHeight / 2 : LABEL_HALF_HEIGHT_PX;
+
   const cache = new Map<string, number>();
 
-  return (label: string) => {
+  const width: LabelMeasurer = (label) => {
     const cached = cache.get(label);
     if (cached !== undefined) {
       return cached;
     }
 
-    const width = context.measureText(label).width;
+    const measured = context.measureText(label).width;
     // A zero width means the font has not loaded yet; fall back rather than collapse the layout.
-    const resolved = width > 0 ? width : estimateLabelWidth(label);
+    // The small margin covers canvas measuring a hair narrower than the SVG renderer lays it out.
+    const resolved = measured > 0 ? measured * LABEL_WIDTH_SAFETY : estimateLabelWidth(label);
     cache.set(label, resolved);
 
     return resolved;
   };
+
+  return { width, halfHeight: Math.max(halfHeight, LABEL_HALF_HEIGHT_PX) };
 }
 
 function useContainerWidth(defaultWidth: number) {
@@ -159,6 +173,11 @@ const COLLISION_STRENGTH = 0.45;
  * case this exists for. Bounded at all so an unsatisfiable layout still terminates.
  */
 const COLLISION_POLISH_PASSES = 600;
+/**
+ * Canvas measures a hair narrower than the SVG renderer lays the same string out (~3% on this
+ * font), so the reserved box gets a small margin rather than sitting exactly on the boundary.
+ */
+const LABEL_WIDTH_SAFETY = 1.05;
 
 // Colour nodes by entity type from the shared LifeScope palette so the graph
 // matches the map/list/gallery.
@@ -211,7 +230,7 @@ function ForceGraphBase({
 
   const svgRef = useRef<SVGSVGElement | null>(null);
   const fontProbeRef = useRef<SVGTextElement | null>(null);
-  const measurerRef = useRef<LabelMeasurer | null>(null);
+  const measurerRef = useRef<TextMetricsProbe | null>(null);
   const panStartRef = useRef({ x: 0, y: 0 });
   const translateStartRef = useRef({ x: 0, y: 0 });
   const previousPositionsRef = useRef<Map<string, ForceNode>>(new Map());
@@ -298,7 +317,8 @@ function ForceGraphBase({
       measurerRef.current = createTextMeasurer(fontProbeRef.current);
     }
 
-    const measure = measurerRef.current ?? estimateLabelWidth;
+    const measure = measurerRef.current?.width ?? estimateLabelWidth;
+    const labelHalfHeight = measurerRef.current?.halfHeight ?? LABEL_HALF_HEIGHT_PX;
 
     const canvasWidth = width || 720;
     // The simulation lays out in a world sized for the labels that have to fit, which is larger than
@@ -369,6 +389,7 @@ function ForceGraphBase({
         label,
         fullLabel,
         labelWidth: label ? labelWidthPx(fullLabel, MAX_LABEL_CHARS, measure) : 0,
+        labelHalfHeight,
         // The pinned centre node is the one thing on screen guaranteed to stay put; letting a
         // label overlap shove it would undo that.
         pinned: anchored || node.id === centerNodeId,
