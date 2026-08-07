@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { MAX_ZOOM, MIN_ZOOM, fitTransform, type FitNode } from './fitTransform';
+import { MAX_FIT_ZOOM, MAX_ZOOM, MIN_ZOOM, fitTransform, type FitNode } from './fitTransform';
 
 const WIDTH = 1100;
 const HEIGHT = 640;
@@ -134,5 +134,24 @@ describe('fitTransform', () => {
 
     expect(single.scale).toBeLessThanOrEqual(MAX_ZOOM);
     expect(enormous.scale).toBeGreaterThanOrEqual(MIN_ZOOM);
+  });
+
+  it('does not magnify a two-node graph until it outgrows the page', () => {
+    // What an entity page shows when its subject has exactly one relationship. Framed to fill the
+    // canvas, the pair reaches MAX_ZOOM and draws `text-xs` labels larger than the page's own h1.
+    const pair = fitTransform([node(400, 300, 'Audrey Friedman'), node(430, 260, 'Hanzla Mateen')], WIDTH, HEIGHT);
+
+    if (!pair) {
+      throw new Error('expected a fit');
+    }
+
+    expect(pair.scale).toBeLessThanOrEqual(MAX_FIT_ZOOM);
+    // Still magnified — a sparse graph should come forward, just not take over.
+    expect(pair.scale).toBeGreaterThan(1);
+  });
+
+  it('leaves manual zoom more room than the framing takes', () => {
+    // The cap is on FRAMING only; the wheel handler still goes to MAX_ZOOM.
+    expect(MAX_FIT_ZOOM).toBeLessThan(MAX_ZOOM);
   });
 });

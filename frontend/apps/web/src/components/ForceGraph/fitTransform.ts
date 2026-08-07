@@ -15,6 +15,16 @@ import { LABEL_GAP_PX, labelWidthPx } from './labelLayout';
 export const MIN_ZOOM = 0.35;
 export const MAX_ZOOM = 3;
 
+/**
+ * Ceiling on how far the FRAMING may magnify. Manual zoom still goes all the way to `MAX_ZOOM`.
+ *
+ * Filling the canvas is worth doing; outgrowing the page is not. An entity whose only relationship
+ * is to one other node frames two dots, and at `MAX_ZOOM` their `text-xs` labels draw at ~38px —
+ * larger than the page's own h1, which reads as a rendering fault rather than as a close-up. Capped
+ * here a sparse graph still comes forward (~19px) and still looks like part of the page.
+ */
+export const MAX_FIT_ZOOM = 1.5;
+
 export const clampScale = (value: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
 
 /** Largest node radius plus its stroke. */
@@ -80,8 +90,11 @@ export function fitTransform(
   const spanX = anchor ? Math.max(2 * Math.max(centreX - minX, maxX - centreX), 1) : Math.max(maxX - minX, 1);
   const spanY = anchor ? Math.max(2 * Math.max(centreY - minY, maxY - centreY), 1) : Math.max(maxY - minY, 1);
 
-  const scale = clampScale(
-    Math.min((boundsWidth - FIT_PADDING_PX * 2) / spanX, (boundsHeight - FIT_PADDING_PX * 2) / spanY),
+  const scale = Math.min(
+    MAX_FIT_ZOOM,
+    clampScale(
+      Math.min((boundsWidth - FIT_PADDING_PX * 2) / spanX, (boundsHeight - FIT_PADDING_PX * 2) / spanY),
+    ),
   );
 
   return {
