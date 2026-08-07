@@ -10,15 +10,15 @@
  * Kept out of ForceGraph.tsx so it can be exercised as pure geometry in the `node` vitest project.
  */
 
+import { LABEL_GAP_PX, labelWidthPx } from './labelLayout';
+
 export const MIN_ZOOM = 0.35;
 export const MAX_ZOOM = 3;
 
 export const clampScale = (value: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
 
-/** Largest node radius (12, when selected) plus its stroke. */
+/** Largest node radius plus its stroke. */
 const NODE_EXTENT_PX = 14;
-/** Average advance of the text-xs label, which is drawn to the right of the node. */
-const LABEL_CHAR_PX = 6.4;
 /** The label's baseline sits below the node centre. */
 const LABEL_BASELINE_PX = 14;
 const FIT_PADDING_PX = 16;
@@ -59,10 +59,12 @@ export function fitTransform(
       continue;
     }
 
+    // The label as DRAWN, so the frame does not reserve room for characters the renderer clips.
     const label = node.name ?? node.entity_type ?? '';
+    const labelPx = label ? LABEL_GAP_PX + labelWidthPx(label) : 0;
 
     minX = Math.min(minX, node.x - NODE_EXTENT_PX);
-    maxX = Math.max(maxX, node.x + NODE_EXTENT_PX + label.length * LABEL_CHAR_PX);
+    maxX = Math.max(maxX, node.x + NODE_EXTENT_PX + labelPx);
     minY = Math.min(minY, node.y - NODE_EXTENT_PX);
     maxY = Math.max(maxY, node.y + LABEL_BASELINE_PX);
   }
