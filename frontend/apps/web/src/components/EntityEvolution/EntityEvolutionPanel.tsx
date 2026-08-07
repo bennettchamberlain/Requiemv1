@@ -312,7 +312,12 @@ export function EntityEvolutionPanel({ entityId, entityName }: Props) {
               >
                 {NODE_TYPE_FILTERS.map((filter) => (
                   <ToggleGroup.Item key={filter} value={filter} className="text-xs">
-                    {filter === 'all' ? 'All Changes' : filter === 'entity' ? 'Own Fields' : 'Relationships'}
+                    {/*
+                      "Everything", not "All Changes": this group filters WHAT changed — the
+                      entity's own fields or its relationships — while the group below filters what
+                      HAPPENED to it. Naming both after changes made the two indistinguishable.
+                    */}
+                    {filter === 'all' ? 'Everything' : filter === 'entity' ? 'Own Fields' : 'Relationships'}
                   </ToggleGroup.Item>
                 ))}
               </ToggleGroup>

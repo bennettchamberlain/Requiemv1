@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { EvolutionDelta } from '@/api/useEntityEvolutionService';
@@ -123,6 +123,25 @@ describe('EntityEvolutionPanel', () => {
     expect(screen.getByRole('button', { name: /Filters/ })).toBeInTheDocument();
     // Still collapsed until asked for.
     expect(screen.queryByText('All Time')).not.toBeInTheDocument();
+  });
+
+  it('gives each filter group a distinct catch-all label', async () => {
+    mockDeltas([
+      delta({ deltaId: 'a' }),
+      delta({ deltaId: 'b' }),
+      delta({ deltaId: 'c' }),
+      delta({ deltaId: 'd' }),
+    ]);
+
+    render(<EntityEvolutionPanel entityId={FOCUS_ID} />);
+    fireEvent.click(screen.getByRole('button', { name: /Filters/ }));
+
+    // Three groups filter three different things — what changed, what happened to it, and when.
+    // Naming two of the catch-alls after "changes" made them impossible to tell apart.
+    expect(await screen.findByText('Everything')).toBeInTheDocument();
+    expect(screen.getByText('Any Action')).toBeInTheDocument();
+    expect(screen.getByText('All Time')).toBeInTheDocument();
+    expect(screen.queryByText('All Changes')).not.toBeInTheDocument();
   });
 
   it('reads a creation as a birth rather than a diff from nothing', () => {

@@ -97,6 +97,9 @@ export function PlacePage() {
                 // That makes this a last-write-wins update on the name as well: if it was renamed
                 // elsewhere since this page loaded, the cached value here would win. Same trade the
                 // existing MemoryPage detail editors make, and the page has no polling to widen it.
+                // The `?? ''` only fires when the stored name is genuinely null — the query selects
+                // `name`, so it is not a projection gap — and null and '' both render as 'Unnamed'.
+                // Omitting the field instead is not an option: it is non-null on the input.
                 const result = await updatePlaceDescription({
                   variables: { input: { id: place.id, name: place.name ?? '', description: value } },
                 });
