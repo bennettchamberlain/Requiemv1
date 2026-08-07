@@ -1,19 +1,18 @@
 import { type ReactNode, useState } from 'react';
 
-import { useQuery } from '@apollo/client';
+import { useMutation, useQuery } from '@apollo/client';
 import { GlobalUID, LoadingPage, Portal, usePageTitle, EmptyState } from '@ci/common';
-import { Breadcrumb, Button, Card, Label, Textarea, Toggle, Tooltip, cn } from '@ci/shadcn';
+import { Breadcrumb, Button, Toggle, Tooltip } from '@ci/shadcn';
 import { Pencil, Link as LinkIcon } from '@ci/shadcn/icons';
 import { useParams, Link } from 'react-router-dom';
 
-import { useTagEntityService } from '@/api';
 import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
 import { EntityGraph } from '@/components/EntityGraph';
 import { EntityRelationshipCards } from '@/components/EntityRelationshipCards/EntityRelationshipCards';
+import { EntityTagsDescriptionCard } from '@/components/EntityTagsDescriptionCard';
 import { PersonIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import { AddRelationshipModal } from '@/components/modals/AddItemModal/AddRelationshipModal';
-import { TagInput } from '@/components/TagInput';
 import { gql } from '@/graphql';
 
 const ALLOWED_TYPES = {
@@ -70,6 +69,18 @@ const GET_PERSON = gql(`
   }
 `);
 
+const UPDATE_PERSON_DESCRIPTION = gql(`
+  mutation UpdatePersonDescription($input: UpdatePersonInput!) {
+    updatePerson(input: $input) {
+      success
+      person {
+        id
+        description
+      }
+    }
+  }
+`);
+
 export function PersonPage() {
   const { id } = useParams<{ id: string }>();
   const [addRelationshipModalOpen, setAddRelationshipModalOpen] = useState(false);
@@ -82,7 +93,7 @@ export function PersonPage() {
     },
   });
 
-  const { tagEntities, untagEntities } = useTagEntityService();
+  const [updatePersonDescription] = useMutation(UPDATE_PERSON_DESCRIPTION);
 
   const person = data?.person;
   const [editMode, setEditMode] = useState(false);
@@ -185,44 +196,29 @@ export function PersonPage() {
             <EntityGraph entityId={id!} maxDepth={hopDepth} nodeLimit={nodeLimit} />
           </div>
 
-          <Card className="p-0">
-            <Card.Content className="p-4 flex flex-col gap-6">
-              <div className="space-y-2">
-                <Label>Tags</Label>
+          <EntityTagsDescriptionCard
+            entityType="person"
+            entityId={id!}
+            resetKey={person.id}
+            tags={person.tags.map((t) => t.label)}
+            description={person.description}
+            editMode={editMode}
+            onDescriptionSave={async (value) => {
+              const result = await updatePersonDescription({
+                variables: { input: { id: person.id, description: value } },
+              });
 
-                <TagInput
-                  key={person.id}
-                  tags={person.tags.map((t) => t.label) ?? []}
-                  readOnly={!editMode}
-                  onTagAdded={(label) => {
-                    tagEntities([GlobalUID.encode('person', id!)], [label]);
-
-                    return true;
-                  }}
-                  onTagRemoved={async (label) => {
-                    await untagEntities([GlobalUID.encode('person', id!)], [label]);
-                  }}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  key={person.id}
-                  id="description"
-                  defaultValue={person.description ?? ''}
-                  readOnly={!editMode}
-                  className={cn(
-                    'resize-none min-h-[120px]',
-                    editMode ? '' : 'shadow-none focus-visible:ring-0 focus-visible:border-border',
-                  )}
-                />
-              </div>
-            </Card.Content>
-          </Card>
+              // The resolver reports a rejected write (wrong owner, missing row) in the payload
+              // rather than throwing, so a silent no-op would otherwise look like a save.
+              if (!result.data?.updatePerson.success) {
+                throw new Error('Update was rejected');
+              }
+            }}
+          />
         </div>
 
         <EntityRelationshipCards entityId={id!} />
-        <EntityEvolutionPanel entityId={id!} />
+        <EntityEvolutionPanel entityId={id!} entityName={person.name} />
       </PageContent>
     );
   }

@@ -1,19 +1,18 @@
 import { type ReactNode, useState } from 'react';
 
-import { useQuery } from '@apollo/client';
+import { useMutation, useQuery } from '@apollo/client';
 import { GlobalUID, LoadingPage, Portal, usePageTitle, EmptyState } from '@ci/common';
-import { Breadcrumb, Card, Label, Textarea, Toggle, cn } from '@ci/shadcn';
+import { Breadcrumb, Card, Toggle } from '@ci/shadcn';
 import { Pencil } from '@ci/shadcn/icons';
 import { useParams, Link } from 'react-router-dom';
 
-import { useTagEntityService } from '@/api';
 import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
 import { EntityGraph } from '@/components/EntityGraph';
 import { EntityRelationshipCards } from '@/components/EntityRelationshipCards/EntityRelationshipCards';
+import { EntityTagsDescriptionCard } from '@/components/EntityTagsDescriptionCard';
 import { PlaceIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import { Map } from '@/components/Map';
-import { TagInput } from '@/components/TagInput';
 import { gql } from '@/graphql';
 
 const GET_PLACE = gql(`
@@ -31,6 +30,15 @@ const GET_PLACE = gql(`
   }
 `);
 
+const UPDATE_PLACE_DESCRIPTION = gql(`
+  mutation UpdatePlaceDescription($input: UpdatePlaceInput!) {
+    updatePlace(input: $input) {
+      id
+      description
+    }
+  }
+`);
+
 export function PlacePage() {
   const { id } = useParams<{ id: string }>();
 
@@ -40,7 +48,7 @@ export function PlacePage() {
     },
   });
 
-  const { tagEntities, untagEntities } = useTagEntityService();
+  const [updatePlaceDescription] = useMutation(UPDATE_PLACE_DESCRIPTION);
 
   const place = data?.place;
   const [editMode, setEditMode] = useState(false);
@@ -75,43 +83,27 @@ export function PlacePage() {
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="md:col-span-2">
-            <Card className="p-0 h-full">
-              <Card.Content className="p-4 flex flex-col gap-6 h-full">
-                <div className="space-y-2">
-                  <Label>Tags</Label>
-                  <TagInput
-                    key={place.id}
-                    tags={place.tags.map((t) => t.label) ?? []}
-                    readOnly={!editMode}
-                    onTagAdded={async (label) => {
-                      try {
-                        await tagEntities([GlobalUID.encode('place', id!)], [label]);
+            <EntityTagsDescriptionCard
+              entityType="place"
+              entityId={id!}
+              resetKey={place.id}
+              tags={place.tags.map((t) => t.label)}
+              description={place.description}
+              editMode={editMode}
+              className="h-full"
+              contentClassName="h-full"
+              onDescriptionSave={async (value) => {
+                // `name` is non-null on UpdatePlaceInput, so it is resent unchanged.
+                const result = await updatePlaceDescription({
+                  variables: { input: { id: place.id, name: place.name ?? '', description: value } },
+                });
 
-                        return true;
-                      } catch {
-                        return false;
-                      }
-                    }}
-                    onTagRemoved={async (label) => {
-                      await untagEntities([GlobalUID.encode('place', id!)], [label]);
-                    }}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="description">Description</Label>
-                  <Textarea
-                    key={place.id}
-                    id="description"
-                    defaultValue={place.description ?? ''}
-                    readOnly={!editMode}
-                    className={cn(
-                      'resize-none min-h-[120px]',
-                      editMode ? '' : 'shadow-none focus-visible:ring-0 focus-visible:border-border',
-                    )}
-                  />
-                </div>
-              </Card.Content>
-            </Card>
+                // updatePlace resolves to the place itself, or null when the write was rejected.
+                if (!result.data?.updatePlace) {
+                  throw new Error('Update was rejected');
+                }
+              }}
+            />
           </div>
 
           <div className="flex flex-col gap-4">
@@ -137,7 +129,7 @@ export function PlacePage() {
         </div>
 
         <EntityRelationshipCards entityId={id!} />
-        <EntityEvolutionPanel entityId={id!} />
+        <EntityEvolutionPanel entityId={id!} entityName={place.name} />
       </PageContent>
     );
   }

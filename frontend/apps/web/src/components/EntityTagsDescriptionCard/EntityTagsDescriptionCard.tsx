@@ -1,0 +1,156 @@
+import { type ReactNode, useEffect, useState } from 'react';
+
+import { GlobalUID } from '@ci/common';
+import { Card, Label, Textarea, cn, useToast } from '@ci/shadcn';
+
+import { useTagEntityService } from '@/api';
+import { TagInput } from '@/components/TagInput';
+
+/**
+ * The Tags + free-text panel in every entity page's sidebar.
+ *
+ * Previously copy-pasted across all seven entity pages, each with the same two defects: an entity
+ * with nothing recorded rendered an empty bordered box and a blank 120px textarea — chrome that
+ * looks broken rather than empty — and the textarea was uncontrolled with no save handler, so edits
+ * were silently discarded on navigate.
+ */
+/** The resource types `GlobalUID` knows about. Not exported from @ci/common, so derived here. */
+type ResourceType = Parameters<typeof GlobalUID.encode>[0];
+
+interface Props {
+  /** Entity type for `GlobalUID.encode` — 'person', 'place', 'item', … */
+  entityType: ResourceType;
+  /** Raw (un-encoded) entity uuid from the route. */
+  entityId: string;
+  /** Resets the tag editor's internal state when the page switches entity. */
+  resetKey: string;
+  tags: string[];
+  description: string | null | undefined;
+  /** What the free-text field is called here: 'Description', 'Text', 'Summary'. */
+  descriptionLabel?: string;
+  editMode: boolean;
+  /**
+   * Persists an edited description. Omit for entity types with no write path for the field — it then
+   * stays read-only even in edit mode, rather than accepting edits it cannot keep.
+   */
+  onDescriptionSave?: (value: string) => Promise<void>;
+  /** Type-specific detail rendered above Tags — an event's organizer and location, say. */
+  children?: ReactNode;
+  className?: string;
+  contentClassName?: string;
+}
+
+export function EntityTagsDescriptionCard({
+  entityType,
+  entityId,
+  resetKey,
+  tags,
+  description,
+  descriptionLabel = 'Description',
+  editMode,
+  onDescriptionSave,
+  children,
+  className,
+  contentClassName,
+}: Props) {
+  const { tagEntities, untagEntities } = useTagEntityService();
+  const { toast } = useToast();
+
+  // Mirrors whether the entity has any tags. Read from local state rather than the `tags` prop so
+  // that adding the first tag and leaving edit mode does not flash the "no tags" placeholder while
+  // the page's query catches up.
+  const [hasTags, setHasTags] = useState(tags.length > 0);
+  const [draft, setDraft] = useState(description ?? '');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setHasTags(tags.length > 0);
+  }, [tags.length]);
+
+  // A new entity, or a description changed elsewhere, replaces the draft — but not mid-edit, which
+  // would yank the text out from under the cursor.
+  useEffect(() => {
+    setDraft(description ?? '');
+  }, [description, resetKey]);
+
+  const globalId = GlobalUID.encode(entityType, entityId);
+  const canEditDescription = editMode && onDescriptionSave != null;
+
+  const handleDescriptionBlur = async () => {
+    const next = draft.trim();
+    if (!onDescriptionSave || next === (description ?? '').trim()) {
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await onDescriptionSave(next);
+    } catch {
+      toast.error(`Couldn't save the ${descriptionLabel.toLowerCase()}.`);
+      setDraft(description ?? '');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card className={cn('p-0', className)}>
+      <Card.Content className={cn('p-4 flex flex-col gap-6', contentClassName)}>
+        {children}
+
+        <div className="space-y-2">
+          <Label>Tags</Label>
+
+          {!editMode && !hasTags ? (
+            <p className="text-sm italic text-muted-foreground">No tags yet</p>
+          ) : (
+            <TagInput
+              key={resetKey}
+              tags={tags}
+              readOnly={!editMode}
+              onTagAdded={async (label) => {
+                try {
+                  await tagEntities([globalId], [label]);
+                  setHasTags(true);
+
+                  return true;
+                } catch {
+                  toast.error(`Couldn't add tag “${label}”.`);
+
+                  return false;
+                }
+              }}
+              onTagRemoved={async (label) => {
+                await untagEntities([globalId], [label]);
+              }}
+            />
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor={`description-${resetKey}`}>{descriptionLabel}</Label>
+            {saving && <span className="text-xs text-muted-foreground">Saving…</span>}
+          </div>
+
+          {!editMode && draft.trim() === '' ? (
+            <p className="text-sm italic text-muted-foreground">No {descriptionLabel.toLowerCase()} yet</p>
+          ) : (
+            <Textarea
+              id={`description-${resetKey}`}
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onBlur={handleDescriptionBlur}
+              readOnly={!canEditDescription}
+              placeholder={canEditDescription ? `Add a ${descriptionLabel.toLowerCase()}…` : undefined}
+              className={cn(
+                'resize-none min-h-[120px]',
+                canEditDescription ? '' : 'shadow-none focus-visible:ring-0 focus-visible:border-border',
+              )}
+            />
+          )}
+        </div>
+      </Card.Content>
+    </Card>
+  );
+}
