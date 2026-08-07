@@ -4,36 +4,37 @@ Temporal workflows for summary generation.
 Workflows are durable, fault-tolerant orchestrations that coordinate
 activities and maintain state across failures and restarts.
 """
-from typing import Dict, Any, List, Optional
+
 from datetime import timedelta
+from typing import Any
+
 from temporalio import workflow
 from temporalio.common import RetryPolicy
 
 # Import activity definitions (not implementations!)
 with workflow.unsafe.imports_passed_through():
     from .activities import (
-        aggregate_data_activity,
-        generate_hourly_summary_activity,
-        generate_rollup_summary_activity,
-        store_summary_activity,
-        fetch_child_summaries_activity,
-        get_entity_id_activity,
-        fetch_previous_dossier_activity,
-        fetch_summaries_for_dossier_activity,
-        generate_dossier_activity,
-        store_dossier_activity,
-        # Insight activities
-        check_new_data_for_insights_activity,
-        get_last_insight_time_activity,
-        aggregate_insights_context_activity,
-        generate_insights_activity,
-        generate_single_insight_activity,
-        store_insight_activity,
         # Action activities
         aggregate_action_context_activity,
-        generate_actions_activity,
+        aggregate_data_activity,
+        aggregate_insights_context_activity,
+        # Insight activities
+        check_new_data_for_insights_activity,
         count_pending_actions_activity,
+        fetch_child_summaries_activity,
+        fetch_previous_dossier_activity,
+        fetch_summaries_for_dossier_activity,
+        generate_actions_activity,
+        generate_dossier_activity,
+        generate_hourly_summary_activity,
+        generate_rollup_summary_activity,
+        generate_single_insight_activity,
+        get_entity_id_activity,
+        get_last_insight_time_activity,
         store_action_activity,
+        store_dossier_activity,
+        store_insight_activity,
+        store_summary_activity,
     )
     from .llm_config import LLMConfig
 
@@ -59,6 +60,7 @@ ACTIVITY_RETRY_POLICY = RetryPolicy(
     maximum_attempts=5,
 )
 
+
 # Activity options will be passed directly to execute_activity calls
 # Kept here for reference and consistency
 def get_data_activity_options():
@@ -67,6 +69,7 @@ def get_data_activity_options():
         "start_to_close_timeout": timedelta(seconds=30),
         "retry_policy": ACTIVITY_RETRY_POLICY,
     }
+
 
 def get_llm_activity_options():
     """Activity options for LLM operations (slow, single blocking call).
@@ -88,6 +91,7 @@ def get_llm_activity_options():
 # Hourly Summary Workflow
 # ============================================================================
 
+
 @workflow.defn(name="hourly-summary")
 class HourlySummaryWorkflow:
     """
@@ -104,10 +108,10 @@ class HourlySummaryWorkflow:
         self,
         user_id: str,
         start_time: str,  # ISO format
-        end_time: str,    # ISO format
+        end_time: str,  # ISO format
         timezone: str = "UTC",
-        llm_config: Optional[LLMConfig] = None,
-    ) -> Dict[str, Any]:
+        llm_config: LLMConfig | None = None,
+    ) -> dict[str, Any]:
         """Execute hourly summary workflow."""
         workflow.logger.info(f"hourly_summary_workflow_started user_id={user_id}")
 
@@ -120,8 +124,7 @@ class HourlySummaryWorkflow:
 
         # Check if there's any activity
         total_activity = sum(
-            len(v) for v in aggregated_data.values()
-            if isinstance(v, list)
+            len(v) for v in aggregated_data.values() if isinstance(v, list)
         )
         workflow.logger.info(f"data_aggregated total_items={total_activity}")
 
@@ -139,7 +142,9 @@ class HourlySummaryWorkflow:
             **get_data_activity_options(),
         )
 
-        workflow.logger.info(f"hourly_summary_workflow_completed summary_id={summary_id}")
+        workflow.logger.info(
+            f"hourly_summary_workflow_completed summary_id={summary_id}"
+        )
 
         return {
             "summary_id": summary_id,
@@ -154,6 +159,7 @@ class HourlySummaryWorkflow:
 # ============================================================================
 # Daily Summary Workflow
 # ============================================================================
+
 
 @workflow.defn(name="daily-summary")
 class DailySummaryWorkflow:
@@ -173,8 +179,8 @@ class DailySummaryWorkflow:
         start_time: str,
         end_time: str,
         timezone: str = "UTC",
-        llm_config: Optional[LLMConfig] = None,
-    ) -> Dict[str, Any]:
+        llm_config: LLMConfig | None = None,
+    ) -> dict[str, Any]:
         """Execute daily summary workflow."""
         workflow.logger.info(f"daily_summary_workflow_started user_id={user_id}")
 
@@ -186,7 +192,9 @@ class DailySummaryWorkflow:
         )
 
         if not hourly_summaries:
-            raise ValueError(f"No hourly summaries found for daily aggregation: {start_time} to {end_time}")
+            raise ValueError(
+                f"No hourly summaries found for daily aggregation: {start_time} to {end_time}"
+            )
 
         workflow.logger.info(f"hourly_summaries_fetched count={len(hourly_summaries)}")
 
@@ -204,7 +212,9 @@ class DailySummaryWorkflow:
             **get_data_activity_options(),
         )
 
-        workflow.logger.info(f"daily_summary_workflow_completed summary_id={summary_id}")
+        workflow.logger.info(
+            f"daily_summary_workflow_completed summary_id={summary_id}"
+        )
 
         return {
             "summary_id": summary_id,
@@ -219,6 +229,7 @@ class DailySummaryWorkflow:
 # ============================================================================
 # Weekly Summary Workflow
 # ============================================================================
+
 
 @workflow.defn(name="weekly-summary")
 class WeeklySummaryWorkflow:
@@ -238,8 +249,8 @@ class WeeklySummaryWorkflow:
         start_time: str,
         end_time: str,
         timezone: str = "UTC",
-        llm_config: Optional[LLMConfig] = None,
-    ) -> Dict[str, Any]:
+        llm_config: LLMConfig | None = None,
+    ) -> dict[str, Any]:
         """Execute weekly summary workflow."""
         workflow.logger.info(f"weekly_summary_workflow_started user_id={user_id}")
 
@@ -251,7 +262,9 @@ class WeeklySummaryWorkflow:
         )
 
         if not daily_summaries:
-            raise ValueError(f"No daily summaries found for weekly aggregation: {start_time} to {end_time}")
+            raise ValueError(
+                f"No daily summaries found for weekly aggregation: {start_time} to {end_time}"
+            )
 
         workflow.logger.info(f"daily_summaries_fetched count={len(daily_summaries)}")
 
@@ -269,7 +282,9 @@ class WeeklySummaryWorkflow:
             **get_data_activity_options(),
         )
 
-        workflow.logger.info(f"weekly_summary_workflow_completed summary_id={summary_id}")
+        workflow.logger.info(
+            f"weekly_summary_workflow_completed summary_id={summary_id}"
+        )
 
         return {
             "summary_id": summary_id,
@@ -284,6 +299,7 @@ class WeeklySummaryWorkflow:
 # ============================================================================
 # Monthly Summary Workflow
 # ============================================================================
+
 
 @workflow.defn(name="monthly-summary")
 class MonthlySummaryWorkflow:
@@ -303,8 +319,8 @@ class MonthlySummaryWorkflow:
         start_time: str,
         end_time: str,
         timezone: str = "UTC",
-        llm_config: Optional[LLMConfig] = None,
-    ) -> Dict[str, Any]:
+        llm_config: LLMConfig | None = None,
+    ) -> dict[str, Any]:
         """Execute monthly summary workflow."""
         workflow.logger.info(f"monthly_summary_workflow_started user_id={user_id}")
 
@@ -316,7 +332,9 @@ class MonthlySummaryWorkflow:
         )
 
         if not daily_summaries:
-            raise ValueError(f"No daily summaries found for monthly aggregation: {start_time} to {end_time}")
+            raise ValueError(
+                f"No daily summaries found for monthly aggregation: {start_time} to {end_time}"
+            )
 
         workflow.logger.info(f"daily_summaries_fetched count={len(daily_summaries)}")
 
@@ -334,7 +352,9 @@ class MonthlySummaryWorkflow:
             **get_data_activity_options(),
         )
 
-        workflow.logger.info(f"monthly_summary_workflow_completed summary_id={summary_id}")
+        workflow.logger.info(
+            f"monthly_summary_workflow_completed summary_id={summary_id}"
+        )
 
         return {
             "summary_id": summary_id,
@@ -349,6 +369,7 @@ class MonthlySummaryWorkflow:
 # ============================================================================
 # Seasonal Summary Workflow
 # ============================================================================
+
 
 @workflow.defn(name="seasonal-summary")
 class SeasonalSummaryWorkflow:
@@ -368,8 +389,8 @@ class SeasonalSummaryWorkflow:
         start_time: str,
         end_time: str,
         timezone: str = "UTC",
-        llm_config: Optional[LLMConfig] = None,
-    ) -> Dict[str, Any]:
+        llm_config: LLMConfig | None = None,
+    ) -> dict[str, Any]:
         """Execute seasonal summary workflow."""
         workflow.logger.info(f"seasonal_summary_workflow_started user_id={user_id}")
 
@@ -381,7 +402,9 @@ class SeasonalSummaryWorkflow:
         )
 
         if not daily_summaries:
-            raise ValueError(f"No daily summaries found for seasonal aggregation: {start_time} to {end_time}")
+            raise ValueError(
+                f"No daily summaries found for seasonal aggregation: {start_time} to {end_time}"
+            )
 
         workflow.logger.info(f"daily_summaries_fetched count={len(daily_summaries)}")
 
@@ -399,7 +422,9 @@ class SeasonalSummaryWorkflow:
             **get_data_activity_options(),
         )
 
-        workflow.logger.info(f"seasonal_summary_workflow_completed summary_id={summary_id}")
+        workflow.logger.info(
+            f"seasonal_summary_workflow_completed summary_id={summary_id}"
+        )
 
         return {
             "summary_id": summary_id,
@@ -414,6 +439,7 @@ class SeasonalSummaryWorkflow:
 # ============================================================================
 # Yearly Summary Workflow
 # ============================================================================
+
 
 @workflow.defn(name="yearly-summary")
 class YearlySummaryWorkflow:
@@ -433,8 +459,8 @@ class YearlySummaryWorkflow:
         start_time: str,
         end_time: str,
         timezone: str = "UTC",
-        llm_config: Optional[LLMConfig] = None,
-    ) -> Dict[str, Any]:
+        llm_config: LLMConfig | None = None,
+    ) -> dict[str, Any]:
         """Execute yearly summary workflow."""
         workflow.logger.info(f"yearly_summary_workflow_started user_id={user_id}")
 
@@ -446,7 +472,9 @@ class YearlySummaryWorkflow:
         )
 
         if not daily_summaries:
-            raise ValueError(f"No daily summaries found for yearly aggregation: {start_time} to {end_time}")
+            raise ValueError(
+                f"No daily summaries found for yearly aggregation: {start_time} to {end_time}"
+            )
 
         workflow.logger.info(f"daily_summaries_fetched count={len(daily_summaries)}")
 
@@ -464,7 +492,9 @@ class YearlySummaryWorkflow:
             **get_data_activity_options(),
         )
 
-        workflow.logger.info(f"yearly_summary_workflow_completed summary_id={summary_id}")
+        workflow.logger.info(
+            f"yearly_summary_workflow_completed summary_id={summary_id}"
+        )
 
         return {
             "summary_id": summary_id,
@@ -479,6 +509,7 @@ class YearlySummaryWorkflow:
 # ============================================================================
 # Dossier Refresh Workflow
 # ============================================================================
+
 
 @workflow.defn(name="dossier-refresh")
 class DossierRefreshWorkflow:
@@ -500,8 +531,8 @@ class DossierRefreshWorkflow:
         end_time: str,
         timezone: str = "UTC",
         lookback_days: int = 30,
-        llm_config: Optional[LLMConfig] = None,
-    ) -> Dict[str, Any]:
+        llm_config: LLMConfig | None = None,
+    ) -> dict[str, Any]:
         """Execute dossier refresh workflow."""
         workflow.logger.info(f"dossier_refresh_workflow_started user_id={user_id}")
 
@@ -524,7 +555,9 @@ class DossierRefreshWorkflow:
             **get_data_activity_options(),
         )
 
-        workflow.logger.info(f"previous_dossier_fetched has_dossier={bool(previous_dossier)}")
+        workflow.logger.info(
+            f"previous_dossier_fetched has_dossier={bool(previous_dossier)}"
+        )
 
         # Step 3: Fetch summaries
         summaries = await workflow.execute_activity(
@@ -537,7 +570,7 @@ class DossierRefreshWorkflow:
         hourly_summaries = summaries.get("hourly", [])
 
         if not daily_summaries and not hourly_summaries:
-            raise ValueError(f"No summaries found for dossier generation")
+            raise ValueError("No summaries found for dossier generation")
 
         workflow.logger.info(
             f"summaries_fetched daily_count={len(daily_summaries)} hourly_count={len(hourly_summaries)}"
@@ -546,7 +579,15 @@ class DossierRefreshWorkflow:
         # Step 4: Generate dossier (LLM call)
         dossier = await workflow.execute_activity(
             generate_dossier_activity,
-            args=[user_id, daily_summaries, hourly_summaries, end_time, timezone, lookback_days, previous_dossier],
+            args=[
+                user_id,
+                daily_summaries,
+                hourly_summaries,
+                end_time,
+                timezone,
+                lookback_days,
+                previous_dossier,
+            ],
             **get_llm_activity_options(),
         )
 
@@ -557,7 +598,9 @@ class DossierRefreshWorkflow:
             **get_data_activity_options(),
         )
 
-        workflow.logger.info(f"dossier_refresh_workflow_completed entity_id={entity_id}")
+        workflow.logger.info(
+            f"dossier_refresh_workflow_completed entity_id={entity_id}"
+        )
 
         return {
             "entity_id": entity_id,
@@ -568,6 +611,7 @@ class DossierRefreshWorkflow:
 # ============================================================================
 # Insights Generation Workflow
 # ============================================================================
+
 
 @workflow.defn(name="insights-generation")
 class InsightsGenerationWorkflow:
@@ -587,11 +631,13 @@ class InsightsGenerationWorkflow:
         user_id: str,
         timezone: str = "UTC",
         lookback_hours: int = 72,  # 3 days default lookback
-        llm_config: Optional[LLMConfig] = None,
+        llm_config: LLMConfig | None = None,
         force: bool = False,  # Skip new data check if True
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute insights generation workflow."""
-        workflow.logger.info(f"insights_generation_workflow_started user_id={user_id} force={force}")
+        workflow.logger.info(
+            f"insights_generation_workflow_started user_id={user_id} force={force}"
+        )
 
         from datetime import datetime, timedelta
 
@@ -645,10 +691,18 @@ class InsightsGenerationWorkflow:
             "graph_deltas": len(insights_context.get("graph_deltas", [])),
             "upcoming_events": len(insights_context.get("upcoming_events", [])),
             "recent_summaries": len(insights_context.get("recent_summaries", [])),
-            "strongest_relationships": len(insights_context.get("strongest_relationships", [])),
-            "recently_changed_relationships": len(insights_context.get("recently_changed_relationships", [])),
-            "event_relevant_relationships": len(insights_context.get("event_relevant_relationships", [])),
-            "recent_communications": len(insights_context.get("recent_communications", [])),
+            "strongest_relationships": len(
+                insights_context.get("strongest_relationships", [])
+            ),
+            "recently_changed_relationships": len(
+                insights_context.get("recently_changed_relationships", [])
+            ),
+            "event_relevant_relationships": len(
+                insights_context.get("event_relevant_relationships", [])
+            ),
+            "recent_communications": len(
+                insights_context.get("recent_communications", [])
+            ),
         }
         total_context_items = sum(context_counts.values())
         has_dossier = insights_context.get("user_dossier") is not None
@@ -673,8 +727,8 @@ class InsightsGenerationWorkflow:
         # insights become visible in ci.summaries (and on the feed) as they are
         # generated — a slow model streams them out instead of blocking the
         # whole batch, and a mid-run failure keeps everything stored so far.
-        summary_ids: List[str] = []
-        prior_insights: List[Dict[str, Any]] = []
+        summary_ids: list[str] = []
+        prior_insights: list[dict[str, Any]] = []
         data_sources_used: set = set()
         total_tokens = 0
 
@@ -698,7 +752,9 @@ class InsightsGenerationWorkflow:
                 str(prior.get("title", "")).strip().lower() == new_title
                 for prior in prior_insights
             ):
-                workflow.logger.info(f"duplicate_insight_stopping title={insight.get('title')}")
+                workflow.logger.info(
+                    f"duplicate_insight_stopping title={insight.get('title')}"
+                )
                 break
 
             stored_ids = await workflow.execute_activity(
@@ -752,6 +808,7 @@ class InsightsGenerationWorkflow:
 # Actions Generation Workflow
 # ============================================================================
 
+
 @workflow.defn(name="actions-generation")
 class ActionsGenerationWorkflow:
     """
@@ -770,9 +827,9 @@ class ActionsGenerationWorkflow:
         user_id: str,
         timezone: str = "UTC",
         lookback_days: int = 7,
-        llm_config: Optional[LLMConfig] = None,
+        llm_config: LLMConfig | None = None,
         max_feed_actions: int = DEFAULT_MAX_FEED_ACTIONS,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute actions generation workflow."""
         workflow.logger.info(f"actions_generation_workflow_started user_id={user_id}")
 
@@ -809,14 +866,16 @@ class ActionsGenerationWorkflow:
 
         # Check if we have enough context to generate meaningful actions
         total_context = (
-            len(action_context.get("recent_summaries", [])) +
-            len(action_context.get("recent_insights", [])) +
-            len(action_context.get("upcoming_events", [])) +
-            len(action_context.get("key_people", []))
+            len(action_context.get("recent_summaries", []))
+            + len(action_context.get("recent_insights", []))
+            + len(action_context.get("upcoming_events", []))
+            + len(action_context.get("key_people", []))
         )
 
         if total_context < 2:
-            workflow.logger.info(f"insufficient_context_for_actions total_items={total_context}")
+            workflow.logger.info(
+                f"insufficient_context_for_actions total_items={total_context}"
+            )
             return {
                 "skipped": True,
                 "reason": "insufficient_context",
@@ -884,14 +943,13 @@ class ActionsGenerationWorkflow:
 
 
 __all__ = [
-    "HourlySummaryWorkflow",
+    "ActionsGenerationWorkflow",
     "DailySummaryWorkflow",
-    "WeeklySummaryWorkflow",
+    "DossierRefreshWorkflow",
+    "HourlySummaryWorkflow",
+    "InsightsGenerationWorkflow",
     "MonthlySummaryWorkflow",
     "SeasonalSummaryWorkflow",
+    "WeeklySummaryWorkflow",
     "YearlySummaryWorkflow",
-    "DossierRefreshWorkflow",
-    "DossierRefreshWorkflow",
-    "InsightsGenerationWorkflow",
-    "ActionsGenerationWorkflow",
 ]

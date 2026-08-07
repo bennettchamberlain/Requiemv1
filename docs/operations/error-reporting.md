@@ -49,7 +49,7 @@ over the DSN.
 
 `backend/apps/api/src/common/telemetry/scrubEvent.ts` and its Python twins
 (`backend/apps/hbpe/src/ci/telemetry.py`,
-`backend/apps/summary/src/telemetry.py`) implement the same rules:
+`backend/apps/summary/src/ci/summary/telemetry.py`) implement the same rules:
 
 - Bearer tokens, `api_key=` / `password:` / `token:` style pairs, Tailscale
   `tskey-…`, and credentials in connection URLs → `[Filtered]`

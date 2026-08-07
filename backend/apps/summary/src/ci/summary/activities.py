@@ -4,30 +4,32 @@ Temporal activities for summary generation.
 Activities are retriable units of work that can fail and be retried.
 They are thin wrappers around pure functions and database operations.
 """
+
 import json
-import structlog
-import nest_asyncio
-from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
+from typing import Any
 from uuid import UUID, uuid4
+
+import nest_asyncio
+import structlog
 from temporalio import activity
 
 # Allow nested event loops (needed for run_sync() in async activity context)
 nest_asyncio.apply()
 
+from .action_aggregator import action_aggregator
 from .config import settings
 from .data_aggregator import aggregator
 from .database import db
 from .insight_aggregator import insight_aggregator
-from .action_aggregator import action_aggregator
-from .llm_config import LLMConfig, get_llm_config
+from .llm_config import get_llm_config
 from .summary_functions import (
-    generate_hourly_summary,
-    generate_rollup_summary,
-    generate_user_dossier,
-    generate_insights,
-    generate_single_insight,
     generate_actions,
+    generate_hourly_summary,
+    generate_insights,
+    generate_rollup_summary,
+    generate_single_insight,
+    generate_user_dossier,
 )
 
 logger = structlog.get_logger()
@@ -37,12 +39,13 @@ logger = structlog.get_logger()
 # Timezone / Window Activities
 # ============================================================================
 
+
 @activity.defn
 async def resolve_summary_window_activity(
     user_id: str,
-    period_type: str,    # 'daily' | 'weekly' | 'monthly'
+    period_type: str,  # 'daily' | 'weekly' | 'monthly'
     reference_iso: str,  # ISO timestamp, typically workflow.now()
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """
     Resolve the user-local ``[start, end)`` window (as UTC instants) and timezone
     for the last complete period before ``reference_iso``.
@@ -58,8 +61,11 @@ async def resolve_summary_window_activity(
     start, end = local_period_window(reference, tz, period_type)
     logger.info(
         "resolved_summary_window",
-        user_id=str(user_id)[:8], period=period_type, tz=tz,
-        start=start.isoformat(), end=end.isoformat(),
+        user_id=str(user_id)[:8],
+        period=period_type,
+        tz=tz,
+        start=start.isoformat(),
+        end=end.isoformat(),
     )
     return {
         "start_time": start.isoformat(),
@@ -72,19 +78,22 @@ async def resolve_summary_window_activity(
 # Data Aggregation Activities
 # ============================================================================
 
+
 @activity.defn
 async def aggregate_data_activity(
     user_id: str,
     start_time: str,  # ISO format
-    end_time: str,    # ISO format
-) -> Dict[str, Any]:
+    end_time: str,  # ISO format
+) -> dict[str, Any]:
     """
     Aggregate user activity data for a time period.
 
     This activity queries all configured data sources and returns
     aggregated data for summary generation.
     """
-    activity.logger.info("aggregating_data", user_id=user_id, start=start_time, end=end_time)
+    activity.logger.info(
+        "aggregating_data", user_id=user_id, start=start_time, end=end_time
+    )
 
     # Send heartbeat for long-running operation
     activity.heartbeat("Starting data aggregation")
@@ -106,7 +115,9 @@ async def aggregate_data_activity(
     activity.logger.info(
         "data_aggregated",
         user_id=user_id,
-        total_sources=len([k for k, v in aggregated_data.items() if isinstance(v, list) and v])
+        total_sources=len(
+            [k for k, v in aggregated_data.items() if isinstance(v, list) and v]
+        ),
     )
 
     return aggregated_data
@@ -116,10 +127,11 @@ async def aggregate_data_activity(
 # Summary Generation Activities
 # ============================================================================
 
+
 @activity.defn
 async def generate_hourly_summary_activity(
-    aggregated_data: Dict[str, Any],
-) -> Dict[str, Any]:
+    aggregated_data: dict[str, Any],
+) -> dict[str, Any]:
     """
     Generate hourly summary from aggregated data using LLM.
 
@@ -139,7 +151,7 @@ async def generate_hourly_summary_activity(
     activity.logger.info(
         "hourly_summary_generated",
         tokens_used=summary_data.get("tokens_used", 0),
-        has_activity=summary_data.get("activity_counts", {}).get("total", 0) > 0
+        has_activity=summary_data.get("activity_counts", {}).get("total", 0) > 0,
     )
 
     return summary_data
@@ -148,14 +160,18 @@ async def generate_hourly_summary_activity(
 @activity.defn
 async def generate_rollup_summary_activity(
     period_type: str,
-    child_summaries: List[Dict[str, Any]],
-) -> Dict[str, Any]:
+    child_summaries: list[dict[str, Any]],
+) -> dict[str, Any]:
     """
     Generate rollup summary (daily/weekly/monthly/seasonal/yearly).
 
     This activity synthesizes child summaries into a higher-level summary.
     """
-    activity.logger.info("generating_rollup_summary", period_type=period_type, child_count=len(child_summaries))
+    activity.logger.info(
+        "generating_rollup_summary",
+        period_type=period_type,
+        child_count=len(child_summaries),
+    )
     activity.heartbeat(f"Generating {period_type} summary")
 
     # Create LLM config
@@ -168,7 +184,7 @@ async def generate_rollup_summary_activity(
     activity.logger.info(
         "rollup_summary_generated",
         period_type=period_type,
-        tokens_used=summary_data.get("tokens_used", 0)
+        tokens_used=summary_data.get("tokens_used", 0),
     )
 
     return summary_data
@@ -178,10 +194,11 @@ async def generate_rollup_summary_activity(
 # Database Activities - Summaries
 # ============================================================================
 
+
 @activity.defn
 async def store_summary_activity(
     user_id: str,
-    summary_data: Dict[str, Any],
+    summary_data: dict[str, Any],
     start_time: str,
     end_time: str,
     timezone: str,
@@ -191,7 +208,9 @@ async def store_summary_activity(
 
     Returns the summary_id as a string.
     """
-    activity.logger.info("storing_summary", summary_type=summary_data.get("summary_type"))
+    activity.logger.info(
+        "storing_summary", summary_type=summary_data.get("summary_type")
+    )
     activity.heartbeat("Storing summary to database")
 
     user_uuid = UUID(user_id)
@@ -216,8 +235,7 @@ async def store_summary_activity(
     # Determine source types from activity counts
     activity_counts = summary_data.get("activity_counts", {})
     source_types = [
-        key for key, count in activity_counts.items()
-        if key != "total" and count > 0
+        key for key, count in activity_counts.items() if key != "total" and count > 0
     ]
 
     # Prepare embedding (use None if empty)
@@ -252,7 +270,9 @@ async def store_summary_activity(
     )
 
     activity.heartbeat("Summary stored")
-    activity.logger.info("summary_stored", summary_id=str(summary_id), type=summary_type)
+    activity.logger.info(
+        "summary_stored", summary_id=str(summary_id), type=summary_type
+    )
 
     return str(summary_id)
 
@@ -263,7 +283,7 @@ async def fetch_child_summaries_activity(
     start_time: str,
     end_time: str,
     period_type: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Fetch child summaries for rollup generation.
 
@@ -316,8 +336,9 @@ async def fetch_child_summaries_activity(
 # Database Activities - Dossier
 # ============================================================================
 
+
 @activity.defn
-async def get_entity_id_activity(user_id: str) -> Optional[str]:
+async def get_entity_id_activity(user_id: str) -> str | None:
     """
     Get or find entity_id for a user.
 
@@ -358,7 +379,7 @@ async def get_entity_id_activity(user_id: str) -> Optional[str]:
 
 
 @activity.defn
-async def fetch_previous_dossier_activity(entity_id: str) -> Optional[Dict[str, Any]]:
+async def fetch_previous_dossier_activity(entity_id: str) -> dict[str, Any] | None:
     """
     Fetch the previous dossier for an entity.
 
@@ -400,7 +421,7 @@ async def fetch_summaries_for_dossier_activity(
     user_id: str,
     lookback_days: int,
     end_time: str,
-) -> Dict[str, List[Dict[str, Any]]]:
+) -> dict[str, list[dict[str, Any]]]:
     """
     Fetch recent summaries for dossier generation.
 
@@ -453,11 +474,13 @@ async def fetch_summaries_for_dossier_activity(
         row["summary_text"] = row.get("content", {}).get("summary_text", "")
         row["activity_counts"] = row.get("content", {}).get("activity_counts", {})
 
-    activity.heartbeat(f"Found {len(daily_rows)} daily, {len(hourly_rows)} hourly summaries")
+    activity.heartbeat(
+        f"Found {len(daily_rows)} daily, {len(hourly_rows)} hourly summaries"
+    )
     activity.logger.info(
         "summaries_fetched_for_dossier",
         daily_count=len(daily_rows),
-        hourly_count=len(hourly_rows)
+        hourly_count=len(hourly_rows),
     )
 
     return {
@@ -469,13 +492,13 @@ async def fetch_summaries_for_dossier_activity(
 @activity.defn
 async def generate_dossier_activity(
     user_id: str,
-    daily_summaries: List[Dict[str, Any]],
-    hourly_summaries: List[Dict[str, Any]],
+    daily_summaries: list[dict[str, Any]],
+    hourly_summaries: list[dict[str, Any]],
     end_time: str,
     timezone: str,
     lookback_days: int,
-    previous_dossier: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+    previous_dossier: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """
     Generate user dossier from summaries using LLM.
 
@@ -484,7 +507,7 @@ async def generate_dossier_activity(
     activity.logger.info(
         "generating_dossier",
         daily_count=len(daily_summaries),
-        hourly_count=len(hourly_summaries)
+        hourly_count=len(hourly_summaries),
     )
     activity.heartbeat("Calling LLM for dossier generation")
 
@@ -516,7 +539,7 @@ async def generate_dossier_activity(
 @activity.defn
 async def store_dossier_activity(
     entity_id: str,
-    dossier: Dict[str, Any],
+    dossier: dict[str, Any],
 ) -> None:
     """
     Store dossier in the entities table.
@@ -541,6 +564,7 @@ async def store_dossier_activity(
 # Insight Generation Activities
 # ============================================================================
 
+
 @activity.defn
 async def check_new_data_for_insights_activity(
     user_id: str,
@@ -559,12 +583,14 @@ async def check_new_data_for_insights_activity(
 
     has_new_data = insight_aggregator.has_new_data(user_uuid, since_dt)
 
-    activity.logger.info("new_data_check_complete", user_id=user_id, has_new_data=has_new_data)
+    activity.logger.info(
+        "new_data_check_complete", user_id=user_id, has_new_data=has_new_data
+    )
     return has_new_data
 
 
 @activity.defn
-async def get_last_insight_time_activity(user_id: str) -> Optional[str]:
+async def get_last_insight_time_activity(user_id: str) -> str | None:
     """
     Get the timestamp of the last generated insight for this user.
 
@@ -577,7 +603,9 @@ async def get_last_insight_time_activity(user_id: str) -> Optional[str]:
     last_time = insight_aggregator.get_last_insight_time(user_uuid)
 
     if last_time:
-        activity.logger.info("last_insight_time_found", user_id=user_id, last_time=last_time.isoformat())
+        activity.logger.info(
+            "last_insight_time_found", user_id=user_id, last_time=last_time.isoformat()
+        )
         return last_time.isoformat()
 
     activity.logger.info("no_previous_insights", user_id=user_id)
@@ -589,21 +617,25 @@ async def aggregate_insights_context_activity(
     user_id: str,
     since: str,  # ISO format
     until: str,  # ISO format
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Aggregate all context needed for insight generation.
 
     Collects graph deltas, upcoming events, recent summaries,
     relevant relationships, and communications.
     """
-    activity.logger.info("aggregating_insights_context", user_id=user_id, since=since, until=until)
+    activity.logger.info(
+        "aggregating_insights_context", user_id=user_id, since=since, until=until
+    )
     activity.heartbeat("Aggregating insights context")
 
     user_uuid = UUID(user_id)
     since_dt = datetime.fromisoformat(since)
     until_dt = datetime.fromisoformat(until)
 
-    context = insight_aggregator.aggregate_insights_context(user_uuid, since_dt, until_dt)
+    context = insight_aggregator.aggregate_insights_context(
+        user_uuid, since_dt, until_dt
+    )
 
     activity.heartbeat("Insights context aggregated")
     activity.logger.info(
@@ -619,8 +651,8 @@ async def aggregate_insights_context_activity(
 
 @activity.defn
 async def generate_insights_activity(
-    insights_context: Dict[str, Any],
-) -> Dict[str, Any]:
+    insights_context: dict[str, Any],
+) -> dict[str, Any]:
     """
     Generate proactive insights from aggregated context using LLM.
 
@@ -671,9 +703,9 @@ async def generate_insights_activity(
 
 @activity.defn
 async def generate_single_insight_activity(
-    insights_context: Dict[str, Any],
-    prior_insights: List[Dict[str, Any]],
-) -> Dict[str, Any]:
+    insights_context: dict[str, Any],
+    prior_insights: list[dict[str, Any]],
+) -> dict[str, Any]:
     """
     Generate ONE insight, distinct from the prior ones (incremental generation).
 
@@ -682,9 +714,7 @@ async def generate_single_insight_activity(
     non-fatal: any insights already stored this run stay stored, and the loop
     simply ends.
     """
-    activity.logger.info(
-        "generating_single_insight num_prior=%d", len(prior_insights)
-    )
+    activity.logger.info("generating_single_insight num_prior=%d", len(prior_insights))
     activity.heartbeat("Calling LLM for single insight generation")
 
     llm_config = get_llm_config()
@@ -713,7 +743,7 @@ async def generate_single_insight_activity(
 async def aggregate_action_context_activity(
     user_id: str,
     lookback_days: int = 7,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Aggregate context needed for action card generation.
 
@@ -721,7 +751,9 @@ async def aggregate_action_context_activity(
     raw data like graph deltas. This produces higher-level context
     for conversation starters and time suggestions.
     """
-    activity.logger.info("aggregating_action_context", user_id=user_id, lookback_days=lookback_days)
+    activity.logger.info(
+        "aggregating_action_context", user_id=user_id, lookback_days=lookback_days
+    )
     activity.heartbeat("Aggregating action context")
 
     user_uuid = UUID(user_id)
@@ -743,8 +775,8 @@ async def aggregate_action_context_activity(
 
 @activity.defn
 async def generate_actions_activity(
-    action_context: Dict[str, Any],
-) -> Dict[str, Any]:
+    action_context: dict[str, Any],
+) -> dict[str, Any]:
     """
     Generate action cards from aggregated context using LLM.
 
@@ -819,8 +851,8 @@ async def count_pending_actions_activity(user_id: str) -> int:
 @activity.defn
 async def store_action_activity(
     user_id: str,
-    actions_data: Dict[str, Any],
-) -> List[str]:
+    actions_data: dict[str, Any],
+) -> list[str]:
     """
     Store generated actions in the ci.actions table.
 
@@ -842,8 +874,8 @@ async def store_action_activity(
     user_uuid = UUID(user_id)
 
     # Prepare all inserts for transaction
-    writes: List[tuple[str, Dict[str, Any]]] = []
-    action_ids: List[str] = []
+    writes: list[tuple[str, dict[str, Any]]] = []
+    action_ids: list[str] = []
 
     insert_query = """
         INSERT INTO ci.actions (
@@ -895,11 +927,11 @@ async def store_action_activity(
 @activity.defn
 async def store_insight_activity(
     user_id: str,
-    insights_data: Dict[str, Any],
+    insights_data: dict[str, Any],
     start_time: str,
     end_time: str,
     timezone: str,
-) -> List[str]:
+) -> list[str]:
     """
     Store generated insights as individual summaries with period_type='insight'.
 
@@ -922,15 +954,17 @@ async def store_insight_activity(
     start_dt = datetime.fromisoformat(start_time)
     end_dt = datetime.fromisoformat(end_time)
 
-    source_types = insights_data.get("data_sources_used", ["graph_deltas", "events", "summaries"])
+    source_types = insights_data.get(
+        "data_sources_used", ["graph_deltas", "events", "summaries"]
+    )
     total_tokens = insights_data.get("tokens_used", 0)
     tokens_per_insight = total_tokens // num_insights if num_insights > 0 else 0
     embedding = insights_data.get("embedding", [])
     embedding_value = json.dumps(embedding) if embedding else None
 
     # Prepare all inserts for transaction
-    writes: List[tuple[str, Dict[str, Any]]] = []
-    summary_ids: List[str] = []
+    writes: list[tuple[str, dict[str, Any]]] = []
+    summary_ids: list[str] = []
 
     insert_query = """
         INSERT INTO ci.summaries (
@@ -1009,26 +1043,26 @@ async def store_insight_activity(
 
 
 __all__ = [
-    "aggregate_data_activity",
-    "generate_hourly_summary_activity",
-    "generate_rollup_summary_activity",
-    "store_summary_activity",
-    "fetch_child_summaries_activity",
-    "get_entity_id_activity",
-    "fetch_previous_dossier_activity",
-    "fetch_summaries_for_dossier_activity",
-    "generate_dossier_activity",
-    "store_dossier_activity",
-    # Insight activities
-    "check_new_data_for_insights_activity",
-    "get_last_insight_time_activity",
-    "aggregate_insights_context_activity",
-    "generate_insights_activity",
-    "generate_single_insight_activity",
-    "store_insight_activity",
     # Action activities
     "aggregate_action_context_activity",
-    "generate_actions_activity",
+    "aggregate_data_activity",
+    "aggregate_insights_context_activity",
+    # Insight activities
+    "check_new_data_for_insights_activity",
     "count_pending_actions_activity",
+    "fetch_child_summaries_activity",
+    "fetch_previous_dossier_activity",
+    "fetch_summaries_for_dossier_activity",
+    "generate_actions_activity",
+    "generate_dossier_activity",
+    "generate_hourly_summary_activity",
+    "generate_insights_activity",
+    "generate_rollup_summary_activity",
+    "generate_single_insight_activity",
+    "get_entity_id_activity",
+    "get_last_insight_time_activity",
     "store_action_activity",
+    "store_dossier_activity",
+    "store_insight_activity",
+    "store_summary_activity",
 ]

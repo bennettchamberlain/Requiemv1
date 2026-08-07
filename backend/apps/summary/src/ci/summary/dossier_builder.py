@@ -1,8 +1,9 @@
 """Utilities to synthesize a compact user dossier."""
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any
 from uuid import UUID
 
 import structlog
@@ -27,16 +28,20 @@ class UserDossierBuilder:
         period_end: datetime,
         timezone: str,
         *,
-        lookback_override: Optional[int] = None,
-        previous_dossier: Optional[Dict[str, Any]] = None,
-    ) -> Optional[Dict[str, Any]]:
+        lookback_override: int | None = None,
+        previous_dossier: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
         lookback_days = max(1, lookback_override or self._lookback_days)
         window_end = period_end
         daily_window_start = window_end - timedelta(days=lookback_days)
         hourly_window_start = window_end - timedelta(days=1)
 
-        daily_summaries = self._get_summaries(user_id, daily_window_start, window_end, "daily")
-        hourly_summaries = self._get_summaries(user_id, hourly_window_start, window_end, "hourly")
+        daily_summaries = self._get_summaries(
+            user_id, daily_window_start, window_end, "daily"
+        )
+        hourly_summaries = self._get_summaries(
+            user_id, hourly_window_start, window_end, "hourly"
+        )
 
         if not daily_summaries and not hourly_summaries:
             logger.info(
@@ -48,9 +53,11 @@ class UserDossierBuilder:
             return None
 
         context_payload = daily_summaries[-30:]
-        logger.info("generating_dossier_from_llm",
-                   daily_count=len(context_payload),
-                   hourly_count=len(hourly_summaries[-24:]))
+        logger.info(
+            "generating_dossier_from_llm",
+            daily_count=len(context_payload),
+            hourly_count=len(hourly_summaries[-24:]),
+        )
 
         dossier = summarizer.generate_user_dossier(
             user_id=str(user_id),
@@ -80,9 +87,12 @@ class UserDossierBuilder:
 
         return dossier
 
-    def _get_summaries(self, user_id: UUID, start: datetime, end: datetime, period_type: str) -> list:
+    def _get_summaries(
+        self, user_id: UUID, start: datetime, end: datetime, period_type: str
+    ) -> list:
         """Get summaries from database."""
         import json
+
         rows = db.execute_query(
             """
             SELECT summary_id, content, period_start, period_end
@@ -93,7 +103,12 @@ class UserDossierBuilder:
               AND period_start < :end
             ORDER BY period_start
             """,
-            {"user_id": str(user_id), "period_type": period_type, "start": start, "end": end},
+            {
+                "user_id": str(user_id),
+                "period_type": period_type,
+                "start": start,
+                "end": end,
+            },
         )
         # Parse content
         for row in rows:

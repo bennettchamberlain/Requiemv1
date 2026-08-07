@@ -4,10 +4,12 @@ Data aggregation for proactive insights generation.
 Collects context from graph deltas, relationships, events, summaries,
 and communications to enable LLM-powered insight generation.
 """
-import structlog
-from typing import Dict, List, Any, Optional
+
 from datetime import datetime, timedelta
+from typing import Any
 from uuid import UUID
+
+import structlog
 
 from .database import db
 
@@ -21,8 +23,8 @@ class InsightAggregator:
         self,
         user_id: UUID,
         since: datetime,
-        until: Optional[datetime] = None,
-    ) -> Dict[str, Any]:
+        until: datetime | None = None,
+    ) -> dict[str, Any]:
         """
         Aggregate all context needed for insight generation.
 
@@ -53,14 +55,18 @@ class InsightAggregator:
         context["graph_deltas"] = self._get_graph_deltas(user_id, since, until)
         context["upcoming_events"] = self._get_upcoming_events(user_id, days=14)
         context["recent_summaries"] = self._get_recent_summaries(user_id, since, until)
-        context["strongest_relationships"] = self._get_strongest_relationships(user_id, limit=3)
-        context["recently_changed_relationships"] = self._get_recently_changed_relationships(
-            user_id, since, limit=5
+        context["strongest_relationships"] = self._get_strongest_relationships(
+            user_id, limit=3
         )
-        context["event_relevant_relationships"] = self._get_event_relevant_relationships(
-            user_id, days=14, limit=5
+        context["recently_changed_relationships"] = (
+            self._get_recently_changed_relationships(user_id, since, limit=5)
         )
-        context["recent_communications"] = self._get_recent_communications(user_id, since, until)
+        context["event_relevant_relationships"] = (
+            self._get_event_relevant_relationships(user_id, days=14, limit=5)
+        )
+        context["recent_communications"] = self._get_recent_communications(
+            user_id, since, until
+        )
         context["user_dossier"] = self._get_user_dossier(user_id)
 
         # Log summary of what we collected
@@ -71,7 +77,9 @@ class InsightAggregator:
             upcoming_events=len(context["upcoming_events"]),
             recent_summaries=len(context["recent_summaries"]),
             strongest_relationships=len(context["strongest_relationships"]),
-            recently_changed_relationships=len(context["recently_changed_relationships"]),
+            recently_changed_relationships=len(
+                context["recently_changed_relationships"]
+            ),
             event_relevant_relationships=len(context["event_relevant_relationships"]),
             recent_communications=len(context["recent_communications"]),
             has_dossier=context["user_dossier"] is not None,
@@ -102,7 +110,7 @@ class InsightAggregator:
         result = db.execute_query(query, {"user_id": str(user_id), "since": since})
         return result[0]["has_new_data"] if result else False
 
-    def get_last_insight_time(self, user_id: UUID) -> Optional[datetime]:
+    def get_last_insight_time(self, user_id: UUID) -> datetime | None:
         """Get the timestamp of the last generated insight for this user."""
         query = """
         SELECT MAX(created_at) as last_insight
@@ -116,7 +124,7 @@ class InsightAggregator:
 
     def _get_graph_deltas(
         self, user_id: UUID, since: datetime, until: datetime
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get recent graph deltas (entity and relationship changes)."""
         query = """
         SELECT
@@ -143,7 +151,9 @@ class InsightAggregator:
             query, {"user_id": str(user_id), "since": since, "until": until}
         )
 
-    def _get_upcoming_events(self, user_id: UUID, days: int = 14) -> List[Dict[str, Any]]:
+    def _get_upcoming_events(
+        self, user_id: UUID, days: int = 14
+    ) -> list[dict[str, Any]]:
         """Get events in the next N days."""
         now = datetime.utcnow()
         future = now + timedelta(days=days)
@@ -173,7 +183,7 @@ class InsightAggregator:
 
     def _get_recent_summaries(
         self, user_id: UUID, since: datetime, until: datetime
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get recent activity summaries (excluding insights)."""
         query = """
         SELECT
@@ -199,7 +209,7 @@ class InsightAggregator:
 
     def _get_strongest_relationships(
         self, user_id: UUID, limit: int = 3
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get top relationships by strength."""
         query = """
         SELECT
@@ -223,7 +233,7 @@ class InsightAggregator:
 
     def _get_recently_changed_relationships(
         self, user_id: UUID, since: datetime, limit: int = 5
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get relationships that were recently created or modified (from graph_deltas)."""
         query = """
         SELECT DISTINCT ON (d.relationship_id)
@@ -250,7 +260,7 @@ class InsightAggregator:
 
     def _get_event_relevant_relationships(
         self, user_id: UUID, days: int = 14, limit: int = 5
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get relationships to people connected to upcoming events."""
         now = datetime.utcnow()
         future = now + timedelta(days=days)
@@ -289,7 +299,7 @@ class InsightAggregator:
 
     def _get_recent_communications(
         self, user_id: UUID, since: datetime, until: datetime
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get recent communications (emails, messages, etc.)."""
         query = """
         SELECT
@@ -311,7 +321,7 @@ class InsightAggregator:
             query, {"user_id": str(user_id), "since": since, "until": until}
         )
 
-    def _get_user_dossier(self, user_id: UUID) -> Optional[Dict[str, Any]]:
+    def _get_user_dossier(self, user_id: UUID) -> dict[str, Any] | None:
         """Get the user's dossier from their entity record."""
         # First, get the user's entity_id from the users table
         user_query = """
@@ -339,4 +349,4 @@ class InsightAggregator:
 # Global instance
 insight_aggregator = InsightAggregator()
 
-__all__ = ["insight_aggregator", "InsightAggregator"]
+__all__ = ["InsightAggregator", "insight_aggregator"]

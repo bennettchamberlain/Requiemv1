@@ -4,9 +4,11 @@ Temporal worker for summary service.
 The worker connects to Temporal server, registers workflows and activities,
 and polls for work to execute.
 """
-import sys
-import signal
+
 import asyncio
+import signal
+import sys
+
 import structlog
 from temporalio.client import Client
 from temporalio.worker import Worker
@@ -15,61 +17,60 @@ from temporalio.worker.workflow_sandbox import (
     SandboxRestrictions,
 )
 
-from .config import settings
-from .telemetry import init_telemetry
-from .llm_config import get_llm_config
-from .database import db
-from .agent_registration import agent_registration
-
-# Import workflows
-from .workflows import (
-    HourlySummaryWorkflow,
-    DailySummaryWorkflow,
-    WeeklySummaryWorkflow,
-    MonthlySummaryWorkflow,
-    SeasonalSummaryWorkflow,
-    YearlySummaryWorkflow,
-    DossierRefreshWorkflow,
-    InsightsGenerationWorkflow,
-    ActionsGenerationWorkflow,
+# Import activities
+from .activities import (
+    # Action activities
+    aggregate_action_context_activity,
+    aggregate_data_activity,
+    aggregate_insights_context_activity,
+    # Insight activities
+    check_new_data_for_insights_activity,
+    count_pending_actions_activity,
+    fetch_child_summaries_activity,
+    fetch_previous_dossier_activity,
+    fetch_summaries_for_dossier_activity,
+    generate_actions_activity,
+    generate_dossier_activity,
+    generate_hourly_summary_activity,
+    generate_insights_activity,
+    generate_rollup_summary_activity,
+    generate_single_insight_activity,
+    get_entity_id_activity,
+    get_last_insight_time_activity,
+    resolve_summary_window_activity,
+    store_action_activity,
+    store_dossier_activity,
+    store_insight_activity,
+    store_summary_activity,
 )
+from .agent_registration import agent_registration
+from .config import settings
+from .database import db
+from .llm_config import get_llm_config
 
 # Import system workflows
 from .system_workflows import (
-    SystemHourlySummariesWorkflow,
-    SystemDailySummariesWorkflow,
-    SystemWeeklySummariesWorkflow,
-    SystemMonthlySummariesWorkflow,
-    SystemDossierRefreshWorkflow,
-    SystemInsightsWorkflow,
     SystemActionsWorkflow,
+    SystemDailySummariesWorkflow,
+    SystemDossierRefreshWorkflow,
+    SystemHourlySummariesWorkflow,
+    SystemInsightsWorkflow,
+    SystemMonthlySummariesWorkflow,
+    SystemWeeklySummariesWorkflow,
 )
+from .telemetry import init_telemetry
 
-# Import activities
-from .activities import (
-    resolve_summary_window_activity,
-    aggregate_data_activity,
-    generate_hourly_summary_activity,
-    generate_rollup_summary_activity,
-    store_summary_activity,
-    fetch_child_summaries_activity,
-    get_entity_id_activity,
-    fetch_previous_dossier_activity,
-    fetch_summaries_for_dossier_activity,
-    generate_dossier_activity,
-    store_dossier_activity,
-    # Insight activities
-    check_new_data_for_insights_activity,
-    get_last_insight_time_activity,
-    aggregate_insights_context_activity,
-    generate_insights_activity,
-    generate_single_insight_activity,
-    store_insight_activity,
-    # Action activities
-    aggregate_action_context_activity,
-    generate_actions_activity,
-    count_pending_actions_activity,
-    store_action_activity,
+# Import workflows
+from .workflows import (
+    ActionsGenerationWorkflow,
+    DailySummaryWorkflow,
+    DossierRefreshWorkflow,
+    HourlySummaryWorkflow,
+    InsightsGenerationWorkflow,
+    MonthlySummaryWorkflow,
+    SeasonalSummaryWorkflow,
+    WeeklySummaryWorkflow,
+    YearlySummaryWorkflow,
 )
 
 # Configure structured logging
@@ -83,7 +84,7 @@ structlog.configure(
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
         structlog.processors.UnicodeDecoder(),
-        structlog.processors.JSONRenderer()
+        structlog.processors.JSONRenderer(),
     ],
     context_class=dict,
     logger_factory=structlog.stdlib.LoggerFactory(),
@@ -116,9 +117,11 @@ async def run_worker():
     """Run the Temporal worker with multiple priority queues."""
     global _worker, _client
 
-    logger.info("temporal_worker_starting",
-               version=settings.agent_version,
-               model=settings.llm_model or "auto-discover")
+    logger.info(
+        "temporal_worker_starting",
+        version=settings.agent_version,
+        model=settings.llm_model or "auto-discover",
+    )
 
     try:
         # Create LLM config once at startup
@@ -231,15 +234,17 @@ async def run_worker():
             workflow_runner=workflow_runner,
         )
 
-        logger.info("workers_configured",
-                   workflows=len(all_workflows),
-                   activities=len(all_activities),
-                   high_queue=settings.task_queue_high,
-                   medium_queue=settings.task_queue_medium,
-                   low_queue=settings.task_queue_low,
-                   high_concurrency=settings.max_concurrent_activities_high,
-                   medium_concurrency=settings.max_concurrent_activities_medium,
-                   low_concurrency=settings.max_concurrent_activities_low)
+        logger.info(
+            "workers_configured",
+            workflows=len(all_workflows),
+            activities=len(all_activities),
+            high_queue=settings.task_queue_high,
+            medium_queue=settings.task_queue_medium,
+            low_queue=settings.task_queue_low,
+            high_concurrency=settings.max_concurrent_activities_high,
+            medium_concurrency=settings.max_concurrent_activities_medium,
+            low_concurrency=settings.max_concurrent_activities_low,
+        )
 
         # Register agent with control plane
         try:

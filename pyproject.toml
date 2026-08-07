@@ -37,6 +37,7 @@ required-version = ">=0.9"
 
 [tool.uv.workspace]
 members = [
+    "backend/apps/summary",
     "backend/packages/*",
 ]
 
@@ -74,7 +75,6 @@ include = ["*.py", "*.pyi", "**/pyproject.toml"]
 # defaults, which is how .venv and node_modules end up being scanned.
 extend-exclude = [
     "backend/apps/hbpe",
-    "backend/apps/summary",
 ]
 
 [tool.ruff.lint]
@@ -101,6 +101,24 @@ ignore = [
 [tool.ruff.lint.isort]
 known-first-party = ["ci"]
 
+# FastAPI's parameter declarations are calls in argument defaults by
+# design, which is exactly what B008 exists to catch everywhere else.
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = [
+    "fastapi.Body",
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Header",
+    "fastapi.Path",
+    "fastapi.Query",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# nest_asyncio.apply() has to run before the modules below are imported,
+# so this import block is deliberately split in two.
+"backend/apps/summary/src/ci/summary/activities.py" = ["E402"]
+
 # ── Mypy ─────────────────────────────────────────────────────────────
 # Strict by default, so new code is born typed. Services that predate the
 # workspace are relaxed by module rather than by path, so the exemption
@@ -115,10 +133,52 @@ strict = true
 namespace_packages = true
 explicit_package_bases = true
 warn_unused_configs = true
-files = []
+
+# Both lists grow as members join. mypy_path is what makes a file resolve
+# to ci.summary.config rather than a path-derived module name, which is
+# what the per-module overrides below have to match.
+mypy_path = [
+    "backend/apps/summary/src",
+]
+files = [
+    "backend/apps/summary/src",
+]
+
+[[tool.mypy.overrides]]
+# Quarantine, not a clean bill of health. ci-summary predates the workspace
+# and reports 41 errors under even a relaxed configuration, most of them
+# genuine (unguarded Optional access, values assigned across incompatible
+# types). Suppressing the module keeps it analyzed, so code that imports
+# from it still type-checks against real signatures, without holding the
+# migration hostage to a typing cleanup.
+#
+# This entry is debt. Narrow it to specific modules as they are annotated,
+# and delete it when the last one goes green.
+module = ["ci.summary.*"]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+# Third-party packages that ship no type information.
+module = [
+    "markitdown.*",
+    "nest_asyncio.*",
+    "structlog.*",
+]
+ignore_missing_imports = true
 
 # ── Pytest ───────────────────────────────────────────────────────────
 
 [tool.pytest.ini_options]
-testpaths = ["backend"]
+# Grows as each member joins. Not simply "backend": hbpe is not a member
+# yet and one of its tests does sys.path.insert(0, <hbpe>/src), which makes
+# `import ci` resolve to hbpe's regular package instead of the shared
+# namespace and breaks every ci.* import for the rest of the session. That
+# hack goes away in the commit that adopts hbpe.
+testpaths = ["backend/apps/summary/tests"]
 asyncio_default_fixture_loop_scope = "function"
+
+# importlib import mode, because members have test files that share a
+# basename (every service has a tests/test_telemetry.py). Under the
+# default mode those collide on module name and collection fails, since
+# the tests directories are deliberately not packages.
+addopts = ["--import-mode=importlib"]

@@ -1,11 +1,11 @@
 """
 Agent registration in the CI-Server agents table.
 """
+
 import json
 import uuid
+
 import structlog
-from typing import Optional
-from datetime import datetime
 
 from .config import resolve_llm_model, settings
 from .database import db
@@ -15,10 +15,10 @@ logger = structlog.get_logger()
 
 class AgentRegistration:
     """Handles agent registration and lifecycle in the agents table."""
-    
+
     def __init__(self):
-        self.agent_id: Optional[uuid.UUID] = None
-    
+        self.agent_id: uuid.UUID | None = None
+
     def register(self) -> uuid.UUID:
         """
         Register this agent in the agents table.
@@ -31,97 +31,76 @@ class AgentRegistration:
             FROM agents 
             WHERE agent_name = :agent_name
             """,
-            {"agent_name": settings.agent_name}
+            {"agent_name": settings.agent_name},
         )
-        
+
         if existing_agent:
-            self.agent_id = existing_agent[0]['agent_id']
-            
+            self.agent_id = existing_agent[0]["agent_id"]
+
             # Update to active if it was inactive
-            if not existing_agent[0]['is_active']:
+            if not existing_agent[0]["is_active"]:
                 db.execute_write(
                     """
                     UPDATE agents 
                     SET is_active = true, updated_at = NOW()
                     WHERE agent_id = :agent_id
                     """,
-                    {"agent_id": self.agent_id}
+                    {"agent_id": self.agent_id},
                 )
                 logger.info("agent_reactivated", agent_id=str(self.agent_id))
             else:
                 logger.info("agent_already_registered", agent_id=str(self.agent_id))
-            
+
             return self.agent_id
-        
+
         # Create new agent registration
         self.agent_id = uuid.uuid4()
-        
+
         configuration = {
             "type": "temporal_summarization",
             "summarization_levels": ["hourly", "daily", "weekly"],
             "data_sources": [
                 "measurements",
-                "position", 
+                "position",
                 "communications",
                 "activities",
                 "events",
                 "messages",
                 "files",
-                "api_logs"
+                "api_logs",
             ],
             "llm_config": {
                 "model": resolve_llm_model(),
                 "temperature": settings.llm_temperature,
-                "max_tokens": settings.llm_max_tokens
-            }
+                "max_tokens": settings.llm_max_tokens,
+            },
         }
-        
+
         input_schema = {
             "type": "object",
             "properties": {
                 "task_type": {
                     "type": "string",
-                    "enum": ["hourly_summary", "daily_summary", "weekly_summary"]
+                    "enum": ["hourly_summary", "daily_summary", "weekly_summary"],
                 },
-                "user_id": {
-                    "type": "string",
-                    "format": "uuid"
-                },
-                "start_time": {
-                    "type": "string",
-                    "format": "date-time"
-                },
-                "end_time": {
-                    "type": "string",
-                    "format": "date-time"
-                }
+                "user_id": {"type": "string", "format": "uuid"},
+                "start_time": {"type": "string", "format": "date-time"},
+                "end_time": {"type": "string", "format": "date-time"},
             },
-            "required": ["task_type", "user_id", "start_time", "end_time"]
+            "required": ["task_type", "user_id", "start_time", "end_time"],
         }
-        
+
         output_schema = {
             "type": "object",
             "properties": {
-                "summary_id": {
-                    "type": "string",
-                    "format": "uuid"
-                },
-                "summary_type": {
-                    "type": "string"
-                },
-                "summary_text": {
-                    "type": "string"
-                },
-                "key_insights": {
-                    "type": "array",
-                    "items": {"type": "string"}
-                },
-                "activity_counts": {
-                    "type": "object"
-                }
-            }
+                "summary_id": {"type": "string", "format": "uuid"},
+                "summary_type": {"type": "string"},
+                "summary_text": {"type": "string"},
+                "key_insights": {"type": "array", "items": {"type": "string"}},
+                "activity_counts": {"type": "object"},
+            },
         }
-        
+
         db.execute_write(
             """
             INSERT INTO agents (
@@ -144,16 +123,18 @@ class AgentRegistration:
                 ),
                 "input_schema": json.dumps(input_schema),
                 "output_schema": json.dumps(output_schema),
-            }
+            },
         )
-        
-        logger.info("agent_registered", 
-                   agent_id=str(self.agent_id),
-                   agent_name=settings.agent_name,
-                   version=settings.agent_version)
-        
+
+        logger.info(
+            "agent_registered",
+            agent_id=str(self.agent_id),
+            agent_name=settings.agent_name,
+            version=settings.agent_version,
+        )
+
         return self.agent_id
-    
+
     def deregister(self):
         """Mark agent as inactive (soft delete)."""
         if self.agent_id:
@@ -163,15 +144,15 @@ class AgentRegistration:
                 SET is_active = false, updated_at = NOW()
                 WHERE agent_id = :agent_id
                 """,
-                {"agent_id": self.agent_id}
+                {"agent_id": self.agent_id},
             )
             logger.info("agent_deregistered", agent_id=str(self.agent_id))
-    
+
     def update_metrics(self, success: bool, execution_time_ms: int):
         """Update agent performance metrics."""
         if not self.agent_id:
             return
-        
+
         db.execute_write(
             """
             UPDATE agents 
@@ -189,8 +170,8 @@ class AgentRegistration:
             {
                 "agent_id": self.agent_id,
                 "success": success,
-                "execution_time_ms": execution_time_ms
-            }
+                "execution_time_ms": execution_time_ms,
+            },
         )
 
 

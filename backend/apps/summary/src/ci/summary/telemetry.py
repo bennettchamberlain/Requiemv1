@@ -14,12 +14,14 @@ No PII is ever sent (``send_default_pii=False``) and every payload passes
 through :func:`scrub_event` first. Mirrors the contract implemented in
 TypeScript at ``backend/apps/api/src/common/telemetry/``.
 """
+
 from __future__ import annotations
 
 import logging
 import os
 import re
-from typing import Any, Mapping, Optional
+from collections.abc import Mapping
+from typing import Any
 
 COMPONENT = "ci-server-summary"
 
@@ -28,7 +30,10 @@ _TRUTHY = {"on", "true", "1", "yes", "enabled"}
 
 _SECRET_PATTERNS = [
     re.compile(r"Bearer\s+[A-Za-z0-9\-._~+/]+=*", re.IGNORECASE),
-    re.compile(r"(?:api[-_ ]?key|token|password|secret|jwt|auth)[\s=:\"']+[^\s\"',}\]]+", re.IGNORECASE),
+    re.compile(
+        r"(?:api[-_ ]?key|token|password|secret|jwt|auth)[\s=:\"']+[^\s\"',}\]]+",
+        re.IGNORECASE,
+    ),
     re.compile(r"tskey-[A-Za-z0-9-]+", re.IGNORECASE),
     # Connection URLs carry credentials in the authority section.
     re.compile(r"\b[a-z][a-z0-9+.\-]*://[^\s:@/]+:[^\s@/]+@", re.IGNORECASE),
@@ -38,10 +43,10 @@ _SECRET_PATTERNS = [
 # `C:/Users/<name>`, and replacing that leaves a stranded `C:~/…` with the drive
 # letter still attached. The longest-prefix forms have to win.
 _HOME_PATTERNS = [
-    re.compile(r"[A-Za-z]:\\Users\\[^\\/\s]+"),     # Windows (backslash)
-    re.compile(r"[A-Za-z]:/Users/[^/\s]+"),         # Windows (forward-slash)
-    re.compile(r"/Users/[^/\s]+"),                  # macOS
-    re.compile(r"/home/[^/\s]+"),                   # Linux
+    re.compile(r"[A-Za-z]:\\Users\\[^\\/\s]+"),  # Windows (backslash)
+    re.compile(r"[A-Za-z]:/Users/[^/\s]+"),  # Windows (forward-slash)
+    re.compile(r"/Users/[^/\s]+"),  # macOS
+    re.compile(r"/home/[^/\s]+"),  # Linux
 ]
 
 _SENSITIVE_KEY = re.compile(
@@ -63,6 +68,7 @@ def _is_sensitive_key(key: str) -> bool:
     """Single predicate so credential and identity coverage cannot diverge."""
     return bool(_SENSITIVE_KEY.search(key) or _IDENTITY_KEY.search(key))
 
+
 _MAX_STRING_LENGTH = 8000
 
 # Headers and breadcrumb keys whose value is a URL — the query string carries
@@ -74,12 +80,12 @@ _URL_VALUED_KEYS = {"url", "from", "to"}
 _initialized = False
 
 
-def _read(env: Mapping[str, str], key: str) -> Optional[str]:
+def _read(env: Mapping[str, str], key: str) -> str | None:
     value = env.get(key, "").strip()
     return value or None
 
 
-def is_enabled(env: Optional[Mapping[str, str]] = None) -> bool:
+def is_enabled(env: Mapping[str, str] | None = None) -> bool:
     """Whether reporting should initialise for this process."""
     env = os.environ if env is None else env
 
@@ -121,7 +127,9 @@ def _scrub_value(value: Any, depth: int = 0) -> Any:
 
     if isinstance(value, dict):
         return {
-            key: "[Filtered]" if _is_sensitive_key(str(key)) else _scrub_value(nested, depth + 1)
+            key: "[Filtered]"
+            if _is_sensitive_key(str(key))
+            else _scrub_value(nested, depth + 1)
             for key, nested in value.items()
         }
 
@@ -131,7 +139,7 @@ def _scrub_value(value: Any, depth: int = 0) -> Any:
     return value
 
 
-def scrub_event(event: dict, _hint: Optional[dict] = None) -> Optional[dict]:
+def scrub_event(event: dict, _hint: dict | None = None) -> dict | None:
     """``before_send`` hook — redact credentials and home paths."""
     if not isinstance(event, dict):
         return event
@@ -173,7 +181,8 @@ def scrub_event(event: dict, _hint: Optional[dict] = None) -> Optional[dict]:
                     lines = frame.get(key)
                     if isinstance(lines, list):
                         frame[key] = [
-                            scrub_string(line) if isinstance(line, str) else line for line in lines
+                            scrub_string(line) if isinstance(line, str) else line
+                            for line in lines
                         ]
                 if frame.get("vars") is not None:
                     frame["vars"] = _scrub_value(frame["vars"])
@@ -248,7 +257,9 @@ def init_telemetry(component: str = COMPONENT) -> bool:
         return False
 
     version = _read(os.environ, "CI_SERVER_VERSION")
-    release = _read(os.environ, "SENTRY_RELEASE") or (f"{component}@{version}" if version else None)
+    release = _read(os.environ, "SENTRY_RELEASE") or (
+        f"{component}@{version}" if version else None
+    )
 
     try:
         sentry_sdk.init(
@@ -275,7 +286,7 @@ def init_telemetry(component: str = COMPONENT) -> bool:
 
         if version:
             sentry_sdk.set_tag("deployment_version", version)
-    except Exception:  # noqa: BLE001 - reporting must never break startup
+    except Exception:
         logging.getLogger(__name__).warning(
             "Sentry initialisation failed; continuing with error reporting disabled",
             exc_info=True,

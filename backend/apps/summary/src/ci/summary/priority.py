@@ -5,17 +5,20 @@ Generic priority system shared across all services (summary, agents, etc).
 Provides utilities for setting workflow priority and helpers for
 executing workflows on the appropriate task queue.
 """
+
 from enum import Enum
-from typing import Optional
 
 from .config import settings
 
 
-class Priority(str, Enum):
+# Deliberately (str, Enum) rather than StrEnum: these values are formatted
+# into Temporal task queue names, and the two differ in what str() returns.
+class Priority(str, Enum):  # noqa: UP042
     """Workflow priority levels (shared across all systems)."""
-    HIGH = "high"      # User-facing, immediate response needed
+
+    HIGH = "high"  # User-facing, immediate response needed
     MEDIUM = "medium"  # Automated background work
-    LOW = "low"        # Long-running batch operations
+    LOW = "low"  # Long-running batch operations
 
 
 def get_task_queue(priority: Priority = Priority.MEDIUM) -> str:
@@ -80,7 +83,7 @@ def get_workflow_priority(workflow_type: str, is_manual: bool = False) -> Priori
 
 __all__ = [
     "Priority",
-    "get_task_queue",
     "get_max_concurrent_activities",
+    "get_task_queue",
     "get_workflow_priority",
 ]

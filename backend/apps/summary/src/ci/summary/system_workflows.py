@@ -4,24 +4,26 @@ System-level workflows that process all users.
 These workflows run on a schedule and process all active users,
 rather than having per-user schedules.
 """
-from typing import List, Dict, Any
-from datetime import datetime, timedelta, timezone
+
+from datetime import timedelta
+from typing import Any
+
 from temporalio import workflow
 from temporalio.common import RetryPolicy
 
 with workflow.unsafe.imports_passed_through():
+    from .activities import resolve_summary_window_activity
     from .database import db
     from .priority import Priority, get_task_queue
-    from .activities import resolve_summary_window_activity
     from .workflows import (
-        HourlySummaryWorkflow,
-        DailySummaryWorkflow,
-        WeeklySummaryWorkflow,
-        MonthlySummaryWorkflow,
-        DossierRefreshWorkflow,
-        InsightsGenerationWorkflow,
-        ActionsGenerationWorkflow,
         DEFAULT_MAX_FEED_ACTIONS,
+        ActionsGenerationWorkflow,
+        DailySummaryWorkflow,
+        DossierRefreshWorkflow,
+        HourlySummaryWorkflow,
+        InsightsGenerationWorkflow,
+        MonthlySummaryWorkflow,
+        WeeklySummaryWorkflow,
     )
 
 
@@ -47,7 +49,7 @@ class SystemHourlySummariesWorkflow:
     """
 
     @workflow.run
-    async def run(self) -> Dict[str, Any]:
+    async def run(self) -> dict[str, Any]:
         """Execute hourly summaries for all users."""
         workflow.logger.info("system_hourly_summaries_started")
 
@@ -79,9 +81,13 @@ class SystemHourlySummariesWorkflow:
                     id=f"hourly-{user_id}-{end_time.isoformat()}",
                     task_queue=get_task_queue(Priority.MEDIUM),
                 )
-                results.append({"user_id": user_id, "status": "success", "result": result})
+                results.append(
+                    {"user_id": user_id, "status": "success", "result": result}
+                )
             except Exception as e:
-                workflow.logger.error(f"hourly_summary_failed user_id={user_id} error={str(e)}")
+                workflow.logger.error(
+                    f"hourly_summary_failed user_id={user_id} error={e!s}"
+                )
                 results.append({"user_id": user_id, "status": "error", "error": str(e)})
 
         workflow.logger.info(f"system_hourly_summaries_completed total={len(users)}")
@@ -93,18 +99,17 @@ class SystemHourlySummariesWorkflow:
             "results": results,
         }
 
-    async def _get_active_users(self) -> List[str]:
+    async def _get_active_users(self) -> list[str]:
         """Get all active users from database."""
         # Use workflow.execute_activity for database queries
         # For now, we'll use a simple approach - query users table
         try:
             # Try ci.users first (new schema)
             rows = db.execute_query(
-                "SELECT id FROM ci.users WHERE onboarded = true",
-                {}
+                "SELECT id FROM ci.users WHERE onboarded = true", {}
             )
             if rows:
-                return [str(row['id']) for row in rows]
+                return [str(row["id"]) for row in rows]
         except Exception:
             pass
 
@@ -112,9 +117,9 @@ class SystemHourlySummariesWorkflow:
             # Fallback to entities table
             rows = db.execute_query(
                 "SELECT DISTINCT owner_user_id FROM entities WHERE owner_user_id IS NOT NULL",
-                {}
+                {},
             )
-            return [str(row['owner_user_id']) for row in rows]
+            return [str(row["owner_user_id"]) for row in rows]
         except Exception:
             workflow.logger.warning("failed_to_fetch_users")
             return []
@@ -125,7 +130,7 @@ class SystemDailySummariesWorkflow:
     """System workflow that generates daily summaries for all active users."""
 
     @workflow.run
-    async def run(self) -> Dict[str, Any]:
+    async def run(self) -> dict[str, Any]:
         """Execute daily summaries for all users."""
         workflow.logger.info("system_daily_summaries_started")
 
@@ -147,16 +152,24 @@ class SystemDailySummariesWorkflow:
                     args=[user_id, "daily", now.isoformat()],
                     **get_activity_options(),
                 )
-                start_iso, end_iso, tz = window["start_time"], window["end_time"], window["timezone"]
+                start_iso, end_iso, tz = (
+                    window["start_time"],
+                    window["end_time"],
+                    window["timezone"],
+                )
                 result = await workflow.execute_child_workflow(
                     DailySummaryWorkflow.run,
                     args=[user_id, start_iso, end_iso, tz, None],
                     id=f"daily-{user_id}-{end_iso}",
                     task_queue=get_task_queue(Priority.MEDIUM),
                 )
-                results.append({"user_id": user_id, "status": "success", "result": result})
+                results.append(
+                    {"user_id": user_id, "status": "success", "result": result}
+                )
             except Exception as e:
-                workflow.logger.error(f"daily_summary_failed user_id={user_id} error={str(e)}")
+                workflow.logger.error(
+                    f"daily_summary_failed user_id={user_id} error={e!s}"
+                )
                 results.append({"user_id": user_id, "status": "error", "error": str(e)})
 
         workflow.logger.info(f"system_daily_summaries_completed total={len(users)}")
@@ -166,24 +179,23 @@ class SystemDailySummariesWorkflow:
             "results": results,
         }
 
-    async def _get_active_users(self) -> List[str]:
+    async def _get_active_users(self) -> list[str]:
         """Get all active users from database."""
         try:
             rows = db.execute_query(
-                "SELECT id FROM ci.users WHERE onboarded = true",
-                {}
+                "SELECT id FROM ci.users WHERE onboarded = true", {}
             )
             if rows:
-                return [str(row['id']) for row in rows]
+                return [str(row["id"]) for row in rows]
         except Exception:
             pass
 
         try:
             rows = db.execute_query(
                 "SELECT DISTINCT owner_user_id FROM entities WHERE owner_user_id IS NOT NULL",
-                {}
+                {},
             )
-            return [str(row['owner_user_id']) for row in rows]
+            return [str(row["owner_user_id"]) for row in rows]
         except Exception:
             workflow.logger.warning("failed_to_fetch_users")
             return []
@@ -194,7 +206,7 @@ class SystemWeeklySummariesWorkflow:
     """System workflow that generates weekly summaries for all active users."""
 
     @workflow.run
-    async def run(self) -> Dict[str, Any]:
+    async def run(self) -> dict[str, Any]:
         """Execute weekly summaries for all users."""
         workflow.logger.info("system_weekly_summaries_started")
 
@@ -213,8 +225,12 @@ class SystemWeeklySummariesWorkflow:
                     args=[user_id, "weekly", now.isoformat()],
                     **get_activity_options(),
                 )
-                start_iso, end_iso, tz = window["start_time"], window["end_time"], window["timezone"]
-                result = await workflow.execute_child_workflow(
+                start_iso, end_iso, tz = (
+                    window["start_time"],
+                    window["end_time"],
+                    window["timezone"],
+                )
+                await workflow.execute_child_workflow(
                     WeeklySummaryWorkflow.run,
                     args=[user_id, start_iso, end_iso, tz, None],
                     id=f"weekly-{user_id}-{end_iso}",
@@ -222,23 +238,28 @@ class SystemWeeklySummariesWorkflow:
                 )
                 results.append({"user_id": user_id, "status": "success"})
             except Exception as e:
-                workflow.logger.error(f"weekly_summary_failed user_id={user_id} error={str(e)}")
+                workflow.logger.error(
+                    f"weekly_summary_failed user_id={user_id} error={e!s}"
+                )
                 results.append({"user_id": user_id, "status": "error", "error": str(e)})
 
         return {"users_processed": len(users), "results": results}
 
-    async def _get_active_users(self) -> List[str]:
+    async def _get_active_users(self) -> list[str]:
         try:
-            rows = db.execute_query("SELECT id FROM ci.users WHERE onboarded = true", {})
+            rows = db.execute_query(
+                "SELECT id FROM ci.users WHERE onboarded = true", {}
+            )
             if rows:
-                return [str(row['id']) for row in rows]
+                return [str(row["id"]) for row in rows]
         except Exception:
             pass
         try:
             rows = db.execute_query(
-                "SELECT DISTINCT owner_user_id FROM entities WHERE owner_user_id IS NOT NULL", {}
+                "SELECT DISTINCT owner_user_id FROM entities WHERE owner_user_id IS NOT NULL",
+                {},
             )
-            return [str(row['owner_user_id']) for row in rows]
+            return [str(row["owner_user_id"]) for row in rows]
         except Exception:
             return []
 
@@ -248,7 +269,7 @@ class SystemMonthlySummariesWorkflow:
     """System workflow that generates monthly summaries for all active users."""
 
     @workflow.run
-    async def run(self) -> Dict[str, Any]:
+    async def run(self) -> dict[str, Any]:
         """Execute monthly summaries for all users."""
         workflow.logger.info("system_monthly_summaries_started")
 
@@ -267,8 +288,12 @@ class SystemMonthlySummariesWorkflow:
                     args=[user_id, "monthly", now.isoformat()],
                     **get_activity_options(),
                 )
-                start_iso, end_iso, tz = window["start_time"], window["end_time"], window["timezone"]
-                result = await workflow.execute_child_workflow(
+                start_iso, end_iso, tz = (
+                    window["start_time"],
+                    window["end_time"],
+                    window["timezone"],
+                )
+                await workflow.execute_child_workflow(
                     MonthlySummaryWorkflow.run,
                     args=[user_id, start_iso, end_iso, tz, None],
                     id=f"monthly-{user_id}-{end_iso}",
@@ -276,23 +301,28 @@ class SystemMonthlySummariesWorkflow:
                 )
                 results.append({"user_id": user_id, "status": "success"})
             except Exception as e:
-                workflow.logger.error(f"monthly_summary_failed user_id={user_id} error={str(e)}")
+                workflow.logger.error(
+                    f"monthly_summary_failed user_id={user_id} error={e!s}"
+                )
                 results.append({"user_id": user_id, "status": "error", "error": str(e)})
 
         return {"users_processed": len(users), "results": results}
 
-    async def _get_active_users(self) -> List[str]:
+    async def _get_active_users(self) -> list[str]:
         try:
-            rows = db.execute_query("SELECT id FROM ci.users WHERE onboarded = true", {})
+            rows = db.execute_query(
+                "SELECT id FROM ci.users WHERE onboarded = true", {}
+            )
             if rows:
-                return [str(row['id']) for row in rows]
+                return [str(row["id"]) for row in rows]
         except Exception:
             pass
         try:
             rows = db.execute_query(
-                "SELECT DISTINCT owner_user_id FROM entities WHERE owner_user_id IS NOT NULL", {}
+                "SELECT DISTINCT owner_user_id FROM entities WHERE owner_user_id IS NOT NULL",
+                {},
             )
-            return [str(row['owner_user_id']) for row in rows]
+            return [str(row["owner_user_id"]) for row in rows]
         except Exception:
             return []
 
@@ -302,7 +332,7 @@ class SystemDossierRefreshWorkflow:
     """System workflow that refreshes dossiers for all active users."""
 
     @workflow.run
-    async def run(self) -> Dict[str, Any]:
+    async def run(self) -> dict[str, Any]:
         """Execute dossier refresh for all users."""
         workflow.logger.info("system_dossier_refresh_started")
 
@@ -315,7 +345,7 @@ class SystemDossierRefreshWorkflow:
         results = []
         for user_id in users:
             try:
-                result = await workflow.execute_child_workflow(
+                await workflow.execute_child_workflow(
                     DossierRefreshWorkflow.run,
                     args=[user_id, now.isoformat(), "UTC", 30, None],
                     id=f"dossier-{user_id}-{now.isoformat()}",
@@ -323,23 +353,28 @@ class SystemDossierRefreshWorkflow:
                 )
                 results.append({"user_id": user_id, "status": "success"})
             except Exception as e:
-                workflow.logger.error(f"dossier_refresh_failed user_id={user_id} error={str(e)}")
+                workflow.logger.error(
+                    f"dossier_refresh_failed user_id={user_id} error={e!s}"
+                )
                 results.append({"user_id": user_id, "status": "error", "error": str(e)})
 
         return {"users_processed": len(users), "results": results}
 
-    async def _get_active_users(self) -> List[str]:
+    async def _get_active_users(self) -> list[str]:
         try:
-            rows = db.execute_query("SELECT id FROM ci.users WHERE onboarded = true", {})
+            rows = db.execute_query(
+                "SELECT id FROM ci.users WHERE onboarded = true", {}
+            )
             if rows:
-                return [str(row['id']) for row in rows]
+                return [str(row["id"]) for row in rows]
         except Exception:
             pass
         try:
             rows = db.execute_query(
-                "SELECT DISTINCT owner_user_id FROM entities WHERE owner_user_id IS NOT NULL", {}
+                "SELECT DISTINCT owner_user_id FROM entities WHERE owner_user_id IS NOT NULL",
+                {},
             )
-            return [str(row['owner_user_id']) for row in rows]
+            return [str(row["owner_user_id"]) for row in rows]
         except Exception:
             return []
 
@@ -354,7 +389,7 @@ class SystemInsightsWorkflow:
     """
 
     @workflow.run
-    async def run(self) -> Dict[str, Any]:
+    async def run(self) -> dict[str, Any]:
         """Execute insights generation for all users."""
         workflow.logger.info("system_insights_started")
 
@@ -385,21 +420,27 @@ class SystemInsightsWorkflow:
 
                 if result.get("skipped"):
                     skipped_count += 1
-                    results.append({
-                        "user_id": user_id,
-                        "status": "skipped",
-                        "reason": result.get("reason"),
-                    })
+                    results.append(
+                        {
+                            "user_id": user_id,
+                            "status": "skipped",
+                            "reason": result.get("reason"),
+                        }
+                    )
                 else:
                     generated_count += 1
-                    results.append({
-                        "user_id": user_id,
-                        "status": "success",
-                        "summary_ids": result.get("summary_ids"),
-                        "num_insights": result.get("num_insights"),
-                    })
+                    results.append(
+                        {
+                            "user_id": user_id,
+                            "status": "success",
+                            "summary_ids": result.get("summary_ids"),
+                            "num_insights": result.get("num_insights"),
+                        }
+                    )
             except Exception as e:
-                workflow.logger.error(f"insights_generation_failed user_id={user_id} error={str(e)}")
+                workflow.logger.error(
+                    f"insights_generation_failed user_id={user_id} error={e!s}"
+                )
                 results.append({"user_id": user_id, "status": "error", "error": str(e)})
 
         workflow.logger.info(
@@ -414,19 +455,22 @@ class SystemInsightsWorkflow:
             "results": results,
         }
 
-    async def _get_active_users(self) -> List[str]:
+    async def _get_active_users(self) -> list[str]:
         """Get all active users from database."""
         try:
-            rows = db.execute_query("SELECT id FROM ci.users WHERE onboarded = true", {})
+            rows = db.execute_query(
+                "SELECT id FROM ci.users WHERE onboarded = true", {}
+            )
             if rows:
-                return [str(row['id']) for row in rows]
+                return [str(row["id"]) for row in rows]
         except Exception:
             pass
         try:
             rows = db.execute_query(
-                "SELECT DISTINCT owner_user_id FROM entities WHERE owner_user_id IS NOT NULL", {}
+                "SELECT DISTINCT owner_user_id FROM entities WHERE owner_user_id IS NOT NULL",
+                {},
             )
-            return [str(row['owner_user_id']) for row in rows]
+            return [str(row["owner_user_id"]) for row in rows]
         except Exception:
             workflow.logger.warning("failed_to_fetch_users")
             return []
@@ -444,7 +488,9 @@ class SystemActionsWorkflow:
     """
 
     @workflow.run
-    async def run(self, max_feed_actions: int = DEFAULT_MAX_FEED_ACTIONS) -> Dict[str, Any]:
+    async def run(
+        self, max_feed_actions: int = DEFAULT_MAX_FEED_ACTIONS
+    ) -> dict[str, Any]:
         """Execute actions generation for all users."""
         workflow.logger.info("system_actions_started")
 
@@ -476,21 +522,27 @@ class SystemActionsWorkflow:
 
                 if result.get("skipped"):
                     skipped_count += 1
-                    results.append({
-                        "user_id": user_id,
-                        "status": "skipped",
-                        "reason": result.get("reason"),
-                    })
+                    results.append(
+                        {
+                            "user_id": user_id,
+                            "status": "skipped",
+                            "reason": result.get("reason"),
+                        }
+                    )
                 else:
                     generated_count += 1
-                    results.append({
-                        "user_id": user_id,
-                        "status": "success",
-                        "action_ids": result.get("action_ids"),
-                        "num_actions": result.get("num_actions"),
-                    })
+                    results.append(
+                        {
+                            "user_id": user_id,
+                            "status": "success",
+                            "action_ids": result.get("action_ids"),
+                            "num_actions": result.get("num_actions"),
+                        }
+                    )
             except Exception as e:
-                workflow.logger.error(f"actions_generation_failed user_id={user_id} error={str(e)}")
+                workflow.logger.error(
+                    f"actions_generation_failed user_id={user_id} error={e!s}"
+                )
                 results.append({"user_id": user_id, "status": "error", "error": str(e)})
 
         workflow.logger.info(
@@ -505,30 +557,33 @@ class SystemActionsWorkflow:
             "results": results,
         }
 
-    async def _get_active_users(self) -> List[str]:
+    async def _get_active_users(self) -> list[str]:
         """Get all active users from database."""
         try:
-            rows = db.execute_query("SELECT id FROM ci.users WHERE onboarded = true", {})
+            rows = db.execute_query(
+                "SELECT id FROM ci.users WHERE onboarded = true", {}
+            )
             if rows:
-                return [str(row['id']) for row in rows]
+                return [str(row["id"]) for row in rows]
         except Exception:
             pass
         try:
             rows = db.execute_query(
-                "SELECT DISTINCT owner_user_id FROM entities WHERE owner_user_id IS NOT NULL", {}
+                "SELECT DISTINCT owner_user_id FROM entities WHERE owner_user_id IS NOT NULL",
+                {},
             )
-            return [str(row['owner_user_id']) for row in rows]
+            return [str(row["owner_user_id"]) for row in rows]
         except Exception:
             workflow.logger.warning("failed_to_fetch_users")
             return []
 
 
 __all__ = [
-    "SystemHourlySummariesWorkflow",
-    "SystemDailySummariesWorkflow",
-    "SystemWeeklySummariesWorkflow",
-    "SystemMonthlySummariesWorkflow",
-    "SystemDossierRefreshWorkflow",
-    "SystemInsightsWorkflow",
     "SystemActionsWorkflow",
+    "SystemDailySummariesWorkflow",
+    "SystemDossierRefreshWorkflow",
+    "SystemHourlySummariesWorkflow",
+    "SystemInsightsWorkflow",
+    "SystemMonthlySummariesWorkflow",
+    "SystemWeeklySummariesWorkflow",
 ]

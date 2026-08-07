@@ -3,18 +3,18 @@ FastAPI endpoints for manual summary triggers.
 
 Simple HTTP layer - delegates to summaries.py for execution logic.
 """
-import uuid
-import nest_asyncio
-from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
 
+import uuid
+from datetime import datetime, timedelta
+from typing import Any
+
+import nest_asyncio
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from . import __version__, workflow_control
 from .data_aggregator import aggregator
 from .telemetry import init_telemetry
-from . import workflow_control
-from . import __version__
 
 # No-op unless SENTRY_DSN is set — see telemetry.py.
 init_telemetry()
@@ -33,13 +33,18 @@ app = FastAPI(
 # Manual summary triggers
 # ============================================================================
 
+
 class ManualSummaryRequest(BaseModel):
     user_id: str = Field(description="User UUID")
-    period_type: str = Field(default="hourly", description="hourly|daily|weekly|monthly|dossier")
-    start_time: Optional[str] = Field(default=None, description="ISO start time")
-    end_time: Optional[str] = Field(default=None, description="ISO end time")
+    period_type: str = Field(
+        default="hourly", description="hourly|daily|weekly|monthly|dossier"
+    )
+    start_time: str | None = Field(default=None, description="ISO start time")
+    end_time: str | None = Field(default=None, description="ISO end time")
     timezone: str = Field(default="UTC", description="Timezone")
-    lookback_days: Optional[int] = Field(default=None, description="For dossier: lookback days")
+    lookback_days: int | None = Field(
+        default=None, description="For dossier: lookback days"
+    )
 
 
 async def _trigger_summary_workflow(
@@ -48,8 +53,8 @@ async def _trigger_summary_workflow(
     start_time: str,
     end_time: str,
     timezone: str,
-    lookback_days: Optional[int] = None,
-) -> Dict[str, Any]:
+    lookback_days: int | None = None,
+) -> dict[str, Any]:
     """
     Trigger summary generation workflow via Temporal.
 
@@ -57,6 +62,7 @@ async def _trigger_summary_workflow(
     with proper durability, retries, and visibility.
     """
     from temporalio.client import Client
+
     from .config import settings
     from .priority import Priority, get_task_queue
 
@@ -100,7 +106,7 @@ async def _trigger_summary_workflow(
 
 
 @app.post("/summary/manual-trigger")
-async def manual_trigger_summary(request: ManualSummaryRequest) -> Dict[str, Any]:
+async def manual_trigger_summary(request: ManualSummaryRequest) -> dict[str, Any]:
     """Manually trigger summary generation via Temporal workflow."""
     try:
         user_id = uuid.UUID(request.user_id)
@@ -136,25 +142,31 @@ async def manual_trigger_summary(request: ManualSummaryRequest) -> Dict[str, Any
             "status": "success",
             "message": f"{request.period_type.title()} summary generated",
             "result": result,
-            "time_range": {"start": start_time.isoformat(), "end": end_time.isoformat()},
+            "time_range": {
+                "start": start_time.isoformat(),
+                "end": end_time.isoformat(),
+            },
         }
 
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Generation failed: {str(exc)}") from exc
+        raise HTTPException(
+            status_code=500, detail=f"Generation failed: {exc!s}"
+        ) from exc
 
 
 # ============================================================================
 # Dossier endpoints
 # ============================================================================
 
+
 class DossierRefreshRequest(BaseModel):
     user_id: str = Field(description="User UUID")
-    start_time: Optional[str] = None
-    end_time: Optional[str] = None
+    start_time: str | None = None
+    end_time: str | None = None
     timezone: str = Field(default="UTC")
-    lookback_days: Optional[int] = None
+    lookback_days: int | None = None
 
 
 class DossierFetchRequest(BaseModel):
@@ -162,7 +174,7 @@ class DossierFetchRequest(BaseModel):
 
 
 @app.post("/dossier/refresh")
-async def refresh_dossier(request: DossierRefreshRequest) -> Dict[str, Any]:
+async def refresh_dossier(request: DossierRefreshRequest) -> dict[str, Any]:
     """Manually refresh user dossier via Temporal workflow."""
     try:
         user_id = uuid.UUID(request.user_id)
@@ -192,7 +204,7 @@ async def refresh_dossier(request: DossierRefreshRequest) -> Dict[str, Any]:
 
 
 @app.post("/dossier/get")
-async def get_dossier(request: DossierFetchRequest) -> Dict[str, Any]:
+async def get_dossier(request: DossierFetchRequest) -> dict[str, Any]:
     """Fetch current user dossier."""
     try:
         user_id = uuid.UUID(request.user_id)
@@ -223,10 +235,13 @@ async def get_dossier(request: DossierFetchRequest) -> Dict[str, Any]:
 # Insights endpoints
 # ============================================================================
 
+
 class InsightsRequest(BaseModel):
     user_id: str = Field(description="User UUID")
     timezone: str = Field(default="UTC", description="User's timezone")
-    lookback_hours: Optional[int] = Field(default=72, description="Hours to look back for context (default 72)")
+    lookback_hours: int | None = Field(
+        default=72, description="Hours to look back for context (default 72)"
+    )
 
 
 async def _trigger_insights_workflow(
@@ -234,17 +249,19 @@ async def _trigger_insights_workflow(
     timezone: str,
     lookback_hours: int,
     force: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Trigger the InsightsGenerationWorkflow via Temporal.
 
     This ensures all insight generation goes through the same code path
     with proper durability, retries, and visibility.
     """
+    from datetime import datetime
+
     from temporalio.client import Client
+
     from .config import settings
     from .priority import Priority, get_task_queue
-    from datetime import datetime
 
     client = await Client.connect(
         settings.temporal_address,
@@ -264,7 +281,6 @@ async def _trigger_insights_workflow(
 
     return result
 
-
     return result
 
 
@@ -272,15 +288,17 @@ async def _trigger_actions_workflow(
     user_id: str,
     timezone: str,
     lookback_hours: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Trigger the ActionsGenerationWorkflow via Temporal.
     """
+    import math
+    from datetime import datetime
+
     from temporalio.client import Client
+
     from .config import settings
     from .priority import Priority, get_task_queue
-    from datetime import datetime
-    import math
 
     client = await Client.connect(
         settings.temporal_address,
@@ -304,7 +322,7 @@ async def _trigger_actions_workflow(
 
 
 @app.post("/insights/generate")
-async def generate_insights(request: InsightsRequest) -> Dict[str, Any]:
+async def generate_insights(request: InsightsRequest) -> dict[str, Any]:
     """
     Manually trigger proactive insights generation.
 
@@ -349,11 +367,13 @@ async def generate_insights(request: InsightsRequest) -> Dict[str, Any]:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Insights generation failed: {str(exc)}") from exc
+        raise HTTPException(
+            status_code=500, detail=f"Insights generation failed: {exc!s}"
+        ) from exc
 
 
 @app.post("/insights/force-generate")
-async def force_generate_insights(request: InsightsRequest) -> Dict[str, Any]:
+async def force_generate_insights(request: InsightsRequest) -> dict[str, Any]:
     """
     Force insights generation even if no new data.
 
@@ -390,11 +410,13 @@ async def force_generate_insights(request: InsightsRequest) -> Dict[str, Any]:
         }
 
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Insights generation failed: {str(exc)}") from exc
+        raise HTTPException(
+            status_code=500, detail=f"Insights generation failed: {exc!s}"
+        ) from exc
 
 
 @app.post("/actions/generate")
-async def generate_actions_endpoint(request: InsightsRequest) -> Dict[str, Any]:
+async def generate_actions_endpoint(request: InsightsRequest) -> dict[str, Any]:
     """
     Manually trigger proactive actions generation.
 
@@ -414,7 +436,7 @@ async def generate_actions_endpoint(request: InsightsRequest) -> Dict[str, Any]:
     # I need to create ActionsGenerationWorkflow in workflows.py first.
     # Since I haven't done that yet, I'll return a placeholder or implement the workflow trigger.
     # I will implement the workflow trigger, assuming I will create the workflow next.
-    
+
     try:
         # Trigger workflow
         # Need to define a new workflow in workflows.py and a helper here
@@ -432,15 +454,18 @@ async def generate_actions_endpoint(request: InsightsRequest) -> Dict[str, Any]:
         }
 
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Actions generation failed: {str(exc)}") from exc
+        raise HTTPException(
+            status_code=500, detail=f"Actions generation failed: {exc!s}"
+        ) from exc
 
 
 # ============================================================================
 # Aggregate preview (for debugging)
 # ============================================================================
 
+
 @app.get("/summary/aggregate")
-async def get_aggregate_preview(request: ManualSummaryRequest) -> Dict[str, Any]:
+async def get_aggregate_preview(request: ManualSummaryRequest) -> dict[str, Any]:
     """Get aggregated data preview (no summary generation)."""
     try:
         user_id = uuid.UUID(request.user_id)
@@ -448,7 +473,11 @@ async def get_aggregate_preview(request: ManualSummaryRequest) -> Dict[str, Any]
         raise HTTPException(status_code=400, detail=f"Invalid user_id: {exc}") from exc
 
     end_time = _parse_iso(request.end_time) if request.end_time else datetime.utcnow()
-    start_time = _parse_iso(request.start_time) if request.start_time else end_time - timedelta(hours=1)
+    start_time = (
+        _parse_iso(request.start_time)
+        if request.start_time
+        else end_time - timedelta(hours=1)
+    )
 
     aggregated = aggregator.aggregate_hour(user_id, start_time, end_time)
     return {
@@ -463,23 +492,26 @@ async def get_aggregate_preview(request: ManualSummaryRequest) -> Dict[str, Any]
 # Workflow Control (for LLM resource management)
 # ============================================================================
 
+
 class CancelWorkflowsRequest(BaseModel):
-    workflow_types: Optional[list[str]] = Field(
+    workflow_types: list[str] | None = Field(
         default=None,
-        description="Workflow types to cancel (hourly, daily, weekly, monthly, dossier). If None, cancels all."
+        description="Workflow types to cancel (hourly, daily, weekly, monthly, dossier). If None, cancels all.",
     )
 
 
 class CancelUserWorkflowsRequest(BaseModel):
     user_id: str = Field(description="User ID whose workflows to cancel")
-    workflow_types: Optional[list[str]] = Field(
+    workflow_types: list[str] | None = Field(
         default=None,
-        description="Workflow types to cancel. If None, cancels all user workflows."
+        description="Workflow types to cancel. If None, cancels all user workflows.",
     )
 
 
 @app.post("/workflows/cancel-system")
-async def cancel_system_workflows_endpoint(request: CancelWorkflowsRequest) -> Dict[str, Any]:
+async def cancel_system_workflows_endpoint(
+    request: CancelWorkflowsRequest,
+) -> dict[str, Any]:
     """
     Cancel running system workflows to free up LLM resources for high-priority work.
 
@@ -494,11 +526,15 @@ async def cancel_system_workflows_endpoint(request: CancelWorkflowsRequest) -> D
             "results": results,
         }
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Cancellation failed: {str(exc)}") from exc
+        raise HTTPException(
+            status_code=500, detail=f"Cancellation failed: {exc!s}"
+        ) from exc
 
 
 @app.post("/workflows/cancel-user")
-async def cancel_user_workflows_endpoint(request: CancelUserWorkflowsRequest) -> Dict[str, Any]:
+async def cancel_user_workflows_endpoint(
+    request: CancelUserWorkflowsRequest,
+) -> dict[str, Any]:
     """
     Cancel running workflows for a specific user.
 
@@ -511,8 +547,7 @@ async def cancel_user_workflows_endpoint(request: CancelUserWorkflowsRequest) ->
 
     try:
         results = await workflow_control.cancel_user_workflows(
-            str(user_id_uuid),
-            request.workflow_types
+            str(user_id_uuid), request.workflow_types
         )
         return {
             "status": "success",
@@ -520,11 +555,13 @@ async def cancel_user_workflows_endpoint(request: CancelUserWorkflowsRequest) ->
             "results": results,
         }
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Cancellation failed: {str(exc)}") from exc
+        raise HTTPException(
+            status_code=500, detail=f"Cancellation failed: {exc!s}"
+        ) from exc
 
 
 @app.get("/workflows/status")
-async def get_workflow_status() -> Dict[str, Any]:
+async def get_workflow_status() -> dict[str, Any]:
     """
     Get information about currently running workflows.
 
@@ -537,14 +574,17 @@ async def get_workflow_status() -> Dict[str, Any]:
             "workflows": workflow_counts,
         }
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Status fetch failed: {str(exc)}") from exc
+        raise HTTPException(
+            status_code=500, detail=f"Status fetch failed: {exc!s}"
+        ) from exc
 
 
 # ============================================================================
 # Helpers
 # ============================================================================
 
-def _parse_iso(iso_str: Optional[str]) -> datetime:
+
+def _parse_iso(iso_str: str | None) -> datetime:
     """Parse ISO timestamp."""
     if not iso_str:
         return datetime.utcnow()

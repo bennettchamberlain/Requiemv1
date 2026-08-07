@@ -10,7 +10,7 @@ import os
 import re
 import tempfile
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from markitdown import MarkItDown
@@ -40,9 +40,9 @@ SUPPORTED_MIME_TYPES = {
 
 class Section(BaseModel):
     sectionId: str
-    title: Optional[str] = None
+    title: str | None = None
     text: str
-    metadata: Dict[str, Any] = {}
+    metadata: dict[str, Any] = {}
 
 
 class ParserInfo(BaseModel):
@@ -52,14 +52,14 @@ class ParserInfo(BaseModel):
 
 class ParsedDocument(BaseModel):
     parser: ParserInfo
-    title: Optional[str] = None
-    language: Optional[str] = None
-    sections: List[Section]
-    warnings: List[str]
+    title: str | None = None
+    language: str | None = None
+    sections: list[Section]
+    warnings: list[str]
 
 
 @app.get("/health")
-def health() -> Dict[str, str]:
+def health() -> dict[str, str]:
     return {"status": "ok", "version": PARSER_VERSION}
 
 
@@ -81,7 +81,7 @@ async def parse_file(
         )
 
     suffix = _extension_for_mime(mime_type)
-    warnings: List[str] = []
+    warnings: list[str] = []
 
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp_path = tmp.name
@@ -116,7 +116,7 @@ async def parse_file(
             os.unlink(tmp_path)
 
 
-def _split_into_sections(markdown: str, warnings: List[str]) -> List[Section]:
+def _split_into_sections(markdown: str, warnings: list[str]) -> list[Section]:
     """
     Split markdown text into sections based on heading boundaries.
 
@@ -138,7 +138,7 @@ def _split_into_sections(markdown: str, warnings: List[str]) -> List[Section]:
             )
         ]
 
-    sections: List[Section] = []
+    sections: list[Section] = []
 
     if matches[0].start() > 0:
         preamble = markdown[: matches[0].start()].strip()
@@ -175,7 +175,7 @@ def _split_into_sections(markdown: str, warnings: List[str]) -> List[Section]:
     return sections
 
 
-def _extract_title(sections: List[Section]) -> Optional[str]:
+def _extract_title(sections: list[Section]) -> str | None:
     for section in sections:
         if section.title:
             return section.title

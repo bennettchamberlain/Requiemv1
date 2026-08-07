@@ -8,10 +8,12 @@ Actions are different from insights:
 - Insights are observations about patterns and connections
 - Actions are conversation starters and proactive suggestions for the user's time
 """
-import structlog
-from typing import Dict, List, Any, Optional
+
 from datetime import datetime, timedelta
+from typing import Any
 from uuid import UUID
+
+import structlog
 
 from .database import db
 
@@ -25,7 +27,7 @@ class ActionAggregator:
         self,
         user_id: UUID,
         lookback_days: int = 7,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Aggregate context needed for action generation.
 
@@ -82,7 +84,7 @@ class ActionAggregator:
 
         return context
 
-    def _get_user_dossier(self, user_id: UUID) -> Optional[Dict[str, Any]]:
+    def _get_user_dossier(self, user_id: UUID) -> dict[str, Any] | None:
         """Get the user's dossier from their entity record."""
         user_query = """
         SELECT entity_id FROM ci.users WHERE id = :user_id
@@ -106,7 +108,7 @@ class ActionAggregator:
 
     def _get_recent_summaries(
         self, user_id: UUID, since: datetime
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get recent daily and weekly summaries."""
         query = """
         SELECT
@@ -129,7 +131,7 @@ class ActionAggregator:
 
     def _get_recent_insights(
         self, user_id: UUID, since: datetime
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get recent insights that were generated."""
         query = """
         SELECT
@@ -148,7 +150,9 @@ class ActionAggregator:
         """
         return db.execute_query(query, {"user_id": str(user_id), "since": since})
 
-    def _get_upcoming_events(self, user_id: UUID, days: int = 7) -> List[Dict[str, Any]]:
+    def _get_upcoming_events(
+        self, user_id: UUID, days: int = 7
+    ) -> list[dict[str, Any]]:
         """Get events in the next N days."""
         now = datetime.utcnow()
         future = now + timedelta(days=days)
@@ -175,7 +179,7 @@ class ActionAggregator:
             query, {"user_id": str(user_id), "now": now, "future": future}
         )
 
-    def _get_key_people(self, user_id: UUID, limit: int = 5) -> List[Dict[str, Any]]:
+    def _get_key_people(self, user_id: UUID, limit: int = 5) -> list[dict[str, Any]]:
         """Get the user's key relationships for conversation suggestions."""
         query = """
         SELECT
@@ -198,4 +202,4 @@ class ActionAggregator:
 # Global instance
 action_aggregator = ActionAggregator()
 
-__all__ = ["action_aggregator", "ActionAggregator"]
+__all__ = ["ActionAggregator", "action_aggregator"]

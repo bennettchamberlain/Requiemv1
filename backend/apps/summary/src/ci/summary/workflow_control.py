@@ -4,9 +4,9 @@ Workflow control utilities for managing running workflows.
 Provides functions to cancel background summarization workflows when
 high-priority LLM work needs to be executed.
 """
+
 import structlog
-from typing import List, Optional
-from temporalio.client import Client, WorkflowHandle
+from temporalio.client import Client
 from temporalio.service import RPCError
 
 from .config import settings
@@ -14,9 +14,7 @@ from .config import settings
 logger = structlog.get_logger()
 
 
-async def cancel_system_workflows(
-    workflow_types: Optional[List[str]] = None
-) -> dict:
+async def cancel_system_workflows(workflow_types: list[str] | None = None) -> dict:
     """
     Cancel running system workflows to free up LLM resources.
 
@@ -68,30 +66,29 @@ async def cancel_system_workflows(
                 results["not_found"].append(workflow_id)
                 logger.debug("workflow_not_running", workflow_id=workflow_id)
             else:
-                results["errors"].append({
-                    "workflow_id": workflow_id,
-                    "error": str(e)
-                })
-                logger.error("workflow_cancel_failed", workflow_id=workflow_id, error=str(e))
+                results["errors"].append({"workflow_id": workflow_id, "error": str(e)})
+                logger.error(
+                    "workflow_cancel_failed", workflow_id=workflow_id, error=str(e)
+                )
 
         except Exception as e:
-            results["errors"].append({
-                "workflow_id": workflow_id,
-                "error": str(e)
-            })
-            logger.error("workflow_cancel_failed", workflow_id=workflow_id, error=str(e))
+            results["errors"].append({"workflow_id": workflow_id, "error": str(e)})
+            logger.error(
+                "workflow_cancel_failed", workflow_id=workflow_id, error=str(e)
+            )
 
-    logger.info("system_workflow_cancellation_complete",
-                cancelled=len(results["cancelled"]),
-                not_found=len(results["not_found"]),
-                errors=len(results["errors"]))
+    logger.info(
+        "system_workflow_cancellation_complete",
+        cancelled=len(results["cancelled"]),
+        not_found=len(results["not_found"]),
+        errors=len(results["errors"]),
+    )
 
     return results
 
 
 async def cancel_user_workflows(
-    user_id: str,
-    workflow_types: Optional[List[str]] = None
+    user_id: str, workflow_types: list[str] | None = None
 ) -> dict:
     """
     Cancel running workflows for a specific user.
@@ -115,7 +112,15 @@ async def cancel_user_workflows(
 
     # Default to all workflow types if not specified
     if workflow_types is None:
-        workflow_types = ["hourly", "daily", "weekly", "monthly", "seasonal", "yearly", "dossier"]
+        workflow_types = [
+            "hourly",
+            "daily",
+            "weekly",
+            "monthly",
+            "seasonal",
+            "yearly",
+            "dossier",
+        ]
 
     results = {
         "cancelled": [],
@@ -124,7 +129,9 @@ async def cancel_user_workflows(
     }
 
     # List all running workflows and filter by user
-    async for workflow in client.list_workflows(f'WorkflowType STARTS_WITH "{workflow_types[0]}-"'):
+    async for workflow in client.list_workflows(
+        f'WorkflowType STARTS_WITH "{workflow_types[0]}-"'
+    ):
         workflow_id = workflow.id
 
         # Check if this workflow is for the specified user
@@ -135,22 +142,25 @@ async def cancel_user_workflows(
                 await handle.cancel()
 
                 results["cancelled"].append(workflow_id)
-                logger.info("user_workflow_cancelled", workflow_id=workflow_id, user_id=user_id)
+                logger.info(
+                    "user_workflow_cancelled", workflow_id=workflow_id, user_id=user_id
+                )
 
             except Exception as e:
-                results["errors"].append({
-                    "workflow_id": workflow_id,
-                    "error": str(e)
-                })
-                logger.error("user_workflow_cancel_failed",
-                           workflow_id=workflow_id,
-                           user_id=user_id,
-                           error=str(e))
+                results["errors"].append({"workflow_id": workflow_id, "error": str(e)})
+                logger.error(
+                    "user_workflow_cancel_failed",
+                    workflow_id=workflow_id,
+                    user_id=user_id,
+                    error=str(e),
+                )
 
-    logger.info("user_workflow_cancellation_complete",
-                user_id=user_id,
-                cancelled=len(results["cancelled"]),
-                errors=len(results["errors"]))
+    logger.info(
+        "user_workflow_cancellation_complete",
+        user_id=user_id,
+        cancelled=len(results["cancelled"]),
+        errors=len(results["errors"]),
+    )
 
     return results
 

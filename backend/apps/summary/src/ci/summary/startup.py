@@ -1,4 +1,5 @@
 import asyncio
+
 import structlog
 import temporalio.api.workflowservice.v1
 from temporalio.client import Client
@@ -7,6 +8,7 @@ from .config import settings
 from .system_schedules import setup_system_schedules
 
 logger = structlog.get_logger()
+
 
 async def wait_for_temporal():
     """Wait for Temporal service and namespace to be available."""
@@ -46,10 +48,15 @@ async def wait_for_temporal():
             return True
         except Exception as e:
             if i == retries - 1:
-                logger.error("namespace_not_found", namespace=settings.temporal_namespace, error=str(e))
+                logger.error(
+                    "namespace_not_found",
+                    namespace=settings.temporal_namespace,
+                    error=str(e),
+                )
                 raise
             logger.debug("namespace_retry", attempt=i + 1, error=str(e))
             await asyncio.sleep(delay)
+
 
 async def main():
     """Run startup tasks."""
@@ -66,6 +73,7 @@ async def main():
         logger.error("startup_failed", error=str(e))
         print(f"❌ Startup failed: {e}")
         exit(1)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

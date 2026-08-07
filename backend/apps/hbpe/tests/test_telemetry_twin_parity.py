@@ -1,7 +1,7 @@
 """
 The two Python telemetry modules must not drift.
 
-`backend/apps/summary/src/telemetry.py` is a copy of
+`backend/apps/summary/src/ci/summary/telemetry.py` is a copy of
 `backend/apps/hbpe/src/ci/telemetry.py` with only the component name and the
 docstring's service name changed. Nothing enforces that by construction, and a
 scrub rule added to one but not the other silently widens what the other service
@@ -14,7 +14,7 @@ import pathlib
 
 _APPS = pathlib.Path(__file__).resolve().parents[2]
 _HBPE = _APPS / "hbpe" / "src" / "ci" / "telemetry.py"
-_SUMMARY = _APPS / "summary" / "src" / "telemetry.py"
+_SUMMARY = _APPS / "summary" / "src" / "ci" / "summary" / "telemetry.py"
 
 # The only sanctioned differences between the twins.
 _SUBSTITUTIONS = [
@@ -31,11 +31,11 @@ def test_summary_telemetry_is_the_hbpe_twin():
         normalized = normalized.replace(old, new)
 
     assert normalized == _HBPE.read_text(), (
-        "backend/apps/summary/src/telemetry.py has drifted from the hbpe twin. "
-        "Regenerate it with:\n"
+        "backend/apps/summary/src/ci/summary/telemetry.py has drifted from the "
+        "hbpe twin. Regenerate it with:\n"
         "  cd backend/apps && sed 's/COMPONENT = \"ci-server-hbpe\"/COMPONENT = \"ci-server-summary\"/; "
         "s/Sentry error reporting for the HBPE service./Sentry error reporting for the Summary service./' "
-        "hbpe/src/ci/telemetry.py > summary/src/telemetry.py"
+        "hbpe/src/ci/telemetry.py > summary/src/ci/summary/telemetry.py"
     )
 
 

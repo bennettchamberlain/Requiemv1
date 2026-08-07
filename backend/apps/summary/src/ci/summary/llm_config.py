@@ -4,9 +4,10 @@ LLM Configuration - creates agents as pure data structures.
 This module provides factory functions to create LLM models and agents.
 The configuration is immutable and can be safely shared across workers.
 """
-from typing import Dict
+
 from dataclasses import dataclass, field
 from functools import lru_cache
+
 import httpx
 import structlog
 from pydantic_ai import Agent, PromptedOutput
@@ -16,17 +17,17 @@ from pydantic_ai.providers.openai import OpenAIProvider
 
 from .config import resolve_llm_model, settings
 from .summarizer import (
-    wrap_output,
-    HourlySummaryResponse,
+    ActionsResponse,
     DailySummaryResponse,
-    WeeklySummaryResponse,
+    HourlySummaryResponse,
+    InsightsResponse,
     MonthlySummaryResponse,
     SeasonalSummaryResponse,
-    YearlySummaryResponse,
-    UserDossierResponse,
-    InsightsResponse,
     SingleInsightResponse,
-    ActionsResponse,
+    UserDossierResponse,
+    WeeklySummaryResponse,
+    YearlySummaryResponse,
+    wrap_output,
 )
 
 logger = structlog.get_logger()
@@ -46,22 +47,23 @@ class LLMConfig:
     response_format that works on Ollama. Empty when the configured mode is
     already `prompted`.
     """
+
     model: OpenAIChatModel
-    agents: Dict[str, Agent]
-    prompted_agents: Dict[str, Agent] = field(default_factory=dict)
+    agents: dict[str, Agent]
+    prompted_agents: dict[str, Agent] = field(default_factory=dict)
 
 
 # name -> (structured output type, system prompt). Single source for both the
 # configured-mode agents and their prompted-mode fallbacks.
 AGENT_SPECS = {
-    'hourly': (
+    "hourly": (
         HourlySummaryResponse,
         (
             "You are an AI that creates concise hourly summaries of user activity. "
             "Analyze the data and provide insights, patterns, and notable events."
         ),
     ),
-    'daily': (
+    "daily": (
         DailySummaryResponse,
         (
             "You synthesize hourly summaries into a daily overview. "
@@ -71,7 +73,7 @@ AGENT_SPECS = {
             "Identify what made this day distinct or typical."
         ),
     ),
-    'weekly': (
+    "weekly": (
         WeeklySummaryResponse,
         (
             "You synthesize daily summaries into a weekly overview. "
@@ -81,7 +83,7 @@ AGENT_SPECS = {
             "Identify how the week developed and key accomplishments or challenges."
         ),
     ),
-    'monthly': (
+    "monthly": (
         MonthlySummaryResponse,
         (
             "You synthesize weekly summaries into a monthly overview. "
@@ -91,7 +93,7 @@ AGENT_SPECS = {
             "Identify the arc of the month and significant transitions."
         ),
     ),
-    'seasonal': (
+    "seasonal": (
         SeasonalSummaryResponse,
         (
             "You synthesize monthly summaries into a seasonal (3-month) overview. "
@@ -101,7 +103,7 @@ AGENT_SPECS = {
             "Identify the broader narrative arc and transformative themes of this quarter."
         ),
     ),
-    'yearly': (
+    "yearly": (
         YearlySummaryResponse,
         (
             "You synthesize seasonal summaries into a yearly overview. "
@@ -111,14 +113,14 @@ AGENT_SPECS = {
             "Provide a bird's-eye view of the year as a chapter in their life story."
         ),
     ),
-    'dossier': (
+    "dossier": (
         UserDossierResponse,
         (
             "Create a concise user dossier summarizing personality, preferences, "
             "challenges, and interests based on their activity. Keep summary under 500 characters."
         ),
     ),
-    'insights': (
+    "insights": (
         InsightsResponse,
         (
             "You are a proactive personal assistant that generates actionable insights. "
@@ -140,7 +142,7 @@ AGENT_SPECS = {
     ),
     # Incremental variant of 'insights': one insight per call so each can be
     # stored (and surface on the feed) as soon as it is generated.
-    'insight_single': (
+    "insight_single": (
         SingleInsightResponse,
         (
             "You are a proactive personal assistant that generates actionable insights. "
@@ -164,7 +166,7 @@ AGENT_SPECS = {
             "return a null insight instead of forcing a weak or duplicate one."
         ),
     ),
-    'actions': (
+    "actions": (
         ActionsResponse,
         (
             "You are a proactive personal assistant that suggests action cards to help the user "
@@ -264,13 +266,20 @@ def _is_structured_output_failure(exc: Exception) -> bool:
         text = str(exc).lower()
         return any(
             marker in text
-            for marker in ("response_format", "json_schema", "structured output", "guided decoding")
+            for marker in (
+                "response_format",
+                "json_schema",
+                "structured output",
+                "guided decoding",
+            )
         )
 
     return False
 
 
-def run_agent_sync(llm_config: LLMConfig, agent_name: str, prompt: str, model_settings: dict):
+def run_agent_sync(
+    llm_config: LLMConfig, agent_name: str, prompt: str, model_settings: dict
+):
     """Run the named agent, falling back to prompted output mode if the
     configured mode fails against this backend.
 
@@ -306,4 +315,10 @@ def get_llm_config() -> LLMConfig:
     return create_llm_config()
 
 
-__all__ = ["LLMConfig", "AGENT_SPECS", "create_llm_config", "get_llm_config", "run_agent_sync"]
+__all__ = [
+    "AGENT_SPECS",
+    "LLMConfig",
+    "create_llm_config",
+    "get_llm_config",
+    "run_agent_sync",
+]

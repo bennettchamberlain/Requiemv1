@@ -52,7 +52,9 @@ JOHN_SMITH_USER_ID := b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b
 export TAG ?= $(shell git describe --tags --exact-match 2>/dev/null)
 
 
-# Subdirectory build contexts that need a copy of LICENSE
+# Subdirectory build contexts that need a copy of LICENSE. Images built
+# from the repo root (api, gateway, summary) read LICENSE.md directly and
+# are not listed here.
 LICENSE_DIRS := \
 	infrastructure/database \
 	infrastructure/object-store \
@@ -60,7 +62,6 @@ LICENSE_DIRS := \
 	infrastructure/setup-database \
 	infrastructure/setup-orchestrator \
 	infrastructure/setup-secrets \
-	backend/apps/summary \
 	backend/apps/hbpe
 
 # Helper: emoji $(2) when goal $(1) is the one invoked at top level, else ➤.
@@ -247,7 +248,7 @@ build: ## Build images. ENV=local|staging|production (default local) GPU=cpu|cud
 	@if [ "$(ENV)" = "production" ]; then printf "\n➤ Building setup secrets image...\n\n" && docker build -f infrastructure/setup-secrets/Dockerfile $(call versioned_tag,$(SETUP_SECRETS_REPO)) -t $(SETUP_SECRETS_REPO):latest infrastructure/setup-secrets ; fi
 
 	@printf "\n➤ Building summary service image...\n\n"
-	@docker build -f backend/apps/summary/Dockerfile $(call versioned_tag,$(SUMMARY_REPO)) -t $(SUMMARY_REPO):latest backend/apps/summary
+	@docker build -f backend/apps/summary/Dockerfile $(call versioned_tag,$(SUMMARY_REPO)) -t $(SUMMARY_REPO):latest .
 
 	@printf "\n➤ Building HBPE service image ($(GPU))...\n\n"
 	@docker build -f backend/apps/hbpe/$(HBPE_DOCKERFILE) $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest backend/apps/hbpe

@@ -4,15 +4,18 @@ Pure functions for summary generation.
 These are stateless functions that can be called from Temporal activities.
 All dependencies are passed as parameters.
 """
-from typing import Dict, List, Any, Optional
-import httpx
+
 import json
+from datetime import datetime
+from typing import Any
+
+import httpx
 
 from .config import settings
 from .llm_config import LLMConfig, run_agent_sync
 
 
-def count_activities(aggregated_data: Dict[str, Any]) -> Dict[str, int]:
+def count_activities(aggregated_data: dict[str, Any]) -> dict[str, int]:
     """
     Count activities in aggregated data.
 
@@ -33,7 +36,9 @@ def count_activities(aggregated_data: Dict[str, Any]) -> Dict[str, int]:
     return counts
 
 
-def build_data_prompt(aggregated_data: Dict[str, Any], activity_counts: Dict[str, int]) -> str:
+def build_data_prompt(
+    aggregated_data: dict[str, Any], activity_counts: dict[str, int]
+) -> str:
     """
     Build prompt from aggregated data.
 
@@ -58,9 +63,8 @@ def build_data_prompt(aggregated_data: Dict[str, Any], activity_counts: Dict[str
 
 
 def generate_hourly_summary(
-    llm_config: LLMConfig,
-    aggregated_data: Dict[str, Any]
-) -> Dict[str, Any]:
+    llm_config: LLMConfig, aggregated_data: dict[str, Any]
+) -> dict[str, Any]:
     """
     Generate hourly summary from aggregated data.
 
@@ -86,7 +90,7 @@ def generate_hourly_summary(
     # Call LLM
     result = run_agent_sync(
         llm_config,
-        'hourly',
+        "hourly",
         prompt,
         model_settings={
             "temperature": settings.llm_temperature,
@@ -114,10 +118,8 @@ def generate_hourly_summary(
 
 
 def generate_rollup_summary(
-    llm_config: LLMConfig,
-    period_type: str,
-    child_summaries: List[Dict[str, Any]]
-) -> Dict[str, Any]:
+    llm_config: LLMConfig, period_type: str, child_summaries: list[dict[str, Any]]
+) -> dict[str, Any]:
     """
     Generate rollup summary from child summaries.
 
@@ -127,12 +129,16 @@ def generate_rollup_summary(
         raise ValueError(f"No agent configured for period_type: {period_type}")
 
     # Build prompt from child summaries
-    combined_text = "\n\n".join([
-        f"Summary {i + 1}: {s.get('summary_text', '')}"
-        for i, s in enumerate(child_summaries)
-    ])
+    combined_text = "\n\n".join(
+        [
+            f"Summary {i + 1}: {s.get('summary_text', '')}"
+            for i, s in enumerate(child_summaries)
+        ]
+    )
 
-    prompt = f"Synthesize these summaries into a {period_type} overview:\n\n{combined_text}"
+    prompt = (
+        f"Synthesize these summaries into a {period_type} overview:\n\n{combined_text}"
+    )
 
     # Call LLM
     result = run_agent_sync(
@@ -172,29 +178,33 @@ def generate_rollup_summary(
 def generate_user_dossier(
     llm_config: LLMConfig,
     user_id: str,
-    daily_summaries: List[Dict[str, Any]],
-    hourly_summaries: List[Dict[str, Any]],
-    previous_dossier: Dict[str, Any] = None,
-    lookback_start: Optional["datetime"] = None,
-    lookback_end: Optional["datetime"] = None,
+    daily_summaries: list[dict[str, Any]],
+    hourly_summaries: list[dict[str, Any]],
+    previous_dossier: dict[str, Any] | None = None,
+    lookback_start: datetime | None = None,
+    lookback_end: datetime | None = None,
     timezone: str = "UTC",
-    max_chars: Optional[int] = None,
-) -> Dict[str, Any]:
+    max_chars: int | None = None,
+) -> dict[str, Any]:
     """
     Generate user dossier from summaries.
 
     Pure function that creates a personality/preference dossier.
     """
     # Build context from summaries
-    daily_text = "\n\n".join([
-        f"Day {i + 1}: {s.get('summary_text', '')}"
-        for i, s in enumerate(daily_summaries)
-    ])
+    daily_text = "\n\n".join(
+        [
+            f"Day {i + 1}: {s.get('summary_text', '')}"
+            for i, s in enumerate(daily_summaries)
+        ]
+    )
 
-    hourly_text = "\n\n".join([
-        f"Hour {i + 1}: {s.get('summary_text', '')}"
-        for i, s in enumerate(hourly_summaries)
-    ])
+    hourly_text = "\n\n".join(
+        [
+            f"Hour {i + 1}: {s.get('summary_text', '')}"
+            for i, s in enumerate(hourly_summaries)
+        ]
+    )
 
     prompt_parts = [
         "Based on the following activity summaries, create a concise user dossier:",
@@ -205,14 +215,16 @@ def generate_user_dossier(
     ]
 
     if previous_dossier:
-        prompt_parts.insert(1, f"\n## Previous Dossier:\n{previous_dossier.get('summary', '')}")
+        prompt_parts.insert(
+            1, f"\n## Previous Dossier:\n{previous_dossier.get('summary', '')}"
+        )
 
     prompt = "\n".join(prompt_parts)
 
     # Call LLM
     result = run_agent_sync(
         llm_config,
-        'dossier',
+        "dossier",
         prompt,
         model_settings={
             "temperature": settings.llm_temperature,
@@ -223,13 +235,12 @@ def generate_user_dossier(
     response = result.output
 
     # Build dossier payload
-    from datetime import datetime
     max_length = max_chars or settings.dossier_max_chars
     summary = response.summary
     if max_length and len(summary) > max_length:
         summary = summary[: max_length - 3] + "..."
 
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "summary": summary,
         "tone": response.tone,
         "personalityTraits": response.personalityTraits,
@@ -253,8 +264,8 @@ def generate_user_dossier(
 
 def generate_insights(
     llm_config: LLMConfig,
-    insights_context: Dict[str, Any],
-) -> Dict[str, Any]:
+    insights_context: dict[str, Any],
+) -> dict[str, Any]:
     """
     Generate proactive insights from aggregated context.
 
@@ -267,7 +278,7 @@ def generate_insights(
     # Call LLM with slightly higher temperature for creativity
     result = run_agent_sync(
         llm_config,
-        'insights',
+        "insights",
         prompt,
         model_settings={
             "temperature": 0.7,
@@ -278,10 +289,9 @@ def generate_insights(
     response = result.output
 
     # Generate embedding from combined insight text
-    combined_text = " ".join([
-        f"{i.title}: {i.summary_text}"
-        for i in response.insights
-    ])
+    combined_text = " ".join(
+        [f"{i.title}: {i.summary_text}" for i in response.insights]
+    )
     embedding = generate_embedding(llm_config, combined_text)
 
     # Convert insights to dicts
@@ -298,9 +308,9 @@ def generate_insights(
 
 def generate_single_insight(
     llm_config: LLMConfig,
-    insights_context: Dict[str, Any],
-    prior_insights: List[Dict[str, Any]],
-) -> Dict[str, Any]:
+    insights_context: dict[str, Any],
+    prior_insights: list[dict[str, Any]],
+) -> dict[str, Any]:
     """
     Generate ONE proactive insight, distinct from any prior ones.
 
@@ -317,12 +327,14 @@ def generate_single_insight(
             "\n## PREVIOUSLY GENERATED INSIGHTS (do NOT repeat or rephrase these topics)",
         ]
         for i, prior in enumerate(prior_insights):
-            parts.append(f"{i + 1}. {prior.get('title', '')}: {prior.get('summary_text', '')}")
+            parts.append(
+                f"{i + 1}. {prior.get('title', '')}: {prior.get('summary_text', '')}"
+            )
         prompt = "\n".join(parts)
 
     result = run_agent_sync(
         llm_config,
-        'insight_single',
+        "insight_single",
         prompt,
         model_settings={
             "temperature": 0.7,
@@ -356,8 +368,8 @@ def generate_single_insight(
 
 def generate_actions(
     llm_config: LLMConfig,
-    context: Dict[str, Any],
-) -> Dict[str, Any]:
+    context: dict[str, Any],
+) -> dict[str, Any]:
     """
     Generate action cards from aggregated context.
 
@@ -370,7 +382,7 @@ def generate_actions(
     # Call LLM with moderate temperature - not too creative to avoid mixing unrelated topics
     result = run_agent_sync(
         llm_config,
-        'actions',
+        "actions",
         prompt,
         model_settings={
             "temperature": 0.6,
@@ -389,9 +401,11 @@ def generate_actions(
     }
 
 
-def _build_actions_prompt(context: Dict[str, Any]) -> str:
+def _build_actions_prompt(context: dict[str, Any]) -> str:
     """Build prompt for action card generation from aggregated context."""
-    parts = ["Based on the following context about the user, generate helpful action cards:\n"]
+    parts = [
+        "Based on the following context about the user, generate helpful action cards:\n"
+    ]
 
     # User dossier (personality/preferences)
     dossier = context.get("user_dossier")
@@ -468,17 +482,27 @@ def _build_actions_prompt(context: Dict[str, Any]) -> str:
     parts.append("3. A mix of conversation starters and time suggestions")
     parts.append("4. Reference specific people, events, or topics from above")
     parts.append("")
-    parts.append("IMPORTANT: Each card must focus on ONE topic. Do NOT combine unrelated activities.")
-    parts.append("BAD example: 'Warm up for your workout by reviewing GraphQL notes' - these are unrelated!")
-    parts.append("GOOD example: 'Prepare for your workout' OR separately 'Review GraphQL documentation'")
+    parts.append(
+        "IMPORTANT: Each card must focus on ONE topic. Do NOT combine unrelated activities."
+    )
+    parts.append(
+        "BAD example: 'Warm up for your workout by reviewing GraphQL notes' - these are unrelated!"
+    )
+    parts.append(
+        "GOOD example: 'Prepare for your workout' OR separately 'Review GraphQL documentation'"
+    )
     parts.append("")
-    parts.append("For conversation starters: suggest specific topics or questions to discuss with specific people.")
-    parts.append("For time suggestions: suggest what the user should do next based on their schedule and recent activity.")
+    parts.append(
+        "For conversation starters: suggest specific topics or questions to discuss with specific people."
+    )
+    parts.append(
+        "For time suggestions: suggest what the user should do next based on their schedule and recent activity."
+    )
 
     return "\n".join(parts)
 
 
-def _build_insights_prompt(context: Dict[str, Any]) -> str:
+def _build_insights_prompt(context: dict[str, Any]) -> str:
     """Build prompt for insights generation from aggregated context."""
     parts = ["Generate proactive insights based on the following user context:\n"]
 
@@ -533,7 +557,9 @@ def _build_insights_prompt(context: Dict[str, Any]) -> str:
     if strongest:
         parts.append("## CLOSEST RELATIONSHIPS (by strength)")
         for rel in strongest[:3]:
-            parts.append(f"- {rel.get('name', 'Unknown')} ({rel.get('relationship_type', 'related')})")
+            parts.append(
+                f"- {rel.get('name', 'Unknown')} ({rel.get('relationship_type', 'related')})"
+            )
         parts.append("")
 
     # Recently changed relationships
@@ -576,13 +602,17 @@ def _build_insights_prompt(context: Dict[str, Any]) -> str:
                 parts.append(f"- {subject[:50]}")
         parts.append("")
 
-    parts.append("\nBased on this context, generate 3-5 actionable insights that would be helpful to the user.")
-    parts.append("Focus on upcoming opportunities, relationship maintenance, and timely suggestions.")
+    parts.append(
+        "\nBased on this context, generate 3-5 actionable insights that would be helpful to the user."
+    )
+    parts.append(
+        "Focus on upcoming opportunities, relationship maintenance, and timely suggestions."
+    )
 
     return "\n".join(parts)
 
 
-def generate_embedding(llm_config: LLMConfig, text: str) -> List[float]:
+def generate_embedding(llm_config: LLMConfig, text: str) -> list[float]:
     """
     Generate embedding for text.
 
@@ -599,7 +629,7 @@ def generate_embedding(llm_config: LLMConfig, text: str) -> List[float]:
                     "model": settings.embedding_model,
                     "input": text[:8000],  # Limit input size
                 },
-                headers={"Authorization": f"Bearer {settings.llm_api_key}"}
+                headers={"Authorization": f"Bearer {settings.llm_api_key}"},
             )
             response.raise_for_status()
             data = response.json()
@@ -610,12 +640,12 @@ def generate_embedding(llm_config: LLMConfig, text: str) -> List[float]:
 
 
 __all__ = [
-    "count_activities",
     "build_data_prompt",
-    "generate_hourly_summary",
-    "generate_rollup_summary",
-    "generate_user_dossier",
-    "generate_insights",
+    "count_activities",
     "generate_actions",
     "generate_embedding",
+    "generate_hourly_summary",
+    "generate_insights",
+    "generate_rollup_summary",
+    "generate_user_dossier",
 ]

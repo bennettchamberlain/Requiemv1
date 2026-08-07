@@ -5,33 +5,35 @@ This script creates persistent Temporal schedules that trigger workflows
 on a cron schedule. Schedules are stored in Temporal's database and survive
 restarts and deployments.
 """
+
 import asyncio
+
 import structlog
-from datetime import datetime, timezone, timedelta
-from typing import List
-from temporalio.client import Client, Schedule, ScheduleActionStartWorkflow, ScheduleSpec, ScheduleIntervalSpec
+from temporalio.client import (
+    Client,
+    Schedule,
+    ScheduleActionStartWorkflow,
+    ScheduleSpec,
+)
 
 from .config import settings
 from .database import db
 from .workflows import (
-    HourlySummaryWorkflow,
     DailySummaryWorkflow,
-    WeeklySummaryWorkflow,
-    MonthlySummaryWorkflow,
     DossierRefreshWorkflow,
+    HourlySummaryWorkflow,
+    MonthlySummaryWorkflow,
+    WeeklySummaryWorkflow,
 )
 
 logger = structlog.get_logger()
 
 
-async def get_onboarded_users() -> List[str]:
+async def get_onboarded_users() -> list[str]:
     """Get all onboarded user IDs."""
     try:
-        rows = db.execute_query(
-            "SELECT id FROM core.users WHERE onboarded = true",
-            {}
-        )
-        return [str(row['id']) for row in rows]
+        rows = db.execute_query("SELECT id FROM core.users WHERE onboarded = true", {})
+        return [str(row["id"]) for row in rows]
     except Exception as exc:
         logger.error("failed_to_fetch_users", error=str(exc))
         return []
@@ -158,7 +160,9 @@ async def create_monthly_schedule(client: Client, user_id: str):
                 ),
             ),
         )
-        logger.info("monthly_schedule_created", user_id=user_id, schedule_id=schedule_id)
+        logger.info(
+            "monthly_schedule_created", user_id=user_id, schedule_id=schedule_id
+        )
     except Exception as e:
         logger.error("failed_to_create_monthly_schedule", user_id=user_id, error=str(e))
 
@@ -189,7 +193,9 @@ async def create_dossier_schedule(client: Client, user_id: str):
                 ),
             ),
         )
-        logger.info("dossier_schedule_created", user_id=user_id, schedule_id=schedule_id)
+        logger.info(
+            "dossier_schedule_created", user_id=user_id, schedule_id=schedule_id
+        )
     except Exception as e:
         logger.error("failed_to_create_dossier_schedule", user_id=user_id, error=str(e))
 
@@ -250,7 +256,9 @@ async def delete_user_schedules(user_id: str):
             await schedule_handle.delete()
             logger.info("schedule_deleted", schedule_id=schedule_id)
         except Exception as e:
-            logger.warning("failed_to_delete_schedule", schedule_id=schedule_id, error=str(e))
+            logger.warning(
+                "failed_to_delete_schedule", schedule_id=schedule_id, error=str(e)
+            )
 
     logger.info("user_schedules_deleted", user_id=user_id)
 
@@ -280,8 +288,12 @@ def main():
 
     if len(sys.argv) < 2:
         print("Usage:")
-        print("  python -m src.schedules setup              # Set up schedules for all users")
-        print("  python -m src.schedules delete <user_id>   # Delete schedules for a user")
+        print(
+            "  python -m src.schedules setup              # Set up schedules for all users"
+        )
+        print(
+            "  python -m src.schedules delete <user_id>   # Delete schedules for a user"
+        )
         print("  python -m src.schedules list               # List all schedules")
         sys.exit(1)
 
@@ -304,12 +316,12 @@ if __name__ == "__main__":
 
 
 __all__ = [
-    "setup_all_schedules",
+    "create_daily_schedule",
+    "create_dossier_schedule",
+    "create_hourly_schedule",
+    "create_monthly_schedule",
+    "create_weekly_schedule",
     "delete_user_schedules",
     "list_all_schedules",
-    "create_hourly_schedule",
-    "create_daily_schedule",
-    "create_weekly_schedule",
-    "create_monthly_schedule",
-    "create_dossier_schedule",
+    "setup_all_schedules",
 ]

@@ -12,6 +12,7 @@ column HBPE and the API's ForecastContextService read.  These helpers run inside
 Temporal *activities* (never the workflow sandbox), so ``zoneinfo`` disk access
 and DB reads are safe here.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -52,7 +53,9 @@ def get_user_timezone(user_id: str) -> str:
     return name if (name == "UTC" or zone_of(name) is not UTC) else "UTC"
 
 
-def local_period_window(reference: datetime, tz: str, period: str) -> tuple[datetime, datetime]:
+def local_period_window(
+    reference: datetime, tz: str, period: str
+) -> tuple[datetime, datetime]:
     """
     Return ``(start, end)`` as UTC-aware instants bounding the last *complete*
     local period before ``reference``, computed in ``tz``.
@@ -77,7 +80,7 @@ def local_period_window(reference: datetime, tz: str, period: str) -> tuple[date
         end_local = midnight - timedelta(days=midnight.weekday())  # this local Monday
         start_local = end_local - timedelta(days=7)
     elif period == "monthly":
-        end_local = midnight.replace(day=1)                        # 1st of this local month
+        end_local = midnight.replace(day=1)  # 1st of this local month
         start_local = (end_local - timedelta(days=1)).replace(day=1)
     else:
         raise ValueError(f"unknown period '{period}'")

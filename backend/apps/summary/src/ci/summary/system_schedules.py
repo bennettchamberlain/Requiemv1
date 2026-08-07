@@ -4,20 +4,27 @@ System-wide schedule setup for summary service.
 Creates schedules that process ALL users automatically.
 No per-user setup required - just works!
 """
+
 import asyncio
+
 import structlog
-from temporalio.client import Client, Schedule, ScheduleActionStartWorkflow, ScheduleSpec
+from temporalio.client import (
+    Client,
+    Schedule,
+    ScheduleActionStartWorkflow,
+    ScheduleSpec,
+)
 
 from .config import settings
 from .priority import Priority, get_task_queue
 from .system_workflows import (
-    SystemHourlySummariesWorkflow,
-    SystemDailySummariesWorkflow,
-    SystemWeeklySummariesWorkflow,
-    SystemMonthlySummariesWorkflow,
-    SystemDossierRefreshWorkflow,
-    SystemInsightsWorkflow,
     SystemActionsWorkflow,
+    SystemDailySummariesWorkflow,
+    SystemDossierRefreshWorkflow,
+    SystemHourlySummariesWorkflow,
+    SystemInsightsWorkflow,
+    SystemMonthlySummariesWorkflow,
+    SystemWeeklySummariesWorkflow,
 )
 
 logger = structlog.get_logger()
@@ -54,12 +61,21 @@ async def setup_system_schedules():
                 ),
             ),
         )
-        logger.info("schedule_created", schedule="system-hourly-summaries", cron="5 * * * *", priority="MEDIUM")
+        logger.info(
+            "schedule_created",
+            schedule="system-hourly-summaries",
+            cron="5 * * * *",
+            priority="MEDIUM",
+        )
     except Exception as e:
         if "already exists" in str(e).lower():
             logger.info("schedule_already_exists", schedule="system-hourly-summaries")
         else:
-            logger.error("schedule_creation_failed", schedule="system-hourly-summaries", error=str(e))
+            logger.error(
+                "schedule_creation_failed",
+                schedule="system-hourly-summaries",
+                error=str(e),
+            )
 
     # Create daily summary schedule (MEDIUM priority)
     try:
@@ -77,12 +93,21 @@ async def setup_system_schedules():
                 ),
             ),
         )
-        logger.info("schedule_created", schedule="system-daily-summaries", cron="10 0 * * *", priority="MEDIUM")
+        logger.info(
+            "schedule_created",
+            schedule="system-daily-summaries",
+            cron="10 0 * * *",
+            priority="MEDIUM",
+        )
     except Exception as e:
         if "already exists" in str(e).lower():
             logger.info("schedule_already_exists", schedule="system-daily-summaries")
         else:
-            logger.error("schedule_creation_failed", schedule="system-daily-summaries", error=str(e))
+            logger.error(
+                "schedule_creation_failed",
+                schedule="system-daily-summaries",
+                error=str(e),
+            )
 
     # Create weekly summary schedule (MEDIUM priority)
     try:
@@ -100,12 +125,21 @@ async def setup_system_schedules():
                 ),
             ),
         )
-        logger.info("schedule_created", schedule="system-weekly-summaries", cron="15 0 * * MON", priority="MEDIUM")
+        logger.info(
+            "schedule_created",
+            schedule="system-weekly-summaries",
+            cron="15 0 * * MON",
+            priority="MEDIUM",
+        )
     except Exception as e:
         if "already exists" in str(e).lower():
             logger.info("schedule_already_exists", schedule="system-weekly-summaries")
         else:
-            logger.error("schedule_creation_failed", schedule="system-weekly-summaries", error=str(e))
+            logger.error(
+                "schedule_creation_failed",
+                schedule="system-weekly-summaries",
+                error=str(e),
+            )
 
     # Create monthly summary schedule (MEDIUM priority)
     try:
@@ -123,12 +157,21 @@ async def setup_system_schedules():
                 ),
             ),
         )
-        logger.info("schedule_created", schedule="system-monthly-summaries", cron="20 0 1 * *", priority="MEDIUM")
+        logger.info(
+            "schedule_created",
+            schedule="system-monthly-summaries",
+            cron="20 0 1 * *",
+            priority="MEDIUM",
+        )
     except Exception as e:
         if "already exists" in str(e).lower():
             logger.info("schedule_already_exists", schedule="system-monthly-summaries")
         else:
-            logger.error("schedule_creation_failed", schedule="system-monthly-summaries", error=str(e))
+            logger.error(
+                "schedule_creation_failed",
+                schedule="system-monthly-summaries",
+                error=str(e),
+            )
 
     # Create dossier refresh schedule (MEDIUM priority)
     try:
@@ -146,12 +189,21 @@ async def setup_system_schedules():
                 ),
             ),
         )
-        logger.info("schedule_created", schedule="system-dossier-refresh", cron="12 * * * *", priority="MEDIUM")
+        logger.info(
+            "schedule_created",
+            schedule="system-dossier-refresh",
+            cron="12 * * * *",
+            priority="MEDIUM",
+        )
     except Exception as e:
         if "already exists" in str(e).lower():
             logger.info("schedule_already_exists", schedule="system-dossier-refresh")
         else:
-            logger.error("schedule_creation_failed", schedule="system-dossier-refresh", error=str(e))
+            logger.error(
+                "schedule_creation_failed",
+                schedule="system-dossier-refresh",
+                error=str(e),
+            )
 
     # Create insights schedule (MEDIUM priority)
     try:
@@ -169,12 +221,19 @@ async def setup_system_schedules():
                 ),
             ),
         )
-        logger.info("schedule_created", schedule="system-insights", cron="30 */3 * * *", priority="MEDIUM")
+        logger.info(
+            "schedule_created",
+            schedule="system-insights",
+            cron="30 */3 * * *",
+            priority="MEDIUM",
+        )
     except Exception as e:
         if "already exists" in str(e).lower():
             logger.info("schedule_already_exists", schedule="system-insights")
         else:
-            logger.error("schedule_creation_failed", schedule="system-insights", error=str(e))
+            logger.error(
+                "schedule_creation_failed", schedule="system-insights", error=str(e)
+            )
 
     # Create actions schedule (MEDIUM priority)
     try:
@@ -193,12 +252,19 @@ async def setup_system_schedules():
                 ),
             ),
         )
-        logger.info("schedule_created", schedule="system-actions", cron="45 * * * *", priority="MEDIUM")
+        logger.info(
+            "schedule_created",
+            schedule="system-actions",
+            cron="45 * * * *",
+            priority="MEDIUM",
+        )
     except Exception as e:
         if "already exists" in str(e).lower():
             logger.info("schedule_already_exists", schedule="system-actions")
         else:
-            logger.error("schedule_creation_failed", schedule="system-actions", error=str(e))
+            logger.error(
+                "schedule_creation_failed", schedule="system-actions", error=str(e)
+            )
 
     logger.info("system_schedule_setup_completed", schedules=7)
     print("\n✅ System schedules created successfully!")
@@ -239,7 +305,9 @@ async def delete_system_schedules():
             await schedule_handle.delete()
             logger.info("schedule_deleted", schedule_id=schedule_id)
         except Exception as e:
-            logger.warning("failed_to_delete_schedule", schedule_id=schedule_id, error=str(e))
+            logger.warning(
+                "failed_to_delete_schedule", schedule_id=schedule_id, error=str(e)
+            )
 
     logger.info("system_schedules_deleted")
     print("\n✅ System schedules deleted!\n")
@@ -276,9 +344,13 @@ def main():
 
     if len(sys.argv) < 2:
         print("Usage:")
-        print("  python -m src.system_schedules setup    # Set up system schedules (run once)")
+        print(
+            "  python -m src.system_schedules setup    # Set up system schedules (run once)"
+        )
         print("  python -m src.system_schedules delete   # Delete all system schedules")
-        print("  python -m src.system_schedules reset    # Delete and recreate all schedules")
+        print(
+            "  python -m src.system_schedules reset    # Delete and recreate all schedules"
+        )
         print("  python -m src.system_schedules list     # List all schedules")
         sys.exit(1)
 
@@ -305,7 +377,7 @@ if __name__ == "__main__":
 
 
 __all__ = [
-    "setup_system_schedules",
     "delete_system_schedules",
     "list_system_schedules",
+    "setup_system_schedules",
 ]
