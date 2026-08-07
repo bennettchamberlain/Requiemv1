@@ -142,9 +142,7 @@ function mintKey() {
     );
 
     const passwordLine =
-      suppliedPassword == null && !isNewUser
-        ? '(unchanged — set TEST_USER_PASSWORD to reset it)'
-        : password;
+      suppliedPassword == null && !isNewUser ? '(unchanged — set TEST_USER_PASSWORD to reset it)' : password;
 
     console.log(`
 User      ${email} ${isNewUser ? '(created)' : '(existing)'}
