@@ -57,3 +57,9 @@ if (!Element.prototype.scrollTo) {
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {};
 }
+
+// ...nor window.scrollTo, which usePreventOverscroll calls on unmount. Assigned
+// unconditionally, unlike the guarded stubs above: jsdom *does* define this one,
+// it just throws "Not implemented" when called, so a presence check would skip
+// the stub and leave the trace it exists to silence.
+window.scrollTo = () => {};
