@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { GraphLink, GraphNode } from '@/api/useGraphOverview';
 
@@ -116,23 +116,43 @@ function overlappingPairs(boxes: ReturnType<typeof labelBoxes>) {
 
 /** Runs the requestAnimationFrame-driven simulation to completion. */
 async function settle() {
-  await waitFor(
-    () => {
-      expect(screen.getAllByTestId('force-node').length).toBeGreaterThan(0);
-    },
-    { timeout: 5000 },
-  );
+  await waitFor(() => {
+    expect(screen.getAllByTestId('force-node').length).toBeGreaterThan(0);
+  });
 
   // The simulation caps at MAX_TICKS; give it room to reach the settle + polish step.
   await waitFor(
     () => {
       expect(overlappingPairs(labelBoxes())).toEqual([]);
     },
-    { timeout: 10000, interval: 50 },
+    { timeout: 4000, interval: 25 },
   );
 }
 
 describe('ForceGraph', () => {
+  const realRequestAnimationFrame = globalThis.requestAnimationFrame;
+  const realCancelAnimationFrame = globalThis.cancelAnimationFrame;
+
+  beforeEach(() => {
+    // jsdom paces requestAnimationFrame at ~16ms, so the 240-tick simulation burns ~4s of wall
+    // clock — inside vitest's 5s budget on its own, and over it once the whole suite runs in
+    // parallel. Ticking on the macrotask queue preserves the ordering the component relies on at a
+    // fraction of the time, which is the difference between a deterministic test and a flaky one.
+    //
+    // Assigned directly rather than via vi.stubGlobal: `vi.unstubAllGlobals` would also drop the
+    // ResizeObserver and IntersectionObserver that src/test/setup.ts stubs once for every file,
+    // breaking every test after the first.
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) =>
+      setTimeout(() => callback(performance.now()), 0)) as unknown as typeof requestAnimationFrame;
+    globalThis.cancelAnimationFrame = ((handle: number) =>
+      clearTimeout(handle)) as unknown as typeof cancelAnimationFrame;
+  });
+
+  afterEach(() => {
+    globalThis.requestAnimationFrame = realRequestAnimationFrame;
+    globalThis.cancelAnimationFrame = realCancelAnimationFrame;
+  });
+
   it('renders every node with a label', async () => {
     const { nodes, links } = buildGraph(NAMES);
 
@@ -214,6 +234,93 @@ describe('ForceGraph', () => {
       expect(leaf).toHaveAttribute('opacity', '1');
       expect(unrelated).toHaveAttribute('opacity', '0.2');
     });
+  });
+
+  it('stops labelling every node once doing so would shrink the text', async () => {
+    // Separating 60 label boxes forces the layout wider than the canvas, and the fit then scales
+    // the whole picture — and its text — down to ~6px. Past the threshold only the nodes worth
+    // naming keep a standing label.
+    const many = Array.from({ length: 60 }, (_, i) => `Neighbour Person ${i}`);
+    const { nodes, links } = buildGraph(many);
+
+    render(<ForceGraph nodes={nodes} links={links} centerNodeId={CENTER_ID} />);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('force-node')).toHaveLength(nodes.length);
+    });
+
+    const drawn = screen
+      .getAllByTestId('force-node')
+      .filter((group) => (group.querySelector('text')?.textContent ?? '') !== '');
+
+    expect(drawn.length).toBeLessThan(nodes.length);
+    expect(drawn.length).toBeGreaterThan(0);
+  });
+
+  it('still names the centre node in a graph too dense to label fully', async () => {
+    const many = Array.from({ length: 60 }, (_, i) => `Neighbour Person ${i}`);
+    const { nodes, links } = buildGraph(many);
+
+    render(<ForceGraph nodes={nodes} links={links} centerNodeId={CENTER_ID} highlightedNodeId={CENTER_ID} />);
+
+    await waitFor(() => {
+      const labels = screen.getAllByTestId('force-node').map((g) => g.querySelector('text')?.textContent);
+
+      expect(labels).toContain('Abdul Ameer');
+    });
+  });
+
+  it('gives an unlabelled dot its name on hover', async () => {
+    const many = Array.from({ length: 60 }, (_, i) => `Neighbour Person ${i}`);
+    const { nodes, links } = buildGraph(many);
+
+    render(<ForceGraph nodes={nodes} links={links} centerNodeId={CENTER_ID} />);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('force-node')).toHaveLength(nodes.length);
+    });
+
+    const bare = screen
+      .getAllByTestId('force-node')
+      .find((group) => (group.querySelector('text')?.textContent ?? '') === '');
+
+    expect(bare).toBeDefined();
+    fireEvent.pointerEnter(bare!);
+
+    await waitFor(() => {
+      expect(bare!.querySelector('text')?.textContent ?? '').not.toBe('');
+    });
+  });
+
+  it('does not relayout when the selection changes', async () => {
+    // The graph explorer passes its live selection as highlightedNodeId. If anything selection-
+    // dependent reaches the layout effect, every click restarts the simulation and throws away the
+    // picture the viewer was reading.
+    const { nodes, links } = buildGraph(NAMES);
+    const { rerender } = render(
+      <ForceGraph nodes={nodes} links={links} centerNodeId={CENTER_ID} highlightedNodeId={CENTER_ID} />,
+    );
+
+    await settle();
+
+    const before = labelBoxes().map((box) => `${box.label}@${box.left.toFixed(2)},${box.top.toFixed(2)}`);
+
+    rerender(
+      <ForceGraph
+        nodes={nodes}
+        links={links}
+        centerNodeId={CENTER_ID}
+        highlightedNodeId="person-3"
+        selectedNodeId="person-3"
+      />,
+    );
+
+    const after = labelBoxes().map((box) => `${box.label}@${box.left.toFixed(2)},${box.top.toFixed(2)}`);
+
+    // Only the newly emphasised node may shift, and only because it is drawn a little larger.
+    const moved = before.filter((entry) => !after.includes(entry));
+
+    expect(moved.length).toBeLessThanOrEqual(1);
   });
 
   it('keeps a label gap the renderer and the layout agree on', () => {

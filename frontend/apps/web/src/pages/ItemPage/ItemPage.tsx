@@ -95,7 +95,10 @@ export function ItemPage() {
             description={item.description}
             editMode={editMode}
             onDescriptionSave={async (value) => {
-              // `name` is non-null on UpdateItemInput, so it is resent unchanged.
+              // UpdateItemInput requires `name`, so a description-only edit has to resend it.
+              // That makes this a last-write-wins update on the name as well: if it was renamed
+              // elsewhere since this page loaded, the cached value here would win. Same trade the
+              // existing MemoryPage detail editors make, and the page has no polling to widen it.
               const result = await updateItemDescription({
                 variables: { input: { id: item.id, name: item.name ?? '', description: value } },
               });

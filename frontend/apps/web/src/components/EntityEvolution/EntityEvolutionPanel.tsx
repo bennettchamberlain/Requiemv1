@@ -170,15 +170,42 @@ function getRelatedEntityName(delta: EvolutionDelta, focusEntityId: string): str
 }
 
 /**
+ * Whether a field's two sides are the same value.
+ *
+ * Compares the RAW values, never their rendered form. `formatDiffValue` is deliberately lossy — it
+ * clips long strings and reduces an object to its key list — so comparing what is displayed would
+ * report `{URL: 'a'}` -> `{URL: 'b'}` as unchanged and hide a genuine edit from an audit trail.
+ *
+ * Errs towards showing: an unserialisable value, or one whose keys are merely in a different order,
+ * counts as changed. Over-reporting a change in a change log is recoverable; hiding one is not.
+ */
+function isSameValue(oldValue: unknown, newValue: unknown): boolean {
+  if (oldValue === newValue) {
+    return true;
+  }
+
+  // A column that went from null to '' (or back) did not change in any sense the reader cares about.
+  const oldEmpty = oldValue == null || oldValue === '';
+  const newEmpty = newValue == null || newValue === '';
+  if (oldEmpty || newEmpty) {
+    return oldEmpty && newEmpty;
+  }
+
+  try {
+    return JSON.stringify(oldValue) === JSON.stringify(newValue);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Field edits worth showing.
  *
  * A record created from an import writes a delta for every column it touched, including the ones it
  * left alone — which rendered as "Description: empty -> empty". Identical sides are not a change.
  */
 function meaningfulFieldChanges(delta: EvolutionDelta) {
-  return delta.fieldChanges.filter(
-    (change) => formatDiffValue(change.oldValue) !== formatDiffValue(change.newValue),
-  );
+  return delta.fieldChanges.filter((change) => !isSameValue(change.oldValue, change.newValue));
 }
 
 export function EntityEvolutionPanel({ entityId, entityName }: Props) {

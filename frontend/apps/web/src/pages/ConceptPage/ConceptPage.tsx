@@ -98,8 +98,10 @@ export function ConceptPage() {
             description={concept.description}
             editMode={editMode}
             onDescriptionSave={async (value) => {
-              // `name` is non-null on UpdateConceptInput, so it is resent unchanged rather than
-              // omitted — leaving it out fails schema validation before the request is sent.
+              // UpdateConceptInput requires `name`, so a description-only edit has to resend it.
+              // That makes this a last-write-wins update on the name as well: if it was renamed
+              // elsewhere since this page loaded, the cached value here would win. Same trade the
+              // existing MemoryPage detail editors make, and the page has no polling to widen it.
               const result = await updateConceptDescription({
                 variables: { input: { id: concept.id, name: concept.name ?? '', description: value } },
               });

@@ -67,8 +67,10 @@ export function EntityTagsDescriptionCard({
     setHasTags(tags.length > 0);
   }, [tags.length]);
 
-  // A new entity, or a description changed elsewhere, replaces the draft — but not mid-edit, which
-  // would yank the text out from under the cursor.
+  // A new entity, or a description changed elsewhere, replaces the draft. In practice this fires
+  // after our own save, normalising the box to exactly what was stored. It would also discard an
+  // in-progress edit if the value changed underneath us, which is the right trade while nothing on
+  // these pages polls: showing stale text as if it were saved is the worse failure.
   useEffect(() => {
     setDraft(description ?? '');
   }, [description, resetKey]);

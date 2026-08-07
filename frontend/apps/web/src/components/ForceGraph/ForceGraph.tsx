@@ -12,6 +12,7 @@ import {
   nodeRadius,
   relaxLabelCollisions,
   simulationBounds,
+  standingLabelIds,
   truncateLabel,
 } from './labelLayout';
 
@@ -216,6 +217,19 @@ function ForceGraphBase({
     return neighbors;
   }, [renderLinks]);
 
+  /**
+   * Which nodes carry a standing label.
+   *
+   * Anchored on `centerNodeId` ONLY. This feeds the layout effect, and the graph explorer passes its
+   * live selection as `highlightedNodeId` — including that here would restart the whole simulation
+   * on every node click and throw away the picture the viewer was reading. A selected or hovered
+   * node still gets its label at render time, which costs nothing and moves nothing.
+   */
+  const standingLabels = useMemo(
+    () => standingLabelIds(nodes, (id) => degreeById.get(id) ?? 0, [centerNodeId]),
+    [centerNodeId, degreeById, nodes],
+  );
+
   useEffect(() => {
     if (nodes.length === 0) {
       previousPositionsRef.current = new Map();
@@ -228,7 +242,7 @@ function ForceGraphBase({
     // The simulation lays out in a world sized for the labels that have to fit, which is larger than
     // the canvas once the graph is dense; `fitTransform` scales the result back down to the canvas.
     const { width: boundsWidth, height: boundsHeight } = simulationBounds(
-      nodes.length,
+      standingLabels.size,
       canvasWidth,
       canvasHeight,
     );
@@ -279,7 +293,10 @@ function ForceGraphBase({
       // has to reserve exactly the room the renderer will use, or the collision pass separates
       // boxes that are not the boxes on screen.
       const fullLabel = node.name ?? node.entity_type ?? '';
-      const label = truncateLabel(fullLabel);
+      // A node without a standing label is a bare dot that answers on hover, so the layout reserves
+      // no horizontal room for it — which is the whole point of dropping the label.
+      const labelled = standingLabels.has(node.id);
+      const label = labelled ? truncateLabel(fullLabel) : '';
       const degree = degreeById.get(node.id) ?? 0;
 
       const shape = {
@@ -507,7 +524,17 @@ function ForceGraphBase({
       cancelAnimationFrame(animationFrame);
       previousPositionsRef.current = new Map(nodeCopies.map((node) => [node.id, { ...node }]));
     };
-  }, [anchoredKey, canvasHeight, centerNodeId, degreeById, nodes, nodesKey, renderLinks, width]);
+  }, [
+    anchoredKey,
+    canvasHeight,
+    centerNodeId,
+    degreeById,
+    nodes,
+    nodesKey,
+    renderLinks,
+    standingLabels,
+    width,
+  ]);
 
   const handleWheel = useCallback((event: WheelEvent) => {
     if (event.cancelable) {
@@ -756,19 +783,26 @@ function ForceGraphBase({
                     a link line. Long names are clipped to a fixed budget so one label cannot eat the
                     room several others need; the full value lives in the <title> above and is drawn
                     in full on hover.
+
+                    A dense graph gives a standing label only to the nodes worth naming, so a node
+                    without one draws no text until it is hovered or selected. That text is NOT in
+                    the layout's budget — it is transient, and reflowing the graph under the pointer
+                    to make room for it would be worse than letting it overlap for the moment.
                   */}
-                  <text
-                    x={radius + LABEL_GAP_PX}
-                    y={4}
-                    className={emphasised ? 'text-xs font-semibold' : 'text-xs'}
-                    fill="hsl(var(--foreground))"
-                    stroke="hsl(var(--background))"
-                    strokeWidth={emphasised ? 4 : 3}
-                    strokeLinejoin="round"
-                    style={{ paintOrder: 'stroke fill' }}
-                  >
-                    {isHovered ? node.fullLabel : node.label}
-                  </text>
+                  {(node.label !== '' || emphasised) && (
+                    <text
+                      x={radius + LABEL_GAP_PX}
+                      y={4}
+                      className={emphasised ? 'text-xs font-semibold' : 'text-xs'}
+                      fill="hsl(var(--foreground))"
+                      stroke="hsl(var(--background))"
+                      strokeWidth={emphasised ? 4 : 3}
+                      strokeLinejoin="round"
+                      style={{ paintOrder: 'stroke fill' }}
+                    >
+                      {emphasised ? node.fullLabel : node.label}
+                    </text>
+                  )}
                 </g>
               );
             })}

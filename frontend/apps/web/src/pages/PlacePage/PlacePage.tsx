@@ -93,7 +93,10 @@ export function PlacePage() {
               className="h-full"
               contentClassName="h-full"
               onDescriptionSave={async (value) => {
-                // `name` is non-null on UpdatePlaceInput, so it is resent unchanged.
+                // UpdatePlaceInput requires `name`, so a description-only edit has to resend it.
+                // That makes this a last-write-wins update on the name as well: if it was renamed
+                // elsewhere since this page loaded, the cached value here would win. Same trade the
+                // existing MemoryPage detail editors make, and the page has no polling to widen it.
                 const result = await updatePlaceDescription({
                   variables: { input: { id: place.id, name: place.name ?? '', description: value } },
                 });

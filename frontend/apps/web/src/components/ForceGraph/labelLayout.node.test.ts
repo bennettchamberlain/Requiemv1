@@ -7,10 +7,13 @@ import {
   graphHeightForNodeCount,
   labelBox,
   labelWidthPx,
+  LABEL_ALL_THRESHOLD,
+  PROMINENT_LABEL_COUNT,
   nodeRadius,
   overlapsVisibly,
   relaxLabelCollisions,
   simulationBounds,
+  standingLabelIds,
   truncateLabel,
 } from './labelLayout';
 
@@ -207,9 +210,60 @@ describe('relaxLabelCollisions', () => {
   });
 });
 
+describe('standingLabelIds', () => {
+  const degreeOf = (id: string) => Number.parseInt(id.replace('n', ''), 10);
+  const graph = (count: number) => Array.from({ length: count }, (_, i) => ({ id: `n${i}` }));
+
+  it('labels everything while the graph is small enough to read', () => {
+    const nodes = graph(LABEL_ALL_THRESHOLD);
+
+    expect(standingLabelIds(nodes, degreeOf).size).toBe(LABEL_ALL_THRESHOLD);
+  });
+
+  it('labels only the busiest nodes once every label would shrink the picture', () => {
+    const nodes = graph(LABEL_ALL_THRESHOLD + 1);
+    const labelled = standingLabelIds(nodes, degreeOf);
+
+    expect(labelled.size).toBe(PROMINENT_LABEL_COUNT);
+    // Highest degree wins; the quietest nodes drop to hover-only.
+    expect(labelled.has(`n${LABEL_ALL_THRESHOLD}`)).toBe(true);
+    expect(labelled.has('n0')).toBe(false);
+  });
+
+  it('always names the node the graph is centred on, however quiet it is', () => {
+    const nodes = graph(100);
+    const labelled = standingLabelIds(nodes, degreeOf, ['n0']);
+
+    // n0 has the lowest degree of all, so only an explicit request keeps it.
+    expect(labelled.has('n0')).toBe(true);
+    expect(labelled.size).toBe(PROMINENT_LABEL_COUNT + 1);
+  });
+
+  it('ignores absent anchors rather than reserving a slot for them', () => {
+    const labelled = standingLabelIds(graph(100), degreeOf, [null, undefined, '']);
+
+    expect(labelled.size).toBe(PROMINENT_LABEL_COUNT);
+  });
+
+  it('picks the same nodes every time for the same graph', () => {
+    const nodes = graph(100);
+    const first = [...standingLabelIds(nodes, () => 1)];
+    const second = [...standingLabelIds(nodes, () => 1)];
+
+    // All degrees tied — a stable sort has to keep this deterministic.
+    expect(first).toEqual(second);
+  });
+});
+
 describe('simulationBounds', () => {
   it('lays out in the canvas itself while the graph is small', () => {
     expect(simulationBounds(10, 720, 420)).toEqual({ width: 720, height: 420 });
+  });
+
+  it('does not grow for bare dots, which need no label room', () => {
+    // 100 nodes but only 13 labelled: growing the world here would shrink the fit, and the
+    // labels that ARE drawn with it — the exact failure the label budget exists to avoid.
+    expect(simulationBounds(13, 720, 420)).toEqual({ width: 720, height: 420 });
   });
 
   it('grows the world once there is more label than canvas', () => {

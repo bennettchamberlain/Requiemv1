@@ -145,6 +145,59 @@ describe('EntityEvolutionPanel', () => {
     expect(screen.getByText(/Name:/)).toBeInTheDocument();
   });
 
+  it('still shows an object edit that keeps the same keys', () => {
+    // The display form reduces an object to its key list, so comparing what is DISPLAYED to decide
+    // whether a field changed silently hides this edit. An audit trail must not lose a real change.
+    mockDeltas([
+      delta({
+        changeType: 'updated',
+        fieldChanges: [
+          {
+            field: 'properties',
+            oldValue: { URL: 'https://linkedin.com/in/abdul-a' },
+            newValue: { URL: 'https://linkedin.com/in/abdul-b' },
+          },
+        ],
+      }),
+    ]);
+
+    render(<EntityEvolutionPanel entityId={FOCUS_ID} />);
+
+    expect(screen.getByText(/Properties:/)).toBeInTheDocument();
+  });
+
+  it('still shows a long string edit that differs past the clip point', () => {
+    const shared = 'x'.repeat(80);
+
+    mockDeltas([
+      delta({
+        changeType: 'updated',
+        fieldChanges: [{ field: 'description', oldValue: `${shared}AAA`, newValue: `${shared}BBB` }],
+      }),
+    ]);
+
+    render(<EntityEvolutionPanel entityId={FOCUS_ID} />);
+
+    expect(screen.getByText(/Description:/)).toBeInTheDocument();
+  });
+
+  it('treats null and empty string as the same non-change', () => {
+    mockDeltas([
+      delta({
+        changeType: 'updated',
+        fieldChanges: [
+          { field: 'description', oldValue: null, newValue: '' },
+          { field: 'name', oldValue: 'Abdul', newValue: 'Abdul Ameer' },
+        ],
+      }),
+    ]);
+
+    render(<EntityEvolutionPanel entityId={FOCUS_ID} />);
+
+    expect(screen.queryByText(/Description:/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Name:/)).toBeInTheDocument();
+  });
+
   it('summarises an object by its keys instead of truncated JSON', () => {
     mockDeltas(IMPORT_DELTAS);
 

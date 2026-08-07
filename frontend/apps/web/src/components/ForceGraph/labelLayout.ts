@@ -204,6 +204,53 @@ export function relaxLabelCollisions(nodes: readonly CollidableNode[], strength 
   return overlaps;
 }
 
+/**
+ * Above this many nodes, a standing label on every node is self-defeating.
+ *
+ * Separating that many label boxes forces the layout wider than the canvas, and `fitTransform` then
+ * scales the whole picture down to fit — so at 100 nodes the labels no longer overlap but render at
+ * ~6px, which is not readable either. Past the threshold only the nodes worth naming keep a standing
+ * label; the rest are dots that give up their name on hover. The layout reserves no room for a label
+ * it will not draw, which is what keeps the fit near 1:1 and the remaining labels legible.
+ */
+export const LABEL_ALL_THRESHOLD = 40;
+
+/** How many of the busiest nodes keep a standing label once the graph is past the threshold. */
+export const PROMINENT_LABEL_COUNT = 12;
+
+/**
+ * Which nodes carry a standing label. Everything else still answers on hover.
+ *
+ * `alwaysLabel` is for nodes the viewer has explicitly put at the centre of the picture — they are
+ * named regardless of how busy they are, because they are the reason the graph is on screen.
+ */
+export function standingLabelIds(
+  nodes: readonly { id: string }[],
+  degreeOf: (id: string) => number,
+  alwaysLabel: readonly (string | null | undefined)[] = [],
+): Set<string> {
+  if (nodes.length <= LABEL_ALL_THRESHOLD) {
+    return new Set(nodes.map((node) => node.id));
+  }
+
+  const labelled = new Set(alwaysLabel.filter((id): id is string => typeof id === 'string' && id !== ''));
+
+  // Busiest first. Array.prototype.sort is stable, so ties keep the incoming order and the same
+  // graph always labels the same nodes.
+  const byDegree = [...nodes].sort((a, b) => degreeOf(b.id) - degreeOf(a.id));
+  const budget = labelled.size + PROMINENT_LABEL_COUNT;
+
+  for (const node of byDegree) {
+    if (labelled.size >= budget) {
+      break;
+    }
+
+    labelled.add(node.id);
+  }
+
+  return labelled;
+}
+
 /** Node count the simulation world is sized for before it needs to grow. */
 const BASELINE_NODE_COUNT = 25;
 const MAX_WORLD_SCALE = 2.2;
@@ -211,17 +258,20 @@ const MAX_WORLD_SCALE = 2.2;
 /**
  * The world the simulation lays out in, which is NOT the canvas it is drawn on.
  *
- * Nodes are clamped inside these bounds, so at 100 nodes a canvas-sized world leaves collision
- * resolution nowhere to put anything and the overflow piles up against the walls. The world grows
- * with the square root of the node count — area scales linearly with the boxes that have to fit —
- * and `fitTransform` scales the result back down to the canvas.
+ * Nodes are clamped inside these bounds, so a canvas-sized world leaves collision resolution nowhere
+ * to put the overflow and it piles up against the walls. The world grows with the square root of the
+ * count — area scales linearly with the boxes that have to fit — and `fitTransform` scales the
+ * result back down to the canvas.
+ *
+ * Driven by the number of LABELLED nodes, not the total: bare dots pack tightly and need no extra
+ * room, and growing the world for them would only shrink the fit and the labels with it.
  */
 export function simulationBounds(
-  nodeCount: number,
+  labelledCount: number,
   canvasWidth: number,
   canvasHeight: number,
 ): { width: number; height: number } {
-  const scale = Math.min(MAX_WORLD_SCALE, Math.max(1, Math.sqrt(nodeCount / BASELINE_NODE_COUNT)));
+  const scale = Math.min(MAX_WORLD_SCALE, Math.max(1, Math.sqrt(labelledCount / BASELINE_NODE_COUNT)));
 
   return { width: canvasWidth * scale, height: canvasHeight * scale };
 }
