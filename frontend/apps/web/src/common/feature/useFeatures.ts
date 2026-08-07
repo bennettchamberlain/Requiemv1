@@ -30,7 +30,7 @@ function useFeatures(): ReturnValue {
   // Refs cannot drive a re-render, so `loading` needs its own state. "Settled"
   // means answered, not answered successfully: a failed fetch leaves the flags
   // off, and callers should act on that rather than spin forever.
-  const [settled, setSettled] = useState(false);
+  const [userSettled, setUserSettled] = useState(false);
   const [globalSettled, setGlobalSettled] = useState(false);
 
   const fetchFeatures = useCallback(
@@ -57,7 +57,7 @@ function useFeatures(): ReturnValue {
       } catch (err) {
         console.error('Failed to fetch features', err);
       } finally {
-        setSettled(true);
+        setUserSettled(true);
       }
     },
     [authToken],
@@ -108,7 +108,7 @@ function useFeatures(): ReturnValue {
   // The per-user set needs a token, so "no token" is only an answer once the
   // session handshake has finished — until then one may still arrive. The global
   // set is unauthenticated and always fetched.
-  const userPending = initializing || (Boolean(authToken) && !settled);
+  const userPending = initializing || (Boolean(authToken) && !userSettled);
 
   return {
     isFeatureEnabled,

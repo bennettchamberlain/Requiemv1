@@ -107,8 +107,11 @@ beforeEach(() => {
 
 describe('App routing', () => {
   it.each(GATED_PATHS)('does not flash 404 on %s while the flags are loading', (path) => {
-    renderAt(path);
+    const { container } = renderAt(path);
 
+    // Paired with the absence check below: on its own, "no 404" would also pass
+    // if the tree had failed to render at all.
+    expect(container).not.toBeEmptyDOMElement();
     expect(notFound()).not.toBeInTheDocument();
   });
 
@@ -116,10 +119,11 @@ describe('App routing', () => {
   // and the browser restores history state across a reload — so refreshing on
   // /settings/* re-renders that background route, gated flags and all.
   it('does not flash 404 when a settings overlay is reloaded over a gated page', () => {
-    renderAt('/settings/appearance', {
+    const { container } = renderAt('/settings/appearance', {
       backgroundLocation: { pathname: '/stats', search: '', hash: '', state: null, key: 'test' },
     });
 
+    expect(container).not.toBeEmptyDOMElement();
     expect(notFound()).not.toBeInTheDocument();
   });
 
@@ -129,7 +133,9 @@ describe('App routing', () => {
     h.features = { loading: false, enabled: true };
     rerender(<App />);
 
-    expect(await screen.findByLabelText('Stats')).toBeInTheDocument();
+    // The layout's nav landmarks stand in for "off the fallback and into the
+    // route" — the pages themselves load lazily and have nothing in common.
+    expect(await screen.findAllByRole('navigation')).not.toHaveLength(0);
     expect(notFound()).not.toBeInTheDocument();
   });
 
