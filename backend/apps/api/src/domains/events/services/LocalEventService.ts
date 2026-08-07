@@ -7,6 +7,7 @@ import { LoggerService } from '@ci/common/logging';
 
 import { type EventPayloads } from '../event-registry';
 import { EventRegistry } from '../registry';
+import type { EventSendOptions } from '../types';
 
 import { EventService } from './EventService';
 
@@ -46,19 +47,22 @@ export class LocalEventService extends EventService implements BeforeApplication
   async send<E extends keyof EventPayloads>(
     name: E,
     event: EventPayloads[E],
-    options?: { queue?: string },
+    options?: EventSendOptions,
   ): Promise<string[]>;
 
   async send<E extends keyof EventRegistry>(
     name: E,
     event: EventRegistry[E],
-    options?: { queue?: string },
+    options?: EventSendOptions,
   ): Promise<string[]>;
 
+  // `options.priority` is accepted for signature parity with the pg-boss
+  // implementation and deliberately ignored: this service executes listeners
+  // inline at the call site, so there is no pending queue to order.
   async send<E extends string>(
     name: E,
     event: EventRegistry[keyof EventRegistry] | EventPayloads[keyof EventPayloads],
-    options?: { queue?: string },
+    options?: EventSendOptions,
   ): Promise<string[]> {
     const traceId = uuidv4();
     const userId = (event as { userId?: string }).userId;
@@ -109,6 +113,9 @@ export class LocalEventService extends EventService implements BeforeApplication
     return executionPromise;
   }
 
+  // The base class declares a third `options` parameter carrying `priority`.
+  // It is omitted here rather than accepted and discarded: inline execution has
+  // no queue to reorder, so there is nothing to honour.
   async sendMany(
     queue: string,
     events: Array<{ name: string; data: Record<string, unknown> }>,
