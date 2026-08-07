@@ -47,9 +47,9 @@ over the DSN.
 
 ## What gets scrubbed
 
-`backend/apps/api/src/common/telemetry/scrubEvent.ts` and its Python twins
-(`backend/apps/hbpe/src/ci/hbpe/telemetry.py`,
-`backend/apps/summary/src/ci/summary/telemetry.py`) implement the same rules:
+`backend/apps/api/src/common/telemetry/scrubEvent.ts` and its Python
+counterpart (`backend/packages/telemetry/src/ci/telemetry/__init__.py`, shared
+by every Python service) implement the same rules:
 
 - Bearer tokens, `api_key=` / `password:` / `token:` style pairs, Tailscale
   `tskey-…`, and credentials in connection URLs → `[Filtered]`

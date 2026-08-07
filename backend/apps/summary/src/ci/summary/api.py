@@ -12,12 +12,13 @@ import nest_asyncio
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from ci.telemetry import init_telemetry
+
 from . import __version__, workflow_control
 from .data_aggregator import aggregator
-from .telemetry import init_telemetry
 
 # No-op unless SENTRY_DSN is set — see telemetry.py.
-init_telemetry()
+init_telemetry("ci-server-summary")
 
 # Allow nested event loops (needed for run_sync() in async FastAPI context)
 nest_asyncio.apply()

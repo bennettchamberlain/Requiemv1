@@ -33,15 +33,23 @@ ENV UV_PROJECT_ENVIRONMENT=/usr/local \
 # against the single root lock. Adding a member means adding a line here.
 # A missing one fails the build loudly, which is the safe direction.
 COPY pyproject.toml uv.lock .python-version ./
+COPY backend/apps/hbpe/pyproject.toml ./backend/apps/hbpe/pyproject.toml
 COPY backend/apps/summary/pyproject.toml ./backend/apps/summary/pyproject.toml
+COPY backend/packages/telemetry/pyproject.toml ./backend/packages/telemetry/pyproject.toml
 
 # --locked fails the build if uv.lock does not match the manifests, so an
 # image can never be built from an unresolved dependency set. This is the
 # reason the lockfile exists; the previous `uv pip install -r
 # pyproject.toml` ignored it entirely and re-resolved on every build.
-RUN uv sync --locked --package ci-summary --no-install-project --no-dev
+#
+# --no-install-workspace, not --no-install-project: this service depends on
+# the ci-telemetry workspace member, whose source has not been copied yet.
+# Skipping only the project would make uv try to build it from an empty
+# directory.
+RUN uv sync --locked --package ci-summary --no-install-workspace --no-dev
 
 COPY backend/apps/summary/src ./backend/apps/summary/src
+COPY backend/packages/telemetry/src ./backend/packages/telemetry/src
 
 RUN uv sync --locked --package ci-summary --no-dev --no-editable
 

@@ -19,6 +19,7 @@ members = [
     "ci-hbpe",
     "ci-server",
     "ci-summary",
+    "ci-telemetry",
 ]
 
 [[package]]
@@ -587,6 +588,7 @@ version = "0.1.0"
 source = { editable = "backend/apps/hbpe" }
 dependencies = [
     { name = "asyncpg" },
+    { name = "ci-telemetry" },
     { name = "fastapi" },
     { name = "huggingface-hub" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
@@ -601,7 +603,6 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "requests" },
     { name = "scikit-learn" },
-    { name = "sentry-sdk" },
     { name = "structlog" },
     { name = "temporalio" },
     { name = "torch" },
@@ -611,6 +612,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "asyncpg", specifier = ">=0.29" },
+    { name = "ci-telemetry", editable = "backend/packages/telemetry" },
     { name = "fastapi" },
     { name = "huggingface-hub", specifier = ">=0.22" },
     { name = "numpy" },
@@ -624,7 +626,6 @@ requires-dist = [
     { name = "python-dotenv" },
     { name = "requests", specifier = ">=2.31" },
     { name = "scikit-learn", specifier = ">=1.4" },
-    { name = "sentry-sdk", specifier = ">=2.20" },
     { name = "structlog" },
     { name = "temporalio" },
     { name = "torch", specifier = ">=2.2" },
@@ -662,6 +663,7 @@ version = "0.1.0"
 source = { editable = "backend/apps/summary" }
 dependencies = [
     { name = "asyncpg" },
+    { name = "ci-telemetry" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "markitdown", extra = ["all"] },
@@ -674,7 +676,6 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "python-multipart" },
     { name = "pytz" },
-    { name = "sentry-sdk" },
     { name = "sqlalchemy" },
     { name = "structlog" },
     { name = "temporalio" },
@@ -685,6 +686,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "asyncpg" },
+    { name = "ci-telemetry", editable = "backend/packages/telemetry" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "markitdown", extras = ["all"] },
@@ -697,13 +699,23 @@ requires-dist = [
     { name = "python-dotenv" },
     { name = "python-multipart" },
     { name = "pytz" },
-    { name = "sentry-sdk", specifier = ">=2.20" },
     { name = "sqlalchemy" },
     { name = "structlog" },
     { name = "temporalio" },
     { name = "tenacity" },
     { name = "uvicorn" },
 ]
+
+[[package]]
+name = "ci-telemetry"
+version = "0.1.0"
+source = { editable = "backend/packages/telemetry" }
+dependencies = [
+    { name = "sentry-sdk" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "sentry-sdk", specifier = ">=2.20" }]
 
 [[package]]
 name = "click"

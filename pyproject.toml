@@ -134,10 +134,12 @@ warn_unused_configs = true
 mypy_path = [
     "backend/apps/hbpe/src",
     "backend/apps/summary/src",
+    "backend/packages/telemetry/src",
 ]
 files = [
     "backend/apps/hbpe/src",
     "backend/apps/summary/src",
+    "backend/packages/telemetry/src",
 ]
 
 [[tool.mypy.overrides]]
@@ -173,6 +175,7 @@ ignore_missing_imports = true
 testpaths = [
     "backend/apps/hbpe/tests",
     "backend/apps/summary/tests",
+    "backend/packages/telemetry/tests",
 ]
 asyncio_default_fixture_loop_scope = "function"
 

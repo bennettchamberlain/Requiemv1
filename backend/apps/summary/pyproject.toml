@@ -34,9 +34,8 @@ dependencies = [
     # Logging
     "structlog",
 
-    # Error reporting — inert unless SENTRY_DSN is set. The telemetry module
-    # also tolerates the package being absent so a slimmed install still boots.
-    "sentry-sdk>=2.20",
+    # Error reporting — shared with ci-hbpe; brings sentry-sdk with it.
+    "ci-telemetry",
 
     # API / HTTP
     "fastapi",
@@ -49,6 +48,9 @@ dependencies = [
 
 # The test runner and linters come from the root workspace dev group, so
 # they are not repeated here.
+
+[tool.uv.sources]
+ci-telemetry = { workspace = true }
 
 [tool.uv.build-backend]
 module-name = "ci.summary"

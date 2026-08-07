@@ -17,6 +17,8 @@ from temporalio.worker.workflow_sandbox import (
     SandboxRestrictions,
 )
 
+from ci.telemetry import init_telemetry
+
 # Import activities
 from .activities import (
     # Action activities
@@ -58,7 +60,6 @@ from .system_workflows import (
     SystemMonthlySummariesWorkflow,
     SystemWeeklySummariesWorkflow,
 )
-from .telemetry import init_telemetry
 
 # Import workflows
 from .workflows import (
@@ -272,7 +273,7 @@ async def run_worker():
 def main():
     """Main entry point for worker."""
     # No-op unless SENTRY_DSN is set — see telemetry.py.
-    init_telemetry()
+    init_telemetry("ci-server-summary")
 
     # Register signal handlers
     signal.signal(signal.SIGINT, signal_handler)

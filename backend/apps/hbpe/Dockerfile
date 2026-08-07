@@ -42,6 +42,7 @@ RUN useradd -m -u 1000 hbpe
 COPY pyproject.toml uv.lock .python-version ./
 COPY backend/apps/hbpe/pyproject.toml ./backend/apps/hbpe/pyproject.toml
 COPY backend/apps/summary/pyproject.toml ./backend/apps/summary/pyproject.toml
+COPY backend/packages/telemetry/pyproject.toml ./backend/packages/telemetry/pyproject.toml
 
 # --locked fails the build if uv.lock does not match the manifests, so an
 # image can never be built from an unresolved dependency set. This is the
@@ -56,7 +57,12 @@ COPY backend/apps/summary/pyproject.toml ./backend/apps/summary/pyproject.toml
 # pyproject.toml selects the GPU build on linux-x86_64 and the portable one
 # everywhere else, replacing the `sed -i 's/onnxruntime-gpu/onnxruntime/'`
 # that used to rewrite the manifest mid-build.
-RUN uv sync --locked --package ci-hbpe --no-install-project --no-dev \
+#
+# --no-install-workspace, not --no-install-project: this service depends on
+# the ci-telemetry workspace member, whose source has not been copied yet.
+# Skipping only the project would make uv try to build it from an empty
+# directory.
+RUN uv sync --locked --package ci-hbpe --no-install-workspace --no-dev \
     --no-install-package torch
 
 # ── Hardware-specific packages ────────────────────────────────────────────────
@@ -91,13 +97,14 @@ COPY LICENSE.md /LICENSE.md
 
 # ── Application code ──────────────────────────────────────────────────────────
 COPY backend/apps/hbpe/src ./backend/apps/hbpe/src
+COPY backend/packages/telemetry/src ./backend/packages/telemetry/src
 COPY backend/apps/hbpe/scripts ./scripts
 COPY --chmod=755 backend/apps/hbpe/entrypoint.sh ./entrypoint.sh
 
 # `uv pip install`, not a second `uv sync`, because sync would prune the
 # hardware-specific packages installed above. --no-deps because the
 # dependencies are already installed from the lock.
-RUN uv pip install --no-cache --no-deps ./backend/apps/hbpe
+RUN uv pip install --no-cache --no-deps ./backend/packages/telemetry ./backend/apps/hbpe
 
 # Persistent volumes for model artifacts and token corpus
 RUN mkdir -p /app/models/qwen \

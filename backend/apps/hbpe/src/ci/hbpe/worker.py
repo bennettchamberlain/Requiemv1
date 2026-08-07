@@ -33,14 +33,14 @@ from ci.hbpe.pipeline.nightly_runner import (
     needs_bootstrap,
 )
 from ci.hbpe.pipeline.schedule import ensure_bootstrap_if_cold, setup_hbpe_schedules
-from ci.hbpe.telemetry import init_telemetry
+from ci.telemetry import init_telemetry
 
 log = structlog.get_logger(__name__)
 
 
 async def main() -> None:
-    # No-op unless SENTRY_DSN is set — see ci/telemetry.py.
-    init_telemetry()
+    # No-op unless SENTRY_DSN is set — see the ci-telemetry package.
+    init_telemetry("ci-server-hbpe")
 
     # Init database connection pool early to fail fast
     from ci.hbpe.database import init_db

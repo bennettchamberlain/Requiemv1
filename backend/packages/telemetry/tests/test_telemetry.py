@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ci.summary.telemetry import is_enabled, scrub_event, scrub_string
+from ci.telemetry import is_enabled, scrub_event, scrub_string
 
 DSN = "https://publickey@o1.ingest.us.sentry.io/2"
 
@@ -245,13 +245,13 @@ class TestStackFrameScrubbing:
 
 class TestInitNeverRaises:
     def test_malformed_dsn_does_not_crash_startup(self, monkeypatch):
-        import ci.summary.telemetry as telemetry_module
+        import ci.telemetry as telemetry_module
 
         monkeypatch.setattr(telemetry_module, "_initialized", False)
         monkeypatch.setenv("SENTRY_DSN", "not-a-dsn")
 
         # Must return False rather than raising BadDsn out of module import.
-        assert telemetry_module.init_telemetry() is False
+        assert telemetry_module.init_telemetry("ci-server-test") is False
 
 
 class TestHubIdentityHeader:

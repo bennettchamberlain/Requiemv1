@@ -1,5 +1,9 @@
 """
-Sentry error reporting for the Summary service.
+Sentry error reporting, shared by every Python service.
+
+Each service passes its own component name to :func:`init_telemetry`; nothing
+else here is service-specific. This module previously existed as two byte-identical
+copies, one per service, kept in step by a test that diffed them.
 
 Opt-out — on wherever a DSN is configured. With no ``SENTRY_DSN`` nothing initialises and the
 process makes no outbound connection. Two kill switches disable reporting even
@@ -21,9 +25,7 @@ import logging
 import os
 import re
 from collections.abc import Mapping
-from typing import Any
-
-COMPONENT = "ci-server-summary"
+from typing import Any, cast
 
 _FALSEY = {"off", "false", "0", "no", "disabled"}
 _TRUTHY = {"on", "true", "1", "yes", "enabled"}
@@ -139,7 +141,9 @@ def _scrub_value(value: Any, depth: int = 0) -> Any:
     return value
 
 
-def scrub_event(event: dict, _hint: dict | None = None) -> dict | None:
+def scrub_event(
+    event: dict[str, Any], _hint: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
     """``before_send`` hook — redact credentials and home paths."""
     if not isinstance(event, dict):
         return event
@@ -233,9 +237,14 @@ def scrub_event(event: dict, _hint: dict | None = None) -> dict | None:
     return event
 
 
-def init_telemetry(component: str = COMPONENT) -> bool:
+def init_telemetry(component: str) -> bool:
     """
     Initialise Sentry when configured. Returns True when reporting is active.
+
+    ``component`` identifies the calling service (for example
+    ``"ci-server-hbpe"``). It is required rather than defaulted, because the
+    default is the one thing that differed between the two copies this module
+    replaces, and a wrong default silently mislabels every event.
 
     Safe to call repeatedly and safe to call when ``sentry-sdk`` is not
     installed — a missing optional dependency must never stop the service from
@@ -280,7 +289,11 @@ def init_telemetry(component: str = COMPONENT) -> bool:
             include_local_variables=False,
             # The hostname identifies the household.
             server_name=None,
-            before_send=scrub_event,
+            # scrub_event is typed against plain dicts rather than the SDK's
+            # Event TypedDict, so that it stays callable (and testable) without
+            # sentry-sdk installed. That is the whole point of the optional
+            # dependency, so the cast is deliberate.
+            before_send=cast("Any", scrub_event),
         )
         sentry_sdk.set_tag("component", component)
 
