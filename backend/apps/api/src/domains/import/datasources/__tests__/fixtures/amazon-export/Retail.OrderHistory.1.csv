@@ -1,0 +1,6 @@
+"Order Date","Order ID","Product Name","Quantity","Total Owed","Currency","Unit Price","Category","ASIN","Product Condition","Shipping Address"
+"2023-01-15T10:30:00Z","111-2233445-6677889","USB-C to USB-C Cable, 6ft (2-Pack)","2","19.98","USD","9.99","ELECTRONIC_CABLE","B07ABC123","New","123 Main St"
+"2023-03-02","112-9988776-5544332","The Pragmatic Programmer, 20th Anniversary Edition","1","42.50","USD","42.50","ABIS_BOOK","020161622X","New","123 Main St"
+"2023-06-19T08:15:00Z","113-5566778-9900112","Stainless Steel Water Bottle, 32oz, ""Midnight Black""
+Insulated, Keeps Cold 24h","1","27.45","USD","27.45","ABIS_KITCHEN","B09KITCHEN","New","456 Oak Ave"
+"","114-0000000-0000000","Item With No Order Date Should Be Skipped","1","5.00","USD","5.00","ELECTRONIC_CABLE","B0SKIPPED","New","123 Main St"

@@ -1,0 +1,4 @@
+[
+  { "DateTime": "2019-06-02T17:20:11Z", "Application": "Cortana", "Transcription": "what's the weather tomorrow" },
+  { "DateTime": "2020-03-14T09:05:43Z", "Application": "Windows Speech Recognition", "Transcription": "open notepad" }
+]

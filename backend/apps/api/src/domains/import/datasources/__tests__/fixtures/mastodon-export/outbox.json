@@ -1,0 +1,54 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    {
+      "ostatus": "http://ostatus.org#",
+      "atomUri": "ostatus:atomUri"
+    }
+  ],
+  "id": "https://mastodon.social/users/alice/outbox",
+  "type": "OrderedCollection",
+  "totalItems": 3,
+  "orderedItems": [
+    {
+      "id": "https://mastodon.social/users/alice/statuses/110001/activity",
+      "type": "Create",
+      "actor": "https://mastodon.social/users/alice",
+      "published": "2023-01-15T10:30:00Z",
+      "to": ["https://www.w3.org/ns/activitystreams#Public"],
+      "object": {
+        "id": "https://mastodon.social/users/alice/statuses/110001",
+        "type": "Note",
+        "summary": null,
+        "published": "2023-01-15T10:30:00Z",
+        "url": "https://mastodon.social/@alice/110001",
+        "attributedTo": "https://mastodon.social/users/alice",
+        "content": "<p>Hello <a href=\"https://mastodon.social/tags/fediverse\">#fediverse</a>! This is my first post &amp; it&#39;s exciting.</p>"
+      }
+    },
+    {
+      "id": "https://mastodon.social/users/alice/statuses/110002/activity",
+      "type": "Create",
+      "actor": "https://mastodon.social/users/alice",
+      "published": "2023-02-20T18:45:30Z",
+      "to": ["https://www.w3.org/ns/activitystreams#Public"],
+      "object": {
+        "id": "https://mastodon.social/users/alice/statuses/110002",
+        "type": "Note",
+        "summary": "spoilers for the finale",
+        "published": "2023-02-20T18:45:30Z",
+        "url": "https://mastodon.social/@alice/110002",
+        "attributedTo": "https://mastodon.social/users/alice",
+        "content": "<p>Wow, that ending was wild.</p><p>Did not see it coming!</p>"
+      }
+    },
+    {
+      "id": "https://mastodon.social/users/alice/statuses/110099/activity",
+      "type": "Announce",
+      "actor": "https://mastodon.social/users/alice",
+      "published": "2023-03-01T08:00:00Z",
+      "to": ["https://www.w3.org/ns/activitystreams#Public"],
+      "object": "https://example.com/users/bob/statuses/55555"
+    }
+  ]
+}

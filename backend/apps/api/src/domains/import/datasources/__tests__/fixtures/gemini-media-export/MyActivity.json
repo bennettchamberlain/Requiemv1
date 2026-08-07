@@ -1,0 +1,24 @@
+[
+  {
+    "header": "Gemini Apps",
+    "title": "Prompted Generate an image of a red fox",
+    "titleUrl": "https://gemini.google.com/app/media1",
+    "time": "2026-04-02T10:00:00.000Z",
+    "products": ["Gemini Apps"],
+    "attachedFiles": [{ "name": "Generated_image_fox.png" }]
+  },
+  {
+    "header": "Gemini Apps",
+    "title": "Prompted Describe this picture",
+    "titleUrl": "https://gemini.google.com/app/media2",
+    "time": "2026-04-03T11:00:00.000Z",
+    "products": ["Gemini Apps"],
+    "attachedFiles": ["uploads/picture_of_dog.png", { "name": "gone.png" }]
+  },
+  {
+    "header": "Gemini Apps",
+    "title": "Prompted Just a text question",
+    "time": "2026-04-04T12:00:00.000Z",
+    "products": ["Gemini Apps"]
+  }
+]

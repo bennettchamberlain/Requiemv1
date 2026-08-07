@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TrainingCenterDatabase
+    xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2">
+    <Activities>
+        <Activity Sport="walking">
+            <!-- <Id> is the first trackpoint, 48s after the session start in the filename. -->
+            <Id>2018-06-02T17:00:48.250Z</Id>
+            <Lap StartTime="2018-06-02T17:00:48.250Z">
+                <TotalTimeSeconds>1752</TotalTimeSeconds>
+            </Lap>
+        </Activity>
+    </Activities>
+</TrainingCenterDatabase>

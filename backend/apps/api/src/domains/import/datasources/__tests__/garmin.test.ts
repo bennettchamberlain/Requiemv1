@@ -1,0 +1,130 @@
+import path from 'path';
+
+import { GarminFileImporter } from '../garmin';
+import type { ImportParams } from '../timeline';
+
+import type { EmittedGraph } from './support/emitted';
+
+const FIXTURES_DIR = path.join(__dirname, 'fixtures');
+
+describe('Garmin Connect datasource', () => {
+  it('recognizes export directory by Activities.csv', async () => {
+    const root = path.join(FIXTURES_DIR, 'garmin-export');
+    const fi = new GarminFileImporter();
+    const rec = await fi.recognize({}, { filename: 'garmin-export', fullPath: root });
+    expect(rec.confidence).toBeGreaterThan(0.8);
+  });
+
+  it('recognizes a single Activities.csv file directly', async () => {
+    const fpath = path.join(FIXTURES_DIR, 'garmin-export', 'Activities.csv');
+    const fi = new GarminFileImporter();
+    const rec = await fi.recognize({}, { filename: 'Activities.csv', fullPath: fpath });
+    expect(rec.confidence).toBeGreaterThan(0.8);
+  });
+
+  it('does not false-match a Strava activities.csv', async () => {
+    // Strava's activities.csv also has "Activity Type" + "Distance" columns but
+    // lacks Garmin-distinctive fields (Favorite/Calories/Avg HR/Aerobic TE).
+    const fpath = path.join(FIXTURES_DIR, 'strava-export', 'activities.csv');
+    const fi = new GarminFileImporter();
+    const rec = await fi.recognize({}, { filename: 'activities.csv', fullPath: fpath });
+    expect(rec.confidence).toBe(0);
+  });
+
+  it('imports activities into workout items', async () => {
+    const root = path.join(FIXTURES_DIR, 'garmin-export');
+    const fi = new GarminFileImporter();
+    const pipeline: EmittedGraph[] = [];
+    await fi.fileImport({}, { filename: 'garmin-export', fullPath: root }, {
+      pipeline,
+      timeframe: {},
+      log: () => {},
+    } as unknown as ImportParams);
+
+    expect(pipeline.length).toBe(3);
+
+    const first = pipeline[0].item;
+    expect(first.classification).toBe('workout');
+    expect(first.metadata['Activity Type']).toBe('Running');
+    expect(first.metadata.Title).toBe('Morning Run, riverside');
+    expect(first.metadata.Distance).toBe('5.02');
+    expect(first.metadata.Calories).toBe('412');
+    expect(first.metadata.Time).toBe('00:28:43');
+    expect(first.metadata['Avg HR']).toBe('148');
+    expect(first.metadata.Source).toBe('Garmin Connect');
+    expect(first.timestamp).toBeInstanceOf(Date);
+    expect(first.timestamp!.getFullYear()).toBe(2023);
+
+    // Embedded quotes inside a quoted field must survive the CSV parse.
+    expect(pipeline[2].item.metadata.Title).toBe('Lap swim "intervals"');
+
+    // Content is the human-readable title.
+    const buf = await first.content.data!();
+    expect(buf.toString()).toBe('Morning Run, riverside');
+  });
+
+  it('honors the timeframe filter', async () => {
+    const root = path.join(FIXTURES_DIR, 'garmin-export');
+    const fi = new GarminFileImporter();
+    const pipeline: EmittedGraph[] = [];
+    await fi.fileImport({}, { filename: 'garmin-export', fullPath: root }, {
+      pipeline,
+      timeframe: { since: new Date('2023-01-20T00:00:00') },
+      log: () => {},
+    } as unknown as ImportParams);
+
+    // Only the Feb swim is after the since cutoff.
+    expect(pipeline.length).toBe(1);
+    expect(pipeline[0].item.metadata['Activity Type']).toBe('Pool Swimming');
+  });
+
+  it('falls back to Activity Type as the title when Title is empty', async () => {
+    // Garmin's Title column is often empty for auto-recorded activities; without a
+    // title-bearing key the item would display as the bare 'workout.txt' filename.
+    const fi = new GarminFileImporter();
+    const pipeline: EmittedGraph[] = [];
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'garmin-untitled-'));
+    const csv = path.join(tmpDir, 'Activities.csv');
+    await fs.promises.writeFile(
+      csv,
+      'Activity Type,Date,Favorite,Title,Distance,Calories,Avg HR\n' +
+        'Walking,2023-03-01 08:00:00,false,,2.10,180,98\n',
+    );
+    try {
+      await fi.fileImport({}, { filename: 'Activities.csv', fullPath: csv }, {
+        pipeline,
+        timeframe: {},
+        log: () => {},
+      } as unknown as ImportParams);
+      expect(pipeline.length).toBe(1);
+      const item = pipeline[0].item;
+      // Title now carries the activity type so titleFor does not fall back to 'workout.txt'.
+      expect(item.metadata.Title).toBe('Walking');
+      expect(item.metadata.Title).not.toBe(item.content.filename);
+    } finally {
+      await fs.promises.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not throw on an empty or malformed CSV', async () => {
+    const fi = new GarminFileImporter();
+    const pipeline: EmittedGraph[] = [];
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'garmin-empty-'));
+    const empty = path.join(tmpDir, 'Activities.csv');
+    await fs.promises.writeFile(empty, '');
+    try {
+      await fi.fileImport({}, { filename: 'Activities.csv', fullPath: empty }, {
+        pipeline,
+        timeframe: {},
+        log: () => {},
+      } as unknown as ImportParams);
+      expect(pipeline.length).toBe(0);
+    } finally {
+      await fs.promises.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+});

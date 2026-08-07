@@ -1,0 +1,30 @@
+[
+  {
+    "header": "YouTube",
+    "title": "Watched How to Code in Python - Full Course",
+    "titleUrl": "https://www.youtube.com/watch?v=abc123",
+    "subtitles": [{"name": "freeCodeCamp.org", "url": "https://www.youtube.com/channel/UC8butISFwT-Wl7EV0hUK0BQ"}],
+    "time": "2021-01-01T20:00:00.000Z",
+    "products": ["YouTube"],
+    "activityControls": ["YouTube watch history"]
+  },
+  {
+    "header": "YouTube",
+    "title": "Watched TypeScript Tutorial for Beginners",
+    "titleUrl": "https://www.youtube.com/watch?v=def456",
+    "subtitles": [{"name": "Traversy Media", "url": "https://www.youtube.com/channel/UC29ju8bIPH5as8OGnQzwJyA"}],
+    "time": "2021-01-02T14:30:00.000Z"
+  },
+  {
+    "header": "YouTube Music",
+    "title": "Listened to Karma Police",
+    "titleUrl": "https://music.youtube.com/watch?v=ghi789",
+    "subtitles": [{"name": "Radiohead"}],
+    "time": "2021-01-03T10:00:00.000Z"
+  },
+  {
+    "header": "Google Search",
+    "title": "Searched for python tutorial",
+    "time": "2021-01-01T19:00:00.000Z"
+  }
+]
