@@ -53,16 +53,15 @@ export TAG ?= $(shell git describe --tags --exact-match 2>/dev/null)
 
 
 # Subdirectory build contexts that need a copy of LICENSE. Images built
-# from the repo root (api, gateway, summary) read LICENSE.md directly and
-# are not listed here.
+# from the repo root (api, gateway, and the Python services) read LICENSE.md
+# directly and are not listed here.
 LICENSE_DIRS := \
 	infrastructure/database \
 	infrastructure/object-store \
 	infrastructure/orchestrator \
 	infrastructure/setup-database \
 	infrastructure/setup-orchestrator \
-	infrastructure/setup-secrets \
-	backend/apps/hbpe
+	infrastructure/setup-secrets
 
 # Helper: emoji $(2) when goal $(1) is the one invoked at top level, else ➤.
 # The MAKELEVEL/MAKECMDGOALS guard keeps the icon to the directly-requested
@@ -251,7 +250,7 @@ build: ## Build images. ENV=local|staging|production (default local) GPU=cpu|cud
 	@docker build -f backend/apps/summary/Dockerfile $(call versioned_tag,$(SUMMARY_REPO)) -t $(SUMMARY_REPO):latest .
 
 	@printf "\n➤ Building HBPE service image ($(GPU))...\n\n"
-	@docker build -f backend/apps/hbpe/$(HBPE_DOCKERFILE) $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest backend/apps/hbpe
+	@docker build -f backend/apps/hbpe/$(HBPE_DOCKERFILE) $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest .
 
 	@$(MAKE) clean-license
 

@@ -1,0 +1,103 @@
+"""
+Temporal worker for HBPE nightly jobs.
+
+Registers all HBPE activities and workflows with the Temporal task queue.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+
+import structlog
+from temporalio.client import Client
+from temporalio.worker import Worker
+
+from ci.hbpe.config import settings
+from ci.hbpe.pipeline.bootstrap import (
+    BootstrapHBPEWorkflow,
+    calibrate_and_export_onnx,
+    serialize_token_stream,
+    train_hmt_model,
+)
+from ci.hbpe.pipeline.nightly_runner import (
+    NightlyHBPEWorkflow,
+    backfill_actuals,
+    cache_invalidation,
+    drift_detection,
+    l1_stale_sweep,
+    l2_stale_sweep,
+    label_summary_tokens,
+    label_unlabeled,
+    lora_fine_tune,
+    needs_bootstrap,
+)
+from ci.hbpe.pipeline.schedule import ensure_bootstrap_if_cold, setup_hbpe_schedules
+from ci.hbpe.telemetry import init_telemetry
+
+log = structlog.get_logger(__name__)
+
+
+async def main() -> None:
+    # No-op unless SENTRY_DSN is set — see ci/telemetry.py.
+    init_telemetry()
+
+    # Init database connection pool early to fail fast
+    from ci.hbpe.database import init_db
+
+    init_db()
+
+    log.info("connecting_temporal", address=settings.temporal_address)
+
+    # Temporal registers the default namespace asynchronously after startup.
+    # Retry until it's available.
+    while True:
+        try:
+            client = await Client.connect(
+                settings.temporal_address,
+                namespace=settings.temporal_namespace,
+            )
+
+            # Register nightly schedule (idempotent — safe to call on every restart)
+            await setup_hbpe_schedules(client)
+
+            # Cold start: kick off the base-model bootstrap so a fresh appliance
+            # leaves COLD_START on its own (the nightly schedule only does
+            # incremental updates and never trains the base model). Idempotent.
+            await ensure_bootstrap_if_cold(client)
+
+            worker = Worker(
+                client,
+                task_queue=settings.task_queue,
+                workflows=[NightlyHBPEWorkflow, BootstrapHBPEWorkflow],
+                activities=[
+                    label_unlabeled,
+                    label_summary_tokens,
+                    l1_stale_sweep,
+                    l2_stale_sweep,
+                    needs_bootstrap,
+                    lora_fine_tune,
+                    backfill_actuals,
+                    drift_detection,
+                    cache_invalidation,
+                    serialize_token_stream,
+                    train_hmt_model,
+                    calibrate_and_export_onnx,
+                ],
+            )
+
+            log.info("hbpe_worker_started", task_queue=settings.task_queue)
+            await worker.run()
+            break
+
+        except RuntimeError as e:
+            if "namespace" in str(e).lower() and "not found" in str(e).lower():
+                log.warning("temporal_namespace_not_ready", retry_in=5)
+                await asyncio.sleep(5)
+            else:
+                raise
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=settings.log_level)
+    asyncio.run(main())

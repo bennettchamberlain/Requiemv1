@@ -1,9 +1,10 @@
 """Tests for the opt-out telemetry gate and the payload scrubber."""
+
 from __future__ import annotations
 
 import pytest
 
-from ci.telemetry import is_enabled, scrub_event, scrub_string
+from ci.hbpe.telemetry import is_enabled, scrub_event, scrub_string
 
 DSN = "https://publickey@o1.ingest.us.sentry.io/2"
 
@@ -77,7 +78,9 @@ class TestScrubEvent:
         assert "abc123456" not in event["logentry"]["message"]
 
     def test_filters_sensitive_extra_keys_at_depth(self):
-        event = scrub_event({"extra": {"outer": {"password": "hunter2", "path": "/home/ci/y"}}})
+        event = scrub_event(
+            {"extra": {"outer": {"password": "hunter2", "path": "/home/ci/y"}}}
+        )
 
         assert event["extra"]["outer"]["password"] == "[Filtered]"
         assert event["extra"]["outer"]["path"] == "~/y"
@@ -115,20 +118,32 @@ class TestUrlAndHeaderScrubbing:
 
     def test_scrubs_request_url_query_string(self):
         event = scrub_event(
-            {"request": {"url": "https://memory.local/api/graph/search?query=oncologist&people=Dr.%20Chen"}}
+            {
+                "request": {
+                    "url": "https://memory.local/api/graph/search?query=oncologist&people=Dr.%20Chen"
+                }
+            }
         )
 
         assert event["request"]["url"] == "https://memory.local/api/graph/search"
 
     def test_scrubs_referer_header(self):
         event = scrub_event(
-            {"request": {"headers": {"Referer": "https://memory.local/memory?search=divorce%20lawyer"}}}
+            {
+                "request": {
+                    "headers": {
+                        "Referer": "https://memory.local/memory?search=divorce%20lawyer"
+                    }
+                }
+            }
         )
 
         assert event["request"]["headers"]["Referer"] == "https://memory.local/memory"
 
     def test_matches_hyphenated_api_key_header(self):
-        event = scrub_event({"request": {"headers": {"x-api-key": "ci_live_abcdef123456"}}})
+        event = scrub_event(
+            {"request": {"headers": {"x-api-key": "ci_live_abcdef123456"}}}
+        )
 
         assert event["request"]["headers"]["x-api-key"] == "[Filtered]"
 
@@ -136,7 +151,10 @@ class TestUrlAndHeaderScrubbing:
         assert "server_name" not in scrub_event({"server_name": "MacBook-Pro-2.local"})
 
     def test_collapses_windows_home_paths(self):
-        assert scrub_string("C:\\Users\\liam\\AppData\\ci\\timeline.db") == "~\\AppData\\ci\\timeline.db"
+        assert (
+            scrub_string("C:\\Users\\liam\\AppData\\ci\\timeline.db")
+            == "~\\AppData\\ci\\timeline.db"
+        )
         assert scrub_string("C:/Users/liam/AppData/ci") == "~/AppData/ci"
 
 
@@ -162,7 +180,10 @@ class TestBreadcrumbScrubbing:
             {
                 "breadcrumbs": {
                     "values": [
-                        {"message": "loaded /home/ci/journal.db", "data": {"token": "abc123456"}},
+                        {
+                            "message": "loaded /home/ci/journal.db",
+                            "data": {"token": "abc123456"},
+                        },
                     ]
                 }
             }
@@ -174,7 +195,11 @@ class TestBreadcrumbScrubbing:
 
     def test_scrubs_breadcrumb_urls(self):
         event = scrub_event(
-            {"breadcrumbs": {"values": [{"data": {"url": "/api/search?query=private"}}]}}
+            {
+                "breadcrumbs": {
+                    "values": [{"data": {"url": "/api/search?query=private"}}]
+                }
+            }
         )
 
         assert event["breadcrumbs"]["values"][0]["data"]["url"] == "/api/search"
@@ -198,7 +223,10 @@ class TestStackFrameScrubbing:
                                     {
                                         "filename": "/Users/liam/devel/ci/x.py",
                                         "abs_path": "/Users/liam/devel/ci/x.py",
-                                        "vars": {"note_text": "/home/ci/journal", "password": "hunter2"},
+                                        "vars": {
+                                            "note_text": "/home/ci/journal",
+                                            "password": "hunter2",
+                                        },
                                     }
                                 ]
                             },
@@ -217,7 +245,7 @@ class TestStackFrameScrubbing:
 
 class TestInitNeverRaises:
     def test_malformed_dsn_does_not_crash_startup(self, monkeypatch):
-        import ci.telemetry as telemetry_module
+        import ci.hbpe.telemetry as telemetry_module
 
         monkeypatch.setattr(telemetry_module, "_initialized", False)
         monkeypatch.setenv("SENTRY_DSN", "not-a-dsn")
@@ -233,7 +261,9 @@ class TestHubIdentityHeader:
         assert event["request"]["headers"]["x-ci-hub-user"] == "[Filtered]"
 
     def test_strips_query_from_location_header(self):
-        event = scrub_event({"request": {"headers": {"location": "/memory?search=private"}}})
+        event = scrub_event(
+            {"request": {"headers": {"location": "/memory?search=private"}}}
+        )
 
         assert event["request"]["headers"]["location"] == "/memory"
 
@@ -250,7 +280,9 @@ class TestContextLines:
                                     {
                                         "pre_context": ['DIR = "/home/ci/notes"'],
                                         "context_line": 'client = Client(api_key="sk-live-9988776655")',
-                                        "post_context": ['headers = {"authorization": "Bearer abcdefghij"}'],
+                                        "post_context": [
+                                            'headers = {"authorization": "Bearer abcdefghij"}'
+                                        ],
                                     }
                                 ]
                             }
@@ -268,7 +300,15 @@ class TestContextLines:
 
 class TestIdentityKeys:
     @pytest.mark.parametrize(
-        "key", ["x-ci-hub-user", "x-forwarded-user", "x-ci-owner", "x-test-owner", "username", "email"]
+        "key",
+        [
+            "x-ci-hub-user",
+            "x-forwarded-user",
+            "x-ci-owner",
+            "x-test-owner",
+            "username",
+            "email",
+        ],
     )
     def test_filters_identity_bearing_keys(self, key):
         event = scrub_event({"request": {"headers": {key: "liam"}}})

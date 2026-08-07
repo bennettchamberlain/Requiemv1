@@ -37,6 +37,7 @@ required-version = ">=0.9"
 
 [tool.uv.workspace]
 members = [
+    "backend/apps/hbpe",
     "backend/apps/summary",
     "backend/packages/*",
 ]
@@ -66,16 +67,6 @@ target-version = "py311"
 # `ruff format` at the root rewrites every doc in docs/. Keep it to
 # Python; Markdown is not ours to reformat.
 include = ["*.py", "*.pyi", "**/pyproject.toml"]
-
-# Members join the workspace one commit at a time, and each adoption
-# commit brings its own service up to the rules below. This list must be
-# empty before the branch lands.
-#
-# extend-exclude, not exclude: plain `exclude` replaces Ruff's built-in
-# defaults, which is how .venv and node_modules end up being scanned.
-extend-exclude = [
-    "backend/apps/hbpe",
-]
 
 [tool.ruff.lint]
 select = [
@@ -118,6 +109,9 @@ extend-immutable-calls = [
 # nest_asyncio.apply() has to run before the modules below are imported,
 # so this import block is deliberately split in two.
 "backend/apps/summary/src/ci/summary/activities.py" = ["E402"]
+# load_dotenv() has to run before pydantic-settings is imported, since the
+# settings classes read the environment at class-definition time.
+"backend/apps/hbpe/src/ci/hbpe/config.py" = ["E402"]
 
 # ── Mypy ─────────────────────────────────────────────────────────────
 # Strict by default, so new code is born typed. Services that predate the
@@ -138,23 +132,30 @@ warn_unused_configs = true
 # to ci.summary.config rather than a path-derived module name, which is
 # what the per-module overrides below have to match.
 mypy_path = [
+    "backend/apps/hbpe/src",
     "backend/apps/summary/src",
 ]
 files = [
+    "backend/apps/hbpe/src",
     "backend/apps/summary/src",
 ]
 
 [[tool.mypy.overrides]]
-# Quarantine, not a clean bill of health. ci-summary predates the workspace
-# and reports 41 errors under even a relaxed configuration, most of them
-# genuine (unguarded Optional access, values assigned across incompatible
-# types). Suppressing the module keeps it analyzed, so code that imports
-# from it still type-checks against real signatures, without holding the
-# migration hostage to a typing cleanup.
+# Quarantine, not a clean bill of health. Both services predate the
+# workspace: ci.summary reports 41 errors and ci.hbpe 190 under a relaxed
+# configuration, a mix of genuine defects (unguarded Optional access,
+# values assigned across incompatible types) and missing annotations.
+# Suppressing them keeps both analyzed, so code that imports from them
+# still type-checks against real signatures, without holding a build-system
+# change hostage to a typing cleanup.
 #
 # This entry is debt. Narrow it to specific modules as they are annotated,
-# and delete it when the last one goes green.
-module = ["ci.summary.*"]
+# and delete it when the last one goes green. Anything outside it, which is
+# every new member, is strict.
+module = [
+    "ci.hbpe.*",
+    "ci.summary.*",
+]
 ignore_errors = true
 
 [[tool.mypy.overrides]]
@@ -169,12 +170,10 @@ ignore_missing_imports = true
 # ── Pytest ───────────────────────────────────────────────────────────
 
 [tool.pytest.ini_options]
-# Grows as each member joins. Not simply "backend": hbpe is not a member
-# yet and one of its tests does sys.path.insert(0, <hbpe>/src), which makes
-# `import ci` resolve to hbpe's regular package instead of the shared
-# namespace and breaks every ci.* import for the rest of the session. That
-# hack goes away in the commit that adopts hbpe.
-testpaths = ["backend/apps/summary/tests"]
+testpaths = [
+    "backend/apps/hbpe/tests",
+    "backend/apps/summary/tests",
+]
 asyncio_default_fixture_loop_scope = "function"
 
 # importlib import mode, because members have test files that share a
