@@ -233,7 +233,12 @@ export function standingLabelIds(
     return new Set(nodes.map((node) => node.id));
   }
 
-  const labelled = new Set(alwaysLabel.filter((id): id is string => typeof id === 'string' && id !== ''));
+  // Only anchors that are actually in the graph. An id that is not — a centre node trimmed out of
+  // the subgraph, say — would otherwise hold a slot that no label is ever drawn in.
+  const present = new Set(nodes.map((node) => node.id));
+  const labelled = new Set(
+    alwaysLabel.filter((id): id is string => typeof id === 'string' && present.has(id)),
+  );
 
   // Busiest first. Array.prototype.sort is stable, so ties keep the incoming order and the same
   // graph always labels the same nodes.

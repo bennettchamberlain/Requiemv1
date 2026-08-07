@@ -158,6 +158,27 @@ describe('EntityTagsDescriptionCard', () => {
     expect(screen.getByDisplayValue('Preview text')).toHaveAttribute('readonly');
   });
 
+  it('does not leave the label pointing at a control that is not rendered', () => {
+    render(<EntityTagsDescriptionCard {...BASE} tags={[]} description={null} editMode={false} />);
+
+    // The Tags label is also on screen and never carries `for`, so target this one by its text.
+    const label = screen.getByText('Description');
+
+    // A `for` naming an id that is not in the document is announced as labelling nothing.
+    expect(label.getAttribute('for')).toBeNull();
+  });
+
+  it('names the textarea whenever there is one to name', () => {
+    const { container } = render(
+      <EntityTagsDescriptionCard {...BASE} tags={[]} description="Something" editMode={false} />,
+    );
+
+    const target = container.querySelector(`#${screen.getByText('Description').getAttribute('for')}`);
+
+    expect(target).not.toBeNull();
+    expect(target!.tagName.toLowerCase()).toBe('textarea');
+  });
+
   it('renders type-specific detail above the tags', () => {
     render(
       <EntityTagsDescriptionCard {...BASE} tags={[]} description={null} editMode={false}>

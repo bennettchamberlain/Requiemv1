@@ -77,6 +77,8 @@ export function EntityTagsDescriptionCard({
 
   const globalId = GlobalUID.encode(entityType, entityId);
   const canEditDescription = editMode && onDescriptionSave != null;
+  const descriptionFieldId = `description-${resetKey}`;
+  const showDescriptionPlaceholder = !editMode && draft.trim() === '';
 
   const handleDescriptionBlur = async () => {
     const next = draft.trim();
@@ -131,15 +133,24 @@ export function EntityTagsDescriptionCard({
 
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
-            <Label htmlFor={`description-${resetKey}`}>{descriptionLabel}</Label>
-            {saving && <span className="text-xs text-muted-foreground">Saving…</span>}
+            {/*
+              `htmlFor` only when the control it names is actually rendered. The empty state
+              replaces the textarea with static text, and a label pointing at an id that is not in
+              the document is announced by a screen reader as labelling nothing.
+            */}
+            <Label htmlFor={showDescriptionPlaceholder ? undefined : descriptionFieldId}>
+              {descriptionLabel}
+            </Label>
+            <span className="text-xs text-muted-foreground" aria-live="polite">
+              {saving ? 'Saving…' : ''}
+            </span>
           </div>
 
-          {!editMode && draft.trim() === '' ? (
+          {showDescriptionPlaceholder ? (
             <p className="text-sm italic text-muted-foreground">No {descriptionLabel.toLowerCase()} yet</p>
           ) : (
             <Textarea
-              id={`description-${resetKey}`}
+              id={descriptionFieldId}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onBlur={handleDescriptionBlur}

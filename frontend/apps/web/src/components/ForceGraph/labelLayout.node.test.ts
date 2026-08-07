@@ -245,6 +245,14 @@ describe('standingLabelIds', () => {
     expect(labelled.size).toBe(PROMINENT_LABEL_COUNT);
   });
 
+  it('ignores an anchor that is not in the graph, rather than spending a label on it', () => {
+    // A centre node trimmed out of the subgraph would otherwise hold a slot no label is drawn in.
+    const labelled = standingLabelIds(graph(100), degreeOf, ['not-in-this-graph']);
+
+    expect(labelled.has('not-in-this-graph')).toBe(false);
+    expect(labelled.size).toBe(PROMINENT_LABEL_COUNT);
+  });
+
   it('picks the same nodes every time for the same graph', () => {
     const nodes = graph(100);
     const first = [...standingLabelIds(nodes, () => 1)];
