@@ -57,3 +57,6 @@ if (!Element.prototype.scrollTo) {
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {};
 }
+
+// ...nor window.scrollTo, which usePreventOverscroll calls on unmount.
+window.scrollTo = () => {};

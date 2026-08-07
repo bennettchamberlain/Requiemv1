@@ -1,6 +1,6 @@
 import { type ReactNode, lazy, useEffect } from 'react';
 
-import { DeviceLayoutProvider, getApiBaseUrl, isNativePlatform } from '@ci/common';
+import { DeviceLayoutProvider, LoadingPage, getApiBaseUrl, isNativePlatform } from '@ci/common';
 import {
   BrowserRouter as Router,
   Routes,
@@ -89,7 +89,7 @@ function Providers({ children }: { children: ReactNode }) {
 }
 
 function AppRoutes() {
-  const { isFeatureEnabled } = useFeatures();
+  const { isFeatureEnabled, loading: featuresLoading } = useFeatures();
   const location = useLocation();
   const navigate = useNavigate();
   const backgroundLocation = (location.state as { backgroundLocation?: Location } | null)?.backgroundLocation;
@@ -481,8 +481,16 @@ function AppRoutes() {
           )}
         </Route>
 
-        {/* Fallback */}
-        <Route path="*" element={<NotFoundPage />} />
+        {/*
+          Fallback. The feature-gated routes above are absent from the table
+          until `/api/_internal/features` answers, so on a hard load of one of
+          them (/stats, /tags, /prompts, or a settings overlay whose restored
+          backgroundLocation is one of them) this is what "*" matches. Rendering
+          404 there flashed a not-found page over a route that was about to
+          exist; wait for the flags instead, exactly as ProtectedRoute waits for
+          the session. A genuinely unknown URL still lands on 404, one tick later.
+        */}
+        <Route path="*" element={featuresLoading ? <LoadingPage /> : <NotFoundPage />} />
       </Routes>
 
       {backgroundLocation && (
