@@ -88,18 +88,25 @@ function createTextMeasurer(sample: SVGTextElement | null): TextMetricsProbe | n
   // Read the font off a node that is actually on screen rather than hard-coding it, so a theme or
   // Tailwind change cannot silently desynchronise the layout from the rendering.
   const style = window.getComputedStyle(sample);
-  const font = style.font || `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
   if (!style.fontSize || !style.fontFamily) {
     return null;
   }
 
-  context.font = font;
+  context.font = style.font || `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
 
-  // Ascenders and descenders both, so the box covers the tallest and deepest glyphs a name can
-  // contain rather than whatever the first label happened to use.
-  const vertical = context.measureText('Mgjpq');
-  const measuredHeight = (vertical.actualBoundingBoxAscent || 0) + (vertical.actualBoundingBoxDescent || 0);
-  const halfHeight = measuredHeight > 0 ? measuredHeight / 2 : LABEL_HALF_HEIGHT_PX;
+  // The probe is a real <text> in the real SVG, so its box is the ground truth the overlap will be
+  // judged against. Canvas TextMetrics is NOT: `actualBoundingBox*` measures ink extents (~12px for
+  // this font) while the renderer lays out the full line box (~18px), which left every separated
+  // pair 2.2px short of clear.
+  const probeRect = sample.getBoundingClientRect();
+  const halfHeight = probeRect.height > 0 ? probeRect.height / 2 : LABEL_HALF_HEIGHT_PX;
+
+  // Canvas also measures a hair narrower than the SVG renderer lays the same string out, so
+  // calibrate against the probe rather than guessing a safety margin.
+  const probeText = sample.textContent ?? '';
+  const canvasProbe = context.measureText(probeText).width;
+  const svgProbe = sample.getComputedTextLength ? sample.getComputedTextLength() : 0;
+  const widthScale = canvasProbe > 0 && svgProbe > 0 ? svgProbe / canvasProbe : 1;
 
   const cache = new Map<string, number>();
 
@@ -109,10 +116,9 @@ function createTextMeasurer(sample: SVGTextElement | null): TextMetricsProbe | n
       return cached;
     }
 
-    const measured = context.measureText(label).width;
+    const measured = context.measureText(label).width * widthScale;
     // A zero width means the font has not loaded yet; fall back rather than collapse the layout.
-    // The small margin covers canvas measuring a hair narrower than the SVG renderer lays it out.
-    const resolved = measured > 0 ? measured * LABEL_WIDTH_SAFETY : estimateLabelWidth(label);
+    const resolved = measured > 0 ? measured : estimateLabelWidth(label);
     cache.set(label, resolved);
 
     return resolved;
@@ -173,11 +179,6 @@ const COLLISION_STRENGTH = 0.45;
  * case this exists for. Bounded at all so an unsatisfiable layout still terminates.
  */
 const COLLISION_POLISH_PASSES = 600;
-/**
- * Canvas measures a hair narrower than the SVG renderer lays the same string out (~3% on this
- * font), so the reserved box gets a small margin rather than sitting exactly on the boundary.
- */
-const LABEL_WIDTH_SAFETY = 1.05;
 
 // Colour nodes by entity type from the shared LifeScope palette so the graph
 // matches the map/list/gallery.
