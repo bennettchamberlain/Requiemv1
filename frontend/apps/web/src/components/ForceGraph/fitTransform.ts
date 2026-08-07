@@ -10,15 +10,25 @@
  * Kept out of ForceGraph.tsx so it can be exercised as pure geometry in the `node` vitest project.
  */
 
+import { LABEL_GAP_PX, labelWidthPx } from './labelLayout';
+
 export const MIN_ZOOM = 0.35;
 export const MAX_ZOOM = 3;
 
+/**
+ * Ceiling on how far the FRAMING may magnify. Manual zoom still goes all the way to `MAX_ZOOM`.
+ *
+ * Filling the canvas is worth doing; outgrowing the page is not. An entity whose only relationship
+ * is to one other node frames two dots, and at `MAX_ZOOM` their `text-xs` labels draw at ~38px —
+ * larger than the page's own h1, which reads as a rendering fault rather than as a close-up. Capped
+ * here a sparse graph still comes forward (~19px) and still looks like part of the page.
+ */
+export const MAX_FIT_ZOOM = 1.5;
+
 export const clampScale = (value: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
 
-/** Largest node radius (12, when selected) plus its stroke. */
+/** Largest node radius plus its stroke. */
 const NODE_EXTENT_PX = 14;
-/** Average advance of the text-xs label, which is drawn to the right of the node. */
-const LABEL_CHAR_PX = 6.4;
 /** The label's baseline sits below the node centre. */
 const LABEL_BASELINE_PX = 14;
 const FIT_PADDING_PX = 16;
@@ -59,10 +69,12 @@ export function fitTransform(
       continue;
     }
 
+    // The label as DRAWN, so the frame does not reserve room for characters the renderer clips.
     const label = node.name ?? node.entity_type ?? '';
+    const labelPx = label ? LABEL_GAP_PX + labelWidthPx(label) : 0;
 
     minX = Math.min(minX, node.x - NODE_EXTENT_PX);
-    maxX = Math.max(maxX, node.x + NODE_EXTENT_PX + label.length * LABEL_CHAR_PX);
+    maxX = Math.max(maxX, node.x + NODE_EXTENT_PX + labelPx);
     minY = Math.min(minY, node.y - NODE_EXTENT_PX);
     maxY = Math.max(maxY, node.y + LABEL_BASELINE_PX);
   }
@@ -78,8 +90,11 @@ export function fitTransform(
   const spanX = anchor ? Math.max(2 * Math.max(centreX - minX, maxX - centreX), 1) : Math.max(maxX - minX, 1);
   const spanY = anchor ? Math.max(2 * Math.max(centreY - minY, maxY - centreY), 1) : Math.max(maxY - minY, 1);
 
-  const scale = clampScale(
-    Math.min((boundsWidth - FIT_PADDING_PX * 2) / spanX, (boundsHeight - FIT_PADDING_PX * 2) / spanY),
+  const scale = Math.min(
+    MAX_FIT_ZOOM,
+    clampScale(
+      Math.min((boundsWidth - FIT_PADDING_PX * 2) / spanX, (boundsHeight - FIT_PADDING_PX * 2) / spanY),
+    ),
   );
 
   return {

@@ -5,6 +5,25 @@ import type { GraphLink, GraphNode } from '@/api/useGraphOverview';
 import { colorForRawType } from '@/components/entities/entityVisuals';
 
 import { clampScale, fitTransform } from './fitTransform';
+import {
+  CONTEXT_LINK_OPACITY,
+  CONTEXT_NODE_OPACITY,
+  CONTEXT_NODE_SCALE,
+  LABEL_GAP_PX,
+  LABEL_HALF_HEIGHT_PX,
+  type LabelMeasurer,
+  estimateLabelWidth,
+  MAX_LABEL_CHARS,
+  graphHeightForNodeCount,
+  hopDistances,
+  isContextNode,
+  labelWidthPx,
+  nodeRadius,
+  relaxLabelCollisions,
+  simulationBounds,
+  standingLabelIds,
+  truncateLabel,
+} from './labelLayout';
 
 type ForceNode = GraphNode & {
   x: number;
@@ -12,6 +31,22 @@ type ForceNode = GraphNode & {
   vx: number;
   vy: number;
   anchored?: boolean;
+  /** How many links touch this node — drives its drawn size. */
+  degree: number;
+  /** Drawn radius, resolved once per layout so the simulation and the renderer agree. */
+  radius: number;
+  /** The label as drawn, clipped to the label budget. */
+  label: string;
+  /** Untruncated label, for the hover tooltip. */
+  fullLabel: string;
+  /** Drawn width of `label`, which is the horizontal room the layout has to reserve. */
+  labelWidth: number;
+  /** Half the drawn line box, measured from the live font. */
+  labelHalfHeight: number;
+  /** Never moved to resolve a label overlap. */
+  pinned: boolean;
+  /** On screen as context rather than as part of the focused node's own graph. */
+  context: boolean;
 };
 
 type SimulationLink = {
@@ -31,6 +66,80 @@ interface ForceGraphProps {
   selectedNodeId?: string | null;
   onNodeSelect?: (nodeId: string) => void;
   anchoredNodeIds?: string[];
+  /**
+   * Hops from `centerNodeId` that count as the focused node's own graph. Anything further is drawn
+   * as context: dimmed, smaller and unlabelled, so an entity page reads as being about its entity
+   * even when the neighbourhood it pulls in belongs to somebody else.
+   *
+   * Omit to weight every node equally, which is what a general graph browser wants.
+   */
+  focusHops?: number;
+}
+
+/**
+ * Measures label text with the font it is actually drawn in.
+ *
+ * The layout has to reserve exactly the room the renderer will use. Modelling that as
+ * `characters × average advance` is wrong for proportional type in a way that matters: measured in
+ * a real browser, the average under-estimates 22 of 25 typical names and is 34% short on the worst,
+ * so the collision pass reports labels as clear while they visibly overlap. Unit tests could not
+ * catch it — they used the same model on both sides of the assertion.
+ *
+ * Returns null where there is no canvas to measure with (the `node` test project), leaving callers
+ * on the estimate.
+ */
+type TextMetricsProbe = { width: LabelMeasurer; halfHeight: number };
+
+function createTextMeasurer(sample: SVGTextElement | null): TextMetricsProbe | null {
+  if (typeof document === 'undefined' || !sample) {
+    return null;
+  }
+
+  const context = document.createElement('canvas').getContext('2d');
+  if (!context) {
+    return null;
+  }
+
+  // Read the font off a node that is actually on screen rather than hard-coding it, so a theme or
+  // Tailwind change cannot silently desynchronise the layout from the rendering.
+  const style = window.getComputedStyle(sample);
+  if (!style.fontSize || !style.fontFamily) {
+    return null;
+  }
+
+  context.font = style.font || `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+
+  // The probe is a real <text> in the real SVG, so its box is the ground truth the overlap will be
+  // judged against. Canvas TextMetrics is NOT: `actualBoundingBox*` measures ink extents (~12px for
+  // this font) while the renderer lays out the full line box (~18px), which left every separated
+  // pair 2.2px short of clear.
+  const probeRect = sample.getBoundingClientRect();
+  const halfHeight = probeRect.height > 0 ? probeRect.height / 2 : LABEL_HALF_HEIGHT_PX;
+
+  // Canvas also measures a hair narrower than the SVG renderer lays the same string out, so
+  // calibrate against the probe rather than guessing a safety margin.
+  const probeText = sample.textContent ?? '';
+  const canvasProbe = context.measureText(probeText).width;
+  const svgProbe = sample.getComputedTextLength ? sample.getComputedTextLength() : 0;
+  const widthScale = canvasProbe > 0 && svgProbe > 0 ? svgProbe / canvasProbe : 1;
+
+  const cache = new Map<string, number>();
+
+  const width: LabelMeasurer = (label) => {
+    const cached = cache.get(label);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const measured = context.measureText(label).width * widthScale;
+    // A zero width means the font has not loaded yet; fall back rather than collapse the layout.
+    const resolved = measured > 0 ? measured : estimateLabelWidth(label);
+    cache.set(label, resolved);
+
+    return resolved;
+  };
+
+  return { width, halfHeight: Math.max(halfHeight, LABEL_HALF_HEIGHT_PX) };
 }
 
 function useContainerWidth(defaultWidth: number) {
@@ -59,7 +168,6 @@ function useContainerWidth(defaultWidth: number) {
   return { ref, width } as const;
 }
 
-const defaultHeight = 420;
 const REPULSION_STRENGTH = 1200;
 const MIN_SPRING_LENGTH = 30;
 const MAX_SPRING_LENGTH = 300;
@@ -70,6 +178,22 @@ const DAMPING = 0.85;
 const MAX_TICKS = 240;
 const MIN_ALPHA = 0.02;
 const ALPHA_DECAY = 0.96;
+/**
+ * How much of each label overlap to resolve per tick. Under-relaxed on purpose: a node squeezed by
+ * several neighbours converges instead of ping-ponging between them.
+ */
+const COLLISION_STRENGTH = 0.45;
+/**
+ * Budget for the passes run once the simulation settles, to land on a frame with no overlaps left
+ * rather than whatever the last tick happened to leave.
+ *
+ * Generous because it is a CEILING, not a cost: a layout that has already had 240 ticks of repulsion
+ * and per-tick separation is close to clean, so the loop exits after a handful of passes. Only a
+ * genuine pile-up spends the budget, and relaxation converges by diffusion — a 25-node pile started
+ * from a single spot measures ~580 passes, so a small bound would quietly give up on exactly the
+ * case this exists for. Bounded at all so an unsatisfiable layout still terminates.
+ */
+const COLLISION_POLISH_PASSES = 600;
 
 // Colour nodes by entity type from the shared LifeScope palette so the graph
 // matches the map/list/gallery.
@@ -107,15 +231,23 @@ function ForceGraphBase({
   selectedNodeId,
   onNodeSelect,
   anchoredNodeIds = [],
-  height = defaultHeight,
+  focusHops,
+  height,
 }: ForceGraphProps) {
   const { ref, width } = useContainerWidth(720);
   const [simNodes, setSimNodes] = useState<ForceNode[]>([]);
   const [scale, setScale] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+
+  // A caller that sizes its own container (the graph explorer modal) keeps control of the height;
+  // the entity panel, which does not, gets one that grows with how much there is to show.
+  const canvasHeight = height ?? graphHeightForNodeCount(nodes.length);
 
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const fontProbeRef = useRef<SVGTextElement | null>(null);
+  const measurerRef = useRef<TextMetricsProbe | null>(null);
   const panStartRef = useRef({ x: 0, y: 0 });
   const translateStartRef = useRef({ x: 0, y: 0 });
   const previousPositionsRef = useRef<Map<string, ForceNode>>(new Map());
@@ -142,6 +274,69 @@ function ForceGraphBase({
     [links],
   );
 
+  /** Link count per node, which is what node size encodes. */
+  const degreeById = useMemo(() => {
+    const degrees = new Map<string, number>();
+
+    for (const link of renderLinks) {
+      degrees.set(link.sourceId, (degrees.get(link.sourceId) ?? 0) + 1);
+      degrees.set(link.targetId, (degrees.get(link.targetId) ?? 0) + 1);
+    }
+
+    return degrees;
+  }, [renderLinks]);
+
+  /** Who is one hop from whom, so hovering a node can pick out its own corner of the graph. */
+  const neighborsById = useMemo(() => {
+    const neighbors = new Map<string, Set<string>>();
+
+    const connect = (from: string, to: string) => {
+      const existing = neighbors.get(from);
+      if (existing) {
+        existing.add(to);
+      } else {
+        neighbors.set(from, new Set([to]));
+      }
+    };
+
+    for (const link of renderLinks) {
+      connect(link.sourceId, link.targetId);
+      connect(link.targetId, link.sourceId);
+    }
+
+    return neighbors;
+  }, [renderLinks]);
+
+  /**
+   * How far each node sits from the focused one, which is what separates its own connections from
+   * the neighbourhood they drag in behind them.
+   *
+   * Keyed on the link set rather than on the selection, for the same reason `standingLabels` is:
+   * this feeds the layout, and recomputing it on a click would relay the whole graph out.
+   */
+  const hopDistanceById = useMemo(
+    () => (focusHops === undefined ? new Map<string, number>() : hopDistances(centerNodeId, renderLinks)),
+    [centerNodeId, focusHops, renderLinks],
+  );
+
+  const isContext = useCallback(
+    (nodeId: string) => isContextNode(hopDistanceById.get(nodeId), focusHops),
+    [focusHops, hopDistanceById],
+  );
+
+  /**
+   * Which nodes carry a standing label.
+   *
+   * Anchored on `centerNodeId` ONLY. This feeds the layout effect, and the graph explorer passes its
+   * live selection as `highlightedNodeId` — including that here would restart the whole simulation
+   * on every node click and throw away the picture the viewer was reading. A selected or hovered
+   * node still gets its label at render time, which costs nothing and moves nothing.
+   */
+  const standingLabels = useMemo(
+    () => standingLabelIds(nodes, (id) => degreeById.get(id) ?? 0, [centerNodeId], (id) => !isContext(id)),
+    [centerNodeId, degreeById, isContext, nodes],
+  );
+
   useEffect(() => {
     if (nodes.length === 0) {
       previousPositionsRef.current = new Map();
@@ -150,8 +345,23 @@ function ForceGraphBase({
       return;
     }
 
-    const boundsWidth = width || 720;
-    const boundsHeight = height;
+    // Built here rather than in a ref initialiser: the probe has to be mounted before its
+    // computed font can be read.
+    if (!measurerRef.current) {
+      measurerRef.current = createTextMeasurer(fontProbeRef.current);
+    }
+
+    const measure = measurerRef.current?.width ?? estimateLabelWidth;
+    const labelHalfHeight = measurerRef.current?.halfHeight ?? LABEL_HALF_HEIGHT_PX;
+
+    const canvasWidth = width || 720;
+    // The simulation lays out in a world sized for the labels that have to fit, which is larger than
+    // the canvas once the graph is dense; `fitTransform` scales the result back down to the canvas.
+    const { width: boundsWidth, height: boundsHeight } = simulationBounds(
+      standingLabels.size,
+      canvasWidth,
+      canvasHeight,
+    );
     const previousPositions = previousPositionsRef.current;
 
     const anchoredSet = new Set(anchoredNodeIds);
@@ -195,9 +405,38 @@ function ForceGraphBase({
       const previous = previousPositions.get(node.id);
       const anchored = anchoredSet.has(node.id);
 
+      // Drawn size and label extent are resolved ONCE, here, and carried on the node: the layout
+      // has to reserve exactly the room the renderer will use, or the collision pass separates
+      // boxes that are not the boxes on screen.
+      const fullLabel = node.name ?? node.entity_type ?? '';
+      // A node without a standing label is a bare dot that answers on hover, so the layout reserves
+      // no horizontal room for it — which is the whole point of dropping the label.
+      const labelled = standingLabels.has(node.id);
+      const label = labelled ? truncateLabel(fullLabel) : '';
+      const degree = degreeById.get(node.id) ?? 0;
+      const context = isContext(node.id);
+
+      const shape = {
+        degree,
+        context,
+        // Degree and distance only — selection/highlight enlarge a node at RENDER time. Baking those
+        // in here would rebuild the whole layout on every click for a few pixels on a single node.
+        // Distance is different: it is fixed for the life of the picture, and the collision pass has
+        // to reserve the radius the renderer will actually draw.
+        radius: nodeRadius(degree) * (context ? CONTEXT_NODE_SCALE : 1),
+        label,
+        fullLabel,
+        labelWidth: label ? labelWidthPx(fullLabel, MAX_LABEL_CHARS, measure) : 0,
+        labelHalfHeight,
+        // The pinned centre node is the one thing on screen guaranteed to stay put; letting a
+        // label overlap shove it would undo that.
+        pinned: anchored || node.id === centerNodeId,
+      };
+
       if (previous) {
         return {
           ...node,
+          ...shape,
           x: previous.x,
           y: previous.y,
           vx: previous.vx ?? 0,
@@ -211,6 +450,7 @@ function ForceGraphBase({
 
       return {
         ...node,
+        ...shape,
         x: position.x,
         y: position.y,
         vx: 0,
@@ -234,7 +474,7 @@ function ForceGraphBase({
 
     // Identifies the picture being framed: the same nodes at the same canvas size
     // are the same shot, so they are fitted once.
-    const fitKey = `${nodesKey}@${boundsWidth}x${boundsHeight}`;
+    const fitKey = `${nodesKey}@${canvasWidth}x${canvasHeight}`;
 
     const fitToNodes = () => {
       if (viewerMovedCameraRef.current || fittedKeyRef.current === fitKey) {
@@ -242,9 +482,10 @@ function ForceGraphBase({
       }
 
       // A pinned centre node is an explicit "put this in the middle"; the fit
-      // reframes around it rather than overriding it.
+      // reframes around it rather than overriding it. The anchor is in WORLD
+      // coordinates, the canvas it is framed into is not.
       const anchor = centerNodeId ? { x: boundsWidth / 2, y: boundsHeight / 2 } : null;
-      const fitted = fitTransform(nodeCopies, boundsWidth, boundsHeight, anchor);
+      const fitted = fitTransform(nodeCopies, canvasWidth, canvasHeight, anchor);
 
       if (!fitted) {
         return;
@@ -253,6 +494,18 @@ function ForceGraphBase({
       fittedKeyRef.current = fitKey;
       setScale(fitted.scale);
       setTranslate(fitted.translate);
+    };
+
+    const clampToBounds = () => {
+      for (const node of nodeCopies) {
+        if (node.anchored || node.id === centerNodeId) {
+          continue;
+        }
+
+        const padding = 32;
+        node.x = Math.min(boundsWidth - padding, Math.max(padding, node.x));
+        node.y = Math.min(boundsHeight - padding, Math.max(padding, node.y));
+      }
     };
 
     const tick = () => {
@@ -314,8 +567,6 @@ function ForceGraphBase({
       }
 
       // Integrate velocities, apply damping, and keep within bounds
-      let centerX = 0;
-      let centerY = 0;
       for (const node of nodeCopies) {
         if (centerNodeId && node.id === centerNodeId) {
           node.vx = 0;
@@ -328,26 +579,37 @@ function ForceGraphBase({
 
           node.x += node.vx;
           node.y += node.vy;
-
-          const padding = 32;
-          node.x = Math.min(boundsWidth - padding, Math.max(padding, node.x));
-          node.y = Math.min(boundsHeight - padding, Math.max(padding, node.y));
         } else {
           node.vx = 0;
           node.vy = 0;
         }
+      }
 
+      clampToBounds();
+
+      // Separate overlapping LABELS, not just node centres. The forces above only know about
+      // positions, so without this a well-spaced layout still stacks four names on one spot.
+      // Resolved positionally rather than through the velocity integrator, which would let labels
+      // oscillate through each other instead of settling.
+      relaxLabelCollisions(nodeCopies, COLLISION_STRENGTH);
+      clampToBounds();
+
+      // Recentre around the world middle
+      let centerX = 0;
+      let centerY = 0;
+      for (const node of nodeCopies) {
         centerX += node.x;
         centerY += node.y;
       }
 
-      // Recentre around canvas middle
       centerX /= nodeCopies.length;
       centerY /= nodeCopies.length;
       const offsetX = boundsWidth / 2 - centerX;
       const offsetY = boundsHeight / 2 - centerY;
       for (const node of nodeCopies) {
-        if (!node.anchored) {
+        // `pinned` rather than `anchored`: the centre node is re-pinned at the top of every tick,
+        // so letting the recentring nudge it here just made it jitter around the middle.
+        if (!node.pinned) {
           node.x += offsetX * 0.1;
           node.y += offsetY * 0.1;
         }
@@ -361,6 +623,16 @@ function ForceGraphBase({
       if (tickCount < MAX_TICKS && alpha > MIN_ALPHA) {
         animationFrame = requestAnimationFrame(tick);
       } else {
+        // The per-tick pass is under-relaxed, so the last tick can still leave a little overlap.
+        // Drive it to zero at full strength before the frame the viewer actually reads.
+        for (let pass = 0; pass < COLLISION_POLISH_PASSES; pass += 1) {
+          if (relaxLabelCollisions(nodeCopies, 1) === 0) {
+            break;
+          }
+
+          clampToBounds();
+        }
+
         publishSnapshot();
         fitToNodes();
       }
@@ -373,7 +645,18 @@ function ForceGraphBase({
       cancelAnimationFrame(animationFrame);
       previousPositionsRef.current = new Map(nodeCopies.map((node) => [node.id, { ...node }]));
     };
-  }, [anchoredKey, centerNodeId, height, nodes, nodesKey, renderLinks, width]);
+  }, [
+    anchoredKey,
+    canvasHeight,
+    centerNodeId,
+    degreeById,
+    isContext,
+    nodes,
+    nodesKey,
+    renderLinks,
+    standingLabels,
+    width,
+  ]);
 
   const handleWheel = useCallback((event: WheelEvent) => {
     if (event.cancelable) {
@@ -484,21 +767,61 @@ function ForceGraphBase({
     return map;
   }, [simNodes]);
 
+  /**
+   * Hovering picks out one node's own corner of the graph: it and its direct neighbours stay lit,
+   * everything else fades back. A dense graph is legible in pieces long before it is legible whole.
+   */
+  const hoveredNeighbors = hoveredNodeId ? neighborsById.get(hoveredNodeId) : undefined;
+  const isDimmed = (nodeId: string) =>
+    hoveredNodeId != null && nodeId !== hoveredNodeId && !hoveredNeighbors?.has(nodeId);
+
+  // SVG paints in document order, so the emphasised nodes are drawn last: a hovered node expands to
+  // its full name, and that name has to land on top of its neighbours rather than under them.
+  const renderOrder = useMemo(() => {
+    const rank = (nodeId: string) => {
+      if (nodeId === hoveredNodeId) {
+        return 3;
+      }
+
+      if (nodeId === selectedNodeId) {
+        return 2;
+      }
+
+      return nodeId === highlightedNodeId ? 1 : 0;
+    };
+
+    return [...simNodes].sort((a, b) => rank(a.id) - rank(b.id));
+  }, [highlightedNodeId, hoveredNodeId, selectedNodeId, simNodes]);
+
   return (
     <div ref={ref} className="w-full">
       <svg
         ref={svgRef}
         width={width}
-        height={height}
+        height={canvasHeight}
         role="img"
         aria-label="Knowledge graph overview"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        onPointerLeave={handlePointerUp}
+        onPointerLeave={(event) => {
+          setHoveredNodeId(null);
+          handlePointerUp(event);
+        }}
         style={{ cursor: isPanning ? 'grabbing' : 'grab', touchAction: 'none' }}
         className="fill-foreground text-foreground"
       >
+        {/* Same class as a real label; the measurer reads its resolved font. */}
+        <text
+          ref={fontProbeRef}
+          className="text-xs"
+          aria-hidden="true"
+          visibility="hidden"
+          x={-9999}
+          y={-9999}
+        >
+          M
+        </text>
         <defs>
           <marker
             id="arrowhead"
@@ -522,6 +845,12 @@ function ForceGraphBase({
                 return null;
               }
 
+              const touchesHovered =
+                hoveredNodeId != null && (link.sourceId === hoveredNodeId || link.targetId === hoveredNodeId);
+              // A link with either end out in the context ring runs away from the focused node
+              // rather than describing it, so it recedes with the node it leads to.
+              const contextual = isContext(link.sourceId) || isContext(link.targetId);
+
               return (
                 <line
                   key={link.id}
@@ -530,20 +859,41 @@ function ForceGraphBase({
                   x2={target.x}
                   y2={target.y}
                   markerEnd="url(#arrowhead)"
-                />
+                  opacity={
+                    hoveredNodeId == null
+                      ? contextual
+                        ? CONTEXT_LINK_OPACITY
+                        : 1
+                      : touchesHovered
+                        ? 1
+                        : 0.12
+                  }
+                  strokeWidth={touchesHovered ? 2 : undefined}
+                >
+                  <title>{link.relationship_type.split('_').join(' ').toLowerCase()}</title>
+                </line>
               );
             })}
           </g>
 
           <g>
-            {simNodes.map((node) => {
+            {renderOrder.map((node) => {
               if (typeof node.x !== 'number' || typeof node.y !== 'number') {
                 return null;
               }
 
               const isHighlighted = node.id === highlightedNodeId;
               const isSelected = node.id === selectedNodeId;
-              const radius = isSelected ? 12 : isHighlighted ? 10 : 6;
+              const isHovered = node.id === hoveredNodeId;
+              const dimmed = isDimmed(node.id);
+              const emphasised = isSelected || isHighlighted || isHovered;
+              // Context recedes until the viewer asks about it. Pointing at a faded node brings it
+              // back to full weight along with its name, which is what makes the ring explorable
+              // rather than merely quiet.
+              const contextual = node.context && !emphasised;
+              const radius =
+                nodeRadius(node.degree, isSelected ? 'selected' : isHighlighted ? 'highlighted' : 'none') *
+                (contextual ? CONTEXT_NODE_SCALE : 1);
               const baseColor = getTypeColor(node.entity_type);
               const fillColor = isSelected ? 'hsl(var(--primary))' : baseColor;
               const opacity = isSelected ? 1 : isHighlighted ? 0.95 : 0.85;
@@ -554,11 +904,20 @@ function ForceGraphBase({
                   transform={`translate(${node.x}, ${node.y})`}
                   className="cursor-pointer"
                   data-force-node
+                  data-testid="force-node"
+                  data-context={node.context ? 'true' : undefined}
+                  opacity={dimmed ? 0.2 : contextual ? CONTEXT_NODE_OPACITY : 1}
+                  onPointerEnter={() => setHoveredNodeId(node.id)}
+                  onPointerLeave={() => setHoveredNodeId((current) => (current === node.id ? null : current))}
                   onClick={(clickEvent) => {
                     clickEvent.stopPropagation();
                     onNodeSelect?.(node.id);
                   }}
                 >
+                  <title>
+                    {node.fullLabel}
+                    {node.degree > 0 ? ` — ${node.degree} connection${node.degree === 1 ? '' : 's'}` : ''}
+                  </title>
                   <circle
                     r={radius}
                     fill={fillColor}
@@ -567,25 +926,31 @@ function ForceGraphBase({
                     strokeWidth={isSelected ? 2 : 1}
                   />
                   {/*
-                    Dense clusters overlap labels ("Mark Thompson" over "Maya Patel",
-                    "Emma Smith" over "Anita Garcia"), which turned them into
-                    unreadable mush. `paint-order: stroke` draws a background-coloured
-                    halo behind each glyph so the topmost label stays legible wherever
-                    two collide. Selected/highlighted labels also render above the
-                    rest via a larger halo and bolder weight.
+                    The layout keeps these boxes from overlapping (see labelLayout.ts), so the halo
+                    below is no longer load-bearing — it just keeps a label legible where it crosses
+                    a link line. Long names are clipped to a fixed budget so one label cannot eat the
+                    room several others need; the full value lives in the <title> above and is drawn
+                    in full on hover.
+
+                    A dense graph gives a standing label only to the nodes worth naming, so a node
+                    without one draws no text until it is hovered or selected. That text is NOT in
+                    the layout's budget — it is transient, and reflowing the graph under the pointer
+                    to make room for it would be worse than letting it overlap for the moment.
                   */}
-                  <text
-                    x={radius + 4}
-                    y={4}
-                    className={isSelected || isHighlighted ? 'text-xs font-semibold' : 'text-xs'}
-                    fill="hsl(var(--foreground))"
-                    stroke="hsl(var(--background))"
-                    strokeWidth={isSelected || isHighlighted ? 4 : 3}
-                    strokeLinejoin="round"
-                    style={{ paintOrder: 'stroke fill' }}
-                  >
-                    {node.name ?? node.entity_type}
-                  </text>
+                  {(node.label !== '' || emphasised) && (
+                    <text
+                      x={radius + LABEL_GAP_PX}
+                      y={4}
+                      className={emphasised ? 'text-xs font-semibold' : 'text-xs'}
+                      fill="hsl(var(--foreground))"
+                      stroke="hsl(var(--background))"
+                      strokeWidth={emphasised ? 4 : 3}
+                      strokeLinejoin="round"
+                      style={{ paintOrder: 'stroke fill' }}
+                    >
+                      {emphasised ? node.fullLabel : node.label}
+                    </text>
+                  )}
                 </g>
               );
             })}
