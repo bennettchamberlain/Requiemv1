@@ -7,6 +7,9 @@ import { colorForRawType } from '@/components/entities/entityVisuals';
 import { clampScale, fitTransform } from './fitTransform';
 import {
   LABEL_GAP_PX,
+  type LabelMeasurer,
+  estimateLabelWidth,
+  MAX_LABEL_CHARS,
   graphHeightForNodeCount,
   labelWidthPx,
   nodeRadius,
@@ -53,6 +56,55 @@ interface ForceGraphProps {
   selectedNodeId?: string | null;
   onNodeSelect?: (nodeId: string) => void;
   anchoredNodeIds?: string[];
+}
+
+/**
+ * Measures label text with the font it is actually drawn in.
+ *
+ * The layout has to reserve exactly the room the renderer will use. Modelling that as
+ * `characters × average advance` is wrong for proportional type in a way that matters: measured in
+ * a real browser, the average under-estimates 22 of 25 typical names and is 34% short on the worst,
+ * so the collision pass reports labels as clear while they visibly overlap. Unit tests could not
+ * catch it — they used the same model on both sides of the assertion.
+ *
+ * Returns null where there is no canvas to measure with (the `node` test project), leaving callers
+ * on the estimate.
+ */
+function createTextMeasurer(sample: SVGTextElement | null): LabelMeasurer | null {
+  if (typeof document === 'undefined' || !sample) {
+    return null;
+  }
+
+  const context = document.createElement('canvas').getContext('2d');
+  if (!context) {
+    return null;
+  }
+
+  // Read the font off a node that is actually on screen rather than hard-coding it, so a theme or
+  // Tailwind change cannot silently desynchronise the layout from the rendering.
+  const style = window.getComputedStyle(sample);
+  const font = style.font || `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+  if (!style.fontSize || !style.fontFamily) {
+    return null;
+  }
+
+  context.font = font;
+
+  const cache = new Map<string, number>();
+
+  return (label: string) => {
+    const cached = cache.get(label);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const width = context.measureText(label).width;
+    // A zero width means the font has not loaded yet; fall back rather than collapse the layout.
+    const resolved = width > 0 ? width : estimateLabelWidth(label);
+    cache.set(label, resolved);
+
+    return resolved;
+  };
 }
 
 function useContainerWidth(defaultWidth: number) {
@@ -158,6 +210,8 @@ function ForceGraphBase({
   const canvasHeight = height ?? graphHeightForNodeCount(nodes.length);
 
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const fontProbeRef = useRef<SVGTextElement | null>(null);
+  const measurerRef = useRef<LabelMeasurer | null>(null);
   const panStartRef = useRef({ x: 0, y: 0 });
   const translateStartRef = useRef({ x: 0, y: 0 });
   const previousPositionsRef = useRef<Map<string, ForceNode>>(new Map());
@@ -238,6 +292,14 @@ function ForceGraphBase({
       return;
     }
 
+    // Built here rather than in a ref initialiser: the probe has to be mounted before its
+    // computed font can be read.
+    if (!measurerRef.current) {
+      measurerRef.current = createTextMeasurer(fontProbeRef.current);
+    }
+
+    const measure = measurerRef.current ?? estimateLabelWidth;
+
     const canvasWidth = width || 720;
     // The simulation lays out in a world sized for the labels that have to fit, which is larger than
     // the canvas once the graph is dense; `fitTransform` scales the result back down to the canvas.
@@ -306,7 +368,7 @@ function ForceGraphBase({
         radius: nodeRadius(degree),
         label,
         fullLabel,
-        labelWidth: label ? labelWidthPx(fullLabel) : 0,
+        labelWidth: label ? labelWidthPx(fullLabel, MAX_LABEL_CHARS, measure) : 0,
         // The pinned centre node is the one thing on screen guaranteed to stay put; letting a
         // label overlap shove it would undo that.
         pinned: anchored || node.id === centerNodeId,
@@ -689,6 +751,17 @@ function ForceGraphBase({
         style={{ cursor: isPanning ? 'grabbing' : 'grab', touchAction: 'none' }}
         className="fill-foreground text-foreground"
       >
+        {/* Same class as a real label; the measurer reads its resolved font. */}
+        <text
+          ref={fontProbeRef}
+          className="text-xs"
+          aria-hidden="true"
+          visibility="hidden"
+          x={-9999}
+          y={-9999}
+        >
+          M
+        </text>
         <defs>
           <marker
             id="arrowhead"

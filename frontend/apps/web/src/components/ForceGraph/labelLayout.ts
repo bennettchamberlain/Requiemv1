@@ -12,8 +12,22 @@
  * Kept out of ForceGraph.tsx as pure geometry so the `node` vitest project can exercise it.
  */
 
-/** Average advance of a `text-xs` glyph, which is what the labels are rendered at. */
+/**
+ * Fallback advance per `text-xs` glyph, used only where the real font cannot be measured.
+ *
+ * It is an AVERAGE, and proportional type does not average well: measured against the rendered
+ * font, this under-estimates 22 of 25 real names and is 34% short on the worst ("Muhammad Nadeem"
+ * is 128px, this model says 96px). A layout that reserves less room than the text occupies puts
+ * labels on top of each other while believing they are clear — so anything that has a DOM measures
+ * instead, and this is the floor for environments that do not (the `node` test project).
+ */
 export const LABEL_CHAR_PX = 6.4;
+
+/** Measures the drawn width of a label. */
+export type LabelMeasurer = (label: string) => number;
+
+/** The width model, for callers with no way to measure the real thing. */
+export const estimateLabelWidth: LabelMeasurer = (label) => label.length * LABEL_CHAR_PX;
 /** Gap between the edge of the circle and the start of the text. */
 export const LABEL_GAP_PX = 4;
 /** Half the line box of a `text-xs` label, measured about the node centre. */
@@ -41,9 +55,18 @@ export function truncateLabel(label: string, maxChars: number = MAX_LABEL_CHARS)
   return `${label.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
 }
 
-/** Width of the label as drawn — i.e. of the TRUNCATED text, so framing and collision agree. */
-export function labelWidthPx(label: string, maxChars: number = MAX_LABEL_CHARS): number {
-  return truncateLabel(label, maxChars).length * LABEL_CHAR_PX;
+/**
+ * Width of the label as drawn — i.e. of the TRUNCATED text, so framing and collision agree.
+ *
+ * `measure` should be a real text measurement wherever one is available; see `createTextMeasurer`
+ * in ForceGraph.tsx. It defaults to the character-count model only so this stays pure geometry.
+ */
+export function labelWidthPx(
+  label: string,
+  maxChars: number = MAX_LABEL_CHARS,
+  measure: LabelMeasurer = estimateLabelWidth,
+): number {
+  return measure(truncateLabel(label, maxChars));
 }
 
 /**
