@@ -337,7 +337,7 @@ export class QuestionService {
             ORDER BY q.created_at ASC
           ) AS rn
         FROM ci.questions q
-        CROSS JOIN (SELECT DISTINCT user_id FROM ci.users WHERE user_id IS NOT NULL) u
+        CROSS JOIN (SELECT DISTINCT id AS user_id FROM ci.users WHERE id IS NOT NULL) u
         WHERE q.is_active = TRUE
           AND (q.is_private_to IS NULL OR q.is_private_to = u.user_id)
           AND NOT EXISTS (

@@ -26,6 +26,6 @@ button.ci-brand-btn-primary[data-slot='button']:hover,
 button.ci-brand-btn-primary.ci-primary-surface[data-slot='button']:hover {
   background-color: var(--ci-phthalo-green-hover) !important;
   background-image: var(--ci-brand-btn-gradient-hover) !important;
-  color: var(--foreground) !important;
+  color: var(--ci-brand-btn-fg) !important;
   box-shadow: var(--ci-brand-btn-shadow-hover) !important;
 }

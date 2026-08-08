@@ -40,7 +40,7 @@ export function MemoryHubNav() {
   return (
     <nav
       aria-label="Memory sections"
-      className="flex flex-wrap gap-1 border-b border-border pb-2 md:gap-2"
+      className="flex min-h-10 flex-wrap items-center gap-1 border-b border-border px-3 py-2 md:gap-2 md:px-4"
     >
       {visible.map((section) => {
         const active = section.match(pathname);
