@@ -565,6 +565,8 @@ lint: ## Check the source for lint and formatting errors, both stacks
 	@# (see scripts/merge-uv-lock.sh) or a manifest edit without a relock.
 	@uv lock --check || { printf "$(RED)✗$(RESET) uv.lock is out of date with the manifests. Run 'uv lock' and retry.\n\n"; exit 1; }
 
+	@sh scripts/check-ci-namespace.sh
+
 	@printf "\nNo lint errors found.\n\n"
 
 .PHONY: test

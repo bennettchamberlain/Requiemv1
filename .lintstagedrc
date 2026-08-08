@@ -4,5 +4,6 @@
     "eslint --fix",
     "prettier --write"
   ],
-  "*.py": ["uv run ruff check --fix", "uv run ruff format"]
+  "*.py": ["uv run ruff check --fix", "uv run ruff format"],
+  "**/src/ci/__init__.py": ["sh scripts/check-ci-namespace.sh"]
 }

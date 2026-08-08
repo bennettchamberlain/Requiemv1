@@ -10,6 +10,7 @@
 # namespace that no single member owns. That means no member may ship a
 # src/ci/__init__.py — adding one makes every other ci.* package
 # unimportable, and the failure looks like an unrelated ImportError.
+# Enforced by scripts/check-ci-namespace.sh in lint-staged and make lint.
 #
 # Layout. Services live in backend/apps/<name>, shared libraries in
 # backend/packages/<name>, mirroring frontend/packages/* on the JS side.
