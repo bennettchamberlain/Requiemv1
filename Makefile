@@ -152,6 +152,11 @@ HBPE_DOCKERFILE_cuda := Dockerfile.cuda
 HBPE_DOCKERFILE_rocm := Dockerfile.rocm
 HBPE_DOCKERFILE := $(HBPE_DOCKERFILE_$(GPU))
 
+# The uv pin, read from required-version in the root pyproject.toml — the
+# one authoritative place it is set. Passed to the Python Dockerfiles as
+# UV_VERSION; setup-uv in CI reads the same field on its own.
+UV_VERSION := $(shell sed -n 's/^required-version = "==\(.*\)"$$/\1/p' pyproject.toml)
+
 
 define BANNER
    ______                                  _
@@ -221,6 +226,8 @@ build: ## Build images. ENV=local|staging|production (default local) GPU=cpu|cud
 	@echo "$(VALID_ENVS)" | grep -qw "$(ENV)" || { printf "$(RED)✗$(RESET) Invalid ENV '$(ENV)'. Choose one of: $(VALID_ENVS)\n\n"; exit 1; }
 	@echo "$(VALID_GPUS)" | grep -qw "$(GPU)" || { printf "$(RED)✗$(RESET) Invalid GPU '$(GPU)'. Choose one of: $(VALID_GPUS)\n\n"; exit 1; }
 
+	@test -n "$(UV_VERSION)" || { printf "$(RED)✗$(RESET) Could not read the uv pin from required-version in pyproject.toml.\n\n"; exit 1; }
+
 	@# The Python images sync with --frozen, which trusts uv.lock as-is so
 	@# each Dockerfile only has to copy the manifests it actually uses. The
 	@# freshness check they gave up lives here instead, where the whole
@@ -254,10 +261,10 @@ build: ## Build images. ENV=local|staging|production (default local) GPU=cpu|cud
 	@if [ "$(ENV)" = "production" ]; then printf "\n➤ Building setup secrets image...\n\n" && docker build -f infrastructure/setup-secrets/Dockerfile $(call versioned_tag,$(SETUP_SECRETS_REPO)) -t $(SETUP_SECRETS_REPO):latest infrastructure/setup-secrets ; fi
 
 	@printf "\n➤ Building summary service image...\n\n"
-	@docker build -f backend/apps/summary/Dockerfile $(call versioned_tag,$(SUMMARY_REPO)) -t $(SUMMARY_REPO):latest .
+	@docker build -f backend/apps/summary/Dockerfile --build-arg UV_VERSION=$(UV_VERSION) $(call versioned_tag,$(SUMMARY_REPO)) -t $(SUMMARY_REPO):latest .
 
 	@printf "\n➤ Building HBPE service image ($(GPU))...\n\n"
-	@docker build -f backend/apps/hbpe/$(HBPE_DOCKERFILE) $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest .
+	@docker build -f backend/apps/hbpe/$(HBPE_DOCKERFILE) --build-arg UV_VERSION=$(UV_VERSION) $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest .
 
 	@$(MAKE) clean-license
 

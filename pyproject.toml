@@ -33,7 +33,11 @@ dependencies = []
 
 [tool.uv]
 package = false
-required-version = ">=0.9"
+# The single authoritative uv pin. Everything reads it from here: setup-uv
+# in CI resolves it when no version input is given, and `make build` passes
+# it to the Dockerfiles as UV_VERSION. Exact on purpose — a floor let CI
+# drift onto newer uv than the images. Bump it here and nowhere else.
+required-version = "==0.9.17"
 
 [tool.uv.workspace]
 members = [

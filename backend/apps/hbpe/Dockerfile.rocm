@@ -2,6 +2,13 @@
 # ci-telemetry from backend/packages/telemetry, which a context rooted here
 # could not reach. See the `build` target in the Makefile for the context.
 
+# The uv version comes from required-version in the root pyproject.toml;
+# `make build` extracts it and passes it as UV_VERSION. There is no default
+# on purpose: a bare `docker build` fails at the FROM below rather than
+# building with a uv the rest of the toolchain is not pinned to.
+ARG UV_VERSION
+FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
+
 FROM python:3.11-slim-bookworm
 
 # System dependencies — build tools needed for llama-cpp-python HIP compilation
@@ -13,9 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# uv >= 0.9 is required: the workspace members build with the uv_build
-# backend, and `uv sync --package` needs workspace support.
-COPY --from=ghcr.io/astral-sh/uv:0.9.17 /uv /usr/local/bin/uv
+COPY --from=uv /uv /usr/local/bin/uv
 
 WORKDIR /app
 
