@@ -11,6 +11,11 @@ import {
 import { UserEntity, type User } from '@ci/domains/user';
 
 /**
+ * User-declared scheduling constraints for the fit solver.
+ *
+ * P2 scaffolding only: `ci.rhythms` ships in the schema and TypeORM registry
+ * but has no reader or writer in this release — the fit solver is not wired yet.
+ *
  * window  — a recurring band to prefer or protect ("Fridays are deep work")
  * cadence — a target frequency ("gym 3x/week")
  * avoid   — an exclusion ("no meetings before 10")
