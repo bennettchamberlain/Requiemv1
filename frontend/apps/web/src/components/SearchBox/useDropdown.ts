@@ -18,6 +18,8 @@ type ReturnType = [
     selectAllEntityTypes: () => void;
     clearEntityTypes: () => void;
     toggleEntityType: (type: string) => void;
+    /** Tab-style filter: show only this type, or clear back to all when already sole selection. */
+    selectOnlyEntityType: (type: string) => void;
     setSelectedEntityTypes: (type: string[]) => void;
     setTags: (tags: string[]) => void;
     setDateRange: (from?: string, to?: string) => void;
@@ -133,6 +135,47 @@ function useDropdown({ changeSearchParams = true }: { changeSearchParams: boolea
     [setSearchParams],
   );
 
+  const selectOnlyEntityType = useCallback(
+    (entityType: string) => {
+      setSelectedEntityTypes((prev) => {
+        const isOnlySelected = prev.length === 1 && prev[0] === entityType;
+
+        if (isOnlySelected) {
+          if (changeSearchParams) {
+            setSearchParams((searchParams) => {
+              searchParams.delete('excludedEntityTypes');
+              searchParams.delete('includedEntityTypes');
+
+              return searchParams;
+            });
+          }
+
+          return AVAILABLE_ENTITY_TYPES;
+        }
+
+        const next = [entityType];
+        const excludedTypes = AVAILABLE_ENTITY_TYPES.filter((type) => type !== entityType);
+
+        if (changeSearchParams) {
+          setSearchParams((searchParams) => {
+            searchParams.delete('includedEntityTypes');
+
+            if (excludedTypes.length === 0) {
+              searchParams.delete('excludedEntityTypes');
+            } else {
+              searchParams.set('excludedEntityTypes', excludedTypes.join(','));
+            }
+
+            return searchParams;
+          });
+        }
+
+        return next;
+      });
+    },
+    [changeSearchParams, setSearchParams],
+  );
+
   const toggleDropdownPanel = useCallback(() => {
     setDropdownPanelVisible((prev) => !prev);
   }, []);
@@ -229,6 +272,7 @@ function useDropdown({ changeSearchParams = true }: { changeSearchParams: boolea
       selectAllEntityTypes,
       clearEntityTypes,
       toggleEntityType,
+      selectOnlyEntityType,
       setSelectedEntityTypes,
       setTags,
       setDateRange,

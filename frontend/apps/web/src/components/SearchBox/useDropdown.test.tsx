@@ -50,6 +50,16 @@ describe('useDropdown', () => {
     expect(result.current[0].selectedEntityTypes).toEqual(['Person']);
   });
 
+  it('selectOnlyEntityType filters to one type then clears on repeat click', () => {
+    const { result } = renderHook(() => useDropdown(), { wrapper: makeWrapper() });
+
+    act(() => result.current[1].selectOnlyEntityType('Event'));
+    expect(result.current[0].selectedEntityTypes).toEqual(['Event']);
+
+    act(() => result.current[1].selectOnlyEntityType('Event'));
+    expect(result.current[0].selectedEntityTypes).toEqual(AVAILABLE_ENTITY_TYPES);
+  });
+
   it('clearEntityTypes resets to all selected', () => {
     const { result } = renderHook(() => useDropdown(), {
       wrapper: makeWrapper(true, ['/?excludedEntityTypes=Person']),
