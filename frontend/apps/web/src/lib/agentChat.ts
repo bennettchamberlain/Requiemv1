@@ -37,7 +37,20 @@ export function openInAppChat(navigate: NavigateFunction, context: AgentChatCont
   navigate('/chat');
 }
 
-/** Hub-managed agent apps — opened in a new tab until native deep links land. */
+/** Open a Hub-managed agent harness in a new tab with optional context query params. */
+export function openAgentHarness(openUrl: string, context: AgentChatContext): void {
+  const url = new URL(openUrl);
+
+  url.searchParams.set('title', context.title);
+
+  if (context.body) {
+    url.searchParams.set('context', context.body.slice(0, 2000));
+  }
+
+  window.open(url.toString(), '_blank', 'noopener,noreferrer');
+}
+
+/** @deprecated Use {@link openAgentHarness} with a discovered harness URL. */
 export function openAgentApp(app: 'openclaw' | 'hermes', context: AgentChatContext): void {
   const params = new URLSearchParams({
     title: context.title,

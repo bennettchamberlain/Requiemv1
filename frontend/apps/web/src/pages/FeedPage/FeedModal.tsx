@@ -7,6 +7,7 @@ import { useParams } from 'react-router-dom';
 
 import { useActionService, useThreadService } from '@/api';
 import { Chat } from '@/components/Chat';
+import { ChatWithAgentMenu } from '@/components/ChatWithAgent';
 import { InlineModal } from '@/components/InlineModal';
 import { Markdown } from '@/components/Markdown';
 import { Tag } from '@/components/Tag';
@@ -48,6 +49,19 @@ export function FeedModal({ onClose }: Props) {
   }, [action?.metadata]);
 
   const rationaleText = actionContext ?? 'No rationale available yet.';
+
+  const chatContext = useMemo(() => {
+    if (!action) {
+      return null;
+    }
+
+    return {
+      title: action.title,
+      body: action.text,
+      sourceKind: 'action' as const,
+      sourceId: action.id,
+    };
+  }, [action]);
 
   const messages = useMemo(() => {
     const baseMessages = thread?.messages ?? [];
@@ -93,7 +107,8 @@ export function FeedModal({ onClose }: Props) {
 
           <div className="font-bold">{action?.title}</div>
 
-          <div className="flex flex-1 justify-end">
+          <div className="flex flex-1 justify-end gap-1">
+            {chatContext ? <ChatWithAgentMenu context={chatContext} size="sm" /> : null}
             <Button variant="ghost" size="icon" onClick={onClose}>
               <X />
             </Button>
@@ -156,8 +171,11 @@ export function FeedModal({ onClose }: Props) {
             )}
 
             <div className="flex-1 prose dark:prose-invert">
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Why this suggestion
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Why this suggestion
+                </div>
+                {chatContext ? <ChatWithAgentMenu context={chatContext} size="sm" /> : null}
               </div>
               <Markdown>{rationaleText}</Markdown>
             </div>

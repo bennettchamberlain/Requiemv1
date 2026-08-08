@@ -12,6 +12,8 @@ export { useTriggerHbpe } from './useTriggerHbpe';
 export { useWeekAheadService } from './useWeekAheadService';
 export type { DueForecast, DueItem, WeekForecast, WeekForecastDay } from './useWeekAheadService';
 export { usePersonaCompose } from './usePersonaCompose';
+export { useAgentHarnesses, fetchAgentHarnesses } from './useAgentHarnesses';
+export type { AgentHarnessId, AgentHarnessStatus } from './useAgentHarnesses';
 export type {
   AboutYouView,
   HowYoudDoItResult,

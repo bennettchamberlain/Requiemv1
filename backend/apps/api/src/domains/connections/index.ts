@@ -86,6 +86,7 @@ export { ConnectionEntity, ProviderEntity, ProviderKeyEntity };
 
 // Services
 export { ConnectionService, ProviderService, ProviderKeyService, CloudOAuthProxyService };
+export type { PortalDeviceApplication } from './services/CloudOAuthProxyService';
 export { ClientFactory } from './clients';
 
 // Clients

@@ -6,6 +6,7 @@ import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 
 import { AboutYouService } from '../services/AboutYouService';
+import { AgentHarnessService } from '../services/AgentHarnessService';
 import {
   PersonaComposeService,
   type HowYoudDoItResult,
@@ -14,6 +15,7 @@ import {
 const howYoudDoItSchema = z.object({
   task: z.string().min(1).max(4000),
   includeRecall: z.boolean().optional(),
+  candidateId: z.string().uuid().optional(),
 });
 
 const applySchema = z.object({
@@ -61,7 +63,16 @@ export class PersonaIntelligenceController {
   constructor(
     private readonly personaComposeService: PersonaComposeService,
     private readonly aboutYouService: AboutYouService,
+    private readonly agentHarnessService: AgentHarnessService,
   ) {}
+
+  @Get('agent-harnesses')
+  async agentHarnesses(@Context() context: RequestContext) {
+    const serviceContext = toServiceContext(context);
+    const harnesses = await this.agentHarnessService.getHarnesses(serviceContext);
+
+    return { harnesses };
+  }
 
   @Post('how-youd-do-it')
   async howYoudDoIt(
@@ -72,6 +83,7 @@ export class PersonaIntelligenceController {
 
     return this.personaComposeService.howYoudDoIt(serviceContext, body.task, {
       includeRecall: body.includeRecall,
+      candidateId: body.candidateId,
     });
   }
 
