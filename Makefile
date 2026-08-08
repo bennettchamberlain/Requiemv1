@@ -544,8 +544,23 @@ lint: ## Check the source for lint and formatting errors, both stacks
 
 	@uv run ruff check .
 	@uv run ruff format --check .
+	@uv run mypy
 
 	@printf "\nNo lint errors found.\n\n"
+
+.PHONY: test
+test: ## Run the unit tests, both stacks
+	@printf "$(call task_icon,test,🧪) Running tests...\n\n"
+
+	@# foreach only runs workspaces that declare a test script, so a new
+	@# workspace's tests are picked up without a line here.
+	@yarn workspaces foreach --all run test
+
+	@printf "\n"
+
+	@uv run pytest
+
+	@printf "\nAll tests passed.\n\n"
 
 .PHONY: migrate
 migrate: ## Run database migrations
