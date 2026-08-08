@@ -13,18 +13,18 @@ import {
 } from '@ci/domains/files';
 import { CreateFileDto } from '@ci/domains/memory/types';
 
-import { FileEntity } from '../entities/FileEntity';
+import { GraphFileNodeEntity } from '../entities/GraphFileNodeEntity';
 
 @Injectable()
 export class FileService {
   constructor(
     private readonly fileService: FileStorageService,
-    @InjectRepository(FileEntity)
-    private readonly fileRepository: Repository<FileEntity>,
+    @InjectRepository(GraphFileNodeEntity)
+    private readonly fileRepository: Repository<GraphFileNodeEntity>,
     private readonly logger: LoggerService,
   ) {}
 
-  async create(context: RequestContext, data: CreateFileDto): Promise<{ entity: FileEntity }> {
+  async create(context: RequestContext, data: CreateFileDto): Promise<{ entity: GraphFileNodeEntity }> {
     const { name, linkedId } = data;
 
     const existingEntity = await this.fileRepository

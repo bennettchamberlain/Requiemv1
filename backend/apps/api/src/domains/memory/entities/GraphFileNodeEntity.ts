@@ -12,8 +12,9 @@ import {
 
 import { UserEntity } from '@ci/domains/user';
 
+/** Graph node projection of a File over `ci.entities` (not `ci.files`). */
 @Entity({ schema: 'ci', name: 'entities' })
-export class FileEntity {
+export class GraphFileNodeEntity {
   @PrimaryColumn('uuid', { name: 'entity_id' })
   id!: string;
 
@@ -37,9 +38,9 @@ export class FileEntity {
 
   // Helper method for creating filtered queries
   static createFileQuery(
-    repository: Repository<FileEntity>,
+    repository: Repository<GraphFileNodeEntity>,
     alias: string = 'file',
-  ): SelectQueryBuilder<FileEntity> {
+  ): SelectQueryBuilder<GraphFileNodeEntity> {
     return repository
       .createQueryBuilder(alias)
       .where(`${alias}.entity_type = :entityType`, { entityType: 'File' });

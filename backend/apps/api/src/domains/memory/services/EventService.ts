@@ -275,9 +275,8 @@ export class EventService {
         sourceId: entity.sourceId,
       }),
       scope: { userId: context.userId },
-      // The events_source_triple_uniq index is NOT user-scoped (see migration
-      // 20260620213807); the arbiter must match it exactly.
-      conflictTarget: '(source_type, source_system, source_id) WHERE source_id IS NOT NULL',
+      // Must match events_source_triple_uniq (user-scoped as of 20260808065724).
+      conflictTarget: '(user_id, source_type, source_system, source_id) WHERE source_id IS NOT NULL',
       tripleColumns: ['source_type', 'source_system', 'source_id'],
       // Centralized refresh contract — currently empty, so conflicts stay
       // DO NOTHING find-or-return.
