@@ -156,7 +156,7 @@
     "planning.enabled": false,
     "planning.page": false,
     "stats.page": true,
-    "schedule.page": false,
+    "schedule.page": true,
     "tags.page": true,
     "hbpe": true,
     "agent.memory.compaction": false,
