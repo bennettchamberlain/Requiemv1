@@ -17,7 +17,7 @@ import { useEntityService } from '../MemoryPage/useEntityService';
 
 import { ActivityTimelineRail } from './ActivityTimelineRail';
 import { EntityDetails } from './Components/EntityDetails';
-import { AdvancedFilters, AdvancedSearchToggle } from './Components/ExplorerToolbar/ExplorerToolbar';
+import { AdvancedFilters } from './Components/ExplorerToolbar/ExplorerToolbar';
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
 import { ListView } from './ListView';
@@ -83,28 +83,7 @@ export default function DesktopMemoryPage() {
 
       return nextParams;
     });
-  // The advanced-filter drawer state lives in the URL (`?advanced=1`) because it
-  // renders inside the header SearchBox's dropdown panel (GlobalSearchBox pins
-  // the panel open from the same param); this page owns the toggle + content.
-  // Advanced filters are exposed by default on the Memory hub.
-  const advancedOpen = searchParams.get('advanced') !== '0';
-  const toggleAdvanced = () =>
-    setSearchParams(
-      (params) => {
-        const nextParams = new URLSearchParams(params);
-
-        if (advancedOpen) {
-          nextParams.set('advanced', '0');
-        } else {
-          nextParams.delete('advanced');
-        }
-
-        return nextParams;
-      },
-      { replace: true },
-    );
-
-  // Make the default view explicit in the URL so the query is shareable and so
+  // Advanced filters render inside the header search panel and stay visible.
   // MemoryPage can derive the map's hasLocation scope from `?view=`.
   useEffect(() => {
     if (!searchParams.get('view')) {
@@ -308,29 +287,13 @@ export default function DesktopMemoryPage() {
         </div>
       </Portal.Slot>
 
-      {/* The Advanced toggle sits inset at the right edge of the header search box
-          (SearchBox's toolsSlot). Borderless h-8 to match the inset controls. */}
-      <Portal.Slot id="nav-tools">
-        <AdvancedSearchToggle
-          open={advancedOpen}
-          onToggle={toggleAdvanced}
-          className="h-7 w-7 rounded-md border-0 shadow-none"
-        />
-      </Portal.Slot>
-
-      {/* The advanced filters render as a pinned section at the top of the
-          header SearchBox's dropdown panel (its panelHeader slot), above any
-          live search suggestions — so typing never covers them. Every applied
-          filter chips inside the drawer's drop area; while the drawer is
-          closed, the search box's "N filters" text stands in. */}
+      {/* Advanced filters sit in the header search dropdown, always pinned. */}
       <Portal.Slot id="nav-search-panel">
-        {advancedOpen && (
-          <DropdownProvider args={[{ changeSearchParams: true }]}>
-            <div className="p-3">
-              <AdvancedFilters modal={false} />
-            </div>
-          </DropdownProvider>
-        )}
+        <DropdownProvider args={[{ changeSearchParams: true }]}>
+          <div className="p-3">
+            <AdvancedFilters modal={false} />
+          </div>
+        </DropdownProvider>
       </Portal.Slot>
 
       <PageContent className="gap-4 p-0">

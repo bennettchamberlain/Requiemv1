@@ -13,7 +13,6 @@ import { useEntityService } from '../MemoryPage/useEntityService';
 
 import { EntityDetails } from './Components';
 import {
-  AdvancedSearchToggle,
   ExplorerToolbar,
   MemorySearchField,
 } from './Components/ExplorerToolbar/ExplorerToolbar';
@@ -44,7 +43,6 @@ export default function MobileMemoryPage() {
       return nextParams;
     });
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [advancedOpen, setAdvancedOpen] = useState(() => searchParams.get('advanced') !== '0');
   const activeFilterCount = countActiveFilters(searchParams);
 
   // Reflect the default view in the URL so the query is shareable/restorable.
@@ -94,11 +92,7 @@ export default function MobileMemoryPage() {
         <MemoryHubShell>
         <div className="space-y-3">
           {/* The global header search isn't shown on mobile, so the search field
-              lives here inline, next to the Advanced toggle; the advanced drawer
-              (Who/What/When/Where/How + tags, semantic, sort, save) renders
-              below via the shared ExplorerToolbar. Applied filters chip inside
-              the drawer's drop area; while it's closed, the count text beside
-              the toggle stands in (mirroring the desktop header search). */}
+              and advanced filters live here inline. */}
           <div className="flex items-center gap-2">
             <div className="flex-1">
               <MemorySearchField />
@@ -108,9 +102,8 @@ export default function MobileMemoryPage() {
                 {activeFilterCount} {activeFilterCount === 1 ? 'filter' : 'filters'}
               </span>
             )}
-            <AdvancedSearchToggle open={advancedOpen} onToggle={() => setAdvancedOpen((open) => !open)} />
           </div>
-          <ExplorerToolbar open={advancedOpen} />
+          <ExplorerToolbar open />
 
           {/* Tab Navigation */}
           <Tabs defaultValue="list" onValueChange={setActiveTab} value={activeTab}>

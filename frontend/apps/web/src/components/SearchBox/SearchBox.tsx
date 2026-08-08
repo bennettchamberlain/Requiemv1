@@ -629,7 +629,8 @@ function SearchBox(
     resultsNode = body;
   }
 
-  const panelVisible = resultsNode != null || panelPinned;
+  const panelVisible =
+    resultsNode != null || (panelPinned && (isFocused || hasQuery));
 
   return (
     <Form {...form}>

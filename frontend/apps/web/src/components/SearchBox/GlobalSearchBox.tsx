@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { GlobalUID, Portal } from '@ci/common';
-import { Clock, FilterX, Search, SearchX, SlidersHorizontal, X } from '@ci/shadcn/icons';
+import { Clock, FilterX, Search, SearchX, X } from '@ci/shadcn/icons';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useRecentSearches } from '@/hooks';
@@ -32,7 +32,6 @@ const RECENT_PREFIX = 'recent:';
 // the tag as an explorer filter rather than opening a detail route.
 const TAG_PREFIX = 'tagfilter:';
 const SEARCH_ACTION_ID = 'action:search';
-const ADVANCED_ACTION_ID = 'action:advanced';
 const CLEAR_FILTERS_ACTION_ID = 'action:clear-filters';
 const CLEAR_QUERY_ACTION_ID = 'action:clear-query';
 
@@ -58,8 +57,8 @@ export function GlobalSearchBox() {
 
   const onMemory = location.pathname === '/memory';
   const semantic = searchParams.get('semantic') === '1';
-  // Advanced filters are open by default on Memory; `?advanced=0` hides them.
-  const advancedOpen = onMemory && searchParams.get('advanced') !== '0';
+  // Advanced filters are always pinned beneath the search input on Memory.
+  const filtersPinned = onMemory;
   // With filters active the clear-X must show even on an empty input — it
   // resets the filters too. The count renders as subtle text beside the box in
   // both states (statusSlot when expanded, left of the button when collapsed).
@@ -76,28 +75,8 @@ export function GlobalSearchBox() {
   const [resetKey, setResetKey] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // GitHub-style: collapsed, the header shows a compact search *button*; clicking
-  // it (or `/`) expands the real SearchBox as an overlay across the header region
-  // (breadcrumbs, view tabs). The expanded box is CSS-hidden rather than
-  // unmounted while collapsed so the nav-tools / nav-search-panel portal targets
-  // stay in the DOM for Portal.Slot.
-  // Always expanded — the search bar stays full-width and visible in the header.
+  // Always expanded — the search bar stays visible in the header.
   const overlayRef = useRef<HTMLDivElement | null>(null);
-
-  // `?advanced=1` implies the expanded box (the pinned filter panel hangs off
-  // it). Closing the filters keeps the wide bar and refocuses the input — the
-  // user is still mid-search — which re-arms the blur/Escape collapse rules.
-  // Only while focus is still in the overlay, though: when the close came from
-  // a window-level Escape after clicking out to the page, pulling focus back
-  // would pop the results dropdown open again (openOnFocus). That guard also
-  // covers the old no-op cases — the mount run and off-memory transitions run
-  // with focus elsewhere.
-  // Collapse-on-outside-click is disabled — the bar stays visible.
-  useEffect(() => {
-    if (advancedOpen && overlayRef.current?.contains(document.activeElement)) {
-      inputRef.current?.focus();
-    }
-  }, [advancedOpen]);
 
   const [recentSearches, { addRecentSearch, removeRecentSearch }] = useRecentSearches();
 
@@ -165,51 +144,6 @@ export function GlobalSearchBox() {
     },
     [addRecentSearch, clearInput, navigate, onMemory, semantic, setSearchParams],
   );
-
-  // Open the advanced-filter drawer. On /memory that's the `?advanced=1` param
-  // (DesktopMemoryPage owns the toggle button and the drawer content); elsewhere
-  // the drawer doesn't exist, so go to the explorer with it open, carrying the
-  // typed query like a committed search.
-  const openAdvanced = useCallback(() => {
-    if (onMemory) {
-      setSearchParams(
-        (params) => {
-          params.delete('advanced');
-
-          return params;
-        },
-        { replace: true },
-      );
-
-      return;
-    }
-
-    const trimmed = (query ?? '').trim();
-    const params = new URLSearchParams();
-
-    if (trimmed) {
-      addRecentSearch(trimmed);
-      params.set('search', trimmed);
-    }
-
-    if (semantic) {
-      params.set('semantic', '1');
-    }
-
-    navigate(`/memory?${params.toString()}`);
-    clearInput();
-  }, [addRecentSearch, clearInput, navigate, onMemory, query, semantic, setSearchParams]);
-
-  const closeAdvanced = useCallback(() => {
-    setSearchParams(
-      (params) => {
-        params.set('advanced', '0');
-
-        return params;
-      },
-      { replace: true },
-    );
-  }, [setSearchParams]);
 
   // The query only — the counterpart to `clearFilters`. Remounting SearchBox
   // empties the input; on /memory the live `?search` param goes with it. The
@@ -325,20 +259,6 @@ export function GlobalSearchBox() {
   const results = useMemo<SearchResultItem[]>(() => {
     const trimmed = (query ?? '').trim();
 
-    // In-place actions that don't depend on a typed query: the advanced-search
-    // toggle, and clear-filters while filters are active. They lead the dropdown
-    // in both states — with no query, active filters still need both handles.
-    const advancedRow: SearchResultItem = {
-      id: ADVANCED_ACTION_ID,
-      content: (
-        <div className="flex items-center gap-2">
-          <SlidersHorizontal className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
-          <span className="text-muted-foreground">
-            {advancedOpen ? 'Close advanced search' : 'Open advanced search'}
-          </span>
-        </div>
-      ),
-    };
     const clearFiltersRows: SearchResultItem[] =
       activeFilterCount > 0
         ? [
@@ -354,12 +274,9 @@ export function GlobalSearchBox() {
           ]
         : [];
 
-    // Typing → the in-place actions plus a clear-query action and a "search
-    // Memory" action, then matching tags (draggable filter rows, few and
-    // precise), then live entity suggestions.
+    // Typing → clear-query, "search Memory", matching tags, then live suggestions.
     if (trimmed) {
       return [
-        advancedRow,
         {
           id: CLEAR_QUERY_ACTION_ID,
           content: (
@@ -391,9 +308,8 @@ export function GlobalSearchBox() {
       ];
     }
 
-    // Empty + focused → the same in-place actions, then recent searches.
+    // Empty + focused → clear-filters (when active), then recent searches.
     return [
-      advancedRow,
       ...clearFiltersRows,
       ...recentSearches.map((recent) => ({
         id: `${RECENT_PREFIX}${recent}`,
@@ -419,7 +335,6 @@ export function GlobalSearchBox() {
     ];
   }, [
     activeFilterCount,
-    advancedOpen,
     onMemory,
     query,
     recentSearches,
@@ -463,7 +378,6 @@ export function GlobalSearchBox() {
       setSearchParams(
         (params) => {
           params.delete('search');
-          params.delete('advanced');
 
           for (const param of FILTER_PARAMS) {
             params.delete(param);
@@ -507,17 +421,6 @@ export function GlobalSearchBox() {
       // falls back to recent searches.
       if (id === CLEAR_QUERY_ACTION_ID) {
         clearQuery();
-
-        return;
-      }
-
-      // Toggles the drawer in place — the typed query and the dropdown stay.
-      if (id === ADVANCED_ACTION_ID) {
-        if (advancedOpen) {
-          closeAdvanced();
-        } else {
-          openAdvanced();
-        }
 
         return;
       }
@@ -594,14 +497,11 @@ export function GlobalSearchBox() {
     },
     [
       addRecentSearch,
-      advancedOpen,
       clearFilters,
       clearInput,
       clearQuery,
-      closeAdvanced,
       commitSearch,
       navigate,
-      openAdvanced,
       query,
     ],
   );
@@ -613,7 +513,7 @@ export function GlobalSearchBox() {
   });
 
   return (
-    <div ref={overlayRef} className="relative flex min-w-0 flex-1 items-center">
+    <div ref={overlayRef} className="relative flex min-w-0 items-center">
       {filterCountText && (
         <span className="mr-2 hidden whitespace-nowrap text-xs text-muted-foreground lg:inline">
           {filterCountText}
@@ -629,9 +529,8 @@ export function GlobalSearchBox() {
           onClear={handleClear}
           onResultSelect={handleResultSelect}
           onFilterAdd={onMemory ? handleFilterAdd : undefined}
-          onPanelUnpin={closeAdvanced}
           onKeyDown={(_value, e) => {
-            if (e.key === 'Escape' && !advancedOpen) {
+            if (e.key === 'Escape' && !filtersPinned) {
               inputRef.current?.blur();
             }
           }}
@@ -652,11 +551,10 @@ export function GlobalSearchBox() {
             )
           }
           showClear={activeFilterCount > 0 || Boolean(onMemory && urlSearch)}
-          toolsSlot={<Portal id="nav-tools" className="flex items-center empty:hidden" />}
           panelHeader={
             <Portal id="nav-search-panel" className="empty:hidden [&:not(:last-child)]:border-b" />
           }
-          panelPinned={advancedOpen}
+          panelPinned={filtersPinned}
         />
       </div>
     </div>

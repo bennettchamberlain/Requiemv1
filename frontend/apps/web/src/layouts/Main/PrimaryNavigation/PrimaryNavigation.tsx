@@ -71,17 +71,19 @@ export function PrimaryNavigation() {
   return (
     <>
       <header className="flex flex-row items-center gap-2 p-2 px-4">
-        {/* Left + center: breadcrumbs, Memory's view switcher, then the collapsed
-            search button right-aligned next to the actions cluster. All share one
-            relative region — the expanded search (GlobalSearchBox) overlays the
-            whole region, GitHub-style, instead of competing with them for width.
-            The right cluster stays visible. */}
-        <div className="relative flex min-w-0 flex-1 flex-col gap-2">
-          <div className="flex shrink-0 flex-row flex-wrap items-center gap-2">
+        {/* Left + center: breadcrumbs and view tabs share a row with the search
+            bar on desktop (search is a fixed width on the right). On small
+            screens the search stacks below. */}
+        <div className="relative flex min-w-0 flex-1 flex-col gap-2 md:flex-row md:items-center md:gap-3">
+          <div className="flex min-w-0 flex-1 flex-row flex-wrap items-center gap-2">
             <Portal id="breadcrumbs" />
             <Portal id="nav-views" className="flex flex-row items-center empty:hidden" />
           </div>
-          {!isSharedView && <GlobalSearchBox />}
+          {!isSharedView && (
+            <div className="w-full min-w-0 md:ml-auto md:w-72 md:shrink-0 lg:w-80">
+              <GlobalSearchBox />
+            </div>
+          )}
         </div>
 
         {/* Right: page actions, new, account (Tags lives in the account menu) */}
