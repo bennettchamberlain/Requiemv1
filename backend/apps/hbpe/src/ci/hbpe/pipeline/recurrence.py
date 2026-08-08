@@ -846,6 +846,12 @@ _INSERT_OCCURRENCE_SQL = """
     INSERT INTO hbpe.occurrence_log
         (user_id, predicted_at, target_date, l1_cluster_id, p_occur, model_version)
     VALUES (%s, %s, %s, %s, %s, %s)
+    ON CONFLICT (
+        user_id,
+        target_date,
+        l1_cluster_id,
+        ((predicted_at AT TIME ZONE 'UTC')::date)
+    ) DO NOTHING
 """
 
 
@@ -915,5 +921,14 @@ def backfill_occurrence_actuals(user_id: str, lookback_days: int = 14) -> dict:
                 {"user_id": user_id, "lookback": lookback_days},
             )
             updated = cur.rowcount or 0
-    log.info("occurrence actuals user=%s updated=%d", user_id[:8], updated)
-    return {"user_id": user_id, "updated": updated}
+            cur.execute(
+                "DELETE FROM hbpe.occurrence_log WHERE predicted_at < NOW() - INTERVAL '90 days'"
+            )
+            pruned = cur.rowcount or 0
+    log.info(
+        "occurrence actuals user=%s updated=%d pruned=%d",
+        user_id[:8],
+        updated,
+        pruned,
+    )
+    return {"user_id": user_id, "updated": updated, "pruned": pruned}
