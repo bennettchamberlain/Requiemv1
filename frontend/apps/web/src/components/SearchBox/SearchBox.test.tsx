@@ -119,4 +119,30 @@ describe('SearchBox', () => {
     expect(onClear).not.toHaveBeenCalled();
     expect(input).toHaveValue('abc');
   });
+
+  it('disables browser autocomplete on the search input', () => {
+    renderWithProviders(<SearchBox placeholder="Search memories" />);
+
+    expect(screen.getByPlaceholderText('Search memories')).toHaveAttribute('autocomplete', 'off');
+  });
+
+  it('renders panelFooter below results when the panel is open', () => {
+    renderWithProviders(
+      <SearchBox
+        displayResults
+        openOnFocus
+        panelPinned
+        results={RESULTS}
+        panelFooter={<div>Advanced filters</div>}
+      />,
+    );
+
+    const input = screen.getByRole('textbox');
+    fireEvent.focus(input);
+
+    const footer = screen.getByText('Advanced filters');
+    const firstResult = screen.getByText('Result One');
+
+    expect(firstResult.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });

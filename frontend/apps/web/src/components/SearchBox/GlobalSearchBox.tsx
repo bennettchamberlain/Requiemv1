@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { GlobalUID, Portal } from '@ci/common';
+import { GlobalUID } from '@ci/common';
 import { Clock, FilterX, Search, SearchX, X } from '@ci/shadcn/icons';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useRecentSearches } from '@/hooks';
 import { useKeyboardShortcut } from '@/hooks/useKeyboardShortcut';
+import { AdvancedFilters } from '@/pages/MemoryPage/Components/ExplorerToolbar/ExplorerToolbar';
 import {
   FILTER_PARAMS,
   addEntityFilter,
@@ -25,6 +26,7 @@ import { PlaceResult } from './results/PlaceResult';
 import { TagResult } from './results/TagResult';
 import { ThreadResult } from './results/ThreadResult';
 import { SearchBox, type SearchResultItem } from './SearchBox';
+import { DropdownProvider } from './useDropdown';
 import { useSearchService } from './useSearchService';
 
 const RECENT_PREFIX = 'recent:';
@@ -39,7 +41,10 @@ const CLEAR_QUERY_ACTION_ID = 'action:clear-query';
  * The unified search in the primary navigation header — visible on every page
  * and the single free-text search for the Memory explorer (the explorer no
  * longer renders its own search box; its toolbar holds only the advanced
- * Who/What/When/Where/How filters).
+ * Who/What/When/Where/How filters on mobile).
+ *
+ * Advanced filters are always pinned beneath the suggestion list in the
+ * header dropdown on every page.
  *
  * - On `/memory`, typing writes `?search` live (debounced) so results filter as
  *   you type, and the input mirrors `?search` via `defaultQuery` (so external
@@ -57,12 +62,7 @@ export function GlobalSearchBox() {
 
   const onMemory = location.pathname === '/memory';
   const semantic = searchParams.get('semantic') === '1';
-  // Advanced filters are always pinned beneath the search input on Memory.
-  const filtersPinned = onMemory;
-  // With filters active the clear-X must show even on an empty input — it
-  // resets the filters too. The count renders as subtle text beside the box in
-  // both states (statusSlot when expanded, left of the button when collapsed).
-  const activeFilterCount = onMemory ? countActiveFilters(searchParams) : 0;
+  const activeFilterCount = countActiveFilters(searchParams);
   const filterCountText =
     activeFilterCount > 0 ? `${activeFilterCount} ${activeFilterCount === 1 ? 'filter' : 'filters'}` : null;
   // On /memory the input mirrors the live `?search` param; elsewhere it stays a
@@ -84,12 +84,8 @@ export function GlobalSearchBox() {
   // filter so the dropdown agrees with the pinned filters above it. The other
   // dimensions (who / when / where / tags / connectors) aren't part of the
   // search API's input yet, so only the page results honor them.
-  const includeTypes = onMemory
-    ? searchParams.get('includedEntityTypes')?.split(',').filter(Boolean)
-    : undefined;
-  const userExcludedTypes = onMemory
-    ? (searchParams.get('excludedEntityTypes')?.split(',').filter(Boolean) ?? [])
-    : [];
+  const includeTypes = searchParams.get('includedEntityTypes')?.split(',').filter(Boolean);
+  const userExcludedTypes = searchParams.get('excludedEntityTypes')?.split(',').filter(Boolean) ?? [];
   // Keep the box's default exclusions on top of the explorer's (the service
   // only applies its defaults when excludeTypes is omitted entirely).
   const excludeTypes =
@@ -131,10 +127,15 @@ export function GlobalSearchBox() {
         });
       } else {
         const params = new URLSearchParams();
+
         params.set('search', trimmed);
 
-        if (semantic) {
-          params.set('semantic', '1');
+        for (const param of FILTER_PARAMS) {
+          const value = searchParams.get(param);
+
+          if (value) {
+            params.set(param, value);
+          }
         }
 
         navigate(`/memory?${params.toString()}`);
@@ -142,7 +143,7 @@ export function GlobalSearchBox() {
 
       clearInput();
     },
-    [addRecentSearch, clearInput, navigate, onMemory, semantic, setSearchParams],
+    [addRecentSearch, clearInput, navigate, onMemory, searchParams, setSearchParams],
   );
 
   // The query only — the counterpart to `clearFilters`. Remounting SearchBox
@@ -374,21 +375,19 @@ export function GlobalSearchBox() {
   const handleClear = useCallback(() => {
     setQuery(null);
 
-    if (onMemory) {
-      setSearchParams(
-        (params) => {
-          params.delete('search');
+    setSearchParams(
+      (params) => {
+        params.delete('search');
 
-          for (const param of FILTER_PARAMS) {
-            params.delete(param);
-          }
+        for (const param of FILTER_PARAMS) {
+          params.delete(param);
+        }
 
-          return params;
-        },
-        { replace: true },
-      );
-    }
-  }, [onMemory, setSearchParams]);
+        return params;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
 
   // Arrow-key analogue of dragging a person/place/tag row onto the explorer's
   // filter drop area: right adds the highlighted row's filter. Same
@@ -528,12 +527,7 @@ export function GlobalSearchBox() {
           onSubmit={({ query: submitted }) => commitSearch(submitted)}
           onClear={handleClear}
           onResultSelect={handleResultSelect}
-          onFilterAdd={onMemory ? handleFilterAdd : undefined}
-          onKeyDown={(_value, e) => {
-            if (e.key === 'Escape' && !filtersPinned) {
-              inputRef.current?.blur();
-            }
-          }}
+          onFilterAdd={handleFilterAdd}
           variant="compact"
           placeholder="Search memory…"
           autoSubmit
@@ -550,11 +544,15 @@ export function GlobalSearchBox() {
               </span>
             )
           }
-          showClear={activeFilterCount > 0 || Boolean(onMemory && urlSearch)}
-          panelHeader={
-            <Portal id="nav-search-panel" className="empty:hidden [&:not(:last-child)]:border-b" />
+          showClear={activeFilterCount > 0 || Boolean(onMemory ? urlSearch : query?.trim())}
+          panelFooter={
+            <DropdownProvider args={[{ changeSearchParams: true }]}>
+              <div className="p-3">
+                <AdvancedFilters modal={false} />
+              </div>
+            </DropdownProvider>
           }
-          panelPinned={filtersPinned}
+          panelPinned
         />
       </div>
     </div>

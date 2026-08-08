@@ -106,12 +106,18 @@ interface Props {
   toolsSlot?: ReactNode;
   /**
    * Caller-supplied section rendered at the top of the dropdown panel, above the
-   * results (e.g. Memory's advanced filters). Shown whenever the panel is open.
+   * results. Shown whenever the panel is open.
    */
   panelHeader?: ReactNode;
   /**
+   * Caller-supplied section rendered at the bottom of the dropdown panel,
+   * below the results (e.g. the global advanced search controls).
+   */
+  panelFooter?: ReactNode;
+  /**
    * Hold the dropdown panel open regardless of focus/query — used with
-   * `panelHeader` so its content stays interactive (it survives input blur).
+   * `panelHeader` / `panelFooter` so their content stays interactive (it
+   * survives input blur).
    */
   panelPinned?: boolean;
   /**
@@ -159,6 +165,7 @@ function SearchBox(
     showClear = false,
     toolsSlot,
     panelHeader,
+    panelFooter,
     panelPinned = false,
     onPanelUnpin,
     defaultQuery,
@@ -634,7 +641,7 @@ function SearchBox(
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleFormSubmit)}>
+      <form autoComplete="off" onSubmit={form.handleSubmit(handleFormSubmit)}>
         <div className="relative" ref={wrapperRef}>
           <div
             className={cn(
@@ -662,6 +669,12 @@ function SearchBox(
                 render={({ field }) => (
                   <Input
                     {...field}
+                    type="text"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    name="ci-global-search"
                     ref={(el) => {
                       field.ref(el);
 
@@ -786,6 +799,9 @@ function SearchBox(
             <div className="absolute top-full left-0 right-0 z-50 bg-background border border-t-0 rounded-b-md shadow-xs">
               {panelHeader}
               {resultsNode}
+              {panelFooter && (
+                <div className={cn(resultsNode != null && 'border-t')}>{panelFooter}</div>
+              )}
             </div>
           )}
         </div>

@@ -10,14 +10,13 @@ import { useSearchParams, Link } from 'react-router-dom';
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
 import { FileChunkModal } from '@/components/modals/FileChunkModal/FileChunkModal';
-import { AVAILABLE_ENTITY_TYPES, DropdownProvider } from '@/components/SearchBox/useDropdown';
+import { AVAILABLE_ENTITY_TYPES } from '@/components/SearchBox/useDropdown';
 import { gql } from '@/graphql';
 
 import { useEntityService } from '../MemoryPage/useEntityService';
 
 import { ActivityTimelineRail } from './ActivityTimelineRail';
 import { EntityDetails } from './Components/EntityDetails';
-import { AdvancedFilters } from './Components/ExplorerToolbar/ExplorerToolbar';
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
 import { ListView } from './ListView';
@@ -285,15 +284,6 @@ export default function DesktopMemoryPage() {
             </Button>
           ))}
         </div>
-      </Portal.Slot>
-
-      {/* Advanced filters sit in the header search dropdown, always pinned. */}
-      <Portal.Slot id="nav-search-panel">
-        <DropdownProvider args={[{ changeSearchParams: true }]}>
-          <div className="p-3">
-            <AdvancedFilters modal={false} />
-          </div>
-        </DropdownProvider>
       </Portal.Slot>
 
       <PageContent className="gap-4 p-0">
