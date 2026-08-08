@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
+import type { Request, Response } from 'express';
 import { DataSource, QueryRunner } from 'typeorm';
 
 import { type UserServiceContext } from '@ci/common/context';
@@ -7,6 +8,13 @@ import { LoggerService } from '@ci/common/logging';
 import { FileService } from '@ci/domains/files';
 import { UserService } from '@ci/domains/user';
 
+import {
+  FILE_CHUNK_BYTES,
+  PORTABILITY_NDJSON_CONTENT_TYPE,
+  readPortabilityNdjsonStream,
+  serializePortabilityLine,
+  type PortabilityStreamRecord,
+} from '../portabilityNdjson';
 import type {
   FileBlobSnapshot,
   ImportResult,
@@ -23,6 +31,14 @@ import {
 
 const ARCHIVE_VERSION = 1 as const;
 const INSERT_CHUNK_SIZE = 200;
+const EXPORT_ROW_PAGE_SIZE = 500;
+
+interface PendingFileImport {
+  bucket: string;
+  key: string;
+  total: number;
+  parts: Map<number, string>;
+}
 
 @Injectable()
 export class UserDataPortabilityService {
@@ -36,6 +52,171 @@ export class UserDataPortabilityService {
     this.logger.setContext(UserDataPortabilityService.name);
   }
 
+  async writeExportStream(context: UserServiceContext, res: Response): Promise<void> {
+    const exportedAt = new Date().toISOString();
+    const profile = await this.exportProfile(context);
+    const filename = `ci-memory-export-${exportedAt.slice(0, 10)}.ndjson`;
+
+    res.setHeader('Content-Type', PORTABILITY_NDJSON_CONTENT_TYPE);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    const manifest: PortabilityStreamRecord = {
+      type: 'manifest',
+      version: ARCHIVE_VERSION,
+      format: 'ndjson',
+      exportedAt,
+      userId: context.userId,
+      profile: profile as Record<string, unknown> | null,
+    };
+
+    res.write(`${serializePortabilityLine(manifest)}\n`);
+
+    const tables = await this.discoverUserTables();
+
+    for (const table of tables) {
+      for await (const row of this.iterateUserRows(context.userId, table)) {
+        const line: PortabilityStreamRecord = {
+          type: 'row',
+          table: qualifiedName(table),
+          row: this.serializeRow(row),
+        };
+        res.write(`${serializePortabilityLine(line)}\n`);
+      }
+    }
+
+    const fileRows = await this.selectUserRows(context.userId, {
+      schema: 'ci',
+      table: 'files',
+      userColumn: 'user_id',
+    });
+
+    for (const row of fileRows) {
+      await this.writeFileChunks(context, res, row);
+    }
+
+    res.end();
+  }
+
+  async importNdjsonStream(
+    context: UserServiceContext,
+    req: Request,
+    confirmEmail: string,
+  ): Promise<ImportResult> {
+    await this.assertConfirmEmail(context, confirmEmail);
+
+    const tables = await this.discoverUserTables();
+    const tableByName = new Map(tables.map((table) => [qualifiedName(table), table]));
+    const touchedTables = new Set<string>();
+    const pendingFiles = new Map<string, PendingFileImport>();
+
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    let rowsImported = 0;
+    let filesRestored = 0;
+    let started = false;
+
+    try {
+      await readPortabilityNdjsonStream(req, async (record) => {
+        if (record.type === 'manifest') {
+          if (started) {
+            throw new BadRequestException('Archive manifest must be the first record');
+          }
+
+          if (record.userId !== context.userId) {
+            throw new BadRequestException('This archive belongs to a different account');
+          }
+
+          await this.setReplicationRole(queryRunner, 'replica');
+
+          for (const table of [...tables].reverse()) {
+            await this.deleteUserRows(queryRunner, context.userId, table);
+          }
+
+          started = true;
+
+          return;
+        }
+
+        if (!started) {
+          throw new BadRequestException('Archive manifest must be the first record');
+        }
+
+        if (record.type === 'row') {
+          const table = tableByName.get(record.table);
+
+          if (!table) {
+            throw new BadRequestException(`Unknown table in archive: ${record.table}`);
+          }
+
+          rowsImported += await this.insertUserRows(queryRunner, context.userId, table, [record.row]);
+          touchedTables.add(record.table);
+
+          return;
+        }
+
+        const pending =
+          pendingFiles.get(record.id) ??
+          ({
+            bucket: record.bucket,
+            key: record.key,
+            total: record.total,
+            parts: new Map<number, string>(),
+          } satisfies PendingFileImport);
+
+        pending.parts.set(record.index, record.data);
+        pendingFiles.set(record.id, pending);
+
+        if (pending.parts.size === pending.total) {
+          const ordered = Array.from({ length: pending.total }, (_, index) => {
+            const part = pending.parts.get(index);
+
+            if (!part) {
+              throw new BadRequestException(`Missing file chunk ${index} for ${record.id}`);
+            }
+
+            return part;
+          });
+
+          await this.fileService.putObject(
+            context,
+            pending.bucket,
+            pending.key,
+            Buffer.concat(ordered.map((part) => Buffer.from(part, 'base64'))),
+          );
+          filesRestored += 1;
+          pendingFiles.delete(record.id);
+        }
+      });
+
+      if (!started) {
+        throw new BadRequestException('Archive is missing a manifest record');
+      }
+
+      if (pendingFiles.size > 0) {
+        throw new BadRequestException('Archive is missing one or more file chunks');
+      }
+
+      await this.setReplicationRole(queryRunner, 'origin');
+      await queryRunner.commitTransaction();
+    } catch (error) {
+      await this.setReplicationRole(queryRunner, 'origin').catch(() => undefined);
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
+
+    return {
+      tablesImported: touchedTables.size,
+      rowsImported,
+      filesRestored,
+      format: 'ndjson',
+    };
+  }
+
+  /** Legacy single-json export for small accounts and tests. */
   async exportArchive(context: UserServiceContext): Promise<UserDataArchive> {
     const tables = await this.discoverUserTables();
     const tableData: Record<string, Record<string, unknown>[]> = {};
@@ -58,6 +239,7 @@ export class UserDataPortabilityService {
     };
   }
 
+  /** Legacy single-json import for small archives. */
   async importArchive(context: UserServiceContext, archive: UserDataArchive): Promise<ImportResult> {
     this.validateArchive(context, archive);
 
@@ -97,7 +279,20 @@ export class UserDataPortabilityService {
       tablesImported: Object.keys(archive.tables).length,
       rowsImported,
       filesRestored,
+      format: 'json',
     };
+  }
+
+  private async assertConfirmEmail(context: UserServiceContext, confirmEmail: string): Promise<void> {
+    const user = await this.userService.findById(context, context.userId);
+
+    if (!user) {
+      throw new BadRequestException('Account not found');
+    }
+
+    if (confirmEmail.trim().toLowerCase() !== user.email.trim().toLowerCase()) {
+      throw new BadRequestException('Confirmation email does not match this account');
+    }
   }
 
   private validateArchive(context: UserServiceContext, archive: UserDataArchive): void {
@@ -126,6 +321,77 @@ export class UserDataPortabilityService {
         table: row.table,
         userColumn: row.user_column as UserScopedTable['userColumn'],
       }));
+  }
+
+  private async *iterateUserRows(
+    userId: string,
+    table: UserScopedTable,
+  ): AsyncGenerator<Record<string, unknown>> {
+    let offset = 0;
+
+    for (;;) {
+      const rows = (await this.dataSource.query(
+        `SELECT * FROM "${table.schema}"."${table.table}"
+         WHERE ${table.userColumn} = $1
+         LIMIT $2 OFFSET $3`,
+        [userId, EXPORT_ROW_PAGE_SIZE, offset],
+      )) as Record<string, unknown>[];
+
+      if (rows.length === 0) {
+        break;
+      }
+
+      for (const row of rows) {
+        yield row;
+      }
+
+      if (rows.length < EXPORT_ROW_PAGE_SIZE) {
+        break;
+      }
+
+      offset += EXPORT_ROW_PAGE_SIZE;
+    }
+  }
+
+  private async writeFileChunks(
+    context: UserServiceContext,
+    res: Response,
+    row: Record<string, unknown>,
+  ): Promise<void> {
+    const id = String(row.id ?? '');
+    const bucket = String(row.bucket ?? '');
+    const key = String(row.key ?? '');
+
+    if (!id || !bucket || !key) {
+      return;
+    }
+
+    try {
+      const content = await this.fileService.getFileContent(context, key);
+      const buffer = Buffer.from(content);
+      const total = Math.max(1, Math.ceil(buffer.length / FILE_CHUNK_BYTES));
+
+      for (let index = 0; index < total; index += 1) {
+        const start = index * FILE_CHUNK_BYTES;
+        const chunk = buffer.subarray(start, start + FILE_CHUNK_BYTES);
+        const line: PortabilityStreamRecord = {
+          type: 'file-chunk',
+          id,
+          bucket,
+          key,
+          index,
+          total,
+          data: chunk.toString('base64'),
+        };
+        res.write(`${serializePortabilityLine(line)}\n`);
+      }
+    } catch (error) {
+      this.logger.warn('Skipped file blob during export', {
+        fileId: id,
+        key,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private async exportProfile(context: UserServiceContext): Promise<UserProfileSnapshot | null> {
@@ -208,15 +474,7 @@ export class UserDataPortabilityService {
     userId: string,
     userColumn: UserScopedTable['userColumn'],
   ): Record<string, unknown> {
-    const normalized: Record<string, unknown> = { ...row, [userColumn]: userId };
-
-    for (const [key, value] of Object.entries(normalized)) {
-      if (value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
-        normalized[key] = value;
-      }
-    }
-
-    return normalized;
+    return { ...row, [userColumn]: userId };
   }
 
   private serializeRow(row: Record<string, unknown>): Record<string, unknown> {
@@ -278,7 +536,12 @@ export class UserDataPortabilityService {
 
     for (const blob of blobs) {
       try {
-        await this.fileService.putObject(context, blob.bucket, blob.key, Buffer.from(blob.contentBase64, 'base64'));
+        await this.fileService.putObject(
+          context,
+          blob.bucket,
+          blob.key,
+          Buffer.from(blob.contentBase64, 'base64'),
+        );
         restored += 1;
       } catch (error) {
         this.logger.warn('Skipped file blob during import', {

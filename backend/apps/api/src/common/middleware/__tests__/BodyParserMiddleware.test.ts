@@ -102,6 +102,10 @@ describe('BodyParserMiddleware NDJSON streaming bypass', () => {
     }
   });
 
+  it('leaves the raw stream untouched for account import/stream', () => {
+    expect(runMiddleware('/api/account/import/stream', 'application/x-ndjson').parsersInvoked).toBe(false);
+  });
+
   it('tolerates content-type parameters and casing on the bypass', () => {
     expect(runMiddleware('/v1/communications', 'Application/X-NDJSON; charset=utf-8').parsersInvoked).toBe(
       false,

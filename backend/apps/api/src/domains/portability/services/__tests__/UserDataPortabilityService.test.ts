@@ -71,6 +71,7 @@ describe('UserDataPortabilityService', () => {
     expect(archive.userId).toBe('user-1');
     expect(archive.profile?.email).toBe('jane@example.com');
     expect(archive.tables['ci.notes']).toEqual([{ id: 'n1', title: 'Hello', user_id: 'user-1' }]);
+    expect(archive.fileBlobs).toEqual([]);
   });
 
   it('rejects archives exported for a different account', async () => {

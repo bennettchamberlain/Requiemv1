@@ -1,4 +1,4 @@
-/** Portable archive written by GET /api/account/export and read by POST /api/account/import. */
+/** Portable archive written by legacy GET /api/account/export (small accounts). */
 export interface UserDataArchive {
   version: 1;
   exportedAt: string;
@@ -38,4 +38,5 @@ export interface ImportResult {
   tablesImported: number;
   rowsImported: number;
   filesRestored: number;
+  format: 'json' | 'ndjson';
 }

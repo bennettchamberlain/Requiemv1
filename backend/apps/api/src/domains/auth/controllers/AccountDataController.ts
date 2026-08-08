@@ -3,19 +3,27 @@ import {
   Body,
   Controller,
   Get,
-  Header,
+  Headers,
   HttpCode,
   HttpStatus,
   Post,
+  Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { z } from 'zod';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { BodyLimit } from '@ci/common/decorators';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
-import { UserDataPortabilityService, type UserDataArchive } from '@ci/domains/portability';
+import {
+  PORTABILITY_NDJSON_CONTENT_TYPE,
+  UserDataPortabilityService,
+  isPortabilityNdjsonImport,
+  type UserDataArchive,
+} from '@ci/domains/portability';
 import { UserService } from '@ci/domains/user';
 
 const importArchiveSchema = z.object({
@@ -40,8 +48,9 @@ const importArchiveSchema = z.object({
 /**
  * Export / import the authenticated user's Memory data as a portable archive.
  *
- * Uses the same guard as account deletion so native clients (API key, no JWT)
- * can back up and restore on a self-hosted appliance.
+ * Large accounts use NDJSON streaming (`application/x-ndjson`) so neither side
+ * has to buffer the full archive in memory. Small legacy JSON import remains
+ * available for older export files.
  */
 @Controller('account')
 @UseGuards(JwtOrApiKeyAuthGuard)
@@ -52,22 +61,37 @@ export class AccountDataController {
   ) {}
 
   @Get('export')
-  @Header('Content-Type', 'application/json; charset=utf-8')
-  async export(@Context() context: RequestContext) {
+  async export(@Context() context: RequestContext, @Res() res: Response): Promise<void> {
     const serviceContext = toServiceContext(context);
-    const archive = await this.portabilityService.exportArchive(serviceContext);
-    const filename = `ci-memory-export-${archive.exportedAt.slice(0, 10)}.json`;
+    await this.portabilityService.writeExportStream(serviceContext, res);
+  }
 
-    return {
-      filename,
-      archive,
-    };
+  @Post('import/stream')
+  @HttpCode(HttpStatus.OK)
+  async importStream(
+    @Context() context: RequestContext,
+    @Req() req: Request,
+    @Headers('x-confirm-email') confirmEmailHeader?: string,
+  ) {
+    if (!isPortabilityNdjsonImport(req)) {
+      throw new BadRequestException(`Expected Content-Type: ${PORTABILITY_NDJSON_CONTENT_TYPE}`);
+    }
+
+    const confirmEmail = confirmEmailHeader?.trim();
+
+    if (!confirmEmail) {
+      throw new BadRequestException('Missing X-Confirm-Email header');
+    }
+
+    const serviceContext = toServiceContext(context);
+
+    return this.portabilityService.importNdjsonStream(serviceContext, req, confirmEmail);
   }
 
   @Post('import')
   @BodyLimit('500mb')
   @HttpCode(HttpStatus.OK)
-  async import(
+  async importLegacy(
     @Context() context: RequestContext,
     @Body(new ValidationPipe(importArchiveSchema))
     body: z.infer<typeof importArchiveSchema>,

@@ -21,3 +21,8 @@ export class PortabilityModule {}
 
 export { UserDataPortabilityService };
 export type { UserDataArchive, ImportResult } from './types';
+export {
+  PORTABILITY_NDJSON_CONTENT_TYPE,
+  isPortabilityNdjsonImport,
+  serializePortabilityLine,
+} from './portabilityNdjson';
