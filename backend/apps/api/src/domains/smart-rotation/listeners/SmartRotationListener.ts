@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 
 import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import { EXCLUDE_QUESTIONS_WITH_PENDING_INFERRED_REVIEW } from '@ci/common/persistence';
 import { Events, EventService, OnEvent } from '@ci/domains/events';
 import { QuestionService } from '@ci/domains/intelligence';
 import { GraphEnrichmentService } from '@ci/domains/maintenance';
@@ -11,6 +12,7 @@ import {
   CrossTableHydrationService,
   LifeContextService,
   PersonalizationService,
+  PromotionCandidateService,
   PromotionReviewService,
 } from '@ci/domains/personalization';
 import { SuggestionSyncService } from '@ci/domains/schedule';
@@ -31,6 +33,7 @@ export class SmartRotationListener {
     private readonly summaryServiceClient: SummaryServiceClient,
     private readonly graphEnrichmentService: GraphEnrichmentService,
     private readonly personalizationService: PersonalizationService,
+    private readonly promotionCandidateService: PromotionCandidateService,
     private readonly promotionReviewService: PromotionReviewService,
     private readonly crossTableHydrationService: CrossTableHydrationService,
     private readonly lifeContextService: LifeContextService,
@@ -57,6 +60,12 @@ export class SmartRotationListener {
       }
 
       case 'answer_infer': {
+        if (await this.promotionCandidateService.hasPendingInferredFactReview(userId)) {
+          this.logger.log('Smart rotation answer infer skipped — pending inferred-answer review', { userId });
+
+          return;
+        }
+
         const questionId = await this.findTopUnansweredQuestionId(userId);
 
         if (!questionId) {
@@ -207,6 +216,7 @@ export class SmartRotationListener {
             AND a.answer_text IS NOT NULL
             AND TRIM(a.answer_text) <> ''
         )
+        ${EXCLUDE_QUESTIONS_WITH_PENDING_INFERRED_REVIEW}
       ORDER BY q.created_at ASC
       LIMIT 1;
       `,

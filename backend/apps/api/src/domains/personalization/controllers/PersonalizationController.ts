@@ -31,7 +31,7 @@ export class PersonalizationController {
 
   @Get('promotion-candidates')
   async listPromotionCandidates(@Context() context: RequestContext) {
-    return this.promotionCandidateService.listPending(toServiceContext(context));
+    return this.promotionCandidateService.listPending(toServiceContext(context), 1);
   }
 
   @Post('promotion-candidates/:id/accept')

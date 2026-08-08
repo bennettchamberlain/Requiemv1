@@ -133,6 +133,10 @@ export class PersonalizationService {
     }
 
     if (profile.trustMode === 'hands_off') {
+      if (kind === 'inferred_fact') {
+        return 'auto';
+      }
+
       if (kind === 'schedule_accept' && !profile.autoSchedule) {
         return confidence >= 0.9 ? 'auto' : 'review';
       }

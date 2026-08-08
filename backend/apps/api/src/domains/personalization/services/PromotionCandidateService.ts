@@ -33,10 +33,38 @@ export class PromotionCandidateService {
     this.logger.setContext(PromotionCandidateService.name);
   }
 
-  async create(context: UserServiceContext, dto: CreatePromotionCandidateDto): Promise<PromotionCandidate> {
+  async create(context: UserServiceContext, dto: CreatePromotionCandidateDto): Promise<PromotionCandidate | null> {
+    const userId = context.userId!;
+
+    if (dto.kind === 'inferred_fact') {
+      const questionId = dto.payload.questionId as string | undefined;
+
+      if (questionId) {
+        const existingForQuestion = await this.findPendingInferredFactForQuestion(userId, questionId);
+        if (existingForQuestion) {
+          existingForQuestion.payload = dto.payload;
+          existingForQuestion.reviewPrompt = dto.reviewPrompt ?? existingForQuestion.reviewPrompt;
+          existingForQuestion.confidence = dto.confidence;
+
+          const saved = await this.repository.save(existingForQuestion);
+
+          return saved as PromotionCandidate;
+        }
+      }
+
+      if (await this.hasPendingInferredFactReview(userId)) {
+        this.logger.log('Skipped inferred-answer review — another review is already pending', {
+          userId,
+          questionId,
+        });
+
+        return null;
+      }
+    }
+
     const entity = this.repository.create({
       id: uuid7(),
-      userId: context.userId!,
+      userId,
       kind: dto.kind,
       payload: dto.payload,
       confidence: dto.confidence,
@@ -52,10 +80,31 @@ export class PromotionCandidateService {
     return saved as PromotionCandidate;
   }
 
-  async listPending(context: UserServiceContext, limit = 20): Promise<PromotionCandidate[]> {
+  async hasPendingInferredFactReview(userId: string): Promise<boolean> {
+    const count = await this.repository.count({
+      where: { userId, status: 'pending', kind: 'inferred_fact' },
+    });
+
+    return count > 0;
+  }
+
+  async findPendingInferredFactForQuestion(
+    userId: string,
+    questionId: string,
+  ): Promise<PromotionCandidateEntity | null> {
+    return this.repository
+      .createQueryBuilder('pc')
+      .where('pc.user_id = :userId', { userId })
+      .andWhere('pc.status = :status', { status: 'pending' })
+      .andWhere('pc.kind = :kind', { kind: 'inferred_fact' })
+      .andWhere("pc.payload->>'questionId' = :questionId", { questionId })
+      .getOne();
+  }
+
+  async listPending(context: UserServiceContext, limit = 1): Promise<PromotionCandidate[]> {
     const rows = await this.repository.find({
       where: { userId: context.userId!, status: 'pending' },
-      order: { createdAt: 'DESC' },
+      order: { createdAt: 'ASC' },
       take: limit,
     });
 

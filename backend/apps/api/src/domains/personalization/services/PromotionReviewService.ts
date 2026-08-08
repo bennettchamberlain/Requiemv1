@@ -21,7 +21,7 @@ export class PromotionReviewService {
   }
 
   /** Surface pending promotion candidates as feed questions for cautious/balanced users. */
-  async surfacePendingReviews(context: UserServiceContext, limit = 5): Promise<number> {
+  async surfacePendingReviews(context: UserServiceContext, limit = 1): Promise<number> {
     const profile = await this.personalizationService.getProfile(context.userId!);
     if (profile.trustMode === 'hands_off') {
       return 0;

@@ -4,7 +4,10 @@ import { DataSource, type FindOptionsWhere, In, IsNull, Repository } from 'typeo
 import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, SYSTEM_USER } from '@ci/common/context';
-import { computeChunkSize } from '@ci/common/persistence';
+import {
+  computeChunkSize,
+  EXCLUDE_QUESTIONS_WITH_PENDING_INFERRED_REVIEW_FOR_USER_COLUMN,
+} from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
 import {
   QuestionCreatedEvent,
@@ -349,6 +352,7 @@ export class QuestionService {
               AND a.answer_text IS NOT NULL
               AND TRIM(a.answer_text) <> ''
           )
+          ${EXCLUDE_QUESTIONS_WITH_PENDING_INFERRED_REVIEW_FOR_USER_COLUMN}
       )
       SELECT id, user_id
       FROM unanswered

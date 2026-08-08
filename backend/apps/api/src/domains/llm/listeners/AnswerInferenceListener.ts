@@ -8,6 +8,7 @@ import { UserContextService } from '@ci/domains/memory';
 import { PersonalizationService, PromotionCandidateService } from '@ci/domains/personalization';
 import { SearchService } from '@ci/domains/search-next';
 
+import { estimateInferredAnswerConfidence } from '../inferredAnswerConfidence';
 import { OllamaService, PROMPT_MODEL } from '../services/OllamaService';
 
 const RELATED_ANSWER_LIMIT = 10;
@@ -49,6 +50,15 @@ export class AnswerInferenceListener {
     const question = await this.questionService.findById(serviceContext, payload.questionId);
 
     if (!question) {
+      return;
+    }
+
+    if (await this.promotionCandidateService.hasPendingInferredFactReview(ownerId)) {
+      this.logger.log('Answer inference skipped — pending inferred-answer review', {
+        userId: ownerId,
+        questionId: payload.questionId,
+      });
+
       return;
     }
 
@@ -127,27 +137,29 @@ Rules:
 
     const decision = await this.personalizationService.decideAction(ownerId, {
       kind: 'inferred_fact',
-      confidence: 0.75,
+      confidence: estimateInferredAnswerConfidence(resolvedAnswers.length, dossierBlock.length > 0),
       hasUserInput: true,
     });
 
     if (decision === 'review') {
-      await this.promotionCandidateService.create(serviceContext, {
+      const candidate = await this.promotionCandidateService.create(serviceContext, {
         kind: 'inferred_fact',
         payload: {
           questionId: payload.questionId,
           questionText: question.text,
           inferredText,
         },
-        confidence: 0.75,
+        confidence: estimateInferredAnswerConfidence(resolvedAnswers.length, dossierBlock.length > 0),
         sourceJob: 'infer.question.answer',
         reviewPrompt: `Confirm this inferred answer: "${inferredText.slice(0, 120)}"`,
       });
 
-      this.logger.log('Inferred answer queued for review', {
-        userId: ownerId,
-        questionId: payload.questionId,
-      });
+      if (candidate) {
+        this.logger.log('Inferred answer queued for review', {
+          userId: ownerId,
+          questionId: payload.questionId,
+        });
+      }
 
       return;
     }

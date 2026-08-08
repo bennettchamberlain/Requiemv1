@@ -20,6 +20,9 @@ describe('SmartRotationListener', () => {
 
     const personalizationService = {} as import('@ci/domains/personalization').PersonalizationService;
     const promotionReviewService = { surfacePendingReviews: jest.fn() } as never;
+    const promotionCandidateService = {
+      hasPendingInferredFactReview: jest.fn().mockResolvedValue(false),
+    } as never;
     const crossTableHydrationService = {} as import('@ci/domains/personalization').CrossTableHydrationService;
     const lifeContextService = { hasNoveltySinceLastRun: jest.fn(), buildForUser: jest.fn() } as never;
 
@@ -30,6 +33,7 @@ describe('SmartRotationListener', () => {
       summaryServiceClient,
       graphEnrichmentService,
       personalizationService,
+      promotionCandidateService,
       promotionReviewService,
       crossTableHydrationService,
       lifeContextService,
@@ -55,6 +59,9 @@ describe('SmartRotationListener', () => {
 
     const personalizationService = {} as import('@ci/domains/personalization').PersonalizationService;
     const promotionReviewService = { surfacePendingReviews: jest.fn() } as never;
+    const promotionCandidateService = {
+      hasPendingInferredFactReview: jest.fn().mockResolvedValue(false),
+    } as never;
     const crossTableHydrationService = {} as import('@ci/domains/personalization').CrossTableHydrationService;
     const lifeContextService = { hasNoveltySinceLastRun: jest.fn(), buildForUser: jest.fn() } as never;
 
@@ -65,6 +72,7 @@ describe('SmartRotationListener', () => {
       summaryServiceClient,
       graphEnrichmentService,
       personalizationService,
+      promotionCandidateService,
       promotionReviewService,
       crossTableHydrationService,
       lifeContextService,
