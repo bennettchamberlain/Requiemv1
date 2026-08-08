@@ -126,7 +126,11 @@ function isForeignApiBase(apiBase: string | undefined, ollamaHost: string): bool
   }
 }
 
-function buildResolved(settings: LlmEndpointSettings, hostGateway: string, locked: boolean): ResolvedLlmEndpoint {
+function buildResolved(
+  settings: LlmEndpointSettings,
+  hostGateway: string,
+  locked: boolean,
+): ResolvedLlmEndpoint {
   const ollamaHost = `http://${hostGateway}:${settings.backend === 'ollama' ? settings.port : DEFAULT_OLLAMA_PORT}`;
   const apiBase =
     settings.backend === 'openai_compatible' ? `http://${hostGateway}:${settings.port}/v1` : undefined;

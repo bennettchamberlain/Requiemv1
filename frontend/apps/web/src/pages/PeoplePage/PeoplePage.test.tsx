@@ -133,10 +133,7 @@ function captureIntersectionObserver({ fireOnObserve = false } = {}) {
       // test: it is what turns "rebuild the observer" into a request loop.
       if (fireOnObserve) {
         queueMicrotask(() =>
-          this.callback(
-            [{ isIntersecting: true } as IntersectionObserverEntry],
-            {} as IntersectionObserver,
-          ),
+          this.callback([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver),
         );
       }
     }
@@ -157,10 +154,7 @@ function captureIntersectionObserver({ fireOnObserve = false } = {}) {
     scrollSentinelIntoView: async () => {
       await act(async () => {
         for (const callback of callbacks) {
-          callback(
-            [{ isIntersecting: true } as IntersectionObserverEntry],
-            {} as IntersectionObserver,
-          );
+          callback([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
         }
       });
     },
@@ -180,9 +174,7 @@ function mocks({ duplicates = [] as unknown[] } = {}) {
             __typename: 'PersonConnection' as const,
             totalCount: 1,
             pageInfo: pageInfo(),
-            edges: [
-              { __typename: 'PersonEdge' as const, cursor: PERSON_GLOBAL_ID, node: personNode() },
-            ],
+            edges: [{ __typename: 'PersonEdge' as const, cursor: PERSON_GLOBAL_ID, node: personNode() }],
           },
         },
       },

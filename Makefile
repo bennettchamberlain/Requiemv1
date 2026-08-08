@@ -52,16 +52,16 @@ JOHN_SMITH_USER_ID := b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b
 export TAG ?= $(shell git describe --tags --exact-match 2>/dev/null)
 
 
-# Subdirectory build contexts that need a copy of LICENSE
+# Subdirectory build contexts that need a copy of LICENSE. Images built
+# from the repo root (api, gateway, and the Python services) read LICENSE.md
+# directly and are not listed here.
 LICENSE_DIRS := \
 	infrastructure/database \
 	infrastructure/object-store \
 	infrastructure/orchestrator \
 	infrastructure/setup-database \
 	infrastructure/setup-orchestrator \
-	infrastructure/setup-secrets \
-	backend/apps/summary \
-	backend/apps/hbpe
+	infrastructure/setup-secrets
 
 # Helper: emoji $(2) when goal $(1) is the one invoked at top level, else ➤.
 # The MAKELEVEL/MAKECMDGOALS guard keeps the icon to the directly-requested
@@ -152,6 +152,19 @@ HBPE_DOCKERFILE_cuda := Dockerfile.cuda
 HBPE_DOCKERFILE_rocm := Dockerfile.rocm
 HBPE_DOCKERFILE := $(HBPE_DOCKERFILE_$(GPU))
 
+# The uv pin, read from required-version in the root pyproject.toml — the
+# one authoritative place it is set. Passed to the Python Dockerfiles as
+# UV_VERSION; setup-uv in CI reads the same field on its own.
+UV_VERSION := $(shell sed -n 's/^required-version = "==\(.*\)"$$/\1/p' pyproject.toml)
+
+# The llama-cpp-python pin: a commit on the JamePeng fork, which tracks
+# llama.cpp HEAD and can load Qwen3.5 GGUFs (the official PyPI package is
+# frozen at llama.cpp Aug 2025 and cannot). All three HBPE images build
+# this same commit with hardware-specific CMake flags; the pin lives here
+# because the install happens only in Dockerfiles, passed as a build arg.
+# Bump deliberately: the fork moves fast and is our inference stack.
+LLAMA_CPP_PYTHON_REF := 81190b03f6d177988112dad5fc919491a77705d1
+
 
 define BANNER
    ______                                  _
@@ -221,6 +234,15 @@ build: ## Build images. ENV=local|staging|production (default local) GPU=cpu|cud
 	@echo "$(VALID_ENVS)" | grep -qw "$(ENV)" || { printf "$(RED)✗$(RESET) Invalid ENV '$(ENV)'. Choose one of: $(VALID_ENVS)\n\n"; exit 1; }
 	@echo "$(VALID_GPUS)" | grep -qw "$(GPU)" || { printf "$(RED)✗$(RESET) Invalid GPU '$(GPU)'. Choose one of: $(VALID_GPUS)\n\n"; exit 1; }
 
+	@test -n "$(UV_VERSION)" || { printf "$(RED)✗$(RESET) Could not read the uv pin from required-version in pyproject.toml.\n\n"; exit 1; }
+
+	@# The Python images sync with --frozen, which trusts uv.lock as-is so
+	@# each Dockerfile only has to copy the manifests it actually uses. The
+	@# freshness check they gave up lives here instead, where the whole
+	@# workspace is present: fail before building anything rather than bake
+	@# a stale resolution into an image.
+	@uv lock --check || { printf "$(RED)✗$(RESET) uv.lock is out of date with the manifests. Run 'uv lock' and retry.\n\n"; exit 1; }
+
 	@$(MAKE) distribute-license
 
 	@printf "$(call task_icon,build,🧱) Building $(ENV) images...\n"
@@ -247,10 +269,10 @@ build: ## Build images. ENV=local|staging|production (default local) GPU=cpu|cud
 	@if [ "$(ENV)" = "production" ]; then printf "\n➤ Building setup secrets image...\n\n" && docker build -f infrastructure/setup-secrets/Dockerfile $(call versioned_tag,$(SETUP_SECRETS_REPO)) -t $(SETUP_SECRETS_REPO):latest infrastructure/setup-secrets ; fi
 
 	@printf "\n➤ Building summary service image...\n\n"
-	@docker build -f backend/apps/summary/Dockerfile $(call versioned_tag,$(SUMMARY_REPO)) -t $(SUMMARY_REPO):latest backend/apps/summary
+	@docker build -f backend/apps/summary/Dockerfile --build-arg UV_VERSION=$(UV_VERSION) $(call versioned_tag,$(SUMMARY_REPO)) -t $(SUMMARY_REPO):latest .
 
 	@printf "\n➤ Building HBPE service image ($(GPU))...\n\n"
-	@docker build -f backend/apps/hbpe/$(HBPE_DOCKERFILE) $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest backend/apps/hbpe
+	@docker build -f backend/apps/hbpe/$(HBPE_DOCKERFILE) --build-arg UV_VERSION=$(UV_VERSION) --build-arg LLAMA_CPP_PYTHON_REF=$(LLAMA_CPP_PYTHON_REF) $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest .
 
 	@$(MAKE) clean-license
 
@@ -392,6 +414,19 @@ tunnel: ## Expose this running stack at https://dev.companionintelligence.com vi
 	@printf "$(YELLOW)Exposing https://dev.companionintelligence.com publicly — confirm Cloudflare Access is enabled. Ctrl-C to stop.$(RESET)\n"
 	cloudflared tunnel --config infrastructure/cloudflare/config.yml run
 
+.PHONY: format
+format: ## Format the source, both stacks
+	@printf "$(call task_icon,format,🧹) Formatting source...\n\n"
+
+	@yarn format
+
+	@printf "\n"
+
+	@uv run ruff format .
+	@uv run ruff check --fix .
+
+	@printf "\nSource successfully formatted.\n\n"
+
 .PHONY: graphql
 graphql: ## Generate GraphQL schema and frontend types
 	@printf "$(call task_icon,graphql,🏷️) Generating GraphQL...\n"
@@ -435,6 +470,17 @@ health: ## Check the repository for prerequisites
 		exit 1; \
 	else \
 		printf "$(GREEN)✓$(RESET) Yarn version matches ($$current_yarn)\n\n"; \
+	fi
+
+	@# uv provisions its own interpreter from .python-version, so there is no
+	@# separate Python check here. The floor is `required-version` in
+	@# pyproject.toml, which uv enforces itself on every invocation.
+	@UV=$$(which uv 2>/dev/null); \
+	if [ -z "$$UV" ]; then \
+		printf "$(RED)✗$(RESET) You do not have 'uv' installed or it is not in your path. Install it with 'brew install uv'.\n\n"; \
+		exit 1; \
+	else \
+		printf "$(GREEN)✓$(RESET) uv found at $$UV ($$(uv --version | cut -d' ' -f2))\n\n"; \
 	fi
 
 	@# Report on per-stack data volumes (convention: <project>-local-*). Purely
@@ -481,6 +527,9 @@ init: ## Initialize repository after checkout
 	@printf "\n"
 	@yarn prepare
 
+	@printf "\n"
+	@uv sync --all-packages
+
 	@if [ ! -f .env ]; then \
 		printf "Copying dotenv template file... "; \
 		cp -v .env.default .env; \
@@ -494,6 +543,45 @@ install: ## Install project dependencies
 	@yarn install
 
 	@printf "\n"
+
+	@uv sync --all-packages
+
+	@printf "\n"
+
+.PHONY: lint
+lint: ## Check the source for lint and formatting errors, both stacks
+	@printf "$(call task_icon,lint,🔎) Checking formatting...\n\n"
+
+	@yarn lint
+	@yarn format:check
+
+	@printf "\n"
+
+	@uv run ruff check .
+	@uv run ruff format --check .
+	@uv run mypy
+
+	@# Catches a uv.lock left stale after the merge driver kept one side
+	@# (see scripts/merge-uv-lock.sh) or a manifest edit without a relock.
+	@uv lock --check || { printf "$(RED)✗$(RESET) uv.lock is out of date with the manifests. Run 'uv lock' and retry.\n\n"; exit 1; }
+
+	@sh scripts/check-ci-namespace.sh
+
+	@printf "\nNo lint errors found.\n\n"
+
+.PHONY: test
+test: ## Run the unit tests, both stacks
+	@printf "$(call task_icon,test,🧪) Running tests...\n\n"
+
+	@# foreach only runs workspaces that declare a test script, so a new
+	@# workspace's tests are picked up without a line here.
+	@yarn workspaces foreach --all run test
+
+	@printf "\n"
+
+	@uv run pytest
+
+	@printf "\nAll tests passed.\n\n"
 
 .PHONY: migrate
 migrate: ## Run database migrations

@@ -68,12 +68,12 @@ echo "Starting CI-Summary services..."
 
 # Start the FastAPI summary API in the background
 echo "Starting FastAPI summary API server on port 8001..."
-uvicorn src.api:app --host 0.0.0.0 --port 8001 &
+uvicorn ci.summary.api:app --host 0.0.0.0 --port 8001 &
 API_PID=$!
 
 # Start the FastAPI parser API in the background
 echo "Starting FastAPI parser API server on port 8002..."
-uvicorn src.parser:app --host 0.0.0.0 --port 8002 &
+uvicorn ci.summary.parser:app --host 0.0.0.0 --port 8002 &
 PARSER_PID=$!
 
 # Give the APIs a moment to start
@@ -81,12 +81,12 @@ sleep 2
 
 # Start the Temporal worker
 echo "Starting Temporal worker..."
-python -m src.worker &
+python -m ci.summary.worker &
 WORKER_PID=$!
 
 # Run unified startup checks and setup
 # This waits for Temporal and then configures system schedules
-python -m src.startup &
+python -m ci.summary.startup &
 
 
 # Function to handle shutdown gracefully

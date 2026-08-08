@@ -13,13 +13,13 @@ The tests avoid a live Temporal server by driving ensure_bootstrap_if_cold with
 a fake client that records start_workflow calls, and avoid touching torch by
 only creating artifact files on disk (never loading them).
 """
+
 from __future__ import annotations
 
 import pytest
 
-from ci.model.checkpoints import HMT_INT8_ONNX, user_ckpt_dir
-from ci.pipeline import schedule
-
+from ci.hbpe.model.checkpoints import HMT_INT8_ONNX, user_ckpt_dir
+from ci.hbpe.pipeline import schedule
 
 WARM_USER = "11111111-warm-0000-0000-000000000000"
 COLD_USER = "22222222-cold-0000-0000-000000000000"
@@ -34,7 +34,7 @@ def _make_checkpoint(user_id: str) -> None:
 @pytest.fixture(autouse=True)
 def _isolated_models_dir(tmp_path, monkeypatch):
     """Point settings.models_dir at a scratch dir so tests never see real ckpts."""
-    from ci.config import settings
+    from ci.hbpe.config import settings
 
     monkeypatch.setattr(settings, "models_dir", str(tmp_path), raising=False)
     yield
@@ -54,7 +54,7 @@ class _FakeClient:
     def __init__(self):
         self.started_users: list[str] = []
 
-    async def start_workflow(self, _run, user_id, *, id, task_queue):  # noqa: A002
+    async def start_workflow(self, _run, user_id, *, id, task_queue):
         self.started_users.append(user_id)
 
 

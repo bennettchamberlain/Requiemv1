@@ -4,3 +4,8 @@
 /.pnp.*              binary linguist-generated
 
 /yarn.lock           linguist-generated
+
+# Generated from the manifests; merged by keeping one side and relocking.
+# The driver is registered per-clone by scripts/merge-uv-lock.sh --register,
+# which the yarn `prepare` script runs on every install.
+/uv.lock             linguist-generated merge=uv-lock

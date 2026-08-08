@@ -1,8 +1,12 @@
+# Workspace member. Dependencies resolve through the single uv.lock at the
+# repo root, not a lock of this service's own. See the root pyproject.toml
+# for the naming and layout conventions.
+
 [project]
 name = "ci-summary"
 version = "0.1.0"
 description = "CI-Summary: Temporal Summarization Service with Durable Workflows"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     # Database
     "psycopg2-binary",
@@ -30,9 +34,8 @@ dependencies = [
     # Logging
     "structlog",
 
-    # Error reporting — inert unless SENTRY_DSN is set. src/telemetry.py also
-    # tolerates the package being absent so a slimmed install still boots.
-    "sentry-sdk>=2.20",
+    # Error reporting — shared with ci-hbpe; brings sentry-sdk with it.
+    "ci-telemetry",
 
     # API / HTTP
     "fastapi",
@@ -43,16 +46,16 @@ dependencies = [
     "markitdown[all]",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest",
-    "pytest-asyncio",
-    "pytest-cov",
-]
+# The test runner and linters come from the root workspace dev group, so
+# they are not repeated here.
 
-[tool.hatch.build.targets.wheel]
-packages = ["src"]
+[tool.uv.sources]
+ci-telemetry = { workspace = true }
+
+[tool.uv.build-backend]
+module-name = "ci.summary"
+namespace = true
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.9,<0.10"]
+build-backend = "uv_build"

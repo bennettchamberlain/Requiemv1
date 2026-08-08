@@ -1,8 +1,7 @@
 import json
 import os
-from pathlib import Path
 
-from src.llm_endpoint_env import apply_persisted_llm_endpoint
+from ci.summary.llm_endpoint_env import apply_persisted_llm_endpoint
 
 
 def test_apply_persisted_llm_endpoint_sets_env(tmp_path, monkeypatch):
@@ -32,7 +31,13 @@ def test_apply_persisted_llm_endpoint_sets_env(tmp_path, monkeypatch):
 def test_apply_persisted_llm_endpoint_skips_when_env_set(tmp_path, monkeypatch):
     config_path = tmp_path / "llm-endpoint.json"
     config_path.write_text(
-        json.dumps({"backend": "openai_compatible", "port": 8000, "hostGateway": "host.docker.internal"}),
+        json.dumps(
+            {
+                "backend": "openai_compatible",
+                "port": 8000,
+                "hostGateway": "host.docker.internal",
+            }
+        ),
         encoding="utf-8",
     )
 

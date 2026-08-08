@@ -3,6 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react';
 
 import { cn } from '@ci/shadcn';
 
+import { intensityCeiling, intensityLevel } from './intensity';
 import { useTimelineGridSelection } from './useTimelineGridSelection';
 import type { TimelineGridRange } from './useTimelineGridSelection';
 
@@ -315,19 +316,22 @@ export function TimelineGrid({
 
   const counts = useMemo(() => new Map(data.map((d) => [d.date, d.count])), [data]);
 
-  const maxCount = useMemo(() => {
-    let max = 0;
-    for (const [key, count] of counts) {
-      if (key >= visibleStartKey && key <= visibleEndKey && count > max) {
-        max = count;
-      }
-    }
+  /**
+   * Top of the colour ramp. Deliberately not the raw maximum: a bulk-import day
+   * sits orders of magnitude above ordinary activity and would flatten every
+   * real day onto level 1. See {@link intensityCeiling}.
+   *
+   * Taken over the whole history rather than the visible window, so that a day
+   * keeps the same shade however the user scrolls, and so the small-sample
+   * fallback in {@link intensityCeiling} is judged against everything we know.
+   * Scoped to the window it would be judged against whatever few active days
+   * happen to be on screen — scrolling to a sparse stretch holding the import
+   * day and little else would take the import at face value and bring the flat
+   * grid straight back.
+   */
+  const ceiling = useMemo(() => intensityCeiling(counts.values()), [counts]);
 
-    return max;
-  }, [counts, visibleStartKey, visibleEndKey]);
-
-  const levelFor = (count: number): number =>
-    count <= 0 || maxCount === 0 ? 0 : Math.max(1, Math.ceil((count / maxCount) * MAX_LEVEL));
+  const levelFor = (count: number): number => intensityLevel(count, ceiling, MAX_LEVEL);
 
   // ── Selection ──
 

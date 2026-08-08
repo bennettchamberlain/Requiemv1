@@ -1,5 +1,5 @@
 """
-Unit tests for the recurrence profiler (ci.pipeline.recurrence).
+Unit tests for the recurrence profiler (ci.hbpe.pipeline.recurrence).
 
 Covers the pure math — profile statistics, smoothed hazard, renewal DP — and
 the forecast/due formatting against monkeypatched profiles, without a live
@@ -10,6 +10,7 @@ The rebuild's prune control flow runs against a recording fake connection;
 DB-backed integration of the upsert/backfill SQL itself is exercised in the
 staging compose environment.
 """
+
 from __future__ import annotations
 
 import datetime
@@ -22,7 +23,7 @@ SRC = Path(__file__).resolve().parents[1] / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from ci.pipeline import recurrence as rec
+from ci.hbpe.pipeline import recurrence as rec  # noqa: E402
 
 
 def _dates(start: str, step_days: list[int]) -> list[datetime.date]:
@@ -39,30 +40,30 @@ def _dates(start: str, step_days: list[int]) -> list[datetime.date]:
 
 
 def test_profile_stats_weekly_habit_is_high_confidence():
-    dates = _dates("2026-01-05", [7] * 10)         # every Monday, 11 occurrences
+    dates = _dates("2026-01-05", [7] * 10)  # every Monday, 11 occurrences
     s = rec._profile_stats(dates, [[1]] * len(dates))
 
     assert s["n_days"] == 11
     assert s["gaps"] == [7] * 10
     assert s["median"] == 7.0
     assert s["std"] == 0.0
-    assert s["conf"] == 1.0                        # metronomic + enough samples
-    assert s["dow"][0] == 11                       # all Mondays
+    assert s["conf"] == 1.0  # metronomic + enough samples
+    assert s["dow"][0] == 11  # all Mondays
     assert sum(s["dow"]) == 11
-    assert s["daypart"] == [0, 11, 0, 0]           # all morning
+    assert s["daypart"] == [0, 11, 0, 0]  # all morning
 
 
 def test_profile_stats_irregular_is_low_confidence():
     dates = _dates("2026-01-01", [1, 9, 2, 15, 1, 20])
     s = rec._profile_stats(dates, [[0]] * len(dates))
-    assert 0.0 <= s["conf"] < 0.3                  # CV near/above 1
+    assert 0.0 <= s["conf"] < 0.3  # CV near/above 1
 
 
 def test_profile_stats_too_few_intervals_gets_zero_confidence():
-    dates = _dates("2026-01-01", [7, 7, 7])        # 3 intervals < MIN_INTERVALS_CONF
+    dates = _dates("2026-01-01", [7, 7, 7])  # 3 intervals < MIN_INTERVALS_CONF
     s = rec._profile_stats(dates, [[2]] * len(dates))
     assert s["conf"] == 0.0
-    assert s["median"] == 7.0                      # stats still computed
+    assert s["median"] == 7.0  # stats still computed
 
 
 def test_profile_stats_single_day_has_no_intervals():
@@ -137,7 +138,9 @@ def test_build_profiles_prunes_only_vanished_clusters(monkeypatch):
     result = rec.build_recurrence_profiles("user-1234-abcd")
 
     assert result["profiles"] == 1
-    deletes = [(sql, params) for sql, params in calls if sql.upper().startswith("DELETE")]
+    deletes = [
+        (sql, params) for sql, params in calls if sql.upper().startswith("DELETE")
+    ]
     assert len(deletes) == 1
     assert "NOT (l1_cluster_id = ANY" in deletes[0][0]
     assert deletes[0][1] == ("user-1234-abcd", ["c1"])
@@ -159,26 +162,26 @@ def test_hazard_prior_does_not_scale_with_largest_gap():
     whose length is max(gaps)*2+7 — would let a single long gap outvote every
     real observation: one 120-day vacation used to drop h[7] from 0.79 to 0.17.
     """
-    clean    = rec._hazard([7] * 25)
+    clean = rec._hazard([7] * 25)
     vacation = rec._hazard([7] * 25 + [120])
 
     assert clean[7] > 0.9
     assert vacation[7] > 0.9
-    assert abs(vacation[7] - clean[7]) < 0.1     # one outlier ≈ one observation
+    assert abs(vacation[7] - clean[7]) < 0.1  # one outlier ≈ one observation
 
 
 def test_hazard_monthly_rhythm_is_forecastable():
     """A monthly cadence must peak near 30 days, not be flattened to ~0.1."""
     h = rec._hazard([30, 31, 28, 31, 30])
     assert max(h[28:32]) > 0.5
-    assert h[15] < 0.05                          # mid-cycle stays quiet
+    assert h[15] < 0.05  # mid-cycle stays quiet
 
 
 def test_dow_lift_is_mean_one_and_favours_the_habitual_weekday():
     lift = rec._dow_lift([11, 0, 0, 0, 0, 0, 0], n_days=11)
-    assert abs(float(np.mean(lift)) - 1.0) < 1e-9      # calibration-preserving
-    assert lift[0] > 4.0                               # Mondays boosted
-    assert all(l < 0.3 for l in lift[1:])              # the rest damped
+    assert abs(float(np.mean(lift)) - 1.0) < 1e-9  # calibration-preserving
+    assert lift[0] > 4.0  # Mondays boosted
+    assert all(value < 0.3 for value in lift[1:])  # the rest damped
     # No history and small samples fall back to "no weekday preference".
     assert np.allclose(rec._dow_lift([0] * 7, n_days=0), np.ones(7))
     assert float(np.max(rec._dow_lift([1, 1, 0, 0, 0, 0, 0], n_days=2))) < lift[0]
@@ -226,11 +229,18 @@ def _weekly_profile(**overrides) -> dict:
 
 def _daily_profile(**overrides) -> dict:
     p = _weekly_profile(
-        l1_cluster_id="d1", display_name="Coffee", l0_class="ROUTINE",
-        n_occurrence_days=31, first_seen=datetime.date(2026, 2, 14),
-        dow_counts=[5, 4, 4, 4, 5, 4, 5], daypart_counts=[0, 31, 0, 0],
+        l1_cluster_id="d1",
+        display_name="Coffee",
+        l0_class="ROUTINE",
+        n_occurrence_days=31,
+        first_seen=datetime.date(2026, 2, 14),
+        dow_counts=[5, 4, 4, 4, 5, 4, 5],
+        daypart_counts=[0, 31, 0, 0],
         intervals_days=[1] * 30,
-        interval_median=1.0, interval_p25=1.0, interval_p75=1.0, interval_p90=1.0,
+        interval_median=1.0,
+        interval_p25=1.0,
+        interval_p75=1.0,
+        interval_p90=1.0,
     )
     p.update(overrides)
     return p
@@ -238,12 +248,19 @@ def _daily_profile(**overrides) -> dict:
 
 def _monthly_profile(**overrides) -> dict:
     p = _weekly_profile(
-        l1_cluster_id="m1", display_name="Rent", l0_class="ADMIN",
-        n_occurrence_days=6, first_seen=datetime.date(2025, 10, 17),
-        dow_counts=[1, 1, 1, 1, 1, 1, 0], daypart_counts=[0, 0, 6, 0],
+        l1_cluster_id="m1",
+        display_name="Rent",
+        l0_class="ADMIN",
+        n_occurrence_days=6,
+        first_seen=datetime.date(2025, 10, 17),
+        dow_counts=[1, 1, 1, 1, 1, 1, 0],
+        daypart_counts=[0, 0, 6, 0],
         intervals_days=[30, 31, 28, 31, 30],
-        interval_median=30.0, interval_p25=30.0, interval_p75=31.0,
-        interval_p90=31.0, periodicity_confidence=0.9,
+        interval_median=30.0,
+        interval_p25=30.0,
+        interval_p75=31.0,
+        interval_p90=31.0,
+        periodicity_confidence=0.9,
     )
     p.update(overrides)
     return p
@@ -254,13 +271,21 @@ def _forecast_mass(monkeypatch, profile, start, days) -> float:
     monkeypatch.setattr(rec, "_load_upcoming_events", lambda uid, h: [])
     monkeypatch.setattr(rec, "_load_profiles", lambda uid: [profile])
     out = rec.week_forecast("user", days=days, start=start)
-    return sum(c["p_occur"] for d in out for c in d["clusters"]
-               if c["cluster_id"] == profile["l1_cluster_id"])
+    return sum(
+        c["p_occur"]
+        for d in out
+        for c in d["clusters"]
+        if c["cluster_id"] == profile["l1_cluster_id"]
+    )
 
 
 def _cluster_by_day(days: list[dict], cluster_id: str) -> list[float]:
-    return [next((c["p_occur"] for c in d["clusters"]
-                  if c["cluster_id"] == cluster_id), 0.0) for d in days]
+    return [
+        next(
+            (c["p_occur"] for c in d["clusters"] if c["cluster_id"] == cluster_id), 0.0
+        )
+        for d in days
+    ]
 
 
 def test_week_forecast_expected_occurrences_match_the_base_rate(monkeypatch):
@@ -272,21 +297,32 @@ def test_week_forecast_expected_occurrences_match_the_base_rate(monkeypatch):
     day but gets the total badly wrong (the pre-fix engine expected 39.8
     occurrences for a daily cluster and 1.49 for a monthly one).
     """
-    monday = datetime.date(2026, 3, 16)            # == _weekly_profile last_seen
+    monday = datetime.date(2026, 3, 16)  # == _weekly_profile last_seen
     tomorrow = monday + datetime.timedelta(days=1)
     cases = [
-        ("weekly",           _weekly_profile(),  tomorrow, 7.0),
+        ("weekly", _weekly_profile(), tomorrow, 7.0),
         # Stale: days_since_last (8) is past every observed gap, the regime where
         # the forecast used to collapse to a flat ~0.07/day.
-        ("weekly, stale",    _weekly_profile(),  monday + datetime.timedelta(days=8), 7.0),
-        ("daily",            _daily_profile(),   tomorrow, 1.0),
-        ("monthly",          _monthly_profile(), tomorrow, 30.0),
-        ("every three days", _weekly_profile(
-            l1_cluster_id="t1", n_occurrence_days=24,
-            first_seen=datetime.date(2026, 1, 6),
-            dow_counts=[4, 3, 3, 4, 3, 3, 4], daypart_counts=[0, 24, 0, 0],
-            intervals_days=[3] * 23, interval_median=3.0, interval_p25=3.0,
-            interval_p75=3.0, interval_p90=3.0), tomorrow, 3.0),
+        ("weekly, stale", _weekly_profile(), monday + datetime.timedelta(days=8), 7.0),
+        ("daily", _daily_profile(), tomorrow, 1.0),
+        ("monthly", _monthly_profile(), tomorrow, 30.0),
+        (
+            "every three days",
+            _weekly_profile(
+                l1_cluster_id="t1",
+                n_occurrence_days=24,
+                first_seen=datetime.date(2026, 1, 6),
+                dow_counts=[4, 3, 3, 4, 3, 3, 4],
+                daypart_counts=[0, 24, 0, 0],
+                intervals_days=[3] * 23,
+                interval_median=3.0,
+                interval_p25=3.0,
+                interval_p75=3.0,
+                interval_p90=3.0,
+            ),
+            tomorrow,
+            3.0,
+        ),
     ]
     for label, profile, start, median_gap in cases:
         total = _forecast_mass(monkeypatch, profile, start, days=60)
@@ -294,7 +330,8 @@ def test_week_forecast_expected_occurrences_match_the_base_rate(monkeypatch):
         # Every regime lands within 0.90–0.96 of truth; the band is tight enough
         # that the pre-fix engine (0.66–0.76) fails all five.
         assert 0.8 * expected <= total <= 1.25 * expected, (
-            f"{label}: expected ≈{expected:.2f} occurrences in 60 days, got {total:.2f}")
+            f"{label}: expected ≈{expected:.2f} occurrences in 60 days, got {total:.2f}"
+        )
 
 
 def test_week_forecast_stale_weekly_habit_still_peaks_on_its_weekday(monkeypatch):
@@ -307,24 +344,27 @@ def test_week_forecast_stale_weekly_habit_still_peaks_on_its_weekday(monkeypatch
     """
     monkeypatch.setattr(rec, "_load_upcoming_events", lambda uid, h: [])
     monkeypatch.setattr(rec, "_load_profiles", lambda uid: [_weekly_profile()])
-    start = datetime.date(2026, 3, 24)             # Tuesday, 8 days after last_seen
+    start = datetime.date(2026, 3, 24)  # Tuesday, 8 days after last_seen
     days = rec.week_forecast("user", days=7, start=start)
 
     by_day = _cluster_by_day(days, "c1")
     assert days[6]["dow"] == "Monday"
     assert by_day[6] == max(by_day)
-    assert by_day[6] > 0.4                          # a real prediction, not noise
-    assert by_day[6] > 3 * max(by_day[:6])          # and clearly above the rest
+    assert by_day[6] > 0.4  # a real prediction, not noise
+    assert by_day[6] > 3 * max(by_day[:6])  # and clearly above the rest
 
 
 def test_week_forecast_two_observation_cluster_is_not_near_certain(monkeypatch):
     """Two occurrences a week apart used to report p_occur = 0.99."""
     tuesday = datetime.date(2026, 3, 10)
     thin = _weekly_profile(
-        n_occurrence_days=2, first_seen=tuesday,
+        n_occurrence_days=2,
+        first_seen=tuesday,
         last_seen=tuesday + datetime.timedelta(days=7),
-        dow_counts=[0, 2, 0, 0, 0, 0, 0], daypart_counts=[0, 2, 0, 0],
-        intervals_days=[7], periodicity_confidence=0.0,
+        dow_counts=[0, 2, 0, 0, 0, 0, 0],
+        daypart_counts=[0, 2, 0, 0],
+        intervals_days=[7],
+        periodicity_confidence=0.0,
     )
     monkeypatch.setattr(rec, "_load_upcoming_events", lambda uid, h: [])
     monkeypatch.setattr(rec, "_load_profiles", lambda uid: [thin])
@@ -332,14 +372,16 @@ def test_week_forecast_two_observation_cluster_is_not_near_certain(monkeypatch):
 
     by_day = _cluster_by_day(days, "c1")
     assert max(by_day) <= 0.5
-    assert by_day[6] == max(by_day)                 # still points at Tuesday
+    assert by_day[6] == max(by_day)  # still points at Tuesday
 
 
 def test_week_forecast_outlier_gap_does_not_flatten_a_weekly_habit(monkeypatch):
     """A single 120-day vacation in an otherwise weekly history."""
     vacation = _weekly_profile(
-        n_occurrence_days=26, first_seen=datetime.date(2025, 6, 2),
-        dow_counts=[26, 0, 0, 0, 0, 0, 0], daypart_counts=[0, 26, 0, 0],
+        n_occurrence_days=26,
+        first_seen=datetime.date(2025, 6, 2),
+        dow_counts=[26, 0, 0, 0, 0, 0, 0],
+        daypart_counts=[0, 26, 0, 0],
         intervals_days=[7] * 12 + [120] + [7] * 12,
     )
     monkeypatch.setattr(rec, "_load_upcoming_events", lambda uid, h: [])
@@ -353,13 +395,21 @@ def test_week_forecast_outlier_gap_does_not_flatten_a_weekly_habit(monkeypatch):
 
 def test_week_forecast_shape_and_sorting(monkeypatch):
     monkeypatch.setattr(rec, "_load_upcoming_events", lambda uid, h: [])
-    monkeypatch.setattr(rec, "_load_profiles", lambda uid: [
-        _weekly_profile(),
-        _weekly_profile(l1_cluster_id="c2", display_name="Groceries",
-                        l0_class="ERRAND", intervals_days=[3] * 10,
-                        interval_median=3.0),
-    ])
-    start = datetime.date(2026, 3, 17)             # Tuesday after last_seen Monday
+    monkeypatch.setattr(
+        rec,
+        "_load_profiles",
+        lambda uid: [
+            _weekly_profile(),
+            _weekly_profile(
+                l1_cluster_id="c2",
+                display_name="Groceries",
+                l0_class="ERRAND",
+                intervals_days=[3] * 10,
+                interval_median=3.0,
+            ),
+        ],
+    )
+    start = datetime.date(2026, 3, 17)  # Tuesday after last_seen Monday
     days = rec.week_forecast("user", days=7, start=start)
 
     assert len(days) == 7
@@ -383,27 +433,33 @@ def test_week_forecast_shape_and_sorting(monkeypatch):
 
 def test_week_forecast_skips_single_occurrence_clusters(monkeypatch):
     monkeypatch.setattr(rec, "_load_upcoming_events", lambda uid, h: [])
-    monkeypatch.setattr(rec, "_load_profiles", lambda uid: [
-        _weekly_profile(n_occurrence_days=1, intervals_days=[]),
-    ])
+    monkeypatch.setattr(
+        rec,
+        "_load_profiles",
+        lambda uid: [
+            _weekly_profile(n_occurrence_days=1, intervals_days=[]),
+        ],
+    )
     days = rec.week_forecast("user", days=7, start=datetime.date(2026, 3, 17))
     assert all(d["clusters"] == [] for d in days)
 
 
 def test_due_list_flags_overdue_and_sorts_first(monkeypatch):
     today = datetime.datetime.utcnow().date()
-    fresh   = _weekly_profile(last_seen=today - datetime.timedelta(days=2))
-    overdue = _weekly_profile(l1_cluster_id="c9", display_name="See Friends",
-                              l0_class="SOCIAL",
-                              last_seen=today - datetime.timedelta(days=16))
+    fresh = _weekly_profile(last_seen=today - datetime.timedelta(days=2))
+    overdue = _weekly_profile(
+        l1_cluster_id="c9",
+        display_name="See Friends",
+        l0_class="SOCIAL",
+        last_seen=today - datetime.timedelta(days=16),
+    )
     low_conf = _weekly_profile(l1_cluster_id="c3", periodicity_confidence=0.1)
     monkeypatch.setattr(rec, "_load_upcoming_events", lambda uid, h: [])
-    monkeypatch.setattr(rec, "_load_profiles",
-                        lambda uid: [fresh, overdue, low_conf])
+    monkeypatch.setattr(rec, "_load_profiles", lambda uid: [fresh, overdue, low_conf])
 
     due = rec.due_list("user")
 
-    assert [r["cluster_id"] for r in due] == ["c9", "c1"]   # low-conf excluded
+    assert [r["cluster_id"] for r in due] == ["c9", "c1"]  # low-conf excluded
     assert due[0]["overdue"] is True
     assert due[0]["days_since_last"] == 16
     assert due[0]["due_in_days"] == 7.0 - 16
@@ -418,21 +474,35 @@ def test_due_list_flags_overdue_and_sorts_first(monkeypatch):
 
 def test_parse_recurrence_accepts_string_and_dict():
     assert rec.parse_recurrence("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE") == {
-        "freq": "WEEKLY", "interval": 2, "byday": [0, 2],
-        "until": None, "count": None}
+        "freq": "WEEKLY",
+        "interval": 2,
+        "byday": [0, 2],
+        "until": None,
+        "count": None,
+    }
     assert rec.parse_recurrence("RRULE:FREQ=DAILY") == {
-        "freq": "DAILY", "interval": 1, "byday": [],
-        "until": None, "count": None}
+        "freq": "DAILY",
+        "interval": 1,
+        "byday": [],
+        "until": None,
+        "count": None,
+    }
     assert rec.parse_recurrence({"freq": "monthly", "interval": 1}) == {
-        "freq": "MONTHLY", "interval": 1, "byday": [],
-        "until": None, "count": None}
+        "freq": "MONTHLY",
+        "interval": 1,
+        "byday": [],
+        "until": None,
+        "count": None,
+    }
 
 
 def test_parse_recurrence_reads_until_and_count():
-    assert rec.parse_recurrence("FREQ=WEEKLY;UNTIL=20250101T000000Z;BYDAY=MO")["until"] \
-        == datetime.date(2025, 1, 1)
-    assert rec.parse_recurrence("FREQ=WEEKLY;UNTIL=2025-01-01")["until"] \
-        == datetime.date(2025, 1, 1)
+    assert rec.parse_recurrence("FREQ=WEEKLY;UNTIL=20250101T000000Z;BYDAY=MO")[
+        "until"
+    ] == datetime.date(2025, 1, 1)
+    assert rec.parse_recurrence("FREQ=WEEKLY;UNTIL=2025-01-01")[
+        "until"
+    ] == datetime.date(2025, 1, 1)
     assert rec.parse_recurrence("FREQ=WEEKLY;COUNT=3")["count"] == 3
     # Unparseable terminators degrade to "no end", never to an exception.
     assert rec.parse_recurrence("FREQ=DAILY;UNTIL=whenever")["until"] is None
@@ -449,52 +519,90 @@ def test_parse_recurrence_rejects_junk():
 
 def test_expand_occurrences_weekly_byday():
     rule = rec.parse_recurrence("FREQ=WEEKLY;BYDAY=TU")
-    occ = rec.expand_occurrences(rule, datetime.date(2026, 1, 6),      # a Tuesday
-                                 datetime.date(2026, 1, 5), datetime.date(2026, 1, 27))
-    assert occ == [datetime.date(2026, 1, 6), datetime.date(2026, 1, 13),
-                   datetime.date(2026, 1, 20), datetime.date(2026, 1, 27)]
+    occ = rec.expand_occurrences(
+        rule,
+        datetime.date(2026, 1, 6),  # a Tuesday
+        datetime.date(2026, 1, 5),
+        datetime.date(2026, 1, 27),
+    )
+    assert occ == [
+        datetime.date(2026, 1, 6),
+        datetime.date(2026, 1, 13),
+        datetime.date(2026, 1, 20),
+        datetime.date(2026, 1, 27),
+    ]
 
 
 def test_expand_occurrences_biweekly_skips_alternate_weeks():
     rule = rec.parse_recurrence("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO")
-    occ = rec.expand_occurrences(rule, datetime.date(2026, 1, 5),      # a Monday
-                                 datetime.date(2026, 1, 5), datetime.date(2026, 2, 2))
-    assert occ == [datetime.date(2026, 1, 5), datetime.date(2026, 1, 19),
-                   datetime.date(2026, 2, 2)]
+    occ = rec.expand_occurrences(
+        rule,
+        datetime.date(2026, 1, 5),  # a Monday
+        datetime.date(2026, 1, 5),
+        datetime.date(2026, 2, 2),
+    )
+    assert occ == [
+        datetime.date(2026, 1, 5),
+        datetime.date(2026, 1, 19),
+        datetime.date(2026, 2, 2),
+    ]
 
 
 def test_expand_occurrences_stops_at_until():
     rule = rec.parse_recurrence("FREQ=WEEKLY;BYDAY=TU;UNTIL=20260114")
-    occ = rec.expand_occurrences(rule, datetime.date(2026, 1, 6),
-                                 datetime.date(2026, 1, 5), datetime.date(2026, 1, 27))
+    occ = rec.expand_occurrences(
+        rule,
+        datetime.date(2026, 1, 6),
+        datetime.date(2026, 1, 5),
+        datetime.date(2026, 1, 27),
+    )
     assert occ == [datetime.date(2026, 1, 6), datetime.date(2026, 1, 13)]
 
 
 def test_expand_occurrences_ended_series_yields_nothing():
     """A standup from a job the user left must not recur forever."""
     rule = rec.parse_recurrence("FREQ=WEEKLY;UNTIL=20250101T000000Z;BYDAY=MO")
-    assert rec.expand_occurrences(rule, datetime.date(2024, 1, 1),
-                                  datetime.date(2026, 8, 3),
-                                  datetime.date(2026, 8, 17)) == []
+    assert (
+        rec.expand_occurrences(
+            rule,
+            datetime.date(2024, 1, 1),
+            datetime.date(2026, 8, 3),
+            datetime.date(2026, 8, 17),
+        )
+        == []
+    )
 
 
 def test_expand_occurrences_honours_count():
     rule = rec.parse_recurrence("FREQ=WEEKLY;COUNT=3;BYDAY=TU")
-    assert rec.expand_occurrences(rule, datetime.date(2026, 1, 6),
-                                  datetime.date(2026, 1, 5),
-                                  datetime.date(2026, 2, 28)) == [
-        datetime.date(2026, 1, 6), datetime.date(2026, 1, 13),
-        datetime.date(2026, 1, 20)]
+    assert rec.expand_occurrences(
+        rule,
+        datetime.date(2026, 1, 6),
+        datetime.date(2026, 1, 5),
+        datetime.date(2026, 2, 28),
+    ) == [
+        datetime.date(2026, 1, 6),
+        datetime.date(2026, 1, 13),
+        datetime.date(2026, 1, 20),
+    ]
     # COUNT runs from series_start, so a later window sees a spent series.
-    assert rec.expand_occurrences(rule, datetime.date(2026, 1, 6),
-                                  datetime.date(2026, 2, 1),
-                                  datetime.date(2026, 2, 28)) == []
+    assert (
+        rec.expand_occurrences(
+            rule,
+            datetime.date(2026, 1, 6),
+            datetime.date(2026, 2, 1),
+            datetime.date(2026, 2, 28),
+        )
+        == []
+    )
 
 
 def test_rrule_cadence_days():
     assert rec._rrule_cadence_days(rec.parse_recurrence("FREQ=WEEKLY")) == 7.0
     assert rec._rrule_cadence_days(rec.parse_recurrence("FREQ=MONTHLY")) == 30.0
-    assert rec._rrule_cadence_days(rec.parse_recurrence("FREQ=WEEKLY;BYDAY=MO,WE,FR")) == round(7 / 3, 1)
+    assert rec._rrule_cadence_days(
+        rec.parse_recurrence("FREQ=WEEKLY;BYDAY=MO,WE,FR")
+    ) == round(7 / 3, 1)
 
 
 # ── Reconciliation: due_list (Layer 1) + week_forecast (Layer 2) ────────────────
@@ -502,20 +610,29 @@ def test_rrule_cadence_days():
 
 def _event(cluster_id, days_ahead, status="confirmed", **kw):
     st = datetime.datetime.utcnow() + datetime.timedelta(days=days_ahead)
-    return {"cluster_id": cluster_id, "display_name": "X", "l0_class": "SOCIAL",
-            "start_time": st, "status": status, "is_recurring": False,
-            "recurrence_pattern": None, **kw}
+    return {
+        "cluster_id": cluster_id,
+        "display_name": "X",
+        "l0_class": "SOCIAL",
+        "start_time": st,
+        "status": status,
+        "is_recurring": False,
+        "recurrence_pattern": None,
+        **kw,
+    }
 
 
 def test_due_list_suppresses_overdue_when_booked(monkeypatch):
     today = datetime.datetime.utcnow().date()
-    overdue = _weekly_profile(l1_cluster_id="c9", display_name="See Friends",
-                              l0_class="SOCIAL",
-                              last_seen=today - datetime.timedelta(days=16))
+    overdue = _weekly_profile(
+        l1_cluster_id="c9",
+        display_name="See Friends",
+        l0_class="SOCIAL",
+        last_seen=today - datetime.timedelta(days=16),
+    )
     monkeypatch.setattr(rec, "_load_profiles", lambda uid: [overdue])
     # A confirmed catch-up two days out: no longer "neglected".
-    monkeypatch.setattr(rec, "_load_upcoming_events",
-                        lambda uid, h: [_event("c9", 2)])
+    monkeypatch.setattr(rec, "_load_upcoming_events", lambda uid, h: [_event("c9", 2)])
 
     due = rec.due_list("user")
     assert len(due) == 1
@@ -537,8 +654,9 @@ def test_upcoming_events_sql_excludes_cancelled_and_deleted():
 
 def test_due_list_overdue_stands_when_nothing_is_booked(monkeypatch):
     today = datetime.datetime.utcnow().date()
-    overdue = _weekly_profile(l1_cluster_id="c9",
-                              last_seen=today - datetime.timedelta(days=16))
+    overdue = _weekly_profile(
+        l1_cluster_id="c9", last_seen=today - datetime.timedelta(days=16)
+    )
     monkeypatch.setattr(rec, "_load_profiles", lambda uid: [overdue])
     monkeypatch.setattr(rec, "_load_upcoming_events", lambda uid, h: [])
 
@@ -553,17 +671,28 @@ def test_due_list_ended_series_does_not_suppress_overdue(monkeypatch):
     expand into phantom occurrences and permanently clear the overdue flag.
     """
     today = datetime.datetime.utcnow().date()
-    overdue = _weekly_profile(l1_cluster_id="c9", display_name="Team Standup",
-                              l0_class="WORK",
-                              last_seen=today - datetime.timedelta(days=16))
+    overdue = _weekly_profile(
+        l1_cluster_id="c9",
+        display_name="Team Standup",
+        l0_class="WORK",
+        last_seen=today - datetime.timedelta(days=16),
+    )
     monkeypatch.setattr(rec, "_load_profiles", lambda uid: [overdue])
-    monkeypatch.setattr(rec, "_load_upcoming_events", lambda uid, h: [{
-        "cluster_id": "c9", "display_name": "Team Standup", "l0_class": "WORK",
-        "start_time": datetime.datetime.utcnow() - datetime.timedelta(days=730),
-        "status": "confirmed", "is_recurring": True,
-        "recurrence_pattern":
-            f"FREQ=WEEKLY;UNTIL={(today - datetime.timedelta(days=365)):%Y%m%d}T000000Z",
-    }])
+    monkeypatch.setattr(
+        rec,
+        "_load_upcoming_events",
+        lambda uid, h: [
+            {
+                "cluster_id": "c9",
+                "display_name": "Team Standup",
+                "l0_class": "WORK",
+                "start_time": datetime.datetime.utcnow() - datetime.timedelta(days=730),
+                "status": "confirmed",
+                "is_recurring": True,
+                "recurrence_pattern": f"FREQ=WEEKLY;UNTIL={(today - datetime.timedelta(days=365)):%Y%m%d}T000000Z",
+            }
+        ],
+    )
 
     due = rec.due_list("user")
     assert due[0]["scheduled_date"] is None
@@ -573,36 +702,63 @@ def test_due_list_ended_series_does_not_suppress_overdue(monkeypatch):
 def test_due_list_seeds_from_calendar_recurrence(monkeypatch):
     # Only 2 statistical intervals (< 3, normally excluded) but a weekly RRULE.
     today = datetime.datetime.utcnow().date()
-    thin = _weekly_profile(l1_cluster_id="c5", display_name="Team Standup",
-                           l0_class="WORK", intervals_days=[7, 7],
-                           periodicity_confidence=0.0,
-                           last_seen=today - datetime.timedelta(days=3))
+    thin = _weekly_profile(
+        l1_cluster_id="c5",
+        display_name="Team Standup",
+        l0_class="WORK",
+        intervals_days=[7, 7],
+        periodicity_confidence=0.0,
+        last_seen=today - datetime.timedelta(days=3),
+    )
     monkeypatch.setattr(rec, "_load_profiles", lambda uid: [thin])
-    monkeypatch.setattr(rec, "_load_upcoming_events", lambda uid, h: [
-        {"cluster_id": "c5", "display_name": "Team Standup", "l0_class": "WORK",
-         "start_time": datetime.datetime.utcnow() + datetime.timedelta(days=4),
-         "status": "confirmed", "is_recurring": True,
-         "recurrence_pattern": "FREQ=WEEKLY"},
-    ])
+    monkeypatch.setattr(
+        rec,
+        "_load_upcoming_events",
+        lambda uid, h: [
+            {
+                "cluster_id": "c5",
+                "display_name": "Team Standup",
+                "l0_class": "WORK",
+                "start_time": datetime.datetime.utcnow() + datetime.timedelta(days=4),
+                "status": "confirmed",
+                "is_recurring": True,
+                "recurrence_pattern": "FREQ=WEEKLY",
+            },
+        ],
+    )
 
     due = rec.due_list("user")
-    assert len(due) == 1                       # seeded despite <3 intervals
+    assert len(due) == 1  # seeded despite <3 intervals
     assert due[0]["median_interval_days"] == 7.0
     assert due[0]["scheduled_date"] is not None
 
 
 def test_week_forecast_overlays_booked_event(monkeypatch):
     start = datetime.date(2026, 3, 17)
-    monkeypatch.setattr(rec, "_load_profiles", lambda uid: [
-        _weekly_profile(l1_cluster_id="c1", last_seen=datetime.date(2026, 3, 16)),
-    ])
+    monkeypatch.setattr(
+        rec,
+        "_load_profiles",
+        lambda uid: [
+            _weekly_profile(l1_cluster_id="c1", last_seen=datetime.date(2026, 3, 16)),
+        ],
+    )
     # A confirmed event on day index 2 for a cluster with no profile at all.
     ev_dt = datetime.datetime(2026, 3, 19, 15, 0)
-    monkeypatch.setattr(rec, "_load_upcoming_events", lambda uid, h: [
-        {"cluster_id": "cX", "display_name": "Dentist", "l0_class": "ERRAND",
-         "start_time": ev_dt, "status": "confirmed", "is_recurring": False,
-         "recurrence_pattern": None},
-    ])
+    monkeypatch.setattr(
+        rec,
+        "_load_upcoming_events",
+        lambda uid, h: [
+            {
+                "cluster_id": "cX",
+                "display_name": "Dentist",
+                "l0_class": "ERRAND",
+                "start_time": ev_dt,
+                "status": "confirmed",
+                "is_recurring": False,
+                "recurrence_pattern": None,
+            },
+        ],
+    )
 
     days = rec.week_forecast("user", days=7, start=start)
     dentist = next(c for c in days[2]["clusters"] if c["cluster_id"] == "cX")
@@ -618,12 +774,21 @@ def test_week_forecast_ignores_ended_recurring_series(monkeypatch):
     """An ended RRULE must not pin p_occur = 1.0 cells into the future."""
     start = datetime.date(2026, 3, 17)
     monkeypatch.setattr(rec, "_load_profiles", lambda uid: [])
-    monkeypatch.setattr(rec, "_load_upcoming_events", lambda uid, h: [{
-        "cluster_id": "cGone", "display_name": "Old Standup", "l0_class": "WORK",
-        "start_time": datetime.datetime(2024, 1, 1, 9, 0),
-        "status": "confirmed", "is_recurring": True,
-        "recurrence_pattern": "FREQ=WEEKLY;UNTIL=20250101T000000Z;BYDAY=MO",
-    }])
+    monkeypatch.setattr(
+        rec,
+        "_load_upcoming_events",
+        lambda uid, h: [
+            {
+                "cluster_id": "cGone",
+                "display_name": "Old Standup",
+                "l0_class": "WORK",
+                "start_time": datetime.datetime(2024, 1, 1, 9, 0),
+                "status": "confirmed",
+                "is_recurring": True,
+                "recurrence_pattern": "FREQ=WEEKLY;UNTIL=20250101T000000Z;BYDAY=MO",
+            }
+        ],
+    )
 
     days = rec.week_forecast("user", days=7, start=start)
     assert all(d["clusters"] == [] for d in days)

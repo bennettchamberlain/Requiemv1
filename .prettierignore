@@ -2,6 +2,7 @@
 node_modules
 .pnp.*
 .claude/worktrees/
+.venv
 **/dist/**
 **/dev-dist/**
 **/build/**
