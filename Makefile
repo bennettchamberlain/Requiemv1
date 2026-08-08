@@ -550,7 +550,7 @@ install: ## Install project dependencies
 
 .PHONY: lint
 lint: ## Check the source for lint and formatting errors, both stacks
-	@printf "$(call task_icon,lint,🔎) Checking source...\n\n"
+	@printf "$(call task_icon,lint,🔎) Checking formatting...\n\n"
 
 	@yarn lint
 	@yarn format:check
