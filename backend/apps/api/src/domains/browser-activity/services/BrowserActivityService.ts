@@ -90,6 +90,8 @@ export class BrowserActivityService {
       }),
     );
 
+    await this.dualWriteTimeline(returned);
+
     return isSingle ? returned[0] : returned;
   }
 
