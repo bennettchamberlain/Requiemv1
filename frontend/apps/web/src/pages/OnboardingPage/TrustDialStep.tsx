@@ -3,7 +3,7 @@ import { cn } from '@ci/shadcn';
 import type { OnboardingFormData } from './OnboardingPage';
 import { StepHeader } from './StepHeader';
 
-const TRUST_OPTIONS = [
+export const TRUST_OPTIONS = [
   { value: 'cautious' as const, label: 'Cautious', hint: 'Review everything yourself' },
   { value: 'balanced' as const, label: 'Balanced', hint: 'High-confidence items auto-promote' },
   {

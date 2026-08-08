@@ -5,9 +5,10 @@ import { v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/logging';
 import { OnEvent } from '@ci/domains/events';
+import { ActionCreatedEvent, type ActionCreatedPayload } from '@ci/domains/intelligence/events';
 import { SummaryCreatedEvent, type SummaryCreatedPayload } from '@ci/domains/summaries/events';
 
-import { ActionCreatedEvent, type ActionCreatedPayload } from '../events';
+import { PersonalizationService } from '../services/PersonalizationService';
 
 const FEED_QUEUE_EVENTS = 'feed-queue';
 
@@ -15,6 +16,7 @@ const FEED_QUEUE_EVENTS = 'feed-queue';
 export class FeedQueuePopulationListener {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly personalizationService: PersonalizationService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(FeedQueuePopulationListener.name);
@@ -22,6 +24,17 @@ export class FeedQueuePopulationListener {
 
   @OnEvent(ActionCreatedEvent, { queue: FEED_QUEUE_EVENTS })
   async enqueueAction(payload: ActionCreatedPayload): Promise<void> {
+    const profile = await this.personalizationService.getProfile(payload.userId);
+    const decision = PersonalizationService.decide(profile, {
+      kind: 'feed_action',
+      confidence: 0.8,
+      hasUserInput: false,
+    });
+
+    if (decision === 'skip') {
+      return;
+    }
+
     await this.dataSource.query(
       `
       INSERT INTO ci.feed_queue (feed_queue_id, user_id, item_type, action_id, enqueued_at)

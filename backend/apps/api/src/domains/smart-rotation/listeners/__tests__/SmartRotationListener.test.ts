@@ -18,12 +18,21 @@ describe('SmartRotationListener', () => {
     const dataSource = { query: jest.fn() };
     const logger = { setContext() {}, log() {} } as unknown as LoggerService;
 
+    const personalizationService = {} as import('@ci/domains/personalization').PersonalizationService;
+    const promotionReviewService = { surfacePendingReviews: jest.fn() } as never;
+    const crossTableHydrationService = {} as import('@ci/domains/personalization').CrossTableHydrationService;
+    const lifeContextService = { hasNoveltySinceLastRun: jest.fn(), buildForUser: jest.fn() } as never;
+
     const listener = new SmartRotationListener(
       questionService,
       eventService,
       suggestionSyncService,
       summaryServiceClient,
       graphEnrichmentService,
+      personalizationService,
+      promotionReviewService,
+      crossTableHydrationService,
+      lifeContextService,
       dataSource as never,
       logger,
     );
@@ -44,21 +53,36 @@ describe('SmartRotationListener', () => {
     const dataSource = { query: jest.fn().mockResolvedValue([{ id: 'q-1' }]) };
     const logger = { setContext() {}, log() {} } as unknown as LoggerService;
 
+    const personalizationService = {} as import('@ci/domains/personalization').PersonalizationService;
+    const promotionReviewService = { surfacePendingReviews: jest.fn() } as never;
+    const crossTableHydrationService = {} as import('@ci/domains/personalization').CrossTableHydrationService;
+    const lifeContextService = { hasNoveltySinceLastRun: jest.fn(), buildForUser: jest.fn() } as never;
+
     const listener = new SmartRotationListener(
       questionService,
       eventService,
       suggestionSyncService,
       summaryServiceClient,
       graphEnrichmentService,
+      personalizationService,
+      promotionReviewService,
+      crossTableHydrationService,
+      lifeContextService,
       dataSource as never,
       logger,
     );
 
     await listener.handleWork({ userId: 'user-1', workType: 'answer_infer' });
 
-    expect(eventService.send).toHaveBeenCalledWith(Events.INFER_QUESTION_ANSWER, {
-      ownerId: 'user-1',
-      questionId: 'q-1',
-    });
+    expect(eventService.send).toHaveBeenCalledWith(
+      Events.INFER_QUESTION_ANSWER,
+      {
+        ownerId: 'user-1',
+        questionId: 'q-1',
+      },
+      {
+        singletonKey: 'infer:user-1:q-1',
+      },
+    );
   });
 });

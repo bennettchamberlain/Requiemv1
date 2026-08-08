@@ -77,6 +77,7 @@ async function main(): Promise<void> {
             },
           } as unknown as CandidateService)
         : candidateService,
+      { getProfile: async () => ({ autoSchedule: false }) } as never,
       logger,
     );
 

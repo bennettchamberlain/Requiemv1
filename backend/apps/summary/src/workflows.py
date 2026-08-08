@@ -640,6 +640,12 @@ class InsightsGenerationWorkflow:
             **get_data_activity_options(),
         )
 
+        if isinstance(llm_config, dict):
+            insights_context = {
+                **insights_context,
+                "personalization": llm_config,
+            }
+
         # Check if we have enough context (count all sources)
         context_counts = {
             "graph_deltas": len(insights_context.get("graph_deltas", [])),
@@ -678,7 +684,11 @@ class InsightsGenerationWorkflow:
         data_sources_used: set = set()
         total_tokens = 0
 
-        for _ in range(MAX_INSIGHTS_PER_RUN):
+        personalization = insights_context.get("personalization") or {}
+        multiplier = float(personalization.get("insight_volume_multiplier") or 1.0)
+        max_insights = max(1, round(MAX_INSIGHTS_PER_RUN * multiplier))
+
+        for _ in range(max_insights):
             single = await workflow.execute_activity(
                 generate_single_insight_activity,
                 args=[insights_context, prior_insights],

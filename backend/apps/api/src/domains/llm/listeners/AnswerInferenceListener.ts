@@ -5,6 +5,7 @@ import { LoggerService } from '@ci/common/logging';
 import { Events, EventPayloads, OnEvent } from '@ci/domains/events';
 import { Answer, AnswerService, QuestionService } from '@ci/domains/intelligence';
 import { UserContextService } from '@ci/domains/memory';
+import { PersonalizationService, PromotionCandidateService } from '@ci/domains/personalization';
 import { SearchService } from '@ci/domains/search-next';
 
 import { OllamaService, PROMPT_MODEL } from '../services/OllamaService';
@@ -19,6 +20,8 @@ export class AnswerInferenceListener {
     private readonly questionService: QuestionService,
     private readonly searchService: SearchService,
     private readonly userContextService: UserContextService,
+    private readonly personalizationService: PersonalizationService,
+    private readonly promotionCandidateService: PromotionCandidateService,
     private readonly ollamaService: OllamaService,
     private readonly logger: LoggerService,
   ) {
@@ -121,6 +124,37 @@ Rules:
       relatedAnswers: resolvedAnswers.length,
       response: inferredText,
     });
+
+    const decision = await this.personalizationService.decideAction(ownerId, {
+      kind: 'inferred_fact',
+      confidence: 0.75,
+      hasUserInput: true,
+    });
+
+    if (decision === 'review') {
+      await this.promotionCandidateService.create(serviceContext, {
+        kind: 'inferred_fact',
+        payload: {
+          questionId: payload.questionId,
+          questionText: question.text,
+          inferredText,
+        },
+        confidence: 0.75,
+        sourceJob: 'infer.question.answer',
+        reviewPrompt: `Confirm this inferred answer: "${inferredText.slice(0, 120)}"`,
+      });
+
+      this.logger.log('Inferred answer queued for review', {
+        userId: ownerId,
+        questionId: payload.questionId,
+      });
+
+      return;
+    }
+
+    if (decision === 'skip') {
+      return;
+    }
 
     const userAnswer = await this.answerService.findByQuestionId(serviceContext, payload.questionId);
 

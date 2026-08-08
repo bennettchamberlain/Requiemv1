@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { ActionEntity } from '@ci/domains/intelligence';
+import { PersonalizationService } from '@ci/domains/personalization';
 import { SummaryEntity } from '@ci/domains/summaries';
 
 import { EventCandidateEntity, type RationaleSource } from '../entities/EventCandidateEntity';
@@ -106,6 +107,7 @@ export class SuggestionSyncService {
     @InjectRepository(EventCandidateEntity)
     private readonly candidateRepository: Repository<EventCandidateEntity>,
     private readonly candidateService: CandidateService,
+    private readonly personalizationService: PersonalizationService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(SuggestionSyncService.name);
@@ -134,6 +136,8 @@ export class SuggestionSyncService {
     const written = await this.candidateService.upsert(context, proposals);
 
     await this.retireStale(context);
+
+    await this.tryAutoAccept(context);
 
     this.logger.log('Synced schedule suggestions', {
       proposed: proposals.length,
@@ -284,6 +288,43 @@ export class SuggestionSyncService {
 
     if (stale.length > 0) {
       this.logger.log('Retired candidates whose source was dismissed', { count: stale.length });
+    }
+  }
+
+  /** hands_off users with estimate-bearing candidates may auto-accept high-confidence items. */
+  private async tryAutoAccept(context: UserServiceContext): Promise<void> {
+    const profile = await this.personalizationService.getProfile(context.userId!);
+    if (!profile.autoSchedule) {
+      return;
+    }
+
+    const open = await this.candidateRepository.find({
+      where: { userId: context.userId!, status: 'open' },
+      order: { confidence: 'DESC' },
+      take: 3,
+    });
+
+    for (const candidate of open) {
+      if (candidate.durationMinutes == null) {
+        continue;
+      }
+
+      const decision = PersonalizationService.decide(profile, {
+        kind: 'schedule_accept',
+        confidence: candidate.confidence ?? 0.5,
+        hasUserInput: true,
+      });
+
+      if (decision !== 'auto') {
+        continue;
+      }
+
+      try {
+        const startTime = candidate.windowStart ?? new Date();
+        await this.candidateService.accept(context, candidate.id, startTime);
+      } catch {
+        // Concurrent accept or missing window — skip silently.
+      }
     }
   }
 }

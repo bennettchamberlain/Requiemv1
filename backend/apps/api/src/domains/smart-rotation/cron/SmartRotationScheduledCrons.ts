@@ -70,3 +70,36 @@ export class SmartRotationGraphEnrichCron {
     await this.rotationService.runScheduledWork('graph_enrich');
   }
 }
+
+/** Surface pending promotion candidates for review — every 4 hours. */
+@Injectable()
+export class SmartRotationPromotionReviewCron {
+  constructor(private readonly rotationService: SmartRotationService) {}
+
+  @Cron(SMART_ROTATION_CRONS.promotion_review)
+  async run(): Promise<void> {
+    await this.rotationService.runScheduledWork('promotion_review');
+  }
+}
+
+/** Hydrate graph from recent answers — daily. */
+@Injectable()
+export class SmartRotationHydrateAnswersCron {
+  constructor(private readonly rotationService: SmartRotationService) {}
+
+  @Cron(SMART_ROTATION_CRONS.hydrate_answers)
+  async run(): Promise<void> {
+    await this.rotationService.runScheduledWork('hydrate_answers');
+  }
+}
+
+/** Hydrate graph from inventory — daily. */
+@Injectable()
+export class SmartRotationHydrateInventoryCron {
+  constructor(private readonly rotationService: SmartRotationService) {}
+
+  @Cron(SMART_ROTATION_CRONS.hydrate_inventory)
+  async run(): Promise<void> {
+    await this.rotationService.runScheduledWork('hydrate_inventory');
+  }
+}

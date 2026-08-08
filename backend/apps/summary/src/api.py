@@ -227,6 +227,8 @@ class InsightsRequest(BaseModel):
     user_id: str = Field(description="User UUID")
     timezone: str = Field(default="UTC", description="User's timezone")
     lookback_hours: Optional[int] = Field(default=72, description="Hours to look back for context (default 72)")
+    trust_mode: Optional[str] = Field(default=None, description="User autonomy setting (cautious|balanced|hands_off)")
+    insight_volume_multiplier: Optional[float] = Field(default=1.0, description="Scale insight card volume by trust dial")
 
 
 async def _trigger_insights_workflow(
@@ -234,6 +236,8 @@ async def _trigger_insights_workflow(
     timezone: str,
     lookback_hours: int,
     force: bool = False,
+    trust_mode: Optional[str] = None,
+    insight_volume_multiplier: Optional[float] = 1.0,
 ) -> Dict[str, Any]:
     """
     Trigger the InsightsGenerationWorkflow via Temporal.
@@ -254,10 +258,15 @@ async def _trigger_insights_workflow(
     now = datetime.utcnow()
     workflow_id = f"insights-{user_id}-{now.isoformat()}"
 
+    personalization_config = {
+        "trust_mode": trust_mode,
+        "insight_volume_multiplier": insight_volume_multiplier or 1.0,
+    }
+
     # Start the workflow and wait for result
     result = await client.execute_workflow(
         "insights-generation",
-        args=[user_id, timezone, lookback_hours, None, force],
+        args=[user_id, timezone, lookback_hours, personalization_config, force],
         id=workflow_id,
         task_queue=get_task_queue(Priority.HIGH),  # API-triggered = high priority
     )
@@ -328,6 +337,8 @@ async def generate_insights(request: InsightsRequest) -> Dict[str, Any]:
             request.timezone,
             request.lookback_hours,
             force=False,
+            trust_mode=request.trust_mode,
+            insight_volume_multiplier=request.insight_volume_multiplier,
         )
 
         if result.get("skipped"):

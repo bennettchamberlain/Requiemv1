@@ -4,14 +4,19 @@ import { LoggingModule } from '@ci/common/logging';
 import { EventsModule } from '@ci/domains/events';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MaintenanceModule } from '@ci/domains/maintenance';
+import { PersonalizationModule } from '@ci/domains/personalization';
 import { ScheduleModule } from '@ci/domains/schedule';
 
 import './events';
 
+import { EntityPromotionCron } from './cron/EntityPromotionCron';
 import {
   SmartRotationAnswerInferCron,
   SmartRotationGraphEnrichCron,
+  SmartRotationHydrateAnswersCron,
+  SmartRotationHydrateInventoryCron,
   SmartRotationInsightsCron,
+  SmartRotationPromotionReviewCron,
   SmartRotationQuestionFeedCron,
   SmartRotationScheduleSyncCron,
   SmartRotationSummariesCron,
@@ -21,7 +26,14 @@ import { SmartRotationService } from './services/SmartRotationService';
 import { SummaryServiceClient } from './services/SummaryServiceClient';
 
 @Module({
-  imports: [EventsModule, IntelligenceModule, ScheduleModule, MaintenanceModule, LoggingModule],
+  imports: [
+    EventsModule,
+    IntelligenceModule,
+    ScheduleModule,
+    MaintenanceModule,
+    PersonalizationModule,
+    LoggingModule,
+  ],
   providers: [
     SmartRotationService,
     SummaryServiceClient,
@@ -32,6 +44,10 @@ import { SummaryServiceClient } from './services/SummaryServiceClient';
     SmartRotationInsightsCron,
     SmartRotationSummariesCron,
     SmartRotationGraphEnrichCron,
+    SmartRotationPromotionReviewCron,
+    SmartRotationHydrateAnswersCron,
+    SmartRotationHydrateInventoryCron,
+    EntityPromotionCron,
   ],
   exports: [SmartRotationService],
 })

@@ -7,6 +7,12 @@ import { LoggerService } from '@ci/common/logging';
 import { Events, EventService, OnEvent } from '@ci/domains/events';
 import { QuestionService } from '@ci/domains/intelligence';
 import { GraphEnrichmentService } from '@ci/domains/maintenance';
+import {
+  CrossTableHydrationService,
+  LifeContextService,
+  PersonalizationService,
+  PromotionReviewService,
+} from '@ci/domains/personalization';
 import { SuggestionSyncService } from '@ci/domains/schedule';
 
 import { SmartRotationWorkEvent, type SmartRotationWorkPayload } from '../events';
@@ -24,6 +30,10 @@ export class SmartRotationListener {
     private readonly suggestionSyncService: SuggestionSyncService,
     private readonly summaryServiceClient: SummaryServiceClient,
     private readonly graphEnrichmentService: GraphEnrichmentService,
+    private readonly personalizationService: PersonalizationService,
+    private readonly promotionReviewService: PromotionReviewService,
+    private readonly crossTableHydrationService: CrossTableHydrationService,
+    private readonly lifeContextService: LifeContextService,
     @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly logger: LoggerService,
@@ -55,10 +65,16 @@ export class SmartRotationListener {
           return;
         }
 
-        await this.eventService.send(Events.INFER_QUESTION_ANSWER, {
-          ownerId: userId,
-          questionId,
-        });
+        await this.eventService.send(
+          Events.INFER_QUESTION_ANSWER,
+          {
+            ownerId: userId,
+            questionId,
+          },
+          {
+            singletonKey: `infer:${userId}:${questionId}`,
+          },
+        );
 
         this.logger.log('Smart rotation answer infer enqueued', { userId, questionId });
 
@@ -75,7 +91,18 @@ export class SmartRotationListener {
       }
 
       case 'insights': {
-        const result = await this.summaryServiceClient.generateInsights(userId);
+        const hasNovelty = await this.lifeContextService.hasNoveltySinceLastRun(userId, 'insights');
+        if (!hasNovelty) {
+          this.logger.log('Smart rotation insights skipped — no novelty', { userId });
+
+          return;
+        }
+
+        const lifeContext = await this.lifeContextService.buildForUser(userId);
+        const result = await this.summaryServiceClient.generateInsights(userId, 'UTC', 72, {
+          trust_mode: lifeContext.trustMode,
+          insight_volume_multiplier: lifeContext.insightVolumeMultiplier,
+        });
 
         this.logger.log('Smart rotation insights', { userId, status: result.status, reason: result.reason });
 
@@ -96,6 +123,7 @@ export class SmartRotationListener {
         const result = await this.graphEnrichmentService.enrich(userId, {
           maxCommunications: 20,
           maxEvents: 10,
+          maxAnswers: 10,
         });
 
         this.logger.log('Smart rotation graph enrich', {
@@ -103,7 +131,36 @@ export class SmartRotationListener {
           sampledRecords: result.sampledRecords,
           preferenceEdgesWritten: result.preferenceEdgesWritten,
           familyEdgesWritten: result.familyEdgesWritten,
+          generalEdgesWritten: result.generalEdgesWritten,
+          reviewQueued: result.reviewQueued,
         });
+
+        return;
+      }
+
+      case 'promotion_review': {
+        const context = { userId } as UserServiceContext;
+        const surfaced = await this.promotionReviewService.surfacePendingReviews(context);
+
+        this.logger.log('Smart rotation promotion review', { userId, surfaced });
+
+        return;
+      }
+
+      case 'hydrate_answers': {
+        const context = { userId } as UserServiceContext;
+        const result = await this.crossTableHydrationService.hydrateAnswers(context);
+
+        this.logger.log('Smart rotation hydrate answers', { userId, ...result });
+
+        return;
+      }
+
+      case 'hydrate_inventory': {
+        const context = { userId } as UserServiceContext;
+        const result = await this.crossTableHydrationService.hydrateInventory(context);
+
+        this.logger.log('Smart rotation hydrate inventory', { userId, ...result });
 
         return;
       }
@@ -140,12 +197,15 @@ export class SmartRotationListener {
       `
       SELECT q.question_id AS id
       FROM ci.questions q
-      WHERE q.user_id IS NULL
-        AND q.active = TRUE
+      WHERE q.is_active = TRUE
+        AND (q.is_private_to IS NULL OR q.is_private_to = $1)
         AND NOT EXISTS (
           SELECT 1 FROM ci.answers a
           WHERE a.question_id = q.question_id
             AND a.user_id = $1
+            AND a.answer_method IN ('user', 'inferred')
+            AND a.answer_text IS NOT NULL
+            AND TRIM(a.answer_text) <> ''
         )
       ORDER BY q.created_at ASC
       LIMIT 1;

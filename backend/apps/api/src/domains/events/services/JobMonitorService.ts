@@ -1,6 +1,6 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Not } from 'typeorm';
+import { Repository } from 'typeorm';
 
 import { RequestContext } from '@ci/common/context';
 
@@ -60,14 +60,32 @@ export interface JobDistributionDto {
   readonly count: number;
 }
 
+export interface JobQueueDistributionDto {
+  readonly queue: string;
+  readonly count: number;
+}
+
+export interface SmartRotationWorkDistributionDto {
+  readonly workType: string;
+  readonly count: number;
+}
+
 export interface JobDashboardDto {
   readonly summary: {
+    readonly pending: number;
     readonly active: number;
     readonly completed: number;
     readonly failed: number;
     readonly scheduled: number;
   };
-  readonly distribution: readonly JobDistributionDto[];
+  /** Lifetime completed/failed jobs grouped by handler (from archive). */
+  readonly archiveDistribution: readonly JobDistributionDto[];
+  /** Currently pending/in-flight jobs grouped by handler. */
+  readonly activeDistribution: readonly JobDistributionDto[];
+  /** Active jobs grouped by queue name. */
+  readonly queueDistribution: readonly JobQueueDistributionDto[];
+  /** Smart rotation meta-jobs broken down by workType in payload. */
+  readonly smartRotationDistribution: readonly SmartRotationWorkDistributionDto[];
   readonly jobs: readonly JobRecordDto[];
   readonly archive: readonly ArchivedJobRecordDto[];
   readonly schedules: readonly JobScheduleDto[];
@@ -94,7 +112,17 @@ export class JobMonitorService {
       throw new UnauthorizedException('A user context is required.');
     }
 
-    const [jobs, archive, schedules, queues, summary, distribution] = await Promise.all([
+    const [
+      jobs,
+      archive,
+      schedules,
+      queues,
+      summary,
+      archiveDistribution,
+      activeDistribution,
+      queueDistribution,
+      smartRotationDistribution,
+    ] = await Promise.all([
       this.jobRepository.find({
         order: { createdOn: 'DESC' },
         take: this.recentLimit,
@@ -106,12 +134,18 @@ export class JobMonitorService {
       this.scheduleRepository.find({ order: { name: 'ASC' } }),
       this.queueRepository.find({ order: { name: 'ASC' } }),
       this.getSummary(),
-      this.getDistribution(),
+      this.getArchiveDistribution(),
+      this.getActiveDistribution(),
+      this.getQueueDistribution(),
+      this.getSmartRotationDistribution(),
     ]);
 
     return {
       summary,
-      distribution,
+      archiveDistribution,
+      activeDistribution,
+      queueDistribution,
+      smartRotationDistribution,
       jobs: jobs.map((job) => this.toJobRecord(job)),
       archive: archive.map((job) => this.toArchivedJobRecord(job)),
       schedules: schedules.map((schedule) => this.toScheduleDto(schedule)),
@@ -121,6 +155,7 @@ export class JobMonitorService {
 
   private async getSummary(): Promise<JobDashboardDto['summary']> {
     const [
+      pendingCount,
       activeCount,
       completedJobCount,
       completedArchiveCount,
@@ -128,7 +163,8 @@ export class JobMonitorService {
       failedArchiveCount,
       scheduledCount,
     ] = await Promise.all([
-      this.jobRepository.count({ where: { state: Not('completed') } }),
+      this.jobRepository.count({ where: { state: 'created' } }),
+      this.jobRepository.count({ where: { state: 'active' } }),
       this.jobRepository.count({ where: { state: 'completed' } }),
       this.archiveRepository.count({ where: { state: 'completed' } }),
       this.jobRepository.count({ where: { state: 'failed' } }),
@@ -137,6 +173,7 @@ export class JobMonitorService {
     ]);
 
     return {
+      pending: pendingCount,
       active: activeCount,
       completed: completedJobCount + completedArchiveCount,
       failed: failedActiveCount + failedArchiveCount,
@@ -144,7 +181,7 @@ export class JobMonitorService {
     };
   }
 
-  private async getDistribution(): Promise<JobDistributionDto[]> {
+  private async getArchiveDistribution(): Promise<JobDistributionDto[]> {
     const rows = await this.archiveRepository
       .createQueryBuilder('archive')
       .select("COALESCE(archive.data->>'name', archive.name)", 'jobName')
@@ -154,6 +191,62 @@ export class JobMonitorService {
       .limit(10)
       .getRawMany<{ jobName: string | null; count: number }>();
 
+    return this.mapDistributionRows(rows);
+  }
+
+  private async getActiveDistribution(): Promise<JobDistributionDto[]> {
+    const rows = await this.jobRepository
+      .createQueryBuilder('job')
+      .select("COALESCE(job.data->>'name', job.name)", 'jobName')
+      .addSelect('COUNT(*)::int', 'count')
+      .where('job.state IN (:...states)', { states: ['created', 'active', 'retry'] })
+      .groupBy("COALESCE(job.data->>'name', job.name)")
+      .orderBy('count', 'DESC')
+      .limit(10)
+      .getRawMany<{ jobName: string | null; count: number }>();
+
+    return this.mapDistributionRows(rows);
+  }
+
+  private async getQueueDistribution(): Promise<JobQueueDistributionDto[]> {
+    const rows = await this.jobRepository
+      .createQueryBuilder('job')
+      .select('job.name', 'queue')
+      .addSelect('COUNT(*)::int', 'count')
+      .where('job.state IN (:...states)', { states: ['created', 'active', 'retry'] })
+      .groupBy('job.name')
+      .orderBy('count', 'DESC')
+      .limit(10)
+      .getRawMany<{ queue: string | null; count: number }>();
+
+    return rows
+      .map((row) => ({
+        queue: row.queue ?? 'unknown',
+        count: Number(row.count) || 0,
+      }))
+      .filter((item) => item.count > 0);
+  }
+
+  private async getSmartRotationDistribution(): Promise<SmartRotationWorkDistributionDto[]> {
+    const rows = await this.jobRepository
+      .createQueryBuilder('job')
+      .select("COALESCE(job.data->>'workType', 'unknown')", 'workType')
+      .addSelect('COUNT(*)::int', 'count')
+      .where('job.state IN (:...states)', { states: ['created', 'active', 'retry'] })
+      .andWhere("job.data->>'name' = :eventName", { eventName: 'smart.rotation.work' })
+      .groupBy("COALESCE(job.data->>'workType', 'unknown')")
+      .orderBy('count', 'DESC')
+      .getRawMany<{ workType: string | null; count: number }>();
+
+    return rows
+      .map((row) => ({
+        workType: row.workType ?? 'unknown',
+        count: Number(row.count) || 0,
+      }))
+      .filter((item) => item.count > 0);
+  }
+
+  private mapDistributionRows(rows: Array<{ jobName: string | null; count: number }>): JobDistributionDto[] {
     return rows
       .map((row) => ({
         jobName: row.jobName ?? 'unknown',

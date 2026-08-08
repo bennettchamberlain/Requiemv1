@@ -6,6 +6,9 @@ export const SMART_ROTATION_WORK_TYPES = [
   'insights',
   'summaries',
   'graph_enrich',
+  'promotion_review',
+  'hydrate_answers',
+  'hydrate_inventory',
 ] as const;
 
 export type SmartRotationWorkType = (typeof SMART_ROTATION_WORK_TYPES)[number];
@@ -29,4 +32,7 @@ export const SMART_ROTATION_CRONS = {
   summaries: '0 22 * * * *',
   insights: '0 45 */3 * * *',
   graph_enrich: '0 10 */6 * * *',
+  promotion_review: '0 30 */4 * * *',
+  hydrate_answers: '0 5 3 * * *',
+  hydrate_inventory: '0 15 3 * * *',
 } as const satisfies Record<SmartRotationWorkType, string>;

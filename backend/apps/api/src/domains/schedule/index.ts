@@ -6,6 +6,7 @@ import { AgentModule } from '@ci/domains/agent';
 import { ActionEntity } from '@ci/domains/intelligence';
 import { LLMModule } from '@ci/domains/llm';
 import { MemoryModule } from '@ci/domains/memory';
+import { PersonalizationModule } from '@ci/domains/personalization';
 import { SummaryEntity } from '@ci/domains/summaries';
 
 import { EventCandidateEntity } from './entities/EventCandidateEntity';
@@ -21,6 +22,7 @@ import { TaskBreakdownService } from './services/TaskBreakdownService';
     // on IntelligenceModule/SummariesModule, to keep the coupling one-way.
     TypeOrmModule.forFeature([EventCandidateEntity, RhythmEntity, ActionEntity, SummaryEntity]),
     MemoryModule,
+    PersonalizationModule,
     AgentModule,
     LLMModule,
     LoggingModule,

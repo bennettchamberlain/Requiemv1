@@ -327,20 +327,32 @@ export class QuestionService {
     };
 
     const rows = (await this.dataSource.query(`
-      SELECT
-        q.question_id as id,
-        COALESCE(q.is_private_to, a.user_id) as user_id
-      FROM
-        ci.questions as q
-      LEFT JOIN ci.answers as a ON a.question_id = q.question_id
-      WHERE q.is_active = TRUE
-        AND (a.answer_id IS NULL OR a.answer_text IS NULL)
-        AND (
-          q.is_private_to IS NULL
-          OR a.user_id IS NULL
-          OR a.user_id = q.is_private_to
-        )
-      LIMIT 5;
+      WITH unanswered AS (
+        SELECT
+          q.question_id AS id,
+          COALESCE(q.is_private_to, u.user_id) AS user_id,
+          q.created_at,
+          ROW_NUMBER() OVER (
+            PARTITION BY COALESCE(q.is_private_to, u.user_id)
+            ORDER BY q.created_at ASC
+          ) AS rn
+        FROM ci.questions q
+        CROSS JOIN (SELECT DISTINCT user_id FROM ci.users WHERE user_id IS NOT NULL) u
+        WHERE q.is_active = TRUE
+          AND (q.is_private_to IS NULL OR q.is_private_to = u.user_id)
+          AND NOT EXISTS (
+            SELECT 1
+            FROM ci.answers a
+            WHERE a.question_id = q.question_id
+              AND a.user_id = u.user_id
+              AND a.answer_method IN ('user', 'inferred')
+              AND a.answer_text IS NOT NULL
+              AND TRIM(a.answer_text) <> ''
+          )
+      )
+      SELECT id, user_id
+      FROM unanswered
+      WHERE rn <= 1;
     `)) satisfies Array<Row>;
 
     const groupedByUserId = new Map<string | null, string[]>();

@@ -12,6 +12,7 @@ import {
   KeyRound,
   MapPin,
   Palette,
+  Shield,
   User,
   UserRound,
   X,
@@ -23,6 +24,9 @@ const AppearanceSection = lazy(() =>
 );
 const PreferencesSection = lazy(() =>
   import('./sections/PreferencesSection').then((m) => ({ default: m.PreferencesSection })),
+);
+const AutonomySection = lazy(() =>
+  import('./sections/AutonomySection').then((m) => ({ default: m.AutonomySection })),
 );
 const AboutYouSection = lazy(() =>
   import('./sections/AboutYouSection').then((m) => ({ default: m.AboutYouSection })),
@@ -111,6 +115,11 @@ export function SettingsPage() {
                 Preferences
               </NavLink>
 
+              <NavLink to="/settings/autonomy" state={{ backgroundLocation }} className={navLinkClass}>
+                <Shield className="h-4 w-4" />
+                Autonomy
+              </NavLink>
+
               <NavLink to="/settings/about-you" state={{ backgroundLocation }} className={navLinkClass}>
                 <UserRound className="h-4 w-4" />
                 About you
@@ -171,6 +180,7 @@ export function SettingsPage() {
                     <Route index element={<Navigate to="appearance" replace />} />
                     <Route path="appearance" element={<AppearanceSection />} />
                     <Route path="preferences" element={<PreferencesSection />} />
+                    <Route path="autonomy" element={<AutonomySection />} />
                     <Route path="about-you" element={<AboutYouSection />} />
                     <Route path="model" element={<ModelSection />} />
                     <Route path="location" element={<LocationSection />} />

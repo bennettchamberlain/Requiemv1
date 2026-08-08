@@ -48,7 +48,7 @@ export class SmartRotationService {
       return 0;
     }
 
-    if (await this.isBacklogHigh()) {
+    if (this.shouldSkipForBacklog(workType) && (await this.isBacklogHigh())) {
       this.logger.warn('Skipping smart rotation work — queue backlog too high', { workType });
 
       return 0;
@@ -85,10 +85,36 @@ export class SmartRotationService {
       {
         queue: SMART_ROTATION_QUEUE,
         singletonKey: `smart-rotation:${userId}:${workType}`,
+        priority: this.workTypePriority(workType),
       },
     );
 
     return jobIds.length > 0;
+  }
+
+  /** Low-priority work types are skipped when the default queue is backlogged. */
+  private shouldSkipForBacklog(workType: SmartRotationWorkType): boolean {
+    return workType === 'answer_infer' || workType === 'question_feed';
+  }
+
+  /** Graph growth and schedule work outrank inference when queues are busy. */
+  private workTypePriority(workType: SmartRotationWorkType): number {
+    switch (workType) {
+      case 'graph_enrich':
+      case 'promotion_review':
+      case 'hydrate_answers':
+      case 'hydrate_inventory':
+        return 5;
+      case 'schedule_sync':
+      case 'summaries':
+      case 'insights':
+        return 2;
+      case 'answer_infer':
+      case 'question_feed':
+        return -2;
+      default:
+        return 0;
+    }
   }
 
   private nextUserBatch(workType: SmartRotationWorkType, userIds: string[], size: number): string[] {

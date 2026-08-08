@@ -801,6 +801,8 @@ export class MaintenanceController {
       conceptsWritten: 0,
       preferenceEdgesWritten: 0,
       familyEdgesWritten: 0,
+      generalEdgesWritten: 0,
+      reviewQueued: 0,
       errors: ['extract-graph requires an authenticated user'],
     };
 

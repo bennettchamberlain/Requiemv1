@@ -17,11 +17,22 @@ export type SummaryTriggerResult = {
 export class SummaryServiceClient {
   private readonly baseUrl = config.services.parser.host.replace(/\/+$/, '');
 
-  async generateInsights(userId: string, timezone = 'UTC', lookbackHours = 72): Promise<InsightsTriggerResult> {
+  async generateInsights(
+    userId: string,
+    timezone = 'UTC',
+    lookbackHours = 72,
+    options: { trust_mode?: string; insight_volume_multiplier?: number } = {},
+  ): Promise<InsightsTriggerResult> {
     const res = await fetch(`${this.baseUrl}/insights/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: userId, timezone, lookback_hours: lookbackHours }),
+      body: JSON.stringify({
+        user_id: userId,
+        timezone,
+        lookback_hours: lookbackHours,
+        trust_mode: options.trust_mode,
+        insight_volume_multiplier: options.insight_volume_multiplier,
+      }),
       signal: AbortSignal.timeout(120_000),
     });
 

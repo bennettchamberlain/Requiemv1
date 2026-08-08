@@ -18,6 +18,7 @@ import { Carousel } from '../../components/Carousel';
 import { FeedModal } from './FeedModal';
 import type { INSIGHT_CARD_FRAGMENT } from './InsightCard';
 import { InsightCard } from './InsightCard';
+import { PromotionReviewCard } from './PromotionReviewCard';
 import { QuestionCard } from './QuestionCard';
 import type { SUMMARY_CARD_FRAGMENT } from './SummaryCard';
 import { SummaryCard } from './SummaryCard';
@@ -420,6 +421,8 @@ export function FeedPage() {
             />
           </div>
         )}
+
+        <PromotionReviewCard />
 
         {(actionsEnabled || Boolean(question)) && (
           <>
