@@ -255,7 +255,7 @@ export function FeedPage() {
   const handleSummaryClick = useCallback(
     async (encodedId: string) => {
       await markSummaryAsSeen(encodedId);
-      navigate(`/insights/${GlobalUID.parse('summary', encodedId)}`);
+      navigate(`/feed/summaries/${GlobalUID.parse('summary', encodedId)}`);
     },
     [markSummaryAsSeen, navigate],
   );

@@ -8,6 +8,7 @@ import {
   Navigate,
   useLocation,
   useNavigate,
+  useParams,
   type Location,
 } from 'react-router-dom';
 
@@ -42,7 +43,6 @@ const ConnectionsPage = lazy(() => import('@/pages/ConnectionsPage'));
 const ContentPage = lazy(() => import('@/pages/ContentPage'));
 const EventPage = lazy(() => import('@/pages/EventPage'));
 const ItemPage = lazy(() => import('@/pages/ItemPage'));
-const InsightsPage = lazy(() => import('@/pages/InsightsPage'));
 const JobsPage = lazy(() => import('@/pages/JobsPage'));
 const InventoryPage = lazy(() => import('@/pages/InventoryPage'));
 const MemoryPage = lazy(() => import('@/pages/MemoryPage'));
@@ -69,6 +69,12 @@ const TagsPage = lazy(() => import('@/pages/TagsPage'));
 const SummaryDetailPage = lazy(() => import('@/pages/SummaryDetailPage'));
 const SystemPage = lazy(() => import('@/pages/SystemPage'));
 const PromptsPage = lazy(() => import('@/pages/PromptsPage'));
+
+function RedirectInsightsSummary() {
+  const { id } = useParams<{ id: string }>();
+
+  return <Navigate to={`/feed/summaries/${id ?? ''}`} replace />;
+}
 
 function Providers({ children }: { children: ReactNode }) {
   return (
@@ -231,23 +237,33 @@ function AppRoutes() {
             </>
           )}
 
+          <Route
+            path="/feed/summaries/:id"
+            element={
+              <ProtectedRoute>
+                <SummaryDetailPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route path="/insights" element={<Navigate to="/feed" replace />} />
+          <Route
+            path="/insights/:id"
+            element={
+              <ProtectedRoute>
+                <RedirectInsightsSummary />
+              </ProtectedRoute>
+            }
+          />
+
           {isFeatureEnabled('insights.page') && (
             <>
+              <Route path="/prompts" element={<Navigate to="/memory/questions" replace />} />
               <Route
-                path="/insights"
+                path="/memory/questions"
                 element={
                   <ProtectedRoute>
-                    {isFeatureEnabled('new.insights.page') && <InsightsPage />}
-                    {!isFeatureEnabled('new.insights.page') && <PromptsPage />}
-                  </ProtectedRoute>
-                }
-              />
-
-              <Route
-                path="/insights/:id"
-                element={
-                  <ProtectedRoute>
-                    <SummaryDetailPage />
+                    <PromptsPage />
                   </ProtectedRoute>
                 }
               />
@@ -515,19 +531,6 @@ function AppRoutes() {
             }
           />
 
-          {isFeatureEnabled('insights.page') && (
-            <>
-              <Route path="/prompts" element={<Navigate to="/memory/questions" replace />} />
-              <Route
-                path="/memory/questions"
-                element={
-                  <ProtectedRoute>
-                    <PromptsPage />
-                  </ProtectedRoute>
-                }
-              />
-            </>
-          )}
         </Route>
 
         {/*

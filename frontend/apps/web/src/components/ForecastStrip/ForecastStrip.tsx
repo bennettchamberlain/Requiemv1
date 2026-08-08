@@ -165,7 +165,7 @@ function SlotTooltip({ bucket, localMin }: { bucket: ForecastBucket; localMin: n
           Top context:{' '}
           {isFeatureEnabled('insights.page') ? (
             <Link
-              to={`/insights?context=${encodeURIComponent(top1.name)}`}
+              to="/feed"
               className="underline underline-offset-2 hover:opacity-100 transition-opacity"
             >
               {top1.name.slice(0, 24)}
