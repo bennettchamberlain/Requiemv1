@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { cn, Tooltip } from '@ci/shadcn';
 
@@ -65,6 +65,12 @@ const NARROW_SPAN_PCT = 7;
 /** Quarter-day guides, so the eye can find noon without counting. */
 const GUIDE_HOURS = [6, 12, 18];
 const AXIS_HOURS = [0, 4, 8, 12, 16, 20];
+
+/** Long horizons virtualize inside a scroll pane; week views stay fully mounted. */
+const VIRTUALIZE_DAYS_AFTER = 14;
+/** Conservative row height for windowing — lanes can grow, so bias high. */
+const ESTIMATED_DAY_ROW_PX = 120;
+const VIRTUAL_OVERSCAN = 2;
 
 /**
  * Dropping snaps to this grain. Finer would imply a precision the suggestion
@@ -434,7 +440,7 @@ interface RhythmClaim {
 
 interface DayRowProps {
   dayStart: Date;
-  events: ScheduleEvent[];
+  dayEvents: ScheduleEvent[];
   lookup: (utcDate: string) => RhythmDay | undefined;
   isToday: boolean;
   nowPct: number | null;
@@ -443,9 +449,9 @@ interface DayRowProps {
   onMoveEvent?: (eventId: string, startTime: Date) => void;
 }
 
-function DayRow({
+const DayRow = memo(function DayRow({
   dayStart,
-  events,
+  dayEvents,
   lookup,
   isToday,
   nowPct,
@@ -455,16 +461,20 @@ function DayRow({
 }: DayRowProps) {
   /** Where a dragged candidate would land, as a percentage across the row. */
   const [dropPct, setDropPct] = useState<number | null>(null);
-  const spans = events
-    .map((event) => spanForDay(event, dayStart))
-    .filter((span): span is EventSpan => span !== null)
-    .sort((a, b) => a.leftPct - b.leftPct);
+  const spans = useMemo(
+    () =>
+      dayEvents
+        .map((event) => spanForDay(event, dayStart))
+        .filter((span): span is EventSpan => span !== null)
+        .sort((a, b) => a.leftPct - b.leftPct),
+    [dayEvents, dayStart],
+  );
 
-  const lanes = packLanes(spans);
+  const lanes = useMemo(() => packLanes(spans), [spans]);
   const laneCount = Math.max(1, ...lanes.map((lane) => lane + 1));
 
-  const claims = rhythmClaims(dayStart, lookup);
-  const clusters = topClusters(lookup(utcDateKey(dayStart)));
+  const claims = useMemo(() => rhythmClaims(dayStart, lookup), [dayStart, lookup]);
+  const clusters = useMemo(() => topClusters(lookup(utcDateKey(dayStart))), [lookup, dayStart]);
   const hasRhythm = claims.some((c) => c.weight >= RHYTHM_NOISE_FLOOR);
 
   const dayLabel = dayStart.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
@@ -513,7 +523,7 @@ function DayRow({
       role="listitem"
       aria-label={dayLabel}
       className={cn(
-        'flex items-stretch gap-3 rounded-lg px-2 py-2 transition-colors',
+        'flex items-stretch gap-3 rounded-lg px-2 py-2 transition-colors [contain-intrinsic-size:auto_120px] [content-visibility:auto]',
         // Today is marked with a rail rather than a wash — a filled row drowns
         // its own rhythm lane, which is the thing you most want to read there.
         isToday ? 'bg-accent/15 ring-1 ring-inset ring-primary/25' : 'hover:bg-accent/15',
@@ -854,6 +864,134 @@ function DayRow({
       </div>
     </div>
   );
+});
+
+// ── Virtual day list ──────────────────────────────────────────────────────────
+
+interface VirtualDayListProps {
+  dayStarts: Date[];
+  eventsByDayKey: Map<string, ScheduleEvent[]>;
+  lookup: (utcDate: string) => RhythmDay | undefined;
+  today: Date;
+  nowPct: number;
+  colorMode: ColorMode;
+  onDropCandidate?: (candidateId: string, startTime: Date) => void;
+  onMoveEvent?: (eventId: string, startTime: Date) => void;
+}
+
+/**
+ * Scroll-window day rows for month/year horizons. Week views mount every row;
+ * longer windows keep off-screen rows out of the DOM unless a drag is in flight
+ * (so a card can be dropped on a row the user scrolls to).
+ */
+function VirtualDayList({
+  dayStarts,
+  eventsByDayKey,
+  lookup,
+  today,
+  nowPct,
+  colorMode,
+  onDropCandidate,
+  onMoveEvent,
+}: VirtualDayListProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const [dragActive, setDragActive] = useState(false);
+
+  const virtualize = dayStarts.length > VIRTUALIZE_DAYS_AFTER && !dragActive;
+
+  useEffect(() => {
+    const pin = () => setDragActive(true);
+    const unpin = () => setDragActive(false);
+
+    document.addEventListener('dragstart', pin);
+    document.addEventListener('dragend', unpin);
+    document.addEventListener('drop', unpin);
+
+    return () => {
+      document.removeEventListener('dragstart', pin);
+      document.removeEventListener('dragend', unpin);
+      document.removeEventListener('drop', unpin);
+    };
+  }, []);
+
+  useEffect(() => {
+    const element = scrollRef.current;
+
+    if (!element || !virtualize) {
+      return;
+    }
+
+    const observer = new ResizeObserver(([entry]) => {
+      setViewportHeight(entry.contentRect.height);
+    });
+
+    observer.observe(element);
+    setViewportHeight(element.clientHeight);
+
+    return () => observer.disconnect();
+  }, [virtualize]);
+
+  const { startIndex, endIndex, paddingTop, paddingBottom } = useMemo(() => {
+    if (!virtualize || viewportHeight === 0) {
+      return {
+        startIndex: 0,
+        endIndex: dayStarts.length,
+        paddingTop: 0,
+        paddingBottom: 0,
+      };
+    }
+
+    const start = Math.max(0, Math.floor(scrollTop / ESTIMATED_DAY_ROW_PX) - VIRTUAL_OVERSCAN);
+    const end = Math.min(
+      dayStarts.length,
+      Math.ceil((scrollTop + viewportHeight) / ESTIMATED_DAY_ROW_PX) + VIRTUAL_OVERSCAN,
+    );
+
+    return {
+      startIndex: start,
+      endIndex: end,
+      paddingTop: start * ESTIMATED_DAY_ROW_PX,
+      paddingBottom: (dayStarts.length - end) * ESTIMATED_DAY_ROW_PX,
+    };
+  }, [virtualize, viewportHeight, scrollTop, dayStarts.length]);
+
+  const visibleDays = dayStarts.slice(startIndex, endIndex);
+
+  return (
+    <div
+      ref={scrollRef}
+      role="list"
+      aria-label="Days"
+      className={cn(
+        'flex flex-col gap-0.5',
+        virtualize && 'max-h-[min(70vh,calc(100vh-12rem))] overflow-y-auto',
+      )}
+      onScroll={virtualize ? (event) => setScrollTop(event.currentTarget.scrollTop) : undefined}
+    >
+      {paddingTop > 0 && <div aria-hidden style={{ height: paddingTop }} />}
+      {visibleDays.map((dayStart) => {
+        const key = dayStart.toISOString();
+        const isToday = sameLocalDay(dayStart, today);
+
+        return (
+          <DayRow
+            key={key}
+            dayStart={dayStart}
+            dayEvents={eventsByDayKey.get(key) ?? []}
+            lookup={lookup}
+            isToday={isToday}
+            nowPct={isToday ? nowPct : null}
+            colorMode={colorMode}
+            onDropCandidate={onDropCandidate}
+            onMoveEvent={onMoveEvent}
+          />
+        );
+      })}
+      {paddingBottom > 0 && <div aria-hidden style={{ height: paddingBottom }} />}
+    </div>
+  );
 }
 
 // ── Public component ──────────────────────────────────────────────────────────
@@ -890,6 +1028,8 @@ interface HorizonGridProps {
  *
  * Days are rows rather than columns because a fuzzy time window is a horizontal
  * smear, and because it lets a week, a month, and a year share one geometry.
+ * Per-day rows are memoized; horizons longer than two weeks virtualize inside a
+ * scroll pane (every row stays mounted during an active drag).
  *
  * The whole grid sits on its own card: PageContent paints a background texture,
  * and hairline content read directly against it is close to unreadable.
@@ -907,9 +1047,43 @@ export function HorizonGrid({
 }: HorizonGridProps) {
   const now = new Date();
   const today = startOfLocalDay(now);
-  const rhythmByDate = new Map(rhythm.map((day) => [day.date, day]));
-  const lookup = (utcDate: string) => rhythmByDate.get(utcDate);
   const nowPct = ((now.getHours() * 60 + now.getMinutes()) / MINUTES_PER_DAY) * 100;
+
+  const rhythmByDate = useMemo(() => new Map(rhythm.map((day) => [day.date, day])), [rhythm]);
+  const lookup = useCallback((utcDate: string) => rhythmByDate.get(utcDate), [rhythmByDate]);
+
+  const dayStarts = useMemo(
+    () => Array.from({ length: days }, (_, index) => addDays(start, index)),
+    [start, days],
+  );
+
+  const eventsByDayKey = useMemo(() => {
+    const map = new Map<string, ScheduleEvent[]>();
+
+    for (const dayStart of dayStarts) {
+      const key = dayStart.toISOString();
+      map.set(
+        key,
+        events.filter((entry) => spanForDay(entry, dayStart) !== null),
+      );
+    }
+
+    return map;
+  }, [dayStarts, events]);
+
+  const handleDropCandidate = useCallback(
+    (candidateId: string, startTime: Date) => {
+      onDropCandidate?.(candidateId, startTime);
+    },
+    [onDropCandidate],
+  );
+
+  const handleMoveEvent = useCallback(
+    (eventId: string, startTime: Date) => {
+      onMoveEvent?.(eventId, startTime);
+    },
+    [onMoveEvent],
+  );
 
   return (
     <div
@@ -933,25 +1107,16 @@ export function HorizonGrid({
         </div>
       </div>
 
-      <div role="list" aria-label="Days" className="flex flex-col gap-0.5">
-        {Array.from({ length: days }, (_, i) => {
-          const dayStart = addDays(start, i);
-
-          return (
-            <DayRow
-              key={dayStart.toISOString()}
-              dayStart={dayStart}
-              events={events}
-              lookup={lookup}
-              isToday={sameLocalDay(dayStart, today)}
-              nowPct={sameLocalDay(dayStart, today) ? nowPct : null}
-              colorMode={colorMode}
-              onDropCandidate={onDropCandidate}
-              onMoveEvent={onMoveEvent}
-            />
-          );
-        })}
-      </div>
+      <VirtualDayList
+        dayStarts={dayStarts}
+        eventsByDayKey={eventsByDayKey}
+        lookup={lookup}
+        today={today}
+        nowPct={nowPct}
+        colorMode={colorMode}
+        onDropCandidate={onDropCandidate ? handleDropCandidate : undefined}
+        onMoveEvent={onMoveEvent ? handleMoveEvent : undefined}
+      />
 
       {footer && <div className="pt-2 text-[10px] text-muted-foreground">{footer}</div>}
     </div>
@@ -968,4 +1133,6 @@ export {
   movedStart,
   startOfLocalDay,
   addDays,
+  VIRTUALIZE_DAYS_AFTER,
+  ESTIMATED_DAY_ROW_PX,
 };

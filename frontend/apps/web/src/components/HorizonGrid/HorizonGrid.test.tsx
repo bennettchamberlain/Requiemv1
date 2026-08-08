@@ -704,6 +704,21 @@ describe('HorizonGrid — reachable without a pointer', () => {
   });
 });
 
+describe('HorizonGrid — long horizon virtualization', () => {
+  it('keeps week views fully mounted without a scroll pane', () => {
+    const { container } = render(<HorizonGrid start={MONDAY} days={7} events={[]} rhythm={[]} />);
+
+    expect(container.querySelector('.overflow-y-auto')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('listitem', { name: /August/ })).toHaveLength(7);
+  });
+
+  it('virtualizes day rows once the horizon exceeds two weeks', () => {
+    const { container } = render(<HorizonGrid start={MONDAY} days={21} events={[]} rhythm={[]} />);
+
+    expect(container.querySelector('.overflow-y-auto')).toBeInTheDocument();
+  });
+});
+
 describe('HorizonGrid — dropping a slate candidate', () => {
   /** jsdom gives every element a zero-width box; give the lanes a real one. */
   function stubLaneWidths(container: HTMLElement, width = 1000, left = 0) {
