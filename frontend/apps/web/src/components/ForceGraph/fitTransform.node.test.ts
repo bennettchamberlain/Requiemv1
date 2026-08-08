@@ -139,7 +139,11 @@ describe('fitTransform', () => {
   it('does not magnify a two-node graph until it outgrows the page', () => {
     // What an entity page shows when its subject has exactly one relationship. Framed to fill the
     // canvas, the pair reaches MAX_ZOOM and draws `text-xs` labels larger than the page's own h1.
-    const pair = fitTransform([node(400, 300, 'Audrey Friedman'), node(430, 260, 'Hanzla Mateen')], WIDTH, HEIGHT);
+    const pair = fitTransform(
+      [node(400, 300, 'Audrey Friedman'), node(430, 260, 'Hanzla Mateen')],
+      WIDTH,
+      HEIGHT,
+    );
 
     if (!pair) {
       throw new Error('expected a fit');

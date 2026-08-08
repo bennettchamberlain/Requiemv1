@@ -63,7 +63,7 @@ echo "Starting CI-HBPE services..."
 
 # Start the FastAPI histogram API in the background
 echo "Starting HBPE API on port 8002..."
-uvicorn ci.api:app --host 0.0.0.0 --port 8002 &
+uvicorn ci.hbpe.api:app --host 0.0.0.0 --port 8002 &
 API_PID=$!
 
 # Give the API a moment to start
@@ -71,7 +71,7 @@ sleep 2
 
 # Start the Temporal worker in the background
 echo "Starting HBPE Temporal worker..."
-python -m ci.worker &
+python -m ci.hbpe.worker &
 WORKER_PID=$!
 
 shutdown() {

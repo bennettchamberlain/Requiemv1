@@ -121,7 +121,10 @@ export function ModelSection() {
             <div className="space-y-4 border-t border-border pt-4">
               <div className="grid gap-2">
                 <Label htmlFor="llm-backend">Backend</Label>
-                <Select value={backend} onValueChange={(value) => handleBackendChange(value as LlmBackendKind)}>
+                <Select
+                  value={backend}
+                  onValueChange={(value) => handleBackendChange(value as LlmBackendKind)}
+                >
                   <Select.Trigger id="llm-backend" className="w-full">
                     <Select.Value />
                   </Select.Trigger>
@@ -165,7 +168,11 @@ export function ModelSection() {
               )}
 
               <div className="flex items-center gap-3">
-                <Button type="button" disabled={!endpointDirty || saving} onClick={() => void handleSaveEndpoint()}>
+                <Button
+                  type="button"
+                  disabled={!endpointDirty || saving}
+                  onClick={() => void handleSaveEndpoint()}
+                >
                   {saving ? 'Saving…' : 'Save endpoint'}
                 </Button>
                 {saved && <span className="text-sm text-teal-700 dark:text-teal-300">Saved</span>}
@@ -181,8 +188,8 @@ export function ModelSection() {
         <Card.Content className="space-y-6 pt-6">
           {modelsUnavailable ? (
             <p className="text-sm text-destructive">
-              Couldn&apos;t load the available models. Check that the LLM service is reachable on port {port} and try
-              again.
+              Couldn&apos;t load the available models. Check that the LLM service is reachable on port {port}{' '}
+              and try again.
             </p>
           ) : (
             <>

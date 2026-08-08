@@ -311,7 +311,9 @@ async function executeChunk<Entity extends ObjectLiteral>(
       triples.forEach((triple, i) => {
         const systemParam = `${prefix}_system_${i}`;
         const systemCond =
-          triple.sourceSystem == null ? `${alias}.${systemCol} IS NULL` : `${alias}.${systemCol} = :${systemParam}`;
+          triple.sourceSystem == null
+            ? `${alias}.${systemCol} IS NULL`
+            : `${alias}.${systemCol} = :${systemParam}`;
 
         b.orWhere(
           `(${alias}.${typeCol} = :${prefix}_type_${i}` +

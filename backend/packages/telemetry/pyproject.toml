@@ -1,0 +1,24 @@
+# Shared library. Consumed by ci-hbpe and ci-summary; see the root
+# pyproject.toml for the naming and layout conventions.
+#
+# Unlike the services, this package is not in the mypy quarantine: it is
+# checked strictly, and so is anything else added under backend/packages.
+
+[project]
+name = "ci-telemetry"
+version = "0.1.0"
+description = "Sentry error reporting shared by the CI-Server Python services"
+requires-python = ">=3.11"
+dependencies = [
+    # Inert unless SENTRY_DSN is set. The module also tolerates the package
+    # being absent entirely so a slimmed install still boots.
+    "sentry-sdk>=2.20",
+]
+
+[tool.uv.build-backend]
+module-name = "ci.telemetry"
+namespace = true
+
+[build-system]
+requires = ["uv_build>=0.9,<0.10"]
+build-backend = "uv_build"

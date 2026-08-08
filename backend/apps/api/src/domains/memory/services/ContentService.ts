@@ -266,7 +266,9 @@ export class ContentService {
           distinctTriples.forEach((triple, i) => {
             const systemParam = `evt_system_${i}`;
             const systemCond =
-              triple.sourceSystem == null ? 'event.sourceSystem IS NULL' : `event.sourceSystem = :${systemParam}`;
+              triple.sourceSystem == null
+                ? 'event.sourceSystem IS NULL'
+                : `event.sourceSystem = :${systemParam}`;
 
             qb.orWhere(
               `(event.sourceType = :evt_type_${i}` +

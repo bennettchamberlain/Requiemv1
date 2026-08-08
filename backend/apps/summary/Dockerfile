@@ -1,3 +1,14 @@
+# Built from the repository root, not this directory: ci-summary installs
+# ci-telemetry from backend/packages/telemetry, which a context rooted here
+# could not reach. See the `build` target in the Makefile for the context.
+
+# The uv version comes from required-version in the root pyproject.toml;
+# `make build` extracts it and passes it as UV_VERSION. There is no default
+# on purpose: a bare `docker build` fails at the FROM below rather than
+# building with a uv the rest of the toolchain is not pinned to.
+ARG UV_VERSION
+FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
+
 FROM python:3.11.12-slim-bookworm
 
 WORKDIR /app
@@ -10,21 +21,46 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv
-COPY --from=ghcr.io/astral-sh/uv:0.5.18 /uv /usr/local/bin/uv
+COPY --from=uv /uv /usr/local/bin/uv
 
-# Copy dependency files first for better caching
-COPY pyproject.toml uv.lock ./
+# Install into the system interpreter rather than a virtualenv, so the
+# entrypoint can invoke `uvicorn` and `python -m` directly with no
+# activation step.
+ENV UV_PROJECT_ENVIRONMENT=/usr/local \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
 
-# Install dependencies from lock file (without project structure)
-RUN uv pip install --system --no-cache -r pyproject.toml
+# Dependency layer. Only the manifests and the lock, so it stays cached
+# until a dependency actually changes rather than on every source edit.
+#
+# Only the manifests this image resolves are copied: the root pair, this
+# service, and the workspace members it depends on. Unrelated members stay
+# out, so their manifest edits do not invalidate this layer.
+COPY pyproject.toml uv.lock .python-version ./
+COPY backend/apps/summary/pyproject.toml ./backend/apps/summary/pyproject.toml
+COPY backend/packages/telemetry/pyproject.toml ./backend/packages/telemetry/pyproject.toml
 
-# Copy application code
-COPY src/ ./src/
-COPY entrypoint.sh ./
+# --frozen installs exactly what uv.lock records without validating the
+# lock against the manifests, which is what allows the partial copy above:
+# validation would demand every member's pyproject.toml. Lock freshness is
+# still enforced, one level up, where the whole workspace exists: `make
+# build` runs `uv lock --check` before building any image, and CI runs
+# `uv sync --all-packages --locked`.
+#
+# --no-install-workspace, not --no-install-project: this service depends on
+# the ci-telemetry workspace member, whose source has not been copied yet.
+# Skipping only the project would make uv try to build it from an empty
+# directory.
+RUN uv sync --frozen --package ci-summary --no-install-workspace --no-dev
 
-# Make entrypoint executable and set ownership
-RUN chmod +x entrypoint.sh && chown -R memorizer:memorizer /app
+COPY backend/apps/summary/src ./backend/apps/summary/src
+COPY backend/packages/telemetry/src ./backend/packages/telemetry/src
+
+RUN uv sync --frozen --package ci-summary --no-dev --no-editable
+
+COPY --chmod=755 backend/apps/summary/entrypoint.sh ./entrypoint.sh
+
+RUN chown -R memorizer:memorizer /app
 
 USER memorizer
 
@@ -37,7 +73,8 @@ EXPOSE 8002
 #
 # Secrets are loaded from a shared secrets file or
 # from environment variables set by Docker Compose.
-# Non-secret config (models, etc.) lives in src/config.py.
+# Non-secret config (models, etc.) lives in
+# src/ci/summary/config.py.
 #
 # Required (no default — will not start without these):
 #   DATABASE_PASSWORD          PostgreSQL password (if DATABASE_URL not set)

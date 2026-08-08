@@ -133,7 +133,7 @@ For testing and debugging, you can manually trigger summary generation without g
 
 ```bash
 # Start the API server
-uvicorn src.api:app --reload
+uvicorn ci.summary.api:app --reload
 
 # Trigger a summary (defaults to last hour)
 curl -X POST http://localhost:8000/summary/manual-trigger \

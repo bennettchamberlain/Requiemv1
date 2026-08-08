@@ -333,7 +333,11 @@ export function PlacesPage() {
         ) : (
           <div className="flex flex-col gap-2">
             {places.map((place) => (
-              <PlaceRow key={place.id} place={place} onOpen={() => navigate(`/places/${GlobalUID.parse('place', place.id)}`)} />
+              <PlaceRow
+                key={place.id}
+                place={place}
+                onOpen={() => navigate(`/places/${GlobalUID.parse('place', place.id)}`)}
+              />
             ))}
           </div>
         )}
