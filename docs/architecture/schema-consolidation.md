@@ -1,6 +1,6 @@
 # Schema consolidation (LifeScope audit)
 
-**Status:** in progress on `chore/schema-consolidation`  
+**Status:** Waves A–E landed on `chore/schema-consolidation`  
 **Source audit:** [lifescope-vs-ci-server-schema.html](./lifescope-vs-ci-server-schema.html)
 
 ## Hypertable exceptions (already landed, do not reopen)
@@ -15,12 +15,17 @@ See [hypertable-audit.md](./hypertable-audit.md) and ADR-0002.
 
 ## Waves
 
-| Wave | Commits | Intent |
-|------|---------|--------|
-| A | Drop dead `agents` / `agent_messages`; user-scoped events arbiter; delete dead/dupe entities; rename graph `FileEntity` | Near-zero blast |
-| B | Restore `ci.content.event_id` FK + `Event.contents`; analytics side table | Integrity |
-| C | One entity-type vocab + tenancy ADR; Person columns; location dedup | Coherence |
-| D | Fold `browser_activity`; `/v1` default → `ci.events` | Timeline |
-| E | `COMMENT` on write-only commerce tables; refresh Database.md | Honesty |
+| Wave | Status | Intent |
+|------|--------|--------|
+| A | **done** | Drop dead `agents` / `agent_messages`; user-scoped events arbiter; delete dead/dupe entities; rename graph `FileEntity` |
+| B | **done** | Restore `ci.content.event_id` FK + `Event.contents`; analytics side table `ci.event_analytics` |
+| C | **done** | One entity-type vocab + tenancy ADR-0003; Person typed columns; location snap dedup |
+| D | **done** | Fold `browser_activity` → events+content (backfill + dual-write); `/v1` prefers timeline |
+| E | **done** | `COMMENT` on write-only commerce tables; refresh Database.md |
 
 Do not break smart-rotation tables (`questions`, `answers`, `feed_queue`, `summaries`, `actions`, `tasks`).
+
+## Follow-ups (not in this branch)
+
+- Drop `ci.browser_activity` after dual-read consumers move to events/content
+- Rename remaining `owner_user_id` columns only if a dedicated blast-radius wave is scheduled (see ADR-0003)
