@@ -117,9 +117,6 @@ extend-immutable-calls = [
 # Strict by default, so new code is born typed. Services that predate the
 # workspace are relaxed by module rather than by path, so the exemption
 # travels with the code if it moves and shrinks as annotations land.
-#
-# `files` grows as each member joins. Mypy is not run until there is a
-# member to check.
 
 [tool.mypy]
 python_version = "3.11"
@@ -128,18 +125,18 @@ namespace_packages = true
 explicit_package_bases = true
 warn_unused_configs = true
 
-# Both lists grow as members join. mypy_path is what makes a file resolve
-# to ci.summary.config rather than a path-derived module name, which is
-# what the per-module overrides below have to match.
-mypy_path = [
-    "backend/apps/hbpe/src",
-    "backend/apps/summary/src",
-    "backend/packages/telemetry/src",
-]
-files = [
-    "backend/apps/hbpe/src",
-    "backend/apps/summary/src",
-    "backend/packages/telemetry/src",
+# Members are checked as installed packages, resolved through the editable
+# installs that `uv sync` writes into the venv, so there are no path lists
+# to keep aligned. Each entry names a member's import package; the member
+# must ship a py.typed marker or mypy refuses to look at it (PEP 561).
+#
+# `packages = ["ci"]` looks tempting but silently checks only the first
+# namespace portion mypy finds on the search path — one member instead of
+# all of them — so every member is named here.
+packages = [
+    "ci.hbpe",
+    "ci.summary",
+    "ci.telemetry",
 ]
 
 [[tool.mypy.overrides]]
@@ -171,11 +168,12 @@ ignore_missing_imports = true
 
 # ── Pytest ───────────────────────────────────────────────────────────
 
+# testpaths expands globs, so a new member's tests directory is collected
+# without touching this file.
 [tool.pytest.ini_options]
 testpaths = [
-    "backend/apps/hbpe/tests",
-    "backend/apps/summary/tests",
-    "backend/packages/telemetry/tests",
+    "backend/apps/*/tests",
+    "backend/packages/*/tests",
 ]
 asyncio_default_fixture_loop_scope = "function"
 
