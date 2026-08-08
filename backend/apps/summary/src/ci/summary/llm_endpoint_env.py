@@ -5,13 +5,13 @@ The API persists shared config to ${APP_DATA_DIR}/data/llm-endpoint.json when
 APP_DATA_DIR is mounted at /app-data. Summary reads it before Settings() so
 LLM_API_BASE / LLM_API_KEY match the API container (chat, actions, insights).
 """
+
 from __future__ import annotations
 
 import json
 import logging
 import os
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
