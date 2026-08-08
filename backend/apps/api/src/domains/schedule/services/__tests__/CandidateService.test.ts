@@ -452,14 +452,26 @@ describe('CandidateService', () => {
       expect(result.feedbackReason).toBe('never');
     });
 
-    it('keeps a "wrong time" rejection recoverable and records the reason', async () => {
+    it('defers a "wrong time" rejection so the card can resurface later', async () => {
       await setup();
       repo.findOne.mockResolvedValue(baseCandidate());
 
       const result = await service.decline(ctx, 'cand-1', 'wrong_time');
 
-      expect(result.status).toBe('declined');
+      expect(result.status).toBe('snoozed');
       expect(result.feedbackReason).toBe('wrong_time');
+      expect(result.snoozedUntil).toBeInstanceOf(Date);
+      expect(result.snoozedUntil!.getTime()).toBeGreaterThan(Date.now());
+    });
+
+    it('defers "not_now" the same way drag-to-dismiss expects', async () => {
+      await setup();
+      repo.findOne.mockResolvedValue(baseCandidate());
+
+      const result = await service.decline(ctx, 'cand-1', 'not_now');
+
+      expect(result.status).toBe('snoozed');
+      expect(result.feedbackReason).toBe('not_now');
     });
 
     it('refuses to decline something already accepted', async () => {

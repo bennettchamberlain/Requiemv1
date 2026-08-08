@@ -11,7 +11,13 @@ import { EventCandidateEntity, type EventCandidate } from '../entities/EventCand
 import { type CreateCandidateDto, type DeclineReason, USER_AUTHORED_GENERATOR_PREFIX } from '../types';
 
 /** Reasons that retire a candidate permanently rather than just for now. */
-const PERMANENT_DECLINES: ReadonlySet<DeclineReason> = new Set(['never']);
+const PERMANENT_DECLINES: ReadonlySet<DeclineReason> = new Set(['never', 'not_like_this']);
+
+/** Defer durations for reasons that mean "try again later", not "never". */
+const DEFERRAL_HOURS: Partial<Record<DeclineReason, number>> = {
+  not_now: 24,
+  wrong_time: 6,
+};
 
 /** Fresh window for a returned candidate whose original one has already closed. */
 const RETURNED_WINDOW_DAYS = 7;
@@ -334,11 +340,14 @@ export class CandidateService {
   }
 
   /**
-   * Record a rejection. `never` retires the idea for good; everything else marks
-   * it declined for this round, and the reason is what the proposer learns from —
-   * "wrong time" is far more useful feedback than a silent disappearance.
+   * Record a rejection. `never` and `not_like_this` retire the idea; `not_now`
+   * and `wrong_time` defer via snooze so the slate can surface the card again
+   * after a cooling-off period — drag-to-dismiss uses `not_now`, and treating
+   * that as a permanent decline made every dismissal behave like "never".
    */
   async decline(context: UserServiceContext, id: string, reason: DeclineReason): Promise<EventCandidate> {
+    const deferHours = DEFERRAL_HOURS[reason];
+
     const candidate = await this.candidateRepository.findOne({
       where: { id, userId: context.userId },
     });
@@ -347,12 +356,25 @@ export class CandidateService {
       throw new NotFoundException(`Candidate ${id} not found`);
     }
 
-    // Same guard as snooze(): moving an accepted row off `accepted` while it
-    // still holds promoted_event_id violates the promotion-consistency check,
-    // and would abandon the event it minted with nothing pointing at it.
-    // returnToSlate is the way back out of committed time.
     if (candidate.status === 'accepted') {
       throw new BadRequestException(`Candidate ${id} was already accepted`);
+    }
+
+    if (deferHours !== undefined) {
+      const until = new Date(Date.now() + deferHours * 3_600_000);
+
+      if (until.getTime() <= Date.now()) {
+        throw new BadRequestException('`until` must be in the future');
+      }
+
+      candidate.status = 'snoozed';
+      candidate.snoozedUntil = until;
+      candidate.feedbackReason = reason;
+      candidate.feedbackAt = new Date();
+
+      const saved = await this.candidateRepository.save(candidate);
+
+      return EventCandidateEntity.toEgressType(saved);
     }
 
     candidate.status = PERMANENT_DECLINES.has(reason) ? 'never' : 'declined';
