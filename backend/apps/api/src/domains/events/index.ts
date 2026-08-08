@@ -55,4 +55,6 @@ export { EventService, LocalEventService };
 export { OnEvent } from './decorators/OnEvent';
 export { Events, type EventPayloads } from './event-registry';
 export type { EventRegistry } from './registry';
+export type { EventSendOptions } from './types';
+export { DEFAULT_JOB_PRIORITY } from './constants';
 export { defineEvent } from './event-registration';

@@ -26,12 +26,14 @@ import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule } from '@ci/domains/memory';
 import { ToolsModule } from '@ci/domains/tools';
 
+import { LlmEndpointController } from './controllers/LlmEndpointController';
 import { OllamaController } from './controllers/OllamaController';
 import { AnswerInferenceCron } from './cron/AnswerInferenceCron';
 import { AnswerInferenceListener } from './listeners/AnswerInferenceListener';
 import { CvDetectionsListener } from './listeners/CvDetectionsListener';
 import { ImageDescriptionListener } from './listeners/ImageDescriptionListener';
 import { InventoryListener } from './listeners/InventoryListener';
+import { LlmEndpointService } from './services/LlmEndpointService';
 import { OllamaService } from './services/OllamaService';
 
 /**
@@ -45,10 +47,11 @@ import { OllamaService } from './services/OllamaService';
     CvDetectionsListener,
     ImageDescriptionListener,
     InventoryListener,
+    LlmEndpointService,
     OllamaService,
   ],
-  controllers: [OllamaController],
-  exports: [OllamaService],
+  controllers: [OllamaController, LlmEndpointController],
+  exports: [OllamaService, LlmEndpointService],
 })
 export class LLMModule {}
 

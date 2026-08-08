@@ -2,16 +2,15 @@ import { type ReactNode, useState } from 'react';
 
 import { useQuery } from '@apollo/client';
 import { GlobalUID, LoadingPage, Portal, usePageTitle, EmptyState } from '@ci/common';
-import { Breadcrumb, Card, Label, Textarea, Toggle, cn } from '@ci/shadcn';
+import { Breadcrumb, Card, Label, Toggle } from '@ci/shadcn';
 import { Pencil, User } from '@ci/shadcn/icons';
 import { useParams, Link } from 'react-router-dom';
 
-import { useTagEntityService } from '@/api';
 import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
+import { EntityTagsDescriptionCard } from '@/components/EntityTagsDescriptionCard';
 import { CommunicationIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import { Tag } from '@/components/Tag';
-import { TagInput } from '@/components/TagInput';
 import { gql } from '@/graphql';
 
 const GET_COMMUNICATION = gql(`
@@ -53,8 +52,6 @@ export function CommunicationPage() {
       id: GlobalUID.encode('communication', id!),
     },
   });
-
-  const { tagEntities, untagEntities } = useTagEntityService();
 
   const communication = data?.communication;
 
@@ -108,70 +105,41 @@ export function CommunicationPage() {
             </Card>
           </div>
 
-          <Card className="p-0 h-full">
-            <Card.Content className="p-4 flex flex-col gap-6">
-              {communication.from && (
-                <div className="flex flex-col gap-2">
-                  <Label>From</Label>
-                  <Link to={`/people/${GlobalUID.parse('person', communication.from.id)}`}>
-                    <Tag icon={<User />} className="text-sm" text={communication.from.name ?? ''} />
-                  </Link>
-                </div>
-              )}
-
-              {communication.to.edges.length > 0 && (
-                <div className="flex flex-col gap-2">
-                  <Label>To</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {communication.to.edges.map(({ node }) => (
-                      <Link key={node.id} to={`/people/${GlobalUID.parse('person', node.id)}`}>
-                        <Tag icon={<User />} className="text-sm cursor-pointer" text={node.name ?? ''} />
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <Label htmlFor="description">Summary</Label>
-                <Textarea
-                  key={communication.id}
-                  id="preview"
-                  defaultValue={communication.preview ?? ''}
-                  readOnly={!editMode}
-                  className={cn(
-                    'resize-none min-h-[120px]',
-                    editMode ? '' : 'shadow-none focus-visible:ring-0 focus-visible:border-border',
-                  )}
-                />
+          <EntityTagsDescriptionCard
+            entityType="communication"
+            entityId={id!}
+            resetKey={communication.id}
+            tags={communication.tags.map((t) => t.label)}
+            description={communication.preview}
+            descriptionLabel="Summary"
+            editMode={editMode}
+            className="h-full"
+          >
+            {communication.from && (
+              <div className="flex flex-col gap-2">
+                <Label>From</Label>
+                <Link to={`/people/${GlobalUID.parse('person', communication.from.id)}`}>
+                  <Tag icon={<User />} className="text-sm" text={communication.from.name ?? ''} />
+                </Link>
               </div>
+            )}
 
-              <div className="space-y-2">
-                <Label>Tags</Label>
-
-                <TagInput
-                  key={communication.id}
-                  tags={communication.tags.map((t) => t.label) ?? []}
-                  readOnly={!editMode}
-                  onTagAdded={async (label) => {
-                    try {
-                      await tagEntities([GlobalUID.encode('communication', id!)], [label]);
-
-                      return true;
-                    } catch {
-                      return false;
-                    }
-                  }}
-                  onTagRemoved={async (label) => {
-                    await untagEntities([GlobalUID.encode('communication', id!)], [label]);
-                  }}
-                />
+            {communication.to.edges.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <Label>To</Label>
+                <div className="flex flex-wrap gap-2">
+                  {communication.to.edges.map(({ node }) => (
+                    <Link key={node.id} to={`/people/${GlobalUID.parse('person', node.id)}`}>
+                      <Tag icon={<User />} className="text-sm cursor-pointer" text={node.name ?? ''} />
+                    </Link>
+                  ))}
+                </div>
               </div>
-            </Card.Content>
-          </Card>
+            )}
+          </EntityTagsDescriptionCard>
         </div>
 
-        <EntityEvolutionPanel entityId={id!} />
+        <EntityEvolutionPanel entityId={id!} entityName={communication.subject} />
       </PageContent>
     );
   }

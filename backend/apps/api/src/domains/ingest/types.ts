@@ -103,7 +103,7 @@ export const bulkCommunicationRecordSchema = z.object({
   is_encrypted: z.boolean().optional(),
   is_archived: z.boolean().optional(),
   preview: z.string().optional(),
-  // Provenance triple for idempotent re-ingest (communications_source_dedup).
+  // Provenance triple for idempotent re-ingest (communications_source_triple_uniq).
   source_type: z.string().optional(),
   source_system: z.string().optional(),
   source_id: z.string().optional(),

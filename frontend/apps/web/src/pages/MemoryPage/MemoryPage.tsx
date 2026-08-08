@@ -23,6 +23,11 @@ export function MemoryPage() {
           searchQuery: searchParams.get('search') || '',
           includeTypes: searchParams.get('includedEntityTypes')?.split(',').filter(Boolean) || undefined,
           excludeTypes: searchParams.get('excludedEntityTypes')?.split(',').filter(Boolean) || undefined,
+          // The gallery (`?view=gallery`) is a media surface: opt standalone
+          // files (e.g. Capture screenshots with no linked event) into the
+          // browse, which excludes them by default. Mirrors the map's derived
+          // hasLocation below rather than writing a URL param.
+          includeFiles: searchParams.get('view') === 'gallery' || undefined,
           eventTypes: searchParams.get('eventTypes')?.split(',').filter(Boolean) || undefined,
           tags: searchParams.get('tags')?.split(',').filter(Boolean) || undefined,
           startTime: searchParams.get('from') || undefined,

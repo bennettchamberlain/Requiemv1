@@ -52,6 +52,8 @@ function makeResolver() {
     browserActivityService,
     communicationService,
     entityResolutionService,
+    fileService,
+    fileChunkService,
   };
 }
 
@@ -157,15 +159,51 @@ describe('SearchResolver.search — combinable filters', () => {
   });
 
   it('falls back to recent timed entities when no filter signal is provided', async () => {
-    const { resolver, eventService, browserActivityService, communicationService } = makeResolver();
+    const { resolver, eventService, browserActivityService, communicationService, fileService } =
+      makeResolver();
 
     await resolver.search(ctx, {} as SearchInput);
 
     expect(eventService.getEntitiesForEvents).toHaveBeenCalledTimes(1);
     expect(browserActivityService.getEntitiesForBrowserActivities).toHaveBeenCalledTimes(1);
     expect(communicationService.getEntitiesForCommunications).toHaveBeenCalledTimes(1);
+    // Files stay out of the default browse (documents/screenshots would bury it).
+    expect(fileService.getEntitiesForFiles).not.toHaveBeenCalled();
     // No filters -> end bound to "now" so recent items are returned, not all history.
     const eventOptions = eventService.getEntitiesForEvents.mock.calls[0][1] as { endTime?: Date };
     expect(eventOptions.endTime).toBeInstanceOf(Date);
+  });
+
+  // Regression: the gallery showed no images because standalone media files
+  // (e.g. Capture screenshots with no linked event) were opted out of the
+  // query-less browse and the gallery had no way to pull them in without
+  // narrowing the whole result to files (includeTypes: ['file']).
+  describe('includeFiles (gallery browse)', () => {
+    it('interleaves files with the other timed types instead of replacing them', async () => {
+      const { resolver, eventService, fileService, fileChunkService, entityResolutionService } =
+        makeResolver();
+      eventService.getEntitiesForEvents.mockResolvedValue([{ type: 'event', id: 'e1' }]);
+      fileService.getEntitiesForFiles.mockResolvedValue([{ type: 'file', id: 'f1' }]);
+
+      await resolver.search(ctx, { includeFiles: true } as SearchInput);
+
+      expect(eventService.getEntitiesForEvents).toHaveBeenCalledTimes(1);
+      expect(fileService.getEntitiesForFiles).toHaveBeenCalledTimes(1);
+      // File chunks stay includeTypes-only — a document's many same-timestamp
+      // chunks would still bury the browse.
+      expect(fileChunkService.getEntitiesForFileChunks).not.toHaveBeenCalled();
+      expect(idsResolvedTo(entityResolutionService.resolve)).toEqual([
+        { type: 'event', id: 'e1' },
+        { type: 'file', id: 'f1' },
+      ]);
+    });
+
+    it('still honours an explicit type filter that excludes files', async () => {
+      const { resolver, fileService } = makeResolver();
+
+      await resolver.search(ctx, { includeFiles: true, excludeTypes: ['file'] } as SearchInput);
+
+      expect(fileService.getEntitiesForFiles).not.toHaveBeenCalled();
+    });
   });
 });

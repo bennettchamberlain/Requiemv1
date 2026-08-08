@@ -155,13 +155,13 @@
     "jobs.page": false,
     "planning.enabled": false,
     "planning.page": false,
-    "stats.page": false,
+    "stats.page": true,
     "tags.page": true,
     "hbpe": true,
     "agent.memory.compaction": false,
     "shared.search": false,
     "onboarding.preference.steps": false,
-    "actions": false
+    "actions": true
   },
   "environment": {
     "database.query.logging": false
