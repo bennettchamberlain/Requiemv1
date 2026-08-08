@@ -157,6 +157,14 @@ HBPE_DOCKERFILE := $(HBPE_DOCKERFILE_$(GPU))
 # UV_VERSION; setup-uv in CI reads the same field on its own.
 UV_VERSION := $(shell sed -n 's/^required-version = "==\(.*\)"$$/\1/p' pyproject.toml)
 
+# The llama-cpp-python pin: a commit on the JamePeng fork, which tracks
+# llama.cpp HEAD and can load Qwen3.5 GGUFs (the official PyPI package is
+# frozen at llama.cpp Aug 2025 and cannot). All three HBPE images build
+# this same commit with hardware-specific CMake flags; the pin lives here
+# because the install happens only in Dockerfiles, passed as a build arg.
+# Bump deliberately: the fork moves fast and is our inference stack.
+LLAMA_CPP_PYTHON_REF := 81190b03f6d177988112dad5fc919491a77705d1
+
 
 define BANNER
    ______                                  _
@@ -264,7 +272,7 @@ build: ## Build images. ENV=local|staging|production (default local) GPU=cpu|cud
 	@docker build -f backend/apps/summary/Dockerfile --build-arg UV_VERSION=$(UV_VERSION) $(call versioned_tag,$(SUMMARY_REPO)) -t $(SUMMARY_REPO):latest .
 
 	@printf "\n➤ Building HBPE service image ($(GPU))...\n\n"
-	@docker build -f backend/apps/hbpe/$(HBPE_DOCKERFILE) --build-arg UV_VERSION=$(UV_VERSION) $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest .
+	@docker build -f backend/apps/hbpe/$(HBPE_DOCKERFILE) --build-arg UV_VERSION=$(UV_VERSION) --build-arg LLAMA_CPP_PYTHON_REF=$(LLAMA_CPP_PYTHON_REF) $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest .
 
 	@$(MAKE) clean-license
 

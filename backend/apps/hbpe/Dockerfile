@@ -83,18 +83,24 @@ RUN uv sync --frozen --package ci-hbpe --no-install-workspace --no-dev
 # JamePeng's fork tracks llama.cpp HEAD and has confirmed Qwen3.5 support.
 #
 # This cannot move into pyproject.toml and the lock: it needs a per-package
-# build environment variable, which uv has no way to express.
+# build environment variable, which uv has no way to express. All three HBPE
+# images build the same fork commit — pinned by LLAMA_CPP_PYTHON_REF in the
+# Makefile, passed as a build arg — with hardware-specific CMake flags, so
+# every hardware variant runs the same inference stack. The ${VAR:?} guard
+# fails the build if the arg is missing rather than tracking the fork's HEAD.
 #
 # There are no pre-built Linux aarch64 wheels — must build from source.
 # GGML_NATIVE=OFF disables -mcpu=native which probes for CPU features (DOTPROD,
 # FP16, SVE) that the Docker aarch64 VM doesn't expose — without it the build
 # enables those extensions but the assembler rejects them at compile time.
-# For native macOS dev (outside Docker) install with Metal instead:
+# For native macOS dev (outside Docker) install with Metal instead, at the
+# same commit the Makefile pins:
 #   CMAKE_ARGS="-DGGML_METAL=ON" FORCE_CMAKE=1 uv pip install \
-#     "llama-cpp-python @ git+https://github.com/JamePeng/llama-cpp-python.git"
+#     "llama-cpp-python @ git+https://github.com/JamePeng/llama-cpp-python.git@<ref>"
+ARG LLAMA_CPP_PYTHON_REF
 RUN CMAKE_ARGS="-DGGML_NATIVE=OFF" FORCE_CMAKE=1 \
     uv pip install --no-cache \
-      "llama-cpp-python @ git+https://github.com/JamePeng/llama-cpp-python.git"
+      "llama-cpp-python @ git+https://github.com/JamePeng/llama-cpp-python.git@${LLAMA_CPP_PYTHON_REF:?set by make build}"
 
 COPY LICENSE.md /LICENSE.md
 

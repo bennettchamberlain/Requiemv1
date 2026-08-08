@@ -62,11 +62,15 @@ RUN uv pip install --no-cache \
     torch==2.2.0 torchvision \
     --index-url https://download.pytorch.org/whl/cu121
 
-# llama-cpp-python for inference. CMAKE_ARGS enables the GGML CUDA backend,
-# which is why this cannot live in pyproject.toml: uv has no way to set a
-# per-package build environment variable.
+# llama-cpp-python (JamePeng fork — required for Qwen3.5 support), the same
+# pinned commit every HBPE image builds (LLAMA_CPP_PYTHON_REF in the
+# Makefile), here with the GGML CUDA backend. Previously this image took the
+# official PyPI package, which is frozen at llama.cpp Aug 2025 and cannot
+# load Qwen3.5 GGUFs — the CPU image could and this one could not.
+ARG LLAMA_CPP_PYTHON_REF
 RUN CMAKE_ARGS="-DGGML_CUDA=on" FORCE_CMAKE=1 \
-    uv pip install --no-cache "llama-cpp-python>=0.2.56"
+    uv pip install --no-cache \
+      "llama-cpp-python @ git+https://github.com/JamePeng/llama-cpp-python.git@${LLAMA_CPP_PYTHON_REF:?set by make build}"
 
 # Flash Attention 2 — used during Phase 2 HMT training only.
 # Requires torch to be pre-installed (hence the ordering).
