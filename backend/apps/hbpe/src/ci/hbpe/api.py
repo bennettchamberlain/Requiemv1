@@ -195,8 +195,13 @@ async def forecast(
     horizon: str = Query("7d", description="Forecast window (only '7d' supported)"),
     include_today: bool = Query(
         False,
-        description="Start the window at today (UTC) instead of tomorrow. For "
-        "calendar surfaces that must render a row for today.",
+        description="Start the window at today (in the user's timezone) instead of "
+        "tomorrow. For calendar surfaces that must render a row for today.",
+    ),
+    timezone: str | None = Query(
+        None,
+        description="IANA timezone for calendar-day boundaries (e.g. America/Los_Angeles). "
+        "Defaults to UTC when omitted.",
     ),
 ) -> dict:
     """
@@ -219,11 +224,18 @@ async def forecast(
         )
 
     import datetime
+    from zoneinfo import ZoneInfo
 
     from ci.hbpe.pipeline.recurrence import log_occurrence_forecast, week_forecast
 
     try:
-        now = datetime.datetime.utcnow()
+        try:
+            tz = ZoneInfo(timezone) if timezone else datetime.UTC
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400, detail=f"Invalid timezone: {timezone}"
+            ) from exc
+        now = datetime.datetime.now(tz)
         today = now.date()
         start = today if include_today else today + datetime.timedelta(days=1)
         days = week_forecast(user_id, days=7, start=start)
@@ -232,7 +244,9 @@ async def forecast(
         # elapsed day against an occurrence prediction issued mid-day would bias
         # the reliability curve (CI-Server-h0m), so today never enters the log.
         loggable = [d for d in days if d["date"] > today.isoformat()]
-        log_occurrence_forecast(user_id, loggable, predicted_at=now)
+        log_occurrence_forecast(
+            user_id, loggable, predicted_at=now.astimezone(datetime.UTC)
+        )
 
         return {
             "horizon": horizon,

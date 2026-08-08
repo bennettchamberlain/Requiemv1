@@ -6,6 +6,7 @@ import { FeatureService } from '@ci/common/feature';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { HbpeService } from '@ci/domains/predictions';
+import { UserService } from '@ci/domains/user';
 
 import { DueForecastType } from '../types/DueForecastType';
 import { ForecastType } from '../types/ForecastType';
@@ -16,6 +17,7 @@ import { WeekForecastType } from '../types/WeekForecastType';
 export class ForecastResolver {
   constructor(
     private readonly hbpeService: HbpeService,
+    private readonly userService: UserService,
     private readonly featureService: FeatureService,
     private readonly logger: LoggerService,
   ) {
@@ -56,7 +58,11 @@ export class ForecastResolver {
     }
 
     try {
-      const response = await this.hbpeService.getWeekForecast(toServiceContext(context), includeToday);
+      const serviceContext = toServiceContext(context);
+      const user = await this.userService.findById(serviceContext, serviceContext.userId);
+      const timezone = user?.timezone ?? 'UTC';
+
+      const response = await this.hbpeService.getWeekForecast(serviceContext, includeToday, timezone);
 
       return WeekForecastType.toType(response);
     } catch (err) {
