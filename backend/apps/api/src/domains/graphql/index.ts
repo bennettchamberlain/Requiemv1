@@ -18,6 +18,7 @@ import { MemoryModule } from '@ci/domains/memory';
 import { NotesModule } from '@ci/domains/notes';
 import { PairingModule } from '@ci/domains/pairing';
 import { ParsingModule } from '@ci/domains/parsing';
+import { PlanningModule } from '@ci/domains/planning';
 import { PredictionsModule } from '@ci/domains/predictions';
 import { ScheduleModule } from '@ci/domains/schedule';
 import { SearchNextModule } from '@ci/domains/search-next';
@@ -75,6 +76,7 @@ import { ScheduleCandidateResolver } from './resolvers/ScheduleCandidateResolver
 import { SearchResolver } from './resolvers/SearchResolver';
 import { SummaryResolver } from './resolvers/SummaryResolver';
 import { TagResolver } from './resolvers/TagResolver';
+import { TaskResolver } from './resolvers/TaskResolver';
 import { ThreadResolver } from './resolvers/ThreadResolver';
 import { UserResolver } from './resolvers/UserResolver';
 import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
@@ -104,6 +106,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     MemoryModule,
     NotesModule,
     ParsingModule,
+    PlanningModule,
     SearchNextModule,
     ScheduleModule,
     SummariesModule,
@@ -126,6 +129,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     ContentResolver,
     NodeResolver,
     NoteResolver,
+    TaskResolver,
     AnswerResolver,
     EventContentsLoader,
     EventLoader,

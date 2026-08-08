@@ -32,6 +32,7 @@ export interface PossibleTypesResultData {
       "SavedSearchConnection",
       "SummaryConnection",
       "TagConnection",
+      "TaskConnection",
       "ThreadConnection"
     ],
     "Edge": [
@@ -56,6 +57,7 @@ export interface PossibleTypesResultData {
       "SavedSearchEdge",
       "SummaryEdge",
       "TagEdge",
+      "TaskEdge",
       "ThreadEdge"
     ],
     "Node": [
@@ -83,6 +85,7 @@ export interface PossibleTypesResultData {
       "SavedSearchType",
       "SummaryType",
       "TagType",
+      "TaskType",
       "ThreadType",
       "UserType"
     ],

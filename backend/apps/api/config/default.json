@@ -153,6 +153,8 @@
     "insights.page": true,
     "chat.page": false,
     "jobs.page": false,
+    "planning.enabled": false,
+    "planning.page": false,
     "stats.page": true,
     "schedule.page": false,
     "tags.page": true,

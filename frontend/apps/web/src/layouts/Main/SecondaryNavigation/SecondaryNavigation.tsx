@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 import { Tooltip } from '@ci/shadcn';
-import { BookOpen, Brain, CalendarRange, ChartColumn, LifeBuoy, Inbox, Lightbulb, MessagesSquare, NotebookPen, FolderSearch2 } from '@ci/shadcn/icons';
+import { BookOpen, Brain, CalendarRange, ChartColumn, LifeBuoy, Inbox, Lightbulb, ListTodo, MessagesSquare, NotebookPen, FolderSearch2 } from '@ci/shadcn/icons';
 
 import { useFeatures } from '@/common/feature';
 
@@ -70,6 +70,12 @@ export function SecondaryNavigation() {
           <NavLink to="/saved-searches" label="Saved Searches">
             <FolderSearch2 className="h-6 w-6" strokeWidth={1.25} />
           </NavLink>
+
+          {isFeatureEnabled('planning.page') && (
+            <NavLink to="/plan" label="Plan">
+              <ListTodo className="h-6 w-6" strokeWidth={1.25} />
+            </NavLink>
+          )}
 
           {isFeatureEnabled('stats.page') && (
             <NavLink to="/stats" label="Stats">

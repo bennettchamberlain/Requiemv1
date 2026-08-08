@@ -20,6 +20,7 @@ type ResourceType =
   | 'saved-search'
   | 'summary'
   | 'tag'
+  | 'task'
   | 'thread'
   | 'user';
 

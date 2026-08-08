@@ -274,6 +274,13 @@ export const ConfigSchema = z.object({
     'chat.page': booleanStringSchema,
     /** Wholesale gate for the Jobs page (/jobs + nav entry points). */
     'jobs.page': booleanStringSchema,
+    /**
+     * Backend gate for the planning domain: ci.tasks, planned-block events and
+     * the planning GraphQL surface. See docs/architecture/planning-roadmap.md.
+     */
+    'planning.enabled': booleanStringSchema,
+    /** Wholesale gate for the Plan page (/plan + nav entry points). */
+    'planning.page': booleanStringSchema,
     /** Enables the memory stats page (`/stats`): timeline totals plus entity
      * breakdowns by data source and by tag. */
     'stats.page': booleanStringSchema,

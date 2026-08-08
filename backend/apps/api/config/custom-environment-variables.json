@@ -133,6 +133,8 @@
     "insights.page": "ENABLE_INSIGHTS_PAGE",
     "chat.page": "ENABLE_CHAT_PAGE",
     "jobs.page": "ENABLE_JOBS_PAGE",
+    "planning.enabled": "ENABLE_PLANNING",
+    "planning.page": "ENABLE_PLANNING_PAGE",
     "stats.page": "ENABLE_STATS_PAGE",
     "schedule.page": "ENABLE_SCHEDULE_PAGE",
     "tags.page": "ENABLE_TAGS_PAGE",

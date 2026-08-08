@@ -50,6 +50,7 @@ import { OnboardingModule } from '@ci/domains/onboarding';
 import { PairingModule } from '@ci/domains/pairing';
 import { ParsingModule } from '@ci/domains/parsing';
 import { PersonaModule } from '@ci/domains/persona';
+import { PlanningModule } from '@ci/domains/planning';
 import { PositionModule } from '@ci/domains/position';
 import { PowerSyncModule } from '@ci/domains/powersync';
 import { PredictionsModule } from '@ci/domains/predictions';
@@ -105,6 +106,7 @@ import { flushTelemetry, isTelemetryEnabled } from '@ci/instrument';
     McpModule,
     OnboardingModule,
     PersonaModule,
+    PlanningModule,
     PositionModule,
     PowerSyncModule,
     PredictionsModule,

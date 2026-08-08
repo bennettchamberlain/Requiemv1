@@ -529,6 +529,32 @@ type CreateSavedSearchPayload {
   success: Boolean!
 }
 
+input CreateTaskInput {
+  """User-local calendar date, `YYYY-MM-DD`."""
+  deferUntil: String
+  description: String
+  dueAt: DateTime
+  estimatedMinutes: Int
+  notes: String
+  parentId: ID
+
+  """0 (highest) to 5 (lowest). Defaults to 3."""
+  priority: Int
+
+  """User-local calendar date, `YYYY-MM-DD`."""
+  scheduledFor: String
+  status: TaskStatus
+
+  """Wall-clock `HH:MM`, user timezone. Zoneless."""
+  taskTime: String
+  title: String!
+}
+
+type CreateTaskPayload {
+  success: Boolean!
+  task: TaskType
+}
+
 """
 A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
 """
@@ -889,6 +915,11 @@ type Mutation {
   breakDownTasks(text: String!): [ScheduleCandidateType!]!
   bulkIngestGraph(input: BulkGraphInput!): BulkGraphPayload!
   bulkIngestItemRelationships(input: [ItemRelationshipInput!]!): BulkItemRelationshipResult!
+
+  """
+  Mark a task done. Idempotent — the original completion instant is preserved.
+  """
+  completeTask(actualMinutes: Int, id: ID!): TaskType
   createAnswer(input: CreateAnswerInput!): AnswerType!
   createAnswers(input: [CreateAnswerInput!]!): [AnswerType!]!
   createBrowserActivities(input: [CreateBrowserActivityInput!]!): [BrowserActivityType!]!
@@ -914,11 +945,17 @@ type Mutation {
   createQuestions(input: [CreateQuestionInput!]!): [QuestionType!]!
   createRelationship(input: CreateRelationshipInput!): CreateRelationshipPayload!
   createSavedSearch(input: CreateSavedSearchInput!): CreateSavedSearchPayload!
+  createTask(input: CreateTaskInput!): CreateTaskPayload!
 
   """
   Reject a candidate. reason: not_now | wrong_time | not_like_this | never
   """
   declineCandidate(id: ID!, reason: String = "not_now"): ScheduleCandidateType!
+
+  """
+  Push a task to a later user-local date (`YYYY-MM-DD`) and count the push.
+  """
+  deferTask(id: ID!, until: String!): TaskType
   deleteConcept(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteConnection(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteConnectionSyncJob(input: DeleteByIdInput!): DeleteByIdPayload!
@@ -928,6 +965,7 @@ type Mutation {
   deleteProviderKey(id: ID!): Boolean!
   deleteRelationship(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteSavedSearch(input: DeleteByIdInput!): DeleteByIdPayload!
+  deleteTask(input: DeleteByIdInput!): DeleteByIdPayload!
   ingestUserSnapshot(input: IngestUserSnapshotInput!): IngestUserSnapshotPayload!
 
   """Mark an action as dismissed"""
@@ -953,6 +991,9 @@ type Mutation {
   removePersonIdentifier(input: RemovePersonIdentifierInput!): [PersonIdentifierType!]!
   removePlace(id: String!): Boolean!
   removeQuestion(id: String!): Boolean!
+
+  """Move a completed task back to open."""
+  reopenTask(id: ID!): TaskType
 
   """
   Move an event to a new time, keeping its duration. Externally-sourced events are moved locally only and marked pending — the change is not pushed to the source calendar.
@@ -995,6 +1036,7 @@ type Mutation {
   updateQuestion(input: UpdateQuestionInput!): QuestionType
   updateRelationship(input: UpdateRelationshipInput!): UpdateRelationshipPayload!
   updateSavedSearch(input: UpdateSavedSearchInput!): UpdateSavedSearchPayload!
+  updateTask(input: UpdateTaskInput!): UpdateTaskPayload!
 }
 
 interface Node {
@@ -1285,6 +1327,17 @@ type Query {
   summary(id: ID!): SummaryType
   tag(id: ID!): TagType
   tags(after: String, before: String, first: Int, last: Int): TagConnection!
+  task(id: ID!): TaskType
+  tasks(
+    after: String
+    before: String
+    first: Int
+    last: Int
+
+    """User-local calendar date, `YYYY-MM-DD`."""
+    scheduledFor: String
+    status: [TaskStatus!]
+  ): TaskConnection!
   thread(id: ID!): ThreadType
   threads(after: String, before: String, first: Int, last: Int): ThreadConnection!
 
@@ -1557,6 +1610,67 @@ type TaggableEntityEdge {
 
 union TaggableEntityType = ActionType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileType | ItemType | NoteType | PersonType | PlaceType | ThreadType
 
+type TaskConnection implements Connection {
+  edges: [TaskEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type TaskEdge implements Edge {
+  cursor: String!
+  node: TaskType!
+}
+
+"""Lifecycle state of a planning task."""
+enum TaskStatus {
+  archived
+  done
+  in_progress
+  open
+  skipped
+}
+
+type TaskType implements Node {
+  actualMinutes: Int!
+  completedAt: DateTime
+  createdAt: DateTime!
+
+  """How many times this task has been pushed to a later day."""
+  deferCount: Int!
+
+  """
+  User-local calendar date, `YYYY-MM-DD`, before which the task stays hidden.
+  """
+  deferUntil: String
+  description: String
+
+  """Deadline, as an instant."""
+  dueAt: DateTime
+  estimatedMinutes: Int
+  id: ID!
+  notes: String
+
+  """Parent task, for subtasks."""
+  parentId: ID
+
+  """0 (highest) to 5 (lowest). Defaults to 3."""
+  priority: Int!
+
+  """User-local calendar date, `YYYY-MM-DD`. Not an instant."""
+  scheduledFor: String
+
+  """Where the task came from: `manual`, or an ingest source."""
+  sourceKind: String!
+  status: TaskStatus!
+
+  """
+  Wall-clock time of day, `HH:MM:SS`, in the user timezone. Zoneless by design.
+  """
+  taskTime: String
+  title: String!
+  updatedAt: DateTime!
+}
+
 type ThreadConnection implements Connection {
   edges: [ThreadEdge!]!
   pageInfo: PageInfo!
@@ -1805,6 +1919,33 @@ input UpdateSavedSearchInput {
 type UpdateSavedSearchPayload {
   savedSearch: SavedSearchType
   success: Boolean!
+}
+
+input UpdateTaskInput {
+  actualMinutes: Int
+
+  """User-local calendar date, `YYYY-MM-DD`."""
+  deferUntil: String
+  description: String
+  dueAt: DateTime
+  estimatedMinutes: Int
+  id: ID!
+  notes: String
+  parentId: ID
+  priority: Int
+
+  """User-local calendar date, `YYYY-MM-DD`."""
+  scheduledFor: String
+  status: TaskStatus
+
+  """Wall-clock `HH:MM`, user timezone. Zoneless."""
+  taskTime: String
+  title: String
+}
+
+type UpdateTaskPayload {
+  success: Boolean!
+  task: TaskType
 }
 
 type UserType implements Node {
