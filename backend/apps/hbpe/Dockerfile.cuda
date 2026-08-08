@@ -43,8 +43,9 @@ RUN useradd -m -u 1000 hbpe
 
 # ── Locked dependencies ───────────────────────────────────────────────────────
 # See backend/apps/hbpe/Dockerfile for why only this image's own manifests
-# are copied and synced with --frozen, and why torch is excluded here and
-# installed from a hardware index below.
+# are copied and synced with --frozen. The lock pins torch to the PyTorch
+# CPU build on Linux, so this image excludes it from the sync and installs
+# the CUDA build from the hardware index below.
 COPY pyproject.toml uv.lock .python-version ./
 COPY backend/apps/hbpe/pyproject.toml ./backend/apps/hbpe/pyproject.toml
 COPY backend/packages/telemetry/pyproject.toml ./backend/packages/telemetry/pyproject.toml

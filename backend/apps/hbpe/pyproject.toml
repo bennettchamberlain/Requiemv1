@@ -61,6 +61,21 @@ dependencies = [
 
 [tool.uv.sources]
 ci-telemetry = { workspace = true }
+# On Linux, torch resolves from the PyTorch CPU index rather than PyPI.
+# PyPI's Linux torch depends on the full NVIDIA/Triton CUDA stack —
+# gigabytes of libraries that every hbpe image installed and the CPU image
+# then overwrote with a CPU wheel. The CPU-index build has no such
+# dependencies. The CUDA and ROCm images still replace torch post-sync
+# from their hardware indexes, exactly as before; macOS keeps PyPI torch,
+# which is already CPU/MPS. See the hbpe Dockerfiles.
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+# explicit: only packages pinned to this index by name may come from it,
+# so it can never shadow a PyPI package during resolution.
+explicit = true
 
 [tool.uv.build-backend]
 module-name = "ci.hbpe"

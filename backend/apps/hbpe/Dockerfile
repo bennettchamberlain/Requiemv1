@@ -54,9 +54,11 @@ COPY backend/packages/telemetry/pyproject.toml ./backend/packages/telemetry/pypr
 # build` runs `uv lock --check` before building any image, and CI runs
 # `uv sync --all-packages --locked`.
 #
-# torch is excluded and installed below from a hardware-specific index. The
-# CPU/CUDA/ROCm builds are the same version from different indexes, which is
-# not something a single lock entry can express.
+# torch comes straight from the lock: on Linux it resolves from the PyTorch
+# CPU index (see [tool.uv.sources] in ci-hbpe's pyproject.toml), so this
+# image gets the CPU wheel with none of the NVIDIA/Triton dependency stack
+# that PyPI's torch drags in. Only the CUDA/ROCm Dockerfiles exclude torch
+# and overwrite it from their hardware indexes.
 #
 # onnxruntime needs no special handling any more: the marker in ci-hbpe's
 # pyproject.toml selects the GPU build on linux-x86_64 and the portable one
@@ -67,16 +69,12 @@ COPY backend/packages/telemetry/pyproject.toml ./backend/packages/telemetry/pypr
 # the ci-telemetry workspace member, whose source has not been copied yet.
 # Skipping only the project would make uv try to build it from an empty
 # directory.
-RUN uv sync --frozen --package ci-hbpe --no-install-workspace --no-dev \
-    --no-install-package torch
+RUN uv sync --frozen --package ci-hbpe --no-install-workspace --no-dev
 
-# ── Hardware-specific packages ────────────────────────────────────────────────
+# ── Packages built outside the lock ───────────────────────────────────────────
 # These must come after `uv sync`, not before it. Sync makes the environment
 # match the lock exactly, which means it removes anything the lock does not
 # mention — including everything installed here.
-
-# CPU-only wheel; no CUDA needed for local dev/testing.
-RUN uv pip install --no-cache torch --index-url https://download.pytorch.org/whl/cpu
 
 # llama-cpp-python (JamePeng fork — required for Qwen3.5 support).
 #
