@@ -11,5 +11,12 @@ export type { GraphNode, GraphLink } from './useGraphOverview';
 export { useTriggerHbpe } from './useTriggerHbpe';
 export { useWeekAheadService } from './useWeekAheadService';
 export type { DueForecast, DueItem, WeekForecast, WeekForecastDay } from './useWeekAheadService';
+export { usePersonaCompose } from './usePersonaCompose';
+export type {
+  AboutYouView,
+  HowYoudDoItResult,
+  HowYoudDoItStep,
+  PersonaEvidence,
+} from './usePersonaCompose';
 
 export type { Action, Message, Thread } from './types';

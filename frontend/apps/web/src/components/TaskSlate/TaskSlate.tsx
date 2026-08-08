@@ -1,9 +1,15 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { Button, cn, Tooltip } from '@ci/shadcn';
 import { Clock, GripVertical, Lightbulb, ListTodo, Loader2, Sparkles, Trash2, X } from '@ci/shadcn/icons';
 
+import {
+  applyHowYoudDoIt,
+  composeHowYoudDoIt,
+  type HowYoudDoItResult,
+} from '@/api/usePersonaCompose';
 import type { DeclineReason, ScheduleCandidate } from '@/api/useScheduleCandidates';
+import { useAuth } from '@/hooks';
 import {
   CANDIDATE_DRAG_TYPE,
   EVENT_DRAG_TYPE,
@@ -38,11 +44,33 @@ interface CardProps {
   onSnooze: (id: string, until: Date) => void;
   /** Lets the rail reveal the dismiss zone only while a card is in flight. */
   onDragStateChange?: (dragging: boolean) => void;
+  personalized?: HowYoudDoItResult | null;
+  personalizing?: boolean;
+  onPersonalize?: (candidate: ScheduleCandidate) => void;
+  onApplyPersonalized?: (result: HowYoudDoItResult) => void;
+  applyNote?: string | null;
 }
 
-function CandidateCard({ candidate, onDecline, onSnooze, onDragStateChange }: CardProps) {
+function CandidateCard({
+  candidate,
+  onDecline,
+  onSnooze,
+  onDragStateChange,
+  personalized,
+  personalizing,
+  onPersonalize,
+  onApplyPersonalized,
+  applyNote,
+}: CardProps) {
   const [expanded, setExpanded] = useState(false);
   const kind = candidate.rationaleSources[0]?.kind ?? 'action';
+  const rationale = personalized?.personaBrief ?? candidate.rationale;
+
+  useEffect(() => {
+    if (personalized) {
+      setExpanded(true);
+    }
+  }, [personalized]);
 
   return (
     <li
@@ -64,6 +92,7 @@ function CandidateCard({ candidate, onDecline, onSnooze, onDragStateChange }: Ca
         // as the backlog grows.
         'group relative flex w-60 shrink-0 flex-col rounded-lg border border-border bg-background',
         'cursor-grab p-2.5 pl-7 transition-colors hover:border-primary/50 active:cursor-grabbing',
+        personalized && 'border-primary/40',
       )}
     >
       <GripVertical
@@ -76,6 +105,31 @@ function CandidateCard({ candidate, onDecline, onSnooze, onDragStateChange }: Ca
         <p className="min-w-0 flex-1 text-[13px] leading-snug text-foreground">{candidate.title}</p>
 
         <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+          {onPersonalize && (
+            <Tooltip>
+              <Tooltip.Trigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  aria-label={`Personalize ${candidate.title}`}
+                  disabled={personalizing}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onPersonalize(candidate);
+                  }}
+                >
+                  {personalizing ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.5} />
+                  ) : (
+                    <Sparkles className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  )}
+                </Button>
+              </Tooltip.Trigger>
+              <Tooltip.Content side="top">How you’d do it</Tooltip.Content>
+            </Tooltip>
+          )}
+
           <Tooltip>
             <Tooltip.Trigger asChild>
               <Button
@@ -115,12 +169,41 @@ function CandidateCard({ candidate, onDecline, onSnooze, onDragStateChange }: Ca
         className="mt-1.5 flex w-full items-start gap-1.5 text-left text-[11px] text-muted-foreground hover:text-foreground/80"
       >
         <SourceIcon kind={kind} />
-        <span className={cn('flex-1', expanded ? '' : 'line-clamp-2')}>{candidate.rationale}</span>
+        <span className={cn('flex-1', expanded ? '' : 'line-clamp-2')}>{rationale}</span>
       </button>
+
+      {personalized && expanded && personalized.approach.length > 0 && (
+        <ol className="mt-2 space-y-1 border-t border-border pt-2">
+          {personalized.approach.slice(0, 4).map((step, index) => (
+            <li key={`${step.title}-${index}`} className="text-[11px] text-foreground/90">
+              {index + 1}. {step.title}
+            </li>
+          ))}
+          {onApplyPersonalized && (
+            <li className="pt-1">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-6 text-[10px]"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onApplyPersonalized(personalized);
+                }}
+              >
+                Add steps to Possibilities
+              </Button>
+              {applyNote && <p className="mt-1 text-[10px] text-muted-foreground">{applyNote}</p>}
+            </li>
+          )}
+        </ol>
+      )}
 
       {/* Pushed to the card's foot so the tag strip lines up across the rail
           even when one card's rationale runs longer than its neighbour's. */}
       <div className="mt-auto flex flex-wrap items-center gap-1 pt-1.5">
+        {personalized && (
+          <span className="rounded bg-primary/10 px-1.5 py-px text-[10px] text-primary">for you</span>
+        )}
         {candidate.rationaleSources.slice(0, 3).map((source) => (
           <span
             key={`${source.kind}-${source.id}`}
@@ -319,11 +402,59 @@ export function TaskSlate({
   onReturnEvent,
   className,
 }: TaskSlateProps) {
+  const [{ authToken }] = useAuth();
   const hasCards = candidates.length > 0;
   /** A candidate is in flight from this rail — offer somewhere to drop it. */
   const [draggingCard, setDraggingCard] = useState(false);
   /** A committed event is hovering the rail and can be taken back. */
   const [returnable, setReturnable] = useState(false);
+  const [personalizedById, setPersonalizedById] = useState<Record<string, HowYoudDoItResult>>({});
+  const [personalizingId, setPersonalizingId] = useState<string | null>(null);
+  const [applyNoteById, setApplyNoteById] = useState<Record<string, string>>({});
+
+  const handlePersonalize = useCallback(
+    async (candidate: ScheduleCandidate) => {
+      if (personalizingId) {
+        return;
+      }
+
+      setPersonalizingId(candidate.id);
+      try {
+        const task = [candidate.title, candidate.description].filter(Boolean).join('\n');
+        const result = await composeHowYoudDoIt(authToken, task, { includeRecall: true });
+        setPersonalizedById((prev) => ({ ...prev, [candidate.id]: result }));
+      } catch {
+        setApplyNoteById((prev) => ({
+          ...prev,
+          [candidate.id]: 'Could not personalize — try again shortly.',
+        }));
+      } finally {
+        setPersonalizingId(null);
+      }
+    },
+    [authToken, personalizingId],
+  );
+
+  const handleApplyPersonalized = useCallback(
+    async (candidateId: string, result: HowYoudDoItResult) => {
+      try {
+        const { added } = await applyHowYoudDoIt(authToken, result);
+        setApplyNoteById((prev) => ({
+          ...prev,
+          [candidateId]:
+            added > 0
+              ? `Added ${added} ${added === 1 ? 'step' : 'steps'}.`
+              : 'Nothing to add.',
+        }));
+      } catch {
+        setApplyNoteById((prev) => ({
+          ...prev,
+          [candidateId]: 'Could not add steps.',
+        }));
+      }
+    },
+    [authToken],
+  );
 
   // A mirrored calendar row has no candidate behind it, so it is not
   // returnable — and that is legible during dragover only because the grid
@@ -433,6 +564,11 @@ export function TaskSlate({
                 onDecline={onDecline}
                 onSnooze={onSnooze}
                 onDragStateChange={setDraggingCard}
+                personalized={personalizedById[candidate.id] ?? null}
+                personalizing={personalizingId === candidate.id}
+                onPersonalize={(c) => void handlePersonalize(c)}
+                onApplyPersonalized={(result) => void handleApplyPersonalized(candidate.id, result)}
+                applyNote={applyNoteById[candidate.id] ?? null}
               />
             ))}
           </ul>
