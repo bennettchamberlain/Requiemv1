@@ -7,6 +7,7 @@ import {
   Cpu,
   ExternalLink,
   Globe,
+  HardDrive,
   Key,
   KeyRound,
   MapPin,
@@ -36,6 +37,9 @@ const ApiKeysSection = lazy(() =>
 const OAuthSection = lazy(() => import('./sections/OAuthSection').then((m) => ({ default: m.OAuthSection })));
 const AccountSection = lazy(() =>
   import('./sections/AccountSection').then((m) => ({ default: m.AccountSection })),
+);
+const DataPortabilitySection = lazy(() =>
+  import('./sections/DataPortabilitySection').then((m) => ({ default: m.DataPortabilitySection })),
 );
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
@@ -137,6 +141,11 @@ export function SettingsPage() {
                 Account
               </NavLink>
 
+              <NavLink to="/settings/data" state={{ backgroundLocation }} className={navLinkClass}>
+                <HardDrive className="h-4 w-4" />
+                Your data
+              </NavLink>
+
               {/* GraphiQL is a full-page IDE served by the API, so it opens in a
                   new tab rather than inside the settings modal. Authenticate it
                   with a key from the API Keys section above. */}
@@ -168,6 +177,7 @@ export function SettingsPage() {
                     <Route path="api-keys" element={<ApiKeysSection />} />
                     <Route path="oauth" element={<OAuthSection />} />
                     <Route path="account" element={<AccountSection />} />
+                    <Route path="data" element={<DataPortabilitySection />} />
                   </Routes>
                 </Suspense>
               </div>
