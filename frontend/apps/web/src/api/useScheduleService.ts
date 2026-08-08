@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
 
-import { gql, useQuery } from '@apollo/client';
+import { gql, NetworkStatus, useQuery } from '@apollo/client';
 
 import type { ProbabilityEntry } from './useForecastService';
 
@@ -105,6 +105,8 @@ interface ScheduleResult {
    */
   rhythmCoversWindow: boolean;
   loading: boolean;
+  /** True while a new window is being fetched (including week paging). */
+  fetching: boolean;
   error: boolean;
   /** Re-read committed time — call after something is placed on the grid. */
   refetch: () => void;
@@ -125,10 +127,11 @@ interface QueryData {
  * the page still has something true to show without it.
  */
 export function useScheduleService(from: Date, to: Date): ScheduleResult {
-  const { data, loading, error, refetch } = useQuery<QueryData>(GET_SCHEDULE, {
+  const { data, loading, error, refetch, networkStatus } = useQuery<QueryData>(GET_SCHEDULE, {
     variables: { from: from.toISOString(), to: to.toISOString() },
     pollInterval: REFRESH_INTERVAL_MS,
     fetchPolicy: 'cache-and-network',
+    notifyOnNetworkStatusChange: true,
     // The two layers resolve independently, so a forecast that THROWS must not
     // take committed time down with it. The default 'none' discards the whole
     // payload the moment any field errors, which is exactly the case the
@@ -170,12 +173,18 @@ export function useScheduleService(from: Date, to: Date): ScheduleResult {
     void refetch();
   }, [refetch]);
 
+  const fetching =
+    loading ||
+    networkStatus === NetworkStatus.refetch ||
+    networkStatus === NetworkStatus.setVariables;
+
   return {
     events: data?.eventsInRange ?? [],
     rhythm,
     generatedAt: forecast?.generatedAt ?? null,
     rhythmCoversWindow,
     loading,
+    fetching,
     error: Boolean(error),
     refetch: reload,
   };

@@ -54,6 +54,30 @@ vi.mock('@/components/HorizonGrid', () => ({
   ),
 }));
 
+vi.mock('@/components/TaskSlate', () => ({
+  TaskSlate: ({
+    candidates,
+    onDecline,
+    error,
+  }: {
+    candidates: { id: string; title: string }[];
+    onDecline: (id: string, reason: string) => void;
+    error?: boolean;
+  }) => (
+    <>
+      {error && <p>Could not load your suggestions. Try again shortly.</p>}
+      {candidates.map((candidate) => (
+        <button
+          key={candidate.id}
+          type="button"
+          aria-label={`Dismiss ${candidate.title}`}
+          onClick={() => onDecline(candidate.id, 'not_now')}
+        />
+      ))}
+    </>
+  ),
+}));
+
 const event = (overrides: Partial<ScheduleEvent> = {}): ScheduleEvent => ({
   id: 'e1',
   title: 'Standup',
@@ -76,6 +100,7 @@ function setSchedule(over: Record<string, unknown> = {}) {
     generatedAt: null,
     rhythmCoversWindow: false,
     loading: false,
+    fetching: false,
     error: false,
     refetch: vi.fn(),
     ...over,
@@ -242,5 +267,34 @@ describe('SchedulePage — failed queries', () => {
     renderWithProviders(<SchedulePage />);
 
     expect(screen.getByText(/Connect a calendar/)).toBeInTheDocument();
+  });
+});
+
+describe('SchedulePage — week paging', () => {
+  it('shows the date range between the arrows and updates it when paging', () => {
+    setSchedule({ events: [], rhythm: [] });
+
+    renderWithProviders(<SchedulePage />);
+
+    const heading = () => screen.getByRole('heading', { level: 2 });
+    const initial = heading().textContent;
+
+    fireEvent.click(screen.getByLabelText('Next week'));
+    expect(heading().textContent).not.toBe(initial);
+    expect(screen.queryByText('Today')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to today' }));
+    expect(heading().textContent).toBe(initial);
+  });
+
+  it('keeps the grid visible on a later week even when that week is empty', () => {
+    setSchedule({ events: [], rhythm: [] });
+
+    renderWithProviders(<SchedulePage />);
+    fireEvent.click(screen.getByLabelText('Next week'));
+
+    expect(screen.getByText('stub-drop')).toBeInTheDocument();
+    expect(screen.queryByText(/Connect a calendar/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Nothing on the calendar this week/)).toBeInTheDocument();
   });
 });

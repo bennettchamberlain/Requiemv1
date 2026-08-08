@@ -138,10 +138,8 @@ export function SchedulePage() {
     return { start: from, end: addDays(from, DAYS_IN_VIEW) };
   }, [weekOffset]);
 
-  const { events, rhythm, generatedAt, rhythmCoversWindow, loading, error, refetch } = useScheduleService(
-    start,
-    end,
-  );
+  const { events, rhythm, generatedAt, rhythmCoversWindow, loading, fetching, error, refetch } =
+    useScheduleService(start, end);
 
   // Placing a candidate mints an event, so the committed lane has to re-read.
   const {
@@ -213,7 +211,9 @@ export function SchedulePage() {
   // `errorPolicy: 'all'` means an error and usable data can arrive together, so
   // the surface is gated on whether anything resolved rather than on `error`.
   const hasAnything = events.length > 0 || rhythm.length > 0 || candidates.length > 0;
-  const isEmpty = !loading && !hasAnything && !error && !candidatesError;
+  const isTrulyEmpty =
+    !loading && !fetching && !hasAnything && !error && !candidatesError && weekOffset === 0;
+  const showScheduleSurface = weekOffset !== 0 || hasAnything || candidatesError || fetching;
 
   return (
     <>
@@ -235,25 +235,23 @@ export function SchedulePage() {
 
       <PageContent>
         <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-2xl font-bold text-foreground">{formatRange(start, end)}</h2>
-
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="icon" aria-label="Previous week" onClick={goBack}>
               <ChevronLeft className="h-4 w-4" strokeWidth={1.5} />
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={goToday}
-              className={cn('text-xs', weekOffset === 0 && 'text-muted-foreground')}
-              disabled={weekOffset === 0}
-            >
-              Today
-            </Button>
+            <h2 className="min-w-[9.5rem] text-center text-lg font-bold text-foreground tabular-nums">
+              {formatRange(start, end)}
+            </h2>
             <Button variant="ghost" size="icon" aria-label="Next week" onClick={goForward}>
               <ChevronRight className="h-4 w-4" strokeWidth={1.5} />
             </Button>
           </div>
+
+          {weekOffset !== 0 && (
+            <Button variant="ghost" size="sm" onClick={goToday} className="text-xs">
+              Back to today
+            </Button>
+          )}
 
           {/* Hue answers one question at a time; this picks which one. Committed
               time and rhythm stay told apart by their lanes and by fill weight,
@@ -287,7 +285,7 @@ export function SchedulePage() {
           </div>
         </div>
 
-        {loading && !hasAnything && <LoadingPage />}
+        {fetching && !hasAnything && <LoadingPage />}
 
         {actionError && (
           <p role="alert" className="text-sm text-destructive">
@@ -303,14 +301,14 @@ export function SchedulePage() {
           </p>
         )}
 
-        {isEmpty && (
+        {isTrulyEmpty && (
           <EmptyState
             icon={<CalendarRange size={48} strokeWidth={1} />}
             message="Nothing here yet. Connect a calendar and your week will start to fill in."
           />
         )}
 
-        {(hasAnything || candidatesError) && (
+        {showScheduleSurface && (
           <>
             {/* Possibilities as a rail above the week, both full width. The
                 week is what the page is about, so it gets the whole page; the
@@ -318,6 +316,10 @@ export function SchedulePage() {
                 a day, which is the shorter and more obvious gesture than the
                 sideways one a column beside the grid asked for. */}
             <div className="flex flex-col gap-4">
+              {weekOffset !== 0 && !hasAnything && !fetching && (
+                <p className="text-sm text-muted-foreground">Nothing on the calendar this week.</p>
+              )}
+
               <TaskSlate
                 candidates={candidates}
                 loading={candidatesLoading}
