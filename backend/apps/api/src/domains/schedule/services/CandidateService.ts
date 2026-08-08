@@ -392,4 +392,28 @@ export class CandidateService {
 
     return EventCandidateEntity.toEgressType(saved);
   }
+
+  /** Persist a how-you'd-do-it compose snapshot on an open candidate. */
+  async savePersonalization(
+    context: UserServiceContext,
+    id: string,
+    snapshot: Record<string, unknown>,
+  ): Promise<EventCandidate> {
+    const candidate = await this.candidateRepository.findOne({
+      where: { id, userId: context.userId },
+    });
+
+    if (!candidate) {
+      throw new NotFoundException(`Candidate ${id} not found`);
+    }
+
+    candidate.personalization = {
+      ...snapshot,
+      generatedAt: new Date().toISOString(),
+    };
+
+    const saved = await this.candidateRepository.save(candidate);
+
+    return EventCandidateEntity.toEgressType(saved);
+  }
 }

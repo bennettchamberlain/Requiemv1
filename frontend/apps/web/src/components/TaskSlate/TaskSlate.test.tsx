@@ -30,6 +30,7 @@ function candidate(overrides: Partial<ScheduleCandidate> = {}): ScheduleCandidat
     status: 'open',
     generator: 'braindump/llm',
     confidence: 0.9,
+    personalization: null,
     ...overrides,
   };
 }

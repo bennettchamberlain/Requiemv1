@@ -9,6 +9,7 @@ describe('PersonaComposeService', () => {
   }) {
     const chat = jest.fn();
     const upsert = jest.fn(async (_ctx: unknown, proposals: unknown[]) => proposals);
+    const savePersonalization = jest.fn(async () => ({}));
     const contextPackService = {
       assemble: jest.fn(async () => pack),
     } as unknown as PersonaContextPackService;
@@ -16,7 +17,7 @@ describe('PersonaComposeService', () => {
     const service = new PersonaComposeService(
       contextPackService,
       { chat } as never,
-      { upsert } as never,
+      { upsert, savePersonalization } as never,
       { setContext: jest.fn(), warn: jest.fn() } as never,
     );
 

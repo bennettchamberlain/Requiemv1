@@ -30,6 +30,7 @@ function candidate(
     status: 'open',
     generator: `adapter/${kind}`,
     confidence: 0.7,
+    personalization: null,
     ...overrides,
   };
 }

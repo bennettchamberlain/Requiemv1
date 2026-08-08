@@ -136,7 +136,7 @@ export class PersonaComposeService {
   async howYoudDoIt(
     context: UserServiceContext & RequestContext,
     task: string,
-    options: { includeRecall?: boolean } = {},
+    options: { includeRecall?: boolean; candidateId?: string } = {},
   ): Promise<HowYoudDoItResult> {
     const trimmed = task.trim();
     if (!trimmed) {
@@ -158,7 +158,7 @@ export class PersonaComposeService {
     });
 
     if (!who.hasSignal) {
-      return {
+      const result: HowYoudDoItResult = {
         task: normalized,
         personaBrief:
           who.personaBrief ||
@@ -177,11 +177,21 @@ export class PersonaComposeService {
         confidence: 0.15,
         hasSignal: false,
       };
+
+      if (options.candidateId) {
+        await this.candidateService.savePersonalization(
+          context,
+          options.candidateId,
+          result as unknown as Record<string, unknown>,
+        );
+      }
+
+      return result;
     }
 
     const how = await this.composeHow(context, normalized, who.personaBrief, signal);
 
-    return {
+    const result: HowYoudDoItResult = {
       task: normalized,
       personaBrief: who.personaBrief,
       approach: how.approach,
@@ -192,6 +202,16 @@ export class PersonaComposeService {
       confidence: how.confidence,
       hasSignal: true,
     };
+
+    if (options.candidateId) {
+      await this.candidateService.savePersonalization(
+        context,
+        options.candidateId,
+        result as unknown as Record<string, unknown>,
+      );
+    }
+
+    return result;
   }
 
   /**

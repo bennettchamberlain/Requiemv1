@@ -30,6 +30,7 @@ function candidate(): ScheduleCandidate {
     status: 'open',
     generator: 'braindump/llm',
     confidence: 0.9,
+    personalization: null,
   };
 }
 

@@ -77,12 +77,16 @@ function authHeaders(authToken: string | null | undefined): HeadersInit {
 export async function composeHowYoudDoIt(
   authToken: string | null | undefined,
   task: string,
-  options: { includeRecall?: boolean } = {},
+  options: { includeRecall?: boolean; candidateId?: string } = {},
 ): Promise<HowYoudDoItResult> {
   const result = await fetchJson<HowYoudDoItResult>('/api/v1/intelligence/how-youd-do-it', {
     method: 'POST',
     headers: authHeaders(authToken),
-    body: JSON.stringify({ task, includeRecall: options.includeRecall }),
+    body: JSON.stringify({
+      task,
+      includeRecall: options.includeRecall,
+      candidateId: options.candidateId,
+    }),
   });
 
   if (!result) {
@@ -149,7 +153,7 @@ export function usePersonaCompose() {
   const [result, setResult] = useState<HowYoudDoItResult | null>(null);
 
   const compose = useCallback(
-    async (task: string, options?: { includeRecall?: boolean }) => {
+    async (task: string, options?: { includeRecall?: boolean; candidateId?: string }) => {
       setLoading(true);
       setError(null);
       try {

@@ -125,6 +125,7 @@ function candidate(id: string, title: string, rationale: string, kind: string): 
     status: 'open',
     generator: `adapter/${kind}`,
     confidence: 0.7,
+    personalization: null,
   };
 }
 
@@ -185,6 +186,7 @@ function Surface({ colorMode = 'type' }: { colorMode?: ColorMode }) {
               status: 'open',
               generator: 'braindump/llm',
               confidence: 0.9,
+              personalization: null,
             },
             ...rest,
           ]);

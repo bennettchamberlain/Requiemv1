@@ -1,4 +1,5 @@
 import { Field, Float, ID, Int, ObjectType } from '@nestjs/graphql';
+import GraphQLJSONObject from 'graphql-type-json';
 
 import { type EventCandidate } from '@ci/domains/schedule';
 
@@ -63,6 +64,12 @@ export class ScheduleCandidateType {
   @Field(() => Float, { nullable: true })
   confidence!: number | null;
 
+  @Field(() => GraphQLJSONObject, {
+    nullable: true,
+    description: 'Saved how-you\'d-do-it compose for this card, when the user has personalized it',
+  })
+  personalization!: Record<string, unknown> | null;
+
   static toType(source: EventCandidate): ScheduleCandidateType {
     return {
       __typename: ScheduleCandidateType.name,
@@ -85,6 +92,7 @@ export class ScheduleCandidateType {
       status: source.status,
       generator: source.generator,
       confidence: source.confidence,
+      personalization: source.personalization,
     };
   }
 }

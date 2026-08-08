@@ -19,6 +19,7 @@ const GET_CANDIDATES = gql(`
       status
       generator
       confidence
+      personalization
     }
   }
 `);
@@ -86,6 +87,7 @@ export interface ScheduleCandidate {
   status: string;
   generator: string | null;
   confidence: number | null;
+  personalization: Record<string, unknown> | null;
 }
 
 export type DeclineReason = 'not_now' | 'wrong_time' | 'not_like_this' | 'never';

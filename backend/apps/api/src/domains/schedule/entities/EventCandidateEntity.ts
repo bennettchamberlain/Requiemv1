@@ -69,6 +69,10 @@ export class EventCandidateEntity {
   @Column({ type: 'jsonb', default: '{}' })
   constraints!: Record<string, unknown>;
 
+  /** Cached how-you'd-do-it compose for this card, when the user has personalized it. */
+  @Column({ type: 'jsonb', nullable: true })
+  personalization!: Record<string, unknown> | null;
+
   @Column({ type: 'text', name: 'l0_class', nullable: true })
   l0Class!: string | null;
 
@@ -149,6 +153,7 @@ export class EventCandidateEntity {
       dedupeKey: entity.dedupeKey,
       generator: entity.generator,
       confidence: entity.confidence,
+      personalization: entity.personalization,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };

@@ -33,6 +33,42 @@ const SOURCE_LABEL: Record<string, string> = {
 /** A day, for the "not now" default. */
 const SNOOZE_MS = 24 * 60 * 60 * 1000;
 
+function parseCandidatePersonalization(raw: unknown): HowYoudDoItResult | null {
+  if (!raw || typeof raw !== 'object') {
+    return null;
+  }
+
+  const snapshot = raw as Record<string, unknown>;
+  if (typeof snapshot.personaBrief !== 'string') {
+    return null;
+  }
+
+  const task = snapshot.task;
+  const normalizedTask =
+    task && typeof task === 'object' && typeof (task as { title?: unknown }).title === 'string'
+      ? (task as HowYoudDoItResult['task'])
+      : { title: '', openQuestions: [], constraints: [] };
+
+  return {
+    task: normalizedTask,
+    personaBrief: snapshot.personaBrief,
+    approach: Array.isArray(snapshot.approach) ? (snapshot.approach as HowYoudDoItResult['approach']) : [],
+    timing: typeof snapshot.timing === 'string' ? snapshot.timing : undefined,
+    people: Array.isArray(snapshot.people) ? (snapshot.people as string[]) : [],
+    evidence: Array.isArray(snapshot.evidence) ? (snapshot.evidence as HowYoudDoItResult['evidence']) : [],
+    followUps: Array.isArray(snapshot.followUps) ? (snapshot.followUps as string[]) : [],
+    confidence: typeof snapshot.confidence === 'number' ? snapshot.confidence : 0,
+    hasSignal: snapshot.hasSignal === true,
+  };
+}
+
+function resolvePersonalization(
+  candidate: ScheduleCandidate,
+  personalizedById: Record<string, HowYoudDoItResult>,
+): HowYoudDoItResult | null {
+  return personalizedById[candidate.id] ?? parseCandidatePersonalization(candidate.personalization);
+}
+
 function SourceIcon({ kind }: { kind: string }) {
   const Icon = kind === 'insight' ? Lightbulb : ListTodo;
 
@@ -431,8 +467,18 @@ export function TaskSlate({
 
       setPersonalizingId(candidate.id);
       try {
+        const saved = resolvePersonalization(candidate, personalizedById);
+        if (saved) {
+          setPersonalizedById((prev) => ({ ...prev, [candidate.id]: saved }));
+
+          return;
+        }
+
         const task = [candidate.title, candidate.description].filter(Boolean).join('\n');
-        const result = await composeHowYoudDoIt(authToken, task, { includeRecall: true });
+        const result = await composeHowYoudDoIt(authToken, task, {
+          includeRecall: true,
+          candidateId: candidate.id,
+        });
         setPersonalizedById((prev) => ({ ...prev, [candidate.id]: result }));
       } catch {
         setApplyNoteById((prev) => ({
@@ -443,7 +489,7 @@ export function TaskSlate({
         setPersonalizingId(null);
       }
     },
-    [authToken, personalizingId],
+    [authToken, personalizingId, personalizedById],
   );
 
   const handleApplyPersonalized = useCallback(
@@ -575,7 +621,7 @@ export function TaskSlate({
                 onDecline={onDecline}
                 onSnooze={onSnooze}
                 onDragStateChange={setDraggingCard}
-                personalized={personalizedById[candidate.id] ?? null}
+                personalized={resolvePersonalization(candidate, personalizedById)}
                 personalizing={personalizingId === candidate.id}
                 onPersonalize={(c) => void handlePersonalize(c)}
                 onApplyPersonalized={(result) => void handleApplyPersonalized(candidate.id, result)}
