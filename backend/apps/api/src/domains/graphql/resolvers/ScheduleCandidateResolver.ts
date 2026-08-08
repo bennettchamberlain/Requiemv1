@@ -34,6 +34,11 @@ function parseDeclineReason(raw: string): DeclineReason {
   return raw as DeclineReason;
 }
 
+/** Decode the GlobalUID clients receive from ScheduleCandidateType.id. */
+function parseCandidateId(gid: string): string {
+  return GlobalUID.parse('schedule-candidate', gid);
+}
+
 @UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => ScheduleCandidateType)
 export class ScheduleCandidateResolver {
@@ -137,9 +142,16 @@ export class ScheduleCandidateResolver {
   ): Promise<EventType> {
     await this.assertScheduleEnabled();
 
-    const { event } = await this.candidateService.accept(toServiceContext(context), id, startTime, endTime);
+    const candidateId = parseCandidateId(id);
 
-    this.logger.log('Candidate placed on the schedule', { candidateId: id, eventId: event.id });
+    const { event } = await this.candidateService.accept(
+      toServiceContext(context),
+      candidateId,
+      startTime,
+      endTime,
+    );
+
+    this.logger.log('Candidate placed on the schedule', { candidateId, eventId: event.id });
 
     return EventType.toType(event);
   }
@@ -183,7 +195,7 @@ export class ScheduleCandidateResolver {
 
     const candidate = await this.candidateService.decline(
       toServiceContext(context),
-      id,
+      parseCandidateId(id),
       parseDeclineReason(reason),
     );
 
@@ -198,7 +210,11 @@ export class ScheduleCandidateResolver {
   ): Promise<ScheduleCandidateType> {
     await this.assertScheduleEnabled();
 
-    const candidate = await this.candidateService.snooze(toServiceContext(context), id, until);
+    const candidate = await this.candidateService.snooze(
+      toServiceContext(context),
+      parseCandidateId(id),
+      until,
+    );
 
     return ScheduleCandidateType.toType(candidate);
   }

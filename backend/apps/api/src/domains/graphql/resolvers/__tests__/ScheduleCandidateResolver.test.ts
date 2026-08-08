@@ -25,6 +25,7 @@ const ownerCtx = { userId: 'owner-1' } as unknown as RequestContext;
 
 const RAW_EVENT_ID = '00000000-0000-0000-0000-0000000000e1';
 const CANDIDATE_ID = '00000000-0000-0000-0000-0000000000c1';
+const CANDIDATE_GID = GlobalUID.encode('schedule-candidate', CANDIDATE_ID);
 
 const sampleCandidate = {
   id: CANDIDATE_ID,
@@ -95,7 +96,7 @@ describe('ScheduleCandidateResolver.returnEventToSlate', () => {
     const result = await resolver.returnEventToSlate(ownerCtx, gid);
 
     expect(candidateService.returnToSlate).toHaveBeenCalledWith({ userId: 'owner-1' }, RAW_EVENT_ID);
-    expect(result.id).toBe(CANDIDATE_ID);
+    expect(result.id).toBe(CANDIDATE_GID);
   });
 
   it('round-trips the exact id EventType.toType hands the client', async () => {
@@ -157,7 +158,7 @@ describe('ScheduleCandidateResolver feature gating', () => {
   it.each([
     [
       'acceptCandidate',
-      (r: ScheduleCandidateResolver) => r.acceptCandidate(ownerCtx, CANDIDATE_ID, new Date()),
+      (r: ScheduleCandidateResolver) => r.acceptCandidate(ownerCtx, CANDIDATE_GID, new Date()),
       'accept' as const,
     ],
     [
@@ -168,13 +169,13 @@ describe('ScheduleCandidateResolver feature gating', () => {
     ],
     [
       'declineCandidate',
-      (r: ScheduleCandidateResolver) => r.declineCandidate(ownerCtx, CANDIDATE_ID, 'not_now'),
+      (r: ScheduleCandidateResolver) => r.declineCandidate(ownerCtx, CANDIDATE_GID, 'not_now'),
       'decline' as const,
     ],
     [
       'snoozeCandidate',
       (r: ScheduleCandidateResolver) =>
-        r.snoozeCandidate(ownerCtx, CANDIDATE_ID, new Date(Date.now() + 86_400_000)),
+        r.snoozeCandidate(ownerCtx, CANDIDATE_GID, new Date(Date.now() + 86_400_000)),
       'snooze' as const,
     ],
   ])('rejects %s when the flag is off, without touching the service', async (_name, call, method) => {
@@ -187,9 +188,14 @@ describe('ScheduleCandidateResolver feature gating', () => {
   it('lets the mutations through when the flag is on', async () => {
     const { resolver, candidateService } = makeResolver();
 
-    const event = await resolver.acceptCandidate(ownerCtx, CANDIDATE_ID, new Date());
+    const event = await resolver.acceptCandidate(ownerCtx, CANDIDATE_GID, new Date());
 
-    expect(candidateService.accept).toHaveBeenCalled();
+    expect(candidateService.accept).toHaveBeenCalledWith(
+      { userId: 'owner-1' },
+      CANDIDATE_ID,
+      expect.any(Date),
+      undefined,
+    );
     expect(event.id).toBe(GlobalUID.encode('event', RAW_EVENT_ID));
   });
 });
@@ -202,7 +208,7 @@ describe('ScheduleCandidateResolver.declineCandidate', () => {
     async (reason) => {
       const { resolver, candidateService } = makeResolver();
 
-      await resolver.declineCandidate(ownerCtx, CANDIDATE_ID, reason);
+      await resolver.declineCandidate(ownerCtx, CANDIDATE_GID, reason);
 
       expect(candidateService.decline).toHaveBeenCalledWith({ userId: 'owner-1' }, CANDIDATE_ID, reason);
     },
@@ -213,7 +219,7 @@ describe('ScheduleCandidateResolver.declineCandidate', () => {
     async (reason) => {
       const { resolver, candidateService } = makeResolver();
 
-      await expect(resolver.declineCandidate(ownerCtx, CANDIDATE_ID, reason)).rejects.toBeInstanceOf(
+      await expect(resolver.declineCandidate(ownerCtx, CANDIDATE_GID, reason)).rejects.toBeInstanceOf(
         BadRequestException,
       );
       expect(candidateService.decline).not.toHaveBeenCalled();
@@ -223,7 +229,7 @@ describe('ScheduleCandidateResolver.declineCandidate', () => {
   it('names the accepted vocabulary in the error', async () => {
     const { resolver } = makeResolver();
 
-    await expect(resolver.declineCandidate(ownerCtx, CANDIDATE_ID, 'Never')).rejects.toThrow(
+    await expect(resolver.declineCandidate(ownerCtx, CANDIDATE_GID, 'Never')).rejects.toThrow(
       'not_now, wrong_time, not_like_this, never',
     );
   });

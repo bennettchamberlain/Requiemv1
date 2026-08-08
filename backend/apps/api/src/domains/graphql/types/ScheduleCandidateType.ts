@@ -3,6 +3,8 @@ import GraphQLJSONObject from 'graphql-type-json';
 
 import { type EventCandidate } from '@ci/domains/schedule';
 
+import { GlobalUID } from './GlobalUID';
+
 @ObjectType({ description: 'Where a candidate came from — the "because" behind a suggestion' })
 export class RationaleSourceType {
   @Field(() => String, { description: 'summary | insight | answer | item | relationship | due | action' })
@@ -73,7 +75,7 @@ export class ScheduleCandidateType {
   static toType(source: EventCandidate): ScheduleCandidateType {
     return {
       __typename: ScheduleCandidateType.name,
-      id: source.id,
+      id: GlobalUID.encode('schedule-candidate', source.id),
       title: source.title,
       description: source.description,
       rationale: source.rationale,
