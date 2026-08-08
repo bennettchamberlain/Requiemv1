@@ -503,7 +503,7 @@ function SearchBox(
     }
   }, [selectedIndex, scrollToSelectedItem]);
 
-  // Close filters panel on outside click
+  // Close filters/results panel on outside click
   useEffect(() => {
     if (!isDropdownPanelVisible) {
       return;
@@ -637,7 +637,51 @@ function SearchBox(
   }
 
   const panelVisible =
-    resultsNode != null || (panelPinned && (isFocused || hasQuery));
+    !panelDismissed &&
+    (resultsNode != null ||
+      (panelFooter != null && isFocused) ||
+      (panelPinned && (isFocused || hasQuery)));
+
+  // Dismiss an open suggestion/filter panel when clicking elsewhere on the page.
+  useEffect(() => {
+    if (!panelVisible) {
+      return;
+    }
+
+    const handlePointerDown = (e: PointerEvent) => {
+      if (!wrapperRef.current) {
+        return;
+      }
+
+      const target = e.target as Node;
+
+      const portaledFilterIds = ['entity-type-filters', 'how-filters'];
+
+      if (
+        portaledFilterIds.some((id) => {
+          const el = document.getElementById(id);
+
+          return el != null && el.contains(target);
+        })
+      ) {
+        return;
+      }
+
+      if (target instanceof Element && target.closest('[data-radix-popper-content-wrapper]')) {
+        return;
+      }
+
+      if (wrapperRef.current.contains(target)) {
+        return;
+      }
+
+      setPanelDismissed(true);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [panelVisible]);
 
   return (
     <Form {...form}>

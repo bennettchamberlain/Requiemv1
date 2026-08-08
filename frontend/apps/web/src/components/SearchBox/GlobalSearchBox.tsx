@@ -4,9 +4,10 @@ import { GlobalUID } from '@ci/common';
 import { Clock, FilterX, Search, SearchX, X } from '@ci/shadcn/icons';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
+import { DropdownProvider } from '@/components/SearchBox/useDropdown';
 import { useRecentSearches } from '@/hooks';
 import { useKeyboardShortcut } from '@/hooks/useKeyboardShortcut';
-import { AdvancedFilters } from '@/pages/MemoryPage/Components/ExplorerToolbar/ExplorerToolbar';
+import { SearchPanelFilters } from '@/pages/MemoryPage/Components/ExplorerToolbar/ExplorerToolbar';
 import {
   FILTER_PARAMS,
   addEntityFilter,
@@ -26,8 +27,15 @@ import { PlaceResult } from './results/PlaceResult';
 import { TagResult } from './results/TagResult';
 import { ThreadResult } from './results/ThreadResult';
 import { SearchBox, type SearchResultItem } from './SearchBox';
-import { DropdownProvider } from './useDropdown';
 import { useSearchService } from './useSearchService';
+
+function isMemoryExplorerPath(pathname: string): boolean {
+  return pathname === '/memory';
+}
+
+function isMemoryHubPath(pathname: string): boolean {
+  return pathname === '/memory' || pathname.startsWith('/memory/');
+}
 
 const RECENT_PREFIX = 'recent:';
 // Tag suggestion ids carry the label, not a GlobalUID — selecting one applies
@@ -43,8 +51,9 @@ const CLEAR_QUERY_ACTION_ID = 'action:clear-query';
  * longer renders its own search box; its toolbar holds only the advanced
  * Who/What/When/Where/How filters on mobile).
  *
- * Advanced filters are always pinned beneath the suggestion list in the
- * header dropdown on every page.
+ * Advanced filters live inline on the Events explorer page only — not in this
+ * header dropdown. On other pages (and Memory hub sub-routes), When / How /
+ * toggles / sort open in the panel footer when the search bar is focused.
  *
  * - On `/memory`, typing writes `?search` live (debounced) so results filter as
  *   you type, and the input mirrors `?search` via `defaultQuery` (so external
@@ -60,7 +69,8 @@ export function GlobalSearchBox() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const onMemory = location.pathname === '/memory';
+  const onMemoryExplorer = isMemoryExplorerPath(location.pathname);
+  const onMemoryHub = isMemoryHubPath(location.pathname);
   const semantic = searchParams.get('semantic') === '1';
   const activeFilterCount = countActiveFilters(searchParams);
   const filterCountText =
@@ -84,8 +94,12 @@ export function GlobalSearchBox() {
   // filter so the dropdown agrees with the pinned filters above it. The other
   // dimensions (who / when / where / tags / connectors) aren't part of the
   // search API's input yet, so only the page results honor them.
-  const includeTypes = searchParams.get('includedEntityTypes')?.split(',').filter(Boolean);
-  const userExcludedTypes = searchParams.get('excludedEntityTypes')?.split(',').filter(Boolean) ?? [];
+  const includeTypes = onMemoryExplorer
+    ? searchParams.get('includedEntityTypes')?.split(',').filter(Boolean)
+    : undefined;
+  const userExcludedTypes = onMemoryExplorer
+    ? searchParams.get('excludedEntityTypes')?.split(',').filter(Boolean) ?? []
+    : [];
   // Keep the box's default exclusions on top of the explorer's (the service
   // only applies its defaults when excludeTypes is omitted entirely).
   const excludeTypes =
@@ -119,7 +133,7 @@ export function GlobalSearchBox() {
 
       addRecentSearch(trimmed);
 
-      if (onMemory) {
+      if (onMemoryExplorer) {
         setSearchParams((params) => {
           params.set('search', trimmed);
 
@@ -143,7 +157,7 @@ export function GlobalSearchBox() {
 
       clearInput();
     },
-    [addRecentSearch, clearInput, navigate, onMemory, searchParams, setSearchParams],
+    [addRecentSearch, clearInput, navigate, onMemoryExplorer, searchParams, setSearchParams],
   );
 
   // The query only — the counterpart to `clearFilters`. Remounting SearchBox
@@ -162,7 +176,7 @@ export function GlobalSearchBox() {
     setQuery(null);
     setClearQueryPending(true);
 
-    if (onMemory) {
+    if (onMemoryExplorer) {
       setSearchParams(
         (params) => {
           params.delete('search');
@@ -172,16 +186,16 @@ export function GlobalSearchBox() {
         { replace: true },
       );
     }
-  }, [onMemory, setSearchParams]);
+  }, [onMemoryExplorer, setSearchParams]);
 
   useEffect(() => {
-    if (!clearQueryPending || (onMemory && urlSearch)) {
+    if (!clearQueryPending || (onMemoryExplorer && urlSearch)) {
       return;
     }
 
     setClearQueryPending(false);
     setResetKey((key) => key + 1);
-  }, [clearQueryPending, onMemory, urlSearch]);
+  }, [clearQueryPending, onMemoryExplorer, urlSearch]);
 
   // A remount replaces the input with a fresh, unfocused one. Refocus so an
   // in-place reset (the clear-query row) keeps the user typing; when the bump
@@ -294,7 +308,7 @@ export function GlobalSearchBox() {
             <div className="flex items-center gap-2">
               <Search className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
               <span className="text-muted-foreground">
-                {onMemory ? 'Search Memory for' : 'Search all of Memory for'}
+                {onMemoryExplorer ? 'Search Memory for' : 'Search all of Memory for'}
               </span>
               <span className="font-medium">“{trimmed}”</span>
             </div>
@@ -336,7 +350,7 @@ export function GlobalSearchBox() {
     ];
   }, [
     activeFilterCount,
-    onMemory,
+    onMemoryExplorer,
     query,
     recentSearches,
     removeRecentSearch,
@@ -350,7 +364,7 @@ export function GlobalSearchBox() {
     ({ query: searchQuery }: { query: string }) => {
       setQuery(searchQuery);
 
-      if (onMemory) {
+      if (onMemoryExplorer) {
         const trimmed = searchQuery.trim();
 
         setSearchParams(
@@ -367,13 +381,19 @@ export function GlobalSearchBox() {
         );
       }
     },
-    [onMemory, setSearchParams],
+    [onMemoryExplorer, setSearchParams],
   );
 
   // The X is a full reset: the query, every explorer filter (the same set as
   // the drop area's "Clear all"), the pinned-filters state, and the expansion.
   const handleClear = useCallback(() => {
     setQuery(null);
+
+    if (onMemoryHub && !onMemoryExplorer) {
+      navigate('/memory', { replace: true });
+
+      return;
+    }
 
     setSearchParams(
       (params) => {
@@ -387,7 +407,7 @@ export function GlobalSearchBox() {
       },
       { replace: true },
     );
-  }, [setSearchParams]);
+  }, [navigate, onMemoryExplorer, onMemoryHub, setSearchParams]);
 
   // Arrow-key analogue of dragging a person/place/tag row onto the explorer's
   // filter drop area: right adds the highlighted row's filter. Same
@@ -522,16 +542,16 @@ export function GlobalSearchBox() {
         <SearchBox
           key={resetKey}
           ref={inputRef}
-          defaultQuery={onMemory ? urlSearch : undefined}
+          defaultQuery={onMemoryExplorer ? urlSearch : undefined}
           onSearch={handleSearch}
           onSubmit={({ query: submitted }) => commitSearch(submitted)}
           onClear={handleClear}
           onResultSelect={handleResultSelect}
-          onFilterAdd={handleFilterAdd}
+          onFilterAdd={onMemoryExplorer ? handleFilterAdd : undefined}
           variant="compact"
           placeholder="Search memory…"
           autoSubmit
-          autoSubmitEmpty={onMemory}
+          autoSubmitEmpty={onMemoryExplorer}
           displayResults
           openOnFocus
           loading={loading}
@@ -544,15 +564,14 @@ export function GlobalSearchBox() {
               </span>
             )
           }
-          showClear={activeFilterCount > 0 || Boolean(onMemory ? urlSearch : query?.trim())}
+          showClear={activeFilterCount > 0 || Boolean(onMemoryExplorer ? urlSearch : query?.trim())}
           panelFooter={
-            <DropdownProvider args={[{ changeSearchParams: true }]}>
-              <div className="p-3">
-                <AdvancedFilters modal={false} />
-              </div>
-            </DropdownProvider>
+            !onMemoryExplorer ? (
+              <DropdownProvider args={[{ changeSearchParams: true }]}>
+                <SearchPanelFilters modal={false} />
+              </DropdownProvider>
+            ) : undefined
           }
-          panelPinned
         />
       </div>
     </div>
