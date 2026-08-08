@@ -27,17 +27,17 @@ function previewFromContent(content: string | null | undefined): string | null {
 
 @Entity({ schema: 'ci', name: 'communications' })
 export class CommunicationEntity {
-  // Surrogate primary key (with the hypertable partition cols time + user_id) so
-  // distinct messages sharing a timestamp + type coexist; idempotent re-sync
-  // dedupes on communications_source_triple_uniq. See migration
-  // 20260624130000_communications_surrogate_pk.
+  // Surrogate primary key, so distinct messages sharing a timestamp + type
+  // coexist; idempotent re-sync dedupes on communications_source_triple_uniq
+  // (the pure provenance triple — the table stopped being a hypertable in
+  // 20260807072321, so the partition columns are out of the key).
   @PrimaryColumn({ type: 'uuid' })
   id!: string;
 
-  @PrimaryColumn({ type: 'timestamptz' })
+  @Column({ type: 'timestamptz' })
   time!: Date;
 
-  @PrimaryColumn({ type: 'uuid', name: 'user_id' })
+  @Column({ type: 'uuid', name: 'user_id' })
   userId!: string;
 
   @Column({ type: 'text', name: 'communication_type' })

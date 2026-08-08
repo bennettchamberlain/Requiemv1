@@ -1,18 +1,17 @@
 import { type ReactNode, useState } from 'react';
 
-import { useQuery } from '@apollo/client';
+import { useMutation, useQuery } from '@apollo/client';
 import { GlobalUID, LoadingPage, Portal, usePageTitle, EmptyState } from '@ci/common';
-import { Breadcrumb, Card, Label, Textarea, Toggle, cn } from '@ci/shadcn';
+import { Breadcrumb, Toggle } from '@ci/shadcn';
 import { Pencil } from '@ci/shadcn/icons';
 import { useParams, Link } from 'react-router-dom';
 
-import { useTagEntityService } from '@/api';
 import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
 import { EntityGraph } from '@/components/EntityGraph';
 import { EntityRelationshipCards } from '@/components/EntityRelationshipCards/EntityRelationshipCards';
+import { EntityTagsDescriptionCard } from '@/components/EntityTagsDescriptionCard';
 import { ConceptIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
-import { TagInput } from '@/components/TagInput';
 import { gql } from '@/graphql';
 
 const GET_CONCEPT = gql(`
@@ -29,6 +28,18 @@ const GET_CONCEPT = gql(`
   }
 `);
 
+const UPDATE_CONCEPT_DESCRIPTION = gql(`
+  mutation UpdateConceptDescription($input: UpdateConceptInput!) {
+    updateConcept(input: $input) {
+      success
+      concept {
+        id
+        description
+      }
+    }
+  }
+`);
+
 export function ConceptPage() {
   const { id } = useParams<{ id: string }>();
 
@@ -38,7 +49,7 @@ export function ConceptPage() {
     },
   });
 
-  const { tagEntities, untagEntities } = useTagEntityService();
+  const [updateConceptDescription] = useMutation(UPDATE_CONCEPT_DESCRIPTION);
 
   const concept = data?.concept;
 
@@ -79,48 +90,34 @@ export function ConceptPage() {
             <EntityGraph entityId={id!} />
           </div>
 
-          <Card className="p-0">
-            <Card.Content className="p-4 flex flex-col gap-6">
-              <div className="space-y-2">
-                <Label>Tags</Label>
+          <EntityTagsDescriptionCard
+            entityType="concept"
+            entityId={id!}
+            resetKey={concept.id}
+            tags={concept.tags.map((tag) => tag.label)}
+            description={concept.description}
+            editMode={editMode}
+            onDescriptionSave={async (value) => {
+              // UpdateConceptInput requires `name`, so a description-only edit has to resend it.
+              // That makes this a last-write-wins update on the name as well: if it was renamed
+              // elsewhere since this page loaded, the cached value here would win. Same trade the
+              // existing MemoryPage detail editors make, and the page has no polling to widen it.
+              // The `?? ''` only fires when the stored name is genuinely null — the query selects
+              // `name`, so it is not a projection gap — and null and '' both render as 'Unnamed'.
+              // Omitting the field instead is not an option: it is non-null on the input.
+              const result = await updateConceptDescription({
+                variables: { input: { id: concept.id, name: concept.name ?? '', description: value } },
+              });
 
-                <TagInput
-                  key={concept.id}
-                  tags={concept.tags.map((tag) => tag.label) ?? []}
-                  readOnly={!editMode}
-                  onTagAdded={async (label) => {
-                    try {
-                      await tagEntities([GlobalUID.encode('concept', id!)], [label]);
-
-                      return true;
-                    } catch {
-                      return false;
-                    }
-                  }}
-                  onTagRemoved={async (label) => {
-                    await untagEntities([GlobalUID.encode('concept', id!)], [label]);
-                  }}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  key={concept.id}
-                  id="description"
-                  defaultValue={concept.description ?? ''}
-                  readOnly={!editMode}
-                  className={cn(
-                    'resize-none min-h-[120px]',
-                    editMode ? '' : 'shadow-none focus-visible:ring-0 focus-visible:border-border',
-                  )}
-                />
-              </div>
-            </Card.Content>
-          </Card>
+              if (!result.data?.updateConcept.success) {
+                throw new Error('Update was rejected');
+              }
+            }}
+          />
         </div>
 
         <EntityRelationshipCards entityId={id!} />
-        <EntityEvolutionPanel entityId={id!} />
+        <EntityEvolutionPanel entityId={id!} entityName={concept.name} />
       </PageContent>
     );
   }

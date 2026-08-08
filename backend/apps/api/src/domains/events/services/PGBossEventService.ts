@@ -7,9 +7,11 @@ import { ContextService } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 
+import { DEFAULT_JOB_PRIORITY } from '../constants';
 import { EventListenerRegistry } from '../event-registration';
 import { type EventPayloads } from '../event-registry';
 import { EventRegistry } from '../registry';
+import type { EventSendOptions } from '../types';
 
 import { EventService } from './EventService';
 
@@ -192,26 +194,29 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
   async send<E extends keyof EventPayloads>(
     name: E,
     event: EventPayloads[E],
-    options?: { queue?: string; singletonKey?: string },
+    options?: EventSendOptions,
   ): Promise<string[]>;
 
   async send<E extends keyof EventRegistry>(
     name: E,
     event: EventRegistry[E],
-    options?: { queue?: string; singletonKey?: string },
+    options?: EventSendOptions,
   ): Promise<string[]>;
 
   async send<E extends string>(
     name: E,
     event: EventRegistry[keyof EventRegistry] | EventPayloads[keyof EventPayloads],
-    options?: { queue?: string; singletonKey?: string },
+    options?: EventSendOptions,
   ): Promise<string[]> {
     const resolvedData = {
       ...event,
       name,
     } satisfies EventData;
 
-    const sendOptions = options?.singletonKey ? { singletonKey: options.singletonKey } : undefined;
+    const sendOptions: PgBoss.SendOptions = {
+      priority: options?.priority ?? DEFAULT_JOB_PRIORITY,
+      ...(options?.singletonKey ? { singletonKey: options.singletonKey } : {}),
+    };
     const allQueues = this.getRegisteredQueues();
 
     // If a specific queue is provided and that queue exists, send only to that queue.
@@ -222,7 +227,7 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
         return [];
       }
 
-      const jobId = await this.boss.send(options.queue, resolvedData, sendOptions ?? {});
+      const jobId = await this.boss.send(options.queue, resolvedData, sendOptions);
 
       return jobId ? [jobId] : [];
     }
@@ -236,7 +241,7 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
       }
 
       try {
-        const jobId = await this.boss.send(queue, resolvedData, sendOptions ?? {});
+        const jobId = await this.boss.send(queue, resolvedData, sendOptions);
 
         if (jobId) {
           jobIds.push(jobId);
@@ -257,6 +262,7 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
   async sendMany(
     queue: string,
     events: Array<{ name: string; data: Record<string, unknown> }>,
+    options?: Omit<EventSendOptions, 'queue'>,
   ): Promise<void> {
     if (events.length === 0) {
       return;
@@ -288,9 +294,12 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
     // minutes while it enqueues ~1M rows. job.name is the queue; job.data mirrors
     // send()'s resolvedData ({ ...event, name }) so executeJob + listeners consume
     // it identically.
+    const priority = options?.priority ?? DEFAULT_JOB_PRIORITY;
+
     const jobs: PgBoss.JobInsert[] = events.map((event) => ({
       name: queue,
       data: { ...event.data, name: event.name },
+      priority,
     }));
 
     for (let i = 0; i < jobs.length; i += PGBOSS_INSERT_CHUNK) {

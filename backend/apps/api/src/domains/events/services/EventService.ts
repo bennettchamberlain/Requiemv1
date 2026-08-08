@@ -2,12 +2,7 @@ import { DEFAULT_QUEUE } from '../constants';
 import { EventListenerRegistry } from '../event-registration';
 import { type EventPayloads } from '../event-registry';
 import type { EventRegistry } from '../registry';
-
-export type EventSendOptions = {
-  queue?: string;
-  /** pg-boss singleton key — suppresses duplicate pending jobs with the same key. */
-  singletonKey?: string;
-};
+import type { EventSendOptions } from '../types';
 
 export abstract class EventService {
   /**
@@ -45,6 +40,7 @@ export abstract class EventService {
   abstract sendMany(
     queue: string,
     events: Array<{ name: string; data: Record<string, unknown> }>,
+    options?: Omit<EventSendOptions, 'queue'>,
   ): Promise<void>;
 
   protected getRegisteredQueues(): Set<string> {

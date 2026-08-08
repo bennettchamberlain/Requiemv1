@@ -4,12 +4,11 @@ import { GlobalUID, ErrorPage, LoadingPage, Portal, useDeviceLayout, usePageTitl
 import { Breadcrumb, useToast } from '@ci/shadcn';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 
-import { useActionListService, useForecastService, useWeekAheadService } from '@/api';
+import { useActionListService, useForecastService } from '@/api';
 import { useFeatures } from '@/common/feature';
 import { ForecastStrip } from '@/components/ForecastStrip';
 import { PageContent } from '@/components/layout';
 import { Markdown } from '@/components/Markdown';
-import { WeekAhead } from '@/components/WeekAhead';
 import { type FragmentType } from '@/graphql';
 import { useModalControls } from '@/hooks';
 
@@ -50,7 +49,6 @@ export function FeedPage() {
     { submitAnswer: submitQuestionAnswer },
   ] = useFeedQuestionService();
   const [{ data: forecast, stalled: forecastStalled }] = useForecastService();
-  const { week: weekForecast, due: dueForecast } = useWeekAheadService();
   const [dismissedActionIds, setDismissedActionIds] = useState<Set<string>>(new Set());
   const [dismissedSummaryIds, setDismissedSummaryIds] = useState<Set<string>>(new Set());
   // Session-only hide for rare legacy nested insights (no dedicated summary row).
@@ -360,7 +358,7 @@ export function FeedPage() {
         )}
 
         {hbpeEnabled && forecast && (
-          <div className="px-2 pb-4">
+          <div className="px-2 pb-4" data-testid="tomorrows-forecast">
             <h3 className="text-sm font-semibold text-foreground mb-2">Tomorrow's Forecast</h3>
             <ForecastStrip
               buckets={forecast.buckets}
@@ -368,13 +366,6 @@ export function FeedPage() {
               systemStatus={forecast.systemStatus}
               stalled={forecastStalled}
             />
-          </div>
-        )}
-
-        {hbpeEnabled && weekForecast && (
-          <div className="px-2 pb-4">
-            <h3 className="text-sm font-semibold text-foreground mb-2">Week Ahead</h3>
-            <WeekAhead week={weekForecast} due={dueForecast} />
           </div>
         )}
 
@@ -409,7 +400,11 @@ export function FeedPage() {
 
       <PageContent>
         {hbpeEnabled && forecast && (
-          <>
+          // `display: contents` so the heading and the strip stay direct flex items of
+          // PageContent (identical layout), while still being one addressable section —
+          // video/capture.config.mjs hides it at the shutter rather than masking it, which
+          // left a dead grey bar under a live heading in the committed shot.
+          <div className="contents" data-testid="tomorrows-forecast">
             <h2 className="text-2xl font-bold text-foreground">Tomorrow's Forecast</h2>
             <ForecastStrip
               buckets={forecast.buckets}
@@ -417,7 +412,7 @@ export function FeedPage() {
               systemStatus={forecast.systemStatus}
               stalled={forecastStalled}
             />
-          </>
+          </div>
         )}
 
         {(actionsEnabled || Boolean(question)) && (
@@ -507,13 +502,6 @@ export function FeedPage() {
             </Carousel>
           )}
         </div>
-
-        {hbpeEnabled && weekForecast && (
-          <>
-            <h2 className="text-2xl font-bold text-foreground">Week Ahead</h2>
-            <WeekAhead week={weekForecast} due={dueForecast} />
-          </>
-        )}
       </PageContent>
 
       {isModalOpen && <FeedModal onClose={handleModalClose} />}

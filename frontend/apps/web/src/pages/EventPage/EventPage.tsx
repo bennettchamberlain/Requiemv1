@@ -1,18 +1,17 @@
 import { type ReactNode, useState } from 'react';
 
-import { useQuery } from '@apollo/client';
+import { useMutation, useQuery } from '@apollo/client';
 import { GlobalUID, LoadingPage, Portal, usePageTitle, EmptyState } from '@ci/common';
-import { Breadcrumb, Card, Label, Textarea, Toggle, cn } from '@ci/shadcn';
+import { Breadcrumb, Card, Label, Toggle } from '@ci/shadcn';
 import { Pencil, User } from '@ci/shadcn/icons';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 
-import { useTagEntityService } from '@/api';
 import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
+import { EntityTagsDescriptionCard } from '@/components/EntityTagsDescriptionCard';
 import { EventIcon, PlaceIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import { Map } from '@/components/Map';
 import { Tag } from '@/components/Tag';
-import { TagInput } from '@/components/TagInput';
 import { gql } from '@/graphql';
 
 const GET_EVENT = gql(`
@@ -50,6 +49,15 @@ const GET_EVENT = gql(`
   }
 `);
 
+const UPDATE_EVENT_DESCRIPTION = gql(`
+  mutation UpdateEventDescription($input: UpdateEventInput!) {
+    updateEvent(input: $input) {
+      id
+      description
+    }
+  }
+`);
+
 export function EventPage() {
   const { id } = useParams<{ id: string }>();
 
@@ -61,7 +69,7 @@ export function EventPage() {
     },
   });
 
-  const { tagEntities, untagEntities } = useTagEntityService();
+  const [updateEventDescription] = useMutation(UPDATE_EVENT_DESCRIPTION);
 
   const event = data?.event;
 
@@ -99,75 +107,58 @@ export function EventPage() {
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="md:col-span-2">
-            <Card className="p-0">
-              <Card.Content className="p-4 flex flex-col gap-6">
-                {event.organizer && (
-                  <div className="flex flex-col gap-2">
-                    <Label>Organizer</Label>
-                    <Link to={`/people/${GlobalUID.parse('person', event.organizer.id)}`}>
-                      <Tag icon={<User />} className="text-sm" text={event.organizer.name ?? ''} />
-                    </Link>
-                  </div>
-                )}
+            <EntityTagsDescriptionCard
+              entityType="event"
+              entityId={id!}
+              resetKey={event.id}
+              tags={event.tags.map((t) => t.label)}
+              description={event.description}
+              editMode={editMode}
+              onDescriptionSave={async (value) => {
+                const result = await updateEventDescription({
+                  variables: { input: { id: event.id, description: value } },
+                });
 
-                {event.participants.edges.length > 0 && (
-                  <div className="flex flex-col gap-2">
-                    <Label>Participants</Label>
-                    <div className="flex flex-wrap gap-2">
-                      {event.participants.edges.map(({ node }) => (
-                        <Link key={node.id} to={`/people/${GlobalUID.parse('person', node.id)}`}>
-                          <Tag icon={<User />} className="text-sm cursor-pointer" text={node.name ?? ''} />
-                        </Link>
-                      ))}
+                // updateEvent resolves to the event itself, or null when the write was rejected.
+                if (!result.data?.updateEvent) {
+                  throw new Error('Update was rejected');
+                }
+              }}
+            >
+              {event.organizer && (
+                <div className="flex flex-col gap-2">
+                  <Label>Organizer</Label>
+                  <Link to={`/people/${GlobalUID.parse('person', event.organizer.id)}`}>
+                    <Tag icon={<User />} className="text-sm" text={event.organizer.name ?? ''} />
+                  </Link>
+                </div>
+              )}
+
+              {event.participants.edges.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  <Label>Participants</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {event.participants.edges.map(({ node }) => (
+                      <Link key={node.id} to={`/people/${GlobalUID.parse('person', node.id)}`}>
+                        <Tag icon={<User />} className="text-sm cursor-pointer" text={node.name ?? ''} />
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {event.location && (
+                <div className="flex flex-col gap-2">
+                  <Label>Location</Label>
+                  <Link to={`/places/${GlobalUID.parse('place', event.location.id)}`}>
+                    <div className="flex gap-2 bg-secondary p-2 pr-5 rounded-full items-center cursor-pointer w-fit">
+                      <PlaceIcon />
+                      <div className="text-sm">{event.location?.name ?? ''}</div>
                     </div>
-                  </div>
-                )}
-
-                {event.location && (
-                  <div className="flex flex-col gap-2">
-                    <Label>Location</Label>
-                    <Link to={`/places/${GlobalUID.parse('place', event.location.id)}`}>
-                      <div className="flex gap-2 bg-secondary p-2 pr-5 rounded-full items-center cursor-pointer w-fit">
-                        <PlaceIcon />
-                        <div className="text-sm">{event.location?.name ?? ''}</div>
-                      </div>
-                    </Link>
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  <Label>Tags</Label>
-
-                  <TagInput
-                    key={event.id}
-                    tags={event.tags.map((t) => t.label) ?? []}
-                    readOnly={!editMode}
-                    onTagAdded={async (label) => {
-                      tagEntities([GlobalUID.encode('event', id!)], [label]);
-
-                      return true;
-                    }}
-                    onTagRemoved={(label) => {
-                      void untagEntities([GlobalUID.encode('event', id!)], [label]);
-                    }}
-                  />
+                  </Link>
                 </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="description">Description</Label>
-                  <Textarea
-                    key={event.id}
-                    id="description"
-                    defaultValue={event.description ?? ''}
-                    readOnly={!editMode}
-                    className={cn(
-                      'resize-none min-h-[120px]',
-                      editMode ? '' : 'shadow-none focus-visible:ring-0 focus-visible:border-border',
-                    )}
-                  />
-                </div>
-              </Card.Content>
-            </Card>
+              )}
+            </EntityTagsDescriptionCard>
           </div>
 
           {event.location != null &&
@@ -191,7 +182,7 @@ export function EventPage() {
             )}
         </div>
 
-        <EntityEvolutionPanel entityId={id!} />
+        <EntityEvolutionPanel entityId={id!} entityName={event.title} />
       </PageContent>
     );
   }

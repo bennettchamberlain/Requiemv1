@@ -8,17 +8,10 @@ import { SEARCH_TABLES } from '@ci/domains/search-ingress';
 /** The pgboss queue the *SearchIndexListeners consume (see SearchIndexBackfillService). */
 const SEARCH_INDEX_QUEUE = 'search-index';
 
-/**
- * Bulk-ingest destination tables cleared by a reset. ci.communications_source_dedup
- * MUST be cleared in lockstep with ci.communications: TRUNCATE does not fire the
- * per-row AFTER DELETE trigger that normally keeps the dedup table consistent, so
- * leaving it populated makes every triple in the next re-import dedupe against a
- * pointer to a deleted row — the "0 communications after reset" incident.
- */
+/** Bulk-ingest destination tables cleared by a reset. */
 const INGEST_TABLES = [
   { schema: 'ci', table: 'events' },
   { schema: 'ci', table: 'communications' },
-  { schema: 'ci', table: 'communications_source_dedup' },
   { schema: 'ci', table: 'content' },
   { schema: 'ci', table: 'inventory' },
   { schema: 'ci', table: 'browser_activity' },
@@ -34,15 +27,15 @@ export interface IngestResetResult {
 }
 
 /**
- * Full ingest reset: wipe every bulk-ingest destination table, the
- * communications dedup structure, the whole `ci_search` index (embeddings,
- * vectors, index_skips — via the shared {@link SEARCH_TABLES} list, so the two
- * can't drift), and the not-yet-run `search-index` queue jobs, all in ONE
- * transaction. Leaves the database ready for a clean re-import.
+ * Full ingest reset: wipe every bulk-ingest destination table, the whole
+ * `ci_search` index (embeddings, vectors, index_skips — via the shared
+ * {@link SEARCH_TABLES} list, so the two can't drift), and the not-yet-run
+ * `search-index` queue jobs, all in ONE transaction. Leaves the database
+ * ready for a clean re-import.
  *
  * DESTRUCTIVE and unscoped (all users' ingested data). The controller gates it
  * behind an exact confirm literal; there is deliberately no partial mode — a
- * partial reset is what desynchronizes the dedup table from the hypertable.
+ * partial reset desynchronizes tables that dedupe against each other.
  *
  * The importer keeps its own push watermark (`ci_server.last_push` in its
  * SQLite settings table) — reset that too or the next sync pushes nothing.
