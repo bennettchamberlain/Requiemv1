@@ -6,6 +6,10 @@ import { CANDIDATE_DRAG_TYPE, EVENT_DRAG_TYPE, EVENT_EXTERNAL_DRAG_TYPE } from '
 
 import { TaskSlate } from './TaskSlate';
 
+vi.mock('@/hooks', () => ({
+  useAuth: () => [{ authToken: 'test-token' }],
+}));
+
 function candidate(overrides: Partial<ScheduleCandidate> = {}): ScheduleCandidate {
   return {
     id: 'c1',

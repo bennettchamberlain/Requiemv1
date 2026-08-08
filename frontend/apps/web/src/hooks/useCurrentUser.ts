@@ -28,11 +28,14 @@ export function useCurrentUser() {
 
   const { data, loading, error, refetch } = useQuery(USER_DATA_QUERY, {
     skip: !authenticated,
+    // `entity` resolves independently; a graph lookup failure must not discard
+    // the rest of `me` and strand the session behind an infinite spinner.
+    errorPolicy: 'all',
   });
 
   return {
     user: data?.me || null,
-    loading: loading || (authenticated && !data && !error),
+    loading: loading || (authenticated && data == null && !error),
     error,
     refetch,
   };

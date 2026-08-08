@@ -116,7 +116,9 @@ export function useActionListService(limit: number = 5, options?: { skip?: boole
   return [
     {
       data: actions,
-      loading,
+      // Only block the feed before the first payload; background refetches must
+      // not swap the whole page back to a spinner.
+      loading: loading && data === undefined,
       error,
     },
     {
