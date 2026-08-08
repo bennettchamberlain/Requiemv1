@@ -62,8 +62,12 @@ function makeService(content: Reply | Reply[]) {
 
   const logger = { setContext() {}, log() {}, warn() {}, debug() {}, error() {} } as unknown as LoggerService;
 
+  const contextPackService = {
+    assemble: async () => ({ markdown: '', evidence: [], hasSignal: false }),
+  } as unknown as import('@ci/domains/persona/services/PersonaContextPackService').PersonaContextPackService;
+
   return {
-    service: new TaskBreakdownService(candidateService, ollamaService, logger),
+    service: new TaskBreakdownService(candidateService, ollamaService, contextPackService, logger),
     upserted,
     chat,
   };

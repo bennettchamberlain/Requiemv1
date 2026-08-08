@@ -2,6 +2,13 @@ import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
+import {
+  MEMORY_SCOPE,
+  READ_CAPABILITY,
+  RequireCapability,
+  RequireScopes,
+  WRITE_CAPABILITY,
+} from '@ci/common/decorators';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 
@@ -59,6 +66,7 @@ const correctionSchema = z.object({
  */
 @Controller('v1/intelligence')
 @UseGuards(JwtOrApiKeyAuthGuard)
+@RequireScopes(MEMORY_SCOPE)
 export class PersonaIntelligenceController {
   constructor(
     private readonly personaComposeService: PersonaComposeService,
@@ -67,6 +75,7 @@ export class PersonaIntelligenceController {
   ) {}
 
   @Get('agent-harnesses')
+  @RequireCapability(READ_CAPABILITY)
   async agentHarnesses(@Context() context: RequestContext) {
     const serviceContext = toServiceContext(context);
     const harnesses = await this.agentHarnessService.getHarnesses(serviceContext);
@@ -75,6 +84,7 @@ export class PersonaIntelligenceController {
   }
 
   @Post('how-youd-do-it')
+  @RequireCapability(READ_CAPABILITY)
   async howYoudDoIt(
     @Context() context: RequestContext,
     @Body(new ValidationPipe(howYoudDoItSchema)) body: z.infer<typeof howYoudDoItSchema>,
@@ -88,6 +98,7 @@ export class PersonaIntelligenceController {
   }
 
   @Post('how-youd-do-it/apply')
+  @RequireCapability(WRITE_CAPABILITY)
   async applyHowYoudDoIt(
     @Context() context: RequestContext,
     @Body(new ValidationPipe(applySchema)) body: z.infer<typeof applySchema>,
@@ -98,6 +109,7 @@ export class PersonaIntelligenceController {
   }
 
   @Get('about-you')
+  @RequireCapability(READ_CAPABILITY)
   async aboutYou(@Context() context: RequestContext) {
     const serviceContext = toServiceContext(context);
 
@@ -105,6 +117,7 @@ export class PersonaIntelligenceController {
   }
 
   @Post('about-you/correction')
+  @RequireCapability(WRITE_CAPABILITY)
   async aboutYouCorrection(
     @Context() context: RequestContext,
     @Body(new ValidationPipe(correctionSchema)) body: z.infer<typeof correctionSchema>,

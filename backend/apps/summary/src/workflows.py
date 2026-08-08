@@ -814,6 +814,16 @@ class ActionsGenerationWorkflow:
             len(action_context.get("upcoming_events", [])) +
             len(action_context.get("key_people", []))
         )
+        has_dossier = action_context.get("user_dossier") is not None
+
+        if not has_dossier:
+            workflow.logger.info("actions_skipped_no_dossier")
+            return {
+                "skipped": True,
+                "reason": "no_dossier",
+                "user_id": user_id,
+                "context_items": total_context,
+            }
 
         if total_context < 2:
             workflow.logger.info(f"insufficient_context_for_actions total_items={total_context}")

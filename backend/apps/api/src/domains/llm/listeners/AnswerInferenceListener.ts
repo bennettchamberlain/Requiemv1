@@ -1,17 +1,24 @@
 import { Injectable } from '@nestjs/common';
 
-import { type ServiceContext, SYSTEM_USER } from '@ci/common/context';
+import { type ServiceContext, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { Events, EventPayloads, OnEvent } from '@ci/domains/events';
 import { Answer, AnswerService, QuestionService } from '@ci/domains/intelligence';
+import { UserContextService } from '@ci/domains/memory';
+import { SearchService } from '@ci/domains/search-next';
 
 import { OllamaService, PROMPT_MODEL } from '../services/OllamaService';
+
+const RELATED_ANSWER_LIMIT = 10;
+const RECENT_ANSWER_FALLBACK = 5;
 
 @Injectable()
 export class AnswerInferenceListener {
   constructor(
     private readonly answerService: AnswerService,
     private readonly questionService: QuestionService,
+    private readonly searchService: SearchService,
+    private readonly userContextService: UserContextService,
     private readonly ollamaService: OllamaService,
     private readonly logger: LoggerService,
   ) {
@@ -20,106 +27,166 @@ export class AnswerInferenceListener {
 
   @OnEvent(Events.INFER_QUESTION_ANSWER)
   async inferQuestionAnswer(payload: EventPayloads[Events.INFER_QUESTION_ANSWER]) {
+    const ownerId = payload.ownerId;
+    if (!ownerId) {
+      this.logger.warn('Answer inference skipped — no user owner', {
+        questionId: payload.questionId,
+      });
+
+      return;
+    }
+
     this.logger.log('Inferring answer to question', {
-      userId: payload.ownerId,
+      userId: ownerId,
       questionId: payload.questionId,
     });
 
-    const serviceContext = {
-      userId: payload.ownerId ?? SYSTEM_USER,
-    } as ServiceContext;
+    const serviceContext = { userId: ownerId } as UserServiceContext;
 
     const question = await this.questionService.findById(serviceContext, payload.questionId);
 
-    if (question) {
-      // const associatedAnswers = await this.embeddingService.findNearest(
-      //   context,
-      //   question.text,
-      //   ['answer'],
-      //   10,
-      // );
-      //
-      // const resolvedAnswers = (
-      //   await this.answerService.findByIds(
-      //     serviceContext,
-      //     associatedAnswers.map((embedding) => embedding.id),
-      //   )
-      // ).filter((answer) => answer != null);
-
-      const resolvedAnswers: Answer[] = [];
-
-      const ragThread = [
-        {
-          role: 'system',
-          content: `
-            I am going to provide you a question that I would ask a user directly.
-            I am also going to provide you a list of questions and answers the user has already provided that I consider related context.
-            I want you to impersonate the user and infer an answer for the question I provide.
-            That is to say your answer should be in the first person as if you were the user.
-            You are impersonating a human being, so you must not reveal that you're a machine in any way.
-
-            Please keep the answer short (within 2 to 3 sentences).
-            You MUST ONLY return your inferred answer with no additional text.
-            You MUST NOT indicate that the answer is inferred.
-            Your answer MUST NOT include filler words like "honestly." We are assuming you're being honest.
-            Your answer MUST NOT compliment the question in any way. Stick straight to the answer.
-          `,
-        },
-        {
-          role: 'system',
-          content: 'The next message will be a list of related questions that the user has responded to.',
-        },
-        {
-          role: 'system',
-          content: resolvedAnswers
-            .map(
-              (answer) => `
-            Question: ${answer.question?.text}
-            Answer: ${answer.answer}
-          `,
-            )
-            .join('\n\n'),
-        },
-        {
-          role: 'system',
-          content:
-            'The next message will be the question I need you to generate an inferred answer for while impersonating the user.',
-        },
-        {
-          role: 'system',
-          content: question.text,
-        },
-      ];
-
-      // TODO: How can we improve the RAG thread?
-      //
-      // I was thinking we could include related questions as a start?
-      // We should consider cleaning up the ergonomics of embeddingService too though. Holy shit this is dirty.
-      //
-      // const associatedQuestions = await this.embeddingService.findNearest({}, question.text, 'question', 5);
-
-      const llmResponse = await this.ollamaService.chat({}, ragThread, {
-        model: PROMPT_MODEL,
-      });
-
-      this.logger.log('Inferred answer to question', {
-        userId: payload.ownerId,
-        questionId: payload.questionId,
-        question: question.text,
-        response: llmResponse.message.content,
-      });
-
-      const userAnswer = await this.answerService.findByQuestionId(serviceContext, payload.questionId);
-
-      if (userAnswer) {
-        this.logger.log('Answer exists, updating existing with RAG response');
-
-        await this.answerService.update(serviceContext, userAnswer.id, {
-          text: llmResponse.message.content,
-        });
-      } else {
-        this.logger.log('Answer does not exist, creating a new one with a RAG response');
-      }
+    if (!question) {
+      return;
     }
+
+    const resolvedAnswers = await this.findRelatedAnswers(serviceContext, question.text, payload.questionId);
+
+    let dossierBlock = '';
+    try {
+      const userCtx = await this.userContextService.getUserContextForLLM(ownerId);
+      if (userCtx) {
+        dossierBlock = this.userContextService.formatContextForSystemPrompt(userCtx);
+      }
+    } catch (err) {
+      this.logger.warn('Answer inference dossier fetch failed', {
+        userId: ownerId,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    const ragThread = [
+      {
+        role: 'system',
+        content: `You impersonate the user and infer a first-person answer to a question they have not answered yet.
+
+Rules:
+- 2-3 sentences max.
+- Return ONLY the answer text — no preamble, no "honestly", no complimenting the question.
+- Ground the answer in the dossier and related Q&A below. Never invent facts absent from context.
+- If context is thin, give a plausible short answer that fits what is known.`,
+      },
+      ...(dossierBlock
+        ? [
+            {
+              role: 'system',
+              content: `User dossier and graph context:\n${dossierBlock}`,
+            },
+          ]
+        : []),
+      {
+        role: 'system',
+        content:
+          resolvedAnswers.length > 0
+            ? `Related questions the user already answered:\n\n${resolvedAnswers
+                .map(
+                  (answer) => `Question: ${answer.question?.text ?? '(unspecified)'}\nAnswer: ${answer.answer}`,
+                )
+                .join('\n\n')}`
+            : 'No related prior answers were found — rely on the dossier only.',
+      },
+      {
+        role: 'user',
+        content: `Question to answer as the user:\n${question.text}`,
+      },
+    ];
+
+    const llmResponse = await this.ollamaService.chat(serviceContext, ragThread, {
+      model: PROMPT_MODEL,
+    });
+
+    const inferredText = llmResponse.message.content.trim();
+    if (!inferredText) {
+      this.logger.warn('Answer inference returned empty content', {
+        userId: ownerId,
+        questionId: payload.questionId,
+      });
+
+      return;
+    }
+
+    this.logger.log('Inferred answer to question', {
+      userId: ownerId,
+      questionId: payload.questionId,
+      question: question.text,
+      relatedAnswers: resolvedAnswers.length,
+      response: inferredText,
+    });
+
+    const userAnswer = await this.answerService.findByQuestionId(serviceContext, payload.questionId);
+
+    if (userAnswer) {
+      await this.answerService.update(serviceContext, userAnswer.id, {
+        text: inferredText,
+        answerMethod: 'inferred',
+        answerSource: 'rag',
+      });
+    } else {
+      await this.answerService.create(serviceContext, {
+        text: inferredText,
+        question: { id: payload.questionId },
+        answerMethod: 'inferred',
+        answerSource: 'rag',
+      });
+    }
+  }
+
+  private async findRelatedAnswers(
+    context: UserServiceContext,
+    questionText: string,
+    excludeQuestionId: string,
+  ): Promise<Answer[]> {
+    const seen = new Set<string>();
+    const resolved: Answer[] = [];
+
+    try {
+      const hits = await this.searchService.search(context, {
+        query: questionText,
+        mode: 'boosted',
+        maxResults: RELATED_ANSWER_LIMIT,
+        includeTypes: ['answer'],
+      });
+
+      if (hits.length > 0) {
+        const byId = await this.answerService.findByIds(
+          context as ServiceContext,
+          hits.map((hit) => hit.id),
+        );
+
+        for (const answer of byId) {
+          if (!answer || answer.question?.id === excludeQuestionId || seen.has(answer.id)) {
+            continue;
+          }
+
+          seen.add(answer.id);
+          resolved.push(answer);
+        }
+      }
+    } catch (err) {
+      this.logger.warn('Answer inference semantic search failed', {
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    if (resolved.length >= 3) {
+      return resolved.slice(0, RELATED_ANSWER_LIMIT);
+    }
+
+    const recent = await this.answerService.findAll(context);
+    const sorted = [...recent]
+      .filter((answer) => answer.question?.id !== excludeQuestionId && !seen.has(answer.id))
+      .sort((a, b) => new Date(b.answeredAt).getTime() - new Date(a.answeredAt).getTime())
+      .slice(0, RECENT_ANSWER_FALLBACK);
+
+    return [...resolved, ...sorted].slice(0, RELATED_ANSWER_LIMIT);
   }
 }

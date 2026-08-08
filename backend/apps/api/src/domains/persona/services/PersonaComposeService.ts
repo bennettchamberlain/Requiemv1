@@ -273,16 +273,28 @@ export class PersonaComposeService {
     task: string,
     signal: AbortSignal,
   ): Promise<HowYoudDoItResult['task']> {
+    let personaContext = '';
+    try {
+      const pack = await this.contextPackService.assemble(context, {
+        includeRecall: false,
+      });
+      if (pack.markdown.trim()) {
+        personaContext = `\n\nUser context (ground constraints and openQuestions in this — do not invent facts):\n${pack.markdown}\n`;
+      }
+    } catch (err) {
+      this.logger.warn(`normalizeTask persona pack failed: ${String(err)}`);
+    }
+
     const prompt = `Normalize a person's task into a clear title and goal. Do not invent steps.
 
 Rules:
 - title: short imperative phrase (max 80 chars)
 - goal: one sentence on what done looks like
 - openQuestions: questions you need answered to personalize (0-3)
-- constraints: constraints explicit in the task text only
+- constraints: constraints from the task text OR explicit in user context (prefs, challenges, schedule hints)
 
 Respond with STRICT JSON only.
-
+${personaContext}
 Task:
 ${task}
 `;

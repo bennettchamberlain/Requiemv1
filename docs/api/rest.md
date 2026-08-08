@@ -236,6 +236,20 @@ Class-level `JwtOrApiKeyAuthGuard` (`:146`). All GET; each query zod-validated.
 | POST | `/memory/turn` | `turn` (`:137`) | `ApiKeyGuard` | Ingest a conversation turn (dedup by SHA-256 UUIDv8). Body `{ sessionId, platform, messages[] }`. Returns `{ created, skipped }`. Driven by OpenClaw `afterTurn` / Hermes `sync_turn`. |
 | POST | `/memory/compact` | `compact` (`:202`) | `JwtOrApiKeyAuthGuard` | Manually trigger compaction (background). Returns `{ queued }`. |
 
+### `PersonaIntelligenceController` — `v1/intelligence`  ·  `domains/persona/controllers/PersonaIntelligenceController.ts:60`
+
+Persona × task intelligence for the web UI and connect keys (Hermes/OpenClaw). All routes use `JwtOrApiKeyAuthGuard`, require `@RequireScopes('memory')`, and declare `@RequireCapability` per method so scoped connect keys can reach them.
+
+| Verb | Path | Handler | Capability | Purpose |
+|------|------|---------|------------|---------|
+| GET | `/v1/intelligence/agent-harnesses` | `agentHarnesses` | read | Linked agent apps (Hermes/OpenClaw) with reachable URLs for “Open with agent”. Returns `{ harnesses }`. |
+| POST | `/v1/intelligence/how-youd-do-it` | `howYoudDoIt` | read | Multi-prompt persona compose for a task. Body `{ task, includeRecall?, candidateId? }`. Returns approach steps, evidence, confidence. |
+| POST | `/v1/intelligence/how-youd-do-it/apply` | `applyHowYoudDoIt` | write | Write compose approach steps onto the Possibilities slate. Body `{ result }` (full `HowYoudDoItResult`). Returns `{ added }`. |
+| GET | `/v1/intelligence/about-you` | `aboutYou` | read | Read dossier, preferences, recent answers for Settings → About you. |
+| POST | `/v1/intelligence/about-you/correction` | `aboutYouCorrection` | write | Teach-loop correction; writes Q&A and invalidates compose cache. Body `{ text }`. |
+
+**MCP:** the same compose pipeline is exposed as native intent `persona.compose` (executable name `persona_compose`) for keys carrying `intents`.
+
 ### `ThreadsController` — `threads`  ·  `domains/conversations/controllers/ThreadsController.ts:35`
 
 Per-method `JwtOrApiKeyAuthGuard`.

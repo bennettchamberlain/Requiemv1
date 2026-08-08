@@ -19,12 +19,15 @@ import { LLMModule } from '@ci/domains/llm';
 import { MemoryModule } from '@ci/domains/memory';
 import { ScheduleModule } from '@ci/domains/schedule';
 import { SummariesModule } from '@ci/domains/summaries';
+import { ToolsModule } from '@ci/domains/tools';
 
 import { PersonaIntelligenceController } from './controllers/PersonaIntelligenceController';
 import { AboutYouService } from './services/AboutYouService';
 import { AgentHarnessService } from './services/AgentHarnessService';
 import { PersonaComposeService } from './services/PersonaComposeService';
 import { PersonaContextPackService } from './services/PersonaContextPackService';
+import { PersonaToolsRegistrationService } from './services/PersonaToolsRegistrationService';
+import { PersonaComposeTool } from './tools/PersonaComposeTool';
 
 @Module({
   imports: [
@@ -37,8 +40,16 @@ import { PersonaContextPackService } from './services/PersonaContextPackService'
     IntelligenceModule,
     AgentModule,
     ScheduleModule,
+    ToolsModule,
   ],
-  providers: [PersonaContextPackService, PersonaComposeService, AboutYouService, AgentHarnessService],
+  providers: [
+    PersonaContextPackService,
+    PersonaComposeService,
+    AboutYouService,
+    AgentHarnessService,
+    PersonaComposeTool,
+    PersonaToolsRegistrationService,
+  ],
   controllers: [PersonaIntelligenceController],
   exports: [PersonaComposeService, AboutYouService, PersonaContextPackService],
 })

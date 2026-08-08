@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { type RequestContext, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { OllamaService, PROMPT_MODEL } from '@ci/domains/llm';
+import { PersonaContextPackService } from '@ci/domains/persona/services/PersonaContextPackService';
 
 import { type CreateCandidateDto, USER_AUTHORED_GENERATOR_PREFIX } from '../types';
 
@@ -160,6 +161,7 @@ export class TaskBreakdownService {
   constructor(
     private readonly candidateService: CandidateService,
     private readonly ollamaService: OllamaService,
+    private readonly contextPackService: PersonaContextPackService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(TaskBreakdownService.name);
@@ -253,13 +255,32 @@ export class TaskBreakdownService {
   }
 
   /** Call the model and return the tasks that survive validation. */
-  private async extract(context: RequestContext, text: string, signal: AbortSignal): Promise<ParsedTask[]> {
+  private async extract(
+    context: UserServiceContext & RequestContext,
+    text: string,
+    signal: AbortSignal,
+  ): Promise<ParsedTask[]> {
     let content: string;
+
+    let personaSection = '';
+    try {
+      const pack = await this.contextPackService.assemble(context, {
+        taskQuery: text,
+        includeRecall: true,
+      });
+      if (pack.markdown.trim()) {
+        personaSection = `\n\nAbout this person (use for duration estimates and l0_class only — do not invent tasks from this):\n${pack.markdown}\n`;
+      }
+    } catch (err) {
+      this.logger.warn('Task breakdown persona pack failed', {
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
 
     try {
       const response = await this.ollamaService.chat(
         context,
-        [{ role: 'user', content: PROMPT_HEADER + text }],
+        [{ role: 'user', content: PROMPT_HEADER + personaSection + text }],
         // No tools: this is a pure text transform and a tool call here would only
         // be the model wandering off. The schema (not the bare 'json' string) is
         // what makes the output usable — see RESPONSE_JSON_SCHEMA.

@@ -2,10 +2,14 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { LoggingModule } from '@ci/common/logging';
+import { AgentModule } from '@ci/domains/agent';
 import { ActionEntity } from '@ci/domains/intelligence';
+import { IntelligenceModule } from '@ci/domains/intelligence';
 import { LLMModule } from '@ci/domains/llm';
 import { MemoryModule } from '@ci/domains/memory';
+import { PersonaContextPackService } from '@ci/domains/persona/services/PersonaContextPackService';
 import { SummaryEntity } from '@ci/domains/summaries';
+import { SummariesModule } from '@ci/domains/summaries';
 
 import { EventCandidateEntity } from './entities/EventCandidateEntity';
 import { RhythmEntity } from './entities/RhythmEntity';
@@ -20,10 +24,13 @@ import { TaskBreakdownService } from './services/TaskBreakdownService';
     // on IntelligenceModule/SummariesModule, to keep the coupling one-way.
     TypeOrmModule.forFeature([EventCandidateEntity, RhythmEntity, ActionEntity, SummaryEntity]),
     MemoryModule,
+    IntelligenceModule,
+    SummariesModule,
+    AgentModule,
     LLMModule,
     LoggingModule,
   ],
-  providers: [CandidateService, SuggestionSyncService, TaskBreakdownService],
+  providers: [CandidateService, SuggestionSyncService, TaskBreakdownService, PersonaContextPackService],
   exports: [CandidateService, SuggestionSyncService, TaskBreakdownService],
 })
 export class ScheduleModule {}
