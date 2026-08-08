@@ -3,8 +3,9 @@ import { z } from 'zod';
 
 import { type RequestContext, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import { RecallService } from '@ci/domains/agent';
 import { OllamaService, PROMPT_MODEL } from '@ci/domains/llm';
-import { PersonaContextPackService } from '@ci/domains/persona/services/PersonaContextPackService';
+import { UserContextService } from '@ci/domains/memory';
 
 import { type CreateCandidateDto, USER_AUTHORED_GENERATOR_PREFIX } from '../types';
 
@@ -161,7 +162,8 @@ export class TaskBreakdownService {
   constructor(
     private readonly candidateService: CandidateService,
     private readonly ollamaService: OllamaService,
-    private readonly contextPackService: PersonaContextPackService,
+    private readonly userContextService: UserContextService,
+    private readonly recallService: RecallService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(TaskBreakdownService.name);
@@ -264,12 +266,22 @@ export class TaskBreakdownService {
 
     let personaSection = '';
     try {
-      const pack = await this.contextPackService.assemble(context, {
-        taskQuery: text,
-        includeRecall: true,
+      const blocks: string[] = [];
+      const userCtx = await this.userContextService.getUserContextForLLM(context.userId);
+      if (userCtx) {
+        blocks.push(this.userContextService.formatContextForSystemPrompt(userCtx));
+      }
+
+      const recall = await this.recallService.recall(context, {
+        query: text,
+        maxResults: 5,
       });
-      if (pack.markdown.trim()) {
-        personaSection = `\n\nAbout this person (use for duration estimates and l0_class only — do not invent tasks from this):\n${pack.markdown}\n`;
+      if (recall.block.trim()) {
+        blocks.push(recall.block);
+      }
+
+      if (blocks.length > 0) {
+        personaSection = `\n\nAbout this person (use for duration estimates and l0_class only — do not invent tasks from this):\n${blocks.join('\n\n')}\n`;
       }
     } catch (err) {
       this.logger.warn('Task breakdown persona pack failed', {

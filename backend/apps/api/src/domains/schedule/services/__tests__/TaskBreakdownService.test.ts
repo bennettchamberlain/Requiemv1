@@ -2,7 +2,9 @@ import { BadRequestException } from '@nestjs/common';
 
 import type { RequestContext, UserServiceContext } from '@ci/common/context';
 import type { LoggerService } from '@ci/common/logging';
+import type { RecallService } from '@ci/domains/agent';
 import type { OllamaService } from '@ci/domains/llm';
+import type { UserContextService } from '@ci/domains/memory';
 
 import type { CreateCandidateDto } from '../../types';
 import type { CandidateService } from '../CandidateService';
@@ -62,12 +64,23 @@ function makeService(content: Reply | Reply[]) {
 
   const logger = { setContext() {}, log() {}, warn() {}, debug() {}, error() {} } as unknown as LoggerService;
 
-  const contextPackService = {
-    assemble: async () => ({ markdown: '', evidence: [], hasSignal: false }),
-  } as unknown as import('@ci/domains/persona/services/PersonaContextPackService').PersonaContextPackService;
+  const userContextService = {
+    getUserContextForLLM: async () => null,
+    formatContextForSystemPrompt: () => '',
+  } as unknown as UserContextService;
+
+  const recallService = {
+    recall: async () => ({ block: '', resultCount: 0 }),
+  } as unknown as RecallService;
 
   return {
-    service: new TaskBreakdownService(candidateService, ollamaService, contextPackService, logger),
+    service: new TaskBreakdownService(
+      candidateService,
+      ollamaService,
+      userContextService,
+      recallService,
+      logger,
+    ),
     upserted,
     chat,
   };
