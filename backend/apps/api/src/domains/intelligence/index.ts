@@ -19,6 +19,9 @@
  *     inform the LLM's responses.
  *   - **`EventsModule`**: Integrated for handling asynchronous tasks related to the Q&A process.
  *
+ * Persona × task compose lives in {@link PersonaModule} (`domains/persona`) so this
+ * module stays free of Agent/Schedule import cycles.
+ *
  * @module IntelligenceModule
  */
 

@@ -37,4 +37,10 @@ export type {
   TimeFlex,
 } from './entities/EventCandidateEntity';
 export type { Rhythm, RhythmKind, RhythmSource, RhythmStrength } from './entities/RhythmEntity';
-export type { CreateCandidateDto, CreateRhythmDto, DeclineReason, UpdateRhythmDto } from './types';
+export {
+  USER_AUTHORED_GENERATOR_PREFIX,
+  type CreateCandidateDto,
+  type CreateRhythmDto,
+  type DeclineReason,
+  type UpdateRhythmDto,
+} from './types';
