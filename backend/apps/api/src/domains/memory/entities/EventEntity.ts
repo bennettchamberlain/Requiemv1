@@ -16,7 +16,7 @@ import { UserEntity, User } from '@ci/domains/user';
 // Idempotency key for captured/imported events. Created by migration
 // 20260620213807_add_events_source_idempotency; declared here so TypeORM is
 // aware of it (schema sync stays off — the migration is the source of truth).
-@Index('events_source_triple_uniq', ['sourceType', 'sourceSystem', 'sourceId'], {
+@Index('events_source_triple_uniq', ['userId', 'sourceType', 'sourceSystem', 'sourceId'], {
   unique: true,
   where: '"source_id" IS NOT NULL',
 })
@@ -105,9 +105,6 @@ export class EventEntity {
   @Column({ type: 'boolean', default: false, name: 'is_inferred' })
   isInferred!: boolean;
 
-  @Column({ type: 'text', nullable: true, name: 'prediction_model' })
-  predictionModel!: string | null;
-
   @Column({ type: 'jsonb', default: '{}', name: 'inference_sources' })
   inferenceSources!: Record<string, unknown>;
 
@@ -120,21 +117,11 @@ export class EventEntity {
   @Column({ type: 'integer', nullable: true, name: 'energy_level' })
   energyLevel!: number | null;
 
-  @Column({ type: 'double precision', nullable: true, name: 'productivity_impact' })
-  productivityImpact!: number | null;
-
   @Column({ type: 'text', default: 'confirmed' })
   status!: string;
 
-  // Retrieval ranking (managed by enrichment + the read path, not at ingest).
-  // salience starts at 1.0 and decays / is reinforced over time; access_count
-  // and last_accessed feed recency+frequency boosting for agent recall.
-  @Column({ type: 'double precision', default: 1.0 })
-  salience!: number;
-
-  @Column({ type: 'integer', default: 0, name: 'access_count' })
-  accessCount!: number;
-
+  // last_accessed stays on the hot table (read-path touch). salience /
+  // access_count / other unused analytics live in ci.event_analytics.
   @Column({ type: 'timestamptz', nullable: true, name: 'last_accessed' })
   lastAccessed!: Date | null;
 
@@ -149,17 +136,8 @@ export class EventEntity {
   @Column({ type: 'text', nullable: true, name: 'external_sync_status' })
   externalSyncStatus!: string | null;
 
-  @Column({ type: 'timestamptz', nullable: true, name: 'last_synced_at' })
-  lastSyncedAt!: Date | null;
-
   @Column({ type: 'uuid', nullable: true, name: 'parent_event_id' })
   parentEventId!: string | null;
-
-  @Column('uuid', { array: true, nullable: true, name: 'related_event_ids' })
-  relatedEventIds!: string[] | null;
-
-  @Column({ type: 'uuid', nullable: true, name: 'supersedes_event_id' })
-  supersedesEventId!: string | null;
 
   @Column({ type: 'text', nullable: true, name: 'created_by' })
   createdBy!: string | null;
@@ -205,21 +183,14 @@ export class EventEntity {
       metadata: entity.metadata,
       isPredicted: entity.isPredicted,
       isInferred: entity.isInferred,
-      predictionModel: entity.predictionModel,
       inferenceSources: entity.inferenceSources,
       tags: entity.tags,
       sentimentScore: entity.sentimentScore,
       energyLevel: entity.energyLevel,
-      productivityImpact: entity.productivityImpact,
       status: entity.status,
       isDeleted: entity.isDeleted,
       externalSyncStatus: entity.externalSyncStatus,
-      lastSyncedAt: entity.lastSyncedAt,
       parentEventId: entity.parentEventId,
-      relatedEventIds: entity.relatedEventIds,
-      supersedesEventId: entity.supersedesEventId,
-      salience: entity.salience,
-      accessCount: entity.accessCount,
       lastAccessed: entity.lastAccessed,
       sharingLevel: entity.sharingLevel,
       createdBy: entity.createdBy,

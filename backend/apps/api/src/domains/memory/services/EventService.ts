@@ -275,9 +275,8 @@ export class EventService {
         sourceId: entity.sourceId,
       }),
       scope: { userId: context.userId },
-      // The events_source_triple_uniq index is NOT user-scoped (see migration
-      // 20260620213807); the arbiter must match it exactly.
-      conflictTarget: '(source_type, source_system, source_id) WHERE source_id IS NOT NULL',
+      // Must match events_source_triple_uniq (user-scoped as of 20260808065724).
+      conflictTarget: '(user_id, source_type, source_system, source_id) WHERE source_id IS NOT NULL',
       tripleColumns: ['source_type', 'source_system', 'source_id'],
       // Centralized refresh contract — currently empty, so conflicts stay
       // DO NOTHING find-or-return.
@@ -528,10 +527,6 @@ export class EventService {
       updateData.isInferred = data.is_inferred;
     }
 
-    if (data.prediction_model) {
-      updateData.predictionModel = data.prediction_model;
-    }
-
     if (data.inference_sources) {
       updateData.inferenceSources = data.inference_sources;
     }
@@ -548,10 +543,6 @@ export class EventService {
       updateData.energyLevel = data.energy_level;
     }
 
-    if (data.productivity_impact) {
-      updateData.productivityImpact = data.productivity_impact;
-    }
-
     if (data.status) {
       updateData.status = data.status;
     }
@@ -564,20 +555,8 @@ export class EventService {
       updateData.externalSyncStatus = data.external_sync_status;
     }
 
-    if (data.last_synced_at) {
-      updateData.lastSyncedAt = data.last_synced_at;
-    }
-
     if (data.parent_event_id) {
       updateData.parentEventId = data.parent_event_id;
-    }
-
-    if (data.related_event_ids) {
-      updateData.relatedEventIds = data.related_event_ids;
-    }
-
-    if (data.supersedes_event_id) {
-      updateData.supersedesEventId = data.supersedes_event_id;
     }
 
     if (data.created_by) {

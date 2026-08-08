@@ -3,6 +3,7 @@ import GraphQLJSONObject from 'graphql-type-json';
 
 import { type Event } from '@ci/domains/memory';
 
+import { ContentConnection } from './ContentConnection';
 import { EntityTagType } from './EntityTagType';
 import { GlobalUID } from './GlobalUID';
 import { Node } from './Node';
@@ -88,6 +89,11 @@ export class EventType implements Node, Taggable {
 
   @Field(() => [EntityTagType])
   tags!: EntityTagType[];
+
+  @Field(() => ContentConnection, {
+    description: 'Content rows linked to this event via ci.content.event_id.',
+  })
+  contents?: ContentConnection;
 
   static toType(event: Event): EventType {
     return {

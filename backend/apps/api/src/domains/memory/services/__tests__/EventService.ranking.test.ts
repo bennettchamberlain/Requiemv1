@@ -46,18 +46,14 @@ describe('EventService.create — ranking + consent columns', () => {
 });
 
 describe('EventEntity.toEgressType — ranking + consent surfaced', () => {
-  it('exposes salience, accessCount, lastAccessed, sharingLevel', () => {
+  it('exposes lastAccessed and sharingLevel (analytics columns live on ci.event_analytics)', () => {
     const accessed = new Date('2026-02-02T00:00:00Z');
     const egress = EventEntity.toEgressType({
       id: 'e1',
-      salience: 0.7,
-      accessCount: 4,
       lastAccessed: accessed,
       sharingLevel: 'household',
     } as EventEntity);
 
-    expect(egress.salience).toBe(0.7);
-    expect(egress.accessCount).toBe(4);
     expect(egress.lastAccessed).toBe(accessed);
     expect(egress.sharingLevel).toBe('household');
   });

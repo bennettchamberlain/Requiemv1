@@ -129,6 +129,15 @@ async function envelopeResponse(
  * (`{ events: [...] }`, max 1,000), a capture raw log ahead of materialization,
  * and per-record rejection — see {@link ingest}.
  *
+ * Timeline preference (Wave D): for kinds that are **not** `position` or
+ * `communications`, prefer materializing onto the `ci.events` timeline when the
+ * record is an activity-in-time. Today that is already true for `/v1/events`
+ * (primary path), and `/v1/browser-activity` dual-writes `view` events +
+ * `web-page` content while keeping `ci.browser_activity` for dual-read.
+ * `/v1/contents` and `/v1/inventory` remain their own tables (content may link
+ * to an event via `event_id` / shared provenance). Positions stay sensor
+ * hypertables; communications stay the dedicated plain table.
+ *
  * Every bulk route accepts TWO request encodings, switched on Content-Type:
  *
  *   - `application/x-ndjson` (the DEFAULT bulk contract): one record per line,
@@ -170,7 +179,8 @@ export class BulkIngestController {
     private readonly dataSource: DataSource,
   ) {}
 
-  // G1 unified capture ingest — the events instance of the shared
+  // G1 unified capture ingest — preferred `/v1` materialization for anything
+  // that is an activity-in-time (Wave D). Instance of the shared
   // capture->materialize->link pipeline (see captureAndMaterialize;
   // event-ingest-spec). Re-POSTing the same (source_type, source_system,
   // source_id) returns `duplicate +1`, not an error.
@@ -610,6 +620,9 @@ export class BulkIngestController {
     serviceContext: UserServiceContext,
     records: BulkBrowserActivityRecord[],
   ): Promise<{ ingested: number; duplicate: number }> {
+    // Capture destination stays browser_activity for raw-log identity, but
+    // BrowserActivityService.createMany dual-writes ci.events (view) +
+    // ci.content (web-page) — the Wave D timeline fold.
     return this.captureAndMaterialize({
       serviceContext,
       records,

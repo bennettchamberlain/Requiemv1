@@ -1,12 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 
 import { type UserServiceContext } from '@ci/common/context';
 import { EmbeddingGenerationService } from '@ci/common/embeddings';
 
-import { EmbeddingEntity } from '../entities/EmbeddingEntity';
-import { VectorEntity } from '../entities/VectorEntity';
 import type { EntityIdentifier, IndexableEntity } from '../types';
 
 /**
@@ -83,11 +81,9 @@ type SearchOptions =
 @Injectable()
 export class SearchService {
   constructor(
-    @InjectRepository(EmbeddingEntity)
-    private readonly embeddingRepo: Repository<EmbeddingEntity>,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
     private readonly embeddingGenerationService: EmbeddingGenerationService,
-    @InjectRepository(VectorEntity)
-    private readonly vectorRepo: Repository<VectorEntity>,
   ) {}
 
   async search(
@@ -173,7 +169,7 @@ export class SearchService {
       LIMIT ${maxResults}
     `;
 
-    const rows = await this.embeddingRepo.query(sql, [context.userId, vector, distanceFloor]);
+    const rows = await this.dataSource.query(sql, [context.userId, vector, distanceFloor]);
 
     return rows.map((row: { entity_id: string; score: string }) => ({
       id: row.entity_id,
@@ -346,7 +342,7 @@ export class SearchService {
       params.push(typeFilter.param);
     }
 
-    const results = await this.embeddingRepo.query(sql, params);
+    const results = await this.dataSource.query(sql, params);
 
     return results.map((row: ScoredRowResult) => ({
       id: row.entity_id,
@@ -394,7 +390,7 @@ export class SearchService {
       params.push(typeFilter.param);
     }
 
-    const results = await this.vectorRepo.query(sql, params);
+    const results = await this.dataSource.query(sql, params);
 
     return results.map((row: ScoredRowResult) => ({
       id: row.entity_id,
@@ -461,7 +457,7 @@ export class SearchService {
       params.push(typeFilter.param);
     }
 
-    const results = await this.vectorRepo.query(sql, params);
+    const results = await this.dataSource.query(sql, params);
 
     return results.map((row: ScoredRowResult) => ({
       id: row.entity_id,

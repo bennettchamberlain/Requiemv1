@@ -28,13 +28,12 @@ import { SearchNextModule } from '@ci/domains/search-next';
 import { UserModule, UserEntity } from '@ci/domains/user';
 
 import { GraphController } from './controllers/GraphController';
-import { BaseEntity } from './entities/BaseEntity';
 import { type Communication, CommunicationEntity } from './entities/CommunicationEntity';
 import { type Concept, ConceptEntity } from './entities/ConceptEntity';
 import { ContentEntity } from './entities/ContentEntity';
 import { EntityMergeBlockEntity } from './entities/EntityMergeBlockEntity';
 import { type Event, EventEntity } from './entities/EventEntity';
-import { FileEntity } from './entities/FileEntity';
+import { GraphFileNodeEntity } from './entities/GraphFileNodeEntity';
 import { GraphNodeEntity } from './entities/GraphNodeEntity';
 import {
   type Item,
@@ -55,7 +54,6 @@ import { type ProductModel, ProductModelEntity } from './entities/ProductModelEn
 import { type Receipt, ReceiptEntity, type ReceiptExtractionState } from './entities/ReceiptEntity';
 import { type ReceiptLineItem, ReceiptLineItemEntity } from './entities/ReceiptLineItemEntity';
 import { RelationshipEntity } from './entities/RelationshipEntity';
-import { ThingEntity } from './entities/ThingEntity';
 import { GraphEventListener } from './listeners/GraphEventListener';
 import { CommunicationService } from './services/CommunicationService';
 import { ConceptService } from './services/ConceptService';
@@ -83,14 +81,12 @@ import { UserContextService } from './services/UserContextService';
   imports: [
     TypeOrmModule.forFeature([
       EntityMergeBlockEntity,
-      BaseEntity,
       CommunicationEntity,
       ContentEntity,
       EventEntity,
       PersonEntity,
       ConceptEntity,
       PlaceEntity,
-      ThingEntity,
       GraphNodeEntity,
       ItemEntity,
       ProductModelEntity,
@@ -98,7 +94,7 @@ import { UserContextService } from './services/UserContextService';
       ReceiptLineItemEntity,
       ObjectObservationEntity,
       RelationshipEntity,
-      FileEntity,
+      GraphFileNodeEntity,
       BrowserActivityEntity,
       UserEntity,
       RelationshipEntity,
@@ -158,7 +154,7 @@ export {
   CommunicationEntity,
   ContentEntity,
   EventEntity,
-  FileEntity,
+  GraphFileNodeEntity,
   ItemEntity,
   ObjectObservationEntity,
   PersonEntity,
@@ -167,7 +163,6 @@ export {
   ProductModelEntity,
   ReceiptEntity,
   ReceiptLineItemEntity,
-  ThingEntity,
   GraphNodeEntity,
   RelationshipEntity,
 };

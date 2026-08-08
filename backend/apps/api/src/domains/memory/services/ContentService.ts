@@ -401,6 +401,46 @@ export class ContentService {
   }
 
   /**
+   * Batch-load content rows linked to each of `eventIds`, oldest first.
+   * Returns one `Content[]` per input id (same order), so a GraphQL DataLoader
+   * can resolve `Event.contents` in a single query. Ownership is scoped through
+   * the joined event's `user_id` — same rationale as {@link findMediaFilesByEventIds}.
+   */
+  async findByEventIds(context: UserServiceContext, eventIds: string[]): Promise<Content[][]> {
+    if (eventIds.length === 0) {
+      return [];
+    }
+
+    const entities = await this.contentRepository
+      .createQueryBuilder('content')
+      .innerJoinAndSelect('content.event', 'event')
+      .where('event.userId = :userId', { userId: context.userId })
+      .andWhere('content.event_id IN (:...eventIds)', { eventIds })
+      .orderBy('content.created_at', 'ASC')
+      .getMany();
+
+    const contentsMap = new Map<string, Content[]>();
+
+    for (const entity of entities) {
+      const eventId = entity.event?.id;
+      if (!eventId) {
+        continue;
+      }
+
+      const list = contentsMap.get(eventId);
+      const content = ContentEntity.toEgressType(entity);
+
+      if (list) {
+        list.push(content);
+      } else {
+        contentsMap.set(eventId, [content]);
+      }
+    }
+
+    return eventIds.map((id) => contentsMap.get(id) ?? []);
+  }
+
+  /**
    * Batch-resolve the media file linked to each of `eventIds`. Photo/video
    * events carry their binary via a `ci.content` row (type='media',
    * external_id = the ORIGINAL `ci.files` id) written by the importer's media

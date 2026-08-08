@@ -10,10 +10,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EmbeddingModule } from '@ci/common/embeddings';
 
-import { EmbeddingEntity } from './entities/EmbeddingEntity';
 import { type EntityTag, EntityTagEntity } from './entities/EntityTagEntity';
 import { type Tag, type TimestampedTag, TagEntity } from './entities/TagEntity';
-import { VectorEntity } from './entities/VectorEntity';
 import { SearchService } from './services/SearchService';
 import { TagService } from './services/TagService';
 
@@ -22,7 +20,7 @@ import { TagService } from './services/TagService';
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([EmbeddingEntity, EntityTagEntity, TagEntity, VectorEntity]),
+    TypeOrmModule.forFeature([EntityTagEntity, TagEntity]),
     EmbeddingModule,
   ],
   providers: [SearchService, TagService],

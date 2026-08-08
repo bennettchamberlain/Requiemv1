@@ -13,6 +13,47 @@ import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next'
 import { type Person, PersonEntity } from '../entities/PersonEntity';
 import { CreatePersonDto, UpdatePersonDto } from '../types';
 
+/** Map properties JSONB identity keys onto the typed Person columns. */
+function typedColumnsFromProperties(properties: Record<string, unknown> = {}): {
+  firstName: string | null;
+  middleName: string | null;
+  lastName: string | null;
+  birthDate: string | null;
+  isSelf?: boolean;
+} {
+  const asText = (key: string): string | null => {
+    const raw = properties[key];
+    if (typeof raw !== 'string') {
+      return null;
+    }
+
+    const trimmed = raw.trim();
+
+    return trimmed === '' ? null : trimmed;
+  };
+
+  const cols: {
+    firstName: string | null;
+    middleName: string | null;
+    lastName: string | null;
+    birthDate: string | null;
+    isSelf?: boolean;
+  } = {
+    firstName: asText('first_name'),
+    middleName: asText('middle_name'),
+    lastName: asText('last_name'),
+    birthDate: asText('birth_date'),
+  };
+
+  if (properties.is_self === true || properties.is_self === 'true') {
+    cols.isSelf = true;
+  } else if (properties.is_self === false || properties.is_self === 'false') {
+    cols.isSelf = false;
+  }
+
+  return cols;
+}
+
 @Injectable()
 export class PersonService {
   constructor(
@@ -57,6 +98,7 @@ export class PersonService {
       }
     }
 
+    const properties = data.properties || {};
     const instance = this.personRepository.create({
       id: data.id || uuid7(),
       name: data.name,
@@ -69,7 +111,8 @@ export class PersonService {
       user: {
         id: context.userId,
       },
-      properties: data.properties || {},
+      properties,
+      ...typedColumnsFromProperties(properties),
     });
 
     let entity: PersonEntity;
@@ -118,8 +161,10 @@ export class PersonService {
       return [];
     }
 
-    const entities = data.map((item) =>
-      this.personRepository.create({
+    const entities = data.map((item) => {
+      const properties = item.properties || {};
+
+      return this.personRepository.create({
         id: item.id || uuid7(),
         name: item.name,
         description: item.description,
@@ -131,9 +176,10 @@ export class PersonService {
         user: {
           id: context.userId,
         },
-        properties: item.properties || {},
-      }),
-    );
+        properties,
+        ...typedColumnsFromProperties(properties),
+      });
+    });
 
     // One set-based INSERT keyed on the linked provenance index, split into
     // param-budget-bounded chunks so a large batch never exceeds Postgres'
@@ -355,6 +401,7 @@ export class PersonService {
 
   async update(context: ServiceContext, id: string, data: UpdatePersonDto): Promise<Person | null> {
     const { properties, ...rest } = data;
+    const typed = properties ? typedColumnsFromProperties(properties) : {};
 
     const result = await this.personRepository.update(
       {
@@ -367,6 +414,7 @@ export class PersonService {
       },
       {
         ...rest,
+        ...typed,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         properties: properties as any, // TypeORM will handle JSON serialization
       },
@@ -406,6 +454,28 @@ export class PersonService {
 
     if (data.propertiesPatch && Object.keys(data.propertiesPatch).length > 0) {
       set.properties = () => `properties || :propertiesPatch::jsonb`;
+      // Keep typed columns in sync with the structured-person editor patch.
+      const typed = typedColumnsFromProperties(data.propertiesPatch);
+      if ('first_name' in data.propertiesPatch) {
+        set.firstName = typed.firstName;
+      }
+
+      if ('middle_name' in data.propertiesPatch) {
+        set.middleName = typed.middleName;
+      }
+
+      if ('last_name' in data.propertiesPatch) {
+        set.lastName = typed.lastName;
+      }
+
+      if ('birth_date' in data.propertiesPatch) {
+        set.birthDate = typed.birthDate;
+      }
+
+      if ('is_self' in data.propertiesPatch) {
+        // Explicit null/false clears the self flag; omit → leave column alone.
+        set.isSelf = typed.isSelf ?? null;
+      }
     }
 
     if (Object.keys(set).length === 0) {
