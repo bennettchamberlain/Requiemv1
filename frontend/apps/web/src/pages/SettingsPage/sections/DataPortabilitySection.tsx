@@ -1,38 +1,19 @@
 import { useRef, useState } from 'react';
 
-import { fetchJson } from '@ci/common';
 import { Button, Card, Dialog, Input, Label } from '@ci/shadcn';
 import { Download, Upload } from '@ci/shadcn/icons';
 
 import { useAuth, useCurrentUser } from '@/hooks';
+import {
+  downloadAccountExport,
+  uploadAccountImport,
+  uploadLegacyAccountImport,
+} from '@/lib/accountDataPortability';
 
-interface ExportResponse {
-  filename: string;
-  archive: unknown;
-}
+function isLegacyJsonExport(file: File): boolean {
+  const lower = file.name.toLowerCase();
 
-interface ImportResponse {
-  tablesImported: number;
-  rowsImported: number;
-  filesRestored: number;
-}
-
-function authHeaders(authToken: string | null | undefined): HeadersInit {
-  return {
-    ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-  };
-}
-
-function downloadJson(filename: string, payload: unknown): void {
-  const blob = new Blob([JSON.stringify(payload, null, 2)], {
-    type: 'application/json;charset=utf-8',
-  });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
+  return lower.endsWith('.json') && !lower.endsWith('.ndjson');
 }
 
 export function DataPortabilitySection() {
@@ -57,15 +38,7 @@ export function DataPortabilitySection() {
     setSuccess(null);
 
     try {
-      const result = await fetchJson<ExportResponse>('/api/account/export', {
-        headers: authHeaders(authToken),
-      });
-
-      if (!result?.archive) {
-        throw new Error('Export returned no data');
-      }
-
-      downloadJson(result.filename ?? 'ci-memory-export.json', result.archive);
+      await downloadAccountExport(authToken);
       setSuccess('Export downloaded.');
     } catch {
       setError('Could not export your data. Please try again.');
@@ -84,24 +57,9 @@ export function DataPortabilitySection() {
     setSuccess(null);
 
     try {
-      const text = await selectedFile.text();
-      const archive = JSON.parse(text) as unknown;
-
-      const result = await fetchJson<ImportResponse>('/api/account/import', {
-        method: 'POST',
-        headers: {
-          ...authHeaders(authToken),
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          confirmEmail: confirmEmail.trim(),
-          archive,
-        }),
-      });
-
-      if (!result) {
-        throw new Error('Import returned no result');
-      }
+      const result = isLegacyJsonExport(selectedFile)
+        ? await uploadLegacyAccountImport(authToken, selectedFile, confirmEmail)
+        : await uploadAccountImport(authToken, selectedFile, confirmEmail);
 
       setSuccess(
         `Import complete — ${result.rowsImported.toLocaleString()} rows across ${result.tablesImported} tables, ${result.filesRestored.toLocaleString()} files restored.`,
@@ -131,8 +89,8 @@ export function DataPortabilitySection() {
             <div className="space-y-1">
               <h3 className="text-sm font-medium">Export all data</h3>
               <p className="text-sm text-muted-foreground">
-                Downloads a JSON archive of your memories, files, graph, schedule, and settings from this
-                server.
+                Streams an NDJSON archive of your memories, files, graph, schedule, and settings. Large
+                accounts are supported without a single-file size cap.
               </p>
             </div>
             <Button onClick={() => void handleExport()} disabled={exporting}>
@@ -147,8 +105,8 @@ export function DataPortabilitySection() {
             <div className="space-y-1">
               <h3 className="text-sm font-medium">Import data</h3>
               <p className="text-sm text-muted-foreground">
-                Replaces your current Memory data with the contents of a CI Memory export file. This cannot be
-                undone.
+                Replaces your current Memory data with a CI Memory export file (.ndjson, or legacy .json).
+                This cannot be undone.
               </p>
             </div>
             <Button variant="outline" onClick={() => setImportOpen(true)}>
@@ -165,7 +123,7 @@ export function DataPortabilitySection() {
       <input
         ref={fileInputRef}
         type="file"
-        accept="application/json,.json"
+        accept=".ndjson,application/x-ndjson,application/json,.json"
         className="hidden"
         onChange={(event) => {
           setSelectedFile(event.target.files?.[0] ?? null);
@@ -200,7 +158,7 @@ export function DataPortabilitySection() {
                 variant="outline"
                 onClick={() => fileInputRef.current?.click()}
               >
-                {selectedFile ? selectedFile.name : 'Choose JSON file'}
+                {selectedFile ? selectedFile.name : 'Choose export file'}
               </Button>
             </div>
 

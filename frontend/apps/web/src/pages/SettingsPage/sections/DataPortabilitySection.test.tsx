@@ -13,36 +13,35 @@ vi.mock('@/hooks', () => ({
   useCurrentUser: () => ({ user: { id: 'u1', email: h.email }, loading: false, error: undefined }),
 }));
 
-const fetchJson = vi.hoisted(() => vi.fn());
-vi.mock('@ci/common', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@ci/common')>()),
-  fetchJson,
+const downloadAccountExport = vi.hoisted(() => vi.fn());
+const uploadAccountImport = vi.hoisted(() => vi.fn());
+const uploadLegacyAccountImport = vi.hoisted(() => vi.fn());
+
+vi.mock('@/lib/accountDataPortability', () => ({
+  downloadAccountExport,
+  uploadAccountImport,
+  uploadLegacyAccountImport,
 }));
 
 describe('DataPortabilitySection', () => {
   beforeEach(() => {
     h.authToken = 'jwt-abc';
     h.email = 'jsmith@example.com';
-    fetchJson.mockResolvedValue({
-      filename: 'ci-memory-export-2026-08-08.json',
-      archive: { version: 1 },
+    downloadAccountExport.mockResolvedValue(undefined);
+    uploadAccountImport.mockResolvedValue({
+      tablesImported: 1,
+      rowsImported: 2,
+      filesRestored: 0,
+      format: 'ndjson',
     });
-    vi.stubGlobal(
-      'URL',
-      class {
-        static createObjectURL = vi.fn(() => 'blob:export');
-
-        static revokeObjectURL = vi.fn();
-      },
-    );
   });
 
-  it('requests an export archive when export is clicked', async () => {
+  it('starts a streaming export when export is clicked', async () => {
     render(<DataPortabilitySection />);
     fireEvent.click(screen.getByRole('button', { name: 'Export all my data' }));
 
     await waitFor(() => {
-      expect(fetchJson).toHaveBeenCalledWith('/api/account/export', expect.any(Object));
+      expect(downloadAccountExport).toHaveBeenCalledWith('jwt-abc');
     });
   });
 });
