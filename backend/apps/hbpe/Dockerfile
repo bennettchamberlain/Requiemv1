@@ -1,6 +1,6 @@
-# Built from the repository root, not this directory: ci-hbpe is a uv
-# workspace member, so it needs the root manifest and the root uv.lock to
-# resolve. See the `build` target in the Makefile for the context.
+# Built from the repository root, not this directory: ci-hbpe installs
+# ci-telemetry from backend/packages/telemetry, which a context rooted here
+# could not reach. See the `build` target in the Makefile for the context.
 
 FROM python:3.11-slim-bookworm
 
@@ -35,19 +35,19 @@ RUN useradd -m -u 1000 hbpe
 # Only the manifests and the lock, so this layer stays cached until a
 # dependency actually changes rather than on every source edit.
 #
-# Every workspace member's pyproject.toml has to be present even when this
-# image does not use it, because uv reads the whole workspace to resolve
-# against the single root lock. Adding a member means adding a line here.
-# A missing one fails the build loudly, which is the safe direction.
+# Only the manifests this image resolves are copied: the root pair, this
+# service, and the workspace members it depends on. Unrelated members stay
+# out, so their manifest edits do not invalidate this layer.
 COPY pyproject.toml uv.lock .python-version ./
 COPY backend/apps/hbpe/pyproject.toml ./backend/apps/hbpe/pyproject.toml
-COPY backend/apps/summary/pyproject.toml ./backend/apps/summary/pyproject.toml
 COPY backend/packages/telemetry/pyproject.toml ./backend/packages/telemetry/pyproject.toml
 
-# --locked fails the build if uv.lock does not match the manifests, so an
-# image can never be built from an unresolved dependency set. This is the
-# reason the lockfile exists; the previous `uv pip install -r pyproject.toml`
-# ignored it entirely and re-resolved on every build.
+# --frozen installs exactly what uv.lock records without validating the
+# lock against the manifests, which is what allows the partial copy above:
+# validation would demand every member's pyproject.toml. Lock freshness is
+# still enforced, one level up, where the whole workspace exists: `make
+# build` runs `uv lock --check` before building any image, and CI runs
+# `uv sync --all-packages --locked`.
 #
 # torch is excluded and installed below from a hardware-specific index. The
 # CPU/CUDA/ROCm builds are the same version from different indexes, which is
@@ -62,7 +62,7 @@ COPY backend/packages/telemetry/pyproject.toml ./backend/packages/telemetry/pypr
 # the ci-telemetry workspace member, whose source has not been copied yet.
 # Skipping only the project would make uv try to build it from an empty
 # directory.
-RUN uv sync --locked --package ci-hbpe --no-install-workspace --no-dev \
+RUN uv sync --frozen --package ci-hbpe --no-install-workspace --no-dev \
     --no-install-package torch
 
 # ── Hardware-specific packages ────────────────────────────────────────────────

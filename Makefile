@@ -221,6 +221,13 @@ build: ## Build images. ENV=local|staging|production (default local) GPU=cpu|cud
 	@echo "$(VALID_ENVS)" | grep -qw "$(ENV)" || { printf "$(RED)✗$(RESET) Invalid ENV '$(ENV)'. Choose one of: $(VALID_ENVS)\n\n"; exit 1; }
 	@echo "$(VALID_GPUS)" | grep -qw "$(GPU)" || { printf "$(RED)✗$(RESET) Invalid GPU '$(GPU)'. Choose one of: $(VALID_GPUS)\n\n"; exit 1; }
 
+	@# The Python images sync with --frozen, which trusts uv.lock as-is so
+	@# each Dockerfile only has to copy the manifests it actually uses. The
+	@# freshness check they gave up lives here instead, where the whole
+	@# workspace is present: fail before building anything rather than bake
+	@# a stale resolution into an image.
+	@uv lock --check || { printf "$(RED)✗$(RESET) uv.lock is out of date with the manifests. Run 'uv lock' and retry.\n\n"; exit 1; }
+
 	@$(MAKE) distribute-license
 
 	@printf "$(call task_icon,build,🧱) Building $(ENV) images...\n"

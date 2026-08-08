@@ -1,6 +1,6 @@
-# Built from the repository root, not this directory: ci-hbpe is a uv
-# workspace member, so it needs the root manifest and the root uv.lock to
-# resolve. See the `build` target in the Makefile for the context.
+# Built from the repository root, not this directory: ci-hbpe installs
+# ci-telemetry from backend/packages/telemetry, which a context rooted here
+# could not reach. See the `build` target in the Makefile for the context.
 
 FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
 
@@ -37,14 +37,14 @@ ENV VIRTUAL_ENV=/app/.venv \
 RUN useradd -m -u 1000 hbpe
 
 # ── Locked dependencies ───────────────────────────────────────────────────────
-# See backend/apps/hbpe/Dockerfile for why every member's manifest is copied
-# and why torch is excluded here and installed from a hardware index below.
+# See backend/apps/hbpe/Dockerfile for why only this image's own manifests
+# are copied and synced with --frozen, and why torch is excluded here and
+# installed from a hardware index below.
 COPY pyproject.toml uv.lock .python-version ./
 COPY backend/apps/hbpe/pyproject.toml ./backend/apps/hbpe/pyproject.toml
-COPY backend/apps/summary/pyproject.toml ./backend/apps/summary/pyproject.toml
 COPY backend/packages/telemetry/pyproject.toml ./backend/packages/telemetry/pyproject.toml
 
-RUN uv sync --locked --package ci-hbpe --no-install-workspace --no-dev \
+RUN uv sync --frozen --package ci-hbpe --no-install-workspace --no-dev \
     --no-install-package torch
 
 # ── GPU-specific packages ─────────────────────────────────────────────────────
