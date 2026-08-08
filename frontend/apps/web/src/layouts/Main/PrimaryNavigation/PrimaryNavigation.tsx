@@ -80,7 +80,7 @@ export function PrimaryNavigation() {
             <Portal id="nav-views" className="flex flex-row items-center empty:hidden" />
           </div>
           {!isSharedView && (
-            <div className="w-full min-w-0 md:ml-auto md:w-72 md:shrink-0 lg:w-80">
+            <div className="w-full min-w-0 md:ml-auto md:w-96 md:shrink-0 lg:w-[32rem]">
               <GlobalSearchBox />
             </div>
           )}

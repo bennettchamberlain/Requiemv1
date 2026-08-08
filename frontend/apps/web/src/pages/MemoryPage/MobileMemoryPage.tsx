@@ -88,8 +88,8 @@ export default function MobileMemoryPage() {
         </Breadcrumb>
       </Portal.Slot>
 
-      <PageContent>
-        <MemoryHubShell>
+      <PageContent className="gap-4 p-0">
+        <MemoryHubShell fillHeight>
         <div className="space-y-3">
           {/* The global header search isn't shown on mobile, so the search field
               and advanced filters live here inline. */}

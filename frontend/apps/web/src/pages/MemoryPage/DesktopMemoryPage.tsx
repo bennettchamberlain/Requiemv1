@@ -18,7 +18,6 @@ import { useEntityService } from '../MemoryPage/useEntityService';
 import { ActivityTimelineRail } from './ActivityTimelineRail';
 import { EntityDetails } from './Components/EntityDetails';
 import { ExplorerToolbar } from './Components/ExplorerToolbar/ExplorerToolbar';
-import { countActiveFilters } from './Components/ExplorerToolbar/filterParams';
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
 import { ListView } from './ListView';
@@ -289,11 +288,9 @@ export default function DesktopMemoryPage() {
       </Portal.Slot>
 
       <PageContent className="gap-4 p-0">
-        <MemoryHubShell>
+        <MemoryHubShell fillHeight>
         <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4">
-          {countActiveFilters(searchParams) > 0 && (
-            <ExplorerToolbar open />
-          )}
+          <ExplorerToolbar open />
           {/* List view splits into two independently-scrolled panes: wheeling
               over the left rail moves the heatmap's window through time, while
               the result list on the right keeps its own scroll. */}
