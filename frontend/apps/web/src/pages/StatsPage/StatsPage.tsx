@@ -220,8 +220,7 @@ function BarListCard({
   headerAction,
   ...listProps
 }: BarListCardProps) {
-  const resolvedSections: BarSection[] =
-    listProps.sections ?? [{ key: 'all', rows: listProps.rows }];
+  const resolvedSections: BarSection[] = listProps.sections ?? [{ key: 'all', rows: listProps.rows }];
   const allRows = resolvedSections.flatMap((section) => section.rows);
   const total = allRows.reduce((sum, row) => sum + row.count, 0);
   const max = allRows.reduce((best, row) => Math.max(best, row.count), 0);

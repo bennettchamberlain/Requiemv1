@@ -94,7 +94,6 @@ const IGNORED_RELATIONSHIP_PROPERTIES = new Set([
   'updated_at',
 ]);
 
-
 function formatPropertyLabel(key: string): string {
   return key
     .replace(/([a-z])([A-Z])/g, '$1 $2')

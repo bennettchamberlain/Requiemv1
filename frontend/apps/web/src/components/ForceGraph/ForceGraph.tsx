@@ -333,7 +333,13 @@ function ForceGraphBase({
    * node still gets its label at render time, which costs nothing and moves nothing.
    */
   const standingLabels = useMemo(
-    () => standingLabelIds(nodes, (id) => degreeById.get(id) ?? 0, [centerNodeId], (id) => !isContext(id)),
+    () =>
+      standingLabelIds(
+        nodes,
+        (id) => degreeById.get(id) ?? 0,
+        [centerNodeId],
+        (id) => !isContext(id),
+      ),
     [centerNodeId, degreeById, isContext, nodes],
   );
 
