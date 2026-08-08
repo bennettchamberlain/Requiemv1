@@ -22,7 +22,6 @@ const SECTIONS: HubSection[] = [
   },
   { to: '/memory/content', label: 'Content', match: (p) => p === '/memory/content', flag: 'files.page' },
   { to: '/memory/tags', label: 'Tags', match: (p) => p === '/memory/tags', flag: 'tags.page' },
-  { to: '/memory/knowledge', label: 'Knowledge', match: (p) => p === '/memory/knowledge' },
   {
     to: '/memory/questions',
     label: 'Questions',

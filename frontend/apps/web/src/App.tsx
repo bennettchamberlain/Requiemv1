@@ -30,7 +30,6 @@ import {
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
 import FeedPage from '@/pages/FeedPage';
 import LoginPage from '@/pages/LoginPage';
-import { MemoryKnowledgeRedirect } from '@/pages/MemoryHub/MemoryKnowledgeRedirect';
 import SignupPage from '@/pages/SignupPage';
 import SplashPage from '@/pages/SplashPage';
 
@@ -306,14 +305,7 @@ function AppRoutes() {
             />
           )}
 
-          <Route
-            path="/memory/knowledge"
-            element={
-              <ProtectedRoute>
-                <MemoryKnowledgeRedirect />
-              </ProtectedRoute>
-            }
-          />
+          <Route path="/memory/knowledge" element={<Navigate to="/memory?view=graph" replace />} />
 
           {isFeatureEnabled('chat.page') && (
             <Route
