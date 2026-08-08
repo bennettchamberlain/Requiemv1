@@ -258,8 +258,9 @@ export function PromptsPage() {
         </Breadcrumb>
       </Portal.Slot>
 
-      <PageContent>
+      <PageContent className="gap-4 p-0">
         <MemoryHubShell>
+        <div className="flex flex-col gap-4 px-4 pb-4">
         <AnswerQuestionPrompt onAnswerSubmitted={fetchAnswers} />
 
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -525,6 +526,7 @@ export function PromptsPage() {
             </div>
           </>
         )}
+        </div>
         </MemoryHubShell>
       </PageContent>
 

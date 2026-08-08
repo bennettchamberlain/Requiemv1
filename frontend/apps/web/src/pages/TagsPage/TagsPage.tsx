@@ -74,9 +74,9 @@ export function TagsPage() {
         </Breadcrumb>
       </Portal.Slot>
 
-      <PageContent>
+      <PageContent className="gap-4 p-0">
         <MemoryHubShell>
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 px-4 pb-4">
             <Input
               placeholder="Filter tags..."
               value={searchQuery}

@@ -424,8 +424,9 @@ export function PeoplePage() {
     content = <EmptyState message={`Couldn't load people: ${error.message}`} />;
   } else {
     content = (
-      <PageContent ref={scrollRef}>
+      <PageContent ref={scrollRef} className="gap-4 p-0">
         <MemoryHubShell>
+        <div className="flex flex-col gap-4 px-4 pb-4">
         <div className="flex items-center gap-2">
           <Input
             placeholder="Search people and communications..."
@@ -499,6 +500,7 @@ export function PeoplePage() {
             </div>
           </>
         )}
+        </div>
         </MemoryHubShell>
       </PageContent>
     );

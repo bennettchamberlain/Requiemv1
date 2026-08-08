@@ -301,8 +301,9 @@ export function PlacesPage() {
     content = <EmptyState message={`Couldn't load places: ${error.message}`} />;
   } else {
     content = (
-      <PageContent>
+      <PageContent className="gap-4 p-0">
         <MemoryHubShell>
+        <div className="flex flex-col gap-4 px-4 pb-4">
         <div className="flex items-center gap-2">
           <Input
             placeholder="Search places by name..."
@@ -344,6 +345,7 @@ export function PlacesPage() {
               ))
             )}
           </div>
+        </div>
         </div>
         </MemoryHubShell>
       </PageContent>

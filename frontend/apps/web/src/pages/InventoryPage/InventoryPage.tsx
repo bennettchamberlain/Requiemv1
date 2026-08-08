@@ -54,10 +54,6 @@ export function InventoryPage() {
 
   const items: InventoryItem[] = data?.items?.edges?.map((edge: { node: InventoryItem }) => edge.node) || [];
 
-  if (loading) {
-    return <div className="p-8 text-center text-gray-500">Loading inventory...</div>;
-  }
-
   return (
     <>
       <Portal.Slot id="breadcrumbs">
@@ -76,10 +72,15 @@ export function InventoryPage() {
         </Breadcrumb>
       </Portal.Slot>
 
-      <PageContent>
+      <PageContent className="gap-4 p-0">
         <MemoryHubShell>
+        <div className="flex flex-col gap-4 px-4 pb-4">
         <h1 className="text-2xl font-bold">Things</h1>
 
+        {loading && items.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Loading things…</p>
+        ) : (
+        <>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {items.map((item) => (
             <div
@@ -125,6 +126,9 @@ export function InventoryPage() {
           item={selectedItem}
           create={false}
         />
+        </>
+        )}
+        </div>
         </MemoryHubShell>
       </PageContent>
     </>
