@@ -15,9 +15,11 @@
 # backend/packages/<name>, mirroring frontend/packages/* on the JS side.
 #
 # The lockfile. There is exactly one uv.lock, here, covering every
-# member. Never resolve a merge conflict in it by hand: take either
-# side, then run `uv lock` to regenerate. CI runs `uv sync --locked`,
-# which fails if the lock does not match the manifests.
+# member. Never resolve a merge conflict in it by hand: a git merge
+# driver (scripts/merge-uv-lock.sh, registered by `yarn install`) keeps
+# one side automatically; run `uv lock` afterward to reconcile. A
+# forgotten relock is caught by `uv lock --check` in `make lint` and
+# `make build`, and by `uv sync --locked` in CI.
 #
 # Python version. .python-version pins the interpreter and uv downloads
 # it on demand, so Python is not listed in .tool-versions. That keeps
