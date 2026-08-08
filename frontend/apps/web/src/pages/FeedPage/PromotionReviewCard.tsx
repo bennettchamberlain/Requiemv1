@@ -28,7 +28,7 @@ export function PromotionReviewCard() {
       const rows = (await fetchJson<PromotionCandidate[]>('/api/personalization/promotion-candidates', {
         headers: { Authorization: `Bearer ${authToken}` },
       })) ?? [];
-      setCandidates(rows.slice(0, 3));
+      setCandidates(rows.slice(0, 1));
     } catch {
       setCandidates([]);
     } finally {
@@ -58,13 +58,27 @@ export function PromotionReviewCard() {
 
   return (
     <div className="space-y-3">
-      {candidates.map((candidate) => (
+      {candidates.map((candidate) => {
+        const questionText =
+          typeof candidate.payload.questionText === 'string' ? candidate.payload.questionText : null;
+
+        return (
         <Card key={candidate.id}>
           <Card.Header>
             <Card.Title className="text-base">Review suggestion</Card.Title>
             <Card.Description>
-              {candidate.reviewPrompt ??
-                `Companion found a ${candidate.kind.replace('_', ' ')} (${Math.round(candidate.confidence * 100)}% confidence)`}
+              {questionText ? (
+                <>
+                  <span className="block font-medium text-foreground">{questionText}</span>
+                  <span className="mt-1 block">
+                    {candidate.reviewPrompt ??
+                      `Companion found a ${candidate.kind.replace('_', ' ')} (${Math.round(candidate.confidence * 100)}% confidence)`}
+                  </span>
+                </>
+              ) : (
+                candidate.reviewPrompt ??
+                `Companion found a ${candidate.kind.replace('_', ' ')} (${Math.round(candidate.confidence * 100)}% confidence)`
+              )}
             </Card.Description>
           </Card.Header>
           <Card.Content className="flex gap-2">
@@ -76,7 +90,8 @@ export function PromotionReviewCard() {
             </Button>
           </Card.Content>
         </Card>
-      ))}
+        );
+      })}
     </div>
   );
 }

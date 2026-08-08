@@ -4,12 +4,12 @@ import type { OnboardingFormData } from './OnboardingPage';
 import { StepHeader } from './StepHeader';
 
 export const TRUST_OPTIONS = [
-  { value: 'cautious' as const, label: 'Cautious', hint: 'Review everything yourself' },
-  { value: 'balanced' as const, label: 'Balanced', hint: 'High-confidence items auto-promote' },
+  { value: 'cautious' as const, label: 'Cautious', hint: 'Ask before saving any inferred answer' },
+  { value: 'balanced' as const, label: 'Balanced', hint: 'Strong inferences save automatically; others ask first' },
   {
     value: 'hands_off' as const,
     label: 'Hands-off',
-    hint: 'Auto-promote and auto-schedule estimate-bearing work',
+    hint: 'Save inferred answers automatically; auto-schedule when estimates are solid',
   },
 ];
 
