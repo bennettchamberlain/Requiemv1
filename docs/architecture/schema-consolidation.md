@@ -25,7 +25,9 @@ See [hypertable-audit.md](./hypertable-audit.md) and ADR-0002.
 
 Do not break smart-rotation tables (`questions`, `answers`, `feed_queue`, `summaries`, `actions`, `tasks`).
 
-## Follow-ups (not in this branch)
+## Follow-ups
 
+- **Done (post-merge):** Import finish that scopes search backfill to `browser-activity` also indexes dual-written `event` + `content` via `expandBackfillEntityTypes` in `SearchIndexBackfillService`
+- **Done (post-merge):** Removed dead analytics fields from event create/update DTOs (`prediction_model`, `productivity_impact`, `last_synced_at`, `related_event_ids`, `supersedes_event_id`) — those live on `ci.event_analytics` when written
 - Drop `ci.browser_activity` after dual-read consumers move to events/content
 - Rename remaining `owner_user_id` columns only if a dedicated blast-radius wave is scheduled (see ADR-0003)

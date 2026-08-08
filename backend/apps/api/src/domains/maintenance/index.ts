@@ -84,6 +84,7 @@ export { GraphEnrichmentService, type GraphEnrichmentOptions } from './services/
 export {
   SearchIndexBackfillService,
   BACKFILLABLE_ENTITIES,
+  expandBackfillEntityTypes,
   type BackfillableEntity,
   type SearchIndexBackfillResult,
 } from './services/SearchIndexBackfillService';
