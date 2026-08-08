@@ -1,22 +1,7 @@
 import type { ReactNode } from 'react';
 
 import { Tooltip } from '@ci/shadcn';
-import {
-  BookOpen,
-  Brain,
-  CalendarRange,
-  ChartColumn,
-  LifeBuoy,
-  Inbox,
-  Lightbulb,
-  MessagesSquare,
-  Package,
-  HardDrive,
-  MapPin,
-  NotebookPen,
-  FolderSearch2,
-  Users,
-} from '@ci/shadcn/icons';
+import { BookOpen, Brain, CalendarRange, ChartColumn, LifeBuoy, Inbox, Lightbulb, MessagesSquare, NotebookPen, FolderSearch2 } from '@ci/shadcn/icons';
 
 import { useFeatures } from '@/common/feature';
 
@@ -70,14 +55,6 @@ export function SecondaryNavigation() {
             <Brain className="h-6 w-6" strokeWidth={1.25} />
           </NavLink>
 
-          <NavLink to="/people" label="People">
-            <Users className="h-6 w-6" strokeWidth={1.25} />
-          </NavLink>
-
-          <NavLink to="/places" label="Places">
-            <MapPin className="h-6 w-6" strokeWidth={1.25} />
-          </NavLink>
-
           {isFeatureEnabled('insights.page') && (
             <NavLink to="/insights" label="Insights">
               <Lightbulb className="h-6 w-6" strokeWidth={1.25} />
@@ -103,18 +80,6 @@ export function SecondaryNavigation() {
           <NavLink to="/notes" label="Notes" end={false}>
             <NotebookPen className="h-6 w-6" strokeWidth={1.25} />
           </NavLink>
-
-          {isFeatureEnabled('enable.inventory.page') && (
-            <NavLink to="/inventory" label="Inventory">
-              <Package className="h-6 w-6" strokeWidth={1.25} />
-            </NavLink>
-          )}
-
-          {isFeatureEnabled('files.page') && (
-            <NavLink to="/files" label="Files">
-              <HardDrive className="h-6 w-6" strokeWidth={1.25} />
-            </NavLink>
-          )}
         </div>
 
         <div className="mt-auto flex flex-col gap-2 pb-2">

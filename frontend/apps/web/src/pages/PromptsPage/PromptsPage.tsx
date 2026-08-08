@@ -15,8 +15,8 @@ import {
 } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
-import { useFeatures } from '@/common/feature';
 import { PageContent } from '@/components/layout';
+import { MemoryHubShell } from '@/components/MemoryHub';
 import { useAuth } from '@/hooks';
 
 import { AnswerQuestionPrompt } from './AnswerQuestionPrompt';
@@ -34,9 +34,7 @@ interface Answer {
 }
 
 export function PromptsPage() {
-  const { isFeatureEnabled } = useFeatures();
-
-  usePageTitle(`${isFeatureEnabled('new.insights.page') ? 'Insights' : 'Prompts'} - Companion Intelligence`);
+  usePageTitle('Questions - Companion Intelligence');
 
   const [{ authToken }] = useAuth();
 
@@ -254,21 +252,20 @@ export function PromptsPage() {
             </Breadcrumb.Item>
             <Breadcrumb.Separator className="hidden md:block" />
             <Breadcrumb.Item>
-              <Breadcrumb.Page>
-                {isFeatureEnabled('new.insights.page') ? 'Prompts' : 'Insights'}
-              </Breadcrumb.Page>
+              <Breadcrumb.Page>Questions</Breadcrumb.Page>
             </Breadcrumb.Item>
           </Breadcrumb.List>
         </Breadcrumb>
       </Portal.Slot>
 
       <PageContent>
+        <MemoryHubShell>
         <AnswerQuestionPrompt onAnswerSubmitted={fetchAnswers} />
 
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           {/* Mobile: Title and refresh button in same row */}
           <div className="flex items-center justify-between lg:justify-start">
-            {!isFeatureEnabled('new.insights.page') && <h1 className="text-2xl font-bold">Insights</h1>}
+            <h1 className="text-2xl font-bold">Questions</h1>
             <Button
               variant="outline"
               size="icon"
@@ -528,6 +525,7 @@ export function PromptsPage() {
             </div>
           </>
         )}
+        </MemoryHubShell>
       </PageContent>
 
       <EditAnswerDialog

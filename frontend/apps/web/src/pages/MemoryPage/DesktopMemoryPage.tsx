@@ -3,11 +3,12 @@ import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@apollo/client';
 import { GlobalUID, Portal } from '@ci/common';
 import { ENTITY_TYPE_REVERSE_MAP } from '@ci/common/src/constants';
-import { Breadcrumb, Button, cn, DropdownMenu, Sheet } from '@ci/shadcn';
-import { ChartNetwork, ChevronDown, Images, List, Map as MapIcon, type LucideIcon } from '@ci/shadcn/icons';
+import { Breadcrumb, Button, Sheet } from '@ci/shadcn';
+import { ChartNetwork, Images, List, Map as MapIcon, type LucideIcon } from '@ci/shadcn/icons';
 import { useSearchParams, Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
+import { MemoryHubShell } from '@/components/MemoryHub';
 import { FileChunkModal } from '@/components/modals/FileChunkModal/FileChunkModal';
 import { AVAILABLE_ENTITY_TYPES, DropdownProvider } from '@/components/SearchBox/useDropdown';
 import { gql } from '@/graphql';
@@ -85,16 +86,17 @@ export default function DesktopMemoryPage() {
   // The advanced-filter drawer state lives in the URL (`?advanced=1`) because it
   // renders inside the header SearchBox's dropdown panel (GlobalSearchBox pins
   // the panel open from the same param); this page owns the toggle + content.
-  const advancedOpen = searchParams.get('advanced') === '1';
+  // Advanced filters are exposed by default on the Memory hub.
+  const advancedOpen = searchParams.get('advanced') !== '0';
   const toggleAdvanced = () =>
     setSearchParams(
       (params) => {
         const nextParams = new URLSearchParams(params);
 
         if (advancedOpen) {
-          nextParams.delete('advanced');
+          nextParams.set('advanced', '0');
         } else {
-          nextParams.set('advanced', '1');
+          nextParams.delete('advanced');
         }
 
         return nextParams;
@@ -262,8 +264,6 @@ export default function DesktopMemoryPage() {
     }
   }, []);
 
-  const activeView = VIEW_TABS.find((tab) => tab.value === activeTab) ?? VIEW_TABS[1];
-
   return (
     <>
       {/* The view switcher is the last breadcrumb crumb: a combo button showing
@@ -281,53 +281,31 @@ export default function DesktopMemoryPage() {
             </Breadcrumb.Item>
             <Breadcrumb.Separator className="hidden md:block" />
             <Breadcrumb.Item>
-              <Breadcrumb.Page>Memory</Breadcrumb.Page>
-            </Breadcrumb.Item>
-            <Breadcrumb.Separator />
-            <Breadcrumb.Item>
-              <DropdownMenu modal={false}>
-                <DropdownMenu.Trigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    aria-label={`${activeView.title} — change view`}
-                    className="group font-normal"
-                  >
-                    <activeView.Icon strokeWidth={1.5} />
-                    {activeView.label}
-                    <ChevronDown className="size-3.5 transition-transform group-data-[state=open]:rotate-180" />
-                  </Button>
-                </DropdownMenu.Trigger>
-                <DropdownMenu.Content
-                  className="rounded-lg p-2"
-                  side="bottom"
-                  align="start"
-                  sideOffset={4}
-                  // Radix refocuses the trigger on close, which lights the
-                  // button's focus-visible ring even after a mouse click.
-                  onCloseAutoFocus={(event) => event.preventDefault()}
-                >
-                  <div className="grid grid-cols-4 gap-2">
-                    {VIEW_TABS.map(({ value, label, title, Icon }) => (
-                      <DropdownMenu.Item
-                        key={value}
-                        title={title}
-                        onSelect={() => setActiveTab(value)}
-                        className={cn(
-                          'h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1',
-                          activeTab === value && 'bg-accent text-accent-foreground',
-                        )}
-                      >
-                        <Icon className="h-6! w-6!" strokeWidth={1.25} />
-                        <span className="text-xs">{label}</span>
-                      </DropdownMenu.Item>
-                    ))}
-                  </div>
-                </DropdownMenu.Content>
-              </DropdownMenu>
+              <Breadcrumb.Page>Events</Breadcrumb.Page>
             </Breadcrumb.Item>
           </Breadcrumb.List>
         </Breadcrumb>
+      </Portal.Slot>
+
+      <Portal.Slot id="nav-views">
+        <div className="flex flex-wrap items-center gap-1">
+          {VIEW_TABS.map(({ value, label, title, Icon }) => (
+            <Button
+              key={value}
+              type="button"
+              variant={activeTab === value ? 'secondary' : 'ghost'}
+              size="sm"
+              title={title}
+              aria-label={title}
+              aria-pressed={activeTab === value}
+              onClick={() => setActiveTab(value)}
+              className="h-8 gap-1.5 px-2"
+            >
+              <Icon className="h-4 w-4" strokeWidth={1.5} />
+              <span className="hidden sm:inline">{label}</span>
+            </Button>
+          ))}
+        </div>
       </Portal.Slot>
 
       {/* The Advanced toggle sits inset at the right edge of the header search box
@@ -355,8 +333,9 @@ export default function DesktopMemoryPage() {
         )}
       </Portal.Slot>
 
-      <PageContent className="p-0 gap-0">
-        <div className="flex min-h-0 flex-1 flex-col">
+      <PageContent className="gap-4 p-0">
+        <MemoryHubShell>
+        <div className="flex min-h-0 flex-1 flex-col px-4 pb-4">
           {/* List view splits into two independently-scrolled panes: wheeling
               over the left rail moves the heatmap's window through time, while
               the result list on the right keeps its own scroll. */}
@@ -370,6 +349,7 @@ export default function DesktopMemoryPage() {
           {activeTab === 'gallery' && <GalleryView />}
           {activeTab === 'graph' && <GraphView variant="desktop" />}
         </div>
+        </MemoryHubShell>
       </PageContent>
 
       {activeSheetEntity && (

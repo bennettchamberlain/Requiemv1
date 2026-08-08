@@ -9,6 +9,7 @@ import {
   type HowYoudDoItResult,
 } from '@/api/usePersonaCompose';
 import type { DeclineReason, ScheduleCandidate } from '@/api/useScheduleCandidates';
+import { ChatWithAgentMenu } from '@/components/ChatWithAgent';
 import { useAuth } from '@/hooks';
 import {
   CANDIDATE_DRAG_TYPE,
@@ -129,6 +130,16 @@ function CandidateCard({
               <Tooltip.Content side="top">How you’d do it</Tooltip.Content>
             </Tooltip>
           )}
+
+          <ChatWithAgentMenu
+            context={{
+              title: candidate.title,
+              body: rationale,
+              sourceKind: 'schedule-candidate',
+              sourceId: candidate.id,
+            }}
+            className="h-6 w-6"
+          />
 
           <Tooltip>
             <Tooltip.Trigger asChild>

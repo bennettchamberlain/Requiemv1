@@ -20,6 +20,7 @@ import {
   classifyEvent,
   normalizeClass,
   sourceColor,
+  sourceLabel,
   sourceOf,
 } from '@/lib/activityPalette';
 
@@ -56,17 +57,22 @@ function formatRange(start: Date, end: Date): string {
  */
 function rhythmFooter(generatedAt: string | null, coversWindow: boolean): string {
   if (!generatedAt) {
-    return 'Rhythm layer unavailable — showing committed time only.';
+    return 'HBPE rhythm forecast is off — showing committed time only.';
   }
 
   if (!coversWindow) {
-    return 'Rhythm only reaches seven days out — this window shows committed time only.';
+    return 'HBPE rhythm only covers the next seven days — this week shows committed time only.';
   }
 
   const updated = new Date(generatedAt).toLocaleDateString([], { month: 'short', day: 'numeric' });
 
-  return `Rhythm from your own patterns, updated ${updated}.`;
+  return `Pattern rhythm (HBPE) from your history, updated ${updated}.`;
 }
+
+const COLOR_MODE_LABEL: Record<ColorMode, string> = {
+  type: 'Activity',
+  source: 'Source',
+};
 
 /** One swatch + word. The word is why hue never carries identity alone. */
 function LegendKey({ color, label }: { color: string; label: string }) {
@@ -97,7 +103,11 @@ function ScheduleLegend({
     if (mode === 'source') {
       const sources = [...new Set(events.map(sourceOf))].sort();
 
-      return sources.map((source) => ({ key: source, color: sourceColor(source), label: source }));
+      return sources.map((source) => ({
+        key: source,
+        color: sourceColor(source),
+        label: sourceLabel(source),
+      }));
     }
 
     // Both lanes contribute: a class the rhythm predicts but you have not
@@ -259,28 +269,33 @@ export function SchedulePage() {
           <div className="ml-auto flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
             <ScheduleLegend mode={colorMode} events={events} rhythm={rhythm} />
 
-            <div
-              role="radiogroup"
-              aria-label="Colour by"
-              className="flex shrink-0 items-center rounded-md border border-border p-0.5"
-            >
-              {(['type', 'source'] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  role="radio"
-                  aria-checked={colorMode === mode}
-                  onClick={() => setColorMode(mode)}
-                  className={cn(
-                    'rounded-[4px] px-2 py-0.5 text-[11px] capitalize transition-colors',
-                    colorMode === mode
-                      ? 'bg-accent text-accent-foreground'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  {mode}
-                </button>
-              ))}
+            <div className="flex shrink-0 flex-col items-end gap-0.5">
+              <div
+                role="radiogroup"
+                aria-label="Colour blocks by activity type or calendar source"
+                className="flex items-center rounded-md border border-border p-0.5"
+              >
+                {(['type', 'source'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    role="radio"
+                    aria-checked={colorMode === mode}
+                    onClick={() => setColorMode(mode)}
+                    className={cn(
+                      'rounded-[4px] px-2 py-0.5 text-[11px] transition-colors',
+                      colorMode === mode
+                        ? 'bg-accent text-accent-foreground'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {COLOR_MODE_LABEL[mode]}
+                  </button>
+                ))}
+              </div>
+              <span className="text-[10px] text-muted-foreground">
+                {colorMode === 'type' ? 'What kind of activity' : 'Which calendar or connector'}
+              </span>
             </div>
           </div>
         </div>

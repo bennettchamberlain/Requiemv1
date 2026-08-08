@@ -1,17 +1,13 @@
 import { useMemo } from 'react';
 
-import { GlobalUID } from '@ci/common';
 import { Avatar, DropdownMenu } from '@ci/shadcn';
 import {
-  BadgeQuestionMark,
   ListTodo,
   LogOut,
   SunMoon,
   Settings2,
   Cable,
   Palette,
-  ChartPie,
-  Tags,
 } from '@ci/shadcn/icons';
 import { Link, useLocation } from 'react-router-dom';
 
@@ -68,35 +64,6 @@ export function NavUser() {
               </div>
             </div>
           </DropdownMenu.Label>
-        </DropdownMenu.Group>
-
-        <DropdownMenu.Separator />
-
-        <DropdownMenu.Group>
-          <DropdownMenu.Item asChild>
-            <Link to={`/people/${user?.entity?.id ? GlobalUID.parse('person', user.entity.id) : ''}`}>
-              <ChartPie />
-              Knowledge
-            </Link>
-          </DropdownMenu.Item>
-
-          {isFeatureEnabled('tags.page') && (
-            <DropdownMenu.Item asChild>
-              <Link to="/tags">
-                <Tags />
-                Tags
-              </Link>
-            </DropdownMenu.Item>
-          )}
-
-          {isFeatureEnabled('insights.page') && isFeatureEnabled('new.insights.page') && (
-            <DropdownMenu.Item asChild>
-              <Link to="/prompts">
-                <BadgeQuestionMark />
-                Prompts
-              </Link>
-            </DropdownMenu.Item>
-          )}
         </DropdownMenu.Group>
 
         <DropdownMenu.Separator />

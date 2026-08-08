@@ -6,6 +6,7 @@ import { ChartNetwork, Images, List, Map as MapIcon } from '@ci/shadcn/icons';
 import { Link, useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
+import { MemoryHubShell } from '@/components/MemoryHub';
 import { FileChunkModal } from '@/components/modals/FileChunkModal/FileChunkModal';
 
 import { useEntityService } from '../MemoryPage/useEntityService';
@@ -43,7 +44,7 @@ export default function MobileMemoryPage() {
       return nextParams;
     });
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(() => searchParams.get('advanced') !== '0');
   const activeFilterCount = countActiveFilters(searchParams);
 
   // Reflect the default view in the URL so the query is shareable/restorable.
@@ -83,13 +84,14 @@ export default function MobileMemoryPage() {
             </Breadcrumb.Item>
             <Breadcrumb.Separator />
             <Breadcrumb.Item>
-              <Breadcrumb.Page>Memory</Breadcrumb.Page>
+              <Breadcrumb.Page>Events</Breadcrumb.Page>
             </Breadcrumb.Item>
           </Breadcrumb.List>
         </Breadcrumb>
       </Portal.Slot>
 
       <PageContent>
+        <MemoryHubShell>
         <div className="space-y-3">
           {/* The global header search isn't shown on mobile, so the search field
               lives here inline, next to the Advanced toggle; the advanced drawer
@@ -143,6 +145,7 @@ export default function MobileMemoryPage() {
 
           {activeTab === 'graph' && <GraphView variant="mobile" />}
         </>
+        </MemoryHubShell>
       </PageContent>
       {activeSheetEntity && (
         <Sheet open={detailsOpen} onOpenChange={toggleactiveEntity}>

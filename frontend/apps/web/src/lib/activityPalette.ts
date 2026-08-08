@@ -226,6 +226,45 @@ export function sourceOf(event: Pick<ScheduleEvent, 'sourceSystem'>): string {
   return event.sourceSystem?.trim() || LOCAL_SOURCE;
 }
 
+/** Human label for a source swatch in the schedule legend. */
+export function sourceLabel(source: string): string {
+  if (source === LOCAL_SOURCE) {
+    return 'Companion';
+  }
+
+  const key = source.toLowerCase();
+
+  if (key.includes('google') || key.includes('gmail')) {
+    return 'Google';
+  }
+
+  if (key.includes('microsoft') || key.includes('outlook')) {
+    return 'Microsoft';
+  }
+
+  if (key.includes('apple') || key.includes('icloud')) {
+    return 'Apple';
+  }
+
+  if (key.includes('facebook')) {
+    return 'Facebook';
+  }
+
+  if (key.includes('signal')) {
+    return 'Signal';
+  }
+
+  if (key.includes('spotify')) {
+    return 'Spotify';
+  }
+
+  if (key.includes('github')) {
+    return 'GitHub';
+  }
+
+  return source.charAt(0).toUpperCase() + source.slice(1);
+}
+
 /**
  * The CSS colour an event takes under the active mode. Returned as a
  * `var(--…)` reference rather than a hex so the light/dark steps swap with the

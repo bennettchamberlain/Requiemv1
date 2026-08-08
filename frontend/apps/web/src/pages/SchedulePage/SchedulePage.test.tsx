@@ -139,7 +139,7 @@ describe('SchedulePage — what the footer is allowed to claim', () => {
 
     renderWithProviders(<SchedulePage />);
 
-    expect(screen.getByText(/Rhythm from your own patterns, updated/)).toBeInTheDocument();
+    expect(screen.getByText(/Pattern rhythm \(HBPE\) from your history, updated/)).toBeInTheDocument();
   });
 
   it('does not claim freshness for a week the forecast horizon cannot reach', () => {
@@ -150,8 +150,8 @@ describe('SchedulePage — what the footer is allowed to claim', () => {
 
     renderWithProviders(<SchedulePage />);
 
-    expect(screen.queryByText(/Rhythm from your own patterns/)).not.toBeInTheDocument();
-    expect(screen.getByText(/only reaches seven days out/)).toBeInTheDocument();
+    expect(screen.queryByText(/Pattern rhythm \(HBPE\)/)).not.toBeInTheDocument();
+    expect(screen.getByText(/only covers the next seven days/)).toBeInTheDocument();
   });
 
   it('says the layer is unavailable when the forecast resolver returned nothing', () => {
@@ -159,7 +159,7 @@ describe('SchedulePage — what the footer is allowed to claim', () => {
 
     renderWithProviders(<SchedulePage />);
 
-    expect(screen.getByText(/Rhythm layer unavailable/)).toBeInTheDocument();
+    expect(screen.getByText(/HBPE rhythm forecast is off/)).toBeInTheDocument();
   });
 });
 

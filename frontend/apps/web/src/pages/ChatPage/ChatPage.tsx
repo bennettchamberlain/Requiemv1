@@ -11,6 +11,7 @@ import { Chat, type FormData } from '@/components/Chat';
 import { HowYoudDoItCard } from '@/components/HowYoudDoItCard';
 import { ModelSelector } from '@/components/ModelSelector';
 import { useChatRequester, useCounter, useModel } from '@/hooks';
+import { clearAgentChatContext, readAgentChatContext } from '@/lib/agentChat';
 
 import { ChatSidebar } from './ChatSidebar';
 import { type Message } from './types';
@@ -27,6 +28,7 @@ function ChatPageContent() {
 
   const { id: initialThreadId } = useParams<{ id?: string }>();
   const [initialMessages, setInitialMessages] = useState<Message[]>([]);
+  const [chatDraft, setChatDraft] = useState('');
   const [{ selectedModel }] = useModel();
   const [personaTask, setPersonaTask] = useState('');
   const [applyingPersona, setApplyingPersona] = useState(false);
@@ -74,6 +76,26 @@ function ChatPageContent() {
     setInitialMessages([]);
     hasSetInitialMessages.current = initialThreadId ? false : true;
     resolvedThreadId.current = initialThreadId ?? null;
+  }, [initialThreadId]);
+
+  useEffect(() => {
+    if (initialThreadId) {
+      return;
+    }
+
+    const seed = readAgentChatContext();
+
+    if (!seed) {
+      return;
+    }
+
+    clearAgentChatContext();
+
+    const draft = seed.body
+      ? `I'd like to talk about "${seed.title}":\n\n${seed.body}`
+      : `I'd like to talk about "${seed.title}".`;
+
+    setChatDraft(draft);
   }, [initialThreadId]);
 
   useEffect(() => {
@@ -314,6 +336,7 @@ function ChatPageContent() {
           hasStartedReceiving={hasStartedReceiving}
           disabled={isSubmitDisabled}
           placeholder={inputPlaceholder}
+          initialDraft={chatDraft}
           messages={initialMessages}
           emptyState={emptyState}
           readable={stream ?? undefined}

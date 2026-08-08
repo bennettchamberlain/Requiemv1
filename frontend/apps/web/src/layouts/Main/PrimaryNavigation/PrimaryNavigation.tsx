@@ -76,14 +76,12 @@ export function PrimaryNavigation() {
             relative region — the expanded search (GlobalSearchBox) overlays the
             whole region, GitHub-style, instead of competing with them for width.
             The right cluster stays visible. */}
-        <div className="relative flex min-w-0 flex-1 items-center gap-3">
-          <div className="flex shrink-0 flex-row items-center gap-2">
+        <div className="relative flex min-w-0 flex-1 flex-col gap-2">
+          <div className="flex shrink-0 flex-row flex-wrap items-center gap-2">
             <Portal id="breadcrumbs" />
+            <Portal id="nav-views" className="flex flex-row items-center empty:hidden" />
           </div>
-          <Portal id="nav-views" className="flex flex-row items-center empty:hidden" />
-          <div className="flex min-w-0 flex-1 items-center justify-end">
-            {!isSharedView && <GlobalSearchBox />}
-          </div>
+          {!isSharedView && <GlobalSearchBox />}
         </div>
 
         {/* Right: page actions, new, account (Tags lives in the account menu) */}

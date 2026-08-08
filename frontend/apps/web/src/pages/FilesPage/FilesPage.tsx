@@ -6,6 +6,7 @@ import { Breadcrumb } from '@ci/shadcn';
 import { Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
+import { MemoryHubShell } from '@/components/MemoryHub';
 import { FileModal } from '@/components/modals/FileModal';
 import { gql } from '@/graphql';
 
@@ -25,7 +26,7 @@ const GET_FILES = gql(`
 `);
 
 export function FilesPage() {
-  usePageTitle('Files - Companion Intelligence');
+  usePageTitle('Content - Companion Intelligence');
 
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
 
@@ -54,13 +55,14 @@ export function FilesPage() {
             </Breadcrumb.Item>
             <Breadcrumb.Separator className="hidden md:block" />
             <Breadcrumb.Item>
-              <Breadcrumb.Page>Files</Breadcrumb.Page>
+              <Breadcrumb.Page>Content</Breadcrumb.Page>
             </Breadcrumb.Item>
           </Breadcrumb.List>
         </Breadcrumb>
       </Portal.Slot>
 
       <PageContent>
+        <MemoryHubShell>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
           {files.map((file) => (
             <GridItem key={file.id} file={file} onSelect={setSelectedFile} />
@@ -68,6 +70,7 @@ export function FilesPage() {
         </div>
 
         <FileModal fileId={selectedFile ?? null} onClose={handleClose} />
+        </MemoryHubShell>
       </PageContent>
     </>
   );

@@ -6,6 +6,7 @@ import { Breadcrumb, Input } from '@ci/shadcn';
 import { Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
+import { MemoryHubShell } from '@/components/MemoryHub';
 import { Tag } from '@/components/Tag';
 import { gql } from '@/graphql';
 
@@ -52,6 +53,7 @@ export function TagsPage() {
 
     content = (
       <PageContent>
+        <MemoryHubShell>
         <Input
           placeholder="Filter tags..."
           value={searchQuery}
@@ -65,6 +67,7 @@ export function TagsPage() {
             </Link>
           ))}
         </div>
+        </MemoryHubShell>
       </PageContent>
     );
   }

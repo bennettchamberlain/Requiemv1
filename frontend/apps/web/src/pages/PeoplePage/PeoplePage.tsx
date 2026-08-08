@@ -7,6 +7,7 @@ import { Merge, Users } from '@ci/shadcn/icons';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
+import { MemoryHubShell } from '@/components/MemoryHub';
 import { gql } from '@/graphql';
 import type { GetPeopleQuery, GetPersonDuplicatesQuery } from '@/graphql/graphql';
 
@@ -298,7 +299,7 @@ function DuplicateGroupCard({
 }
 
 export function PeoplePage() {
-  usePageTitle('People - Companion Intelligence');
+  usePageTitle('People & communications - Companion Intelligence');
 
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
@@ -316,7 +317,20 @@ export function PeoplePage() {
   // flight — swapping to a full-page loader would unmount the search input and
   // drop focus on the first keystroke of every new query.
   const view = data ?? previousData;
-  const people = useMemo(() => (view?.people.edges ?? []).map((edge) => edge.node), [view]);
+  const people = useMemo(() => {
+    const nodes = (view?.people.edges ?? []).map((edge) => edge.node);
+
+    return [...nodes].sort((a, b) => {
+      const aTime = a.interactionStats?.lastInteractionAt
+        ? new Date(a.interactionStats.lastInteractionAt).getTime()
+        : 0;
+      const bTime = b.interactionStats?.lastInteractionAt
+        ? new Date(b.interactionStats.lastInteractionAt).getTime()
+        : 0;
+
+      return bTime - aTime;
+    });
+  }, [view]);
   const duplicateGroups = duplicatesData?.personDuplicates ?? [];
 
   const onMerged = async () => Promise.all([refetch(), refetchDuplicates()]);
@@ -330,12 +344,13 @@ export function PeoplePage() {
   } else {
     content = (
       <PageContent>
+        <MemoryHubShell>
         <div className="flex items-center gap-2">
           <Input
-            placeholder="Search people by name..."
+            placeholder="Search people and communications..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="max-w-md"
+            className="max-w-xl flex-1"
           />
           <div className="text-sm text-muted-foreground">{view?.people.totalCount ?? 0} people</div>
         </div>
@@ -379,6 +394,7 @@ export function PeoplePage() {
             ))}
           </div>
         )}
+        </MemoryHubShell>
       </PageContent>
     );
   }
@@ -399,7 +415,7 @@ export function PeoplePage() {
             <Breadcrumb.Item className="hidden md:block">
               <Breadcrumb.Page className="flex items-center gap-1">
                 <Users className="h-4 w-4" />
-                People
+                People & communications
               </Breadcrumb.Page>
             </Breadcrumb.Item>
           </Breadcrumb.List>

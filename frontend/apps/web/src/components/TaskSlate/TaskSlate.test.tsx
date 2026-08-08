@@ -10,6 +10,10 @@ vi.mock('@/hooks', () => ({
   useAuth: () => [{ authToken: 'test-token' }],
 }));
 
+vi.mock('@/components/ChatWithAgent', () => ({
+  ChatWithAgentMenu: () => null,
+}));
+
 function candidate(overrides: Partial<ScheduleCandidate> = {}): ScheduleCandidate {
   return {
     id: 'c1',

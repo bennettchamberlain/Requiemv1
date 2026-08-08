@@ -5,6 +5,7 @@ import {
   BrowserRouter as Router,
   Routes,
   Route,
+  Navigate,
   useLocation,
   useNavigate,
   type Location,
@@ -28,6 +29,7 @@ import {
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
 import FeedPage from '@/pages/FeedPage';
 import LoginPage from '@/pages/LoginPage';
+import { MemoryKnowledgeRedirect } from '@/pages/MemoryHub/MemoryKnowledgeRedirect';
 import SignupPage from '@/pages/SignupPage';
 import SplashPage from '@/pages/SplashPage';
 
@@ -201,14 +203,31 @@ function AppRoutes() {
           />
 
           {isFeatureEnabled('enable.inventory.page') && (
-            <Route
-              path="/inventory"
-              element={
-                <ProtectedRoute>
-                  <InventoryPage />
-                </ProtectedRoute>
-              }
-            />
+            <>
+              <Route path="/inventory" element={<Navigate to="/memory/things" replace />} />
+              <Route
+                path="/memory/things"
+                element={
+                  <ProtectedRoute>
+                    <InventoryPage />
+                  </ProtectedRoute>
+                }
+              />
+            </>
+          )}
+
+          {isFeatureEnabled('files.page') && (
+            <>
+              <Route path="/files" element={<Navigate to="/memory/content" replace />} />
+              <Route
+                path="/memory/content"
+                element={
+                  <ProtectedRoute>
+                    <FilesPage />
+                  </ProtectedRoute>
+                }
+              />
+            </>
           )}
 
           {isFeatureEnabled('insights.page') && (
@@ -234,15 +253,18 @@ function AppRoutes() {
             </>
           )}
 
-          {isFeatureEnabled('files.page') && (
-            <Route
-              path="/files"
-              element={
-                <ProtectedRoute>
-                  <FilesPage />
-                </ProtectedRoute>
-              }
-            />
+          {isFeatureEnabled('tags.page') && (
+            <>
+              <Route path="/tags" element={<Navigate to="/memory/tags" replace />} />
+              <Route
+                path="/memory/tags"
+                element={
+                  <ProtectedRoute>
+                    <TagsPage />
+                  </ProtectedRoute>
+                }
+              />
+            </>
           )}
 
           {isFeatureEnabled('stats.page') && (
@@ -267,16 +289,14 @@ function AppRoutes() {
             />
           )}
 
-          {isFeatureEnabled('tags.page') && (
-            <Route
-              path="/tags"
-              element={
-                <ProtectedRoute>
-                  <TagsPage />
-                </ProtectedRoute>
-              }
-            />
-          )}
+          <Route
+            path="/memory/knowledge"
+            element={
+              <ProtectedRoute>
+                <MemoryKnowledgeRedirect />
+              </ProtectedRoute>
+            }
+          />
 
           {isFeatureEnabled('chat.page') && (
             <Route
@@ -409,8 +429,9 @@ function AppRoutes() {
             }
           />
 
+          <Route path="/people" element={<Navigate to="/memory/people" replace />} />
           <Route
-            path="/people"
+            path="/memory/people"
             element={
               <ProtectedRoute>
                 <PeoplePage />
@@ -427,8 +448,9 @@ function AppRoutes() {
             }
           />
 
+          <Route path="/places" element={<Navigate to="/memory/places" replace />} />
           <Route
-            path="/places"
+            path="/memory/places"
             element={
               <ProtectedRoute>
                 <PlacesPage />
@@ -481,15 +503,18 @@ function AppRoutes() {
             }
           />
 
-          {isFeatureEnabled('insights.page') && isFeatureEnabled('new.insights.page') && (
-            <Route
-              path="/prompts"
-              element={
-                <ProtectedRoute>
-                  <PromptsPage />
-                </ProtectedRoute>
-              }
-            />
+          {isFeatureEnabled('insights.page') && (
+            <>
+              <Route path="/prompts" element={<Navigate to="/memory/questions" replace />} />
+              <Route
+                path="/memory/questions"
+                element={
+                  <ProtectedRoute>
+                    <PromptsPage />
+                  </ProtectedRoute>
+                }
+              />
+            </>
           )}
         </Route>
 
