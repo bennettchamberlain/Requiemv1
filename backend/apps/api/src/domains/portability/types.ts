@@ -1,0 +1,41 @@
+/** Portable archive written by GET /api/account/export and read by POST /api/account/import. */
+export interface UserDataArchive {
+  version: 1;
+  exportedAt: string;
+  userId: string;
+  profile: UserProfileSnapshot | null;
+  tables: Record<string, Record<string, unknown>[]>;
+  fileBlobs: FileBlobSnapshot[];
+}
+
+export interface UserProfileSnapshot {
+  id: string;
+  name: string;
+  email: string;
+  entityId: string | null;
+  onboarded: boolean;
+  onboardedAt: string | null;
+  timezone: string;
+  onboardingProgress: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FileBlobSnapshot {
+  id: string;
+  bucket: string;
+  key: string;
+  contentBase64: string;
+}
+
+export interface UserScopedTable {
+  schema: string;
+  table: string;
+  userColumn: 'user_id' | 'owner_user_id';
+}
+
+export interface ImportResult {
+  tablesImported: number;
+  rowsImported: number;
+  filesRestored: number;
+}

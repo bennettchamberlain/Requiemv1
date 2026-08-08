@@ -417,6 +417,16 @@ export class FileService implements OnModuleInit {
     return { file: created, deduped: false };
   }
 
+  async putObject(_context: ServiceContext, bucket: string, key: string, body: Buffer): Promise<void> {
+    await this.s3.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Body: body,
+      }),
+    );
+  }
+
   async getFileContent(context: ServiceContext, key: string): Promise<Uint8Array> {
     const response = await this.s3.send(
       new GetObjectCommand({
