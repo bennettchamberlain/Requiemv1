@@ -20,15 +20,16 @@ export type EntityType = (typeof ENTITY_TYPES)[number];
  * `person`, `place`, `item`) to the graph's NER-style `entity_type` values. Used so the Graph
  * view can honor the explorer's entity-type filter (view parity).
  *
- * Note the vocabularies only partially overlap and names differ (`place` -> `Location`,
- * `item` -> `Object`/`Thing`). Explorer types with no graph representation map to `[]`.
- * Graph types absent from any value here (e.g. `Concept`, `Goal`, `Tag`) have no explorer
- * equivalent and are treated as "connective" nodes — never excluded by the type filter.
+ * One vocabulary direction: explorer → graph. Canonical mappings are
+ * `person` → `Person`, `place` → `Location`, `item` → `Object`/`Item` (no `Thing`/`Place`/
+ * `Contact` aliases). Explorer types with no graph representation map to `[]`. Graph types
+ * absent from any value here (e.g. `Concept`, `Goal`, `Tag`) have no explorer equivalent and
+ * are treated as "connective" nodes — never excluded by the type filter.
  */
 export const EXPLORER_TO_GRAPH_ENTITY_TYPES: Record<string, string[]> = {
-  person: ['Person', 'Contact'],
-  place: ['Location', 'Place'],
-  item: ['Object', 'Thing', 'Item'],
+  person: ['Person'],
+  place: ['Location'],
+  item: ['Object', 'Item'],
   event: ['Event'],
   content: ['Content'],
   file: ['File'],
