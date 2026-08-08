@@ -160,7 +160,8 @@
     "agent.memory.compaction": false,
     "shared.search": false,
     "onboarding.preference.steps": false,
-    "actions": true
+    "actions": true,
+    "smart.rotation": false
   },
   "environment": {
     "database.query.logging": false

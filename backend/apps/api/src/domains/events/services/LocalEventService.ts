@@ -46,19 +46,19 @@ export class LocalEventService extends EventService implements BeforeApplication
   async send<E extends keyof EventPayloads>(
     name: E,
     event: EventPayloads[E],
-    options?: { queue?: string },
+    options?: { queue?: string; singletonKey?: string },
   ): Promise<string[]>;
 
   async send<E extends keyof EventRegistry>(
     name: E,
     event: EventRegistry[E],
-    options?: { queue?: string },
+    options?: { queue?: string; singletonKey?: string },
   ): Promise<string[]>;
 
   async send<E extends string>(
     name: E,
     event: EventRegistry[keyof EventRegistry] | EventPayloads[keyof EventPayloads],
-    options?: { queue?: string },
+    options?: { queue?: string; singletonKey?: string },
   ): Promise<string[]> {
     const traceId = uuidv4();
     const userId = (event as { userId?: string }).userId;

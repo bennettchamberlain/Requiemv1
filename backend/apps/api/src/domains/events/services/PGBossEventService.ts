@@ -192,25 +192,26 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
   async send<E extends keyof EventPayloads>(
     name: E,
     event: EventPayloads[E],
-    options?: { queue?: string },
+    options?: { queue?: string; singletonKey?: string },
   ): Promise<string[]>;
 
   async send<E extends keyof EventRegistry>(
     name: E,
     event: EventRegistry[E],
-    options?: { queue?: string },
+    options?: { queue?: string; singletonKey?: string },
   ): Promise<string[]>;
 
   async send<E extends string>(
     name: E,
     event: EventRegistry[keyof EventRegistry] | EventPayloads[keyof EventPayloads],
-    options?: { queue?: string },
+    options?: { queue?: string; singletonKey?: string },
   ): Promise<string[]> {
     const resolvedData = {
       ...event,
       name,
     } satisfies EventData;
 
+    const sendOptions = options?.singletonKey ? { singletonKey: options.singletonKey } : undefined;
     const allQueues = this.getRegisteredQueues();
 
     // If a specific queue is provided and that queue exists, send only to that queue.
@@ -221,7 +222,7 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
         return [];
       }
 
-      const jobId = await this.boss.send(options.queue, resolvedData);
+      const jobId = await this.boss.send(options.queue, resolvedData, sendOptions ?? {});
 
       return jobId ? [jobId] : [];
     }
@@ -235,7 +236,7 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
       }
 
       try {
-        const jobId = await this.boss.send(queue, resolvedData);
+        const jobId = await this.boss.send(queue, resolvedData, sendOptions ?? {});
 
         if (jobId) {
           jobIds.push(jobId);

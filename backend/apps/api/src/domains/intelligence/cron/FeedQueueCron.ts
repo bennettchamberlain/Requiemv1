@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
+import { FeatureService } from '@ci/common/feature';
 import { LoggerService } from '@ci/common/logging';
 import { Cron } from '@ci/common/schedule';
 
@@ -13,12 +14,17 @@ export class FeedQueueCron {
   constructor(
     private readonly questionService: QuestionService,
     private readonly logger: LoggerService,
+    private readonly featureService: FeatureService,
   ) {
     this.logger.setContext(FeedQueueCron.name);
   }
 
   @Cron(FEED_QUEUE_CRON)
   async topUpFeedQueue() {
+    if (await this.featureService.isFeatureEnabled('smart.rotation')) {
+      return;
+    }
+
     const userIds = await this.questionService.listFeedQueueUserIds();
     let enqueueCount = 0;
 

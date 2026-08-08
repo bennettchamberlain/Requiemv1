@@ -20,6 +20,10 @@ export class AnswerInferenceCron {
 
   @Cron(CronExpression.EVERY_MINUTE)
   async cronInferAnswers() {
+    if (await this.featureService.isFeatureEnabled('smart.rotation')) {
+      return;
+    }
+
     const featureEnabled = await this.featureService.isFeatureEnabled('scheduled.answer.inferencing');
 
     if (!featureEnabled) {

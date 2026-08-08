@@ -80,6 +80,7 @@ export {
   type OrchestrateStage,
   type OrchestrateSummary,
 } from './services/MaintenanceOrchestratorService';
+export { GraphEnrichmentService, type GraphEnrichmentOptions } from './services/GraphEnrichmentService';
 export {
   SearchIndexBackfillService,
   BACKFILLABLE_ENTITIES,

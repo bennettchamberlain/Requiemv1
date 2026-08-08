@@ -55,6 +55,7 @@ import { PredictionsModule } from '@ci/domains/predictions';
 import { ScheduleModule } from '@ci/domains/schedule';
 import { SearchIngressModule } from '@ci/domains/search-ingress';
 import { SearchNextModule } from '@ci/domains/search-next';
+import { SmartRotationModule } from '@ci/domains/smart-rotation';
 import { SummariesModule } from '@ci/domains/summaries';
 import { ToolsModule } from '@ci/domains/tools';
 import { UserModule } from '@ci/domains/user';
@@ -111,6 +112,7 @@ import { flushTelemetry, isTelemetryEnabled } from '@ci/instrument';
     MaintenanceModule,
     NotesModule,
     ScheduleModule,
+    SmartRotationModule,
     SearchIngressModule,
     SearchNextModule,
     SummariesModule,

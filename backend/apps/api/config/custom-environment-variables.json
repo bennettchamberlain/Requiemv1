@@ -135,7 +135,8 @@
     "agent.memory.compaction": "ENABLE_AGENT_MEMORY_COMPACTION",
     "shared.search": "ENABLE_SHARED_SEARCH",
     "onboarding.preference.steps": "ENABLE_ONBOARDING_PREFERENCE_STEPS",
-    "actions": "ENABLE_ACTIONS"
+    "actions": "ENABLE_ACTIONS",
+    "smart.rotation": "ENABLE_SMART_ROTATION"
   },
   "environment": {
     "database.query.logging": "DATABASE_QUERY_LOGGING"

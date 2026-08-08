@@ -3,6 +3,12 @@ import { EventListenerRegistry } from '../event-registration';
 import { type EventPayloads } from '../event-registry';
 import type { EventRegistry } from '../registry';
 
+export type EventSendOptions = {
+  queue?: string;
+  /** pg-boss singleton key — suppresses duplicate pending jobs with the same key. */
+  singletonKey?: string;
+};
+
 export abstract class EventService {
   /**
    * @deprecated Use the new distributed EventPayloads type instead.
@@ -10,19 +16,19 @@ export abstract class EventService {
   abstract send<E extends keyof EventPayloads>(
     name: E,
     event: EventPayloads[E],
-    options?: { queue?: string },
+    options?: EventSendOptions,
   ): Promise<string[]>;
 
   abstract send<E extends keyof EventRegistry>(
     name: E,
     event: EventRegistry[E],
-    options?: { queue?: string },
+    options?: EventSendOptions,
   ): Promise<string[]>;
 
   abstract send<E extends string>(
     name: E,
     event: EventRegistry[keyof EventRegistry] | EventPayloads[keyof EventPayloads],
-    options?: { queue?: string },
+    options?: EventSendOptions,
   ): Promise<string[]>;
 
   /**

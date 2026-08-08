@@ -294,6 +294,13 @@ export const ConfigSchema = z.object({
      * initializer. On by default; set ENABLE_ACTIONS=false to disable.
      */
     actions: booleanStringSchema,
+    /**
+     * Meta flag for background intelligence scheduling. When on, each pipeline
+     * (question feed, answer inference, schedule sync, insights, summaries,
+     * graph enrichment) runs on its own cadence via SmartRotationScheduledCrons
+     * instead of the legacy standalone crons.
+     */
+    'smart.rotation': booleanStringSchema,
   }),
   environment: z.object({
     'database.query.logging': booleanStringSchema,
