@@ -7,10 +7,14 @@ import { MaxArraySizePipe } from '@ci/common/pipes';
 import { EventService } from '@ci/domains/memory';
 import { type Person } from '@ci/domains/memory';
 
+import { EventContentsLoader } from '../loaders/EventContentsLoader';
 import { type EventMedia, EventMediaLoader } from '../loaders/EventMediaLoader';
 import { PersonLoader } from '../loaders/PersonLoader';
 import { PlaceLoader } from '../loaders/PlaceLoader';
 import { TagLoader } from '../loaders/TagLoader';
+import { ContentConnection } from '../types/ContentConnection';
+import { ContentEdge } from '../types/ContentEdge';
+import { ContentType } from '../types/ContentType';
 import { CreateEventInput } from '../types/CreateEventInput';
 import { EntityTagType } from '../types/EntityTagType';
 import { EventConnection } from '../types/EventConnection';
@@ -38,6 +42,7 @@ export class EventResolver {
     private readonly placeLoader: PlaceLoader,
     private readonly tagLoader: TagLoader,
     private readonly eventMediaLoader: EventMediaLoader,
+    private readonly eventContentsLoader: EventContentsLoader,
   ) {}
 
   /** Map a CreateEventInput (GraphQL) to the service's CreateEventDto. */
@@ -347,6 +352,41 @@ export class EventResolver {
     });
 
     return tags.map((tag) => EntityTagType.toType(tag));
+  }
+
+  /**
+   * Content linked to this event via `ci.content.event_id`. Batched per request
+   * through {@link EventContentsLoader} so a page of events costs one query.
+   */
+  @ResolveField(() => ContentConnection)
+  async contents(
+    @Context() context: RequestContext,
+    @Parent() parent: EventType,
+    @Args() pagination: PaginationArgs,
+  ): Promise<ContentConnection> {
+    const serviceContext = entityOwnerScope(context, parent.__source.userId);
+
+    const entities = await this.eventContentsLoader.load(serviceContext, parent.__source.id);
+
+    const { slice, pageInfo, totalCount } = Paginator.paginate(entities, {
+      ...pagination,
+      getId: (entity) => GlobalUID.encode('content', entity.id),
+    });
+
+    const edges: ContentEdge[] = slice.map((entity) => {
+      const node = ContentType.toType(entity);
+
+      return {
+        node,
+        cursor: node.id,
+      };
+    });
+
+    return {
+      edges,
+      pageInfo,
+      totalCount,
+    };
   }
 
   /**

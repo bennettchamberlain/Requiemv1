@@ -27,6 +27,7 @@ import { UserSnapshotsModule } from '@ci/domains/user-snapshots';
 
 import { GraphQLController } from './controllers/GraphQLController';
 import { ConnectionLoader } from './loaders/ConnectionLoader';
+import { EventContentsLoader } from './loaders/EventContentsLoader';
 import { EventLoader } from './loaders/EventLoader';
 import { EventMediaLoader } from './loaders/EventMediaLoader';
 import { FileItemsLoader } from './loaders/FileItemsLoader';
@@ -126,6 +127,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     NodeResolver,
     NoteResolver,
     AnswerResolver,
+    EventContentsLoader,
     EventLoader,
     EventMediaLoader,
     EventResolver,

@@ -527,10 +527,6 @@ export class EventService {
       updateData.isInferred = data.is_inferred;
     }
 
-    if (data.prediction_model) {
-      updateData.predictionModel = data.prediction_model;
-    }
-
     if (data.inference_sources) {
       updateData.inferenceSources = data.inference_sources;
     }
@@ -547,10 +543,6 @@ export class EventService {
       updateData.energyLevel = data.energy_level;
     }
 
-    if (data.productivity_impact) {
-      updateData.productivityImpact = data.productivity_impact;
-    }
-
     if (data.status) {
       updateData.status = data.status;
     }
@@ -563,20 +555,8 @@ export class EventService {
       updateData.externalSyncStatus = data.external_sync_status;
     }
 
-    if (data.last_synced_at) {
-      updateData.lastSyncedAt = data.last_synced_at;
-    }
-
     if (data.parent_event_id) {
       updateData.parentEventId = data.parent_event_id;
-    }
-
-    if (data.related_event_ids) {
-      updateData.relatedEventIds = data.related_event_ids;
-    }
-
-    if (data.supersedes_event_id) {
-      updateData.supersedesEventId = data.supersedes_event_id;
     }
 
     if (data.created_by) {
