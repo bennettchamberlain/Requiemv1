@@ -173,6 +173,44 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
    * and means this line moves whenever `enrich.geocode`'s does.
    */
   [STAGE_IDS.ENRICH_ESTIMATE_LOCATION]: 1,
+
+  /**
+   * v1 — initial conversion of the three participant backfills.
+   *
+   * Two literals mirroring ONE derivation, which is why they must move
+   * together: `PersonLinkStage` computes `PERSON_LINK_VERSION` from three
+   * generations (the identifier rule, the match rule, the projection rule) and
+   * throws at module load if EITHER of these lines disagrees. So the derivation
+   * is the authority and these entries are its reviewable mirror — bump a
+   * generation there and both of these lines in the same commit.
+   *
+   * Not thunks, for the reason `enrich.position_reverse` gives: that file
+   * imports `@ci/domains/graph` for the shared normalisation rule, and a thunk
+   * would drag the graph domain's whole module graph behind every importer of
+   * this constants module.
+   *
+   * A bump here is the fix for the fill-only-NULL guard all three services
+   * shared: it re-opens every row, INCLUDING the ones already carrying a
+   * partial link, so a message whose other four recipients finally have
+   * contacts gets them.
+   */
+  [STAGE_IDS.ENRICH_PERSON_LINK]: 1,
+  [STAGE_IDS.ENRICH_EVENT_PERSON_LINK]: 1,
+
+  /** v1 — initial temporal repair. Bump when SOURCE_TIME_SPECS gains a source; only a bump re-opens a skip. */
+  [STAGE_IDS.CLEAN_TEMPORAL_REPAIR]: 1,
+
+  /** v1 — initial duplicate proposer. A bump rescores pending candidates; it never resurrects a rejected pair. */
+  [STAGE_IDS.CLEAN_DUPLICATE_DETECT]: 1,
+
+  /** v1 — initial identifier canonicaliser. Deliberately NOT tied to IDENTITY_SPEC_VERSION, which versions the object identity ladder. */
+  [STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE]: 1,
+
+  /** v1 — place promotion. Derives from the forward-geocode generation: a better provider makes every hierarchy provisional. Cheap to bump — no provider call. */
+  [STAGE_IDS.PROMOTE_PLACE]: 1,
+
+  /** v1 — object promotion. A literal: this stage reads nothing another stage produces. Bump when extractPurchase changes. */
+  [STAGE_IDS.PROMOTE_OBJECT]: 1,
 };
 
 /**
