@@ -19,7 +19,10 @@ type Outcome = 'completed' | 'deferred';
 function runJob(service: PGBossEventService, queue: string, name: string): Promise<Outcome> {
   const job = { id: 'job-1', data: { name } };
 
-  return (service as unknown as { executeJob: (q: string, j: unknown) => Promise<Outcome> }).executeJob(queue, job);
+  return (service as unknown as { executeJob: (q: string, j: unknown) => Promise<Outcome> }).executeJob(
+    queue,
+    job,
+  );
 }
 
 describe('PGBossEventService deferred completion', () => {
@@ -54,7 +57,10 @@ describe('PGBossEventService deferred completion', () => {
   });
 
   it('completeJob / failJob delegate to pg-boss by queue and job id', async () => {
-    const boss = { complete: jest.fn().mockResolvedValue(undefined), fail: jest.fn().mockResolvedValue(undefined) };
+    const boss = {
+      complete: jest.fn().mockResolvedValue(undefined),
+      fail: jest.fn().mockResolvedValue(undefined),
+    };
 
     (service as unknown as { boss: typeof boss }).boss = boss;
 

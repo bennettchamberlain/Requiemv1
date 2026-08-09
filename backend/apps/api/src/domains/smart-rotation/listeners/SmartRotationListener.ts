@@ -22,7 +22,6 @@ import { SmartRotationWorkEvent, type SmartRotationWorkPayload } from '../events
 import { ContextGapQuestionService } from '../services/ContextGapQuestionService';
 import { SMART_ROTATION_QUEUE, type SmartRotationWorkType } from '../types';
 
-
 const FEED_QUEUE_LIMIT = 3;
 
 @Injectable()

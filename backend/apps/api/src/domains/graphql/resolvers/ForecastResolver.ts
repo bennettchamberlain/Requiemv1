@@ -108,9 +108,15 @@ export class ForecastResolver {
       // The nightly pipeline covers cold start too: its bootstrap check trains
       // the model when the checkpoint is missing or stale. Routed through
       // pg-boss so the run gets retries and shows up in the jobs monitor.
-      const enqueued = await this.pythonFunctionService.dispatch('hbpe', 'nightly', context.userId, {}, {
-        singletonKey: `fn:nightly:${context.userId}:manual`,
-      });
+      const enqueued = await this.pythonFunctionService.dispatch(
+        'hbpe',
+        'nightly',
+        context.userId,
+        {},
+        {
+          singletonKey: `fn:nightly:${context.userId}:manual`,
+        },
+      );
 
       return enqueued ? 'triggered' : 'already_running';
     } catch (err) {

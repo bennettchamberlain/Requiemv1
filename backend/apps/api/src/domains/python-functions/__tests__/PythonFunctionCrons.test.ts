@@ -11,7 +11,9 @@ function makeCrons(userIds: string[]) {
   const dataSource = {
     query: jest.fn().mockResolvedValue(userIds.map((id) => ({ id }))),
   } as unknown as DataSource;
-  const pythonFunctionService = { dispatch: jest.fn().mockResolvedValue(true) } as unknown as PythonFunctionService;
+  const pythonFunctionService = {
+    dispatch: jest.fn().mockResolvedValue(true),
+  } as unknown as PythonFunctionService;
 
   return { crons: new PythonFunctionCrons(dataSource, pythonFunctionService, logger), pythonFunctionService };
 }

@@ -49,7 +49,13 @@ describe('PythonFunctionService', () => {
     const eventService = { send: jest.fn().mockResolvedValue([]) } as unknown as EventService;
     const service = new PythonFunctionService(eventService, logger);
 
-    const enqueued = await service.dispatch('hbpe', 'nightly', 'user-1', {}, { singletonKey: 'fn:nightly:user-1:d' });
+    const enqueued = await service.dispatch(
+      'hbpe',
+      'nightly',
+      'user-1',
+      {},
+      { singletonKey: 'fn:nightly:user-1:d' },
+    );
 
     expect(enqueued).toBe(false);
   });

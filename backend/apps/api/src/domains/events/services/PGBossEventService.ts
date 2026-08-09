@@ -434,7 +434,10 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
     this.logger.warn(`Failed deferred job ${jobId} on queue ${queue}`);
   }
 
-  private async executeJob(queue: string, job: JobWithMetadata<EventData>): Promise<'completed' | 'deferred'> {
+  private async executeJob(
+    queue: string,
+    job: JobWithMetadata<EventData>,
+  ): Promise<'completed' | 'deferred'> {
     const userId = (job as { userId?: string }).userId;
 
     return ContextService.run({ traceId: job.id, userId }, () => {

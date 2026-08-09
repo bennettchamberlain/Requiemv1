@@ -41,7 +41,9 @@ export class PythonFunctionService {
     options: PythonFunctionDispatchOptions = {},
   ): Promise<boolean> {
     if (!PYTHON_FUNCTIONS[target].includes(functionName)) {
-      throw new Error(`Unknown ${target} function '${functionName}'. Known: ${PYTHON_FUNCTIONS[target].join(', ')}`);
+      throw new Error(
+        `Unknown ${target} function '${functionName}'. Known: ${PYTHON_FUNCTIONS[target].join(', ')}`,
+      );
     }
 
     const jobIds = await this.eventService.send(
