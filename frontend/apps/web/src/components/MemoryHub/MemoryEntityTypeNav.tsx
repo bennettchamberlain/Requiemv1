@@ -225,18 +225,11 @@ function GroupWhatDropdown({
   );
 }
 
-function TagWhatDropdown({
-  tags,
-  onTagsChange,
-}: {
-  tags: string[];
-  onTagsChange: (next: string[]) => void;
-}) {
+function TagWhatDropdown({ tags, onTagsChange }: { tags: string[]; onTagsChange: (next: string[]) => void }) {
   const [open, setOpen] = useState(false);
   const active = tags.length > 0;
   const { data } = useQuery(GET_TAGS, { skip: !open });
-  const suggestions =
-    data?.tags?.edges.map(({ node }: { node: { label: string } }) => node.label) ?? [];
+  const suggestions = data?.tags?.edges.map(({ node }: { node: { label: string } }) => node.label) ?? [];
   const { Content, Label, Trigger } = DropdownMenu;
 
   return (

@@ -3,11 +3,7 @@ import { ExternalLink, MessagesSquare } from '@ci/shadcn/icons';
 import { useNavigate } from 'react-router-dom';
 
 import { useAgentHarnesses } from '@/api/useAgentHarnesses';
-import {
-  type AgentChatContext,
-  openAgentHarness,
-  openInAppChat,
-} from '@/lib/agentChat';
+import { type AgentChatContext, openAgentHarness, openInAppChat } from '@/lib/agentChat';
 
 interface Props {
   context: AgentChatContext;
@@ -39,7 +35,12 @@ export function ChatWithAgentMenu({ context, size = 'icon', className }: Props) 
     <DropdownMenu modal={false}>
       <DropdownMenu.Trigger asChild>
         {size === 'icon' ? (
-          <Button variant="ghost" size="icon" className={className} aria-label={`Chat about ${context.title}`}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className={className}
+            aria-label={`Chat about ${context.title}`}
+          >
             <MessagesSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
           </Button>
         ) : (
@@ -53,10 +54,7 @@ export function ChatWithAgentMenu({ context, size = 'icon', className }: Props) 
         <DropdownMenu.Item onClick={() => openInAppChat(navigate, context)}>Chat here</DropdownMenu.Item>
         {!loading &&
           accessibleHarnesses.map((harness) => (
-            <DropdownMenu.Item
-              key={harness.id}
-              onClick={() => openAgentHarness(harness.openUrl!, context)}
-            >
+            <DropdownMenu.Item key={harness.id} onClick={() => openAgentHarness(harness.openUrl!, context)}>
               Open with {harness.name}
             </DropdownMenu.Item>
           ))}

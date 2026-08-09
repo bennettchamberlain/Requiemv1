@@ -22,7 +22,13 @@ import { PromotionCandidateService } from './services/PromotionCandidateService'
 import { PromotionReviewService } from './services/PromotionReviewService';
 
 @Module({
-  imports: [EventsModule, TypeOrmModule.forFeature([PromotionCandidateEntity]), MemoryModule, GraphModule, IntelligenceModule],
+  imports: [
+    EventsModule,
+    TypeOrmModule.forFeature([PromotionCandidateEntity]),
+    MemoryModule,
+    GraphModule,
+    IntelligenceModule,
+  ],
   controllers: [PersonalizationController],
   providers: [
     PersonalizationService,
@@ -42,5 +48,16 @@ import { PromotionReviewService } from './services/PromotionReviewService';
 })
 export class PersonalizationModule {}
 
-export { PersonalizationService, PromotionCandidateService, CrossTableHydrationService, LifeContextService, PromotionReviewService };
-export type { PersonalizationProfile, TrustMode, PersonalizationDecision, PersonalizationActionKind } from './types';
+export {
+  PersonalizationService,
+  PromotionCandidateService,
+  CrossTableHydrationService,
+  LifeContextService,
+  PromotionReviewService,
+};
+export type {
+  PersonalizationProfile,
+  TrustMode,
+  PersonalizationDecision,
+  PersonalizationActionKind,
+} from './types';

@@ -14,11 +14,6 @@ export type { DueForecast, DueItem, WeekForecast, WeekForecastDay } from './useW
 export { usePersonaCompose } from './usePersonaCompose';
 export { useAgentHarnesses, fetchAgentHarnesses } from './useAgentHarnesses';
 export type { AgentHarnessId, AgentHarnessStatus } from './useAgentHarnesses';
-export type {
-  AboutYouView,
-  HowYoudDoItResult,
-  HowYoudDoItStep,
-  PersonaEvidence,
-} from './usePersonaCompose';
+export type { AboutYouView, HowYoudDoItResult, HowYoudDoItStep, PersonaEvidence } from './usePersonaCompose';
 
 export type { Action, Message, Thread } from './types';

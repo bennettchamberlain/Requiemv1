@@ -5,7 +5,11 @@ import { v7 as uuid7 } from 'uuid';
 
 import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { GraphIngestService, type GraphEntityInputDto, type GraphRelationshipInputDto } from '@ci/domains/graph';
+import {
+  GraphIngestService,
+  type GraphEntityInputDto,
+  type GraphRelationshipInputDto,
+} from '@ci/domains/graph';
 import { AnswerService } from '@ci/domains/intelligence';
 
 import { PromotionCandidateEntity, type PromotionCandidate } from '../entities/PromotionCandidateEntity';
@@ -33,7 +37,10 @@ export class PromotionCandidateService {
     this.logger.setContext(PromotionCandidateService.name);
   }
 
-  async create(context: UserServiceContext, dto: CreatePromotionCandidateDto): Promise<PromotionCandidate | null> {
+  async create(
+    context: UserServiceContext,
+    dto: CreatePromotionCandidateDto,
+  ): Promise<PromotionCandidate | null> {
     const userId = context.userId!;
 
     if (dto.kind === 'inferred_fact') {
@@ -146,7 +153,10 @@ export class PromotionCandidateService {
     return this.repository.count({ where: { userId, status: 'pending' } });
   }
 
-  private async applyCandidate(context: UserServiceContext, candidate: PromotionCandidateEntity): Promise<void> {
+  private async applyCandidate(
+    context: UserServiceContext,
+    candidate: PromotionCandidateEntity,
+  ): Promise<void> {
     if (candidate.kind === 'inferred_fact') {
       const questionId = candidate.payload.questionId as string | undefined;
       const inferredText = candidate.payload.inferredText as string | undefined;

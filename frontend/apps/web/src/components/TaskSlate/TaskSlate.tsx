@@ -3,11 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Button, cn, Tooltip } from '@ci/shadcn';
 import { Clock, GripVertical, Lightbulb, ListTodo, Loader2, Sparkles, Trash2, X } from '@ci/shadcn/icons';
 
-import {
-  applyHowYoudDoIt,
-  composeHowYoudDoIt,
-  type HowYoudDoItResult,
-} from '@/api/usePersonaCompose';
+import { applyHowYoudDoIt, composeHowYoudDoIt, type HowYoudDoItResult } from '@/api/usePersonaCompose';
 import type { DeclineReason, ScheduleCandidate } from '@/api/useScheduleCandidates';
 import { ChatWithAgentMenu } from '@/components/ChatWithAgent';
 import { useAuth } from '@/hooks';
@@ -498,10 +494,7 @@ export function TaskSlate({
         const { added } = await applyHowYoudDoIt(authToken, result);
         setApplyNoteById((prev) => ({
           ...prev,
-          [candidateId]:
-            added > 0
-              ? `Added ${added} ${added === 1 ? 'step' : 'steps'}.`
-              : 'Nothing to add.',
+          [candidateId]: added > 0 ? `Added ${added} ${added === 1 ? 'step' : 'steps'}.` : 'Nothing to add.',
         }));
       } catch {
         setApplyNoteById((prev) => ({

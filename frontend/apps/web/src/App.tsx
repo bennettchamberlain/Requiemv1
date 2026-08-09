@@ -522,7 +522,6 @@ function AppRoutes() {
               </ProtectedRoute>
             }
           />
-
         </Route>
 
         {/*

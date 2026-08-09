@@ -59,19 +59,19 @@ export function FilesPage() {
 
       <PageContent className="gap-4 p-0">
         <MemoryHubShell>
-        <div className="flex flex-col gap-4 px-4 pb-4">
-        {loading && files.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Loading content…</p>
-        ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          {files.map((file) => (
-            <GridItem key={file.id} file={file} onSelect={setSelectedFile} />
-          ))}
-        </div>
-        )}
+          <div className="flex flex-col gap-4 px-4 pb-4">
+            {loading && files.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Loading content…</p>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {files.map((file) => (
+                  <GridItem key={file.id} file={file} onSelect={setSelectedFile} />
+                ))}
+              </div>
+            )}
 
-        <FileModal fileId={selectedFile ?? null} onClose={handleClose} />
-        </div>
+            <FileModal fileId={selectedFile ?? null} onClose={handleClose} />
+          </div>
         </MemoryHubShell>
       </PageContent>
     </>

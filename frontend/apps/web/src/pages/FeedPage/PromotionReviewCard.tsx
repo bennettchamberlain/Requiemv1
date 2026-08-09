@@ -25,9 +25,10 @@ export function PromotionReviewCard() {
 
     setLoading(true);
     try {
-      const rows = (await fetchJson<PromotionCandidate[]>('/api/personalization/promotion-candidates', {
-        headers: { Authorization: `Bearer ${authToken}` },
-      })) ?? [];
+      const rows =
+        (await fetchJson<PromotionCandidate[]>('/api/personalization/promotion-candidates', {
+          headers: { Authorization: `Bearer ${authToken}` },
+        })) ?? [];
       setCandidates(rows.slice(0, 1));
     } catch {
       setCandidates([]);
@@ -63,33 +64,33 @@ export function PromotionReviewCard() {
           typeof candidate.payload.questionText === 'string' ? candidate.payload.questionText : null;
 
         return (
-        <Card key={candidate.id}>
-          <Card.Header>
-            <Card.Title className="text-base">Review suggestion</Card.Title>
-            <Card.Description>
-              {questionText ? (
-                <>
-                  <span className="block font-medium text-foreground">{questionText}</span>
-                  <span className="mt-1 block">
-                    {candidate.reviewPrompt ??
-                      `Companion found a ${candidate.kind.replace('_', ' ')} (${Math.round(candidate.confidence * 100)}% confidence)`}
-                  </span>
-                </>
-              ) : (
-                candidate.reviewPrompt ??
-                `Companion found a ${candidate.kind.replace('_', ' ')} (${Math.round(candidate.confidence * 100)}% confidence)`
-              )}
-            </Card.Description>
-          </Card.Header>
-          <Card.Content className="flex gap-2">
-            <Button size="sm" onClick={() => void respond(candidate.id, 'accept')}>
-              Accept
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => void respond(candidate.id, 'reject')}>
-              Reject
-            </Button>
-          </Card.Content>
-        </Card>
+          <Card key={candidate.id}>
+            <Card.Header>
+              <Card.Title className="text-base">Review suggestion</Card.Title>
+              <Card.Description>
+                {questionText ? (
+                  <>
+                    <span className="block font-medium text-foreground">{questionText}</span>
+                    <span className="mt-1 block">
+                      {candidate.reviewPrompt ??
+                        `Companion found a ${candidate.kind.replace('_', ' ')} (${Math.round(candidate.confidence * 100)}% confidence)`}
+                    </span>
+                  </>
+                ) : (
+                  (candidate.reviewPrompt ??
+                  `Companion found a ${candidate.kind.replace('_', ' ')} (${Math.round(candidate.confidence * 100)}% confidence)`)
+                )}
+              </Card.Description>
+            </Card.Header>
+            <Card.Content className="flex gap-2">
+              <Button size="sm" onClick={() => void respond(candidate.id, 'accept')}>
+                Accept
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => void respond(candidate.id, 'reject')}>
+                Reject
+              </Button>
+            </Card.Content>
+          </Card>
         );
       })}
     </div>

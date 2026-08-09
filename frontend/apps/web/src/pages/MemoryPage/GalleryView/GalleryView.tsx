@@ -30,8 +30,7 @@ import { MediaTile } from './MediaTile';
 export function GalleryView() {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [searchParams] = useSearchParams();
-  const filteredBrowse =
-    countActiveFilters(searchParams) > 0 || Boolean(searchParams.get('search')?.trim());
+  const filteredBrowse = countActiveFilters(searchParams) > 0 || Boolean(searchParams.get('search')?.trim());
 
   const [{ data, loading, hasNextPage, loadingMore, loadMore, error, refetch }, { setActiveEntity }] =
     useEntityService();

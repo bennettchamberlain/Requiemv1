@@ -2,10 +2,7 @@
  * Heuristic confidence for RAG-based answer inference until we have model logprobs.
  * Grounded in how much dossier + related Q&A context was available for the inference.
  */
-export function estimateInferredAnswerConfidence(
-  relatedAnswerCount: number,
-  hasDossier: boolean,
-): number {
+export function estimateInferredAnswerConfidence(relatedAnswerCount: number, hasDossier: boolean): number {
   let score = 0.45;
 
   if (hasDossier) {

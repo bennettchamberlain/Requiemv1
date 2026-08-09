@@ -8,36 +8,28 @@ import {
   PersonCreatedEvent,
 } from '@ci/domains/memory/events';
 
-import {
-  SearchIndexBackfillService,
-  expandBackfillEntityTypes,
-} from './SearchIndexBackfillService';
+import { SearchIndexBackfillService, expandBackfillEntityTypes } from './SearchIndexBackfillService';
 
 const SEARCH_INDEX_QUEUE = 'search-index';
 
 describe('expandBackfillEntityTypes', () => {
   it('expands browser-activity to also include event and content (Wave D dual-write)', () => {
-    expect(expandBackfillEntityTypes(['browser-activity'])).toEqual([
-      'event',
-      'content',
-      'browser-activity',
-    ]);
+    expect(expandBackfillEntityTypes(['browser-activity'])).toEqual(['event', 'content', 'browser-activity']);
   });
 
   it('is a no-op when browser-activity is not in the scope', () => {
-    expect(expandBackfillEntityTypes(['communication', 'event'])).toEqual([
-      'communication',
-      'event',
-    ]);
+    expect(expandBackfillEntityTypes(['communication', 'event'])).toEqual(['communication', 'event']);
   });
 
   it('does not duplicate when event/content are already requested', () => {
-    expect(
-      expandBackfillEntityTypes(['browser-activity', 'event', 'content', 'item']),
-    ).toEqual(['event', 'content', 'item', 'browser-activity']);
+    expect(expandBackfillEntityTypes(['browser-activity', 'event', 'content', 'item'])).toEqual([
+      'event',
+      'content',
+      'item',
+      'browser-activity',
+    ]);
   });
 });
-
 
 /**
  * Build a DataSource whose `query` serves a queue of id pages PER entity type
@@ -204,9 +196,7 @@ describe('SearchIndexBackfillService', () => {
       { name: BrowserActivityCreatedEvent, data: { browserActivityId: 'b1' } },
     ]);
     const communicationEmitted = sendMany.mock.calls.some((call) =>
-      ((call as unknown[])[1] as Array<{ name: string }>).some(
-        (e) => e.name === CommunicationCreatedEvent,
-      ),
+      ((call as unknown[])[1] as Array<{ name: string }>).some((e) => e.name === CommunicationCreatedEvent),
     );
     expect(communicationEmitted).toBe(false);
   });

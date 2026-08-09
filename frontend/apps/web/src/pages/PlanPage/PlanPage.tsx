@@ -116,12 +116,7 @@ export function PlanPage() {
 
             <ul className="flex flex-col gap-2">
               {section.tasks.map((task) => (
-                <Task
-                  key={task.id}
-                  task={task as never}
-                  onToggle={handleToggle}
-                  onDelete={handleDelete}
-                />
+                <Task key={task.id} task={task as never} onToggle={handleToggle} onDelete={handleDelete} />
               ))}
             </ul>
           </section>
@@ -162,9 +157,7 @@ export function PlanPage() {
         </div>
       </PageContent>
 
-      {focusedTask && (
-        <DeleteTaskModal taskId={focusedTask} onClose={() => setFocusedTask(null)} />
-      )}
+      {focusedTask && <DeleteTaskModal taskId={focusedTask} onClose={() => setFocusedTask(null)} />}
     </>
   );
 }

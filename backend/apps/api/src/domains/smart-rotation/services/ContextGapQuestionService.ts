@@ -55,7 +55,9 @@ export class ContextGapQuestionService {
     const prompt = [
       'You help a personal memory assistant decide what to ask the user next.',
       `Target category (lowest coverage): ${gapCategory ?? 'General'}`,
-      dossier ? `Known context:\n${dossier.slice(0, 2500)}` : 'Known context: (minimal — user is still onboarding)',
+      dossier
+        ? `Known context:\n${dossier.slice(0, 2500)}`
+        : 'Known context: (minimal — user is still onboarding)',
       '',
       'Write ONE concise, friendly, open-ended question that would materially improve understanding of this user.',
       'Do not repeat generic onboarding prompts. Return JSON only.',
@@ -109,7 +111,11 @@ export class ContextGapQuestionService {
       ],
     );
 
-    this.logger.log('Enqueued context-gap LLM question', { userId, questionId: question.id, category: parsed.category });
+    this.logger.log('Enqueued context-gap LLM question', {
+      userId,
+      questionId: question.id,
+      category: parsed.category,
+    });
 
     return true;
   }

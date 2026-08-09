@@ -33,16 +33,11 @@ export function TagsPage() {
   const sortedTags = useMemo(() => {
     const edges = data?.tags?.edges ?? [];
 
-    return [...edges].sort((a, b) =>
-      a.node.label.toLowerCase().localeCompare(b.node.label.toLowerCase()),
-    );
+    return [...edges].sort((a, b) => a.node.label.toLowerCase().localeCompare(b.node.label.toLowerCase()));
   }, [data]);
 
   const filteredTags = useMemo(
-    () =>
-      sortedTags.filter(({ node: tag }) =>
-        tag.label.toLowerCase().includes(searchQuery.toLowerCase()),
-      ),
+    () => sortedTags.filter(({ node: tag }) => tag.label.toLowerCase().includes(searchQuery.toLowerCase())),
     [searchQuery, sortedTags],
   );
 

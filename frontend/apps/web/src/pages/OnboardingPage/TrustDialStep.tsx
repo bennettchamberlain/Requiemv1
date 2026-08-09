@@ -5,7 +5,11 @@ import { StepHeader } from './StepHeader';
 
 export const TRUST_OPTIONS = [
   { value: 'cautious' as const, label: 'Cautious', hint: 'Ask before saving any inferred answer' },
-  { value: 'balanced' as const, label: 'Balanced', hint: 'Strong inferences save automatically; others ask first' },
+  {
+    value: 'balanced' as const,
+    label: 'Balanced',
+    hint: 'Strong inferences save automatically; others ask first',
+  },
   {
     value: 'hands_off' as const,
     label: 'Hands-off',

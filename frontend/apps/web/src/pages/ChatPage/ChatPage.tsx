@@ -168,9 +168,7 @@ function ChatPageContent() {
     try {
       const { added } = await apply(personaResult);
       setApplyNote(
-        added > 0
-          ? `Added ${added} ${added === 1 ? 'card' : 'cards'} to Possibilities.`
-          : 'Nothing to add.',
+        added > 0 ? `Added ${added} ${added === 1 ? 'card' : 'cards'} to Possibilities.` : 'Nothing to add.',
       );
     } catch {
       setApplyNote('Could not add to Possibilities.');

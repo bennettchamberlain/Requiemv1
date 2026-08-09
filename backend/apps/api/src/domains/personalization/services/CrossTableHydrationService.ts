@@ -4,7 +4,11 @@ import { DataSource } from 'typeorm';
 
 import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { GraphIngestService, type GraphEntityInputDto, type GraphRelationshipInputDto } from '@ci/domains/graph';
+import {
+  GraphIngestService,
+  type GraphEntityInputDto,
+  type GraphRelationshipInputDto,
+} from '@ci/domains/graph';
 
 import { PersonalizationService } from './PersonalizationService';
 import { PromotionCandidateService } from './PromotionCandidateService';
@@ -44,7 +48,11 @@ export class CrossTableHydrationService {
       [context.userId, limit],
     )) as Row[];
 
-    return this.hydrateFromTexts(context, rows.map((r) => r.answer_text), 'hydrate_answers');
+    return this.hydrateFromTexts(
+      context,
+      rows.map((r) => r.answer_text),
+      'hydrate_answers',
+    );
   }
 
   async hydrateInventory(context: UserServiceContext, limit = 50): Promise<HydrationResult> {

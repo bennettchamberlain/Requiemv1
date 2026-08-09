@@ -153,11 +153,7 @@ export function DataPortabilitySection() {
           <div className="space-y-4 py-2">
             <div className="grid gap-2">
               <Label htmlFor="exportFile">Export file</Label>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => fileInputRef.current?.click()}
-              >
+              <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()}>
                 {selectedFile ? selectedFile.name : 'Choose export file'}
               </Button>
             </div>

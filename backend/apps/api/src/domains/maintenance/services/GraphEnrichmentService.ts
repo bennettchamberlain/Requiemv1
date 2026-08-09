@@ -382,7 +382,12 @@ export class GraphEnrichmentService {
       if (generalInput.relationships.length > 0) {
         const avgConfidence =
           general.reduce((sum, rel) => sum + rel.confidence, 0) / Math.max(general.length, 1);
-        const gated = await this.ingestWithPersonalization(context, generalInput, avgConfidence, 'graph_edge');
+        const gated = await this.ingestWithPersonalization(
+          context,
+          generalInput,
+          avgConfidence,
+          'graph_edge',
+        );
         result.generalEdgesWritten += gated.relationshipsProcessed;
         result.reviewQueued += gated.reviewQueued;
         result.errors.push(...gated.errors);

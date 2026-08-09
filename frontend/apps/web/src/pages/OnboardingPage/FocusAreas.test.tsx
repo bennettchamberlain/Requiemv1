@@ -2,7 +2,6 @@ import { Form, formDataResolver, formDataSchema as s, useForm } from '@ci/shadcn
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-
 import { FocusAreas } from './FocusAreas';
 
 const schema = s.object({

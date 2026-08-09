@@ -124,7 +124,9 @@ describe('QuestionService feed rotation', () => {
             {
               feed_queue_id: 'fq-1',
               question_id: 'q-1',
-              metadata: { lastPresentedAt: new Date(Date.now() - FEED_QUESTION_STALE_MS - 1000).toISOString() },
+              metadata: {
+                lastPresentedAt: new Date(Date.now() - FEED_QUESTION_STALE_MS - 1000).toISOString(),
+              },
             },
           ];
         }

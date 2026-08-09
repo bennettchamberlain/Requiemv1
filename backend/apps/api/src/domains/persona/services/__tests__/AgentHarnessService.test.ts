@@ -4,7 +4,6 @@ import type { CloudOAuthProxyService } from '@ci/domains/connections';
 
 import { AgentHarnessService } from '../AgentHarnessService';
 
-
 describe('AgentHarnessService', () => {
   const apiKeyService = {
     findAllByUser: jest.fn(),

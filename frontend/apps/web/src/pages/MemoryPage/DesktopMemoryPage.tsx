@@ -13,7 +13,6 @@ import { FileChunkModal } from '@/components/modals/FileChunkModal/FileChunkModa
 import { AVAILABLE_ENTITY_TYPES } from '@/components/SearchBox/useDropdown';
 import { gql } from '@/graphql';
 
-
 import { useEntityService } from '../MemoryPage/useEntityService';
 
 import { ActivityTimelineRail } from './ActivityTimelineRail';
@@ -288,23 +287,23 @@ export default function DesktopMemoryPage() {
 
       <PageContent className="gap-2 p-0">
         <MemoryHubShell fillHeight>
-        <div className="flex min-h-0 flex-1 flex-col gap-2 pb-2">
-          <div className="px-2">
-            <ExplorerToolbar open />
-          </div>
-          {/* List view splits into two independently-scrolled panes: wheeling
+          <div className="flex min-h-0 flex-1 flex-col gap-2 pb-2">
+            <div className="px-2">
+              <ExplorerToolbar open />
+            </div>
+            {/* List view splits into two independently-scrolled panes: wheeling
               over the left rail moves the heatmap's window through time, while
               the result list on the right keeps its own scroll. */}
-          {activeTab === 'list' && (
-            <div className="flex min-h-0 flex-1">
-              <ActivityTimelineRail className="shrink-0 border-r" />
-              <ListView />
-            </div>
-          )}
-          {activeTab === 'map' && <DesktopMapView />}
-          {activeTab === 'gallery' && <GalleryView />}
-          {activeTab === 'graph' && <GraphView variant="desktop" />}
-        </div>
+            {activeTab === 'list' && (
+              <div className="flex min-h-0 flex-1">
+                <ActivityTimelineRail className="shrink-0 border-r" />
+                <ListView />
+              </div>
+            )}
+            {activeTab === 'map' && <DesktopMapView />}
+            {activeTab === 'gallery' && <GalleryView />}
+            {activeTab === 'graph' && <GraphView variant="desktop" />}
+          </div>
         </MemoryHubShell>
       </PageContent>
 

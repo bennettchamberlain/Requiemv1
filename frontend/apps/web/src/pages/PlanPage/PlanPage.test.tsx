@@ -10,8 +10,7 @@ const featureState = vi.hoisted(() => ({ emptyState: false }));
 
 vi.mock('@/common/feature', () => ({
   useFeatures: () => ({
-    isFeatureEnabled: (name: string) =>
-      name === 'planning.emptyState' ? featureState.emptyState : false,
+    isFeatureEnabled: (name: string) => (name === 'planning.emptyState' ? featureState.emptyState : false),
   }),
 }));
 
@@ -106,18 +105,15 @@ describe('PlanPage', () => {
     const today = new Date();
     const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
 
-    renderWithProviders(
-      <PlanPage />,
-      {
-        mocks: [
-          tasksMock([
-            node({ id: 'a', title: 'Overdue thing', dueAt: yesterday.toISOString() }),
-            node({ id: 'b', title: 'Someday thing' }),
-            node({ id: 'c', title: 'Finished thing', status: 'done' }),
-          ]),
-        ],
-      },
-    );
+    renderWithProviders(<PlanPage />, {
+      mocks: [
+        tasksMock([
+          node({ id: 'a', title: 'Overdue thing', dueAt: yesterday.toISOString() }),
+          node({ id: 'b', title: 'Someday thing' }),
+          node({ id: 'c', title: 'Finished thing', status: 'done' }),
+        ]),
+      ],
+    });
 
     expect(await screen.findByText('Overdue thing')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /overdue/i })).toBeInTheDocument();

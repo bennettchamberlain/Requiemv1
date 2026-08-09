@@ -90,7 +90,7 @@ export async function composeHowYoudDoIt(
   });
 
   if (!result) {
-    throw new Error('How-you\'d-do-it request returned no data');
+    throw new Error("How-you'd-do-it request returned no data");
   }
 
   return result;
@@ -107,7 +107,7 @@ export async function applyHowYoudDoIt(
   });
 
   if (!response) {
-    throw new Error('Apply how-you\'d-do-it returned no data');
+    throw new Error("Apply how-you'd-do-it returned no data");
   }
 
   return response;

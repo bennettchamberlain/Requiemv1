@@ -351,15 +351,7 @@ export function GlobalSearchBox() {
         ),
       })),
     ];
-  }, [
-    activeFilterCount,
-    onMemoryExplorer,
-    query,
-    recentSearches,
-    removeRecentSearch,
-    suggestions,
-    tags,
-  ]);
+  }, [activeFilterCount, onMemoryExplorer, query, recentSearches, removeRecentSearch, suggestions, tags]);
 
   // Live, debounced. Drives the suggestion query everywhere, and on /memory also
   // writes `?search` so the explorer filters as you type (replace: keep history clean).
@@ -517,15 +509,7 @@ export function GlobalSearchBox() {
           break;
       }
     },
-    [
-      addRecentSearch,
-      clearFilters,
-      clearInput,
-      clearQuery,
-      commitSearch,
-      navigate,
-      query,
-    ],
+    [addRecentSearch, clearFilters, clearInput, clearQuery, commitSearch, navigate, query],
   );
 
   // Expand + focus. The focus call only lands when already expanded (a hidden

@@ -7,8 +7,6 @@ import type { UserService } from '@ci/domains/user';
 
 import { UserDataPortabilityService } from '../UserDataPortabilityService';
 
-
-
 describe('UserDataPortabilityService', () => {
   const queryRunner = {
     connect: jest.fn(),

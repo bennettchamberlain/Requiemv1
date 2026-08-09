@@ -45,7 +45,15 @@ interface Props {
 }
 
 function ChatInput(
-  { disabled = false, loading = false, streaming = false, placeholder, initialDraft = '', onSubmit, onStop }: Props,
+  {
+    disabled = false,
+    loading = false,
+    streaming = false,
+    placeholder,
+    initialDraft = '',
+    onSubmit,
+    onStop,
+  }: Props,
   forwardedRef: ForwardedRef<HTMLTextAreaElement>,
 ) {
   const SendIcon = streaming ? Square : Send;

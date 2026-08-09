@@ -690,9 +690,7 @@ function SearchBox(
 
   const panelVisible =
     !panelDismissed &&
-    (resultsNode != null ||
-      (panelFooter != null && userEngaged) ||
-      (panelPinned && (isFocused || hasQuery)));
+    (resultsNode != null || (panelFooter != null && userEngaged) || (panelPinned && (isFocused || hasQuery)));
 
   // Dismiss an open suggestion/filter panel when clicking elsewhere on the page.
   useEffect(() => {
@@ -735,11 +733,7 @@ function SearchBox(
   return (
     <Form {...form}>
       <form autoComplete="off" onSubmit={form.handleSubmit(handleFormSubmit)}>
-        <div
-          className="relative"
-          ref={wrapperRef}
-          onPointerDown={() => setUserEngaged(true)}
-        >
+        <div className="relative" ref={wrapperRef} onPointerDown={() => setUserEngaged(true)}>
           <div
             className={cn(
               'w-full flex flex-col',
