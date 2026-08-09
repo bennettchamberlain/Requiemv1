@@ -6,14 +6,18 @@ import { FeatureService } from '@ci/common/feature';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { HbpeService } from '@ci/domains/predictions';
+import { UserService } from '@ci/domains/user';
 
+import { DueForecastType } from '../types/DueForecastType';
 import { ForecastType } from '../types/ForecastType';
+import { WeekForecastType } from '../types/WeekForecastType';
 
 @UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => ForecastType)
 export class ForecastResolver {
   constructor(
     private readonly hbpeService: HbpeService,
+    private readonly userService: UserService,
     private readonly featureService: FeatureService,
     private readonly logger: LoggerService,
   ) {
@@ -35,6 +39,54 @@ export class ForecastResolver {
       return ForecastType.toType(response);
     } catch (err) {
       this.logger.error('Forecast query failed', err instanceof Error ? err : new Error(String(err)));
+
+      return null;
+    }
+  }
+
+  @Query(() => WeekForecastType, {
+    nullable: true,
+    description: 'Fetch the HBPE week-horizon occurrence forecast (per-day cluster probabilities)',
+  })
+  async weekForecast(
+    @Context() context: RequestContext,
+    @Args('includeToday', { type: () => Boolean, nullable: true, defaultValue: false })
+    includeToday: boolean,
+  ): Promise<WeekForecastType | null> {
+    if (!(await this.featureService.isFeatureEnabled('hbpe'))) {
+      return null;
+    }
+
+    try {
+      const serviceContext = toServiceContext(context);
+      const user = await this.userService.findById(serviceContext, serviceContext.userId);
+      const timezone = user?.timezone ?? 'UTC';
+
+      const response = await this.hbpeService.getWeekForecast(serviceContext, includeToday, timezone);
+
+      return WeekForecastType.toType(response);
+    } catch (err) {
+      this.logger.error('Week forecast query failed', err instanceof Error ? err : new Error(String(err)));
+
+      return null;
+    }
+  }
+
+  @Query(() => DueForecastType, {
+    nullable: true,
+    description: 'Fetch HBPE renewal predictions: periodic behaviors coming due or overdue',
+  })
+  async dueForecast(@Context() context: RequestContext): Promise<DueForecastType | null> {
+    if (!(await this.featureService.isFeatureEnabled('hbpe'))) {
+      return null;
+    }
+
+    try {
+      const response = await this.hbpeService.getDueList(toServiceContext(context));
+
+      return DueForecastType.toType(response);
+    } catch (err) {
+      this.logger.error('Due forecast query failed', err instanceof Error ? err : new Error(String(err)));
 
       return null;
     }

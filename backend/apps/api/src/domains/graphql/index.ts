@@ -18,7 +18,9 @@ import { MemoryModule } from '@ci/domains/memory';
 import { NotesModule } from '@ci/domains/notes';
 import { PairingModule } from '@ci/domains/pairing';
 import { ParsingModule } from '@ci/domains/parsing';
+import { PlanningModule } from '@ci/domains/planning';
 import { PredictionsModule } from '@ci/domains/predictions';
+import { ScheduleModule } from '@ci/domains/schedule';
 import { SearchNextModule } from '@ci/domains/search-next';
 import { SummariesModule } from '@ci/domains/summaries';
 import { UserModule } from '@ci/domains/user';
@@ -26,6 +28,7 @@ import { UserSnapshotsModule } from '@ci/domains/user-snapshots';
 
 import { GraphQLController } from './controllers/GraphQLController';
 import { ConnectionLoader } from './loaders/ConnectionLoader';
+import { EventContentsLoader } from './loaders/EventContentsLoader';
 import { EventLoader } from './loaders/EventLoader';
 import { EventMediaLoader } from './loaders/EventMediaLoader';
 import { FileItemsLoader } from './loaders/FileItemsLoader';
@@ -69,9 +72,11 @@ import { ProviderResolver } from './resolvers/ProviderResolver';
 import { QuestionResolver } from './resolvers/QuestionResolver';
 import { RelationshipResolver } from './resolvers/RelationshipResolver';
 import { SavedSearchResolver } from './resolvers/SavedSearchResolver';
+import { ScheduleCandidateResolver } from './resolvers/ScheduleCandidateResolver';
 import { SearchResolver } from './resolvers/SearchResolver';
 import { SummaryResolver } from './resolvers/SummaryResolver';
 import { TagResolver } from './resolvers/TagResolver';
+import { TaskResolver } from './resolvers/TaskResolver';
 import { ThreadResolver } from './resolvers/ThreadResolver';
 import { UserResolver } from './resolvers/UserResolver';
 import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
@@ -101,7 +106,9 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     MemoryModule,
     NotesModule,
     ParsingModule,
+    PlanningModule,
     SearchNextModule,
+    ScheduleModule,
     SummariesModule,
     UserModule,
     UserSnapshotsModule,
@@ -110,6 +117,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     ActionResolver,
     ActivityResolver,
     ForecastResolver,
+    ScheduleCandidateResolver,
     PairingResolver,
     BrowserActivityResolver,
     CommunicationResolver,
@@ -121,7 +129,9 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     ContentResolver,
     NodeResolver,
     NoteResolver,
+    TaskResolver,
     AnswerResolver,
+    EventContentsLoader,
     EventLoader,
     EventMediaLoader,
     EventResolver,

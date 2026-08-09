@@ -53,7 +53,7 @@ import { SerializerService } from './services/SerializerService';
     // Provides IntentCatalogService, which the IntentsController publishes.
     ToolsModule,
   ],
-  exports: [SerializerService],
+  exports: [SerializerService, ForecastContextService, RecallService],
   providers: [
     AgentMemoryService,
     ForecastContextService,
@@ -65,3 +65,5 @@ import { SerializerService } from './services/SerializerService';
   controllers: [IntentsController, MemoryController],
 })
 export class AgentModule {}
+
+export { ForecastContextService, RecallService };

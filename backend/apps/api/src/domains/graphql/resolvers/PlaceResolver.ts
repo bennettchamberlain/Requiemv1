@@ -52,6 +52,31 @@ function parsePlaceKind(raw: string | undefined | null): PlaceKind | undefined {
   return raw as PlaceKind;
 }
 
+/**
+ * Resolve typed coordinates for location_point. Prefer explicit lat/lng; fall
+ * back to a legacy geolocation array [lng, lat]. Never write geolocation into
+ * properties — location_point is canonical (Wave C location dedup).
+ */
+function locationPointFromPlaceInput(input: {
+  latitude?: number | null;
+  longitude?: number | null;
+  geolocation?: unknown;
+}): { type: 'Point'; coordinates: [number, number] } | undefined {
+  if (typeof input.latitude === 'number' && typeof input.longitude === 'number') {
+    return { type: 'Point' as const, coordinates: [input.longitude, input.latitude] };
+  }
+
+  if (Array.isArray(input.geolocation) && input.geolocation.length >= 2) {
+    const lng = Number(input.geolocation[0]);
+    const lat = Number(input.geolocation[1]);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      return { type: 'Point' as const, coordinates: [lng, lat] };
+    }
+  }
+
+  return undefined;
+}
+
 @UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => PlaceType)
 export class PlaceResolver {
@@ -79,9 +104,7 @@ export class PlaceResolver {
       properties.geoFormat = input.geoFormat;
     }
 
-    if (input.geolocation) {
-      properties.geolocation = input.geolocation;
-    }
+    // Do not write properties.geolocation — use location_point (typed columns).
 
     if (input.locationBoundary) {
       properties.locationBoundary = input.locationBoundary;
@@ -99,14 +122,14 @@ export class PlaceResolver {
       properties.uploaded = input.uploaded;
     }
 
+    const locationPoint = locationPointFromPlaceInput(input);
+
     const entity = await this.placeService.create(serviceContext, {
       name: input.name,
       entity_type: 'Location',
       properties,
       description: input.description,
-      ...(typeof input.latitude === 'number' && typeof input.longitude === 'number'
-        ? { locationPoint: { type: 'Point' as const, coordinates: [input.longitude, input.latitude] } }
-        : {}),
+      ...(locationPoint ? { locationPoint } : {}),
       ...(input.placeKind != null ? { placeKind: parsePlaceKind(input.placeKind) } : {}),
       ...(input.parentId ? { parentPlaceId: GlobalUID.parse('place', input.parentId) } : {}),
     });
@@ -139,9 +162,7 @@ export class PlaceResolver {
           properties.geoFormat = item.geoFormat;
         }
 
-        if (item.geolocation) {
-          properties.geolocation = item.geolocation;
-        }
+        // Do not write properties.geolocation — use location_point (typed columns).
 
         if (item.locationBoundary) {
           properties.locationBoundary = item.locationBoundary;
@@ -159,14 +180,14 @@ export class PlaceResolver {
           properties.uploaded = item.uploaded;
         }
 
+        const locationPoint = locationPointFromPlaceInput(item);
+
         return {
           name: item.name,
           entity_type: 'Location',
           properties,
           description: item.description,
-          ...(typeof item.latitude === 'number' && typeof item.longitude === 'number'
-            ? { locationPoint: { type: 'Point' as const, coordinates: [item.longitude, item.latitude] } }
-            : {}),
+          ...(locationPoint ? { locationPoint } : {}),
           ...(item.placeKind != null ? { placeKind: parsePlaceKind(item.placeKind) } : {}),
           ...(item.parentId ? { parentPlaceId: GlobalUID.parse('place', item.parentId) } : {}),
         };
@@ -193,9 +214,7 @@ export class PlaceResolver {
       properties.geoFormat = input.geoFormat;
     }
 
-    if (input.geolocation) {
-      properties.geolocation = input.geolocation;
-    }
+    // Do not write properties.geolocation — use location_point (typed columns).
 
     if (input.locationBoundary) {
       properties.locationBoundary = input.locationBoundary;
@@ -214,13 +233,14 @@ export class PlaceResolver {
     }
 
     const id = GlobalUID.parse('place', input.id);
+    const locationPoint = locationPointFromPlaceInput(input);
 
     const entity = await this.placeService.update(serviceContext, id, {
       name: input.name,
       properties,
       description: input.description,
-      ...(typeof input.latitude === 'number' && typeof input.longitude === 'number'
-        ? { latitude: input.latitude, longitude: input.longitude }
+      ...(locationPoint
+        ? { latitude: locationPoint.coordinates[1], longitude: locationPoint.coordinates[0] }
         : {}),
       // An explicit empty string clears the kind; a value is validated.
       ...(input.placeKind !== undefined

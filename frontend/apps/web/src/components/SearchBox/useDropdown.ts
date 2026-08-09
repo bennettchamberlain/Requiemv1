@@ -3,11 +3,18 @@ import { useCallback, useEffect, useState } from 'react';
 import { createHookContext } from '@ci/common';
 import { useSearchParams } from 'react-router-dom';
 
+import {
+  type DatePreset,
+  type DatePresetSelection,
+  resolveDatePreset,
+} from '@/pages/MemoryPage/Components/ExplorerToolbar/datePresets';
+
 type ReturnType = [
   {
     isDropdownPanelVisible: boolean;
     selectedEntityTypes: string[];
     tags: string[];
+    whenPreset: string;
     dateFrom: string;
     dateTo: string;
     sortBy: string;
@@ -18,9 +25,12 @@ type ReturnType = [
     selectAllEntityTypes: () => void;
     clearEntityTypes: () => void;
     toggleEntityType: (type: string) => void;
+    /** Tab-style filter: show only this type, or clear back to all when already sole selection. */
+    selectOnlyEntityType: (type: string) => void;
     setSelectedEntityTypes: (type: string[]) => void;
     setTags: (tags: string[]) => void;
     setDateRange: (from?: string, to?: string) => void;
+    setDatePreset: (preset: DatePresetSelection | null) => void;
     setSort: (sortBy?: string, sortOrder?: string) => void;
   },
 ];
@@ -133,6 +143,47 @@ function useDropdown({ changeSearchParams = true }: { changeSearchParams: boolea
     [setSearchParams],
   );
 
+  const selectOnlyEntityType = useCallback(
+    (entityType: string) => {
+      setSelectedEntityTypes((prev) => {
+        const isOnlySelected = prev.length === 1 && prev[0] === entityType;
+
+        if (isOnlySelected) {
+          if (changeSearchParams) {
+            setSearchParams((searchParams) => {
+              searchParams.delete('excludedEntityTypes');
+              searchParams.delete('includedEntityTypes');
+
+              return searchParams;
+            });
+          }
+
+          return AVAILABLE_ENTITY_TYPES;
+        }
+
+        const next = [entityType];
+        const excludedTypes = AVAILABLE_ENTITY_TYPES.filter((type) => type !== entityType);
+
+        if (changeSearchParams) {
+          setSearchParams((searchParams) => {
+            searchParams.delete('includedEntityTypes');
+
+            if (excludedTypes.length === 0) {
+              searchParams.delete('excludedEntityTypes');
+            } else {
+              searchParams.set('excludedEntityTypes', excludedTypes.join(','));
+            }
+
+            return searchParams;
+          });
+        }
+
+        return next;
+      });
+    },
+    [changeSearchParams, setSearchParams],
+  );
+
   const toggleDropdownPanel = useCallback(() => {
     setDropdownPanelVisible((prev) => !prev);
   }, []);
@@ -140,6 +191,7 @@ function useDropdown({ changeSearchParams = true }: { changeSearchParams: boolea
   // Date range, tags, and sort are read straight from the URL (no inversion logic like entity
   // types), so derive them per-render and write through setters that update the search params.
   const tags = searchParams.get('tags')?.split(',').filter(Boolean) || [];
+  const whenPreset = searchParams.get('when') || '';
   const dateFrom = searchParams.get('from') || '';
   const dateTo = searchParams.get('to') || '';
   const sortBy = searchParams.get('sortBy') || '';
@@ -183,6 +235,44 @@ function useDropdown({ changeSearchParams = true }: { changeSearchParams: boolea
           params.delete('to');
         }
 
+        if (!from && !to) {
+          params.delete('when');
+        } else {
+          params.set('when', 'custom');
+        }
+
+        return params;
+      });
+    },
+    [changeSearchParams, setSearchParams],
+  );
+
+  const setDatePreset = useCallback(
+    (preset: DatePresetSelection | null) => {
+      if (!changeSearchParams) {
+        return;
+      }
+
+      setSearchParams((params) => {
+        if (!preset) {
+          params.delete('when');
+          params.delete('from');
+          params.delete('to');
+
+          return params;
+        }
+
+        if (preset === 'custom') {
+          params.set('when', 'custom');
+
+          return params;
+        }
+
+        const { from, to } = resolveDatePreset(preset as DatePreset);
+        params.set('when', preset);
+        params.set('from', from);
+        params.set('to', to);
+
         return params;
       });
     },
@@ -219,6 +309,7 @@ function useDropdown({ changeSearchParams = true }: { changeSearchParams: boolea
       isDropdownPanelVisible,
       selectedEntityTypes,
       tags,
+      whenPreset,
       dateFrom,
       dateTo,
       sortBy,
@@ -229,9 +320,11 @@ function useDropdown({ changeSearchParams = true }: { changeSearchParams: boolea
       selectAllEntityTypes,
       clearEntityTypes,
       toggleEntityType,
+      selectOnlyEntityType,
       setSelectedEntityTypes,
       setTags,
       setDateRange,
+      setDatePreset,
       setSort,
     },
   ];

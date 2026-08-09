@@ -57,12 +57,16 @@ export interface JobDistributionSegment {
 
 export interface JobsDashboardResponse {
   readonly summary: {
+    readonly pending: number;
     readonly active: number;
     readonly completed: number;
     readonly failed: number;
     readonly scheduled: number;
   };
-  readonly distribution: readonly JobDistributionSegment[];
+  readonly archiveDistribution: readonly JobDistributionSegment[];
+  readonly activeDistribution: readonly JobDistributionSegment[];
+  readonly queueDistribution: Array<{ queue: string; count: number }>;
+  readonly smartRotationDistribution: Array<{ workType: string; count: number }>;
   readonly jobs: readonly JobRecord[];
   readonly archive: readonly ArchivedJobRecord[];
   readonly schedules: readonly JobSchedule[];

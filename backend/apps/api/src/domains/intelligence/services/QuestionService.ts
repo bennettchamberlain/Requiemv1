@@ -4,7 +4,10 @@ import { DataSource, type FindOptionsWhere, In, IsNull, Repository } from 'typeo
 import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, SYSTEM_USER } from '@ci/common/context';
-import { computeChunkSize } from '@ci/common/persistence';
+import {
+  computeChunkSize,
+  EXCLUDE_QUESTIONS_WITH_PENDING_INFERRED_REVIEW_FOR_USER_COLUMN,
+} from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
 import {
   QuestionCreatedEvent,
@@ -16,6 +19,46 @@ import { Question, QuestionEntity } from '../entities/QuestionEntity';
 import type { CreateQuestionDto, UpdateQuestionDto } from '../types';
 
 const FEED_QUESTION_QUEUE_LIMIT = 3;
+/** Unanswered front-of-queue questions rotate after this long on the feed. */
+export const FEED_QUESTION_STALE_MS = 6 * 60 * 60 * 1000;
+
+const GAP_AWARE_CANDIDATE_SQL = `
+  WITH category_coverage AS (
+    SELECT
+      q.question_category AS category,
+      COUNT(DISTINCT a.answer_id)::int AS answered_count
+    FROM ci.questions q
+    LEFT JOIN ci.answers a
+      ON a.question_id = q.question_id
+      AND a.user_id = $1
+      AND a.answer_text IS NOT NULL
+      AND TRIM(a.answer_text) <> ''
+    WHERE q.is_active = TRUE
+      AND (q.is_private_to IS NULL OR q.is_private_to = $1)
+    GROUP BY q.question_category
+  )
+  SELECT q.question_id AS id
+  FROM ci.questions q
+  LEFT JOIN category_coverage cc ON cc.category = q.question_category
+  WHERE q.is_active = TRUE
+    AND (q.is_private_to IS NULL OR q.is_private_to = $1)
+    AND NOT EXISTS (
+      SELECT 1
+      FROM ci.answers a
+      WHERE a.question_id = q.question_id
+        AND a.user_id = $1
+        AND a.answer_text IS NOT NULL
+        AND TRIM(a.answer_text) <> ''
+    )
+    AND NOT EXISTS (
+      SELECT 1
+      FROM ci.feed_queue fq
+      WHERE fq.user_id = $1
+        AND fq.question_id = q.question_id
+    )
+  ORDER BY COALESCE(cc.answered_count, 0) ASC, RANDOM()
+  LIMIT 1;
+`;
 
 @Injectable()
 export class QuestionService {
@@ -327,20 +370,33 @@ export class QuestionService {
     };
 
     const rows = (await this.dataSource.query(`
-      SELECT
-        q.question_id as id,
-        COALESCE(q.is_private_to, a.user_id) as user_id
-      FROM
-        ci.questions as q
-      LEFT JOIN ci.answers as a ON a.question_id = q.question_id
-      WHERE q.is_active = TRUE
-        AND (a.answer_id IS NULL OR a.answer_text IS NULL)
-        AND (
-          q.is_private_to IS NULL
-          OR a.user_id IS NULL
-          OR a.user_id = q.is_private_to
-        )
-      LIMIT 5;
+      WITH unanswered AS (
+        SELECT
+          q.question_id AS id,
+          COALESCE(q.is_private_to, u.user_id) AS user_id,
+          q.created_at,
+          ROW_NUMBER() OVER (
+            PARTITION BY COALESCE(q.is_private_to, u.user_id)
+            ORDER BY q.created_at ASC
+          ) AS rn
+        FROM ci.questions q
+        CROSS JOIN (SELECT DISTINCT id AS user_id FROM ci.users WHERE id IS NOT NULL) u
+        WHERE q.is_active = TRUE
+          AND (q.is_private_to IS NULL OR q.is_private_to = u.user_id)
+          AND NOT EXISTS (
+            SELECT 1
+            FROM ci.answers a
+            WHERE a.question_id = q.question_id
+              AND a.user_id = u.user_id
+              AND a.answer_method IN ('user', 'inferred')
+              AND a.answer_text IS NOT NULL
+              AND TRIM(a.answer_text) <> ''
+          )
+          ${EXCLUDE_QUESTIONS_WITH_PENDING_INFERRED_REVIEW_FOR_USER_COLUMN}
+      )
+      SELECT id, user_id
+      FROM unanswered
+      WHERE rn <= 1;
     `)) satisfies Array<Row>;
 
     const groupedByUserId = new Map<string | null, string[]>();
@@ -363,11 +419,13 @@ export class QuestionService {
       return null;
     }
 
+    await this.cleanupFeedQueue(context.userId);
+    await this.rotateStaleFeedQuestions(context.userId);
+    await this.ensureFeedQueueHasQuestion(context.userId);
+
     type Row = {
       id: string;
     };
-
-    await this.cleanupFeedQueue(context.userId);
 
     const rows = (await this.dataSource.query(
       `
@@ -379,8 +437,9 @@ export class QuestionService {
       LEFT JOIN ci.answers as a ON a.question_id = fq.question_id
         AND a.user_id = fq.user_id
       WHERE fq.user_id = $1
+        AND fq.question_id IS NOT NULL
         AND q.is_active = TRUE
-        AND (a.answer_id IS NULL OR a.answer_text IS NULL)
+        AND (a.answer_id IS NULL OR a.answer_text IS NULL OR TRIM(a.answer_text) = '')
       ORDER BY fq.enqueued_at ASC, fq.feed_queue_id ASC
       LIMIT 1;
     `,
@@ -391,7 +450,129 @@ export class QuestionService {
       return null;
     }
 
-    return this.findById(context, rows[0].id);
+    const questionId = rows[0].id;
+    await this.recordFeedQuestionPresentation(context.userId, questionId);
+
+    return this.findById(context, questionId);
+  }
+
+  /**
+   * Move a front-of-queue question that was shown but left unanswered for too
+   * long to the back and top up with a fresh pick when possible.
+   */
+  async rotateStaleFeedQuestions(userId: string): Promise<boolean> {
+    type FrontRow = {
+      feed_queue_id: string;
+      question_id: string;
+      metadata: Record<string, unknown> | null;
+    };
+
+    const frontRows = (await this.dataSource.query(
+      `
+      SELECT
+        fq.feed_queue_id,
+        fq.question_id,
+        fq.metadata
+      FROM ci.feed_queue fq
+      JOIN ci.questions q ON q.question_id = fq.question_id
+      LEFT JOIN ci.answers a
+        ON a.question_id = fq.question_id
+        AND a.user_id = fq.user_id
+      WHERE fq.user_id = $1
+        AND fq.question_id IS NOT NULL
+        AND q.is_active = TRUE
+        AND (a.answer_id IS NULL OR a.answer_text IS NULL OR TRIM(a.answer_text) = '')
+      ORDER BY fq.enqueued_at ASC, fq.feed_queue_id ASC
+      LIMIT 1;
+      `,
+      [userId],
+    )) satisfies Array<FrontRow>;
+
+    const front = frontRows[0];
+    if (!front) {
+      return false;
+    }
+
+    const lastPresentedRaw = front.metadata?.lastPresentedAt;
+    if (typeof lastPresentedRaw !== 'string') {
+      return false;
+    }
+
+    const lastPresentedAt = Date.parse(lastPresentedRaw);
+    if (!Number.isFinite(lastPresentedAt) || Date.now() - lastPresentedAt < FEED_QUESTION_STALE_MS) {
+      return false;
+    }
+
+    await this.dataSource.query(
+      `
+      UPDATE ci.feed_queue
+      SET
+        enqueued_at = NOW(),
+        metadata = (COALESCE(metadata, '{}'::jsonb) - 'lastPresentedAt') || jsonb_build_object('rotatedAt', to_jsonb(NOW()::text))
+      WHERE feed_queue_id = $1;
+      `,
+      [front.feed_queue_id],
+    );
+
+    await this.enqueueNextFeedQueueQuestion(userId, FEED_QUESTION_QUEUE_LIMIT);
+
+    return true;
+  }
+
+  /** Stamp first presentation time on the feed row and bump times_asked on the question. */
+  async recordFeedQuestionPresentation(userId: string, questionId: string): Promise<void> {
+    type Row = { updated: boolean };
+    const rows = (await this.dataSource.query(
+      `
+      UPDATE ci.feed_queue
+      SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('lastPresentedAt', to_jsonb(NOW()::text))
+      WHERE user_id = $1
+        AND question_id = $2
+        AND (metadata->>'lastPresentedAt' IS NULL)
+      RETURNING TRUE AS updated;
+      `,
+      [userId, questionId],
+    )) satisfies Array<Row>;
+
+    if (!rows[0]?.updated) {
+      return;
+    }
+
+    await this.dataSource.query(
+      `
+      UPDATE ci.questions
+      SET times_asked = times_asked + 1
+      WHERE question_id = $1;
+      `,
+      [questionId],
+    );
+  }
+
+  /** Ensure at least one unanswered question is queued when candidates exist. */
+  async ensureFeedQueueHasQuestion(userId: string): Promise<boolean> {
+    type QueueCountRow = { count: string };
+    const countRows = (await this.dataSource.query(
+      `
+      SELECT COUNT(*)::text AS count
+      FROM ci.feed_queue fq
+      JOIN ci.questions q ON q.question_id = fq.question_id
+      LEFT JOIN ci.answers a
+        ON a.question_id = fq.question_id
+        AND a.user_id = fq.user_id
+      WHERE fq.user_id = $1
+        AND fq.question_id IS NOT NULL
+        AND q.is_active = TRUE
+        AND (a.answer_id IS NULL OR a.answer_text IS NULL OR TRIM(a.answer_text) = '');
+      `,
+      [userId],
+    )) satisfies Array<QueueCountRow>;
+
+    const activeCount = Number.parseInt(countRows[0]?.count ?? '0', 10);
+    if (activeCount > 0) {
+      return false;
+    }
+
+    return this.enqueueNextFeedQueueQuestion(userId, 1);
   }
 
   async listFeedQueueUserIds(): Promise<string[]> {
@@ -438,30 +619,7 @@ export class QuestionService {
     type CandidateRow = {
       id: string;
     };
-    const candidates = (await this.dataSource.query(
-      `
-      SELECT q.question_id as id
-      FROM ci.questions as q
-      WHERE q.is_active = TRUE
-        AND (q.is_private_to IS NULL OR q.is_private_to = $1)
-        AND NOT EXISTS (
-          SELECT 1
-          FROM ci.answers as a
-          WHERE a.question_id = q.question_id
-            AND a.user_id = $1
-            AND a.answer_text IS NOT NULL
-        )
-        AND NOT EXISTS (
-          SELECT 1
-          FROM ci.feed_queue as fq
-          WHERE fq.user_id = $1
-            AND fq.question_id = q.question_id
-        )
-      ORDER BY q.created_at ASC, q.question_id ASC
-      LIMIT 1;
-      `,
-      [userId],
-    )) satisfies Array<CandidateRow>;
+    const candidates = (await this.dataSource.query(GAP_AWARE_CANDIDATE_SQL, [userId])) satisfies Array<CandidateRow>;
 
     const candidate = candidates[0];
     if (!candidate) {

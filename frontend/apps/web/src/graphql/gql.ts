@@ -22,9 +22,19 @@ type Documents = {
     "\n  mutation MarkActionAsSeen($id: ID!) {\n    markActionAsSeen(id: $id) {\n      id\n      seen\n    }\n  }\n": typeof types.MarkActionAsSeenDocument,
     "\n  mutation MarkActionAsDismissed($id: ID!) {\n    markActionAsDismissed(id: $id) {\n      id\n      dismissed\n    }\n  }\n": typeof types.MarkActionAsDismissedDocument,
     "\n  query GetForecast($horizon: String) {\n    forecast(horizon: $horizon) {\n      horizon\n      generatedAt\n      systemStatus\n      buckets {\n        bucketIndex\n        startTime\n        l0Probs { label probability }\n        l1Probs { label probability }\n        l2Probs { label probability }\n        q10\n        q50\n        q90\n      }\n    }\n  }\n": typeof types.GetForecastDocument,
+    "\n  mutation RescheduleEvent($id: ID!, $startTime: DateTime!, $endTime: DateTime) {\n    rescheduleEvent(id: $id, startTime: $startTime, endTime: $endTime) {\n      id\n      title\n      startTime\n      endTime\n      externalSyncStatus\n    }\n  }\n": typeof types.RescheduleEventDocument,
+    "\n  query GetScheduleCandidates($from: DateTime!, $to: DateTime!) {\n    scheduleCandidates(from: $from, to: $to) {\n      id\n      title\n      description\n      rationale\n      rationaleSources { kind id note }\n      windowStart\n      windowEnd\n      timeFlex\n      durationMinutes\n      l0Class\n      fitScore\n      status\n      generator\n      confidence\n    }\n  }\n": typeof types.GetScheduleCandidatesDocument,
+    "\n  mutation SyncScheduleSuggestions {\n    syncScheduleSuggestions\n  }\n": typeof types.SyncScheduleSuggestionsDocument,
+    "\n  mutation AcceptCandidate($id: ID!, $startTime: DateTime!, $endTime: DateTime) {\n    acceptCandidate(id: $id, startTime: $startTime, endTime: $endTime) {\n      id\n      title\n      startTime\n      endTime\n      status\n    }\n  }\n": typeof types.AcceptCandidateDocument,
+    "\n  mutation DeclineCandidate($id: ID!, $reason: String) {\n    declineCandidate(id: $id, reason: $reason) { id status }\n  }\n": typeof types.DeclineCandidateDocument,
+    "\n  mutation SnoozeCandidate($id: ID!, $until: DateTime!) {\n    snoozeCandidate(id: $id, until: $until) { id status }\n  }\n": typeof types.SnoozeCandidateDocument,
+    "\n  mutation BreakDownTasks($text: String!) {\n    breakDownTasks(text: $text) { id title }\n  }\n": typeof types.BreakDownTasksDocument,
+    "\n  mutation ReturnEventToSlate($eventId: ID!) {\n    returnEventToSlate(eventId: $eventId) { id status }\n  }\n": typeof types.ReturnEventToSlateDocument,
+    "\n  query GetSchedule($from: DateTime!, $to: DateTime!) {\n    eventsInRange(from: $from, to: $to) {\n      id\n      title\n      description\n      startTime\n      endTime\n      isAllDay\n      status\n      category\n      locationName\n      sourceSystem\n      externalSyncStatus\n    }\n    weekForecast(includeToday: true) {\n      generatedAt\n      days {\n        date\n        dow\n        clusters {\n          clusterId\n          name\n          l0Class\n          pOccur\n          scheduled\n          daypartProbs { label probability }\n        }\n      }\n    }\n  }\n": typeof types.GetScheduleDocument,
     "\n  mutation TagEntities($input: TagEntitiesInput!) {\n    tagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": typeof types.TagEntitiesDocument,
     "\n  mutation UntagEntities($input: TagEntitiesInput!) {\n    untagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": typeof types.UntagEntitiesDocument,
     "\n  mutation TriggerHbpe {\n    triggerHbpe\n  }\n": typeof types.TriggerHbpeDocument,
+    "\n  query GetWeekAhead {\n    weekForecast {\n      horizon\n      generatedAt\n      days {\n        date\n        dow\n        clusters {\n          clusterId\n          name\n          l0Class\n          pOccur\n          scheduled\n          daypartProbs { label probability }\n        }\n      }\n    }\n    dueForecast {\n      generatedAt\n      due {\n        clusterId\n        name\n        l0Class\n        lastSeen\n        daysSinceLast\n        medianIntervalDays\n        dueInDays\n        window\n        overdue\n        scheduledDate\n        confidence\n      }\n    }\n  }\n": typeof types.GetWeekAheadDocument,
     "\n  query EventSources {\n    eventSources\n  }\n": typeof types.EventSourcesDocument,
     "\n  query EventTypes {\n    eventTypes\n  }\n": typeof types.EventTypesDocument,
     "\n  fragment SearchResultCommunicationData on CommunicationType {\n    id\n    preview\n    time\n  }\n": typeof types.SearchResultCommunicationDataFragmentDoc,
@@ -101,7 +111,7 @@ type Documents = {
     "\n  mutation UpdateNoteDetail($input: UpdateNoteInput!) {\n    updateNote(input: $input) {\n      success\n      note {\n        id\n        title\n        content\n      }\n    }\n  }\n": typeof types.UpdateNoteDetailDocument,
     "\n  mutation UpdatePersonDetail($input: UpdatePersonInput!) {\n    updatePerson(input: $input) {\n      success\n      person {\n        id\n        name\n        description\n        firstName\n        lastName\n        birthDate\n        avatarUrl\n      }\n    }\n  }\n": typeof types.UpdatePersonDetailDocument,
     "\n  mutation UpdatePlaceDetail($input: UpdatePlaceInput!) {\n    updatePlace(input: $input) {\n      id\n      name\n      description\n      properties\n    }\n  }\n": typeof types.UpdatePlaceDetailDocument,
-    "\n  query GetSavedSearch($id: ID!) {\n    savedSearch(id: $id) {\n      id\n      name\n      description\n      query\n      entityTypes\n      tags\n      filters {\n        eventTypes\n        startTime\n        endTime\n        sortBy\n        sortOrder\n        connectors\n        people\n        places\n        hasLocation\n        semantic\n      }\n    }\n  }\n": typeof types.GetSavedSearchDocument,
+    "\n  query GetSavedSearch($id: ID!) {\n    savedSearch(id: $id) {\n      id\n      name\n      description\n      query\n      entityTypes\n      tags\n      filters {\n        eventTypes\n        startTime\n        endTime\n        datePreset\n        sortBy\n        sortOrder\n        connectors\n        people\n        places\n        hasLocation\n        semantic\n      }\n    }\n  }\n": typeof types.GetSavedSearchDocument,
     "\n  fragment TableAnswerRowData on AnswerType {\n    id\n    answer\n    question {\n      id\n      text\n    }\n  }\n": typeof types.TableAnswerRowDataFragmentDoc,
     "\n  fragment TableBrowserActivityRowData on BrowserActivityType {\n    id\n    title\n    url\n  }\n": typeof types.TableBrowserActivityRowDataFragmentDoc,
     "\n  fragment TableCommunicationRowData on CommunicationType {\n    id\n    subject\n    preview\n  }\n": typeof types.TableCommunicationRowDataFragmentDoc,
@@ -134,6 +144,12 @@ type Documents = {
     "\n  query GetPlaces($query: String) {\n    places(query: $query, first: 500) {\n      totalCount\n      edges {\n        node {\n          id\n          name\n          description\n          placeKind\n          latitude\n          longitude\n          parent {\n            id\n            name\n            placeKind\n          }\n          visitStats {\n            visitCount\n            firstVisitAt\n            lastVisitAt\n          }\n        }\n      }\n    }\n  }\n": typeof types.GetPlacesDocument,
     "\n  query GetKnownPlaces {\n    knownPlaces {\n      id\n      locationId\n      label\n      kind\n      confidence\n      source\n      coordinates {\n        lat\n        lng\n      }\n    }\n    knownPlaceCandidates {\n      locationId\n      label\n      kind\n      lat\n      lng\n      eventCount\n      confidence\n    }\n  }\n": typeof types.GetKnownPlacesDocument,
     "\n  mutation ConfirmKnownPlace($input: UpdateKnownPlaceInput!) {\n    updateKnownPlace(input: $input) {\n      id\n      label\n      kind\n    }\n  }\n": typeof types.ConfirmKnownPlaceDocument,
+    "\n  mutation DeleteTask($input: DeleteByIdInput!) {\n    deleteTask(input: $input) {\n      success\n      deletedId\n    }\n  }\n": typeof types.DeleteTaskDocument,
+    "\n  mutation CreateTask($input: CreateTaskInput!) {\n    createTask(input: $input) {\n      success\n      task {\n        id\n        ...TaskRowFragment\n      }\n    }\n  }\n": typeof types.CreateTaskDocument,
+    "\n  query GetTasks($first: Int, $after: String) {\n    tasks(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          status\n          priority\n          dueAt\n          scheduledFor\n          deferUntil\n          title\n          ...TaskRowFragment\n        }\n      }\n      totalCount\n    }\n  }\n": typeof types.GetTasksDocument,
+    "\n  mutation CompleteTask($id: ID!) {\n    completeTask(id: $id) {\n      id\n      status\n      completedAt\n    }\n  }\n": typeof types.CompleteTaskDocument,
+    "\n  mutation ReopenTask($id: ID!) {\n    reopenTask(id: $id) {\n      id\n      status\n      completedAt\n    }\n  }\n": typeof types.ReopenTaskDocument,
+    "\n  fragment TaskRowFragment on TaskType {\n    id\n    title\n    description\n    status\n    priority\n    dueAt\n    scheduledFor\n    deferUntil\n    estimatedMinutes\n    completedAt\n  }\n": typeof types.TaskRowFragmentFragmentDoc,
     "\n  fragment ProviderEndpointsFragment on ProviderType {\n    endpoints {\n      name\n      description\n    }\n  }\n": typeof types.ProviderEndpointsFragmentFragmentDoc,
     "\n  query GetProvider($id: ID!) {\n    provider(id: $id) {\n      id\n      name\n      description\n      logoUrl\n      authType\n      localOnly\n      appSetupUrl\n      openidKeyLink\n      theme {\n        backgroundColor\n        borderColor\n      }\n      ...ProviderEndpointsFragment\n    }\n  }\n": typeof types.GetProviderDocument,
     "\n  mutation CreateSavedSearch($input: CreateSavedSearchInput!) {\n    createSavedSearch(input: $input) {\n      success\n      savedSearch {\n        id\n        # Full grid fragment (incl. isPublic/shareToken/filters) so the created\n        # search can be handed straight to the share modal from \"Save & share\".\n        ...SavedSearchGridItemFragment\n      }\n    }\n  }\n": typeof types.CreateSavedSearchDocument,
@@ -157,9 +173,19 @@ const documents: Documents = {
     "\n  mutation MarkActionAsSeen($id: ID!) {\n    markActionAsSeen(id: $id) {\n      id\n      seen\n    }\n  }\n": types.MarkActionAsSeenDocument,
     "\n  mutation MarkActionAsDismissed($id: ID!) {\n    markActionAsDismissed(id: $id) {\n      id\n      dismissed\n    }\n  }\n": types.MarkActionAsDismissedDocument,
     "\n  query GetForecast($horizon: String) {\n    forecast(horizon: $horizon) {\n      horizon\n      generatedAt\n      systemStatus\n      buckets {\n        bucketIndex\n        startTime\n        l0Probs { label probability }\n        l1Probs { label probability }\n        l2Probs { label probability }\n        q10\n        q50\n        q90\n      }\n    }\n  }\n": types.GetForecastDocument,
+    "\n  mutation RescheduleEvent($id: ID!, $startTime: DateTime!, $endTime: DateTime) {\n    rescheduleEvent(id: $id, startTime: $startTime, endTime: $endTime) {\n      id\n      title\n      startTime\n      endTime\n      externalSyncStatus\n    }\n  }\n": types.RescheduleEventDocument,
+    "\n  query GetScheduleCandidates($from: DateTime!, $to: DateTime!) {\n    scheduleCandidates(from: $from, to: $to) {\n      id\n      title\n      description\n      rationale\n      rationaleSources { kind id note }\n      windowStart\n      windowEnd\n      timeFlex\n      durationMinutes\n      l0Class\n      fitScore\n      status\n      generator\n      confidence\n    }\n  }\n": types.GetScheduleCandidatesDocument,
+    "\n  mutation SyncScheduleSuggestions {\n    syncScheduleSuggestions\n  }\n": types.SyncScheduleSuggestionsDocument,
+    "\n  mutation AcceptCandidate($id: ID!, $startTime: DateTime!, $endTime: DateTime) {\n    acceptCandidate(id: $id, startTime: $startTime, endTime: $endTime) {\n      id\n      title\n      startTime\n      endTime\n      status\n    }\n  }\n": types.AcceptCandidateDocument,
+    "\n  mutation DeclineCandidate($id: ID!, $reason: String) {\n    declineCandidate(id: $id, reason: $reason) { id status }\n  }\n": types.DeclineCandidateDocument,
+    "\n  mutation SnoozeCandidate($id: ID!, $until: DateTime!) {\n    snoozeCandidate(id: $id, until: $until) { id status }\n  }\n": types.SnoozeCandidateDocument,
+    "\n  mutation BreakDownTasks($text: String!) {\n    breakDownTasks(text: $text) { id title }\n  }\n": types.BreakDownTasksDocument,
+    "\n  mutation ReturnEventToSlate($eventId: ID!) {\n    returnEventToSlate(eventId: $eventId) { id status }\n  }\n": types.ReturnEventToSlateDocument,
+    "\n  query GetSchedule($from: DateTime!, $to: DateTime!) {\n    eventsInRange(from: $from, to: $to) {\n      id\n      title\n      description\n      startTime\n      endTime\n      isAllDay\n      status\n      category\n      locationName\n      sourceSystem\n      externalSyncStatus\n    }\n    weekForecast(includeToday: true) {\n      generatedAt\n      days {\n        date\n        dow\n        clusters {\n          clusterId\n          name\n          l0Class\n          pOccur\n          scheduled\n          daypartProbs { label probability }\n        }\n      }\n    }\n  }\n": types.GetScheduleDocument,
     "\n  mutation TagEntities($input: TagEntitiesInput!) {\n    tagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": types.TagEntitiesDocument,
     "\n  mutation UntagEntities($input: TagEntitiesInput!) {\n    untagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": types.UntagEntitiesDocument,
     "\n  mutation TriggerHbpe {\n    triggerHbpe\n  }\n": types.TriggerHbpeDocument,
+    "\n  query GetWeekAhead {\n    weekForecast {\n      horizon\n      generatedAt\n      days {\n        date\n        dow\n        clusters {\n          clusterId\n          name\n          l0Class\n          pOccur\n          scheduled\n          daypartProbs { label probability }\n        }\n      }\n    }\n    dueForecast {\n      generatedAt\n      due {\n        clusterId\n        name\n        l0Class\n        lastSeen\n        daysSinceLast\n        medianIntervalDays\n        dueInDays\n        window\n        overdue\n        scheduledDate\n        confidence\n      }\n    }\n  }\n": types.GetWeekAheadDocument,
     "\n  query EventSources {\n    eventSources\n  }\n": types.EventSourcesDocument,
     "\n  query EventTypes {\n    eventTypes\n  }\n": types.EventTypesDocument,
     "\n  fragment SearchResultCommunicationData on CommunicationType {\n    id\n    preview\n    time\n  }\n": types.SearchResultCommunicationDataFragmentDoc,
@@ -236,7 +262,7 @@ const documents: Documents = {
     "\n  mutation UpdateNoteDetail($input: UpdateNoteInput!) {\n    updateNote(input: $input) {\n      success\n      note {\n        id\n        title\n        content\n      }\n    }\n  }\n": types.UpdateNoteDetailDocument,
     "\n  mutation UpdatePersonDetail($input: UpdatePersonInput!) {\n    updatePerson(input: $input) {\n      success\n      person {\n        id\n        name\n        description\n        firstName\n        lastName\n        birthDate\n        avatarUrl\n      }\n    }\n  }\n": types.UpdatePersonDetailDocument,
     "\n  mutation UpdatePlaceDetail($input: UpdatePlaceInput!) {\n    updatePlace(input: $input) {\n      id\n      name\n      description\n      properties\n    }\n  }\n": types.UpdatePlaceDetailDocument,
-    "\n  query GetSavedSearch($id: ID!) {\n    savedSearch(id: $id) {\n      id\n      name\n      description\n      query\n      entityTypes\n      tags\n      filters {\n        eventTypes\n        startTime\n        endTime\n        sortBy\n        sortOrder\n        connectors\n        people\n        places\n        hasLocation\n        semantic\n      }\n    }\n  }\n": types.GetSavedSearchDocument,
+    "\n  query GetSavedSearch($id: ID!) {\n    savedSearch(id: $id) {\n      id\n      name\n      description\n      query\n      entityTypes\n      tags\n      filters {\n        eventTypes\n        startTime\n        endTime\n        datePreset\n        sortBy\n        sortOrder\n        connectors\n        people\n        places\n        hasLocation\n        semantic\n      }\n    }\n  }\n": types.GetSavedSearchDocument,
     "\n  fragment TableAnswerRowData on AnswerType {\n    id\n    answer\n    question {\n      id\n      text\n    }\n  }\n": types.TableAnswerRowDataFragmentDoc,
     "\n  fragment TableBrowserActivityRowData on BrowserActivityType {\n    id\n    title\n    url\n  }\n": types.TableBrowserActivityRowDataFragmentDoc,
     "\n  fragment TableCommunicationRowData on CommunicationType {\n    id\n    subject\n    preview\n  }\n": types.TableCommunicationRowDataFragmentDoc,
@@ -269,6 +295,12 @@ const documents: Documents = {
     "\n  query GetPlaces($query: String) {\n    places(query: $query, first: 500) {\n      totalCount\n      edges {\n        node {\n          id\n          name\n          description\n          placeKind\n          latitude\n          longitude\n          parent {\n            id\n            name\n            placeKind\n          }\n          visitStats {\n            visitCount\n            firstVisitAt\n            lastVisitAt\n          }\n        }\n      }\n    }\n  }\n": types.GetPlacesDocument,
     "\n  query GetKnownPlaces {\n    knownPlaces {\n      id\n      locationId\n      label\n      kind\n      confidence\n      source\n      coordinates {\n        lat\n        lng\n      }\n    }\n    knownPlaceCandidates {\n      locationId\n      label\n      kind\n      lat\n      lng\n      eventCount\n      confidence\n    }\n  }\n": types.GetKnownPlacesDocument,
     "\n  mutation ConfirmKnownPlace($input: UpdateKnownPlaceInput!) {\n    updateKnownPlace(input: $input) {\n      id\n      label\n      kind\n    }\n  }\n": types.ConfirmKnownPlaceDocument,
+    "\n  mutation DeleteTask($input: DeleteByIdInput!) {\n    deleteTask(input: $input) {\n      success\n      deletedId\n    }\n  }\n": types.DeleteTaskDocument,
+    "\n  mutation CreateTask($input: CreateTaskInput!) {\n    createTask(input: $input) {\n      success\n      task {\n        id\n        ...TaskRowFragment\n      }\n    }\n  }\n": types.CreateTaskDocument,
+    "\n  query GetTasks($first: Int, $after: String) {\n    tasks(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          status\n          priority\n          dueAt\n          scheduledFor\n          deferUntil\n          title\n          ...TaskRowFragment\n        }\n      }\n      totalCount\n    }\n  }\n": types.GetTasksDocument,
+    "\n  mutation CompleteTask($id: ID!) {\n    completeTask(id: $id) {\n      id\n      status\n      completedAt\n    }\n  }\n": types.CompleteTaskDocument,
+    "\n  mutation ReopenTask($id: ID!) {\n    reopenTask(id: $id) {\n      id\n      status\n      completedAt\n    }\n  }\n": types.ReopenTaskDocument,
+    "\n  fragment TaskRowFragment on TaskType {\n    id\n    title\n    description\n    status\n    priority\n    dueAt\n    scheduledFor\n    deferUntil\n    estimatedMinutes\n    completedAt\n  }\n": types.TaskRowFragmentFragmentDoc,
     "\n  fragment ProviderEndpointsFragment on ProviderType {\n    endpoints {\n      name\n      description\n    }\n  }\n": types.ProviderEndpointsFragmentFragmentDoc,
     "\n  query GetProvider($id: ID!) {\n    provider(id: $id) {\n      id\n      name\n      description\n      logoUrl\n      authType\n      localOnly\n      appSetupUrl\n      openidKeyLink\n      theme {\n        backgroundColor\n        borderColor\n      }\n      ...ProviderEndpointsFragment\n    }\n  }\n": types.GetProviderDocument,
     "\n  mutation CreateSavedSearch($input: CreateSavedSearchInput!) {\n    createSavedSearch(input: $input) {\n      success\n      savedSearch {\n        id\n        # Full grid fragment (incl. isPublic/shareToken/filters) so the created\n        # search can be handed straight to the share modal from \"Save & share\".\n        ...SavedSearchGridItemFragment\n      }\n    }\n  }\n": types.CreateSavedSearchDocument,
@@ -321,6 +353,42 @@ export function gql(source: "\n  query GetForecast($horizon: String) {\n    fore
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
+export function gql(source: "\n  mutation RescheduleEvent($id: ID!, $startTime: DateTime!, $endTime: DateTime) {\n    rescheduleEvent(id: $id, startTime: $startTime, endTime: $endTime) {\n      id\n      title\n      startTime\n      endTime\n      externalSyncStatus\n    }\n  }\n"): (typeof documents)["\n  mutation RescheduleEvent($id: ID!, $startTime: DateTime!, $endTime: DateTime) {\n    rescheduleEvent(id: $id, startTime: $startTime, endTime: $endTime) {\n      id\n      title\n      startTime\n      endTime\n      externalSyncStatus\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query GetScheduleCandidates($from: DateTime!, $to: DateTime!) {\n    scheduleCandidates(from: $from, to: $to) {\n      id\n      title\n      description\n      rationale\n      rationaleSources { kind id note }\n      windowStart\n      windowEnd\n      timeFlex\n      durationMinutes\n      l0Class\n      fitScore\n      status\n      generator\n      confidence\n    }\n  }\n"): (typeof documents)["\n  query GetScheduleCandidates($from: DateTime!, $to: DateTime!) {\n    scheduleCandidates(from: $from, to: $to) {\n      id\n      title\n      description\n      rationale\n      rationaleSources { kind id note }\n      windowStart\n      windowEnd\n      timeFlex\n      durationMinutes\n      l0Class\n      fitScore\n      status\n      generator\n      confidence\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation SyncScheduleSuggestions {\n    syncScheduleSuggestions\n  }\n"): (typeof documents)["\n  mutation SyncScheduleSuggestions {\n    syncScheduleSuggestions\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation AcceptCandidate($id: ID!, $startTime: DateTime!, $endTime: DateTime) {\n    acceptCandidate(id: $id, startTime: $startTime, endTime: $endTime) {\n      id\n      title\n      startTime\n      endTime\n      status\n    }\n  }\n"): (typeof documents)["\n  mutation AcceptCandidate($id: ID!, $startTime: DateTime!, $endTime: DateTime) {\n    acceptCandidate(id: $id, startTime: $startTime, endTime: $endTime) {\n      id\n      title\n      startTime\n      endTime\n      status\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation DeclineCandidate($id: ID!, $reason: String) {\n    declineCandidate(id: $id, reason: $reason) { id status }\n  }\n"): (typeof documents)["\n  mutation DeclineCandidate($id: ID!, $reason: String) {\n    declineCandidate(id: $id, reason: $reason) { id status }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation SnoozeCandidate($id: ID!, $until: DateTime!) {\n    snoozeCandidate(id: $id, until: $until) { id status }\n  }\n"): (typeof documents)["\n  mutation SnoozeCandidate($id: ID!, $until: DateTime!) {\n    snoozeCandidate(id: $id, until: $until) { id status }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation BreakDownTasks($text: String!) {\n    breakDownTasks(text: $text) { id title }\n  }\n"): (typeof documents)["\n  mutation BreakDownTasks($text: String!) {\n    breakDownTasks(text: $text) { id title }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation ReturnEventToSlate($eventId: ID!) {\n    returnEventToSlate(eventId: $eventId) { id status }\n  }\n"): (typeof documents)["\n  mutation ReturnEventToSlate($eventId: ID!) {\n    returnEventToSlate(eventId: $eventId) { id status }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query GetSchedule($from: DateTime!, $to: DateTime!) {\n    eventsInRange(from: $from, to: $to) {\n      id\n      title\n      description\n      startTime\n      endTime\n      isAllDay\n      status\n      category\n      locationName\n      sourceSystem\n      externalSyncStatus\n    }\n    weekForecast(includeToday: true) {\n      generatedAt\n      days {\n        date\n        dow\n        clusters {\n          clusterId\n          name\n          l0Class\n          pOccur\n          scheduled\n          daypartProbs { label probability }\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetSchedule($from: DateTime!, $to: DateTime!) {\n    eventsInRange(from: $from, to: $to) {\n      id\n      title\n      description\n      startTime\n      endTime\n      isAllDay\n      status\n      category\n      locationName\n      sourceSystem\n      externalSyncStatus\n    }\n    weekForecast(includeToday: true) {\n      generatedAt\n      days {\n        date\n        dow\n        clusters {\n          clusterId\n          name\n          l0Class\n          pOccur\n          scheduled\n          daypartProbs { label probability }\n        }\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
 export function gql(source: "\n  mutation TagEntities($input: TagEntitiesInput!) {\n    tagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation TagEntities($input: TagEntitiesInput!) {\n    tagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
@@ -330,6 +398,10 @@ export function gql(source: "\n  mutation UntagEntities($input: TagEntitiesInput
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "\n  mutation TriggerHbpe {\n    triggerHbpe\n  }\n"): (typeof documents)["\n  mutation TriggerHbpe {\n    triggerHbpe\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query GetWeekAhead {\n    weekForecast {\n      horizon\n      generatedAt\n      days {\n        date\n        dow\n        clusters {\n          clusterId\n          name\n          l0Class\n          pOccur\n          scheduled\n          daypartProbs { label probability }\n        }\n      }\n    }\n    dueForecast {\n      generatedAt\n      due {\n        clusterId\n        name\n        l0Class\n        lastSeen\n        daysSinceLast\n        medianIntervalDays\n        dueInDays\n        window\n        overdue\n        scheduledDate\n        confidence\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetWeekAhead {\n    weekForecast {\n      horizon\n      generatedAt\n      days {\n        date\n        dow\n        clusters {\n          clusterId\n          name\n          l0Class\n          pOccur\n          scheduled\n          daypartProbs { label probability }\n        }\n      }\n    }\n    dueForecast {\n      generatedAt\n      due {\n        clusterId\n        name\n        l0Class\n        lastSeen\n        daysSinceLast\n        medianIntervalDays\n        dueInDays\n        window\n        overdue\n        scheduledDate\n        confidence\n      }\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -637,7 +709,7 @@ export function gql(source: "\n  mutation UpdatePlaceDetail($input: UpdatePlaceI
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "\n  query GetSavedSearch($id: ID!) {\n    savedSearch(id: $id) {\n      id\n      name\n      description\n      query\n      entityTypes\n      tags\n      filters {\n        eventTypes\n        startTime\n        endTime\n        sortBy\n        sortOrder\n        connectors\n        people\n        places\n        hasLocation\n        semantic\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetSavedSearch($id: ID!) {\n    savedSearch(id: $id) {\n      id\n      name\n      description\n      query\n      entityTypes\n      tags\n      filters {\n        eventTypes\n        startTime\n        endTime\n        sortBy\n        sortOrder\n        connectors\n        people\n        places\n        hasLocation\n        semantic\n      }\n    }\n  }\n"];
+export function gql(source: "\n  query GetSavedSearch($id: ID!) {\n    savedSearch(id: $id) {\n      id\n      name\n      description\n      query\n      entityTypes\n      tags\n      filters {\n        eventTypes\n        startTime\n        endTime\n        datePreset\n        sortBy\n        sortOrder\n        connectors\n        people\n        places\n        hasLocation\n        semantic\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetSavedSearch($id: ID!) {\n    savedSearch(id: $id) {\n      id\n      name\n      description\n      query\n      entityTypes\n      tags\n      filters {\n        eventTypes\n        startTime\n        endTime\n        datePreset\n        sortBy\n        sortOrder\n        connectors\n        people\n        places\n        hasLocation\n        semantic\n      }\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -766,6 +838,30 @@ export function gql(source: "\n  query GetKnownPlaces {\n    knownPlaces {\n    
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "\n  mutation ConfirmKnownPlace($input: UpdateKnownPlaceInput!) {\n    updateKnownPlace(input: $input) {\n      id\n      label\n      kind\n    }\n  }\n"): (typeof documents)["\n  mutation ConfirmKnownPlace($input: UpdateKnownPlaceInput!) {\n    updateKnownPlace(input: $input) {\n      id\n      label\n      kind\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation DeleteTask($input: DeleteByIdInput!) {\n    deleteTask(input: $input) {\n      success\n      deletedId\n    }\n  }\n"): (typeof documents)["\n  mutation DeleteTask($input: DeleteByIdInput!) {\n    deleteTask(input: $input) {\n      success\n      deletedId\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation CreateTask($input: CreateTaskInput!) {\n    createTask(input: $input) {\n      success\n      task {\n        id\n        ...TaskRowFragment\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation CreateTask($input: CreateTaskInput!) {\n    createTask(input: $input) {\n      success\n      task {\n        id\n        ...TaskRowFragment\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query GetTasks($first: Int, $after: String) {\n    tasks(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          status\n          priority\n          dueAt\n          scheduledFor\n          deferUntil\n          title\n          ...TaskRowFragment\n        }\n      }\n      totalCount\n    }\n  }\n"): (typeof documents)["\n  query GetTasks($first: Int, $after: String) {\n    tasks(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          status\n          priority\n          dueAt\n          scheduledFor\n          deferUntil\n          title\n          ...TaskRowFragment\n        }\n      }\n      totalCount\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation CompleteTask($id: ID!) {\n    completeTask(id: $id) {\n      id\n      status\n      completedAt\n    }\n  }\n"): (typeof documents)["\n  mutation CompleteTask($id: ID!) {\n    completeTask(id: $id) {\n      id\n      status\n      completedAt\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation ReopenTask($id: ID!) {\n    reopenTask(id: $id) {\n      id\n      status\n      completedAt\n    }\n  }\n"): (typeof documents)["\n  mutation ReopenTask($id: ID!) {\n    reopenTask(id: $id) {\n      id\n      status\n      completedAt\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  fragment TaskRowFragment on TaskType {\n    id\n    title\n    description\n    status\n    priority\n    dueAt\n    scheduledFor\n    deferUntil\n    estimatedMinutes\n    completedAt\n  }\n"): (typeof documents)["\n  fragment TaskRowFragment on TaskType {\n    id\n    title\n    description\n    status\n    priority\n    dueAt\n    scheduledFor\n    deferUntil\n    estimatedMinutes\n    completedAt\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

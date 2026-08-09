@@ -49,6 +49,38 @@ export interface HourlyEventCount {
   count: number;
 }
 
+/**
+ * How far before `from` an event may have started and still be returned by the
+ * calendar range read.
+ *
+ * The overlap predicate `COALESCE(end_time, start_time) >= :from` is an
+ * expression no index covers, and the only applicable index —
+ * events_user_time_idx (user_id, start_time DESC) — can serve the `< :to` upper
+ * bound but has nothing to stop at underneath, so the scan costs O(every event
+ * the user owns before `to`) regardless of how narrow the window is. On a 200k
+ * row table a 7-day window measured as a 2273-buffer seq scan (24.9ms); adding a
+ * lower bound on start_time turns it into a 190-buffer bitmap index scan (2.4ms).
+ * ci.events also holds photo/video rows, so this grows with every day of use.
+ *
+ * The bound is a bounded-lookback trade, not a free win: an event that started
+ * more than this long before the window and is *still* running is dropped. A
+ * quarter is the same span MAX_RANGE_DAYS lets a caller request in one go, and
+ * nothing this appliance ingests — calendar entries, photos, visits, trips —
+ * occupies a single unbroken span that long.
+ */
+const MAX_EVENT_LOOKBACK_DAYS = 92;
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Hard row cap for one calendar range read. The resolver's MAX_RANGE_DAYS bounds
+ * the *span* a caller may ask for but not the row count, and a quarter-wide
+ * request over a photo-heavy library can run to six figures of serialised nodes.
+ * This is a backstop against that, not a pagination scheme: results are ordered
+ * start_time ASC, so a truncated response is the earliest prefix of the window.
+ */
+const MAX_RANGE_EVENTS = 2000;
+
 @Injectable()
 export class EventService {
   constructor(
@@ -108,6 +140,32 @@ export class EventService {
 
     if (item.sharing_level) {
       toCreate.sharingLevel = item.sharing_level;
+    }
+
+    // Provenance: who minted this event and from what. `repository.create()`
+    // reads columns by propertyName and silently drops any key it does not
+    // recognise, so a snake_case DTO key that is not renamed here is not a
+    // no-op — it is a lost write. These four are the trail an event promoted
+    // from a schedule candidate carries; without them a suggested event is
+    // indistinguishable from a hand-created one.
+    //
+    // Compared against `undefined` rather than truthiness: `is_predicted: false`
+    // is the meaningful assertion "the user committed to this, HBPE may train on
+    // it", and 0 is a legal energy_level.
+    if (item.is_predicted !== undefined) {
+      toCreate.isPredicted = item.is_predicted;
+    }
+
+    if (item.inference_sources) {
+      toCreate.inferenceSources = item.inference_sources;
+    }
+
+    if (item.created_by) {
+      toCreate.createdBy = item.created_by;
+    }
+
+    if (item.energy_level !== undefined) {
+      toCreate.energyLevel = item.energy_level;
     }
 
     return toCreate;
@@ -217,9 +275,8 @@ export class EventService {
         sourceId: entity.sourceId,
       }),
       scope: { userId: context.userId },
-      // The events_source_triple_uniq index is NOT user-scoped (see migration
-      // 20260620213807); the arbiter must match it exactly.
-      conflictTarget: '(source_type, source_system, source_id) WHERE source_id IS NOT NULL',
+      // Must match events_source_triple_uniq (user-scoped as of 20260808065724).
+      conflictTarget: '(user_id, source_type, source_system, source_id) WHERE source_id IS NOT NULL',
       tripleColumns: ['source_type', 'source_system', 'source_id'],
       // Centralized refresh contract — currently empty, so conflicts stay
       // DO NOTHING find-or-return.
@@ -232,6 +289,97 @@ export class EventService {
     // (POST /api/maintenance/search-index/backfill). Single-row create() still
     // emits, so interactive creates index live.
     return results.map(({ entity }) => EventEntity.toEgressType(entity));
+  }
+
+  /**
+   * Events overlapping [from, to) — the calendar read path.
+   *
+   * Deliberately NOT the "starts within the window" filter used by
+   * getEntitiesForEvents (the search path). A calendar must show an event that
+   * began before the window and runs into it: a Sunday-night flight still
+   * occupies Monday morning. So the predicate is interval overlap, with an
+   * open-ended event (no end_time) treated as an instant at start_time.
+   *
+   * Cancelled and no-show rows are excluded — they are not occupied time — but
+   * `tentative` is kept, because a maybe on the calendar is still a claim on the
+   * slot and the schedule surface renders it as such.
+   *
+   * Bounded on both sides and capped: see MAX_EVENT_LOOKBACK_DAYS for why the
+   * overlap predicate alone cannot use an index, and MAX_RANGE_EVENTS for the
+   * row cap.
+   */
+  async findInRange(context: ServiceContext, from: Date, to: Date): Promise<Event[]> {
+    // Sargable floor for events_user_time_idx: the planner can now range-scan
+    // (user_id, start_time) instead of walking the user's whole history.
+    const lowerBound = new Date(from.getTime() - MAX_EVENT_LOOKBACK_DAYS * DAY_MS);
+
+    const query = this.dataSource
+      .getRepository(EventEntity)
+      .createQueryBuilder('event')
+      .where('event.is_deleted = false')
+      .andWhere("event.status NOT IN ('cancelled', 'no_show')")
+      .andWhere('event.start_time >= :lowerBound', { lowerBound })
+      .andWhere('event.start_time < :to', { to })
+      .andWhere('COALESCE(event.end_time, event.start_time) >= :from', { from })
+      .orderBy('event.start_time', 'ASC')
+      .addOrderBy('event.event_id', 'ASC')
+      .take(MAX_RANGE_EVENTS);
+
+    if (context.userId !== SYSTEM_USER) {
+      query.andWhere('event.user_id = :userId', { userId: context.userId });
+    }
+
+    const result = await query.getMany();
+
+    return result.map((entity) => EventEntity.toEgressType(entity));
+  }
+
+  /**
+   * Move an event to a new time, preserving its duration.
+   *
+   * Separate from `update` because a move carries a consequence a generic field
+   * write does not: an event mirrored from an external calendar
+   * (`source_system` set) is only a local copy, and moving it here does NOT
+   * reach the source. Marking it `pending` records that the local row has drifted
+   * ahead of the calendar it came from, so a future sync-back has something to
+   * find (CI-Server-aan) and the UI can say so honestly.
+   *
+   * All-day events ignore the time component: their "when" is a date.
+   */
+  async reschedule(
+    context: ServiceContext,
+    id: string,
+    startTime: Date,
+    endTime?: Date,
+  ): Promise<Event | null> {
+    const event = await this.eventRepository.findOne({
+      where: {
+        id,
+        ...(context.userId !== SYSTEM_USER && { user: { id: context.userId } }),
+      },
+    });
+
+    if (!event) {
+      return null;
+    }
+
+    // Duration is the thing being preserved: a 90-minute meeting dragged to
+    // Thursday is still 90 minutes, even though the caller only names a start.
+    const priorSpanMs =
+      event.endTime && event.startTime ? event.endTime.getTime() - event.startTime.getTime() : 0;
+
+    event.startTime = startTime;
+    event.endTime = endTime ?? (priorSpanMs > 0 ? new Date(startTime.getTime() + priorSpanMs) : null);
+
+    if (event.sourceSystem) {
+      event.externalSyncStatus = 'pending';
+    }
+
+    await this.eventRepository.save(event);
+
+    await this.signallingEventService.send(EventUpdatedEvent, { eventId: event.id });
+
+    return this.findById(context, id);
   }
 
   async findAll(context: ServiceContext): Promise<Event[]> {
@@ -379,10 +527,6 @@ export class EventService {
       updateData.isInferred = data.is_inferred;
     }
 
-    if (data.prediction_model) {
-      updateData.predictionModel = data.prediction_model;
-    }
-
     if (data.inference_sources) {
       updateData.inferenceSources = data.inference_sources;
     }
@@ -399,10 +543,6 @@ export class EventService {
       updateData.energyLevel = data.energy_level;
     }
 
-    if (data.productivity_impact) {
-      updateData.productivityImpact = data.productivity_impact;
-    }
-
     if (data.status) {
       updateData.status = data.status;
     }
@@ -415,20 +555,8 @@ export class EventService {
       updateData.externalSyncStatus = data.external_sync_status;
     }
 
-    if (data.last_synced_at) {
-      updateData.lastSyncedAt = data.last_synced_at;
-    }
-
     if (data.parent_event_id) {
       updateData.parentEventId = data.parent_event_id;
-    }
-
-    if (data.related_event_ids) {
-      updateData.relatedEventIds = data.related_event_ids;
-    }
-
-    if (data.supersedes_event_id) {
-      updateData.supersedesEventId = data.supersedes_event_id;
     }
 
     if (data.created_by) {

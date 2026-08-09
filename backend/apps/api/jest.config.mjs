@@ -22,5 +22,21 @@ export default {
   coverageDirectory: '<rootDir>/coverage',
   collectCoverageFrom: ['<rootDir>/src/**/*.ts'],
 
+  // Ratchet, per docs/architecture/test-strategy.md §4: a floor that only ever
+  // moves up. Scoped rather than global because the global number is still low;
+  // new domains land with a real floor from day one instead of inheriting it.
+  //
+  // The planning floor is set just under what the suite achieves WITHOUT a
+  // database, since TaskService.tenancy.integration.test.ts skips unless
+  // PLANNING_TEST_DATABASE_URL is set.
+  coverageThreshold: {
+    './src/domains/planning/': {
+      statements: 88,
+      branches: 76,
+      functions: 76,
+      lines: 90,
+    },
+  },
+
   setupFilesAfterEnv: ['reflect-metadata'],
 };

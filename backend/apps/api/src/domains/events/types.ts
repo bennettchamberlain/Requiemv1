@@ -23,4 +23,7 @@ export type EventSendOptions = {
    * listeners inline, so there is no queue to order.
    */
   priority?: number;
+
+  /** pg-boss singleton key — suppresses duplicate pending jobs with the same key. */
+  singletonKey?: string;
 };

@@ -13,6 +13,9 @@ Job order:
   4b. backfill_actuals    < 30 sec    — fill prediction_log.actual_* for elapsed
                                         forecast buckets from observed token_stream
                                         labels (Phase 5a / T5.1).
+  4c. recurrence_profile  <  5 min    — rebuild hbpe.recurrence_profiles (week/
+                                        month-horizon occurrence + due forecasts)
+                                        and backfill occurrence_log actuals.
   5. drift_detection                  [Phase 5 stub]
   6. cache_invalidation               [Phase 5 stub]
 
@@ -354,6 +357,32 @@ async def backfill_actuals(user_id: str) -> dict:
     return await asyncio.get_event_loop().run_in_executor(None, _run)
 
 
+# ── Step 4c — Recurrence profiles (week/month-horizon forecasts) ───────────────
+
+
+@activity.defn(name="recurrence_profile")
+async def recurrence_profile(user_id: str) -> dict:
+    """
+    Step 4c: Rebuild hbpe.recurrence_profiles from token_stream history
+    (per-L1-cluster DoW/daypart histograms, inter-arrival stats, periodicity
+    confidence), then backfill hbpe.occurrence_log.actual for elapsed
+    week-forecast days. Backs GET /forecast and GET /forecast/due.
+    """
+    import asyncio
+
+    def _run() -> dict:
+        from ci.hbpe.pipeline.recurrence import (
+            backfill_occurrence_actuals,
+            build_recurrence_profiles,
+        )
+
+        result = build_recurrence_profiles(user_id)
+        result["occurrence_actuals"] = backfill_occurrence_actuals(user_id)["updated"]
+        return result
+
+    return await asyncio.get_event_loop().run_in_executor(None, _run)
+
+
 # ── Phase 5 stubs ──────────────────────────────────────────────────────────────
 
 
@@ -515,6 +544,18 @@ class NightlyHBPEWorkflow:
                 retry_policy=_RETRY,
             ),
             "step4b_backfill_actuals",
+        )
+
+        # Step 4c — rebuild recurrence profiles + occurrence actuals
+        self._step = "recurrence"
+        results["steps"]["step4c_recurrence"] = await _safe_execute(
+            workflow.execute_activity(
+                recurrence_profile,
+                user_id,
+                start_to_close_timeout=_ACTIVITY_TIMEOUT,
+                retry_policy=_RETRY,
+            ),
+            "step4c_recurrence",
         )
 
         # Step 5 — drift detection (stub)

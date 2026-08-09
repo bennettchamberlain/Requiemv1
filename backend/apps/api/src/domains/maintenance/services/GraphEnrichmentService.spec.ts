@@ -92,6 +92,13 @@ function makeService(opts: {
   });
   const graphQuery = { getNodes };
 
+  const personalizationService = {
+    decideAction: jest.fn().mockResolvedValue('auto'),
+  };
+  const promotionCandidateService = {
+    create: jest.fn(),
+  };
+
   const service = new GraphEnrichmentService(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     dataSource as any,
@@ -101,6 +108,10 @@ function makeService(opts: {
     graphIngestService as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     graphQuery as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    personalizationService as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    promotionCandidateService as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     makeLogger() as any,
   );
@@ -158,6 +169,7 @@ describe('GraphEnrichmentService.cleanExtraction', () => {
         { concept: 'Politics', type: 'topic', sentiment: 'dislike' }, // unknown type -> dropped
       ],
       familyRelations: [],
+      generalRelations: [],
     });
 
     expect(preferences).toEqual([{ concept: 'Sushi', type: 'cuisine', sentiment: 'like' }]);
@@ -171,9 +183,12 @@ describe('GraphEnrichmentService.cleanExtraction', () => {
         { person: 'Liam', relatedPerson: 'Bob', relationship: 'coworker' }, // not family -> dropped
         { person: 'Liam', relatedPerson: 'Liam', relationship: 'SPOUSE' }, // self-ref -> dropped
       ],
+      generalRelations: [],
     });
 
-    expect(family).toEqual([{ person: 'Liam', relatedPerson: 'Sarah', relationship: 'SPOUSE' }]);
+    expect(family).toEqual([
+      { person: 'Liam', relatedPerson: 'Sarah', relationship: 'SPOUSE', confidence: 0.75 },
+    ]);
     // The relationship type is one the family tool queries.
     expect(FAMILY_RELATIONSHIP_TYPES).toContain(family[0].relationship);
   });
@@ -187,12 +202,14 @@ describe('GraphEnrichmentService.parseLlmContent', () => {
 
     expect(parsed.preferences).toEqual([{ concept: 'Thai', type: 'cuisine', sentiment: 'like' }]);
     expect(parsed.familyRelations).toEqual([]);
+    expect(parsed.generalRelations).toEqual([]);
   });
 
   it('returns empty arrays on malformed JSON', () => {
     expect(GraphEnrichmentService.parseLlmContent('not json at all')).toEqual({
       preferences: [],
       familyRelations: [],
+      generalRelations: [],
     });
   });
 });
@@ -207,6 +224,7 @@ describe('GraphEnrichmentService.enrich (end-to-end with mocked LLM)', () => {
           { concept: 'Seafood', type: 'food', sentiment: 'dislike' },
         ],
         familyRelations: [],
+        generalRelations: [],
       },
     });
 
@@ -235,6 +253,7 @@ describe('GraphEnrichmentService.enrich (end-to-end with mocked LLM)', () => {
           { person: 'Liam', relatedPerson: 'Sarah', relationship: 'SPOUSE' },
           { person: 'Liam', relatedPerson: 'Emma', relationship: 'SIBLING_OF' },
         ],
+        generalRelations: [],
       },
       persons: { liam: SELF, sarah: SPOUSE_ID, emma: SIBLING_ID },
     });
@@ -277,6 +296,7 @@ describe('GraphEnrichmentService.enrich (end-to-end with mocked LLM)', () => {
       extraction: {
         preferences: [],
         familyRelations: [{ person: 'Liam', relatedPerson: 'Dana', relationship: 'SPOUSE' }],
+        generalRelations: [],
       },
       persons: { liam: SELF }, // Dana has no Person node
     });
@@ -294,7 +314,7 @@ describe('GraphEnrichmentService.enrich (end-to-end with mocked LLM)', () => {
     const { service, chat, ingest } = makeService({
       comms: [],
       events: [],
-      extraction: { preferences: [], familyRelations: [] },
+      extraction: { preferences: [], familyRelations: [], generalRelations: [] },
     });
 
     const result = await service.enrich(USER);

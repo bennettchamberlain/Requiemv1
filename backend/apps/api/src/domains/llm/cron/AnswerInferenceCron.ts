@@ -6,12 +6,14 @@ import { LoggerService } from '@ci/common/logging';
 import { Cron } from '@ci/common/schedule';
 import { EventService, Events } from '@ci/domains/events';
 import { QuestionService } from '@ci/domains/intelligence';
+import { PromotionCandidateService } from '@ci/domains/personalization';
 
 @Injectable()
 export class AnswerInferenceCron {
   constructor(
     private readonly eventService: EventService,
     private readonly questionService: QuestionService,
+    private readonly promotionCandidateService: PromotionCandidateService,
     private readonly logger: LoggerService,
     private readonly featureService: FeatureService,
   ) {
@@ -20,6 +22,10 @@ export class AnswerInferenceCron {
 
   @Cron(CronExpression.EVERY_MINUTE)
   async cronInferAnswers() {
+    if (await this.featureService.isFeatureEnabled('smart.rotation')) {
+      return;
+    }
+
     const featureEnabled = await this.featureService.isFeatureEnabled('scheduled.answer.inferencing');
 
     if (!featureEnabled) {
@@ -31,11 +37,21 @@ export class AnswerInferenceCron {
     const unansweredQuestions = await this.questionService.findUnansweredByUserId();
 
     for (const [userId, questionIds] of unansweredQuestions) {
+      if (!userId || (await this.promotionCandidateService.hasPendingInferredFactReview(userId))) {
+        continue;
+      }
+
       for (const questionId of questionIds) {
-        await this.eventService.send(Events.INFER_QUESTION_ANSWER, {
-          ownerId: userId,
-          questionId: questionId,
-        });
+        await this.eventService.send(
+          Events.INFER_QUESTION_ANSWER,
+          {
+            ownerId: userId,
+            questionId: questionId,
+          },
+          {
+            singletonKey: `infer:${userId}:${questionId}`,
+          },
+        );
       }
     }
   }

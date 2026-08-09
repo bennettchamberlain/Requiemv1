@@ -190,19 +190,19 @@ Two families: **single writes** return the entity type (`createEvent: EventType!
 
 The high-throughput paths CI-Import-Tools calls. **Shape:** `mutation(input: [CreateXInput!]!): [XType!]!` — one round-trip carries an array; the result is in **input order**. The 10 MB body limit exists for these.
 
-**Idempotency — the provenance triple.** Each record carries `(sourceType, sourceSystem, sourceId)`; re-ingesting the same triple is a **no-op find-or-return**, enforced by set-based `INSERT … ON CONFLICT <arbiter> DO NOTHING` (or a companion dedup table for the hypertable). A row is dedupable only when it carries the triple.
+**Idempotency — the provenance triple.** Each record carries `(sourceType, sourceSystem, sourceId)`; re-ingesting the same triple is a **no-op find-or-return**, enforced by set-based `INSERT … ON CONFLICT <arbiter> DO NOTHING`. A row is dedupable only when it carries the triple.
 
 **Deferred indexing (`emitCreated:false`).** The list paths **do not emit** per-row `*CreatedEvent`s (at ~1M rows the per-row PGBoss fan-out was the dominant cost). Search embedding is deferred to `POST /api/maintenance/search-index/backfill`. The single-row `createX` mutations **still** emit, so interactive creates index live.
 
 | Mutation | Service path | Mechanism | ON CONFLICT arbiter | Scope col | Refresh on conflict |
 |---|---|---|---|---|---|
 | `createEvents` | `EventService.createManyBatched` | `bulkInsertIdempotent` | `(source_type, source_system, source_id) WHERE source_id IS NOT NULL` | `user_id` | none (`INGEST_REFRESH_COLUMNS.event = []`) |
-| `createCommunications` | `CommunicationService.createMany` | **bespoke** 3-step tx (hypertable) | companion table `ci.communications_source_dedup` PK `(user_id, source_type, source_system, source_id)` | `user_id` | **self-heals** `direction, participants_metadata, content, preview, subject` on losers |
+| `createCommunications` | `CommunicationService.createMany` | `bulkInsertIdempotent` | `communications_source_triple_uniq` on `(user_id, source_type, source_system, source_id)` | `user_id` | **self-heals** `direction, participants_metadata, content, preview, subject` on losers |
 | `createContents` | `ContentService.createMany` | set-based `bulkInsertIdempotent` + set-based event auto-link | `content_source_triple_uniq` | `user_id` | none |
 | `createInventoryItems` | `ItemService.createMany` | `bulkInsertIdempotent` | `(owner_user_id, source_type, source_system, source_id) WHERE source_id IS NOT NULL` | `owner_user_id` | none |
-| `createBrowserActivities` | `BrowserActivityService.createMany` | `bulkInsertIdempotent` | `(user_id, source_type, source_system, source_id) WHERE source_id IS NOT NULL` | `user_id` | none |
+| `createBrowserActivities` | `BrowserActivityService.createMany` | `bulkInsertIdempotent` (+ dual-write to `events`/`content`) | `(user_id, source_type, source_system, source_id) WHERE source_id IS NOT NULL` | `user_id` | none |
 
-- **Communications is special** because `ci.communications` is a TimescaleDB hypertable — Timescale rejects any UNIQUE index lacking the partition column `time`. The invariant was moved to a non-hypertable dedup table keyed on the pure triple; an `AFTER DELETE` trigger drops the dedup row so a future re-ingest is treated as new (migration `20260628120000`). It's also the **only** path that self-heals fields on conflict.
+- **Communications** is a **plain table** (de-hypertabled; see [Database.md](../architecture/Database.md)). The pure provenance triple lives on `communications_source_triple_uniq` — the old `ci.communications_source_dedup` companion was dropped with the hypertable. It remains the **only** path that self-heals fields on conflict via `INGEST_REFRESH_COLUMNS.communication`.
 - **`bulkInsertIdempotent`** (`common/persistence/bulkUpsert.ts`) runs one transaction, three statements: existence pre-check, multi-row `INSERT … ON CONFLICT … DO NOTHING RETURNING pk`, hydration SELECT. It **chunks** large inputs internally (bind-param-budget-sized sub-batches inside the one transaction) to avoid the 65535-parameter cliff. The centralized refresh contract is `INGEST_REFRESH_COLUMNS`; only `communication` is non-empty (`INGEST_SCHEMA_VERSION` gates changes).
 
 **Entity batch-creates** — `createPeople`, `createPlaces`, `createNotes`, `createConcepts`, `createAnswers`, `createQuestions`: now set-based (`emitCreated:false` on the bulk path, so no per-row `*CreatedEvent`); single `create()` still emits live. Person/Concept dedup on `(entity_type, linkedTable, linkedId)`; Place/Note/Answer/Question always insert. `createNotes` may return fewer rows than input (null creates filtered).

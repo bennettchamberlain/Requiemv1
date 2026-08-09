@@ -6,6 +6,7 @@ import { Breadcrumb } from '@ci/shadcn';
 import { Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
+import { MemoryHubShell } from '@/components/MemoryHub';
 import { InventoryItemModal } from '@/components/modals/InventoryItemModal';
 
 interface InventoryItem {
@@ -43,7 +44,7 @@ const GET_INVENTORY_ITEMS = gql`
 `;
 
 export function InventoryPage() {
-  usePageTitle('Inventory - Companion Intelligence');
+  usePageTitle('Things - Companion Intelligence');
 
   const { data, loading } = useQuery(GET_INVENTORY_ITEMS, {
     fetchPolicy: 'cache-and-network',
@@ -52,10 +53,6 @@ export function InventoryPage() {
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
 
   const items: InventoryItem[] = data?.items?.edges?.map((edge: { node: InventoryItem }) => edge.node) || [];
-
-  if (loading) {
-    return <div className="p-8 text-center text-gray-500">Loading inventory...</div>;
-  }
 
   return (
     <>
@@ -69,15 +66,21 @@ export function InventoryPage() {
             </Breadcrumb.Item>
             <Breadcrumb.Separator className="hidden md:block" />
             <Breadcrumb.Item>
-              <Breadcrumb.Page>Inventory</Breadcrumb.Page>
+              <Breadcrumb.Page>Things</Breadcrumb.Page>
             </Breadcrumb.Item>
           </Breadcrumb.List>
         </Breadcrumb>
       </Portal.Slot>
 
-      <PageContent>
-        <h1 className="text-2xl font-bold">Inventory</h1>
+      <PageContent className="gap-4 p-0">
+        <MemoryHubShell>
+        <div className="flex flex-col gap-4 px-4 pb-4">
+        <h1 className="text-2xl font-bold">Things</h1>
 
+        {loading && items.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Loading things…</p>
+        ) : (
+        <>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {items.map((item) => (
             <div
@@ -112,7 +115,7 @@ export function InventoryPage() {
 
         {items.length === 0 && (
           <div className="text-center py-12 text-gray-500">
-            <p>No items in your inventory yet.</p>
+            <p>No things tracked yet.</p>
             <p className="text-sm mt-2">Use the capture button to add items.</p>
           </div>
         )}
@@ -123,6 +126,10 @@ export function InventoryPage() {
           item={selectedItem}
           create={false}
         />
+        </>
+        )}
+        </div>
+        </MemoryHubShell>
       </PageContent>
     </>
   );

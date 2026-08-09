@@ -43,6 +43,7 @@ interface Props extends ChatInputProps {
   emptyState?: ReactNode;
   children?: ReactNode;
   onResponseFinished?: (text: string) => void;
+  initialDraft?: string;
 }
 
 const textDecoder = new TextDecoder();
@@ -59,6 +60,7 @@ export function Chat({
   onSubmit,
   children,
   onResponseFinished,
+  initialDraft,
   ...chatInputProps
 }: Props) {
   const autoFocusRef = useRef<HTMLTextAreaElement | null>(null);
@@ -387,6 +389,7 @@ export function Chat({
           loading={loading}
           streaming={streaming}
           onSubmit={handleSubmit}
+          initialDraft={initialDraft}
           {...chatInputProps}
         />
       </div>

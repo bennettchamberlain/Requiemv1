@@ -686,6 +686,12 @@ class InsightsGenerationWorkflow:
             **get_data_activity_options(),
         )
 
+        if isinstance(llm_config, dict):
+            insights_context = {
+                **insights_context,
+                "personalization": llm_config,
+            }
+
         # Check if we have enough context (count all sources)
         context_counts = {
             "graph_deltas": len(insights_context.get("graph_deltas", [])),
@@ -732,7 +738,11 @@ class InsightsGenerationWorkflow:
         data_sources_used: set = set()
         total_tokens = 0
 
-        for _ in range(MAX_INSIGHTS_PER_RUN):
+        personalization = insights_context.get("personalization") or {}
+        multiplier = float(personalization.get("insight_volume_multiplier") or 1.0)
+        max_insights = max(1, round(MAX_INSIGHTS_PER_RUN * multiplier))
+
+        for _ in range(max_insights):
             single = await workflow.execute_activity(
                 generate_single_insight_activity,
                 args=[insights_context, prior_insights],
@@ -871,6 +881,16 @@ class ActionsGenerationWorkflow:
             + len(action_context.get("upcoming_events", []))
             + len(action_context.get("key_people", []))
         )
+        has_dossier = action_context.get("user_dossier") is not None
+
+        if not has_dossier:
+            workflow.logger.info("actions_skipped_no_dossier")
+            return {
+                "skipped": True,
+                "reason": "no_dossier",
+                "user_id": user_id,
+                "context_items": total_context,
+            }
 
         if total_context < 2:
             workflow.logger.info(

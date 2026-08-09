@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { Images } from '@ci/shadcn/icons';
+import { useSearchParams } from 'react-router-dom';
 
 import {
   AnswerGridItem,
@@ -19,7 +19,8 @@ import {
   ThreadGridItem,
 } from '@/components/entities';
 
-import { Empty, ErrorState } from '../Components';
+import { ErrorState, MemoryEmptyState } from '../Components';
+import { countActiveFilters } from '../Components/ExplorerToolbar/filterParams';
 import { useEntityService } from '../useEntityService';
 
 import { getEntityMedia, type EntityMedia } from './media';
@@ -28,6 +29,9 @@ import { MediaTile } from './MediaTile';
 
 export function GalleryView() {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [searchParams] = useSearchParams();
+  const filteredBrowse =
+    countActiveFilters(searchParams) > 0 || Boolean(searchParams.get('search')?.trim());
 
   const [{ data, loading, hasNextPage, loadingMore, loadMore, error, refetch }, { setActiveEntity }] =
     useEntityService();
@@ -71,7 +75,7 @@ export function GalleryView() {
 
   if (loading && data.length === 0) {
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         <EntityGrid>
           {Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="h-full w-full animate-pulse rounded-lg border bg-card" />
@@ -85,7 +89,7 @@ export function GalleryView() {
   // query failure read as "No results found".
   if (error && data.length === 0) {
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         <ErrorState onRetry={refetch} />
       </div>
     );
@@ -93,17 +97,15 @@ export function GalleryView() {
 
   if (data.length === 0) {
     return (
-      <Empty
-        title="No results found"
-        description="Connect your data sources or try a different search to see content here"
-        icon={Images}
-      />
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+        <MemoryEmptyState filtered={filteredBrowse} />
+      </div>
     );
   }
 
   return (
     <>
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         <EntityGrid>
           {data.map((item) => {
             // Media-bearing entities (image/video) render as real thumbnails and

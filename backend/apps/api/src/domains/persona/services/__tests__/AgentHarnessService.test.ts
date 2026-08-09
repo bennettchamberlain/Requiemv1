@@ -1,0 +1,108 @@
+import type { LoggerService } from '@ci/common/logging';
+import type { ApiKeyService } from '@ci/domains/auth';
+import type { CloudOAuthProxyService } from '@ci/domains/connections';
+
+import { AgentHarnessService } from '../AgentHarnessService';
+
+
+describe('AgentHarnessService', () => {
+  const apiKeyService = {
+    findAllByUser: jest.fn(),
+  } as unknown as ApiKeyService;
+
+  const cloudOAuthProxyService = {
+    getDeviceApplications: jest.fn(),
+  } as unknown as CloudOAuthProxyService;
+
+  const logger = {
+    setContext: jest.fn(),
+    debug: jest.fn(),
+  } as unknown as LoggerService;
+
+  let service: AgentHarnessService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new AgentHarnessService(apiKeyService, cloudOAuthProxyService, logger);
+  });
+
+  it('marks harnesses accessible when connected, listed in portal, and responding', async () => {
+    apiKeyService.findAllByUser = jest.fn().mockResolvedValue([
+      {
+        name: 'app:ci-hermes:ci-marketplace',
+        managed_by: 'connect',
+      },
+    ]);
+
+    cloudOAuthProxyService.getDeviceApplications = jest.fn().mockResolvedValue([
+      {
+        id: '1',
+        name: 'ci-hermes',
+        slug: 'ci-hermes-official',
+        port: 18790,
+        publicDomain: 'hermes.example.test',
+      },
+      {
+        id: '2',
+        name: 'ci-openclaw',
+        slug: 'ci-openclaw-official',
+        port: 18789,
+        publicDomain: 'openclaw.example.test',
+      },
+    ]);
+
+    jest.spyOn(global, 'fetch').mockImplementation(async (url: string | URL | Request) => {
+      if (String(url).startsWith('https://hermes.example.test')) {
+        return new Response(null, { status: 200 });
+      }
+
+      return new Response(null, { status: 503 });
+    });
+
+    const harnesses = await service.getHarnesses({ userId: 'user-1' } as never);
+
+    expect(harnesses).toEqual([
+      expect.objectContaining({
+        id: 'hermes',
+        connectedToMemory: true,
+        installed: true,
+        running: true,
+        openUrl: 'https://hermes.example.test',
+        accessible: true,
+      }),
+      expect.objectContaining({
+        id: 'openclaw',
+        connectedToMemory: false,
+        installed: true,
+        running: false,
+        openUrl: 'https://openclaw.example.test',
+        accessible: false,
+      }),
+    ]);
+  });
+
+  it('returns no open URL when portal app has no public domain', async () => {
+    apiKeyService.findAllByUser = jest.fn().mockResolvedValue([]);
+    cloudOAuthProxyService.getDeviceApplications = jest.fn().mockResolvedValue([
+      {
+        id: '1',
+        name: 'ci-hermes',
+        slug: 'ci-hermes-official',
+        port: 18790,
+        publicDomain: null,
+      },
+    ]);
+
+    jest.spyOn(global, 'fetch').mockImplementation(jest.fn());
+
+    const harnesses = await service.getHarnesses({ userId: 'user-1' } as never);
+
+    expect(harnesses[0]).toMatchObject({
+      id: 'hermes',
+      openUrl: null,
+      accessible: false,
+      running: false,
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});

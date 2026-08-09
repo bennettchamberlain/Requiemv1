@@ -3,20 +3,27 @@ import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@apollo/client';
 import { GlobalUID, Portal } from '@ci/common';
 import { ENTITY_TYPE_REVERSE_MAP } from '@ci/common/src/constants';
-import { Breadcrumb, Button, cn, DropdownMenu, Sheet } from '@ci/shadcn';
-import { ChartNetwork, ChevronDown, Images, List, Map as MapIcon, type LucideIcon } from '@ci/shadcn/icons';
-import { useSearchParams, Link } from 'react-router-dom';
+import { Button, Sheet } from '@ci/shadcn';
+import { ChartNetwork, Images, List, Map as MapIcon, type LucideIcon } from '@ci/shadcn/icons';
+import { useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
+import { MemoryHubShell } from '@/components/MemoryHub';
 import { FileChunkModal } from '@/components/modals/FileChunkModal/FileChunkModal';
-import { AVAILABLE_ENTITY_TYPES, DropdownProvider } from '@/components/SearchBox/useDropdown';
+import { AVAILABLE_ENTITY_TYPES } from '@/components/SearchBox/useDropdown';
 import { gql } from '@/graphql';
+
 
 import { useEntityService } from '../MemoryPage/useEntityService';
 
 import { ActivityTimelineRail } from './ActivityTimelineRail';
 import { EntityDetails } from './Components/EntityDetails';
-import { AdvancedFilters, AdvancedSearchToggle } from './Components/ExplorerToolbar/ExplorerToolbar';
+import {
+  isRollingDatePreset,
+  resolveDatePreset,
+  type DatePreset,
+} from './Components/ExplorerToolbar/datePresets';
+import { ExplorerToolbar } from './Components/ExplorerToolbar/ExplorerToolbar';
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
 import { ListView } from './ListView';
@@ -35,6 +42,7 @@ const GET_SAVED_SEARCH = gql(`
         eventTypes
         startTime
         endTime
+        datePreset
         sortBy
         sortOrder
         connectors
@@ -82,27 +90,7 @@ export default function DesktopMemoryPage() {
 
       return nextParams;
     });
-  // The advanced-filter drawer state lives in the URL (`?advanced=1`) because it
-  // renders inside the header SearchBox's dropdown panel (GlobalSearchBox pins
-  // the panel open from the same param); this page owns the toggle + content.
-  const advancedOpen = searchParams.get('advanced') === '1';
-  const toggleAdvanced = () =>
-    setSearchParams(
-      (params) => {
-        const nextParams = new URLSearchParams(params);
-
-        if (advancedOpen) {
-          nextParams.delete('advanced');
-        } else {
-          nextParams.set('advanced', '1');
-        }
-
-        return nextParams;
-      },
-      { replace: true },
-    );
-
-  // Make the default view explicit in the URL so the query is shareable and so
+  // Advanced filters render inside the header search panel and stay visible.
   // MemoryPage can derive the map's hasLocation scope from `?view=`.
   useEffect(() => {
     if (!searchParams.get('view')) {
@@ -139,6 +127,7 @@ export default function DesktopMemoryPage() {
         'eventTypes',
         'from',
         'to',
+        'when',
         'sortBy',
         'sortOrder',
         'connectors',
@@ -186,12 +175,23 @@ export default function DesktopMemoryPage() {
         setCsv('people', filters.people);
         setCsv('places', filters.places);
 
-        if (filters.startTime) {
-          currentParams.set('from', filters.startTime);
-        }
+        if (isRollingDatePreset(filters.datePreset)) {
+          currentParams.set('when', filters.datePreset);
+          const { from, to } = resolveDatePreset(filters.datePreset as DatePreset);
+          currentParams.set('from', from);
+          currentParams.set('to', to);
+        } else {
+          if (filters.startTime) {
+            currentParams.set('from', filters.startTime);
+          }
 
-        if (filters.endTime) {
-          currentParams.set('to', filters.endTime);
+          if (filters.endTime) {
+            currentParams.set('to', filters.endTime);
+          }
+
+          if (filters.startTime || filters.endTime) {
+            currentParams.set('when', 'custom');
+          }
         }
 
         if (filters.sortBy) {
@@ -262,101 +262,36 @@ export default function DesktopMemoryPage() {
     }
   }, []);
 
-  const activeView = VIEW_TABS.find((tab) => tab.value === activeTab) ?? VIEW_TABS[1];
-
   return (
     <>
-      {/* The view switcher is the last breadcrumb crumb: a combo button showing
-          the current view's icon + name with a dropdown chevron, so it reads as
-          an interactive control rather than static breadcrumb text. The
-          expansion mirrors the header plus-button's Add panel (icon grid) so
-          both header menus read as one pattern. */}
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-            <Breadcrumb.Separator className="hidden md:block" />
-            <Breadcrumb.Item>
-              <Breadcrumb.Page>Memory</Breadcrumb.Page>
-            </Breadcrumb.Item>
-            <Breadcrumb.Separator />
-            <Breadcrumb.Item>
-              <DropdownMenu modal={false}>
-                <DropdownMenu.Trigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    aria-label={`${activeView.title} — change view`}
-                    className="group font-normal"
-                  >
-                    <activeView.Icon strokeWidth={1.5} />
-                    {activeView.label}
-                    <ChevronDown className="size-3.5 transition-transform group-data-[state=open]:rotate-180" />
-                  </Button>
-                </DropdownMenu.Trigger>
-                <DropdownMenu.Content
-                  className="rounded-lg p-2"
-                  side="bottom"
-                  align="start"
-                  sideOffset={4}
-                  // Radix refocuses the trigger on close, which lights the
-                  // button's focus-visible ring even after a mouse click.
-                  onCloseAutoFocus={(event) => event.preventDefault()}
-                >
-                  <div className="grid grid-cols-4 gap-2">
-                    {VIEW_TABS.map(({ value, label, title, Icon }) => (
-                      <DropdownMenu.Item
-                        key={value}
-                        title={title}
-                        onSelect={() => setActiveTab(value)}
-                        className={cn(
-                          'h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1',
-                          activeTab === value && 'bg-accent text-accent-foreground',
-                        )}
-                      >
-                        <Icon className="h-6! w-6!" strokeWidth={1.25} />
-                        <span className="text-xs">{label}</span>
-                      </DropdownMenu.Item>
-                    ))}
-                  </div>
-                </DropdownMenu.Content>
-              </DropdownMenu>
-            </Breadcrumb.Item>
-          </Breadcrumb.List>
-        </Breadcrumb>
+      {/* View tabs (list / map / gallery / graph) live in the header nav-views portal. */}
+      <Portal.Slot id="nav-views">
+        <div className="flex flex-wrap items-center gap-1">
+          {VIEW_TABS.map(({ value, label, title, Icon }) => (
+            <Button
+              key={value}
+              type="button"
+              variant={activeTab === value ? 'secondary' : 'ghost'}
+              size="sm"
+              title={title}
+              aria-label={title}
+              aria-pressed={activeTab === value}
+              onClick={() => setActiveTab(value)}
+              className="h-8 gap-1.5 px-2"
+            >
+              <Icon className="h-4 w-4" strokeWidth={1.5} />
+              <span className="hidden sm:inline">{label}</span>
+            </Button>
+          ))}
+        </div>
       </Portal.Slot>
 
-      {/* The Advanced toggle sits inset at the right edge of the header search box
-          (SearchBox's toolsSlot). Borderless h-8 to match the inset controls. */}
-      <Portal.Slot id="nav-tools">
-        <AdvancedSearchToggle
-          open={advancedOpen}
-          onToggle={toggleAdvanced}
-          className="h-7 w-7 rounded-md border-0 shadow-none"
-        />
-      </Portal.Slot>
-
-      {/* The advanced filters render as a pinned section at the top of the
-          header SearchBox's dropdown panel (its panelHeader slot), above any
-          live search suggestions — so typing never covers them. Every applied
-          filter chips inside the drawer's drop area; while the drawer is
-          closed, the search box's "N filters" text stands in. */}
-      <Portal.Slot id="nav-search-panel">
-        {advancedOpen && (
-          <DropdownProvider args={[{ changeSearchParams: true }]}>
-            <div className="p-3">
-              <AdvancedFilters modal={false} />
-            </div>
-          </DropdownProvider>
-        )}
-      </Portal.Slot>
-
-      <PageContent className="p-0 gap-0">
-        <div className="flex min-h-0 flex-1 flex-col">
+      <PageContent className="gap-2 p-0">
+        <MemoryHubShell fillHeight>
+        <div className="flex min-h-0 flex-1 flex-col gap-2 pb-2">
+          <div className="px-2">
+            <ExplorerToolbar open />
+          </div>
           {/* List view splits into two independently-scrolled panes: wheeling
               over the left rail moves the heatmap's window through time, while
               the result list on the right keeps its own scroll. */}
@@ -370,6 +305,7 @@ export default function DesktopMemoryPage() {
           {activeTab === 'gallery' && <GalleryView />}
           {activeTab === 'graph' && <GraphView variant="desktop" />}
         </div>
+        </MemoryHubShell>
       </PageContent>
 
       {activeSheetEntity && (

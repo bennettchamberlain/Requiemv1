@@ -19,6 +19,9 @@
  *     inform the LLM's responses.
  *   - **`EventsModule`**: Integrated for handling asynchronous tasks related to the Q&A process.
  *
+ * Persona × task compose lives in {@link PersonaModule} (`domains/persona`) so this
+ * module stays free of Agent/Schedule import cycles.
+ *
  * @module IntelligenceModule
  */
 
@@ -34,7 +37,6 @@ import { FeedQueueCron } from './cron/FeedQueueCron';
 import { type Action, ActionEntity } from './entities/ActionEntity';
 import { type Answer, AnswerEntity } from './entities/AnswerEntity';
 import { type Question, QuestionEntity } from './entities/QuestionEntity';
-import { FeedQueuePopulationListener } from './listeners/FeedQueuePopulationListener';
 import { ActionService } from './services/ActionService';
 import { AnswerService } from './services/AnswerService';
 import { QuestionService } from './services/QuestionService';
@@ -44,7 +46,7 @@ import { QuestionService } from './services/QuestionService';
  */
 @Module({
   imports: [TypeOrmModule.forFeature([ActionEntity, AnswerEntity, QuestionEntity]), EventsModule],
-  providers: [ActionService, AnswerService, QuestionService, FeedQueueCron, FeedQueuePopulationListener],
+  providers: [ActionService, AnswerService, QuestionService, FeedQueueCron],
   controllers: [ActionsController, AnswersController, QuestionsController],
   exports: [ActionService, AnswerService, QuestionService],
 })

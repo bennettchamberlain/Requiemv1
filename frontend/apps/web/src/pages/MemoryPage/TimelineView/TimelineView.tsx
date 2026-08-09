@@ -146,6 +146,13 @@ export function TimelineView({
               : 'Try removing a filter (or the Located filter on the map) to see more.'
           }
           icon="🔍"
+          // Difference blend keeps the copy legible over any map tile tone
+          // (light satellite / dark streets) in the left panel.
+          className={
+            isMapView
+              ? 'mix-blend-difference [&_h3]:text-white [&_p]:text-white [&_div.bg-muted]:bg-white/25'
+              : undefined
+          }
         />
       );
     }

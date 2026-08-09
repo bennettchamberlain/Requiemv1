@@ -14,6 +14,10 @@ vi.mock('react-router-dom', async (importOriginal) => {
   return { ...actual, useNavigate: () => navigate };
 });
 
+vi.mock('@/components/MemoryHub', () => ({
+  MemoryHubShell: ({ children }: { children: React.ReactNode }) => children,
+}));
+
 const GET_PEOPLE = gql(`
   query GetPeople($query: String, $first: Int, $after: String) {
     people(query: $query, first: $first, after: $after) {

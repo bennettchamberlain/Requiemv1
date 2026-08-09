@@ -176,7 +176,7 @@ export class OllamaController {
 
     const systemPrompt = systemPromptEnabled
       ? await this.buildSystemPrompt(context, { leadingAssistantMessages })
-      : null;
+      : await this.buildL0OnlySystemPrompt(context);
 
     const messagesWithSystem: OllamaMessage[] = [
       ...(systemPrompt
@@ -342,6 +342,32 @@ export class OllamaController {
         payload,
         summary: result.message.content,
       });
+    }
+  }
+
+  /**
+   * When the full Companion system prompt is disabled, still inject L0 dossier so chat
+   * is not completely de-personalized.
+   */
+  private async buildL0OnlySystemPrompt(context: RequestContext): Promise<string | null> {
+    if (!context.userId) {
+      return null;
+    }
+
+    try {
+      const userContext = await this.userContextService.getUserContextForLLM(context.userId);
+      if (!userContext) {
+        return null;
+      }
+
+      return this.userContextService.formatContextForSystemPrompt(userContext);
+    } catch (error) {
+      this.logger.warn('Failed to fetch L0 context for minimal system prompt', {
+        userId: context.userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      return null;
     }
   }
 

@@ -50,22 +50,30 @@ export class PersonEntity {
   @Column({ type: 'uuid', name: 'merged_into_entity_id', nullable: true })
   mergedIntoEntityId!: string | null;
 
+  // Typed identity columns (migration 20260808070235). Canonical for Person/
+  // Contact; properties.* kept dual-written during the transition.
+  @Column({ type: 'text', name: 'first_name', nullable: true })
+  firstName!: string | null;
+
+  @Column({ type: 'text', name: 'middle_name', nullable: true })
+  middleName!: string | null;
+
+  @Column({ type: 'text', name: 'last_name', nullable: true })
+  lastName!: string | null;
+
+  @Column({ type: 'date', name: 'birth_date', nullable: true })
+  birthDate!: string | null;
+
+  /** Nullable in DB; AfterLoad coerces null → false for egress. */
+  @Column({ type: 'boolean', name: 'is_self', nullable: true })
+  isSelf!: boolean;
+
   @ManyToOne(() => UserEntity, { nullable: true })
   @JoinColumn({ name: 'owner_user_id' })
   user?: UserEntity;
 
   // Backward compatibility fields - populated from properties JSONB after load
   type!: string | null;
-
-  firstName!: string | null;
-
-  middleName!: string | null;
-
-  lastName!: string | null;
-
-  birthDate!: string | null;
-
-  isSelf!: boolean;
 
   gender!: string | null;
 
@@ -94,11 +102,17 @@ export class PersonEntity {
   @AfterLoad()
   loadPropertiesFromJsonb() {
     this.type = (this.properties?.type as string) || null;
-    this.firstName = (this.properties?.first_name as string) || null;
-    this.middleName = (this.properties?.middle_name as string) || null;
-    this.lastName = (this.properties?.last_name as string) || null;
-    this.birthDate = (this.properties?.birth_date as string) || null;
-    this.isSelf = this.properties?.is_self === true || this.properties?.is_self === 'true';
+    // Prefer typed columns; fall back to properties for pre-migration rows.
+    this.firstName = this.firstName ?? ((this.properties?.first_name as string) || null);
+    this.middleName = this.middleName ?? ((this.properties?.middle_name as string) || null);
+    this.lastName = this.lastName ?? ((this.properties?.last_name as string) || null);
+    this.birthDate = this.birthDate ?? ((this.properties?.birth_date as string) || null);
+    if (this.isSelf == null) {
+      this.isSelf = this.properties?.is_self === true || this.properties?.is_self === 'true';
+    } else {
+      this.isSelf = this.isSelf === true;
+    }
+
     this.gender = (this.properties?.gender as string) || null;
     this.address = (this.properties?.address as string) || null;
     this.streetAddress = (this.properties?.street_address as string) || null;

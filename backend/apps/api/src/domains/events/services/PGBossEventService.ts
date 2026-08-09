@@ -213,11 +213,10 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
       name,
     } satisfies EventData;
 
-    // pg-boss fetches ORDER BY priority DESC, so a higher number is worked
-    // sooner. Every job carries an explicit priority rather than leaning on the
-    // column default, so the ordering is legible from the enqueue side.
-    const sendOptions: PgBoss.SendOptions = { priority: options?.priority ?? DEFAULT_JOB_PRIORITY };
-
+    const sendOptions: PgBoss.SendOptions = {
+      priority: options?.priority ?? DEFAULT_JOB_PRIORITY,
+      ...(options?.singletonKey ? { singletonKey: options.singletonKey } : {}),
+    };
     const allQueues = this.getRegisteredQueues();
 
     // If a specific queue is provided and that queue exists, send only to that queue.

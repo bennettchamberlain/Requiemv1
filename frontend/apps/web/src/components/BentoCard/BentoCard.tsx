@@ -4,7 +4,9 @@ import { useDeviceLayout } from '@ci/common';
 import { Button, cn } from '@ci/shadcn';
 import { X } from '@ci/shadcn/icons';
 
+import { ChatWithAgentMenu } from '@/components/ChatWithAgent';
 import { Tag } from '@/components/Tag';
+import type { AgentChatContext } from '@/lib/agentChat';
 
 interface Props {
   title: string;
@@ -16,6 +18,7 @@ interface Props {
   onDismiss?: MouseEventHandler<HTMLButtonElement>;
   dismissLabel?: string;
   showUnseenIndicator?: boolean;
+  chatContext?: AgentChatContext;
 }
 
 export function BentoCard({
@@ -28,6 +31,7 @@ export function BentoCard({
   onDismiss,
   dismissLabel = 'Dismiss card',
   showUnseenIndicator = false,
+  chatContext,
 }: Props) {
   const { isMobile } = useDeviceLayout();
 
@@ -45,6 +49,12 @@ export function BentoCard({
     },
     [onDismiss],
   );
+
+  const chatButton = chatContext ? (
+    <div className="absolute right-12 top-3 z-30">
+      <ChatWithAgentMenu context={chatContext} className="h-7 w-7 bg-background/80 backdrop-blur-sm" />
+    </div>
+  ) : null;
 
   const dismissButton = onDismiss ? (
     <Button
@@ -79,6 +89,7 @@ export function BentoCard({
         onClick={handleClick}
       >
         {unseenIndicator}
+        {chatButton}
         {dismissButton}
         {imageUrl && (
           <div
@@ -129,6 +140,7 @@ export function BentoCard({
         onClick={handleClick}
       >
         {unseenIndicator}
+        {chatButton}
         {dismissButton}
         <div className="flex w-full justify-between content-start">
           <h1 className="text-2xl font-semibold">{title}</h1>
@@ -161,6 +173,7 @@ export function BentoCard({
       onClick={handleClick}
     >
       {unseenIndicator}
+      {chatButton}
       {dismissButton}
       <div className="flex flex-col flex-1 gap-4 justify-between p-4">
         <div>

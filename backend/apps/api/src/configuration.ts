@@ -274,9 +274,22 @@ export const ConfigSchema = z.object({
     'chat.page': booleanStringSchema,
     /** Wholesale gate for the Jobs page (/jobs + nav entry points). */
     'jobs.page': booleanStringSchema,
+    /**
+     * Backend gate for the planning domain: ci.tasks, planned-block events and
+     * the planning GraphQL surface. See docs/architecture/planning-roadmap.md.
+     */
+    'planning.enabled': booleanStringSchema,
+    /** Wholesale gate for the Plan page (/plan + nav entry points). */
+    'planning.page': booleanStringSchema,
+    /** Shows the "Nothing planned yet" empty state on the Plan page when there are no tasks. */
+    'planning.emptyState': booleanStringSchema,
     /** Enables the memory stats page (`/stats`): timeline totals plus entity
      * breakdowns by data source and by tag. */
     'stats.page': booleanStringSchema,
+    /** Wholesale gate for the Schedule surface (`/schedule` + nav entry point):
+     * committed events, the HBPE rhythm layer, and proposed candidates. Off by
+     * default while the proposer is still being tuned. */
+    'schedule.page': booleanStringSchema,
     /** The standalone all-tags browse page (`/tags`). Restored — on by default —
      * after #1512 removed it and left no way to see every tag in the system.
      * Chips open the explorer filtered by the tag (`/memory?tags=<label>`). */
@@ -300,6 +313,13 @@ export const ConfigSchema = z.object({
      * initializer. On by default; set ENABLE_ACTIONS=false to disable.
      */
     actions: booleanStringSchema,
+    /**
+     * Meta flag for background intelligence scheduling. When on, each pipeline
+     * (question feed, answer inference, schedule sync, insights, summaries,
+     * graph enrichment) runs on its own cadence via SmartRotationScheduledCrons
+     * instead of the legacy standalone crons.
+     */
+    'smart.rotation': booleanStringSchema,
   }),
   environment: z.object({
     'database.query.logging': booleanStringSchema,

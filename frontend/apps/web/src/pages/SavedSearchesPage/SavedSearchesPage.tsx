@@ -102,7 +102,7 @@ export function SavedSearchesPage() {
                 New saved search
               </Button>
               <Button variant="outline" asChild>
-                <Link to="/memory?advanced=1">
+                <Link to="/memory">
                   <Search className="mr-2 h-4 w-4" />
                   Search Memory
                 </Link>

@@ -236,6 +236,20 @@ Class-level `JwtOrApiKeyAuthGuard` (`:146`). All GET; each query zod-validated.
 | POST | `/memory/turn` | `turn` (`:137`) | `ApiKeyGuard` | Ingest a conversation turn (dedup by SHA-256 UUIDv8). Body `{ sessionId, platform, messages[] }`. Returns `{ created, skipped }`. Driven by OpenClaw `afterTurn` / Hermes `sync_turn`. |
 | POST | `/memory/compact` | `compact` (`:202`) | `JwtOrApiKeyAuthGuard` | Manually trigger compaction (background). Returns `{ queued }`. |
 
+### `PersonaIntelligenceController` — `v1/intelligence`  ·  `domains/persona/controllers/PersonaIntelligenceController.ts:60`
+
+Persona × task intelligence for the web UI and connect keys (Hermes/OpenClaw). All routes use `JwtOrApiKeyAuthGuard`, require `@RequireScopes('memory')`, and declare `@RequireCapability` per method so scoped connect keys can reach them.
+
+| Verb | Path | Handler | Capability | Purpose |
+|------|------|---------|------------|---------|
+| GET | `/v1/intelligence/agent-harnesses` | `agentHarnesses` | read | Linked agent apps (Hermes/OpenClaw) with reachable URLs for “Open with agent”. Returns `{ harnesses }`. |
+| POST | `/v1/intelligence/how-youd-do-it` | `howYoudDoIt` | read | Multi-prompt persona compose for a task. Body `{ task, includeRecall?, candidateId? }`. Returns approach steps, evidence, confidence. |
+| POST | `/v1/intelligence/how-youd-do-it/apply` | `applyHowYoudDoIt` | write | Write compose approach steps onto the Possibilities slate. Body `{ result }` (full `HowYoudDoItResult`). Returns `{ added }`. |
+| GET | `/v1/intelligence/about-you` | `aboutYou` | read | Read dossier, preferences, recent answers for Settings → About you. |
+| POST | `/v1/intelligence/about-you/correction` | `aboutYouCorrection` | write | Teach-loop correction; writes Q&A and invalidates compose cache. Body `{ text }`. |
+
+**MCP:** the same compose pipeline is exposed as native intent `persona.compose` (executable name `persona_compose`) for keys carrying `intents`.
+
 ### `ThreadsController` — `threads`  ·  `domains/conversations/controllers/ThreadsController.ts:35`
 
 Per-method `JwtOrApiKeyAuthGuard`.
@@ -321,13 +335,13 @@ Per-method `JwtOrApiKeyAuthGuard`. Thin proxy in front of the local Ollama daemo
 
 ## What the importer (CI-Import-Tools) drives during a run
 
-Verified against `CI-Import-Tools/backend/src/ci-server/`. On `main` today the importer's **push** step uses **GraphQL bulk mutations**, and the binary + enrichment steps use these **REST** endpoints:
+Verified against `CI-Import-Tools/backend/src/ci-server/`. Prefer **REST `/v1/*`** when the server advertises it (`GET /v1/ingest/status`); GraphQL bulk mutations remain the fallback for older servers.
 
-1. **Data push (GraphQL, not REST):** kind-routed batch mutations `createEvents` / `createCommunications` / `createInventoryItems` / `createContents` / `createBrowserActivities` (`graphql.ts`), dedup on the source triple → `POST /graphql` (10 mb body limit). **`POST /v1/events` is the convergence target** the importer is moving to.
-2. **Media (REST):** binary upload → **`POST /files/upload`** (`media.ts`; the URL is derived from the GraphQL URL by swapping `/graphql`→`/files/upload`), then links the returned `{id}` into records.
-3. **Post-push enrichment (REST, `api/maintenance/*`):** `maintenance-runner.ts` **prefers one `POST /api/maintenance/orchestrate`** call (streamed) covering all legs, and **falls back to the per-leg chain** when orchestrate is absent: `extract-people-from-communications`, `link-communications`, `link-events`, `extract-graph`, `geocode-locations`, `reverse-geocode-locations`, `estimate-locations`, `backfill-media-dimensions`, `search-index/backfill`.
+1. **Data push (REST `/v1/*`, preferred):** NDJSON batches to `/v1/{events,communications,contents,inventory,browser-activity,positions}` (`v1.ts` + `mapping.ts`), dedup on the source triple. Falls back to GraphQL `create*` mutations when `/v1` is unavailable.
+2. **Media (REST):** binary upload → **`POST /files/upload`** (or `/v1/files`), then links the returned `{id}` into records.
+3. **Post-push enrichment:** `POST /v1/ingest/finish` (`searchIndexOnly` / staged orchestration) when available; otherwise `api/maintenance/*` (`orchestrate` or the per-leg chain ending in `search-index/backfill`). A `browser-activity`-scoped search backfill also indexes dual-written `event` + `content` rows on the server.
 4. **Graph sync (GraphQL):** entities + relationships via `bulkIngestGraph`, and item↔item edges (email→attachment, photo→album) via `bulkIngestItemRelationships`.
-5. **Embed-drain progress (REST):** polls **`GET /api/maintenance/search-index/embedded-count`** to animate its stage-6 bar toward the enqueued count (best-effort).
+5. **Embed-drain progress (REST):** polls ingest status / embedded-count endpoints to animate the drain bar (best-effort).
 
 ---
 

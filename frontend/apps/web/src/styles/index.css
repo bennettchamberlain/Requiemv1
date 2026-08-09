@@ -27,12 +27,38 @@
   color-scheme: light;
   /* --input is the input border token; --input-fill is the opaque fill counterpart. */
   --input-fill: var(--input);
+
+  /* Activity palette — categorical identity for the schedule surface. Seven
+     hues in a fixed, validated order (see HorizonGrid/activityPalette.ts);
+     --activity-none is the deliberate non-hue for unsorted/local.
+     A server-only extension, not a canonical design token: it is specific to
+     the schedule, and it is deliberately NOT derived from the theme hue — a
+     class's colour is a learned association and must survive re-theming. */
+  --activity-1: #2a78d6;
+  --activity-2: #eb6834;
+  --activity-3: #1baf7a;
+  --activity-4: #eda100;
+  --activity-5: #e87ba4;
+  --activity-6: #008300;
+  --activity-7: #4a3aa7;
+  --activity-none: oklch(0.554 0.046 257.526);
 }
 
 .dark {
   color-scheme: dark;
   /* Pre-rendered fallback — see color-mix upgrade below. */
   --input-fill: #0a2e38;
+
+  /* The same seven hues re-stepped for the dark surface (not an automatic
+     flip), validated against the dark card. */
+  --activity-1: #3987e5;
+  --activity-2: #d95926;
+  --activity-3: #199e70;
+  --activity-4: #c98500;
+  --activity-5: #d55181;
+  --activity-6: #008300;
+  --activity-7: #9085e9;
+  --activity-none: oklch(0.676 0.019 253.397);
 }
 
 @supports (color: color-mix(in lab, red, red)) {
@@ -76,6 +102,18 @@
     box-shadow: 0 0 0 1000px var(--input-fill) inset;
     caret-color: var(--foreground);
     transition: background-color 9999s ease-in-out 0s;
+  }
+}
+
+@layer utilities {
+  /* Scrollable overflow without a visible track — keeps chip/icon rows at full height. */
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
   }
 }
 

@@ -26,6 +26,9 @@ type ReturnType = [
   },
 ];
 
+/** Poll for a rotated question while one remains unanswered on the feed. */
+const FEED_QUESTION_POLL_MS = 10 * 60 * 1000;
+
 export function useFeedQuestionService(): ReturnType {
   const [{ authToken }] = useAuth();
 
@@ -121,6 +124,19 @@ export function useFeedQuestionService(): ReturnType {
   useEffect(() => {
     void fetchUnansweredQuestion();
   }, [fetchUnansweredQuestion]);
+
+  // Re-fetch periodically so stale unanswered questions can rotate server-side.
+  useEffect(() => {
+    if (!authToken || !question) {
+      return;
+    }
+
+    const handle = setInterval(() => {
+      void fetchUnansweredQuestion();
+    }, FEED_QUESTION_POLL_MS);
+
+    return () => clearInterval(handle);
+  }, [authToken, question, fetchUnansweredQuestion]);
 
   return [
     {

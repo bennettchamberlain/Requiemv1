@@ -27,10 +27,6 @@ const FormSchema = s.object({
 
 export type FormData = s.infer<typeof FormSchema>;
 
-const EMPTY: FormData = {
-  message: '',
-};
-
 const handleEnterSubmit = (e: KeyboardEvent<HTMLTextAreaElement>) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
@@ -43,12 +39,13 @@ interface Props {
   loading?: boolean;
   streaming?: boolean;
   placeholder?: string;
+  initialDraft?: string;
   onStop?: (e: MouseEvent<HTMLButtonElement>) => void | Promise<void>;
   onSubmit?: (data: FormData, e?: FormEvent<HTMLFormElement>) => boolean | void | Promise<boolean | void>;
 }
 
 function ChatInput(
-  { disabled = false, loading = false, streaming = false, placeholder, onSubmit, onStop }: Props,
+  { disabled = false, loading = false, streaming = false, placeholder, initialDraft = '', onSubmit, onStop }: Props,
   forwardedRef: ForwardedRef<HTMLTextAreaElement>,
 ) {
   const SendIcon = streaming ? Square : Send;
@@ -56,7 +53,7 @@ function ChatInput(
 
   const form = useForm<FormData>({
     resolver: formDataResolver(FormSchema),
-    defaultValues: EMPTY,
+    defaultValues: { message: initialDraft },
   });
 
   const handleStop = useCallback(

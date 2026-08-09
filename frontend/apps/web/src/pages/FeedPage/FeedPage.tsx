@@ -18,6 +18,7 @@ import { Carousel } from '../../components/Carousel';
 import { FeedModal } from './FeedModal';
 import type { INSIGHT_CARD_FRAGMENT } from './InsightCard';
 import { InsightCard } from './InsightCard';
+import { PromotionReviewCard } from './PromotionReviewCard';
 import { QuestionCard } from './QuestionCard';
 import type { SUMMARY_CARD_FRAGMENT } from './SummaryCard';
 import { SummaryCard } from './SummaryCard';
@@ -255,7 +256,7 @@ export function FeedPage() {
   const handleSummaryClick = useCallback(
     async (encodedId: string) => {
       await markSummaryAsSeen(encodedId);
-      navigate(`/insights/${GlobalUID.parse('summary', encodedId)}`);
+      navigate(`/feed/summaries/${GlobalUID.parse('summary', encodedId)}`);
     },
     [markSummaryAsSeen, navigate],
   );
@@ -324,6 +325,12 @@ export function FeedPage() {
                   onDismiss={() => void handleActionDismiss(card.action.id)}
                   dismissLabel="Dismiss action"
                   showUnseenIndicator={!card.action.seen}
+                  chatContext={{
+                    title: card.action.title,
+                    body: card.action.text,
+                    sourceKind: 'action',
+                    sourceId: card.action.id,
+                  }}
                 />
               ),
             )}
@@ -415,6 +422,8 @@ export function FeedPage() {
           </div>
         )}
 
+        <PromotionReviewCard />
+
         {(actionsEnabled || Boolean(question)) && (
           <>
             <h2 className="text-2xl font-bold text-foreground">{actionsEnabled ? 'Actions' : 'Questions'}</h2>
@@ -451,6 +460,12 @@ export function FeedPage() {
                       onDismiss={() => void handleActionDismiss(card.action.id)}
                       dismissLabel="Dismiss action"
                       showUnseenIndicator={!card.action.seen}
+                      chatContext={{
+                        title: card.action.title,
+                        body: card.action.text,
+                        sourceKind: 'action',
+                        sourceId: card.action.id,
+                      }}
                       className="hover:shadow-lg transition-shadow duration-200"
                     />
                   ),

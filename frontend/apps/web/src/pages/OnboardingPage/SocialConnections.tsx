@@ -91,15 +91,15 @@ export function SocialConnections() {
                       name={`people.${index}.relationship`}
                       render={({ field }) => (
                         <Select value={field.value ?? ''} onValueChange={field.onChange}>
-                          <Select.Trigger className="w-28 md:w-36 h-12 text-base overflow-hidden truncate min-w-0">
+                          <Select.Trigger className="w-full sm:w-44 h-12 min-h-12 data-[size=default]:h-12 text-lg px-3 overflow-hidden [&_svg:not([class*='size-'])]:size-5">
                             <Select.Value placeholder="Relation" />
                           </Select.Trigger>
                           <Select.Content>
                             {RELATIONSHIP_GROUPS.map((group) => (
                               <Select.Group key={group.label}>
-                                <Select.Label>{group.label}</Select.Label>
+                                <Select.Label className="text-sm">{group.label}</Select.Label>
                                 {group.options.map((opt) => (
-                                  <Select.Item key={opt.value} value={opt.value}>
+                                  <Select.Item key={opt.value} value={opt.value} className="text-lg py-2.5">
                                     {opt.label}
                                   </Select.Item>
                                 ))}

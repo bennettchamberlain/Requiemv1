@@ -31,6 +31,7 @@ from ci.hbpe.pipeline.nightly_runner import (
     label_unlabeled,
     lora_fine_tune,
     needs_bootstrap,
+    recurrence_profile,
 )
 from ci.hbpe.pipeline.schedule import ensure_bootstrap_if_cold, setup_hbpe_schedules
 from ci.telemetry import init_telemetry
@@ -78,6 +79,7 @@ async def main() -> None:
                     needs_bootstrap,
                     lora_fine_tune,
                     backfill_actuals,
+                    recurrence_profile,
                     drift_detection,
                     cache_invalidation,
                     serialize_token_stream,

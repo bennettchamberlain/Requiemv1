@@ -53,20 +53,15 @@ export interface CreateEventDto {
   metadata?: Record<string, unknown>;
   is_predicted?: boolean;
   is_inferred?: boolean;
-  prediction_model?: string;
   inference_sources?: Record<string, unknown>;
   tags?: string[];
   sentiment_score?: number;
   energy_level?: number;
-  productivity_impact?: number;
   status?: string;
   sharing_level?: string;
   is_deleted?: boolean;
   external_sync_status?: string;
-  last_synced_at?: Date;
   parent_event_id?: string;
-  related_event_ids?: string[];
-  supersedes_event_id?: string;
   created_by?: string;
   user_id?: string;
   duration_minutes?: number;
@@ -102,20 +97,15 @@ export interface UpdateEventDto {
   metadata?: Record<string, unknown>;
   is_predicted?: boolean;
   is_inferred?: boolean;
-  prediction_model?: string;
   inference_sources?: Record<string, unknown>;
   tags?: string[];
   sentiment_score?: number;
   energy_level?: number;
-  productivity_impact?: number;
   status?: string;
   sharing_level?: string;
   is_deleted?: boolean;
   external_sync_status?: string;
-  last_synced_at?: Date;
   parent_event_id?: string;
-  related_event_ids?: string[];
-  supersedes_event_id?: string;
   created_by?: string;
   user_id?: string;
   duration_minutes?: number;
@@ -147,17 +137,13 @@ export interface SearchEventDto {
   metadata?: object;
   isPredicted?: boolean;
   isInferred?: boolean;
-  predictionModel?: string;
   inferenceSources?: object;
   sentimentScore?: number;
   energyLevel?: number;
-  productivityImpact?: number;
   status?: string;
   isDeleted?: boolean;
   externalSyncStatus?: string;
-  lastSyncedAt?: Date | undefined;
   parentEventId?: string;
-  supersedesEventId?: string;
   createdBy?: string;
   userId?: string;
 }
@@ -513,19 +499,14 @@ const createEventSchemaRoot = z.object({
   metadata: z.record(z.unknown()).optional(),
   is_predicted: z.boolean().optional(),
   is_inferred: z.boolean().optional(),
-  prediction_model: z.string().optional(),
   inference_sources: z.record(z.unknown()).optional(),
   tags: z.array(z.string()).optional(),
   sentiment_score: z.number().optional(),
   energy_level: z.number().optional(),
-  productivity_impact: z.number().optional(),
   status: z.string().optional(),
   is_deleted: z.boolean().optional(),
   external_sync_status: z.string().optional(),
-  last_synced_at: z.string().datetime().optional(),
   parent_event_id: z.string().optional(),
-  related_event_ids: z.array(z.string()).optional(),
-  supersedes_event_id: z.string().optional(),
   created_by: z.string().optional(),
   content: z.array(createContentSchema).optional(),
 });
@@ -562,19 +543,14 @@ export const updateEventSchema = z.object({
   metadata: z.record(z.unknown()).optional(),
   is_predicted: z.boolean().optional(),
   is_inferred: z.boolean().optional(),
-  prediction_model: z.string().optional(),
   inference_sources: z.record(z.unknown()).optional(),
   tags: z.array(z.string()).optional(),
   sentiment_score: z.number().optional(),
   energy_level: z.number().optional(),
-  productivity_impact: z.number().optional(),
   status: z.string().optional(),
   is_deleted: z.boolean().optional(),
   external_sync_status: z.string().optional(),
-  last_synced_at: z.string().datetime().optional(),
   parent_event_id: z.string().optional(),
-  related_event_ids: z.array(z.string()).optional(),
-  supersedes_event_id: z.string().optional(),
   created_by: z.string().optional(),
   content: z.array(createContentSchema).optional(),
 });

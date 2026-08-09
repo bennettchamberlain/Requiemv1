@@ -28,6 +28,49 @@ import { DropdownContent } from './DropdownContent';
 import type { FilterDragPayload } from './filterDrag';
 import { DropdownProvider, useDropdown } from './useDropdown';
 
+/** Radix filter menus portal outside the search wrapper — clicks there must not dismiss the panel. */
+const PORTALED_FILTER_IDS = ['entity-type-filters', 'how-filters', 'connector-filters'];
+
+function isPortaledFilterTarget(target: Node | null): boolean {
+  if (target == null) {
+    return false;
+  }
+
+  if (
+    PORTALED_FILTER_IDS.some((id) => {
+      const el = document.getElementById(id);
+
+      return el != null && el.contains(target);
+    })
+  ) {
+    return true;
+  }
+
+  if (!(target instanceof Element)) {
+    return false;
+  }
+
+  return (
+    target.closest('[data-radix-popper-content-wrapper]') != null ||
+    target.closest('[data-slot="dropdown-menu-content"]') != null ||
+    target.closest('[data-slot="popover-content"]') != null ||
+    target.closest('[data-slot="select-content"]') != null
+  );
+}
+
+/** True while a nested filter control (What / When / How / sort) is open in the panel footer. */
+function hasOpenNestedFilterOverlay(): boolean {
+  return (
+    document.querySelector(
+      [
+        '[data-slot="dropdown-menu-content"][data-state="open"]',
+        '[data-slot="popover-content"][data-state="open"]',
+        '[data-slot="select-content"][data-state="open"]',
+      ].join(', '),
+    ) != null
+  );
+}
+
 const FormSchema = s.object({
   query: s.string(),
 });
@@ -106,12 +149,18 @@ interface Props {
   toolsSlot?: ReactNode;
   /**
    * Caller-supplied section rendered at the top of the dropdown panel, above the
-   * results (e.g. Memory's advanced filters). Shown whenever the panel is open.
+   * results. Shown whenever the panel is open.
    */
   panelHeader?: ReactNode;
   /**
+   * Caller-supplied section rendered at the bottom of the dropdown panel,
+   * below the results (e.g. the global advanced search controls).
+   */
+  panelFooter?: ReactNode;
+  /**
    * Hold the dropdown panel open regardless of focus/query — used with
-   * `panelHeader` so its content stays interactive (it survives input blur).
+   * `panelHeader` / `panelFooter` so their content stays interactive (it
+   * survives input blur).
    */
   panelPinned?: boolean;
   /**
@@ -138,6 +187,8 @@ interface Props {
    */
   onFilterAdd?: (filter: FilterDragPayload) => void;
   onSave?: (query: string, entityTypes: string[]) => void;
+  /** Ref populated with a function to mark user-engaged before programmatic focus. */
+  engageRef?: React.MutableRefObject<(() => void) | null>;
 }
 
 function SearchBox(
@@ -159,6 +210,7 @@ function SearchBox(
     showClear = false,
     toolsSlot,
     panelHeader,
+    panelFooter,
     panelPinned = false,
     onPanelUnpin,
     defaultQuery,
@@ -169,6 +221,7 @@ function SearchBox(
     onResultSelect,
     onFilterAdd,
     onSave,
+    engageRef,
   }: Props,
   forwardedRef: ForwardedRef<HTMLInputElement>,
 ) {
@@ -179,6 +232,9 @@ function SearchBox(
 
   const isFocusedRef = useRef(false);
   const [isFocused, setIsFocused] = useState(false);
+  // Panel opens on focus only after an explicit user gesture (click/tap or
+  // keyboard engage), not on mount-time or restored focus.
+  const [userEngaged, setUserEngaged] = useState(false);
   // Escape closes the results panel before it clears the query (two-stage);
   // typing or refocusing reopens it.
   const [panelDismissed, setPanelDismissed] = useState(false);
@@ -212,6 +268,18 @@ function SearchBox(
 
   const selectedResult = selectedIndex >= 0 && selectedIndex < results.length ? results[selectedIndex] : null;
   const isLoading = loading || isAutoSubmitPending;
+
+  useEffect(() => {
+    if (!engageRef) {
+      return;
+    }
+
+    engageRef.current = () => setUserEngaged(true);
+
+    return () => {
+      engageRef.current = null;
+    };
+  }, [engageRef]);
 
   const scrollToSelectedItem = useCallback(() => {
     if (selectedIndex === -1 || !scrollAreaRef.current) {
@@ -323,6 +391,9 @@ function SearchBox(
             setSelectedIndex(-1);
           } else if (panelShowing) {
             setPanelDismissed(true);
+          } else if (panelFooter && userEngaged) {
+            setPanelDismissed(true);
+            setUserEngaged(false);
           } else {
             handleClear();
           }
@@ -386,6 +457,7 @@ function SearchBox(
           if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete') {
             setSelectedIndex(-1);
             setPanelDismissed(false);
+            setUserEngaged(true);
           }
 
           break;
@@ -412,6 +484,8 @@ function SearchBox(
       onFilterAdd,
       handleClear,
       onKeyDown,
+      panelFooter,
+      userEngaged,
     ],
   );
 
@@ -496,7 +570,7 @@ function SearchBox(
     }
   }, [selectedIndex, scrollToSelectedItem]);
 
-  // Close filters panel on outside click
+  // Close filters/results panel on outside click
   useEffect(() => {
     if (!isDropdownPanelVisible) {
       return;
@@ -509,23 +583,7 @@ function SearchBox(
 
       const target = e.target as Node;
 
-      // Filter dropdowns portal to document.body (outside wrapperRef), so treat
-      // clicks within them as inside-panel clicks rather than closing the panel.
-      const portaledFilterIds = ['entity-type-filters', 'how-filters'];
-
-      if (
-        portaledFilterIds.some((id) => {
-          const el = document.getElementById(id);
-
-          return el != null && el.contains(target);
-        })
-      ) {
-        return;
-      }
-
-      // Date-range, tag, and sort controls open Radix poppers in a portal outside this wrapper;
-      // clicks inside them must not close the filter panel.
-      if (target instanceof Element && target.closest('[data-radix-popper-content-wrapper]')) {
+      if (isPortaledFilterTarget(target)) {
         return;
       }
 
@@ -542,9 +600,10 @@ function SearchBox(
   }, [isDropdownPanelVisible, toggleDropdownPanel]);
 
   const hasQuery = queryValue.length > 0;
+  const focusOpensPanel = userEngaged || hasQuery;
   // Default: show the dropdown whenever there's a query. With `openOnFocus`, gate
-  // it on focus instead — so it can surface recent searches before the user types
-  // and won't auto-open just because the input reflects an external `?search` value.
+  // on an explicit user engage (click/tap or `/`) — not passive/restored focus —
+  // so recent searches can surface without opening on every app visit.
   // While the panel is pinned, a live query keeps its results visible even
   // unfocused — interacting with panelHeader content (filter dropdowns steal
   // focus) must not blank the suggestions below it.
@@ -552,7 +611,7 @@ function SearchBox(
     displayResults &&
     !disabled &&
     !panelDismissed &&
-    (openOnFocus ? isFocused || (panelPinned && hasQuery) : hasQuery);
+    (openOnFocus ? (focusOpensPanel && isFocused) || (panelPinned && hasQuery) : hasQuery);
 
   let resultsNode: ReactNode | null = null;
 
@@ -629,12 +688,58 @@ function SearchBox(
     resultsNode = body;
   }
 
-  const panelVisible = resultsNode != null || panelPinned;
+  const panelVisible =
+    !panelDismissed &&
+    (resultsNode != null ||
+      (panelFooter != null && userEngaged) ||
+      (panelPinned && (isFocused || hasQuery)));
+
+  // Dismiss an open suggestion/filter panel when clicking elsewhere on the page.
+  useEffect(() => {
+    if (!panelVisible) {
+      return;
+    }
+
+    const handlePointerDown = (e: PointerEvent) => {
+      if (!wrapperRef.current) {
+        return;
+      }
+
+      const target = e.target as Node;
+
+      if (isPortaledFilterTarget(target)) {
+        return;
+      }
+
+      if (wrapperRef.current.contains(target)) {
+        return;
+      }
+
+      if (panelFooter && hasOpenNestedFilterOverlay()) {
+        // Let Radix close the nested filter menu on this click; keep the search panel open.
+        return;
+      }
+
+      setPanelDismissed(true);
+
+      if (panelFooter) {
+        setUserEngaged(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [panelVisible, panelFooter]);
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleFormSubmit)}>
-        <div className="relative" ref={wrapperRef}>
+      <form autoComplete="off" onSubmit={form.handleSubmit(handleFormSubmit)}>
+        <div
+          className="relative"
+          ref={wrapperRef}
+          onPointerDown={() => setUserEngaged(true)}
+        >
           <div
             className={cn(
               'w-full flex flex-col',
@@ -661,6 +766,12 @@ function SearchBox(
                 render={({ field }) => (
                   <Input
                     {...field}
+                    type="text"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    name="ci-global-search"
                     ref={(el) => {
                       field.ref(el);
 
@@ -676,7 +787,9 @@ function SearchBox(
                     onFocus={() => {
                       isFocusedRef.current = true;
                       setIsFocused(true);
-                      setPanelDismissed(false);
+                      if (userEngaged || queryValue.length > 0) {
+                        setPanelDismissed(false);
+                      }
                     }}
                     onBlur={() => {
                       // Window deactivation isn't a real focus change — keep the
@@ -686,8 +799,23 @@ function SearchBox(
                         return;
                       }
 
+                      const active = document.activeElement;
+
+                      if (active != null && wrapperRef.current?.contains(active)) {
+                        return;
+                      }
+
+                      if (isPortaledFilterTarget(active)) {
+                        return;
+                      }
+
                       isFocusedRef.current = false;
                       setIsFocused(false);
+
+                      if (!panelFooter) {
+                        setUserEngaged(false);
+                      }
+
                       field.onBlur();
                     }}
                     className={cn(
@@ -785,6 +913,16 @@ function SearchBox(
             <div className="absolute top-full left-0 right-0 z-50 bg-background border border-t-0 rounded-b-md shadow-xs">
               {panelHeader}
               {resultsNode}
+              {panelFooter && (
+                <div
+                  className={cn(resultsNode != null && 'border-t')}
+                  // Keep focus in the input so the filter panel stays open while
+                  // opening What / When / How menus in the footer.
+                  onMouseDown={(e) => e.preventDefault()}
+                >
+                  {panelFooter}
+                </div>
+              )}
             </div>
           )}
         </div>

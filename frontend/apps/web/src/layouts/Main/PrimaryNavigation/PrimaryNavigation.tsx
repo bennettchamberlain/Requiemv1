@@ -18,11 +18,13 @@ import { NavUser } from './NavUser';
 
 export function PrimaryNavigation() {
   const navigate = useNavigate();
+  const location = useLocation();
   // The global search box searches the VIEWER's own memory. On a shared-search
   // page the body shows someone else's results, so the prominent search would be
   // misleading (and navigate the viewer away). Hide it there; the page's own view
   // tabs (nav-views) still render.
-  const isSharedView = useLocation().pathname.startsWith('/shared/');
+  const isSharedView = location.pathname.startsWith('/shared/');
+  const isMemoryExplorer = location.pathname === '/memory';
   const { toast } = useToast();
   const [, { trigger }] = useTriggerHbpe();
 
@@ -71,19 +73,31 @@ export function PrimaryNavigation() {
   return (
     <>
       <header className="flex flex-row items-center gap-2 p-2 px-4">
-        {/* Left + center: breadcrumbs, Memory's view switcher, then the collapsed
-            search button right-aligned next to the actions cluster. All share one
-            relative region — the expanded search (GlobalSearchBox) overlays the
-            whole region, GitHub-style, instead of competing with them for width.
-            The right cluster stays visible. */}
-        <div className="relative flex min-w-0 flex-1 items-center gap-3">
-          <div className="flex shrink-0 flex-row items-center gap-2">
-            <Portal id="breadcrumbs" />
-          </div>
-          <Portal id="nav-views" className="flex flex-row items-center empty:hidden" />
-          <div className="flex min-w-0 flex-1 items-center justify-end">
-            {!isSharedView && <GlobalSearchBox />}
-          </div>
+        {/* Memory explorer: search left (no breadcrumb); view tabs after search.
+            Other pages: breadcrumb + nav-views, then search fills remaining width. */}
+        <div className="relative flex min-w-0 flex-1 flex-col gap-2 md:flex-row md:items-center md:gap-3">
+          {isMemoryExplorer ? (
+            <>
+              {!isSharedView && (
+                <div className="w-full min-w-0 flex-1">
+                  <GlobalSearchBox />
+                </div>
+              )}
+              <Portal id="nav-views" className="flex shrink-0 flex-row items-center empty:hidden" />
+            </>
+          ) : (
+            <>
+              <div className="flex min-w-0 shrink-0 flex-row flex-wrap items-center gap-2">
+                <Portal id="breadcrumbs" />
+                <Portal id="nav-views" className="flex flex-row items-center empty:hidden" />
+              </div>
+              {!isSharedView && (
+                <div className="w-full min-w-0 flex-1">
+                  <GlobalSearchBox />
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         {/* Right: page actions, new, account (Tags lives in the account menu) */}

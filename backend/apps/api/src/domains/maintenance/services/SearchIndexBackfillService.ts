@@ -45,6 +45,22 @@ export const BACKFILLABLE_ENTITIES = [
 export type BackfillableEntity = (typeof BACKFILLABLE_ENTITIES)[number];
 
 /**
+ * Wave D dual-writes `/v1/browser-activity` into `ci.events` (`view`) +
+ * `ci.content` (`web-page`). Importers that only ask to backfill
+ * `browser-activity` would otherwise leave the timeline rows unindexed.
+ * Expand scoped requests so search matches what the dual-write wrote.
+ */
+export function expandBackfillEntityTypes(types: readonly BackfillableEntity[]): BackfillableEntity[] {
+  const set = new Set<BackfillableEntity>(types);
+  if (set.has('browser-activity')) {
+    set.add('event');
+    set.add('content');
+  }
+
+  return BACKFILLABLE_ENTITIES.filter((t) => set.has(t));
+}
+
+/**
  * Per-entity-type re-emit descriptor: the `*CreatedEvent` name to fire and the
  * payload field its listener reads the id from. Drives the bulk enqueue so a
  * page of ids becomes one `sendMany` call instead of N awaited `send`s.
@@ -168,7 +184,9 @@ export class SearchIndexBackfillService {
   }
 
   async backfill(options: SearchIndexBackfillOptions = {}): Promise<SearchIndexBackfillResult> {
-    const types = options.entityTypes ?? [...BACKFILLABLE_ENTITIES];
+    const types = options.entityTypes
+      ? expandBackfillEntityTypes(options.entityTypes)
+      : [...BACKFILLABLE_ENTITIES];
 
     if (this.running) {
       this.logger.warn('Search-index backfill: sweep already running, skipping this trigger');

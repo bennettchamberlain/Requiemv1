@@ -4,14 +4,15 @@ import { useSearchParams } from 'react-router-dom';
 
 import {
   DateGroupHeader,
-  Empty,
   ErrorState,
   ListSkeleton,
+  MemoryEmptyState,
   formatRowTime,
   getEntityTimestamp,
   groupEntitiesByBucket,
   isChronologicalSort,
 } from '@/pages/MemoryPage/Components';
+import { countActiveFilters } from '@/pages/MemoryPage/Components/ExplorerToolbar/filterParams';
 
 import { useEntityService, type EntityItem } from '../useEntityService';
 
@@ -67,6 +68,8 @@ export function ListView() {
     Boolean(searchParams.get('search')?.trim()),
   );
   const groups = useMemo(() => (grouped ? groupEntitiesByBucket(data) : null), [grouped, data]);
+  const filteredBrowse =
+    countActiveFilters(searchParams) > 0 || Boolean(searchParams.get('search')?.trim());
 
   // Every row opens the same shared details drawer (incl. File/Item media).
   const renderRow = (item: EntityItem) => {
@@ -134,7 +137,7 @@ export function ListView() {
   // First load (no data yet): skeletons over a bare spinner.
   if (loading && data.length === 0) {
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto pl-1 pr-4 pb-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         <ListSkeleton count={10} />
       </div>
     );
@@ -143,7 +146,7 @@ export function ListView() {
   // Hard error with nothing to show.
   if (error && data.length === 0) {
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto pl-1 pr-4 pb-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         <ErrorState onRetry={refetch} />
       </div>
     );
@@ -151,16 +154,14 @@ export function ListView() {
 
   if (data.length === 0) {
     return (
-      <Empty
-        title="No results"
-        description="Try clearing your filters or searching for something else."
-        icon="🔍"
-      />
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+        <MemoryEmptyState filtered={filteredBrowse} />
+      </div>
     );
   }
 
   return (
-    <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto pl-1 pr-4 pb-2">
+    <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
       <div className="flex flex-col">
         {groups
           ? groups.map((group) => (

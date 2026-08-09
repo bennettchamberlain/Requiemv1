@@ -28,7 +28,7 @@ export function DateGroupHeader({ label, count, className, align = 'left' }: Dat
         // The negative margin lets the sticky backdrop bleed past the scroll
         // container's edge; the inner padding then places the label flush with
         // the rows' icon slot so headers and icons share one left edge.
-        rightAligned ? 'px-3' : '-mx-1 px-3',
+        rightAligned ? 'px-2' : '-mx-1 px-2',
         className,
       )}
     >

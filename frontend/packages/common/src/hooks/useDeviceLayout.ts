@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { createHookContext } from '../utils/createHookContext';
 
 // Define the breakpoint for mobile devices
-const MOBILE_BREAKPOINT = 768; // Corresponds to md in Tailwind CSS
+const MOBILE_BREAKPOINT = 896; // Slightly above Tailwind md (768) — mobile layout through tablet widths
 
 /**
  * A comprehensive React hook to determine device state, including

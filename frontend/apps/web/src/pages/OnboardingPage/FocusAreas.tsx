@@ -47,56 +47,32 @@ export function FocusAreas() {
               const checked = field.value?.includes(item.id) ?? false;
               const checkboxId = `focus-area-${item.id}`;
 
-              const toggle = () => {
-                field.onChange(
-                  checked
-                    ? field.value?.filter((value: string) => value !== item.id)
-                    : [...(field.value || []), item.id],
-                );
-              };
-
               return (
-                <Form.Item
-                  key={item.id}
+                <label
+                  htmlFor={checkboxId}
                   className={cn(
                     'grid grid-cols-[max-content_1fr] items-start gap-x-4 rounded-xl border border-border/70 bg-muted/40 px-4 py-3.5 transition-colors cursor-pointer hover:bg-muted/55',
                     checked && 'border-primary/40 bg-muted/60',
                   )}
-                  onClick={toggle}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      toggle();
-                    }
-                  }}
-                  role="button"
-                  tabIndex={0}
                 >
-                  <Form.Control>
-                    <Checkbox
-                      id={checkboxId}
-                      className="mt-1 size-5 border-border bg-background"
-                      checked={checked}
-                      onCheckedChange={(value) => {
-                        field.onChange(
-                          value
-                            ? [...(field.value || []), item.id]
-                            : field.value?.filter((entry: string) => entry !== item.id),
-                        );
-                      }}
-                      onClick={(event) => event.stopPropagation()}
-                    />
-                  </Form.Control>
+                  <Checkbox
+                    id={checkboxId}
+                    className="mt-1 size-5 border-border bg-background"
+                    checked={checked}
+                    onCheckedChange={(value) => {
+                      field.onChange(
+                        value
+                          ? [...(field.value || []), item.id]
+                          : field.value?.filter((entry: string) => entry !== item.id),
+                      );
+                    }}
+                  />
 
-                  <div className="space-y-1 pointer-events-none">
-                    <Form.Label htmlFor={checkboxId} className="text-lg sm:text-xl font-medium leading-snug">
-                      {item.label}
-                    </Form.Label>
-                    <Form.Description className="text-base text-muted-foreground leading-snug">
-                      {item.description}
-                    </Form.Description>
+                  <div className="space-y-1">
+                    <span className="text-lg sm:text-xl font-medium leading-snug">{item.label}</span>
+                    <p className="text-base text-muted-foreground leading-snug">{item.description}</p>
                   </div>
-                </Form.Item>
+                </label>
               );
             }}
           />

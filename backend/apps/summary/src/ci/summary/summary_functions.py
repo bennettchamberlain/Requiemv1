@@ -297,12 +297,18 @@ def generate_insights(
     # Convert insights to dicts
     insights_list = [item.model_dump() for item in response.insights]
 
+    personalization = insights_context.get("personalization") or {}
+    multiplier = float(personalization.get("insight_volume_multiplier") or 1.0)
+    if multiplier != 1.0 and insights_list:
+        limit = max(1, round(len(insights_list) * multiplier))
+        insights_list = insights_list[:limit]
+
     return {
         "insights": insights_list,
         "data_sources_used": response.data_sources_used,
         "embedding": embedding,
         "tokens_used": result.usage.total_tokens if result.usage else 0,
-        "num_insights": len(response.insights),
+        "num_insights": len(insights_list),
     }
 
 

@@ -74,7 +74,7 @@ export function ConnectorFilter({ modal = true, label }: Props) {
   };
 
   return (
-    <DropdownMenu modal={modal} onOpenChange={() => setIsOpen(!isOpen)}>
+    <DropdownMenu modal={modal} open={isOpen} onOpenChange={setIsOpen}>
       <Trigger asChild>
         <Button type="button" variant="outline">
           {label && <Database className="mr-2 h-4 w-4 text-muted-foreground" />}
