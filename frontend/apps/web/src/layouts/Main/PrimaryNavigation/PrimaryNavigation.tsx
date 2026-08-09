@@ -18,11 +18,13 @@ import { NavUser } from './NavUser';
 
 export function PrimaryNavigation() {
   const navigate = useNavigate();
+  const location = useLocation();
   // The global search box searches the VIEWER's own memory. On a shared-search
   // page the body shows someone else's results, so the prominent search would be
   // misleading (and navigate the viewer away). Hide it there; the page's own view
   // tabs (nav-views) still render.
-  const isSharedView = useLocation().pathname.startsWith('/shared/');
+  const isSharedView = location.pathname.startsWith('/shared/');
+  const isMemoryExplorer = location.pathname === '/memory';
   const { toast } = useToast();
   const [, { trigger }] = useTriggerHbpe();
 
@@ -71,18 +73,30 @@ export function PrimaryNavigation() {
   return (
     <>
       <header className="flex flex-row items-center gap-2 p-2 px-4">
-        {/* Left + center: breadcrumbs and view tabs share a row with the search
-            bar on desktop (search is a fixed width on the right). On small
-            screens the search stacks below. */}
+        {/* Memory explorer: search left (no breadcrumb); view tabs after search.
+            Other pages: breadcrumb + nav-views, then search fills remaining width. */}
         <div className="relative flex min-w-0 flex-1 flex-col gap-2 md:flex-row md:items-center md:gap-3">
-          <div className="flex min-w-0 flex-1 flex-row flex-wrap items-center gap-2">
-            <Portal id="breadcrumbs" />
-            <Portal id="nav-views" className="flex flex-row items-center empty:hidden" />
-          </div>
-          {!isSharedView && (
-            <div className="w-full min-w-0 md:ml-auto md:w-96 md:shrink-0 lg:w-[32rem]">
-              <GlobalSearchBox />
-            </div>
+          {isMemoryExplorer ? (
+            <>
+              {!isSharedView && (
+                <div className="w-full min-w-0 flex-1">
+                  <GlobalSearchBox />
+                </div>
+              )}
+              <Portal id="nav-views" className="flex shrink-0 flex-row items-center empty:hidden" />
+            </>
+          ) : (
+            <>
+              <div className="flex min-w-0 shrink-0 flex-row flex-wrap items-center gap-2">
+                <Portal id="breadcrumbs" />
+                <Portal id="nav-views" className="flex flex-row items-center empty:hidden" />
+              </div>
+              {!isSharedView && (
+                <div className="w-full min-w-0 flex-1">
+                  <GlobalSearchBox />
+                </div>
+              )}
+            </>
           )}
         </div>
 

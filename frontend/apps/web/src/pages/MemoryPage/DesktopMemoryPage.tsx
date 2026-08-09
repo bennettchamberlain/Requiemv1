@@ -3,9 +3,9 @@ import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@apollo/client';
 import { GlobalUID, Portal } from '@ci/common';
 import { ENTITY_TYPE_REVERSE_MAP } from '@ci/common/src/constants';
-import { Breadcrumb, Button, Sheet } from '@ci/shadcn';
+import { Button, Sheet } from '@ci/shadcn';
 import { ChartNetwork, Images, List, Map as MapIcon, type LucideIcon } from '@ci/shadcn/icons';
-import { useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
@@ -245,27 +245,7 @@ export default function DesktopMemoryPage() {
 
   return (
     <>
-      {/* The view switcher is the last breadcrumb crumb: a combo button showing
-          the current view's icon + name with a dropdown chevron, so it reads as
-          an interactive control rather than static breadcrumb text. The
-          expansion mirrors the header plus-button's Add panel (icon grid) so
-          both header menus read as one pattern. */}
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-            <Breadcrumb.Separator className="hidden md:block" />
-            <Breadcrumb.Item>
-              <Breadcrumb.Page>Events</Breadcrumb.Page>
-            </Breadcrumb.Item>
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
+      {/* View tabs (list / map / gallery / graph) live in the header nav-views portal. */}
       <Portal.Slot id="nav-views">
         <div className="flex flex-wrap items-center gap-1">
           {VIEW_TABS.map(({ value, label, title, Icon }) => (

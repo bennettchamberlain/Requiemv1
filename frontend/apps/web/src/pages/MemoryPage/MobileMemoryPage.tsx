@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 
-import { Portal } from '@ci/common';
-import { Breadcrumb, Tabs, Sheet } from '@ci/shadcn';
+import { Tabs, Sheet } from '@ci/shadcn';
 import { ChartNetwork, Images, List, Map as MapIcon } from '@ci/shadcn/icons';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
@@ -72,22 +71,6 @@ export default function MobileMemoryPage() {
 
   return (
     <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item>
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-            <Breadcrumb.Separator />
-            <Breadcrumb.Item>
-              <Breadcrumb.Page>Events</Breadcrumb.Page>
-            </Breadcrumb.Item>
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
       <PageContent className="gap-4 p-0">
         <MemoryHubShell fillHeight>
         <div className="space-y-3">
