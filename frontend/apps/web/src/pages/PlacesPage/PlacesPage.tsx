@@ -303,50 +303,50 @@ export function PlacesPage() {
     content = (
       <PageContent className="gap-4 p-0">
         <MemoryHubShell>
-        <div className="flex flex-col gap-4 px-4 pb-4">
-        <div className="flex items-center gap-2">
-          <Input
-            placeholder="Search places by name..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="max-w-xl flex-1"
-          />
-          <div className="text-sm text-muted-foreground">{view?.places.totalCount ?? 0} places</div>
-        </div>
-
-        <KnownPlacesCard />
-
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-          {locatedPlaces.length > 0 && (
-            <div className="h-72 flex-1 overflow-hidden rounded-md border lg:sticky lg:top-4 lg:h-[calc(100vh-12rem)] lg:min-h-72">
-              <Map center={mapCenter} zoom={locatedPlaces.length === 1 ? 13 : 3}>
-                {locatedPlaces.slice(0, 300).map((place) => (
-                  <Map.Marker
-                    key={place.id}
-                    variant="place"
-                    position={[place.latitude, place.longitude]}
-                    onClick={() => navigate(`/places/${GlobalUID.parse('place', place.id)}`)}
-                  />
-                ))}
-              </Map>
+          <div className="flex flex-col gap-4 px-4 pb-4">
+            <div className="flex items-center gap-2">
+              <Input
+                placeholder="Search places by name..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="max-w-xl flex-1"
+              />
+              <div className="text-sm text-muted-foreground">{view?.places.totalCount ?? 0} places</div>
             </div>
-          )}
 
-          <div className="flex min-w-0 flex-1 flex-col gap-2">
-            {places.length === 0 ? (
-              <EmptyState message="No places found" />
-            ) : (
-              places.map((place) => (
-                <PlaceRow
-                  key={place.id}
-                  place={place}
-                  onOpen={() => navigate(`/places/${GlobalUID.parse('place', place.id)}`)}
-                />
-              ))
-            )}
+            <KnownPlacesCard />
+
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+              {locatedPlaces.length > 0 && (
+                <div className="h-72 flex-1 overflow-hidden rounded-md border lg:sticky lg:top-4 lg:h-[calc(100vh-12rem)] lg:min-h-72">
+                  <Map center={mapCenter} zoom={locatedPlaces.length === 1 ? 13 : 3}>
+                    {locatedPlaces.slice(0, 300).map((place) => (
+                      <Map.Marker
+                        key={place.id}
+                        variant="place"
+                        position={[place.latitude, place.longitude]}
+                        onClick={() => navigate(`/places/${GlobalUID.parse('place', place.id)}`)}
+                      />
+                    ))}
+                  </Map>
+                </div>
+              )}
+
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
+                {places.length === 0 ? (
+                  <EmptyState message="No places found" />
+                ) : (
+                  places.map((place) => (
+                    <PlaceRow
+                      key={place.id}
+                      place={place}
+                      onOpen={() => navigate(`/places/${GlobalUID.parse('place', place.id)}`)}
+                    />
+                  ))
+                )}
+              </div>
+            </div>
           </div>
-        </div>
-        </div>
         </MemoryHubShell>
       </PageContent>
     );

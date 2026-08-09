@@ -475,7 +475,12 @@ function DistributionChart({
 }: {
   title: string;
   description: string;
-  data: Array<{ readonly key: string; readonly jobName: string; readonly count: number; readonly color: string }>;
+  data: Array<{
+    readonly key: string;
+    readonly jobName: string;
+    readonly count: number;
+    readonly color: string;
+  }>;
   emptyMessage: string;
 }) {
   if (!data.length) {

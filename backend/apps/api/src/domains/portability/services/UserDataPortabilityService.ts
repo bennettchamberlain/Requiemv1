@@ -22,12 +22,7 @@ import type {
   UserProfileSnapshot,
   UserScopedTable,
 } from '../types';
-import {
-  DISCOVER_USER_TABLES_SQL,
-  USER_DATA_SCHEMAS,
-  isExcluded,
-  qualifiedName,
-} from '../userDataTables';
+import { DISCOVER_USER_TABLES_SQL, USER_DATA_SCHEMAS, isExcluded, qualifiedName } from '../userDataTables';
 
 const ARCHIVE_VERSION = 1 as const;
 const INSERT_CHUNK_SIZE = 200;
@@ -310,9 +305,11 @@ export class UserDataPortabilityService {
   }
 
   private async discoverUserTables(): Promise<UserScopedTable[]> {
-    const discovered = (await this.dataSource.query(DISCOVER_USER_TABLES_SQL, [
-      USER_DATA_SCHEMAS,
-    ])) as Array<{ schema: string; table: string; user_column: string }>;
+    const discovered = (await this.dataSource.query(DISCOVER_USER_TABLES_SQL, [USER_DATA_SCHEMAS])) as Array<{
+      schema: string;
+      table: string;
+      user_column: string;
+    }>;
 
     return discovered
       .filter((row) => !isExcluded(row))
@@ -415,10 +412,7 @@ export class UserDataPortabilityService {
     };
   }
 
-  private async selectUserRows(
-    userId: string,
-    table: UserScopedTable,
-  ): Promise<Record<string, unknown>[]> {
+  private async selectUserRows(userId: string, table: UserScopedTable): Promise<Record<string, unknown>[]> {
     return this.dataSource.query(
       `SELECT * FROM "${table.schema}"."${table.table}" WHERE ${table.userColumn} = $1`,
       [userId],
@@ -430,10 +424,9 @@ export class UserDataPortabilityService {
     userId: string,
     table: UserScopedTable,
   ): Promise<void> {
-    await queryRunner.query(
-      `DELETE FROM "${table.schema}"."${table.table}" WHERE ${table.userColumn} = $1`,
-      [userId],
-    );
+    await queryRunner.query(`DELETE FROM "${table.schema}"."${table.table}" WHERE ${table.userColumn} = $1`, [
+      userId,
+    ]);
   }
 
   private async insertUserRows(
@@ -528,10 +521,7 @@ export class UserDataPortabilityService {
     return blobs;
   }
 
-  private async restoreFileBlobs(
-    context: UserServiceContext,
-    blobs: FileBlobSnapshot[],
-  ): Promise<number> {
+  private async restoreFileBlobs(context: UserServiceContext, blobs: FileBlobSnapshot[]): Promise<number> {
     let restored = 0;
 
     for (const blob of blobs) {
@@ -555,10 +545,7 @@ export class UserDataPortabilityService {
     return restored;
   }
 
-  private async setReplicationRole(
-    queryRunner: QueryRunner,
-    role: 'replica' | 'origin',
-  ): Promise<void> {
+  private async setReplicationRole(queryRunner: QueryRunner, role: 'replica' | 'origin'): Promise<void> {
     try {
       await queryRunner.query(`SET session_replication_role = '${role}'`);
     } catch (error) {

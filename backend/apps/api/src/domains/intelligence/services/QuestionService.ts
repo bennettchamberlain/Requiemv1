@@ -619,7 +619,9 @@ export class QuestionService {
     type CandidateRow = {
       id: string;
     };
-    const candidates = (await this.dataSource.query(GAP_AWARE_CANDIDATE_SQL, [userId])) satisfies Array<CandidateRow>;
+    const candidates = (await this.dataSource.query(GAP_AWARE_CANDIDATE_SQL, [
+      userId,
+    ])) satisfies Array<CandidateRow>;
 
     const candidate = candidates[0];
     if (!candidate) {

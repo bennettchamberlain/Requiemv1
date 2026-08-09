@@ -145,6 +145,11 @@ declare global {
     showSaveFilePicker?: (options?: {
       suggestedName?: string;
       types?: Array<{ description?: string; accept: Record<string, string[]> }>;
-    }) => Promise<{ createWritable: () => Promise<{ write: (chunk: Uint8Array) => Promise<void>; close: () => Promise<void> }> }>;
+    }) => Promise<{
+      createWritable: () => Promise<{
+        write: (chunk: Uint8Array) => Promise<void>;
+        close: () => Promise<void>;
+      }>;
+    }>;
   }
 }

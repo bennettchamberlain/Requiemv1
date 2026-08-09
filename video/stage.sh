@@ -35,7 +35,7 @@
 #   @ci/be-api                                       (node, :$API_PORT)
 #   @ci/fe-web  — Vite, proxies /api -> the API      (node, :$WEB_PORT)
 #
-# It does NOT start Temporal, MinIO, HBPE or the summary service. e2e.yml does
+# It does NOT start MinIO, HBPE or the summary service. e2e.yml does
 # not either, and nothing in this storyboard films them.
 #
 # ⚠️ RUN THIS AGAINST YOUR OWN CHECKOUT. It runs `yarn install` and drops a

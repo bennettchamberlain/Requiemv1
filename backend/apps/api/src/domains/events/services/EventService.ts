@@ -43,6 +43,19 @@ export abstract class EventService {
     options?: Omit<EventSendOptions, 'queue'>,
   ): Promise<void>;
 
+  /**
+   * Complete a job whose listener called `ack.defer()` — used by out-of-band
+   * completion paths (e.g. a webhook reporting that an external executor
+   * finished). No-op in implementations without a persistent queue.
+   */
+  abstract completeJob(queue: string, jobId: string, output?: Record<string, unknown>): Promise<void>;
+
+  /**
+   * Fail a deferred job so the queue's retry/dead-letter policy applies.
+   * The output is persisted with the job for diagnosis.
+   */
+  abstract failJob(queue: string, jobId: string, output?: Record<string, unknown>): Promise<void>;
+
   protected getRegisteredQueues(): Set<string> {
     const listeners = EventListenerRegistry.getListeners();
     const queues = new Set<string>();

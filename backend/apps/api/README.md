@@ -15,7 +15,7 @@ browser's `/api` prefix (Caddy under `make dev`).
 ## Getting started
 
 See the [repo README](../../../README.md) for prerequisites and `make dev`, which brings up
-the whole per-worktree stack (Postgres, MinIO, Temporal, hbpe/summary services, Caddy route,
+the whole per-worktree stack (Postgres, MinIO, hbpe/summary services, Caddy route,
 api + web dev servers). To run just this service against an already-running stack:
 
 ```bash

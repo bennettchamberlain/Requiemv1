@@ -20,6 +20,7 @@ import { PairingModule } from '@ci/domains/pairing';
 import { ParsingModule } from '@ci/domains/parsing';
 import { PlanningModule } from '@ci/domains/planning';
 import { PredictionsModule } from '@ci/domains/predictions';
+import { PythonFunctionsModule } from '@ci/domains/python-functions';
 import { ScheduleModule } from '@ci/domains/schedule';
 import { SearchNextModule } from '@ci/domains/search-next';
 import { SummariesModule } from '@ci/domains/summaries';
@@ -97,6 +98,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     ConnectionsModule,
     DeviceModule,
     PredictionsModule,
+    PythonFunctionsModule,
     ConversationModule,
     EntityResolutionModule,
     EtlModule,

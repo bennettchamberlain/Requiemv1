@@ -32,7 +32,6 @@ jobs:
       DATABASE_USERNAME: companion
       DATABASE_PASSWORD: comp4nion_1ntel_ftw!
       DATABASE_ADMIN_PASSWORD: pgadmin_s3cure!
-      ORCHESTRATOR_DATABASE_PASSWORD: t3mporal_ftw!
       DB_HOST_PORT: '5432'
       PORT: '3030'
       E2E_API_PORT: '3030'

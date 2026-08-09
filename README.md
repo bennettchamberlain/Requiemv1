@@ -244,7 +244,7 @@ make dev
 
 1. checks prerequisites (Node version, overmind, Caddy + its admin API on `:2019`, Ollama + required models);
 2. installs dependencies and builds the local service images;
-3. brings up this worktree's Docker stack — **PostgreSQL** (primary DB + PGBoss job queue), **Minio** (S3 object storage), **Temporal** (durable workflow orchestration), and the **summary** / **hbpe** services — preferring the conventional host ports when free and falling back to ephemeral ports otherwise, so multiple worktrees never collide;
+3. brings up this worktree's Docker stack — **PostgreSQL** (primary DB + PGBoss job queue), **Minio** (S3 object storage), and the **summary** / **hbpe** services — preferring the conventional host ports when free and falling back to ephemeral ports otherwise, so multiple worktrees never collide;
 4. runs database migrations;
 5. registers a **Caddy** route at `https://<project>.localhost` and runs the `api` + `web` dev servers via overmind, in the foreground.
 

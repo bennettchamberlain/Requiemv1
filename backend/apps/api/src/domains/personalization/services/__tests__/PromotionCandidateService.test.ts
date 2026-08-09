@@ -20,8 +20,16 @@ describe('PromotionCandidateService', () => {
   }
 
   it('does not create a second inferred_fact review while one is pending', async () => {
+    // No pending candidate matches this question, so the flow falls through to the
+    // has-any-pending-review gate, which reports one already open.
+    const queryBuilder = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue(null),
+    };
+
     const repository = {
-      createQueryBuilder: jest.fn(),
+      createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
       count: jest.fn().mockResolvedValue(1),
       create: jest.fn(),
       save: jest.fn(),

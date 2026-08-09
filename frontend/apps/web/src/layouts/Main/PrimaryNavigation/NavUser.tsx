@@ -1,14 +1,7 @@
 import { useMemo } from 'react';
 
 import { Avatar, DropdownMenu } from '@ci/shadcn';
-import {
-  ListTodo,
-  LogOut,
-  SunMoon,
-  Settings2,
-  Cable,
-  Palette,
-} from '@ci/shadcn/icons';
+import { ListTodo, LogOut, SunMoon, Settings2, Cable, Palette } from '@ci/shadcn/icons';
 import { Link, useLocation } from 'react-router-dom';
 
 import { useFeatures } from '@/common/feature';

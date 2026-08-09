@@ -7,22 +7,32 @@ import { SmartRotationWorkEvent } from '../../events';
 import { SMART_ROTATION_QUEUE } from '../../types';
 import { SmartRotationService } from '../SmartRotationService';
 
-function createService(overrides: {
-  dataSource?: { query: jest.Mock };
-  questionService?: Partial<QuestionService>;
-  eventService?: { send: jest.Mock };
-  featureService?: { isFeatureEnabled: jest.Mock };
-} = {}) {
+function createService(
+  overrides: {
+    dataSource?: { query: jest.Mock };
+    questionService?: Partial<QuestionService>;
+    eventService?: { send: jest.Mock };
+    featureService?: { isFeatureEnabled: jest.Mock };
+  } = {},
+) {
   const dataSource = overrides.dataSource ?? { query: jest.fn().mockResolvedValue([{ count: '0' }]) };
   const questionService = (overrides.questionService ?? {}) as QuestionService;
-  const eventService = (overrides.eventService ?? { send: jest.fn().mockResolvedValue(['job-1']) }) as unknown as EventService;
+  const eventService = (overrides.eventService ?? {
+    send: jest.fn().mockResolvedValue(['job-1']),
+  }) as unknown as EventService;
   const featureService = (overrides.featureService ?? {
     isFeatureEnabled: jest.fn().mockResolvedValue(true),
   }) as unknown as FeatureService;
   const logger = { setContext() {}, log() {}, warn() {}, error() {} } as unknown as LoggerService;
 
   return {
-    service: new SmartRotationService(dataSource as never, questionService, eventService, featureService, logger),
+    service: new SmartRotationService(
+      dataSource as never,
+      questionService,
+      eventService,
+      featureService,
+      logger,
+    ),
     dataSource,
     questionService,
     eventService,
@@ -43,6 +53,7 @@ describe('SmartRotationService.enqueueWork', () => {
       {
         queue: SMART_ROTATION_QUEUE,
         singletonKey: 'smart-rotation:user-1:question_feed',
+        priority: -2,
       },
     );
   });

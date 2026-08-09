@@ -174,8 +174,7 @@ export function useScheduleService(from: Date, to: Date): ScheduleResult {
   }, [refetch]);
 
   const fetching =
-    networkStatus === NetworkStatus.setVariables ||
-    (networkStatus === NetworkStatus.loading && data == null);
+    networkStatus === NetworkStatus.setVariables || (networkStatus === NetworkStatus.loading && data == null);
 
   return {
     events: data?.eventsInRange ?? [],

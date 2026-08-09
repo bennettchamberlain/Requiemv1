@@ -24,7 +24,10 @@ export class PersonalizationController {
 
   @Post('trust-mode')
   async updateTrustMode(@Context() context: RequestContext, @Body() body: { trustMode: TrustMode }) {
-    const profile = await this.personalizationService.updateTrustMode(toServiceContext(context), body.trustMode);
+    const profile = await this.personalizationService.updateTrustMode(
+      toServiceContext(context),
+      body.trustMode,
+    );
 
     return profile;
   }

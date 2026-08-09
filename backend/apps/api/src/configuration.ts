@@ -202,6 +202,14 @@ export const ConfigSchema = z.object({
     parser: z.object({
       host: z.string(),
     }),
+    /**
+     * Summary service API (function runner + manual triggers). Distinct from
+     * `parser`, which is the document-parsing app on a different port of the
+     * same container.
+     */
+    summary: z.object({
+      host: z.string().default('http://summary-service:8001'),
+    }),
   }),
   signalCli: z.object({
     restUrl: z.string(),

@@ -54,6 +54,12 @@ fi
 
 export DATABASE_URL
 
+# ── API JWT Secret ────────────────────────────────
+# Needed by the function runner to self-sign the JWT on run-completion
+# callbacks to the NestJS API. Same pattern as the HBPE entrypoint.
+: "${API_JWT_SECRET:=$(get_secret AUTH_TOKEN_SECRET)}"
+[ -n "$API_JWT_SECRET" ] && export API_JWT_SECRET
+
 # ── LLM ──────────────────────────────────────────
 # Only export when a key is actually configured. Exporting an empty string
 # would clobber the application-layer default ("ollama"), which Ollama ignores
@@ -63,10 +69,13 @@ export DATABASE_URL
 [ -n "$LLM_API_KEY" ] && export LLM_API_KEY
 
 # ── Start services ───────────────────────────────
+# Scheduling is owned by the NestJS API (pg-boss crons); background work
+# arrives through the summary API's /functions/run endpoint. There is no
+# separate worker process anymore.
 
 echo "Starting CI-Summary services..."
 
-# Start the FastAPI summary API in the background
+# Start the FastAPI summary API (manual triggers + function runner)
 echo "Starting FastAPI summary API server on port 8001..."
 uvicorn ci.summary.api:app --host 0.0.0.0 --port 8001 &
 API_PID=$!
@@ -76,24 +85,11 @@ echo "Starting FastAPI parser API server on port 8002..."
 uvicorn ci.summary.parser:app --host 0.0.0.0 --port 8002 &
 PARSER_PID=$!
 
-# Give the APIs a moment to start
-sleep 2
-
-# Start the Temporal worker
-echo "Starting Temporal worker..."
-python -m ci.summary.worker &
-WORKER_PID=$!
-
-# Run unified startup checks and setup
-# This waits for Temporal and then configures system schedules
-python -m ci.summary.startup &
-
-
 # Function to handle shutdown gracefully
 shutdown() {
     echo "Shutting down services..."
-    kill $API_PID $PARSER_PID $WORKER_PID 2>/dev/null || true
-    wait $API_PID $PARSER_PID $WORKER_PID 2>/dev/null || true
+    kill $API_PID $PARSER_PID 2>/dev/null || true
+    wait $API_PID $PARSER_PID 2>/dev/null || true
     exit 0
 }
 
@@ -101,4 +97,4 @@ shutdown() {
 trap shutdown SIGTERM SIGINT
 
 # Wait for all processes
-wait $API_PID $PARSER_PID $WORKER_PID
+wait $API_PID $PARSER_PID

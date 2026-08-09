@@ -11,10 +11,7 @@ import { FileChunkModal } from '@/components/modals/FileChunkModal/FileChunkModa
 import { useEntityService } from '../MemoryPage/useEntityService';
 
 import { EntityDetails } from './Components';
-import {
-  ExplorerToolbar,
-  MemorySearchField,
-} from './Components/ExplorerToolbar/ExplorerToolbar';
+import { ExplorerToolbar, MemorySearchField } from './Components/ExplorerToolbar/ExplorerToolbar';
 import { countActiveFilters } from './Components/ExplorerToolbar/filterParams';
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
@@ -87,42 +84,42 @@ export default function MobileMemoryPage() {
           </div>
 
           <MemoryHubShell fillHeight>
-          <div className="space-y-2">
-          <ExplorerToolbar open />
+            <div className="space-y-2">
+              <ExplorerToolbar open />
 
-          {/* Tab Navigation */}
-          <Tabs defaultValue="list" onValueChange={setActiveTab} value={activeTab}>
-            <Tabs.List className="grid grid-cols-4 w-full">
-              <Tabs.Trigger value="list" className="text-sm flex items-center gap-1">
-                <List className="h-4 w-4" />
-                List
-              </Tabs.Trigger>
-              <Tabs.Trigger value="map" className="text-sm flex items-center gap-1">
-                <MapIcon className="h-4 w-4" />
-                Map
-              </Tabs.Trigger>
-              <Tabs.Trigger value="gallery" className="text-sm flex items-center gap-1">
-                <Images className="h-4 w-4" />
-                Gallery
-              </Tabs.Trigger>
-              <Tabs.Trigger value="graph" className="text-sm flex items-center gap-1">
-                <ChartNetwork className="h-4 w-4" />
-                Graph
-              </Tabs.Trigger>
-            </Tabs.List>
-          </Tabs>
-        </div>
+              {/* Tab Navigation */}
+              <Tabs defaultValue="list" onValueChange={setActiveTab} value={activeTab}>
+                <Tabs.List className="grid grid-cols-4 w-full">
+                  <Tabs.Trigger value="list" className="text-sm flex items-center gap-1">
+                    <List className="h-4 w-4" />
+                    List
+                  </Tabs.Trigger>
+                  <Tabs.Trigger value="map" className="text-sm flex items-center gap-1">
+                    <MapIcon className="h-4 w-4" />
+                    Map
+                  </Tabs.Trigger>
+                  <Tabs.Trigger value="gallery" className="text-sm flex items-center gap-1">
+                    <Images className="h-4 w-4" />
+                    Gallery
+                  </Tabs.Trigger>
+                  <Tabs.Trigger value="graph" className="text-sm flex items-center gap-1">
+                    <ChartNetwork className="h-4 w-4" />
+                    Graph
+                  </Tabs.Trigger>
+                </Tabs.List>
+              </Tabs>
+            </div>
 
-        {/* Content */}
-        <>
-          {activeTab === 'list' && <ListView />}
+            {/* Content */}
+            <>
+              {activeTab === 'list' && <ListView />}
 
-          {activeTab === 'map' && <MobileMapView />}
+              {activeTab === 'map' && <MobileMapView />}
 
-          {activeTab === 'gallery' && <GalleryView />}
+              {activeTab === 'gallery' && <GalleryView />}
 
-          {activeTab === 'graph' && <GraphView variant="mobile" />}
-        </>
+              {activeTab === 'graph' && <GraphView variant="mobile" />}
+            </>
           </MemoryHubShell>
         </div>
       </PageContent>

@@ -41,9 +41,7 @@ export class PromotionCandidateEntity {
   updatedAt!: Date;
 }
 
-export type PromotionCandidate = Readonly<
-  Omit<PromotionCandidateEntity, 'createdAt' | 'updatedAt'>
-> & {
+export type PromotionCandidate = Readonly<Omit<PromotionCandidateEntity, 'createdAt' | 'updatedAt'>> & {
   createdAt: Date;
   updatedAt: Date;
 };

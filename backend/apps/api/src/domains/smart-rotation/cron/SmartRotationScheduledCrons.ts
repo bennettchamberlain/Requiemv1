@@ -60,7 +60,18 @@ export class SmartRotationSummariesCron {
   }
 }
 
-/** Graph relationship enrichment — every 6 hours. */
+/** Deterministic graph linking — extract people, link comms/events (Import Tools stages 4–6). */
+@Injectable()
+export class SmartRotationGraphLinkCron {
+  constructor(private readonly rotationService: SmartRotationService) {}
+
+  @Cron(SMART_ROTATION_CRONS.graph_link)
+  async run(): Promise<void> {
+    await this.rotationService.runScheduledWork('graph_link');
+  }
+}
+
+/** Graph relationship enrichment — every 6 hours when new memory exists. */
 @Injectable()
 export class SmartRotationGraphEnrichCron {
   constructor(private readonly rotationService: SmartRotationService) {}

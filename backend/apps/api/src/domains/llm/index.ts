@@ -42,7 +42,16 @@ import { OllamaService } from './services/OllamaService';
  * @internal
  */
 @Module({
-  imports: [ConversationModule, EventsModule, FilesModule, IntelligenceModule, MemoryModule, PersonalizationModule, SearchNextModule, ToolsModule],
+  imports: [
+    ConversationModule,
+    EventsModule,
+    FilesModule,
+    IntelligenceModule,
+    MemoryModule,
+    PersonalizationModule,
+    SearchNextModule,
+    ToolsModule,
+  ],
   providers: [
     AnswerInferenceCron,
     AnswerInferenceListener,

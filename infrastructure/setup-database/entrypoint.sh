@@ -44,14 +44,6 @@ export PGPASSWORD="$ADMIN_PASSWORD"
 : "${COMPANION_PASSWORD:=$(get_secret DATABASE_PASSWORD)}"
 : "${COMPANION_DATABASE:=$DEFAULT_COMPANION_DATABASE}"
 
-# ── Secrets: Orchestrator (Temporal) ─────────────
-
-: "${ORCHESTRATOR_USERNAME:=$(get_secret ORCHESTRATOR_DATABASE_USERNAME)}"
-: "${ORCHESTRATOR_USERNAME:=$DEFAULT_ORCHESTRATOR_USERNAME}"
-: "${ORCHESTRATOR_PASSWORD:=$(get_secret ORCHESTRATOR_DATABASE_PASSWORD)}"
-: "${ORCHESTRATOR_DATABASE:=$DEFAULT_ORCHESTRATOR_DATABASE}"
-: "${ORCHESTRATOR_VISIBILITY_DATABASE:=${ORCHESTRATOR_DATABASE}_visibility}"
-
 # ── Secrets: PowerSync (logical replication) ─────
 
 : "${POWERSYNC_USERNAME:=$(get_secret POWERSYNC_DATABASE_USERNAME)}"
@@ -96,16 +88,6 @@ if [ -z "$COMPANION_PASSWORD" ]; then
   echo ""
   echo "  1. Add DATABASE_PASSWORD to the secrets file at $SECRETS_FILE, or"
   echo "  2. Set the COMPANION_PASSWORD environment variable directly"
-  fail=1
-fi
-
-if [ -z "$ORCHESTRATOR_PASSWORD" ]; then
-  echo "Error: ORCHESTRATOR_PASSWORD is not set."
-  echo ""
-  echo "Please set the orchestrator database password in one of the following ways:"
-  echo ""
-  echo "  1. Add ORCHESTRATOR_DATABASE_PASSWORD to the secrets file at $SECRETS_FILE, or"
-  echo "  2. Set the ORCHESTRATOR_PASSWORD environment variable directly"
   fail=1
 fi
 
@@ -201,11 +183,6 @@ create_role     "$COMPANION_USERNAME"  "$COMPANION_PASSWORD"
 create_database "$COMPANION_DATABASE"  "$COMPANION_USERNAME"
 enable_extensions "$COMPANION_DATABASE" \
   timescaledb postgis vector pg_stat_statements btree_gist
-
-# Orchestrator (Temporal)
-create_role     "$ORCHESTRATOR_USERNAME"             "$ORCHESTRATOR_PASSWORD"
-create_database "$ORCHESTRATOR_DATABASE"             "$ORCHESTRATOR_USERNAME"
-create_database "$ORCHESTRATOR_VISIBILITY_DATABASE"  "$ORCHESTRATOR_USERNAME"
 
 # PowerSync (logical replication)
 #

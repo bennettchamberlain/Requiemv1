@@ -133,6 +133,24 @@ class Settings(BaseSettings):
         default_factory=lambda: int(os.getenv("SUMMARY_DOSSIER_MAX_CHARS", 4000))
     )
 
+    # Function runner (pg-boss dispatch from the NestJS API)
+    # Bounded worker pool size for /functions/run — replaces the Temporal
+    # high/medium/low task queues with a single concurrency limit.
+    function_runner_concurrency: int = Field(
+        default_factory=lambda: int(os.getenv("FUNCTION_RUNNER_CONCURRENCY", "2"))
+    )
+    # Base URL of the main application API; run-completion callbacks POST to
+    # {api_url}/function-runs/callback.
+    api_url: str = Field(
+        default_factory=lambda: os.getenv("API_URL", "http://api:3030")
+    )
+    # Shared JWT secret (AUTH_JWT_AUTHTOKENSECRET in the app). The runner
+    # self-signs callback JWTs with it — same pattern as HBPE's graphql_client.
+    api_jwt_secret: str = Field(default_factory=lambda: os.getenv("API_JWT_SECRET", ""))
+    api_jwt_expiry_seconds: int = Field(
+        default_factory=lambda: int(os.getenv("API_JWT_EXPIRY_SECONDS", "3600"))
+    )
+
     # Logging
     log_level: str = Field(
         default_factory=lambda: os.getenv("SUMMARY_LOG_LEVEL", "INFO")
@@ -140,42 +158,6 @@ class Settings(BaseSettings):
     debug_prompts: bool = Field(
         default_factory=lambda: (
             os.getenv("SUMMARY_DEBUG_PROMPTS", "false").lower() == "true"
-        )
-    )
-
-    # Temporal Configuration
-    temporal_address: str = Field(
-        default_factory=lambda: os.getenv("TEMPORAL_ADDRESS", "orchestrator:7233")
-    )
-    temporal_namespace: str = Field(
-        default_factory=lambda: os.getenv("TEMPORAL_NAMESPACE", "default")
-    )
-
-    # Task Queue Configuration (shared across all systems)
-    task_queue_high: str = Field(
-        default_factory=lambda: os.getenv("TEMPORAL_TASK_QUEUE_HIGH", "high")
-    )
-    task_queue_medium: str = Field(
-        default_factory=lambda: os.getenv("TEMPORAL_TASK_QUEUE_MEDIUM", "medium")
-    )
-    task_queue_low: str = Field(
-        default_factory=lambda: os.getenv("TEMPORAL_TASK_QUEUE_LOW", "low")
-    )
-
-    # Worker Concurrency Configuration
-    max_concurrent_activities_high: int = Field(
-        default_factory=lambda: int(
-            os.getenv("TEMPORAL_MAX_CONCURRENT_ACTIVITIES_HIGH", 5)
-        )
-    )
-    max_concurrent_activities_medium: int = Field(
-        default_factory=lambda: int(
-            os.getenv("TEMPORAL_MAX_CONCURRENT_ACTIVITIES_MEDIUM", 3)
-        )
-    )
-    max_concurrent_activities_low: int = Field(
-        default_factory=lambda: int(
-            os.getenv("TEMPORAL_MAX_CONCURRENT_ACTIVITIES_LOW", 1)
         )
     )
 

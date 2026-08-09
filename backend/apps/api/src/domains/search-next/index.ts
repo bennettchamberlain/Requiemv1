@@ -19,10 +19,7 @@ import { TagService } from './services/TagService';
  * @internal
  */
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([EntityTagEntity, TagEntity]),
-    EmbeddingModule,
-  ],
+  imports: [TypeOrmModule.forFeature([EntityTagEntity, TagEntity]), EmbeddingModule],
   providers: [SearchService, TagService],
   exports: [SearchService, TagService],
 })

@@ -7,7 +7,7 @@ import { LoggerService } from '@ci/common/logging';
 import { EXCLUDE_QUESTIONS_WITH_PENDING_INFERRED_REVIEW } from '@ci/common/persistence';
 import { Events, EventService, OnEvent } from '@ci/domains/events';
 import { QuestionService } from '@ci/domains/intelligence';
-import { GraphEnrichmentService } from '@ci/domains/maintenance';
+import { GraphEnrichmentService, MaintenanceOrchestratorService } from '@ci/domains/maintenance';
 import {
   CrossTableHydrationService,
   LifeContextService,
@@ -15,13 +15,12 @@ import {
   PromotionCandidateService,
   PromotionReviewService,
 } from '@ci/domains/personalization';
+import { PythonFunctionService } from '@ci/domains/python-functions';
 import { SuggestionSyncService } from '@ci/domains/schedule';
 
 import { SmartRotationWorkEvent, type SmartRotationWorkPayload } from '../events';
 import { ContextGapQuestionService } from '../services/ContextGapQuestionService';
-import { SummaryServiceClient } from '../services/SummaryServiceClient';
 import { SMART_ROTATION_QUEUE, type SmartRotationWorkType } from '../types';
-
 
 const FEED_QUEUE_LIMIT = 3;
 
@@ -32,8 +31,9 @@ export class SmartRotationListener {
     private readonly contextGapQuestionService: ContextGapQuestionService,
     private readonly eventService: EventService,
     private readonly suggestionSyncService: SuggestionSyncService,
-    private readonly summaryServiceClient: SummaryServiceClient,
+    private readonly pythonFunctionService: PythonFunctionService,
     private readonly graphEnrichmentService: GraphEnrichmentService,
+    private readonly maintenanceOrchestratorService: MaintenanceOrchestratorService,
     private readonly personalizationService: PersonalizationService,
     private readonly promotionCandidateService: PromotionCandidateService,
     private readonly promotionReviewService: PromotionReviewService,
@@ -114,28 +114,81 @@ export class SmartRotationListener {
           return;
         }
 
+        // Dispatch to the summary service via pg-boss (deferred completion +
+        // retries) instead of a blocking HTTP call. Personalization is
+        // resolved here because the trust dial lives app-side.
         const lifeContext = await this.lifeContextService.buildForUser(userId);
-        const result = await this.summaryServiceClient.generateInsights(userId, 'UTC', 72, {
-          trust_mode: lifeContext.trustMode,
-          insight_volume_multiplier: lifeContext.insightVolumeMultiplier,
-        });
+        const enqueued = await this.pythonFunctionService.dispatch(
+          'summary',
+          'insights_generation',
+          userId,
+          {
+            timezone: 'UTC',
+            lookback_hours: 72,
+            personalization: {
+              trust_mode: lifeContext.trustMode,
+              insight_volume_multiplier: lifeContext.insightVolumeMultiplier,
+            },
+          },
+          { singletonKey: `fn:insights_generation:${userId}:rotation` },
+        );
 
-        this.logger.log('Smart rotation insights', { userId, status: result.status, reason: result.reason });
+        this.logger.log('Smart rotation insights dispatched', { userId, enqueued });
 
         return;
       }
 
       case 'summaries': {
         const hoursSince = await this.hoursSinceLastSummary(userId);
-        const periodType = hoursSince == null || hoursSince >= 24 ? 'dossier' : 'hourly';
-        const result = await this.summaryServiceClient.triggerSummary(userId, periodType);
+        const stale = hoursSince == null || hoursSince >= 24;
+        const functionName = stale ? 'dossier_refresh' : 'hourly_summary';
 
-        this.logger.log('Smart rotation summary', { userId, periodType, status: result.status });
+        const enqueued = await this.pythonFunctionService.dispatch(
+          'summary',
+          functionName,
+          userId,
+          {},
+          { singletonKey: `fn:${functionName}:${userId}:rotation` },
+        );
+
+        this.logger.log('Smart rotation summary dispatched', { userId, functionName, enqueued });
+
+        return;
+      }
+
+      case 'graph_link': {
+        if (this.maintenanceOrchestratorService.isRunning(userId)) {
+          this.logger.log('Smart rotation graph link skipped — orchestrator busy', { userId });
+
+          return;
+        }
+
+        const summary = await this.maintenanceOrchestratorService.orchestrate(userId, {
+          stages: ['extract_people', 'link_communications', 'link_events'],
+          options: {
+            extractPeople: { windowDays: 30 },
+            linkCommunications: { windowDays: 14, windowLimit: 300 },
+            linkEvents: { pageSize: 500 },
+          },
+        });
+
+        this.logger.log('Smart rotation graph link', {
+          userId,
+          ok: summary.ok,
+          legs: summary.legs.map((leg) => ({ leg: leg.leg, ok: leg.ok })),
+        });
 
         return;
       }
 
       case 'graph_enrich': {
+        const hasNovelty = await this.lifeContextService.hasNoveltySinceLastRun(userId, 'graph_enrich');
+        if (!hasNovelty) {
+          this.logger.log('Smart rotation graph enrich skipped — no novelty', { userId });
+
+          return;
+        }
+
         const result = await this.graphEnrichmentService.enrich(userId, {
           maxCommunications: 20,
           maxEvents: 10,

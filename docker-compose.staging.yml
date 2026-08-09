@@ -68,6 +68,7 @@ services:
   hbpe-service:
     environment:
       DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+      API_URL: http://api:3030
       API_JWT_SECRET: ${AUTH_TOKEN_SECRET}
     devices:
       - /dev/kfd
@@ -82,18 +83,15 @@ services:
     ports:
       - 9000:9000
 
-  orchestrator:
-    environment:
-      DATABASE_PASSWORD: ${ORCHESTRATOR_DATABASE_PASSWORD}
-      DYNAMIC_CONFIG_FILE_PATH: /etc/temporal/config/dynamicconfig/local.yaml
-    volumes:
-      - ./infrastructure/orchestrator/dynamicconfig.yaml:/etc/temporal/config/dynamicconfig/local.yaml:ro
-
   summary-service:
     # Pass the shared LLM config from .env explicitly (not via env_file) so
     # host-oriented vars like DATABASE_HOST=localhost don't leak into the container.
     environment:
       DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+      # Function-run completion callbacks POST to the api service; the JWT
+      # secret must match AUTH_JWT_AUTHTOKENSECRET so the callback passes auth.
+      API_URL: http://api:3030
+      API_JWT_SECRET: ${AUTH_TOKEN_SECRET}
       LLM_API_BASE: ${LLM_API_BASE:-http://host.docker.internal:11434/v1}
       LLM_API_KEY: ${LLM_API_KEY:-ollama}
       # Unset by default: the summary service uses the Hub-injected model, or
@@ -127,14 +125,9 @@ services:
     environment:
       ADMIN_PASSWORD: ${DATABASE_ADMIN_PASSWORD}
       COMPANION_PASSWORD: ${DATABASE_PASSWORD}
-      ORCHESTRATOR_PASSWORD: ${ORCHESTRATOR_DATABASE_PASSWORD}
       # Unset means "skip the replication role", which leaves powersync unable to
       # authenticate. See infrastructure/powersync/README.md.
       POWERSYNC_PASSWORD: ${POWERSYNC_DATABASE_PASSWORD:-}
-
-  setup-orchestrator:
-    environment:
-      DATABASE_PASSWORD: ${ORCHESTRATOR_DATABASE_PASSWORD}
 
 volumes:
   db-data:

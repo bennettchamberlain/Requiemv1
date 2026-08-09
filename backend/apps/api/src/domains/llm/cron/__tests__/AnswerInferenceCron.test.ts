@@ -39,7 +39,9 @@ describe('AnswerInferenceCron with smart.rotation', () => {
       findUnansweredByUserId: jest.fn().mockResolvedValue(new Map()),
     } as unknown as QuestionService;
     const featureService = {
-      isFeatureEnabled: jest.fn().mockImplementation(async (key: string) => key === 'scheduled.answer.inferencing'),
+      isFeatureEnabled: jest
+        .fn()
+        .mockImplementation(async (key: string) => key === 'scheduled.answer.inferencing'),
     } as unknown as FeatureService;
     const logger = { setContext() {}, log() {} } as unknown as LoggerService;
 
@@ -62,14 +64,22 @@ describe('AnswerInferenceCron with smart.rotation', () => {
       findUnansweredByUserId: jest.fn().mockResolvedValue(new Map([['user-1', ['q-1']]])),
     } as unknown as QuestionService;
     const featureService = {
-      isFeatureEnabled: jest.fn().mockImplementation(async (key: string) => key === 'scheduled.answer.inferencing'),
+      isFeatureEnabled: jest
+        .fn()
+        .mockImplementation(async (key: string) => key === 'scheduled.answer.inferencing'),
     } as unknown as FeatureService;
     const logger = { setContext() {}, log() {} } as unknown as LoggerService;
     const pendingReviewService = {
       hasPendingInferredFactReview: jest.fn().mockResolvedValue(true),
     } as unknown as PromotionCandidateService;
 
-    const cron = new AnswerInferenceCron(eventService, questionService, pendingReviewService, logger, featureService);
+    const cron = new AnswerInferenceCron(
+      eventService,
+      questionService,
+      pendingReviewService,
+      logger,
+      featureService,
+    );
 
     await cron.cronInferAnswers();
 

@@ -39,10 +39,8 @@ export API_REPO ?= ci/api
 export DATABASE_REPO ?= ci/database
 export GATEWAY_REPO ?= ci/gateway
 export OBJECT_STORE_REPO ?= ci/object-store
-export ORCHESTRATOR_REPO ?= ci/orchestrator
 export SETUP_SECRETS_REPO ?= ci/setup-secrets
 export SETUP_DATABASE_REPO ?= ci/setup-database
-export SETUP_ORCHESTRATOR_REPO ?= ci/setup-orchestrator
 export SUMMARY_REPO ?= ci/summary-service
 export HBPE_REPO ?= ci/hbpe-service
 
@@ -58,9 +56,7 @@ export TAG ?= $(shell git describe --tags --exact-match 2>/dev/null)
 LICENSE_DIRS := \
 	infrastructure/database \
 	infrastructure/object-store \
-	infrastructure/orchestrator \
 	infrastructure/setup-database \
-	infrastructure/setup-orchestrator \
 	infrastructure/setup-secrets
 
 # Helper: emoji $(2) when goal $(1) is the one invoked at top level, else ➤.
@@ -141,7 +137,7 @@ REBUILD ?=
 # Images built for ENV=local — must match the `build` recipe's local set
 # (api/gateway/setup-secrets are NOT built for local).
 LOCAL_IMAGES := $(SETUP_DATABASE_REPO) $(DATABASE_REPO) $(OBJECT_STORE_REPO) \
-	$(SETUP_ORCHESTRATOR_REPO) $(ORCHESTRATOR_REPO) $(SUMMARY_REPO) $(HBPE_REPO)
+	$(SUMMARY_REPO) $(HBPE_REPO)
 
 VALID_ENVS := local staging production
 VALID_GPUS := cpu cuda rocm
@@ -258,12 +254,6 @@ build: ## Build images. ENV=local|staging|production (default local) GPU=cpu|cud
 
 	@printf "\n➤ Building object store image...\n\n"
 	@docker build -f infrastructure/object-store/Dockerfile $(call versioned_tag,$(OBJECT_STORE_REPO)) -t $(OBJECT_STORE_REPO):latest infrastructure/object-store
-
-	@printf "\n➤ Building orchestrator setup image...\n\n"
-	@docker build -f infrastructure/setup-orchestrator/Dockerfile $(call versioned_tag,$(SETUP_ORCHESTRATOR_REPO)) -t $(SETUP_ORCHESTRATOR_REPO):latest infrastructure/setup-orchestrator
-
-	@printf "\n➤ Building orchestrator image...\n\n"
-	@docker build -f infrastructure/orchestrator/Dockerfile $(call versioned_tag,$(ORCHESTRATOR_REPO)) -t $(ORCHESTRATOR_REPO):latest infrastructure/orchestrator
 
 	@# setup-secrets is only built for production
 	@if [ "$(ENV)" = "production" ]; then printf "\n➤ Building setup secrets image...\n\n" && docker build -f infrastructure/setup-secrets/Dockerfile $(call versioned_tag,$(SETUP_SECRETS_REPO)) -t $(SETUP_SECRETS_REPO):latest infrastructure/setup-secrets ; fi

@@ -36,13 +36,9 @@ export function HowYoudDoItCard({
           <Sparkles className="h-4 w-4 text-foreground/70" strokeWidth={1.5} />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            How you’d do it
-          </p>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">How you’d do it</p>
           <h3 className="text-[15px] font-semibold leading-snug text-foreground">{result.task.title}</h3>
-          {result.task.goal && (
-            <p className="mt-0.5 text-xs text-muted-foreground">{result.task.goal}</p>
-          )}
+          {result.task.goal && <p className="mt-0.5 text-xs text-muted-foreground">{result.task.goal}</p>}
         </div>
         <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
           {Math.round(result.confidence * 100)}%
@@ -70,8 +66,8 @@ export function HowYoudDoItCard({
         </ol>
       ) : (
         <p className="mb-3 text-[13px] text-muted-foreground">
-          Not enough signal to personalize confidently yet — answer the follow-ups below or correct
-          what Companion knows about you.
+          Not enough signal to personalize confidently yet — answer the follow-ups below or correct what
+          Companion knows about you.
         </p>
       )}
 

@@ -4,7 +4,9 @@ describe('PersonalizationService.decide for inferred_fact', () => {
   it('cautious always asks before saving inferred answers', () => {
     const profile = PersonalizationService.profileForTrustMode('cautious');
 
-    expect(PersonalizationService.decide(profile, { kind: 'inferred_fact', confidence: 0.95 })).toBe('review');
+    expect(PersonalizationService.decide(profile, { kind: 'inferred_fact', confidence: 0.95 })).toBe(
+      'review',
+    );
     expect(PersonalizationService.decide(profile, { kind: 'inferred_fact', confidence: 0.5 })).toBe('review');
   });
 
@@ -12,7 +14,9 @@ describe('PersonalizationService.decide for inferred_fact', () => {
     const profile = PersonalizationService.profileForTrustMode('balanced');
 
     expect(PersonalizationService.decide(profile, { kind: 'inferred_fact', confidence: 0.9 })).toBe('auto');
-    expect(PersonalizationService.decide(profile, { kind: 'inferred_fact', confidence: 0.75 })).toBe('review');
+    expect(PersonalizationService.decide(profile, { kind: 'inferred_fact', confidence: 0.75 })).toBe(
+      'review',
+    );
     expect(PersonalizationService.decide(profile, { kind: 'inferred_fact', confidence: 0.5 })).toBe('review');
   });
 

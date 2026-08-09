@@ -14,8 +14,9 @@ from pydantic import BaseModel, Field
 
 from ci.telemetry import init_telemetry
 
-from . import __version__, workflow_control
+from . import __version__, functions
 from .data_aggregator import aggregator
+from .runner import router as runner_router
 
 # No-op unless SENTRY_DSN is set — see telemetry.py.
 init_telemetry("ci-server-summary")
@@ -26,8 +27,11 @@ nest_asyncio.apply()
 app = FastAPI(
     title="CI Summary API",
     version=__version__,
-    description="Manual summary triggers and data aggregation.",
+    description="Manual summary triggers, background function runner, and data aggregation.",
 )
+
+# pg-boss function runner: POST /functions/run, GET /runs/{id}
+app.include_router(runner_router)
 
 
 # ============================================================================
@@ -57,58 +61,40 @@ async def _trigger_summary_workflow(
     lookback_days: int | None = None,
 ) -> dict[str, Any]:
     """
-    Trigger summary generation workflow via Temporal.
-
-    This ensures all summary generation goes through the same code path
-    with proper durability, retries, and visibility.
+    Run summary generation directly (same functions the pg-boss scheduler
+    dispatches through the runner). Kept synchronous for debugging/manual use.
     """
-    from temporalio.client import Client
+    if period_type == "dossier":
+        return await functions.dossier_refresh(
+            user_id,
+            end_time=end_time,
+            timezone=timezone,
+            lookback_days=lookback_days or 30,
+        )
 
-    from .config import settings
-    from .priority import Priority, get_task_queue
+    if period_type == "hourly":
+        return await functions.hourly_summary(
+            user_id, start_time=start_time, end_time=end_time, timezone=timezone
+        )
 
-    client = await Client.connect(
-        settings.temporal_address,
-        namespace=settings.temporal_namespace,
-    )
-
-    now = datetime.utcnow()
-
-    # Map period_type to workflow name
-    workflow_map = {
-        "hourly": "hourly-summary",
-        "daily": "daily-summary",
-        "weekly": "weekly-summary",
-        "monthly": "monthly-summary",
-        "dossier": "dossier-refresh",
+    rollups = {
+        "daily": functions.daily_summary,
+        "weekly": functions.weekly_summary,
+        "monthly": functions.monthly_summary,
     }
+    rollup = rollups.get(period_type)
 
-    workflow_name = workflow_map.get(period_type)
-    if not workflow_name:
+    if not rollup:
         raise ValueError(f"Unknown period_type: {period_type}")
 
-    workflow_id = f"{period_type}-{user_id}-{now.isoformat()}"
-
-    # Build args based on workflow type
-    if period_type == "dossier":
-        args = [user_id, end_time, timezone, lookback_days or 30, None]
-    else:
-        args = [user_id, start_time, end_time, timezone, None]
-
-    # Start the workflow and wait for result
-    result = await client.execute_workflow(
-        workflow_name,
-        args=args,
-        id=workflow_id,
-        task_queue=get_task_queue(Priority.HIGH),  # API-triggered = high priority
+    return await rollup(
+        user_id, start_time=start_time, end_time=end_time, timezone=timezone
     )
-
-    return result
 
 
 @app.post("/summary/manual-trigger")
 async def manual_trigger_summary(request: ManualSummaryRequest) -> dict[str, Any]:
-    """Manually trigger summary generation via Temporal workflow."""
+    """Manually trigger summary generation (runs inline)."""
     try:
         user_id = uuid.UUID(request.user_id)
     except ValueError as exc:
@@ -176,7 +162,7 @@ class DossierFetchRequest(BaseModel):
 
 @app.post("/dossier/refresh")
 async def refresh_dossier(request: DossierRefreshRequest) -> dict[str, Any]:
-    """Manually refresh user dossier via Temporal workflow."""
+    """Manually refresh user dossier (runs inline)."""
     try:
         user_id = uuid.UUID(request.user_id)
     except ValueError as exc:
@@ -259,41 +245,19 @@ async def _trigger_insights_workflow(
     trust_mode: str | None = None,
     insight_volume_multiplier: float | None = 1.0,
 ) -> dict[str, Any]:
-    """
-    Trigger the InsightsGenerationWorkflow via Temporal.
-
-    This ensures all insight generation goes through the same code path
-    with proper durability, retries, and visibility.
-    """
-    from datetime import datetime
-
-    from temporalio.client import Client
-
-    from .config import settings
-    from .priority import Priority, get_task_queue
-
-    client = await Client.connect(
-        settings.temporal_address,
-        namespace=settings.temporal_namespace,
-    )
-
-    now = datetime.utcnow()
-    workflow_id = f"insights-{user_id}-{now.isoformat()}"
-
+    """Run insights generation directly (same function pg-boss dispatches)."""
     personalization_config = {
         "trust_mode": trust_mode,
         "insight_volume_multiplier": insight_volume_multiplier or 1.0,
     }
 
-    # Start the workflow and wait for result
-    result = await client.execute_workflow(
-        "insights-generation",
-        args=[user_id, timezone, lookback_hours, personalization_config, force],
-        id=workflow_id,
-        task_queue=get_task_queue(Priority.HIGH),  # API-triggered = high priority
+    return await functions.insights_generation(
+        user_id,
+        timezone=timezone,
+        lookback_hours=lookback_hours,
+        personalization=personalization_config,
+        force=force,
     )
-
-    return result
 
 
 async def _trigger_actions_workflow(
@@ -301,36 +265,14 @@ async def _trigger_actions_workflow(
     timezone: str,
     lookback_hours: int,
 ) -> dict[str, Any]:
-    """
-    Trigger the ActionsGenerationWorkflow via Temporal.
-    """
+    """Run actions generation directly (same function pg-boss dispatches)."""
     import math
-    from datetime import datetime
-
-    from temporalio.client import Client
-
-    from .config import settings
-    from .priority import Priority, get_task_queue
-
-    client = await Client.connect(
-        settings.temporal_address,
-        namespace=settings.temporal_namespace,
-    )
-
-    now = datetime.utcnow()
-    workflow_id = f"actions-{user_id}-{now.isoformat()}"
 
     lookback_days = max(1, math.ceil(lookback_hours / 24))
 
-    # Start the workflow and wait for result
-    result = await client.execute_workflow(
-        "actions-generation",
-        args=[user_id, timezone, lookback_days, None],
-        id=workflow_id,
-        task_queue=get_task_queue(Priority.HIGH),
+    return await functions.actions_generation(
+        user_id, timezone=timezone, lookback_days=lookback_days
     )
-
-    return result
 
 
 @app.post("/insights/generate")
@@ -500,97 +442,6 @@ async def get_aggregate_preview(request: ManualSummaryRequest) -> dict[str, Any]
         "end_time": end_time.isoformat(),
         "aggregated_data": aggregated,
     }
-
-
-# ============================================================================
-# Workflow Control (for LLM resource management)
-# ============================================================================
-
-
-class CancelWorkflowsRequest(BaseModel):
-    workflow_types: list[str] | None = Field(
-        default=None,
-        description="Workflow types to cancel (hourly, daily, weekly, monthly, dossier). If None, cancels all.",
-    )
-
-
-class CancelUserWorkflowsRequest(BaseModel):
-    user_id: str = Field(description="User ID whose workflows to cancel")
-    workflow_types: list[str] | None = Field(
-        default=None,
-        description="Workflow types to cancel. If None, cancels all user workflows.",
-    )
-
-
-@app.post("/workflows/cancel-system")
-async def cancel_system_workflows_endpoint(
-    request: CancelWorkflowsRequest,
-) -> dict[str, Any]:
-    """
-    Cancel running system workflows to free up LLM resources for high-priority work.
-
-    Use this when critical LLM operations need immediate access and background
-    summarization can be paused.
-    """
-    try:
-        results = await workflow_control.cancel_system_workflows(request.workflow_types)
-        return {
-            "status": "success",
-            "message": "System workflow cancellation requested",
-            "results": results,
-        }
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Cancellation failed: {exc!s}"
-        ) from exc
-
-
-@app.post("/workflows/cancel-user")
-async def cancel_user_workflows_endpoint(
-    request: CancelUserWorkflowsRequest,
-) -> dict[str, Any]:
-    """
-    Cancel running workflows for a specific user.
-
-    Use this to stop background processing for a particular user when needed.
-    """
-    try:
-        user_id_uuid = uuid.UUID(request.user_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=f"Invalid user_id: {exc}") from exc
-
-    try:
-        results = await workflow_control.cancel_user_workflows(
-            str(user_id_uuid), request.workflow_types
-        )
-        return {
-            "status": "success",
-            "message": f"User workflow cancellation requested for {request.user_id}",
-            "results": results,
-        }
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Cancellation failed: {exc!s}"
-        ) from exc
-
-
-@app.get("/workflows/status")
-async def get_workflow_status() -> dict[str, Any]:
-    """
-    Get information about currently running workflows.
-
-    Useful for monitoring LLM resource usage and deciding when to cancel workflows.
-    """
-    try:
-        workflow_counts = await workflow_control.get_running_workflows()
-        return {
-            "status": "success",
-            "workflows": workflow_counts,
-        }
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Status fetch failed: {exc!s}"
-        ) from exc
 
 
 # ============================================================================

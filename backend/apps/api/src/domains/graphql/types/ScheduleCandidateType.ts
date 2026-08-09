@@ -68,7 +68,7 @@ export class ScheduleCandidateType {
 
   @Field(() => GraphQLJSONObject, {
     nullable: true,
-    description: 'Saved how-you\'d-do-it compose for this card, when the user has personalized it',
+    description: "Saved how-you'd-do-it compose for this card, when the user has personalized it",
   })
   personalization!: Record<string, unknown> | null;
 

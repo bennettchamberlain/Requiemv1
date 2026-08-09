@@ -37,17 +37,6 @@ class Settings(BaseSettings):
     # ── Database ──────────────────────────────────────────────────────────────
     database_url: str = Field(default_factory=_get_database_url)
 
-    # ── Temporal ──────────────────────────────────────────────────────────────
-    temporal_address: str = Field(
-        default_factory=lambda: os.getenv("TEMPORAL_ADDRESS", "orchestrator:7233")
-    )
-    temporal_namespace: str = Field(
-        default_factory=lambda: os.getenv("TEMPORAL_NAMESPACE", "default")
-    )
-    task_queue: str = Field(
-        default_factory=lambda: os.getenv("HBPE_TASK_QUEUE", "hbpe")
-    )
-
     # ── Model artifacts ───────────────────────────────────────────────────────
     # In Docker: set MODELS_DIR=/app/models (backed by a named volume).
     # Locally (dev/test): falls back to .cache/hbpe-models/ at the repo root
@@ -110,6 +99,14 @@ class Settings(BaseSettings):
     # How long each service JWT lives (default 24 h).
     api_jwt_expiry_seconds: int = Field(
         default_factory=lambda: int(os.getenv("API_JWT_EXPIRY_SECONDS", "86400"))
+    )
+
+    # ── Function runner (pg-boss dispatch from the NestJS API) ───────────────
+    # Worker pool size for /functions/run. Defaults to 1: labeling shares a
+    # single-flight llama.cpp context and training is CPU-saturating, so
+    # concurrent pipeline runs only thrash.
+    function_runner_concurrency: int = Field(
+        default_factory=lambda: int(os.getenv("FUNCTION_RUNNER_CONCURRENCY", "1"))
     )
 
     # ── API ───────────────────────────────────────────────────────────────────

@@ -5,7 +5,7 @@
 [project]
 name = "ci-summary"
 version = "0.1.0"
-description = "CI-Summary: Temporal Summarization Service with Durable Workflows"
+description = "CI-Summary: Summarization service driven by the pg-boss function runner"
 requires-python = ">=3.11"
 dependencies = [
     # Database
@@ -17,8 +17,9 @@ dependencies = [
     "pydantic-ai",
     "httpx",
 
-    # Workflow Orchestration
-    "temporalio",
+    # Function-runner callback auth — self-sign service JWTs with the shared
+    # secret (same pattern as ci-hbpe's graphql_client).
+    "PyJWT>=2.13.0",
 
     # Environment & Configuration
     "python-dotenv",

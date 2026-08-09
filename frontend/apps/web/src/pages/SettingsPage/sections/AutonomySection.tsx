@@ -74,8 +74,8 @@ export function AutonomySection() {
       <div className="mb-6">
         <h2 className="text-xl font-semibold">Autonomy</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Control how much Companion does on its own — graph growth, inferred answers, schedule suggestions, and feed
-          actions all respect this setting.
+          Control how much Companion does on its own — graph growth, inferred answers, schedule suggestions,
+          and feed actions all respect this setting.
         </p>
       </div>
 

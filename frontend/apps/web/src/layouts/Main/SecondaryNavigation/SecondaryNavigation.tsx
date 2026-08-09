@@ -1,7 +1,18 @@
 import type { ReactNode } from 'react';
 
 import { Tooltip } from '@ci/shadcn';
-import { BookOpen, Brain, CalendarRange, ChartColumn, LifeBuoy, Inbox, ListTodo, MessagesSquare, NotebookPen, FolderSearch2 } from '@ci/shadcn/icons';
+import {
+  BookOpen,
+  Brain,
+  CalendarRange,
+  ChartColumn,
+  LifeBuoy,
+  Inbox,
+  ListTodo,
+  MessagesSquare,
+  NotebookPen,
+  FolderSearch2,
+} from '@ci/shadcn/icons';
 
 import { useFeatures } from '@/common/feature';
 

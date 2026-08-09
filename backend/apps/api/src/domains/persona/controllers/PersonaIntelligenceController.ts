@@ -14,10 +14,7 @@ import { ValidationPipe } from '@ci/common/pipes';
 
 import { AboutYouService } from '../services/AboutYouService';
 import { AgentHarnessService } from '../services/AgentHarnessService';
-import {
-  PersonaComposeService,
-  type HowYoudDoItResult,
-} from '../services/PersonaComposeService';
+import { PersonaComposeService, type HowYoudDoItResult } from '../services/PersonaComposeService';
 
 const howYoudDoItSchema = z.object({
   task: z.string().min(1).max(4000),

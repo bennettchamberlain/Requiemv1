@@ -3,11 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Button, Card, Textarea } from '@ci/shadcn';
 import { Loader2, UserRound } from '@ci/shadcn/icons';
 
-import {
-  fetchAboutYou,
-  submitAboutYouCorrection,
-  type AboutYouView,
-} from '@/api/usePersonaCompose';
+import { fetchAboutYou, submitAboutYouCorrection, type AboutYouView } from '@/api/usePersonaCompose';
 import { useAuth } from '@/hooks';
 
 export function AboutYouSection() {
@@ -86,16 +82,16 @@ export function AboutYouSection() {
           <h2 className="text-lg font-semibold">About you</h2>
         </div>
         <p className="text-sm text-muted-foreground">
-          How Companion currently understands you — used to personalize “How you’d do it”. Wrong?
-          Correct it below.
+          How Companion currently understands you — used to personalize “How you’d do it”. Wrong? Correct it
+          below.
         </p>
       </div>
 
       {!view?.hasSignal && (
         <Card className="mb-4 border-dashed">
           <Card.Content className="p-4 text-sm text-muted-foreground">
-            Still thin — answer questions on the Feed, or add a correction below so Companion has
-            something to work with.
+            Still thin — answer questions on the Feed, or add a correction below so Companion has something to
+            work with.
           </Card.Content>
         </Card>
       )}
@@ -104,18 +100,14 @@ export function AboutYouSection() {
         <section className="mb-6 space-y-2">
           <h3 className="text-sm font-medium">Dossier</h3>
           <p className="text-sm leading-relaxed text-foreground/90">{view.dossier.summary}</p>
-          {view.dossier.tone && (
-            <p className="text-xs text-muted-foreground">Tone: {view.dossier.tone}</p>
-          )}
+          {view.dossier.tone && <p className="text-xs text-muted-foreground">Tone: {view.dossier.tone}</p>}
           {view.dossier.personalityTraits && view.dossier.personalityTraits.length > 0 && (
             <p className="text-xs text-muted-foreground">
               Traits: {view.dossier.personalityTraits.join(', ')}
             </p>
           )}
           {view.dossier.challenges && view.dossier.challenges.length > 0 && (
-            <p className="text-xs text-muted-foreground">
-              Challenges: {view.dossier.challenges.join(', ')}
-            </p>
+            <p className="text-xs text-muted-foreground">Challenges: {view.dossier.challenges.join(', ')}</p>
           )}
         </section>
       )}
@@ -165,9 +157,7 @@ export function AboutYouSection() {
           <ul className="space-y-3">
             {view.recentAnswers.slice(0, 5).map((answer) => (
               <li key={answer.id} className="rounded-lg border border-border p-3">
-                {answer.question && (
-                  <p className="mb-1 text-xs text-muted-foreground">{answer.question}</p>
-                )}
+                {answer.question && <p className="mb-1 text-xs text-muted-foreground">{answer.question}</p>}
                 <p className="text-sm text-foreground/90">{answer.answer}</p>
               </li>
             ))}
@@ -178,8 +168,7 @@ export function AboutYouSection() {
       <section>
         <h3 className="mb-2 text-sm font-medium">Something wrong?</h3>
         <p className="mb-2 text-xs text-muted-foreground">
-          Tell Companion what to correct. This becomes a first-person answer used in the next
-          personalization.
+          Tell Companion what to correct. This becomes a first-person answer used in the next personalization.
         </p>
         <Textarea
           value={correction}
@@ -194,9 +183,7 @@ export function AboutYouSection() {
             disabled={saving || correction.trim().length === 0}
             onClick={() => void handleCorrection()}
           >
-            {saving ? (
-              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" strokeWidth={1.5} />
-            ) : null}
+            {saving ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" strokeWidth={1.5} /> : null}
             Save correction
           </Button>
           {savedNote && <span className="text-xs text-muted-foreground">{savedNote}</span>}

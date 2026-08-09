@@ -4,12 +4,13 @@ import { z } from 'zod';
 import { type RequestContext, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { OllamaService, PROMPT_MODEL } from '@ci/domains/llm';
-import { CandidateService, USER_AUTHORED_GENERATOR_PREFIX, type CreateCandidateDto } from '@ci/domains/schedule';
-
 import {
-  PersonaContextPackService,
-  type PersonaEvidence,
-} from './PersonaContextPackService';
+  CandidateService,
+  USER_AUTHORED_GENERATOR_PREFIX,
+  type CreateCandidateDto,
+} from '@ci/domains/schedule';
+
+import { PersonaContextPackService, type PersonaEvidence } from './PersonaContextPackService';
 
 const MAX_INPUT_CHARS = 4000;
 const COMPOSE_TIMEOUT_MS = 45_000;
@@ -161,8 +162,7 @@ export class PersonaComposeService {
       const result: HowYoudDoItResult = {
         task: normalized,
         personaBrief:
-          who.personaBrief ||
-          'Companion does not know enough about you yet to personalize this confidently.',
+          who.personaBrief || 'Companion does not know enough about you yet to personalize this confidently.',
         approach: [],
         people: [],
         evidence: who.evidence,
@@ -233,10 +233,7 @@ export class PersonaComposeService {
     const proposals: CreateCandidateDto[] = result.approach.map((step, index) => ({
       title: step.title.slice(0, 120),
       description: step.detail,
-      rationale: [
-        result.personaBrief.slice(0, 240),
-        result.timing ? `Timing: ${result.timing}` : null,
-      ]
+      rationale: [result.personaBrief.slice(0, 240), result.timing ? `Timing: ${result.timing}` : null]
         .filter(Boolean)
         .join('\n'),
       rationale_sources: [
@@ -300,18 +297,25 @@ ${task}
 `;
 
     try {
-      const response = await this.ollamaService.chat(
-        context,
-        [{ role: 'user', content: prompt }],
-        { model: PROMPT_MODEL, enableTools: false, format: TASK_NORM_JSON_SCHEMA, signal },
-      );
+      const response = await this.ollamaService.chat(context, [{ role: 'user', content: prompt }], {
+        model: PROMPT_MODEL,
+        enableTools: false,
+        format: TASK_NORM_JSON_SCHEMA,
+        signal,
+      });
       const parsed = taskNormSchema.safeParse(JSON.parse(stripFences(response.message.content)));
       if (parsed.success && parsed.data.title.trim()) {
         return {
           title: parsed.data.title.trim().slice(0, 120),
           goal: parsed.data.goal?.trim() || undefined,
-          openQuestions: (parsed.data.openQuestions ?? []).map((q) => q.trim()).filter(Boolean).slice(0, 5),
-          constraints: (parsed.data.constraints ?? []).map((c) => c.trim()).filter(Boolean).slice(0, 5),
+          openQuestions: (parsed.data.openQuestions ?? [])
+            .map((q) => q.trim())
+            .filter(Boolean)
+            .slice(0, 5),
+          constraints: (parsed.data.constraints ?? [])
+            .map((c) => c.trim())
+            .filter(Boolean)
+            .slice(0, 5),
         };
       }
     } catch (err) {
@@ -375,11 +379,12 @@ ${pack.markdown}
 
     let personaBrief = '';
     try {
-      const response = await this.ollamaService.chat(
-        context,
-        [{ role: 'user', content: prompt }],
-        { model: PROMPT_MODEL, enableTools: false, format: WHO_SYNTH_JSON_SCHEMA, signal: options.signal },
-      );
+      const response = await this.ollamaService.chat(context, [{ role: 'user', content: prompt }], {
+        model: PROMPT_MODEL,
+        enableTools: false,
+        format: WHO_SYNTH_JSON_SCHEMA,
+        signal: options.signal,
+      });
       const parsed = whoSynthSchema.safeParse(JSON.parse(stripFences(response.message.content)));
       if (parsed.success) {
         personaBrief = parsed.data.personaBrief.trim();
@@ -441,11 +446,12 @@ Open questions: ${(task.openQuestions ?? []).join('; ') || '(none)'}
 `;
 
     try {
-      const response = await this.ollamaService.chat(
-        context,
-        [{ role: 'user', content: prompt }],
-        { model: PROMPT_MODEL, enableTools: false, format: HOW_YOU_JSON_SCHEMA, signal },
-      );
+      const response = await this.ollamaService.chat(context, [{ role: 'user', content: prompt }], {
+        model: PROMPT_MODEL,
+        enableTools: false,
+        format: HOW_YOU_JSON_SCHEMA,
+        signal,
+      });
       const parsed = howYouSchema.safeParse(JSON.parse(stripFences(response.message.content)));
       if (parsed.success) {
         const approach: HowYoudDoItStep[] = [];
@@ -468,8 +474,14 @@ Open questions: ${(task.openQuestions ?? []).join('; ') || '(none)'}
         return {
           approach,
           timing: parsed.data.timing?.trim() || undefined,
-          people: (parsed.data.people ?? []).map((p) => p.trim()).filter(Boolean).slice(0, 8),
-          followUps: (parsed.data.followUps ?? []).map((q) => q.trim()).filter(Boolean).slice(0, 5),
+          people: (parsed.data.people ?? [])
+            .map((p) => p.trim())
+            .filter(Boolean)
+            .slice(0, 8),
+          followUps: (parsed.data.followUps ?? [])
+            .map((q) => q.trim())
+            .filter(Boolean)
+            .slice(0, 5),
           confidence: clampConfidence(parsed.data.confidence),
         };
       }

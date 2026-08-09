@@ -18,8 +18,7 @@ import { CandidateService } from '../CandidateService';
  * Opt-in: set `SCHEDULE_TEST_DATABASE_URL` (or `PLANNING_TEST_DATABASE_URL`) to
  * a database with migrations applied.
  */
-const DATABASE_URL =
-  process.env.SCHEDULE_TEST_DATABASE_URL ?? process.env.PLANNING_TEST_DATABASE_URL;
+const DATABASE_URL = process.env.SCHEDULE_TEST_DATABASE_URL ?? process.env.PLANNING_TEST_DATABASE_URL;
 const describeWithDb = DATABASE_URL ? describe : describe.skip;
 
 describeWithDb('CandidateService — accept / returnToSlate lifecycle (integration)', () => {
@@ -104,9 +103,7 @@ describeWithDb('CandidateService — accept / returnToSlate lifecycle (integrati
     expect(candidate.status).toBe('accepted');
     expect(candidate.promotedEventId).toBe(event.id);
 
-    const eventRow = await dataSource.query('SELECT event_id FROM ci.events WHERE event_id = $1', [
-      event.id,
-    ]);
+    const eventRow = await dataSource.query('SELECT event_id FROM ci.events WHERE event_id = $1', [event.id]);
     expect(eventRow).toHaveLength(1);
 
     const returned = await candidateService.returnToSlate(ctx, event.id);
@@ -114,9 +111,7 @@ describeWithDb('CandidateService — accept / returnToSlate lifecycle (integrati
     expect(returned.status).toBe('open');
     expect(returned.promotedEventId).toBeNull();
 
-    const gone = await dataSource.query('SELECT event_id FROM ci.events WHERE event_id = $1', [
-      event.id,
-    ]);
+    const gone = await dataSource.query('SELECT event_id FROM ci.events WHERE event_id = $1', [event.id]);
     expect(gone).toHaveLength(0);
   });
 });

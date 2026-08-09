@@ -13,7 +13,6 @@ COPY --chmod=755 entrypoint.sh /usr/local/bin/entrypoint.sh
 # Required (no default — will not start without these):
 #   ADMIN_PASSWORD             PostgreSQL superuser password
 #   COMPANION_PASSWORD         Companion API role password
-#   ORCHESTRATOR_PASSWORD      Temporal role password
 #
 # Optional:
 #   ADMIN_HOST                 PostgreSQL host [database]
@@ -21,8 +20,6 @@ COPY --chmod=755 entrypoint.sh /usr/local/bin/entrypoint.sh
 #   ADMIN_USERNAME             PostgreSQL superuser name [postgres]
 #   COMPANION_DATABASE         Companion database name [companion]
 #   COMPANION_USERNAME         Companion role name [companion]
-#   ORCHESTRATOR_DATABASE      Temporal database name [temporal]
-#   ORCHESTRATOR_USERNAME      Temporal role name [temporal]
 #   POWERSYNC_PASSWORD         PowerSync replication role password — the role is
 #                              skipped entirely when unset
 #   POWERSYNC_USERNAME         PowerSync replication role name [powersync]
@@ -36,8 +33,6 @@ ENV DEFAULT_ADMIN_USERNAME=postgres \
     DEFAULT_HOST=database \
     DEFAULT_COMPANION_USERNAME=companion \
     DEFAULT_COMPANION_DATABASE=companion \
-    DEFAULT_ORCHESTRATOR_USERNAME=temporal \
-    DEFAULT_ORCHESTRATOR_DATABASE=temporal \
     DEFAULT_POWERSYNC_USERNAME=powersync
 
 ENTRYPOINT ["entrypoint.sh"]

@@ -6,6 +6,7 @@ import { FeatureService } from '@ci/common/feature';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { HbpeService } from '@ci/domains/predictions';
+import { PythonFunctionService } from '@ci/domains/python-functions';
 import { UserService } from '@ci/domains/user';
 
 import { DueForecastType } from '../types/DueForecastType';
@@ -17,6 +18,7 @@ import { WeekForecastType } from '../types/WeekForecastType';
 export class ForecastResolver {
   constructor(
     private readonly hbpeService: HbpeService,
+    private readonly pythonFunctionService: PythonFunctionService,
     private readonly userService: UserService,
     private readonly featureService: FeatureService,
     private readonly logger: LoggerService,
@@ -102,6 +104,25 @@ export class ForecastResolver {
       return 'error';
     }
 
-    return this.hbpeService.triggerPipeline(context.userId);
+    try {
+      // The nightly pipeline covers cold start too: its bootstrap check trains
+      // the model when the checkpoint is missing or stale. Routed through
+      // pg-boss so the run gets retries and shows up in the jobs monitor.
+      const enqueued = await this.pythonFunctionService.dispatch(
+        'hbpe',
+        'nightly',
+        context.userId,
+        {},
+        {
+          singletonKey: `fn:nightly:${context.userId}:manual`,
+        },
+      );
+
+      return enqueued ? 'triggered' : 'already_running';
+    } catch (err) {
+      this.logger.error('HBPE trigger dispatch failed', err instanceof Error ? err : new Error(String(err)));
+
+      return 'error';
+    }
   }
 }

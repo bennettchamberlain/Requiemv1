@@ -1,12 +1,11 @@
 """
-Nightly Runner — Temporal workflow that orchestrates the nightly HBPE pipeline.
+Nightly Runner — step functions for the nightly HBPE pipeline.
 
-Job order:
+Job order (orchestrated by ci.hbpe.functions.nightly, dispatched from the
+NestJS pg-boss scheduler through the function runner):
   1. label_unlabeled      long-running — run QwenLabeler on any events/content
                                          that arrived without labels. CPU-bound;
-                                         relies on heartbeats, not a wall-clock
-                                         timeout, so a large backlog can drain
-                                         over hours without being cancelled.
+                                         a large backlog can drain over hours.
   2. l1_stale_sweep       < 30 sec    — deactivate L1 clusters unused for 90 days.
   3. l2_stale_sweep       < 30 sec    — deactivate L2 clusters unused for 90 days.
   4. lora_fine_tune       <  5 min    — per-user LoRA adapter update.
@@ -19,17 +18,13 @@ Job order:
   5. drift_detection                  [Phase 5 stub]
   6. cache_invalidation               [Phase 5 stub]
 
-Each step is a separate Temporal activity with fail-continue semantics:
-one user's error does not block others.
+Each step has fail-continue semantics in the orchestrator: one step's error
+does not block subsequent steps.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
-
-from temporalio import activity, workflow
-from temporalio.common import RetryPolicy
 
 log = logging.getLogger(__name__)
 
@@ -37,9 +32,7 @@ log = logging.getLogger(__name__)
 def __getattr__(name: str):
     # Lazily re-export the Phase 5a backfill entry point so callers can reach it
     # via this module (``from ci.pipeline.nightly_runner import
-    # backfill_prediction_actuals``) without importing psycopg2 at module load —
-    # keeping the Temporal workflow-sandbox reimport of this file DB-free, as the
-    # other activities do with their in-body imports.
+    # backfill_prediction_actuals``) without importing psycopg2 at module load.
     if name == "backfill_prediction_actuals":
         from ci.hbpe.pipeline.actuals_backfill import backfill_prediction_actuals
 
@@ -47,48 +40,24 @@ def __getattr__(name: str):
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-_RETRY = RetryPolicy(maximum_attempts=2, backoff_coefficient=2.0)
-_ACTIVITY_TIMEOUT = timedelta(minutes=5)
-_SWEEP_TIMEOUT = timedelta(seconds=60)  # single-row UPDATEs — 60s is plenty
-
-# CPU-only labeling of a large backlog is intentionally long-running, so the
-# label activities use an effectively-unbounded start_to_close and rely on
-# heartbeats for liveness: _run_inference heartbeats every ~30s from the
-# activity context, so a stuck/dead worker is detected within _HEARTBEAT_TIMEOUT
-# while a legitimately long run is never cancelled mid-batch.
-_LABEL_TIMEOUT = timedelta(hours=24)
-_HEARTBEAT_TIMEOUT = timedelta(minutes=2)
-
-# (Re)bootstrap steps are CPU-bound with no heartbeat — generous ceilings so a
-# full retrain on drift is never cancelled prematurely (matches BootstrapHBPEWorkflow).
-_SERIALIZE_TIMEOUT = timedelta(hours=1)
-_TRAIN_TIMEOUT = timedelta(hours=6)
-_EXPORT_TIMEOUT = timedelta(hours=1)
-_LORA_TIMEOUT = timedelta(hours=1)
-
 # On-device inference (Qwen via llama.cpp) runs on a single-worker executor so
-# blocking label work never runs concurrently — neither across users' nightly
-# workflows nor when a timed-out attempt's thread is still draining as Temporal
-# starts a retry. Concurrent use of the shared llama.cpp context corrupts its KV
-# cache and aborts the process (GGML_ASSERT). The executor is created lazily on
-# first use (inside the async helper, on the event-loop thread) so the workflow
-# sandbox — which re-imports this module — never spawns threads at import time.
+# blocking label work never runs concurrently across users' nightly runs.
+# Concurrent use of the shared llama.cpp context corrupts its KV cache and
+# aborts the process (GGML_ASSERT). The executor is created lazily on first use
+# (inside the async helper, on the event-loop thread) so importing this module
+# never spawns threads.
 _INFERENCE_EXECUTOR = None
 
 
-async def _run_inference(fn, heartbeat_interval: float = 30.0):
+async def _run_inference(fn):
     """
     Run a blocking inference function on the single-flight inference executor.
 
     ``fn(should_stop)`` receives a ``threading.Event`` it should poll between
-    items. If the activity is cancelled (e.g. its heartbeat timed out or the
-    workflow was cancelled), we set the event so the abandoned thread stops at
-    the next item boundary instead of zombie-running the rest of the batch —
-    bounding wasted work and freeing the single executor slot for the retry.
-
-    While the blocking work runs, we heartbeat from the activity context (this
-    event-loop coroutine, never the worker thread) every ``heartbeat_interval``
-    seconds, keeping a long CPU-bound run alive under its heartbeat_timeout.
+    items. If the surrounding task is cancelled, we set the event so the
+    abandoned thread stops at the next item boundary instead of zombie-running
+    the rest of the batch — bounding wasted work and freeing the single
+    executor slot.
     """
     import asyncio
     import threading
@@ -104,18 +73,7 @@ async def _run_inference(fn, heartbeat_interval: float = 30.0):
     loop = asyncio.get_event_loop()
     fut = loop.run_in_executor(_INFERENCE_EXECUTOR, fn, should_stop)
     try:
-        while True:
-            try:
-                # shield: a heartbeat-interval timeout must not cancel the work.
-                return await asyncio.wait_for(
-                    asyncio.shield(fut), timeout=heartbeat_interval
-                )
-            except TimeoutError:
-                try:
-                    activity.heartbeat()
-                except Exception:
-                    # Not inside a Temporal activity (e.g. unit tests) — ignore.
-                    pass
+        return await asyncio.shield(fut)
     except asyncio.CancelledError:
         should_stop.set()
         raise
@@ -124,7 +82,6 @@ async def _run_inference(fn, heartbeat_interval: float = 30.0):
 # ── Step 1 — Label unlabeled events and content ────────────────────────────────
 
 
-@activity.defn(name="label_unlabeled")
 async def label_unlabeled(user_id: str) -> dict:
     """
     Step 1: Assign L0/L1 to any events and L0/L1/L2 to any content items
@@ -202,7 +159,6 @@ async def label_unlabeled(user_id: str) -> dict:
 # ── Step 1b — Label hourly summaries ──────────────────────────────────────────
 
 
-@activity.defn(name="label_summary_tokens")
 async def label_summary_tokens(user_id: str) -> dict:
     """
     Step 1b: Label yesterday's hourly summaries with L0+L1 via Qwen.
@@ -226,7 +182,6 @@ async def label_summary_tokens(user_id: str) -> dict:
 # ── Step 2 — L1 staleness sweep ────────────────────────────────────────────────
 
 
-@activity.defn(name="l1_stale_sweep")
 async def l1_stale_sweep(user_id: str) -> int:
     """Step 2: Deactivate L1 clusters with no activity in staleness_days."""
     import asyncio
@@ -242,7 +197,6 @@ async def l1_stale_sweep(user_id: str) -> int:
 # ── Step 3 — L2 staleness sweep ────────────────────────────────────────────────
 
 
-@activity.defn(name="l2_stale_sweep")
 async def l2_stale_sweep(user_id: str) -> int:
     """Step 3: Deactivate L2 clusters with no activity in staleness_days."""
     import asyncio
@@ -258,7 +212,6 @@ async def l2_stale_sweep(user_id: str) -> int:
 # ── Step 4 — LoRA fine-tune ────────────────────────────────────────────────────
 
 
-@activity.defn(name="lora_fine_tune")
 async def lora_fine_tune(user_id: str) -> dict:
     """
     Step 4: Fine-tune the per-user LoRA adapter on yesterday's token stream.
@@ -287,7 +240,6 @@ async def lora_fine_tune(user_id: str) -> dict:
     return await asyncio.get_event_loop().run_in_executor(None, _run)
 
 
-@activity.defn(name="needs_bootstrap")
 async def needs_bootstrap(user_id: str) -> dict:
     """
     Decide whether the user needs a (re)bootstrap before LoRA fine-tune.
@@ -336,7 +288,6 @@ async def needs_bootstrap(user_id: str) -> dict:
 # ── Step 4b — Backfill prediction actuals (Phase 5a / T5.1) ─────────────────────
 
 
-@activity.defn(name="backfill_actuals")
 async def backfill_actuals(user_id: str) -> dict:
     """
     Step 4b: Fill hbpe.prediction_log.actual_l0/l1/l2 for elapsed forecast
@@ -360,7 +311,6 @@ async def backfill_actuals(user_id: str) -> dict:
 # ── Step 4c — Recurrence profiles (week/month-horizon forecasts) ───────────────
 
 
-@activity.defn(name="recurrence_profile")
 async def recurrence_profile(user_id: str) -> dict:
     """
     Step 4c: Rebuild hbpe.recurrence_profiles from token_stream history
@@ -386,210 +336,11 @@ async def recurrence_profile(user_id: str) -> dict:
 # ── Phase 5 stubs ──────────────────────────────────────────────────────────────
 
 
-@activity.defn(name="drift_detection")
 async def drift_detection(user_id: str) -> str:
     log.info("drift_detection: stub — Phase 5 (user=%s)", user_id)
     return "skipped"
 
 
-@activity.defn(name="cache_invalidation")
 async def cache_invalidation(user_id: str) -> str:
     log.info("cache_invalidation: stub — Phase 5 (user=%s)", user_id)
     return "skipped"
-
-
-# ── Workflow ───────────────────────────────────────────────────────────────────
-
-
-@workflow.defn(name="NightlyHBPEWorkflow")
-class NightlyHBPEWorkflow:
-    """
-    Temporal workflow: runs the nightly HBPE pipeline per user.
-
-    Fail-continue semantics: each step is attempted independently.
-    A step failure logs the error and does not block subsequent steps.
-    """
-
-    def __init__(self) -> None:
-        self._step = "queued"
-
-    @workflow.query
-    def current_step(self) -> str:
-        return self._step
-
-    @workflow.run
-    async def run(self, user_id: str) -> dict:
-        results: dict = {"user_id": user_id, "steps": {}}
-
-        # Step 1 — label unlabeled events/content
-        self._step = "label"
-        results["steps"]["step1_label"] = await _safe_execute(
-            workflow.execute_activity(
-                label_unlabeled,
-                user_id,
-                start_to_close_timeout=_LABEL_TIMEOUT,
-                heartbeat_timeout=_HEARTBEAT_TIMEOUT,
-                retry_policy=_RETRY,
-            ),
-            "step1_label",
-        )
-
-        # Step 1b — label hourly summaries
-        self._step = "label_summaries"
-        results["steps"]["step1b_summaries"] = await _safe_execute(
-            workflow.execute_activity(
-                label_summary_tokens,
-                user_id,
-                start_to_close_timeout=_LABEL_TIMEOUT,
-                heartbeat_timeout=_HEARTBEAT_TIMEOUT,
-                retry_policy=_RETRY,
-            ),
-            "step1b_summaries",
-        )
-
-        # Step 2 — L1 staleness
-        self._step = "l1_sweep"
-        results["steps"]["step2_l1_stale"] = await _safe_execute(
-            workflow.execute_activity(
-                l1_stale_sweep,
-                user_id,
-                start_to_close_timeout=_SWEEP_TIMEOUT,
-                retry_policy=_RETRY,
-            ),
-            "step2_l1_stale",
-        )
-
-        # Step 3 — L2 staleness
-        self._step = "l2_sweep"
-        results["steps"]["step3_l2_stale"] = await _safe_execute(
-            workflow.execute_activity(
-                l2_stale_sweep,
-                user_id,
-                start_to_close_timeout=_SWEEP_TIMEOUT,
-                retry_policy=_RETRY,
-            ),
-            "step3_l2_stale",
-        )
-
-        # Step 3b — (re)bootstrap the per-user HMT model when it is missing or its
-        # L1 vocab has drifted from the saved checkpoint. Without a checkpoint
-        # matching the current vocab, lora_fine_tune can't load the model (the
-        # size mismatch behind CI-Server-ad4). These activities are shared with
-        # BootstrapHBPEWorkflow and called by name to avoid importing that module.
-        self._step = "bootstrap_check"
-        boot_check = await _safe_execute(
-            workflow.execute_activity(
-                needs_bootstrap,
-                user_id,
-                start_to_close_timeout=_SWEEP_TIMEOUT,
-                retry_policy=_RETRY,
-            ),
-            "bootstrap_check",
-        )
-        results["steps"]["bootstrap_check"] = boot_check
-
-        if boot_check.get("result", {}).get("needs"):
-            self._step = "serialize"
-            results["steps"]["serialize"] = await _safe_execute(
-                workflow.execute_activity(
-                    "serialize_token_stream",
-                    user_id,
-                    start_to_close_timeout=_SERIALIZE_TIMEOUT,
-                    retry_policy=RetryPolicy(maximum_attempts=1),
-                ),
-                "serialize",
-            )
-
-            self._step = "train"
-            results["steps"]["train"] = await _safe_execute(
-                workflow.execute_activity(
-                    "train_hmt_model",
-                    user_id,
-                    start_to_close_timeout=_TRAIN_TIMEOUT,
-                    retry_policy=RetryPolicy(maximum_attempts=1),
-                ),
-                "train",
-            )
-
-            self._step = "export"
-            results["steps"]["export"] = await _safe_execute(
-                workflow.execute_activity(
-                    "calibrate_and_export_onnx",
-                    user_id,
-                    start_to_close_timeout=_EXPORT_TIMEOUT,
-                    retry_policy=RetryPolicy(maximum_attempts=1),
-                ),
-                "export",
-            )
-
-        # Step 4 — LoRA fine-tune
-        self._step = "lora"
-        results["steps"]["step4_lora"] = await _safe_execute(
-            workflow.execute_activity(
-                lora_fine_tune,
-                user_id,
-                start_to_close_timeout=_LORA_TIMEOUT,
-                retry_policy=RetryPolicy(maximum_attempts=1),
-            ),
-            "step4_lora",
-        )
-
-        # Step 4b — backfill prediction_log actuals for elapsed forecast windows
-        self._step = "backfill_actuals"
-        results["steps"]["step4b_backfill_actuals"] = await _safe_execute(
-            workflow.execute_activity(
-                backfill_actuals,
-                user_id,
-                start_to_close_timeout=_SWEEP_TIMEOUT,
-                retry_policy=_RETRY,
-            ),
-            "step4b_backfill_actuals",
-        )
-
-        # Step 4c — rebuild recurrence profiles + occurrence actuals
-        self._step = "recurrence"
-        results["steps"]["step4c_recurrence"] = await _safe_execute(
-            workflow.execute_activity(
-                recurrence_profile,
-                user_id,
-                start_to_close_timeout=_ACTIVITY_TIMEOUT,
-                retry_policy=_RETRY,
-            ),
-            "step4c_recurrence",
-        )
-
-        # Step 5 — drift detection (stub)
-        self._step = "drift"
-        results["steps"]["step5_drift"] = await _safe_execute(
-            workflow.execute_activity(
-                drift_detection,
-                user_id,
-                start_to_close_timeout=_ACTIVITY_TIMEOUT,
-                retry_policy=RetryPolicy(maximum_attempts=1),
-            ),
-            "step5_drift",
-        )
-
-        # Step 6 — cache invalidation (stub)
-        self._step = "cache"
-        results["steps"]["step6_cache"] = await _safe_execute(
-            workflow.execute_activity(
-                cache_invalidation,
-                user_id,
-                start_to_close_timeout=_ACTIVITY_TIMEOUT,
-                retry_policy=RetryPolicy(maximum_attempts=1),
-            ),
-            "step6_cache",
-        )
-
-        self._step = "done"
-        return results
-
-
-async def _safe_execute(coro, step_name: str):
-    """Await coro; on exception return error dict instead of raising."""
-    try:
-        return {"status": "ok", "result": await coro}
-    except Exception as exc:
-        log.exception("Nightly step %s failed", step_name)
-        return {"status": "error", "error": str(exc)}

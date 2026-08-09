@@ -68,8 +68,7 @@ export function ListView() {
     Boolean(searchParams.get('search')?.trim()),
   );
   const groups = useMemo(() => (grouped ? groupEntitiesByBucket(data) : null), [grouped, data]);
-  const filteredBrowse =
-    countActiveFilters(searchParams) > 0 || Boolean(searchParams.get('search')?.trim());
+  const filteredBrowse = countActiveFilters(searchParams) > 0 || Boolean(searchParams.get('search')?.trim());
 
   // Every row opens the same shared details drawer (incl. File/Item media).
   const renderRow = (item: EntityItem) => {

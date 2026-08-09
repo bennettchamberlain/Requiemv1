@@ -429,85 +429,85 @@ export function PeoplePage() {
     content = (
       <PageContent ref={scrollRef} className="gap-4 p-0">
         <MemoryHubShell>
-        <div className="flex flex-col gap-4 px-4 pb-4">
-        <div className="flex items-center gap-2">
-          <Input
-            placeholder="Search people and communications..."
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              // New query, new cursor space — a stale failure must not gate it.
-              setLoadMoreError(null);
-            }}
-            className="max-w-xl flex-1"
-          />
-          <div className="text-sm text-muted-foreground">{totalCount} people</div>
-        </div>
-
-        {duplicatesError && (
-          <div className="text-sm text-muted-foreground">
-            Duplicate suggestions are unavailable right now ({duplicatesError.message}).
-          </div>
-        )}
-
-        {duplicateGroups.length > 0 && (
-          <Card>
-            <Card.Header>
-              <Card.Title className="flex items-center gap-2 text-base">
-                <Merge className="h-4 w-4" />
-                Possible duplicates
-              </Card.Title>
-              <Card.Description>
-                These people share an email, phone number or name. Review and merge the ones that are the same
-                person.
-              </Card.Description>
-            </Card.Header>
-            <Card.Content className="flex flex-col gap-3">
-              {duplicateGroups.map((group) => (
-                <DuplicateGroupCard
-                  key={`${group.reason}:${group.value}`}
-                  group={group}
-                  onMerged={onMerged}
-                />
-              ))}
-            </Card.Content>
-          </Card>
-        )}
-
-        {people.length === 0 ? (
-          <EmptyState message="No people found" />
-        ) : (
-          <>
-            <div className="flex flex-col gap-2">
-              {people.map((person) => (
-                <PersonRow
-                  key={person.id}
-                  person={person}
-                  onOpen={() => navigate(`/people/${GlobalUID.parse('person', person.id)}`)}
-                />
-              ))}
+          <div className="flex flex-col gap-4 px-4 pb-4">
+            <div className="flex items-center gap-2">
+              <Input
+                placeholder="Search people and communications..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  // New query, new cursor space — a stale failure must not gate it.
+                  setLoadMoreError(null);
+                }}
+                className="max-w-xl flex-1"
+              />
+              <div className="text-sm text-muted-foreground">{totalCount} people</div>
             </div>
 
-            {hasNextPage && loadMoreError == null && <div ref={sentinelRef} className="h-8" />}
-
-            {loadMoreError != null && (
-              <div className="flex flex-col items-center gap-2 py-3">
-                <div className="text-sm text-muted-foreground">
-                  Couldn&apos;t load more people: {loadMoreError}
-                </div>
-                <Button variant="outline" size="sm" onClick={() => setLoadMoreError(null)}>
-                  Try again
-                </Button>
+            {duplicatesError && (
+              <div className="text-sm text-muted-foreground">
+                Duplicate suggestions are unavailable right now ({duplicatesError.message}).
               </div>
             )}
 
-            <div className="py-3 text-center text-xs text-muted-foreground">
-              {people.length} of {totalCount} loaded
-              {loadingMore ? ' · loading…' : hasNextPage ? '' : ' · end'}
-            </div>
-          </>
-        )}
-        </div>
+            {duplicateGroups.length > 0 && (
+              <Card>
+                <Card.Header>
+                  <Card.Title className="flex items-center gap-2 text-base">
+                    <Merge className="h-4 w-4" />
+                    Possible duplicates
+                  </Card.Title>
+                  <Card.Description>
+                    These people share an email, phone number or name. Review and merge the ones that are the
+                    same person.
+                  </Card.Description>
+                </Card.Header>
+                <Card.Content className="flex flex-col gap-3">
+                  {duplicateGroups.map((group) => (
+                    <DuplicateGroupCard
+                      key={`${group.reason}:${group.value}`}
+                      group={group}
+                      onMerged={onMerged}
+                    />
+                  ))}
+                </Card.Content>
+              </Card>
+            )}
+
+            {people.length === 0 ? (
+              <EmptyState message="No people found" />
+            ) : (
+              <>
+                <div className="flex flex-col gap-2">
+                  {people.map((person) => (
+                    <PersonRow
+                      key={person.id}
+                      person={person}
+                      onOpen={() => navigate(`/people/${GlobalUID.parse('person', person.id)}`)}
+                    />
+                  ))}
+                </div>
+
+                {hasNextPage && loadMoreError == null && <div ref={sentinelRef} className="h-8" />}
+
+                {loadMoreError != null && (
+                  <div className="flex flex-col items-center gap-2 py-3">
+                    <div className="text-sm text-muted-foreground">
+                      Couldn&apos;t load more people: {loadMoreError}
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => setLoadMoreError(null)}>
+                      Try again
+                    </Button>
+                  </div>
+                )}
+
+                <div className="py-3 text-center text-xs text-muted-foreground">
+                  {people.length} of {totalCount} loaded
+                  {loadingMore ? ' · loading…' : hasNextPage ? '' : ' · end'}
+                </div>
+              </>
+            )}
+          </div>
         </MemoryHubShell>
       </PageContent>
     );

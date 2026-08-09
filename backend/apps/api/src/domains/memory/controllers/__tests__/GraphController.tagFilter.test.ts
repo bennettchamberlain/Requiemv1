@@ -302,7 +302,13 @@ describe('GraphController — explorer filters (graph parity)', () => {
       const getNodes = jest.fn(async () => []); // cap missed both matches
       const getNodesByIds = jest.fn(async () => [
         { entity_id: 'person-node', entity_type: 'Person', name: 'P', description: null, properties: {} },
-        { entity_id: 'place-node', entity_type: 'Place', name: 'Q', description: null, properties: {} },
+        {
+          entity_id: 'place-node',
+          entity_type: 'Location',
+          name: 'Q',
+          description: null,
+          properties: {},
+        },
       ]);
 
       const { controller } = setup({ getEntitiesForTags, getEntityIdsByTagSources, getNodes, getNodesByIds });

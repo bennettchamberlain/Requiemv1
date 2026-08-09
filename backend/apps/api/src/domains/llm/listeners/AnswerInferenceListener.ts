@@ -102,7 +102,8 @@ Rules:
           resolvedAnswers.length > 0
             ? `Related questions the user already answered:\n\n${resolvedAnswers
                 .map(
-                  (answer) => `Question: ${answer.question?.text ?? '(unspecified)'}\nAnswer: ${answer.answer}`,
+                  (answer) =>
+                    `Question: ${answer.question?.text ?? '(unspecified)'}\nAnswer: ${answer.answer}`,
                 )
                 .join('\n\n')}`
             : 'No related prior answers were found — rely on the dossier only.',

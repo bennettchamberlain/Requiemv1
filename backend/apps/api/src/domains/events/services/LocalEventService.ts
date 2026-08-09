@@ -145,6 +145,18 @@ export class LocalEventService extends EventService implements BeforeApplication
     }
   }
 
+  // No persistent queue to complete against — deferred jobs were already
+  // released inline (defer resolves like done here), so this is a no-op.
+  async completeJob(queue: string, jobId: string): Promise<void> {
+    this.logger.debug(`completeJob(${queue}, ${jobId}) is a no-op for LocalEventService`);
+  }
+
+  async failJob(queue: string, jobId: string, output?: Record<string, unknown>): Promise<void> {
+    this.logger.warn(
+      `failJob(${queue}, ${jobId}) is a no-op for LocalEventService${output ? `: ${JSON.stringify(output)}` : ''}`,
+    );
+  }
+
   private trackJob(promise: Promise<string[]>) {
     this.pendingJobs.push(promise);
 
@@ -178,10 +190,18 @@ export class LocalEventService extends EventService implements BeforeApplication
           reject(error);
         };
 
+        // Inline execution has no persistent job to leave active, so a defer
+        // simply releases the caller — the external executor's webhook will hit
+        // completeJob(), which is a no-op here.
+        const defer = () => {
+          this.logger.log(`Deferred job ${job.id} for event ${name} (inline: treated as done)`);
+          resolve();
+        };
+
         const queueSpecificEventName = `${name}:${queue}`;
 
         if (this.eventEmitter.hasListeners(queueSpecificEventName)) {
-          this.eventEmitter.emit(queueSpecificEventName, resolvedData, { done, fail });
+          this.eventEmitter.emit(queueSpecificEventName, resolvedData, { done, fail, defer });
         } else {
           this.logger.log(`No listeners for event ${name} in queue ${queue}`);
           resolve();
