@@ -2252,6 +2252,7 @@ export type SavedSearchEdge = Edge & {
 
 export type SavedSearchFiltersInput = {
   connectors?: InputMaybe<Array<Scalars['String']['input']>>;
+  datePreset?: InputMaybe<Scalars['String']['input']>;
   endTime?: InputMaybe<Scalars['String']['input']>;
   eventTypes?: InputMaybe<Array<Scalars['String']['input']>>;
   hasLocation?: InputMaybe<Scalars['Boolean']['input']>;
@@ -2266,6 +2267,7 @@ export type SavedSearchFiltersInput = {
 export type SavedSearchFiltersType = {
   __typename?: 'SavedSearchFiltersType';
   connectors?: Maybe<Array<Scalars['String']['output']>>;
+  datePreset?: Maybe<Scalars['String']['output']>;
   endTime?: Maybe<Scalars['String']['output']>;
   eventTypes?: Maybe<Array<Scalars['String']['output']>>;
   hasLocation?: Maybe<Scalars['Boolean']['output']>;
@@ -3417,7 +3419,7 @@ export type GetSavedSearchQueryVariables = Exact<{
 }>;
 
 
-export type GetSavedSearchQuery = { __typename?: 'Query', savedSearch?: { __typename?: 'SavedSearchType', id: string, name?: string | null, description?: string | null, query?: string | null, entityTypes?: Array<string> | null, tags?: Array<string> | null, filters?: { __typename?: 'SavedSearchFiltersType', eventTypes?: Array<string> | null, startTime?: string | null, endTime?: string | null, sortBy?: string | null, sortOrder?: string | null, connectors?: Array<string> | null, people?: Array<string> | null, places?: Array<string> | null, hasLocation?: boolean | null, semantic?: boolean | null } | null } | null };
+export type GetSavedSearchQuery = { __typename?: 'Query', savedSearch?: { __typename?: 'SavedSearchType', id: string, name?: string | null, description?: string | null, query?: string | null, entityTypes?: Array<string> | null, tags?: Array<string> | null, filters?: { __typename?: 'SavedSearchFiltersType', eventTypes?: Array<string> | null, startTime?: string | null, endTime?: string | null, datePreset?: string | null, sortBy?: string | null, sortOrder?: string | null, connectors?: Array<string> | null, people?: Array<string> | null, places?: Array<string> | null, hasLocation?: boolean | null, semantic?: boolean | null } | null } | null };
 
 export type TableAnswerRowDataFragment = { __typename?: 'AnswerType', id: string, answer: string, question: { __typename?: 'QuestionType', id: string, text: string } } & { ' $fragmentName'?: 'TableAnswerRowDataFragment' };
 

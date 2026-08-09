@@ -14,6 +14,9 @@ export class SavedSearchFiltersType implements SavedSearchFilters {
   eventTypes?: string[];
 
   @Field(() => String, { nullable: true })
+  datePreset?: string;
+
+  @Field(() => String, { nullable: true })
   startTime?: string;
 
   @Field(() => String, { nullable: true })
@@ -47,6 +50,7 @@ export class SavedSearchFiltersType implements SavedSearchFilters {
 
     return {
       eventTypes: filters.eventTypes,
+      datePreset: filters.datePreset,
       startTime: filters.startTime,
       endTime: filters.endTime,
       sortBy: filters.sortBy,
@@ -64,6 +68,9 @@ export class SavedSearchFiltersType implements SavedSearchFilters {
 export class SavedSearchFiltersInput implements SavedSearchFilters {
   @Field(() => [String], { nullable: true })
   eventTypes?: string[];
+
+  @Field(() => String, { nullable: true })
+  datePreset?: string;
 
   @Field(() => String, { nullable: true })
   startTime?: string;
