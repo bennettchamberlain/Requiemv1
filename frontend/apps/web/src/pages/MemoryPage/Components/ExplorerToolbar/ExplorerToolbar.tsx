@@ -417,11 +417,7 @@ function FilterDropArea() {
   }, [add]);
 
   if (!hasSelections && !isDropTarget) {
-    return (
-      <div className="flex justify-end">
-        <SaveSearchButton />
-      </div>
-    );
+    return null;
   }
 
   const DropIcon = isDropTarget ? Scan : Filter;
@@ -472,7 +468,7 @@ function FilterDropArea() {
         >
         {hasSelections ? (
           <>
-            <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overscroll-x-contain">
+            <div className="scrollbar-none flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overscroll-x-contain">
               {selectedTypes !== null && (
               <FilterChip
                 icon={Shapes}

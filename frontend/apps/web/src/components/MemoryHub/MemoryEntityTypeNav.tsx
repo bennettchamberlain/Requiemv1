@@ -308,7 +308,7 @@ export function MemoryEntityTypeNav() {
         <span className="hidden sm:inline">What</span>
       </div>
 
-      <div className="min-w-0 flex-1 overflow-x-auto overscroll-x-contain">
+      <div className="scrollbar-none min-w-0 flex-1 overflow-x-auto overscroll-x-contain">
         <div className="flex w-max items-center gap-1 md:gap-1.5">
           {WHAT_CATEGORIES.map((category) => {
             if (category.kind === 'standalone') {

@@ -105,6 +105,18 @@
   }
 }
 
+@layer utilities {
+  /* Scrollable overflow without a visible track — keeps chip/icon rows at full height. */
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 .ci-primary-surface {
   background-color: var(--phthalo);
   background-image: var(--gradient-button);
