@@ -95,6 +95,186 @@ export interface StageSource {
   predicate?: string;
 }
 
+// ---------------------------------------------------------------------------
+// The schedule contract
+// ---------------------------------------------------------------------------
+
+/**
+ * What is allowed to start a stage.
+ *
+ * The tick reads this; nothing else does. A stage cannot see its own trigger,
+ * for the same reason it cannot see `STAGE_DEPENDENCIES` — see the note on
+ * {@link Stage} about why the schedule is not a field there.
+ */
+export type StageTrigger =
+  /**
+   * New data dispatches it directly, AND the tick sweeps it as a backstop at
+   * `minInterval`.
+   *
+   * The backstop is not redundancy for its own sake: arrival dispatch is a
+   * listener plus a pg-boss job, and both can be lost (a listener that threw
+   * before enqueuing, a job that spent its retries and dead-lettered, an
+   * import that wrote rows with the event bus down). Without a sweep behind it
+   * the loss is permanent and silent — the entity simply never appears in the
+   * index and nothing counts the gap. `index.embed` is the only stage on this
+   * trigger today, because search freshness is the only thing on the appliance
+   * a user notices within the hour.
+   */
+  | 'onArrival'
+  /** Only the tick starts it, at `minInterval`, inside its `window`. */
+  | 'scheduled'
+  /**
+   * Nothing automatic ever starts it. Reachable only by a run that NAMES it in
+   * `detail.stages` — i.e. a person, once, deliberately.
+   *
+   * Nothing declares this today, and it is still worth having: it is what makes
+   * "excluded from every automatic set" a property of the schedule rather than
+   * a second exclusion list beside it, which is the drift this whole file
+   * exists to prevent. A stage whose sweep is destructive rather than merely
+   * expensive is what it is for.
+   */
+  | 'manual';
+
+/**
+ * What one sweep of the stage SPENDS. Descriptive for two of the three values
+ * and enforced for the third.
+ */
+export type StageCost =
+  /**
+   * Postgres and local CPU on the appliance. Nothing shared, nothing billed —
+   * a bump costs time and nothing else.
+   */
+  | 'local'
+  /**
+   * Competes with an interactive user for a scarce LOCAL resource. Today that
+   * means the single host Ollama process, shared with interactive chat, HBPE
+   * and the summary sidecar.
+   *
+   * This value is DESCRIPTIVE and deliberately so: this file cannot gate Ollama,
+   * because there is no honest contention signal to gate it with (the argument
+   * is in `BackpressureService`'s class comment, and it is that chat, HBPE and
+   * the sidecar record their usage nowhere this process can read). What actually
+   * bounds a contended stage is `QUEUE_READY_CAPS['pipeline-embed']` — 25 ready
+   * jobs, the tightest cap of the three, a declared reservation rather than a
+   * measurement. `cost: 'contended'` is the label that sends a reader there.
+   */
+  | 'contended'
+  /**
+   * Egresses to a paid, metered provider. A sweep is a BILL, not just load.
+   *
+   * The ONE value in this union with teeth. `schedule.ts`'s boot guard refuses a
+   * metered stage that is `onArrival`, refuses one that is not confined to the
+   * enrichment window, and refuses one with no {@link StageSchedule.perRunCap}
+   * — because a weekly stage with no cap still means one night a week when the
+   * whole corpus hits a paid provider at once.
+   */
+  | 'metered';
+
+/** When in the day the tick may START a sweep for this stage. */
+export type StageWindow =
+  /** Any hour. For work whose latency a user notices. */
+  | 'any'
+  /**
+   * Only while the daily enrichment window is open — `ENRICHMENT_WINDOW` in
+   * `constants.ts`, as decided by `EnrichmentWindowService`.
+   *
+   * This value DECLARES that a stage is confined to the window. It does not
+   * decide whether the window is open: that reads a zoned wall clock, a nightly
+   * budget and `ci.pipeline_turns`, and there must be exactly one
+   * implementation of it. `stageDueness` takes `WindowStatus.open` as an input
+   * for that reason.
+   *
+   * Time-boxing is about ADMISSION, never about killing work: the tick refuses
+   * to start a sweep while the window is shut, and a sweep already running
+   * drains on its own. Nothing in this pipeline reaches into a queue to remove
+   * work — that always races a worker that has already claimed it.
+   *
+   * A window on its own would be a starvation trap on an appliance that is
+   * asleep every night, which is why {@link StageSchedule.maxStaleness} exists
+   * and overrides it.
+   */
+  | 'enrichment';
+
+/**
+ * WHEN a stage is allowed to run, and how much one run may cost.
+ *
+ * Declared once per stage in `STAGE_SCHEDULES` (`schedule.ts`). Read only by the
+ * control tick.
+ *
+ * The four required fields answer four different questions, and dropping any one
+ * of them collapses into a mechanism that has already failed here:
+ *
+ *  - `trigger` — what may start it at all;
+ *  - `cost` — what a run spends, which is what decides how strict the rest is;
+ *  - `minInterval` — the floor. Without it every stage runs on one global clock,
+ *    which is what the appliance did before this file: a five-minute tick that
+ *    re-probed a metered geocoder as eagerly as it re-probed a Postgres-only
+ *    cleaner;
+ *  - `maxStaleness` — the ceiling, and the escape hatch. Without it a windowed
+ *    stage on an appliance that is powered down every night never runs again,
+ *    and nothing anywhere says so.
+ */
+export interface StageSchedule {
+  /** What may start this stage. */
+  trigger: StageTrigger;
+
+  /** What one sweep spends. */
+  cost: StageCost;
+
+  /** When in the day a sweep may START. */
+  window: StageWindow;
+
+  /**
+   * SECONDS. Do not re-sweep this stage for a user sooner than this after the
+   * last sweep was started for that user.
+   *
+   * Measured per (user, stage, entity_type) leg, never appliance-wide: a second
+   * user's first import must not be held back because the first user's nightly
+   * pass ran an hour ago.
+   */
+  minInterval: number;
+
+  /**
+   * SECONDS. Once this long has passed since the last sweep, the leg is OVERDUE
+   * and its `window` no longer applies.
+   *
+   * This is what keeps a daily window from being a way to never run. An
+   * appliance that is powered off at 03:00 every night has an enrichment window
+   * it is never awake for; after `maxStaleness` its nightly stages become due at
+   * whatever hour the box happens to be on, and the cost discipline that still
+   * holds is {@link perRunCap}, which is the one that was about money anyway.
+   *
+   * A leg that has NEVER run is infinitely stale and therefore overdue by this
+   * rule rather than by a special case — so a freshly imported appliance
+   * enriches immediately instead of waiting for tonight, and a metered stage's
+   * first pass is bounded by its cap.
+   *
+   * Must be >= `minInterval`; the boot guard refuses otherwise, because a
+   * ceiling below the floor makes every leg permanently overdue and silently
+   * deletes both the interval and the window.
+   */
+  maxStaleness: number;
+
+  /**
+   * Hard ceiling on entity ids ONE sweep may dispatch. Omitted means uncapped.
+   *
+   * For a metered stage this matters more than `minInterval` does, and the
+   * measured case is `enrich.position_reverse`: `ci.position` is empty today
+   * only because a debug push used the legacy GraphQL lane, and a real `/v1`
+   * import fills it from 66,579 Google Fit records plus GPX and location
+   * history. Weekly-with-no-cap is not slow, it is one week in which 66,000
+   * fixes hit a paid provider at once. The interval decides how often the bill
+   * arrives; the cap decides how big it can be.
+   *
+   * Enforced by the dispatcher at slice granularity, so a sweep may overshoot by
+   * less than one slice (`DEFAULT_SLICE_SIZE`) before it stops. That slack is
+   * deliberate: cutting a slice in half to hit an exact number would make the
+   * cap a source of odd-sized slices for no benefit, and the cap is a budget
+   * rather than a quota.
+   */
+  perRunCap?: number;
+}
+
 /**
  * One unit of work in the pipeline.
  *
@@ -105,6 +285,35 @@ export interface StageSource {
  * stage trivially unit-testable and what stops each new enricher from
  * re-inventing its own batching, retry and cursor handling — the drift that
  * left nine maintenance legs with nine different pagination strategies.
+ *
+ * ── There is deliberately no `schedule` field here ──────────────────────────
+ *
+ * A stage's cadence is declared in `STAGE_SCHEDULES` (`schedule.ts`), keyed by
+ * stage id, exactly as its version is declared in `STAGE_VERSIONS` and its
+ * implementation token in `STAGE_REGISTRY`. {@link StageSchedule} lives in this
+ * file because it is contract vocabulary; the VALUES do not, and that split is
+ * the same one `STAGE_DEPENDENCIES` already makes.
+ *
+ * Three reasons, in the order they matter:
+ *
+ *  1. **The boot guard only exists if it is a map.** `assertStageRegistryComplete`
+ *     is a key-set comparison between two flat declarations at MODULE LOAD, and
+ *     that is the only reason a stage with no version fails the boot instead of
+ *     failing a worker weeks later. A field on `Stage` is readable only after
+ *     Nest has constructed the provider, so the equivalent guard could not run
+ *     until `onModuleInit` — after pg-boss has created queues and started
+ *     workers, and only for stages something resolved. "Every registered stage
+ *     declares a schedule" would become "every stage somebody happened to
+ *     resolve declared a schedule".
+ *  2. **Cadence is reviewable in one diff, or it is not reviewable.** Twelve
+ *     numbers spread over twelve classes cannot be read as a schedule. The one
+ *     question anybody actually asks — "what does this appliance do overnight,
+ *     and what does it cost?" — is answered by reading one file.
+ *  3. **Scheduling is not a stage's business.** A stage that declared its own
+ *     cadence would be one step from reading it, and the contract's whole
+ *     discipline is that a stage receives ids and returns decisions. It does not
+ *     know what ran before it (`STAGE_DEPENDENCIES`), and it does not know when
+ *     it runs either.
  */
 export interface Stage {
   /** Stable id, e.g. `enrich.media_dimensions`. Must appear in `STAGE_IDS`. */

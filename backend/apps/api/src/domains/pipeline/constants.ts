@@ -11,6 +11,8 @@
  * a diff, snapshot-tested, or reasoned about at planning time.
  */
 
+import config from '@ci/configuration';
+
 // ---------------------------------------------------------------------------
 // Queues
 // ---------------------------------------------------------------------------
@@ -364,3 +366,169 @@ export const DEAD_LETTER_REAP_BATCH = 500;
  * a fourth scheduled job there turns a quiet appliance into a periodic spike.
  */
 export const DEAD_LETTER_REAP_CRON = '40 */2 * * * *';
+
+// ---------------------------------------------------------------------------
+// The nightly enrichment window
+// ---------------------------------------------------------------------------
+
+/**
+ * WHEN the appliance is willing to spend on enrichment, and HOW MUCH.
+ *
+ * ── Why a window at all ────────────────────────────────────────────────────
+ *
+ * Everything the pipeline enriches is contended. `index.embed` runs through the
+ * ONE host Ollama process that also serves interactive chat, HBPE and the
+ * summary sidecar — and `BackpressureService` says plainly that there is no
+ * honest way to measure that contention from inside this process. What cannot
+ * be measured has to be BOUNDED instead, and the only bound nobody has to
+ * measure is a clock: run when the owner is asleep, and stop.
+ *
+ * The alternative that was in place — a perpetual tick with a queue-depth cap —
+ * makes enrichment a permanent background tenant. It is never egregious at any
+ * one moment and it never stops, which on an appliance shared with an assistant
+ * somebody is talking to is the worse failure.
+ *
+ * ── Why the window and the budget are TWO numbers ──────────────────────────
+ *
+ * They answer different questions, and collapsing them loses the second one:
+ *
+ *  - the WINDOW (`start` + `durationMinutes`) is PERMISSION. Its edges are a
+ *    fact about the owner — they are asleep — and nothing else.
+ *  - the BUDGET (`budgetMinutes`) is SPEND. It is consumed only by ticks that
+ *    actually dispatch, so a night with nothing to do costs nothing, and an
+ *    appliance that was powered off until 03:00 still gets its whole budget
+ *    instead of the remainder of a window it slept through.
+ *
+ * A single 90-minute window would give the first property and lose the second,
+ * which is exactly the case that matters on a box that is not on 24/7.
+ *
+ * ── Why the defaults are these defaults ────────────────────────────────────
+ *
+ * 01:00 for five hours, spending ninety minutes of it. The window is wide
+ * because "when is the owner asleep?" is a guess and a wide guess is a cheap
+ * one; the budget is small because it is the number that is actually spent, and
+ * because a small nightly budget is only safe if work RESUMES — which it does:
+ * the sweep's position lives in `ci.pipeline_shards.cursor` and the ledger
+ * re-derives the remainder from THE ONE RULE, so a night that stops mid-sweep
+ * costs nothing but the slice in flight. Ninety minutes a night converges a
+ * 324,044-row corpus over several nights instead of one long night, and several
+ * short nights is the shape that never makes the assistant feel broken.
+ *
+ * Every field is overridable — see `config/default.json` → `enrichment.window`
+ * and `config/custom-environment-variables.json` for the env var names.
+ * `enabled: false` restores free-running enrichment, which is the right setting
+ * for a supervised first-import burn-in.
+ */
+export const ENRICHMENT_WINDOW = {
+  enabled: config.enrichment.window.enabled,
+  /** Local wall-clock `HH:MM` the window opens. */
+  start: config.enrichment.window.start,
+  /** How long it stays open. May cross midnight. */
+  durationMs: config.enrichment.window.durationMinutes * 60_000,
+  /** Minutes of ACTUAL dispatching activity spent inside it. */
+  budgetMs: config.enrichment.window.budgetMinutes * 60_000,
+  /** IANA zone the wall clock is read in; empty means the host's zone. */
+  timezone: config.enrichment.window.timezone,
+} as const;
+
+/**
+ * Fair rotation across users.
+ *
+ * ── The problem it exists for ──────────────────────────────────────────────
+ *
+ * With one shared nightly budget and naive iteration, the second user waits
+ * behind the WHOLE of the first user's archive. On a real import — 66,579
+ * Google Fit records plus GPX and location history, before a single event or
+ * file — that is weeks, silently, with nothing in any log that says so.
+ *
+ * ── The mechanism ──────────────────────────────────────────────────────────
+ *
+ * A user HOLDS the window for {@link turnMs}, then it passes to the
+ * least-recently-served user (`ci.pipeline_turns.last_served_at ASC NULLS
+ * FIRST`). So the bound on how long anybody waits is ONE TURN, not one import,
+ * and a user who joined this afternoon has no row at all, sorts first, and is
+ * served before anybody takes a second turn.
+ *
+ * ── The two numbers ────────────────────────────────────────────────────────
+ *
+ * `turnMinutes` (20) divides the 90-minute budget into roughly four or five
+ * turns a night. Long enough that a turn is worth having — a sweep hop enqueues
+ * up to `MAX_SLICES_PER_SWEEP` slices and a slice is sized for ~60 s, so twenty
+ * minutes is real work rather than a handover — and short enough that the whole
+ * rotation comes round inside one night for a small household.
+ *
+ * `usersPerTurn` (1) is deliberately not "as many as fit". Effective global
+ * concurrency is 10 in-flight jobs and {@link MAX_SWEEPS_PER_TICK} is 4, so the
+ * appliance's capacity is already the ceiling; splitting it across two users
+ * makes both of them slower and neither of them earlier. Serving one user at a
+ * time also means the per-night spend is attributable, which is what makes
+ * "where did last night go?" answerable from `ci.pipeline_turns` alone.
+ */
+export const ENRICHMENT_ROTATION = {
+  turnMs: config.enrichment.rotation.turnMinutes * 60_000,
+  usersPerTurn: config.enrichment.rotation.usersPerTurn,
+} as const;
+
+/**
+ * Where the rotation pointer and the nightly budget ledger live.
+ *
+ * One row per user. Named here rather than inlined so the boot-time presence
+ * probe, the tick's user ordering and `EnrichmentWindowService`'s statements
+ * cannot drift onto three different table names.
+ */
+export const PIPELINE_TURNS_TABLE = 'ci.pipeline_turns';
+
+/**
+ * Ceiling on the budget one tick may charge for the gap since the previous one.
+ *
+ * The budget measures ENRICHMENT ACTIVITY, and the only clock available for
+ * that is the interval between two dispatching ticks. That interval is normally
+ * the tick cadence (five minutes, `PIPELINE_TICK_CRON`), but it is not bounded:
+ * suspend the appliance at 01:10 and resume it at 05:00 and the naive delta is
+ * 230 minutes, which would spend a 90-minute budget on time when nothing ran —
+ * every night, on any laptop-shaped box.
+ *
+ * Ten minutes is two tick periods: generous enough that a slow or contended
+ * tick is charged honestly, tight enough that downtime is charged as one tick
+ * rather than as a night. The error is deliberately in the direction of
+ * UNDER-charging — a night that overruns its budget by one tick is a rounding
+ * error, and a night that ends before it began is a pipeline that never runs.
+ */
+export const MAX_BUDGET_CHARGE_PER_TICK_MS = 10 * 60_000;
+
+/**
+ * Module-load sanity check over the two declarations above, in the style of
+ * `BackpressureService`'s cap guard — and, like `assertStagePolicy`, it names
+ * the consequence rather than merely rejecting a number.
+ *
+ * Neither problem is an error. A turn longer than the budget still rotates
+ * correctly (the pointer carries across nights, so tomorrow's turn goes to
+ * somebody else); a budget longer than the window is simply "spend the whole
+ * window". Both are silently surprising, though, so they are said out loud once
+ * at boot instead of being discovered from a graph of coverage that is not
+ * moving.
+ */
+export function assertEnrichmentWindowPolicy(warn: (message: string) => void = console.warn): void {
+  if (!ENRICHMENT_WINDOW.enabled) {
+    return;
+  }
+
+  if (ENRICHMENT_ROTATION.turnMs > ENRICHMENT_WINDOW.budgetMs) {
+    warn(
+      `[pipeline] enrichment.rotation.turnMinutes (${ENRICHMENT_ROTATION.turnMs / 60_000}) is longer than ` +
+        `enrichment.window.budgetMinutes (${ENRICHMENT_WINDOW.budgetMs / 60_000}), so exactly one user is ` +
+        `served per night. The rotation still reaches everybody — the pointer is durable and carries across ` +
+        `nights — but a household of N users now takes N nights to come round.`,
+    );
+  }
+
+  if (ENRICHMENT_WINDOW.budgetMs > ENRICHMENT_WINDOW.durationMs) {
+    warn(
+      `[pipeline] enrichment.window.budgetMinutes (${ENRICHMENT_WINDOW.budgetMs / 60_000}) exceeds the ` +
+        `window's own length (${ENRICHMENT_WINDOW.durationMs / 60_000}), so the budget can never be spent ` +
+        `and the window's closing time is the only thing that stops enrichment.`,
+    );
+  }
+}
+
+assertEnrichmentWindowPolicy();

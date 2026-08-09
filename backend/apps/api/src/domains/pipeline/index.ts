@@ -44,6 +44,7 @@ import { GeocodeModule } from '@ci/domains/geocode';
 import { MemoryModule } from '@ci/domains/memory';
 
 import { STAGE_IDS } from './constants';
+import { PipelineController } from './controllers/PipelineController';
 import { IdentifierClaimEntity } from './entities/IdentifierClaimEntity';
 import { PipelineDeadLetterEntity } from './entities/PipelineDeadLetterEntity';
 import { PipelineRunEntity } from './entities/PipelineRunEntity';
@@ -52,7 +53,11 @@ import { PipelineStateEntity } from './entities/PipelineStateEntity';
 import { RecordRejectionEntity } from './entities/RecordRejectionEntity';
 import { DeadLetterReaperListener } from './listeners/DeadLetterReaperListener';
 import { PipelineSliceListener } from './listeners/PipelineSliceListener';
+import { PIPELINE_TICK, PipelineTickCron } from './listeners/PipelineTickCron';
+import { BackpressureService } from './services/BackpressureService';
+import { PipelineControlService } from './services/PipelineControlService';
 import { PipelineDispatchService } from './services/PipelineDispatchService';
+import { PipelineRunService } from './services/PipelineRunService';
 import { PipelineStateService } from './services/PipelineStateService';
 import { STAGE_REGISTRY, StageRegistry } from './services/StageRegistry';
 import { DuplicateDetectStage } from './stages/clean/DuplicateDetectStage';
@@ -162,11 +167,28 @@ const stageProviders: Provider[] = [
     PipelineStateService,
     StageRegistry,
     PipelineDispatchService,
+    PipelineRunService,
+    BackpressureService,
+    PipelineControlService,
     PipelineSliceListener,
+    PipelineTickCron,
+    // The cron owns the schedule and the cluster-safe advisory lock; the control
+    // service owns what a tick DOES. Binding by token rather than importing the
+    // service into the cron keeps the timer swappable — a worker process split
+    // (Phase 5) replaces the cron, not the tick.
+    { provide: PIPELINE_TICK, useExisting: PipelineControlService },
     DeadLetterReaperListener,
     ...stageProviders,
   ],
-  exports: [PipelineStateService, PipelineDispatchService, StageRegistry],
+  controllers: [PipelineController],
+  exports: [
+    PipelineStateService,
+    PipelineDispatchService,
+    PipelineRunService,
+    PipelineControlService,
+    BackpressureService,
+    StageRegistry,
+  ],
 })
 export class PipelineModule {}
 

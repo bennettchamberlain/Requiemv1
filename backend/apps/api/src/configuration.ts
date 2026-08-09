@@ -265,6 +265,68 @@ export const ConfigSchema = z.object({
     fetchBatchSize: z.coerce.number().int().positive().default(20),
     perQueueConcurrency: z.coerce.number().int().positive().default(6),
   }),
+  // WHEN the appliance is willing to spend on enrichment, and HOW MUCH. The
+  // pipeline's twelve stages share ONE Ollama process with interactive chat,
+  // HBPE and the summary sidecar, and two of them egress to a metered geocoding
+  // provider — so background enrichment is not free-running work, it is a
+  // nightly allowance with an owner-visible cost. `window` bounds the hours;
+  // `rotation` decides who inside them gets served. Consumed by
+  // `domains/pipeline/constants.ts` → `EnrichmentWindowService`, which explains
+  // every number. Defaults suit an appliance whose owner is asleep.
+  enrichment: z.object({
+    window: z.object({
+      /**
+       * Off makes enrichment free-running again — the pre-window behaviour, and
+       * the right setting for a supervised first-import burn-in where somebody
+       * is watching the box and wants the archive processed today.
+       */
+      enabled: booleanStringSchema.default(true),
+      /** Local wall-clock time the window opens, `HH:MM`, 24-hour. */
+      start: z
+        .string()
+        .regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'must be a 24-hour HH:MM local time, e.g. "01:00"')
+        .default('01:00'),
+      /** How long the window stays open. May cross midnight. */
+      durationMinutes: z.coerce
+        .number()
+        .int()
+        .positive()
+        .max(24 * 60)
+        .default(300),
+      /**
+       * Minutes of ACTUAL enrichment activity the appliance will spend inside
+       * the window. Distinct from the window length on purpose: the window is
+       * permission (do not run while the owner is awake), the budget is spend
+       * (do not be a permanent background tenant). A night with nothing to do
+       * costs nothing, and a box that boots at 03:00 still gets its full budget.
+       */
+      budgetMinutes: z.coerce
+        .number()
+        .int()
+        .positive()
+        .max(24 * 60)
+        .default(90),
+      /**
+       * IANA zone the window's wall clock is read in. Empty = the host's zone,
+       * which on an appliance is the owner's.
+       */
+      timezone: z.string().default(''),
+    }),
+    rotation: z.object({
+      /**
+       * How long one user holds the window before it passes to the
+       * least-recently-served user. This is the bound on how long user 2 waits
+       * behind user 1's archive: one turn, not one import.
+       */
+      turnMinutes: z.coerce.number().int().positive().default(20),
+      /**
+       * Users served concurrently. 1 by default: the appliance-wide sweep and
+       * queue-depth caps are already the ceiling, so splitting them across
+       * users makes every user slower without making anyone earlier.
+       */
+      usersPerTurn: z.coerce.number().int().positive().default(1),
+    }),
+  }),
   features: z.object({
     'scheduled.answer.inferencing': booleanStringSchema,
     'scheduled.connection.sync': booleanStringSchema,

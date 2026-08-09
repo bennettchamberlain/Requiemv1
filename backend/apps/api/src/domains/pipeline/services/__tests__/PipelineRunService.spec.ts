@@ -9,6 +9,11 @@ import { DEAD_LETTER_QUEUE, STAGE_ID_LIST } from '../../constants';
 import { stageVersion } from '../../versions';
 import { MAX_SHARDS_PER_RUN, PipelineRunService } from '../PipelineRunService';
 
+// `isWrite`, not `startsWith('UPDATE')`: the writes are CTE-wrapped so TypeORM
+// returns plain rows instead of `[rows, rowCount]`, which means the outer command
+// is a SELECT. Matching the leading keyword silently stopped identifying them —
+// the mock fell through to the read branch and the 409 paths went untested.
+const isWrite = (sql: string): boolean => /\bUPDATE\s+ci\./i.test(sql);
 /**
  * The run lifecycle and the operator's read/control plane.
  *
@@ -393,7 +398,7 @@ describe('PipelineRunService.setDesiredState', () => {
   it('409s a run that has already finished', async () => {
     const finished = runRow({ finished_at: new Date('2026-08-09T11:00:00Z'), status: 'completed' });
 
-    const harness = makeHarness((statement) => (statement.sql.startsWith('UPDATE') ? [] : [finished]));
+    const harness = makeHarness((statement) => (isWrite(statement.sql) ? [] : [finished]));
 
     await expect(harness.service.setDesiredState(CTX, RUN_ID, 'paused')).rejects.toThrow(/no longer accepts/);
   });
@@ -401,7 +406,7 @@ describe('PipelineRunService.setDesiredState', () => {
   it('409s an attempt to resume a cancelled run', async () => {
     const cancelled = runRow({ desired_state: 'cancelled' });
 
-    const harness = makeHarness((statement) => (statement.sql.startsWith('UPDATE') ? [] : [cancelled]));
+    const harness = makeHarness((statement) => (isWrite(statement.sql) ? [] : [cancelled]));
 
     await expect(harness.service.setDesiredState(CTX, RUN_ID, 'running')).rejects.toThrow(
       /cancelled run cannot be resumed/,
@@ -768,7 +773,7 @@ describe('PipelineRunService.replayDeadLetter', () => {
   it('409s a letter that was already replayed, and emits nothing', async () => {
     // replayed_at is the idempotency flag that keeps "replay all" from looping.
     const harness = makeHarness((statement) =>
-      statement.sql.startsWith('UPDATE') ? [] : [{ replayed_at: new Date('2026-08-09T08:00:00Z') }],
+      isWrite(statement.sql) ? [] : [{ replayed_at: new Date('2026-08-09T08:00:00Z') }],
     );
 
     await expect(harness.service.replayDeadLetter(CTX, LETTER_ID)).rejects.toBeInstanceOf(ConflictException);

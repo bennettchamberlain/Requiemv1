@@ -142,6 +142,19 @@
     "fetchBatchSize": 10,
     "perQueueConcurrency": 6
   },
+  "enrichment": {
+    "window": {
+      "enabled": true,
+      "start": "01:00",
+      "durationMinutes": 300,
+      "budgetMinutes": 90,
+      "timezone": ""
+    },
+    "rotation": {
+      "turnMinutes": 20,
+      "usersPerTurn": 1
+    }
+  },
   "features": {
     "scheduled.answer.inferencing": true,
     "scheduled.connection.sync": true,
