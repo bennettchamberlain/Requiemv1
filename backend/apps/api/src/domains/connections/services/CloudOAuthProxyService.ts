@@ -22,6 +22,16 @@ export interface PortalDeviceApplication {
   slug: string;
   port: number;
   publicDomain: string | null;
+  /** Browser-reachable URL built by Portal (same shape as ListMyApps). */
+  openUrl?: string | null;
+}
+
+/** Minimal app row from Portal GET /api/users/me/apps?slug=… */
+export interface PortalUserApplication {
+  slug: string;
+  url: string;
+  deviceName: string;
+  deviceSlug: string;
 }
 
 /**
@@ -233,6 +243,53 @@ export class CloudOAuthProxyService {
       return Array.isArray(body.applications) ? body.applications : [];
     } catch (error) {
       this.logger.warn('CI Portal device applications request errored', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      return [];
+    }
+  }
+
+  /**
+   * Discover where a Hub app runs for the signed-in Portal user.
+   * Mirrors the browser extension's post-OIDC lookup against ListMyApps.
+   */
+  async listMyApps(slug: string, bearerToken: string): Promise<PortalUserApplication[]> {
+    if (!this.isPortalConfigured()) {
+      return [];
+    }
+
+    if (!slug.trim() || !bearerToken.trim()) {
+      return [];
+    }
+
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/api/users/me/apps?slug=${encodeURIComponent(slug.trim())}`,
+        {
+          headers: {
+            Authorization: `Bearer ${bearerToken}`,
+          },
+        },
+      );
+
+      if (!response.ok) {
+        const text = await response.text();
+        this.logger.warn('CI Portal ListMyApps request failed', {
+          slug,
+          status: response.status,
+          body: text,
+        });
+
+        return [];
+      }
+
+      const body = (await response.json()) as { apps?: PortalUserApplication[] };
+
+      return Array.isArray(body.apps) ? body.apps : [];
+    } catch (error) {
+      this.logger.warn('CI Portal ListMyApps request errored', {
+        slug,
         error: error instanceof Error ? error.message : String(error),
       });
 

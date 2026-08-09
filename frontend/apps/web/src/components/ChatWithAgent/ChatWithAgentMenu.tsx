@@ -3,7 +3,7 @@ import { ExternalLink, MessagesSquare } from '@ci/shadcn/icons';
 import { useNavigate } from 'react-router-dom';
 
 import { useAgentHarnesses } from '@/api/useAgentHarnesses';
-import { type AgentChatContext, openAgentHarness, openInAppChat } from '@/lib/agentChat';
+import { type AgentChatContext, openAgentHarness, openChatHere } from '@/lib/agentChat';
 
 interface Props {
   context: AgentChatContext;
@@ -13,20 +13,34 @@ interface Props {
 
 export function ChatWithAgentMenu({ context, size = 'icon', className }: Props) {
   const navigate = useNavigate();
-  const { accessibleHarnesses, loading } = useAgentHarnesses();
+  const { openableHarnesses, loading } = useAgentHarnesses();
 
-  const singleHarness = accessibleHarnesses.length === 1 ? accessibleHarnesses[0] : null;
+  const defaultHarness = openableHarnesses.length === 1 ? openableHarnesses[0] : null;
 
-  if (size === 'sm' && singleHarness?.openUrl) {
+  if (size === 'sm' && defaultHarness?.openUrl) {
     return (
       <Button
         variant="outline"
         size="sm"
         className={className}
-        onClick={() => openAgentHarness(singleHarness.openUrl!, context)}
+        onClick={() => openAgentHarness(defaultHarness.openUrl!, context)}
       >
         <ExternalLink className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} />
-        Open with agent
+        Chat here
+      </Button>
+    );
+  }
+
+  if (size === 'sm' && !loading && openableHarnesses.length === 0) {
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        className={className}
+        onClick={() => openChatHere(navigate, context, openableHarnesses)}
+      >
+        <MessagesSquare className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} />
+        Chat here
       </Button>
     );
   }
@@ -46,14 +60,16 @@ export function ChatWithAgentMenu({ context, size = 'icon', className }: Props) 
         ) : (
           <Button variant="outline" size="sm" className={className}>
             <MessagesSquare className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} />
-            Chat
+            Chat here
           </Button>
         )}
       </DropdownMenu.Trigger>
       <DropdownMenu.Content align="end">
-        <DropdownMenu.Item onClick={() => openInAppChat(navigate, context)}>Chat here</DropdownMenu.Item>
+        <DropdownMenu.Item onClick={() => openChatHere(navigate, context, openableHarnesses)}>
+          Chat here
+        </DropdownMenu.Item>
         {!loading &&
-          accessibleHarnesses.map((harness) => (
+          openableHarnesses.map((harness) => (
             <DropdownMenu.Item key={harness.id} onClick={() => openAgentHarness(harness.openUrl!, context)}>
               Open with {harness.name}
             </DropdownMenu.Item>
