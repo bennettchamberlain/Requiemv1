@@ -28,6 +28,49 @@ import { DropdownContent } from './DropdownContent';
 import type { FilterDragPayload } from './filterDrag';
 import { DropdownProvider, useDropdown } from './useDropdown';
 
+/** Radix filter menus portal outside the search wrapper — clicks there must not dismiss the panel. */
+const PORTALED_FILTER_IDS = ['entity-type-filters', 'how-filters', 'connector-filters'];
+
+function isPortaledFilterTarget(target: Node | null): boolean {
+  if (target == null) {
+    return false;
+  }
+
+  if (
+    PORTALED_FILTER_IDS.some((id) => {
+      const el = document.getElementById(id);
+
+      return el != null && el.contains(target);
+    })
+  ) {
+    return true;
+  }
+
+  if (!(target instanceof Element)) {
+    return false;
+  }
+
+  return (
+    target.closest('[data-radix-popper-content-wrapper]') != null ||
+    target.closest('[data-slot="dropdown-menu-content"]') != null ||
+    target.closest('[data-slot="popover-content"]') != null ||
+    target.closest('[data-slot="select-content"]') != null
+  );
+}
+
+/** True while a nested filter control (What / When / How / sort) is open in the panel footer. */
+function hasOpenNestedFilterOverlay(): boolean {
+  return (
+    document.querySelector(
+      [
+        '[data-slot="dropdown-menu-content"][data-state="open"]',
+        '[data-slot="popover-content"][data-state="open"]',
+        '[data-slot="select-content"][data-state="open"]',
+      ].join(', '),
+    ) != null
+  );
+}
+
 const FormSchema = s.object({
   query: s.string(),
 });
@@ -348,6 +391,9 @@ function SearchBox(
             setSelectedIndex(-1);
           } else if (panelShowing) {
             setPanelDismissed(true);
+          } else if (panelFooter && userEngaged) {
+            setPanelDismissed(true);
+            setUserEngaged(false);
           } else {
             handleClear();
           }
@@ -438,6 +484,8 @@ function SearchBox(
       onFilterAdd,
       handleClear,
       onKeyDown,
+      panelFooter,
+      userEngaged,
     ],
   );
 
@@ -535,23 +583,7 @@ function SearchBox(
 
       const target = e.target as Node;
 
-      // Filter dropdowns portal to document.body (outside wrapperRef), so treat
-      // clicks within them as inside-panel clicks rather than closing the panel.
-      const portaledFilterIds = ['entity-type-filters', 'how-filters'];
-
-      if (
-        portaledFilterIds.some((id) => {
-          const el = document.getElementById(id);
-
-          return el != null && el.contains(target);
-        })
-      ) {
-        return;
-      }
-
-      // Date-range, tag, and sort controls open Radix poppers in a portal outside this wrapper;
-      // clicks inside them must not close the filter panel.
-      if (target instanceof Element && target.closest('[data-radix-popper-content-wrapper]')) {
+      if (isPortaledFilterTarget(target)) {
         return;
       }
 
@@ -659,7 +691,7 @@ function SearchBox(
   const panelVisible =
     !panelDismissed &&
     (resultsNode != null ||
-      (panelFooter != null && isFocused && focusOpensPanel) ||
+      (panelFooter != null && userEngaged) ||
       (panelPinned && (isFocused || hasQuery)));
 
   // Dismiss an open suggestion/filter panel when clicking elsewhere on the page.
@@ -675,19 +707,7 @@ function SearchBox(
 
       const target = e.target as Node;
 
-      const portaledFilterIds = ['entity-type-filters', 'how-filters'];
-
-      if (
-        portaledFilterIds.some((id) => {
-          const el = document.getElementById(id);
-
-          return el != null && el.contains(target);
-        })
-      ) {
-        return;
-      }
-
-      if (target instanceof Element && target.closest('[data-radix-popper-content-wrapper]')) {
+      if (isPortaledFilterTarget(target)) {
         return;
       }
 
@@ -695,13 +715,22 @@ function SearchBox(
         return;
       }
 
+      if (panelFooter && hasOpenNestedFilterOverlay()) {
+        // Let Radix close the nested filter menu on this click; keep the search panel open.
+        return;
+      }
+
       setPanelDismissed(true);
+
+      if (panelFooter) {
+        setUserEngaged(false);
+      }
     };
 
     document.addEventListener('pointerdown', handlePointerDown);
 
     return () => document.removeEventListener('pointerdown', handlePointerDown);
-  }, [panelVisible]);
+  }, [panelVisible, panelFooter]);
 
   return (
     <Form {...form}>
@@ -770,9 +799,23 @@ function SearchBox(
                         return;
                       }
 
+                      const active = document.activeElement;
+
+                      if (active != null && wrapperRef.current?.contains(active)) {
+                        return;
+                      }
+
+                      if (isPortaledFilterTarget(active)) {
+                        return;
+                      }
+
                       isFocusedRef.current = false;
                       setIsFocused(false);
-                      setUserEngaged(false);
+
+                      if (!panelFooter) {
+                        setUserEngaged(false);
+                      }
+
                       field.onBlur();
                     }}
                     className={cn(
@@ -871,7 +914,14 @@ function SearchBox(
               {panelHeader}
               {resultsNode}
               {panelFooter && (
-                <div className={cn(resultsNode != null && 'border-t')}>{panelFooter}</div>
+                <div
+                  className={cn(resultsNode != null && 'border-t')}
+                  // Keep focus in the input so the filter panel stays open while
+                  // opening What / When / How menus in the footer.
+                  onMouseDown={(e) => e.preventDefault()}
+                >
+                  {panelFooter}
+                </div>
               )}
             </div>
           )}

@@ -63,6 +63,7 @@ import {
 import {
   FILTER_PARAMS,
   addEntityFilter,
+  countActiveFilters,
   filterValueKey,
   narrowedEntityTypes,
   readCsvParam,
@@ -602,7 +603,8 @@ function FilterDropArea() {
           </div>
         )}
         </div>
-        <div className="shrink-0">
+        <div className="flex shrink-0 items-center gap-2">
+          <FilterCountLabel />
           <SaveSearchButton />
         </div>
       </div>
@@ -957,7 +959,8 @@ function FilterControlsRow({
       <SortControl />
 
       {showSave && (
-        <div className="ml-auto">
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <FilterCountLabel />
           <SaveSearchButton />
         </div>
       )}
@@ -991,6 +994,25 @@ export function MemoryExplorerFilterControls() {
  */
 export function AdvancedFilters() {
   return <FilterDropArea />;
+}
+
+/**
+ * "Save" — captures a name and persists the current query + selected
+ * entity types + tags as a SavedSearch (shown on the Saved Searches page).
+ */
+function FilterCountLabel() {
+  const [searchParams] = useSearchParams();
+  const activeFilterCount = countActiveFilters(searchParams);
+
+  if (activeFilterCount === 0) {
+    return null;
+  }
+
+  return (
+    <span className="whitespace-nowrap text-xs text-muted-foreground">
+      {activeFilterCount} {activeFilterCount === 1 ? 'filter' : 'filters'}
+    </span>
+  );
 }
 
 /**

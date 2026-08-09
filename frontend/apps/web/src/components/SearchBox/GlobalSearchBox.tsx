@@ -73,8 +73,6 @@ export function GlobalSearchBox() {
   const onMemoryHub = isMemoryHubPath(location.pathname);
   const semantic = searchParams.get('semantic') === '1';
   const activeFilterCount = countActiveFilters(searchParams);
-  const filterCountText =
-    activeFilterCount > 0 ? `${activeFilterCount} ${activeFilterCount === 1 ? 'filter' : 'filters'}` : null;
   // On /memory the input mirrors the live `?search` param; elsewhere it stays a
   // transient launcher value, so we don't seed it from the URL.
   const urlSearch = searchParams.get('search') ?? '';
@@ -539,11 +537,6 @@ export function GlobalSearchBox() {
 
   return (
     <div ref={overlayRef} className="relative flex min-w-0 items-center">
-      {filterCountText && (
-        <span className="mr-2 hidden whitespace-nowrap text-xs text-muted-foreground lg:inline">
-          {filterCountText}
-        </span>
-      )}
       <div className="min-w-0 flex-1">
         <SearchBox
           key={resetKey}
@@ -564,13 +557,6 @@ export function GlobalSearchBox() {
           loading={loading}
           error={error}
           results={results}
-          statusSlot={
-            filterCountText && (
-              <span className="whitespace-nowrap text-xs text-muted-foreground lg:hidden">
-                {filterCountText}
-              </span>
-            )
-          }
           showClear={activeFilterCount > 0 || Boolean(onMemoryExplorer ? urlSearch : query?.trim())}
           panelFooter={
             !onMemoryExplorer ? (
