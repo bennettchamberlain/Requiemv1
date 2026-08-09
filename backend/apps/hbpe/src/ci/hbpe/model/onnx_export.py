@@ -251,7 +251,7 @@ def export_and_quantize(
 
     # Non-padded prefix: SOD, WORK, WORK, EOD
     ex_tokens[0, :4] = torch.tensor([SOD_IDX, 4, 4, EOD_IDX], dtype=torch.long)
-    ex_buckets[0, :4] = torch.tensor([0, 4, 8, 47], dtype=torch.long)
+    ex_buckets[0, :4] = torch.tensor([0, 4, 8, 95], dtype=torch.long)
     ex_mask[0, :4] = False
 
     # ── 3. FP32 ONNX export ───────────────────────────────────────────────────

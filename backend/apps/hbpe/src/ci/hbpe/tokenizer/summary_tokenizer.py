@@ -2,7 +2,7 @@
 Summary Tokenizer — labels hourly summaries with L0+L1 via Qwen and returns
 token records for inclusion in the HMT token stream.
 
-Hourly summaries from ci.summaries cover 2 × 30-min buckets each.  Where a
+Hourly summaries from ci.summaries cover 4 × 15-min buckets each.  Where a
 bucket has no event-derived token, a summary-derived token fills the gap,
 giving the model signal for hours that contain no calendar events (sleep,
 leisure, off-calendar work, commutes).
@@ -21,6 +21,7 @@ import json
 import logging
 from datetime import datetime
 
+from ci.hbpe.buckets import BUCKET_MINUTES, MAX_BUCKET_INDEX, SUMMARY_BUCKETS_PER_HOUR
 from ci.hbpe.database import get_conn
 
 log = logging.getLogger(__name__)
@@ -122,8 +123,8 @@ class SummaryTokenizer:
         """
         Return L0+L1 token records from labeled summaries for this date.
 
-        Each hourly summary maps to 2 consecutive 30-min buckets (e.g.
-        period_start 14:00 → buckets 28 and 29).  Records use the same shape
+        Each hourly summary maps to 4 consecutive 15-min buckets (e.g.
+        period_start 14:00 → buckets 56–59).  Records use the same shape
         as those returned by _fetch_tokens_for_day() in serializer.py.
         """
         from ci.hbpe.data_client import get_labeled_summaries
@@ -163,7 +164,7 @@ def _build_summary_tokens(rows: list[dict]) -> list[dict]:
     """
     Convert labeled summary rows into token records.
 
-    Each hourly summary spans 2 consecutive 30-min buckets.  Both buckets
+    Each hourly summary spans 4 consecutive 15-min buckets.  All buckets
     receive the same L0+L1 token at SUMMARY_SOFT_PROB confidence.
     Rows must have keys: l0_class, l1_cluster_id, period_start.
     """
@@ -176,8 +177,10 @@ def _build_summary_tokens(rows: list[dict]) -> list[dict]:
         # Compute the starting bucket index from minutes since midnight.
         midnight = period_start.replace(hour=0, minute=0, second=0, microsecond=0)
         minutes_elapsed = (period_start - midnight).total_seconds() / 60
-        start_bucket = min(max(int(minutes_elapsed / 30), 0), 47)
-        end_bucket = min(start_bucket + 1, 47)  # 1-hour summary → 2 buckets
+        start_bucket = min(
+            max(int(minutes_elapsed / BUCKET_MINUTES), 0), MAX_BUCKET_INDEX
+        )
+        end_bucket = min(start_bucket + SUMMARY_BUCKETS_PER_HOUR - 1, MAX_BUCKET_INDEX)
 
         for bucket_idx in range(start_bucket, end_bucket + 1):
             records.append(

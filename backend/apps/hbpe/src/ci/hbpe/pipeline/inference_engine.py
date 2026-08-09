@@ -1,7 +1,7 @@
 """
 Incremental inference engine for the HMT model (T4.2).
 
-Produces 48-bucket hourly-resolution behavioral forecasts by aggregating
+Produces 96-bucket (15-minute) behavioral forecasts by aggregating
 per-day model outputs across a 30-day sliding window, weighted by recency
 and day-of-week similarity to the forecast horizon.
 
@@ -36,6 +36,8 @@ from pathlib import Path
 
 import numpy as np
 
+from ci.hbpe.buckets import BUCKET_MINUTES
+from ci.hbpe.buckets import BUCKETS_PER_DAY as N_BUCKETS
 from ci.hbpe.model.calibration import _build_full_batch
 from ci.hbpe.model.checkpoints import (
     HMT_CALIBRATED,
@@ -57,7 +59,6 @@ from ci.hbpe.model.vocab import (
 log = logging.getLogger(__name__)
 
 WINDOW_DAYS = 30
-N_BUCKETS = 48
 DECAY_LAMBDA = 7.0  # recency half-life in days
 DOW_BOOST = 2.0  # weight multiplier for same-day-of-week as forecast
 
@@ -402,7 +403,7 @@ class InferenceEngine:
 
     def predict(self, horizon_start: datetime.datetime | None = None) -> list[dict]:
         """
-        Return a 48-bucket histogram for the 24h window starting at *horizon_start*
+        Return a 96-bucket histogram for the 24h window starting at *horizon_start*
         (default: midnight tonight).
 
         Each element: {bucket_index, start_time, l0_probs, l1_probs, l2_probs,
@@ -474,7 +475,7 @@ class InferenceEngine:
 
         results: list[dict] = []
         for b in range(N_BUCKETS):
-            start_time = horizon_start + datetime.timedelta(minutes=30 * b)
+            start_time = horizon_start + datetime.timedelta(minutes=BUCKET_MINUTES * b)
             class_arr = bucket_l0_sum[b, N_SPECIAL:].copy()  # shape (8,)
             total = class_arr.sum()
             if total > 0:

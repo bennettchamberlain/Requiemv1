@@ -31,6 +31,7 @@ import psycopg2
 import psycopg2.errors
 import psycopg2.extras
 
+from ci.hbpe.buckets import BUCKET_SECONDS, MAX_BUCKET_INDEX
 from ci.hbpe.database import get_conn
 from ci.hbpe.graphql_client import GraphQLUnavailable, decode_gid, gql, paginate
 
@@ -120,12 +121,12 @@ def get_token_events_for_day(user_id: str, date_str: str) -> list[dict]:
     stream; (b) ContentType does not expose eventId in the schema, so the
     L2-cluster JOIN cannot be expressed in GraphQL.
     """
-    sql = """
+    sql = f"""
         WITH day_events AS (
             SELECT
                 e.event_id,
                 e.start_time,
-                EXTRACT(epoch FROM (e.start_time - date_trunc('day', e.start_time))) / 1800
+                EXTRACT(epoch FROM (e.start_time - date_trunc('day', e.start_time))) / {BUCKET_SECONDS}
                     AS bucket_idx_raw,
                 cl1.l0_class          AS l0_class,
                 ec.cluster_id::text   AS l1_cluster_id,
@@ -144,7 +145,7 @@ def get_token_events_for_day(user_id: str, date_str: str) -> list[dict]:
             de.l0_class,
             de.l1_cluster_id,
             de.l1_sim,
-            LEAST(GREATEST(de.bucket_idx_raw::int, 0), 47) AS bucket_idx,
+            LEAST(GREATEST(de.bucket_idx_raw::int, 0), {MAX_BUCKET_INDEX}) AS bucket_idx,
             lc.cluster_id::text AS l2_cluster_id,
             lc.similarity       AS l2_sim
         FROM day_events de

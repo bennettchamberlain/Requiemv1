@@ -29,7 +29,7 @@ const HOURS_PER_DAY = 24;
 
 /**
  * HBPE bins behaviour into four 6-hour dayparts anchored at UTC midnight
- * (recurrence.py: BUCKETS_PER_PART = 12). Cells are resolved per local hour by
+ * (recurrence.py: BUCKETS_PER_PART = 24). Cells are resolved per local hour by
  * looking up the UTC instant that hour actually falls in, so a viewer far from
  * UTC sees their real rhythm rather than a label that assumes "morning" means
  * their morning.
