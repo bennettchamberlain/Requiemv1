@@ -20,7 +20,7 @@ export function MemoryHubShell({
   const { pathname } = useLocation();
   const isExplorer = pathname === '/memory';
 
-  const shellClass = cn('flex flex-col gap-4', fillHeight && 'min-h-0 flex-1');
+  const shellClass = cn('flex flex-col gap-2', fillHeight && 'min-h-0 flex-1');
 
   if (isExplorer) {
     return (

@@ -13,10 +13,16 @@ import { FileChunkModal } from '@/components/modals/FileChunkModal/FileChunkModa
 import { AVAILABLE_ENTITY_TYPES } from '@/components/SearchBox/useDropdown';
 import { gql } from '@/graphql';
 
+
 import { useEntityService } from '../MemoryPage/useEntityService';
 
 import { ActivityTimelineRail } from './ActivityTimelineRail';
 import { EntityDetails } from './Components/EntityDetails';
+import {
+  isRollingDatePreset,
+  resolveDatePreset,
+  type DatePreset,
+} from './Components/ExplorerToolbar/datePresets';
 import { ExplorerToolbar } from './Components/ExplorerToolbar/ExplorerToolbar';
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
@@ -36,6 +42,7 @@ const GET_SAVED_SEARCH = gql(`
         eventTypes
         startTime
         endTime
+        datePreset
         sortBy
         sortOrder
         connectors
@@ -120,6 +127,7 @@ export default function DesktopMemoryPage() {
         'eventTypes',
         'from',
         'to',
+        'when',
         'sortBy',
         'sortOrder',
         'connectors',
@@ -167,12 +175,23 @@ export default function DesktopMemoryPage() {
         setCsv('people', filters.people);
         setCsv('places', filters.places);
 
-        if (filters.startTime) {
-          currentParams.set('from', filters.startTime);
-        }
+        if (isRollingDatePreset(filters.datePreset)) {
+          currentParams.set('when', filters.datePreset);
+          const { from, to } = resolveDatePreset(filters.datePreset as DatePreset);
+          currentParams.set('from', from);
+          currentParams.set('to', to);
+        } else {
+          if (filters.startTime) {
+            currentParams.set('from', filters.startTime);
+          }
 
-        if (filters.endTime) {
-          currentParams.set('to', filters.endTime);
+          if (filters.endTime) {
+            currentParams.set('to', filters.endTime);
+          }
+
+          if (filters.startTime || filters.endTime) {
+            currentParams.set('when', 'custom');
+          }
         }
 
         if (filters.sortBy) {

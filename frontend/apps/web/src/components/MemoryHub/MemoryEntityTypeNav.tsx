@@ -1,94 +1,348 @@
-import type { ComponentType } from 'react';
+import { useState, type ComponentType } from 'react';
 
-import { cn } from '@ci/shadcn';
-import { Shapes } from '@ci/shadcn/icons';
+import { useQuery } from '@apollo/client';
+import { Button, DropdownMenu, cn } from '@ci/shadcn';
+import { ChevronDown, Shapes, Tag as TagIcon } from '@ci/shadcn/icons';
 import { useSearchParams } from 'react-router-dom';
 
-import {
-  BrowserActivityIcon,
-  CommunicationIcon,
-  ContentIcon,
-  EventIcon,
-  FileIcon,
-  ItemIcon,
-  NoteIcon,
-  PersonIcon,
-  PlaceIcon,
-} from '@/components/icons';
 import { AVAILABLE_ENTITY_TYPES, useDropdown } from '@/components/SearchBox/useDropdown';
+import { TagInput } from '@/components/TagInput';
+import { gql } from '@/graphql';
+import { MemoryExplorerFilterControls } from '@/pages/MemoryPage/Components/ExplorerToolbar/ExplorerToolbar';
 
-const ENTITY_TYPE_LABELS: Record<string, string> = {
-  Browser: 'Browser',
-  Communication: 'Communication',
-  Content: 'Content',
-  Event: 'Events',
-  File: 'Files',
-  Note: 'Notes',
-  Person: 'People',
-  Place: 'Places',
-  Thing: 'Things',
-};
+import {
+  WHAT_CATEGORIES,
+  entityTypesForCategory,
+  type EntityTypeIcon,
+  type WhatCategory,
+} from './entityTypeCategories';
 
-const ENTITY_TYPE_ICONS: Record<string, ComponentType<{ className?: string; colorized?: boolean }>> = {
-  Browser: BrowserActivityIcon,
-  Communication: CommunicationIcon,
-  Content: ContentIcon,
-  Event: EventIcon,
-  File: FileIcon,
-  Note: NoteIcon,
-  Person: PersonIcon,
-  Place: PlaceIcon,
-  Thing: ItemIcon,
-};
+const GET_TAGS = gql(`
+  query GetTags {
+    tags {
+      edges {
+        node {
+          id
+          label
+          description
+        }
+      }
+    }
+  }
+`);
 
-/** Entity-type toggles for the Memory explorer — replaces the old What dropdown. */
-export function MemoryEntityTypeNav() {
+const EXPAND_LABEL_CLASS =
+  'max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-all duration-200 ease-out group-hover:ml-1.5 group-hover:max-w-[7rem] group-hover:opacity-100 group-focus-visible:ml-1.5 group-focus-visible:max-w-[7rem] group-focus-visible:opacity-100 group-data-[state=open]:ml-1.5 group-data-[state=open]:max-w-[7rem] group-data-[state=open]:opacity-100';
+
+function categoryButtonClass(selected: boolean, active: boolean) {
+  return cn(
+    'group inline-flex h-8 shrink-0 items-center rounded-md border px-2 text-sm font-medium transition-colors',
+    selected
+      ? 'border-primary bg-background text-foreground shadow-sm'
+      : active
+        ? 'border-border bg-background text-foreground hover:bg-accent'
+        : 'border-border bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+  );
+}
+
+function CategoryIcon({
+  icon: Icon,
+  className,
+}: {
+  icon: EntityTypeIcon | ComponentType<{ className?: string }>;
+  className?: string;
+}) {
+  return <Icon className={cn('h-4 w-4 shrink-0', className)} />;
+}
+
+function useWhatSelection() {
   const [searchParams] = useSearchParams();
-  const [{ selectedEntityTypes }, { selectOnlyEntityType }] = useDropdown();
+  const [{ selectedEntityTypes, tags }, actions] = useDropdown();
 
   const includedOnly = searchParams.get('includedEntityTypes');
   const excludedOnly = searchParams.get('excludedEntityTypes');
   const isFiltered = Boolean(includedOnly || excludedOnly);
   const allSelected = selectedEntityTypes.length === AVAILABLE_ENTITY_TYPES.length;
 
+  const isEntityTypeSelected = (entityType: string) =>
+    isFiltered && selectedEntityTypes.length === 1 && selectedEntityTypes[0] === entityType;
+
+  const isGroupSelected = (types: string[]) => {
+    if (!isFiltered || types.length === 0) {
+      return false;
+    }
+
+    const selectedSet = new Set(selectedEntityTypes);
+
+    return (
+      types.every((type) => selectedSet.has(type)) &&
+      selectedEntityTypes.every((type) => types.includes(type))
+    );
+  };
+
+  const isGroupActive = (types: string[]) =>
+    allSelected || types.some((type) => selectedEntityTypes.includes(type));
+
+  return {
+    allSelected,
+    isFiltered,
+    isEntityTypeSelected,
+    isGroupSelected,
+    isGroupActive,
+    selectedEntityTypes,
+    tags,
+    ...actions,
+  };
+}
+
+function StandaloneWhatButton({
+  category,
+  onSelect,
+  selected,
+  active,
+}: {
+  category: Extract<WhatCategory, { kind: 'standalone' }>;
+  onSelect: () => void;
+  selected: boolean;
+  active: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      aria-label={category.label}
+      title={category.label}
+      onClick={onSelect}
+      className={categoryButtonClass(selected, active)}
+    >
+      <CategoryIcon icon={category.icon} />
+      <span className={EXPAND_LABEL_CLASS}>{category.label}</span>
+    </button>
+  );
+}
+
+function GroupWhatDropdown({
+  category,
+  selectedEntityTypes,
+  isGroupSelected,
+  isGroupActive,
+  onSelectOnly,
+  onToggleType,
+}: {
+  category: Extract<WhatCategory, { kind: 'group' }>;
+  selectedEntityTypes: string[];
+  isGroupSelected: (types: string[]) => boolean;
+  isGroupActive: (types: string[]) => boolean;
+  onSelectOnly: (entityType: string) => void;
+  onToggleType: (entityType: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const types = entityTypesForCategory(category);
+  const selected = isGroupSelected(types);
+  const active = isGroupActive(types);
+  const { CheckboxItem, Content, Label, Separator, Trigger } = DropdownMenu;
+
+  return (
+    <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
+      <Trigger asChild>
+        <button
+          type="button"
+          aria-pressed={active}
+          aria-expanded={open}
+          aria-haspopup="menu"
+          aria-label={category.label}
+          title={category.label}
+          className={categoryButtonClass(selected, active)}
+        >
+          <CategoryIcon icon={category.icon} />
+          <span className={EXPAND_LABEL_CLASS}>{category.label}</span>
+          <ChevronDown
+            className={cn(
+              'ml-0 h-3.5 w-3.5 shrink-0 opacity-50 transition-transform duration-200 group-hover:ml-1 group-data-[state=open]:ml-1 group-data-[state=open]:rotate-180',
+            )}
+          />
+        </button>
+      </Trigger>
+
+      <Content align="start" sideOffset={4} className="z-[9999] w-56 p-2">
+        <Label className="px-1 pb-2 text-sm font-medium">{category.label}</Label>
+        <Separator className="mb-1" />
+        {category.items.map(({ entityType, label, icon: ItemIcon }) => {
+          const isChecked = selectedEntityTypes.includes(entityType);
+          const isOnly = selectedEntityTypes.length === 1 && selectedEntityTypes[0] === entityType;
+
+          return (
+            <CheckboxItem
+              key={entityType}
+              checked={isChecked}
+              onClick={(event) => {
+                event.stopPropagation();
+                event.preventDefault();
+
+                if (category.items.length === 1) {
+                  onSelectOnly(entityType);
+
+                  return;
+                }
+
+                onToggleType(entityType);
+              }}
+              onSelect={(event) => {
+                event.preventDefault();
+              }}
+              className="gap-2"
+            >
+              <span className="flex items-center gap-2">
+                {ItemIcon ? <ItemIcon className="h-4 w-4 shrink-0" /> : null}
+                <span>{label}</span>
+                {isOnly ? <span className="text-xs text-muted-foreground">(only)</span> : null}
+              </span>
+            </CheckboxItem>
+          );
+        })}
+        {category.items.length > 1 && (
+          <>
+            <Separator className="my-1" />
+            {category.items.map(({ entityType, label }) => (
+              <Button
+                key={`only-${entityType}`}
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 w-full justify-start px-2 text-xs font-normal"
+                onClick={() => {
+                  onSelectOnly(entityType);
+                  setOpen(false);
+                }}
+              >
+                Only {label}
+              </Button>
+            ))}
+          </>
+        )}
+      </Content>
+    </DropdownMenu>
+  );
+}
+
+function TagWhatDropdown({
+  tags,
+  onTagsChange,
+}: {
+  tags: string[];
+  onTagsChange: (next: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const active = tags.length > 0;
+  const { data } = useQuery(GET_TAGS, { skip: !open });
+  const suggestions =
+    data?.tags?.edges.map(({ node }: { node: { label: string } }) => node.label) ?? [];
+  const { Content, Label, Trigger } = DropdownMenu;
+
+  return (
+    <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
+      <Trigger asChild>
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-haspopup="dialog"
+          aria-label="Tag"
+          title="Tag"
+          className={categoryButtonClass(active, active)}
+        >
+          <CategoryIcon icon={TagIcon} />
+          <span className={EXPAND_LABEL_CLASS}>Tag</span>
+          <ChevronDown
+            className={cn(
+              'ml-0 h-3.5 w-3.5 shrink-0 opacity-50 transition-transform duration-200 group-hover:ml-1 group-data-[state=open]:ml-1 group-data-[state=open]:rotate-180',
+            )}
+          />
+        </button>
+      </Trigger>
+
+      <Content align="start" sideOffset={4} className="z-[9999] w-80 p-3">
+        <Label className="mb-2 block text-sm font-medium">Tags</Label>
+        <TagInput
+          key={tags.join('|')}
+          tags={tags}
+          suggestions={suggestions}
+          inputPlaceholder="Search or add a tag…"
+          onTagAdded={(tag) => {
+            if (tags.includes(tag)) {
+              return false;
+            }
+
+            onTagsChange([...tags, tag]);
+
+            return true;
+          }}
+          onTagRemoved={(tag) => {
+            onTagsChange(tags.filter((value) => value !== tag));
+          }}
+        />
+      </Content>
+    </DropdownMenu>
+  );
+}
+
+/** Entity-type toggles for the Memory explorer — grouped What categories. */
+export function MemoryEntityTypeNav() {
+  const {
+    isEntityTypeSelected,
+    isGroupSelected,
+    isGroupActive,
+    selectedEntityTypes,
+    tags,
+    selectOnlyEntityType,
+    toggleEntityType,
+    setTags,
+  } = useWhatSelection();
+
   return (
     <nav
       aria-label="What to show in Memory"
-      className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2 md:gap-3 md:px-4"
+      className="flex shrink-0 items-center gap-2 border-b border-border px-2 py-1.5 md:gap-3 md:px-3"
     >
       <div className="flex shrink-0 items-center gap-1.5 text-sm font-medium text-muted-foreground">
         <Shapes className="h-4 w-4" strokeWidth={1.5} aria-hidden />
-        <span>What</span>
+        <span className="hidden sm:inline">What</span>
       </div>
 
       <div className="min-w-0 flex-1 overflow-x-auto overscroll-x-contain">
-        <div className="flex w-max items-center gap-1.5 pb-0.5 md:gap-2">
-          {AVAILABLE_ENTITY_TYPES.map((entityType) => {
-            const active = allSelected || selectedEntityTypes.includes(entityType);
-            const selected = isFiltered && selectedEntityTypes.includes(entityType);
-            const label = ENTITY_TYPE_LABELS[entityType] ?? entityType;
-            const Icon = ENTITY_TYPE_ICONS[entityType];
+        <div className="flex w-max items-center gap-1 md:gap-1.5">
+          {WHAT_CATEGORIES.map((category) => {
+            if (category.kind === 'standalone') {
+              const types = entityTypesForCategory(category);
 
-            return (
-              <button
-                key={entityType}
-                type="button"
-                aria-pressed={active}
-                onClick={() => selectOnlyEntityType(entityType)}
-                className={cn(
-                  'inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-medium transition-colors',
-                  selected
-                    ? 'border-primary bg-background text-foreground shadow-sm'
-                    : active
-                      ? 'border-border bg-background text-foreground hover:bg-accent'
-                      : 'border-border bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground',
-                )}
-              >
-                {Icon ? <Icon className="h-4 w-4 shrink-0" /> : null}
-                <span className="whitespace-nowrap">{label}</span>
-              </button>
-            );
+              return (
+                <StandaloneWhatButton
+                  key={category.id}
+                  category={category}
+                  onSelect={() => selectOnlyEntityType(category.entityType)}
+                  selected={isEntityTypeSelected(category.entityType)}
+                  active={isGroupActive(types)}
+                />
+              );
+            }
+
+            if (category.kind === 'group') {
+              return (
+                <GroupWhatDropdown
+                  key={category.id}
+                  category={category}
+                  selectedEntityTypes={selectedEntityTypes}
+                  isGroupSelected={isGroupSelected}
+                  isGroupActive={isGroupActive}
+                  onSelectOnly={selectOnlyEntityType}
+                  onToggleType={toggleEntityType}
+                />
+              );
+            }
+
+            return <TagWhatDropdown key={category.id} tags={tags} onTagsChange={setTags} />;
           })}
+
+          <MemoryExplorerFilterControls />
         </div>
       </div>
     </nav>
