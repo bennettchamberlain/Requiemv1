@@ -42,6 +42,10 @@
   --activity-6: #008300;
   --activity-7: #4a3aa7;
   --activity-none: oklch(0.554 0.046 257.526);
+
+  /* Button gradient — lighten the right stop (was #064741 / hover #022c2b). */
+  --ci-button-end: #0a6358;
+  --gradient-button: linear-gradient(135deg, var(--ci-button-start), var(--ci-button-end));
 }
 
 .dark {
@@ -59,6 +63,9 @@
   --activity-6: #008300;
   --activity-7: #9085e9;
   --activity-none: oklch(0.676 0.019 253.397);
+
+  --ci-button-end: #0a6358;
+  --gradient-button: linear-gradient(135deg, var(--ci-button-start), var(--ci-button-end));
 }
 
 @supports (color: color-mix(in lab, red, red)) {
@@ -126,7 +133,7 @@
 }
 
 .ci-primary-surface:hover {
-  background-image: linear-gradient(135deg, var(--phthalo-hover), var(--phthalo-deep));
+  background-image: linear-gradient(135deg, var(--phthalo-hover), #08665c);
   color: var(--ci-button-foreground);
   box-shadow: var(--ci-button-shadow-hover);
 }

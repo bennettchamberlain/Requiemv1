@@ -181,28 +181,37 @@ export class JobMonitorService {
     };
   }
 
+  private jobHandlerGroupExpression(entityAlias: 'job' | 'archive'): string {
+    const dataRef = `${entityAlias}.data`;
+    const nameRef = `${entityAlias}.name`;
+
+    return `CASE WHEN ${dataRef}->>'name' = 'smart.rotation.work' THEN CONCAT('smart.rotation.work · ', COALESCE(${dataRef}->>'workType', 'unknown')) ELSE COALESCE(${dataRef}->>'name', ${nameRef}) END`;
+  }
+
   private async getArchiveDistribution(): Promise<JobDistributionDto[]> {
+    const groupExpr = this.jobHandlerGroupExpression('archive');
     const rows = await this.archiveRepository
       .createQueryBuilder('archive')
-      .select("COALESCE(archive.data->>'name', archive.name)", 'jobName')
+      .select(groupExpr, 'jobName')
       .addSelect('COUNT(*)::int', 'count')
-      .groupBy("COALESCE(archive.data->>'name', archive.name)")
+      .groupBy(groupExpr)
       .orderBy('count', 'DESC')
-      .limit(10)
+      .limit(15)
       .getRawMany<{ jobName: string | null; count: number }>();
 
     return this.mapDistributionRows(rows);
   }
 
   private async getActiveDistribution(): Promise<JobDistributionDto[]> {
+    const groupExpr = this.jobHandlerGroupExpression('job');
     const rows = await this.jobRepository
       .createQueryBuilder('job')
-      .select("COALESCE(job.data->>'name', job.name)", 'jobName')
+      .select(groupExpr, 'jobName')
       .addSelect('COUNT(*)::int', 'count')
       .where('job.state IN (:...states)', { states: ['created', 'active', 'retry'] })
-      .groupBy("COALESCE(job.data->>'name', job.name)")
+      .groupBy(groupExpr)
       .orderBy('count', 'DESC')
-      .limit(10)
+      .limit(15)
       .getRawMany<{ jobName: string | null; count: number }>();
 
     return this.mapDistributionRows(rows);
