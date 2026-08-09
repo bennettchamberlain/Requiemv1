@@ -222,19 +222,6 @@ generate_compose() {
       }
     },
     {
-      "name": "orchestrator",
-      "image": "${reg}/companion/orchestrator:${ver}",
-      "restart": "unless-stopped",
-      "volumes": [
-        { "hostPath": "\${APP_DATA_DIR}/data/secrets", "containerPath": "/run/secrets", "readOnly": true }
-      ],
-      "dependsOn": {
-        "setup-orchestrator": { "condition": "service_completed_successfully" },
-        "database": { "condition": "service_healthy" },
-        "setup-secrets": { "condition": "service_completed_successfully" }
-      }
-    },
-    {
       "name": "summary-service",
       "image": "${reg}/companion/summary-service:${ver}",
       "restart": "unless-stopped",
@@ -248,7 +235,6 @@ generate_compose() {
       ],
       "dependsOn": {
         "database": { "condition": "service_healthy" },
-        "orchestrator": { "condition": "service_started" },
         "setup-secrets": { "condition": "service_completed_successfully" }
       }
     },
@@ -260,19 +246,6 @@ generate_compose() {
         { "hostPath": "\${APP_DATA_DIR}/data/secrets", "containerPath": "/run/secrets", "readOnly": true }
       ],
       "dependsOn": {
-        "database": { "condition": "service_healthy" },
-        "setup-secrets": { "condition": "service_completed_successfully" }
-      }
-    },
-    {
-      "name": "setup-orchestrator",
-      "image": "${reg}/companion/setup-orchestrator:${ver}",
-      "restart": "no",
-      "volumes": [
-        { "hostPath": "\${APP_DATA_DIR}/data/secrets", "containerPath": "/run/secrets", "readOnly": true }
-      ],
-      "dependsOn": {
-        "setup-database": { "condition": "service_completed_successfully" },
         "database": { "condition": "service_healthy" },
         "setup-secrets": { "condition": "service_completed_successfully" }
       }
@@ -296,7 +269,6 @@ generate_compose() {
       ],
       "dependsOn": {
         "database": { "condition": "service_healthy" },
-        "orchestrator": { "condition": "service_started" },
         "setup-secrets": { "condition": "service_completed_successfully" }
       }
     },

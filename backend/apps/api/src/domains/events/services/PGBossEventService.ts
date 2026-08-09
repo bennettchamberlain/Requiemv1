@@ -139,7 +139,12 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
     // won't update an existing queue's options, so updateQueue (a COALESCE merge)
     // applies deadLetter to queues that already exist on a live DB too.
     for (const queue of discoveredQueues) {
-      const options = { name: queue, deadLetter: PGBossEventService.DEAD_LETTER_QUEUE };
+      // Listener-requested queue-level options (expiration/retries) — used by
+      // deferred-completion queues whose jobs stay active while an external
+      // executor works, so their expiration must match the work's runtime.
+      const queueOptions = EventListenerRegistry.getQueueOptions(queue) ?? {};
+
+      const options = { name: queue, deadLetter: PGBossEventService.DEAD_LETTER_QUEUE, ...queueOptions };
 
       await this.boss.createQueue(queue, options);
       await this.boss.updateQueue(queue, options);
@@ -354,8 +359,14 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
         perQueueSemaphore(async () => {
           await this.globalSemaphore(async () => {
             try {
-              await this.executeJob(queueName, job);
-              await this.boss.complete(queueName, job.id);
+              const outcome = await this.executeJob(queueName, job);
+
+              // Deferred jobs stay `active` in pg-boss: an out-of-band caller
+              // (webhook) completes/fails them by id, or the queue's
+              // expireInSeconds elapses and pg-boss retries.
+              if (outcome !== 'deferred') {
+                await this.boss.complete(queueName, job.id);
+              }
             } catch (err) {
               this.logger.error(
                 `Failed to complete job in queue ${queueName}`,
@@ -404,11 +415,30 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
     return count;
   }
 
-  private async executeJob(queue: string, job: JobWithMetadata<EventData>): Promise<void> {
+  /**
+   * Complete a job that a listener deferred (see {@link Acknowledgement.defer}).
+   * Called out-of-band, typically by a webhook controller once the external
+   * executor reports success.
+   */
+  async completeJob(queue: string, jobId: string, output?: Record<string, unknown>): Promise<void> {
+    await this.boss.complete(queue, jobId, output);
+    this.logger.log('Completed deferred job', { queue, jobId });
+  }
+
+  /**
+   * Fail a deferred job so pg-boss applies its retry/dead-letter policy. The
+   * output is persisted on the job row so the failure stays diagnosable.
+   */
+  async failJob(queue: string, jobId: string, output?: Record<string, unknown>): Promise<void> {
+    await this.boss.fail(queue, jobId, output);
+    this.logger.warn(`Failed deferred job ${jobId} on queue ${queue}`);
+  }
+
+  private async executeJob(queue: string, job: JobWithMetadata<EventData>): Promise<'completed' | 'deferred'> {
     const userId = (job as { userId?: string }).userId;
 
     return ContextService.run({ traceId: job.id, userId }, () => {
-      return new Promise<void>((resolve, reject) => {
+      return new Promise<'completed' | 'deferred'>((resolve, reject) => {
         const { name, ...data } = job.data;
 
         const resolvedData = {
@@ -424,7 +454,7 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
 
         const done = () => {
           this.logger.log('Completed job');
-          resolve();
+          resolve('completed');
         };
 
         const fail = (reason: unknown) => {
@@ -432,15 +462,20 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
           reject(reason instanceof Error ? reason : new Error(String(reason)));
         };
 
+        const defer = () => {
+          this.logger.log('Deferred job completion', { queue, jobId: job.id });
+          resolve('deferred');
+        };
+
         const skip = () => {
           this.logger.log('No listeners found, skipping job');
-          resolve();
+          resolve('completed');
         };
 
         const queueSpecificEventName = `${name}:${queue}`;
 
         if (this.eventEmitter.hasListeners(queueSpecificEventName)) {
-          this.eventEmitter.emit(queueSpecificEventName, resolvedData, { done, fail });
+          this.eventEmitter.emit(queueSpecificEventName, resolvedData, { done, fail, defer });
         } else {
           skip();
         }

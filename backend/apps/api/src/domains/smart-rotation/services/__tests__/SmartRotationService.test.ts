@@ -43,6 +43,7 @@ describe('SmartRotationService.enqueueWork', () => {
       {
         queue: SMART_ROTATION_QUEUE,
         singletonKey: 'smart-rotation:user-1:question_feed',
+        priority: -2,
       },
     );
   });

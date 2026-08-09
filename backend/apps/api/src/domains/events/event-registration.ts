@@ -1,9 +1,21 @@
 import { DEFAULT_QUEUE } from './constants';
+import type { QueueOptions } from './types';
 
 export class EventListenerRegistry {
   private static listeners = new Map<string, { className: string; methodName: string; queue: string }>();
 
-  static register(eventName: string, className: string, methodName: string, queue: string = DEFAULT_QUEUE) {
+  // Queue-level options requested via @OnEvent({ queueOptions }). Keyed by
+  // queue name; conflicting explicit values from different listeners throw at
+  // registration (decorator evaluation) so a misconfiguration fails fast.
+  private static queueOptions = new Map<string, QueueOptions>();
+
+  static register(
+    eventName: string,
+    className: string,
+    methodName: string,
+    queue: string = DEFAULT_QUEUE,
+    queueOptions?: QueueOptions,
+  ) {
     const key = `${eventName}:${queue}`;
     const existing = this.listeners.get(key);
 
@@ -21,14 +33,38 @@ export class EventListenerRegistry {
       methodName,
       queue,
     });
+
+    if (queueOptions) {
+      const current = this.queueOptions.get(queue) ?? {};
+
+      for (const [option, value] of Object.entries(queueOptions) as [keyof QueueOptions, number][]) {
+        const existingValue = current[option];
+
+        if (existingValue !== undefined && existingValue !== value) {
+          throw new Error(
+            `Conflicting queueOptions.${option} for queue ${queue}: ` +
+              `${existingValue} already registered, ${className}.${methodName} requests ${value}.`,
+          );
+        }
+
+        current[option] = value;
+      }
+
+      this.queueOptions.set(queue, current);
+    }
   }
 
   static getListeners() {
     return Array.from(this.listeners.entries());
   }
 
+  static getQueueOptions(queue: string): QueueOptions | undefined {
+    return this.queueOptions.get(queue);
+  }
+
   static clear() {
     this.listeners.clear();
+    this.queueOptions.clear();
   }
 }
 

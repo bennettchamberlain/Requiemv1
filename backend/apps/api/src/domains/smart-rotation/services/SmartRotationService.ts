@@ -100,6 +100,7 @@ export class SmartRotationService {
   /** Graph growth and schedule work outrank inference when queues are busy. */
   private workTypePriority(workType: SmartRotationWorkType): number {
     switch (workType) {
+      case 'graph_link':
       case 'graph_enrich':
       case 'promotion_review':
       case 'hydrate_answers':

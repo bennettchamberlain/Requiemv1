@@ -3,6 +3,32 @@ import type { EventPayloads } from './event-registry';
 export type Acknowledgement = {
   done: () => void;
   fail: (reason: unknown) => void;
+
+  /**
+   * Release the worker slot WITHOUT completing or failing the job. The job
+   * stays `active` in pg-boss until something calls
+   * {@link EventService.completeJob} / {@link EventService.failJob} with its id
+   * (e.g. a webhook from an external executor), or until the queue's
+   * `expireInSeconds` elapses and pg-boss retries it. Only meaningful with
+   * `autoAcknowledge: false`; LocalEventService treats it as `done`.
+   */
+  defer: () => void;
+};
+
+/**
+ * pg-boss queue-level options a listener can request for its queue. Applied at
+ * queue creation/update on module init by the pg-boss implementation; ignored
+ * by LocalEventService.
+ */
+export type QueueOptions = {
+  /** Seconds an `active` job may run before pg-boss expires (and retries) it. */
+  expireInSeconds?: number;
+
+  /** Retry attempts before the job is routed to the dead-letter queue. */
+  retryLimit?: number;
+
+  /** Seconds between retries (with pg-boss's backoff applied on top). */
+  retryDelay?: number;
 };
 
 export type EventPayload<E extends keyof EventPayloads> = EventPayloads[E];

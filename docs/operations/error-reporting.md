@@ -196,7 +196,7 @@ To confirm reporting is genuinely inert without a DSN, start the API with no
 | `backend/apps/api/src/common/filters/GlobalExceptionsFilter.ts` | Captures unexpected request failures (not 4xx) |
 | `backend/apps/api/src/application.ts` | Crash handlers capture + flush before `process.exit` |
 | `frontend/apps/web/src/main.tsx` | Calls `initTelemetry()` before render |
-| `backend/apps/{hbpe,summary}` | `init_telemetry()` in the FastAPI app and Temporal worker entry points |
+| `backend/apps/{hbpe,summary}` | `init_telemetry()` in the FastAPI app entry points |
 
 ## Not wired up yet
 

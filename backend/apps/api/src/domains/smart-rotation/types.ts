@@ -5,7 +5,11 @@ export const SMART_ROTATION_WORK_TYPES = [
   'schedule_sync',
   'insights',
   'summaries',
+  /** Deterministic graph prep: person stubs + comm/event entity links (Import Tools stages 4–6). */
+  'graph_link',
+  /** LLM relationship extraction from recent comms/events/answers. */
   'graph_enrich',
+  /** Surface pending graph/inference promotions for user review. */
   'promotion_review',
   'hydrate_answers',
   'hydrate_inventory',
@@ -31,6 +35,7 @@ export const SMART_ROTATION_CRONS = {
   schedule_sync: '0 14 * * * *',
   summaries: '0 22 * * * *',
   insights: '0 45 */3 * * *',
+  graph_link: '0 5 */2 * * *',
   graph_enrich: '0 10 */6 * * *',
   promotion_review: '0 30 */4 * * *',
   hydrate_answers: '0 5 3 * * *',

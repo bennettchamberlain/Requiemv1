@@ -121,6 +121,9 @@
     },
     "parser": {
       "host": "http://summary-service:8002"
+    },
+    "summary": {
+      "host": "http://summary-service:8001"
     }
   },
   "signalCli": {

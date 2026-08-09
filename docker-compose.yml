@@ -36,8 +36,6 @@ services:
     depends_on:
       database:
         condition: service_healthy
-      orchestrator:
-        condition: service_started
     restart: unless-stopped
     profiles: [ "local", "staging", "production" ]
 
@@ -56,18 +54,6 @@ services:
       start_period: 10s
     profiles: [ "local", "staging", "production" ]
 
-  orchestrator:
-    image: ci/orchestrator
-    networks:
-      - ci
-    depends_on:
-      setup-orchestrator:
-        condition: service_completed_successfully
-      database:
-         condition: service_healthy
-    restart: unless-stopped
-    profiles: [ "local", "staging", "production" ]
-
   summary-service:
     image: ci/summary-service
     extra_hosts:
@@ -84,8 +70,6 @@ services:
     depends_on:
       database:
         condition: service_healthy
-      orchestrator:
-        condition: service_started
     restart: unless-stopped
     profiles: [ "local", "staging", "production" ]
 
@@ -141,18 +125,6 @@ services:
         condition: service_healthy
     profiles: [ "local", "staging", "production" ]
 
-  setup-orchestrator:
-    image: ci/setup-orchestrator
-    networks:
-      - ci
-    restart: "no"
-    depends_on:
-      setup-database:
-        condition: service_completed_successfully
-      database:
-         condition: service_healthy
-    profiles: [ "local", "staging", "production" ]
-
   ##############################
   # THIRD-PARTY MANAGEMENT UIs #
   ##############################
@@ -182,17 +154,6 @@ services:
       - 5432:5432
     networks:
       - ci
-    profiles: [ "tooling" ]
-
-  orchestrator-ui:
-    image: temporalio/ui:2.31.2
-    ports:
-      - 8080:8080
-    environment:
-      - TEMPORAL_ADDRESS=orchestrator:7233
-    networks:
-      - ci
-    restart: unless-stopped
     profiles: [ "tooling" ]
 
 volumes:

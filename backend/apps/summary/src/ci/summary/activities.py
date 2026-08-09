@@ -1,8 +1,9 @@
 """
-Temporal activities for summary generation.
+Retriable units of work for summary generation (formerly Temporal activities).
 
-Activities are retriable units of work that can fail and be retried.
-They are thin wrappers around pure functions and database operations.
+Plain async functions orchestrated by ci.summary.functions and dispatched from
+the NestJS pg-boss scheduler through the function runner. They are thin
+wrappers around pure functions and database operations.
 """
 
 import json
@@ -12,9 +13,8 @@ from uuid import UUID, uuid4
 
 import nest_asyncio
 import structlog
-from temporalio import activity
 
-# Allow nested event loops (needed for run_sync() in async activity context)
+# Allow nested event loops (needed for run_sync() in async context)
 nest_asyncio.apply()
 
 from .action_aggregator import action_aggregator
@@ -40,7 +40,6 @@ logger = structlog.get_logger()
 # ============================================================================
 
 
-@activity.defn
 async def resolve_summary_window_activity(
     user_id: str,
     period_type: str,  # 'daily' | 'weekly' | 'monthly'
@@ -79,7 +78,6 @@ async def resolve_summary_window_activity(
 # ============================================================================
 
 
-@activity.defn
 async def aggregate_data_activity(
     user_id: str,
     start_time: str,  # ISO format
@@ -91,12 +89,7 @@ async def aggregate_data_activity(
     This activity queries all configured data sources and returns
     aggregated data for summary generation.
     """
-    activity.logger.info(
-        "aggregating_data", user_id=user_id, start=start_time, end=end_time
-    )
-
-    # Send heartbeat for long-running operation
-    activity.heartbeat("Starting data aggregation")
+    logger.info("aggregating_data", user_id=user_id, start=start_time, end=end_time)
 
     user_uuid = UUID(user_id)
     start_dt = datetime.fromisoformat(start_time)
@@ -110,9 +103,7 @@ async def aggregate_data_activity(
     # Call pure aggregator function
     aggregated_data = aggregator.aggregate_hour(user_uuid, adjusted_start, adjusted_end)
 
-    activity.heartbeat("Data aggregation complete")
-
-    activity.logger.info(
+    logger.info(
         "data_aggregated",
         user_id=user_id,
         total_sources=len(
@@ -128,7 +119,6 @@ async def aggregate_data_activity(
 # ============================================================================
 
 
-@activity.defn
 async def generate_hourly_summary_activity(
     aggregated_data: dict[str, Any],
 ) -> dict[str, Any]:
@@ -138,8 +128,7 @@ async def generate_hourly_summary_activity(
     This activity calls the LLM to create a summary and is the main
     point where LLM API failures can occur (handled by retry policy).
     """
-    activity.logger.info("generating_hourly_summary")
-    activity.heartbeat("Calling LLM for hourly summary")
+    logger.info("generating_hourly_summary")
 
     # Create LLM config
     llm_config = get_llm_config()
@@ -147,8 +136,7 @@ async def generate_hourly_summary_activity(
     # Call pure function
     summary_data = generate_hourly_summary(llm_config, aggregated_data)
 
-    activity.heartbeat("Hourly summary generated")
-    activity.logger.info(
+    logger.info(
         "hourly_summary_generated",
         tokens_used=summary_data.get("tokens_used", 0),
         has_activity=summary_data.get("activity_counts", {}).get("total", 0) > 0,
@@ -157,7 +145,6 @@ async def generate_hourly_summary_activity(
     return summary_data
 
 
-@activity.defn
 async def generate_rollup_summary_activity(
     period_type: str,
     child_summaries: list[dict[str, Any]],
@@ -167,12 +154,11 @@ async def generate_rollup_summary_activity(
 
     This activity synthesizes child summaries into a higher-level summary.
     """
-    activity.logger.info(
+    logger.info(
         "generating_rollup_summary",
         period_type=period_type,
         child_count=len(child_summaries),
     )
-    activity.heartbeat(f"Generating {period_type} summary")
 
     # Create LLM config
     llm_config = get_llm_config()
@@ -180,8 +166,7 @@ async def generate_rollup_summary_activity(
     # Call pure function
     summary_data = generate_rollup_summary(llm_config, period_type, child_summaries)
 
-    activity.heartbeat(f"{period_type.title()} summary generated")
-    activity.logger.info(
+    logger.info(
         "rollup_summary_generated",
         period_type=period_type,
         tokens_used=summary_data.get("tokens_used", 0),
@@ -195,7 +180,6 @@ async def generate_rollup_summary_activity(
 # ============================================================================
 
 
-@activity.defn
 async def store_summary_activity(
     user_id: str,
     summary_data: dict[str, Any],
@@ -208,10 +192,7 @@ async def store_summary_activity(
 
     Returns the summary_id as a string.
     """
-    activity.logger.info(
-        "storing_summary", summary_type=summary_data.get("summary_type")
-    )
-    activity.heartbeat("Storing summary to database")
+    logger.info("storing_summary", summary_type=summary_data.get("summary_type"))
 
     user_uuid = UUID(user_id)
     start_dt = datetime.fromisoformat(start_time)
@@ -269,15 +250,11 @@ async def store_summary_activity(
         },
     )
 
-    activity.heartbeat("Summary stored")
-    activity.logger.info(
-        "summary_stored", summary_id=str(summary_id), type=summary_type
-    )
+    logger.info("summary_stored", summary_id=str(summary_id), type=summary_type)
 
     return str(summary_id)
 
 
-@activity.defn
 async def fetch_child_summaries_activity(
     user_id: str,
     start_time: str,
@@ -290,8 +267,7 @@ async def fetch_child_summaries_activity(
     For example, fetch hourly summaries to create daily summary,
     or daily summaries to create weekly summary.
     """
-    activity.logger.info("fetching_child_summaries", period_type=period_type)
-    activity.heartbeat(f"Fetching {period_type} summaries")
+    logger.info("fetching_child_summaries", period_type=period_type)
 
     user_uuid = UUID(user_id)
     start_dt = datetime.fromisoformat(start_time)
@@ -326,8 +302,7 @@ async def fetch_child_summaries_activity(
         row["summary_text"] = row.get("content", {}).get("summary_text", "")
         row["activity_counts"] = row.get("content", {}).get("activity_counts", {})
 
-    activity.heartbeat(f"Found {len(rows)} {period_type} summaries")
-    activity.logger.info("child_summaries_fetched", count=len(rows))
+    logger.info("child_summaries_fetched", count=len(rows))
 
     return rows
 
@@ -337,15 +312,13 @@ async def fetch_child_summaries_activity(
 # ============================================================================
 
 
-@activity.defn
 async def get_entity_id_activity(user_id: str) -> str | None:
     """
     Get or find entity_id for a user.
 
     Returns entity_id or None if not found.
     """
-    activity.logger.info("getting_entity_id", user_id=user_id)
-    activity.heartbeat("Looking up entity ID")
+    logger.info("getting_entity_id", user_id=user_id)
 
     user_uuid = UUID(user_id)
 
@@ -356,7 +329,7 @@ async def get_entity_id_activity(user_id: str) -> str | None:
     )
     if rows and rows[0].get("entity_id"):
         entity_id = str(rows[0]["entity_id"])
-        activity.logger.info("entity_id_found_from_users", entity_id=entity_id)
+        logger.info("entity_id_found_from_users", entity_id=entity_id)
         return entity_id
 
     # Fallback: find Person entity
@@ -371,22 +344,20 @@ async def get_entity_id_activity(user_id: str) -> str | None:
 
     if rows:
         entity_id = str(rows[0]["entity_id"])
-        activity.logger.info("entity_id_found_from_entities", entity_id=entity_id)
+        logger.info("entity_id_found_from_entities", entity_id=entity_id)
         return entity_id
 
-    activity.logger.warning("entity_id_not_found", user_id=user_id)
+    logger.warning("entity_id_not_found", user_id=user_id)
     return None
 
 
-@activity.defn
 async def fetch_previous_dossier_activity(entity_id: str) -> dict[str, Any] | None:
     """
     Fetch the previous dossier for an entity.
 
     Returns the dossier dict or None if not found.
     """
-    activity.logger.info("fetching_previous_dossier", entity_id=entity_id)
-    activity.heartbeat("Fetching previous dossier")
+    logger.info("fetching_previous_dossier", entity_id=entity_id)
 
     rows = db.execute_query(
         "SELECT dossier FROM entities WHERE entity_id = :entity_id",
@@ -394,29 +365,28 @@ async def fetch_previous_dossier_activity(entity_id: str) -> dict[str, Any] | No
     )
 
     if not rows:
-        activity.logger.info("no_previous_dossier_found")
+        logger.info("no_previous_dossier_found")
         return None
 
     dossier = rows[0].get("dossier")
 
     if isinstance(dossier, dict):
-        activity.logger.info("previous_dossier_fetched")
+        logger.info("previous_dossier_fetched")
         return dossier
 
     if isinstance(dossier, str):
         try:
             parsed = json.loads(dossier)
-            activity.logger.info("previous_dossier_parsed")
+            logger.info("previous_dossier_parsed")
             return parsed
         except json.JSONDecodeError:
-            activity.logger.warning("dossier_parse_failed")
+            logger.warning("dossier_parse_failed")
             return None
 
-    activity.logger.info("no_dossier_data")
+    logger.info("no_dossier_data")
     return None
 
 
-@activity.defn
 async def fetch_summaries_for_dossier_activity(
     user_id: str,
     lookback_days: int,
@@ -427,8 +397,7 @@ async def fetch_summaries_for_dossier_activity(
 
     Returns dict with 'daily' and 'hourly' summary lists.
     """
-    activity.logger.info("fetching_summaries_for_dossier", lookback_days=lookback_days)
-    activity.heartbeat("Fetching recent summaries")
+    logger.info("fetching_summaries_for_dossier", lookback_days=lookback_days)
 
     user_uuid = UUID(user_id)
     end_dt = datetime.fromisoformat(end_time)
@@ -474,10 +443,7 @@ async def fetch_summaries_for_dossier_activity(
         row["summary_text"] = row.get("content", {}).get("summary_text", "")
         row["activity_counts"] = row.get("content", {}).get("activity_counts", {})
 
-    activity.heartbeat(
-        f"Found {len(daily_rows)} daily, {len(hourly_rows)} hourly summaries"
-    )
-    activity.logger.info(
+    logger.info(
         "summaries_fetched_for_dossier",
         daily_count=len(daily_rows),
         hourly_count=len(hourly_rows),
@@ -489,7 +455,6 @@ async def fetch_summaries_for_dossier_activity(
     }
 
 
-@activity.defn
 async def generate_dossier_activity(
     user_id: str,
     daily_summaries: list[dict[str, Any]],
@@ -504,12 +469,11 @@ async def generate_dossier_activity(
 
     Returns the dossier payload ready to be stored.
     """
-    activity.logger.info(
+    logger.info(
         "generating_dossier",
         daily_count=len(daily_summaries),
         hourly_count=len(hourly_summaries),
     )
-    activity.heartbeat("Calling LLM for dossier generation")
 
     end_dt = datetime.fromisoformat(end_time)
     lookback_start = end_dt - timedelta(days=lookback_days)
@@ -530,13 +494,11 @@ async def generate_dossier_activity(
         max_chars=settings.dossier_max_chars,
     )
 
-    activity.heartbeat("Dossier generated")
-    activity.logger.info("dossier_generated")
+    logger.info("dossier_generated")
 
     return dossier
 
 
-@activity.defn
 async def store_dossier_activity(
     entity_id: str,
     dossier: dict[str, Any],
@@ -544,8 +506,7 @@ async def store_dossier_activity(
     """
     Store dossier in the entities table.
     """
-    activity.logger.info("storing_dossier", entity_id=entity_id)
-    activity.heartbeat("Storing dossier to database")
+    logger.info("storing_dossier", entity_id=entity_id)
 
     db.execute_write(
         """
@@ -556,8 +517,7 @@ async def store_dossier_activity(
         {"entity_id": entity_id, "dossier": json.dumps(dossier)},
     )
 
-    activity.heartbeat("Dossier stored")
-    activity.logger.info("dossier_stored", entity_id=entity_id)
+    logger.info("dossier_stored", entity_id=entity_id)
 
 
 # ============================================================================
@@ -565,7 +525,6 @@ async def store_dossier_activity(
 # ============================================================================
 
 
-@activity.defn
 async def check_new_data_for_insights_activity(
     user_id: str,
     since: str,  # ISO format
@@ -575,44 +534,38 @@ async def check_new_data_for_insights_activity(
 
     Returns True if new graph deltas, events, or summaries exist since the given time.
     """
-    activity.logger.info("checking_new_data_for_insights", user_id=user_id, since=since)
-    activity.heartbeat("Checking for new data")
+    logger.info("checking_new_data_for_insights", user_id=user_id, since=since)
 
     user_uuid = UUID(user_id)
     since_dt = datetime.fromisoformat(since)
 
     has_new_data = insight_aggregator.has_new_data(user_uuid, since_dt)
 
-    activity.logger.info(
-        "new_data_check_complete", user_id=user_id, has_new_data=has_new_data
-    )
+    logger.info("new_data_check_complete", user_id=user_id, has_new_data=has_new_data)
     return has_new_data
 
 
-@activity.defn
 async def get_last_insight_time_activity(user_id: str) -> str | None:
     """
     Get the timestamp of the last generated insight for this user.
 
     Returns ISO format timestamp or None if no insights exist.
     """
-    activity.logger.info("getting_last_insight_time", user_id=user_id)
-    activity.heartbeat("Looking up last insight time")
+    logger.info("getting_last_insight_time", user_id=user_id)
 
     user_uuid = UUID(user_id)
     last_time = insight_aggregator.get_last_insight_time(user_uuid)
 
     if last_time:
-        activity.logger.info(
+        logger.info(
             "last_insight_time_found", user_id=user_id, last_time=last_time.isoformat()
         )
         return last_time.isoformat()
 
-    activity.logger.info("no_previous_insights", user_id=user_id)
+    logger.info("no_previous_insights", user_id=user_id)
     return None
 
 
-@activity.defn
 async def aggregate_insights_context_activity(
     user_id: str,
     since: str,  # ISO format
@@ -624,10 +577,9 @@ async def aggregate_insights_context_activity(
     Collects graph deltas, upcoming events, recent summaries,
     relevant relationships, and communications.
     """
-    activity.logger.info(
+    logger.info(
         "aggregating_insights_context", user_id=user_id, since=since, until=until
     )
-    activity.heartbeat("Aggregating insights context")
 
     user_uuid = UUID(user_id)
     since_dt = datetime.fromisoformat(since)
@@ -637,8 +589,7 @@ async def aggregate_insights_context_activity(
         user_uuid, since_dt, until_dt
     )
 
-    activity.heartbeat("Insights context aggregated")
-    activity.logger.info(
+    logger.info(
         "insights_context_aggregated",
         user_id=user_id,
         graph_deltas=len(context.get("graph_deltas", [])),
@@ -649,7 +600,6 @@ async def aggregate_insights_context_activity(
     return context
 
 
-@activity.defn
 async def generate_insights_activity(
     insights_context: dict[str, Any],
 ) -> dict[str, Any]:
@@ -658,23 +608,22 @@ async def generate_insights_activity(
 
     Returns insights data ready for storage.
     """
-    activity.logger.info("generating_insights")
-    activity.heartbeat("Calling LLM for insights generation")
+    logger.info("generating_insights")
 
     # Create LLM config
     llm_config = get_llm_config()
 
     # Call pure function. Insights are a proactive, best-effort feature: a flaky
     # local model that can't produce schema-valid output should not fail the
-    # workflow (and trigger Temporal's retry storm). Return an empty result so
-    # the workflow's num_insights==0 branch skips gracefully.
+    # run (and trigger pg-boss's retry storm). Return an empty result so
+    # the caller's num_insights==0 branch skips gracefully.
     try:
         insights_data = generate_insights(llm_config, insights_context)
     except Exception as exc:
         # Loud on purpose: this swallow is the reason "insights never show up"
         # went undiagnosed. The workflow still skips gracefully, but the error
         # (with traceback) must be visible in the logs.
-        activity.logger.error(
+        logger.error(
             "insights_generation_failed_nonfatal error=%s error_type=%s output_mode=%s",
             exc,
             type(exc).__name__,
@@ -691,8 +640,7 @@ async def generate_insights_activity(
             "reason": "generation_failed",
         }
 
-    activity.heartbeat("Insights generated")
-    activity.logger.info(
+    logger.info(
         "insights_generated",
         num_insights=insights_data.get("num_insights", 0),
         tokens_used=insights_data.get("tokens_used", 0),
@@ -701,7 +649,6 @@ async def generate_insights_activity(
     return insights_data
 
 
-@activity.defn
 async def generate_single_insight_activity(
     insights_context: dict[str, Any],
     prior_insights: list[dict[str, Any]],
@@ -714,15 +661,14 @@ async def generate_single_insight_activity(
     non-fatal: any insights already stored this run stay stored, and the loop
     simply ends.
     """
-    activity.logger.info("generating_single_insight num_prior=%d", len(prior_insights))
-    activity.heartbeat("Calling LLM for single insight generation")
+    logger.info("generating_single_insight num_prior=%d", len(prior_insights))
 
     llm_config = get_llm_config()
 
     try:
         return generate_single_insight(llm_config, insights_context, prior_insights)
     except Exception as exc:
-        activity.logger.error(
+        logger.error(
             "single_insight_generation_failed_nonfatal error=%s error_type=%s output_mode=%s",
             exc,
             type(exc).__name__,
@@ -739,7 +685,6 @@ async def generate_single_insight_activity(
         }
 
 
-@activity.defn
 async def aggregate_action_context_activity(
     user_id: str,
     lookback_days: int = 7,
@@ -751,17 +696,15 @@ async def aggregate_action_context_activity(
     raw data like graph deltas. This produces higher-level context
     for conversation starters and time suggestions.
     """
-    activity.logger.info(
+    logger.info(
         "aggregating_action_context", user_id=user_id, lookback_days=lookback_days
     )
-    activity.heartbeat("Aggregating action context")
 
     user_uuid = UUID(user_id)
 
     context = action_aggregator.aggregate_action_context(user_uuid, lookback_days)
 
-    activity.heartbeat("Action context aggregated")
-    activity.logger.info(
+    logger.info(
         "action_context_aggregated",
         user_id=user_id,
         recent_summaries=len(context.get("recent_summaries", [])),
@@ -773,7 +716,6 @@ async def aggregate_action_context_activity(
     return context
 
 
-@activity.defn
 async def generate_actions_activity(
     action_context: dict[str, Any],
 ) -> dict[str, Any]:
@@ -782,8 +724,7 @@ async def generate_actions_activity(
 
     Returns conversation starters and time suggestions.
     """
-    activity.logger.info("generating_actions")
-    activity.heartbeat("Calling LLM for actions generation")
+    logger.info("generating_actions")
 
     # Create LLM config
     llm_config = get_llm_config()
@@ -794,7 +735,7 @@ async def generate_actions_activity(
     try:
         actions_data = generate_actions(llm_config, action_context)
     except Exception as exc:
-        activity.logger.error(
+        logger.error(
             "actions_generation_failed_nonfatal error=%s error_type=%s output_mode=%s",
             exc,
             type(exc).__name__,
@@ -808,8 +749,7 @@ async def generate_actions_activity(
             "reason": "generation_failed",
         }
 
-    activity.heartbeat("Actions generated")
-    activity.logger.info(
+    logger.info(
         "actions_generated",
         num_actions=len(actions_data.get("actions", [])),
         tokens_used=actions_data.get("tokens_used", 0),
@@ -818,7 +758,6 @@ async def generate_actions_activity(
     return actions_data
 
 
-@activity.defn
 async def count_pending_actions_activity(user_id: str) -> int:
     """
     Count the actions currently occupying slots on the user's feed.
@@ -828,7 +767,7 @@ async def count_pending_actions_activity(user_id: str) -> int:
     actions are only used as filler and are not counted here — otherwise a user who
     stops dismissing would permanently block new generation.
     """
-    activity.logger.info("counting_pending_actions", user_id=user_id)
+    logger.info("counting_pending_actions", user_id=user_id)
 
     rows = db.execute_query(
         """
@@ -843,12 +782,11 @@ async def count_pending_actions_activity(user_id: str) -> int:
 
     pending = int(rows[0]["pending"]) if rows else 0
 
-    activity.logger.info("pending_actions_counted", user_id=user_id, pending=pending)
+    logger.info("pending_actions_counted", user_id=user_id, pending=pending)
 
     return pending
 
 
-@activity.defn
 async def store_action_activity(
     user_id: str,
     actions_data: dict[str, Any],
@@ -864,11 +802,10 @@ async def store_action_activity(
     actions_list = actions_data.get("actions", [])
     num_actions = len(actions_list)
 
-    activity.logger.info("storing_actions", num_actions=num_actions)
-    activity.heartbeat("Storing actions to database")
+    logger.info("storing_actions", num_actions=num_actions)
 
     if not actions_list:
-        activity.logger.info("no_actions_to_store")
+        logger.info("no_actions_to_store")
         return []
 
     user_uuid = UUID(user_id)
@@ -911,11 +848,9 @@ async def store_action_activity(
         writes.append((insert_query, params))
 
     # Execute all inserts in a single transaction
-    activity.heartbeat(f"Inserting {num_actions} actions in transaction")
     db.execute_writes_in_transaction(writes)
 
-    activity.heartbeat("Actions stored")
-    activity.logger.info(
+    logger.info(
         "actions_stored",
         num_actions=num_actions,
         action_ids=action_ids,
@@ -924,7 +859,6 @@ async def store_action_activity(
     return action_ids
 
 
-@activity.defn
 async def store_insight_activity(
     user_id: str,
     insights_data: dict[str, Any],
@@ -943,11 +877,10 @@ async def store_insight_activity(
     insights_list = insights_data.get("insights", [])
     num_insights = len(insights_list)
 
-    activity.logger.info("storing_insights", num_insights=num_insights)
-    activity.heartbeat("Storing insights to database")
+    logger.info("storing_insights", num_insights=num_insights)
 
     if not insights_list:
-        activity.logger.info("no_insights_to_store")
+        logger.info("no_insights_to_store")
         return []
 
     user_uuid = UUID(user_id)
@@ -1029,11 +962,9 @@ async def store_insight_activity(
         writes.append((insert_query, params))
 
     # Execute all inserts in a single transaction
-    activity.heartbeat(f"Inserting {num_insights} insights in transaction")
     db.execute_writes_in_transaction(writes)
 
-    activity.heartbeat("Insights stored")
-    activity.logger.info(
+    logger.info(
         "insights_stored",
         num_insights=num_insights,
         summary_ids=summary_ids,

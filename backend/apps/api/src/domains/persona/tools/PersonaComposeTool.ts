@@ -3,9 +3,9 @@ import { z } from 'zod';
 
 import { type RequestContext, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-
 import { BaseTool } from '@ci/domains/tools';
 import type { IntentDefinition, ToolExecutionContext } from '@ci/domains/tools';
+
 import { PersonaComposeService, type HowYoudDoItResult } from '../services/PersonaComposeService';
 
 const inputSchema = z.object({

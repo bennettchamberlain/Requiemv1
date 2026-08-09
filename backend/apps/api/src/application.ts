@@ -55,6 +55,7 @@ import { PlanningModule } from '@ci/domains/planning';
 import { PositionModule } from '@ci/domains/position';
 import { PowerSyncModule } from '@ci/domains/powersync';
 import { PredictionsModule } from '@ci/domains/predictions';
+import { PythonFunctionsModule } from '@ci/domains/python-functions';
 import { ScheduleModule } from '@ci/domains/schedule';
 import { SearchIngressModule } from '@ci/domains/search-ingress';
 import { SearchNextModule } from '@ci/domains/search-next';
@@ -112,6 +113,7 @@ import { flushTelemetry, isTelemetryEnabled } from '@ci/instrument';
     PositionModule,
     PowerSyncModule,
     PredictionsModule,
+    PythonFunctionsModule,
     ToolsModule,
     MemoryModule,
     GeocodeModule,

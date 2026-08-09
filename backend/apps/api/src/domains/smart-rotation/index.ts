@@ -7,6 +7,7 @@ import { LLMModule } from '@ci/domains/llm';
 import { MaintenanceModule } from '@ci/domains/maintenance';
 import { MemoryModule } from '@ci/domains/memory';
 import { PersonalizationModule } from '@ci/domains/personalization';
+import { PythonFunctionsModule } from '@ci/domains/python-functions';
 import { ScheduleModule } from '@ci/domains/schedule';
 
 import './events';
@@ -15,6 +16,7 @@ import { EntityPromotionCron } from './cron/EntityPromotionCron';
 import {
   SmartRotationAnswerInferCron,
   SmartRotationGraphEnrichCron,
+  SmartRotationGraphLinkCron,
   SmartRotationHydrateAnswersCron,
   SmartRotationHydrateInventoryCron,
   SmartRotationInsightsCron,
@@ -26,7 +28,6 @@ import {
 import { SmartRotationListener } from './listeners/SmartRotationListener';
 import { ContextGapQuestionService } from './services/ContextGapQuestionService';
 import { SmartRotationService } from './services/SmartRotationService';
-import { SummaryServiceClient } from './services/SummaryServiceClient';
 
 @Module({
   imports: [
@@ -37,11 +38,11 @@ import { SummaryServiceClient } from './services/SummaryServiceClient';
     ScheduleModule,
     MaintenanceModule,
     PersonalizationModule,
+    PythonFunctionsModule,
     LoggingModule,
   ],
   providers: [
     SmartRotationService,
-    SummaryServiceClient,
     ContextGapQuestionService,
     SmartRotationListener,
     SmartRotationQuestionFeedCron,
@@ -49,6 +50,7 @@ import { SummaryServiceClient } from './services/SummaryServiceClient';
     SmartRotationScheduleSyncCron,
     SmartRotationInsightsCron,
     SmartRotationSummariesCron,
+    SmartRotationGraphLinkCron,
     SmartRotationGraphEnrichCron,
     SmartRotationPromotionReviewCron,
     SmartRotationHydrateAnswersCron,

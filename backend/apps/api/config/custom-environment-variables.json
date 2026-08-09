@@ -82,6 +82,9 @@
     },
     "parser": {
       "host": "PARSER_HOST"
+    },
+    "summary": {
+      "host": "SUMMARY_HOST"
     }
   },
   "embedding": {

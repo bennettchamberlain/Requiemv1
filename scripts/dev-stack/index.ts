@@ -7,7 +7,7 @@
  *      The main checkout working solo therefore gets stable, familiar ports;
  *      concurrent worktrees transparently get ephemeral ones and never collide.
  *   2. Brings up the compose stack for this project (Postgres, object-store,
- *      Temporal, summary, hbpe) on those host ports and waits for health.
+ *      summary, hbpe) on those host ports and waits for health.
  *   3. Runs migrations against the (possibly dynamic) DB port.
  *   4. Registers a Caddy route at <key>.localhost (api / graphql / llm-stream /
  *      mcp-SSE / static / web).
@@ -48,7 +48,6 @@ const DEFAULTS = {
   web: 5173,
   db: 5432,
   objectStore: 9000,
-  temporal: 7233,
   hbpe: 8002,
   summary: 8001,
 };
@@ -283,12 +282,11 @@ async function up(key: string): Promise<void> {
   }
 
   const dockerPorts = dockerPublishedPorts();
-  const [apiPort, webPort, dbPort, objPort, temporalPort, hbpePort, summaryPort] = await Promise.all([
+  const [apiPort, webPort, dbPort, objPort, hbpePort, summaryPort] = await Promise.all([
     allocPort(DEFAULTS.api, dockerPorts),
     allocPort(DEFAULTS.web, dockerPorts),
     allocPort(DEFAULTS.db, dockerPorts),
     allocPort(DEFAULTS.objectStore, dockerPorts),
-    allocPort(DEFAULTS.temporal, dockerPorts),
     allocPort(DEFAULTS.hbpe, dockerPorts),
     allocPort(DEFAULTS.summary, dockerPorts),
   ]);
@@ -298,7 +296,6 @@ async function up(key: string): Promise<void> {
     COMPOSE_PROJECT_NAME: key,
     DB_HOST_PORT: String(dbPort),
     OBJECT_STORE_HOST_PORT: String(objPort),
-    ORCHESTRATOR_HOST_PORT: String(temporalPort),
     HBPE_HOST_PORT: String(hbpePort),
     SUMMARY_HOST_PORT: String(summaryPort),
     API_HOST_PORT: String(apiPort), // hbpe container calls the host api at this port
@@ -386,7 +383,6 @@ async function up(key: string): Promise<void> {
         ['api', String(apiPort)],
         ['web (vite)', String(webPort)],
         ['db', String(dbPort)],
-        ['temporal', String(temporalPort)],
         ['object store', String(objPort)],
         ['hbpe', String(hbpePort)],
         ['summary', String(summaryPort)],

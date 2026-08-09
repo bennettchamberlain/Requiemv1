@@ -60,27 +60,22 @@ if [ -z "$API_JWT_SECRET" ]; then
 fi
 
 echo "Starting CI-HBPE services..."
+# Scheduling is owned by the NestJS API (pg-boss crons); pipeline runs arrive
+# through the API's /functions/run endpoint. There is no separate worker
+# process anymore.
 
-# Start the FastAPI histogram API in the background
+# Start the FastAPI histogram API (also hosts the function runner)
 echo "Starting HBPE API on port 8002..."
 uvicorn ci.hbpe.api:app --host 0.0.0.0 --port 8002 &
 API_PID=$!
 
-# Give the API a moment to start
-sleep 2
-
-# Start the Temporal worker in the background
-echo "Starting HBPE Temporal worker..."
-python -m ci.hbpe.worker &
-WORKER_PID=$!
-
 shutdown() {
     echo "Shutting down HBPE services..."
-    kill $API_PID $WORKER_PID 2>/dev/null || true
-    wait $API_PID $WORKER_PID 2>/dev/null || true
+    kill $API_PID 2>/dev/null || true
+    wait $API_PID 2>/dev/null || true
     exit 0
 }
 
 trap shutdown SIGTERM SIGINT
 
-wait $API_PID $WORKER_PID
+wait $API_PID

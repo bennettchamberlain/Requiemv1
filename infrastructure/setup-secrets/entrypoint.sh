@@ -49,7 +49,6 @@ mkdir -p "$(dirname "$SECRETS_FILE")"
 
 DB_ADMIN_PASSWORD=$(random_password)
 DB_APP_PASSWORD=$(random_password)
-DB_ORCH_PASSWORD=$(random_password)
 DB_SYNC_PASSWORD=$(random_password)
 S3_USERNAME=$(random_password)
 S3_PASSWORD=$(random_password)
@@ -82,13 +81,6 @@ DATABASE_ADMIN_NAME=postgres
 DATABASE_USERNAME=companion
 DATABASE_PASSWORD=${DB_APP_PASSWORD}
 DATABASE_NAME=companion
-
-# ──────────────────────────────
-# Orchestrator Database (Temporal)
-# ──────────────────────────────
-ORCHESTRATOR_DATABASE_USERNAME=temporal
-ORCHESTRATOR_DATABASE_PASSWORD=${DB_ORCH_PASSWORD}
-ORCHESTRATOR_DATABASE_NAME=temporal
 
 # ──────────────────────────────
 # PowerSync replication role (read-only, REPLICATION attribute)

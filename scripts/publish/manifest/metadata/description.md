@@ -104,7 +104,6 @@ one install:
 | **database**   | PostgreSQL 18 + pgvector + TimescaleDB + PostGIS                         |
 | **summary**    | LLM summarization service (via Ollama)                         |
 | **hbpe**       | Behavioral-prediction sidecar (ONNX INT8)                     |
-| **orchestrator** | Durable workflow engine for background jobs                  |
 | **object-store** | MinIO S3-compatible file storage                            |
 
 Everything reads and writes the same local Postgres instance, and everything
