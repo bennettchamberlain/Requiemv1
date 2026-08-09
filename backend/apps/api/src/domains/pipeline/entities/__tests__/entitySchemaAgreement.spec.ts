@@ -4,6 +4,7 @@ import path from 'node:path';
 import { DataSource, type EntityMetadata, type EntityTarget, type ObjectLiteral } from 'typeorm';
 
 import { databaseAvailability, resolveConnection } from '../../__tests__/harness/pipelineHarness';
+import { IdentifierClaimEntity } from '../IdentifierClaimEntity';
 import { PipelineDeadLetterEntity } from '../PipelineDeadLetterEntity';
 import { PipelineRunEntity } from '../PipelineRunEntity';
 import { PipelineShardEntity } from '../PipelineShardEntity';
@@ -118,6 +119,7 @@ const CONTROL_PLANE: readonly ControlPlaneTable[] = [
   { entity: PipelineShardEntity, table: 'pipeline_shards' },
   { entity: PipelineDeadLetterEntity, table: 'pipeline_dead_letters' },
   { entity: RecordRejectionEntity, table: 'record_rejections' },
+  { entity: IdentifierClaimEntity, table: 'identifier_claims' },
 ];
 
 /** Every control-plane table lives here. Hardcoded so a stray `schema:` is caught. */
@@ -350,6 +352,7 @@ describeWithDatabase(`entity ↔ migration agreement (${availability.target})`, 
         PipelineShardEntity,
         PipelineDeadLetterEntity,
         RecordRejectionEntity,
+        IdentifierClaimEntity,
       ],
       synchronize: false,
       logging: false,

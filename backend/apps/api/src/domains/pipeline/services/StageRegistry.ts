@@ -35,6 +35,13 @@ export const STAGE_REGISTRY: Record<StageId, string> = {
   [STAGE_IDS.ENRICH_POSITION_REVERSE]: 'PipelineStage:enrich.position_reverse',
   [STAGE_IDS.ENRICH_GEOCODE]: 'PipelineStage:enrich.geocode',
   [STAGE_IDS.ENRICH_ESTIMATE_LOCATION]: 'PipelineStage:enrich.estimate_location',
+  [STAGE_IDS.ENRICH_PERSON_LINK]: 'PipelineStage:enrich.person_link',
+  [STAGE_IDS.ENRICH_EVENT_PERSON_LINK]: 'PipelineStage:enrich.event_person_link',
+  [STAGE_IDS.CLEAN_TEMPORAL_REPAIR]: 'PipelineStage:clean.temporal_repair',
+  [STAGE_IDS.CLEAN_DUPLICATE_DETECT]: 'PipelineStage:clean.duplicate_detect',
+  [STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE]: 'PipelineStage:clean.identifier_normalize',
+  [STAGE_IDS.PROMOTE_PLACE]: 'PipelineStage:promote.place',
+  [STAGE_IDS.PROMOTE_OBJECT]: 'PipelineStage:promote.object',
 };
 
 /**

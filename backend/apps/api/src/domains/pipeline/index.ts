@@ -41,8 +41,10 @@ import { EmbeddingModule } from '@ci/common/embeddings';
 import { EventsModule } from '@ci/domains/events';
 import { FileEntity, FilesModule } from '@ci/domains/files';
 import { GeocodeModule } from '@ci/domains/geocode';
+import { MemoryModule } from '@ci/domains/memory';
 
 import { STAGE_IDS } from './constants';
+import { IdentifierClaimEntity } from './entities/IdentifierClaimEntity';
 import { PipelineDeadLetterEntity } from './entities/PipelineDeadLetterEntity';
 import { PipelineRunEntity } from './entities/PipelineRunEntity';
 import { PipelineShardEntity } from './entities/PipelineShardEntity';
@@ -53,11 +55,17 @@ import { PipelineSliceListener } from './listeners/PipelineSliceListener';
 import { PipelineDispatchService } from './services/PipelineDispatchService';
 import { PipelineStateService } from './services/PipelineStateService';
 import { STAGE_REGISTRY, StageRegistry } from './services/StageRegistry';
+import { DuplicateDetectStage } from './stages/clean/DuplicateDetectStage';
+import { IdentifierNormalizeStage } from './stages/clean/IdentifierNormalizeStage';
+import { TemporalRepairStage } from './stages/clean/TemporalRepairStage';
 import { EstimateLocationStage } from './stages/enrich/EstimateLocationStage';
 import { GeocodeStage } from './stages/enrich/GeocodeStage';
 import { MediaDimensionsStage } from './stages/enrich/MediaDimensionsStage';
+import { EventPersonLinkStage, PersonLinkStage } from './stages/enrich/PersonLinkStage';
 import { PositionReverseStage } from './stages/enrich/PositionReverseStage';
 import { EmbedStage } from './stages/index/EmbedStage';
+import { ObjectPromoteStage } from './stages/promote/ObjectPromoteStage';
+import { PlacePromoteStage } from './stages/promote/PlacePromoteStage';
 
 /**
  * Stage implementations, bound to the tokens declared in `STAGE_REGISTRY`.
@@ -90,6 +98,16 @@ const stageProviders: Provider[] = [
   { provide: STAGE_REGISTRY[STAGE_IDS.ENRICH_POSITION_REVERSE], useClass: PositionReverseStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.ENRICH_GEOCODE], useClass: GeocodeStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.ENRICH_ESTIMATE_LOCATION], useClass: EstimateLocationStage },
+  // Two ids, one implementation. `PersonLinkStage.ts` carries the argument: a
+  // Stage has exactly one `source`, and the three backfills these replace read
+  // two tables.
+  { provide: STAGE_REGISTRY[STAGE_IDS.ENRICH_PERSON_LINK], useClass: PersonLinkStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.ENRICH_EVENT_PERSON_LINK], useClass: EventPersonLinkStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.CLEAN_TEMPORAL_REPAIR], useClass: TemporalRepairStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.CLEAN_DUPLICATE_DETECT], useClass: DuplicateDetectStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE], useClass: IdentifierNormalizeStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_PLACE], useClass: PlacePromoteStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_OBJECT], useClass: ObjectPromoteStage },
 ];
 
 /**
@@ -103,6 +121,14 @@ const stageProviders: Provider[] = [
       PipelineShardEntity,
       PipelineDeadLetterEntity,
       RecordRejectionEntity,
+      // NOT a control-plane table: `ci.identifier_claims` is user data (it has
+      // the FK to `ci.users` the control plane deliberately refuses) and it is
+      // read by the graph, not the dispatcher. Registered here because
+      // `enrich.person_link` is its only writer. The stage itself speaks raw
+      // SQL — one `unnest` upsert per slice — so this registration exists to
+      // make the repository injectable for a read path, not because the stage
+      // needs it.
+      IdentifierClaimEntity,
       // `MediaDimensionsStage` injects the `ci.files` repository directly. The
       // files domain registers the same entity for its own module, but
       // `forFeature` registrations are per-module, so this line is what makes
@@ -128,6 +154,9 @@ const stageProviders: Provider[] = [
     FilesModule,
     EmbeddingModule,
     GeocodeModule,
+    //  - `MemoryModule`    -> PlaceService (find-or-create place identity + the
+    //                        city/region/country hierarchy fold) for `promote.place`.
+    MemoryModule,
   ],
   providers: [
     PipelineStateService,
@@ -142,12 +171,14 @@ const stageProviders: Provider[] = [
 export class PipelineModule {}
 
 export {
+  IdentifierClaimEntity,
   PipelineDeadLetterEntity,
   PipelineRunEntity,
   PipelineShardEntity,
   PipelineStateEntity,
   RecordRejectionEntity,
 };
+export type { IdentifierClaim } from './entities/IdentifierClaimEntity';
 export { PipelineStateService } from './services/PipelineStateService';
 export type { RetryBackoff } from './services/PipelineStateService';
 export { PipelineDispatchService } from './services/PipelineDispatchService';

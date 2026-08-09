@@ -156,6 +156,79 @@ export const STAGE_IDS = {
    * estimate stale too.
    */
   ENRICH_ESTIMATE_LOCATION: 'enrich.estimate_location',
+
+  /**
+   * Resolve a communication's participants to people, writing the evidence to
+   * `ci.identifier_claims` and PROJECTING the resolved ids onto
+   * `from_entity_id` / `to_entity_ids`.
+   *
+   * Replaces the sweeps of `PersonStubBackfillService` and
+   * `CommunicationLinkBackfillService`, whose shared candidate predicate —
+   * `(from_entity_id IS NULL OR to_entity_ids IS NULL OR
+   * cardinality(to_entity_ids) = 0)` — is the ratchet at its worst: a row is
+   * declared finished as soon as ONE recipient resolves, so a message to five
+   * people where one had a contact can never link the other four.
+   *
+   * Postgres-only. Four statements per slice, no provider and no bill, so a
+   * bump is CPU on the appliance and nothing else.
+   */
+  ENRICH_PERSON_LINK: 'enrich.person_link',
+
+  /**
+   * The same algorithm over `ci.events`, replacing
+   * `EventParticipantBackfillService`.
+   *
+   * A SECOND id rather than a second entity type, because a `Stage` declares
+   * exactly one `source` and this is a different table — see the long note at
+   * the top of `stages/enrich/PersonLinkStage.ts`, which both ids share. Their
+   * implementation, normalisation, confidence and version are all common, so
+   * the two can only ever be swept independently, never disagree.
+   */
+  ENRICH_EVENT_PERSON_LINK: 'enrich.event_person_link',
+
+  /**
+   * Repair `ci.events.start_time` where the source's own timestamp can be
+   * recovered, and LABEL it where it cannot. Two documented defects:
+   * `TransformGoogleCalendar` declares `start.timeZone` and never reads it, so a
+   * bare date becomes UTC midnight and a floating date-time becomes HOST-local;
+   * and undated records are stamped with the import run's wall clock.
+   *
+   * The first stage whose sweep MOVES DATES THE USER HAS ALREADY SEEN. It writes
+   * `start_time_original` alongside, never over, so the repair is reversible and
+   * "which dates did we move?" stays answerable. Bump deliberately.
+   */
+  CLEAN_TEMPORAL_REPAIR: 'clean.temporal_repair',
+
+  /**
+   * PROPOSE duplicate entities into `ci.merge_candidates`; never merge them.
+   * The standing decision is that CLEAN proposes and a human disposes, so this
+   * stage scores pairs and records the evidence, and a bump RESCORES pending
+   * candidates without resurrecting a pair a human already rejected.
+   */
+  CLEAN_DUPLICATE_DETECT: 'clean.duplicate_detect',
+
+  /**
+   * Canonicalise identifiers already stored — emails, phones to E.164, handles —
+   * so identity work runs over a consistent corpus. Writes `value_e164` BESIDE
+   * `value` rather than over it: `value` is a join key existing rows point at.
+   * Idempotent by construction.
+   */
+  CLEAN_IDENTIFIER_NORMALIZE: 'clean.identifier_normalize',
+
+  /**
+   * Promote a resolved event location into a first-class place: the entity, its
+   * city -> region -> country hierarchy, and `ci.entities.location_boundary`,
+   * which no code has ever written. Costs nothing metered — the hierarchy comes
+   * out of `ci.geocode_cache` by primary key — so a better place-dedupe rule can
+   * re-run over the whole corpus without re-billing the geocoder.
+   */
+  PROMOTE_PLACE: 'promote.place',
+
+  /**
+   * Promote purchases into `ci.inventory` with real identity — the first writer
+   * the rich object model has ever had.
+   */
+  PROMOTE_OBJECT: 'promote.object',
 } as const;
 
 export type StageId = (typeof STAGE_IDS)[keyof typeof STAGE_IDS];
