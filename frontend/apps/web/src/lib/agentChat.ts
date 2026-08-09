@@ -1,7 +1,5 @@
 import type { NavigateFunction } from 'react-router-dom';
 
-import type { AgentHarnessStatus } from '@/api/useAgentHarnesses';
-
 export interface AgentChatContext {
   title: string;
   body?: string | null;
@@ -34,6 +32,7 @@ export function clearAgentChatContext(): void {
   sessionStorage.removeItem(SESSION_KEY);
 }
 
+/** Open Memory's in-app chat with action context pre-filled. */
 export function openInAppChat(navigate: NavigateFunction, context: AgentChatContext): void {
   stashAgentChatContext(context);
   navigate('/chat');
@@ -50,44 +49,6 @@ export function openAgentHarness(openUrl: string, context: AgentChatContext): vo
   }
 
   window.open(url.toString(), '_blank', 'noopener,noreferrer');
-}
-
-const HARNESS_PRIORITY: AgentHarnessStatus['id'][] = ['hermes', 'openclaw'];
-
-/** Pick the default agent harness to open for "Chat here". */
-export function pickDefaultHarness(harnesses: AgentHarnessStatus[]): AgentHarnessStatus | null {
-  const withUrl = harnesses.filter((harness) => harness.openUrl);
-
-  if (withUrl.length === 0) {
-    return null;
-  }
-
-  for (const id of HARNESS_PRIORITY) {
-    const match = withUrl.find((harness) => harness.id === id);
-
-    if (match) {
-      return match;
-    }
-  }
-
-  return withUrl[0] ?? null;
-}
-
-/** Open the user's agent app with action context, falling back to in-app chat. */
-export function openChatHere(
-  navigate: NavigateFunction,
-  context: AgentChatContext,
-  harnesses: AgentHarnessStatus[],
-): void {
-  const harness = pickDefaultHarness(harnesses);
-
-  if (harness?.openUrl) {
-    openAgentHarness(harness.openUrl, context);
-
-    return;
-  }
-
-  openInAppChat(navigate, context);
 }
 
 /** @deprecated Use {@link openAgentHarness} with a discovered harness URL. */

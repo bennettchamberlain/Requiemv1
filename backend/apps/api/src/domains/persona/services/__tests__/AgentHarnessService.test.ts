@@ -25,7 +25,7 @@ describe('AgentHarnessService', () => {
     service = new AgentHarnessService(apiKeyService, cloudOAuthProxyService, logger);
   });
 
-  it('marks harnesses accessible when portal lists an open URL', async () => {
+  it('marks harnesses accessible only when the open URL responds', async () => {
     apiKeyService.findAllByUser = jest.fn().mockResolvedValue([
       {
         name: 'app:ci-hermes:ci-marketplace',
@@ -77,7 +77,7 @@ describe('AgentHarnessService', () => {
         installed: true,
         running: false,
         openUrl: 'https://ci-openclaw-official-device-org.companionintelligence.com',
-        accessible: true,
+        accessible: false,
       }),
     ]);
   });

@@ -2,8 +2,8 @@ import { Button, DropdownMenu } from '@ci/shadcn';
 import { ExternalLink, MessagesSquare } from '@ci/shadcn/icons';
 import { useNavigate } from 'react-router-dom';
 
-import { useAgentHarnesses } from '@/api/useAgentHarnesses';
-import { type AgentChatContext, openAgentHarness, openChatHere } from '@/lib/agentChat';
+import { useAgentHarnesses, type AgentHarnessStatus } from '@/api/useAgentHarnesses';
+import { type AgentChatContext, openAgentHarness, openInAppChat } from '@/lib/agentChat';
 
 interface Props {
   context: AgentChatContext;
@@ -11,36 +11,68 @@ interface Props {
   className?: string;
 }
 
+function RunningHarnessButtons({
+  harnesses,
+  context,
+  className,
+}: {
+  harnesses: AgentHarnessStatus[];
+  context: AgentChatContext;
+  className?: string;
+}) {
+  return (
+    <>
+      {harnesses.map((harness) => (
+        <Button
+          key={harness.id}
+          variant="outline"
+          size="sm"
+          className={className}
+          onClick={() => openAgentHarness(harness.openUrl!, context)}
+        >
+          <ExternalLink className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} />
+          {harness.name}
+        </Button>
+      ))}
+    </>
+  );
+}
+
 export function ChatWithAgentMenu({ context, size = 'icon', className }: Props) {
   const navigate = useNavigate();
-  const { openableHarnesses, loading } = useAgentHarnesses();
+  const { runningHarnesses, loading } = useAgentHarnesses();
 
-  const defaultHarness = openableHarnesses.length === 1 ? openableHarnesses[0] : null;
-
-  if (size === 'sm' && defaultHarness?.openUrl) {
+  if (size === 'sm') {
     return (
-      <Button
-        variant="outline"
-        size="sm"
-        className={className}
-        onClick={() => openAgentHarness(defaultHarness.openUrl!, context)}
-      >
-        <ExternalLink className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} />
-        Chat here
-      </Button>
+      <div className="flex items-center gap-1">
+        <Button
+          variant="outline"
+          size="sm"
+          className={className}
+          onClick={() => openInAppChat(navigate, context)}
+        >
+          <MessagesSquare className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} />
+          Chat here
+        </Button>
+        {!loading && runningHarnesses.length > 0 ? (
+          <RunningHarnessButtons harnesses={runningHarnesses} context={context} className={className} />
+        ) : null}
+      </div>
     );
   }
 
-  if (size === 'sm' && !loading && openableHarnesses.length === 0) {
+  const hasRunningHarnesses = !loading && runningHarnesses.length > 0;
+
+  if (!hasRunningHarnesses) {
     return (
       <Button
-        variant="outline"
-        size="sm"
+        variant="ghost"
+        size="icon"
         className={className}
-        onClick={() => openChatHere(navigate, context, openableHarnesses)}
+        aria-label={`Chat about ${context.title}`}
+        onClick={() => openInAppChat(navigate, context)}
       >
-        <MessagesSquare className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} />
-        Chat here
+        <MessagesSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
       </Button>
     );
   }
@@ -48,32 +80,22 @@ export function ChatWithAgentMenu({ context, size = 'icon', className }: Props) 
   return (
     <DropdownMenu modal={false}>
       <DropdownMenu.Trigger asChild>
-        {size === 'icon' ? (
-          <Button
-            variant="ghost"
-            size="icon"
-            className={className}
-            aria-label={`Chat about ${context.title}`}
-          >
-            <MessagesSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
-          </Button>
-        ) : (
-          <Button variant="outline" size="sm" className={className}>
-            <MessagesSquare className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} />
-            Chat here
-          </Button>
-        )}
+        <Button
+          variant="ghost"
+          size="icon"
+          className={className}
+          aria-label={`Chat about ${context.title}`}
+        >
+          <MessagesSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
+        </Button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Content align="end">
-        <DropdownMenu.Item onClick={() => openChatHere(navigate, context, openableHarnesses)}>
-          Chat here
-        </DropdownMenu.Item>
-        {!loading &&
-          openableHarnesses.map((harness) => (
-            <DropdownMenu.Item key={harness.id} onClick={() => openAgentHarness(harness.openUrl!, context)}>
-              Open with {harness.name}
-            </DropdownMenu.Item>
-          ))}
+        <DropdownMenu.Item onClick={() => openInAppChat(navigate, context)}>Chat here</DropdownMenu.Item>
+        {runningHarnesses.map((harness) => (
+          <DropdownMenu.Item key={harness.id} onClick={() => openAgentHarness(harness.openUrl!, context)}>
+            Open in {harness.name}
+          </DropdownMenu.Item>
+        ))}
       </DropdownMenu.Content>
     </DropdownMenu>
   );
