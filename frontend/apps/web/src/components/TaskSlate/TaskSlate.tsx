@@ -134,10 +134,21 @@ function CandidateCard({
         aria-hidden
       />
 
-      <div className="flex items-start gap-2">
-        <p className="min-w-0 flex-1 text-[13px] leading-snug text-foreground">{candidate.title}</p>
+      <div>
+        <p className="text-[13px] leading-snug text-foreground">{candidate.title}</p>
+      </div>
 
-        <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+      {/* Action icons sit over the tag strip on hover — never in the title's layout or line box. */}
+      <div
+        className={cn(
+          'absolute bottom-1.5 right-2.5 z-10 flex items-center gap-0.5 rounded-md',
+          'border border-border/60 bg-background/95 px-0.5 shadow-sm backdrop-blur-sm',
+          'pointer-events-none opacity-0 transition-opacity',
+          'group-hover:pointer-events-auto group-hover:opacity-100',
+          'focus-within:pointer-events-auto focus-within:opacity-100',
+          'pointer-coarse:pointer-events-auto pointer-coarse:opacity-100',
+        )}
+      >
           {onPersonalize && (
             <Tooltip>
               <Tooltip.Trigger asChild>
@@ -202,7 +213,6 @@ function CandidateCard({
             </Tooltip.Trigger>
             <Tooltip.Content side="top">Never suggest this</Tooltip.Content>
           </Tooltip>
-        </div>
       </div>
 
       {/* The because. Nothing on this list appears without one. */}

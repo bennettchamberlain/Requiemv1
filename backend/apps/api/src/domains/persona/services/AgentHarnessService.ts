@@ -72,6 +72,7 @@ export class AgentHarnessService {
         }
 
         status.running = await this.probeOpenUrl(status.openUrl);
+        status.accessible = status.running;
       }),
     );
 
@@ -97,7 +98,7 @@ export class AgentHarnessService {
       installed: portalApp != null,
       running: false,
       openUrl,
-      accessible: openUrl != null,
+      accessible: false,
     };
   }
 

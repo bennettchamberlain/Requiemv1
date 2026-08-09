@@ -65,7 +65,7 @@ export async function fetchAgentHarnesses(
   return inflight;
 }
 
-/** Discover Hub agent harnesses (Hermes / OpenClaw) connected to Memory with open URLs. */
+/** Discover Hub agent harnesses (Hermes / OpenClaw) with Portal-resolved open URLs. */
 export function useAgentHarnesses() {
   const [{ authToken }] = useAuth();
   const [harnesses, setHarnesses] = useState<AgentHarnessStatus[]>(cached?.value.harnesses ?? []);
@@ -129,16 +129,18 @@ export function useAgentHarnesses() {
     };
   }, [authToken]);
 
-  const openableHarnesses = useMemo(
-    () => harnesses.filter((harness) => harness.accessible && harness.openUrl),
+  const runningHarnesses = useMemo(
+    () => harnesses.filter((harness) => harness.running && harness.openUrl),
     [harnesses],
   );
 
   return {
     harnesses,
-    openableHarnesses,
-    /** @deprecated Prefer {@link openableHarnesses}. */
-    accessibleHarnesses: openableHarnesses,
+    runningHarnesses,
+    /** @deprecated Prefer {@link runningHarnesses}. */
+    openableHarnesses: runningHarnesses,
+    /** @deprecated Prefer {@link runningHarnesses}. */
+    accessibleHarnesses: runningHarnesses,
     loading,
     error,
     reload,
