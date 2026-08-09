@@ -1,10 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
 import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import {
+  EXCLUDE_QUESTIONS_WITH_PENDING_INFERRED_REVIEW,
+  EXCLUDE_QUESTIONS_WITH_REJECTED_INFERRED_REVIEW,
+} from '@ci/common/persistence';
+import { Events, EventService } from '@ci/domains/events';
 import {
   GraphIngestService,
   type GraphEntityInputDto,
@@ -30,8 +35,11 @@ export class PromotionCandidateService {
   constructor(
     @InjectRepository(PromotionCandidateEntity)
     private readonly repository: Repository<PromotionCandidateEntity>,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
     private readonly graphIngestService: GraphIngestService,
     private readonly answerService: AnswerService,
+    private readonly eventService: EventService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(PromotionCandidateService.name);
@@ -131,6 +139,14 @@ export class PromotionCandidateService {
     candidate.status = 'accepted';
     await this.repository.save(candidate);
 
+    if (candidate.kind === 'inferred_fact') {
+      const questionId = candidate.payload.questionId as string | undefined;
+      if (questionId) {
+        await this.rejectDuplicatePendingInferredFacts(context.userId!, questionId, candidate.id);
+        await this.clearFeedQueueForQuestion(context.userId!, questionId);
+      }
+    }
+
     return candidate as PromotionCandidate;
   }
 
@@ -143,8 +159,23 @@ export class PromotionCandidateService {
       return null;
     }
 
-    candidate.status = 'rejected';
-    await this.repository.save(candidate);
+    if (candidate.kind === 'inferred_fact') {
+      const questionId = candidate.payload.questionId as string | undefined;
+      if (questionId) {
+        await this.rejectAllPendingInferredFactsForQuestion(context.userId!, questionId);
+        await this.clearFeedQueueForQuestion(context.userId!, questionId);
+      } else {
+        candidate.status = 'rejected';
+        await this.repository.save(candidate);
+      }
+    } else {
+      candidate.status = 'rejected';
+      await this.repository.save(candidate);
+    }
+
+    if (!(await this.hasPendingInferredFactReview(context.userId!))) {
+      await this.enqueueNextAnswerInference(context.userId!);
+    }
 
     return candidate as PromotionCandidate;
   }
@@ -167,14 +198,14 @@ export class PromotionCandidateService {
           await this.answerService.update(context, existing.id, {
             text: inferredText,
             answerMethod: 'inferred',
-            answerSource: 'rag',
+            answerSource: 'inferred',
           });
         } else {
           await this.answerService.create(context, {
             text: inferredText,
             question: { id: questionId },
             answerMethod: 'inferred',
-            answerSource: 'rag',
+            answerSource: 'inferred',
           });
         }
       }
@@ -192,5 +223,103 @@ export class PromotionCandidateService {
       candidateId: candidate.id,
       kind: candidate.kind,
     });
+  }
+
+  private async rejectAllPendingInferredFactsForQuestion(userId: string, questionId: string): Promise<void> {
+    await this.repository
+      .createQueryBuilder()
+      .update(PromotionCandidateEntity)
+      .set({ status: 'rejected' })
+      .where('user_id = :userId', { userId })
+      .andWhere('kind = :kind', { kind: 'inferred_fact' })
+      .andWhere('status = :status', { status: 'pending' })
+      .andWhere("payload->>'questionId' = :questionId", { questionId })
+      .execute();
+  }
+
+  private async rejectDuplicatePendingInferredFacts(
+    userId: string,
+    questionId: string,
+    acceptedCandidateId: string,
+  ): Promise<void> {
+    await this.repository
+      .createQueryBuilder()
+      .update(PromotionCandidateEntity)
+      .set({ status: 'rejected' })
+      .where('user_id = :userId', { userId })
+      .andWhere('kind = :kind', { kind: 'inferred_fact' })
+      .andWhere('status = :status', { status: 'pending' })
+      .andWhere("payload->>'questionId' = :questionId", { questionId })
+      .andWhere('promotion_candidate_id <> :acceptedCandidateId', { acceptedCandidateId })
+      .execute();
+  }
+
+  private async clearFeedQueueForQuestion(userId: string, questionId: string): Promise<void> {
+    await this.dataSource.query(
+      `
+      DELETE FROM ci.feed_queue fq
+      WHERE fq.user_id = $1
+        AND fq.item_type = 'promotion_review'
+        AND EXISTS (
+          SELECT 1
+          FROM ci.promotion_candidates pc
+          WHERE pc.promotion_candidate_id::text = fq.metadata->>'promotionCandidateId'
+            AND pc.user_id = $1
+            AND pc.kind = 'inferred_fact'
+            AND pc.payload->>'questionId' = $2
+        );
+      `,
+      [userId, questionId],
+    );
+  }
+
+  private async enqueueNextAnswerInference(userId: string): Promise<void> {
+    const questionId = await this.findNextInferenceQuestionId(userId);
+
+    if (!questionId) {
+      this.logger.log('No unanswered questions left for inference after review', { userId });
+
+      return;
+    }
+
+    await this.eventService.send(
+      Events.INFER_QUESTION_ANSWER,
+      {
+        ownerId: userId,
+        questionId,
+      },
+      {
+        singletonKey: `infer:${userId}:${questionId}`,
+      },
+    );
+
+    this.logger.log('Queued next answer inference after review decision', { userId, questionId });
+  }
+
+  private async findNextInferenceQuestionId(userId: string): Promise<string | null> {
+    type Row = { id: string };
+    const rows = (await this.dataSource.query(
+      `
+      SELECT q.question_id AS id
+      FROM ci.questions q
+      WHERE q.is_active = TRUE
+        AND (q.is_private_to IS NULL OR q.is_private_to = $1)
+        AND NOT EXISTS (
+          SELECT 1 FROM ci.answers a
+          WHERE a.question_id = q.question_id
+            AND a.user_id = $1
+            AND a.answer_method IN ('user', 'inferred')
+            AND a.answer_text IS NOT NULL
+            AND TRIM(a.answer_text) <> ''
+        )
+        ${EXCLUDE_QUESTIONS_WITH_PENDING_INFERRED_REVIEW}
+        ${EXCLUDE_QUESTIONS_WITH_REJECTED_INFERRED_REVIEW}
+      ORDER BY q.created_at ASC
+      LIMIT 1;
+      `,
+      [userId],
+    )) as Row[];
+
+    return rows[0]?.id ?? null;
   }
 }

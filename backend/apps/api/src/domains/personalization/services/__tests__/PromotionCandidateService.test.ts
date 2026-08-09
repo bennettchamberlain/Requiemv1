@@ -1,6 +1,7 @@
 import type { Repository } from 'typeorm';
 
 import type { LoggerService } from '@ci/common/logging';
+import type { EventService } from '@ci/domains/events';
 import type { GraphIngestService } from '@ci/domains/graph';
 import type { AnswerService } from '@ci/domains/intelligence';
 
@@ -13,8 +14,10 @@ describe('PromotionCandidateService', () => {
   function buildService(repository: Partial<Repository<PromotionCandidateEntity>>) {
     return new PromotionCandidateService(
       repository as Repository<PromotionCandidateEntity>,
+      { query: jest.fn() } as never,
       {} as GraphIngestService,
       {} as AnswerService,
+      { send: jest.fn() } as unknown as EventService,
       { setContext() {}, log() {} } as unknown as LoggerService,
     );
   }
