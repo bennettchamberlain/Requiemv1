@@ -150,7 +150,7 @@ function RailContent() {
 export function ActivityTimelineRail({ className }: { className?: string }) {
   return (
     <TimelineGridSelectionProvider args={[]}>
-      <div className={cn('flex min-h-0 flex-col px-3 py-2', className)}>
+      <div className={cn('flex min-h-0 flex-col py-1 pl-0 pr-1', className)}>
         <RailContent />
       </div>
     </TimelineGridSelectionProvider>

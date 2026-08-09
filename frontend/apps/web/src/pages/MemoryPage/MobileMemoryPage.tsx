@@ -71,8 +71,8 @@ export default function MobileMemoryPage() {
 
   return (
     <>
-      <PageContent className="gap-4 p-0">
-        <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <PageContent className="gap-2 p-0">
+        <div className="flex min-h-0 flex-1 flex-col gap-2 px-2">
           {/* The global header search isn't shown on mobile — keep it first, like
               the desktop header, above entity-type nav and filters. */}
           <div className="flex items-center gap-2">
@@ -87,7 +87,7 @@ export default function MobileMemoryPage() {
           </div>
 
           <MemoryHubShell fillHeight>
-          <div className="space-y-3">
+          <div className="space-y-2">
           <ExplorerToolbar open />
 
           {/* Tab Navigation */}

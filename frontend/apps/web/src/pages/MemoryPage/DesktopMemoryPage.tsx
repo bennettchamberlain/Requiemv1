@@ -286,10 +286,12 @@ export default function DesktopMemoryPage() {
         </div>
       </Portal.Slot>
 
-      <PageContent className="gap-4 p-0">
+      <PageContent className="gap-2 p-0">
         <MemoryHubShell fillHeight>
-        <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4">
-          <ExplorerToolbar open />
+        <div className="flex min-h-0 flex-1 flex-col gap-2 pb-2">
+          <div className="px-2">
+            <ExplorerToolbar open />
+          </div>
           {/* List view splits into two independently-scrolled panes: wheeling
               over the left rail moves the heatmap's window through time, while
               the result list on the right keeps its own scroll. */}
