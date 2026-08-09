@@ -72,10 +72,9 @@ export default function MobileMemoryPage() {
   return (
     <>
       <PageContent className="gap-4 p-0">
-        <MemoryHubShell fillHeight>
-        <div className="space-y-3">
-          {/* The global header search isn't shown on mobile, so the search field
-              and advanced filters live here inline. */}
+        <div className="flex min-h-0 flex-1 flex-col gap-3">
+          {/* The global header search isn't shown on mobile — keep it first, like
+              the desktop header, above entity-type nav and filters. */}
           <div className="flex items-center gap-2">
             <div className="flex-1">
               <MemorySearchField />
@@ -86,6 +85,9 @@ export default function MobileMemoryPage() {
               </span>
             )}
           </div>
+
+          <MemoryHubShell fillHeight>
+          <div className="space-y-3">
           <ExplorerToolbar open />
 
           {/* Tab Navigation */}
@@ -121,7 +123,8 @@ export default function MobileMemoryPage() {
 
           {activeTab === 'graph' && <GraphView variant="mobile" />}
         </>
-        </MemoryHubShell>
+          </MemoryHubShell>
+        </div>
       </PageContent>
       {activeSheetEntity && (
         <Sheet open={detailsOpen} onOpenChange={toggleactiveEntity}>

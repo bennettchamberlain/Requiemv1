@@ -144,6 +144,8 @@ interface Props {
    */
   onFilterAdd?: (filter: FilterDragPayload) => void;
   onSave?: (query: string, entityTypes: string[]) => void;
+  /** Ref populated with a function to mark user-engaged before programmatic focus. */
+  engageRef?: React.MutableRefObject<(() => void) | null>;
 }
 
 function SearchBox(
@@ -176,6 +178,7 @@ function SearchBox(
     onResultSelect,
     onFilterAdd,
     onSave,
+    engageRef,
   }: Props,
   forwardedRef: ForwardedRef<HTMLInputElement>,
 ) {
@@ -186,6 +189,9 @@ function SearchBox(
 
   const isFocusedRef = useRef(false);
   const [isFocused, setIsFocused] = useState(false);
+  // Panel opens on focus only after an explicit user gesture (click/tap or
+  // keyboard engage), not on mount-time or restored focus.
+  const [userEngaged, setUserEngaged] = useState(false);
   // Escape closes the results panel before it clears the query (two-stage);
   // typing or refocusing reopens it.
   const [panelDismissed, setPanelDismissed] = useState(false);
@@ -219,6 +225,18 @@ function SearchBox(
 
   const selectedResult = selectedIndex >= 0 && selectedIndex < results.length ? results[selectedIndex] : null;
   const isLoading = loading || isAutoSubmitPending;
+
+  useEffect(() => {
+    if (!engageRef) {
+      return;
+    }
+
+    engageRef.current = () => setUserEngaged(true);
+
+    return () => {
+      engageRef.current = null;
+    };
+  }, [engageRef]);
 
   const scrollToSelectedItem = useCallback(() => {
     if (selectedIndex === -1 || !scrollAreaRef.current) {
@@ -393,6 +411,7 @@ function SearchBox(
           if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete') {
             setSelectedIndex(-1);
             setPanelDismissed(false);
+            setUserEngaged(true);
           }
 
           break;
@@ -549,9 +568,10 @@ function SearchBox(
   }, [isDropdownPanelVisible, toggleDropdownPanel]);
 
   const hasQuery = queryValue.length > 0;
+  const focusOpensPanel = userEngaged || hasQuery;
   // Default: show the dropdown whenever there's a query. With `openOnFocus`, gate
-  // it on focus instead — so it can surface recent searches before the user types
-  // and won't auto-open just because the input reflects an external `?search` value.
+  // on an explicit user engage (click/tap or `/`) — not passive/restored focus —
+  // so recent searches can surface without opening on every app visit.
   // While the panel is pinned, a live query keeps its results visible even
   // unfocused — interacting with panelHeader content (filter dropdowns steal
   // focus) must not blank the suggestions below it.
@@ -559,7 +579,7 @@ function SearchBox(
     displayResults &&
     !disabled &&
     !panelDismissed &&
-    (openOnFocus ? isFocused || (panelPinned && hasQuery) : hasQuery);
+    (openOnFocus ? (focusOpensPanel && isFocused) || (panelPinned && hasQuery) : hasQuery);
 
   let resultsNode: ReactNode | null = null;
 
@@ -639,7 +659,7 @@ function SearchBox(
   const panelVisible =
     !panelDismissed &&
     (resultsNode != null ||
-      (panelFooter != null && isFocused) ||
+      (panelFooter != null && isFocused && focusOpensPanel) ||
       (panelPinned && (isFocused || hasQuery)));
 
   // Dismiss an open suggestion/filter panel when clicking elsewhere on the page.
@@ -686,7 +706,11 @@ function SearchBox(
   return (
     <Form {...form}>
       <form autoComplete="off" onSubmit={form.handleSubmit(handleFormSubmit)}>
-        <div className="relative" ref={wrapperRef}>
+        <div
+          className="relative"
+          ref={wrapperRef}
+          onPointerDown={() => setUserEngaged(true)}
+        >
           <div
             className={cn(
               'w-full flex flex-col',
@@ -734,7 +758,9 @@ function SearchBox(
                     onFocus={() => {
                       isFocusedRef.current = true;
                       setIsFocused(true);
-                      setPanelDismissed(false);
+                      if (userEngaged || queryValue.length > 0) {
+                        setPanelDismissed(false);
+                      }
                     }}
                     onBlur={() => {
                       // Window deactivation isn't a real focus change — keep the
@@ -746,6 +772,7 @@ function SearchBox(
 
                       isFocusedRef.current = false;
                       setIsFocused(false);
+                      setUserEngaged(false);
                       field.onBlur();
                     }}
                     className={cn(

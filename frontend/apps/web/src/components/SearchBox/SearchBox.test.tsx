@@ -138,6 +138,7 @@ describe('SearchBox', () => {
     );
 
     const input = screen.getByRole('textbox');
+    fireEvent.pointerDown(input);
     fireEvent.focus(input);
 
     const footer = screen.getByText('Advanced filters');

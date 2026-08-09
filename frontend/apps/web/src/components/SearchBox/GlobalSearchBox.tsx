@@ -84,6 +84,8 @@ export function GlobalSearchBox() {
   // Bumped to remount SearchBox after a commit/navigation, clearing input + dropdown.
   const [resetKey, setResetKey] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const engageSearchRef = useRef<(() => void) | null>(null);
+  const resetKeyFocusSkipRef = useRef(true);
 
   // Always expanded — the search bar stays visible in the header.
   const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -197,6 +199,13 @@ export function GlobalSearchBox() {
   // in-place reset (the clear-query row) keeps the user typing; when the bump
   // came with a collapse (clearInput) the input is hidden, so this is a no-op.
   useEffect(() => {
+    if (resetKeyFocusSkipRef.current) {
+      resetKeyFocusSkipRef.current = false;
+
+      return;
+    }
+
+    engageSearchRef.current?.();
     inputRef.current?.focus();
   }, [resetKey]);
 
@@ -524,6 +533,7 @@ export function GlobalSearchBox() {
   // Expand + focus. The focus call only lands when already expanded (a hidden
   // input can't take focus); the expanded-effect above covers the fresh expand.
   useKeyboardShortcut('/', () => {
+    engageSearchRef.current?.();
     inputRef.current?.focus();
   });
 
@@ -538,6 +548,7 @@ export function GlobalSearchBox() {
         <SearchBox
           key={resetKey}
           ref={inputRef}
+          engageRef={engageSearchRef}
           defaultQuery={onMemoryExplorer ? urlSearch : undefined}
           onSearch={handleSearch}
           onSubmit={({ query: submitted }) => commitSearch(submitted)}
