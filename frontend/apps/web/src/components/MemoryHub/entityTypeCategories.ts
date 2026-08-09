@@ -104,3 +104,20 @@ export function entityTypesForCategory(category: WhatCategory): string[] {
 
   return [];
 }
+
+/** Slightly darker in light mode, lighter in dark — tuned for the Memory What bar. */
+export const WHAT_BAR_ICON_CLASS: Record<string, string> = {
+  people: 'text-indigo-600 dark:text-indigo-400',
+  places: 'text-red-600 dark:text-red-400',
+  messages: 'text-green-600 dark:text-green-400',
+  content: 'text-pink-600 dark:text-pink-400',
+  thing: 'text-yellow-600 dark:text-yellow-400',
+  tag: 'text-orange-600 dark:text-orange-400',
+};
+
+export const WHAT_BAR_ITEM_ICON_CLASS: Record<string, string> = {
+  Browser: 'text-emerald-600 dark:text-emerald-400',
+  Content: 'text-pink-600 dark:text-pink-400',
+  File: 'text-gray-600 dark:text-gray-400',
+  Note: 'text-teal-700 dark:text-teal-400',
+};

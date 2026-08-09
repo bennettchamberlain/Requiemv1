@@ -11,6 +11,8 @@ import { gql } from '@/graphql';
 import { MemoryExplorerFilterControls } from '@/pages/MemoryPage/Components/ExplorerToolbar/ExplorerToolbar';
 
 import {
+  WHAT_BAR_ICON_CLASS,
+  WHAT_BAR_ITEM_ICON_CLASS,
   WHAT_CATEGORIES,
   entityTypesForCategory,
   type EntityTypeIcon,
@@ -48,11 +50,21 @@ function categoryButtonClass(selected: boolean, active: boolean) {
 function CategoryIcon({
   icon: Icon,
   className,
+  toneClass,
+  entityIcon = false,
 }: {
-  icon: EntityTypeIcon | ComponentType<{ className?: string }>;
+  icon: EntityTypeIcon | ComponentType<{ className?: string; colorized?: boolean }>;
   className?: string;
+  toneClass?: string;
+  entityIcon?: boolean;
 }) {
-  return <Icon className={cn('h-4 w-4 shrink-0', className)} />;
+  const iconClassName = cn('h-4 w-4 shrink-0', toneClass, className);
+
+  if (entityIcon && toneClass) {
+    return <Icon className={iconClassName} colorized={false} />;
+  }
+
+  return <Icon className={iconClassName} />;
 }
 
 function useWhatSelection() {
@@ -115,7 +127,7 @@ function StandaloneWhatButton({
       onClick={onSelect}
       className={categoryButtonClass(selected, active)}
     >
-      <CategoryIcon icon={category.icon} />
+      <CategoryIcon icon={category.icon} toneClass={WHAT_BAR_ICON_CLASS[category.id]} entityIcon />
       <span className={EXPAND_LABEL_CLASS}>{category.label}</span>
     </button>
   );
@@ -154,7 +166,7 @@ function GroupWhatDropdown({
           title={category.label}
           className={categoryButtonClass(selected, active)}
         >
-          <CategoryIcon icon={category.icon} />
+          <CategoryIcon icon={category.icon} toneClass={WHAT_BAR_ICON_CLASS[category.id]} entityIcon />
           <span className={EXPAND_LABEL_CLASS}>{category.label}</span>
           <ChevronDown
             className={cn(
@@ -193,7 +205,12 @@ function GroupWhatDropdown({
               className="gap-2"
             >
               <span className="flex items-center gap-2">
-                {ItemIcon ? <ItemIcon className="h-4 w-4 shrink-0" /> : null}
+                {ItemIcon ? (
+                  <ItemIcon
+                    className={cn('h-4 w-4 shrink-0', WHAT_BAR_ITEM_ICON_CLASS[entityType])}
+                    colorized={false}
+                  />
+                ) : null}
                 <span>{label}</span>
                 {isOnly ? <span className="text-xs text-muted-foreground">(only)</span> : null}
               </span>
@@ -243,7 +260,7 @@ function TagWhatDropdown({ tags, onTagsChange }: { tags: string[]; onTagsChange:
           title="Tag"
           className={categoryButtonClass(active, active)}
         >
-          <CategoryIcon icon={TagIcon} />
+          <CategoryIcon icon={TagIcon} toneClass={WHAT_BAR_ICON_CLASS.tag} />
           <span className={EXPAND_LABEL_CLASS}>Tag</span>
           <ChevronDown
             className={cn(
