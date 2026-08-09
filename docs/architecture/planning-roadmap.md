@@ -1,7 +1,7 @@
 # Planning — roadmap and object model
 
 > Status: **M0 landed** (flags + this document). M1 in progress.
-> Feature flags: `planning.enabled` (backend, `ENABLE_PLANNING`), `planning.page` (frontend, `ENABLE_PLANNING_PAGE`). Both default **off**.
+> Feature flags: `planning.enabled` (backend, `ENABLE_PLANNING`), `planning.page` (frontend, `ENABLE_PLANNING_PAGE`), `planning.emptyState` (Plan page empty state, `ENABLE_PLANNING_EMPTY_STATE`). All default **off**.
 
 ## Why planning lives here
 

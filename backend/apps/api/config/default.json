@@ -155,6 +155,7 @@
     "jobs.page": false,
     "planning.enabled": false,
     "planning.page": false,
+    "planning.emptyState": false,
     "stats.page": true,
     "schedule.page": true,
     "tags.page": true,

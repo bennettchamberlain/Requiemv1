@@ -281,6 +281,8 @@ export const ConfigSchema = z.object({
     'planning.enabled': booleanStringSchema,
     /** Wholesale gate for the Plan page (/plan + nav entry points). */
     'planning.page': booleanStringSchema,
+    /** Shows the "Nothing planned yet" empty state on the Plan page when there are no tasks. */
+    'planning.emptyState': booleanStringSchema,
     /** Enables the memory stats page (`/stats`): timeline totals plus entity
      * breakdowns by data source and by tag. */
     'stats.page': booleanStringSchema,

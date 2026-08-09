@@ -6,6 +6,7 @@ import { Breadcrumb } from '@ci/shadcn';
 import { ListTodo } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
+import { useFeatures } from '@/common/feature';
 import { PageContent } from '@/components/layout';
 import { gql } from '@/graphql';
 
@@ -56,6 +57,8 @@ const REOPEN_TASK = gql(`
 
 export function PlanPage() {
   usePageTitle('Plan - Companion Intelligence');
+  const { isFeatureEnabled } = useFeatures();
+  const showEmptyState = isFeatureEnabled('planning.emptyState');
 
   const { data, loading, refetch } = useQuery(GET_TASKS, {
     variables: { first: 200 },
@@ -95,12 +98,12 @@ export function PlanPage() {
   if (loading && nodes.length === 0) {
     content = <LoadingPage />;
   } else if (nodes.length === 0) {
-    content = (
+    content = showEmptyState ? (
       <EmptyState
         icon={<ListTodo size={48} />}
         message={<div>Nothing planned yet. Add your first task above.</div>}
       />
-    );
+    ) : null;
   } else {
     content = (
       <div className="flex flex-col gap-6">

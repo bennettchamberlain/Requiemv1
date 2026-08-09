@@ -135,6 +135,7 @@
     "jobs.page": "ENABLE_JOBS_PAGE",
     "planning.enabled": "ENABLE_PLANNING",
     "planning.page": "ENABLE_PLANNING_PAGE",
+    "planning.emptyState": "ENABLE_PLANNING_EMPTY_STATE",
     "stats.page": "ENABLE_STATS_PAGE",
     "schedule.page": "ENABLE_SCHEDULE_PAGE",
     "tags.page": "ENABLE_TAGS_PAGE",

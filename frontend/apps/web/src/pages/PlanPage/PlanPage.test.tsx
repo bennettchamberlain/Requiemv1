@@ -1,10 +1,19 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { gql } from '@/graphql';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
 import { PlanPage } from './PlanPage';
+
+const featureState = vi.hoisted(() => ({ emptyState: false }));
+
+vi.mock('@/common/feature', () => ({
+  useFeatures: () => ({
+    isFeatureEnabled: (name: string) =>
+      name === 'planning.emptyState' ? featureState.emptyState : false,
+  }),
+}));
 
 const GET_TASKS = gql(`
   query GetTasks($first: Int, $after: String) {
@@ -72,10 +81,22 @@ function tasksMock(nodes: ReturnType<typeof node>[]) {
 }
 
 describe('PlanPage', () => {
-  it('invites the user to add something when there is nothing planned', async () => {
+  beforeEach(() => {
+    featureState.emptyState = false;
+  });
+
+  it('invites the user to add something when there is nothing planned and the empty state is enabled', async () => {
+    featureState.emptyState = true;
     renderWithProviders(<PlanPage />, { mocks: [tasksMock([])] });
 
     expect(await screen.findByText(/nothing planned yet/i)).toBeInTheDocument();
+  });
+
+  it('does not show the empty state when the feature flag is off', async () => {
+    renderWithProviders(<PlanPage />, { mocks: [tasksMock([])] });
+
+    await screen.findByLabelText(/new task title/i);
+    expect(screen.queryByText(/nothing planned yet/i)).not.toBeInTheDocument();
   });
 
   it('groups tasks under their section headings', async () => {
