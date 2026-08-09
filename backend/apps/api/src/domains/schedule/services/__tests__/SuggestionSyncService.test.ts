@@ -4,6 +4,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import type { UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { ActionEntity } from '@ci/domains/intelligence';
+import { PersonalizationService } from '@ci/domains/personalization';
 import { SummaryEntity } from '@ci/domains/summaries';
 
 import { EventCandidateEntity } from '../../entities/EventCandidateEntity';
@@ -42,12 +43,15 @@ describe('SuggestionSyncService — projecting actions and insights onto the sla
   let summaries: { find: jest.Mock };
   let candidates: { find: jest.Mock; save: jest.Mock };
   let candidateService: { upsert: jest.Mock };
+  let personalization: { getProfile: jest.Mock };
 
   async function setup(actionRows: ActionEntity[] = [], summaryRows: SummaryEntity[] = []) {
     actions = { find: jest.fn(async () => actionRows) };
     summaries = { find: jest.fn(async () => summaryRows) };
     candidates = { find: jest.fn(async () => []), save: jest.fn(async (e) => e) };
     candidateService = { upsert: jest.fn(async (_c, proposals) => proposals) };
+    // autoSchedule off keeps the auto-accept leg out of these projection tests.
+    personalization = { getProfile: jest.fn(async () => ({ autoSchedule: false })) };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -56,6 +60,7 @@ describe('SuggestionSyncService — projecting actions and insights onto the sla
         { provide: getRepositoryToken(SummaryEntity), useValue: summaries },
         { provide: getRepositoryToken(EventCandidateEntity), useValue: candidates },
         { provide: CandidateService, useValue: candidateService },
+        { provide: PersonalizationService, useValue: personalization },
         { provide: LoggerService, useValue: { setContext: jest.fn(), log: jest.fn(), debug: jest.fn() } },
       ],
     }).compile();
