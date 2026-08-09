@@ -17,7 +17,7 @@ export interface AgentHarnessStatus {
   /** HTTP probe against {@link openUrl} succeeded (when probed). */
   running: boolean;
   openUrl: string | null;
-  /** Ready to open from Memory — connected, URL known, and responding. */
+  /** Ready to open from Memory — installed with a resolvable open URL. */
   accessible: boolean;
 }
 
@@ -72,7 +72,6 @@ export class AgentHarnessService {
         }
 
         status.running = await this.probeOpenUrl(status.openUrl);
-        status.accessible = status.connectedToMemory && status.running;
       }),
     );
 
@@ -89,7 +88,7 @@ export class AgentHarnessService {
     );
 
     const portalApp = portalApps.find((app) => definition.appNames.includes(app.name));
-    const openUrl = portalApp ? buildPortalOpenUrl(portalApp) : null;
+    const openUrl = portalApp ? resolvePortalOpenUrl(portalApp) : null;
 
     return {
       id: definition.id,
@@ -98,7 +97,7 @@ export class AgentHarnessService {
       installed: portalApp != null,
       running: false,
       openUrl,
-      accessible: false,
+      accessible: openUrl != null,
     };
   }
 
@@ -127,7 +126,18 @@ export class AgentHarnessService {
   }
 }
 
-function buildPortalOpenUrl(app: PortalDeviceApplication): string | null {
+function resolvePortalOpenUrl(app: PortalDeviceApplication): string | null {
+  const fromPortal = app.openUrl?.trim();
+
+  if (fromPortal) {
+    return fromPortal.replace(/\/$/, '');
+  }
+
+  return buildLegacyPortalOpenUrl(app);
+}
+
+/** Fallback for Portals predating the `openUrl` field on device applications. */
+function buildLegacyPortalOpenUrl(app: PortalDeviceApplication): string | null {
   const domain = app.publicDomain?.trim();
 
   if (!domain) {

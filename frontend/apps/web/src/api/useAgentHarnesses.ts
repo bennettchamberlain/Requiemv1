@@ -129,14 +129,16 @@ export function useAgentHarnesses() {
     };
   }, [authToken]);
 
-  const accessibleHarnesses = useMemo(
+  const openableHarnesses = useMemo(
     () => harnesses.filter((harness) => harness.accessible && harness.openUrl),
     [harnesses],
   );
 
   return {
     harnesses,
-    accessibleHarnesses,
+    openableHarnesses,
+    /** @deprecated Prefer {@link openableHarnesses}. */
+    accessibleHarnesses: openableHarnesses,
     loading,
     error,
     reload,

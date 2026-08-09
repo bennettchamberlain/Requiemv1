@@ -25,7 +25,7 @@ describe('AgentHarnessService', () => {
     service = new AgentHarnessService(apiKeyService, cloudOAuthProxyService, logger);
   });
 
-  it('marks harnesses accessible when connected, listed in portal, and responding', async () => {
+  it('marks harnesses accessible when portal lists an open URL', async () => {
     apiKeyService.findAllByUser = jest.fn().mockResolvedValue([
       {
         name: 'app:ci-hermes:ci-marketplace',
@@ -39,19 +39,21 @@ describe('AgentHarnessService', () => {
         name: 'ci-hermes',
         slug: 'ci-hermes-official',
         port: 18790,
-        publicDomain: 'hermes.example.test',
+        publicDomain: 'companionintelligence.com',
+        openUrl: 'https://ci-hermes-official-device-org.companionintelligence.com',
       },
       {
         id: '2',
         name: 'ci-openclaw',
         slug: 'ci-openclaw-official',
         port: 18789,
-        publicDomain: 'openclaw.example.test',
+        publicDomain: 'companionintelligence.com',
+        openUrl: 'https://ci-openclaw-official-device-org.companionintelligence.com',
       },
     ]);
 
     jest.spyOn(global, 'fetch').mockImplementation(async (url: string | URL | Request) => {
-      if (String(url).startsWith('https://hermes.example.test')) {
+      if (String(url).startsWith('https://ci-hermes-official-device-org.companionintelligence.com')) {
         return new Response(null, { status: 200 });
       }
 
@@ -66,7 +68,7 @@ describe('AgentHarnessService', () => {
         connectedToMemory: true,
         installed: true,
         running: true,
-        openUrl: 'https://hermes.example.test',
+        openUrl: 'https://ci-hermes-official-device-org.companionintelligence.com',
         accessible: true,
       }),
       expect.objectContaining({
@@ -74,13 +76,13 @@ describe('AgentHarnessService', () => {
         connectedToMemory: false,
         installed: true,
         running: false,
-        openUrl: 'https://openclaw.example.test',
-        accessible: false,
+        openUrl: 'https://ci-openclaw-official-device-org.companionintelligence.com',
+        accessible: true,
       }),
     ]);
   });
 
-  it('returns no open URL when portal app has no public domain', async () => {
+  it('returns no open URL when portal app has no resolvable URL', async () => {
     apiKeyService.findAllByUser = jest.fn().mockResolvedValue([]);
     cloudOAuthProxyService.getDeviceApplications = jest.fn().mockResolvedValue([
       {
@@ -89,6 +91,7 @@ describe('AgentHarnessService', () => {
         slug: 'ci-hermes-official',
         port: 18790,
         publicDomain: null,
+        openUrl: null,
       },
     ]);
 
