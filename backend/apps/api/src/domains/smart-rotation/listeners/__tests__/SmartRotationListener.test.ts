@@ -11,6 +11,7 @@ import type { SummaryServiceClient } from '../../services/SummaryServiceClient';
 describe('SmartRotationListener', () => {
   it('delegates schedule_sync to SuggestionSyncService', async () => {
     const questionService = {} as QuestionService;
+    const contextGapQuestionService = {} as import('../../services/ContextGapQuestionService').ContextGapQuestionService;
     const eventService = { send: jest.fn() } as unknown as EventService;
     const suggestionSyncService = { sync: jest.fn().mockResolvedValue(3) } as unknown as SuggestionSyncService;
     const summaryServiceClient = {} as SummaryServiceClient;
@@ -28,6 +29,7 @@ describe('SmartRotationListener', () => {
 
     const listener = new SmartRotationListener(
       questionService,
+      contextGapQuestionService,
       eventService,
       suggestionSyncService,
       summaryServiceClient,
@@ -48,8 +50,10 @@ describe('SmartRotationListener', () => {
 
   it('delegates answer_infer to the inference event bus', async () => {
     const questionService = {
+      rotateStaleFeedQuestions: jest.fn(),
       enqueueNextFeedQueueQuestion: jest.fn(),
     } as unknown as QuestionService;
+    const contextGapQuestionService = { tryGenerateAndEnqueue: jest.fn() } as unknown as import('../../services/ContextGapQuestionService').ContextGapQuestionService;
     const eventService = { send: jest.fn().mockResolvedValue(['job-1']) } as unknown as EventService;
     const suggestionSyncService = {} as SuggestionSyncService;
     const summaryServiceClient = {} as SummaryServiceClient;
@@ -67,6 +71,7 @@ describe('SmartRotationListener', () => {
 
     const listener = new SmartRotationListener(
       questionService,
+      contextGapQuestionService,
       eventService,
       suggestionSyncService,
       summaryServiceClient,

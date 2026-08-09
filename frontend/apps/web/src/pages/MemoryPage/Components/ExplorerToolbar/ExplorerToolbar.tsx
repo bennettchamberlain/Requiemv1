@@ -39,6 +39,7 @@ import { useSearchParams } from 'react-router-dom';
 
 import { useFeatures } from '@/common/feature';
 import { ConnectorFilter } from '@/components/SearchBox/ConnectorFilter';
+import { EntityTypeFilter } from '@/components/SearchBox/EntityTypeFilter';
 import {
   FILTER_DRAG_TYPE,
   isFilterDrag,
@@ -847,9 +848,17 @@ function SortControl() {
 }
 
 /** When / How / toggles / sort — shared by the inline explorer toolbar and header panel. */
-function FilterControlsRow({ modal }: { modal: boolean }) {
+function FilterControlsRow({
+  modal,
+  includeEntityTypeFilter = false,
+}: {
+  modal: boolean;
+  /** Off on `/memory` — entity types live in MemoryEntityTypeNav instead. */
+  includeEntityTypeFilter?: boolean;
+}) {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
+      {includeEntityTypeFilter && <EntityTypeFilter modal={modal} label="What" />}
       <DateControl />
 
       <ConnectorFilter modal={modal} label="How" />
@@ -871,13 +880,13 @@ function FilterControlsRow({ modal }: { modal: boolean }) {
 }
 
 /**
- * Advanced filters for the header search dropdown — no entity-type picker (that
- * lives in MemoryEntityTypeNav on the explorer) and no drag drop zone.
+ * Advanced filters for the header search dropdown on non-`/memory` pages. Includes
+ * the What picker here; the main Memory explorer uses MemoryEntityTypeNav instead.
  */
 export function SearchPanelFilters({ modal }: { modal: boolean }) {
   return (
     <div className="p-3">
-      <FilterControlsRow modal={modal} />
+      <FilterControlsRow modal={modal} includeEntityTypeFilter />
     </div>
   );
 }

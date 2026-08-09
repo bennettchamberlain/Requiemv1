@@ -52,8 +52,8 @@ const CLEAR_QUERY_ACTION_ID = 'action:clear-query';
  * Who/What/When/Where/How filters on mobile).
  *
  * Advanced filters live inline on the Events explorer page only — not in this
- * header dropdown. On other pages (and Memory hub sub-routes), When / How /
- * toggles / sort open in the panel footer when the search bar is focused.
+ * header dropdown. On other pages (and Memory hub sub-routes), What / When /
+ * How / toggles / sort open in the panel footer when the search bar is focused.
  *
  * - On `/memory`, typing writes `?search` live (debounced) so results filter as
  *   you type, and the input mirrors `?search` via `defaultQuery` (so external
@@ -94,12 +94,8 @@ export function GlobalSearchBox() {
   // filter so the dropdown agrees with the pinned filters above it. The other
   // dimensions (who / when / where / tags / connectors) aren't part of the
   // search API's input yet, so only the page results honor them.
-  const includeTypes = onMemoryExplorer
-    ? searchParams.get('includedEntityTypes')?.split(',').filter(Boolean)
-    : undefined;
-  const userExcludedTypes = onMemoryExplorer
-    ? searchParams.get('excludedEntityTypes')?.split(',').filter(Boolean) ?? []
-    : [];
+  const includeTypes = searchParams.get('includedEntityTypes')?.split(',').filter(Boolean);
+  const userExcludedTypes = searchParams.get('excludedEntityTypes')?.split(',').filter(Boolean) ?? [];
   // Keep the box's default exclusions on top of the explorer's (the service
   // only applies its defaults when excludeTypes is omitted entirely).
   const excludeTypes =

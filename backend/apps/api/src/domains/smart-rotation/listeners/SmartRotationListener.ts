@@ -18,6 +18,7 @@ import {
 import { SuggestionSyncService } from '@ci/domains/schedule';
 
 import { SmartRotationWorkEvent, type SmartRotationWorkPayload } from '../events';
+import { ContextGapQuestionService } from '../services/ContextGapQuestionService';
 import { SummaryServiceClient } from '../services/SummaryServiceClient';
 import { SMART_ROTATION_QUEUE, type SmartRotationWorkType } from '../types';
 
@@ -28,6 +29,7 @@ const FEED_QUEUE_LIMIT = 3;
 export class SmartRotationListener {
   constructor(
     private readonly questionService: QuestionService,
+    private readonly contextGapQuestionService: ContextGapQuestionService,
     private readonly eventService: EventService,
     private readonly suggestionSyncService: SuggestionSyncService,
     private readonly summaryServiceClient: SummaryServiceClient,
@@ -52,7 +54,12 @@ export class SmartRotationListener {
   private async executeWork(userId: string, workType: SmartRotationWorkType): Promise<void> {
     switch (workType) {
       case 'question_feed': {
-        const enqueued = await this.questionService.enqueueNextFeedQueueQuestion(userId, FEED_QUEUE_LIMIT);
+        await this.questionService.rotateStaleFeedQuestions(userId);
+        let enqueued = await this.questionService.enqueueNextFeedQueueQuestion(userId, FEED_QUEUE_LIMIT);
+
+        if (!enqueued) {
+          enqueued = await this.contextGapQuestionService.tryGenerateAndEnqueue(userId);
+        }
 
         this.logger.log('Smart rotation question feed', { userId, enqueued });
 

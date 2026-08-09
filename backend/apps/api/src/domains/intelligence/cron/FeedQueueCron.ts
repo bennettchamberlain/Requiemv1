@@ -29,6 +29,7 @@ export class FeedQueueCron {
     let enqueueCount = 0;
 
     for (const userId of userIds) {
+      await this.questionService.rotateStaleFeedQuestions(userId);
       const enqueued = await this.questionService.enqueueNextFeedQueueQuestion(userId, FEED_QUEUE_LIMIT);
 
       if (enqueued) {

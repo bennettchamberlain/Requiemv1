@@ -2,7 +2,7 @@ import { SYSTEM_USER, type ServiceContext } from '@ci/common/context';
 
 import { QuestionEntity } from '../entities/QuestionEntity';
 
-import { QuestionService } from './QuestionService';
+import { QuestionService, FEED_QUESTION_STALE_MS } from './QuestionService';
 
 const USER = '00000000-0000-0000-0000-0000000000aa';
 
@@ -109,6 +109,65 @@ describe('QuestionService bulk createMany', () => {
     expect(result).toEqual([]);
     expect(insert.inserted).toBe(false);
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe('QuestionService feed rotation', () => {
+  function makeRotationService() {
+    const queries: Array<{ sql: string; params?: unknown[] }> = [];
+    const dataSource = {
+      query: jest.fn(async (sql: string, params?: unknown[]) => {
+        queries.push({ sql, params });
+
+        if (sql.includes('SELECT') && sql.includes('feed_queue_id') && sql.includes('LIMIT 1')) {
+          return [
+            {
+              feed_queue_id: 'fq-1',
+              question_id: 'q-1',
+              metadata: { lastPresentedAt: new Date(Date.now() - FEED_QUESTION_STALE_MS - 1000).toISOString() },
+            },
+          ];
+        }
+
+        if (sql.includes('UPDATE ci.feed_queue') && sql.includes('rotatedAt')) {
+          return [];
+        }
+
+        if (sql.includes('GAP_AWARE') || sql.includes('category_coverage')) {
+          return [{ id: 'q-2' }];
+        }
+
+        if (sql.includes('INSERT INTO ci.feed_queue')) {
+          return [{ question_id: 'q-2' }];
+        }
+
+        if (sql.includes('COUNT(*)')) {
+          return [{ count: '1' }];
+        }
+
+        return [];
+      }),
+    };
+
+    const service = new QuestionService(
+      dataSource as never,
+      { create: jest.fn(), save: jest.fn(), find: jest.fn(), metadata: { columns: { length: 14 } } } as never,
+      { send: jest.fn() } as never,
+    );
+
+    return { service, dataSource, queries };
+  }
+
+  it('rotates a stale front-of-queue question and enqueues a replacement', async () => {
+    const { service, dataSource } = makeRotationService();
+
+    const rotated = await service.rotateStaleFeedQuestions(USER);
+
+    expect(rotated).toBe(true);
+    expect(dataSource.query).toHaveBeenCalledWith(
+      expect.stringContaining('rotatedAt'),
+      expect.arrayContaining(['fq-1']),
+    );
   });
 });
 
