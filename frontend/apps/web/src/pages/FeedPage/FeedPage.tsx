@@ -27,6 +27,8 @@ import { useSummariesService } from './useSummariesService';
 
 type CarouselProps = Partial<ComponentProps<typeof Carousel>>;
 const MAX_INSIGHT_SUMMARY_CARDS = 20;
+const FEED_PAGE_CONTENT_CLASS =
+  'gap-3 p-3 pt-[max(0.5rem,env(safe-area-inset-top))] md:gap-4 md:p-4 md:pt-[max(0.75rem,env(safe-area-inset-top))]';
 
 export function FeedPage() {
   usePageTitle('Feed - Companion Intelligence');
@@ -272,7 +274,7 @@ export function FeedPage() {
 
   if (actionsEnabled && loading) {
     return (
-      <PageContent>
+      <PageContent className={FEED_PAGE_CONTENT_CLASS}>
         <LoadingPage />
       </PageContent>
     );
@@ -280,7 +282,7 @@ export function FeedPage() {
 
   if (actionsEnabled && error) {
     return (
-      <PageContent>
+      <PageContent className={FEED_PAGE_CONTENT_CLASS}>
         <ErrorPage error={error} />
       </PageContent>
     );
@@ -295,9 +297,9 @@ export function FeedPage() {
     } satisfies CarouselProps;
 
     return (
-      <PageContent>
+      <PageContent className={FEED_PAGE_CONTENT_CLASS}>
         {showMobileEmptyState ? (
-          <div className="flex min-h-[40vh] items-center justify-center py-10">
+          <div className="flex min-h-[28vh] items-center justify-center py-4">
             <p className="text-center text-xl font-medium text-muted-foreground opacity-70">All Caught Up!</p>
           </div>
         ) : (
@@ -365,8 +367,8 @@ export function FeedPage() {
         )}
 
         {hbpeEnabled && forecast && (
-          <div className="px-2 pb-4" data-testid="tomorrows-forecast">
-            <h3 className="text-sm font-semibold text-foreground mb-2">Tomorrow's Forecast</h3>
+          <div className="px-1 pb-2" data-testid="tomorrows-forecast">
+            <h3 className="text-sm font-semibold text-foreground mb-1">Tomorrow's Forecast</h3>
             <ForecastStrip
               buckets={forecast.buckets}
               generatedAt={forecast.generatedAt}
@@ -382,9 +384,9 @@ export function FeedPage() {
   }
 
   const carouselProps = {
-    className: '-mx-6',
-    containerClassName: 'px-6 pb-6 pt-1',
-    slideClassName: 'flex-none min-w-[550px] basis-[550px] mr-6',
+    className: '-mx-4',
+    containerClassName: 'px-4 pb-2 pt-0',
+    slideClassName: 'flex-none min-w-[550px] basis-[550px] mr-4',
   } satisfies CarouselProps;
 
   return (
@@ -405,7 +407,7 @@ export function FeedPage() {
         </Breadcrumb>
       </Portal.Slot>
 
-      <PageContent>
+      <PageContent className={FEED_PAGE_CONTENT_CLASS}>
         {hbpeEnabled && forecast && (
           // `display: contents` so the heading and the strip stay direct flex items of
           // PageContent (identical layout), while still being one addressable section —
@@ -429,7 +431,7 @@ export function FeedPage() {
             <h2 className="text-2xl font-bold text-foreground">{actionsEnabled ? 'Actions' : 'Questions'}</h2>
 
             {isActionsRowEmpty ? (
-              <div className="flex min-h-[220px] items-center justify-center">
+              <div className="flex min-h-[120px] items-center justify-center">
                 <p className="text-center text-lg font-medium text-muted-foreground opacity-70">
                   All Caught Up!
                 </p>
@@ -477,7 +479,7 @@ export function FeedPage() {
 
         <h2 className="text-2xl font-bold text-foreground">Insights & Summaries</h2>
 
-        <div className="space-y-3">
+        <div className="space-y-2">
           {summariesError && (
             <div className="text-sm text-destructive">
               We could not load live insights. Preview cards are shown until the service recovers.
@@ -485,7 +487,7 @@ export function FeedPage() {
           )}
 
           {showInsightsRowEmptyState ? (
-            <div className="flex min-h-[220px] items-center justify-center">
+            <div className="flex min-h-[120px] items-center justify-center">
               <p className="text-center text-lg font-medium text-muted-foreground opacity-70">
                 You've seen everything for now, let Companion learn and come back later
               </p>
