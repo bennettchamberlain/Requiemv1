@@ -106,6 +106,56 @@ export const STAGE_IDS = {
    * storage and re-decodes.
    */
   ENRICH_MEDIA_DIMENSIONS: 'enrich.media_dimensions',
+
+  /**
+   * Dense-embed `ci.content` into `ci_search.embeddings`. The conversion that
+   * justifies the whole rebuild, because its version is not a hand-chosen
+   * integer: it is a function of `(embedding model, pgvector width)`, so
+   * changing `CI_EMBED_MODEL` re-embeds the corpus by itself. See
+   * `versions.ts` for how a derived version is declared, and
+   * `stages/index/EmbedStage.ts` for why a hash would have been dangerous here.
+   *
+   * `index.*`, not `enrich.*`: this writes a search index, and the sibling
+   * tsvector work belongs to a separate `index.vector` stage rather than being
+   * smuggled in where one version bump could not address the two separately.
+   */
+  INDEX_EMBED: 'index.embed',
+
+  /**
+   * Reverse-geocode `ci.position` fixes into the seven address columns that
+   * have existed since `20251111000000_add_position_fields` and that NO CODE
+   * has ever written.
+   *
+   * The one stage on this list whose sweep is a BILL — `ci.position` is the
+   * largest table on the appliance and the provider is metered — so it is swept
+   * deliberately rather than nightly. `stages/enrich/PositionReverseStage.ts`
+   * carries the cost argument and the two generations its version derives from.
+   */
+  ENRICH_POSITION_REVERSE: 'enrich.position_reverse',
+
+  /**
+   * Forward-geocode `ci.events.location_name` into `location_coordinates`,
+   * replacing `GeocodeBatchListener`'s sweep. That listener's candidate predicate
+   * is `location_coordinates IS NULL`, and its own comment states the
+   * consequence — "a resolved coordinate is never re-billed" — so every coarse
+   * city-centroid hit it ever wrote is frozen for the life of the appliance.
+   *
+   * The second stage whose sweep is a BILL, not just CPU: it egresses through
+   * Portal to a paid provider. Bump deliberately.
+   */
+  ENRICH_GEOCODE: 'enrich.geocode',
+
+  /**
+   * Fill a physical-presence event's coordinates from the nearest-in-time REAL
+   * location, replacing `LocationEstimateService`'s temporal fill — and its
+   * `forced` flag, a request-scoped re-run lever that recorded nothing anywhere.
+   *
+   * Its version tracks the geocode provider generation as well as its own rule,
+   * because its donors are overwhelmingly rows `enrich.geocode` resolved: an
+   * estimate is a COPY of a donor's coordinate, so a better geocoder makes every
+   * estimate stale too.
+   */
+  ENRICH_ESTIMATE_LOCATION: 'enrich.estimate_location',
 } as const;
 
 export type StageId = (typeof STAGE_IDS)[keyof typeof STAGE_IDS];
