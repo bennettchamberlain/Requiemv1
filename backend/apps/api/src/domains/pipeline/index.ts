@@ -54,6 +54,7 @@ import { RecordRejectionEntity } from './entities/RecordRejectionEntity';
 import { DeadLetterReaperListener } from './listeners/DeadLetterReaperListener';
 import { PipelineSliceListener } from './listeners/PipelineSliceListener';
 import { PIPELINE_TICK, PipelineTickCron } from './listeners/PipelineTickCron';
+import { StageArrivalListener } from './listeners/StageArrivalListener';
 import { BackpressureService } from './services/BackpressureService';
 import { PipelineControlService } from './services/PipelineControlService';
 import { PipelineDispatchService } from './services/PipelineDispatchService';
@@ -171,6 +172,11 @@ const stageProviders: Provider[] = [
     BackpressureService,
     PipelineControlService,
     PipelineSliceListener,
+    // Rows are enriched AS THEY ARRIVE; the tick is the backstop, not the
+    // primary path. Shedding under backpressure is safe here precisely because
+    // the ledger is the source of truth — a shed row simply stays stale and the
+    // next sweep re-derives it, so there is no deferral queue to leak.
+    StageArrivalListener,
     PipelineTickCron,
     // The cron owns the schedule and the cluster-safe advisory lock; the control
     // service owns what a tick DOES. Binding by token rather than importing the
