@@ -228,8 +228,22 @@ FROM rocm/dev-ubuntu-22.04:7.2.4
 # No compiler, no headers, no git — and no apt python either, for the reason
 # given in the builder: jammy's only python3.11 is 3.11.0rc1, which torch
 # cannot import.
+#
+# tzdata is NOT incidental. The forecast API takes an IANA timezone straight
+# from the request (`?timezone=America/Los_Angeles`) and hands it to
+# ZoneInfo, which reads /usr/share/zoneinfo and raises ZoneInfoNotFoundError
+# when the database is missing — surfacing to the caller as a misleading
+# "400: Invalid timezone" for a perfectly valid one. python:3.11-slim-bookworm
+# carried this implicitly through its Debian base, so the CPU image never had
+# to think about it; this base ships no zone database at all, and uv's managed
+# interpreter does not bundle one either.
+#
+# DEBIAN_FRONTEND is set because tzdata's postinst otherwise blocks on an
+# interactive geographic-area prompt and hangs the build.
+ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 # The interpreter the venv was built against. A venv records an ABSOLUTE path
