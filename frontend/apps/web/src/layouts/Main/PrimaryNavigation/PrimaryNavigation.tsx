@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Portal } from '@ci/common';
-import { Button, DropdownMenu, Separator, useToast } from '@ci/shadcn';
+import { DropdownMenu, IconButton, Separator, useToast } from '@ci/shadcn';
 import { NotebookPen, Upload, Camera, Plus, Cable, Search, User, Lightbulb, Package } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { useUploadFile, useTriggerHbpe } from '@/api';
@@ -17,6 +18,7 @@ import { useModalControls } from '@/hooks';
 import { NavUser } from './NavUser';
 
 export function PrimaryNavigation() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   // The global search box searches the VIEWER's own memory. On a shared-search
@@ -109,9 +111,9 @@ export function PrimaryNavigation() {
           <div className="flex items-center">
             <DropdownMenu modal={false}>
               <DropdownMenu.Trigger asChild>
-                <Button variant="ghost" size="icon" aria-label="More Options">
+                <IconButton variant="ghost" label={t('NAV_ADD')}>
                   <Plus strokeWidth={1.5} />
-                </Button>
+                </IconButton>
               </DropdownMenu.Trigger>
               <DropdownMenu.Content className="rounded-lg p-2" side="bottom" align="end" sideOffset={4}>
                 <div className="text-center text-sm font-semibold mb-3 mt-1">Add</div>

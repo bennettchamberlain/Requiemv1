@@ -1,5 +1,6 @@
-import { Button, Form, Input, Select, useFieldArray, useFormContext } from '@ci/shadcn';
+import { Button, Form, IconButton, Input, Select, useFieldArray, useFormContext } from '@ci/shadcn';
 import { X } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 
 import { StepHeader } from './StepHeader';
 
@@ -33,6 +34,7 @@ const RELATIONSHIP_GROUPS = [
 ];
 
 export function SocialConnections() {
+  const { t } = useTranslation();
   const form = useFormContext<{ people: Person[] }>();
   const { fields, append, remove } = useFieldArray({
     control: form.control,
@@ -113,15 +115,16 @@ export function SocialConnections() {
                   <Form.Message />
                 </Form.Item>
 
-                <Button
+                <IconButton
                   className="-ml-2 -mr-1 cursor-pointer"
                   type="button"
                   size="lg"
                   variant="ghost"
                   onClick={() => remove(index)}
+                  label={t('ONBOARDING_REMOVE_PERSON')}
                 >
                   <X className="h-5 w-5" />
-                </Button>
+                </IconButton>
               </>
             )}
           />

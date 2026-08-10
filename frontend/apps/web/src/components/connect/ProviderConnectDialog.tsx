@@ -9,11 +9,13 @@ import {
   Input,
   Label,
   Popover,
+  Tooltip,
   useForm,
   useToast,
   formDataSchema as s,
 } from '@ci/shadcn';
 import { Info } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 
 import { BrandPrimaryButton } from '@/components/BrandPrimaryButton/BrandPrimaryButton';
 import { ONBOARDING_OAUTH_RESUME_KEY } from '@/pages/OnboardingPage/constants';
@@ -42,6 +44,7 @@ export function ProviderConnectDialog({
   onConnected,
   resumeOnboarding = false,
 }: ProviderConnectDialogProps) {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const form = useForm<ConnectFormData>({
     resolver: formDataResolver(ConnectFormSchema),
@@ -122,11 +125,20 @@ export function ProviderConnectDialog({
                     <Label htmlFor="provider-api-key">API key</Label>
                     {provider.openidKeyLink && (
                       <Popover>
-                        <Popover.Trigger asChild>
-                          <button type="button" className="text-muted-foreground hover:text-foreground">
-                            <Info className="h-4 w-4" />
-                          </button>
-                        </Popover.Trigger>
+                        <Tooltip delayDuration={600}>
+                          <Tooltip.Content>{t('PROVIDER_API_KEY_HELP')}</Tooltip.Content>
+                          <Tooltip.Trigger asChild>
+                            <Popover.Trigger asChild>
+                              <button
+                                type="button"
+                                aria-label={t('PROVIDER_API_KEY_HELP')}
+                                className="text-muted-foreground hover:text-foreground"
+                              >
+                                <Info className="h-4 w-4" />
+                              </button>
+                            </Popover.Trigger>
+                          </Tooltip.Trigger>
+                        </Tooltip>
                         <Popover.Content className="text-sm w-fit">
                           <a
                             href={provider.openidKeyLink}

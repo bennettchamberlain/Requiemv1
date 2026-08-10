@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { Button } from '@ci/shadcn';
+import { IconButton } from '@ci/shadcn';
 import { ChevronLeft, ChevronRight, Download, ExternalLink, X } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 
 import { FileIcon } from '@/components/icons';
 
@@ -31,6 +32,7 @@ function isSameOrigin(url: string): boolean {
  * entries, the backdrop and ✕ close, and the source can be downloaded.
  */
 export function MediaLightbox({ entries, index, onClose, onIndexChange }: Props) {
+  const { t } = useTranslation();
   const count = entries.length;
   const current = entries[index];
 
@@ -153,36 +155,32 @@ export function MediaLightbox({ entries, index, onClose, onIndexChange }: Props)
             target="_blank"
             rel="noopener noreferrer"
           >
-            <Button
+            <IconButton
               variant="ghost"
-              size="icon"
               className="text-white hover:bg-white/15 hover:text-white"
-              aria-label={canDownload ? 'Download' : 'Open original'}
-              title={canDownload ? 'Download' : 'Open original'}
+              label={canDownload ? t('MEMORY_LIGHTBOX_DOWNLOAD') : t('MEMORY_LIGHTBOX_OPEN_ORIGINAL')}
             >
               {canDownload ? <Download /> : <ExternalLink />}
-            </Button>
+            </IconButton>
           </a>
-          <Button
+          <IconButton
             ref={closeButtonRef}
             variant="ghost"
-            size="icon"
             className="text-white hover:bg-white/15 hover:text-white"
             onClick={onClose}
-            aria-label="Close"
+            label={t('MEMORY_LIGHTBOX_CLOSE')}
           >
             <X />
-          </Button>
+          </IconButton>
         </div>
       </div>
 
       {/* Stage */}
       <div className="relative flex min-h-0 flex-1 items-center justify-center px-4 pb-2" onClick={onClose}>
         {hasPrev && (
-          <Button
+          <IconButton
             variant="ghost"
-            size="icon"
-            aria-label="Previous"
+            label={t('MEMORY_LIGHTBOX_PREVIOUS')}
             onClick={(e) => {
               e.stopPropagation();
               goPrev();
@@ -190,7 +188,7 @@ export function MediaLightbox({ entries, index, onClose, onIndexChange }: Props)
             className="absolute left-2 top-1/2 h-11 w-11 -translate-y-1/2 rounded-full bg-black/40 text-white hover:bg-black/60 hover:text-white"
           >
             <ChevronLeft className="h-6 w-6" />
-          </Button>
+          </IconButton>
         )}
 
         <div
@@ -235,10 +233,9 @@ export function MediaLightbox({ entries, index, onClose, onIndexChange }: Props)
         </div>
 
         {hasNext && (
-          <Button
+          <IconButton
             variant="ghost"
-            size="icon"
-            aria-label="Next"
+            label={t('MEMORY_LIGHTBOX_NEXT')}
             onClick={(e) => {
               e.stopPropagation();
               goNext();
@@ -246,7 +243,7 @@ export function MediaLightbox({ entries, index, onClose, onIndexChange }: Props)
             className="absolute right-2 top-1/2 h-11 w-11 -translate-y-1/2 rounded-full bg-black/40 text-white hover:bg-black/60 hover:text-white"
           >
             <ChevronRight className="h-6 w-6" />
-          </Button>
+          </IconButton>
         )}
       </div>
 

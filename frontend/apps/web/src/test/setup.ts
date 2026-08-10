@@ -6,7 +6,14 @@ import * as matchers from '@testing-library/jest-dom/matchers';
 import { cleanup } from '@testing-library/react';
 import { afterEach, expect, vi } from 'vitest';
 
+import { initI18n } from '@/lib/i18n';
+
 expect.extend(matchers);
+
+// Components call `t()` during render. Initialising here (rather than wrapping
+// every test in a provider) keeps `renderWithProviders` unchanged and makes
+// assertions match the English copy users actually see.
+initI18n();
 
 // Unmount React trees between tests so queries don't leak across cases.
 afterEach(() => {

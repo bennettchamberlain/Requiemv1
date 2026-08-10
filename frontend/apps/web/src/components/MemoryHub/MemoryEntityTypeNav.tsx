@@ -1,8 +1,9 @@
 import { useState, type ComponentType } from 'react';
 
 import { useQuery } from '@apollo/client';
-import { Button, DropdownMenu, cn } from '@ci/shadcn';
+import { Button, DropdownMenu, Tooltip, cn } from '@ci/shadcn';
 import { ChevronDown, Shapes, Tag as TagIcon } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
 import { AVAILABLE_ENTITY_TYPES, useDropdown } from '@/components/SearchBox/useDropdown';
@@ -119,17 +120,21 @@ function StandaloneWhatButton({
   active: boolean;
 }) {
   return (
-    <button
-      type="button"
-      aria-pressed={active}
-      aria-label={category.label}
-      title={category.label}
-      onClick={onSelect}
-      className={categoryButtonClass(selected, active)}
-    >
-      <CategoryIcon icon={category.icon} toneClass={WHAT_BAR_ICON_CLASS[category.id]} entityIcon />
-      <span className={EXPAND_LABEL_CLASS}>{category.label}</span>
-    </button>
+    <Tooltip delayDuration={600}>
+      <Tooltip.Content>{category.label}</Tooltip.Content>
+      <Tooltip.Trigger asChild>
+        <button
+          type="button"
+          aria-pressed={active}
+          aria-label={category.label}
+          onClick={onSelect}
+          className={categoryButtonClass(selected, active)}
+        >
+          <CategoryIcon icon={category.icon} toneClass={WHAT_BAR_ICON_CLASS[category.id]} entityIcon />
+          <span className={EXPAND_LABEL_CLASS}>{category.label}</span>
+        </button>
+      </Tooltip.Trigger>
+    </Tooltip>
   );
 }
 
@@ -156,25 +161,29 @@ function GroupWhatDropdown({
 
   return (
     <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
-      <Trigger asChild>
-        <button
-          type="button"
-          aria-pressed={active}
-          aria-expanded={open}
-          aria-haspopup="menu"
-          aria-label={category.label}
-          title={category.label}
-          className={categoryButtonClass(selected, active)}
-        >
-          <CategoryIcon icon={category.icon} toneClass={WHAT_BAR_ICON_CLASS[category.id]} entityIcon />
-          <span className={EXPAND_LABEL_CLASS}>{category.label}</span>
-          <ChevronDown
-            className={cn(
-              'ml-0 h-3.5 w-3.5 shrink-0 opacity-50 transition-transform duration-200 group-hover:ml-1 group-data-[state=open]:ml-1 group-data-[state=open]:rotate-180',
-            )}
-          />
-        </button>
-      </Trigger>
+      <Tooltip delayDuration={600}>
+        <Tooltip.Content>{category.label}</Tooltip.Content>
+        <Tooltip.Trigger asChild>
+          <Trigger asChild>
+            <button
+              type="button"
+              aria-pressed={active}
+              aria-expanded={open}
+              aria-haspopup="menu"
+              aria-label={category.label}
+              className={categoryButtonClass(selected, active)}
+            >
+              <CategoryIcon icon={category.icon} toneClass={WHAT_BAR_ICON_CLASS[category.id]} entityIcon />
+              <span className={EXPAND_LABEL_CLASS}>{category.label}</span>
+              <ChevronDown
+                className={cn(
+                  'ml-0 h-3.5 w-3.5 shrink-0 opacity-50 transition-transform duration-200 group-hover:ml-1 group-data-[state=open]:ml-1 group-data-[state=open]:rotate-180',
+                )}
+              />
+            </button>
+          </Trigger>
+        </Tooltip.Trigger>
+      </Tooltip>
 
       <Content align="start" sideOffset={4} className="z-[9999] w-56 p-2">
         <Label className="px-1 pb-2 text-sm font-medium">{category.label}</Label>
@@ -248,27 +257,32 @@ function TagWhatDropdown({ tags, onTagsChange }: { tags: string[]; onTagsChange:
   const { data } = useQuery(GET_TAGS, { skip: !open });
   const suggestions = data?.tags?.edges.map(({ node }: { node: { label: string } }) => node.label) ?? [];
   const { Content, Label, Trigger } = DropdownMenu;
+  const { t } = useTranslation();
 
   return (
     <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
-      <Trigger asChild>
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-haspopup="dialog"
-          aria-label="Tag"
-          title="Tag"
-          className={categoryButtonClass(active, active)}
-        >
-          <CategoryIcon icon={TagIcon} toneClass={WHAT_BAR_ICON_CLASS.tag} />
-          <span className={EXPAND_LABEL_CLASS}>Tag</span>
-          <ChevronDown
-            className={cn(
-              'ml-0 h-3.5 w-3.5 shrink-0 opacity-50 transition-transform duration-200 group-hover:ml-1 group-data-[state=open]:ml-1 group-data-[state=open]:rotate-180',
-            )}
-          />
-        </button>
-      </Trigger>
+      <Tooltip delayDuration={600}>
+        <Tooltip.Content>{t('MEMORY_ENTITY_TYPE_FILTER_TAG')}</Tooltip.Content>
+        <Tooltip.Trigger asChild>
+          <Trigger asChild>
+            <button
+              type="button"
+              aria-expanded={open}
+              aria-haspopup="dialog"
+              aria-label={t('MEMORY_ENTITY_TYPE_FILTER_TAG')}
+              className={categoryButtonClass(active, active)}
+            >
+              <CategoryIcon icon={TagIcon} toneClass={WHAT_BAR_ICON_CLASS.tag} />
+              <span className={EXPAND_LABEL_CLASS}>Tag</span>
+              <ChevronDown
+                className={cn(
+                  'ml-0 h-3.5 w-3.5 shrink-0 opacity-50 transition-transform duration-200 group-hover:ml-1 group-data-[state=open]:ml-1 group-data-[state=open]:rotate-180',
+                )}
+              />
+            </button>
+          </Trigger>
+        </Tooltip.Trigger>
+      </Tooltip>
 
       <Content align="start" sideOffset={4} className="z-[9999] w-80 p-3">
         <Label className="mb-2 block text-sm font-medium">Tags</Label>

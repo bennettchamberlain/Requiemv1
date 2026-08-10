@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 
-import { Avatar, DropdownMenu } from '@ci/shadcn';
+import { Avatar, DropdownMenu, Tooltip } from '@ci/shadcn';
 import { ListTodo, LogOut, SunMoon, Settings2, Cable, Palette } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 import { Link, useLocation } from 'react-router-dom';
 
 import { useFeatures } from '@/common/feature';
@@ -9,6 +10,7 @@ import { useTheme, ColorPicker } from '@/components/ThemePicker';
 import { useAuth, useCurrentUser } from '@/hooks';
 
 export function NavUser() {
+  const { t } = useTranslation();
   const [, { logout }] = useAuth();
   const { user } = useCurrentUser();
   const { themeState, setTheme } = useTheme();
@@ -37,12 +39,17 @@ export function NavUser() {
 
   return (
     <DropdownMenu modal={false}>
-      <DropdownMenu.Trigger asChild>
-        <Avatar className="h-9 w-9 rounded-full select-none cursor-pointer">
-          <Avatar.Image src={currentUser.avatar} alt={currentUser.name} />
-          <Avatar.Fallback>{initials}</Avatar.Fallback>
-        </Avatar>
-      </DropdownMenu.Trigger>
+      <Tooltip delayDuration={600}>
+        <Tooltip.Content>{t('NAV_ACCOUNT')}</Tooltip.Content>
+        <Tooltip.Trigger asChild>
+          <DropdownMenu.Trigger asChild>
+            <Avatar className="h-9 w-9 rounded-full select-none cursor-pointer" aria-label={t('NAV_ACCOUNT')}>
+              <Avatar.Image src={currentUser.avatar} alt={currentUser.name} />
+              <Avatar.Fallback>{initials}</Avatar.Fallback>
+            </Avatar>
+          </DropdownMenu.Trigger>
+        </Tooltip.Trigger>
+      </Tooltip>
       <DropdownMenu.Content className="min-w-56 rounded-lg" side="bottom" align="end" sideOffset={4}>
         <DropdownMenu.Group>
           <DropdownMenu.Label className="p-0 font-normal select-none">

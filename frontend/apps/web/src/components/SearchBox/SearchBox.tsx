@@ -11,7 +11,7 @@ import {
 
 import { ENTITY_TYPE_MAP } from '@ci/common/src/constants';
 import {
-  Button,
+  IconButton,
   ScrollArea,
   ScrollBar,
   Input,
@@ -23,6 +23,7 @@ import {
   cn,
 } from '@ci/shadcn';
 import { ArrowDown, Search, X } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 
 import { DropdownContent } from './DropdownContent';
 import type { FilterDragPayload } from './filterDrag';
@@ -225,6 +226,8 @@ function SearchBox(
   }: Props,
   forwardedRef: ForwardedRef<HTMLInputElement>,
 ) {
+  const { t } = useTranslation();
+
   const form = useForm<FormData>({
     resolver: formDataResolver(FormSchema),
     defaultValues: defaultQuery != null ? { query: defaultQuery } : EMPTY,
@@ -848,7 +851,8 @@ function SearchBox(
                 {statusSlot}
 
                 {(queryValue.length > 0 || showClear) && (
-                  <Button
+                  <IconButton
+                    label={t('SEARCH_CLEAR')}
                     type="button"
                     disabled={disabled}
                     variant="ghost"
@@ -866,13 +870,14 @@ function SearchBox(
                     onMouseDown={(e) => e.preventDefault()}
                   >
                     <X className="h-4 w-4" />
-                  </Button>
+                  </IconButton>
                 )}
 
                 {toolsSlot}
 
                 {displayDropdown && (
-                  <Button
+                  <IconButton
+                    label={isDropdownPanelVisible ? t('SEARCH_FILTERS_HIDE') : t('SEARCH_FILTERS_SHOW')}
                     type="button"
                     disabled={disabled}
                     variant={isDropdownPanelVisible ? 'secondary' : 'ghost'}
@@ -886,18 +891,19 @@ function SearchBox(
                         isDropdownPanelVisible && 'rotate-180',
                       )}
                     />
-                  </Button>
+                  </IconButton>
                 )}
 
                 {variant === 'default' && (
-                  <Button
+                  <IconButton
+                    label={t('SEARCH_SUBMIT')}
                     type="submit"
                     disabled={disabled}
                     size="sm"
                     className="cursor-pointer h-8 w-8 p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform"
                   >
                     <Search className="h-4 w-4" />
-                  </Button>
+                  </IconButton>
                 )}
               </div>
             </div>

@@ -1,7 +1,8 @@
 import { useCallback } from 'react';
 
-import { Select, Toggle, cn, useToast } from '@ci/shadcn';
+import { Select, Toggle, Tooltip, cn, useToast } from '@ci/shadcn';
 import { Brain, Eye, Wrench } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 
 import { useModel } from '@/hooks';
 
@@ -22,6 +23,7 @@ export function ModelSelector({
   triggerClassName = 'w-[150px]',
 }: Props) {
   const { toast } = useToast();
+  const { t } = useTranslation();
 
   const [
     {
@@ -41,6 +43,12 @@ export function ModelSelector({
   const handleSelectModel = visionOnly ? selectVisionModel : selectModel;
   const models = visionOnly ? activeModels.filter((model) => model.vision === true) : activeModels;
   const selectedModelConfig = activeModels.find((model) => model.model === currentModel) ?? null;
+  const toolsLabel = t(
+    selectedModelConfig?.tools === false ? 'MODEL_TOGGLE_TOOLS_UNSUPPORTED' : 'MODEL_TOGGLE_TOOLS',
+  );
+  const thinkingLabel = t(
+    selectedModelConfig?.thinking === false ? 'MODEL_TOGGLE_THINKING_UNSUPPORTED' : 'MODEL_TOGGLE_THINKING',
+  );
 
   const handleToggleTools = useCallback(
     (pressed: boolean) => {
@@ -102,28 +110,45 @@ export function ModelSelector({
   return (
     <div className="flex flex-row">
       <div className="flex flex-row items-center mr-2 gap-1">
-        <Toggle
-          pressed={toolsEnabled}
-          onPressedChange={handleToggleTools}
-          size="sm"
-          variant="outline"
-          aria-label="Toggle tools"
-          disabled={!toolsSupported}
-          className={!toolsSupported ? 'opacity-50 cursor-not-allowed' : ''}
-        >
-          <Wrench />
-        </Toggle>
-        <Toggle
-          pressed={thinkingEnabled}
-          onPressedChange={handleToggleThinking}
-          size="sm"
-          variant="outline"
-          aria-label="Toggle thinking"
-          disabled={!thinkingSupported}
-          className={!thinkingSupported ? 'opacity-50 cursor-not-allowed' : ''}
-        >
-          <Brain />
-        </Toggle>
+        <Tooltip delayDuration={600}>
+          <Tooltip.Content>{toolsLabel}</Tooltip.Content>
+          {/* A disabled Toggle gets `pointer-events: none`, which would swallow the
+              hover — and an unsupported model is exactly when the tooltip has
+              something to say. Anchor to a wrapper span so it still opens. */}
+          <Tooltip.Trigger asChild>
+            <span className="inline-flex">
+              <Toggle
+                pressed={toolsEnabled}
+                onPressedChange={handleToggleTools}
+                size="sm"
+                variant="outline"
+                aria-label={toolsLabel}
+                disabled={!toolsSupported}
+                className={!toolsSupported ? 'opacity-50 cursor-not-allowed' : ''}
+              >
+                <Wrench />
+              </Toggle>
+            </span>
+          </Tooltip.Trigger>
+        </Tooltip>
+        <Tooltip delayDuration={600}>
+          <Tooltip.Content>{thinkingLabel}</Tooltip.Content>
+          <Tooltip.Trigger asChild>
+            <span className="inline-flex">
+              <Toggle
+                pressed={thinkingEnabled}
+                onPressedChange={handleToggleThinking}
+                size="sm"
+                variant="outline"
+                aria-label={thinkingLabel}
+                disabled={!thinkingSupported}
+                className={!thinkingSupported ? 'opacity-50 cursor-not-allowed' : ''}
+              >
+                <Brain />
+              </Toggle>
+            </span>
+          </Tooltip.Trigger>
+        </Tooltip>
       </div>
 
       {selector}

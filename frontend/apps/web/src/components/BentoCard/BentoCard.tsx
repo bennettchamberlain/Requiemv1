@@ -1,8 +1,9 @@
 import { type MouseEvent, type MouseEventHandler, type ReactNode, useCallback } from 'react';
 
 import { useDeviceLayout } from '@ci/common';
-import { Button, cn } from '@ci/shadcn';
+import { cn, IconButton, Tooltip } from '@ci/shadcn';
 import { X } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 
 import { ChatWithAgentMenu } from '@/components/ChatWithAgent';
 import { Tag } from '@/components/Tag';
@@ -29,10 +30,11 @@ export function BentoCard({
   className,
   onClick,
   onDismiss,
-  dismissLabel = 'Dismiss card',
+  dismissLabel,
   showUnseenIndicator = false,
   chatContext,
 }: Props) {
+  const { t } = useTranslation();
   const { isMobile } = useDeviceLayout();
 
   const handleClick = useCallback(
@@ -57,25 +59,27 @@ export function BentoCard({
   ) : null;
 
   const dismissButton = onDismiss ? (
-    <Button
+    <IconButton
       type="button"
       variant="outline"
-      size="icon"
       className="absolute right-3 top-3 z-30 h-7 w-7 bg-background/80 backdrop-blur-sm"
       onClick={handleDismiss}
-      aria-label={dismissLabel}
-      title={dismissLabel}
+      label={dismissLabel ?? t('FEED_CARD_DISMISS')}
     >
       <X className="h-4 w-4" />
-    </Button>
+    </IconButton>
   ) : null;
 
   const unseenIndicator = showUnseenIndicator ? (
-    <span
-      className="pointer-events-none absolute left-0 top-0 z-30 h-3 w-3 -translate-x-1/3 -translate-y-1/3 rounded-full bg-primary ring-2 ring-background"
-      aria-label="New item"
-      title="New item"
-    />
+    <Tooltip delayDuration={600}>
+      <Tooltip.Content>{t('FEED_CARD_UNSEEN')}</Tooltip.Content>
+      <Tooltip.Trigger asChild>
+        <span
+          className="absolute left-0 top-0 z-30 h-3 w-3 -translate-x-1/3 -translate-y-1/3 rounded-full bg-primary ring-2 ring-background"
+          aria-label={t('FEED_CARD_UNSEEN')}
+        />
+      </Tooltip.Trigger>
+    </Tooltip>
   ) : null;
 
   if (isMobile) {

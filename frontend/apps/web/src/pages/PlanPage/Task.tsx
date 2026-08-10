@@ -1,5 +1,6 @@
-import { Button, Checkbox } from '@ci/shadcn';
+import { Checkbox, IconButton } from '@ci/shadcn';
 import { Trash } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 
 import { gql } from '@/graphql';
 import { type FragmentType, useFragment } from '@/graphql/fragment-masking';
@@ -39,6 +40,7 @@ function formatDue(dueAt: string): string {
 }
 
 export function Task({ task: taskMasked, onToggle, onDelete }: Props) {
+  const { t } = useTranslation();
   const task = useFragment(TaskRowFragment, taskMasked);
   const done = task.status === 'done';
   const priorityLabel = PRIORITY_LABELS[task.priority];
@@ -69,14 +71,9 @@ export function Task({ task: taskMasked, onToggle, onDelete }: Props) {
         </div>
       </div>
 
-      <Button
-        onClick={(e) => onDelete(e, task.id)}
-        size="icon"
-        variant="ghost"
-        aria-label={`Delete ${task.title}`}
-      >
+      <IconButton onClick={(e) => onDelete(e, task.id)} variant="ghost" label={t('PLAN_TASK_DELETE', { title: task.title })}>
         <Trash className="h-4 w-4" />
-      </Button>
+      </IconButton>
     </li>
   );
 }

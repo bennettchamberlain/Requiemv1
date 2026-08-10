@@ -10,11 +10,14 @@ import {
   useForm,
   useToast,
   formDataSchema as s,
+  IconButton,
   Input,
   Label,
   Popover,
+  Tooltip,
 } from '@ci/shadcn';
 import { ChevronLeft, ChevronRight, Info } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import logo from '@/assets/logo.png';
@@ -59,6 +62,7 @@ export function ProviderPage() {
   const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { t } = useTranslation();
 
   const { data, loading: queryLoading } = useQuery(GET_PROVIDER, {
     variables: {
@@ -205,14 +209,20 @@ export function ProviderPage() {
                           </Label>
                           {provider.openidKeyLink && (
                             <Popover>
-                              <Popover.Trigger asChild>
-                                <button
-                                  type="button"
-                                  className="cursor-pointer text-muted-foreground hover:text-foreground"
-                                >
-                                  <Info className="h-4 w-4" />
-                                </button>
-                              </Popover.Trigger>
+                              <Tooltip delayDuration={600}>
+                                <Tooltip.Content>{t('PROVIDER_API_KEY_HELP')}</Tooltip.Content>
+                                <Tooltip.Trigger asChild>
+                                  <Popover.Trigger asChild>
+                                    <button
+                                      type="button"
+                                      className="cursor-pointer text-muted-foreground hover:text-foreground"
+                                      aria-label={t('PROVIDER_API_KEY_HELP')}
+                                    >
+                                      <Info className="h-4 w-4" />
+                                    </button>
+                                  </Popover.Trigger>
+                                </Tooltip.Trigger>
+                              </Tooltip>
                               <Popover.Content className="text-sm w-fit">
                                 To get your API key, go to{' '}
                                 <a
@@ -248,15 +258,14 @@ export function ProviderPage() {
           </div>
 
           <div className="flex justify-center items-center px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-            <Button
+            <IconButton
               variant="ghost"
-              size="icon"
               className="cursor-pointer"
               onClick={handleGoBack}
-              aria-label="Go back to connect page"
+              label={t('PROVIDER_BACK_TO_CONNECTIONS')}
             >
               <ChevronLeft className="h-4 w-4" />
-            </Button>
+            </IconButton>
 
             <Button
               variant="ghost"

@@ -1,8 +1,9 @@
 import { GlobalUID } from '@ci/common';
-import { Button } from '@ci/shadcn';
+import { IconButton } from '@ci/shadcn';
 import { Trash } from '@ci/shadcn/icons';
 import DOMPurify from 'dompurify';
 import parse from 'html-react-parser';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
 import { gql } from '@/graphql';
@@ -22,6 +23,7 @@ const NoteGridItemFragment = gql(`
 `);
 
 export function Note({ note: noteMasked, onDelete }: Props) {
+  const { t } = useTranslation();
   const note = useFragment(NoteGridItemFragment, noteMasked);
 
   return (
@@ -36,9 +38,9 @@ export function Note({ note: noteMasked, onDelete }: Props) {
           </div>
         </div>
         <div className="flex items-center justify-end">
-          <Button onClick={onDelete} size="icon" variant="ghost" aria-label="Delete note">
+          <IconButton onClick={onDelete} variant="ghost" label={t('NOTES_DELETE')}>
             <Trash className="w-4 h-4" />
-          </Button>
+          </IconButton>
         </div>
       </div>
     </Link>

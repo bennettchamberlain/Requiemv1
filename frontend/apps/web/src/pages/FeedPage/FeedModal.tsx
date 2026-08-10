@@ -1,8 +1,9 @@
 import { useCallback, useMemo, type ReactNode } from 'react';
 
 import { ErrorPage, LoadingPage, useDeviceLayout } from '@ci/common';
-import { Button, Dialog, cn } from '@ci/shadcn';
+import { Dialog, IconButton, cn } from '@ci/shadcn';
 import { X } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
 
 import { useActionService, useThreadService } from '@/api';
@@ -21,6 +22,7 @@ interface Props {
 export function FeedModal({ onClose }: Props) {
   const { id: actionId } = useParams<{ id?: string }>();
 
+  const { t } = useTranslation();
   const { isMobile } = useDeviceLayout();
 
   const [{ data: action, loading: actionLoading, error: actionError }] = useActionService(actionId ?? null);
@@ -109,9 +111,9 @@ export function FeedModal({ onClose }: Props) {
 
           <div className="flex flex-1 justify-end gap-1">
             {chatContext ? <ChatWithAgentMenu context={chatContext} size="sm" /> : null}
-            <Button variant="ghost" size="icon" onClick={onClose}>
+            <IconButton variant="ghost" onClick={onClose} label={t('FEED_MODAL_CLOSE')}>
               <X />
-            </Button>
+            </IconButton>
           </div>
         </div>
 
@@ -156,9 +158,9 @@ export function FeedModal({ onClose }: Props) {
           </div>
 
           <div className="flex items-center justify-end">
-            <Button variant="ghost" size="icon" onClick={onClose}>
+            <IconButton variant="ghost" onClick={onClose} label={t('FEED_MODAL_CLOSE')}>
               <X />
-            </Button>
+            </IconButton>
           </div>
         </Dialog.Header>
 

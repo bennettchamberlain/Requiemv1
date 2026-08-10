@@ -1,7 +1,8 @@
 import { type KeyboardEvent, useState, useCallback, useMemo } from 'react';
 
-import { Form, Input, useForm, formDataResolver, formDataSchema as s, cn } from '@ci/shadcn';
+import { Form, Input, Tooltip, useForm, formDataResolver, formDataSchema as s, cn } from '@ci/shadcn';
 import { X, Tag as TagIcon } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 
 import { Tag } from '../Tag';
 
@@ -48,6 +49,7 @@ export function TagInput({
   onTagAdded,
   onTagRemoved,
 }: Props) {
+  const { t } = useTranslation();
   const [tags, setTags] = useState<string[]>(initialTags ?? []);
   const [lowercaseTags, setLowercaseTags] = useState<Set<string>>(
     new Set(initialTags?.map((t) => t.toLowerCase()) ?? []),
@@ -195,14 +197,20 @@ export function TagInput({
               return (
                 <Tag key={`${tag}-${i}`} text={tag} className={singleLine ? 'shrink-0' : undefined}>
                   {!readOnly && (
-                    <button
-                      type="button"
-                      className="flex items-center justify-center cursor-pointer -ml-0.5 -my-0.5 -mr-1.5 p-1"
-                      onClick={() => handleRemove(tag)}
-                      onMouseDown={(e) => e.preventDefault()}
-                    >
-                      <X size={12} />
-                    </button>
+                    <Tooltip delayDuration={600}>
+                      <Tooltip.Content>{t('TAG_INPUT_REMOVE', { tag })}</Tooltip.Content>
+                      <Tooltip.Trigger asChild>
+                        <button
+                          type="button"
+                          aria-label={t('TAG_INPUT_REMOVE', { tag })}
+                          className="flex items-center justify-center cursor-pointer -ml-0.5 -my-0.5 -mr-1.5 p-1"
+                          onClick={() => handleRemove(tag)}
+                          onMouseDown={(e) => e.preventDefault()}
+                        >
+                          <X size={12} />
+                        </button>
+                      </Tooltip.Trigger>
+                    </Tooltip>
                   )}
                 </Tag>
               );

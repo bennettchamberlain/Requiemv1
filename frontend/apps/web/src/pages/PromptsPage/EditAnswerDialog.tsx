@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, type FormEvent } from 'react';
 
-import { Button, Dialog, Textarea, Spinner } from '@ci/shadcn';
+import { Button, Dialog, IconButton, Textarea, Spinner } from '@ci/shadcn';
 import { X } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 
 interface Answer {
   id: string;
@@ -22,6 +23,7 @@ interface Props {
 }
 
 export function EditAnswerDialog({ open, answer, onClose, onSave }: Props) {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [charCount, setCharCount] = useState(0);
@@ -95,9 +97,14 @@ export function EditAnswerDialog({ open, answer, onClose, onSave }: Props) {
           <Dialog.Description className="hidden">Edit the answer text.</Dialog.Description>
 
           <div className="flex items-center justify-end">
-            <Button variant="ghost" size="icon" onClick={handleClose} disabled={loading}>
+            <IconButton
+              variant="ghost"
+              onClick={handleClose}
+              disabled={loading}
+              label={t('PROMPTS_EDIT_DIALOG_CLOSE')}
+            >
               <X />
-            </Button>
+            </IconButton>
           </div>
         </Dialog.Header>
 

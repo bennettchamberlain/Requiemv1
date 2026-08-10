@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect } from 'react';
 
 import { LoadingPage, Portal, usePageTitle } from '@ci/common';
-import { Button, ScrollArea } from '@ci/shadcn';
+import { IconButton, ScrollArea } from '@ci/shadcn';
 import {
   Braces,
   Cpu,
@@ -17,6 +17,7 @@ import {
   UserRound,
   X,
 } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 
 const AppearanceSection = lazy(() =>
@@ -57,6 +58,7 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
 export function SettingsPage() {
   usePageTitle('Settings - Companion Intelligence');
 
+  const { t } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
   const backgroundLocation = (
@@ -89,15 +91,14 @@ export function SettingsPage() {
           className="flex w-full max-w-6xl mx-8 h-[calc(100%-4rem)] rounded-xl overflow-hidden shadow-2xl border border-border bg-background relative"
           onClick={(e) => e.stopPropagation()}
         >
-          <Button
+          <IconButton
             variant="ghost"
-            size="icon"
             onClick={handleClose}
-            aria-label="Close Settings"
+            label={t('SETTINGS_CLOSE')}
             className="absolute top-3 right-3 z-10"
           >
             <X className="h-4 w-4" />
-          </Button>
+          </IconButton>
 
           <ScrollArea className="w-60 flex-shrink-0 border-r border-border">
             <aside className="flex flex-col gap-1 p-4">

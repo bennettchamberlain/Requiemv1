@@ -1,6 +1,7 @@
 import { GlobalUID } from '@ci/common';
-import { Button } from '@ci/shadcn';
+import { IconButton, Tooltip } from '@ci/shadcn';
 import { Pencil, Share2, SlidersHorizontal, Trash } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
 import { useFeatures } from '@/common/feature';
@@ -76,6 +77,7 @@ export function SavedSearch({
   openSavedSearchShareModal,
   openSavedSearchDeleteModal,
 }: Props) {
+  const { t } = useTranslation();
   const savedSearch = useFragment(SavedSearchGridItemFragment, savedSearchMasked);
   const filterDims = activeFilterDimensions(savedSearch.filters);
   // Sharing (the "make public" control) is gated while the access model is hardened.
@@ -88,22 +90,26 @@ export function SavedSearch({
         <div className="flex items-center gap-2">
           <div className="text-md font-semibold truncate">{savedSearch.name || 'Untitled Saved Search'}</div>
           {sharingEnabled && savedSearch.isPublic && (
-            <span
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary border border-primary/20"
-              title="This saved search is shared via a link"
-            >
-              <Share2 className="w-3 h-3" />
-              Shared
-            </span>
+            <Tooltip delayDuration={600}>
+              <Tooltip.Content>{t('SAVED_SEARCH_SHARED_BADGE')}</Tooltip.Content>
+              <Tooltip.Trigger asChild>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary border border-primary/20">
+                  <Share2 className="w-3 h-3" />
+                  Shared
+                </span>
+              </Tooltip.Trigger>
+            </Tooltip>
           )}
           {filterDims.length > 0 && (
-            <span
-              className="inline-flex shrink-0 items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-muted text-muted-foreground border border-border"
-              title={`Filters: ${filterDims.join(', ')}`}
-            >
-              <SlidersHorizontal className="w-3 h-3" />
-              {filterDims.length}
-            </span>
+            <Tooltip delayDuration={600}>
+              <Tooltip.Content>{t('SAVED_SEARCH_FILTERS_BADGE', { filters: filterDims.join(', ') })}</Tooltip.Content>
+              <Tooltip.Trigger asChild>
+                <span className="inline-flex shrink-0 items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-muted text-muted-foreground border border-border">
+                  <SlidersHorizontal className="w-3 h-3" />
+                  {filterDims.length}
+                </span>
+              </Tooltip.Trigger>
+            </Tooltip>
           )}
         </div>
         <div className="flex-1 flex flex-col gap-1 min-h-0">
@@ -133,32 +139,17 @@ export function SavedSearch({
           </div>
         </div>
         <div className="flex items-center justify-between">
-          <Button
-            onClick={openSavedSearchEditModal}
-            size="icon"
-            variant="ghost"
-            aria-label="Edit Saved Search"
-          >
+          <IconButton onClick={openSavedSearchEditModal} variant="ghost" label={t('SAVED_SEARCH_EDIT')}>
             <Pencil className="w-4 h-4" />
-          </Button>
+          </IconButton>
           {sharingEnabled && (
-            <Button
-              onClick={openSavedSearchShareModal}
-              size="icon"
-              variant="ghost"
-              aria-label="Share Saved Search"
-            >
+            <IconButton onClick={openSavedSearchShareModal} variant="ghost" label={t('SAVED_SEARCH_SHARE')}>
               <Share2 className="w-4 h-4" />
-            </Button>
+            </IconButton>
           )}
-          <Button
-            onClick={openSavedSearchDeleteModal}
-            size="icon"
-            variant="ghost"
-            aria-label="Delete Saved Search"
-          >
+          <IconButton onClick={openSavedSearchDeleteModal} variant="ghost" label={t('SAVED_SEARCH_DELETE')}>
             <Trash className="w-4 h-4" />
-          </Button>
+          </IconButton>
         </div>
       </div>
     </Link>

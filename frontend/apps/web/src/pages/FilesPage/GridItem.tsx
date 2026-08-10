@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 
+import { Tooltip } from '@ci/shadcn';
 import { File as FileIcon } from '@ci/shadcn/icons';
 
 import { gql, type FragmentType, useFragment } from '@/graphql';
@@ -27,26 +28,32 @@ export function GridItem({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <button
-        onClick={() => onSelect(file.id)}
-        className="relative group aspect-square rounded-lg overflow-hidden border border-border bg-muted transition-transform hover:shadow-md w-full cursor-pointer"
-      >
-        {previewUrl && (
-          <img src={previewUrl} alt={file.filename || ''} className="w-full h-full object-cover" />
-        )}
+      <Tooltip delayDuration={600}>
+        {file.filename && <Tooltip.Content>{file.filename}</Tooltip.Content>}
+        <Tooltip.Trigger asChild>
+          <button
+            onClick={() => onSelect(file.id)}
+            className="relative group aspect-square rounded-lg overflow-hidden border border-border bg-muted transition-transform hover:shadow-md w-full cursor-pointer"
+            aria-label={file.filename ?? undefined}
+          >
+            {previewUrl && (
+              <img src={previewUrl} alt={file.filename || ''} className="w-full h-full object-cover" />
+            )}
 
-        {!previewUrl && (
-          <>
-            <div className="absolute p-2 px-3 bottom-0 w-full text-sm truncate text-muted-foreground">
-              {file.filename}
-            </div>
+            {!previewUrl && (
+              <>
+                <div className="absolute p-2 px-3 bottom-0 w-full text-sm truncate text-muted-foreground">
+                  {file.filename}
+                </div>
 
-            <div className="flex flex-col items-center justify-center w-full h-full gap-2 p-4">
-              <FileIcon className="h-10 w-10 text-muted-foreground" />
-            </div>
-          </>
-        )}
-      </button>
+                <div className="flex flex-col items-center justify-center w-full h-full gap-2 p-4">
+                  <FileIcon className="h-10 w-10 text-muted-foreground" />
+                </div>
+              </>
+            )}
+          </button>
+        </Tooltip.Trigger>
+      </Tooltip>
     </div>
   );
 }

@@ -1,8 +1,9 @@
 import { type ReactNode, useMemo, useState } from 'react';
 
 import { GlobalUID } from '@ci/common';
-import { Button, Card, Input, Label, Sheet, Textarea, cn, useToast } from '@ci/shadcn';
+import { Button, Card, IconButton, Input, Label, Sheet, Textarea, cn, useToast } from '@ci/shadcn';
 import { Loader2, Pencil } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
 import { useTagEntityService } from '@/api';
@@ -222,6 +223,7 @@ export function EntityDetailScaffold({
   taggable = false,
   tagsEditable = false,
 }: EntityDetailScaffoldProps) {
+  const { t } = useTranslation();
   const ref = useMemo(() => resolveEntityRef(entity), [entity]);
   const currentTags = useMemo(() => readTags(entity), [entity]);
   const { tagEntities, untagEntities } = useTagEntityService();
@@ -312,15 +314,14 @@ export function EntityDetailScaffold({
         <div className="flex items-start justify-between gap-2">
           <Sheet.Title className="text-xl leading-tight tracking-tight">{title}</Sheet.Title>
           {canEnterEditMode && !editing && (
-            <Button
+            <IconButton
               variant="ghost"
-              size="icon"
               className="-mt-1 size-8 shrink-0"
-              aria-label="Edit"
+              label={t('ENTITY_DETAILS_EDIT')}
               onClick={startEditing}
             >
               <Pencil className="size-4" />
-            </Button>
+            </IconButton>
           )}
         </div>
         {/* Always render a description so Radix has an accessible description to
