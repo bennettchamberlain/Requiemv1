@@ -168,7 +168,7 @@ export function MediaLightbox({ entries, index, onClose, onIndexChange }: Props)
             variant="ghost"
             className="text-white hover:bg-white/15 hover:text-white"
             onClick={onClose}
-            label={t('MEMORY_LIGHTBOX_CLOSE')}
+            label={t('COMMON_CLOSE')}
             tooltip={t('MEMORY_LIGHTBOX_CLOSE_HINT')}
           >
             <X />
@@ -212,7 +212,7 @@ export function MediaLightbox({ entries, index, onClose, onIndexChange }: Props)
                 className="inline-flex items-center gap-2 rounded-md border border-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/10"
               >
                 {canDownload ? <Download className="h-4 w-4" /> : <ExternalLink className="h-4 w-4" />}
-                {canDownload ? 'Download' : 'Open original'}
+                {canDownload ? t('MEMORY_LIGHTBOX_DOWNLOAD') : t('MEMORY_LIGHTBOX_OPEN_ORIGINAL')}
               </a>
             </div>
           ) : current.kind === 'video' ? (

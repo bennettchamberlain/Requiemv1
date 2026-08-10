@@ -2,13 +2,12 @@ import { type ReactNode, useState } from 'react';
 
 import { useMutation, useQuery } from '@apollo/client';
 import { GlobalUID, LoadingPage, Portal, usePageTitle, EmptyState } from '@ci/common';
-import { Breadcrumb, Card, Label, Toggle, Tooltip } from '@ci/shadcn';
-import { Pencil, User } from '@ci/shadcn/icons';
-import { useTranslation } from 'react-i18next';
+import { Breadcrumb, Card, Label } from '@ci/shadcn';
+import { User } from '@ci/shadcn/icons';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 
 import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
-import { EntityTagsDescriptionCard } from '@/components/EntityTagsDescriptionCard';
+import { EntityEditToggle, EntityTagsDescriptionCard } from '@/components/EntityTagsDescriptionCard';
 import { EventIcon, PlaceIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import { Map } from '@/components/Map';
@@ -60,7 +59,6 @@ const UPDATE_EVENT_DESCRIPTION = gql(`
 `);
 
 export function EventPage() {
-  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
 
   const navigate = useNavigate();
@@ -95,23 +93,7 @@ export function EventPage() {
             <EventIcon />
             <h1 className="text-2xl font-bold">{event.title}</h1>
           </div>
-          <Tooltip delayDuration={600}>
-            <Tooltip.Content>{t('ENTITY_EDIT_TOGGLE')}</Tooltip.Content>
-            <Tooltip.Trigger asChild>
-              <span className="inline-flex">
-                <Toggle
-                  aria-label={t('ENTITY_EDIT_TOGGLE')}
-                  size="sm"
-                  variant="outline"
-                  className="data-[state=on]:bg-transparent data-[state=on]:*:[svg]:fill-blue-500 data-[state=on]:*:[svg]:stroke-blue-500"
-                  pressed={editMode}
-                  onPressedChange={setEditMode}
-                >
-                  <Pencil />
-                </Toggle>
-              </span>
-            </Tooltip.Trigger>
-          </Tooltip>
+          <EntityEditToggle pressed={editMode} onPressedChange={setEditMode} />
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">

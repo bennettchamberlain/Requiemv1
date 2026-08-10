@@ -2,15 +2,13 @@ import { type ReactNode, useState } from 'react';
 
 import { useMutation, useQuery } from '@apollo/client';
 import { GlobalUID, LoadingPage, Portal, usePageTitle, EmptyState } from '@ci/common';
-import { Breadcrumb, Toggle, Tooltip } from '@ci/shadcn';
-import { Pencil } from '@ci/shadcn/icons';
-import { useTranslation } from 'react-i18next';
+import { Breadcrumb } from '@ci/shadcn';
 import { useParams, Link } from 'react-router-dom';
 
 import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
 import { EntityGraph } from '@/components/EntityGraph';
 import { EntityRelationshipCards } from '@/components/EntityRelationshipCards/EntityRelationshipCards';
-import { EntityTagsDescriptionCard } from '@/components/EntityTagsDescriptionCard';
+import { EntityEditToggle, EntityTagsDescriptionCard } from '@/components/EntityTagsDescriptionCard';
 import { ConceptIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import { gql } from '@/graphql';
@@ -42,7 +40,6 @@ const UPDATE_CONCEPT_DESCRIPTION = gql(`
 `);
 
 export function ConceptPage() {
-  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
 
   const { data, loading } = useQuery(GET_CONCEPT, {
@@ -75,23 +72,7 @@ export function ConceptPage() {
             <ConceptIcon />
             <h1 className="text-2xl font-bold">{concept.name}</h1>
           </div>
-          <Tooltip delayDuration={600}>
-            <Tooltip.Content>{t('ENTITY_EDIT_TOGGLE')}</Tooltip.Content>
-            <Tooltip.Trigger asChild>
-              <span className="inline-flex">
-                <Toggle
-                  aria-label={t('ENTITY_EDIT_TOGGLE')}
-                  size="sm"
-                  variant="outline"
-                  className="data-[state=on]:bg-transparent data-[state=on]:*:[svg]:fill-blue-500 data-[state=on]:*:[svg]:stroke-blue-500"
-                  pressed={editMode}
-                  onPressedChange={setEditMode}
-                >
-                  <Pencil />
-                </Toggle>
-              </span>
-            </Tooltip.Trigger>
-          </Tooltip>
+          <EntityEditToggle pressed={editMode} onPressedChange={setEditMode} />
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">

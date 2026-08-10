@@ -1,5 +1,7 @@
 import { type MouseEvent } from 'react';
 
+import { useTranslation } from 'react-i18next';
+
 import { gql, useFragment, type FragmentType } from '@/graphql';
 
 import { BentoCard } from '../../components/BentoCard';
@@ -27,6 +29,7 @@ interface Props {
 }
 
 export function SummaryCard({ summary, onClick, onDismiss, className }: Props) {
+  const { t } = useTranslation();
   const data = useFragment(SUMMARY_CARD_FRAGMENT, summary);
 
   const description = (
@@ -53,7 +56,7 @@ export function SummaryCard({ summary, onClick, onDismiss, className }: Props) {
       tags={data.tags}
       onClick={onClick}
       onDismiss={onDismiss}
-      dismissLabel="Dismiss summary"
+      dismissLabel={t('FEED_CARD_DISMISS_SUMMARY')}
       showUnseenIndicator={!data.seen}
       className={className}
     />
