@@ -149,6 +149,26 @@ t('COMMON_CLOSE');
 t('UPLOAD_REMOVE_FILE', { name: file.name }); // {{name}} interpolation
 ```
 
+### Copy is governed by CI-Common
+
+`CI-Common/content/brand-voice.md` is the org-wide source of truth for what the
+product says. Two rules are absolutes and are enforced here by
+`src/lib/i18nBrandVoice.node.test.ts`, because CI-Common's own `lint:voice` script
+is still a `TODO` stub and this repo does not consume
+`@companionintelligence/content`:
+
+- **No em or en dashes in user-facing copy.** Commas for light pauses, semicolons
+  for independent clauses. (They remain fine in code comments and these docs.)
+- **Product nouns are Title Case** — Companion Hub, Companion Memory, your Core.
+  Never genericize them to "knowledge base", "app store", "memory system".
+  Everything else, including button labels, is sentence case.
+
+Note the key style differs from CI-Common's catalog, which is nested and
+dot-namespaced (`common.actions.save`). This repo follows Hub's flat
+`SCREAMING_SNAKE` instead, deliberately: Hub has not adopted the shared catalog
+either, and `@companionintelligence/content` is still `private` with stub tooling.
+Converging on it is a cross-repo migration, not something to do one repo at a time.
+
 Key naming follows Hub: a domain prefix, then the specific action —
 `SETTINGS_API_KEY_DELETE`, `CHAT_THREAD_NEW`, `MEMORY_VIEW_GALLERY`. Strings shared
 across surfaces live under `COMMON_`.
