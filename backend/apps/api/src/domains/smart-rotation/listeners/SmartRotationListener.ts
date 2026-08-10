@@ -4,7 +4,10 @@ import { DataSource } from 'typeorm';
 
 import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { EXCLUDE_QUESTIONS_WITH_PENDING_INFERRED_REVIEW } from '@ci/common/persistence';
+import {
+  EXCLUDE_QUESTIONS_WITH_PENDING_INFERRED_REVIEW,
+  EXCLUDE_QUESTIONS_WITH_REJECTED_INFERRED_REVIEW,
+} from '@ci/common/persistence';
 import { Events, EventService, OnEvent } from '@ci/domains/events';
 import { QuestionService } from '@ci/domains/intelligence';
 import { GraphEnrichmentService, MaintenanceOrchestratorService } from '@ci/domains/maintenance';
@@ -277,6 +280,7 @@ export class SmartRotationListener {
             AND TRIM(a.answer_text) <> ''
         )
         ${EXCLUDE_QUESTIONS_WITH_PENDING_INFERRED_REVIEW}
+        ${EXCLUDE_QUESTIONS_WITH_REJECTED_INFERRED_REVIEW}
       ORDER BY q.created_at ASC
       LIMIT 1;
       `,

@@ -731,7 +731,7 @@ type ForecastBucketType {
   startTime: String!
 }
 
-"""48-bucket HBPE day-ahead forecast"""
+"""96-bucket (15-min) HBPE day-ahead forecast"""
 type ForecastType {
   buckets: [ForecastBucketType!]!
 

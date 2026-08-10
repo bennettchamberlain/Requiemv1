@@ -175,14 +175,14 @@ Rules:
       await this.answerService.update(serviceContext, userAnswer.id, {
         text: inferredText,
         answerMethod: 'inferred',
-        answerSource: 'rag',
+        answerSource: 'inferred',
       });
     } else {
       await this.answerService.create(serviceContext, {
         text: inferredText,
         question: { id: payload.questionId },
         answerMethod: 'inferred',
-        answerSource: 'rag',
+        answerSource: 'inferred',
       });
     }
   }

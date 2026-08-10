@@ -26,6 +26,8 @@ import sys
 import time
 from pathlib import Path
 
+from ci.hbpe.buckets import BUCKETS_PER_DAY
+
 # ── Step registry ──────────────────────────────────────────────────────────────
 
 STEPS = [
@@ -873,7 +875,9 @@ def step12_e2e(user_id: str) -> None:
     t_full = (_time.perf_counter() - t0) * 1000
 
     print(f"  Buckets returned : {len(buckets)}")
-    assert len(buckets) == 48, f"Expected 48 buckets, got {len(buckets)}"
+    assert len(buckets) == BUCKETS_PER_DAY, (
+        f"Expected {BUCKETS_PER_DAY} buckets, got {len(buckets)}"
+    )
 
     required_keys = {
         "bucket_index",
@@ -888,13 +892,15 @@ def step12_e2e(user_id: str) -> None:
     for b in buckets:
         missing = required_keys - b.keys()
         assert not missing, f"Bucket {b['bucket_index']} missing keys: {missing}"
-        assert 0 <= b["bucket_index"] < 48
+        assert 0 <= b["bucket_index"] < BUCKETS_PER_DAY
         assert isinstance(b["l0_probs"], dict) and len(b["l0_probs"]) > 0
         probs_sum = sum(b["l0_probs"].values())
         assert abs(probs_sum - 1.0) < 0.02, f"L0 probs don't sum to 1: {probs_sum:.4f}"
 
     print(f"  Full-refresh latency : {t_full:.1f} ms  (target <2000 ms)")
-    print("  Schema               : ✓  (all 48 buckets have required keys)")
+    print(
+        f"  Schema               : ✓  (all {BUCKETS_PER_DAY} buckets have required keys)"
+    )
     assert t_full < 2000, f"Full refresh too slow: {t_full:.1f} ms"
     print("  ✓ Full refresh within 2s SLA")
 
@@ -915,7 +921,7 @@ def step12_e2e(user_id: str) -> None:
     result = build_histogram(engine, horizon="24h", user_id=user_id)
     assert result["horizon"] == "24h"
     assert "generated_at" in result
-    assert len(result["buckets"]) == 48
+    assert len(result["buckets"]) == BUCKETS_PER_DAY
     print(f"  Envelope keys : {list(result.keys())}")
     print("  ✓ build_histogram returns correct envelope")
 

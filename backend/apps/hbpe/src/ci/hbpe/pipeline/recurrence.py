@@ -2,7 +2,7 @@
 Recurrence profiler — week/month-horizon occurrence and due forecasts.
 
 The 24h histogram (inference_engine) predicts *occupancy*: which L0/L1 class
-fills each 30-min bucket.  That object dissolves at longer horizons — nobody
+fills each 15-min bucket.  That object dissolves at longer horizons — nobody
 cares whether gym is 14:00 or 14:30 next Thursday.  The right objects are:
 
   week  →  *occurrence*:  P(cluster happens on day D), Bernoulli per day
@@ -58,6 +58,7 @@ from itertools import pairwise
 import numpy as np
 import psycopg2.extras
 
+from ci.hbpe.buckets import BUCKETS_PER_PART
 from ci.hbpe.database import get_conn
 
 log = logging.getLogger(__name__)
@@ -78,8 +79,6 @@ DOW_PRIOR_WEEKS = 3.0  # pseudo-weeks smoothing the DoW base rate
 DOW_MIN_DAYS = 4  # occurrence days before DoW evidence counts at face value
 DOW_P_MAX = 0.95  # a statistical DoW rate never reads as certainty
 
-BUCKETS_PER_DAY = 48
-BUCKETS_PER_PART = 12  # 4 dayparts × 12 half-hour buckets
 DAYPART_NAMES = ("night", "morning", "afternoon", "evening")
 
 # ── Schedule reconciliation (future ci.events × recurrence) ─────────────────────

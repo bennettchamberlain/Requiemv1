@@ -7,6 +7,7 @@ import { type ServiceContext, SYSTEM_USER } from '@ci/common/context';
 import {
   computeChunkSize,
   EXCLUDE_QUESTIONS_WITH_PENDING_INFERRED_REVIEW_FOR_USER_COLUMN,
+  EXCLUDE_QUESTIONS_WITH_REJECTED_INFERRED_REVIEW_FOR_USER_COLUMN,
 } from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
 import {
@@ -20,7 +21,7 @@ import type { CreateQuestionDto, UpdateQuestionDto } from '../types';
 
 const FEED_QUESTION_QUEUE_LIMIT = 3;
 /** Unanswered front-of-queue questions rotate after this long on the feed. */
-export const FEED_QUESTION_STALE_MS = 6 * 60 * 60 * 1000;
+export const FEED_QUESTION_STALE_MS = 30 * 60 * 1000;
 
 const GAP_AWARE_CANDIDATE_SQL = `
   WITH category_coverage AS (
@@ -393,6 +394,7 @@ export class QuestionService {
               AND TRIM(a.answer_text) <> ''
           )
           ${EXCLUDE_QUESTIONS_WITH_PENDING_INFERRED_REVIEW_FOR_USER_COLUMN}
+          ${EXCLUDE_QUESTIONS_WITH_REJECTED_INFERRED_REVIEW_FOR_USER_COLUMN}
       )
       SELECT id, user_id
       FROM unanswered
@@ -425,12 +427,14 @@ export class QuestionService {
 
     type Row = {
       id: string;
+      feed_queue_id: string;
     };
 
     const rows = (await this.dataSource.query(
       `
       SELECT
-        q.question_id as id
+        q.question_id as id,
+        fq.feed_queue_id
       FROM
         ci.feed_queue as fq
       JOIN ci.questions as q ON q.question_id = fq.question_id
@@ -450,10 +454,15 @@ export class QuestionService {
       return null;
     }
 
-    const questionId = rows[0].id;
+    const { id: questionId, feed_queue_id: feedQueueId } = rows[0];
     await this.recordFeedQuestionPresentation(context.userId, questionId);
 
-    return this.findById(context, questionId);
+    const question = await this.findById(context, questionId);
+    if (!question) {
+      return null;
+    }
+
+    return Object.assign(question, { presentationId: feedQueueId });
   }
 
   /**

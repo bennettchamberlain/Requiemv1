@@ -7,8 +7,8 @@ import { classColor, normalizeClass } from '@/lib/activityPalette';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const N_BUCKETS = 48;
-const MINUTES_PER_BUCKET = 30;
+const N_BUCKETS = 96;
+const MINUTES_PER_BUCKET = 15;
 const MINUTES_PER_DAY = 24 * 60;
 
 // ── Colour mapping ────────────────────────────────────────────────────────────
@@ -56,7 +56,7 @@ function formatClock(minutesOfDay: number): string {
   });
 }
 
-/** Always returns exactly N_BUCKETS entries sorted 0–47, filling gaps with neutral defaults. */
+/** Always returns exactly N_BUCKETS entries sorted 0–95, filling gaps with neutral defaults. */
 function normalizeBuckets(raw: ForecastBucket[]): ForecastBucket[] {
   const byIndex = new Map(raw.map((b) => [b.bucketIndex, b]));
 
@@ -77,16 +77,16 @@ function normalizeBuckets(raw: ForecastBucket[]): ForecastBucket[] {
 }
 
 /**
- * Order the 48 buckets so the strip reads local midnight → 23:30, labeling each by its
+ * Order the 96 buckets so the strip reads local midnight → 23:45, labeling each by its
  * real instant in the viewer's local time.
  *
- * HBPE bins behaviour by UTC time-of-day, so bucket N describes the UTC half-hour N — but
+ * HBPE bins behaviour by UTC time-of-day, so bucket N describes the UTC 15-minute slot N — but
  * each bucket carries its real `startTime` instant. We derive the viewer's UTC→local
  * offset from the first bucket with a valid instant, apply it to every bucket (so gap-
  * filled buckets sort correctly too), then order into a local day. Timezone handling stays
  * purely at display: no server-side re-bucketing, and it tracks the browser clock (incl.
  * DST) automatically. With no valid instants (non-READY placeholder), offset is 0 and the
- * strip falls back to index order (00:00 → 23:30).
+ * strip falls back to index order (00:00 → 23:45).
  */
 function orderLocalDay(raw: ForecastBucket[]): { bucket: ForecastBucket; localMin: number }[] {
   const pinned = normalizeBuckets(raw);
@@ -177,7 +177,7 @@ function SlotTooltip({ bucket, localMin }: { bucket: ForecastBucket; localMin: n
   );
 }
 
-// ── Single 30-min slot ────────────────────────────────────────────────────────
+// ── Single 15-min slot ────────────────────────────────────────────────────────
 
 function ForecastSlot({
   bucket,
@@ -291,7 +291,7 @@ export function ForecastStrip({
 
   return (
     <div className={cn('space-y-2', className)}>
-      {/* Strip — always 48 slots, 00:00 left → 23:30 right */}
+      {/* Strip — always 96 slots, 00:00 left → 23:45 right */}
       <div className="flex items-stretch gap-px" role="img" aria-label="24-hour behavioral forecast strip">
         {ordered.map(({ bucket, localMin }, idx) => (
           <ForecastSlot
@@ -305,7 +305,7 @@ export function ForecastStrip({
         ))}
       </div>
 
-      {/* Time labels — local midnight to 23:30 */}
+      {/* Time labels — local midnight to 23:45 */}
       <div className="flex justify-between text-[10px] text-muted-foreground px-0.5">
         <span>{formatClock(ordered[0]?.localMin ?? 0)}</span>
         <span
