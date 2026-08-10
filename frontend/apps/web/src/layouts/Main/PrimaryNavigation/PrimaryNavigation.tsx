@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Portal } from '@ci/common';
-import { DropdownMenu, IconButton, Separator, useToast } from '@ci/shadcn';
+import { DropdownMenu, IconButton, Separator, Tooltip, useToast } from '@ci/shadcn';
 import { NotebookPen, Upload, Camera, Plus, Cable, Search, User, Lightbulb, Package } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -117,85 +117,147 @@ export function PrimaryNavigation() {
               </DropdownMenu.Trigger>
               <DropdownMenu.Content className="rounded-lg p-2" side="bottom" align="end" sideOffset={4}>
                 <div className="text-center text-sm font-semibold mb-3 mt-1">Add</div>
+                {/* Each grid label is a single word, so the tooltip describes what the
+                    entry actually does rather than repeating it. `side` points the bubble
+                    out of the menu instead of over the neighbouring row, and
+                    pointer-events-none keeps it from stealing hover from the items.
+                    DropdownMenu.Item styles on data-[highlighted]/data-[disabled], never
+                    data-state, so it is safe as the direct child of Tooltip.Trigger. */}
                 <div className="grid grid-cols-4 gap-2">
-                  <DropdownMenu.Item
-                    onSelect={() => navigate('/notes/new')}
-                    className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
-                  >
-                    <NotebookPen className="h-6! w-6!" strokeWidth={1.25} />
-                    <span className="text-xs">Note</span>
-                  </DropdownMenu.Item>
+                  <Tooltip delayDuration={600}>
+                    <Tooltip.Content side="top" className="pointer-events-none">
+                      {t('NAV_ADD_NOTE')}
+                    </Tooltip.Content>
+                    <Tooltip.Trigger asChild>
+                      <DropdownMenu.Item
+                        onSelect={() => navigate('/notes/new')}
+                        className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
+                      >
+                        <NotebookPen className="h-6! w-6!" strokeWidth={1.25} />
+                        <span className="text-xs">Note</span>
+                      </DropdownMenu.Item>
+                    </Tooltip.Trigger>
+                  </Tooltip>
 
-                  <DropdownMenu.Item
-                    onSelect={openAddPersonModal}
-                    className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
-                  >
-                    <User className="h-6! w-6!" strokeWidth={1.25} />
-                    <span className="text-xs text-center">Person</span>
-                  </DropdownMenu.Item>
+                  <Tooltip delayDuration={600}>
+                    <Tooltip.Content side="top" className="pointer-events-none">
+                      {t('NAV_ADD_PERSON')}
+                    </Tooltip.Content>
+                    <Tooltip.Trigger asChild>
+                      <DropdownMenu.Item
+                        onSelect={openAddPersonModal}
+                        className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
+                      >
+                        <User className="h-6! w-6!" strokeWidth={1.25} />
+                        <span className="text-xs text-center">Person</span>
+                      </DropdownMenu.Item>
+                    </Tooltip.Trigger>
+                  </Tooltip>
 
-                  <DropdownMenu.Item
-                    onSelect={openAddConceptModal}
-                    className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
-                  >
-                    <Lightbulb className="h-6! w-6!" strokeWidth={1.25} />
-                    <span className="text-xs text-center">Concept</span>
-                  </DropdownMenu.Item>
+                  <Tooltip delayDuration={600}>
+                    <Tooltip.Content side="top" className="pointer-events-none">
+                      {t('NAV_ADD_CONCEPT')}
+                    </Tooltip.Content>
+                    <Tooltip.Trigger asChild>
+                      <DropdownMenu.Item
+                        onSelect={openAddConceptModal}
+                        className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
+                      >
+                        <Lightbulb className="h-6! w-6!" strokeWidth={1.25} />
+                        <span className="text-xs text-center">Concept</span>
+                      </DropdownMenu.Item>
+                    </Tooltip.Trigger>
+                  </Tooltip>
 
-                  <DropdownMenu.Item
-                    onSelect={openItemModal}
-                    className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
-                  >
-                    <Package className="h-6! w-6!" strokeWidth={1.25} />
-                    <span className="text-xs text-center">Item</span>
-                  </DropdownMenu.Item>
+                  <Tooltip delayDuration={600}>
+                    <Tooltip.Content side="top" className="pointer-events-none">
+                      {t('NAV_ADD_ITEM')}
+                    </Tooltip.Content>
+                    <Tooltip.Trigger asChild>
+                      <DropdownMenu.Item
+                        onSelect={openItemModal}
+                        className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
+                      >
+                        <Package className="h-6! w-6!" strokeWidth={1.25} />
+                        <span className="text-xs text-center">Item</span>
+                      </DropdownMenu.Item>
+                    </Tooltip.Trigger>
+                  </Tooltip>
                 </div>
                 <div className="mt-2 -mx-2 -mb-2 bg-muted/50 p-4 rounded-b-lg">
                   <div className="text-center text-sm font-semibold mb-3">Actions</div>
                   <div className="grid grid-cols-4 gap-2">
-                    <DropdownMenu.Item
-                      onSelect={openUploadModal}
-                      className="h-16 w-16 flex flex-col items-center justify-center gap-2 cursor-pointer rounded-md p-1"
-                    >
-                      <Upload className="h-6! w-6!" strokeWidth={1.25} />
-                      <span className="text-xs text-center">Upload</span>
-                    </DropdownMenu.Item>
+                    <Tooltip delayDuration={600}>
+                      <Tooltip.Content side="bottom" className="pointer-events-none">
+                        {t('NAV_ACTION_UPLOAD')}
+                      </Tooltip.Content>
+                      <Tooltip.Trigger asChild>
+                        <DropdownMenu.Item
+                          onSelect={openUploadModal}
+                          className="h-16 w-16 flex flex-col items-center justify-center gap-2 cursor-pointer rounded-md p-1"
+                        >
+                          <Upload className="h-6! w-6!" strokeWidth={1.25} />
+                          <span className="text-xs text-center">Upload</span>
+                        </DropdownMenu.Item>
+                      </Tooltip.Trigger>
+                    </Tooltip>
 
-                    <DropdownMenu.Item
-                      onSelect={openCaptureModal}
-                      className="h-16 w-16 flex flex-col items-center justify-center gap-2 cursor-pointer rounded-md p-1"
-                    >
-                      <Camera className="h-6! w-6!" strokeWidth={1.25} />
-                      <span className="text-xs text-center">Capture</span>
-                    </DropdownMenu.Item>
+                    <Tooltip delayDuration={600}>
+                      <Tooltip.Content side="bottom" className="pointer-events-none">
+                        {t('NAV_ACTION_CAPTURE')}
+                      </Tooltip.Content>
+                      <Tooltip.Trigger asChild>
+                        <DropdownMenu.Item
+                          onSelect={openCaptureModal}
+                          className="h-16 w-16 flex flex-col items-center justify-center gap-2 cursor-pointer rounded-md p-1"
+                        >
+                          <Camera className="h-6! w-6!" strokeWidth={1.25} />
+                          <span className="text-xs text-center">Capture</span>
+                        </DropdownMenu.Item>
+                      </Tooltip.Trigger>
+                    </Tooltip>
 
-                    <DropdownMenu.Item
-                      onSelect={() => navigate('/connect')}
-                      className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
-                    >
-                      <Cable className="h-6! w-6!" strokeWidth={1.25} />
-                      <span className="text-xs text-center">Connect</span>
-                    </DropdownMenu.Item>
+                    <Tooltip delayDuration={600}>
+                      <Tooltip.Content side="bottom" className="pointer-events-none">
+                        {t('NAV_ACTION_CONNECT')}
+                      </Tooltip.Content>
+                      <Tooltip.Trigger asChild>
+                        <DropdownMenu.Item
+                          onSelect={() => navigate('/connect')}
+                          className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
+                        >
+                          <Cable className="h-6! w-6!" strokeWidth={1.25} />
+                          <span className="text-xs text-center">Connect</span>
+                        </DropdownMenu.Item>
+                      </Tooltip.Trigger>
+                    </Tooltip>
 
-                    <DropdownMenu.Item
-                      onSelect={async (e) => {
-                        e.preventDefault();
-                        const status = await trigger();
-                        if (status === 'already_running') {
-                          toast.info('Prediction pipeline is already running');
-                        } else if (status === 'triggered') {
-                          toast.success('Prediction pipeline started');
-                        } else if (status === 'error' || !status) {
-                          toast.error('Failed to trigger prediction pipeline');
-                        } else {
-                          toast.success('Prediction pipeline started');
-                        }
-                      }}
-                      className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
-                    >
-                      <Search className="h-6! w-6!" strokeWidth={1.25} />
-                      <span className="text-xs text-center">Predict</span>
-                    </DropdownMenu.Item>
+                    <Tooltip delayDuration={600}>
+                      <Tooltip.Content side="bottom" className="pointer-events-none">
+                        {t('NAV_ACTION_PREDICT')}
+                      </Tooltip.Content>
+                      <Tooltip.Trigger asChild>
+                        <DropdownMenu.Item
+                          onSelect={async (e) => {
+                            e.preventDefault();
+                            const status = await trigger();
+                            if (status === 'already_running') {
+                              toast.info('Prediction pipeline is already running');
+                            } else if (status === 'triggered') {
+                              toast.success('Prediction pipeline started');
+                            } else if (status === 'error' || !status) {
+                              toast.error('Failed to trigger prediction pipeline');
+                            } else {
+                              toast.success('Prediction pipeline started');
+                            }
+                          }}
+                          className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
+                        >
+                          <Search className="h-6! w-6!" strokeWidth={1.25} />
+                          <span className="text-xs text-center">Predict</span>
+                        </DropdownMenu.Item>
+                      </Tooltip.Trigger>
+                    </Tooltip>
                   </div>
                 </div>
               </DropdownMenu.Content>

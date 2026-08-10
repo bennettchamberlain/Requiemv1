@@ -90,6 +90,38 @@ where a wrapper is harmless — inside a `ToggleGroup` it would make every item 
 restate `data-state` on the item instead. `IconButton` is immune to all of this:
 it spreads incoming props onto the real `Button` element, so they win the merge.
 
+### Tooltips on menu entries
+
+The Add menu and the account menu wrap each entry, so `Tooltip.Trigger asChild`
+sits directly around `DropdownMenu.Item`. That is safe: `DropdownMenuItem` styles
+on `data-[highlighted]`, `data-[disabled]` and `data-[variant]`, never on
+`data-state`. The trigger does overwrite the item's `data-slot`, which nothing
+reads — pinned in `MenuItemTooltip.test.tsx` so it fails if that changes.
+
+```tsx
+<Tooltip delayDuration={600}>
+  <Tooltip.Content side="top" className="pointer-events-none">
+    {t('NAV_ADD_NOTE')}
+  </Tooltip.Content>
+  <Tooltip.Trigger asChild>
+    <DropdownMenu.Item onSelect={…}>…</DropdownMenu.Item>
+  </Tooltip.Trigger>
+</Tooltip>
+```
+
+Two rules specific to menus:
+
+- **`pointer-events-none` on the content.** A bubble that overlaps a sibling entry
+  would otherwise swallow the hover that highlights it.
+- **Pick `side` so the bubble leaves the menu.** It should not cover the entries
+  around it: `top` for the upper grid, `bottom` for the lower one, `left` for a
+  right-aligned vertical menu.
+
+These entries already show a text label, so the tooltip must *describe* the entry
+(`Predict` → "Run the prediction pipeline now"). A tooltip that repeats a visible
+label is noise. **`DropdownMenu.SubTrigger` gets no tooltip** — it styles on
+`data-[state=open]`, and hovering it already opens the submenu.
+
 ### Delay behaviour
 
 The exported `Tooltip` always mounts its own `TooltipProvider`, and Radix reads the

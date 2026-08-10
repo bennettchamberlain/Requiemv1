@@ -75,33 +75,60 @@ export function NavUser() {
 
         <DropdownMenu.Separator />
 
+        {/* The entries carry visible labels, so each tooltip says what the entry leads
+            to rather than repeating it. side="left" puts the bubble on the open side of
+            this right-aligned menu, and pointer-events-none stops it stealing hover. */}
         <DropdownMenu.Group>
-          <DropdownMenu.Item asChild>
-            <Link to="/settings/appearance" state={{ backgroundLocation: location }}>
-              <Settings2 />
-              Settings
-            </Link>
-          </DropdownMenu.Item>
+          <Tooltip delayDuration={600}>
+            <Tooltip.Content side="left" className="pointer-events-none">
+              {t('NAV_ACCOUNT_SETTINGS')}
+            </Tooltip.Content>
+            <Tooltip.Trigger asChild>
+              <DropdownMenu.Item asChild>
+                <Link to="/settings/appearance" state={{ backgroundLocation: location }}>
+                  <Settings2 />
+                  Settings
+                </Link>
+              </DropdownMenu.Item>
+            </Tooltip.Trigger>
+          </Tooltip>
 
-          <DropdownMenu.Item asChild>
-            <Link to="/connections">
-              <Cable />
-              Connections
-            </Link>
-          </DropdownMenu.Item>
+          <Tooltip delayDuration={600}>
+            <Tooltip.Content side="left" className="pointer-events-none">
+              {t('NAV_ACCOUNT_CONNECTIONS')}
+            </Tooltip.Content>
+            <Tooltip.Trigger asChild>
+              <DropdownMenu.Item asChild>
+                <Link to="/connections">
+                  <Cable />
+                  Connections
+                </Link>
+              </DropdownMenu.Item>
+            </Tooltip.Trigger>
+          </Tooltip>
 
           {isFeatureEnabled('jobs.page') && (
-            <DropdownMenu.Item asChild>
-              <Link to="/jobs">
-                <ListTodo />
-                Jobs
-              </Link>
-            </DropdownMenu.Item>
+            <Tooltip delayDuration={600}>
+              <Tooltip.Content side="left" className="pointer-events-none">
+                {t('NAV_ACCOUNT_JOBS')}
+              </Tooltip.Content>
+              <Tooltip.Trigger asChild>
+                <DropdownMenu.Item asChild>
+                  <Link to="/jobs">
+                    <ListTodo />
+                    Jobs
+                  </Link>
+                </DropdownMenu.Item>
+              </Tooltip.Trigger>
+            </Tooltip>
           )}
         </DropdownMenu.Group>
 
         <DropdownMenu.Separator />
 
+        {/* No tooltips on the two sub-triggers: they style on data-[state=open], which
+            Tooltip.Trigger would overwrite, and hovering them already opens the submenu
+            that shows the choices — a bubble would only fight it. */}
         <DropdownMenu.Group>
           <DropdownMenu.Sub>
             <DropdownMenu.SubTrigger>
@@ -133,10 +160,17 @@ export function NavUser() {
 
         <DropdownMenu.Separator />
 
-        <DropdownMenu.Item onClick={logout}>
-          <LogOut />
-          Log out
-        </DropdownMenu.Item>
+        <Tooltip delayDuration={600}>
+          <Tooltip.Content side="left" className="pointer-events-none">
+            {t('NAV_ACCOUNT_LOGOUT')}
+          </Tooltip.Content>
+          <Tooltip.Trigger asChild>
+            <DropdownMenu.Item onClick={logout}>
+              <LogOut />
+              Log out
+            </DropdownMenu.Item>
+          </Tooltip.Trigger>
+        </Tooltip>
       </DropdownMenu.Content>
     </DropdownMenu>
   );
