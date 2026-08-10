@@ -11,7 +11,22 @@ type PromotionCandidate = {
   reviewPrompt: string | null;
   confidence: number;
   payload: Record<string, unknown>;
+  evidence?: Array<{ text?: string }>;
 };
+
+function extractValueText(candidate: PromotionCandidate): string | null {
+  if (typeof candidate.payload.inferredText === 'string' && candidate.payload.inferredText.trim()) {
+    return candidate.payload.inferredText.trim();
+  }
+
+  if (typeof candidate.payload.valueText === 'string' && candidate.payload.valueText.trim()) {
+    return candidate.payload.valueText.trim();
+  }
+
+  const evidenceText = candidate.evidence?.find((item) => typeof item.text === 'string' && item.text.trim());
+
+  return evidenceText?.text?.trim() ?? null;
+}
 
 export function PromotionReviewCard() {
   const [{ authToken }] = useAuth();
@@ -68,36 +83,28 @@ export function PromotionReviewCard() {
     return null;
   }
 
-  const questionText =
-    typeof candidate.payload.questionText === 'string' ? candidate.payload.questionText : null;
-  const inferredText =
-    typeof candidate.payload.inferredText === 'string' ? candidate.payload.inferredText : null;
+  const reviewQuestion =
+    candidate.reviewPrompt ??
+    (typeof candidate.payload.questionText === 'string'
+      ? candidate.payload.questionText
+      : 'Is this accurate?');
+  const valueText = extractValueText(candidate);
+  const showValue = valueText !== null && valueText !== reviewQuestion;
 
   return (
     <Card>
       <Card.Header>
-        <Card.Title className="text-base">Review suggestion</Card.Title>
+        <Card.Title className="text-base">Quick check</Card.Title>
         <Card.Description>
-          {questionText ? (
-            <>
-              <span className="block font-medium text-foreground">{questionText}</span>
-              <span className="mt-1 block">
-                {inferredText ??
-                  candidate.reviewPrompt ??
-                  `Companion inferred an answer (${Math.round(candidate.confidence * 100)}% confidence).`}
-              </span>
-            </>
-          ) : (
-            (candidate.reviewPrompt ??
-            `Companion found a ${candidate.kind.replace('_', ' ')} (${Math.round(candidate.confidence * 100)}% confidence)`)
-          )}
+          <span className="block font-medium text-foreground">{reviewQuestion}</span>
+          {showValue ? <span className="mt-1 block text-muted-foreground">{valueText}</span> : null}
         </Card.Description>
       </Card.Header>
       <Card.Content className="flex flex-col gap-2">
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <div className="flex gap-2">
           <Button size="sm" disabled={responding} onClick={() => void respond(candidate.id, 'accept')}>
-            Accept
+            Yes
           </Button>
           <Button
             size="sm"
@@ -105,7 +112,7 @@ export function PromotionReviewCard() {
             disabled={responding}
             onClick={() => void respond(candidate.id, 'reject')}
           >
-            Reject
+            No
           </Button>
         </div>
       </Card.Content>

@@ -9,9 +9,11 @@ import { MemoryModule } from '@ci/domains/memory';
 import { PersonalizationModule } from '@ci/domains/personalization';
 import { PythonFunctionsModule } from '@ci/domains/python-functions';
 import { ScheduleModule } from '@ci/domains/schedule';
+import { SearchNextModule } from '@ci/domains/search-next';
 
 import './events';
 
+import { AnswerInferenceCron } from './cron/AnswerInferenceCron';
 import { EntityPromotionCron } from './cron/EntityPromotionCron';
 import {
   SmartRotationAnswerInferCron,
@@ -25,6 +27,7 @@ import {
   SmartRotationScheduleSyncCron,
   SmartRotationSummariesCron,
 } from './cron/SmartRotationScheduledCrons';
+import { AnswerInferenceListener } from './listeners/AnswerInferenceListener';
 import { SmartRotationListener } from './listeners/SmartRotationListener';
 import { ContextGapQuestionService } from './services/ContextGapQuestionService';
 import { SmartRotationService } from './services/SmartRotationService';
@@ -38,6 +41,7 @@ import { SmartRotationService } from './services/SmartRotationService';
     ScheduleModule,
     MaintenanceModule,
     PersonalizationModule,
+    SearchNextModule,
     PythonFunctionsModule,
     LoggingModule,
   ],
@@ -45,6 +49,8 @@ import { SmartRotationService } from './services/SmartRotationService';
     SmartRotationService,
     ContextGapQuestionService,
     SmartRotationListener,
+    AnswerInferenceListener,
+    AnswerInferenceCron,
     SmartRotationQuestionFeedCron,
     SmartRotationAnswerInferCron,
     SmartRotationScheduleSyncCron,

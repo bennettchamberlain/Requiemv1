@@ -10,6 +10,8 @@ import {
   type GraphRelationshipInputDto,
 } from '@ci/domains/graph';
 
+import { shouldSkipHydrationCandidate } from '../utils/hydrationCandidateFilter';
+
 import { PersonalizationService } from './PersonalizationService';
 import { PromotionCandidateService } from './PromotionCandidateService';
 
@@ -18,6 +20,11 @@ export interface HydrationResult {
   readonly autoWritten: number;
   readonly reviewQueued: number;
   readonly skipped: number;
+}
+
+interface HydrationTextRow {
+  readonly text: string;
+  readonly questionText?: string | null;
 }
 
 @Injectable()
@@ -50,7 +57,7 @@ export class CrossTableHydrationService {
 
     return this.hydrateFromTexts(
       context,
-      rows.map((r) => r.answer_text),
+      rows.map((row) => ({ text: row.answer_text, questionText: row.question_text })),
       'hydrate_answers',
     );
   }
@@ -68,28 +75,40 @@ export class CrossTableHydrationService {
       [context.userId, limit],
     )) as Row[];
 
-    const texts = rows.map((r) => [r.name, r.description].filter(Boolean).join(': ')).filter(Boolean);
+    const texts = rows
+      .map((row) => ({
+        text: [row.name, row.description].filter(Boolean).join(': '),
+        questionText: null,
+      }))
+      .filter((row) => row.text.length > 0);
 
     return this.hydrateFromTexts(context, texts, 'hydrate_inventory');
   }
 
   private async hydrateFromTexts(
     context: UserServiceContext,
-    texts: string[],
+    rows: HydrationTextRow[],
     sourceJob: string,
   ): Promise<HydrationResult> {
     const result = {
-      sampledRecords: texts.length,
+      sampledRecords: rows.length,
       autoWritten: 0,
       reviewQueued: 0,
       skipped: 0,
     };
 
-    if (texts.length === 0 || !context.userId) {
+    if (rows.length === 0 || !context.userId) {
       return result;
     }
 
-    for (const text of texts) {
+    for (const row of rows) {
+      const text = row.text.trim();
+
+      if (shouldSkipHydrationCandidate(text, row.questionText)) {
+        result.skipped += 1;
+        continue;
+      }
+
       const entities: GraphEntityInputDto[] = [
         {
           key: `${sourceJob}:concept:${text.slice(0, 64).toLowerCase()}`,
@@ -109,9 +128,16 @@ export class CrossTableHydrationService {
         },
       ];
 
+      const payload = {
+        entities,
+        relationships,
+        valueText: text.slice(0, 500),
+        sourceQuestionText: row.questionText ?? null,
+      };
+
       const decision = await this.personalizationService.decideAction(context.userId, {
         kind: 'graph_edge',
-        confidence: 0.75,
+        confidence: 0.69,
         hasUserInput: true,
       });
 
@@ -123,11 +149,10 @@ export class CrossTableHydrationService {
       if (decision === 'review') {
         await this.promotionCandidateService.create(context, {
           kind: 'entity',
-          payload: { entities, relationships },
-          confidence: 0.75,
+          payload,
+          confidence: 0.69,
           evidence: [{ text: text.slice(0, 500) }],
           sourceJob,
-          reviewPrompt: `Companion found a possible interest: "${text.slice(0, 120)}"`,
         });
         result.reviewQueued += 1;
         continue;

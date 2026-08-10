@@ -1,15 +1,10 @@
-/**
- * Central personalization profile — trust_mode and promotion review pipeline.
- *
- * @module PersonalizationModule
- */
-
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EventsModule } from '@ci/domains/events';
 import { GraphModule } from '@ci/domains/graph';
 import { IntelligenceModule } from '@ci/domains/intelligence';
+import { LlmCoreModule } from '@ci/domains/llm';
 import { MemoryModule } from '@ci/domains/memory';
 
 import { PersonalizationController } from './controllers/PersonalizationController';
@@ -19,6 +14,7 @@ import { CrossTableHydrationService } from './services/CrossTableHydrationServic
 import { LifeContextService } from './services/LifeContextService';
 import { PersonalizationService } from './services/PersonalizationService';
 import { PromotionCandidateService } from './services/PromotionCandidateService';
+import { PromotionReviewPromptService } from './services/PromotionReviewPromptService';
 import { PromotionReviewService } from './services/PromotionReviewService';
 
 @Module({
@@ -28,11 +24,13 @@ import { PromotionReviewService } from './services/PromotionReviewService';
     MemoryModule,
     GraphModule,
     IntelligenceModule,
+    LlmCoreModule,
   ],
   controllers: [PersonalizationController],
   providers: [
     PersonalizationService,
     PromotionCandidateService,
+    PromotionReviewPromptService,
     CrossTableHydrationService,
     LifeContextService,
     PromotionReviewService,
@@ -41,6 +39,7 @@ import { PromotionReviewService } from './services/PromotionReviewService';
   exports: [
     PersonalizationService,
     PromotionCandidateService,
+    PromotionReviewPromptService,
     CrossTableHydrationService,
     LifeContextService,
     PromotionReviewService,
@@ -51,6 +50,7 @@ export class PersonalizationModule {}
 export {
   PersonalizationService,
   PromotionCandidateService,
+  PromotionReviewPromptService,
   CrossTableHydrationService,
   LifeContextService,
   PromotionReviewService,
@@ -60,4 +60,5 @@ export type {
   TrustMode,
   PersonalizationDecision,
   PersonalizationActionKind,
+  PromotionCandidateKind,
 } from './types';

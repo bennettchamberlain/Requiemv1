@@ -19,6 +19,15 @@ import { AnswerService } from '@ci/domains/intelligence';
 
 import { PromotionCandidateEntity, type PromotionCandidate } from '../entities/PromotionCandidateEntity';
 import type { PromotionCandidateKind } from '../types';
+import { shouldSkipHydrationCandidate } from '../utils/hydrationCandidateFilter';
+import {
+  isLegacyReviewPrompt,
+  promotionSourceQuestion,
+  promotionValueText,
+} from '../utils/promotionCandidatePayload';
+
+
+import { PromotionReviewPromptService } from './PromotionReviewPromptService';
 
 export interface CreatePromotionCandidateDto {
   readonly kind: PromotionCandidateKind;
@@ -40,6 +49,7 @@ export class PromotionCandidateService {
     private readonly graphIngestService: GraphIngestService,
     private readonly answerService: AnswerService,
     private readonly eventService: EventService,
+    private readonly promotionReviewPromptService: PromotionReviewPromptService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(PromotionCandidateService.name);
@@ -58,8 +68,15 @@ export class PromotionCandidateService {
         const existingForQuestion = await this.findPendingInferredFactForQuestion(userId, questionId);
         if (existingForQuestion) {
           existingForQuestion.payload = dto.payload;
-          existingForQuestion.reviewPrompt = dto.reviewPrompt ?? existingForQuestion.reviewPrompt;
           existingForQuestion.confidence = dto.confidence;
+          existingForQuestion.reviewPrompt =
+            dto.reviewPrompt ??
+            (await this.promotionReviewPromptService.generate(context, {
+              kind: dto.kind,
+              payload: dto.payload,
+              evidence: dto.evidence,
+              sourceJob: dto.sourceJob ?? null,
+            }));
 
           const saved = await this.repository.save(existingForQuestion);
 
@@ -77,6 +94,15 @@ export class PromotionCandidateService {
       }
     }
 
+    const reviewPrompt =
+      dto.reviewPrompt ??
+      (await this.promotionReviewPromptService.generate(context, {
+        kind: dto.kind,
+        payload: dto.payload,
+        evidence: dto.evidence,
+        sourceJob: dto.sourceJob ?? null,
+      }));
+
     const entity = this.repository.create({
       id: uuid7(),
       userId,
@@ -87,7 +113,7 @@ export class PromotionCandidateService {
       status: 'pending',
       sourceJob: dto.sourceJob ?? null,
       requiresUserInput: dto.requiresUserInput ?? true,
-      reviewPrompt: dto.reviewPrompt ?? null,
+      reviewPrompt,
     });
 
     const saved = await this.repository.save(entity);
@@ -117,13 +143,55 @@ export class PromotionCandidateService {
   }
 
   async listPending(context: UserServiceContext, limit = 1): Promise<PromotionCandidate[]> {
-    const rows = await this.repository.find({
-      where: { userId: context.userId!, status: 'pending' },
-      order: { createdAt: 'ASC' },
-      take: limit,
-    });
+    const results: PromotionCandidate[] = [];
+    let offset = 0;
 
-    return rows as PromotionCandidate[];
+    while (results.length < limit) {
+      const rows = await this.repository.find({
+        where: { userId: context.userId!, status: 'pending' },
+        order: { createdAt: 'ASC' },
+        take: 1,
+        skip: offset,
+      });
+
+      const row = rows[0];
+      if (!row) {
+        break;
+      }
+
+      offset += 1;
+
+      if (this.shouldAutoReject(row)) {
+        row.status = 'rejected';
+        await this.repository.save(row);
+        continue;
+      }
+
+      if (isLegacyReviewPrompt(row.reviewPrompt)) {
+        row.reviewPrompt = await this.promotionReviewPromptService.generate(context, {
+          kind: row.kind,
+          payload: row.payload,
+          evidence: row.evidence,
+          sourceJob: row.sourceJob,
+        });
+        await this.repository.save(row);
+      }
+
+      results.push(row as PromotionCandidate);
+    }
+
+    return results;
+  }
+
+  private shouldAutoReject(candidate: PromotionCandidateEntity): boolean {
+    if (candidate.kind !== 'entity' || candidate.sourceJob !== 'hydrate_answers') {
+      return false;
+    }
+
+    return shouldSkipHydrationCandidate(
+      promotionValueText(candidate.payload, candidate.evidence),
+      promotionSourceQuestion(candidate.payload),
+    );
   }
 
   async accept(context: UserServiceContext, candidateId: string): Promise<PromotionCandidate | null> {
