@@ -599,12 +599,22 @@ export class PipelineRunService {
     detail: Record<string, unknown> = {},
   ): Promise<PipelineRunSummary | null> {
     const rows = await this.dataSource.query<RunRow[]>(
-      `UPDATE ci.pipeline_runs
-          SET status      = $2,
-              finished_at = COALESCE(finished_at, now()),
-              detail      = detail || $3::jsonb
-        WHERE id = $1::uuid
-    RETURNING id, kind, desired_state, status, started_at, finished_at, detail`,
+      // CTE-wrapped so the OUTER command is a SELECT. TypeORM's Postgres driver
+      // special-cases UPDATE/DELETE and resolves \`[rows, rowCount]\`, so a bare
+      // \`UPDATE ... RETURNING\` hands back an array whose FIRST ELEMENT is the rows
+      // array — making \`rows.length === 0\` never true and \`rows[0]\` an array
+      // rather than a row. Measured against live Postgres:
+      //   UPDATE ... RETURNING  ->  [[{...}], 1]
+      //   WITH u AS (UPDATE ...) SELECT * FROM u  ->  [{...}]
+      // A mock-based spec cannot catch this: the mock returns whatever the test wrote.
+      `WITH updated AS (
+         UPDATE ci.pipeline_runs
+            SET status      = $2,
+                finished_at = COALESCE(finished_at, now()),
+                detail      = detail || $3::jsonb
+          WHERE id = $1::uuid
+      RETURNING id, kind, desired_state, status, started_at, finished_at, detail)
+       SELECT id, kind, desired_state, status, started_at, finished_at, detail FROM updated`,
       [runId, status, JSON.stringify(detail)],
     );
 
@@ -651,13 +661,23 @@ export class PipelineRunService {
     desiredState: PipelineRunDesiredState,
   ): Promise<PipelineRunSummary> {
     const rows = await this.dataSource.query<RunRow[]>(
-      `UPDATE ci.pipeline_runs
-          SET desired_state = $3
-        WHERE id = $2::uuid
-          AND user_id = $1::uuid
-          AND finished_at IS NULL
-          AND (desired_state <> 'cancelled' OR $3 = 'cancelled')
-    RETURNING id, kind, desired_state, status, started_at, finished_at, detail`,
+      // CTE-wrapped so the OUTER command is a SELECT. TypeORM's Postgres driver
+      // special-cases UPDATE/DELETE and resolves \`[rows, rowCount]\`, so a bare
+      // \`UPDATE ... RETURNING\` hands back an array whose FIRST ELEMENT is the rows
+      // array — making \`rows.length === 0\` never true and \`rows[0]\` an array
+      // rather than a row. Measured against live Postgres:
+      //   UPDATE ... RETURNING  ->  [[{...}], 1]
+      //   WITH u AS (UPDATE ...) SELECT * FROM u  ->  [{...}]
+      // A mock-based spec cannot catch this: the mock returns whatever the test wrote.
+      `WITH updated AS (
+         UPDATE ci.pipeline_runs
+            SET desired_state = $3
+          WHERE id = $2::uuid
+            AND user_id = $1::uuid
+            AND finished_at IS NULL
+            AND (desired_state <> 'cancelled' OR $3 = 'cancelled')
+      RETURNING id, kind, desired_state, status, started_at, finished_at, detail)
+       SELECT id, kind, desired_state, status, started_at, finished_at, detail FROM updated`,
       [ctx.userId, runId, desiredState],
     );
 
@@ -866,12 +886,22 @@ export class PipelineRunService {
    */
   async replayDeadLetter(ctx: UserServiceContext, letterId: string): Promise<DeadLetterReplayResult> {
     const claimed = await this.dataSource.query<DeadLetterRow[]>(
-      `UPDATE ci.pipeline_dead_letters
-          SET replayed_at = now()
-        WHERE id = $2::uuid
-          AND (user_id = $1::uuid OR user_id IS NULL)
-          AND replayed_at IS NULL
-    RETURNING id, queue, event_name, payload, replayed_at`,
+      // CTE-wrapped so the OUTER command is a SELECT. TypeORM's Postgres driver
+      // special-cases UPDATE/DELETE and resolves \`[rows, rowCount]\`, so a bare
+      // \`UPDATE ... RETURNING\` hands back an array whose FIRST ELEMENT is the rows
+      // array — making \`rows.length === 0\` never true and \`rows[0]\` an array
+      // rather than a row. Measured against live Postgres:
+      //   UPDATE ... RETURNING  ->  [[{...}], 1]
+      //   WITH u AS (UPDATE ...) SELECT * FROM u  ->  [{...}]
+      // A mock-based spec cannot catch this: the mock returns whatever the test wrote.
+      `WITH claimed AS (
+         UPDATE ci.pipeline_dead_letters
+            SET replayed_at = now()
+          WHERE id = $2::uuid
+            AND (user_id = $1::uuid OR user_id IS NULL)
+            AND replayed_at IS NULL
+      RETURNING id, queue, event_name, payload, replayed_at)
+       SELECT id, queue, event_name, payload, replayed_at FROM claimed`,
       [ctx.userId, letterId],
     );
 

@@ -122,6 +122,31 @@
       "__format": "json"
     }
   },
+  "enrichment": {
+    "window": {
+      "enabled": "CI_ENRICHMENT_WINDOW_ENABLED",
+      "start": "CI_ENRICHMENT_WINDOW_START",
+      "durationMinutes": {
+        "__name": "CI_ENRICHMENT_WINDOW_DURATION_MINUTES",
+        "__format": "json"
+      },
+      "budgetMinutes": {
+        "__name": "CI_ENRICHMENT_WINDOW_BUDGET_MINUTES",
+        "__format": "json"
+      },
+      "timezone": "CI_ENRICHMENT_WINDOW_TIMEZONE"
+    },
+    "rotation": {
+      "turnMinutes": {
+        "__name": "CI_ENRICHMENT_TURN_MINUTES",
+        "__format": "json"
+      },
+      "usersPerTurn": {
+        "__name": "CI_ENRICHMENT_USERS_PER_TURN",
+        "__format": "json"
+      }
+    }
+  },
   "features": {
     "scheduled.answer.inferencing": "ENABLE_SCHEDULED_ANSWER_INFERENCING",
     "scheduled.connection.sync": "ENABLE_SCHEDULED_CONNECTION_SYNC",
