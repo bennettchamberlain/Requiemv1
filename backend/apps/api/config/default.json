@@ -168,7 +168,7 @@
     "files.page": true,
     "insights.page": true,
     "chat.page": false,
-    "jobs.page": false,
+    "jobs.page": true,
     "planning.enabled": false,
     "planning.page": false,
     "planning.emptyState": false,
