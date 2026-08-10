@@ -1,0 +1,76 @@
+/**
+ * The archive importer, ported from CI-Import-Tools.
+ *
+ * Takes a bulk export a person downloaded from a service they use — Google
+ * Takeout, a Twitter archive, an iCloud photo dump, a browser history database —
+ * and turns it into ci.* records. This is the path for data nobody has a live
+ * API for, which is most of a person's history.
+ *
+ * ### Shape
+ *
+ * Three phases, each a PGBoss job, each a row in `ci_import.import_stages`:
+ *
+ *   unpack → parse → push
+ *
+ * `unpack` explodes the uploaded archive; `parse` runs the datasource parsers
+ * over it and writes `ci_import.staged_*`; `push` fans those staged rows out
+ * into ci.* through the ingest services, in-process.
+ *
+ * Upstream, phase one wrote a local SQLite file and phase two shipped it to
+ * CI-Server over HTTP — roughly 8.6k lines of split-retry, gzip and capability
+ * probing that evaporates when both ends are the same process. The split itself
+ * is worth keeping regardless: parsing a 40GB Takeout is slow and re-runnable,
+ * pushing is transactional and resumable, and a run that dies between the two
+ * resumes from staged rows instead of re-reading the archive.
+ *
+ * ### Staging is run-scoped
+ *
+ * Every `staged_*` row hangs off an `import_runs` row with `ON DELETE CASCADE`,
+ * so deleting a run is the complete cleanup. These tables are a scratchpad, not
+ * a second copy of the user's data: cross-run and cross-source deduplication
+ * belongs to ci.* (content_sha256, identifier claims, entity resolution), and
+ * re-implementing it here is how the two would drift apart. Within-run dedup IS
+ * enforced, because it is a parser contract — a photo library replicates one
+ * file into every album folder it belongs to, and those must collapse to a
+ * single staged item.
+ *
+ * ### Not the operator console
+ *
+ * `ci_import.import_runs` / `import_stages` are the USER-facing progress
+ * surface, in a stage vocabulary that means something to the person who uploaded
+ * the file. pg-boss still holds the work and `/jobs` still renders pg-boss for
+ * an operator. Different questions, different audiences — the two surfaces are
+ * deliberately not merged.
+ *
+ * NOTE: `./datasources` is intentionally NOT re-exported here. Importing that
+ * barrel registers all ~71 parsers as a side effect, which callers who only want
+ * an entity type should not pay for.
+ */
+
+export { EntityMappingEntity } from './entities/EntityMappingEntity';
+export type { EntityMapping } from './entities/EntityMappingEntity';
+
+export { ImportRunEntity } from './entities/ImportRunEntity';
+export type { ImportRun, ImportRunSource, ImportRunStatus } from './entities/ImportRunEntity';
+
+export { ImportStageEntity } from './entities/ImportStageEntity';
+export type { ImportStage, ImportStageKind, ImportStageStatus } from './entities/ImportStageEntity';
+
+export { StagedSourceEntity } from './entities/StagedSourceEntity';
+export type {
+  StagedSource,
+  StagedSourceKind,
+  StagedSourceOrigin,
+  StagedSourceStatus,
+} from './entities/StagedSourceEntity';
+
+export { StagedEntityEntity } from './entities/StagedEntityEntity';
+export type { StagedEntity } from './entities/StagedEntityEntity';
+
+export { StagedItemEntity } from './entities/StagedItemEntity';
+export type { StagedItem, StagedItemPushRef } from './entities/StagedItemEntity';
+
+export { StagedRelationshipEntity } from './entities/StagedRelationshipEntity';
+export type { StagedRelationship } from './entities/StagedRelationshipEntity';
+
+export type { StagedPushStatus } from './entities/pushState';

@@ -3,6 +3,18 @@ import path from 'node:path';
 
 import { DataSource, type EntityMetadata, type EntityTarget, type ObjectLiteral } from 'typeorm';
 
+import {
+  columnsWithNoDdl,
+  columnsWithNoProperty,
+  compareNullability,
+  compareTypeFamilies,
+  declaredColumns as declaredColumnsOf,
+  introspectTables,
+  typeFamily,
+  type DdlColumn,
+  type DdlTable,
+  type DeclaredColumn,
+} from '../../../__tests__/support/schemaAgreement';
 import { databaseAvailability, resolveConnection } from '../../__tests__/harness/pipelineHarness';
 import { IdentifierClaimEntity } from '../IdentifierClaimEntity';
 import { PipelineDeadLetterEntity } from '../PipelineDeadLetterEntity';
@@ -126,150 +138,18 @@ const CONTROL_PLANE: readonly ControlPlaneTable[] = [
 const CONTROL_PLANE_SCHEMA = 'ci';
 
 // ---------------------------------------------------------------------------
-// Type families
+// The comparisons
 // ---------------------------------------------------------------------------
-
-/**
- * Postgres and TypeORM spell the same type several ways — `information_schema`
- * says `timestamp with time zone`, `udt_name` says `timestamptz`, the decorator
- * says `timestamptz`, and TypeORM's driver normalizes back to `timestamp with
- * time zone`. Folding all of them onto one token is what makes this a DRIFT test
- * rather than a spelling test.
- *
- * The folds are only ever between genuinely interchangeable spellings.
- * `timestamp` and `timestamptz` are kept apart because a column that quietly
- * loses its time zone is exactly the kind of bug this file exists to catch, and
- * likewise `json` is not folded into `jsonb`.
- */
-const TYPE_FAMILY_GROUPS: ReadonlyArray<readonly [family: string, spellings: readonly string[]]> = [
-  ['uuid', ['uuid']],
-  ['text', ['text', 'varchar', 'character varying', 'char', 'character', 'bpchar', 'citext', 'name']],
-  ['integer', ['integer', 'int', 'int2', 'int4', 'int8', 'smallint', 'bigint', 'serial', 'bigserial']],
-  ['timestamptz', ['timestamptz', 'timestamp with time zone']],
-  ['timestamp', ['timestamp', 'timestamp without time zone']],
-  ['jsonb', ['jsonb']],
-  ['json', ['json']],
-  ['boolean', ['bool', 'boolean']],
-  ['numeric', ['numeric', 'decimal', 'float4', 'float8', 'real', 'double precision']],
-  ['date', ['date']],
-  ['bytea', ['bytea']],
-];
-
-const TYPE_FAMILIES = new Map<string, string>(
-  TYPE_FAMILY_GROUPS.flatMap(([family, spellings]) =>
-    spellings.map((spelling): [string, string] => [spelling, family]),
-  ),
-);
-
-/**
- * Collapse one type spelling onto its family.
- *
- * An unrecognised type falls through as itself rather than throwing, so an
- * exotic column (a domain, an enum, `vector(768)`) still compares equal to the
- * same exotic column on the other side. Only a genuine difference fails.
- */
-function typeFamily(raw: string): string {
-  const cleaned = raw
-    .trim()
-    .toLowerCase()
-    // `character varying(255)`, `numeric(10,2)` — the modifier is not the type.
-    .replace(/\s*\([^)]*\)/g, '')
-    .trim();
-
-  return TYPE_FAMILIES.get(cleaned) ?? cleaned;
-}
-
-// ---------------------------------------------------------------------------
-// The two sides, reduced to plain data
-// ---------------------------------------------------------------------------
-
-/** One entity column, reduced to the three facts this file compares. */
-interface DeclaredColumn {
-  /** `ColumnMetadata.databaseName` — the name TypeORM will actually put in SQL. */
-  name: string;
-  nullable: boolean;
-  /** Driver-normalized type string, folded through {@link typeFamily} when compared. */
-  type: string;
-}
-
-/** One `information_schema.columns` row, narrowed the same way. */
-interface DdlColumn {
-  nullable: boolean;
-  /** `udt_name` — `timestamptz`, `int4`, `jsonb`. */
-  type: string;
-}
-
-/** The live shape of one table. */
-interface DdlTable {
-  columns: Map<string, DdlColumn>;
-  /** PK columns in constraint order, which is the index's column order. */
-  primaryKey: string[];
-}
-
-/** Two same-keyed records, for a jest diff that reads as "entity vs database". */
-interface Comparison {
-  entity: Record<string, unknown>;
-  database: Record<string, unknown>;
-}
-
-/**
- * Properties the entity declares that the migration never created.
- *
- * Every column of an entity appears in the SELECT list TypeORM generates, so one
- * bad property breaks every READ of the table, not just the writes that touch
- * it.
- */
-function columnsWithNoDdl(declared: readonly DeclaredColumn[], live: DdlTable): string[] {
-  return declared.filter((column) => !live.columns.has(column.name)).map((column) => column.name);
-}
-
-/**
- * Columns the migration created that no property maps.
- *
- * The direction nobody remembers to check, and the one that actually happens:
- * an unmapped column is omitted from every INSERT and UPDATE the repository
- * builds, so its value reverts to the column default on every save.
- */
-function columnsWithNoProperty(declared: readonly DeclaredColumn[], live: DdlTable): string[] {
-  const names = new Set(declared.map((column) => column.name));
-
-  return [...live.columns.keys()].filter((name) => !names.has(name));
-}
-
-/**
- * Columns both sides know about.
- *
- * Comparisons are restricted to these on purpose: a name mismatch is already
- * reported by the two functions above, and letting it fail the nullability and
- * type checks as well would bury the real message under two derived ones.
- */
-function shared(declared: readonly DeclaredColumn[], live: DdlTable): DeclaredColumn[] {
-  return declared.filter((column) => live.columns.has(column.name));
-}
-
-/** Nullability, entity vs database, over the shared columns. */
-function compareNullability(declared: readonly DeclaredColumn[], live: DdlTable): Comparison {
-  const columns = shared(declared, live);
-
-  return {
-    entity: Object.fromEntries(columns.map((column) => [column.name, column.nullable])),
-    database: Object.fromEntries(
-      columns.map((column) => [column.name, live.columns.get(column.name)!.nullable]),
-    ),
-  };
-}
-
-/** Type FAMILIES, entity vs database, over the shared columns. */
-function compareTypeFamilies(declared: readonly DeclaredColumn[], live: DdlTable): Comparison {
-  const columns = shared(declared, live);
-
-  return {
-    entity: Object.fromEntries(columns.map((column) => [column.name, typeFamily(column.type)])),
-    database: Object.fromEntries(
-      columns.map((column) => [column.name, typeFamily(live.columns.get(column.name)!.type)]),
-    ),
-  };
-}
+//
+// Type families and the four drift checks live in
+// `src/domains/__tests__/support/schemaAgreement.ts` — the ci_import staging
+// schema needs exactly the same machinery, and one copy means a fold added for
+// one domain (or deliberately NOT added, as with timestamptz vs timestamp)
+// cannot silently differ from the other. The declarations stay here: which
+// entity maps to which table is a statement about THIS migration.
+//
+// The falsifiability block at the bottom of this file exercises those shared
+// functions directly, so it now covers both domains' checks.
 
 // ---------------------------------------------------------------------------
 // Suite gating
@@ -315,8 +195,8 @@ describe('the control-plane declaration', () => {
 describeWithDatabase(`entity ↔ migration agreement (${availability.target})`, () => {
   let dataSource: DataSource;
 
-  /** The live DDL, keyed by table name. Populated once. */
-  const ddl = new Map<string, DdlTable>();
+  /** The live DDL, keyed by table name. Populated once by {@link introspect}. */
+  let ddl = new Map<string, DdlTable>();
 
   beforeAll(async () => {
     const connection = resolveConnection();
@@ -385,55 +265,11 @@ describeWithDatabase(`entity ↔ migration agreement (${availability.target})`, 
    * subsystem was rebuilt to remove.
    */
   async function introspect(): Promise<void> {
-    const tables = CONTROL_PLANE.map((entry) => entry.table);
-
-    const columns = await dataSource.query<
-      Array<{ table_name: string; column_name: string; is_nullable: string; udt_name: string }>
-    >(
-      `SELECT table_name, column_name, is_nullable, udt_name
-         FROM information_schema.columns
-        WHERE table_schema = $1
-          AND table_name = ANY($2::text[])
-        ORDER BY table_name, ordinal_position`,
-      [CONTROL_PLANE_SCHEMA, tables],
+    ddl = await introspectTables(
+      dataSource,
+      CONTROL_PLANE_SCHEMA,
+      CONTROL_PLANE.map((entry) => entry.table),
     );
-
-    const primaryKeys = await dataSource.query<Array<{ table_name: string; column_name: string }>>(
-      // `key_column_usage.ordinal_position` is the column's position WITHIN the
-      // constraint — i.e. the PK index's column order, which is the thing worth
-      // asserting.
-      `SELECT tc.table_name, kcu.column_name
-         FROM information_schema.table_constraints tc
-         JOIN information_schema.key_column_usage kcu
-           ON kcu.constraint_name = tc.constraint_name
-          AND kcu.constraint_schema = tc.constraint_schema
-        WHERE tc.constraint_type = 'PRIMARY KEY'
-          AND tc.table_schema = $1
-          AND tc.table_name = ANY($2::text[])
-        ORDER BY tc.table_name, kcu.ordinal_position`,
-      [CONTROL_PLANE_SCHEMA, tables],
-    );
-
-    for (const table of tables) {
-      const own = columns.filter((row) => row.table_name === table);
-
-      if (own.length === 0) {
-        throw new Error(
-          `${CONTROL_PLANE_SCHEMA}.${table} is missing from this database. Run ` +
-            '`yarn workspace @ci/be-api migrate` and try again.',
-        );
-      }
-
-      ddl.set(table, {
-        columns: new Map(
-          own.map((row): [string, DdlColumn] => [
-            row.column_name,
-            { nullable: row.is_nullable === 'YES', type: row.udt_name },
-          ]),
-        ),
-        primaryKey: primaryKeys.filter((row) => row.table_name === table).map((row) => row.column_name),
-      });
-    }
   }
 
   /** The live DDL for a table. */
@@ -447,19 +283,9 @@ describeWithDatabase(`entity ↔ migration agreement (${availability.target})`, 
     return found;
   }
 
-  /**
-   * The entity's columns as plain data.
-   *
-   * The type comes from the DRIVER's normalization rather than the raw string in
-   * the decorator, so what is compared is the type TypeORM believes the column
-   * has — the same answer it would use to build DDL.
-   */
+  /** The entity's columns as plain data, bound to this suite's driver. */
   function declaredColumns(metadata: EntityMetadata): DeclaredColumn[] {
-    return metadata.columns.map((column) => ({
-      name: column.databaseName,
-      nullable: column.isNullable,
-      type: dataSource.driver.normalizeType(column),
-    }));
+    return declaredColumnsOf(dataSource, metadata);
   }
 
   describe.each(CONTROL_PLANE)('$table', ({ entity, table }: ControlPlaneTable) => {
@@ -638,6 +464,25 @@ describe('the drift checks themselves', () => {
   it('catches a jsonb mapped as text', () => {
     expect(typeFamily('jsonb')).not.toBe(typeFamily('text'));
     expect(typeFamily('jsonb')).not.toBe(typeFamily('json'));
+  });
+
+  it('folds the two spellings of an array type together', () => {
+    // No control-plane column is an array, but `ci_import.import_runs.
+    // requested_stages` is, and the two sides never agree on the spelling:
+    // Postgres's `udt_name` says `_text`, while TypeORM reports the ELEMENT type
+    // and keeps array-ness in `isArray`. Folding them is what lets an array
+    // column pass at all.
+    expect(typeFamily('_text')).toBe(typeFamily('text[]'));
+    expect(typeFamily('_int4')).toBe(typeFamily('integer[]'));
+  });
+
+  it('does not fold an array onto its element type', () => {
+    // The drift this must still catch: an entity that dropped `array: true`
+    // would have TypeORM writing scalars into an array column.
+    expect(typeFamily('text[]')).not.toBe(typeFamily('text'));
+    expect(typeFamily('_text')).not.toBe(typeFamily('text'));
+    // And arrays of different elements stay distinct from each other.
+    expect(typeFamily('_text')).not.toBe(typeFamily('_int4'));
   });
 
   it('reports drift on the shared columns only, so one rename does not fail four checks', () => {
