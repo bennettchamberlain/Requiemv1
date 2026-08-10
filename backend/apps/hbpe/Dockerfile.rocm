@@ -31,22 +31,41 @@ FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
 # this stage and never shipped.
 FROM rocm/dev-ubuntu-22.04:7.2.4-complete AS builder
 
-# Python 3.11 and the toolchain. Same shape as Dockerfile.cuda, which also
-# builds on an Ubuntu 22.04 vendor image: the distro's own python3 is 3.10
-# here, and .python-version pins 3.11.
+# Build toolchain only. Python does NOT come from apt here — see below.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 \
-    python3.11-dev \
-    python3-pip \
     build-essential \
     cmake \
     git \
     curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
-    && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=uv /uv /usr/local/bin/uv
+
+# ── Python 3.11 from uv, NOT from apt ─────────────────────────────────────────
+# Ubuntu 22.04 ships exactly one python3.11 and it is a RELEASE CANDIDATE:
+#
+#   $ apt-cache policy python3.11
+#   Candidate: 3.11.0~rc1-1~22.04
+#
+# rc1 predates the int/str conversion security fix that added
+# sys.get_int_max_str_digits, and torch._dynamo dereferences that attribute at
+# import time. The result is not a warning — every optimiser construction dies
+# with `AttributeError: module 'sys' has no attribute
+# 'get_int_max_str_digits'`, so training never starts. The CPU image never had
+# this because python:3.11-slim-bookworm carries a real release (3.11.15).
+#
+# uv's managed interpreters are python-build-standalone releases, so this is an
+# actual 3.11.x and does not depend on what a distro chose to package. That is
+# also why the install dir is pinned somewhere shareable rather than left in
+# uv's default under $HOME: the runtime stage copies this exact tree, and the
+# venv records an absolute path to the interpreter that created it.
+#
+# only-managed makes it deterministic — uv will not silently fall back to the
+# distro's python3.10 (or a reappearing rc1) if the managed one is missing.
+ENV UV_PYTHON_INSTALL_DIR=/opt/python \
+    UV_PYTHON_PREFERENCE=only-managed
+
+RUN uv python install 3.11
 
 WORKDIR /app
 
@@ -206,15 +225,21 @@ RUN set -eu; \
 # /opt/rocm.
 FROM rocm/dev-ubuntu-22.04:7.2.4
 
-# Runtime Python only — no -dev headers, no compiler, no git. The venv carries
-# its own packages but still links the system libpython3.11, and the
-# interpreter it was created against has to exist at the same path.
+# No compiler, no headers, no git — and no apt python either, for the reason
+# given in the builder: jammy's only python3.11 is 3.11.0rc1, which torch
+# cannot import.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 \
     postgresql-client \
-    && rm -rf /var/lib/apt/lists/* \
-    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
-    && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1
+    && rm -rf /var/lib/apt/lists/*
+
+# The interpreter the venv was built against. A venv records an ABSOLUTE path
+# to its base interpreter, so this has to land at the same /opt/python it
+# occupied in the builder — hence pinning UV_PYTHON_INSTALL_DIR rather than
+# accepting uv's $HOME-relative default, which would differ between the two
+# stages' users. Roughly 130 MB, against ~30 MB for the apt package it
+# replaces: a cheap price for an interpreter that is a real release.
+ENV UV_PYTHON_INSTALL_DIR=/opt/python
+COPY --from=builder /opt/python /opt/python
 
 # The math libraries libggml-hip.so links, plus their kernel data.
 #
