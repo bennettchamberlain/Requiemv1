@@ -6,12 +6,20 @@ import { CANDIDATE_DRAG_TYPE, EVENT_DRAG_TYPE, EVENT_EXTERNAL_DRAG_TYPE } from '
 
 import { TaskSlate } from './TaskSlate';
 
+const featureState = vi.hoisted(() => ({ chatPage: true }));
+
 vi.mock('@/hooks', () => ({
   useAuth: () => [{ authToken: 'test-token' }],
 }));
 
+vi.mock('@/common/feature', () => ({
+  useFeatures: () => ({
+    isFeatureEnabled: (name: string) => name === 'chat.page' && featureState.chatPage,
+  }),
+}));
+
 vi.mock('@/components/ChatWithAgent', () => ({
-  ChatWithAgentMenu: () => null,
+  ChatWithAgentMenu: () => <button type="button">Chat</button>,
 }));
 
 function candidate(overrides: Partial<ScheduleCandidate> = {}): ScheduleCandidate {
@@ -173,6 +181,18 @@ describe('TaskSlate — dragging a card away to dismiss it', () => {
     dragEventOn(zone, 'drop', [CANDIDATE_DRAG_TYPE], { [CANDIDATE_DRAG_TYPE]: '' });
 
     expect(onDecline).not.toHaveBeenCalled();
+  });
+});
+
+describe('TaskSlate — chat actions', () => {
+  it('hides chat and personalize controls when chat.page is off', () => {
+    featureState.chatPage = false;
+    render(<TaskSlate candidates={[candidate()]} {...NOOP} />);
+
+    expect(screen.queryByLabelText(/Personalize Book the dentist/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Chat' })).not.toBeInTheDocument();
+
+    featureState.chatPage = true;
   });
 });
 
