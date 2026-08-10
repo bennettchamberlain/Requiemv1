@@ -43,12 +43,11 @@ export function ModelSelector({
   const handleSelectModel = visionOnly ? selectVisionModel : selectModel;
   const models = visionOnly ? activeModels.filter((model) => model.vision === true) : activeModels;
   const selectedModelConfig = activeModels.find((model) => model.model === currentModel) ?? null;
-  const toolsLabel = t(
-    selectedModelConfig?.tools === false ? 'MODEL_TOGGLE_TOOLS_UNSUPPORTED' : 'MODEL_TOGGLE_TOOLS',
-  );
-  const thinkingLabel = t(
-    selectedModelConfig?.thinking === false ? 'MODEL_TOGGLE_THINKING_UNSUPPORTED' : 'MODEL_TOGGLE_THINKING',
-  );
+  // Keyed off the same flags that drive `disabled`, not off selectedModelConfig:
+  // an unknown/not-yet-loaded model leaves `tools` undefined, which disables the
+  // toggle but is not `=== false`, so the copy would claim the model is fine.
+  const toolsTooltip = t(toolsSupported ? 'MODEL_TOGGLE_TOOLS' : 'MODEL_TOGGLE_TOOLS_UNSUPPORTED');
+  const thinkingTooltip = t(thinkingSupported ? 'MODEL_TOGGLE_THINKING' : 'MODEL_TOGGLE_THINKING_UNSUPPORTED');
 
   const handleToggleTools = useCallback(
     (pressed: boolean) => {
@@ -111,7 +110,7 @@ export function ModelSelector({
     <div className="flex flex-row">
       <div className="flex flex-row items-center mr-2 gap-1">
         <Tooltip delayDuration={600}>
-          <Tooltip.Content>{toolsLabel}</Tooltip.Content>
+          <Tooltip.Content>{toolsTooltip}</Tooltip.Content>
           {/* A disabled Toggle gets `pointer-events: none`, which would swallow the
               hover — and an unsupported model is exactly when the tooltip has
               something to say. Anchor to a wrapper span so it still opens. */}
@@ -122,7 +121,7 @@ export function ModelSelector({
                 onPressedChange={handleToggleTools}
                 size="sm"
                 variant="outline"
-                aria-label={toolsLabel}
+                aria-label={t('MODEL_TOGGLE_TOOLS')}
                 disabled={!toolsSupported}
                 className={!toolsSupported ? 'opacity-50 cursor-not-allowed' : ''}
               >
@@ -132,7 +131,7 @@ export function ModelSelector({
           </Tooltip.Trigger>
         </Tooltip>
         <Tooltip delayDuration={600}>
-          <Tooltip.Content>{thinkingLabel}</Tooltip.Content>
+          <Tooltip.Content>{thinkingTooltip}</Tooltip.Content>
           <Tooltip.Trigger asChild>
             <span className="inline-flex">
               <Toggle
@@ -140,7 +139,7 @@ export function ModelSelector({
                 onPressedChange={handleToggleThinking}
                 size="sm"
                 variant="outline"
-                aria-label={thinkingLabel}
+                aria-label={t('MODEL_TOGGLE_THINKING')}
                 disabled={!thinkingSupported}
                 className={!thinkingSupported ? 'opacity-50 cursor-not-allowed' : ''}
               >

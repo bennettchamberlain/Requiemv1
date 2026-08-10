@@ -86,7 +86,7 @@ function ColorSwatchEditor({
               size="sm"
               className="h-6 w-6 p-0"
               onClick={() => setIsOpen(false)}
-              label={t('THEME_COLOR_PICKER_CLOSE')}
+              label={t('COMMON_CLOSE')}
             >
               <X className="h-3 w-3" />
             </IconButton>

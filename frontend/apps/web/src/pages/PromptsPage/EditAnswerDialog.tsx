@@ -101,7 +101,7 @@ export function EditAnswerDialog({ open, answer, onClose, onSave }: Props) {
               variant="ghost"
               onClick={handleClose}
               disabled={loading}
-              label={t('PROMPTS_EDIT_DIALOG_CLOSE')}
+              label={t('COMMON_CLOSE')}
             >
               <X />
             </IconButton>

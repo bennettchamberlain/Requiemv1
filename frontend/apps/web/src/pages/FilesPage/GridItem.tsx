@@ -29,12 +29,12 @@ export function GridItem({
   return (
     <div className="flex flex-col gap-1.5">
       <Tooltip delayDuration={600}>
-        {file.filename && <Tooltip.Content>{file.filename}</Tooltip.Content>}
+        <Tooltip.Content>{file.filename || 'Untitled'}</Tooltip.Content>
         <Tooltip.Trigger asChild>
           <button
             onClick={() => onSelect(file.id)}
             className="relative group aspect-square rounded-lg overflow-hidden border border-border bg-muted transition-transform hover:shadow-md w-full cursor-pointer"
-            aria-label={file.filename ?? undefined}
+            aria-label={file.filename || 'Untitled'}
           >
             {previewUrl && (
               <img src={previewUrl} alt={file.filename || ''} className="w-full h-full object-cover" />

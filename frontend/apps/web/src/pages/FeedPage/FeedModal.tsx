@@ -111,7 +111,7 @@ export function FeedModal({ onClose }: Props) {
 
           <div className="flex flex-1 justify-end gap-1">
             {chatContext ? <ChatWithAgentMenu context={chatContext} size="sm" /> : null}
-            <IconButton variant="ghost" onClick={onClose} label={t('FEED_MODAL_CLOSE')}>
+            <IconButton variant="ghost" onClick={onClose} label={t('COMMON_CLOSE')}>
               <X />
             </IconButton>
           </div>
@@ -158,7 +158,7 @@ export function FeedModal({ onClose }: Props) {
           </div>
 
           <div className="flex items-center justify-end">
-            <IconButton variant="ghost" onClick={onClose} label={t('FEED_MODAL_CLOSE')}>
+            <IconButton variant="ghost" onClick={onClose} label={t('COMMON_CLOSE')}>
               <X />
             </IconButton>
           </div>

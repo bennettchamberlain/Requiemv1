@@ -1,10 +1,8 @@
 {
   "COMMON_CLOSE": "Close",
-
   "NAV_ADD": "Add",
   "NAV_ACCOUNT": "Account",
   "NAV_LOGO_EXTERNAL": "Companion Intelligence — opens in a new tab",
-
   "CHAT_SIDEBAR_EXPAND": "Expand sidebar",
   "CHAT_SIDEBAR_COLLAPSE": "Collapse sidebar",
   "CHAT_THREADS_REFRESH": "Refresh threads",
@@ -12,26 +10,25 @@
   "CHAT_THREAD_NEW": "New thread",
   "CHAT_WITH_AGENT_ABOUT": "Chat about “{{title}}”",
   "CHAT_WITH_AGENT_OPEN_MENU": "Chat with an agent",
-
   "ENTITY_EDIT_TOGGLE": "Edit description and tags",
   "ENTITY_DETAILS_EDIT": "Edit details",
-
   "FEED_CARD_DISMISS": "Dismiss card",
   "FEED_CARD_UNSEEN": "Not seen yet",
-  "FEED_MODAL_CLOSE": "Close",
-
   "MEMORY_VIEW_MAP": "Map view",
   "MEMORY_VIEW_LIST": "List view",
   "MEMORY_VIEW_GALLERY": "Gallery view",
   "MEMORY_VIEW_GRAPH": "Graph view",
-  "MEMORY_LIGHTBOX_CLOSE": "Close (Esc)",
-  "MEMORY_LIGHTBOX_PREVIOUS": "Previous (←)",
-  "MEMORY_LIGHTBOX_NEXT": "Next (→)",
+  "MEMORY_LIGHTBOX_CLOSE": "Close",
+  "MEMORY_LIGHTBOX_CLOSE_HINT": "Close (Esc)",
+  "MEMORY_LIGHTBOX_PREVIOUS": "Previous",
+  "MEMORY_LIGHTBOX_PREVIOUS_HINT": "Previous (←)",
+  "MEMORY_LIGHTBOX_NEXT": "Next",
+  "MEMORY_LIGHTBOX_NEXT_HINT": "Next (→)",
   "MEMORY_LIGHTBOX_DOWNLOAD": "Download",
   "MEMORY_LIGHTBOX_OPEN_ORIGINAL": "Open original",
   "MEMORY_ENTITY_TYPE_FILTER_TAG": "Filter by tag",
-
-  "SETTINGS_CLOSE": "Close settings (Esc)",
+  "SETTINGS_CLOSE": "Close settings",
+  "SETTINGS_CLOSE_HINT": "Close settings (Esc)",
   "SETTINGS_API_KEY_CREATE": "Create API key",
   "SETTINGS_API_KEY_COPY": "Copy key",
   "SETTINGS_API_KEY_DELETE": "Delete {{name}}",
@@ -44,7 +41,6 @@
   "SETTINGS_OAUTH_HIDE_CLIENT_ID": "Hide client ID",
   "SETTINGS_OAUTH_SHOW_CLIENT_SECRET": "Show client secret",
   "SETTINGS_OAUTH_HIDE_CLIENT_SECRET": "Hide client secret",
-
   "SAVED_SEARCH_EDIT": "Edit saved search",
   "SAVED_SEARCH_SHARE": "Share saved search",
   "SAVED_SEARCH_DELETE": "Delete saved search",
@@ -54,60 +50,43 @@
   "SAVED_SEARCH_FILTER_REMOVE": "Remove {{name}}",
   "SAVED_SEARCH_SHARED_BADGE": "Shared via link — anyone signed in with the link can view these results",
   "SAVED_SEARCH_FILTERS_BADGE": "Filters: {{filters}}",
-
   "SCHEDULE_PREVIOUS_WEEK": "Previous week",
   "SCHEDULE_NEXT_WEEK": "Next week",
-
   "PROMPTS_REFRESH_ANSWERS": "Refresh answers",
   "PROMPTS_VIEW_CARD": "Card view",
   "PROMPTS_VIEW_TABLE": "Table view",
-  "PROMPTS_EDIT_DIALOG_CLOSE": "Close",
-
   "PROVIDER_BACK_TO_CONNECTIONS": "Back to connections",
   "PROVIDER_API_KEY_HELP": "Where to find your API key",
-
   "CONNECTIONS_CREATE": "Create connection",
-
   "NOTES_DELETE": "Delete note",
   "PLAN_TASK_DELETE": "Delete {{title}}",
-
   "SEARCH_CLEAR": "Clear search and filters",
   "SEARCH_FILTERS_SHOW": "Show filters",
   "SEARCH_FILTERS_HIDE": "Hide filters",
   "SEARCH_SUBMIT": "Search",
-  "SEARCH_RECENT_REMOVE": "Remove from recent searches",
-
+  "SEARCH_RECENT_REMOVE": "Remove “{{query}}” from recent searches",
   "CAPTURE_OPEN": "Capture",
   "CAPTURE_MODEL_SETTINGS": "Model settings",
-
   "FILE_DOWNLOAD": "Download file",
   "UPLOAD_REMOVE_FILE": "Remove {{name}}",
-
   "TAG_INPUT_REMOVE": "Remove tag “{{tag}}”",
-
   "PERSON_GRAPH_FEWER_HOPS": "Fewer hops",
   "PERSON_GRAPH_MORE_HOPS": "More hops — include friends of friends",
   "PERSON_GRAPH_FEWER_NODES": "Show fewer nodes",
   "PERSON_GRAPH_MORE_NODES": "Show more nodes",
-
   "ONBOARDING_REMOVE_PERSON": "Remove this person",
-
   "CAROUSEL_PREVIOUS": "Previous slide",
   "CAROUSEL_NEXT": "Next slide",
-  "CAROUSEL_GO_TO_SLIDE": "Slide {{number}}",
-
+  "CAROUSEL_GO_TO_SLIDE": "Go to slide {{number}}",
   "MODEL_TOGGLE_TOOLS": "Tools",
   "MODEL_TOGGLE_TOOLS_UNSUPPORTED": "This model doesn't support tools",
   "MODEL_TOGGLE_THINKING": "Thinking",
   "MODEL_TOGGLE_THINKING_UNSUPPORTED": "This model doesn't support thinking",
-
   "THEME_SWITCH_TO_LIGHT": "Switch to light mode",
   "THEME_SWITCH_TO_DARK": "Switch to dark mode",
   "THEME_SWITCH_TO_SYSTEM": "Use system theme",
   "THEME_COLOR_CUSTOM_OVERRIDE": "Custom override",
-  "THEME_COLOR_PICKER_CLOSE": "Close",
   "THEME_TEXTURE_OPACITY": "Texture opacity",
-
   "RELATIONSHIP_CLEAR_ENTITY": "Clear selected entity",
   "RELATIONSHIP_CLEAR_START_DATE": "Clear start date",
   "RELATIONSHIP_CLEAR_END_DATE": "Clear end date"

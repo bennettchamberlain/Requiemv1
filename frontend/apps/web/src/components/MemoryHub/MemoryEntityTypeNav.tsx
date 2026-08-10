@@ -163,8 +163,12 @@ function GroupWhatDropdown({
     <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
       <Tooltip delayDuration={600}>
         <Tooltip.Content>{category.label}</Tooltip.Content>
-        <Tooltip.Trigger asChild>
-          <Trigger asChild>
+        {/* The dropdown trigger must sit OUTSIDE Tooltip.Trigger. Both write
+            `data-state`, and whichever is inner wins — with the order reversed the
+            tooltip's open/closed value lands on the button and the chevron's
+            group-data-[state=open] rotation never fires. */}
+        <Trigger asChild>
+          <Tooltip.Trigger asChild>
             <button
               type="button"
               aria-pressed={active}
@@ -181,8 +185,8 @@ function GroupWhatDropdown({
                 )}
               />
             </button>
-          </Trigger>
-        </Tooltip.Trigger>
+          </Tooltip.Trigger>
+        </Trigger>
       </Tooltip>
 
       <Content align="start" sideOffset={4} className="z-[9999] w-56 p-2">
@@ -263,8 +267,8 @@ function TagWhatDropdown({ tags, onTagsChange }: { tags: string[]; onTagsChange:
     <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
       <Tooltip delayDuration={600}>
         <Tooltip.Content>{t('MEMORY_ENTITY_TYPE_FILTER_TAG')}</Tooltip.Content>
-        <Tooltip.Trigger asChild>
-          <Trigger asChild>
+        <Trigger asChild>
+          <Tooltip.Trigger asChild>
             <button
               type="button"
               aria-expanded={open}
@@ -280,8 +284,8 @@ function TagWhatDropdown({ tags, onTagsChange }: { tags: string[]; onTagsChange:
                 )}
               />
             </button>
-          </Trigger>
-        </Tooltip.Trigger>
+          </Tooltip.Trigger>
+        </Trigger>
       </Tooltip>
 
       <Content align="start" sideOffset={4} className="z-[9999] w-80 p-3">

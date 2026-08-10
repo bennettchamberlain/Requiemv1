@@ -60,21 +60,28 @@ export const ChatSidebar = memo(function ChatSidebar({
           isExpanded ? 'gap-3 p-4' : 'justify-center p-2',
         )}
       >
-        <Tooltip delayDuration={600}>
-          {!isExpanded && <Tooltip.Content>{t('CHAT_SIDEBAR_EXPAND')}</Tooltip.Content>}
-          <Tooltip.Trigger asChild>
-            <button
-              onClick={() => !isExpanded && setIsExpanded(true)}
-              className={cn(
-                'w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 transition-all duration-200',
-                !isExpanded && 'hover:bg-primary/20 cursor-pointer',
-              )}
-              aria-label={!isExpanded ? t('CHAT_SIDEBAR_EXPAND') : undefined}
-            >
-              <MessageSquare className="h-5 w-5 text-primary" />
-            </button>
-          </Tooltip.Trigger>
-        </Tooltip>
+        {/* Expanded, this is just the panel's icon — the click is a no-op, so it
+            is taken out of the tab order rather than left as a nameless button.
+            The Tooltip is gated as a whole: a Tooltip with no Content still
+            points aria-describedby at an element that was never rendered. */}
+        {isExpanded ? (
+          <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0" aria-hidden="true">
+            <MessageSquare className="h-5 w-5 text-primary" />
+          </div>
+        ) : (
+          <Tooltip delayDuration={600}>
+            <Tooltip.Content>{t('CHAT_SIDEBAR_EXPAND')}</Tooltip.Content>
+            <Tooltip.Trigger asChild>
+              <button
+                onClick={() => setIsExpanded(true)}
+                className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 transition-all duration-200 hover:bg-primary/20 cursor-pointer"
+                aria-label={t('CHAT_SIDEBAR_EXPAND')}
+              >
+                <MessageSquare className="h-5 w-5 text-primary" />
+              </button>
+            </Tooltip.Trigger>
+          </Tooltip>
+        )}
         {isExpanded && (
           <>
             <h2 className="text-lg font-semibold flex-shrink-0">Chat Threads</h2>

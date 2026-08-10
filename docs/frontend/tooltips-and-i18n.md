@@ -54,12 +54,51 @@ import { Tooltip } from '@ci/shadcn';
 </Tooltip>;
 ```
 
-The exported `Tooltip` wraps its own provider, so a surrounding `Tooltip.Provider`
-is only needed to share one `delayDuration` across a cluster of controls — see
-[`Map/Controls.tsx`](../../frontend/apps/web/src/components/Map/Controls.tsx).
-
 **Never use the raw `title` attribute.** It is unstyled, slow to appear, invisible
 on touch, and it renders *in addition to* a Radix tooltip when both are present.
+
+### Never make a stateful Radix trigger the direct child of `Tooltip.Trigger`
+
+`Tooltip.Trigger` writes its own `data-state` (`closed` / `delayed-open`), and
+Radix's `Slot` only lets the child win for props the child itself declares. Wrap a
+`Toggle`, `ToggleGroup.Item`, or another `*.Trigger` directly and the tooltip's
+value lands on the DOM node, so `data-[state=on]` and `data-[state=open]` never
+match again — the control keeps working and stays correct for screen readers, but
+every trace of its pressed/open styling silently disappears.
+
+Two ways out, both used in this codebase:
+
+```tsx
+// A neutral span absorbs the tooltip's data-state (standalone Toggle)
+<Tooltip.Trigger asChild>
+  <span className="inline-flex">
+    <Toggle pressed={editMode} …>…</Toggle>
+  </span>
+</Tooltip.Trigger>
+
+// Or put the tooltip innermost, so the other trigger's state wins (menus, popovers)
+<DropdownMenu.Trigger asChild>
+  <Tooltip.Trigger asChild>
+    <button …>…</button>
+  </Tooltip.Trigger>
+</DropdownMenu.Trigger>
+```
+
+Prefer the inner-tooltip form for menu and popover triggers. Use the span only
+where a wrapper is harmless — inside a `ToggleGroup` it would make every item both
+`:first-child` and `:last-child`, rounding all four corners of every segment; there,
+restate `data-state` on the item instead. `IconButton` is immune to all of this:
+it spreads incoming props onto the real `Button` element, so they win the merge.
+
+### Delay behaviour
+
+The exported `Tooltip` always mounts its own `TooltipProvider`, and Radix reads the
+delay from the *nearest* provider. So an outer `Tooltip.Provider` has no effect,
+and Radix's `skipDelayDuration` — which normally lets a second tooltip open
+instantly as you sweep along a toolbar — never engages: every control waits the
+full delay. Fixing that means dropping the self-wrap and mounting one provider in
+`App.tsx`, which is a change to the shared primitive and its ~130 call sites, so it
+is deliberately left for its own PR.
 
 ## i18n
 

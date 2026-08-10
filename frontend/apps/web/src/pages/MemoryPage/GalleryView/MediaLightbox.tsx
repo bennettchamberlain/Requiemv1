@@ -169,6 +169,7 @@ export function MediaLightbox({ entries, index, onClose, onIndexChange }: Props)
             className="text-white hover:bg-white/15 hover:text-white"
             onClick={onClose}
             label={t('MEMORY_LIGHTBOX_CLOSE')}
+            tooltip={t('MEMORY_LIGHTBOX_CLOSE_HINT')}
           >
             <X />
           </IconButton>
@@ -181,6 +182,7 @@ export function MediaLightbox({ entries, index, onClose, onIndexChange }: Props)
           <IconButton
             variant="ghost"
             label={t('MEMORY_LIGHTBOX_PREVIOUS')}
+            tooltip={t('MEMORY_LIGHTBOX_PREVIOUS_HINT')}
             onClick={(e) => {
               e.stopPropagation();
               goPrev();
@@ -236,6 +238,7 @@ export function MediaLightbox({ entries, index, onClose, onIndexChange }: Props)
           <IconButton
             variant="ghost"
             label={t('MEMORY_LIGHTBOX_NEXT')}
+            tooltip={t('MEMORY_LIGHTBOX_NEXT_HINT')}
             onClick={(e) => {
               e.stopPropagation();
               goNext();

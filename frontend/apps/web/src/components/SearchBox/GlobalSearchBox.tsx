@@ -339,11 +339,11 @@ export function GlobalSearchBox() {
             <Clock className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
             <span className="flex-1 truncate">{recent}</span>
             <Tooltip delayDuration={600}>
-              <Tooltip.Content>{t('SEARCH_RECENT_REMOVE')}</Tooltip.Content>
+              <Tooltip.Content>{t('SEARCH_RECENT_REMOVE', { query: recent })}</Tooltip.Content>
               <Tooltip.Trigger asChild>
                 <button
                   type="button"
-                  aria-label={t('SEARCH_RECENT_REMOVE')}
+                  aria-label={t('SEARCH_RECENT_REMOVE', { query: recent })}
                   className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={(e) => {

@@ -81,7 +81,12 @@ export function ChatWithAgentMenu({ context, size = 'icon', className }: Props) 
   return (
     <DropdownMenu modal={false}>
       <DropdownMenu.Trigger asChild>
-        <IconButton variant="ghost" className={className} label={t('CHAT_WITH_AGENT_OPEN_MENU')}>
+        <IconButton
+          variant="ghost"
+          className={className}
+          label={t('CHAT_WITH_AGENT_ABOUT', { title: context.title })}
+          tooltip={t('CHAT_WITH_AGENT_OPEN_MENU')}
+        >
           <MessagesSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
         </IconButton>
       </DropdownMenu.Trigger>

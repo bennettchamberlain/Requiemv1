@@ -1,7 +1,7 @@
 import { type MouseEvent, type MouseEventHandler, type ReactNode, useCallback } from 'react';
 
 import { useDeviceLayout } from '@ci/common';
-import { cn, IconButton, Tooltip } from '@ci/shadcn';
+import { cn, IconButton } from '@ci/shadcn';
 import { X } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 
@@ -71,15 +71,18 @@ export function BentoCard({
   ) : null;
 
   const unseenIndicator = showUnseenIndicator ? (
-    <Tooltip delayDuration={600}>
-      <Tooltip.Content>{t('FEED_CARD_UNSEEN')}</Tooltip.Content>
-      <Tooltip.Trigger asChild>
-        <span
-          className="absolute left-0 top-0 z-30 h-3 w-3 -translate-x-1/3 -translate-y-1/3 rounded-full bg-primary ring-2 ring-background"
-          aria-label={t('FEED_CARD_UNSEEN')}
-        />
-      </Tooltip.Trigger>
-    </Tooltip>
+    <>
+      {/* The dot overhangs the card by a third of its size, so it must stay out
+          of the hit test or it swallows clicks meant for the neighbouring card.
+          That also rules out hovering it, hence the sr-only text rather than a
+          tooltip: a decorative span carries no role, so aria-label on it would
+          be ignored anyway. */}
+      <span
+        className="pointer-events-none absolute left-0 top-0 z-30 h-3 w-3 -translate-x-1/3 -translate-y-1/3 rounded-full bg-primary ring-2 ring-background"
+        aria-hidden="true"
+      />
+      <span className="sr-only">{t('FEED_CARD_UNSEEN')}</span>
+    </>
   ) : null;
 
   if (isMobile) {

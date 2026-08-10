@@ -41,14 +41,21 @@ export function NavUser() {
     <DropdownMenu modal={false}>
       <Tooltip delayDuration={600}>
         <Tooltip.Content>{t('NAV_ACCOUNT')}</Tooltip.Content>
-        <Tooltip.Trigger asChild>
-          <DropdownMenu.Trigger asChild>
-            <Avatar className="h-9 w-9 rounded-full select-none cursor-pointer" aria-label={t('NAV_ACCOUNT')}>
-              <Avatar.Image src={currentUser.avatar} alt={currentUser.name} />
-              <Avatar.Fallback>{initials}</Avatar.Fallback>
-            </Avatar>
-          </DropdownMenu.Trigger>
-        </Tooltip.Trigger>
+        {/* Avatar renders a span, so as the bare trigger it took no role and no
+            tab stop — the account menu was unreachable by keyboard, and an
+            aria-label on it would have been ignored. The button supplies both.
+            Dropdown trigger outermost so its `data-state` is not overwritten by
+            the tooltip's. */}
+        <DropdownMenu.Trigger asChild>
+          <Tooltip.Trigger asChild>
+            <button type="button" aria-label={t('NAV_ACCOUNT')} className="rounded-full cursor-pointer">
+              <Avatar className="h-9 w-9 rounded-full select-none">
+                <Avatar.Image src={currentUser.avatar} alt={currentUser.name} />
+                <Avatar.Fallback>{initials}</Avatar.Fallback>
+              </Avatar>
+            </button>
+          </Tooltip.Trigger>
+        </DropdownMenu.Trigger>
       </Tooltip>
       <DropdownMenu.Content className="min-w-56 rounded-lg" side="bottom" align="end" sideOffset={4}>
         <DropdownMenu.Group>

@@ -52,7 +52,7 @@ export function TagInput({
   const { t } = useTranslation();
   const [tags, setTags] = useState<string[]>(initialTags ?? []);
   const [lowercaseTags, setLowercaseTags] = useState<Set<string>>(
-    new Set(initialTags?.map((t) => t.toLowerCase()) ?? []),
+    new Set(initialTags?.map((tag) => tag.toLowerCase()) ?? []),
   );
   const [focused, setFocused] = useState(false);
 

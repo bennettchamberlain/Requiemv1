@@ -3,7 +3,8 @@ import i18n from 'i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 import { initReactI18next } from 'react-i18next';
 
-let initialized = false;
+// Guards on the i18next singleton rather than a module-local flag: Storybook and
+// the app can end up with separate copies of this module but share the instance.
 
 /**
  * Initialise the shared i18next instance.
@@ -19,11 +20,9 @@ let initialized = false;
  * Idempotent — safe to call from both the app entrypoint and the test setup.
  */
 export function initI18n(): typeof i18n {
-  if (initialized) {
+  if (i18n.isInitialized) {
     return i18n;
   }
-
-  initialized = true;
 
   void i18n
     .use(LanguageDetector)
@@ -34,6 +33,10 @@ export function initI18n(): typeof i18n {
         'en-US': { translation: en },
       },
       fallbackLng: 'en',
+      // Safe while `en` is the only locale: a fr-FR browser resolves the
+      // hierarchy ['fr-FR', 'en'] and lands on English. It becomes wrong the
+      // moment a regional file ships — fr.json would NOT match a fr-FR browser
+      // under `currentOnly`. Switch to 'languageOnly' when adding locales.
       load: 'currentOnly',
       react: { useSuspense: false },
       // React already escapes interpolated values; escaping again double-encodes

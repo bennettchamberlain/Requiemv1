@@ -191,16 +191,18 @@ export function PersonPage() {
             <Tooltip delayDuration={600}>
               <Tooltip.Content>{t('ENTITY_EDIT_TOGGLE')}</Tooltip.Content>
               <Tooltip.Trigger asChild>
-                <Toggle
-                  aria-label={t('ENTITY_EDIT_TOGGLE')}
-                  size="sm"
-                  variant="outline"
-                  className="data-[state=on]:bg-transparent data-[state=on]:*:[svg]:fill-blue-500 data-[state=on]:*:[svg]:stroke-blue-500"
-                  pressed={editMode}
-                  onPressedChange={setEditMode}
-                >
-                  <Pencil />
-                </Toggle>
+                <span className="inline-flex">
+                  <Toggle
+                    aria-label={t('ENTITY_EDIT_TOGGLE')}
+                    size="sm"
+                    variant="outline"
+                    className="data-[state=on]:bg-transparent data-[state=on]:*:[svg]:fill-blue-500 data-[state=on]:*:[svg]:stroke-blue-500"
+                    pressed={editMode}
+                    onPressedChange={setEditMode}
+                  >
+                    <Pencil />
+                  </Toggle>
+                </span>
               </Tooltip.Trigger>
             </Tooltip>
           </div>

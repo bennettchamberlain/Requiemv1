@@ -127,8 +127,8 @@ export function ProviderConnectDialog({
                       <Popover>
                         <Tooltip delayDuration={600}>
                           <Tooltip.Content>{t('PROVIDER_API_KEY_HELP')}</Tooltip.Content>
-                          <Tooltip.Trigger asChild>
-                            <Popover.Trigger asChild>
+                          <Popover.Trigger asChild>
+                            <Tooltip.Trigger asChild>
                               <button
                                 type="button"
                                 aria-label={t('PROVIDER_API_KEY_HELP')}
@@ -136,8 +136,8 @@ export function ProviderConnectDialog({
                               >
                                 <Info className="h-4 w-4" />
                               </button>
-                            </Popover.Trigger>
-                          </Tooltip.Trigger>
+                            </Tooltip.Trigger>
+                          </Popover.Trigger>
                         </Tooltip>
                         <Popover.Content className="text-sm w-fit">
                           <a

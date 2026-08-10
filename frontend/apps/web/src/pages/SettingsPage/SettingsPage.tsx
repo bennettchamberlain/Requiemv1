@@ -95,6 +95,7 @@ export function SettingsPage() {
             variant="ghost"
             onClick={handleClose}
             label={t('SETTINGS_CLOSE')}
+            tooltip={t('SETTINGS_CLOSE_HINT')}
             className="absolute top-3 right-3 z-10"
           >
             <X className="h-4 w-4" />

@@ -287,10 +287,19 @@ export function PromptsPage() {
                   value={viewMode}
                   onValueChange={(value) => value && setViewMode(value as 'card' | 'table')}
                 >
+                  {/* `data-state` is restated here because Tooltip.Trigger's own
+                      open/closed state would otherwise overwrite the item's on/off
+                      state and kill the selected-item styling. A wrapper span would
+                      fix that too, but it would make every item both :first-child
+                      and :last-child, rounding all four corners of each segment. */}
                   <Tooltip delayDuration={600}>
                     <Tooltip.Content>{t('PROMPTS_VIEW_CARD')}</Tooltip.Content>
                     <Tooltip.Trigger asChild>
-                      <ToggleGroup.Item value="card" aria-label={t('PROMPTS_VIEW_CARD')}>
+                      <ToggleGroup.Item
+                        value="card"
+                        aria-label={t('PROMPTS_VIEW_CARD')}
+                        data-state={viewMode === 'card' ? 'on' : 'off'}
+                      >
                         <Grid3X3 className="h-4 w-4" />
                       </ToggleGroup.Item>
                     </Tooltip.Trigger>
@@ -298,7 +307,11 @@ export function PromptsPage() {
                   <Tooltip delayDuration={600}>
                     <Tooltip.Content>{t('PROMPTS_VIEW_TABLE')}</Tooltip.Content>
                     <Tooltip.Trigger asChild>
-                      <ToggleGroup.Item value="table" aria-label={t('PROMPTS_VIEW_TABLE')}>
+                      <ToggleGroup.Item
+                        value="table"
+                        aria-label={t('PROMPTS_VIEW_TABLE')}
+                        data-state={viewMode === 'table' ? 'on' : 'off'}
+                      >
                         <List className="h-4 w-4" />
                       </ToggleGroup.Item>
                     </Tooltip.Trigger>
