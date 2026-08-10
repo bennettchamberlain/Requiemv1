@@ -125,6 +125,42 @@ COPY backend/apps/hbpe/scripts ./scripts
 # are already installed from the lock.
 RUN uv pip install --no-cache --no-deps ./backend/packages/telemetry ./backend/apps/hbpe
 
+# ── Trim the vendor kernel bundles, HERE rather than in the runtime stage ─────
+# rocBLAS and hipBLASLt carry one tuned kernel bundle per GPU architecture, and
+# they are the largest thing the runtime stage ships — 4.48 GB for hipBLASLt,
+# 0.63 GB for rocBLAS. The CDNA datacenter parts dominate: gfx942 (MI300) alone
+# is 2.99 GB, two thirds of hipBLASLt, and the four together are ~4.2 GB.
+#
+# This appliance runs on consumer hardware, so those four go and every RDNA
+# target stays: gfx1030 (RX 6800/6900), gfx1100-1103 (RX 7000 and the Phoenix
+# APU), gfx1150/1151 (Strix APUs) and gfx1200/1201 (RX 9000). Pruning by
+# ARCHITECTURE CLASS rather than down to AMDGPU_TARGETS is deliberate: the
+# image stays portable across the cards this actually ships to, instead of
+# being silently pinned to whichever GPU happened to build it. AMDGPU_TARGETS
+# pins the llama.cpp COMPILE to one architecture, which is right for a local
+# build and wrong for vendor kernels another consumer card still needs.
+#
+# It runs in the BUILDER, not next to the COPY that consumes it, because layers
+# are additive: deleting these files after the copy writes a whiteout and
+# reclaims nothing — the first attempt at this left the image byte-for-byte the
+# same size. Pruning before the copy is what actually makes the layer smaller.
+#
+# Set PRUNE_GFX_ARCHS empty to keep everything, which is what a datacenter
+# deployment would need. The substrings are unambiguous: none of gfx908,
+# gfx90a, gfx942 or gfx950 occurs inside an RDNA target's name.
+ARG PRUNE_GFX_ARCHS="gfx908 gfx90a gfx942 gfx950"
+RUN for arch in $PRUNE_GFX_ARCHS; do \
+      find /opt/rocm/lib/rocblas/library /opt/rocm/lib/hipblaslt/library \
+           -name "*$arch*" -delete; \
+    done \
+    # Guard against a glob that ate too much: the consumer bundles are the
+    # entire point of keeping these directories, and their absence would not
+    # surface until a matmul failed at dispatch time, far from this line.
+    && for dir in rocblas hipblaslt; do \
+         ls /opt/rocm/lib/$dir/library | grep -q 'gfx1[0-2]' \
+           || { echo "PRUNE_GFX_ARCHS removed every consumer kernel from $dir"; exit 1; }; \
+       done
+
 # ══════════════════════════════════════════════════════════════════════════════
 # RUNTIME — what actually ships.
 # ══════════════════════════════════════════════════════════════════════════════
@@ -175,13 +211,9 @@ COPY --from=builder /opt/rocm/lib/librocsolver.so* /opt/rocm/lib/
 COPY --from=builder /opt/rocm/lib/librocroller.so* /opt/rocm/lib/
 
 # rocBLAS and hipBLASLt keep their tuned kernels in a `library/` directory
-# beside the .so and fail at first dispatch without it, so those come whole.
-#
-# NOTE: they hold one kernel bundle per GPU architecture and are the single
-# largest thing this stage still ships (hipBLASLt's is ~4.5 GB). Keeping only
-# the AMDGPU_TARGETS arch would cut most of it — a worthwhile follow-up, left
-# out here because a wrong glob silently removes the kernels for the card you
-# actually have, and that fails at dispatch rather than at import.
+# beside the .so and fail at first dispatch without it, so those come whole —
+# already trimmed to the consumer architectures in the builder stage, which is
+# the only place a deletion actually shrinks the result.
 COPY --from=builder /opt/rocm/lib/rocblas /opt/rocm/lib/rocblas
 COPY --from=builder /opt/rocm/lib/hipblaslt /opt/rocm/lib/hipblaslt
 
