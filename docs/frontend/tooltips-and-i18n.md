@@ -23,9 +23,12 @@ const { t } = useTranslation();
 ```
 
 `label` is required and feeds **both** the tooltip and `aria-label`, so the hover
-affordance and the screen-reader name cannot drift apart. Do not pass `aria-label`
-alongside it. Everything else (`variant`, `className`, `disabled`, `asChild`,
-`data-testid`) forwards to `Button`; `size` defaults to `icon`.
+affordance and the screen-reader name cannot drift apart. That is enforced, not just
+asked for: `aria-label` is `Omit`-ed from the props type, and it is applied *after*
+the prop spread so it still wins for callers the type cannot see (an untyped spread,
+a cast). Use `tooltip` when the bubble should read differently from the name.
+Everything else (`variant`, `className`, `disabled`, `asChild`, `data-testid`)
+forwards to `Button`; `size` defaults to `icon`.
 
 | Prop | Use it for |
 |---|---|
