@@ -32,10 +32,17 @@ function makeResolver() {
   const resolver = new SearchResolver(
     {} as never, // browserActivityService
     {} as never, // communicationService
+    {} as never, // conceptService
+    {} as never, // contentService
     {} as never, // entityResolutionService
     {} as never, // eventService
     {} as never, // fileService
     {} as never, // fileChunkService
+    {} as never, // itemService
+    {} as never, // noteService
+    {} as never, // personService
+    {} as never, // placeService
+    {} as never, // answerService
     savedSearchService as never,
     {} as never, // searchService
     {} as never, // tagService

@@ -7,6 +7,7 @@ import { type ServiceContext, type UserServiceContext, SYSTEM_USER } from '@ci/c
 import { computeChunkSize } from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
 import { AnswerCreatedEvent, AnswerUpdatedEvent, AnswerRemovedEvent } from '@ci/domains/intelligence/events';
+import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
 import { Answer, AnswerEntity } from '../entities/AnswerEntity';
 import type { CreateAnswerDto, UpdateAnswerDto } from '../types';
@@ -302,6 +303,38 @@ export class AnswerService {
     });
 
     return true;
+  }
+
+  /**
+   * Lightweight identifiers for the most-recent answers, for the unified
+   * search/explorer feed. Full entities are batch-resolved downstream.
+   */
+  async getEntitiesForAnswers(
+    context: ServiceContext,
+    options: { limit?: number; startTime?: Date; endTime?: Date; order?: 'ASC' | 'DESC' } = {},
+  ): Promise<EntityIdentifier<IndexableEntity>[]> {
+    let query = this.answerRepository
+      .createQueryBuilder('answer')
+      .select('answer.answer_id', 'id')
+      .where('answer.user_id = :userId', { userId: context.userId });
+
+    if (options.startTime) {
+      query = query.andWhere('answer.answered_at >= :startTime', { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere('answer.answered_at <= :endTime', { endTime: options.endTime });
+    }
+
+    query = query.orderBy('answer.answered_at', options.order ?? 'DESC');
+
+    if (options.limit) {
+      query = query.limit(options.limit);
+    }
+
+    const rows = await query.getRawMany<{ id: string }>();
+
+    return rows.map((row) => ({ id: row.id, type: 'answer' as IndexableEntity }));
   }
 
   /**
