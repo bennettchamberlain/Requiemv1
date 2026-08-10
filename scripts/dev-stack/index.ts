@@ -40,7 +40,59 @@ dotenv.config({ path: path.join(ROOT, '.env'), quiet: true });
 
 const caddy = new CaddyClient();
 
-const COMPOSE_FILES = ['-f', 'docker-compose.yml', '-f', 'docker-compose.local.yml'];
+/**
+ * Whether this host can pass an AMD GPU into a container.
+ *
+ * Keyed on the device nodes rather than on `rocminfo` or the built image's
+ * flavour, because the nodes are exactly what `devices:` needs to bind — a
+ * host with the ROCm userspace installed but no card, or a card with no
+ * loaded amdkfd driver, must NOT get the overlay or compose refuses to start
+ * the service at all.
+ */
+function rocmDevicesPresent(): boolean {
+  return fs.existsSync('/dev/kfd') && fs.existsSync('/dev/dri');
+}
+
+/**
+ * The group IDs `docker-compose.rocm.yml` binds the container's user into,
+ * read off the host's own device nodes.
+ *
+ * Numeric and derived, never literal: the kernel checks the GID as seen from
+ * the host, and `render` is 109 on Ubuntu but 105 elsewhere. /dev/kfd carries
+ * the render group; the video group comes from a DRM card node, which a
+ * headless box may not have — it falls back to the render GID rather than
+ * being left empty, since compose would reject an empty group_add entry and a
+ * duplicated group is harmless.
+ */
+function amdGroupEnv(): NodeJS.ProcessEnv {
+  if (!rocmDevicesPresent()) {
+    return {};
+  }
+
+  const renderGid = fs.statSync('/dev/kfd').gid;
+
+  const card = fs
+    .readdirSync('/dev/dri')
+    .filter((entry) => entry.startsWith('card'))
+    .sort()[0];
+
+  const videoGid = card != null ? fs.statSync(path.join('/dev/dri', card)).gid : renderGid;
+
+  return { AMD_RENDER_GID: String(renderGid), AMD_VIDEO_GID: String(videoGid) };
+}
+
+const COMPOSE_FILES = [
+  '-f',
+  'docker-compose.yml',
+  '-f',
+  'docker-compose.local.yml',
+  // Appended, not substituted: the overlay only adds device passthrough to
+  // hbpe-service and must lose to nothing in the local file.
+  ...(rocmDevicesPresent() ? ['-f', 'docker-compose.rocm.yml'] : []),
+];
+
+/** Set once at startup; merged into the env of every compose invocation. */
+const AMD_GROUP_ENV = amdGroupEnv();
 
 // Conventional default host ports, preferred when free.
 const DEFAULTS = {
@@ -242,7 +294,7 @@ function composeUp(env: NodeJS.ProcessEnv): void {
   run(
     'docker',
     ['compose', ...COMPOSE_FILES, '--profile', 'local', 'up', '-d', '--wait', '--remove-orphans'],
-    env,
+    { ...env, ...AMD_GROUP_ENV },
   );
 
   console.log('');
@@ -253,7 +305,10 @@ function composeStop(key: string): void {
 
   spawnSync('docker', ['compose', ...COMPOSE_FILES, '--profile', 'local', 'stop'], {
     cwd: ROOT,
-    env: { ...process.env, COMPOSE_PROJECT_NAME: key },
+    // The group vars matter even on `stop`: compose interpolates every file it
+    // is handed before it does anything, so an unset AMD_RENDER_GID would warn
+    // (and resolve to an empty group) while tearing the stack down.
+    env: { ...process.env, ...AMD_GROUP_ENV, COMPOSE_PROJECT_NAME: key },
     stdio: 'inherit',
   });
 

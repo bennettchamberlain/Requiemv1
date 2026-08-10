@@ -340,6 +340,42 @@ Run `make` from the project root to see all available commands with descriptions
 | `make publish` | Publish CI-Server images and metadata to the CI-Portal store |
 | `make seed-production` | Seed the production database via an ephemeral proxy |
 
+#### GPU acceleration (HBPE)
+
+`GPU` picks which HBPE image is built. It is auto-detected, so passing it is
+only needed to override the detection:
+
+```bash
+make build GPU=rocm                        # AMD, gfx target auto-detected
+make build GPU=rocm AMDGPU_TARGETS=gfx1030 # …or named explicitly
+make build GPU=cpu                         # no GPU
+```
+
+On AMD, `AMDGPU_TARGETS` is the gfx architecture llama.cpp's HIP backend
+compiles for — `gfx1100` for an RX 7900, `gfx1030` for a 6800/6900.
+`scripts/detect-gpu.sh --amdgpu-arch` reports this host's. Override it on a
+machine with both an APU and a discrete card, where detection takes whichever
+`rocminfo` lists first.
+
+Building the image is only half of it: the container also needs the GPU passed
+in at runtime, which `docker-compose.rocm.yml` does. `make dev` layers that
+file in automatically when `/dev/kfd` and `/dev/dri` exist. For staging or
+production, add it explicitly:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.production.yml \
+               -f docker-compose.rocm.yml --profile production up -d
+```
+
+Without it the service still starts and still answers — it just finds no HSA
+agent and runs on the CPU, silently. If you are unsure which you have, ask the
+container rather than assuming:
+
+```bash
+docker compose exec hbpe-service python -c \
+  "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
+
 ### Releasing & image tags
 
 Pushing a git tag triggers `.github/workflows/publish.yml`, which builds every `companion/*` image

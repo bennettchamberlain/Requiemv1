@@ -9,16 +9,42 @@
 ARG UV_VERSION
 FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
 
-FROM python:3.11-slim-bookworm
+# The ROCm SDK must be IN this image, not on the host. Compiling the GGML HIP
+# backend needs hipcc and the HIP/rocBLAS headers at BUILD time, and a build
+# container has no access to the host's /opt/rocm — nor to /dev/kfd and
+# /dev/dri, which are runtime device nodes and are never mounted during
+# `docker build`. Until this was fixed the image inherited python:3.11-slim
+# (the CPU image's base) and passed a HIP flag anyway; see the note on the
+# llama-cpp-python layer below for why that went unnoticed for months.
+#
+# Pinned to the same ROCm the appliance runs (7.2.x). The container ships ROCm
+# USERSPACE; the kernel driver is the host's, shared through /dev/kfd. Newer
+# userspace against an older kernel driver is the direction that breaks, so
+# this tracks the host rather than the newest published tag.
+#
+# `-complete` rather than the smaller plain `dev` tag: the GGML HIP backend
+# links hipBLAS/rocBLAS, which the stripped image does not carry. It costs
+# ~7 GB compressed, ~18 GB on disk. Slimming it means a second stage that
+# copies just the built wheel and the ROCm runtime libraries into a lean
+# image — worth doing, but it is a separate change from making this build work
+# at all.
+FROM rocm/dev-ubuntu-22.04:7.2.4-complete
 
-# System dependencies — build tools needed for llama-cpp-python HIP compilation
+# Install Python 3.11 and system dependencies. Same shape as Dockerfile.cuda,
+# which also builds on an Ubuntu 22.04 vendor image: the distro's own python3
+# is 3.10 here, and .python-version pins 3.11.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3.11-dev \
+    python3-pip \
     postgresql-client \
     build-essential \
     cmake \
     git \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1
 
 COPY --from=uv /uv /usr/local/bin/uv
 
@@ -27,8 +53,14 @@ WORKDIR /app
 # Putting the venv on PATH is what lets the entrypoint invoke `uvicorn` and
 # `python` directly. PYTHONPATH is deliberately not set: the service is an
 # installed distribution now, not a directory on the import path.
+#
+# ROCM_PATH and /opt/rocm/bin are set explicitly rather than relied on from the
+# base image: CMake's HIP language detection resolves the compiler through
+# them, and "The HIP compiler identification is unknown" is what it reports
+# when it cannot. The venv stays ahead of ROCm on PATH so `python` is 3.11.
 ENV VIRTUAL_ENV=/app/.venv \
-    PATH=/app/.venv/bin:$PATH \
+    ROCM_PATH=/opt/rocm \
+    PATH=/app/.venv/bin:/opt/rocm/bin:$PATH \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     MODELS_DIR=/app/models \
@@ -58,21 +90,36 @@ RUN uv sync --frozen --package ci-hbpe --no-install-workspace --no-dev \
 # match the lock exactly, which means it removes anything the lock does not
 # mention — including everything installed here.
 
-# PyTorch with ROCm 6.1 support.
+# PyTorch built against ROCm 7.2, matching the base image. PyTorch publishes a
+# separate wheel index per ROCm minor; pointing at one that predates the SDK in
+# the image (this was rocm6.1 against a base with no ROCm at all) gets you
+# wheels linked to runtime libraries that are not there.
 RUN uv pip install --no-cache \
     torch torchvision \
-    --index-url https://download.pytorch.org/whl/rocm6.1
+    --index-url https://download.pytorch.org/whl/rocm7.2
 
 # llama-cpp-python (JamePeng fork — required for Qwen3.5 support), the same
 # pinned commit every HBPE image builds (LLAMA_CPP_PYTHON_REF in the
-# Makefile), here with the GGML HIP backend for AMD cards. Requires the ROCm
-# SDK on the host (mounted via /dev/kfd, /dev/dri).
+# Makefile), here with the GGML HIP backend for AMD cards.
 #
 # GGML_HIP=ON, not the GGML_HIPBLAS=ON this image used against the official
 # package: llama.cpp renamed the flag, and on the fork's newer llama.cpp the
 # old name is ignored — the build would silently produce a CPU-only wheel.
+# That silence is why the missing SDK went unnoticed: for months CMake never
+# tried to configure HIP, so it never looked for a compiler that was not there,
+# and every "ROCm" image shipped a CPU-only wheel that worked well enough that
+# nobody questioned it.
+#
+# AMDGPU_TARGETS is the gfx architecture of the card this appliance actually
+# has (gfx1100 for an RX 7900, gfx1030 for a 6800/6900), detected by
+# scripts/detect-gpu.sh and passed by `make build`. Left empty the build falls
+# back to llama.cpp's own default target list — which is slow to compile and
+# is not guaranteed to include this host's card. It is deliberately NOT
+# defaulted to a value here: a wrong architecture compiled in produces a wheel
+# that loads and then finds no usable device at runtime.
 ARG LLAMA_CPP_PYTHON_REF
-RUN CMAKE_ARGS="-DGGML_HIP=ON" FORCE_CMAKE=1 \
+ARG AMDGPU_TARGETS
+RUN CMAKE_ARGS="-DGGML_HIP=ON${AMDGPU_TARGETS:+ -DAMDGPU_TARGETS=$AMDGPU_TARGETS}" FORCE_CMAKE=1 \
     uv pip install --no-cache \
       "llama-cpp-python @ git+https://github.com/JamePeng/llama-cpp-python.git@${LLAMA_CPP_PYTHON_REF:?set by make build}"
 
@@ -95,6 +142,35 @@ RUN mkdir -p /app/models/qwen \
              /app/data/artifacts
 
 RUN chown -R hbpe:hbpe /app
+
+# ── One HIP runtime per process ───────────────────────────────────────────────
+# Without this, importing llama_cpp and torch into the same process and letting
+# both touch the GPU aborts the interpreter:
+#
+#   F hip.cpp:512] hipApiName has non-null function pointer 1 despite this
+#   being the first instance of the library being copies
+#     @ rocprofiler_register_library_api_table
+#     @ hipGetDeviceCount  @ c10::cuda::device_count()
+#
+# There are two copies of libamdhip64 in the image: llama-cpp-python links the
+# one in /opt/rocm, while the PyTorch ROCm wheel bundles its own under
+# torch/lib. rocprofiler-register notices the second registration of the HIP API
+# table and calls it fatal. It is not an ordering problem — it aborts whichever
+# library initialises second — and none of ROCPROFILER_REGISTER_FORCE_LOAD,
+# HSA_TOOLS_LIB or ROCP_DISABLE suppress it.
+#
+# Preloading the system runtime collapses both onto one copy. That is only safe
+# because the base image's ROCm and the torch wheel's ROCm are the same minor
+# (7.2) — which is the real reason those two pins have to move together, and
+# what a bump to a newer ROCm must re-check.
+#
+# HBPE reaches this: inference/qwen.py drives llama_cpp while the model/ and
+# pipeline/ modules are all torch.
+#
+# Set here, after every build step, deliberately. Earlier in the file it would
+# be active during the pip installs and llama.cpp compile, which do not need it,
+# and would invalidate the cache for those expensive layers on every edit.
+ENV LD_PRELOAD=/opt/rocm/lib/libamdhip64.so
 
 USER hbpe
 
