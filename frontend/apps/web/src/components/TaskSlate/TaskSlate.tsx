@@ -5,6 +5,7 @@ import { Clock, GripVertical, Lightbulb, ListTodo, Loader2, Sparkles, Trash2, X 
 
 import { applyHowYoudDoIt, composeHowYoudDoIt, type HowYoudDoItResult } from '@/api/usePersonaCompose';
 import type { DeclineReason, ScheduleCandidate } from '@/api/useScheduleCandidates';
+import { useFeatures } from '@/common/feature';
 import { ChatWithAgentMenu } from '@/components/ChatWithAgent';
 import { useAuth } from '@/hooks';
 import {
@@ -82,6 +83,7 @@ interface CardProps {
   onPersonalize?: (candidate: ScheduleCandidate) => void;
   onApplyPersonalized?: (result: HowYoudDoItResult) => void;
   applyNote?: string | null;
+  chatEnabled?: boolean;
 }
 
 function CandidateCard({
@@ -94,6 +96,7 @@ function CandidateCard({
   onPersonalize,
   onApplyPersonalized,
   applyNote,
+  chatEnabled = false,
 }: CardProps) {
   const [expanded, setExpanded] = useState(false);
   const kind = candidate.rationaleSources[0]?.kind ?? 'action';
@@ -149,7 +152,7 @@ function CandidateCard({
           'pointer-coarse:pointer-events-auto pointer-coarse:opacity-100',
         )}
       >
-        {onPersonalize && (
+        {chatEnabled && onPersonalize && (
           <Tooltip>
             <Tooltip.Trigger asChild>
               <Button
@@ -174,15 +177,17 @@ function CandidateCard({
           </Tooltip>
         )}
 
-        <ChatWithAgentMenu
-          context={{
-            title: candidate.title,
-            body: rationale,
-            sourceKind: 'schedule-candidate',
-            sourceId: candidate.id,
-          }}
-          className="h-6 w-6"
-        />
+        {chatEnabled && (
+          <ChatWithAgentMenu
+            context={{
+              title: candidate.title,
+              body: rationale,
+              sourceKind: 'schedule-candidate',
+              sourceId: candidate.id,
+            }}
+            className="h-6 w-6"
+          />
+        )}
 
         <Tooltip>
           <Tooltip.Trigger asChild>
@@ -456,6 +461,8 @@ export function TaskSlate({
   className,
 }: TaskSlateProps) {
   const [{ authToken }] = useAuth();
+  const { isFeatureEnabled } = useFeatures();
+  const chatEnabled = isFeatureEnabled('chat.page');
   const hasCards = candidates.length > 0;
   /** A candidate is in flight from this rail — offer somewhere to drop it. */
   const [draggingCard, setDraggingCard] = useState(false);
@@ -626,9 +633,12 @@ export function TaskSlate({
                 onDragStateChange={setDraggingCard}
                 personalized={resolvePersonalization(candidate, personalizedById)}
                 personalizing={personalizingId === candidate.id}
-                onPersonalize={(c) => void handlePersonalize(c)}
-                onApplyPersonalized={(result) => void handleApplyPersonalized(candidate.id, result)}
+                onPersonalize={chatEnabled ? (c) => void handlePersonalize(c) : undefined}
+                onApplyPersonalized={
+                  chatEnabled ? (result) => void handleApplyPersonalized(candidate.id, result) : undefined
+                }
                 applyNote={applyNoteById[candidate.id] ?? null}
+                chatEnabled={chatEnabled}
               />
             ))}
           </ul>
