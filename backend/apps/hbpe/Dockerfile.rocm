@@ -127,9 +127,18 @@ RUN uv pip install --no-cache --no-deps ./backend/packages/telemetry ./backend/a
 
 # ── Trim the vendor kernel bundles, HERE rather than in the runtime stage ─────
 # rocBLAS and hipBLASLt carry one tuned kernel bundle per GPU architecture, and
-# they are the largest thing the runtime stage ships — 4.48 GB for hipBLASLt,
-# 0.63 GB for rocBLAS. The CDNA datacenter parts dominate: gfx942 (MI300) alone
-# is 2.99 GB, two thirds of hipBLASLt, and the four together are ~4.2 GB.
+# they are the largest thing this image ships. There are TWO independent copies:
+# the system one under /opt/rocm, and a second complete set vendored inside the
+# PyTorch ROCm wheel, which bundles its own ROCm stack rather than using the
+# system's. Both need the same treatment.
+#
+#   /opt/rocm hipBLASLt   4.48 GB   torch/lib hipblaslt        4.5 GB
+#   /opt/rocm rocBLAS     0.63 GB   torch/lib rocblas          644 MB
+#                                   torch/lib aotriton.images  897 MB
+#
+# The CDNA datacenter parts dominate all of them: gfx942 (MI300) alone is
+# ~3 GB in each hipBLASLt copy, two thirds of it. Across every location the
+# four datacenter targets are ~8.7 GB.
 #
 # This appliance runs on consumer hardware, so those four go and every RDNA
 # target stays: gfx1030 (RX 6800/6900), gfx1100-1103 (RX 7000 and the Phoenix
@@ -147,19 +156,38 @@ RUN uv pip install --no-cache --no-deps ./backend/packages/telemetry ./backend/a
 #
 # Set PRUNE_GFX_ARCHS empty to keep everything, which is what a datacenter
 # deployment would need. The substrings are unambiguous: none of gfx908,
-# gfx90a, gfx942 or gfx950 occurs inside an RDNA target's name.
+# gfx90a, gfx942 or gfx950 occurs inside an RDNA target's name, and they match
+# aotriton's `amd-gfx942` spelling too.
+#
+# What is NOT touched, deliberately: libtorch_hip.so is a fat binary carrying
+# device code for every architecture, and re-slicing it means building torch
+# from source with a restricted PYTORCH_ROCM_ARCH — hours of compile and a
+# permanent maintenance cost on every torch bump. magma, MIOpen, rocSOLVER,
+# rocRAND, rocSPARSE and RCCL are linked unconditionally by torch; deleting
+# them saves GBs and risks failing inside one operator, or at import.
 ARG PRUNE_GFX_ARCHS="gfx908 gfx90a gfx942 gfx950"
-RUN for arch in $PRUNE_GFX_ARCHS; do \
-      find /opt/rocm/lib/rocblas/library /opt/rocm/lib/hipblaslt/library \
-           -name "*$arch*" -delete; \
-    done \
+RUN set -eu; \
+    TORCH_LIB="$(echo /app/.venv/lib/python3.*/site-packages/torch/lib)"; \
+    ROOTS="/opt/rocm/lib/rocblas/library /opt/rocm/lib/hipblaslt/library \
+           $TORCH_LIB/rocblas/library $TORCH_LIB/hipblaslt/library \
+           $TORCH_LIB/aotriton.images"; \
+    for root in $ROOTS; do \
+      [ -d "$root" ] || continue; \
+      for arch in $PRUNE_GFX_ARCHS; do \
+        # -maxdepth 1 because the arch-named entries are always top level, and
+        # -prune/-exec rm -rf rather than -delete because aotriton's are
+        # DIRECTORIES, which -delete refuses unless already empty.
+        find "$root" -maxdepth 1 -name "*$arch*" -prune -exec rm -rf {} +; \
+      done; \
+    done; \
     # Guard against a glob that ate too much: the consumer bundles are the
     # entire point of keeping these directories, and their absence would not
     # surface until a matmul failed at dispatch time, far from this line.
-    && for dir in rocblas hipblaslt; do \
-         ls /opt/rocm/lib/$dir/library | grep -q 'gfx1[0-2]' \
-           || { echo "PRUNE_GFX_ARCHS removed every consumer kernel from $dir"; exit 1; }; \
-       done
+    for root in $ROOTS; do \
+      [ -d "$root" ] || continue; \
+      ls "$root" | grep -q 'gfx1[0-2]' \
+        || { echo "PRUNE_GFX_ARCHS removed every consumer kernel from $root"; exit 1; }; \
+    done
 
 # ══════════════════════════════════════════════════════════════════════════════
 # RUNTIME — what actually ships.
