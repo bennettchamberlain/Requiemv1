@@ -7,11 +7,11 @@ import { PageContent } from '@/components/layout';
 
 import { Card } from './Card';
 
-const DOWNLOAD_URL = 'https://ci.computer/download';
+// const DOWNLOAD_URL = 'https://ci.computer/download';
 const CAPTURE_DOWNLOAD_URL = 'https://ci.computer/download#capture';
 
 export function ConnectPage() {
-  const openDownload = () => window.open(DOWNLOAD_URL, '_blank', 'noopener,noreferrer');
+  // const openDownload = () => window.open(DOWNLOAD_URL, '_blank', 'noopener,noreferrer');
   const openCaptureDownload = () => window.open(CAPTURE_DOWNLOAD_URL, '_blank', 'noopener,noreferrer');
 
   return (
@@ -101,7 +101,8 @@ export function ConnectPage() {
           </div>
         </div>
 
-        {/* Devices Section */}
+        {/* Devices Section — hidden until device connect flows are ready (was linking to ci.computer/download). */}
+        {/*
         <div className="max-w-[1040px] mx-auto mb-8">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">Devices</h2>
           <p className="text-muted-foreground mb-6">
@@ -114,6 +115,7 @@ export function ConnectPage() {
               border="border-blue-400"
               text="Connect Home Assistant to track your smart home interactions, automation usage, and device states."
               onClick={openDownload}
+              disabled
             />
             <Card
               logo="/branding/quest/logo.svg"
@@ -121,6 +123,7 @@ export function ConnectPage() {
               border="border-gray-700"
               text="Link your Quest VR headset to use your camera for XR tracking and more to unlock embodied agentic immersive experiences."
               onClick={openDownload}
+              disabled
             />
             <Card
               logo="/branding/ios/logo.svg"
@@ -128,6 +131,7 @@ export function ConnectPage() {
               border="border-blue-400"
               text="Download the iOS app to track your mobile usage, screen time, and app interactions on iPhone and iPad."
               onClick={openDownload}
+              disabled
             />
             <Card
               logo="/branding/android/logo.svg"
@@ -135,6 +139,7 @@ export function ConnectPage() {
               border="border-green-400"
               text="Install the Android app to monitor your device usage, notifications, and mobile activity patterns."
               onClick={openDownload}
+              disabled
             />
             <Card
               logo="/branding/windows/logo.svg"
@@ -142,6 +147,7 @@ export function ConnectPage() {
               border="border-blue-500"
               text="Get the Windows app to track your desktop activity, application usage, and system interactions."
               onClick={openDownload}
+              disabled
             />
             <Card
               logo="/branding/mac/logo.svg"
@@ -149,6 +155,7 @@ export function ConnectPage() {
               border="border-gray-500"
               text="Download the macOS app to monitor your Mac usage, workspace activity, and application patterns."
               onClick={openDownload}
+              disabled
             />
             <Card
               logo="/branding/linux/logo.svg"
@@ -156,9 +163,11 @@ export function ConnectPage() {
               border="border-yellow-500"
               text="Install the Linux app to track your system usage, command line activity, and development workflows."
               onClick={openDownload}
+              disabled
             />
           </div>
         </div>
+        */}
 
         {/* Service Integrations Section */}
         <div className="max-w-[1040px] mx-auto">
