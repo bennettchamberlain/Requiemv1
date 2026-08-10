@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useState } from 'react';
 
 import { EmptyState, LoadingPage, Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb, Button, cn } from '@ci/shadcn';
+import { Breadcrumb, Button, IconButton, cn } from '@ci/shadcn';
 import { CalendarRange, ChevronLeft, ChevronRight } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
 import { useRescheduleEvent } from '@/api/useRescheduleEvent';
@@ -137,6 +138,7 @@ function ScheduleLegend({
 }
 
 export function SchedulePage() {
+  const { t } = useTranslation();
   const [weekOffset, setWeekOffset] = useState(0);
   const [colorMode, setColorMode] = useState<ColorMode>('type');
 
@@ -246,15 +248,15 @@ export function SchedulePage() {
       <PageContent>
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" aria-label="Previous week" onClick={goBack}>
+            <IconButton variant="ghost" label={t('SCHEDULE_PREVIOUS_WEEK')} onClick={goBack}>
               <ChevronLeft className="h-4 w-4" strokeWidth={1.5} />
-            </Button>
+            </IconButton>
             <h2 className="min-w-[9.5rem] text-center text-lg font-bold text-foreground tabular-nums">
               {formatRange(start, end)}
             </h2>
-            <Button variant="ghost" size="icon" aria-label="Next week" onClick={goForward}>
+            <IconButton variant="ghost" label={t('SCHEDULE_NEXT_WEEK')} onClick={goForward}>
               <ChevronRight className="h-4 w-4" strokeWidth={1.5} />
-            </Button>
+            </IconButton>
           </div>
 
           {weekOffset !== 0 && (

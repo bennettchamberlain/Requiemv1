@@ -2,14 +2,15 @@ import { type ReactNode, useState } from 'react';
 
 import { useMutation, useQuery } from '@apollo/client';
 import { GlobalUID, LoadingPage, Portal, usePageTitle, EmptyState } from '@ci/common';
-import { Breadcrumb, Button, Toggle, Tooltip } from '@ci/shadcn';
-import { Pencil, Link as LinkIcon } from '@ci/shadcn/icons';
+import { Breadcrumb, Button, IconButton, Tooltip } from '@ci/shadcn';
+import { Link as LinkIcon } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 import { useParams, Link } from 'react-router-dom';
 
 import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
 import { EntityGraph } from '@/components/EntityGraph';
 import { EntityRelationshipCards } from '@/components/EntityRelationshipCards/EntityRelationshipCards';
-import { EntityTagsDescriptionCard } from '@/components/EntityTagsDescriptionCard';
+import { EntityEditToggle, EntityTagsDescriptionCard } from '@/components/EntityTagsDescriptionCard';
 import { PersonIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import { AddRelationshipModal } from '@/components/modals/AddItemModal/AddRelationshipModal';
@@ -90,6 +91,7 @@ const UPDATE_PERSON_DESCRIPTION = gql(`
 `);
 
 export function PersonPage() {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const [addRelationshipModalOpen, setAddRelationshipModalOpen] = useState(false);
   const [hopDepth, setHopDepth] = useState(DEFAULT_HOP_DEPTH);
@@ -127,51 +129,51 @@ export function PersonPage() {
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1 rounded-md border border-border/60 bg-background/60 px-2 py-1">
               <span className="text-xs text-muted-foreground">Hops</span>
-              <Button
+              <IconButton
                 size="sm"
                 variant="ghost"
                 className="h-6 w-6 p-0"
                 disabled={hopDepth <= MIN_HOP_DEPTH}
                 onClick={() => setHopDepth((prev) => Math.max(MIN_HOP_DEPTH, prev - 1))}
-                aria-label="Decrease hop depth"
+                label={t('PERSON_GRAPH_FEWER_HOPS')}
               >
                 -
-              </Button>
+              </IconButton>
               <span className="w-5 text-center text-sm font-medium">{hopDepth}</span>
-              <Button
+              <IconButton
                 size="sm"
                 variant="ghost"
                 className="h-6 w-6 p-0"
                 disabled={hopDepth >= MAX_HOP_DEPTH}
                 onClick={() => setHopDepth((prev) => Math.min(MAX_HOP_DEPTH, prev + 1))}
-                aria-label="Increase hop depth"
+                label={t('PERSON_GRAPH_MORE_HOPS')}
               >
                 +
-              </Button>
+              </IconButton>
             </div>
             <div className="flex items-center gap-1 rounded-md border border-border/60 bg-background/60 px-2 py-1">
               <span className="text-xs text-muted-foreground">Nodes</span>
-              <Button
+              <IconButton
                 size="sm"
                 variant="ghost"
                 className="h-6 w-6 p-0"
                 disabled={nodeLimit <= MIN_NODE_LIMIT}
                 onClick={() => setNodeLimit((prev) => Math.max(MIN_NODE_LIMIT, prev - NODE_LIMIT_STEP))}
-                aria-label="Decrease node limit"
+                label={t('PERSON_GRAPH_FEWER_NODES')}
               >
                 -
-              </Button>
+              </IconButton>
               <span className="w-8 text-center text-sm font-medium">{nodeLimit}</span>
-              <Button
+              <IconButton
                 size="sm"
                 variant="ghost"
                 className="h-6 w-6 p-0"
                 disabled={nodeLimit >= MAX_NODE_LIMIT}
                 onClick={() => setNodeLimit((prev) => Math.min(MAX_NODE_LIMIT, prev + NODE_LIMIT_STEP))}
-                aria-label="Increase node limit"
+                label={t('PERSON_GRAPH_MORE_NODES')}
               >
                 +
-              </Button>
+              </IconButton>
             </div>
             <Tooltip>
               <Tooltip.Trigger asChild>
@@ -186,16 +188,7 @@ export function PersonPage() {
               </Tooltip.Trigger>
               <Tooltip.Content>Add relationship</Tooltip.Content>
             </Tooltip>
-            <Toggle
-              aria-label="Toggle edit mode"
-              size="sm"
-              variant="outline"
-              className="data-[state=on]:bg-transparent data-[state=on]:*:[svg]:fill-blue-500 data-[state=on]:*:[svg]:stroke-blue-500"
-              pressed={editMode}
-              onPressedChange={setEditMode}
-            >
-              <Pencil />
-            </Toggle>
+            <EntityEditToggle pressed={editMode} onPressedChange={setEditMode} />
           </div>
         </div>
 

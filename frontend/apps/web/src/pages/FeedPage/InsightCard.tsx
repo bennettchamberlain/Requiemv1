@@ -1,6 +1,7 @@
 import { type MouseEvent } from 'react';
 
 import { cn } from '@ci/shadcn';
+import { useTranslation } from 'react-i18next';
 
 import { gql, useFragment, type FragmentType } from '@/graphql';
 
@@ -26,6 +27,7 @@ interface Props {
 }
 
 export function InsightCard({ insight, onClick, onDismiss, isSeen = false, className }: Props) {
+  const { t } = useTranslation();
   const data = useFragment(INSIGHT_CARD_FRAGMENT, insight);
 
   const description = (
@@ -64,7 +66,7 @@ export function InsightCard({ insight, onClick, onDismiss, isSeen = false, class
       tags={data.tags}
       onClick={onClick}
       onDismiss={onDismiss}
-      dismissLabel="Dismiss insight"
+      dismissLabel={t('FEED_CARD_DISMISS_INSIGHT')}
       showUnseenIndicator={!isSeen}
       className={cn('border-l-4 border-l-blue-500', className)}
     />

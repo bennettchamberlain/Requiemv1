@@ -21,12 +21,14 @@ import {
   Card,
   Checkbox,
   Dialog,
+  IconButton,
   Input,
   Label,
   Popover,
   RadioGroup,
 } from '@ci/shadcn';
 import { CalendarIcon, Check, ClipboardCopy, KeyRound, Lock, Pencil, Plus, Trash, X } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 
 import { useAuth } from '@/hooks';
 
@@ -158,6 +160,7 @@ function isHubManagedKey(key: { managed_by?: string | null }): boolean {
 }
 
 export function ApiKeysSection() {
+  const { t } = useTranslation();
   const [{ authToken }] = useAuth();
 
   const [keys, setKeys] = useState<ApiKeyResponse[]>([]);
@@ -407,9 +410,13 @@ export function ApiKeysSection() {
           </p>
         </div>
         {/* Icon-only trigger: without an explicit label it reaches assistive tech as an unnamed button. */}
-        <Button variant="outline" size="icon" aria-label="Create API key" onClick={() => setCreateOpen(true)}>
+        <IconButton
+          variant="outline"
+          label={t('SETTINGS_API_KEY_CREATE')}
+          onClick={() => setCreateOpen(true)}
+        >
           <Plus className="h-4 w-4" />
-        </Button>
+        </IconButton>
       </div>
 
       {error && (
@@ -421,9 +428,9 @@ export function ApiKeysSection() {
       {/* Revealed key banner */}
       {revealedKey && (
         <Card className="mb-4 border-green-200 dark:border-green-800 relative">
-          <Button
+          <IconButton
             variant="ghost"
-            size="icon"
+            label={t('SETTINGS_API_KEY_DISMISS_BANNER')}
             className="absolute top-3 right-3 h-6 w-6"
             onClick={() => {
               setRevealedKey(null);
@@ -431,7 +438,7 @@ export function ApiKeysSection() {
             }}
           >
             <X className="h-3 w-3" />
-          </Button>
+          </IconButton>
           <Card.Content className="space-y-4">
             <p className="text-sm font-medium text-green-700 dark:text-green-400 pr-8">
               Your new API key has been created.
@@ -442,9 +449,10 @@ export function ApiKeysSection() {
                 value={revealedKey}
                 className="!flex-1 !border-0 !ring-0 !shadow-none !bg-transparent !p-0 !ml-1 !h-auto !rounded-none font-mono text-sm focus-visible:!ring-0 focus-visible:!border-transparent"
               />
-              <Button
+              <IconButton
                 variant="ghost"
                 size="sm"
+                label={t('SETTINGS_API_KEY_COPY')}
                 onClick={() => copyToClipboard(revealedKey)}
                 className="cursor-pointer h-8 w-8 p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform"
               >
@@ -453,7 +461,7 @@ export function ApiKeysSection() {
                 ) : (
                   <ClipboardCopy className="h-4 w-4" />
                 )}
-              </Button>
+              </IconButton>
             </div>
             <p className="text-xs text-muted-foreground">The key value won't be shown again.</p>
           </Card.Content>
@@ -524,28 +532,23 @@ export function ApiKeysSection() {
                   </div>
                 </div>
                 <div className="ml-4 flex items-center gap-1">
-                  <Button
+                  <IconButton
                     variant="ghost"
-                    size="icon"
                     className="h-8 w-8"
                     onClick={() => openEdit(key)}
-                    aria-label={`Edit ${key.name}`}
-                    title={
-                      isHubManagedKey(key)
-                        ? 'Managed by Companion Hub — you can change what it may do, but not rename it'
-                        : undefined
-                    }
+                    label={t('SETTINGS_API_KEY_EDIT', { name: key.name })}
+                    tooltip={isHubManagedKey(key) ? t('SETTINGS_API_KEY_HUB_MANAGED') : undefined}
                   >
                     <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button
+                  </IconButton>
+                  <IconButton
                     variant="ghost"
-                    size="icon"
                     className="h-8 w-8 text-red-600 hover:text-red-700"
                     onClick={() => openDelete(key)}
+                    label={t('SETTINGS_API_KEY_DELETE', { name: key.name })}
                   >
                     <Trash className="h-4 w-4" />
-                  </Button>
+                  </IconButton>
                 </div>
               </Card.Content>
             </Card>

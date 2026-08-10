@@ -206,14 +206,19 @@ function FilterChip({
     <Badge variant="secondary" className="h-7 max-w-full shrink-0 gap-1 pl-2 pr-1">
       <Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
       <span className="max-w-[220px] truncate">{label}</span>
-      <button
-        type="button"
-        onClick={onRemove}
-        aria-label={removeLabel}
-        className="-mr-1 rounded p-0.5 hover:bg-background/60"
-      >
-        <X className="h-3 w-3" />
-      </button>
+      <Tooltip delayDuration={600}>
+        <Tooltip.Content>{removeLabel}</Tooltip.Content>
+        <Tooltip.Trigger asChild>
+          <button
+            type="button"
+            onClick={onRemove}
+            aria-label={removeLabel}
+            className="-mr-1 rounded p-0.5 hover:bg-background/60"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </Tooltip.Trigger>
+      </Tooltip>
     </Badge>
   );
 }
@@ -1180,7 +1185,6 @@ export function AdvancedSearchToggle({
             onMouseDown={(e) => e.preventDefault()}
             aria-label={label}
             aria-expanded={open}
-            title={label}
             className={cn('h-10 w-10 flex-shrink-0', open && 'rounded-b-none', className)}
           >
             <ChevronDown className={cn('h-4 w-4 transition-transform duration-100', open && 'rotate-180')} />

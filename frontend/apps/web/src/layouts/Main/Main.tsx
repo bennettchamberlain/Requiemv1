@@ -1,7 +1,8 @@
 import { Suspense } from 'react';
 
 import { LoadingPage, Portal, useDeviceLayout } from '@ci/common';
-import { Toaster } from '@ci/shadcn';
+import { Toaster, Tooltip } from '@ci/shadcn';
+import { useTranslation } from 'react-i18next';
 import { Outlet } from 'react-router-dom';
 
 import logo from '@/assets/logo.png';
@@ -12,6 +13,7 @@ import { PrimaryNavigation } from './PrimaryNavigation';
 import { SecondaryNavigation } from './SecondaryNavigation';
 
 export function Main() {
+  const { t } = useTranslation();
   const { isMobile } = useDeviceLayout();
   const { themeState } = useTheme();
 
@@ -34,9 +36,19 @@ export function Main() {
   return (
     <div className="grid h-lvh min-h-0 grid-cols-[auto_1fr] grid-rows-[auto_1fr]">
       <div className="flex items-center justify-center py-2 px-3 bg-secondary">
-        <a href="https://companionintelligence.com" target="_blank" rel="noopener noreferrer">
-          <img src={logo} alt="Logo" className="h-8 w-8" />
-        </a>
+        <Tooltip delayDuration={600}>
+          <Tooltip.Content>{t('NAV_LOGO_EXTERNAL')}</Tooltip.Content>
+          <Tooltip.Trigger asChild>
+            <a
+              href="https://companionintelligence.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={t('NAV_LOGO_EXTERNAL')}
+            >
+              <img src={logo} alt="Logo" className="h-8 w-8" />
+            </a>
+          </Tooltip.Trigger>
+        </Tooltip>
       </div>
 
       <div className="bg-secondary/20 border-b border-b-secondary/90">

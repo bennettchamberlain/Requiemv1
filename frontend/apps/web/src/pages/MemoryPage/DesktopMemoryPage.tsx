@@ -3,8 +3,9 @@ import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@apollo/client';
 import { GlobalUID, Portal } from '@ci/common';
 import { ENTITY_TYPE_REVERSE_MAP } from '@ci/common/src/constants';
-import { Button, Sheet } from '@ci/shadcn';
+import { Button, Sheet, Tooltip } from '@ci/shadcn';
 import { ChartNetwork, Images, List, Map as MapIcon, type LucideIcon } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
@@ -57,16 +58,17 @@ const GET_SAVED_SEARCH = gql(`
 const VIEW_TABS: Array<{
   value: string;
   label: string;
-  title: string;
+  titleKey: string;
   Icon: LucideIcon;
 }> = [
-  { value: 'map', label: 'Map', title: 'Map view', Icon: MapIcon },
-  { value: 'list', label: 'List', title: 'List view', Icon: List },
-  { value: 'gallery', label: 'Gallery', title: 'Gallery view', Icon: Images },
-  { value: 'graph', label: 'Graph', title: 'Graph view', Icon: ChartNetwork },
+  { value: 'map', label: 'Map', titleKey: 'MEMORY_VIEW_MAP', Icon: MapIcon },
+  { value: 'list', label: 'List', titleKey: 'MEMORY_VIEW_LIST', Icon: List },
+  { value: 'gallery', label: 'Gallery', titleKey: 'MEMORY_VIEW_GALLERY', Icon: Images },
+  { value: 'graph', label: 'Graph', titleKey: 'MEMORY_VIEW_GRAPH', Icon: ChartNetwork },
 ];
 
 export default function DesktopMemoryPage() {
+  const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [{ activeEntity }, { setActiveEntity }] = useEntityService();
 
@@ -266,22 +268,29 @@ export default function DesktopMemoryPage() {
       {/* View tabs (list / map / gallery / graph) live in the header nav-views portal. */}
       <Portal.Slot id="nav-views">
         <div className="flex flex-wrap items-center gap-1">
-          {VIEW_TABS.map(({ value, label, title, Icon }) => (
-            <Button
-              key={value}
-              type="button"
-              variant={activeTab === value ? 'secondary' : 'ghost'}
-              size="sm"
-              title={title}
-              aria-label={title}
-              aria-pressed={activeTab === value}
-              onClick={() => setActiveTab(value)}
-              className="h-8 gap-1.5 px-2"
-            >
-              <Icon className="h-4 w-4" strokeWidth={1.5} />
-              <span className="hidden sm:inline">{label}</span>
-            </Button>
-          ))}
+          {VIEW_TABS.map(({ value, label, titleKey, Icon }) => {
+            const title = t(titleKey);
+
+            return (
+              <Tooltip key={value} delayDuration={600}>
+                <Tooltip.Content>{title}</Tooltip.Content>
+                <Tooltip.Trigger asChild>
+                  <Button
+                    type="button"
+                    variant={activeTab === value ? 'secondary' : 'ghost'}
+                    size="sm"
+                    aria-label={title}
+                    aria-pressed={activeTab === value}
+                    onClick={() => setActiveTab(value)}
+                    className="h-8 gap-1.5 px-2"
+                  >
+                    <Icon className="h-4 w-4" strokeWidth={1.5} />
+                    <span className="hidden sm:inline">{label}</span>
+                  </Button>
+                </Tooltip.Trigger>
+              </Tooltip>
+            );
+          })}
         </div>
       </Portal.Slot>
 

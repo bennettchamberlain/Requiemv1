@@ -1,9 +1,10 @@
 import { type ReactNode, Children, useCallback, useEffect, useRef, useState } from 'react';
 
 import { useDeviceLayout } from '@ci/common';
-import { Button, cn } from '@ci/shadcn';
+import { cn, IconButton } from '@ci/shadcn';
 import { ChevronLeft, ChevronRight } from '@ci/shadcn/icons';
 import useEmblaCarousel, { type UseEmblaCarouselType } from 'embla-carousel-react';
+import { useTranslation } from 'react-i18next';
 
 type EmblaCarouselType = UseEmblaCarouselType[1];
 
@@ -23,6 +24,7 @@ export function Carousel({
   slideClassName,
   initialIndex = 0,
 }: CarouselProps) {
+  const { t } = useTranslation();
   const { isMobile } = useDeviceLayout();
 
   const hasAutoScrolled = useRef<boolean>(false);
@@ -120,26 +122,24 @@ export function Carousel({
       </div>
 
       <div className="flex items-center justify-center">
-        <Button
+        <IconButton
           variant="ghost"
-          size="icon"
           className="cursor-pointer"
           onClick={scrollPrev}
           disabled={!canScrollPrev}
-          aria-label="Previous slide"
+          label={t('CAROUSEL_PREVIOUS')}
         >
           <ChevronLeft className="h-4 w-4" />
-        </Button>
+        </IconButton>
 
         <div className="flex items-center justify-center">
           {scrollSnaps.map((_, index) => (
-            <Button
+            <IconButton
               key={index}
               variant="ghost"
-              size="icon"
               className="cursor-pointer"
               onClick={() => scrollTo(index)}
-              aria-label={`Go to slide ${index + 1}`}
+              label={t('CAROUSEL_GO_TO_SLIDE', { number: index + 1 })}
             >
               <div
                 className={cn(
@@ -147,20 +147,19 @@ export function Carousel({
                   index === selectedIndex ? 'bg-slate-800 scale-115' : 'bg-slate-300',
                 )}
               ></div>
-            </Button>
+            </IconButton>
           ))}
         </div>
 
-        <Button
+        <IconButton
           variant="ghost"
-          size="icon"
           className="cursor-pointer"
           onClick={scrollNext}
           disabled={!canScrollNext}
-          aria-label="Next slide"
+          label={t('CAROUSEL_NEXT')}
         >
           <ChevronRight className="h-4 w-4" />
-        </Button>
+        </IconButton>
       </div>
     </div>
   );

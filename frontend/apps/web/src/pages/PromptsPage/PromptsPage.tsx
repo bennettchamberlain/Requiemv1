@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 
 import { apiKeyHeaders, buildApiUrl, Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb, Button, Table, Card, ToggleGroup, Badge } from '@ci/shadcn';
+import { Breadcrumb, Button, IconButton, Table, Card, ToggleGroup, Badge, Tooltip } from '@ci/shadcn';
 import {
   AlertCircle,
   RefreshCw,
@@ -13,6 +13,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
@@ -36,6 +37,7 @@ interface Answer {
 export function PromptsPage() {
   usePageTitle('Questions - Companion Intelligence');
 
+  const { t } = useTranslation();
   const [{ authToken }] = useAuth();
 
   const [answers, setAnswers] = useState<Answer[]>([]);
@@ -267,16 +269,15 @@ export function PromptsPage() {
               {/* Mobile: Title and refresh button in same row */}
               <div className="flex items-center justify-between lg:justify-start">
                 <h1 className="text-2xl font-bold">Questions</h1>
-                <Button
+                <IconButton
                   variant="outline"
-                  size="icon"
                   onClick={fetchAnswers}
                   disabled={loading}
-                  title="Refresh answers"
+                  label={t('PROMPTS_REFRESH_ANSWERS')}
                   className="lg:hidden"
                 >
                   <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                </Button>
+                </IconButton>
               </div>
 
               {/* Desktop: Toggle and refresh button */}
@@ -286,22 +287,44 @@ export function PromptsPage() {
                   value={viewMode}
                   onValueChange={(value) => value && setViewMode(value as 'card' | 'table')}
                 >
-                  <ToggleGroup.Item value="card" aria-label="Card view">
-                    <Grid3X3 className="h-4 w-4" />
-                  </ToggleGroup.Item>
-                  <ToggleGroup.Item value="table" aria-label="Table view">
-                    <List className="h-4 w-4" />
-                  </ToggleGroup.Item>
+                  {/* `data-state` is restated here because Tooltip.Trigger's own
+                      open/closed state would otherwise overwrite the item's on/off
+                      state and kill the selected-item styling. A wrapper span would
+                      fix that too, but it would make every item both :first-child
+                      and :last-child, rounding all four corners of each segment. */}
+                  <Tooltip delayDuration={600}>
+                    <Tooltip.Content>{t('PROMPTS_VIEW_CARD')}</Tooltip.Content>
+                    <Tooltip.Trigger asChild>
+                      <ToggleGroup.Item
+                        value="card"
+                        aria-label={t('PROMPTS_VIEW_CARD')}
+                        data-state={viewMode === 'card' ? 'on' : 'off'}
+                      >
+                        <Grid3X3 className="h-4 w-4" />
+                      </ToggleGroup.Item>
+                    </Tooltip.Trigger>
+                  </Tooltip>
+                  <Tooltip delayDuration={600}>
+                    <Tooltip.Content>{t('PROMPTS_VIEW_TABLE')}</Tooltip.Content>
+                    <Tooltip.Trigger asChild>
+                      <ToggleGroup.Item
+                        value="table"
+                        aria-label={t('PROMPTS_VIEW_TABLE')}
+                        data-state={viewMode === 'table' ? 'on' : 'off'}
+                      >
+                        <List className="h-4 w-4" />
+                      </ToggleGroup.Item>
+                    </Tooltip.Trigger>
+                  </Tooltip>
                 </ToggleGroup>
-                <Button
+                <IconButton
                   variant="outline"
-                  size="icon"
                   onClick={fetchAnswers}
                   disabled={loading}
-                  title="Refresh answers"
+                  label={t('PROMPTS_REFRESH_ANSWERS')}
                 >
                   <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                </Button>
+                </IconButton>
               </div>
             </div>
 

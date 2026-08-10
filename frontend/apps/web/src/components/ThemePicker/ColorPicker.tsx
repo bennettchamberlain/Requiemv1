@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 
-import { Button, Tabs, ScrollArea, Input, Label, Popover } from '@ci/shadcn';
+import { Button, Tabs, ScrollArea, Input, Label, Popover, IconButton, Tooltip } from '@ci/shadcn';
 import { Palette, Settings2, Sliders, RotateCcw, X, Download, Upload, Copy, Check } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 
 import { useFeatures } from '@/common/feature';
 
@@ -31,6 +32,7 @@ function ColorSwatchEditor({
 }: ColorSwatchEditorProps) {
   const [localColor, setLocalColor] = useState(currentColor ?? '');
   const [isOpen, setIsOpen] = useState(false);
+  const { t } = useTranslation();
 
   const handleInputChange = (value: string) => {
     setLocalColor(value);
@@ -66,7 +68,12 @@ function ColorSwatchEditor({
           />
           <span className="text-xs truncate flex-1">{displayName}</span>
           {hasOverride && (
-            <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" title="Custom override" />
+            <Tooltip delayDuration={600}>
+              <Tooltip.Content>{t('THEME_COLOR_CUSTOM_OVERRIDE')}</Tooltip.Content>
+              <Tooltip.Trigger asChild>
+                <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
+              </Tooltip.Trigger>
+            </Tooltip>
           )}
         </button>
       </Popover.Trigger>
@@ -74,9 +81,15 @@ function ColorSwatchEditor({
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <Label className="text-sm font-medium">{displayName}</Label>
-            <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setIsOpen(false)}>
+            <IconButton
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0"
+              onClick={() => setIsOpen(false)}
+              label={t('COMMON_CLOSE')}
+            >
               <X className="h-3 w-3" />
-            </Button>
+            </IconButton>
           </div>
 
           <div className="space-y-2">
@@ -238,10 +251,12 @@ export function ColorPicker() {
           <h3 className="text-sm font-medium">Choose a color theme</h3>
           <div className="grid grid-cols-3 gap-2">
             {PRESET_THEMES.map((preset) => (
-              <button
-                key={preset.name}
-                onClick={() => handlePresetSelect(preset)}
-                className={`
+              <Tooltip key={preset.name} delayDuration={600}>
+                <Tooltip.Content>{preset.name}</Tooltip.Content>
+                <Tooltip.Trigger asChild>
+                  <button
+                    onClick={() => handlePresetSelect(preset)}
+                    className={`
                         group relative aspect-square rounded-md border-2 transition-all
                         ${
                           isPresetSelected(preset)
@@ -249,34 +264,36 @@ export function ColorPicker() {
                             : 'border-border hover:border-primary/50'
                         }
                       `}
-                title={preset.name}
-              >
-                <div
-                  className="absolute inset-0.5 rounded-sm"
-                  style={{
-                    background:
-                      preset.baseHue === -1
-                        ? 'linear-gradient(135deg, #2a2a2a, #3a3a3a, #4a4a4a)'
-                        : preset.baseHue === -2
-                          ? 'linear-gradient(135deg, #fafafa, #f0f0f0, #e0e0e0)'
-                          : preset.baseHue === -3
-                            ? 'linear-gradient(135deg, #129, #208, #279)'
-                            : `linear-gradient(135deg,
+                    aria-label={preset.name}
+                  >
+                    <div
+                      className="absolute inset-0.5 rounded-sm"
+                      style={{
+                        background:
+                          preset.baseHue === -1
+                            ? 'linear-gradient(135deg, #2a2a2a, #3a3a3a, #4a4a4a)'
+                            : preset.baseHue === -2
+                              ? 'linear-gradient(135deg, #fafafa, #f0f0f0, #e0e0e0)'
+                              : preset.baseHue === -3
+                                ? 'linear-gradient(135deg, #129, #208, #279)'
+                                : `linear-gradient(135deg,
                             oklch(0.3 0.15 ${preset.baseHue}),
                             oklch(0.5 0.12 ${preset.baseHue}),
                             oklch(0.7 0.08 ${preset.baseHue})
                           )`,
-                  }}
-                />
+                      }}
+                    />
 
-                {isPresetSelected(preset) && (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="w-2 h-2 bg-white rounded-full border border-gray-300" />
-                  </div>
-                )}
+                    {isPresetSelected(preset) && (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="w-2 h-2 bg-white rounded-full border border-gray-300" />
+                      </div>
+                    )}
 
-                <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity rounded-md" />
-              </button>
+                    <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity rounded-md" />
+                  </button>
+                </Tooltip.Trigger>
+              </Tooltip>
             ))}
           </div>
 

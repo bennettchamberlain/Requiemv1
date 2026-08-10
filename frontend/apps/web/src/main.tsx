@@ -5,7 +5,11 @@ import { createRoot } from 'react-dom/client';
 
 import './styles/index.css';
 import App from './App.tsx';
+import { initI18n } from './lib/i18n';
 import { initTelemetry } from './lib/telemetry';
+
+// Bundled and synchronous, so `t()` resolves during the very first render.
+initI18n();
 
 // Resolve the API origin before anything renders. No-op on web (stays same-origin);
 // on the native Capacitor shell this loads the user-configured server URL so Apollo

@@ -2,14 +2,13 @@ import { type ReactNode, useState } from 'react';
 
 import { useMutation, useQuery } from '@apollo/client';
 import { GlobalUID, LoadingPage, Portal, usePageTitle, EmptyState } from '@ci/common';
-import { Breadcrumb, Toggle } from '@ci/shadcn';
-import { Pencil } from '@ci/shadcn/icons';
+import { Breadcrumb } from '@ci/shadcn';
 import { useParams, Link } from 'react-router-dom';
 
 import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
 import { EntityGraph } from '@/components/EntityGraph';
 import { EntityRelationshipCards } from '@/components/EntityRelationshipCards/EntityRelationshipCards';
-import { EntityTagsDescriptionCard } from '@/components/EntityTagsDescriptionCard';
+import { EntityEditToggle, EntityTagsDescriptionCard } from '@/components/EntityTagsDescriptionCard';
 import { ItemIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import { gql } from '@/graphql';
@@ -71,16 +70,7 @@ export function ItemPage() {
             <ItemIcon />
             <h1 className="text-2xl font-bold">{item.name}</h1>
           </div>
-          <Toggle
-            aria-label="Toggle edit mode"
-            size="sm"
-            variant="outline"
-            className="data-[state=on]:bg-transparent data-[state=on]:*:[svg]:fill-blue-500 data-[state=on]:*:[svg]:stroke-blue-500"
-            pressed={editMode}
-            onPressedChange={setEditMode}
-          >
-            <Pencil />
-          </Toggle>
+          <EntityEditToggle pressed={editMode} onPressedChange={setEditMode} />
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">

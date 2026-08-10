@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { GlobalUID } from '@ci/common';
+import { Tooltip } from '@ci/shadcn';
 import { Clock, FilterX, Search, SearchX, X } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { DropdownProvider } from '@/components/SearchBox/useDropdown';
@@ -65,6 +67,7 @@ const CLEAR_QUERY_ACTION_ID = 'action:clear-query';
  * - Recent searches (locally persisted) surface on focus.
  */
 export function GlobalSearchBox() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -335,23 +338,28 @@ export function GlobalSearchBox() {
           <div className="flex items-center gap-2">
             <Clock className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
             <span className="flex-1 truncate">{recent}</span>
-            <button
-              type="button"
-              aria-label={`Remove "${recent}" from recent searches`}
-              className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={(e) => {
-                e.stopPropagation();
-                removeRecentSearch(recent);
-              }}
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
+            <Tooltip delayDuration={600}>
+              <Tooltip.Content>{t('SEARCH_RECENT_REMOVE', { query: recent })}</Tooltip.Content>
+              <Tooltip.Trigger asChild>
+                <button
+                  type="button"
+                  aria-label={t('SEARCH_RECENT_REMOVE', { query: recent })}
+                  className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeRecentSearch(recent);
+                  }}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </Tooltip.Trigger>
+            </Tooltip>
           </div>
         ),
       })),
     ];
-  }, [activeFilterCount, onMemoryExplorer, query, recentSearches, removeRecentSearch, suggestions, tags]);
+  }, [activeFilterCount, onMemoryExplorer, query, recentSearches, removeRecentSearch, suggestions, t, tags]);
 
   // Live, debounced. Drives the suggestion query everywhere, and on /memory also
   // writes `?search` so the explorer filters as you type (replace: keep history clean).

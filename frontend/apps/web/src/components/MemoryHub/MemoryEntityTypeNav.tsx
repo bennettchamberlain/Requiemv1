@@ -3,6 +3,7 @@ import { useState, type ComponentType } from 'react';
 import { useQuery } from '@apollo/client';
 import { Button, DropdownMenu, cn } from '@ci/shadcn';
 import { ChevronDown, Shapes, Tag as TagIcon } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
 import { AVAILABLE_ENTITY_TYPES, useDropdown } from '@/components/SearchBox/useDropdown';
@@ -118,12 +119,14 @@ function StandaloneWhatButton({
   selected: boolean;
   active: boolean;
 }) {
+  // No tooltip here: EXPAND_LABEL_CLASS already animates the label into view on
+  // hover and focus, so a bubble would paint the same text a second time, on top
+  // of the text it duplicates.
   return (
     <button
       type="button"
       aria-pressed={active}
       aria-label={category.label}
-      title={category.label}
       onClick={onSelect}
       className={categoryButtonClass(selected, active)}
     >
@@ -156,6 +159,7 @@ function GroupWhatDropdown({
 
   return (
     <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
+      {/* No tooltip: the label already expands inline on hover (EXPAND_LABEL_CLASS). */}
       <Trigger asChild>
         <button
           type="button"
@@ -163,7 +167,6 @@ function GroupWhatDropdown({
           aria-expanded={open}
           aria-haspopup="menu"
           aria-label={category.label}
-          title={category.label}
           className={categoryButtonClass(selected, active)}
         >
           <CategoryIcon icon={category.icon} toneClass={WHAT_BAR_ICON_CLASS[category.id]} entityIcon />
@@ -248,16 +251,17 @@ function TagWhatDropdown({ tags, onTagsChange }: { tags: string[]; onTagsChange:
   const { data } = useQuery(GET_TAGS, { skip: !open });
   const suggestions = data?.tags?.edges.map(({ node }: { node: { label: string } }) => node.label) ?? [];
   const { Content, Label, Trigger } = DropdownMenu;
+  const { t } = useTranslation();
 
   return (
     <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
+      {/* No tooltip: the label already expands inline on hover (EXPAND_LABEL_CLASS). */}
       <Trigger asChild>
         <button
           type="button"
           aria-expanded={open}
           aria-haspopup="dialog"
-          aria-label="Tag"
-          title="Tag"
+          aria-label={t('MEMORY_ENTITY_TYPE_FILTER_TAG')}
           className={categoryButtonClass(active, active)}
         >
           <CategoryIcon icon={TagIcon} toneClass={WHAT_BAR_ICON_CLASS.tag} />

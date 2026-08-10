@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 
 import { gql, useQuery, useMutation } from '@apollo/client';
-import { Button, Card, Dialog, Input, Label } from '@ci/shadcn';
+import { Button, Card, Dialog, IconButton, Input, Label } from '@ci/shadcn';
 import { Eye, EyeOff, Save, Trash } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 
 import type { Provider } from '@/pages/ConnectionsPage/ConnectionsPage.tsx';
 import { GET_PROVIDERS } from '@/queries';
@@ -57,6 +58,8 @@ interface OAuthState {
 }
 
 export function OAuthSection() {
+  const { t } = useTranslation();
+
   const [settings, setSettings] = useState<OAuthState>({
     oauth: {
       google: { clientId: '', clientSecret: '' },
@@ -327,19 +330,19 @@ export function OAuthSection() {
           <Card.Title className="text-base font-semibold">{label}</Card.Title>
           <div className="flex gap-2">
             {providerData.providerKeyId && (
-              <Button
+              <IconButton
                 variant="outline"
-                size="icon"
+                label={t('SETTINGS_OAUTH_DELETE')}
                 onClick={() => openDeleteModal(provider)}
                 className="h-8 w-8 text-red-600 hover:text-red-700"
               >
                 <Trash className="h-4 w-4" />
-              </Button>
+              </IconButton>
             )}
             {hasProviderChanges(provider) && (
-              <Button
+              <IconButton
                 variant="outline"
-                size="icon"
+                label={t('SETTINGS_OAUTH_SAVE')}
                 onClick={() => handleSaveOAuthField(provider)}
                 className="h-8 w-8 text-green-600 hover:text-green-700"
                 disabled={
@@ -348,7 +351,7 @@ export function OAuthSection() {
                 }
               >
                 <Save className="h-4 w-4" />
-              </Button>
+              </IconButton>
             )}
           </div>
         </Card.Header>
@@ -363,9 +366,13 @@ export function OAuthSection() {
                 onChange={(e) => updateSetting(`oauth.${provider}.clientId`, e.target.value)}
                 className="flex-1"
               />
-              <Button
+              <IconButton
                 variant="outline"
-                size="icon"
+                label={
+                  showKeys[`${provider}ClientId`]
+                    ? t('SETTINGS_OAUTH_HIDE_CLIENT_ID')
+                    : t('SETTINGS_OAUTH_SHOW_CLIENT_ID')
+                }
                 onClick={() => toggleKeyVisibility(`${provider}ClientId`)}
               >
                 {showKeys[`${provider}ClientId`] ? (
@@ -373,7 +380,7 @@ export function OAuthSection() {
                 ) : (
                   <Eye className="h-4 w-4" />
                 )}
-              </Button>
+              </IconButton>
             </div>
             {errors.clientId &&
               (providerData.providerKeyId || providerData.clientSecret?.trim().length > 0) && (
@@ -391,9 +398,13 @@ export function OAuthSection() {
                 onChange={(e) => updateSetting(`oauth.${provider}.clientSecret`, e.target.value)}
                 className="flex-1"
               />
-              <Button
+              <IconButton
                 variant="outline"
-                size="icon"
+                label={
+                  showKeys[`${provider}ClientSecret`]
+                    ? t('SETTINGS_OAUTH_HIDE_CLIENT_SECRET')
+                    : t('SETTINGS_OAUTH_SHOW_CLIENT_SECRET')
+                }
                 onClick={() => toggleKeyVisibility(`${provider}ClientSecret`)}
               >
                 {showKeys[`${provider}ClientSecret`] ? (
@@ -401,7 +412,7 @@ export function OAuthSection() {
                 ) : (
                   <Eye className="h-4 w-4" />
                 )}
-              </Button>
+              </IconButton>
             </div>
             {errors.clientSecret &&
               (providerData.providerKeyId || providerData.clientId?.trim().length > 0) && (

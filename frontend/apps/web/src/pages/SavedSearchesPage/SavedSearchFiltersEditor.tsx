@@ -1,7 +1,8 @@
 import { useState } from 'react';
 
-import { Badge, Button, Input, Label, Select, Switch } from '@ci/shadcn';
+import { Badge, IconButton, Input, Label, Select, Switch, Tooltip } from '@ci/shadcn';
 import { Plus, X } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 
 import {
   addListValue,
@@ -43,6 +44,7 @@ function ChipListField({
   onAdd: (value: string) => void;
   onRemove: (value: string) => void;
 }) {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState('');
 
   const commit = () => {
@@ -58,14 +60,19 @@ function ChipListField({
           {items.map((item) => (
             <Badge key={item} variant="secondary" className="max-w-[220px] gap-1">
               <span className="truncate">{item}</span>
-              <button
-                type="button"
-                onClick={() => onRemove(item)}
-                aria-label={`Remove ${item}`}
-                className="hover:bg-background/60 -mr-1 rounded p-0.5"
-              >
-                <X className="h-3 w-3" />
-              </button>
+              <Tooltip delayDuration={600}>
+                <Tooltip.Content>{t('SAVED_SEARCH_FILTER_REMOVE', { name: item })}</Tooltip.Content>
+                <Tooltip.Trigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => onRemove(item)}
+                    aria-label={t('SAVED_SEARCH_FILTER_REMOVE', { name: item })}
+                    className="hover:bg-background/60 -mr-1 rounded p-0.5"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Tooltip.Trigger>
+              </Tooltip>
             </Badge>
           ))}
         </div>
@@ -82,9 +89,14 @@ function ChipListField({
             }
           }}
         />
-        <Button type="button" variant="outline" size="icon" aria-label={`Add ${label}`} onClick={commit}>
+        <IconButton
+          type="button"
+          variant="outline"
+          label={t('SAVED_SEARCH_FILTER_ADD', { label })}
+          onClick={commit}
+        >
           <Plus className="h-4 w-4" />
-        </Button>
+        </IconButton>
       </div>
     </div>
   );

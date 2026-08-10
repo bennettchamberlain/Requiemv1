@@ -35,6 +35,12 @@ codegen): [graphql-api.md](graphql-api.md).
 - [saved-search-sharing.md](saved-search-sharing.md) — saved searches: full-filter capture,
   capability-link sharing, the read-only shared viewer.
 
+## Frontend conventions — [`docs/frontend/`](frontend/)
+
+- [frontend/tooltips-and-i18n.md](frontend/tooltips-and-i18n.md) — the `IconButton` /
+  `Tooltip` contract for icon-only controls, and the i18next setup shared with CI-Hub
+  (flat `SCREAMING_SNAKE` keys, `en.json` as the Crowdin source).
+
 ## Runbooks (operator procedures)
 
 - [`docs/runbooks/one-off-prod-data-testing.md`](runbooks/one-off-prod-data-testing.md)

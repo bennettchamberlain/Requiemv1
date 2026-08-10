@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ComponentProps } from '
 
 import { GlobalUID, ErrorPage, LoadingPage, Portal, useDeviceLayout, usePageTitle } from '@ci/common';
 import { Breadcrumb, useToast } from '@ci/shadcn';
+import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 
 import { useActionListService, useForecastService } from '@/api';
@@ -30,6 +31,8 @@ const MAX_INSIGHT_SUMMARY_CARDS = 20;
 
 export function FeedPage() {
   usePageTitle('Feed - Companion Intelligence');
+
+  const { t } = useTranslation();
 
   const { isMobile } = useDeviceLayout();
   const { toast } = useToast();
@@ -323,7 +326,7 @@ export function FeedPage() {
                   imageUrl={card.action.imageUrl}
                   onClick={() => void handleCardClick(card.action.id)}
                   onDismiss={() => void handleActionDismiss(card.action.id)}
-                  dismissLabel="Dismiss action"
+                  dismissLabel={t('FEED_CARD_DISMISS_ACTION')}
                   showUnseenIndicator={!card.action.seen}
                   chatContext={{
                     title: card.action.title,
@@ -458,7 +461,7 @@ export function FeedPage() {
                       imageUrl={card.action.imageUrl}
                       onClick={() => void handleCardClick(card.action.id)}
                       onDismiss={() => void handleActionDismiss(card.action.id)}
-                      dismissLabel="Dismiss action"
+                      dismissLabel={t('FEED_CARD_DISMISS_ACTION')}
                       showUnseenIndicator={!card.action.seen}
                       chatContext={{
                         title: card.action.title,

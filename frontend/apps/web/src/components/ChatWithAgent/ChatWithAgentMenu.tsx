@@ -1,5 +1,6 @@
-import { Button, DropdownMenu } from '@ci/shadcn';
+import { Button, DropdownMenu, IconButton } from '@ci/shadcn';
 import { ExternalLink, MessagesSquare } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
 import { useAgentHarnesses, type AgentHarnessStatus } from '@/api/useAgentHarnesses';
@@ -39,6 +40,7 @@ function RunningHarnessButtons({
 }
 
 export function ChatWithAgentMenu({ context, size = 'icon', className }: Props) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { runningHarnesses, loading } = useAgentHarnesses();
 
@@ -65,24 +67,28 @@ export function ChatWithAgentMenu({ context, size = 'icon', className }: Props) 
 
   if (!hasRunningHarnesses) {
     return (
-      <Button
+      <IconButton
         variant="ghost"
-        size="icon"
         className={className}
-        aria-label={`Chat about ${context.title}`}
+        label={t('CHAT_WITH_AGENT_ABOUT', { title: context.title })}
         onClick={() => openInAppChat(navigate, context)}
       >
         <MessagesSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
-      </Button>
+      </IconButton>
     );
   }
 
   return (
     <DropdownMenu modal={false}>
       <DropdownMenu.Trigger asChild>
-        <Button variant="ghost" size="icon" className={className} aria-label={`Chat about ${context.title}`}>
+        <IconButton
+          variant="ghost"
+          className={className}
+          label={t('CHAT_WITH_AGENT_ABOUT', { title: context.title })}
+          tooltip={t('CHAT_WITH_AGENT_OPEN_MENU')}
+        >
           <MessagesSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
-        </Button>
+        </IconButton>
       </DropdownMenu.Trigger>
       <DropdownMenu.Content align="end">
         <DropdownMenu.Item onClick={() => openInAppChat(navigate, context)}>Chat here</DropdownMenu.Item>
