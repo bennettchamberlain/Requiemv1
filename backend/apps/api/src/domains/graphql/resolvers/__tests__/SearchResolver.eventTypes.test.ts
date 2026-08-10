@@ -41,15 +41,29 @@ describe('SearchResolver — event-type ("how") filter', () => {
       findByShareToken: jest.fn().mockResolvedValue(null),
     };
 
+    const conceptService = { getEntitiesForConcepts: jest.fn().mockResolvedValue([]) };
+    const contentService = { getEntitiesForContents: jest.fn().mockResolvedValue([]) };
+    const itemService = { getEntitiesForItems: jest.fn().mockResolvedValue([]) };
+    const noteService = { getEntitiesForNotes: jest.fn().mockResolvedValue([]) };
+    const personService = { getEntitiesForPeople: jest.fn().mockResolvedValue([]) };
+    const placeService = { getEntitiesForPlaces: jest.fn().mockResolvedValue([]) };
+    const answerService = { getEntitiesForAnswers: jest.fn().mockResolvedValue([]) };
     const fileService = { getEntitiesForFiles: jest.fn().mockResolvedValue([]) };
     const fileChunkService = { getEntitiesForFileChunks: jest.fn().mockResolvedValue([]) };
     const resolver = new SearchResolver(
       browserActivityService as never,
       communicationService as never,
+      conceptService as never,
+      contentService as never,
       entityResolutionService as never,
       eventService as never,
       fileService as never,
       fileChunkService as never,
+      itemService as never,
+      noteService as never,
+      personService as never,
+      placeService as never,
+      answerService as never,
       savedSearchService as never,
       searchService as never,
       tagService as never,

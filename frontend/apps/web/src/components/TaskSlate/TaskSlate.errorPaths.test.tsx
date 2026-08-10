@@ -10,6 +10,10 @@ vi.mock('@/hooks', () => ({
   useAuth: () => [{ authToken: 'test-token' }],
 }));
 
+vi.mock('@/common/feature', () => ({
+  useFeatures: () => ({ isFeatureEnabled: () => false }),
+}));
+
 vi.mock('@/components/ChatWithAgent', () => ({
   ChatWithAgentMenu: () => null,
 }));

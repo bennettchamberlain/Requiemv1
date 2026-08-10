@@ -71,6 +71,35 @@ type ActivityCountsType {
   total: Int!
 }
 
+"""
+Optional filters applied to the activity heatmap — mirrors the Memory explorer search filters.
+"""
+input ActivityTimelineFiltersInput {
+  """Restrict to events from these connectors"""
+  connectors: [String!]
+
+  """Restrict to these event types (How filter)"""
+  eventTypes: [String!]
+
+  """Exclude these indexable entity types"""
+  excludeTypes: [String!]
+
+  """Include only these indexable entity types"""
+  includeTypes: [String!]
+
+  """Restrict to events mentioning these people"""
+  people: [String!]
+
+  """Restrict to events at these places"""
+  places: [String!]
+
+  """Free-text search query"""
+  query: String
+
+  """Restrict to entities carrying these tags"""
+  tags: [String!]
+}
+
 input AddPersonIdentifierInput {
   kind: String!
   label: String
@@ -1243,14 +1272,16 @@ type Query {
   actions(after: String, before: String, first: Int, last: Int): ActionConnection!
 
   """
-  Precomputed activity counts per local calendar day, with day boundaries in the user profile timezone. Eventually consistent: refreshed from the source tables every 15 minutes.
+  Precomputed activity counts per local calendar day, with day boundaries in the user profile timezone. Eventually consistent: refreshed from the source tables every 15 minutes. When filters are supplied, counts reflect the same Memory explorer constraints as the search results.
   """
   activityTimeline(
     """Inclusive last day, yyyy-MM-dd"""
     end: String!
 
-    """Restrict to these activity sources; all sources when omitted"""
-    sources: [String!]
+    """
+    Optional Memory explorer filters (entity types, tags, who/where/how, search query)
+    """
+    filters: ActivityTimelineFiltersInput
 
     """Inclusive first day, yyyy-MM-dd"""
     start: String!
@@ -1286,7 +1317,7 @@ type Query {
   events(after: String, before: String, first: Int, last: Int): EventConnection!
 
   """
-  Events overlapping [from, to) — calendar read path. Excludes cancelled/no-show; keeps tentative.
+  Events overlapping [from, to) — calendar read path. Excludes cancelled/no-show; keeps tentative. STOPGAP: excludes browser_activity source rows until schedule event policy is defined.
   """
   eventsInRange(from: DateTime!, to: DateTime!): [EventType!]!
 
