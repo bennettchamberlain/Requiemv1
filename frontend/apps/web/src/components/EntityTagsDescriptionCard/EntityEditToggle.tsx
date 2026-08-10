@@ -16,7 +16,7 @@ export function EntityEditToggle({ pressed, onPressedChange }: Props) {
   const { t } = useTranslation();
 
   return (
-    <Tooltip>
+    <Tooltip delayDuration={600}>
       <Tooltip.Content>{t('ENTITY_EDIT_TOGGLE')}</Tooltip.Content>
       {/* The span is load-bearing: Tooltip.Trigger writes its own `data-state`,
           and a Toggle placed directly inside it would have its on/off state

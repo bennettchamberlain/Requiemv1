@@ -56,6 +56,22 @@ describe('IconButton', () => {
     expect(screen.getByRole('button', { name: 'Save credentials' })).toBeDisabled();
   });
 
+  it('label wins over an aria-label that reaches it past the type', () => {
+    // `aria-label` is Omit-ed from IconButtonProps, so this needs a cast to compile —
+    // which is the point. The type stops the honest caller; this pins the runtime
+    // guarantee for the ones it can't see (untyped spreads, JS callers, casts), so
+    // the tooltip and the accessible name cannot disagree.
+    const sneaky = { 'aria-label': 'Something else' } as Record<string, unknown>;
+    render(
+      <IconButton label="Delete note" {...sneaky}>
+        <X />
+      </IconButton>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Delete note' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Something else' })).not.toBeInTheDocument();
+  });
+
   it('supports asChild for link triggers', () => {
     render(
       <IconButton label="Create connection" asChild>

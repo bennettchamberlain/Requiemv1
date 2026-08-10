@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 
 import { Tooltip } from '@ci/shadcn';
 import { File as FileIcon } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 
 import { gql, type FragmentType, useFragment } from '@/graphql';
 
@@ -20,7 +21,12 @@ export function GridItem({
   file: FragmentType<typeof FileGridItemFragment>;
   onSelect: (id: string) => void;
 }) {
+  const { t } = useTranslation();
   const file = useFragment(FileGridItemFragment, fileMasked);
+
+  // The filename itself is user data and goes in verbatim; only the fallback is
+  // copy, so only the fallback is keyed.
+  const name = file.filename || t('FILES_UNTITLED');
 
   const previewUrl = useMemo(() => {
     return file.previewUrl ? `/static${file.previewUrl}` : undefined;
@@ -29,12 +35,12 @@ export function GridItem({
   return (
     <div className="flex flex-col gap-1.5">
       <Tooltip delayDuration={600}>
-        <Tooltip.Content>{file.filename || 'Untitled'}</Tooltip.Content>
+        <Tooltip.Content>{name}</Tooltip.Content>
         <Tooltip.Trigger asChild>
           <button
             onClick={() => onSelect(file.id)}
             className="relative group aspect-square rounded-lg overflow-hidden border border-border bg-muted transition-transform hover:shadow-md w-full cursor-pointer"
-            aria-label={file.filename || 'Untitled'}
+            aria-label={name}
           >
             {previewUrl && (
               <img src={previewUrl} alt={file.filename || ''} className="w-full h-full object-cover" />

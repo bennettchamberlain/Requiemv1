@@ -3,7 +3,10 @@ import * as React from 'react';
 import { Button } from '../ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 
-interface IconButtonProps extends React.ComponentProps<typeof Button> {
+// `aria-label` is omitted so a caller cannot set it directly and split the accessible
+// name from the tooltip. Use `label` for both, or `tooltip` when the bubble needs to
+// read differently from the name.
+interface IconButtonProps extends Omit<React.ComponentProps<typeof Button>, 'aria-label'> {
   /**
    * Accessible name for the button. Drives both the tooltip text and `aria-label`,
    * so the hover affordance and the screen-reader name can never drift apart.
@@ -33,7 +36,9 @@ function IconButton({
   ...props
 }: IconButtonProps) {
   const button = (
-    <Button aria-label={label} size={size} {...props}>
+    // `aria-label` goes after the spread so it wins even if one reaches the runtime
+    // past the type — an untyped spread, a JS caller, a cast.
+    <Button size={size} {...props} aria-label={label}>
       {children}
     </Button>
   );
