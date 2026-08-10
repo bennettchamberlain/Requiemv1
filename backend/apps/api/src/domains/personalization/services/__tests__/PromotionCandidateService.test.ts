@@ -7,6 +7,7 @@ import type { AnswerService } from '@ci/domains/intelligence';
 
 import type { PromotionCandidateEntity } from '../../entities/PromotionCandidateEntity';
 import { PromotionCandidateService } from '../PromotionCandidateService';
+import type { PromotionReviewPromptService } from '../PromotionReviewPromptService';
 
 describe('PromotionCandidateService', () => {
   const context = { userId: 'user-1' };
@@ -18,6 +19,7 @@ describe('PromotionCandidateService', () => {
       {} as GraphIngestService,
       {} as AnswerService,
       { send: jest.fn() } as unknown as EventService,
+      { generate: jest.fn() } as unknown as PromotionReviewPromptService,
       { setContext() {}, log() {} } as unknown as LoggerService,
     );
   }

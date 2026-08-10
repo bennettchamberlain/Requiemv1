@@ -720,7 +720,6 @@ export class GraphEnrichmentService {
         confidence,
         evidence: input.relationships.map((r) => r.properties ?? {}),
         sourceJob: 'graph_enrich',
-        reviewPrompt: 'Companion found a possible relationship in your recent activity.',
       });
 
       return { entitiesProcessed: 0, relationshipsProcessed: 0, reviewQueued: 1, errors: [] };

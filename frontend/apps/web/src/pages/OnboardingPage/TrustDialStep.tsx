@@ -4,16 +4,20 @@ import type { OnboardingFormData } from './OnboardingPage';
 import { StepHeader } from './StepHeader';
 
 export const TRUST_OPTIONS = [
-  { value: 'cautious' as const, label: 'Cautious', hint: 'Ask before saving any inferred answer' },
+  {
+    value: 'cautious' as const,
+    label: 'Cautious',
+    hint: 'Ask before saving inferred answers or graph connections',
+  },
   {
     value: 'balanced' as const,
     label: 'Balanced',
-    hint: 'Strong inferences save automatically; others ask first',
+    hint: 'Strong inferences save automatically; connections and weaker guesses ask first',
   },
   {
     value: 'hands_off' as const,
     label: 'Hands-off',
-    hint: 'Save inferred answers automatically; auto-schedule when estimates are solid',
+    hint: 'Auto-apply solid inferences and moderately confident connections; low-confidence items still ask',
   },
 ];
 

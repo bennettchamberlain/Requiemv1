@@ -13,6 +13,11 @@ import {
 
 const DEFAULT_TRUST_MODE: TrustMode = 'balanced';
 
+/** Below this confidence, always ask the user before applying (all trust modes). */
+export const ALWAYS_REVIEW_BELOW_CONFIDENCE = 0.7;
+
+const GRAPH_CONNECTION_KINDS = new Set<PersonalizationActionKind>(['graph_edge', 'graph_entity']);
+
 @Injectable()
 export class PersonalizationService {
   private readonly profileCache = new Map<string, { profile: PersonalizationProfile; expiresAt: number }>();
@@ -123,6 +128,12 @@ export class PersonalizationService {
 
   static decide(profile: PersonalizationProfile, input: DecideActionInput): PersonalizationDecision {
     const { kind, confidence, hasUserInput = true } = input;
+    const isGraphConnection = GRAPH_CONNECTION_KINDS.has(kind);
+    const isLowConfidence = confidence < ALWAYS_REVIEW_BELOW_CONFIDENCE;
+
+    if (isLowConfidence && hasUserInput) {
+      return 'review';
+    }
 
     if (profile.trustMode === 'cautious') {
       if (kind === 'insights_generation' || kind === 'feed_action') {
@@ -133,10 +144,6 @@ export class PersonalizationService {
     }
 
     if (profile.trustMode === 'hands_off') {
-      if (kind === 'inferred_fact') {
-        return 'auto';
-      }
-
       if (kind === 'schedule_accept' && !profile.autoSchedule) {
         return confidence >= 0.9 ? 'auto' : 'review';
       }
@@ -144,23 +151,31 @@ export class PersonalizationService {
       return confidence >= profile.autoPromoteThreshold ? 'auto' : 'review';
     }
 
-    // balanced
+    // balanced — never auto-apply graph connections; only hands_off does at lower confidence.
+    if (isGraphConnection) {
+      return 'review';
+    }
+
     if (kind === 'schedule_accept') {
       return profile.autoSchedule && confidence >= 0.9 ? 'auto' : 'review';
+    }
+
+    if (kind === 'inferred_fact') {
+      return confidence >= profile.autoPromoteThreshold ? 'auto' : 'review';
     }
 
     if (confidence >= profile.autoPromoteThreshold) {
       return 'auto';
     }
 
-    if (hasUserInput && confidence >= profile.autoPromoteThreshold - 0.15) {
-      return 'review';
-    }
-
     return kind === 'insights_generation' || kind === 'feed_action' ? 'skip' : 'review';
   }
 
   static thresholdForKind(profile: PersonalizationProfile, kind: PersonalizationActionKind): number {
+    if (GRAPH_CONNECTION_KINDS.has(kind) && profile.trustMode !== 'hands_off') {
+      return 1;
+    }
+
     if (kind === 'schedule_accept') {
       return profile.autoSchedule ? 0.7 : 0.95;
     }
