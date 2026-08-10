@@ -1,3 +1,5 @@
+import { createRef } from 'react';
+
 import { IconButton } from '@ci/shadcn';
 import { X } from '@ci/shadcn/icons';
 import { fireEvent, render, screen } from '@testing-library/react';
@@ -70,6 +72,24 @@ describe('IconButton', () => {
 
     expect(screen.getByRole('button', { name: 'Delete note' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Something else' })).not.toBeInTheDocument();
+  });
+
+  it('attaches a ref to the real button element', () => {
+    // MediaLightbox focuses its close control through a ref. React 19 passes `ref`
+    // as an ordinary prop to function components, so it rides the spread onto
+    // Button — no forwardRef needed. Pinned because it is invisible until focus
+    // management silently stops working.
+    const ref = createRef<HTMLButtonElement>();
+    render(
+      <IconButton label="Close" ref={ref}>
+        <X />
+      </IconButton>,
+    );
+
+    expect(ref.current).toBeInstanceOf(HTMLButtonElement);
+    expect(ref.current).toBe(screen.getByRole('button', { name: 'Close' }));
+    ref.current?.focus();
+    expect(ref.current).toHaveFocus();
   });
 
   it('supports asChild for link triggers', () => {

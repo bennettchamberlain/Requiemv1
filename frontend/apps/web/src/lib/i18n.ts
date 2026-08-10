@@ -38,6 +38,11 @@ export function initI18n(): typeof i18n {
       // moment a regional file ships — fr.json would NOT match a fr-FR browser
       // under `currentOnly`. Switch to 'languageOnly' when adding locales.
       load: 'currentOnly',
+      // i18next otherwise defers the tail of init to a setTimeout, which would make
+      // the synchronous guarantee above merely usually-true: the first render could
+      // paint raw KEYs, and tests would depend on timing. Resources are bundled, so
+      // there is nothing to wait for.
+      initImmediate: false,
       react: { useSuspense: false },
       // React already escapes interpolated values; escaping again double-encodes
       // apostrophes and quotes in names that flow through {{...}} placeholders.
