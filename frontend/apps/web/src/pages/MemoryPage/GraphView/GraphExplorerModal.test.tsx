@@ -238,32 +238,39 @@ describe('GraphTabPanel (webbed-feet spike)', () => {
   it('switches to the 3D renderer and back, remembering the choice', async () => {
     renderShell();
 
-    // 2D SVG by default; no 3D canvas mounted (nor its three.js bundle loaded).
+    // 2D SVG by default; no 3D canvas mounted (nor its three.js bundle loaded). The toggle is a
+    // single button labelled with the dimension it switches TO.
     await waitFor(() => {
       expect(screen.getAllByTestId('force-node')).toHaveLength(OVERVIEW.nodes.length);
     });
     expect(screen.queryByTestId('graph-canvas-3d')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId('graph-dimension-3d'));
+    const toggle = screen.getByTestId('graph-dimension-toggle');
 
-    // Same display graph, different renderer.
+    expect(toggle).toHaveTextContent('3D');
+
+    fireEvent.click(toggle);
+
+    // Same display graph, different renderer; the toggle now offers the way back.
     const canvas3d = await screen.findByTestId('graph-canvas-3d');
 
     expect(canvas3d).toHaveAttribute('data-node-count', String(OVERVIEW.nodes.length));
     expect(canvas3d).toHaveAttribute('data-link-count', String(OVERVIEW.links.length));
     expect(screen.queryAllByTestId('force-node')).toHaveLength(0);
     expect(localStorage.getItem('ci-graph-view-dimension')).toBe('3d');
+    expect(toggle).toHaveTextContent('2D');
 
     // The shell chrome — stats line and legend — stays up over either renderer.
     expect(screen.getByText('3 entities · 2 connections')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId('graph-dimension-2d'));
+    fireEvent.click(toggle);
 
     await waitFor(() => {
       expect(screen.getAllByTestId('force-node')).toHaveLength(OVERVIEW.nodes.length);
     });
     expect(screen.queryByTestId('graph-canvas-3d')).not.toBeInTheDocument();
     expect(localStorage.getItem('ci-graph-view-dimension')).toBe('2d');
+    expect(toggle).toHaveTextContent('3D');
   });
 
   it('clears dialogs on a background click', async () => {

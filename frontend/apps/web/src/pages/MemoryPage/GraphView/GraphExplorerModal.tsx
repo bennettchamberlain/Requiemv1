@@ -671,38 +671,19 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
       </div>
 
       {/* Rendering dimension: a persisted preference, orthogonal to the overview/focus/search
-          modes. 3D loads its renderer on first use. */}
+          modes. One small button labelled with the dimension it switches TO; 3D loads its
+          renderer on first use. */}
       <div className="pointer-events-none absolute bottom-3 right-3 z-20">
-        <div
-          className="pointer-events-auto flex overflow-hidden rounded-md border bg-background/90 shadow-sm"
-          role="group"
-          aria-label="Graph rendering dimension"
+        <button
+          type="button"
+          data-testid="graph-dimension-toggle"
+          aria-label={is3D ? 'Switch to 2D graph' : 'Switch to 3D graph'}
+          title={is3D ? 'Switch to 2D' : 'Switch to 3D'}
+          onClick={() => handleDimensionChange(!is3D)}
+          className="pointer-events-auto rounded-md border bg-background/90 px-2.5 py-1 text-xs font-medium text-muted-foreground shadow-sm transition-colors hover:text-foreground"
         >
-          <button
-            type="button"
-            data-testid="graph-dimension-2d"
-            aria-pressed={!is3D}
-            onClick={() => handleDimensionChange(false)}
-            className={cn(
-              'px-2.5 py-1 text-xs font-medium transition-colors',
-              !is3D ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            2D
-          </button>
-          <button
-            type="button"
-            data-testid="graph-dimension-3d"
-            aria-pressed={is3D}
-            onClick={() => handleDimensionChange(true)}
-            className={cn(
-              'border-l px-2.5 py-1 text-xs font-medium transition-colors',
-              is3D ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            3D
-          </button>
-        </div>
+          {is3D ? '2D' : '3D'}
+        </button>
       </div>
 
       {displayGraph.nodes.length > 0 && (
