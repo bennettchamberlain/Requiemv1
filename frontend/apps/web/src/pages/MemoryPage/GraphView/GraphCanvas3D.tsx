@@ -92,6 +92,24 @@ const LABEL_FONT_PX = 30;
 /** World units per label-canvas pixel. */
 const LABEL_WORLD_PER_PX = 0.16;
 
+/** Effective theme: the explicit root class when present, the system preference otherwise. */
+function isDarkTheme(): boolean {
+  if (typeof document === 'undefined') {
+    return true;
+  }
+
+  const root = document.documentElement.classList;
+  if (root.contains('dark')) {
+    return true;
+  }
+
+  if (root.contains('light')) {
+    return false;
+  }
+
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true;
+}
+
 /**
  * Resolves a theme token to a literal color three.Color can eat, by letting the browser do the
  * resolving: paint a probe element with the token and read the computed rgb back. Rebuilding the
@@ -253,12 +271,14 @@ function GraphScene({
     controls.update();
   });
 
-  // Keyed to the selection state rather than the theme: selection changes are the moments the
-  // scene rebuilds anyway, so the label ink follows a theme change by the next interaction —
-  // the right economy for a spike.
-  const foregroundColor = useMemo(() => resolveThemeColor('--foreground', '#e2e8f0'), [selectedNodeId, threadKey]);
+  // Label ink is plain white-on-dark / black-on-light rather than a theme token — tinted
+  // foregrounds read as muddy at sprite sizes. Keyed to the selection state rather than the
+  // theme: selection changes are the moments the scene rebuilds anyway, so the ink follows a
+  // theme change by the next interaction — the right economy for a spike.
+  const dark = useMemo(() => isDarkTheme(), [selectedNodeId, threadKey]);
+  const labelColor = dark ? '#ffffff' : '#000000';
+  const haloColor = dark ? 'rgba(0, 0, 0, 0.75)' : 'rgba(255, 255, 255, 0.85)';
   const primaryColor = useMemo(() => resolveThemeColor('--primary', '#7dd3a8'), [selectedNodeId, threadKey]);
-  const haloColor = useMemo(() => resolveThemeColor('--background', '#0f172a'), [selectedNodeId, threadKey]);
 
   // Node objects rebuild whenever the selection state changes — that is what re-dresses emphasis
   // and dimming. At overview scale (<=150 nodes) a rebuild is cheap.
@@ -288,11 +308,7 @@ function GraphScene({
       group.add(sphere);
 
       if (node.labelled && !node.context && !dimmedByThread) {
-        const sprite = makeLabelSprite(
-          node.label,
-          isSelected || isCenter ? primaryColor : foregroundColor,
-          haloColor,
-        );
+        const sprite = makeLabelSprite(node.label, labelColor, haloColor);
         if (sprite) {
           sprite.position.set(0, radius + sprite.scale.y / 2 + 1.2, 0);
           group.add(sprite);
@@ -301,7 +317,7 @@ function GraphScene({
 
       return group;
     };
-  }, [threadKey, selectedNodeId, centerNodeId, primaryColor, foregroundColor, haloColor]);
+  }, [threadKey, selectedNodeId, centerNodeId, labelColor, haloColor]);
 
   // Non-thread links carry their own material so opacity can vary per link; the selected thread
   // returns null to take the library's default cylinder material, colored by linkColor below.
