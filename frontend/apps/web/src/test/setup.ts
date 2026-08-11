@@ -70,3 +70,26 @@ if (!Element.prototype.scrollIntoView) {
 // it just throws "Not implemented" when called, so a presence check would skip
 // the stub and leave the trace it exists to silence.
 window.scrollTo = () => {};
+
+// jsdom has no PointerEvent, so testing-library's fireEvent.pointerDown falls back to a bare
+// Event that carries no `button` or `clientX` — which silently fails any handler that checks
+// which button was pressed or where (the ForceGraph node drag). MouseEvent accepts the same
+// init fields, so pointer events synthesised through it carry real coordinates.
+if (!window.PointerEvent) {
+  class PointerEventPolyfill extends MouseEvent {
+    pointerId: number;
+
+    isPrimary: boolean;
+
+    pointerType: string;
+
+    constructor(type: string, init: PointerEventInit = {}) {
+      super(type, init);
+      this.pointerId = init.pointerId ?? 1;
+      this.isPrimary = init.isPrimary ?? true;
+      this.pointerType = init.pointerType ?? 'mouse';
+    }
+  }
+
+  vi.stubGlobal('PointerEvent', PointerEventPolyfill);
+}
