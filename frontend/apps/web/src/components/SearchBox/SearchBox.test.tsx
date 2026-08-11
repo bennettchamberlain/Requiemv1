@@ -70,12 +70,7 @@ describe('SearchBox', () => {
     const onSubmit = vi.fn();
     const onResultSelect = vi.fn();
     renderWithProviders(
-      <SearchBox
-        displayResults
-        results={RESULTS}
-        onSubmit={onSubmit}
-        onResultSelect={onResultSelect}
-      />,
+      <SearchBox displayResults results={RESULTS} onSubmit={onSubmit} onResultSelect={onResultSelect} />,
     );
 
     const input = screen.getByRole('textbox');
