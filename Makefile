@@ -183,9 +183,30 @@ LLAMA_CPP_PYTHON_REF := 81190b03f6d177988112dad5fc919491a77705d1
 # gfx target.
 AMDGPU_TARGETS ?= $(shell scripts/detect-gpu.sh --amdgpu-arch)
 
-# Passed only to the rocm image: the cpu and cuda Dockerfiles declare no such
-# ARG, and docker warns on a build-arg nothing consumes.
-HBPE_GPU_BUILD_ARGS = $(if $(filter rocm,$(GPU)),--build-arg AMDGPU_TARGETS=$(AMDGPU_TARGETS))
+# The flash-attn pin. Installed outside the lock for the same reason
+# llama-cpp-python is — it needs --no-build-isolation plus build-time
+# environment variables, neither of which uv can express in a manifest — so it
+# needs pinning here or not at all. It was the one unpinned dependency in the
+# repo: `uv pip install flash-attn` resolved to whatever was newest that day,
+# so two builds of the same commit could produce different images.
+#
+# CUDA only. flash-attn has no ROCm build, and the CPU image has no use for it.
+FLASH_ATTN_VERSION := 2.8.3.post1
+
+# Optional URL of a prebuilt flash-attn wheel, which skips a source compile of
+# tens of minutes. It must match the image's torch version, CUDA major and
+# C++11 ABI exactly; see the wheel notes in backend/apps/hbpe/Dockerfile.cuda
+# for the naming scheme and how to read those values off the image. Unset by
+# default because no wheel exists for every combination — there was none for
+# torch 2.13 when this was written.
+FLASH_ATTN_WHEEL ?=
+
+# Passed per hardware variant: each Dockerfile declares only the ARGs it uses,
+# and docker warns on a build-arg nothing consumes.
+HBPE_GPU_BUILD_ARGS = \
+	$(if $(filter rocm,$(GPU)),--build-arg AMDGPU_TARGETS=$(AMDGPU_TARGETS)) \
+	$(if $(filter cuda,$(GPU)),--build-arg FLASH_ATTN_VERSION=$(FLASH_ATTN_VERSION) \
+		$(if $(FLASH_ATTN_WHEEL),--build-arg FLASH_ATTN_WHEEL=$(FLASH_ATTN_WHEEL)))
 
 
 define BANNER

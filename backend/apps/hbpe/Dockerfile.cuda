@@ -9,23 +9,60 @@
 ARG UV_VERSION
 FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
 
-FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
+# CUDA 12.9 to match the torch wheels installed below. The two have to move
+# together: torch bundles its own CUDA runtime, but the flash-attn build
+# compiles against THIS image's nvcc and links torch's headers, so a base
+# older than the wheel's toolkit is how you get subtle build failures.
+#
+# 12.1 was the previous pin, alongside torch 2.2.0. That combination caps at
+# compute capability 9.0 — meaning no RTX 50-series at all — and predates
+# NumPy 2, which broke `import torch` during the flash-attn build.
+#
+# `-cudnn-` rather than the old `-cudnn8-`: NVIDIA dropped the version suffix
+# when cuDNN 9 became the default.
+FROM nvidia/cuda:12.9.2-cudnn-devel-ubuntu22.04
 
-# Install Python 3.11 and system dependencies
+# System dependencies. Python does NOT come from apt here — see below.
+#
+# tzdata is not incidental: the forecast API takes an IANA timezone from the
+# request and hands it to ZoneInfo, which reads /usr/share/zoneinfo and raises
+# ZoneInfoNotFoundError without it — surfacing as a misleading "400: Invalid
+# timezone" for a valid one. The CPU image inherits a zone database from its
+# Debian base; an Ubuntu vendor image ships none. DEBIAN_FRONTEND is set
+# because tzdata's postinst otherwise blocks on an interactive prompt.
+ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 \
-    python3.11-dev \
-    python3-pip \
     postgresql-client \
+    tzdata \
     build-essential \
     cmake \
     git \
     curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
-    && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=uv /uv /usr/local/bin/uv
+
+# ── Python 3.11 from uv, NOT from apt ─────────────────────────────────────────
+# Ubuntu 22.04 ships exactly one python3.11 and it is a RELEASE CANDIDATE:
+#
+#   $ apt-cache policy python3.11
+#   Candidate: 3.11.0~rc1-1~22.04
+#
+# rc1 predates the int/str conversion security fix that added
+# sys.get_int_max_str_digits, and torch._dynamo dereferences that attribute at
+# import time. Every optimiser construction routes through torch._compile,
+# which imports _dynamo, so training dies with `AttributeError: module 'sys'
+# has no attribute 'get_int_max_str_digits'` before it starts. This bit the
+# ROCm image in production; this one carried the same defect unexercised.
+#
+# uv's managed interpreters are python-build-standalone releases, so this is an
+# actual 3.11.x regardless of what the distro packaged. only-managed keeps it
+# deterministic — uv will not fall back to the distro's python3.10 or to a
+# reappearing rc1.
+ENV UV_PYTHON_INSTALL_DIR=/opt/python \
+    UV_PYTHON_PREFERENCE=only-managed
+
+RUN uv python install 3.11
 
 WORKDIR /app
 
@@ -39,16 +76,24 @@ ENV VIRTUAL_ENV=/app/.venv \
     MODELS_DIR=/app/models \
     HF_HOME=/app/models/hf_cache
 
-RUN useradd -m -u 1000 hbpe
+# Everything below /app is created BY hbpe rather than handed over afterwards.
+#
+# The `RUN chown -R hbpe:hbpe /app` this replaces rewrites every file into a new
+# layer — layers are copy-on-write per FILE, so a recursive ownership change
+# duplicates the whole venv byte for byte, differing only in its owner. It cost
+# 16.6 GB in the ROCm image and 1.7 GB in the CPU one, a third of the latter.
+RUN useradd -m -u 1000 hbpe && chown hbpe:hbpe /app
+
+USER hbpe
 
 # ── Locked dependencies ───────────────────────────────────────────────────────
 # See backend/apps/hbpe/Dockerfile for why only this image's own manifests
 # are copied and synced with --frozen. The lock pins torch to the PyTorch
 # CPU build on Linux, so this image excludes it from the sync and installs
 # the CUDA build from the hardware index below.
-COPY pyproject.toml uv.lock .python-version ./
-COPY backend/apps/hbpe/pyproject.toml ./backend/apps/hbpe/pyproject.toml
-COPY backend/packages/telemetry/pyproject.toml ./backend/packages/telemetry/pyproject.toml
+COPY --chown=hbpe:hbpe pyproject.toml uv.lock .python-version ./
+COPY --chown=hbpe:hbpe backend/apps/hbpe/pyproject.toml ./backend/apps/hbpe/pyproject.toml
+COPY --chown=hbpe:hbpe backend/packages/telemetry/pyproject.toml ./backend/packages/telemetry/pyproject.toml
 
 RUN uv sync --frozen --package ci-hbpe --no-install-workspace --no-dev \
     --no-install-package torch
@@ -58,9 +103,18 @@ RUN uv sync --frozen --package ci-hbpe --no-install-workspace --no-dev \
 # match the lock exactly, which means it removes anything the lock does not
 # mention — including everything installed here.
 
+# torch 2.13.0, the current release, from the CUDA 12.9 wheel index — matching
+# the base image above.
+#
+# The previous pin was 2.2.0 (Feb 2024, eleven minor versions back) and was the
+# root of three separate problems: it predates NumPy 2, so `import torch` failed
+# during the flash-attn build; no flash-attn wheel is published for it, forcing
+# a two-hour source compile; and its cu121 toolkit cannot target Blackwell.
+# The CPU and ROCm images already track 2.13.0 through the lock and the ROCm
+# index respectively, so this also brings the three back into line.
 RUN uv pip install --no-cache \
-    torch==2.2.0 torchvision \
-    --index-url https://download.pytorch.org/whl/cu121
+    torch==2.13.0 torchvision \
+    --index-url https://download.pytorch.org/whl/cu129
 
 # llama-cpp-python (JamePeng fork — required for Qwen3.5 support), the same
 # pinned commit every HBPE image builds (LLAMA_CPP_PYTHON_REF in the
@@ -74,14 +128,128 @@ RUN CMAKE_ARGS="-DGGML_CUDA=on" FORCE_CMAKE=1 \
 
 # Flash Attention 2 — used during Phase 2 HMT training only.
 # Requires torch to be pre-installed (hence the ordering).
-RUN uv pip install --no-cache flash-attn --no-build-isolation
+#
+# psutil first: flash-attn's setup.py imports it while deciding a build job
+# count, but never declares it as a build dependency. Isolation would normally
+# paper over that by resolving build requirements separately — but isolation is
+# exactly what has to be off here, since the build also needs the torch that is
+# already installed, and an isolated build would fetch its own. So the venv is
+# the build environment, and anything setup.py imports has to be in it.
+#
+# Without this the image does not build AT ALL — which is how it came to ship a
+# release-candidate Python (see above) unnoticed: nobody could get far enough
+# to run it.
+# MAX_JOBS bounds how many nvcc processes run at once. flash-attn picks this
+# itself by asking psutil how much memory is free, and picks it badly: on a
+# 24-core / 61 GB machine it chose 2, leaving the box 85% idle while a single
+# build ran for nearly two hours.
+#
+# DERIVED from the machine doing the build, not hard-coded — the right number
+# is a property of that host, and a constant would be wrong on every machine
+# except the one it was tuned on. Bounded by BOTH limits, because they bind on
+# different hardware: cores on a small VM, memory on a many-core box. Memory is
+# the dangerous one — overshooting gets the compiler OOM-killed an hour in,
+# rather than merely running slowly.
+#
+# 5 GiB per job comes from measurement: cicc peaked at ~3.7 GB RSS during this
+# image's own build, and nvcc holds its own allocation alongside. Deliberately
+# more generous than the measurement, since the cost of being wrong is
+# asymmetric — a job too few is minutes, an OOM kill is the whole build.
+#
+# `--build-arg MAX_JOBS=N` overrides the derivation. Note /proc/meminfo is not
+# cgroup-aware, so a memory-capped builder should pass one explicitly.
+# TORCH_CUDA_ARCH_LIST is the CUDA counterpart of PRUNE_GFX_ARCHS in
+# Dockerfile.rocm: without it flash-attn compiles kernels for every capability
+# the toolkit knows, most of which this appliance will never meet.
+#
+# The default keeps the CONSUMER parts and drops the datacenter ones, the same
+# split applied to ROCm:
+#
+#   8.6  RTX 3060-3090        keep      8.0  A100          drop
+#   8.9  RTX 4060-4090        keep      9.0  H100 / H200   drop
+#   12.0 RTX 50-series        keep      8.7  Jetson Orin   drop (embedded)
+#
+# Anything below 8.0 is excluded by FlashAttention-2 itself, which requires
+# Ampere or newer — so Turing and Pascal are out regardless of this list.
+#
+# FILTERED against `nvcc --list-gpu-arch` rather than trusted blindly: the
+# supported set is a property of whatever CUDA the base image ships, and 12.0
+# in particular only exists from 12.8 onwards. A base downgrade would otherwise
+# fail deep inside the compile with an unhelpful message; this drops the
+# unsupported entry and says so.
+# ── Skipping the compile with a prebuilt wheel ────────────────────────────────
+# The source build below takes tens of minutes. Dao-AILab publishes prebuilt
+# wheels, and when one matches this image exactly, FLASH_ATTN_WHEEL installs it
+# in seconds instead:
+#
+#   docker build --build-arg FLASH_ATTN_WHEEL=<url> ...
+#
+# The wheels live on the GitHub release for the version, and the filename
+# encodes every dimension it must agree with:
+#
+#   https://github.com/Dao-AILab/flash-attention/releases/download/v<VER>/
+#     flash_attn-<VER>+cu12torch<T>cxx11abi<ABI>-cp311-cp311-linux_x86_64.whl
+#            └ version   └ CUDA  └ torch  └ C++11 ABI   └ python  └ platform
+#                          major    X.Y     TRUE/FALSE
+#
+# Every field has to match or the extension will not import — it links against
+# torch's C++ symbols. Read them off the image rather than guessing:
+#
+#   docker run --rm <image> python -c "import torch; print(torch.__version__, \
+#     torch.version.cuda, torch._C._GLIBCXX_USE_CXX11_ABI)"
+#
+# The ABI flag is the one people get wrong: it is a property of how that torch
+# wheel was compiled, not of this image, and it has flipped between releases.
+# A mismatched wheel installs cleanly and then fails at `import flash_attn`
+# with an undefined-symbol error naming a mangled C++ name.
+#
+# There is no wheel for every combination. torch 2.13 had none when this was
+# written, which is why the source build is the default rather than the
+# fallback — check the release page before assuming one exists.
+ARG FLASH_ATTN_WHEEL=""
+ARG MAX_JOBS
+ARG TORCH_CUDA_ARCH_LIST="8.6;8.9;12.0"
+RUN set -eu; \
+    jobs="${MAX_JOBS:-}"; \
+    if [ -z "$jobs" ]; then \
+      cores="$(nproc)"; \
+      mem_gib="$(awk '/MemAvailable/ {printf "%d", $2 / 1024 / 1024}' /proc/meminfo)"; \
+      by_mem="$((mem_gib / 5))"; \
+      if [ "$by_mem" -lt 1 ]; then by_mem=1; fi; \
+      if [ "$cores" -lt "$by_mem" ]; then jobs="$cores"; else jobs="$by_mem"; fi; \
+      echo "flash-attn parallelism derived: ${cores} cores, ${mem_gib} GiB available -> MAX_JOBS=${jobs}"; \
+    else \
+      echo "flash-attn parallelism from build arg: MAX_JOBS=${jobs}"; \
+    fi; \
+    supported="$(nvcc --list-gpu-arch | sed 's/compute_\(.*\)\(.\)$/\1.\2/')"; \
+    kept=""; \
+    for arch in $(echo "$TORCH_CUDA_ARCH_LIST" | tr ';' ' '); do \
+      if echo "$supported" | grep -qx "$arch"; then \
+        kept="${kept:+$kept;}$arch"; \
+      else \
+        echo "WARNING: dropping CUDA arch $arch — not supported by this image's nvcc"; \
+      fi; \
+    done; \
+    if [ -z "$kept" ]; then \
+      echo "ERROR: no requested CUDA arch is supported by this nvcc; supported: $(echo $supported | tr '\n' ' ')"; \
+      exit 1; \
+    fi; \
+    echo "flash-attn building for CUDA arch: $kept (MAX_JOBS=$jobs)"; \
+    export MAX_JOBS="$jobs" TORCH_CUDA_ARCH_LIST="$kept"; \
+    if [ -n "${FLASH_ATTN_WHEEL:-}" ]; then \
+      echo "flash-attn from prebuilt wheel: $FLASH_ATTN_WHEEL"; \
+      uv pip install --no-cache "$FLASH_ATTN_WHEEL"; \
+    else \
+      uv pip install --no-cache psutil; \
+      uv pip install --no-cache "flash-attn==${FLASH_ATTN_VERSION:?set by make build}" --no-build-isolation; \
+    fi
 
 COPY LICENSE.md /LICENSE.md
 
 # ── Application code ──────────────────────────────────────────────────────────
-COPY backend/apps/hbpe/src ./backend/apps/hbpe/src
-COPY backend/packages/telemetry/src ./backend/packages/telemetry/src
-COPY --chmod=755 backend/apps/hbpe/entrypoint.sh ./entrypoint.sh
+COPY --chown=hbpe:hbpe backend/apps/hbpe/src ./backend/apps/hbpe/src
+COPY --chown=hbpe:hbpe backend/packages/telemetry/src ./backend/packages/telemetry/src
+COPY --chown=hbpe:hbpe --chmod=755 backend/apps/hbpe/entrypoint.sh ./entrypoint.sh
 
 # `uv pip install`, not a second `uv sync`, because sync would prune the
 # GPU-specific packages installed above. --no-deps because the dependencies
@@ -92,8 +260,6 @@ RUN uv pip install --no-cache --no-deps ./backend/packages/telemetry ./backend/a
 RUN mkdir -p /app/models/qwen \
              /app/data/token_corpus \
              /app/data/artifacts
-
-RUN chown -R hbpe:hbpe /app
 
 USER hbpe
 
