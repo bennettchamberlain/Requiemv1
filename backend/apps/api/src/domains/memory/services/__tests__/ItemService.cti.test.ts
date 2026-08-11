@@ -40,6 +40,10 @@ function makeHarness() {
     update: jest.fn(async () => ({ affected: 1 })),
     delete: jest.fn(async () => ({ affected: 1 })),
     find: jest.fn(async () => [] as ItemBaseEntity[]),
+    // update/remove trail reads the base name inside the aggregate transaction.
+    findOne: jest.fn(async ({ where: { id } }: { where: { id: string } }) =>
+      Object.assign(new ItemBaseEntity(), { id, name: 'Camera' }),
+    ),
     metadata: { target: ItemBaseEntity, columns: { length: 10 } },
     createQueryBuilder: jest.fn(() => makeInsertBuilder(baseInsert)),
   };
@@ -66,6 +70,12 @@ function makeHarness() {
     logger as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     { send } as any,
+    {
+      entityCreated: jest.fn(async () => undefined),
+      entityUpdated: jest.fn(async () => undefined),
+      entityDeleted: jest.fn(async () => undefined),
+      recordMany: jest.fn(async () => undefined),
+    } as any, // eslint-disable-line @typescript-eslint/no-explicit-any
   );
 
   return { service, detailRepo, baseRepo, baseInsert, send };

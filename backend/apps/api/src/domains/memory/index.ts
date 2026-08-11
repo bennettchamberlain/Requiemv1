@@ -32,6 +32,7 @@ import { BaseEntity } from './entities/BaseEntity';
 import { CommunicationBaseEntity } from './entities/CommunicationBaseEntity';
 import { type Communication, CommunicationEntity } from './entities/CommunicationEntity';
 import { type Concept, ConceptEntity } from './entities/ConceptEntity';
+import { ContentBaseEntity } from './entities/ContentBaseEntity';
 import { ContentEntity } from './entities/ContentEntity';
 import { EntityMergeBlockEntity } from './entities/EntityMergeBlockEntity';
 import { EventBaseEntity } from './entities/EventBaseEntity';
@@ -65,6 +66,7 @@ import { ContentService } from './services/ContentService';
 import { EntityMergeBlockService } from './services/EntityMergeBlockService';
 import { EventService } from './services/EventService';
 import { FileService } from './services/FileService';
+import { GraphDeltaWriter } from './services/GraphDeltaWriter';
 import { GraphEventService } from './services/GraphEventService';
 import { GraphQueryService } from './services/GraphQueryService';
 import { GraphReadService } from './services/GraphReadService';
@@ -88,6 +90,7 @@ import { UserContextService } from './services/UserContextService';
       CommunicationEntity,
       CommunicationBaseEntity,
       ContentEntity,
+      ContentBaseEntity,
       EventEntity,
       EventBaseEntity,
       PersonEntity,
@@ -113,6 +116,7 @@ import { UserContextService } from './services/UserContextService';
     SearchNextModule,
   ],
   providers: [
+    GraphDeltaWriter,
     CommunicationService,
     ContentService,
     EventService,
@@ -137,6 +141,7 @@ import { UserContextService } from './services/UserContextService';
   exports: [
     CommunicationService,
     ContentService,
+    GraphDeltaWriter,
     EventService,
     GraphEventService,
     ItemService,
@@ -166,6 +171,7 @@ export {
   CommunicationEntity,
   CommunicationBaseEntity,
   ContentEntity,
+  ContentBaseEntity,
   EventEntity,
   EventBaseEntity,
   ItemEntity,
@@ -184,6 +190,7 @@ export {
 // Services
 export {
   ContentService,
+  GraphDeltaWriter,
   EventService,
   CommunicationService,
   GraphEventService,
