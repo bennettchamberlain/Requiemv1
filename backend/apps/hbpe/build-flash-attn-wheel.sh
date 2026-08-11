@@ -21,13 +21,21 @@
 #
 # Usage:
 #   ./build-flash-attn-wheel.sh
-#   FLASH_ATTN_LOCAL_VERSION=cu12torch2.13cxx11abiTRUE ./build-flash-attn-wheel.sh
 #
-# FLASH_ATTN_LOCAL_VERSION stamps the +cu12torch... tag into both the filename
-# and the METADATA. Without it a forced source build emits a plain
-# flash_attn-<ver>-cp311-cp311-linux_x86_64.whl, because setup.py applies that
-# tag only on its download path. Renaming the file afterwards does NOT work —
-# pip compares the filename version against METADATA and rejects the mismatch.
+# The +cu12torch2.13cxx11abiTRUE local version is DERIVED inside the build from
+# the image's own torch, CUDA, ABI and Python, and stamped into both the
+# filename and the METADATA via FLASH_ATTN_LOCAL_VERSION. Without it a forced
+# source build emits a plain flash_attn-<ver>-cp311-cp311-linux_x86_64.whl,
+# because setup.py applies that tag only on its download path. Renaming the file
+# afterwards does NOT work — pip compares the filename version against METADATA.
+#
+# Deriving it rather than passing it is the point: the tag is a claim about
+# which torch/CUDA/ABI the wheel is married to, and a hand-typed one goes stale
+# the first time a pin moves — bump torch and reuse last month's command and you
+# stamp the old tag on a correctly-built wheel, which is worse than no tag at
+# all, because the name is what the next person trusts. Setting
+# FLASH_ATTN_LOCAL_VERSION explicitly still works but is checked against the
+# image and fails the build if it disagrees.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
@@ -90,13 +98,24 @@ RUN set -eu; \
       else echo "WARNING: dropping CUDA arch $arch — unsupported by this nvcc"; fi; \
     done; \
     [ -n "$kept" ] || { echo "ERROR: no requested CUDA arch supported"; exit 1; }; \
-    echo "flash-attn wheel: arch=$kept MAX_JOBS=$jobs NVCC_THREADS=${NVCC_THREADS}" \
-         "LOCAL_VERSION=${FLASH_ATTN_LOCAL_VERSION:-<none>}"; \
-    export MAX_JOBS="$jobs" NVCC_THREADS="${NVCC_THREADS}" TORCH_CUDA_ARCH_LIST="$kept" \
-           FLASH_ATTENTION_FORCE_BUILD=TRUE; \
-    if [ -n "${FLASH_ATTN_LOCAL_VERSION:-}" ]; then \
-      export FLASH_ATTN_LOCAL_VERSION; \
+    derived="$(python -c "import torch; print('cu%storch%scxx11abi%s' % (torch.version.cuda.split('.')[0], '.'.join(torch.__version__.split('+')[0].split('.')[:2]), str(torch._C._GLIBCXX_USE_CXX11_ABI).upper()))")"; \
+    if [ -z "${FLASH_ATTN_LOCAL_VERSION:-}" ]; then \
+      FLASH_ATTN_LOCAL_VERSION="$derived"; \
+      echo "local version derived from the image: $FLASH_ATTN_LOCAL_VERSION"; \
+    elif [ "$FLASH_ATTN_LOCAL_VERSION" != "$derived" ]; then \
+      echo "ERROR: --build-arg FLASH_ATTN_LOCAL_VERSION=$FLASH_ATTN_LOCAL_VERSION"; \
+      echo "       but this image is  $derived"; \
+      echo "       The tag names the torch/CUDA/ABI a wheel is married to. Stamping"; \
+      echo "       one that disagrees with the image that built it produces a wheel"; \
+      echo "       that lies about itself — worse than the untagged wheel, because"; \
+      echo "       the name is what the next person will trust. Omit the variable"; \
+      echo "       and it is derived correctly."; \
+      exit 1; \
     fi; \
+    echo "flash-attn wheel: arch=$kept MAX_JOBS=$jobs NVCC_THREADS=${NVCC_THREADS}" \
+         "LOCAL_VERSION=$FLASH_ATTN_LOCAL_VERSION"; \
+    export MAX_JOBS="$jobs" NVCC_THREADS="${NVCC_THREADS}" TORCH_CUDA_ARCH_LIST="$kept" \
+           FLASH_ATTENTION_FORCE_BUILD=TRUE FLASH_ATTN_LOCAL_VERSION="$FLASH_ATTN_LOCAL_VERSION"; \
     uv pip install --no-cache psutil ninja pip setuptools wheel; \
     mkdir -p /tmp/wheels; \
     python -m pip wheel --no-cache-dir --no-build-isolation --no-deps \
