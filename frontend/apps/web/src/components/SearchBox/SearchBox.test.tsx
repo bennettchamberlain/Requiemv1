@@ -52,7 +52,7 @@ describe('SearchBox', () => {
     expect(onResultSelect).toHaveBeenCalledWith(RESULTS[1]);
   });
 
-  it('selects the highlighted result with arrow keys + Enter', () => {
+  it('selects the highlighted result with arrow keys + Enter when onSubmit is omitted', () => {
     const onResultSelect = vi.fn();
     renderWithProviders(<SearchBox displayResults results={RESULTS} onResultSelect={onResultSelect} />);
 
@@ -64,6 +64,28 @@ describe('SearchBox', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
 
     expect(onResultSelect).toHaveBeenCalledWith(RESULTS[0]);
+  });
+
+  it('submits the exact typed query on Enter even when a result is highlighted', () => {
+    const onSubmit = vi.fn();
+    const onResultSelect = vi.fn();
+    renderWithProviders(
+      <SearchBox
+        displayResults
+        results={RESULTS}
+        onSubmit={onSubmit}
+        onResultSelect={onResultSelect}
+      />,
+    );
+
+    const input = screen.getByRole('textbox');
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'hanzla' } });
+    fireEvent.keyDown(input, { key: 'ArrowDown' }); // would otherwise activate a row
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onSubmit).toHaveBeenCalledWith({ query: 'hanzla' });
+    expect(onResultSelect).not.toHaveBeenCalled();
   });
 
   it('keeps the highlight on the same row (by id) across a results refresh', () => {

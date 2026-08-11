@@ -173,8 +173,10 @@ interface Props {
   onPanelUnpin?: () => void;
   onSearch?: (data: FormData & { entityDropdowns?: string[] }) => boolean | void | Promise<boolean | void>;
   /**
-   * Explicit submit (Enter with no result highlighted). Falls back to `onSearch`
-   * when omitted, so existing callers keep their submit behavior.
+   * Explicit submit. When provided, Enter/Return always commits the exact input
+   * value (highlighted suggestion rows are click-only). Falls back to `onSearch`
+   * when omitted, so existing callers keep their submit behavior — and Enter
+   * still activates a highlighted result when there is no `onSubmit`.
    */
   onSubmit?: (data: FormData) => void;
   onKeyDown?: (query: string, e: React.KeyboardEvent<HTMLInputElement>) => void;
@@ -328,9 +330,9 @@ function SearchBox(
     [form, onSearch, disabled],
   );
 
-  // Form submit (Enter with no result highlighted). Prefer the explicit `onSubmit`
-  // callback; fall back to the live `onSearch` so callers that only pass the latter
-  // keep their existing behavior.
+  // Form submit (click the submit control, or Enter when onSubmit is omitted and
+  // nothing is highlighted). Prefer the explicit `onSubmit` callback; fall back
+  // to the live `onSearch` so callers that only pass the latter keep working.
   const handleFormSubmit = useCallback(
     async (data: FormData) => {
       if (disabled) {
@@ -427,6 +429,22 @@ function SearchBox(
           break;
 
         case Keys.ENTER:
+          // Global search (and any caller with onSubmit) must commit exactly what
+          // the user typed. Do not activate a highlighted row — the dropdown puts
+          // actions like "Clear search query" above "Search for …", so ArrowDown
+          // + Enter (or a sticky highlight) felt like the bar just closed.
+          if (onSubmit) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const submitted = (e.target as HTMLInputElement).value;
+            onSubmit({ query: submitted });
+            setSelectedIndex(-1);
+            setPanelDismissed(true);
+
+            break;
+          }
+
           if (selectedIndex >= 0 && selectedIndex < results.length) {
             e.preventDefault();
             e.stopPropagation();
@@ -483,6 +501,7 @@ function SearchBox(
       panelPinned,
       onPanelUnpin,
       onResultSelect,
+      onSubmit,
       selectedResult,
       onFilterAdd,
       handleClear,
