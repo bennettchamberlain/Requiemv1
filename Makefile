@@ -164,6 +164,14 @@ UV_VERSION := $(shell sed -n 's/^required-version = "==\(.*\)"$$/\1/p' pyproject
 # Bump deliberately: the fork moves fast and is our inference stack.
 LLAMA_CPP_PYTHON_REF := 81190b03f6d177988112dad5fc919491a77705d1
 
+# The version the fork reports AT that ref, which is not derivable from it —
+# it comes from the fork's own metadata and is only known after a build. Its one
+# job is to name the published wheel, so BUMP IT WITH THE REF ABOVE: get it from
+# the filename build-llama-cpp-wheel.sh exports into dist-llama/. Wrong here and
+# the default wheel tag points at nothing, which fails the pull loudly rather
+# than installing anything incorrect.
+LLAMA_CPP_PYTHON_VERSION := 0.3.46
+
 # The AMD gfx architecture llama.cpp's HIP backend compiles for, detected from
 # this host (gfx1100 on an RX 7900, gfx1030 on a 6800/6900). Empty is a valid
 # answer and means "let llama.cpp pick its default target list"; pass
@@ -201,12 +209,74 @@ FLASH_ATTN_VERSION := 2.8.3.post1
 # torch 2.13 when this was written.
 FLASH_ATTN_WHEEL ?=
 
+# ── Prebuilt wheel images, and the tags that name them ────────────────────────
+# Both expensive CUDA compiles come from FROM-scratch images on GHCR, published
+# by backend/apps/hbpe/build-{flash-attn,llama-cpp}-wheel.sh and copied in by
+# Dockerfile.cuda. Measured 2026-08-11 on a 24-core desktop: with both wheels a
+# full `make build GPU=cuda` is 13.3 s, against ~71 min for the flash-attn
+# source compile and 278 s for llama-cpp's.
+#
+# Images rather than URLs because they survive access control: both packages are
+# public today and pull anonymously, but if either were made private, docker
+# authenticates to the registry on its own, where a private URL would need a
+# token passed as a build arg and baked into image history.
+#
+# THE TAGS ARE COMPOSED FROM THE PINS THEY DESCRIBE, not written out. A literal
+# tag would survive a pin bump and quietly install the wheel built for the
+# PREVIOUS pin — the build-time guards do not cover this: flash-attn's checks the
+# ABI but not the version, and llama-cpp's checks the CUDA architectures but not
+# the fork ref. Composed, a bump nobody has republished for produces a tag that
+# does not exist, and the build fails at the pull with `manifest unknown`. That
+# is the intended behaviour: a loud "republish the wheel" beats a silently wrong
+# image. Republish with `PUSH=1 ./backend/apps/hbpe/build-<name>-wheel.sh`.
+#
+# Each component is read from the file that owns it. `:=` so the seds run once
+# per make invocation rather than once per expansion.
+HBPE_TORCH_VERSION := $(shell sed -n 's/^ *torch==\([0-9.]*\).*/\1/p' backend/apps/hbpe/Dockerfile.cuda | head -1)
+HBPE_CUDA_MAJOR    := $(shell sed -n 's|^FROM nvidia/cuda:\([0-9]*\)\..*|\1|p' backend/apps/hbpe/Dockerfile.cuda | head -1)
+HBPE_CUDA_ARCHS    := $(shell sed -n 's/^ARG TORCH_CUDA_ARCH_LIST="\(.*\)"$$/\1/p' backend/apps/hbpe/Dockerfile.cuda)
+HBPE_PY_VERSION    := $(shell sed -n 's/^RUN uv python install \([0-9.]*\) *$$/\1/p' backend/apps/hbpe/Dockerfile.cuda | head -1)
+HBPE_PY_TAG        := cp$(subst .,,$(HBPE_PY_VERSION))
+
+# torch's local-version segment is MAJOR.MINOR — `basename` drops the patch,
+# turning 2.13.0 into the 2.13 that setup.py stamps into the wheel name.
+HBPE_TORCH_MINOR   := $(basename $(HBPE_TORCH_VERSION))
+# 8.6;8.9;12.0 -> sm86_89_120. Underscores because dots would read as a version.
+HBPE_ARCH_TAG      := sm$(subst ;,_,$(subst .,,$(HBPE_CUDA_ARCHS)))
+
+# The C++11 ABI flag is the one component NOT derived: it is a property of how
+# the torch wheel was compiled, readable only from an installed torch, and it
+# HAS flipped between releases. If it ever flips again this tag keeps naming the
+# old wheel, and the backstop is flash-attn's build-time import of
+# flash_attn_2_cuda, which fails on an undefined symbol — loud, just later than
+# a failed pull would be.
+HBPE_TORCH_ABI     := cxx11abitrue
+
+FLASH_ATTN_WHEEL_IMAGE ?= ghcr.io/companionintelligence/companion/flash-attn-wheel:$(FLASH_ATTN_VERSION)-cu$(HBPE_CUDA_MAJOR)torch$(HBPE_TORCH_MINOR)$(HBPE_TORCH_ABI)-$(HBPE_PY_TAG)
+LLAMA_CPP_WHEEL_IMAGE  ?= ghcr.io/companionintelligence/companion/llama-cpp-wheel:$(LLAMA_CPP_PYTHON_VERSION)-$(shell echo $(LLAMA_CPP_PYTHON_REF) | cut -c1-12)-cu$(HBPE_CUDA_MAJOR)-$(HBPE_ARCH_TAG)-$(HBPE_PY_TAG)
+
+# Set either to empty to force the source compile:
+#   make build GPU=cuda FLASH_ATTN_WHEEL_IMAGE= LLAMA_CPP_WHEEL_IMAGE=
+#
+# A sed that stops matching would leave its component empty and compose a
+# plausible-looking tag with a hole in it, so the components are checked rather
+# than trusted. Only under GPU=cuda: the other two variants never read them, and
+# a restructured Dockerfile.cuda should not break a ROCm build.
+ifeq ($(GPU),cuda)
+$(if $(HBPE_TORCH_VERSION),,$(error could not read the torch pin from backend/apps/hbpe/Dockerfile.cuda))
+$(if $(HBPE_CUDA_MAJOR),,$(error could not read the CUDA major from the FROM line in backend/apps/hbpe/Dockerfile.cuda))
+$(if $(HBPE_CUDA_ARCHS),,$(error could not read ARG TORCH_CUDA_ARCH_LIST from backend/apps/hbpe/Dockerfile.cuda))
+$(if $(HBPE_PY_VERSION),,$(error could not read the python version from backend/apps/hbpe/Dockerfile.cuda))
+endif
+
 # Passed per hardware variant: each Dockerfile declares only the ARGs it uses,
 # and docker warns on a build-arg nothing consumes.
 HBPE_GPU_BUILD_ARGS = \
 	$(if $(filter rocm,$(GPU)),--build-arg AMDGPU_TARGETS=$(AMDGPU_TARGETS)) \
 	$(if $(filter cuda,$(GPU)),--build-arg FLASH_ATTN_VERSION=$(FLASH_ATTN_VERSION) \
-		$(if $(FLASH_ATTN_WHEEL),--build-arg FLASH_ATTN_WHEEL=$(FLASH_ATTN_WHEEL)))
+		$(if $(FLASH_ATTN_WHEEL),--build-arg FLASH_ATTN_WHEEL=$(FLASH_ATTN_WHEEL)) \
+		$(if $(FLASH_ATTN_WHEEL_IMAGE),--build-arg FLASH_ATTN_WHEEL_IMAGE=$(FLASH_ATTN_WHEEL_IMAGE)) \
+		$(if $(LLAMA_CPP_WHEEL_IMAGE),--build-arg LLAMA_CPP_WHEEL_IMAGE=$(LLAMA_CPP_WHEEL_IMAGE)))
 
 
 define BANNER

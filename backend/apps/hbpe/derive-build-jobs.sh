@@ -28,7 +28,7 @@
 set -eu
 
 label="${1:-build}"
-reserve="${BUILD_RESERVE_GIB:-16}"
+reserve="${BUILD_RESERVE_GIB:-8}"
 per_job="${GIB_PER_JOB:-${2:-8}}"
 
 if [ -n "${MAX_JOBS:-}" ]; then
