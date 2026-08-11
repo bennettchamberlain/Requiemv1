@@ -2,7 +2,7 @@
 Summary Tokenizer — labels hourly summaries with L0+L1 via Qwen and returns
 token records for inclusion in the HMT token stream.
 
-Hourly summaries from ci.summaries cover 4 × 15-min buckets each.  Where a
+Hourly summaries from ci.summaries cover 2 × 30-min buckets each.  Where a
 bucket has no event-derived token, a summary-derived token fills the gap,
 giving the model signal for hours that contain no calendar events (sleep,
 leisure, off-calendar work, commutes).
@@ -123,8 +123,8 @@ class SummaryTokenizer:
         """
         Return L0+L1 token records from labeled summaries for this date.
 
-        Each hourly summary maps to 4 consecutive 15-min buckets (e.g.
-        period_start 14:00 → buckets 56–59).  Records use the same shape
+        Each hourly summary maps to 2 consecutive 30-min buckets (e.g.
+        period_start 14:00 → buckets 28–29).  Records use the same shape
         as those returned by _fetch_tokens_for_day() in serializer.py.
         """
         from ci.hbpe.data_client import get_labeled_summaries
@@ -164,7 +164,7 @@ def _build_summary_tokens(rows: list[dict]) -> list[dict]:
     """
     Convert labeled summary rows into token records.
 
-    Each hourly summary spans 4 consecutive 15-min buckets.  All buckets
+    Each hourly summary spans 2 consecutive 30-min buckets.  All buckets
     receive the same L0+L1 token at SUMMARY_SOFT_PROB confidence.
     Rows must have keys: l0_class, l1_cluster_id, period_start.
     """

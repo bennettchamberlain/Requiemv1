@@ -826,7 +826,7 @@ export type ForecastBucketType = {
   startTime: Scalars['String']['output'];
 };
 
-/** 96-bucket (15-min) HBPE day-ahead forecast */
+/** 48-bucket (30-min) HBPE day-ahead forecast */
 export type ForecastType = {
   __typename?: 'ForecastType';
   buckets: Array<ForecastBucketType>;
