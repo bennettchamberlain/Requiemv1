@@ -90,27 +90,48 @@ const WEAK_TIE_THRESHOLD = 0.35;
 const WORLD_RADIUS_SCALE = 0.55;
 const LABEL_FONT_PX = 30;
 /** World units per label-canvas pixel. */
-const LABEL_WORLD_PER_PX = 0.14;
+const LABEL_WORLD_PER_PX = 0.16;
 
 /**
- * The shadcn tokens store raw HSL components ("158 40% 84%") for use as `hsl(var(--primary))`.
- * three.Color cannot read a CSS var, so resolve the components and rebuild a literal color.
+ * Resolves a theme token to a literal color three.Color can eat, by letting the browser do the
+ * resolving: paint a probe element with the token and read the computed rgb back. Rebuilding the
+ * color by string ("hsl(<raw components>)") breaks silently the moment a token is authored in any
+ * other format — the invalid string parses to black, which on the dark canvas is an invisible
+ * label. The probe works whatever the token holds.
  */
 function resolveThemeColor(variable: string, fallback: string): string {
   if (typeof document === 'undefined') {
     return fallback;
   }
 
-  const raw = getComputedStyle(document.documentElement).getPropertyValue(variable).trim();
-  if (!raw) {
-    return fallback;
-  }
+  const probe = document.createElement('span');
+  probe.style.display = 'none';
 
-  return `hsl(${raw.split(/\s+/).join(', ')})`;
+  document.body.appendChild(probe);
+  try {
+    // shadcn tokens hold raw HSL components (used as `hsl(var(--x))`); tokens holding a full
+    // color only resolve bare. Try both — an invalid value leaves `color` empty.
+    for (const expression of [`hsl(var(${variable}))`, `var(${variable})`]) {
+      probe.style.color = '';
+      probe.style.color = expression;
+      const resolved = getComputedStyle(probe).color;
+      if (resolved && resolved !== 'rgba(0, 0, 0, 0)' && probe.style.color !== '') {
+        return resolved;
+      }
+    }
+
+    return fallback;
+  } finally {
+    probe.remove();
+  }
 }
 
-/** Billboard label sprite, drawn once into a canvas texture sized to the text. */
-function makeLabelSprite(text: string, color: string): Sprite | null {
+/**
+ * Billboard label sprite: text with a background-colored halo, drawn once into a canvas texture.
+ * Rendered on top (no depth test) — a label a sphere or a link can occlude is a label that
+ * cannot be read from half the orbit angles.
+ */
+function makeLabelSprite(text: string, color: string, haloColor: string): Sprite | null {
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d');
   if (!context) {
@@ -119,7 +140,7 @@ function makeLabelSprite(text: string, color: string): Sprite | null {
 
   const font = `600 ${LABEL_FONT_PX}px Inter, system-ui, sans-serif`;
   context.font = font;
-  const padding = 10;
+  const padding = 12;
   canvas.width = Math.max(2, Math.ceil(context.measureText(text).width) + padding * 2);
   canvas.height = LABEL_FONT_PX + padding * 2;
 
@@ -127,13 +148,20 @@ function makeLabelSprite(text: string, color: string): Sprite | null {
   context.font = font;
   context.textAlign = 'center';
   context.textBaseline = 'middle';
+  context.lineJoin = 'round';
+  context.strokeStyle = haloColor;
+  context.lineWidth = 7;
+  context.strokeText(text, canvas.width / 2, canvas.height / 2);
   context.fillStyle = color;
   context.fillText(text, canvas.width / 2, canvas.height / 2);
 
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;
 
-  const sprite = new Sprite(new SpriteMaterial({ map: texture, transparent: true, depthWrite: false }));
+  const sprite = new Sprite(
+    new SpriteMaterial({ map: texture, transparent: true, depthWrite: false, depthTest: false }),
+  );
+  sprite.renderOrder = 2;
   sprite.scale.set(canvas.width * LABEL_WORLD_PER_PX, canvas.height * LABEL_WORLD_PER_PX, 1);
 
   return sprite;
@@ -230,6 +258,7 @@ function GraphScene({
   // the right economy for a spike.
   const foregroundColor = useMemo(() => resolveThemeColor('--foreground', '#e2e8f0'), [selectedNodeId, threadKey]);
   const primaryColor = useMemo(() => resolveThemeColor('--primary', '#7dd3a8'), [selectedNodeId, threadKey]);
+  const haloColor = useMemo(() => resolveThemeColor('--background', '#0f172a'), [selectedNodeId, threadKey]);
 
   // Node objects rebuild whenever the selection state changes — that is what re-dresses emphasis
   // and dimming. At overview scale (<=150 nodes) a rebuild is cheap.
@@ -259,7 +288,11 @@ function GraphScene({
       group.add(sphere);
 
       if (node.labelled && !node.context && !dimmedByThread) {
-        const sprite = makeLabelSprite(node.label, isSelected || isCenter ? primaryColor : foregroundColor);
+        const sprite = makeLabelSprite(
+          node.label,
+          isSelected || isCenter ? primaryColor : foregroundColor,
+          haloColor,
+        );
         if (sprite) {
           sprite.position.set(0, radius + sprite.scale.y / 2 + 1.2, 0);
           group.add(sprite);
@@ -268,7 +301,7 @@ function GraphScene({
 
       return group;
     };
-  }, [threadKey, selectedNodeId, centerNodeId, primaryColor, foregroundColor]);
+  }, [threadKey, selectedNodeId, centerNodeId, primaryColor, foregroundColor, haloColor]);
 
   // Non-thread links carry their own material so opacity can vary per link; the selected thread
   // returns null to take the library's default cylinder material, colored by linkColor below.

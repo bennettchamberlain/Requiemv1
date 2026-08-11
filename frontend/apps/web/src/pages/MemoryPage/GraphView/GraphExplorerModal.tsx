@@ -671,7 +671,7 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
       </div>
 
       {/* Rendering dimension: a persisted preference, orthogonal to the overview/focus/search
-          modes. One small button labelled with the dimension it switches TO; 3D loads its
+          modes. One tiny button labelled with the dimension it switches TO; 3D loads its
           renderer on first use. */}
       <div className="pointer-events-none absolute bottom-3 right-3 z-20">
         <button
@@ -680,7 +680,7 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
           aria-label={is3D ? 'Switch to 2D graph' : 'Switch to 3D graph'}
           title={is3D ? 'Switch to 2D' : 'Switch to 3D'}
           onClick={() => handleDimensionChange(!is3D)}
-          className="pointer-events-auto rounded-md border bg-background/90 px-2.5 py-1 text-xs font-medium text-muted-foreground shadow-sm transition-colors hover:text-foreground"
+          className="pointer-events-auto rounded border bg-background/90 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-muted-foreground shadow-sm transition-colors hover:text-foreground"
         >
           {is3D ? '2D' : '3D'}
         </button>
