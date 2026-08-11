@@ -144,6 +144,14 @@ RUN CMAKE_ARGS="-DGGML_CUDA=on" FORCE_CMAKE=1 \
 # 24-core / 61 GB machine it chose 2, leaving the box 85% idle while a single
 # build ran for nearly two hours.
 #
+# ninja is what makes MAX_JOBS mean anything. torch's cpp_extension only
+# parallelises through ninja; without it setuptools compiles one file at a time
+# and the variable is read and ignored. Measured: with MAX_JOBS=8 exported and
+# no ninja installed, exactly one nvcc ran and the rate was 1.54 min/object —
+# indistinguishable from the same build at flash-attn's own MAX_JOBS=2. It is a
+# build-time dependency of the same kind as psutil, needed in the venv because
+# --no-build-isolation makes the venv the build environment.
+#
 # DERIVED from the machine doing the build, not hard-coded — the right number
 # is a property of that host, and a constant would be wrong on every machine
 # except the one it was tuned on. Bounded by BOTH limits, because they bind on
@@ -240,7 +248,7 @@ RUN set -eu; \
       echo "flash-attn from prebuilt wheel: $FLASH_ATTN_WHEEL"; \
       uv pip install --no-cache "$FLASH_ATTN_WHEEL"; \
     else \
-      uv pip install --no-cache psutil; \
+      uv pip install --no-cache psutil ninja; \
       uv pip install --no-cache "flash-attn==${FLASH_ATTN_VERSION:?set by make build}" --no-build-isolation; \
     fi
 
