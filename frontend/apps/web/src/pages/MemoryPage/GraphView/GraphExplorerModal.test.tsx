@@ -79,6 +79,14 @@ vi.mock('@/api/useNodeGraphService', () => ({
   useNodeGraphService: (props: { entityId?: string; skip?: boolean }) => useNodeGraphServiceMock(props),
 }));
 
+// The 3D renderer needs WebGL, which jsdom does not have. The stub records the graph it was
+// handed so the toggle tests can assert the same data flows to either renderer.
+vi.mock('./GraphCanvas3D', () => ({
+  default: ({ nodes, links }: { nodes: GraphNode[]; links: GraphLink[] }) => (
+    <div data-testid="graph-canvas-3d" data-node-count={nodes.length} data-link-count={links.length} />
+  ),
+}));
+
 function renderShell() {
   return render(
     <MemoryRouter>
@@ -125,6 +133,7 @@ describe('GraphTabPanel (webbed-feet spike)', () => {
     globalThis.cancelAnimationFrame = realCancelAnimationFrame;
     useNodeGraphServiceMock.mockReset();
     setActiveEntityMock.mockReset();
+    localStorage.removeItem('ci-graph-view-dimension');
   });
 
   it('renders the overview graph with its stats line', async () => {
@@ -224,6 +233,37 @@ describe('GraphTabPanel (webbed-feet spike)', () => {
     expect(
       screen.getAllByTestId('force-link').filter((group) => group.getAttribute('data-selected') === 'true'),
     ).toHaveLength(1);
+  });
+
+  it('switches to the 3D renderer and back, remembering the choice', async () => {
+    renderShell();
+
+    // 2D SVG by default; no 3D canvas mounted (nor its three.js bundle loaded).
+    await waitFor(() => {
+      expect(screen.getAllByTestId('force-node')).toHaveLength(OVERVIEW.nodes.length);
+    });
+    expect(screen.queryByTestId('graph-canvas-3d')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('graph-dimension-3d'));
+
+    // Same display graph, different renderer.
+    const canvas3d = await screen.findByTestId('graph-canvas-3d');
+
+    expect(canvas3d).toHaveAttribute('data-node-count', String(OVERVIEW.nodes.length));
+    expect(canvas3d).toHaveAttribute('data-link-count', String(OVERVIEW.links.length));
+    expect(screen.queryAllByTestId('force-node')).toHaveLength(0);
+    expect(localStorage.getItem('ci-graph-view-dimension')).toBe('3d');
+
+    // The shell chrome — stats line and legend — stays up over either renderer.
+    expect(screen.getByText('3 entities · 2 connections')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('graph-dimension-2d'));
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('force-node')).toHaveLength(OVERVIEW.nodes.length);
+    });
+    expect(screen.queryByTestId('graph-canvas-3d')).not.toBeInTheDocument();
+    expect(localStorage.getItem('ci-graph-view-dimension')).toBe('2d');
   });
 
   it('clears dialogs on a background click', async () => {

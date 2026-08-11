@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { apiKeyHeaders, buildApiUrl } from '@ci/common';
 import { ENTITY_TYPE_MAP } from '@ci/common/src/constants';
@@ -18,6 +18,9 @@ import { useEntityService } from '@/pages/MemoryPage/useEntityService';
 
 import { ConnectionThreadDialog } from './ConnectionThreadDialog';
 import { EntityInfoDialog, type EntityRelation } from './EntityInfoDialog';
+
+// The 3D renderer pulls in three.js and react-three-fiber; loaded only when 3D is switched on.
+const GraphCanvas3D = lazy(() => import('./GraphCanvas3D'));
 
 /**
  * Webbed Feet-inspired graph view (spike/webbed-feet-graph-view).
@@ -48,6 +51,8 @@ const FOCUS_HOP_DEPTH = 3;
 /** Hops that count as the focused entity's own graph; everything further renders as context dots. */
 const FOCUS_OWN_HOPS = 1;
 const MAX_LEGEND_TYPES = 8;
+/** The 2D/3D choice survives navigation; a rendering preference, not a per-visit mode. */
+const GRAPH_DIMENSION_STORAGE_KEY = 'ci-graph-view-dimension';
 
 interface GraphTabPanelProps {
   variant: 'desktop' | 'mobile';
@@ -72,6 +77,22 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedLinkId, setSelectedLinkId] = useState<string | null>(null);
   const [focusEntityId, setFocusEntityId] = useState<string | null>(null);
+  const [is3D, setIs3D] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(GRAPH_DIMENSION_STORAGE_KEY) === '3d';
+    } catch {
+      return false;
+    }
+  });
+
+  const handleDimensionChange = useCallback((next: boolean) => {
+    setIs3D(next);
+    try {
+      localStorage.setItem(GRAPH_DIMENSION_STORAGE_KEY, next ? '3d' : '2d');
+    } catch {
+      // Preference-only; losing persistence is fine.
+    }
+  }, []);
 
   const [searchParams] = useSearchParams();
 
@@ -584,22 +605,44 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
         variant === 'mobile' ? 'min-h-[420px]' : 'min-h-[480px]',
       )}
     >
-      {displayGraph.nodes.length > 0 && (
-        <ForceGraph
-          nodes={displayGraph.nodes}
-          links={displayGraph.links}
-          height={canvasHeight}
-          centerNodeId={centerNodeId ?? undefined}
-          highlightedNodeId={selectedNodeId ?? undefined}
-          selectedNodeId={selectedNodeId ?? undefined}
-          selectedLinkId={selectedLinkId ?? undefined}
-          onNodeSelect={handleNodeSelect}
-          onLinkSelect={handleLinkSelect}
-          onBackgroundClick={handleBackgroundClick}
-          flyToNodeId={selectedNodeId}
-          focusHops={mode === 'focus' ? FOCUS_OWN_HOPS : undefined}
-        />
-      )}
+      {displayGraph.nodes.length > 0 &&
+        (is3D ? (
+          <Suspense
+            fallback={
+              <div className="absolute inset-0 z-10 flex items-center justify-center">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              </div>
+            }
+          >
+            <GraphCanvas3D
+              nodes={displayGraph.nodes}
+              links={displayGraph.links}
+              height={canvasHeight}
+              centerNodeId={centerNodeId ?? undefined}
+              selectedNodeId={selectedNodeId ?? undefined}
+              selectedLinkId={selectedLinkId ?? undefined}
+              onNodeSelect={handleNodeSelect}
+              onLinkSelect={handleLinkSelect}
+              onBackgroundClick={handleBackgroundClick}
+              focusHops={mode === 'focus' ? FOCUS_OWN_HOPS : undefined}
+            />
+          </Suspense>
+        ) : (
+          <ForceGraph
+            nodes={displayGraph.nodes}
+            links={displayGraph.links}
+            height={canvasHeight}
+            centerNodeId={centerNodeId ?? undefined}
+            highlightedNodeId={selectedNodeId ?? undefined}
+            selectedNodeId={selectedNodeId ?? undefined}
+            selectedLinkId={selectedLinkId ?? undefined}
+            onNodeSelect={handleNodeSelect}
+            onLinkSelect={handleLinkSelect}
+            onBackgroundClick={handleBackgroundClick}
+            flyToNodeId={selectedNodeId}
+            focusHops={mode === 'focus' ? FOCUS_OWN_HOPS : undefined}
+          />
+        ))}
 
       {stateOverlay}
 
@@ -625,6 +668,41 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
             Search: “{trimmedSearchQuery}”
           </span>
         )}
+      </div>
+
+      {/* Rendering dimension: a persisted preference, orthogonal to the overview/focus/search
+          modes. 3D loads its renderer on first use. */}
+      <div className="pointer-events-none absolute bottom-3 right-3 z-20">
+        <div
+          className="pointer-events-auto flex overflow-hidden rounded-md border bg-background/90 shadow-sm"
+          role="group"
+          aria-label="Graph rendering dimension"
+        >
+          <button
+            type="button"
+            data-testid="graph-dimension-2d"
+            aria-pressed={!is3D}
+            onClick={() => handleDimensionChange(false)}
+            className={cn(
+              'px-2.5 py-1 text-xs font-medium transition-colors',
+              !is3D ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            2D
+          </button>
+          <button
+            type="button"
+            data-testid="graph-dimension-3d"
+            aria-pressed={is3D}
+            onClick={() => handleDimensionChange(true)}
+            className={cn(
+              'border-l px-2.5 py-1 text-xs font-medium transition-colors',
+              is3D ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            3D
+          </button>
+        </div>
       </div>
 
       {displayGraph.nodes.length > 0 && (

@@ -31,6 +31,25 @@ The `{ nodes, links }` graph shape and the server-side caps/filter contract are 
 | Drag / wheel on canvas | Pan and zoom (pre-existing, retained); manual input cancels a camera flight in progress |
 | Drag a node | The node pins to the pointer and the web re-tensions around it (`alpha(0.1)` reheat per move, ported from Webbed Feet's `dragged()`); it stays pinned where dropped |
 | Drag a dialog | The floating cards drag by their header and glide with throw momentum, bouncing softly off the shell edges |
+| 2D / 3D toggle (bottom-right) | Swaps the renderer under the same shell: the 2D SVG (default) or an r3f-forcegraph WebGL scene. The choice persists in `localStorage` |
+
+## 3D mode
+
+A separate rendering setting, not a separate view: the shell's mode machine, dialogs, legend and
+filters are shared, and `GraphCanvas3D` receives exactly the graph + selection contract the 2D
+`ForceGraph` does. Built on [r3f-forcegraph](https://github.com/vasturiano/r3f-forcegraph)
+(react-three-fiber bindings for three-forcegraph), lazy-loaded so three.js stays out of the main
+bundle until 3D is switched on.
+
+Carried into 3D: type colours and degree-based node sizing, standing-label budget (billboard
+sprites), focus-mode context dots (dimmed, smaller, unlabelled), connection-thread emphasis (the
+selected link draws as a primary-coloured tube with directional particles while everything else
+recedes), background-click deselect, and a camera that leans its orbit target toward the selected
+node. The old `ForceGraph3D` (react-force-graph-3d) is untouched and remains unused by this view.
+
+Not carried into 3D (deliberate): node dragging (the orbit camera owns the pointer;
+r3f-forcegraph exposes no drag interaction), dashed weak ties (drawn fainter instead), and the
+label collision layout (billboarded labels have no stable 2D geometry to separate).
 
 ## Retained from the old graph view
 
@@ -50,8 +69,8 @@ The `{ nodes, links }` graph shape and the server-side caps/filter contract are 
 
 ## Removed in this spike (deliberate)
 
-- **3D view** (`ForceGraph3D` and the 2D/3D toggle). The component still exists for other
-  callers; the memory graph no longer offers it.
+- **The old 3D view** (`ForceGraph3D` on react-force-graph-3d). Replaced by the r3f-forcegraph
+  `GraphCanvas3D` behind the new 2D/3D toggle; the old component still exists for other callers.
 - **Neighbors spawn-limit input** — superseded by fixed bounds: the overview shows the bounded
   `/data` payload capped to the 150 busiest nodes, and focus mode uses a 60-node / 3-hop budget
   (1 hop at full weight + a 2-hop context ring).
@@ -91,3 +110,5 @@ The `{ nodes, links }` graph shape and the server-side caps/filter contract are 
   `flyToNodeId`).
 - `frontend/apps/web/src/pages/MemoryPage/GraphView/useThrowableCard.ts` +
   `throwPhysics.ts` — dialog drag with throw momentum.
+- `frontend/apps/web/src/pages/MemoryPage/GraphView/GraphCanvas3D.tsx` — the 3D renderer
+  (r3f-forcegraph scene, orbit camera, selection/thread/focus parity with the 2D graph).
