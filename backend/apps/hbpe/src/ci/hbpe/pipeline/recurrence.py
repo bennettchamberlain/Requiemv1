@@ -2,7 +2,7 @@
 Recurrence profiler — week/month-horizon occurrence and due forecasts.
 
 The 24h histogram (inference_engine) predicts *occupancy*: which L0/L1 class
-fills each 15-min bucket.  That object dissolves at longer horizons — nobody
+fills each 30-min bucket.  That object dissolves at longer horizons — nobody
 cares whether gym is 14:00 or 14:30 next Thursday.  The right objects are:
 
   week  →  *occurrence*:  P(cluster happens on day D), Bernoulli per day

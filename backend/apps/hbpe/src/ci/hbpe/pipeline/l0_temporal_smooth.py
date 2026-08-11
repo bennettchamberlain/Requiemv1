@@ -1,7 +1,7 @@
 """
 Within-day L0 temporal smoothing for histogram inference.
 
-The transformer scores each 15-minute bucket independently, which produces
+The transformer scores each 30-minute bucket independently, which produces
  unrealistic flicker (e.g. TRANSIT → WORK → TRANSIT).  We treat the raw
  per-bucket class distributions as HMM emissions and smooth them with a
  row-stochastic transition matrix learned from hbpe.token_stream, blended

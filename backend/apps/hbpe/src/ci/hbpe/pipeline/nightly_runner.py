@@ -163,7 +163,7 @@ async def label_summary_tokens(user_id: str) -> dict:
     """
     Step 1b: Label yesterday's hourly summaries with L0+L1 via Qwen.
 
-    Summary tokens fill 15-min buckets that have no event-derived coverage
+    Summary tokens fill 30-min buckets that have no event-derived coverage
     (sleep, leisure, off-calendar hours).  Labels are stored in
     ci.summary_l1_label and merged into the token stream at serialization time.
     """

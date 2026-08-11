@@ -1,10 +1,10 @@
 """
 Actuals backfill — Phase 5a (T5.1).
 
-Every ``/histogram`` response logs 96 forecast buckets to ``hbpe.prediction_log``
+Every ``/histogram`` response logs 48 forecast buckets to ``hbpe.prediction_log``
 with ``actual_l0/l1/l2`` left NULL.  Once a forecast's day has elapsed, the day's
 observed behavior has been serialized into ``hbpe.token_stream`` by the nightly
-label + serialize pipeline, so the *actual* label for each 15-min bucket is now
+label + serialize pipeline, so the *actual* label for each 30-min bucket is now
 known.  This module joins elapsed-window prediction rows to the observed token
 stream and backfills the ``actual_*`` columns, enabling retrospective accuracy
 measurement and the LoRA fine-tune signal.

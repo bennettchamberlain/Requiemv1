@@ -78,13 +78,13 @@ def test_coverage_full(monkeypatch):
 
 
 def test_coverage_partial(monkeypatch):
-    cur = _FakeCursor(update_rowcount=3, coverage_row=(96, 72))
+    cur = _FakeCursor(update_rowcount=3, coverage_row=(48, 36))
     ab = _install_fake_db(monkeypatch, cur)
 
     out = ab.backfill_prediction_actuals("user-2")
 
-    assert out["elapsed"] == 96
-    assert out["filled"] == 72
+    assert out["elapsed"] == 48
+    assert out["filled"] == 36
     assert out["coverage"] == 0.75
 
 
