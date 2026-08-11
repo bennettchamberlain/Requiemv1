@@ -34,7 +34,17 @@ ENV VIRTUAL_ENV=/app/.venv \
     MODELS_DIR=/app/models \
     HF_HOME=/app/models/hf_cache
 
-RUN useradd -m -u 1000 hbpe
+# Everything below /app is created BY hbpe rather than handed over afterwards.
+#
+# The `RUN chown -R hbpe:hbpe /app` this replaces cost 1.7 GB — about a third of
+# the published image. Layers are copy-on-write per FILE, so recursively
+# changing ownership rewrites every file into a new layer: a byte-identical
+# second copy of the whole venv, differing only in its owner. Switching user
+# before anything is written means the ownership is right the first time and
+# there is nothing to fix up.
+RUN useradd -m -u 1000 hbpe && chown hbpe:hbpe /app
+
+USER hbpe
 
 # ── Locked dependencies ───────────────────────────────────────────────────────
 # Only the manifests and the lock, so this layer stays cached until a
@@ -43,9 +53,9 @@ RUN useradd -m -u 1000 hbpe
 # Only the manifests this image resolves are copied: the root pair, this
 # service, and the workspace members it depends on. Unrelated members stay
 # out, so their manifest edits do not invalidate this layer.
-COPY pyproject.toml uv.lock .python-version ./
-COPY backend/apps/hbpe/pyproject.toml ./backend/apps/hbpe/pyproject.toml
-COPY backend/packages/telemetry/pyproject.toml ./backend/packages/telemetry/pyproject.toml
+COPY --chown=hbpe:hbpe pyproject.toml uv.lock .python-version ./
+COPY --chown=hbpe:hbpe backend/apps/hbpe/pyproject.toml ./backend/apps/hbpe/pyproject.toml
+COPY --chown=hbpe:hbpe backend/packages/telemetry/pyproject.toml ./backend/packages/telemetry/pyproject.toml
 
 # --frozen installs exactly what uv.lock records without validating the
 # lock against the manifests, which is what allows the partial copy above:
@@ -105,10 +115,10 @@ RUN CMAKE_ARGS="-DGGML_NATIVE=OFF" FORCE_CMAKE=1 \
 COPY LICENSE.md /LICENSE.md
 
 # ── Application code ──────────────────────────────────────────────────────────
-COPY backend/apps/hbpe/src ./backend/apps/hbpe/src
-COPY backend/packages/telemetry/src ./backend/packages/telemetry/src
-COPY backend/apps/hbpe/scripts ./scripts
-COPY --chmod=755 backend/apps/hbpe/entrypoint.sh ./entrypoint.sh
+COPY --chown=hbpe:hbpe backend/apps/hbpe/src ./backend/apps/hbpe/src
+COPY --chown=hbpe:hbpe backend/packages/telemetry/src ./backend/packages/telemetry/src
+COPY --chown=hbpe:hbpe backend/apps/hbpe/scripts ./scripts
+COPY --chown=hbpe:hbpe --chmod=755 backend/apps/hbpe/entrypoint.sh ./entrypoint.sh
 
 # `uv pip install`, not a second `uv sync`, because sync would prune the
 # hardware-specific packages installed above. --no-deps because the
@@ -119,8 +129,6 @@ RUN uv pip install --no-cache --no-deps ./backend/packages/telemetry ./backend/a
 RUN mkdir -p /app/models/qwen \
              /app/data/token_corpus \
              /app/data/artifacts
-
-RUN chown -R hbpe:hbpe /app
 
 USER hbpe
 

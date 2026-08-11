@@ -164,6 +164,29 @@ UV_VERSION := $(shell sed -n 's/^required-version = "==\(.*\)"$$/\1/p' pyproject
 # Bump deliberately: the fork moves fast and is our inference stack.
 LLAMA_CPP_PYTHON_REF := 81190b03f6d177988112dad5fc919491a77705d1
 
+# The AMD gfx architecture llama.cpp's HIP backend compiles for, detected from
+# this host (gfx1100 on an RX 7900, gfx1030 on a 6800/6900). Empty is a valid
+# answer and means "let llama.cpp pick its default target list"; pass
+# AMDGPU_TARGETS=gfx#### explicitly to override, which is what a host with both
+# an APU and a discrete card needs.
+#
+# Recursive (`?=` defines a deferred variable), so `rocminfo` is only invoked
+# where the value is actually used — see HBPE_GPU_BUILD_ARGS below, which is
+# the sole reference and is itself guarded on GPU=rocm. A cpu or cuda build
+# therefore never shells out.
+#
+# `?=` also means an AMDGPU_TARGETS already in the environment wins, matching
+# how ENV/GPU/REBUILD behave. Worth knowing that a ROCm workstation often
+# exports one from a shell profile — which is precisely why the GPU guard lives
+# at the point of use and not in this assignment. Attached here it would be
+# defeated by that same ambient value, and a cpu build would still be handed a
+# gfx target.
+AMDGPU_TARGETS ?= $(shell scripts/detect-gpu.sh --amdgpu-arch)
+
+# Passed only to the rocm image: the cpu and cuda Dockerfiles declare no such
+# ARG, and docker warns on a build-arg nothing consumes.
+HBPE_GPU_BUILD_ARGS = $(if $(filter rocm,$(GPU)),--build-arg AMDGPU_TARGETS=$(AMDGPU_TARGETS))
+
 
 define BANNER
    ______                                  _
@@ -264,8 +287,15 @@ build: ## Build images. ENV=local|staging|production (default local) GPU=cpu|cud
 	@printf "\n➤ Building summary service image...\n\n"
 	@docker build -f backend/apps/summary/Dockerfile --build-arg UV_VERSION=$(UV_VERSION) $(call versioned_tag,$(SUMMARY_REPO)) -t $(SUMMARY_REPO):latest .
 
-	@printf "\n➤ Building HBPE service image ($(GPU))...\n\n"
-	@docker build -f backend/apps/hbpe/$(HBPE_DOCKERFILE) --build-arg UV_VERSION=$(UV_VERSION) --build-arg LLAMA_CPP_PYTHON_REF=$(LLAMA_CPP_PYTHON_REF) $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest .
+	@printf "\n➤ Building HBPE service image ($(GPU)$(if $(filter rocm,$(GPU)),$(if $(AMDGPU_TARGETS), $(AMDGPU_TARGETS), no-gfx-target)))...\n\n"
+ifeq ($(GPU),rocm)
+	@test -n "$(AMDGPU_TARGETS)" || { \
+		printf "$(YELLOW)•$(RESET) No AMD gfx architecture detected — llama.cpp will build for its default\n"; \
+		printf "  target list, which may not include this host's card. Pass $(YELLOW)AMDGPU_TARGETS=gfx####$(RESET)\n"; \
+		printf "  to compile for it explicitly ($(YELLOW)rocminfo | grep gfx$(RESET) reports it).\n\n"; \
+	}
+endif
+	@docker build -f backend/apps/hbpe/$(HBPE_DOCKERFILE) --build-arg UV_VERSION=$(UV_VERSION) --build-arg LLAMA_CPP_PYTHON_REF=$(LLAMA_CPP_PYTHON_REF) $(HBPE_GPU_BUILD_ARGS) $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest .
 
 	@$(MAKE) clean-license
 

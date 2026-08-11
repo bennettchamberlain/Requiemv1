@@ -9,11 +9,30 @@
 ARG UV_VERSION
 FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
 
-FROM python:3.11-slim-bookworm
+# ══════════════════════════════════════════════════════════════════════════════
+# BUILDER — compiles the HIP backend, then is thrown away.
+# ══════════════════════════════════════════════════════════════════════════════
+# The ROCm SDK must be IN this image, not on the host. Compiling the GGML HIP
+# backend needs hipcc and the HIP/rocBLAS headers at BUILD time, and a build
+# container has no access to the host's /opt/rocm — nor to /dev/kfd and
+# /dev/dri, which are runtime device nodes and are never mounted during
+# `docker build`. Until this was fixed the image inherited python:3.11-slim
+# (the CPU image's base) and passed a HIP flag anyway; see the note on the
+# llama-cpp-python layer below for why that went unnoticed for months.
+#
+# Pinned to the same ROCm the appliance runs (7.2.x). The container ships ROCm
+# USERSPACE; the kernel driver is the host's, shared through /dev/kfd. Newer
+# userspace against an older kernel driver is the direction that breaks, so
+# this tracks the host rather than the newest published tag.
+#
+# `-complete` rather than the smaller plain `dev` tag: the GGML HIP backend
+# links hipBLAS/rocBLAS, which the stripped image does not carry. It costs
+# ~7 GB compressed and 21.7 GB on disk — which is exactly why it is confined to
+# this stage and never shipped.
+FROM rocm/dev-ubuntu-22.04:7.2.4-complete AS builder
 
-# System dependencies — build tools needed for llama-cpp-python HIP compilation
+# Build toolchain only. Python does NOT come from apt here — see below.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    postgresql-client \
     build-essential \
     cmake \
     git \
@@ -22,19 +41,43 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=uv /uv /usr/local/bin/uv
 
+# ── Python 3.11 from uv, NOT from apt ─────────────────────────────────────────
+# Ubuntu 22.04 ships exactly one python3.11 and it is a RELEASE CANDIDATE:
+#
+#   $ apt-cache policy python3.11
+#   Candidate: 3.11.0~rc1-1~22.04
+#
+# rc1 predates the int/str conversion security fix that added
+# sys.get_int_max_str_digits, and torch._dynamo dereferences that attribute at
+# import time. The result is not a warning — every optimiser construction dies
+# with `AttributeError: module 'sys' has no attribute
+# 'get_int_max_str_digits'`, so training never starts. The CPU image never had
+# this because python:3.11-slim-bookworm carries a real release (3.11.15).
+#
+# uv's managed interpreters are python-build-standalone releases, so this is an
+# actual 3.11.x and does not depend on what a distro chose to package. That is
+# also why the install dir is pinned somewhere shareable rather than left in
+# uv's default under $HOME: the runtime stage copies this exact tree, and the
+# venv records an absolute path to the interpreter that created it.
+#
+# only-managed makes it deterministic — uv will not silently fall back to the
+# distro's python3.10 (or a reappearing rc1) if the managed one is missing.
+ENV UV_PYTHON_INSTALL_DIR=/opt/python \
+    UV_PYTHON_PREFERENCE=only-managed
+
+RUN uv python install 3.11
+
 WORKDIR /app
 
-# Putting the venv on PATH is what lets the entrypoint invoke `uvicorn` and
-# `python` directly. PYTHONPATH is deliberately not set: the service is an
-# installed distribution now, not a directory on the import path.
+# ROCM_PATH and /opt/rocm/bin are set explicitly rather than relied on from the
+# base image: CMake's HIP language detection resolves the compiler through
+# them, and "The HIP compiler identification is unknown" is what it reports
+# when it cannot.
 ENV VIRTUAL_ENV=/app/.venv \
-    PATH=/app/.venv/bin:$PATH \
+    ROCM_PATH=/opt/rocm \
+    PATH=/app/.venv/bin:/opt/rocm/bin:$PATH \
     UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy \
-    MODELS_DIR=/app/models \
-    HF_HOME=/app/models/hf_cache
-
-RUN useradd -m -u 1000 hbpe
+    UV_LINK_MODE=copy
 
 # ── Locked dependencies ───────────────────────────────────────────────────────
 # See backend/apps/hbpe/Dockerfile for why only this image's own manifests
@@ -58,43 +101,241 @@ RUN uv sync --frozen --package ci-hbpe --no-install-workspace --no-dev \
 # match the lock exactly, which means it removes anything the lock does not
 # mention — including everything installed here.
 
-# PyTorch with ROCm 6.1 support.
+# PyTorch built against ROCm 7.2, matching the base image. PyTorch publishes a
+# separate wheel index per ROCm minor; pointing at one that predates the SDK in
+# the image (this was rocm6.1 against a base with no ROCm at all) gets you
+# wheels linked to runtime libraries that are not there.
 RUN uv pip install --no-cache \
     torch torchvision \
-    --index-url https://download.pytorch.org/whl/rocm6.1
+    --index-url https://download.pytorch.org/whl/rocm7.2
 
 # llama-cpp-python (JamePeng fork — required for Qwen3.5 support), the same
 # pinned commit every HBPE image builds (LLAMA_CPP_PYTHON_REF in the
-# Makefile), here with the GGML HIP backend for AMD cards. Requires the ROCm
-# SDK on the host (mounted via /dev/kfd, /dev/dri).
+# Makefile), here with the GGML HIP backend for AMD cards.
 #
 # GGML_HIP=ON, not the GGML_HIPBLAS=ON this image used against the official
 # package: llama.cpp renamed the flag, and on the fork's newer llama.cpp the
 # old name is ignored — the build would silently produce a CPU-only wheel.
+# That silence is why the missing SDK went unnoticed: for months CMake never
+# tried to configure HIP, so it never looked for a compiler that was not there,
+# and every "ROCm" image shipped a CPU-only wheel that worked well enough that
+# nobody questioned it.
+#
+# AMDGPU_TARGETS is the gfx architecture of the card this appliance actually
+# has (gfx1100 for an RX 7900, gfx1030 for a 6800/6900), detected by
+# scripts/detect-gpu.sh and passed by `make build`. Left empty the build falls
+# back to llama.cpp's own default target list — which is slow to compile and
+# is not guaranteed to include this host's card. It is deliberately NOT
+# defaulted to a value here: a wrong architecture compiled in produces a wheel
+# that loads and then finds no usable device at runtime.
 ARG LLAMA_CPP_PYTHON_REF
-RUN CMAKE_ARGS="-DGGML_HIP=ON" FORCE_CMAKE=1 \
+ARG AMDGPU_TARGETS
+RUN CMAKE_ARGS="-DGGML_HIP=ON${AMDGPU_TARGETS:+ -DAMDGPU_TARGETS=$AMDGPU_TARGETS}" FORCE_CMAKE=1 \
     uv pip install --no-cache \
       "llama-cpp-python @ git+https://github.com/JamePeng/llama-cpp-python.git@${LLAMA_CPP_PYTHON_REF:?set by make build}"
-
-COPY LICENSE.md /LICENSE.md
 
 # ── Application code ──────────────────────────────────────────────────────────
 COPY backend/apps/hbpe/src ./backend/apps/hbpe/src
 COPY backend/packages/telemetry/src ./backend/packages/telemetry/src
 COPY backend/apps/hbpe/scripts ./scripts
-COPY --chmod=755 backend/apps/hbpe/entrypoint.sh ./entrypoint.sh
 
 # `uv pip install`, not a second `uv sync`, because sync would prune the
 # GPU-specific packages installed above. --no-deps because the dependencies
 # are already installed from the lock.
 RUN uv pip install --no-cache --no-deps ./backend/packages/telemetry ./backend/apps/hbpe
 
+# ── Trim the vendor kernel bundles, HERE rather than in the runtime stage ─────
+# rocBLAS and hipBLASLt carry one tuned kernel bundle per GPU architecture, and
+# they are the largest thing this image ships. There are TWO independent copies:
+# the system one under /opt/rocm, and a second complete set vendored inside the
+# PyTorch ROCm wheel, which bundles its own ROCm stack rather than using the
+# system's. Both need the same treatment.
+#
+#   /opt/rocm hipBLASLt   4.48 GB   torch/lib hipblaslt        4.5 GB
+#   /opt/rocm rocBLAS     0.63 GB   torch/lib rocblas          644 MB
+#                                   torch/lib aotriton.images  897 MB
+#
+# The CDNA datacenter parts dominate all of them: gfx942 (MI300) alone is
+# ~3 GB in each hipBLASLt copy, two thirds of it. Across every location the
+# four datacenter targets are ~8.7 GB.
+#
+# This appliance runs on consumer hardware, so those four go and every RDNA
+# target stays: gfx1030 (RX 6800/6900), gfx1100-1103 (RX 7000 and the Phoenix
+# APU), gfx1150/1151 (Strix APUs) and gfx1200/1201 (RX 9000). Pruning by
+# ARCHITECTURE CLASS rather than down to AMDGPU_TARGETS is deliberate: the
+# image stays portable across the cards this actually ships to, instead of
+# being silently pinned to whichever GPU happened to build it. AMDGPU_TARGETS
+# pins the llama.cpp COMPILE to one architecture, which is right for a local
+# build and wrong for vendor kernels another consumer card still needs.
+#
+# It runs in the BUILDER, not next to the COPY that consumes it, because layers
+# are additive: deleting these files after the copy writes a whiteout and
+# reclaims nothing — the first attempt at this left the image byte-for-byte the
+# same size. Pruning before the copy is what actually makes the layer smaller.
+#
+# Set PRUNE_GFX_ARCHS empty to keep everything, which is what a datacenter
+# deployment would need. The substrings are unambiguous: none of gfx908,
+# gfx90a, gfx942 or gfx950 occurs inside an RDNA target's name, and they match
+# aotriton's `amd-gfx942` spelling too.
+#
+# What is NOT touched, deliberately: libtorch_hip.so is a fat binary carrying
+# device code for every architecture, and re-slicing it means building torch
+# from source with a restricted PYTORCH_ROCM_ARCH — hours of compile and a
+# permanent maintenance cost on every torch bump. magma, MIOpen, rocSOLVER,
+# rocRAND, rocSPARSE and RCCL are linked unconditionally by torch; deleting
+# them saves GBs and risks failing inside one operator, or at import.
+ARG PRUNE_GFX_ARCHS="gfx908 gfx90a gfx942 gfx950"
+RUN set -eu; \
+    TORCH_LIB="$(echo /app/.venv/lib/python3.*/site-packages/torch/lib)"; \
+    ROOTS="/opt/rocm/lib/rocblas/library /opt/rocm/lib/hipblaslt/library \
+           $TORCH_LIB/rocblas/library $TORCH_LIB/hipblaslt/library \
+           $TORCH_LIB/aotriton.images"; \
+    for root in $ROOTS; do \
+      [ -d "$root" ] || continue; \
+      for arch in $PRUNE_GFX_ARCHS; do \
+        # -maxdepth 1 because the arch-named entries are always top level, and
+        # -prune/-exec rm -rf rather than -delete because aotriton's are
+        # DIRECTORIES, which -delete refuses unless already empty.
+        find "$root" -maxdepth 1 -name "*$arch*" -prune -exec rm -rf {} +; \
+      done; \
+    done; \
+    # Guard against a glob that ate too much: the consumer bundles are the
+    # entire point of keeping these directories, and their absence would not
+    # surface until a matmul failed at dispatch time, far from this line.
+    for root in $ROOTS; do \
+      [ -d "$root" ] || continue; \
+      ls "$root" | grep -q 'gfx1[0-2]' \
+        || { echo "PRUNE_GFX_ARCHS removed every consumer kernel from $root"; exit 1; }; \
+    done
+
+# ══════════════════════════════════════════════════════════════════════════════
+# RUNTIME — what actually ships.
+# ══════════════════════════════════════════════════════════════════════════════
+# The plain `dev` tag, not `-complete`: 1.1 GB compressed against 7.3 GB. It
+# carries the HIP runtime (libamdhip64, libamd_comgr) and nothing else, so the
+# math libraries the GGML HIP backend links are copied in from the builder
+# below — pinned to the identical ROCm build by construction, which apt could
+# not guarantee.
+#
+# What this stage deliberately leaves behind is most of the 19 GB in the
+# builder's /opt/rocm/lib: the LLVM toolchain (2.3 GB), the device-operation
+# static archives (2.1 GB + 1.9 GB, link-time only), the headers, and every
+# math library nothing here links — rocFFT, rocSOLVER, rocRAND and MIOpen are
+# all reachable through torch's own bundled copies in the venv, not through
+# /opt/rocm.
+FROM rocm/dev-ubuntu-22.04:7.2.4
+
+# No compiler, no headers, no git — and no apt python either, for the reason
+# given in the builder: jammy's only python3.11 is 3.11.0rc1, which torch
+# cannot import.
+#
+# tzdata is NOT incidental. The forecast API takes an IANA timezone straight
+# from the request (`?timezone=America/Los_Angeles`) and hands it to
+# ZoneInfo, which reads /usr/share/zoneinfo and raises ZoneInfoNotFoundError
+# when the database is missing — surfacing to the caller as a misleading
+# "400: Invalid timezone" for a perfectly valid one. python:3.11-slim-bookworm
+# carried this implicitly through its Debian base, so the CPU image never had
+# to think about it; this base ships no zone database at all, and uv's managed
+# interpreter does not bundle one either.
+#
+# DEBIAN_FRONTEND is set because tzdata's postinst otherwise blocks on an
+# interactive geographic-area prompt and hangs the build.
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-client \
+    tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+# The interpreter the venv was built against. A venv records an ABSOLUTE path
+# to its base interpreter, so this has to land at the same /opt/python it
+# occupied in the builder — hence pinning UV_PYTHON_INSTALL_DIR rather than
+# accepting uv's $HOME-relative default, which would differ between the two
+# stages' users. Roughly 130 MB, against ~30 MB for the apt package it
+# replaces: a cheap price for an interpreter that is a real release.
+ENV UV_PYTHON_INSTALL_DIR=/opt/python
+COPY --from=builder /opt/python /opt/python
+
+# The math libraries libggml-hip.so links, plus their kernel data.
+#
+# This list is DERIVED, not guessed — guessing it cost a build. `ldd` on the
+# built backend gives the flattened closure; everything in it that the plain
+# runtime base does not already carry has to be copied:
+#
+#   docker build --target builder -t hbpe-builder .
+#   docker run --rm --entrypoint sh hbpe-builder -c \
+#     'ldd /app/.venv/lib/python3.11/site-packages/llama_cpp/lib/libggml-hip.so \
+#        | sed -n "s|.*=> \(/opt/rocm[^ ]*\).*|\1|p" | xargs -rn1 readlink -f | sort -u'
+#
+# The base already provides the HIP core — libamdhip64, libamd_comgr,
+# libhsa-runtime64, librocprofiler-register, libroctx64 — leaving these five.
+# rocSOLVER and rocROLLER are the non-obvious pair: nothing here calls a solver
+# directly, but rocBLAS links them, so omitting them fails at import with
+# "Failed to load 'ggml'" rather than anything mentioning a solver.
+COPY --from=builder /opt/rocm/lib/libhipblas.so* /opt/rocm/lib/
+COPY --from=builder /opt/rocm/lib/libhipblaslt.so* /opt/rocm/lib/
+COPY --from=builder /opt/rocm/lib/librocblas.so* /opt/rocm/lib/
+COPY --from=builder /opt/rocm/lib/librocsolver.so* /opt/rocm/lib/
+COPY --from=builder /opt/rocm/lib/librocroller.so* /opt/rocm/lib/
+
+# rocBLAS and hipBLASLt keep their tuned kernels in a `library/` directory
+# beside the .so and fail at first dispatch without it, so those come whole —
+# already trimmed to the consumer architectures in the builder stage, which is
+# the only place a deletion actually shrinks the result.
+COPY --from=builder /opt/rocm/lib/rocblas /opt/rocm/lib/rocblas
+COPY --from=builder /opt/rocm/lib/hipblaslt /opt/rocm/lib/hipblaslt
+
+WORKDIR /app
+
+# PYTHONPATH is deliberately not set: the service is an installed distribution
+# now, not a directory on the import path.
+ENV VIRTUAL_ENV=/app/.venv \
+    ROCM_PATH=/opt/rocm \
+    PATH=/app/.venv/bin:/opt/rocm/bin:$PATH \
+    MODELS_DIR=/app/models \
+    HF_HOME=/app/models/hf_cache
+
+RUN useradd -m -u 1000 hbpe
+
+# `--chown` on the copy, NOT a `RUN chown -R` afterwards. Layers are
+# copy-on-write per file, so recursively changing ownership rewrites every file
+# into a new layer — a byte-identical second copy of the whole venv. That one
+# line cost 16.6 GB here (and still costs 1.7 GB in the published CPU image,
+# a third of its size).
+COPY --from=builder --chown=hbpe:hbpe /app /app
+
+COPY LICENSE.md /LICENSE.md
+COPY --chmod=755 backend/apps/hbpe/entrypoint.sh ./entrypoint.sh
+
 # Persistent volumes for model artifacts and token corpus
 RUN mkdir -p /app/models/qwen \
              /app/data/token_corpus \
-             /app/data/artifacts
+             /app/data/artifacts \
+    && chown -R hbpe:hbpe /app/models /app/data
 
-RUN chown -R hbpe:hbpe /app
+# ── One HIP runtime per process ───────────────────────────────────────────────
+# Without this, importing llama_cpp and torch into the same process and letting
+# both touch the GPU aborts the interpreter:
+#
+#   F hip.cpp:512] hipApiName has non-null function pointer 1 despite this
+#   being the first instance of the library being copies
+#     @ rocprofiler_register_library_api_table
+#     @ hipGetDeviceCount  @ c10::cuda::device_count()
+#
+# There are two copies of libamdhip64 in the image: llama-cpp-python links the
+# one in /opt/rocm, while the PyTorch ROCm wheel bundles its own under
+# torch/lib. rocprofiler-register notices the second registration of the HIP API
+# table and calls it fatal. It is not an ordering problem — it aborts whichever
+# library initialises second — and none of ROCPROFILER_REGISTER_FORCE_LOAD,
+# HSA_TOOLS_LIB or ROCP_DISABLE suppress it.
+#
+# Preloading the system runtime collapses both onto one copy. That is only safe
+# because the base image's ROCm and the torch wheel's ROCm are the same minor
+# (7.2) — which is the real reason those two pins have to move together, and
+# what a bump to a newer ROCm must re-check.
+#
+# HBPE reaches this: inference/qwen.py drives llama_cpp while the model/ and
+# pipeline/ modules are all torch.
+ENV LD_PRELOAD=/opt/rocm/lib/libamdhip64.so
 
 USER hbpe
 
