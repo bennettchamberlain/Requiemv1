@@ -65,6 +65,39 @@ DOW_BOOST = 2.0  # weight multiplier for same-day-of-week as forecast
 _SPECIAL_IDX = {PAD_IDX, SOD_IDX, EOD_IDX}
 
 
+def _onnx_pos_emb_rows(path: Path) -> int | None:
+    """Return the first dim of ``pos_emb.weight`` in an ONNX graph, if present."""
+    try:
+        import onnx
+    except ImportError:
+        return None
+    model = onnx.load(str(path), load_external_data=False)
+    for init in model.graph.initializer:
+        if init.name == "pos_emb.weight" or init.name.endswith("/pos_emb.weight"):
+            if init.dims:
+                return int(init.dims[0])
+    return None
+
+
+def _assert_checkpoint_bucket_resolution(path: Path) -> None:
+    """
+    Reject ONNX checkpoints whose bucket position table does not match
+    ``BUCKETS_PER_DAY``.
+
+    Without this, a 96-row (15-min) embedding table loads fine under a 48-bucket
+    (30-min) runtime and silently maps morning slots onto the wrong wall-clock
+    hours.
+    """
+    rows = _onnx_pos_emb_rows(path)
+    if rows is None:
+        return
+    if rows != N_BUCKETS:
+        raise ValueError(
+            f"{path.name} pos_emb has {rows} rows; expected {N_BUCKETS} "
+            f"for {BUCKET_MINUTES}-minute buckets — re-export after retrain"
+        )
+
+
 # ── PyTorch fallback session ───────────────────────────────────────────────────
 
 
@@ -168,6 +201,7 @@ class InferenceEngine:
 
                     from ci.hbpe.model.onnx_export import ONNX_SEQ_LEN
 
+                    _assert_checkpoint_bucket_resolution(path)
                     sess = ort.InferenceSession(str(path))
                     # After INT8 static quantization the sequence dimension may be
                     # represented as a dynamic string rather than a fixed int.
