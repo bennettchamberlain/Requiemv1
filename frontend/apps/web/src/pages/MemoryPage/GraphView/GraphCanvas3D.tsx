@@ -328,7 +328,13 @@ function GraphScene({
       }
 
       const dimmedByThread = Boolean(selectedLinkId);
-      const opacity = dimmedByThread ? 0.08 : link.context ? 0.14 : link.strength < WEAK_TIE_THRESHOLD ? 0.2 : 0.42;
+      const opacity = dimmedByThread
+        ? 0.08
+        : link.context
+          ? 0.14
+          : link.strength < WEAK_TIE_THRESHOLD
+            ? 0.2
+            : 0.42;
 
       return new LineBasicMaterial({ color: '#94a3b8', transparent: true, opacity });
     };
@@ -435,7 +441,8 @@ export default function GraphCanvas3D({
         label: truncateLabel(fullLabel),
         entityType: node.entity_type,
         color: colorForRawType(node.entity_type),
-        radius: nodeRadius(degrees.get(node.id) ?? 0) * WORLD_RADIUS_SCALE * (context ? CONTEXT_NODE_SCALE : 1),
+        radius:
+          nodeRadius(degrees.get(node.id) ?? 0) * WORLD_RADIUS_SCALE * (context ? CONTEXT_NODE_SCALE : 1),
         context,
         labelled: labelled.has(node.id),
       };

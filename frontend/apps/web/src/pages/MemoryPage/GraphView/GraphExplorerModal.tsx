@@ -418,7 +418,11 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
     };
   }, [filterMatchedEntityIds, searchLinks, searchNodes]);
 
-  const mode: 'focus' | 'search' | 'overview' = focusEntityId ? 'focus' : isSearchMode ? 'search' : 'overview';
+  const mode: 'focus' | 'search' | 'overview' = focusEntityId
+    ? 'focus'
+    : isSearchMode
+      ? 'search'
+      : 'overview';
 
   const displayGraph: DisplayGraph =
     mode === 'focus' ? (focusGraph ?? EMPTY_GRAPH) : mode === 'search' ? searchGraph : overviewGraph;

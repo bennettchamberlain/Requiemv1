@@ -1,14 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 
-import {
-  forceCollide,
-  forceLink,
-  forceManyBody,
-  forceSimulation,
-  forceX,
-  forceY,
-} from 'd3-force';
+import { forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY } from 'd3-force';
 
 import type { GraphLink, GraphNode } from '@/api/useGraphOverview';
 import { colorForRawType } from '@/components/entities/entityVisuals';
@@ -701,9 +694,7 @@ function ForceGraphBase({
 
     const applyPositions = () => {
       for (const node of nodeCopies) {
-        nodeElsRef.current
-          .get(node.id)
-          ?.setAttribute('transform', `translate(${node.x}, ${node.y})`);
+        nodeElsRef.current.get(node.id)?.setAttribute('transform', `translate(${node.x}, ${node.y})`);
       }
 
       for (const link of linkCopies) {

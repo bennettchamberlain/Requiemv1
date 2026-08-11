@@ -55,10 +55,7 @@ export function EntityInfoDialog({
       aria-label={`Entity: ${node.name ?? node.entity_type}`}
       className="absolute right-3 top-3 z-20 flex max-h-[calc(100%-1.5rem)] w-80 max-w-[calc(100%-1.5rem)] flex-col overflow-hidden rounded-xl border bg-background/95 shadow-xl backdrop-blur will-change-transform"
     >
-      <div
-        {...handleProps}
-        className={cn('flex items-start gap-2 border-b p-3', handleProps.className)}
-      >
+      <div {...handleProps} className={cn('flex items-start gap-2 border-b p-3', handleProps.className)}>
         <span
           className="mt-1.5 h-2.5 w-2.5 flex-shrink-0 rounded-full"
           style={{ backgroundColor: typeColor }}

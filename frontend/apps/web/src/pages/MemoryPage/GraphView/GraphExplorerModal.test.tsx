@@ -32,7 +32,11 @@ const link = (id: string, source: string, target: string, strength = 0.8): Graph
 });
 
 const OVERVIEW = {
-  nodes: [node('user-1', 'Owner Person'), node('friend-1', 'Frida Friend'), node('friend-2', 'Colm Colleague')],
+  nodes: [
+    node('user-1', 'Owner Person'),
+    node('friend-1', 'Frida Friend'),
+    node('friend-2', 'Colm Colleague'),
+  ],
   links: [link('rel-1', 'user-1', 'friend-1'), link('rel-2', 'friend-1', 'friend-2')],
 };
 
