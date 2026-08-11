@@ -151,7 +151,6 @@ class InferenceEngine:
         self._temp = self._load_temperature()
         # Memoised per-day model outputs
         self._output_cache: dict[datetime.date, dict | None] = {}
-        self._l0_transition: np.ndarray | None = None
 
     def _load_l1_display_names(self) -> dict[str, str]:
         """Load cluster_id → human-readable label mapping for L1 labels."""
@@ -508,24 +507,14 @@ class InferenceEngine:
         N_SPECIAL = 4
         l0_classes = L0_CLASSES  # 8 behavioral class names
 
-        raw_l0 = np.zeros((N_BUCKETS, len(l0_classes)), dtype=np.float64)
-        for b in range(N_BUCKETS):
-            class_arr = bucket_l0_sum[b, N_SPECIAL:].copy()
-            total = class_arr.sum()
-            if total > 0:
-                class_arr /= total
-            else:
-                class_arr = np.ones(len(l0_classes)) / len(l0_classes)
-            raw_l0[b] = class_arr
-
-        smoothed_l0 = self._smooth_l0_across_day(raw_l0)
-
         results: list[dict] = []
         for b in range(N_BUCKETS):
             start_time = horizon_start + datetime.timedelta(minutes=BUCKET_MINUTES * b)
-            l0_probs = {
-                cls: float(smoothed_l0[b, i]) for i, cls in enumerate(l0_classes)
-            }
+            class_arr = bucket_l0_sum[b, N_SPECIAL:].copy()  # shape (8,)
+            total = class_arr.sum()
+            if total > 0:
+                class_arr /= total
+            l0_probs = {cls: float(class_arr[i]) for i, cls in enumerate(l0_classes)}
             # Top-10 L1 clusters by probability (keyed by human-readable label)
             l1_arr = bucket_l1_sum[b]
             top_l1_idx = np.argsort(l1_arr)[::-1][:10]
@@ -554,26 +543,6 @@ class InferenceEngine:
 
         return results
 
-    def _smooth_l0_across_day(self, raw_l0: np.ndarray) -> np.ndarray:
-        """
-        HMM forward–backward over the day's bucket chain.
-
-        Raw per-bucket softmax outputs are independent; this enforces plausible
-        contiguous activity blocks (e.g. suppresses TRANSIT→WORK→TRANSIT flicker).
-        """
-        try:
-            from ci.hbpe.pipeline.l0_temporal_smooth import (
-                build_l0_transition,
-                forward_backward_smooth,
-            )
-
-            if self._l0_transition is None:
-                self._l0_transition = build_l0_transition(self.user_id)
-            return forward_backward_smooth(raw_l0, self._l0_transition)
-        except Exception:
-            log.exception("L0 temporal smooth failed — using raw histogram")
-            return raw_l0
-
     def invalidate(self, date: datetime.date) -> None:
         """Evict one day from the output cache (call on new event arrival)."""
         self._output_cache.pop(date, None)
@@ -582,7 +551,6 @@ class InferenceEngine:
     def invalidate_all(self) -> None:
         """Clear the entire cache (call after LoRA adapter update)."""
         self._output_cache.clear()
-        self._l0_transition = None
         log.info("Inference cache cleared (full invalidation)")
 
 
