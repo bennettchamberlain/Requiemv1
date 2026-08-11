@@ -8,6 +8,7 @@ import { LoggerService } from '@ci/common/logging';
 import {
   bulkInsertIdempotent,
   INGEST_REFRESH_COLUMNS,
+  buildEventAggregateFold,
   keysetPaginate,
   type KeysetPageArgs,
   type KeysetPage,
@@ -182,23 +183,24 @@ export class BrowserActivityService {
     const CHUNK = 200;
     for (let at = 0; at < rows.length; at += CHUNK) {
       const chunk = rows.slice(at, at + CHUNK);
-      const eventParams: unknown[] = [];
-      const eventValues = chunk.map((ba, i) => {
-        const base = i * 10;
-        const sourceType = ba.source_type ?? 'browser_activity';
-        const sourceSystem = ba.source_system ?? 'fold';
-        const sourceId = ba.source_id ?? ba.id;
-        eventParams.push(
-          ba.user_id,
-          ba.title?.trim() || ba.url || 'Browser activity',
-          ba.page_summary ?? null,
-          ba.category ?? null,
-          ba.time,
-          ba.duration_seconds ?? null,
-          sourceType,
-          sourceSystem,
-          sourceId,
-          JSON.stringify({
+
+      // An event is a CTI aggregate: the `ci.events` detail row plus an
+      // `Event`-discriminated base row in `ci.entities` sharing its uuid. The
+      // single-statement dual insert is owned by the memory domain
+      // (buildEventAggregateFold); this service only maps its rows in.
+      const { sql, params } = buildEventAggregateFold(
+        chunk.map((ba) => ({
+          userId: ba.user_id,
+          title: ba.title?.trim() || ba.url || 'Browser activity',
+          description: ba.page_summary ?? null,
+          eventType: 'view',
+          category: ba.category ?? null,
+          time: ba.time,
+          durationSeconds: ba.duration_seconds ?? null,
+          sourceType: ba.source_type ?? 'browser_activity',
+          sourceSystem: ba.source_system ?? 'fold',
+          sourceId: ba.source_id ?? ba.id,
+          metadata: {
             browser_activity_id: ba.id,
             url: ba.url,
             action_type: ba.action_type ?? null,
@@ -210,38 +212,11 @@ export class BrowserActivityService {
             contains_sensitive: ba.contains_sensitive,
             device_id: ba.device_id ?? null,
             properties: ba.properties ?? {},
-          }),
-        );
-
-        return `(
-          ci.gen_uuid_v7(),
-          $${base + 1}::uuid,
-          $${base + 2},
-          $${base + 3},
-          'view',
-          $${base + 4},
-          $${base + 5}::timestamptz,
-          CASE WHEN $${base + 6}::int IS NOT NULL AND $${base + 6}::int > 0
-            THEN $${base + 5}::timestamptz + make_interval(secs => $${base + 6}::int)
-            ELSE NULL END,
-          $${base + 7},
-          $${base + 8},
-          $${base + 9},
-          $${base + 10}::jsonb
-        )`;
-      });
-
-      await this.dataSource.query(
-        `INSERT INTO ci.events (
-           event_id, user_id, title, description, event_type, category,
-           start_time, end_time, source_type, source_system, source_id, metadata
-         )
-         VALUES ${eventValues.join(', ')}
-         ON CONFLICT (user_id, source_type, source_system, source_id)
-           WHERE source_id IS NOT NULL
-           DO NOTHING`,
-        eventParams,
+          },
+        })),
       );
+
+      await this.dataSource.query(sql, params);
 
       // Content rows: resolve event_id by the same provenance triple.
       const contentParams: unknown[] = [];

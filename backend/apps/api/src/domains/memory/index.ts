@@ -28,13 +28,17 @@ import { SearchNextModule } from '@ci/domains/search-next';
 import { UserModule, UserEntity } from '@ci/domains/user';
 
 import { GraphController } from './controllers/GraphController';
+import { BaseEntity } from './entities/BaseEntity';
+import { CommunicationBaseEntity } from './entities/CommunicationBaseEntity';
 import { type Communication, CommunicationEntity } from './entities/CommunicationEntity';
 import { type Concept, ConceptEntity } from './entities/ConceptEntity';
 import { ContentEntity } from './entities/ContentEntity';
 import { EntityMergeBlockEntity } from './entities/EntityMergeBlockEntity';
+import { EventBaseEntity } from './entities/EventBaseEntity';
 import { type Event, EventEntity } from './entities/EventEntity';
-import { GraphFileNodeEntity } from './entities/GraphFileNodeEntity';
+import { FileEntity } from './entities/FileEntity';
 import { GraphNodeEntity } from './entities/GraphNodeEntity';
+import { ItemBaseEntity } from './entities/ItemBaseEntity';
 import {
   type Item,
   type InventoryCondition,
@@ -82,19 +86,22 @@ import { UserContextService } from './services/UserContextService';
     TypeOrmModule.forFeature([
       EntityMergeBlockEntity,
       CommunicationEntity,
+      CommunicationBaseEntity,
       ContentEntity,
       EventEntity,
+      EventBaseEntity,
       PersonEntity,
       ConceptEntity,
       PlaceEntity,
       GraphNodeEntity,
       ItemEntity,
+      ItemBaseEntity,
       ProductModelEntity,
       ReceiptEntity,
       ReceiptLineItemEntity,
       ObjectObservationEntity,
       RelationshipEntity,
-      GraphFileNodeEntity,
+      FileEntity,
       BrowserActivityEntity,
       UserEntity,
       RelationshipEntity,
@@ -150,11 +157,17 @@ import { UserContextService } from './services/UserContextService';
 })
 export class MemoryModule {}
 
+// FileEntity is deliberately absent: the graph's file row is an internal
+// concern maintained by the FileUploadedEvent listener, and re-exporting it
+// under that name would collide with the files domain's FileEntity — the
+// record it references — at every call site that imports both.
 export {
+  BaseEntity,
   CommunicationEntity,
+  CommunicationBaseEntity,
   ContentEntity,
   EventEntity,
-  GraphFileNodeEntity,
+  EventBaseEntity,
   ItemEntity,
   ObjectObservationEntity,
   PersonEntity,
@@ -164,6 +177,7 @@ export {
   ReceiptEntity,
   ReceiptLineItemEntity,
   GraphNodeEntity,
+  ItemBaseEntity,
   RelationshipEntity,
 };
 
@@ -220,5 +234,6 @@ export {
   CommunicationDirection,
   CommunicationType,
   CreateCommunicationDto,
+  NORMALIZED_PERSON_FIELDS,
   UpdateCommunicationDto,
 } from './types';

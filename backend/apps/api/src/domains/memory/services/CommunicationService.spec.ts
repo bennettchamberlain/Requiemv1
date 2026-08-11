@@ -1,9 +1,11 @@
 import type { UserServiceContext } from '@ci/common/context';
 import { INGEST_REFRESH_COLUMNS, bulkInsertIdempotent } from '@ci/common/persistence';
 
+import { CommunicationBaseEntity } from '../entities/CommunicationBaseEntity';
 import { CommunicationEntity } from '../entities/CommunicationEntity';
 import { CommunicationType } from '../types';
 
+import { makeInsertBuilder } from './__tests__/harness/insertBuilder';
 import { CommunicationService } from './CommunicationService';
 
 jest.mock('@ci/common/persistence', () => ({
@@ -18,11 +20,34 @@ const USER = '00000000-0000-0000-0000-0000000000aa';
 const CONTEXT: UserServiceContext = { userId: USER } as UserServiceContext;
 
 function makeService() {
-  const repository = {
+  const baseInsert = {} as { values?: unknown[]; conflict?: string };
+
+  const baseRepo = {
+    create: jest.fn((partial: Partial<CommunicationBaseEntity>) =>
+      Object.assign(new CommunicationBaseEntity(), partial),
+    ),
+    save: jest.fn(async (entity: CommunicationBaseEntity) => entity),
+    update: jest.fn(async () => ({ affected: 1 })),
+    delete: jest.fn(async () => ({ affected: 1 })),
+    metadata: { target: CommunicationBaseEntity, columns: { length: 10 } },
+    createQueryBuilder: jest.fn(() => makeInsertBuilder(baseInsert)),
+  };
+
+  const repository: Record<string, unknown> = {
     create: jest.fn((partial: Partial<CommunicationEntity>) =>
       Object.assign(new CommunicationEntity(), partial),
     ),
     save: jest.fn(async (entity: CommunicationEntity) => entity),
+    findOne: jest.fn(),
+  };
+  // Writes run in a spanning transaction; the manager dispatches by entity class.
+  repository.manager = {
+    transaction: jest.fn(async (cb: (m: unknown) => unknown) =>
+      cb({
+        getRepository: (cls: unknown): unknown => (cls === CommunicationBaseEntity ? baseRepo : repository),
+        withRepository: (): unknown => repository,
+      }),
+    ),
   };
 
   const send = jest.fn<Promise<string[]>, [string, Record<string, unknown>]>(async () => []);
@@ -40,7 +65,7 @@ function makeService() {
     dataSource as any,
   );
 
-  return { service, send, repository };
+  return { service, send, repository, baseRepo, baseInsert };
 }
 
 const makeInput = (n: number) =>

@@ -11,7 +11,7 @@ const PREVIEW_MAX_CHARS = 140;
  * the rows where content itself IS the preview. Same one-line + ellipsis shape
  * as the importer's clip, so stored and derived previews are indistinguishable.
  */
-function previewFromContent(content: string | null | undefined): string | null {
+export function previewFromContent(content: string | null | undefined): string | null {
   if (!content) {
     return null;
   }
@@ -33,6 +33,15 @@ export class CommunicationEntity {
   // 20260807072321, so the partition columns are out of the key).
   @PrimaryColumn({ type: 'uuid' })
   id!: string;
+
+  /**
+   * CTI discriminator pin (migration 20260811061411): always 'Communication'.
+   * Pairs with id in the composite FK to ci.entities(entity_id, entity_type)
+   * so a detail row can never point at a base row of another type. DEFAULTed
+   * and CHECKed in the schema; never written by the application.
+   */
+  @Column({ type: 'text', name: 'entity_type', default: 'Communication', insert: false, update: false })
+  entityType!: string;
 
   @Column({ type: 'timestamptz' })
   time!: Date;
@@ -159,4 +168,4 @@ export class CommunicationEntity {
   }
 }
 
-export type Communication = Readonly<CommunicationEntity>;
+export type Communication = Readonly<Omit<CommunicationEntity, 'entityType'>>;

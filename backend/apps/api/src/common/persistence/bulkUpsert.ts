@@ -1,4 +1,10 @@
-import type { ObjectLiteral, Repository, SelectQueryBuilder, WhereExpressionBuilder } from 'typeorm';
+import type {
+  EntityManager,
+  ObjectLiteral,
+  Repository,
+  SelectQueryBuilder,
+  WhereExpressionBuilder,
+} from 'typeorm';
 import { Brackets } from 'typeorm';
 
 /**
@@ -85,6 +91,14 @@ interface BulkInsertOptions<Entity extends ObjectLiteral> {
    * DEFAULT_CHUNK_ROWS when omitted. Must be >= 1.
    */
   maxRowsPerChunk?: number;
+  /**
+   * Optional transactional EntityManager to run inside. When supplied, the whole
+   * statement sequence joins the CALLER's transaction instead of opening its own,
+   * so a caller can compose this with writes to other tables (e.g. a CTI base
+   * row) atomically. When omitted, the call opens and owns its transaction as
+   * before.
+   */
+  manager?: EntityManager;
 }
 
 /**
@@ -117,6 +131,35 @@ export function computeChunkSize(columnsPerRow: number, requestedMax?: number): 
   const target = requestedMax != null && requestedMax > 0 ? requestedMax : DEFAULT_CHUNK_ROWS;
 
   return Math.max(1, Math.min(target, paramBudgetCap));
+}
+
+/**
+ * Chunked multi-row INSERT with an explicit ON CONFLICT clause: the row list is
+ * split by {@link computeChunkSize} so no statement exceeds the bind-param
+ * budget, and each chunk targets `repository.metadata.target` so STI child
+ * repositories emit their discriminator for every row.
+ *
+ * This is the one canonical copy of the "chunk + insert().onConflict()" loop
+ * the CTI/STI bulk writers previously each hand-rolled; a change to the chunk
+ * math or the (deprecated) `onConflict` API lands here once.
+ */
+export async function chunkedConflictInsert<Entity extends ObjectLiteral>(
+  repository: Repository<Entity>,
+  rows: Entity[],
+  onConflict: string,
+): Promise<void> {
+  const chunkSize = computeChunkSize(repository.metadata.columns.length);
+  for (let offset = 0; offset < rows.length; offset += chunkSize) {
+    await repository
+      .createQueryBuilder()
+      .insert()
+      // Route through `metadata.target` so TS picks the `ObjectLiteral`
+      // overload of `.values()`.
+      .into(repository.metadata.target)
+      .values(rows.slice(offset, offset + chunkSize))
+      .onConflict(onConflict)
+      .execute();
+  }
 }
 
 /**
@@ -160,6 +203,13 @@ export async function bulkInsertIdempotent<Entity extends ObjectLiteral>(
 ): Promise<BulkInsertResult<Entity>[]> {
   if (options.entities.length === 0) {
     return [];
+  }
+
+  if (options.manager) {
+    return executeBulkInsert({
+      ...options,
+      repository: options.manager.withRepository(options.repository),
+    });
   }
 
   return options.repository.manager.transaction(async (tx) =>

@@ -9,8 +9,11 @@ import { EventService as SignallingEventService } from '@ci/domains/events';
 import { EventCreatedEvent, EventUpdatedEvent, EventRemovedEvent } from '@ci/domains/memory/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
+import { EventBaseEntity } from '../entities/EventBaseEntity';
 import { EventEntity, Event } from '../entities/EventEntity';
 import { CreateEventDto, UpdateEventDto, SearchEventDto } from '../types';
+
+import { CtiAggregate } from './CtiAggregate';
 
 interface Options {
   limit?: number;
@@ -81,18 +84,63 @@ const DAY_MS = 86_400_000;
  */
 const MAX_RANGE_EVENTS = 2000;
 
+/**
+ * Spanning-aggregate service for the events CTI split: an event is ONE logical
+ * entity persisted as a `ci.entities` base row (discriminated 'Event', the
+ * SOLE owner of title/description — see {@link EventBaseEntity}) plus a
+ * `ci.events` detail row sharing the same uuid. Writes touch both rows in one
+ * transaction; reads compose the egress {@link Event} from the pair with one
+ * batched base-row fetch.
+ */
 @Injectable()
 export class EventService {
+  private readonly aggregate: CtiAggregate<EventEntity, EventBaseEntity>;
+
   constructor(
     @InjectRepository(EventEntity)
     private readonly eventRepository: Repository<EventEntity>,
+    @InjectRepository(EventBaseEntity)
+    private readonly eventBaseRepository: Repository<EventBaseEntity>,
     private readonly signallingEventService: SignallingEventService,
     private readonly dataSource: DataSource,
-  ) {}
+  ) {
+    this.aggregate = new CtiAggregate({
+      detailRepository: this.eventRepository,
+      detailEntity: EventEntity,
+      baseEntity: EventBaseEntity,
+      baseRepository: this.eventBaseRepository,
+      linkedTable: 'events',
+      scopedWhere: (context, id) => ({
+        id,
+        ...(context.userId !== SYSTEM_USER && {
+          user: { id: context.userId },
+        }),
+      }),
+    });
+  }
+
+  /**
+   * Composes egress events from detail rows plus one batched fetch of their
+   * base rows (the owners of title/description), preserving input order.
+   */
+  private composeMany(entities: EventEntity[]): Promise<Event[]> {
+    return this.aggregate.composeMany(entities, (entity, base) => EventEntity.toEgressType(entity, base));
+  }
+
+  private async composeOne(entity: EventEntity): Promise<Event> {
+    const [event] = await this.composeMany([entity]);
+
+    return event;
+  }
 
   /** Map a CreateEventDto onto EventEntity columns (shared by the single + bulk paths). */
   private toEntityFields(item: CreateEventDto): Partial<EventEntity> {
     const toCreate = { ...item } as Partial<EventEntity>;
+
+    // title/description are base-row data (ci.entities); never let them near
+    // the detail table.
+    delete (toCreate as Record<string, unknown>).title;
+    delete (toCreate as Record<string, unknown>).description;
 
     if (item.start_time) {
       toCreate.startTime = item.start_time;
@@ -196,30 +244,44 @@ export class EventService {
     if (sourceWhere) {
       const existing = await this.eventRepository.findOne({ where: sourceWhere });
       if (existing) {
-        return EventEntity.toEgressType(existing);
+        return this.composeOne(existing);
       }
     }
 
     const id = item.id ?? uuidv7();
 
-    const event = this.eventRepository.create({
-      ...toCreate,
-      id,
-      user: {
-        id: context.userId,
-      },
-    });
-
     let eventResult: EventEntity;
     try {
-      eventResult = await this.eventRepository.save(event);
+      // One transaction across both halves of the aggregate: the base row (the
+      // owner of title/description) first, then the detail.
+      eventResult = await this.eventRepository.manager.transaction(async (manager) => {
+        await manager.getRepository(EventBaseEntity).save(
+          this.aggregate.createBaseRow(manager, {
+            id,
+            userId: context.userId,
+            name: item.title,
+            description: item.description ?? null,
+          }),
+        );
+
+        const event = manager.getRepository(EventEntity).create({
+          ...toCreate,
+          id,
+          user: {
+            id: context.userId,
+          },
+        });
+
+        return manager.getRepository(EventEntity).save(event);
+      });
     } catch (err) {
       // Lost a race to a concurrent insert of the same triple (the partial-
-      // unique index raised 23505) — fetch and return the winner.
+      // unique index raised 23505) — fetch and return the winner. The failed
+      // transaction rolled back the base row too.
       if (sourceWhere && (err as { code?: string })?.code === '23505') {
         const existing = await this.eventRepository.findOne({ where: sourceWhere });
         if (existing) {
-          return EventEntity.toEgressType(existing);
+          return this.composeOne(existing);
         }
       }
 
@@ -230,7 +292,10 @@ export class EventService {
       eventId: eventResult.id,
     });
 
-    return EventEntity.toEgressType(eventResult);
+    return EventEntity.toEgressType(eventResult, {
+      name: item.title,
+      description: item.description ?? null,
+    });
   }
 
   async create(context: UserServiceContext, data: CreateEventDto | CreateEventDto[]): Promise<Event[]> {
@@ -257,30 +322,77 @@ export class EventService {
       return [];
     }
 
-    const entities = data.map((item) =>
+    const withIds = data.map((item) => ({ ...item, id: item.id ?? uuidv7() }));
+
+    const entities = withIds.map((item) =>
       this.eventRepository.create({
         ...this.toEntityFields(item),
-        id: item.id ?? uuidv7(),
+        id: item.id,
         userId: context.userId,
       }),
     );
 
-    const results = await bulkInsertIdempotent({
-      repository: this.eventRepository,
-      entities,
-      primaryKey: 'id',
-      getTriple: (entity) => ({
-        sourceType: entity.sourceType,
-        sourceSystem: entity.sourceSystem,
-        sourceId: entity.sourceId,
-      }),
-      scope: { userId: context.userId },
-      // Must match events_source_triple_uniq (user-scoped as of 20260808065724).
-      conflictTarget: '(user_id, source_type, source_system, source_id) WHERE source_id IS NOT NULL',
-      tripleColumns: ['source_type', 'source_system', 'source_id'],
-      // Centralized refresh contract — currently empty, so conflicts stay
-      // DO NOTHING find-or-return.
-      conflictUpdateColumns: INGEST_REFRESH_COLUMNS.event,
+    // title/description are base-row data and never touch the detail table.
+    const ingressById = new Map(
+      withIds.map((item) => [item.id, { title: item.title, description: item.description ?? null }]),
+    );
+
+    // One transaction spans both halves of the CTI aggregate: the detail rows
+    // land first (the triple arbiter decides which actually insert), then a
+    // base row is written for exactly the inserted set. The deferred FK
+    // (events_event_id_entities_fk) tolerates the detail-before-base order.
+    const { results, bases } = await this.eventRepository.manager.transaction(async (manager) => {
+      const detailResults = await bulkInsertIdempotent({
+        repository: this.eventRepository,
+        manager,
+        entities,
+        primaryKey: 'id',
+        getTriple: (entity) => ({
+          sourceType: entity.sourceType,
+          sourceSystem: entity.sourceSystem,
+          sourceId: entity.sourceId,
+        }),
+        scope: { userId: context.userId },
+        // Must match events_source_triple_uniq (user-scoped as of 20260808150100).
+        conflictTarget: '(user_id, source_type, source_system, source_id) WHERE source_id IS NOT NULL',
+        tripleColumns: ['source_type', 'source_system', 'source_id'],
+        // Centralized refresh contract — currently empty, so conflicts stay
+        // DO NOTHING find-or-return.
+        conflictUpdateColumns: INGEST_REFRESH_COLUMNS.event,
+      });
+
+      const baseRows = detailResults
+        .filter(({ inserted }) => inserted)
+        .map(({ entity }) => {
+          const ingress = ingressById.get(entity.id);
+          if (!ingress) {
+            // Every inserted id came from withIds — the exact array ingressById
+            // was built from — so a miss means the id mapping broke. Fail
+            // loudly rather than writing a null-labeled base row.
+            throw new Error(`No ingress row for inserted event ${entity.id}`);
+          }
+
+          return this.aggregate.createBaseRow(manager, {
+            id: entity.id,
+            userId: context.userId,
+            name: ingress.title,
+            description: ingress.description,
+          });
+        });
+
+      // ON CONFLICT (entity_id) DO NOTHING guards the theoretical case of a
+      // base row already present for this uuid.
+      await this.aggregate.insertBaseRows(manager, baseRows, '(entity_id) DO NOTHING');
+
+      // One read covers egress composition for inserted AND pre-existing rows
+      // (a deduped triple resolves to a row whose base values this batch never
+      // carried).
+      const baseEntities = await this.aggregate.fetchBaseMap(
+        detailResults.map(({ entity }) => entity.id),
+        manager,
+      );
+
+      return { results: detailResults, bases: baseEntities };
     });
 
     // Bulk ingest does NOT emit a per-row EventCreatedEvent: the per-row pgboss
@@ -288,7 +400,7 @@ export class EventService {
     // bulk-loaded rows is deferred to the post-load batch embed
     // (POST /api/maintenance/search-index/backfill). Single-row create() still
     // emits, so interactive creates index live.
-    return results.map(({ entity }) => EventEntity.toEgressType(entity));
+    return results.map(({ entity }) => EventEntity.toEgressType(entity, bases.get(entity.id)));
   }
 
   /**
@@ -336,7 +448,7 @@ export class EventService {
 
     const result = await query.getMany();
 
-    return result.map((entity) => EventEntity.toEgressType(entity));
+    return this.composeMany(result);
   }
 
   /**
@@ -396,7 +508,7 @@ export class EventService {
       },
     });
 
-    return result.map((entity) => EventEntity.toEgressType(entity));
+    return this.composeMany(result);
   }
 
   async findByIds(context: ServiceContext, ids: string[]): Promise<(Event | null)[]> {
@@ -411,7 +523,8 @@ export class EventService {
       },
     });
 
-    const map = new Map(result.map((entity) => [entity.id, EventEntity.toEgressType(entity)]));
+    const events = await this.composeMany(result);
+    const map = new Map(events.map((event) => [event.id, event]));
 
     return ids.map((id) => map.get(id) ?? null);
   }
@@ -426,18 +539,21 @@ export class EventService {
       },
     });
 
-    return result ? EventEntity.toEgressType(result) : null;
+    return result ? this.composeOne(result) : null;
   }
 
   async update(context: ServiceContext, id: string, data: UpdateEventDto): Promise<Event | null> {
     const updateData: Partial<EventEntity> = {};
 
+    // title/description are base-row data (ci.entities); patched separately
+    // below, in the same transaction.
+    const basePatch: Partial<Pick<EventBaseEntity, 'name' | 'description'>> = {};
     if (data.title) {
-      updateData.title = data.title;
+      basePatch.name = data.title;
     }
 
     if (data.description) {
-      updateData.description = data.description;
+      basePatch.description = data.description;
     }
 
     if (data.event_type) {
@@ -462,10 +578,6 @@ export class EventService {
 
     if (data.location_name) {
       updateData.locationName = data.location_name;
-    }
-
-    if (data.event_entity_id) {
-      updateData.eventEntityId = data.event_entity_id;
     }
 
     if (data.location_coordinates) {
@@ -568,42 +680,40 @@ export class EventService {
       updateData.createdBy = data.created_by;
     }
 
-    const event = await this.eventRepository.findOne({
-      where: {
-        id: id,
-        ...(context.userId !== SYSTEM_USER && {
-          user: { id: context.userId },
-        }),
-      },
+    // One transaction across both halves of the aggregate (see CtiAggregate).
+    // A title/description-only patch still bumps ci.events.updated_at so
+    // detail-side incremental consumers see the change.
+    const updated = await this.aggregate.applyUpdate(context, id, {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      detail: updateData as any, // TypeORM will handle JSON serialization
+      base: basePatch,
     });
 
-    if (event) {
-      Object.assign(event, updateData);
-      await this.eventRepository.save(event);
-
-      await this.signallingEventService.send(EventUpdatedEvent, {
-        eventId: event.id,
-      });
-    } else {
+    if (!updated) {
       return null;
     }
 
-    return this.findById(context, id);
+    await this.signallingEventService.send(EventUpdatedEvent, {
+      eventId: updated.id,
+    });
+
+    // The transaction already reloaded the detail row; one base fetch
+    // completes the egress composition.
+    const [event] = await this.composeMany([updated]);
+
+    return event;
   }
 
   async remove(context: ServiceContext, id: string): Promise<boolean> {
-    const event = await this.findById(context, id);
+    // Authorized load + base-row delete — the events_event_id_entities_fk
+    // ON DELETE CASCADE removes the detail in the same statement. Downstream
+    // FK semantics are unchanged (capture_events/observations/receipts SET
+    // NULL; hbpe.l1_event_cluster still RESTRICTs a clustered event).
+    const removed = await this.aggregate.remove(context, id);
 
-    if (!event) {
+    if (!removed) {
       return false;
     }
-
-    await this.eventRepository.delete({
-      id,
-      ...(context.userId !== SYSTEM_USER && {
-        user: { id: context.userId },
-      }),
-    });
 
     await this.signallingEventService.send(EventRemovedEvent, {
       eventId: id,
@@ -612,15 +722,49 @@ export class EventService {
     return true;
   }
 
-  async search(context: ServiceContext, query: SearchEventDto): Promise<EventEntity[]> {
-    return this.eventRepository.find({
-      where: {
-        ...query,
-        ...(context.userId !== SYSTEM_USER && {
-          user: { id: context.userId },
-        }),
-      },
-    });
+  async search(context: ServiceContext, query: SearchEventDto): Promise<Event[]> {
+    const { title, description, ...detailQuery } = query;
+
+    // title/description live on the CTI base row; the FK guarantees every
+    // detail row has one, so the base is joined unconditionally and its
+    // columns are hydrated in the SAME query — no second composition fetch.
+    let qb = this.eventRepository
+      .createQueryBuilder('event')
+      .innerJoin('ci.entities', 'base', 'base.entity_id = event.event_id')
+      .addSelect('base.name', 'base_name')
+      .addSelect('base.description', 'base_description');
+
+    if (context.userId !== SYSTEM_USER) {
+      qb = qb.andWhere('event.user_id = :userId', { userId: context.userId });
+    }
+
+    if (title) {
+      qb = qb.andWhere('base.name = :title', { title });
+    }
+
+    if (description) {
+      qb = qb.andWhere('base.description = :description', { description });
+    }
+
+    for (const [key, value] of Object.entries(detailQuery)) {
+      if (value !== undefined) {
+        qb = qb.andWhere(`event.${key} = :${key}`, { [key]: value });
+      }
+    }
+
+    // The 1:1 join yields exactly one raw row per entity, in the same order,
+    // so the base columns compose positionally.
+    const { entities, raw } = await qb.getRawAndEntities<{
+      base_name: string | null;
+      base_description: string | null;
+    }>();
+
+    return entities.map((entity, index) =>
+      EventEntity.toEgressType(entity, {
+        name: raw[index]?.base_name ?? null,
+        description: raw[index]?.base_description ?? null,
+      }),
+    );
   }
 
   async getEntitiesForEvents(

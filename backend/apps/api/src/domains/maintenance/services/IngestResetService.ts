@@ -72,6 +72,31 @@ export class IngestResetService {
       const ingestRefs = INGEST_TABLES.map(({ schema, table }) => `"${schema}"."${table}"`);
       await manager.query(`TRUNCATE TABLE ${ingestRefs.join(', ')} RESTART IDENTITY CASCADE`);
 
+      // Inventory/events/communications rows are CTI aggregates: each detail
+      // row has a discriminated base row in ci.entities sharing its uuid.
+      // TRUNCATE only follows FKs POINTING AT the truncated tables, so the
+      // base rows survive it — delete them explicitly or the reset strands
+      // orphan base entities.
+      //
+      // Scoped by provenance (linked_table): 'Item'/'Event'/'Communication'
+      // entities created by graph ingest (linked_table 'import:<source>') are
+      // real graph entities, not mirrors of the truncated tables, and must
+      // survive the reset.
+      //
+      // The graph-delta delete trigger is disabled around the DELETE, matching
+      // the CTI migrations' bulk rebuilds: a maintenance reset is not a graph
+      // change, and leaving it on would write one ci.graph_deltas row per
+      // deleted entity (communications scale: ~0.5M+) inside this transaction
+      // and then narrate the reset to the user in the next summary. A rollback
+      // restores the trigger state along with everything else.
+      await manager.query(`ALTER TABLE ci.entities DISABLE TRIGGER entities_graph_delta_delete`);
+      await manager.query(
+        `DELETE FROM ci.entities
+         WHERE entity_type IN ('Item', 'Event', 'Communication')
+           AND linked_table IN ('inventory', 'events', 'communications')`,
+      );
+      await manager.query(`ALTER TABLE ci.entities ENABLE TRIGGER entities_graph_delta_delete`);
+
       // The ci_search index tables carry no FK edges — plain truncates, same as
       // OrphanCleanupService.truncateSearchIndex but inside THIS transaction.
       for (const { schema, table } of SEARCH_TABLES) {

@@ -2,34 +2,21 @@ import type { UserServiceContext } from '@ci/common/context';
 
 import { ConceptEntity } from '../entities/ConceptEntity';
 
+import { makeInsertBuilder } from './__tests__/harness/insertBuilder';
 import { ConceptService } from './ConceptService';
 
 const USER = '00000000-0000-0000-0000-0000000000aa';
 
 const CONTEXT: UserServiceContext = { userId: USER } as UserServiceContext;
 
-function makeInsertBuilder(record: { values?: unknown[]; conflict?: string; inserted: boolean }) {
-  const qb: Record<string, unknown> = {};
-  qb.insert = jest.fn(() => qb);
-  qb.into = jest.fn(() => qb);
-  qb.values = jest.fn((v: unknown[]) => {
-    record.values = v;
-
-    return qb;
-  });
-  qb.onConflict = jest.fn((c: string) => {
-    record.conflict = c;
-
-    return qb;
-  });
-  qb.execute = jest.fn(async () => {
-    record.inserted = true;
-
-    return { raw: [] };
-  });
-
-  return qb;
-}
+/**
+ * ConceptEntity's persisted-column count as reported by
+ * repository.metadata.columns.length: the 7 columns inherited from BaseEntity,
+ * the `entity_type` STI discriminator, and ConceptEntity's own 4
+ * (search_content, linked_table, linked_id, last_accessed). Drives
+ * computeChunkSize in the bulk insert.
+ */
+const CONCEPT_COLUMN_COUNT = 12;
 
 function makeSelectBuilder(rows: ConceptEntity[]) {
   const qb: Record<string, unknown> = {};
@@ -44,9 +31,10 @@ function makeService(existing: ConceptEntity[] = []) {
   const insertRecord = { inserted: false } as { values?: unknown[]; conflict?: string; inserted: boolean };
   const created: ConceptEntity[] = [];
 
+  // No `entityType` is seeded: under STI the discriminator is TypeORM's to
+  // manage, and ConceptEntity no longer carries it as a property.
   const create = jest.fn((partial: Partial<ConceptEntity>) => {
     const entity = Object.assign(new ConceptEntity(), {
-      entityType: 'Concept',
       properties: {},
       ...partial,
       userId: USER,
@@ -67,9 +55,19 @@ function makeService(existing: ConceptEntity[] = []) {
     create,
     save,
     findOne,
-    // 12 scalar columns + the owner_user_id relation-join column = 13, matching
-    // repository.metadata.columns.length; drives computeChunkSize in createMany.
-    metadata: { target: ConceptEntity, columns: { length: 13 } },
+    target: ConceptEntity,
+    metadata: {
+      target: ConceptEntity,
+      columns: { length: CONCEPT_COLUMN_COUNT },
+      primaryColumns: [{ propertyName: 'id' }],
+    },
+    // create() persists inside a transaction (EntityService.persistCreate); the
+    // transactional manager hands back this same mock repository.
+    manager: {
+      transaction: jest.fn(async (cb: (m: { getRepository: () => unknown }) => unknown) =>
+        cb({ getRepository: (): unknown => repository }),
+      ),
+    },
     createQueryBuilder: jest.fn((alias?: string) => {
       if (alias === undefined) {
         return makeInsertBuilder(insertRecord);
@@ -121,7 +119,6 @@ describe('ConceptService bulk createMany', () => {
   it('dedups on re-send: the same linked key returns the existing row without a duplicate event', async () => {
     const existing = Object.assign(new ConceptEntity(), {
       id: 'existing-1',
-      entityType: 'Concept',
       name: 'Chess',
       linkedTable: 'topics',
       linkedId: 'chess',

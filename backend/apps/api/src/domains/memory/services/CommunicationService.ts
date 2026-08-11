@@ -15,9 +15,12 @@ import {
 import { EventService } from '@ci/domains/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
-import { CommunicationEntity, Communication } from '../entities/CommunicationEntity';
+import { CommunicationBaseEntity } from '../entities/CommunicationBaseEntity';
+import { CommunicationEntity, Communication, previewFromContent } from '../entities/CommunicationEntity';
 import { CommunicationCreatedEvent, CommunicationUpdatedEvent, CommunicationRemovedEvent } from '../events';
 import { CreateCommunicationDto, UpdateCommunicationDto } from '../types';
+
+import { CtiAggregate, type RepositoryProvider } from './CtiAggregate';
 
 interface Options {
   limit?: number;
@@ -40,8 +43,17 @@ export interface HourlyCommunicationCount {
   count: number;
 }
 
+/**
+ * Spanning-aggregate service for the communications CTI split: every
+ * `ci.communications` row has a `Communication`-discriminated base row in
+ * `ci.entities` sharing its uuid (see {@link CommunicationBaseEntity}). Unlike
+ * Item/Event, nothing was normalized away — the base row's `name` is a DERIVED
+ * display label re-computed here whenever its source fields change.
+ */
 @Injectable()
 export class CommunicationService {
+  private readonly aggregate: CtiAggregate<CommunicationEntity, CommunicationBaseEntity>;
+
   constructor(
     @InjectRepository(CommunicationEntity)
     private readonly communicationRepository: Repository<CommunicationEntity>,
@@ -50,6 +62,44 @@ export class CommunicationService {
     private readonly dataSource: DataSource,
   ) {
     this.logger.setContext(CommunicationService.name);
+    this.aggregate = new CtiAggregate({
+      detailRepository: this.communicationRepository,
+      detailEntity: CommunicationEntity,
+      baseEntity: CommunicationBaseEntity,
+      // No baseRepository: the Communication egress composes from the detail
+      // row alone (nothing was normalized away).
+      linkedTable: 'communications',
+      scopedWhere: (context, id) => ({
+        id,
+        ...(context.userId !== SYSTEM_USER && {
+          userId: context.userId,
+        }),
+      }),
+    });
+  }
+
+  /** The base row's derived display label: subject, else preview, else a content clip. */
+  private labelFor(entity: Pick<CommunicationEntity, 'subject' | 'preview' | 'content'>): string | null {
+    // Importers commonly store no-subject messages as '' (not null); a blank
+    // subject/preview must fall through to the next branch, matching the
+    // migration backfill's NULLIF(trim(...), '').
+    const blankToNull = (value: string | null | undefined): string | null => {
+      const trimmed = value?.trim();
+
+      return trimmed ? trimmed : null;
+    };
+
+    return blankToNull(entity.subject) ?? blankToNull(entity.preview) ?? previewFromContent(entity.content);
+  }
+
+  /** Builds the `ci.entities` half of the aggregate from a (hydrated) detail row. */
+  private baseRowFor(manager: RepositoryProvider, entity: CommunicationEntity): CommunicationBaseEntity {
+    return this.aggregate.createBaseRow(manager, {
+      id: entity.id,
+      userId: entity.userId,
+      name: this.labelFor(entity),
+      description: entity.summary ?? null,
+    });
   }
 
   async create(context: UserServiceContext, data: CreateCommunicationDto): Promise<Communication> {
@@ -91,7 +141,14 @@ export class CommunicationService {
     // for previously-unseen identifiers, and writes the resolved ids back.
     // Bulk createMany does not emit per-row events, so its rows are linked by
     // the matching backfill pair instead (see MaintenanceController).
-    const communicationResult = await this.communicationRepository.save(communication);
+    //
+    // One transaction across both halves of the CTI aggregate: the base row
+    // (derived display label) first, then the detail.
+    const communicationResult = await this.communicationRepository.manager.transaction(async (manager) => {
+      await manager.getRepository(CommunicationBaseEntity).save(this.baseRowFor(manager, communication));
+
+      return manager.getRepository(CommunicationEntity).save(communication);
+    });
 
     await this.eventService.send(CommunicationCreatedEvent, {
       communicationId: communicationResult.id,
@@ -163,19 +220,47 @@ export class CommunicationService {
       }),
     );
 
-    const results = await bulkInsertIdempotent({
-      repository: this.communicationRepository,
-      entities,
-      primaryKey: 'id',
-      getTriple: (entity) => ({
-        sourceType: entity.sourceType,
-        sourceSystem: entity.sourceSystem,
-        sourceId: entity.sourceId,
-      }),
-      scope: { userId: context.userId },
-      conflictTarget: '(user_id, source_type, source_system, source_id) WHERE source_id IS NOT NULL',
-      tripleColumns: ['source_type', 'source_system', 'source_id'],
-      conflictUpdateColumns: INGEST_REFRESH_COLUMNS.communication,
+    // One transaction spans both halves of the CTI aggregate. The base phase
+    // UPSERTS for every result row — not just inserts — because the detail
+    // conflict action refreshes subject/preview/content on re-ingest
+    // (INGEST_REFRESH_COLUMNS.communication) and the base row's derived label
+    // must follow. Labels are derived from the HYDRATED rows, so they reflect
+    // what actually landed (refreshed values applied, stored summary kept).
+    const results = await this.communicationRepository.manager.transaction(async (manager) => {
+      const detailResults = await bulkInsertIdempotent({
+        repository: this.communicationRepository,
+        manager,
+        entities,
+        primaryKey: 'id',
+        getTriple: (entity) => ({
+          sourceType: entity.sourceType,
+          sourceSystem: entity.sourceSystem,
+          sourceId: entity.sourceId,
+        }),
+        scope: { userId: context.userId },
+        conflictTarget: '(user_id, source_type, source_system, source_id) WHERE source_id IS NOT NULL',
+        tripleColumns: ['source_type', 'source_system', 'source_id'],
+        conflictUpdateColumns: INGEST_REFRESH_COLUMNS.communication,
+      });
+
+      // One base row per distinct id: intra-batch duplicate triples resolve to
+      // the same hydrated row, and ON CONFLICT DO UPDATE rejects touching one
+      // arbiter row twice in a single statement (SQLSTATE 21000).
+      const baseRows = [
+        ...new Map(detailResults.map(({ entity }) => [entity.id, this.baseRowFor(manager, entity)])).values(),
+      ];
+
+      // The WHERE skips identical-value rewrites: an unchanged re-sync of
+      // the largest table in the schema would otherwise churn a dead tuple
+      // and a search-vector/GIN recompute per row for no change.
+      await this.aggregate.insertBaseRows(
+        manager,
+        baseRows,
+        '(entity_id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description ' +
+          'WHERE (entities.name, entities.description) IS DISTINCT FROM (EXCLUDED.name, EXCLUDED.description)',
+      );
+
+      return detailResults;
     });
 
     return results.map(({ entity }) => CommunicationEntity.toEgressType(entity));
@@ -316,23 +401,35 @@ export class CommunicationService {
       updateData.isArchived = data.is_archived;
     }
 
-    if (data.preview !== 'undefined') {
+    // (Previously compared against the STRING 'undefined', which is always
+    // true — the guard never guarded.)
+    if (data.preview !== undefined) {
       updateData.preview = data.preview;
     }
 
-    const communication = await this.communicationRepository.findOne({
-      where: {
-        id: id,
-        ...(context.userId !== SYSTEM_USER && {
-          userId: context.userId,
-        }),
-      },
+    // One transaction across both halves of the aggregate; when any source of
+    // the derived label (subject/preview/content) or of the description
+    // (summary) changed, the base row is re-derived from the updated detail.
+    const labelSourcesTouched =
+      data.subject !== undefined ||
+      data.preview !== undefined ||
+      data.content !== undefined ||
+      data.summary !== undefined;
+
+    const updated = await this.aggregate.applyUpdate(context, id, {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      detail: updateData as any, // TypeORM will handle JSON serialization
+      // The base patch derives from the PATCHED detail values, so the label
+      // reflects what is actually being persisted.
+      base: labelSourcesTouched
+        ? (after) => ({
+            name: this.labelFor(after),
+            description: after.summary ?? null,
+          })
+        : undefined,
     });
 
-    if (communication) {
-      Object.assign(communication, updateData);
-      await this.communicationRepository.save(communication);
-    } else {
+    if (!updated) {
       return null;
     }
 
@@ -340,29 +437,19 @@ export class CommunicationService {
       communicationId: id,
     });
 
-    return this.findById(context, id);
+    // The transaction already reloaded the detail row; the Communication
+    // egress composes from it alone.
+    return CommunicationEntity.toEgressType(updated);
   }
 
   async remove(context: ServiceContext, id: string): Promise<boolean> {
-    const communication = await this.communicationRepository.findOne({
-      where: {
-        id: id,
-        ...(context.userId !== SYSTEM_USER && {
-          userId: context.userId,
-        }),
-      },
-    });
+    // Authorized load + base-row delete — the communications_id_entities_fk
+    // ON DELETE CASCADE removes the detail in the same statement.
+    const removed = await this.aggregate.remove(context, id);
 
-    if (!communication) {
+    if (!removed) {
       return false;
     }
-
-    await this.communicationRepository.delete({
-      id,
-      ...(context.userId !== SYSTEM_USER && {
-        userId: context.userId,
-      }),
-    });
 
     await this.eventService.send(CommunicationRemovedEvent, {
       communicationId: id,
