@@ -512,6 +512,11 @@ export class GraphUtilityService {
 
     const visitedNodes = new Map<string, GraphNodeEntity>();
     const collectedEdges: RelationshipEntity[] = [];
+    // Each BFS layer re-fetches the relationships touching its frontier, and an edge between two
+    // visited layers matches BOTH fetches — without this set the edge list contained every
+    // relationship once per layer it touched, and clients rendered the duplicates on top of each
+    // other (a second, never-updated line under each real one).
+    const collectedEdgeIds = new Set<string>();
 
     let currentLayer = new Set(seedEntityIds);
     let depth = 0;
@@ -546,7 +551,10 @@ export class GraphUtilityService {
           break;
         }
 
-        collectedEdges.push(rel);
+        if (!collectedEdgeIds.has(rel.relationship_id)) {
+          collectedEdgeIds.add(rel.relationship_id);
+          collectedEdges.push(rel);
+        }
 
         if (direction === 'outbound' || direction === 'both') {
           if (layerIds.includes(rel.from_entity_id) && !visitedNodes.has(rel.to_entity_id)) {
