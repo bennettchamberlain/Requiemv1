@@ -91,6 +91,7 @@ export class PushStage implements ImportStageRunner {
     const counts: DestinationCounts = {};
     let pushed = 0;
     let failed = 0;
+    let deduped = 0;
 
     for (;;) {
       const batch = await this.nextBatch(context.runId);
@@ -103,8 +104,9 @@ export class PushStage implements ImportStageRunner {
 
       pushed += outcome.pushed;
       failed += outcome.failed;
+      deduped += outcome.deduped;
 
-      await context.progress({ processed: pushed + failed, total, phase: 'pushing' });
+      await context.progress({ processed: pushed + failed + deduped, total, phase: 'pushing' });
     }
 
     return {
@@ -113,7 +115,10 @@ export class PushStage implements ImportStageRunner {
       // Rows that could not be sent are not a failed import — the ones that went
       // are in ci.* and useful. The run says `partial` and the ledger says which.
       partial: failed > 0 || entities.skipped > 0,
-      detail: { pushed, failed, destinations: counts, entities },
+      // `deduped` is reported separately from `pushed`: it is a real outcome
+      // (the record is in ci.*, it just arrived earlier) and reads as neither a
+      // write nor a loss.
+      detail: { pushed, deduped, failed, destinations: counts, entities },
     };
   }
 
@@ -302,10 +307,11 @@ export class PushStage implements ImportStageRunner {
     context: StageRunContext,
     batch: StagedItem[],
     counts: DestinationCounts,
-  ): Promise<{ pushed: number; failed: number }> {
+  ): Promise<{ pushed: number; failed: number; deduped: number }> {
     const ctx = { userId: context.userId };
     let pushed = 0;
     let failed = 0;
+    let deduped = 0;
 
     for (const row of batch) {
       const record = toCanonical(row);
@@ -322,6 +328,18 @@ export class PushStage implements ImportStageRunner {
         await this.markPushed(row.id, destinations);
         pushed += 1;
       } catch (err) {
+        // A unique violation on a provenance triple is the dedup working, not a
+        // failure: something already in ci.* carries this identity. The batch
+        // paths absorb it, so reaching here means a destination without an
+        // upsert — record it as `skipped`, which the schema defines as "was
+        // considered and deliberately not pushed", so a resumed push does not
+        // reconsider it forever.
+        if (isDuplicateKey(err)) {
+          await this.markSkipped(row.id);
+          deduped += 1;
+          continue;
+        }
+
         await this.markFailed(row.id, (err as Error).message);
         failed += 1;
 
@@ -335,7 +353,7 @@ export class PushStage implements ImportStageRunner {
       }
     }
 
-    return { pushed, failed };
+    return { pushed, failed, deduped };
   }
 
   /** Hand one record to the service that owns its destination. */
@@ -363,21 +381,23 @@ export class PushStage implements ImportStageRunner {
           input.to_entity_ids = to;
         }
 
-        await this.communications.create(ctx, input);
+        await this.communications.createMany(ctx, [input]);
         break;
       }
 
       case 'content':
-        await this.contents.create(ctx, toContentInput(record));
+        await this.contents.createMany(ctx, [toContentInput(record)]);
         break;
       case 'events':
-        await this.events.create(ctx, toEventInput(record));
+        // An ARRAY, deliberately: `create` is only idempotent on the batched
+        // path. Handed a bare object it takes `createOne`, which inserts.
+        await this.events.create(ctx, [toEventInput(record)]);
         break;
       case 'inventory':
-        await this.items.create(ctx, toInventoryInput(record));
+        await this.items.createMany(ctx, [toInventoryInput(record)]);
         break;
       case 'browser_activity':
-        await this.browserActivity.create(ctx, toBrowserActivityInput(record));
+        await this.browserActivity.createMany(ctx, [toBrowserActivityInput(record)]);
         break;
       case 'position': {
         const position = toPositionInput(record);
@@ -410,6 +430,16 @@ export class PushStage implements ImportStageRunner {
     );
   }
 
+  /** Considered and deliberately not written, because it is already there. */
+  private async markSkipped(stagedItemId: string): Promise<void> {
+    await this.dataSource.query(
+      `UPDATE ci_import.staged_items
+          SET push_status = 'skipped', pushed_at = now(), push_error = NULL
+        WHERE id = $1::uuid`,
+      [stagedItemId],
+    );
+  }
+
   private async markFailed(stagedItemId: string, error: string): Promise<void> {
     await this.dataSource.query(
       `UPDATE ci_import.staged_items
@@ -418,4 +448,16 @@ export class PushStage implements ImportStageRunner {
       [stagedItemId, error],
     );
   }
+}
+
+/**
+ * Postgres 23505 — unique violation — however the driver wrapped it.
+ *
+ * Checked on both the error and its `driverError`, because TypeORM surfaces the
+ * code in different places depending on which query path raised it.
+ */
+function isDuplicateKey(err: unknown): boolean {
+  const wrapped = err as { code?: string; driverError?: { code?: string } };
+
+  return wrapped?.code === '23505' || wrapped?.driverError?.code === '23505';
 }

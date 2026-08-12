@@ -46,11 +46,15 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
   /** A stage wired to recording doubles for every destination. */
   function makeStage(overrides: { communicationCreate?: jest.Mock; personCreate?: jest.Mock } = {}) {
     const sent: Array<{ destination: string; input: Record<string, unknown> }> = [];
+    // Every destination takes an ARRAY now — that is the upserting path, and
+    // passing a single row bypasses it.
     const record = (destination: string) =>
-      jest.fn(async (_ctx: unknown, input: Record<string, unknown>) => {
-        sent.push({ destination, input });
+      jest.fn(async (_ctx: unknown, inputs: Array<Record<string, unknown>>) => {
+        for (const input of inputs) {
+          sent.push({ destination, input });
+        }
 
-        return { id: `${destination}-row` };
+        return inputs.map(() => ({ id: `${destination}-row` }));
       });
 
     // Real uuids: `entity_mappings.server_entity_id` is a uuid column, so a
@@ -68,16 +72,16 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
         return { id };
       });
 
-    const communications = { create: overrides.communicationCreate ?? record('communications') };
+    const communications = { createMany: overrides.communicationCreate ?? record('communications') };
 
     const stage = new PushStage(
       harness.dataSource,
       communications as never,
-      { create: record('content') } as never,
+      { createMany: record('content') } as never,
       { create: record('events') } as never,
-      { create: record('inventory') } as never,
+      { createMany: record('inventory') } as never,
       { create: record('position') } as never,
-      { create: record('browser_activity') } as never,
+      { createMany: record('browser_activity') } as never,
       { create: people } as never,
       { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), debug: jest.fn() } as never,
     );
@@ -212,12 +216,12 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
       );
     }
 
-    const communicationCreate = jest.fn(async (_ctx: unknown, input: { source_id?: string }) => {
-      if (input.source_id === 'poison') {
+    const communicationCreate = jest.fn(async (_ctx: unknown, inputs: Array<{ source_id?: string }>) => {
+      if (inputs.some((input) => input.source_id === 'poison')) {
         throw new Error('communications rejected this record');
       }
 
-      return { id: 'communication-row' };
+      return inputs.map(() => ({ id: 'communication-row' }));
     });
 
     const { stage } = makeStage({ communicationCreate });
@@ -261,6 +265,66 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
 
     expect(second.sent).toHaveLength(0);
     expect(outcome.processed).toBe(0);
+  });
+
+  it('sends every destination a batch, which is the path that upserts', async () => {
+    // `create` with one row inserts and throws on a duplicate; only the batch
+    // method is an upsert on the provenance triple. Two audiobook listens are
+    // two events but ONE content row, because content is keyed on the work's
+    // URI — so the single-row path raised
+    // "duplicate key value violates content_source_triple_uniq" on the second.
+    const runId = await harness.startRun();
+
+    await harness.dataSource.query(
+      `INSERT INTO ci_import.staged_items
+         (run_id, user_id, data_source, classification, content_hash, occurred_at, metadata)
+       VALUES ($1::uuid, $2::uuid, 'audible', 'listen', 'listen-1', now(), '{}'::jsonb)`,
+      [runId, harness.userId],
+    );
+
+    const { stage, sent } = makeStage();
+
+    await stage.run(contextFor(runId));
+
+    // media.listen fans out to events and content; both must have been handed
+    // an array, or the mock would not have recorded anything.
+    expect(sent.map((entry) => entry.destination).sort()).toEqual(['content', 'events']);
+  });
+
+  it('counts a duplicate as deduped, not as a failure', async () => {
+    // The record is in ci.* — it just arrived earlier. Reporting that as failure
+    // makes a re-import look broken and marks rows for a retry that can never
+    // succeed.
+    const runId = await harness.startRun();
+
+    await harness.dataSource.query(
+      `INSERT INTO ci_import.staged_items
+         (run_id, user_id, data_source, classification, content_hash, occurred_at, metadata)
+       VALUES ($1::uuid, $2::uuid, 'audible', 'email', 'dupe-1', now(), '{}'::jsonb)`,
+      [runId, harness.userId],
+    );
+
+    const duplicate = Object.assign(new Error('duplicate key value violates unique constraint'), {
+      code: '23505',
+    });
+    const { stage } = makeStage({
+      communicationCreate: jest.fn(async () => {
+        throw duplicate;
+      }),
+    });
+
+    const outcome = await stage.run(contextFor(runId));
+
+    expect(outcome.detail).toMatchObject({ pushed: 0, deduped: 1, failed: 0 });
+
+    const [row] = await harness.dataSource.query<Array<{ push_status: string; push_error: string | null }>>(
+      `SELECT push_status, push_error FROM ci_import.staged_items WHERE run_id = $1::uuid`,
+      [runId],
+    );
+
+    // `skipped`, so a resumed push does not reconsider it forever.
+    expect(row.push_status).toBe('skipped');
+    expect(row.push_error).toBeNull();
   });
 
   it('records which destinations a row reached', async () => {
