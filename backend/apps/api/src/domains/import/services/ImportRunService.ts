@@ -262,14 +262,20 @@ export class ImportRunService {
     update: { processed: number; total?: number | null; phase?: string },
   ): Promise<void> {
     await this.dataSource.query(
+      // Every parameter cast, and `$2` cast at BOTH sites. It feeds `processed`
+      // (bigint) and a division (double precision), and Postgres will not deduce
+      // one type for a parameter used two ways — it raises "inconsistent types
+      // deduced for parameter $2" on the first tick, which killed the unpack
+      // stage the moment it reported progress. Same fault as `completeStage`;
+      // this statement was simply never exercised.
       `UPDATE ci_import.import_stages
-          SET processed = $2,
-              total = COALESCE($3, total),
-              phase = COALESCE($4, phase),
+          SET processed = $2::bigint,
+              total = COALESCE($3::bigint, total),
+              phase = COALESCE($4::text, phase),
               items_per_sec = CASE
                 WHEN started_at IS NULL THEN items_per_sec
                 WHEN EXTRACT(EPOCH FROM (now() - started_at)) <= 0 THEN items_per_sec
-                ELSE $2 / EXTRACT(EPOCH FROM (now() - started_at))
+                ELSE $2::double precision / EXTRACT(EPOCH FROM (now() - started_at))
               END
         WHERE id = $1::uuid`,
       [stageId, update.processed, update.total ?? null, update.phase ?? null],

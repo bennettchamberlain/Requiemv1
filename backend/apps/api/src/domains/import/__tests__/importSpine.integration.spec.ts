@@ -132,6 +132,45 @@ describeWithDatabase(`the import spine (${importDatabase.target})`, () => {
       expect(await service.beginStage(stages[0].id)).toBe(false);
     });
 
+    it('records progress while a stage runs', async () => {
+      // The first thing every stage runner does. It went unexercised, and the
+      // statement it runs failed against a real driver on the first tick:
+      // `$2` fed both `processed` (bigint) and a division (double precision),
+      // which Postgres refuses to deduce one type for.
+      const { stages } = await startRun(await stageDrop());
+
+      await service.beginStage(stages[0].id);
+      await service.recordProgress(stages[0].id, { processed: 3, total: 10, phase: 'extracting' });
+
+      const [after] = await dataSource.query<
+        Array<{ processed: string; total: string; phase: string; items_per_sec: number | null }>
+      >(`SELECT processed, total, phase, items_per_sec FROM ci_import.import_stages WHERE id = $1::uuid`, [
+        stages[0].id,
+      ]);
+
+      expect(Number(after.processed)).toBe(3);
+      expect(Number(after.total)).toBe(10);
+      expect(after.phase).toBe('extracting');
+    });
+
+    it('leaves a total alone when a tick does not know one', async () => {
+      // An unpack ticks with no denominator; that must not wipe a total a
+      // previous tick established.
+      const { stages } = await startRun(await stageDrop());
+
+      await service.beginStage(stages[0].id);
+      await service.recordProgress(stages[0].id, { processed: 1, total: 5 });
+      await service.recordProgress(stages[0].id, { processed: 2 });
+
+      const [after] = await dataSource.query<Array<{ processed: string; total: string }>>(
+        `SELECT processed, total FROM ci_import.import_stages WHERE id = $1::uuid`,
+        [stages[0].id],
+      );
+
+      expect(Number(after.processed)).toBe(2);
+      expect(Number(after.total)).toBe(5);
+    });
+
     it('weights the percent rollup by stage rather than counting stages', async () => {
       const { run, stages } = await startRun(await stageDrop());
 
