@@ -58,6 +58,7 @@ import { StagedSourceEntity } from './entities/StagedSourceEntity';
 import { StagedEntityEntity } from './entities/StagedEntityEntity';
 import { StagedItemEntity } from './entities/StagedItemEntity';
 import { StagedRelationshipEntity } from './entities/StagedRelationshipEntity';
+import { StagedUploadPurgeCron } from './listeners/StagedUploadPurgeCron';
 import { StagedSourceService } from './services/StagedSourceService';
 
 /**
@@ -75,13 +76,14 @@ import { StagedSourceService } from './services/StagedSourceService';
       StagedRelationshipEntity,
     ]),
   ],
-  providers: [StagedSourceService],
+  providers: [StagedSourceService, StagedUploadPurgeCron],
   controllers: [ImportUploadsController],
   exports: [StagedSourceService],
 })
 export class ImportModule {}
 
 export { StagedSourceService, UPLOAD_TTL_MS } from './services/StagedSourceService';
+export { StagedUploadPurgeCron, STAGED_UPLOAD_PURGE_CRON } from './listeners/StagedUploadPurgeCron';
 export type { RegisterUploadInput } from './services/StagedSourceService';
 export { sanitizeFilename } from './sources/sanitizeFilename';
 
