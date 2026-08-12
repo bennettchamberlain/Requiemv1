@@ -5,6 +5,7 @@ import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/context';
 import {
+  type BulkInsertResult,
   bulkInsertIdempotent,
   INGEST_REFRESH_COLUMNS,
   keysetPaginate,
@@ -210,6 +211,25 @@ export class ContentService {
     data: CreateContentDto[],
     options?: { emitCreated?: boolean },
   ): Promise<Content[]> {
+    return (await this.createManyDetailed(context, data, options)).map(({ entity }) => entity);
+  }
+
+  /**
+   * Same ingest as {@link createMany}, reporting which rows this call actually
+   * INSERTED rather than found already present.
+   *
+   * The batch paths upsert, so a re-sent row resolves silently and is
+   * indistinguishable in the returned entities from one written for the first
+   * time. The importer needs the difference: without it a push of 7,339 content
+   * records that collapsed onto 2,354 rows reports 7,339 writes, and its
+   * "already saved" count reads zero on an import that was almost entirely
+   * repeats.
+   */
+  async createManyDetailed(
+    context: UserServiceContext,
+    data: CreateContentDto[],
+    options?: { emitCreated?: boolean },
+  ): Promise<Array<BulkInsertResult<Content>>> {
     if (data.length === 0) {
       return [];
     }
@@ -328,7 +348,10 @@ export class ContentService {
       }
     }
 
-    return detailResults.map(({ entity }) => ContentEntity.toEgressType(entity, bases.get(entity.id)));
+    return detailResults.map(({ entity, inserted }) => ({
+      entity: ContentEntity.toEgressType(entity, bases.get(entity.id)),
+      inserted,
+    }));
   }
 
   /**

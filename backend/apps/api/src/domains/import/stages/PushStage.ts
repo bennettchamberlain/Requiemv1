@@ -373,13 +373,30 @@ export class PushStage implements ImportStageRunner {
       try {
         const participants = await this.participantsFor(row.id);
 
+        // `wrote` is per DESTINATION, and a row can reach several. It counts as
+        // a write if ANY destination wrote it: an Audible listen whose audiobook
+        // already exists still produces a new event, so calling the whole row a
+        // duplicate would lose the event it did create.
+        let wrote = false;
+
         for (const destination of destinations) {
-          await this.send(ctx, destination, record, participants);
-          counts[destination] = (counts[destination] ?? 0) + 1;
+          if (await this.send(ctx, destination, record, participants)) {
+            counts[destination] = (counts[destination] ?? 0) + 1;
+            wrote = true;
+          }
         }
 
-        await this.markPushed(row.id, destinations);
-        pushed += 1;
+        if (wrote) {
+          await this.markPushed(row.id, destinations);
+          pushed += 1;
+        } else {
+          // Marked the same way as a row whose duplicate surfaced as a 23505,
+          // because it is the same outcome reached by a quieter route: every
+          // destination already held this record. `skipped` is terminal, so a
+          // resumed push does not reconsider it.
+          await this.markSkipped(row.id);
+          deduped += 1;
+        }
       } catch (err) {
         // A unique violation on a provenance triple is the dedup working, not a
         // failure: something already in ci.* carries this identity. The batch
@@ -409,13 +426,23 @@ export class PushStage implements ImportStageRunner {
     return { pushed, failed, deduped };
   }
 
-  /** Hand one record to the service that owns its destination. */
+  /**
+   * Hand one record to the service that owns its destination, and report whether
+   * that destination actually WROTE a row.
+   *
+   * Every destination upserts, so a collision is absorbed silently rather than
+   * raised — which is correct for ingest and useless for reporting. Counting
+   * sends instead of writes claimed 7,339 content records for an archive that
+   * produced 2,354: content is keyed on the work, so 4,443 Audible listening
+   * sessions collapse onto 88 audiobooks. The `*Detailed` variants exist to tell
+   * the two apart.
+   */
   private async send(
     ctx: { userId: string },
     destination: Destination,
     record: CanonicalRecord,
     participants: Map<string, string[]>,
-  ): Promise<void> {
+  ): Promise<boolean> {
     switch (destination) {
       case 'communications': {
         const input = toCommunicationInput(record);
@@ -434,35 +461,35 @@ export class PushStage implements ImportStageRunner {
           input.to_entity_ids = to;
         }
 
-        await this.communications.createMany(ctx, [input]);
-        break;
+        return wroteAnything(await this.communications.createManyDetailed(ctx, [input]));
       }
 
       case 'content':
-        await this.contents.createMany(ctx, [toContentInput(record)]);
-        break;
+        return wroteAnything(await this.contents.createManyDetailed(ctx, [toContentInput(record)]));
       case 'events':
-        // An ARRAY, deliberately: `create` is only idempotent on the batched
-        // path. Handed a bare object it takes `createOne`, which inserts.
-        await this.events.create(ctx, [toEventInput(record)]);
-        break;
+        // An ARRAY, deliberately: `createDetailed` is the batched path, and only
+        // the batched path is idempotent. A bare object takes `createOne`, which
+        // inserts unconditionally.
+        return wroteAnything(await this.events.createDetailed(ctx, [toEventInput(record)]));
       case 'inventory':
-        await this.items.createMany(ctx, [toInventoryInput(record)]);
-        break;
+        return wroteAnything(await this.items.createManyDetailed(ctx, [toInventoryInput(record)]));
       case 'browser_activity':
-        await this.browserActivity.createMany(ctx, [toBrowserActivityInput(record)]);
-        break;
+        return wroteAnything(await this.browserActivity.createManyDetailed(ctx, [toBrowserActivityInput(record)]));
       case 'position': {
         const position = toPositionInput(record);
 
         // `destinationsFor` routes on `rec.coordinates`, and so does this
         // builder — but it returns null rather than throwing, so a disagreement
         // between the two skips the row instead of failing the import.
-        if (position != null) {
-          await this.positions.create(ctx, [position]);
+        if (position == null) {
+          return false;
         }
 
-        break;
+        // PositionService has no upsert-reporting variant: positions carry no
+        // provenance triple, so every call writes.
+        await this.positions.create(ctx, [position]);
+
+        return true;
       }
     }
   }
@@ -509,6 +536,11 @@ export class PushStage implements ImportStageRunner {
  * Checked on both the error and its `driverError`, because TypeORM surfaces the
  * code in different places depending on which query path raised it.
  */
+/** Whether a batch ingest call wrote at least one row, rather than finding them all. */
+function wroteAnything(results: ReadonlyArray<{ inserted: boolean }>): boolean {
+  return results.some((result) => result.inserted);
+}
+
 function isDuplicateKey(err: unknown): boolean {
   const wrapped = err as { code?: string; driverError?: { code?: string } };
 

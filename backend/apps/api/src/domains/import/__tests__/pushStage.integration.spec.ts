@@ -5,6 +5,7 @@ import {
   NodeEntity,
   RelationshipEntity,
 } from '@ci/domains/graph';
+import { GraphDeltaWriter } from '@ci/domains/memory';
 
 import { PushStage } from '../stages/PushStage';
 import type { StageRunContext } from '../types';
@@ -50,17 +51,21 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
   });
 
   /** A stage wired to recording doubles for every destination. */
-  function makeStage(overrides: { communicationCreate?: jest.Mock; graph?: GraphIngestService } = {}) {
+  function makeStage(
+    overrides: { communicationCreate?: jest.Mock; contentCreate?: jest.Mock; graph?: GraphIngestService } = {},
+  ) {
     const sent: Array<{ destination: string; input: Record<string, unknown> }> = [];
-    // Every destination takes an ARRAY now — that is the upserting path, and
-    // passing a single row bypasses it.
-    const record = (destination: string) =>
+    // Every destination takes an ARRAY and reports `inserted` per row — that is
+    // the upserting path, and the flag is how the stage tells a row it WROTE
+    // from one the destination already had. `inserted: false` is what a real
+    // service returns when the provenance triple is already present.
+    const record = (destination: string, inserted = true) =>
       jest.fn(async (_ctx: unknown, inputs: Array<Record<string, unknown>>) => {
         for (const input of inputs) {
           sent.push({ destination, input });
         }
 
-        return inputs.map(() => ({ id: `${destination}-row` }));
+        return inputs.map(() => ({ entity: { id: `${destination}-row` }, inserted }));
       });
 
     // The entity lane runs against the REAL GraphIngestService, not a double.
@@ -82,18 +87,24 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
           logger as never,
         ),
         logger as never,
+        // Real, for the same reason the ingest service is: `ci.graph_deltas` is
+        // written by the application now (the triggers were dropped), so a
+        // doubled writer would let the entity lane resolve rows while recording
+        // nothing — and the delta is what the insight summaries read.
+        new GraphDeltaWriter(harness.dataSource, logger as never),
       );
 
-    const communications = { createMany: overrides.communicationCreate ?? record('communications') };
+    const communications = { createManyDetailed: overrides.communicationCreate ?? record('communications') };
 
     const stage = new PushStage(
       harness.dataSource,
       communications as never,
-      { createMany: record('content') } as never,
-      { create: record('events') } as never,
-      { createMany: record('inventory') } as never,
+      { createManyDetailed: overrides.contentCreate ?? record('content') } as never,
+      { createDetailed: record('events') } as never,
+      { createManyDetailed: record('inventory') } as never,
+      // Positions carry no provenance triple, so this one never reports.
       { create: record('position') } as never,
-      { createMany: record('browser_activity') } as never,
+      { createManyDetailed: record('browser_activity') } as never,
       graph as never,
       logger as never,
     );
@@ -164,6 +175,32 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
     );
 
     expect(mappings).toHaveLength(3);
+  });
+
+  it('counts a row whose destinations all already had it as deduped, not as a write', async () => {
+    // The reason the services report `inserted` at all. Every destination
+    // upserts, so a collision is absorbed silently — a re-push used to count as
+    // 10,808 writes and report `deduped: 0` on an archive that was mostly
+    // repeats, and the destination breakdown claimed 7,339 content records
+    // where 2,354 rows existed.
+    const runId = await stageEmailWithParticipants();
+    const { stage, sent } = makeStage({
+      communicationCreate: jest.fn(async (_ctx: unknown, inputs: Array<Record<string, unknown>>) => {
+        for (const input of inputs) {
+          sent.push({ destination: 'communications', input });
+        }
+
+        return inputs.map(() => ({ entity: { id: 'communication-row' }, inserted: false }));
+      }),
+    });
+
+    const outcome = await stage.run(contextFor(runId));
+
+    expect(outcome.detail).toMatchObject({ pushed: 0, deduped: 1, failed: 0 });
+    // The record was still SENT — it just wrote nothing, so it must not inflate
+    // the destination breakdown.
+    expect(sent.filter((entry) => entry.destination === 'communications')).toHaveLength(1);
+    expect(outcome.detail.destinations).not.toHaveProperty('communications');
   });
 
   it('counts entities in its own total, so Read and Save agree on one import', async () => {
@@ -361,7 +398,7 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
         throw new Error('communications rejected this record');
       }
 
-      return inputs.map(() => ({ id: 'communication-row' }));
+      return inputs.map(() => ({ entity: { id: 'communication-row' }, inserted: true }));
     });
 
     const { stage } = makeStage({ communicationCreate });
