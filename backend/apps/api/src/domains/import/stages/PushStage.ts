@@ -211,8 +211,14 @@ export class PushStage implements ImportStageRunner {
     error: string | null,
   ): Promise<void> {
     await this.dataSource.query(
+      // `$2` is used twice. It deduces today because both uses are text, but
+      // that is luck, not design — the identical shape in `recordProgress` threw
+      // "inconsistent types deduced" because one use was numeric. Cast at both
+      // sites so a future change to the status type cannot resurrect it.
       `UPDATE ci_import.staged_entities
-          SET push_status = $2, push_error = $3, pushed_at = CASE WHEN $2 = 'pushed' THEN now() END
+          SET push_status = $2::text,
+              push_error = $3::text,
+              pushed_at = CASE WHEN $2::text = 'pushed' THEN now() END
         WHERE id = $1::uuid`,
       [stagedEntityId, status, error],
     );
