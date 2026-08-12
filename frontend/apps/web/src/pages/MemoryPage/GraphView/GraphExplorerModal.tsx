@@ -6,6 +6,7 @@ import { Button, cn } from '@ci/shadcn';
 import { AlertCircle, ArrowLeft, Loader2, Sparkles } from '@ci/shadcn/icons';
 import { useSearchParams } from 'react-router-dom';
 
+import { useGraphDots } from '@/api/useGraphDots';
 import { useGraphOverview, type GraphNode, type GraphLink } from '@/api/useGraphOverview';
 import { useNodeGraphService } from '@/api/useNodeGraphService';
 import { colorForRawType } from '@/components/entities/entityVisuals';
@@ -39,6 +40,8 @@ const GraphCanvas3D = lazy(() => import('./GraphCanvas3D'));
 
 /** Overview cap: past this the O(n²) simulation and the label budget both stop earning their keep. */
 const MAX_OVERVIEW_NODES = 150;
+/** How many viewport node ids the zoomed-in section-edge fetch sends (the endpoint's own cap). */
+const SECTION_EDGE_ID_LIMIT = 300;
 const SEARCH_RESULT_LIMIT = 20;
 /** Focus-mode expansion bounds forwarded to /api/graph/node (client-side caps applied on top). */
 const FOCUS_NODE_LIMIT = 60;
@@ -152,6 +155,22 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
   const [searchLinks, setSearchLinks] = useState<GraphLink[]>([]);
 
   const [{ authToken }] = useAuth();
+
+  /**
+   * DOTS overview: the default zoomed-out picture — every data type as thousands of tiny dots from
+   * GET /graph/dots. Only the filters that endpoint can honor cheaply (entity types, event types)
+   * keep it eligible; the restrictive dimensions (tags, connectors, who/where, dates) resolve
+   * through the classic /graph/data path with its server-computed match sets.
+   */
+  const dotsEligible =
+    tagsParam === undefined &&
+    explorerConnectors.length === 0 &&
+    explorerPeople.length === 0 &&
+    explorerPlaces.length === 0 &&
+    !hasLocationParam &&
+    !dateFromParam &&
+    !dateToParam;
+
   const { loading, error, subgraph, userEntityId, filterMatchedEntityIds, filterScope } = useGraphOverview(
     authToken,
     {
@@ -165,8 +184,48 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
       hasLocation: hasLocationParam,
       dateFrom: dateFromParam,
       dateTo: dateToParam,
+      skip: dotsEligible,
     },
   );
+
+  const {
+    loading: dotsLoading,
+    hydrating: dotsHydrating,
+    error: dotsError,
+    nodes: dotNodes,
+    userEntityId: dotsUserEntityId,
+    counts: dotsCounts,
+    truncated: dotsTruncated,
+    connectivity: dotsConnectivity,
+  } = useGraphDots(authToken, {
+    includeTypes: explorerIncludeTypes,
+    eventTypes: explorerEventTypes,
+    skip: !dotsEligible,
+  });
+
+  const dotsUniverseTotal = useMemo(
+    () => Object.values(dotsCounts).reduce((sum, count) => sum + count, 0),
+    [dotsCounts],
+  );
+
+  const sampleHubs = useMemo(() => {
+    if (!dotsEligible) {
+      return { linked: 0, alone: 0 };
+    }
+
+    let linked = 0;
+    let alone = 0;
+    for (const node of dotNodes) {
+      if ((node.degree ?? 0) > 0) {
+        linked += 1;
+      } else {
+        alone += 1;
+      }
+    }
+
+    return { linked, alone };
+  }, [dotsEligible, dotNodes]);
+
   const isFilterActive = filterScope.tags || filterScope.events;
   const [, { setActiveEntity }] = useEntityService();
 
@@ -182,6 +241,82 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
     maxDepth: FOCUS_HOP_DEPTH,
     skip: !focusEntityId,
   });
+
+  /**
+   * Section edges for the dots overview: once the viewer zooms past the LOD threshold, fetch the
+   * relationships among the nodes actually in frame (POST /graph/edges) and hand them to the
+   * canvas, which reveals them faintly. Keyed on the visible-id set so panning within the same
+   * neighbourhood doesn't refetch; a new section aborts the previous fetch.
+   */
+  const [sectionLinks, setSectionLinks] = useState<GraphLink[]>([]);
+  const sectionAbortRef = useRef<AbortController | null>(null);
+  const sectionKeyRef = useRef('');
+  const dotDegreeById = useMemo(
+    () => new Map(dotNodes.map((node) => [node.id, node.degree ?? 0])),
+    [dotNodes],
+  );
+
+  // The fetched section resets with the picture it belongs to.
+  useEffect(() => {
+    setSectionLinks([]);
+    sectionKeyRef.current = '';
+  }, [dotNodes]);
+
+  const handleViewportChange = useCallback(
+    (visibleNodeIds: string[], zoomedIn: boolean) => {
+      if (!dotsEligible || focusEntityId || isSearchMode || !zoomedIn || visibleNodeIds.length === 0) {
+        return;
+      }
+
+      // The endpoint caps the id list; send the busiest nodes in frame, whose edges are the ones
+      // most worth drawing.
+      const ids = [...visibleNodeIds]
+        .sort((a, b) => (dotDegreeById.get(b) ?? 0) - (dotDegreeById.get(a) ?? 0))
+        .slice(0, SECTION_EDGE_ID_LIMIT);
+
+      const key = [...ids].sort().join(',');
+      if (key === sectionKeyRef.current) {
+        return;
+      }
+
+      sectionKeyRef.current = key;
+      sectionAbortRef.current?.abort();
+      const controller = new AbortController();
+      sectionAbortRef.current = controller;
+
+      (async () => {
+        try {
+          const response = await fetch(buildApiUrl('/api/graph/edges'), {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...apiKeyHeaders(),
+              ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+            },
+            credentials: 'include',
+            body: JSON.stringify({ ids }),
+            signal: controller.signal,
+          });
+
+          if (!response.ok) {
+            return;
+          }
+
+          const payload = await response.json();
+          const links = Array.isArray(payload?.data?.links) ? (payload.data.links as GraphLink[]) : [];
+
+          if (!controller.signal.aborted) {
+            setSectionLinks(links);
+          }
+        } catch {
+          // A failed/aborted section fetch just leaves the current edges standing.
+        }
+      })();
+    },
+    [authToken, dotDegreeById, dotsEligible, focusEntityId, isSearchMode],
+  );
+
+  useEffect(() => () => sectionAbortRef.current?.abort(), []);
 
   // Graph search, scoped by the same explorer filters as /data. Unchanged contract from the
   // previous view, minus the spawn-limit coupling (a fixed result cap instead).
@@ -365,6 +500,21 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
    * node is always kept — it is the anchor the overview is framed around.
    */
   const overviewGraph = useMemo<DisplayGraph>(() => {
+    // Dots overview: the type-balanced /graph/dots payload, plus whatever section edges the
+    // current zoom has fetched. No cap here — LOD rendering is what makes the count affordable.
+    if (dotsEligible) {
+      if (dotNodes.length === 0) {
+        return EMPTY_GRAPH;
+      }
+
+      const dotIds = new Set(dotNodes.map((node) => node.id));
+
+      return {
+        nodes: dotNodes,
+        links: sectionLinks.filter((link) => dotIds.has(link.source) && dotIds.has(link.target)),
+      };
+    }
+
     const nodes = subgraph?.nodes ?? [];
     const links = subgraph?.links ?? [];
 
@@ -404,7 +554,7 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
       nodes: scopedNodes.filter((node) => keep.has(node.id)),
       links: scopedLinks.filter((link) => keep.has(link.source) && keep.has(link.target)),
     };
-  }, [subgraph, filterMatchedEntityIds, userEntityId]);
+  }, [dotsEligible, dotNodes, sectionLinks, subgraph, filterMatchedEntityIds, userEntityId]);
 
   const searchGraph = useMemo<DisplayGraph>(() => {
     const scopedNodes = filterMatchedEntityIds
@@ -486,10 +636,19 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
     return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, MAX_LEGEND_TYPES);
   }, [displayGraph.nodes]);
 
-  const handleNodeSelect = useCallback((nodeId: string) => {
-    setSelectedLinkId(null);
-    setSelectedNodeId(nodeId);
-  }, []);
+  const handleNodeSelect = useCallback(
+    (nodeId: string) => {
+      setSelectedLinkId(null);
+      setSelectedNodeId(nodeId);
+
+      // In the dots overview a click IS the focus gesture: fly to the dot and expand its subgraph
+      // (the webbed-feet zoomToNode + focus pattern). Focus and search keep click = select only.
+      if (dotsEligible && !focusEntityId && !isSearchMode) {
+        setFocusEntityId(nodeId);
+      }
+    },
+    [dotsEligible, focusEntityId, isSearchMode],
+  );
 
   const handleLinkSelect = useCallback((linkId: string) => {
     setSelectedNodeId(null);
@@ -551,11 +710,15 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
     return () => observer.disconnect();
   }, []);
 
-  const dataLoading = mode === 'search' ? searchLoading : mode === 'focus' ? focusLoading : loading;
-  const dataError =
-    mode === 'search' ? searchError : mode === 'focus' ? (focusError?.message ?? null) : error;
+  const overviewLoading = dotsEligible ? dotsLoading : loading;
+  const overviewError = dotsEligible ? dotsError : error;
+  const overviewUserEntityId = dotsEligible ? dotsUserEntityId : userEntityId;
 
-  const centerNodeId = mode === 'focus' ? focusEntityId : (userEntityId ?? undefined);
+  const dataLoading = mode === 'search' ? searchLoading : mode === 'focus' ? focusLoading : overviewLoading;
+  const dataError =
+    mode === 'search' ? searchError : mode === 'focus' ? (focusError?.message ?? null) : overviewError;
+
+  const centerNodeId = mode === 'focus' ? focusEntityId : (overviewUserEntityId ?? undefined);
 
   let stateOverlay: ReactNode = null;
 
@@ -645,8 +808,16 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
             onBackgroundClick={handleBackgroundClick}
             flyToNodeId={selectedNodeId}
             focusHops={mode === 'focus' ? FOCUS_OWN_HOPS : undefined}
+            onViewportChange={handleViewportChange}
+            forceLod={dotsEligible && mode === 'overview'}
+            ambientBreath={dotsEligible && mode === 'overview'}
           />
         ))}
+
+      {/* Soft fog while the second dots wave densifies — canvas stays interactive underneath. */}
+      {dotsEligible && mode === 'overview' && dotsHydrating && displayGraph.nodes.length > 0 && (
+        <div className="constellation-mist absolute inset-0 z-[5]" aria-hidden />
+      )}
 
       {stateOverlay}
 
@@ -691,20 +862,76 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
       </div>
 
       {displayGraph.nodes.length > 0 && (
-        <div className="pointer-events-none absolute bottom-3 left-3 z-20 flex max-w-[70%] flex-wrap items-center gap-x-3 gap-y-1 rounded-md border bg-background/90 px-2.5 py-1.5 text-xs text-muted-foreground shadow-sm">
-          <span className="font-medium text-foreground">
-            {displayGraph.nodes.length} entities · {displayGraph.links.length} connections
-          </span>
-          {legendTypes.map(([type]) => (
-            <span key={type} className="flex items-center gap-1">
-              <span
-                className="h-2 w-2 rounded-full"
-                style={{ backgroundColor: colorForRawType(type) }}
-                aria-hidden
-              />
-              {formatEnumLabel(type)}
+        <div className="pointer-events-none absolute bottom-3 left-3 z-20 flex max-w-[min(36rem,85%)] flex-col gap-1.5 rounded-md border bg-background/90 px-2.5 py-2 text-xs text-muted-foreground shadow-sm">
+          {dotsEligible && mode === 'overview' && dotsConnectivity && dotsConnectivity.total > 0 && (
+            <div className="flex flex-col gap-1" data-testid="graph-relatedness">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Relatedness
+                </span>
+                <span className="font-semibold tabular-nums text-foreground">
+                  {Math.round(dotsConnectivity.relatedRatio * 100)}% linked
+                </span>
+              </div>
+              <div
+                className="h-1.5 overflow-hidden rounded-full bg-muted"
+                role="meter"
+                aria-label="Share of entities with at least one relationship"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(dotsConnectivity.relatedRatio * 100)}
+              >
+                <div
+                  className="h-full rounded-full bg-primary/80 transition-[width] duration-500 ease-out"
+                  style={{ width: `${Math.max(2, Math.round(dotsConnectivity.relatedRatio * 100))}%` }}
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 tabular-nums">
+                <span>
+                  <span className="font-medium text-foreground">
+                    {dotsConnectivity.related.toLocaleString()}
+                  </span>{' '}
+                  related
+                </span>
+                <span className="text-muted-foreground/50">·</span>
+                <span>
+                  <span className="font-medium text-foreground">
+                    {dotsConnectivity.isolated.toLocaleString()}
+                  </span>{' '}
+                  alone
+                </span>
+                <span className="text-muted-foreground/50">·</span>
+                <span>{dotsConnectivity.total.toLocaleString()} total</span>
+              </div>
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="font-medium text-foreground">
+              {displayGraph.nodes.length.toLocaleString()}
+              {dotsEligible && dotsUniverseTotal > displayGraph.nodes.length
+                ? ` of ~${dotsUniverseTotal.toLocaleString()}`
+                : ''}{' '}
+              shown
+              {dotsEligible && mode === 'overview' ? ` · ${sampleHubs.linked.toLocaleString()} hubs` : ''}
+              {displayGraph.links.length > 0 ? ` · ${displayGraph.links.length} connections` : ''}
+              {dotsTruncated && dotsEligible ? ' · top by links' : ''}
             </span>
-          ))}
+            {dotsEligible && mode === 'overview' && dotsHydrating && (
+              <span className="constellation-hydrating-chip text-[10px] uppercase tracking-wide text-primary/80">
+                materializing
+              </span>
+            )}
+            {legendTypes.map(([type]) => (
+              <span key={type} className="flex items-center gap-1">
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: colorForRawType(type) }}
+                  aria-hidden
+                />
+                {formatEnumLabel(type)}
+              </span>
+            ))}
+          </div>
         </div>
       )}
 

@@ -211,6 +211,35 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
 
   /** v1 — object promotion. A literal: this stage reads nothing another stage produces. Bump when extractPurchase changes. */
   [STAGE_IDS.PROMOTE_OBJECT]: 1,
+
+  /**
+   * v3 — deterministic edge projection, all legs. Literals mirroring
+   * derivations in `EdgePromoteStage.ts`, which throw at module load if any
+   * line disagrees. The communication leg derives from the edge-matrix
+   * generation + PERSON_LINK_VERSION (its edges are a COPY of the linker's
+   * columns, so a linker bump re-projects); the event leg additionally tracks
+   * PROMOTE_PLACE_VERSION (`location_entity_id` is that stage's output); the
+   * inventory and observation legs track PROMOTE_OBJECT_VERSION; the content,
+   * receipt, position and device legs have no versioned producer (importers,
+   * extraction, capture-time snapping and device registration fill their
+   * columns), so they are the matrix generation alone. v3 = matrix generation
+   * 3: the matrix now covers every entity-linkage pair in the schema —
+   * receipts, object observations, positions and devices gained rules. Bump a
+   * producer's generation and the matching line here in the same commit.
+   *
+   * v4 = matrix generation 4: LOCATED_AT/DOCUMENTS canonical storage, Place and
+   * File hierarchy legs.
+   */
+  [STAGE_IDS.PROMOTE_EDGE_COMMUNICATION]: 4,
+  [STAGE_IDS.PROMOTE_EDGE_EVENT]: 4,
+  [STAGE_IDS.PROMOTE_EDGE_CONTENT]: 4,
+  [STAGE_IDS.PROMOTE_EDGE_INVENTORY]: 4,
+  [STAGE_IDS.PROMOTE_EDGE_RECEIPT]: 4,
+  [STAGE_IDS.PROMOTE_EDGE_OBSERVATION]: 4,
+  [STAGE_IDS.PROMOTE_EDGE_POSITION]: 4,
+  [STAGE_IDS.PROMOTE_EDGE_DEVICE]: 4,
+  [STAGE_IDS.PROMOTE_EDGE_FILE]: 4,
+  [STAGE_IDS.PROMOTE_EDGE_PLACE]: 4,
 };
 
 /**

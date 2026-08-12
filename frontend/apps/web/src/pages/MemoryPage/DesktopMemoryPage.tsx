@@ -93,8 +93,10 @@ export default function DesktopMemoryPage() {
     });
   // Advanced filters render inside the header search panel and stay visible.
   // MemoryPage can derive the map's hasLocation scope from `?view=`.
+  // Events is a What-bar filter, not a top-level view — rewrite legacy ?view=events.
   useEffect(() => {
-    if (!searchParams.get('view')) {
+    const view = searchParams.get('view');
+    if (!view || view === 'events') {
       setSearchParams(
         (params) => {
           const nextParams = new URLSearchParams(params);

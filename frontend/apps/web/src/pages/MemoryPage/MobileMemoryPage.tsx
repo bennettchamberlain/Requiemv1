@@ -42,8 +42,10 @@ export default function MobileMemoryPage() {
   const activeFilterCount = countActiveFilters(searchParams);
 
   // Reflect the default view in the URL so the query is shareable/restorable.
+  // Events is a What-bar filter, not a top-level view — rewrite legacy ?view=events.
   useEffect(() => {
-    if (!searchParams.get('view')) {
+    const view = searchParams.get('view');
+    if (!view || view === 'events') {
       setSearchParams(
         (params) => {
           const nextParams = new URLSearchParams(params);

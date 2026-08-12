@@ -42,6 +42,16 @@ export const STAGE_REGISTRY: Record<StageId, string> = {
   [STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE]: 'PipelineStage:clean.identifier_normalize',
   [STAGE_IDS.PROMOTE_PLACE]: 'PipelineStage:promote.place',
   [STAGE_IDS.PROMOTE_OBJECT]: 'PipelineStage:promote.object',
+  [STAGE_IDS.PROMOTE_EDGE_COMMUNICATION]: 'PipelineStage:promote.edge_communication',
+  [STAGE_IDS.PROMOTE_EDGE_EVENT]: 'PipelineStage:promote.edge_event',
+  [STAGE_IDS.PROMOTE_EDGE_CONTENT]: 'PipelineStage:promote.edge_content',
+  [STAGE_IDS.PROMOTE_EDGE_INVENTORY]: 'PipelineStage:promote.edge_inventory',
+  [STAGE_IDS.PROMOTE_EDGE_RECEIPT]: 'PipelineStage:promote.edge_receipt',
+  [STAGE_IDS.PROMOTE_EDGE_OBSERVATION]: 'PipelineStage:promote.edge_observation',
+  [STAGE_IDS.PROMOTE_EDGE_POSITION]: 'PipelineStage:promote.edge_position',
+  [STAGE_IDS.PROMOTE_EDGE_DEVICE]: 'PipelineStage:promote.edge_device',
+  [STAGE_IDS.PROMOTE_EDGE_FILE]: 'PipelineStage:promote.edge_file',
+  [STAGE_IDS.PROMOTE_EDGE_PLACE]: 'PipelineStage:promote.edge_place',
 };
 
 /**
