@@ -122,6 +122,9 @@
       "__format": "json"
     }
   },
+  "import": {
+    "uploadsDir": "CI_IMPORT_UPLOADS_DIR"
+  },
   "enrichment": {
     "window": {
       "enabled": "CI_ENRICHMENT_WINDOW_ENABLED",

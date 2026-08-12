@@ -142,6 +142,9 @@
     "fetchBatchSize": 10,
     "perQueueConcurrency": 6
   },
+  "import": {
+    "uploadsDir": "/var/lib/ci-import/uploads"
+  },
   "enrichment": {
     "window": {
       "enabled": true,

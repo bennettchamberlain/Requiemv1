@@ -47,6 +47,60 @@
  * an entity type should not pay for.
  */
 
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+
+import { ImportUploadsController } from './controllers/ImportUploadsController';
+import { EntityMappingEntity } from './entities/EntityMappingEntity';
+import { ImportRunEntity } from './entities/ImportRunEntity';
+import { ImportStageEntity } from './entities/ImportStageEntity';
+import { StagedSourceEntity } from './entities/StagedSourceEntity';
+import { StagedEntityEntity } from './entities/StagedEntityEntity';
+import { StagedItemEntity } from './entities/StagedItemEntity';
+import { StagedRelationshipEntity } from './entities/StagedRelationshipEntity';
+import { StagedSourceService } from './services/StagedSourceService';
+
+/**
+ * @internal
+ */
+@Module({
+  imports: [
+    TypeOrmModule.forFeature([
+      EntityMappingEntity,
+      ImportRunEntity,
+      ImportStageEntity,
+      StagedSourceEntity,
+      StagedEntityEntity,
+      StagedItemEntity,
+      StagedRelationshipEntity,
+    ]),
+  ],
+  providers: [StagedSourceService],
+  controllers: [ImportUploadsController],
+  exports: [StagedSourceService],
+})
+export class ImportModule {}
+
+export { StagedSourceService, UPLOAD_TTL_MS } from './services/StagedSourceService';
+export type { RegisterUploadInput } from './services/StagedSourceService';
+export { sanitizeFilename } from './sources/sanitizeFilename';
+
+export { ImportUploadsController } from './controllers/ImportUploadsController';
+export type { DropSummary } from './controllers/ImportUploadsController';
+
+export {
+  CorruptArchiveError,
+  InsufficientDiskError,
+  REJECTED_DIR,
+  diagnoseArchive,
+  freeBytesAt,
+  unpackArchives,
+} from './archive/unpack';
+export type { RejectedArchive, UnpackOptions, UnpackResult } from './archive/unpack';
+
+export { extractUploadedArchive, isExtractableArchive } from './archive/extract';
+export type { ExtractLimits, ExtractResult } from './archive/extract';
+
 export { EntityMappingEntity } from './entities/EntityMappingEntity';
 export type { EntityMapping } from './entities/EntityMappingEntity';
 

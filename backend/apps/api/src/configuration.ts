@@ -265,6 +265,12 @@ export const ConfigSchema = z.object({
     fetchBatchSize: z.coerce.number().int().positive().default(20),
     perQueueConcurrency: z.coerce.number().int().positive().default(6),
   }),
+  import: z.object({
+    // Where uploads are staged: <uploadsDir>/<dropId>/<filename>, registered
+    // in ci_import.staged_sources with a TTL. Importer-owned and root-only —
+    // nothing lands here except through the API.
+    uploadsDir: z.string().default('/var/lib/ci-import/uploads'),
+  }),
   // WHEN the appliance is willing to spend on enrichment, and HOW MUCH. The
   // pipeline's twelve stages share ONE Ollama process with interactive chat,
   // HBPE and the summary sidecar, and two of them egress to a metered geocoding

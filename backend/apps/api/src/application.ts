@@ -39,6 +39,7 @@ import { FilesModule } from '@ci/domains/files';
 import { GeocodeModule } from '@ci/domains/geocode';
 import { GraphModule } from '@ci/domains/graph';
 import { GraphQLModule } from '@ci/domains/graphql';
+import { ImportModule } from '@ci/domains/import';
 import { IngestModule } from '@ci/domains/ingest';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { LLMModule } from '@ci/domains/llm';
@@ -107,6 +108,7 @@ import { flushTelemetry, isTelemetryEnabled } from '@ci/instrument';
     FilesModule,
     GraphModule,
     GraphQLModule,
+    ImportModule,
     IngestModule,
     IntelligenceModule,
     LLMModule,
