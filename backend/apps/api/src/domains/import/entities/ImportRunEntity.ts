@@ -11,13 +11,7 @@ export type ImportRunSource = 'wizard' | 'api' | 'mcp';
  * other five, and reporting that as `failed` is what teaches people to re-run
  * the whole 40GB archive.
  */
-export type ImportRunStatus =
-  | 'queued'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'partial'
-  | 'cancelled';
+export type ImportRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'partial' | 'cancelled';
 
 /**
  * One user-initiated import. Mirrors migration

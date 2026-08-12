@@ -10,13 +10,7 @@ import { Column, Entity, Index, PrimaryColumn, UpdateDateColumn } from 'typeorm'
  */
 export type ImportStageKind = 'unpack' | 'parse' | 'push';
 
-export type ImportStageStatus =
-  | 'queued'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'skipped'
-  | 'cancelled';
+export type ImportStageStatus = 'queued' | 'running' | 'completed' | 'failed' | 'skipped' | 'cancelled';
 
 /**
  * One step of an import run. Mirrors migration
