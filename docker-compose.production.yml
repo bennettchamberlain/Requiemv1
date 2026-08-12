@@ -9,6 +9,10 @@ services:
       # an atomic rename instead of a copy of a 50GB archive. uploads/ is
       # root-only: nothing lands there except through the API.
       - ${CI_IMPORT_WORK_DIR:-./import-work}:/var/lib/ci-import
+      # The user's own archives, read-only, as upstream ci-import-tools mounted
+      # them: importable in place via the path tools, never modified, never
+      # deleted. Point CI_REPO_DIR somewhere else to expose a different folder.
+      - ${CI_REPO_DIR:-~/Downloads}:/repo:ro
     environment:
       ENABLE_HBPE: ${ENABLE_HBPE:-true}
       # Off /var/tmp deliberately, and load-bearing: scratch must share the
@@ -16,6 +20,8 @@ services:
       # mount means an interrupted run's working files survive a container
       # recreate.
       CI_IMPORT_SCRATCH_DIR: ${CI_IMPORT_SCRATCH_DIR:-/var/lib/ci-import/scratch}
+      # JSON array, not a colon list. /repo is the read-only mount above.
+      CI_IMPORT_ROOTS: ${CI_IMPORT_ROOTS:-["/repo"]}
       # OpenAI-compatible chat backend (Hub-injected on managed deploys). When
       # unset, the API falls back to native Ollama on OLLAMA_HOST.
       LLM_API_BASE: ${LLM_API_BASE:-}

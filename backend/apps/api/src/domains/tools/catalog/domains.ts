@@ -41,6 +41,12 @@ export const INTENT_DOMAINS: readonly IntentDomain[] = [
     title: 'Media',
     description: 'Find photos and videos, and resolve entertainment availability.',
   },
+  {
+    key: 'import',
+    title: 'Import',
+    description:
+      'Discover what an export archive holds, bring it into the personal corpus, and follow the import.',
+  },
 ] as const;
 
 const DOMAIN_KEYS = new Set<string>(INTENT_DOMAINS.map((d) => d.key));

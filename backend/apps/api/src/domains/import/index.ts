@@ -138,6 +138,18 @@ export { IMPORT_QUEUE, IMPORT_STAGE_KINDS, IMPORT_STAGE_WEIGHTS } from './consta
 export type { ImportStageKindName } from './constants';
 export { ImportStageEvent } from './events';
 export { ImportStageListener } from './listeners/ImportStageListener';
+export {
+  configuredImportRoots,
+  resolveWithinImportRoots,
+  uploadsRoot,
+  PathOutsideImportRootsError,
+} from './sources/importRoots';
+// Re-exported for the import tools, which live in the tools domain (that is
+// where the native provider is assembled) and must reach this domain through
+// its barrel rather than into its internals.
+export { dataSourcesRecognize } from './datasources/registry';
+export type { DirEntry, DataSourceRecognition } from './datasources/registry';
+
 export { ParseStage } from './stages/ParseStage';
 export { PushStage } from './stages/PushStage';
 export { UnpackStage } from './stages/UnpackStage';

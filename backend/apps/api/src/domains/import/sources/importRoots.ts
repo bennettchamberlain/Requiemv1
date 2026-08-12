@@ -4,9 +4,28 @@ import path from 'node:path';
 import config from '@ci/configuration';
 
 /**
+ * Where a caller is allowed to point the path-based import tools.
+ *
+ * Upstream this question did not exist: the importer ran on the user's own
+ * machine, under their own account, and "import this path" meant a path they
+ * already had. Here it is an API on an appliance, reachable by any MCP client
+ * holding a token — so an unconstrained absolute path is a filesystem read
+ * primitive that would let a caller enumerate `/etc`, or ingest it.
+ *
+ * The roots are therefore explicit. Empty by default: nothing is importable by
+ * path until an operator says which directory holds the exports, which is the
+ * safe way round for a capability that only some deployments want. Uploading
+ * through the API is unaffected and remains the ordinary path.
+ */
+export function configuredImportRoots(): string[] {
+  return config.import.roots.filter((root) => root.trim().length > 0).map((root) => path.resolve(root));
+}
+
+/**
  * Where uploads are staged: `<uploadsDir>/<dropId>/<filename>`, registered in
- * `ci_import.staged_sources`. Importer-owned — nothing lands here except
- * through the API, and the TTL purge sweeps it.
+ * `ci_import.staged_sources`. Importer-owned, unlike the roots, which hold
+ * the user's own files — nothing lands here except through the API, and the
+ * TTL purge sweeps it.
  */
 export function uploadsRoot(): string {
   return path.resolve(config.import.uploadsDir);
@@ -76,6 +95,15 @@ export async function resolveWithinRoots(requested: string, roots: string[]): Pr
   }
 
   return resolved;
+}
+
+/**
+ * The read-side resolver the path tools use: the operator's roots. The uploads
+ * directory is deliberately NOT included — staged uploads are per-user, and a
+ * path tool must not become a way to read another user's staged archive.
+ */
+export async function resolveWithinImportRoots(requested: string): Promise<string> {
+  return resolveWithinRoots(requested, configuredImportRoots());
 }
 
 /**

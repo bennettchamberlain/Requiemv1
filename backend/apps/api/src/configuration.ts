@@ -276,6 +276,12 @@ export const ConfigSchema = z.object({
   // sharing a filesystem is what makes the acquisition an atomic rename.
   import: z.object({
     scratchDir: z.string().default('/var/tmp/ci-import'),
+    // Directories the path-based import tools may read. EMPTY BY DEFAULT: an
+    // unconstrained absolute path over an API is a filesystem read primitive,
+    // so path imports stay off until an operator names the directory that holds
+    // exports. Uploading through the API is unaffected. Files here are the
+    // user's own and are never modified or deleted.
+    roots: z.array(z.string()).default([]),
     // Where uploads are staged: <uploadsDir>/<dropId>/<filename>, registered
     // in ci_import.staged_sources with a TTL. Importer-owned and root-only —
     // nothing lands here except through the API.

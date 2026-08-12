@@ -25,6 +25,7 @@ import { LoggerService } from '@ci/common/logging';
 import { ConversationModule } from '@ci/domains/conversations';
 import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
+import { ImportModule } from '@ci/domains/import';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule } from '@ci/domains/memory';
 import { ParsingModule } from '@ci/domains/parsing';
@@ -42,6 +43,10 @@ import { GetEntertainmentPreferencesTool } from './tools/GetEntertainmentPrefere
 import { GetFamilyMembersTool } from './tools/GetFamilyMembersTool';
 import { GetStreamingAvailabilityTool } from './tools/GetStreamingAvailabilityTool';
 import { GetUserPreferencesTool } from './tools/GetUserPreferencesTool';
+import { ImportListSourcesTool } from './tools/ImportListSourcesTool';
+import { ImportPathTool } from './tools/ImportPathTool';
+import { ImportRecognizePathTool } from './tools/ImportRecognizePathTool';
+import { ImportRunStatusTool } from './tools/ImportRunStatusTool';
 import { MediaFindPhotosTool } from './tools/MediaFindPhotosTool';
 import { PeopleFindTool } from './tools/PeopleFindTool';
 import { PlacesFindTool } from './tools/PlacesFindTool';
@@ -63,6 +68,13 @@ const nativeToolInstances = [
   PlacesFindTool,
   CalendarFindEventsTool,
   MediaFindPhotosTool,
+  // The import domain's four intents. They live in that domain because they are
+  // thin wrappers over its services; they are REGISTERED here because this is
+  // where the native provider is assembled.
+  ImportListSourcesTool,
+  ImportRecognizePathTool,
+  ImportPathTool,
+  ImportRunStatusTool,
 ];
 
 /**
@@ -77,6 +89,7 @@ const nativeToolInstances = [
     IntelligenceModule,
     ParsingModule,
     SearchNextModule,
+    ImportModule,
   ],
   providers: [
     ToolRegistry,
