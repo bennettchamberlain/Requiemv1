@@ -265,7 +265,17 @@ export const ConfigSchema = z.object({
     fetchBatchSize: z.coerce.number().int().positive().default(20),
     perQueueConcurrency: z.coerce.number().int().positive().default(6),
   }),
+  // The archive importer's working areas. A run MOVES its staged source into
+  // scratch, extracts it, and parses the resulting tree; the whole directory
+  // is reclaimed when the run finishes.
+  //
+  // scratchDir is configurable because the default is a trap at real sizes. An
+  // unpacked Google Takeout runs 40-50GB and `/tmp` is tmpfs on a stock
+  // appliance, so extracting there consumes RAM until the machine dies.
+  // Deployments point it at the same volume the uploads directory lives on —
+  // sharing a filesystem is what makes the acquisition an atomic rename.
   import: z.object({
+    scratchDir: z.string().default('/var/tmp/ci-import'),
     // Where uploads are staged: <uploadsDir>/<dropId>/<filename>, registered
     // in ci_import.staged_sources with a TTL. Importer-owned and root-only —
     // nothing lands here except through the API.

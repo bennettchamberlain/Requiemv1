@@ -1,0 +1,195 @@
+import { Injectable } from '@nestjs/common';
+
+import { LoggerService } from '@ci/common/logging';
+import { OnEvent } from '@ci/domains/events';
+
+import { IMPORT_QUEUE } from '../constants';
+import { ImportStageEvent } from '../events';
+import { ImportRunService } from '../services/ImportRunService';
+import { ImportScratchService } from '../services/ImportScratchService';
+import { ParseStage } from '../stages/ParseStage';
+import { UnpackStage } from '../stages/UnpackStage';
+import { importStagePayloadSchema, type ImportStageRunner, type StageRunContext } from '../types';
+
+/** Minimum gap between progress writes, whatever a runner asks for. */
+const PROGRESS_THROTTLE_MS = 1_000;
+
+/**
+ * THE worker. One class runs every stage kind that will ever exist.
+ *
+ * A stage kind supplies `run(context) -> StageOutcome` and nothing else. Claiming
+ * the row, the scratch directory, progress bookkeeping, advancing the run and
+ * recording failure are handled here, once — the same shape
+ * `PipelineSliceListener` uses, and for the same reason: the alternative is a
+ * listener per kind, and they drift because nothing forces them to agree.
+ *
+ * ## Failure is recorded, not retried
+ *
+ * A throw fails the stage and the run, and is then rethrown so pg-boss's retry
+ * and dead-letter machinery still applies. The retry is deliberately a no-op:
+ * {@link ImportRunService.beginStage} only moves a `queued` stage, so a
+ * redelivered job for a stage now marked `failed` logs and returns. That is the
+ * intended behaviour, not an oversight — silently re-running a 40GB unpack
+ * because object storage blipped is expensive and surprising, and the operator
+ * still gets the dead letter. Re-running a failed stage is a user action, which
+ * the import API surfaces.
+ */
+@Injectable()
+export class ImportStageListener {
+  private readonly runners: Map<string, ImportStageRunner>;
+
+  constructor(
+    private readonly runs: ImportRunService,
+    private readonly scratch: ImportScratchService,
+    unpackStage: UnpackStage,
+    parseStage: ParseStage,
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(ImportStageListener.name);
+    this.runners = new Map([
+      [unpackStage.kind, unpackStage as ImportStageRunner],
+      [parseStage.kind, parseStage as ImportStageRunner],
+    ]);
+  }
+
+  // ONE stage job at a time, appliance-wide. Stage jobs run in the API's own
+  // process, and a parse is long stretches of parser work plus a firehose of
+  // staged-row writes — six abreast (the global per-queue default) starves
+  // the event loop and the connection pool until Skip on an onboarding page
+  // hangs. Serial costs nothing real: the work is disk-bound on one volume,
+  // and a run's stages already chain one at a time.
+  @OnEvent(ImportStageEvent, { queue: IMPORT_QUEUE, queueOptions: { localConcurrency: 1 } })
+  async handleStage(payload: unknown): Promise<void> {
+    await this.runStage(payload);
+  }
+
+  /**
+   * Run one stage.
+   *
+   * Public so a test can drive a stage without a queue.
+   */
+  async runStage(rawPayload: unknown): Promise<void> {
+    // Parsed, not cast: this came out of `pgboss.job.data`, written by some
+    // earlier release of this code or by a replayed dead letter.
+    const payload = importStagePayloadSchema.parse(rawPayload);
+
+    const stage = await this.runs.getStage(payload.stageId);
+
+    if (stage == null || stage.runId !== payload.runId) {
+      // The run was deleted — which cascades its stages — while this job sat in
+      // the queue. Nothing to do and nothing wrong; deleting a run IS the
+      // cleanup operation.
+      this.logger.debug('Stage no longer exists; dropping the job', payload);
+
+      return;
+    }
+
+    if (await this.runs.isFinished(payload.runId)) {
+      this.logger.log('Run already finished; not starting its stage', {
+        runId: payload.runId,
+        stageId: payload.stageId,
+        kind: stage.kind,
+      });
+
+      return;
+    }
+
+    const runner = this.runners.get(stage.kind);
+
+    if (runner == null) {
+      await this.runs.failStage(
+        stage.id,
+        `No runner is registered for the '${stage.kind}' stage in this build`,
+      );
+
+      return;
+    }
+
+    // The claim. A redelivered job whose stage is already running (or finished)
+    // stops here rather than doing the work twice.
+    if (!(await this.runs.beginStage(stage.id))) {
+      this.logger.log('Stage was already claimed; leaving it to its owner', {
+        runId: payload.runId,
+        stageId: stage.id,
+        status: stage.status,
+      });
+
+      return;
+    }
+
+    const scratchDir = await this.scratch.ensureDir(payload.userId, payload.runId);
+
+    try {
+      const outcome = await runner.run(this.contextFor(payload, stage.id, scratchDir));
+
+      await this.runs.completeStage(stage.id, outcome);
+
+      const next = await this.runs.advance(payload.userId, payload.runId, stage.seq);
+
+      if (next == null) {
+        // Last stage: the tree has done its job. Reclaimed here rather than on a
+        // sweep because these directories hold tens of gigabytes and nothing
+        // else knows the run is over.
+        await this.scratch.reclaim(payload.userId, payload.runId);
+      }
+
+      this.logger.log('Completed import stage', {
+        runId: payload.runId,
+        stageId: stage.id,
+        kind: stage.kind,
+        processed: outcome.processed,
+        next: next?.kind ?? null,
+      });
+    } catch (err) {
+      const error = (err as Error).message;
+
+      await this.runs.failStage(stage.id, error);
+
+      this.logger.error(err as Error, {
+        message: 'Import stage failed',
+        runId: payload.runId,
+        stageId: stage.id,
+        kind: stage.kind,
+      });
+
+      // Rethrown so pg-boss records it. The retry will find the stage `failed`
+      // and no-op — see the class comment.
+      throw err;
+    }
+  }
+
+  /**
+   * What a runner is handed.
+   *
+   * The progress callback is throttled here rather than in each runner: a parse
+   * reporting per record would write a row per record for the length of a 40GB
+   * import, which costs more than the parse it is describing. The final counts
+   * come from `completeStage`, so a throttled-away tick loses nothing that
+   * survives the stage.
+   */
+  private contextFor(
+    payload: { userId: string; runId: string },
+    stageId: string,
+    scratchDir: string,
+  ): StageRunContext {
+    let lastWrite = 0;
+
+    return {
+      userId: payload.userId,
+      runId: payload.runId,
+      stageId,
+      scratchDir,
+      progress: async (update) => {
+        const now = Date.now();
+
+        if (now - lastWrite < PROGRESS_THROTTLE_MS) {
+          return;
+        }
+
+        lastWrite = now;
+
+        await this.runs.recordProgress(stageId, update);
+      },
+    };
+  }
+}

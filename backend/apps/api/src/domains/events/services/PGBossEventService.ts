@@ -144,13 +144,19 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
       // Listener-requested queue-level options (expiration/retries) — used by
       // deferred-completion queues whose jobs stay active while an external
       // executor works, so their expiration must match the work's runtime.
-      const queueOptions = EventListenerRegistry.getQueueOptions(queue) ?? {};
+      // `localConcurrency` is OURS (it sizes the in-process semaphore below),
+      // not pg-boss's — split it off so the queue-create call sees only real
+      // pg-boss options.
+      const { localConcurrency, ...queueOptions } = EventListenerRegistry.getQueueOptions(queue) ?? {};
 
       const options = { name: queue, deadLetter: PGBossEventService.DEAD_LETTER_QUEUE, ...queueOptions };
 
       await this.boss.createQueue(queue, options);
       await this.boss.updateQueue(queue, options);
-      this.perQueueSemaphores.set(queue, plimit(this.perQueueConcurrency));
+      this.perQueueSemaphores.set(
+        queue,
+        plimit(Math.max(1, Math.min(localConcurrency ?? this.perQueueConcurrency, this.perQueueConcurrency))),
+      );
       this.logger.debug(`Created queue: ${queue} (deadLetter=${PGBossEventService.DEAD_LETTER_QUEUE})`);
     }
 

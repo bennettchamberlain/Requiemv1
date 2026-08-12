@@ -3,8 +3,19 @@ services:
     image: ci/api
     volumes:
       - secrets:/run/secrets:ro
+      # ONE bind mount holding the importer's working areas — uploads/ (staged
+      # uploads, TTL'd) and scratch/ (per-run working trees). Sharing a
+      # filesystem is what lets a staged upload move into a run's scratch as
+      # an atomic rename instead of a copy of a 50GB archive. uploads/ is
+      # root-only: nothing lands there except through the API.
+      - ${CI_IMPORT_WORK_DIR:-./import-work}:/var/lib/ci-import
     environment:
       ENABLE_HBPE: ${ENABLE_HBPE:-true}
+      # Off /var/tmp deliberately, and load-bearing: scratch must share the
+      # uploads directory's filesystem for the rename above, and living on the
+      # mount means an interrupted run's working files survive a container
+      # recreate.
+      CI_IMPORT_SCRATCH_DIR: ${CI_IMPORT_SCRATCH_DIR:-/var/lib/ci-import/scratch}
       # OpenAI-compatible chat backend (Hub-injected on managed deploys). When
       # unset, the API falls back to native Ollama on OLLAMA_HOST.
       LLM_API_BASE: ${LLM_API_BASE:-}

@@ -143,6 +143,7 @@
     "perQueueConcurrency": 6
   },
   "import": {
+    "scratchDir": "/var/tmp/ci-import",
     "uploadsDir": "/var/lib/ci-import/uploads"
   },
   "enrichment": {

@@ -29,6 +29,16 @@ export type QueueOptions = {
 
   /** Seconds between retries (with pg-boss's backoff applied on top). */
   retryDelay?: number;
+
+  /**
+   * In-process worker slots for THIS queue, overriding the global
+   * `queues.perQueueConcurrency` downward. For queues whose jobs are heavy
+   * in-process work — parsing a 40GB archive shares the event loop and the
+   * database pool with every interactive request — running six abreast
+   * starves the API; such a queue declares 1 and serializes. Never raises
+   * above the global per-queue ceiling. Ignored by LocalEventService.
+   */
+  localConcurrency?: number;
 };
 
 export type EventPayload<E extends keyof EventPayloads> = EventPayloads[E];

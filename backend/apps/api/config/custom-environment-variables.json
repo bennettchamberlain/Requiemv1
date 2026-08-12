@@ -123,6 +123,7 @@
     }
   },
   "import": {
+    "scratchDir": "CI_IMPORT_SCRATCH_DIR",
     "uploadsDir": "CI_IMPORT_UPLOADS_DIR"
   },
   "enrichment": {

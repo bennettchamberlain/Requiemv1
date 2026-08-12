@@ -250,15 +250,22 @@ export class CalendarFileImporter implements FileImporter {
   }
 }
 
-// REMOVED FOR THIS PORT: `backfillCalendarMetadata` and its
+// NOT PORTED, AND NOT COMING BACK: `backfillCalendarMetadata` and its
 // `CalendarBackfillResult` lived here — a ~115-line repair pass that re-read
-// each calendar item straight out of the standalone importer's SQLite `items`
-// table and rewrote its stringified metadata in place.
+// each calendar item out of the standalone importer's SQLite `items` table and
+// rewrote its stringified metadata in place.
 //
-// It is raw SQL against a schema this port deliberately does not carry, and
-// nothing here calls it. It returns with the Postgres staging layer, rewritten
-// against those tables; its tests travel with the same deferral (they import
-// the old db module, so they moved out with the other persistence tests).
+// The earlier note here said it would return with the Postgres staging layer.
+// That was written before staging was settled as RUN-SCOPED, and the two do not
+// fit together: it repaired a cohort of rows written by an OLDER importer, and
+// `ci_import.staged_*` is deleted with its run, so there is never a stale cohort
+// there to repair. The durable side (`ci.*`) has never held calendar rows from
+// an older parser either — rows arrive through the push carrying whatever the
+// current parser produced. Its only caller was the standalone CLI, which is
+// also not being ported.
+//
+// Its parser-side tests ARE restored, in `__tests__/calendar.test.ts`; only the
+// backfill describe block stayed behind.
 
 function parseICSDate(val?: string): Date | undefined {
   if (!val) {

@@ -50,6 +50,8 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { EventsModule } from '@ci/domains/events';
+
 import { ImportUploadsController } from './controllers/ImportUploadsController';
 import { EntityMappingEntity } from './entities/EntityMappingEntity';
 import { ImportRunEntity } from './entities/ImportRunEntity';
@@ -58,11 +60,20 @@ import { StagedSourceEntity } from './entities/StagedSourceEntity';
 import { StagedEntityEntity } from './entities/StagedEntityEntity';
 import { StagedItemEntity } from './entities/StagedItemEntity';
 import { StagedRelationshipEntity } from './entities/StagedRelationshipEntity';
+import { ImportStageListener } from './listeners/ImportStageListener';
 import { StagedUploadPurgeCron } from './listeners/StagedUploadPurgeCron';
+import { ImportRunService } from './services/ImportRunService';
+import { ImportScratchService } from './services/ImportScratchService';
 import { StagedSourceService } from './services/StagedSourceService';
+import { ParseStage } from './stages/ParseStage';
+import { UnpackStage } from './stages/UnpackStage';
 
 /**
  * @internal
+ *
+ * `EventsModule` is imported for the pg-boss queue behind
+ * {@link ImportStageListener}: the queue is created, and its workers started,
+ * from the `@OnEvent` decorator this module's registration makes visible.
  */
 @Module({
   imports: [
@@ -75,10 +86,19 @@ import { StagedSourceService } from './services/StagedSourceService';
       StagedItemEntity,
       StagedRelationshipEntity,
     ]),
+    EventsModule,
   ],
-  providers: [StagedSourceService, StagedUploadPurgeCron],
+  providers: [
+    ImportRunService,
+    ImportScratchService,
+    StagedSourceService,
+    UnpackStage,
+    ParseStage,
+    ImportStageListener,
+    StagedUploadPurgeCron,
+  ],
   controllers: [ImportUploadsController],
-  exports: [StagedSourceService],
+  exports: [ImportRunService, ImportScratchService, StagedSourceService],
 })
 export class ImportModule {}
 
@@ -86,6 +106,31 @@ export { StagedSourceService, UPLOAD_TTL_MS } from './services/StagedSourceServi
 export { StagedUploadPurgeCron, STAGED_UPLOAD_PURGE_CRON } from './listeners/StagedUploadPurgeCron';
 export type { RegisterUploadInput } from './services/StagedSourceService';
 export { sanitizeFilename } from './sources/sanitizeFilename';
+
+export { ImportRunService } from './services/ImportRunService';
+export type { StartRunInput, StartRunResult } from './services/ImportRunService';
+export { ImportScratchService } from './services/ImportScratchService';
+
+export { IMPORT_QUEUE, IMPORT_STAGE_KINDS, IMPORT_STAGE_WEIGHTS } from './constants';
+export type { ImportStageKindName } from './constants';
+export { ImportStageEvent } from './events';
+export { ImportStageListener } from './listeners/ImportStageListener';
+export { ParseStage } from './stages/ParseStage';
+export { UnpackStage } from './stages/UnpackStage';
+export { importStagePayloadSchema } from './types';
+export type { ImportStagePayload, ImportStageRunner, StageOutcome, StageRunContext } from './types';
+
+export { StagedWriter, DEFAULT_FLUSH_THRESHOLD } from './staging/StagedWriter';
+export type { StagedCounts } from './staging/StagedWriter';
+export {
+  entityIdentityKey,
+  entityKey,
+  hasContactIdentity,
+  hashItem,
+  mergeAccumulatedMetadata,
+  normalizeHandle,
+  resolveEntityType,
+} from './staging/identity';
 
 export { ImportUploadsController } from './controllers/ImportUploadsController';
 export type { DropSummary } from './controllers/ImportUploadsController';

@@ -77,3 +77,13 @@ export async function resolveWithinRoots(requested: string, roots: string[]): Pr
 
   return resolved;
 }
+
+/**
+ * The mutation-site resolver: the staging areas the importer OWNS. Today that
+ * is the uploads directory; `localAcquire` re-validates through this
+ * immediately before moving or deleting, so a registry row edited to point
+ * elsewhere is refused where the mutating happens, not only at enqueue.
+ */
+export async function resolveWithinStaging(requested: string): Promise<string> {
+  return resolveWithinRoots(requested, [uploadsRoot()]);
+}

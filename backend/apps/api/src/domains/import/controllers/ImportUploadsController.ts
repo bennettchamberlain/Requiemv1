@@ -23,6 +23,7 @@ import { Context, type RequestContext } from '@ci/common/context';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import config from '@ci/configuration';
 
+import { ImportRunService } from '../services/ImportRunService';
 import { StagedSourceService } from '../services/StagedSourceService';
 import { sanitizeFilename } from '../sources/sanitizeFilename';
 
@@ -63,7 +64,10 @@ function incomingDir(): string {
 
 @Controller('import/uploads')
 export class ImportUploadsController implements OnModuleInit {
-  constructor(private readonly sources: StagedSourceService) {}
+  constructor(
+    private readonly sources: StagedSourceService,
+    private readonly runs: ImportRunService,
+  ) {}
 
   /**
    * Prepare the incoming directory, best-effort, so the first upload does not
@@ -181,6 +185,26 @@ export class ImportUploadsController implements OnModuleInit {
     const uploads = await this.sources.listStagedUploads({ userId });
 
     return uploads.map(toSummary);
+  }
+
+  /**
+   * Start importing a staged upload.
+   *
+   * Provisional, and deliberately minimal: the run surface proper — listing
+   * runs, watching stages, cancelling, re-running a failed stage — is the import
+   * API's job. This exists so an upload can actually become staged rows without
+   * waiting for it, and so the intake path is demonstrable end to end.
+   */
+  @UseGuards(JwtOrApiKeyAuthGuard)
+  @Post(':dropId/start')
+  async start(
+    @Context() context: RequestContext,
+    @Param('dropId') dropId: string,
+  ): Promise<{ runId: string; stages: string[] }> {
+    const userId = requireUserId(context);
+    const { run, stages } = await this.runs.startRun({ userId }, { dropId });
+
+    return { runId: run.id, stages: stages.map((stage) => stage.kind) };
   }
 
   /**

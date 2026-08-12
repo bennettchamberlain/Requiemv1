@@ -3,8 +3,13 @@ services:
     image: ci/api
     env_file:
       - .env
+    volumes:
+      # See docker-compose.production.yml for why uploads and scratch share a
+      # mount.
+      - ${CI_IMPORT_WORK_DIR:-./import-work}:/var/lib/ci-import
     environment:
       DATABASE_HOST: database
+      CI_IMPORT_SCRATCH_DIR: ${CI_IMPORT_SCRATCH_DIR:-/var/lib/ci-import/scratch}
       OBJECT_STORE_URL: http://object-store:9000
       OLLAMA_HOST: http://host.docker.internal:11434
       # OpenAI-compatible chat backend (Hub-injected on managed deploys). When

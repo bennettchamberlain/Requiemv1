@@ -83,7 +83,14 @@ import { flushTelemetry, isTelemetryEnabled } from '@ci/instrument';
       // user-defined types (e.g. the enum `ci.communication_direction`) are
       // emitted UNqualified by TypeORM in casts, so `ci` must be on the
       // search_path for them to resolve. `public` stays for extensions/pgboss.
-      extra: { options: '-c search_path=ci,public' },
+      extra: {
+        options: '-c search_path=ci,public',
+        // node-postgres defaults to 10 connections, which import staging
+        // flushes can exhaust — leaving interactive requests (an onboarding
+        // progress save) queued behind bulk INSERTs. 25 keeps headroom while
+        // staying far under Postgres's default max_connections.
+        max: 25,
+      },
     }),
     FeatureModule,
     LoggingModule,
