@@ -110,7 +110,14 @@ export class PushStage implements ImportStageRunner {
     }
 
     return {
-      processed: pushed,
+      // Every staged row is RESOLVED one way or another, and this stage's work
+      // is examining all of them — so all three outcomes count toward progress.
+      // Reporting only `pushed` made the bar climb to 100% during the push and
+      // then jump BACKWARDS when the stage completed: a real import showed
+      // 5.8k/10.8k and read as though half of it had failed, when most of the
+      // remainder was content that already existed. Whether the work went well
+      // is what `partial` and the breakdown below say; this number is progress.
+      processed: pushed + deduped + failed,
       total,
       // Rows that could not be sent are not a failed import — the ones that went
       // are in ci.* and useful. The run says `partial` and the ledger says which.

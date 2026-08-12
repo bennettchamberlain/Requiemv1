@@ -227,7 +227,10 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
     const { stage } = makeStage({ communicationCreate });
     const outcome = await stage.run(contextFor(runId));
 
-    expect(outcome.processed).toBe(2);
+    // All three rows were resolved, so the bar reaches its total; the breakdown
+    // is what says two landed and one did not. Counting only successes made a
+    // stage that examined everything report as half finished.
+    expect(outcome.processed).toBe(3);
     expect(outcome.detail).toMatchObject({ pushed: 2, failed: 1 });
     // A partly-pushed run is not a failed one: two records are in ci.* and useful.
     expect(outcome.partial).toBe(true);
@@ -316,6 +319,8 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
     const outcome = await stage.run(contextFor(runId));
 
     expect(outcome.detail).toMatchObject({ pushed: 0, deduped: 1, failed: 0 });
+    // A run that deduped everything still finished its work.
+    expect(outcome.processed).toBe(outcome.total);
 
     const [row] = await harness.dataSource.query<Array<{ push_status: string; push_error: string | null }>>(
       `SELECT push_status, push_error FROM ci_import.staged_items WHERE run_id = $1::uuid`,
