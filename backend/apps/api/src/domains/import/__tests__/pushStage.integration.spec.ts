@@ -166,6 +166,26 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
     expect(mappings).toHaveLength(3);
   });
 
+  it('counts entities in its own total, so Read and Save agree on one import', async () => {
+    // A real Amazon archive read 10,890 and saved 10,808. Nothing was lost: the
+    // parse stage counts items AND entities, while this stage's denominator was
+    // items alone, so the two steps described the same import with different
+    // numbers and the 82 missing rows read as a silent drop.
+    const runId = await stageEmailWithParticipants();
+    const { stage } = makeStage();
+
+    const outcome = await stage.run(contextFor(runId));
+
+    const [{ items }] = await harness.dataSource.query<Array<{ items: string }>>(
+      `SELECT count(*) AS items FROM ci_import.staged_items WHERE run_id = $1::uuid`,
+      [runId],
+    );
+
+    // One email, three contacts.
+    expect(outcome.total).toBe(Number(items) + 3);
+    expect(outcome.processed).toBe(outcome.total);
+  });
+
   it('writes real ci.entities rows, with a linked id a uuid column accepts', async () => {
     // The bug in one test. `linked_id` is a uuid; the handle used to be written
     // into it directly, so this INSERT failed for every entity that had one.

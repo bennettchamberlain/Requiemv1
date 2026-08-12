@@ -79,9 +79,21 @@ export class PushStage implements ImportStageRunner {
     // `entity_mappings` — before the record that points at them is built.
     const entities = await this.pushEntities(context);
 
-    const total = await this.pendingCount(context.runId);
+    // Entities count toward this stage's total, because resolving them IS part
+    // of its work — and because the parse stage already counts them, so leaving
+    // them out made the two steps disagree about the same import. A real Amazon
+    // archive read 10,890 and saved 10,808, and the missing 82 were exactly the
+    // entities: not a loss, but nothing on the page said so.
+    //
+    // Taken from the outcome rather than a second COUNT: `pushEntities` has
+    // already moved these rows off 'pending', so counting them now would return
+    // zero. On a resumed push it returns zero anyway — the entities were settled
+    // by the earlier attempt — which is the same shrinking-total behaviour the
+    // item side has.
+    const entitiesProcessed = entities.resolved + entities.skipped + entities.failed;
+    const total = (await this.pendingCount(context.runId)) + entitiesProcessed;
 
-    await context.progress({ processed: 0, total, phase: 'pushing' });
+    await context.progress({ processed: entitiesProcessed, total, phase: 'pushing' });
 
     const counts: DestinationCounts = {};
     let pushed = 0;
@@ -101,7 +113,7 @@ export class PushStage implements ImportStageRunner {
       failed += outcome.failed;
       deduped += outcome.deduped;
 
-      await context.progress({ processed: pushed + failed + deduped, total, phase: 'pushing' });
+      await context.progress({ processed: entitiesProcessed + pushed + failed + deduped, total, phase: 'pushing' });
     }
 
     return {
@@ -112,7 +124,7 @@ export class PushStage implements ImportStageRunner {
       // 5.8k/10.8k and read as though half of it had failed, when most of the
       // remainder was content that already existed. Whether the work went well
       // is what `partial` and the breakdown below say; this number is progress.
-      processed: pushed + deduped + failed,
+      processed: entitiesProcessed + pushed + deduped + failed,
       total,
       // Rows that could not be sent are not a failed import — the ones that went
       // are in ci.* and useful. The run says `partial` and the ledger says which.
