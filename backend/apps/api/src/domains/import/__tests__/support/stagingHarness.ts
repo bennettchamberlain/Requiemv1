@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import { DataSource } from 'typeorm';
 
+import { EntityIdentifierEntity, NodeEntity, RelationshipEntity } from '@ci/domains/graph';
+
 import { databaseAvailability, resolveConnection } from '../../../__tests__/support/databaseConnection';
 import { EntityMappingEntity } from '../../entities/EntityMappingEntity';
 import { ImportRunEntity } from '../../entities/ImportRunEntity';
@@ -90,6 +92,13 @@ export async function createStagingHarness(): Promise<{
           database: connection.database,
         }),
     entities: [
+      // The graph entities are registered so a spec can run a REAL
+      // GraphIngestService against this connection. The entity lane's identity
+      // rules live in the server, not in the importer, and a mocked stand-in is
+      // exactly what hid a handle being written into a uuid column.
+      EntityIdentifierEntity,
+      NodeEntity,
+      RelationshipEntity,
       EntityMappingEntity,
       ImportRunEntity,
       ImportStageEntity,
@@ -135,6 +144,18 @@ export async function createStagingHarness(): Promise<{
   const userId = randomUUID();
   const createdRuns: string[] = [];
   const createdDrops: string[] = [];
+
+  // A REAL `ci.users` row, not just a uuid.
+  //
+  // Nothing in `ci_import` references the user, so a bare uuid was enough for as
+  // long as these specs stayed inside the staging schema. The push stage leaves
+  // it: `ci.entities.owner_user_id` carries a foreign key, and every entity a
+  // run resolves fails on it if the owner does not exist.
+  await dataSource.query(
+    `INSERT INTO ci.users (id, name, email) VALUES ($1::uuid, 'import harness', $2)
+     ON CONFLICT (id) DO NOTHING`,
+    [userId, `import-harness-${userId}@example.invalid`],
+  );
 
   const stageDrop = async (filename = 'export.zip'): Promise<string> => {
     const dropId = randomUUID();
@@ -202,6 +223,16 @@ export async function createStagingHarness(): Promise<{
         dropId,
       ]);
     }
+
+    // Whatever the push stage resolved into `ci.*` belongs to this harness user
+    // alone, so it goes with them. Entities before identifiers and the user
+    // last: both reference what precedes them.
+    await dataSource.query(
+      `DELETE FROM ci.entity_identifiers WHERE owner_user_id = $1::uuid`,
+      [userId],
+    );
+    await dataSource.query(`DELETE FROM ci.entities WHERE owner_user_id = $1::uuid`, [userId]);
+    await dataSource.query(`DELETE FROM ci.users WHERE id = $1::uuid`, [userId]);
 
     await dataSource.destroy();
   };

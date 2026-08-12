@@ -1,4 +1,10 @@
-import { randomUUID } from 'node:crypto';
+import {
+  EntityIdentifierEntity,
+  EntityIdentifierService,
+  GraphIngestService,
+  NodeEntity,
+  RelationshipEntity,
+} from '@ci/domains/graph';
 
 import { PushStage } from '../stages/PushStage';
 import type { StageRunContext } from '../types';
@@ -44,7 +50,7 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
   });
 
   /** A stage wired to recording doubles for every destination. */
-  function makeStage(overrides: { communicationCreate?: jest.Mock; personCreate?: jest.Mock } = {}) {
+  function makeStage(overrides: { communicationCreate?: jest.Mock; graph?: GraphIngestService } = {}) {
     const sent: Array<{ destination: string; input: Record<string, unknown> }> = [];
     // Every destination takes an ARRAY now — that is the upserting path, and
     // passing a single row bypasses it.
@@ -57,20 +63,26 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
         return inputs.map(() => ({ id: `${destination}-row` }));
       });
 
-    // Real uuids: `entity_mappings.server_entity_id` is a uuid column, so a
-    // readable fake id ("person-alice@example.com") fails the INSERT rather than
-    // an assertion, which reads as a code bug and is not one.
-    const personIds = new Map<string, string>();
-    const people =
-      overrides.personCreate ??
-      jest.fn(async (_ctx: unknown, input: { linkedId?: string }) => {
-        const handle = input.linkedId ?? 'unknown';
-        const id = personIds.get(handle) ?? randomUUID();
-
-        personIds.set(handle, id);
-
-        return { id };
-      });
+    // The entity lane runs against the REAL GraphIngestService, not a double.
+    //
+    // It was a double once, and the double accepted a normalized handle in
+    // `linkedId` — a `uuid` column — so every entity that had a handle failed
+    // against the actual database and every entity without one was skipped.
+    // Nothing resolved, and because `entity_mappings` stayed empty the
+    // participant join silently produced nothing for any record. The mock
+    // agreed with the code at every step.
+    const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() };
+    const graph =
+      overrides.graph ??
+      new GraphIngestService(
+        harness.dataSource.getRepository(NodeEntity),
+        harness.dataSource.getRepository(RelationshipEntity),
+        new EntityIdentifierService(
+          harness.dataSource.getRepository(EntityIdentifierEntity),
+          logger as never,
+        ),
+        logger as never,
+      );
 
     const communications = { createMany: overrides.communicationCreate ?? record('communications') };
 
@@ -82,11 +94,11 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
       { createMany: record('inventory') } as never,
       { create: record('position') } as never,
       { createMany: record('browser_activity') } as never,
-      { create: people } as never,
-      { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), debug: jest.fn() } as never,
+      graph as never,
+      logger as never,
     );
 
-    return { stage, sent, people, communications, personIds };
+    return { stage, sent, graph, communications };
   }
 
   function contextFor(runId: string): StageRunContext {
@@ -118,8 +130,9 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
       ['carol@example.com', 'cc'],
     ]) {
       const [entity] = await dataSource.query<Array<{ id: string }>>(
-        `INSERT INTO ci_import.staged_entities (run_id, user_id, type, name, metadata, identity_key)
-              VALUES ($1::uuid, $2::uuid, 'contact', $3, '{}'::jsonb, $3)
+        `INSERT INTO ci_import.staged_entities
+           (run_id, user_id, type, name, metadata, identity_key, data_source)
+              VALUES ($1::uuid, $2::uuid, 'contact', $3, '{}'::jsonb, $3, 'gmail')
            RETURNING id`,
         [runId, userId, handle],
       );
@@ -136,18 +149,11 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
 
   it('resolves staged entities before the records that name them, and records the mapping', async () => {
     const runId = await stageEmailWithParticipants();
-    const { stage, people } = makeStage();
+    const { stage } = makeStage();
 
     const outcome = await stage.run(contextFor(runId));
 
     expect(outcome.detail.entities).toMatchObject({ resolved: 3, skipped: 0, failed: 0 });
-    // Every person is filed under one namespace keyed on the handle, so the same
-    // person from another export next month resolves to the same row.
-    expect(people.mock.calls.map((call) => call[1].linkedId).sort()).toEqual([
-      'alice@example.com',
-      'bob@example.com',
-      'carol@example.com',
-    ]);
 
     const mappings = await harness.dataSource.query<Array<{ server_entity_id: string }>>(
       `SELECT m.server_entity_id
@@ -160,38 +166,152 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
     expect(mappings).toHaveLength(3);
   });
 
+  it('writes real ci.entities rows, with a linked id a uuid column accepts', async () => {
+    // The bug in one test. `linked_id` is a uuid; the handle used to be written
+    // into it directly, so this INSERT failed for every entity that had one.
+    const runId = await stageEmailWithParticipants();
+    const { stage } = makeStage();
+
+    await stage.run(contextFor(runId));
+
+    const rows = await harness.dataSource.query<Array<{ entity_type: string; linked_table: string }>>(
+      `SELECT e.entity_type, e.linked_table
+         FROM ci.entities e
+         JOIN ci_import.entity_mappings m ON m.server_entity_id = e.entity_id
+         JOIN ci_import.staged_entities s ON s.id = m.staged_entity_id
+        WHERE s.run_id = $1::uuid`,
+      [runId],
+    );
+
+    expect(rows).toHaveLength(3);
+    expect(rows.every((row) => row.entity_type === 'Person')).toBe(true);
+    // Namespaced by the parser that produced them, per GraphIngestService.
+    expect(rows.every((row) => row.linked_table === 'import:gmail')).toBe(true);
+  });
+
+  it('indexes each handle in ci.entity_identifiers, which is what links people later', async () => {
+    // Without these rows a person imported from one export can never be matched
+    // to the same person in another — the table was empty on a real import.
+    const runId = await stageEmailWithParticipants();
+    const { stage } = makeStage();
+
+    await stage.run(contextFor(runId));
+
+    const identifiers = await harness.dataSource.query<Array<{ value_normalized: string }>>(
+      `SELECT i.value_normalized
+         FROM ci.entity_identifiers i
+         JOIN ci_import.entity_mappings m ON m.server_entity_id = i.entity_id
+         JOIN ci_import.staged_entities s ON s.id = m.staged_entity_id
+        WHERE s.run_id = $1::uuid AND i.kind = 'email'
+        ORDER BY i.value_normalized`,
+      [runId],
+    );
+
+    expect(identifiers.map((row) => row.value_normalized)).toEqual([
+      'alice@example.com',
+      'bob@example.com',
+      'carol@example.com',
+    ]);
+  });
+
+  it('resolves the same handle to the same row on a re-import', async () => {
+    // Idempotency is the reason the identity is a natural key rather than a
+    // fresh uuid: a second import of the same archive must not double everyone.
+    const { stage } = makeStage();
+
+    const first = await stageEmailWithParticipants();
+    await stage.run(contextFor(first));
+
+    const second = await stageEmailWithParticipants();
+    await stage.run(contextFor(second));
+
+    const [{ count }] = await harness.dataSource.query<Array<{ count: string }>>(
+      `SELECT count(DISTINCT m.server_entity_id) AS count
+         FROM ci_import.entity_mappings m
+         JOIN ci_import.staged_entities s ON s.id = m.staged_entity_id
+        WHERE s.run_id IN ($1::uuid, $2::uuid)`,
+      [first, second],
+    );
+
+    expect(Number(count)).toBe(3);
+  });
+
   it('attaches the sender and recipients to the communication it pushes', async () => {
     const runId = await stageEmailWithParticipants();
-    const { stage, sent, personIds } = makeStage();
+    const { stage, sent } = makeStage();
 
     await stage.run(contextFor(runId));
 
     const communication = sent.find((entry) => entry.destination === 'communications');
 
+    // Read back through the mapping table rather than from a mock's memory: the
+    // participant ids are only correct if the join the stage itself uses agrees.
+    const resolved = new Map(
+      (
+        await harness.dataSource.query<Array<{ identity_key: string; server_entity_id: string }>>(
+          `SELECT s.identity_key, m.server_entity_id
+             FROM ci_import.entity_mappings m
+             JOIN ci_import.staged_entities s ON s.id = m.staged_entity_id
+            WHERE s.run_id = $1::uuid`,
+          [runId],
+        )
+      ).map((row) => [row.identity_key, row.server_entity_id]),
+    );
+
     // The regression this closes: a full-mbox import once recorded 15,434 items
     // and ZERO relationships, so every message arrived with no sender at all.
-    expect(communication?.input.from_entity_id).toBe(personIds.get('alice@example.com'));
+    expect(communication?.input.from_entity_id).toBe(resolved.get('alice@example.com'));
     expect(communication?.input.to_entity_ids).toEqual([
-      personIds.get('bob@example.com'),
-      personIds.get('carol@example.com'),
+      resolved.get('bob@example.com'),
+      resolved.get('carol@example.com'),
     ]);
   });
 
-  it('skips a handle-less entity instead of minting a duplicate every run', async () => {
+  it('resolves a handle-less entity by name, without filing it as a contact', async () => {
+    // Handle-less entities used to be skipped outright, on the grounds that a
+    // null key would mint a duplicate every run. That cost a real Amazon import
+    // all 69 of its artists and 12 of its genres. A name IS a stable key for the
+    // things that have no handle by nature, so they resolve — as a Concept, not
+    // as a person, which is the part that actually mattered.
+    const runId = await harness.startRun();
+
+    await harness.dataSource.query(
+      `INSERT INTO ci_import.staged_entities
+         (run_id, user_id, type, name, metadata, identity_key, data_source)
+            VALUES ($1::uuid, $2::uuid, 'album', 'European Vacation', '{}'::jsonb, NULL, 'google_photos')`,
+      [runId, harness.userId],
+    );
+
+    const { stage } = makeStage();
+    const outcome = await stage.run(contextFor(runId));
+
+    expect(outcome.detail.entities).toMatchObject({ resolved: 1, skipped: 0, failed: 0 });
+
+    const [row] = await harness.dataSource.query<Array<{ entity_type: string }>>(
+      `SELECT e.entity_type
+         FROM ci.entities e
+         JOIN ci_import.entity_mappings m ON m.server_entity_id = e.entity_id
+         JOIN ci_import.staged_entities s ON s.id = m.staged_entity_id
+        WHERE s.run_id = $1::uuid`,
+      [runId],
+    );
+
+    expect(row.entity_type).toBe('Concept');
+  });
+
+  it('skips only an entity with nothing at all to key on', async () => {
     const runId = await harness.startRun();
 
     await harness.dataSource.query(
       `INSERT INTO ci_import.staged_entities (run_id, user_id, type, name, metadata, identity_key)
-            VALUES ($1::uuid, $2::uuid, 'album', 'European Vacation', '{}'::jsonb, NULL)`,
+            VALUES ($1::uuid, $2::uuid, 'album', NULL, '{}'::jsonb, NULL)`,
       [runId, harness.userId],
     );
 
-    const { stage, people } = makeStage();
+    const { stage } = makeStage();
     const outcome = await stage.run(contextFor(runId));
 
     expect(outcome.detail.entities).toMatchObject({ resolved: 0, skipped: 1 });
-    // Filing an album through the person lane would record it as a contact.
-    expect(people).not.toHaveBeenCalled();
     // `skipped` is a decision, not an absence — a resumed push must not
     // reconsider it.
     const [row] = await harness.dataSource.query<Array<{ push_status: string }>>(

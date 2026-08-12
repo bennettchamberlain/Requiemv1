@@ -37,6 +37,22 @@ export class StagedEntityEntity {
   metadata!: Record<string, unknown>;
 
   /**
+   * The parser that produced this entity — part of its server-side identity.
+   *
+   * `GraphIngestService` files an imported entity under
+   * `linked_table = 'import:<sourceSystem>'`, so the source system is not
+   * decoration: it decides which existing row a re-import resolves to. It cannot
+   * be taken from the run, because one run spans several parsers — an Amazon
+   * archive stages `audible`, `prime_video`, `kindle_reading` and `amazon_music`
+   * together.
+   *
+   * Null for entities staged before the column existed; the push path reads that
+   * as 'unknown' rather than refusing to resolve them.
+   */
+  @Column({ type: 'text', name: 'data_source', nullable: true })
+  dataSource!: string | null;
+
+  /**
    * The normalized handle this entity is known by: lower-cased email, or the
    * last ten digits of a phone number.
    *

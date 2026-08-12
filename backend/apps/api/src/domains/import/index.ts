@@ -52,6 +52,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { BrowserActivityModule } from '@ci/domains/browser-activity';
 import { EventsModule } from '@ci/domains/events';
+import { GraphModule } from '@ci/domains/graph';
 import { MemoryModule } from '@ci/domains/memory';
 import { PositionModule } from '@ci/domains/position';
 
@@ -92,6 +93,7 @@ import { UnpackStage } from './stages/UnpackStage';
     ]),
     EventsModule,
     BrowserActivityModule,
+    GraphModule,
     MemoryModule,
     PositionModule,
   ],

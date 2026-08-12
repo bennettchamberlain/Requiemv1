@@ -275,11 +275,19 @@ export class StagedWriter implements ImportPipeline {
     }
 
     const rows = await tx.query<Array<{ id: string; metadata: Record<string, unknown> }>>(
-      `INSERT INTO ci_import.staged_entities (run_id, user_id, type, name, metadata, identity_key)
-            VALUES ($1::uuid, $2::uuid, $3, $4, $5::jsonb, $6)
+      `INSERT INTO ci_import.staged_entities (run_id, user_id, type, name, metadata, identity_key, data_source)
+            VALUES ($1::uuid, $2::uuid, $3, $4, $5::jsonb, $6, $7)
        ON CONFLICT (run_id, identity_key) WHERE identity_key IS NOT NULL DO NOTHING
          RETURNING id, metadata`,
-      [this.scope.runId, this.scope.userId, type, entity.name ?? null, JSON.stringify(metadata), identityKey],
+      [
+        this.scope.runId,
+        this.scope.userId,
+        type,
+        entity.name ?? null,
+        JSON.stringify(metadata),
+        identityKey,
+        this.scope.dataSource,
+      ],
     );
 
     if (rows.length > 0) {
@@ -325,10 +333,17 @@ export class StagedWriter implements ImportPipeline {
     }
 
     const rows = await tx.query<Array<{ id: string }>>(
-      `INSERT INTO ci_import.staged_entities (run_id, user_id, type, name, metadata, identity_key)
-            VALUES ($1::uuid, $2::uuid, $3, $4, $5::jsonb, NULL)
+      `INSERT INTO ci_import.staged_entities (run_id, user_id, type, name, metadata, identity_key, data_source)
+            VALUES ($1::uuid, $2::uuid, $3, $4, $5::jsonb, NULL, $6)
          RETURNING id`,
-      [this.scope.runId, this.scope.userId, type, entity.name ?? null, JSON.stringify(metadata)],
+      [
+        this.scope.runId,
+        this.scope.userId,
+        type,
+        entity.name ?? null,
+        JSON.stringify(metadata),
+        this.scope.dataSource,
+      ],
     );
 
     this.counts.entities += 1;

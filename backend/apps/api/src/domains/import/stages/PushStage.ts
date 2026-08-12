@@ -4,19 +4,14 @@ import { DataSource } from 'typeorm';
 
 import { LoggerService } from '@ci/common/logging';
 import { BrowserActivityService } from '@ci/domains/browser-activity';
-import {
-  CommunicationService,
-  ContentService,
-  EventService,
-  ItemService,
-  PersonService,
-} from '@ci/domains/memory';
+import { type GraphEntityInputDto, GraphIngestService } from '@ci/domains/graph';
+import { CommunicationService, ContentService, EventService, ItemService } from '@ci/domains/memory';
 import { PositionService } from '@ci/domains/position';
 
 import type { StagedEntity } from '../entities/StagedEntityEntity';
 import type { StagedItem } from '../entities/StagedItemEntity';
 import { destinationsFor, toCanonical, type CanonicalRecord, type Destination } from '../push/canonical';
-import { toPersonInput } from '../push/entities';
+import { toGraphEntity } from '../push/entities';
 import {
   toBrowserActivityInput,
   toCommunicationInput,
@@ -72,7 +67,7 @@ export class PushStage implements ImportStageRunner {
     private readonly items: ItemService,
     private readonly positions: PositionService,
     private readonly browserActivity: BrowserActivityService,
-    private readonly people: PersonService,
+    private readonly graph: GraphIngestService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(PushStage.name);
@@ -130,18 +125,23 @@ export class PushStage implements ImportStageRunner {
   }
 
   /**
-   * Resolve every staged entity that has an identity, and remember what it
+   * Resolve every staged entity to a `ci.entities` row, and remember what it
    * became.
    *
-   * `PersonService.create` is resolve-or-create on the linked key, so this is
-   * cheap to repeat and safe to resume: the second run of a stage that died
-   * halfway re-resolves the entities it already did and gets the same ids back.
+   * Resolution goes through `GraphIngestService`, which upserts on
+   * `(owner_user_id, entity_type, 'import:<sourceSystem>', uuidv5(key))` — so
+   * this is cheap to repeat and safe to resume: the second run of a stage that
+   * died halfway re-resolves the entities it already did and gets the same ids
+   * back. It also indexes each entity's emails and phones into
+   * `ci.entity_identifiers`, which is how a person imported from one export is
+   * later matched to the same person in another.
    *
-   * Handle-less staged entities are counted and SKIPPED. An album, a mail thread
-   * or a bare place name has no stable key, so there is nothing to dedup on and
-   * every run would mint another row for the same album; they belong to
-   * `PlaceService` / `ThreadService` with their own identity rules, and filing
-   * them through the person lane would record a photo album as a contact.
+   * Only an entity with neither a handle nor a name is SKIPPED — there is
+   * nothing to key it on, so every run would mint another row for it.
+   *
+   * Batched deliberately: `ingest` resolves a whole array in a bounded number of
+   * statements, and entity counts here are small next to item counts (82 against
+   * 10,808 in a real Amazon archive), so one call covers the run.
    */
   private async pushEntities(
     context: StageRunContext,
@@ -150,20 +150,22 @@ export class PushStage implements ImportStageRunner {
 
     const staged = await this.dataSource.query<StagedEntity[]>(
       `SELECT id, run_id AS "runId", user_id AS "userId", type, name, metadata,
-              identity_key AS "identityKey"
+              identity_key AS "identityKey", data_source AS "dataSource"
          FROM ci_import.staged_entities
         WHERE run_id = $1::uuid AND push_status = 'pending'
         ORDER BY id`,
       [context.runId],
     );
 
-    const ctx = { userId: context.userId };
-    let resolved = 0;
+    // Several staged rows can share a natural key — the same artist reached by
+    // two parsers in one archive — so the key maps to a LIST. Ingest is given
+    // each key once, and every staged row holding it gets the resulting id.
+    const byKey = new Map<string, StagedEntity[]>();
+    const inputs: GraphEntityInputDto[] = [];
     let skipped = 0;
-    let failed = 0;
 
     for (const row of staged) {
-      const input = toPersonInput(row);
+      const input = toGraphEntity(row);
 
       if (input == null) {
         skipped += 1;
@@ -171,14 +173,46 @@ export class PushStage implements ImportStageRunner {
         continue;
       }
 
-      try {
-        const person = await this.people.create(ctx, input, { emitCreated: false });
+      const sharing = byKey.get(input.key);
 
-        await this.recordEntityMapping(row.id, context.userId, person.id);
+      if (sharing) {
+        sharing.push(row);
+        continue;
+      }
+
+      byKey.set(input.key, [row]);
+      inputs.push(input);
+    }
+
+    if (inputs.length === 0) {
+      this.logger.log('Resolved staged entities', { runId: context.runId, resolved: 0, skipped, failed: 0 });
+
+      return { resolved: 0, skipped, failed: 0 };
+    }
+
+    const result = await this.graph.ingest({ userId: context.userId }, { entities: inputs, relationships: [] });
+
+    let resolved = 0;
+
+    for (const mapping of result.entities) {
+      for (const row of byKey.get(mapping.key) ?? []) {
+        await this.recordEntityMapping(row.id, context.userId, mapping.entityId);
         await this.markEntity(row.id, 'pushed', null);
         resolved += 1;
-      } catch (err) {
-        await this.markEntity(row.id, 'failed', (err as Error).message);
+      }
+
+      byKey.delete(mapping.key);
+    }
+
+    // Whatever ingest did not echo back failed; its reason is in `errors`, which
+    // is per-batch rather than per-entity, so the whole list is recorded against
+    // each unresolved row.
+    const reason = result.errors.length > 0 ? result.errors.join('; ') : 'entity not resolved by graph ingest';
+    let failed = 0;
+
+    for (const rows of byKey.values()) {
+      for (const row of rows) {
+        await this.markEntity(row.id, 'failed', reason);
         failed += 1;
 
         // Logged, not just recorded: an entity that will not resolve costs every
@@ -188,7 +222,7 @@ export class PushStage implements ImportStageRunner {
           runId: context.runId,
           stagedEntityId: row.id,
           identityKey: row.identityKey,
-          error: (err as Error).message,
+          error: reason,
         });
       }
     }
