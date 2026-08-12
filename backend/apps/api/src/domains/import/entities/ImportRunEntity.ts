@@ -50,6 +50,19 @@ export class ImportRunEntity {
   source!: ImportRunSource;
 
   /**
+   * The services this run turned out to contain, most rows first.
+   *
+   * DETECTED, not declared. Upstream knew the service because the user picked
+   * its card before uploading; a drop zone that takes any archive has to work it
+   * out from the contents — and one archive legitimately spans several parsers,
+   * which is why this is a list rather than a single value.
+   *
+   * Written by the parse stage. Empty until then.
+   */
+  @Column({ type: 'text', array: true, name: 'data_sources', default: () => "'{}'" })
+  dataSources!: string[];
+
+  /**
    * Derived CACHE over {@link ImportStageEntity}, maintained by the stage
    * runners. Never the source of truth for whether work remains.
    */

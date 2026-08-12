@@ -85,6 +85,8 @@ export class ParseStage implements ImportStageRunner {
       }
     }
 
+    await this.recordDataSources(context.runId, perSource);
+
     return {
       processed: staged,
       total: staged,
@@ -95,6 +97,31 @@ export class ParseStage implements ImportStageRunner {
         failures,
       },
     };
+  }
+
+  /**
+   * Stamp the run with the services it turned out to contain, via
+   * {@link rankDataSources}.
+   *
+   * On the run itself rather than left in this stage's `detail`, because the run
+   * LIST is what needs it — naming a run in a list of ten should not mean
+   * joining ten stage rows and parsing their JSON.
+   *
+   * Ordered by row count, so the first name is the one the archive is mostly
+   * about; a `generic` fallback that matched a stray CSV sorts to the end
+   * instead of leading. Ties break on name so a re-parse is stable.
+   *
+   * Sources that produced NOTHING are dropped: a parser recognising a file and
+   * then finding no rows in it is not something the run was.
+   */
+  private async recordDataSources(
+    runId: string,
+    perSource: ReadonlyArray<Record<string, unknown>>,
+  ): Promise<void> {
+    await this.dataSource.query(`UPDATE ci_import.import_runs SET data_sources = $2::text[] WHERE id = $1::uuid`, [
+      runId,
+      rankDataSources(perSource),
+    ]);
   }
 
   /**
@@ -157,4 +184,28 @@ export class ParseStage implements ImportStageRunner {
 
     return counts;
   }
+}
+
+/**
+ * The services a run should be labelled with, most rows first.
+ *
+ * Ordered by row count so the first name is the one the archive is mostly
+ * about: a `generic` fallback that matched a stray CSV sorts to the end rather
+ * than leading a list that should say "Audible". Ties break on name so a
+ * re-parse produces the same order.
+ *
+ * Sources that produced NOTHING are dropped. A parser recognising a file and
+ * then finding no rows in it is not something the run was — and `recognized`
+ * in the stage detail still records that it matched, for anyone debugging why
+ * a file went nowhere.
+ */
+export function rankDataSources(perSource: ReadonlyArray<Record<string, unknown>>): string[] {
+  return perSource
+    .map((entry) => ({
+      name: String(entry.dataSource ?? ''),
+      rows: Number(entry.items ?? 0) + Number(entry.entities ?? 0),
+    }))
+    .filter((entry) => entry.name.length > 0 && entry.rows > 0)
+    .sort((a, b) => b.rows - a.rows || a.name.localeCompare(b.name))
+    .map((entry) => entry.name);
 }
