@@ -3,6 +3,11 @@ import path from 'node:path';
 
 import { DataSource, type EntityMetadata, type EntityTarget, type ObjectLiteral } from 'typeorm';
 
+// The repo's one contract for "may a test touch Postgres?", plus the dotenv load
+// that makes DATABASE_* visible to jest. Shared rather than re-implemented:
+// a private copy of the synchronous probe is how two suites end up disagreeing
+// about whether a database exists.
+import { databaseAvailability, resolveConnection } from '../../../__tests__/support/databaseConnection';
 import {
   columnsWithNoDdl,
   columnsWithNoProperty,
@@ -13,11 +18,6 @@ import {
   type DdlTable,
   type DeclaredColumn,
 } from '../../../__tests__/support/schemaAgreement';
-// The repo's one contract for "may a test touch Postgres?", plus the dotenv load
-// that makes DATABASE_* visible to jest. Imported across domains deliberately:
-// re-implementing the synchronous probe here is how two suites end up disagreeing
-// about whether a database exists. See pipeline/__tests__/harness/README.md.
-import { databaseAvailability, resolveConnection } from '../../../pipeline/__tests__/harness/pipelineHarness';
 import { EntityMappingEntity } from '../EntityMappingEntity';
 import { ImportRunEntity } from '../ImportRunEntity';
 import { ImportStageEntity } from '../ImportStageEntity';
@@ -99,7 +99,19 @@ const STAGING_SCHEMA = 'ci_import';
 // Suite gating
 // ---------------------------------------------------------------------------
 
-const availability = databaseAvailability();
+/**
+ * `IMPORT_TEST_DATABASE_URL` points this suite at a scratch database without
+ * moving the whole app — or the other database-backed suites — off the dev one.
+ * Previously this suite borrowed `PIPELINE_TEST_DATABASE_URL` by way of the
+ * pipeline harness, which meant redirecting one domain silently redirected the
+ * other.
+ */
+const IMPORT_DATABASE_ENV = {
+  urlEnvVar: 'IMPORT_TEST_DATABASE_URL',
+  probeTimeoutEnvVar: 'IMPORT_TEST_PROBE_TIMEOUT_MS',
+};
+
+const availability = databaseAvailability(IMPORT_DATABASE_ENV);
 
 const describeWithDatabase = availability.available ? describe : describe.skip;
 
@@ -145,7 +157,7 @@ describeWithDatabase(`ci_import entity ↔ migration agreement (${availability.t
   let ddl = new Map<string, DdlTable>();
 
   beforeAll(async () => {
-    const connection = resolveConnection();
+    const connection = resolveConnection(IMPORT_DATABASE_ENV);
 
     if (connection == null) {
       throw new Error(

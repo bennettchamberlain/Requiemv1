@@ -1,9 +1,6 @@
-import { spawnSync } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
-import path from 'node:path';
 
 import { Test, type TestingModule } from '@nestjs/testing';
-import dotenv from 'dotenv';
 import { DataSource } from 'typeorm';
 
 import { type UserServiceContext } from '@ci/common/context';
@@ -16,6 +13,14 @@ import {
   type EventSendOptions,
 } from '@ci/domains/events';
 
+import {
+  databaseAvailability as testDatabaseAvailability,
+  isPortOpen,
+  resolveConnection as resolveTestConnection,
+  type DatabaseAvailability,
+  type TestDatabaseConnection,
+  type TestDatabaseOptions,
+} from '../../../__tests__/support/databaseConnection';
 import { PIPELINE_QUEUES, type PipelineQueue } from '../../constants';
 import { PipelineSliceEvent, PipelineSweepEvent } from '../../events';
 import { PipelineSliceListener } from '../../listeners/PipelineSliceListener';
@@ -99,187 +104,54 @@ import { STAGE_VERSIONS } from '../../versions';
  * skipped. See the README beside this file.
  */
 
-// The rest of the toolchain (`yarn test`, `yarn dev`, `yarn dbmate`) runs with
-// DOTENV_CONFIG_PATH pointing at the repo-root .env, and `src/bootstrap.ts` is
-// what turns that into process.env for the running app. Test files never import
-// bootstrap, so the same load happens here, at module scope, BEFORE anything
-// reads process.env — otherwise the connection would resolve to nothing on a
-// developer machine whose credentials live only in .env.
-dotenv.config({ path: path.resolve(process.cwd(), process.env.DOTENV_CONFIG_PATH ?? '.env') });
-
 // ---------------------------------------------------------------------------
 // Connection resolution
 // ---------------------------------------------------------------------------
+//
+// Moved to `src/domains/__tests__/support/databaseConnection.ts`. None of it was
+// pipeline-specific — working out where the database is and whether anything is
+// listening there is what every database-backed spec in the repo needs, and
+// `domains/audit` proved it by carrying a hand-copied duplicate. The pipeline's
+// own override variable names are bound here so the sixteen specs that import
+// these two functions from the harness are unaffected.
 
 /** Where the harness will connect. Never carries a hardcoded credential. */
-export interface HarnessConnection {
-  /** Present when a full URL was supplied; the discrete fields are parsed from it. */
-  url?: string;
-  host: string;
-  port: number;
-  username: string;
-  database: string;
-  /** Read from the environment. Never defaulted — an absent password means "no database". */
-  password: string;
-}
+export type HarnessConnection = TestDatabaseConnection;
+export type { DatabaseAvailability };
 
 /**
- * Defaults that are NOT secrets.
- *
- * `config/default.json` says host `database` because the app runs inside the
- * compose network; jest runs on the host, where the published port is what is
- * reachable — which is why `.env` sets `DATABASE_HOST=localhost`. Defaulting to
- * localhost means a developer with a running stack needs no extra setup, while
- * the password is only ever read, never assumed.
+ * `PIPELINE_TEST_DATABASE_URL` exists so these suites can be pointed at a
+ * scratch database without moving the whole app off the dev one.
  */
-const DEFAULT_HOST = 'localhost';
-const DEFAULT_PORT = 5432;
-const DEFAULT_USERNAME = 'companion';
-const DEFAULT_DATABASE = 'companion';
+const PIPELINE_DATABASE_ENV: TestDatabaseOptions = {
+  urlEnvVar: 'PIPELINE_TEST_DATABASE_URL',
+  probeTimeoutEnvVar: 'PIPELINE_TEST_PROBE_TIMEOUT_MS',
+};
 
-/**
- * The connection, or `null` when the environment does not describe one.
- *
- * Precedence: an explicit test URL, then the URL the dev-stack supervisor
- * exports, then the discrete `DATABASE_*` variables `config/` already maps.
- * `PIPELINE_TEST_DATABASE_URL` exists so this suite can be pointed at a scratch
- * database without moving the whole app off the dev one.
- */
+/** The connection, or `null` when the environment does not describe one. */
 export function resolveConnection(): HarnessConnection | null {
-  const url = process.env.PIPELINE_TEST_DATABASE_URL ?? process.env.DATABASE_URL;
-
-  if (url != null && url.trim().length > 0) {
-    try {
-      const parsed = new URL(url);
-
-      return {
-        url,
-        host: parsed.hostname,
-        port: parsed.port.length > 0 ? Number(parsed.port) : DEFAULT_PORT,
-        username: decodeURIComponent(parsed.username) || DEFAULT_USERNAME,
-        password: decodeURIComponent(parsed.password),
-        database: parsed.pathname.replace(/^\//, '') || DEFAULT_DATABASE,
-      };
-    } catch {
-      // A malformed URL is a configuration mistake, not an absent database, but
-      // it is reported as unavailable (with the reason) rather than thrown so
-      // the suite skips legibly instead of failing every test on a parse error.
-      return null;
-    }
-  }
-
-  const password = process.env.DATABASE_PASSWORD;
-
-  // The one field with no default. Everything else about this database is
-  // public knowledge living in config/default.json; the password lives in .env,
-  // and its absence is precisely the signal "there is no database here".
-  if (password == null || password.length === 0) {
-    return null;
-  }
-
-  return {
-    host: process.env.DATABASE_HOST ?? DEFAULT_HOST,
-    port: Number(process.env.DATABASE_PORT ?? DEFAULT_PORT),
-    username: process.env.DATABASE_USERNAME ?? DEFAULT_USERNAME,
-    database: process.env.DATABASE_NAME ?? DEFAULT_DATABASE,
-    password,
-  };
+  return resolveTestConnection(PIPELINE_DATABASE_ENV);
 }
-
-/** Answer to "can this suite run?", computed without any I/O the caller must await. */
-export interface DatabaseAvailability {
-  available: boolean;
-  /** Human-readable explanation, printed by the spec when it skips. */
-  reason: string;
-  /** `host:port/database`, never including the password. */
-  target: string;
-}
-
-/** How long the connectivity probe waits. Overridable for slow or loaded machines. */
-const PROBE_TIMEOUT_MS = Number(process.env.PIPELINE_TEST_PROBE_TIMEOUT_MS ?? 2_000);
 
 /**
- * TCP reachability, SYNCHRONOUSLY.
- *
- * A jest suite must choose `describe` vs `describe.skip` while the module is
- * being evaluated, and this file compiles to CommonJS (`jest.config.mjs` →
- * `@swc/jest`), so there is no top-level `await` to reach for. A short-lived
- * child process doing one `net.connect` is the only way to get a real answer at
- * that moment. It costs one process spawn per test file and depends on nothing
- * but a node builtin — notably not `pg`, which the child would have to resolve
- * through Yarn PnP.
- *
- * A TCP handshake proves something is listening, not that it is Postgres with
- * the migrations applied. That split is deliberate: "nothing is listening" is
- * an absent database and must SKIP, whereas "something is listening but the
- * schema is wrong" is a broken setup and must FAIL, with the message from
- * {@link PipelineHarness.start} naming the command that fixes it.
- *
- * Exported for `scratchDatabase.ts`, which needs the same synchronous answer
- * about a server it reaches with different (administrative) credentials.
- */
-export function isPortOpen(host: string, port: number, timeoutMs: number): boolean {
-  const script =
-    "const net = require('node:net');" +
-    'const socket = net.connect({ host: process.argv[1], port: Number(process.argv[2]) });' +
-    'socket.setTimeout(Number(process.argv[3]));' +
-    "socket.on('connect', () => { socket.destroy(); process.exit(0); });" +
-    "socket.on('timeout', () => { socket.destroy(); process.exit(1); });" +
-    "socket.on('error', () => { process.exit(1); });";
-
-  const probe = spawnSync(process.execPath, ['-e', script, host, String(port), String(timeoutMs)], {
-    // Generous relative to the socket's own timeout: this bounds process
-    // startup, not the connection, so a merely slow spawn is never misread as
-    // an unreachable database.
-    timeout: timeoutMs + 5_000,
-    stdio: 'ignore',
-  });
-
-  return probe.status === 0;
-}
-
-let cachedAvailability: DatabaseAvailability | null = null;
-
-/**
- * Whether a Postgres is reachable for this test run. Cached — the probe spawns
- * a process, and a suite may consult it more than once.
+ * Whether a Postgres is reachable for this test run. Cached by the shared
+ * helper — the probe spawns a process, and a suite may consult it more than
+ * once.
  */
 export function databaseAvailability(): DatabaseAvailability {
-  if (cachedAvailability != null) {
-    return cachedAvailability;
-  }
-
-  const connection = resolveConnection();
-
-  if (connection == null) {
-    cachedAvailability = {
-      available: false,
-      reason:
-        'no database configured — set PIPELINE_TEST_DATABASE_URL or DATABASE_URL, or DATABASE_PASSWORD ' +
-        '(plus optional DATABASE_HOST / DATABASE_PORT / DATABASE_USERNAME / DATABASE_NAME). ' +
-        '`yarn test` already points DOTENV_CONFIG_PATH at the repo-root .env.',
-      target: '(unset)',
-    };
-
-    return cachedAvailability;
-  }
-
-  const target = `${connection.host}:${connection.port}/${connection.database}`;
-
-  if (!isPortOpen(connection.host, connection.port, PROBE_TIMEOUT_MS)) {
-    cachedAvailability = {
-      available: false,
-      reason: `nothing accepting connections at ${target} (probe timeout ${PROBE_TIMEOUT_MS} ms)`,
-      target,
-    };
-
-    return cachedAvailability;
-  }
-
-  cachedAvailability = { available: true, reason: `Postgres reachable at ${target}`, target };
-
-  return cachedAvailability;
+  return testDatabaseAvailability(PIPELINE_DATABASE_ENV);
 }
+
+/**
+ * TCP reachability, SYNCHRONOUSLY — re-exported, not reimplemented.
+ *
+ * The probe itself moved to the shared helper with the rest of the connection
+ * machinery. The NAME stays here because `scratchDatabase.ts` imports it from
+ * this module to ask the same question about a server it reaches with different
+ * (administrative) credentials, and a second copy of a `net.connect` probe is
+ * precisely what moving it was undoing.
+ */
+export { isPortOpen };
 
 // ---------------------------------------------------------------------------
 // The in-memory queue
