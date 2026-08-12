@@ -9,6 +9,7 @@ import { ImportStageEvent } from '../events';
 import { ImportRunService } from '../services/ImportRunService';
 import { ImportScratchService } from '../services/ImportScratchService';
 import { ParseStage } from '../stages/ParseStage';
+import { PushStage } from '../stages/PushStage';
 import { UnpackStage } from '../stages/UnpackStage';
 import { importStagePayloadSchema, type ImportStageRunner, type StageRunContext } from '../types';
 
@@ -61,12 +62,14 @@ export class ImportStageListener implements OnApplicationBootstrap {
     private readonly scratch: ImportScratchService,
     unpackStage: UnpackStage,
     parseStage: ParseStage,
+    pushStage: PushStage,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(ImportStageListener.name);
     this.runners = new Map([
       [unpackStage.kind, unpackStage as ImportStageRunner],
       [parseStage.kind, parseStage as ImportStageRunner],
+      [pushStage.kind, pushStage as ImportStageRunner],
     ]);
   }
 

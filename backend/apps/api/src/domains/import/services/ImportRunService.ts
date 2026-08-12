@@ -37,15 +37,14 @@ export interface StartRunResult {
 }
 
 /**
- * What a run does when the caller does not say.
+ * What a run does when the caller does not say: the whole import.
  *
- * `push` is deliberately absent until its runner exists. A run that listed a
- * stage nothing can execute would either strand at that stage or "skip" it and
- * report a complete import over data that never reached `ci.*` — and the second
- * is worse, because it looks like success. The kind is already in the schema and
- * in {@link IMPORT_STAGE_WEIGHTS}; it joins this list with its runner.
+ * `push` joined this list with its runner. Until then it was deliberately
+ * absent, because a run listing a stage nothing can execute would either strand
+ * there or "skip" it and report a complete import over data that never reached
+ * `ci.*` — and the second is worse, since it looks like success.
  */
-const DEFAULT_STAGES: readonly ImportStageKindName[] = ['unpack', 'parse'];
+const DEFAULT_STAGES: readonly ImportStageKindName[] = ['unpack', 'parse', 'push'];
 
 /**
  * How silent a stage must go before the recovery sweep treats its claim as

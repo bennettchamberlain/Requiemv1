@@ -50,7 +50,10 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { BrowserActivityModule } from '@ci/domains/browser-activity';
 import { EventsModule } from '@ci/domains/events';
+import { MemoryModule } from '@ci/domains/memory';
+import { PositionModule } from '@ci/domains/position';
 
 import { ImportUploadsController } from './controllers/ImportUploadsController';
 import { EntityMappingEntity } from './entities/EntityMappingEntity';
@@ -66,6 +69,7 @@ import { ImportRunService } from './services/ImportRunService';
 import { ImportScratchService } from './services/ImportScratchService';
 import { StagedSourceService } from './services/StagedSourceService';
 import { ParseStage } from './stages/ParseStage';
+import { PushStage } from './stages/PushStage';
 import { UnpackStage } from './stages/UnpackStage';
 
 /**
@@ -87,6 +91,9 @@ import { UnpackStage } from './stages/UnpackStage';
       StagedRelationshipEntity,
     ]),
     EventsModule,
+    BrowserActivityModule,
+    MemoryModule,
+    PositionModule,
   ],
   providers: [
     ImportRunService,
@@ -94,6 +101,7 @@ import { UnpackStage } from './stages/UnpackStage';
     StagedSourceService,
     UnpackStage,
     ParseStage,
+    PushStage,
     ImportStageListener,
     StagedUploadPurgeCron,
   ],
@@ -116,6 +124,7 @@ export type { ImportStageKindName } from './constants';
 export { ImportStageEvent } from './events';
 export { ImportStageListener } from './listeners/ImportStageListener';
 export { ParseStage } from './stages/ParseStage';
+export { PushStage } from './stages/PushStage';
 export { UnpackStage } from './stages/UnpackStage';
 export { importStagePayloadSchema } from './types';
 export type { ImportStagePayload, ImportStageRunner, StageOutcome, StageRunContext } from './types';

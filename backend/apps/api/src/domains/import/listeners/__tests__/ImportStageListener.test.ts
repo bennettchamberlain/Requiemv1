@@ -56,6 +56,11 @@ function makeListener(
     run: jest.fn(async () => ({ processed: 0, total: 0, detail: {} })),
   };
 
+  const pushStage = {
+    kind: 'push' as const,
+    run: jest.fn(async () => ({ processed: 0, total: 0, detail: {} })),
+  };
+
   const logger = {
     setContext: jest.fn(),
     log: jest.fn(),
@@ -70,6 +75,7 @@ function makeListener(
       scratch as never,
       unpackStage as never,
       parseStage as never,
+      pushStage as never,
       logger as never,
     ),
     runs,
@@ -120,13 +126,15 @@ describe('ImportStageListener claiming', () => {
   });
 
   it('fails a stage whose kind this build cannot run, rather than stranding it', async () => {
+    // A kind from a future release, or a replayed job from one: the worker must
+    // say so against the stage instead of leaving the run stuck at `queued`.
     const { listener, runs } = makeListener({
-      stage: { id: payload.stageId, runId: payload.runId, kind: 'push', seq: 2, status: 'queued' },
+      stage: { id: payload.stageId, runId: payload.runId, kind: 'enrich', seq: 3, status: 'queued' },
     });
 
     await listener.runStage(payload);
 
-    expect(runs.failStage).toHaveBeenCalledWith(payload.stageId, expect.stringContaining('push'));
+    expect(runs.failStage).toHaveBeenCalledWith(payload.stageId, expect.stringContaining('enrich'));
     expect(runs.beginStage).not.toHaveBeenCalled();
   });
 

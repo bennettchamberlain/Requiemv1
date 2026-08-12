@@ -66,12 +66,12 @@ describeWithDatabase(`the import spine (${importDatabase.target})`, () => {
 
       expect(run.status).toBe('queued');
       expect(run.label).toBe('Takeout.zip');
-      expect(stages.map((stage) => stage.kind)).toEqual(['unpack', 'parse']);
-      expect(stages.map((stage) => stage.seq)).toEqual([0, 1]);
+      expect(stages.map((stage) => stage.kind)).toEqual(['unpack', 'parse', 'push']);
+      expect(stages.map((stage) => stage.seq)).toEqual([0, 1, 2]);
 
       // The stage bar is recorded up front so the UI can draw the whole thing on
       // the first poll instead of growing it a box at a time.
-      expect(run.requestedStages).toEqual(['unpack', 'parse']);
+      expect(run.requestedStages).toEqual(['unpack', 'parse', 'push']);
 
       const [drop] = await dataSource.query<Array<{ status: string; run_id: string }>>(
         `SELECT status, run_id FROM ci_import.staged_sources WHERE user_id = $1::uuid AND drop_id = $2`,
@@ -182,8 +182,8 @@ describeWithDatabase(`the import spine (${importDatabase.target})`, () => {
         [run.id],
       );
 
-      // unpack is 30 of the 80 weight this run carries (30 + 50), not 1 of 2.
-      expect(after.percent).toBe(38);
+      // unpack is 30 of the run's 100 weight (30 + 50 + 20), not 1 of 3.
+      expect(after.percent).toBe(30);
     });
 
     it('ends a run partial when a stage reported partial, not failed', async () => {
