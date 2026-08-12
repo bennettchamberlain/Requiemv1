@@ -360,7 +360,7 @@ export const ConfigSchema = z.object({
     'new.insights.page': booleanStringSchema,
     'require.signup.codes': booleanStringSchema,
     'files.page': booleanStringSchema,
-    /** The archive-import surface (/import). Off until the importer has been exercised on real exports. */
+    /** The archive-import surface (/import): upload, run progress, the source catalogue and the guide. */
     'import.page': booleanStringSchema,
     /** Wholesale gate for the Insights surface (/insights, /insights/:id, /prompts + nav entry points). */
     'insights.page': booleanStringSchema,

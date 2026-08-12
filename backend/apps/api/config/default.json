@@ -174,7 +174,7 @@
     "insights.page": true,
     "chat.page": true,
     "jobs.page": true,
-    "import.page": false,
+    "import.page": true,
     "planning.enabled": false,
     "planning.page": false,
     "planning.emptyState": false,
