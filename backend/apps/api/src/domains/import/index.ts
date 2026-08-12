@@ -56,16 +56,18 @@ import { GraphModule } from '@ci/domains/graph';
 import { MemoryModule } from '@ci/domains/memory';
 import { PositionModule } from '@ci/domains/position';
 
+import { ImportRunsController } from './controllers/ImportRunsController';
 import { ImportUploadsController } from './controllers/ImportUploadsController';
 import { EntityMappingEntity } from './entities/EntityMappingEntity';
 import { ImportRunEntity } from './entities/ImportRunEntity';
 import { ImportStageEntity } from './entities/ImportStageEntity';
-import { StagedSourceEntity } from './entities/StagedSourceEntity';
 import { StagedEntityEntity } from './entities/StagedEntityEntity';
 import { StagedItemEntity } from './entities/StagedItemEntity';
 import { StagedRelationshipEntity } from './entities/StagedRelationshipEntity';
+import { StagedSourceEntity } from './entities/StagedSourceEntity';
 import { ImportStageListener } from './listeners/ImportStageListener';
 import { StagedUploadPurgeCron } from './listeners/StagedUploadPurgeCron';
+import { DataSourceCatalogService } from './services/DataSourceCatalogService';
 import { ImportRunService } from './services/ImportRunService';
 import { ImportScratchService } from './services/ImportScratchService';
 import { StagedSourceService } from './services/StagedSourceService';
@@ -98,6 +100,7 @@ import { UnpackStage } from './stages/UnpackStage';
     PositionModule,
   ],
   providers: [
+    DataSourceCatalogService,
     ImportRunService,
     ImportScratchService,
     StagedSourceService,
@@ -107,8 +110,13 @@ import { UnpackStage } from './stages/UnpackStage';
     ImportStageListener,
     StagedUploadPurgeCron,
   ],
-  controllers: [ImportUploadsController],
-  exports: [ImportRunService, ImportScratchService, StagedSourceService],
+  controllers: [ImportUploadsController, ImportRunsController],
+  exports: [
+    DataSourceCatalogService,
+    ImportRunService,
+    ImportScratchService,
+    StagedSourceService,
+  ],
 })
 export class ImportModule {}
 
@@ -143,6 +151,10 @@ export {
   resolveEntityType,
 } from './staging/identity';
 
+export { ImportRunsController } from './controllers/ImportRunsController';
+export type { RunDetail, RunSummary, StageSummary, StartRunBody } from './controllers/ImportRunsController';
+export { DataSourceCatalogService } from './services/DataSourceCatalogService';
+export type { DataSourceSummary } from './services/DataSourceCatalogService';
 export { ImportUploadsController } from './controllers/ImportUploadsController';
 export type { DropSummary } from './controllers/ImportUploadsController';
 

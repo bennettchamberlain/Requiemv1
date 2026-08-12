@@ -354,6 +354,83 @@ export class ImportRunService {
     return this.dataSource.getRepository(ImportStageEntity).find({ where: { runId }, order: { seq: 'ASC' } });
   }
 
+  /**
+   * A user's runs, newest first.
+   *
+   * Reads the cached `status`/`percent` off the run row rather than joining the
+   * stages — that cache exists precisely so this list is cheap, because it is
+   * polled while an import is in flight.
+   */
+  async listRuns(ctx: UserServiceContext, options: { limit?: number } = {}): Promise<ImportRun[]> {
+    return this.dataSource.getRepository(ImportRunEntity).find({
+      where: { userId: ctx.userId },
+      order: { createdAt: 'DESC' },
+      take: Math.min(options.limit ?? 50, 200),
+    });
+  }
+
+  /** One run with its stage bar, or null when it is not this user's. */
+  async getRunDetail(
+    ctx: UserServiceContext,
+    runId: string,
+  ): Promise<{ run: ImportRun; stages: ImportStage[] } | null> {
+    const run = await this.getRun(ctx, runId);
+
+    if (run == null) {
+      return null;
+    }
+
+    return { run, stages: await this.stagesFor(runId) };
+  }
+
+  /**
+   * Re-queue a stage that failed.
+   *
+   * This is the user action the worker's retry deliberately is not: a pg-boss
+   * redelivery no-ops because `beginStage` only moves a `queued` stage, so
+   * nothing re-runs a 40GB unpack on its own. Someone asking for it explicitly is
+   * a different matter, and putting the stage back to `queued` is what makes the
+   * next job a real attempt rather than another no-op.
+   *
+   * The run is reopened alongside it — a finished run with a queued stage would
+   * be a row that contradicts itself, and the rollup would never move again.
+   */
+  async retryStage(ctx: UserServiceContext, runId: string, stageId: string): Promise<boolean> {
+    const rows = await this.dataSource.query<Array<{ id: string; seq: number }>>(
+      `WITH requeued AS (
+         UPDATE ci_import.import_stages s
+            SET status = 'queued', error = NULL, started_at = NULL, finished_at = NULL,
+                processed = 0, duration_ms = NULL
+          WHERE s.id = $1::uuid
+            AND s.run_id = $2::uuid
+            AND s.status IN ('failed', 'cancelled')
+            AND EXISTS (
+              SELECT 1 FROM ci_import.import_runs r
+               WHERE r.id = s.run_id AND r.user_id = $3::uuid
+            )
+      RETURNING s.id, s.seq)
+       SELECT id, seq FROM requeued`,
+      [stageId, runId, ctx.userId],
+    );
+
+    if (rows.length === 0) {
+      return false;
+    }
+
+    await this.dataSource.query(
+      `UPDATE ci_import.import_runs
+          SET status = 'queued', error = NULL, finished_at = NULL
+        WHERE id = $1::uuid`,
+      [runId],
+    );
+
+    await this.enqueueStage(ctx.userId, runId, { id: rows[0].id } as ImportStage);
+
+    this.logger.log('Re-queued a failed import stage', { runId, stageId, userId: ctx.userId });
+
+    return true;
+  }
+
   // -------------------------------------------------------------------------
   // Transitions
   // -------------------------------------------------------------------------

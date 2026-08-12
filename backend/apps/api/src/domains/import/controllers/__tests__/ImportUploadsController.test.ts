@@ -75,14 +75,7 @@ function makeController() {
     releaseUpload: jest.fn(async () => true),
   };
 
-  const runs = {
-    startRun: jest.fn(async () => ({
-      run: { id: 'run-1' },
-      stages: [{ kind: 'unpack' }, { kind: 'parse' }],
-    })),
-  };
-
-  return { controller: new ImportUploadsController(sources as never, runs as never), sources, runs, order };
+  return { controller: new ImportUploadsController(sources as never), sources, order };
 }
 
 describe('ImportUploadsController.upload', () => {
