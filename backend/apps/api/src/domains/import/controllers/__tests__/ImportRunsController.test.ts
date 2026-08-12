@@ -25,6 +25,7 @@ const RUN = {
   id: 'run-1',
   label: 'Takeout.zip',
   source: 'wizard',
+  dataSources: ['audible', 'amazon'],
   status: 'running',
   percent: 30,
   requestedStages: ['unpack', 'parse', 'push'],
@@ -153,6 +154,16 @@ describe('ImportRunsController.get', () => {
     // bigint columns arrive as strings and must not reach the client that way.
     expect(detail.stages[1].processed).toBe(412);
     expect(detail.stages[0].durationMs).toBe(1200);
+  });
+
+  it('carries the detected services through to the run list', async () => {
+    // The summary is built field by field, so a column added to the run does not
+    // reach the page on its own — and the list has nothing but the archive's
+    // filename to name a run with otherwise.
+    const { controller } = makeController();
+    const [listed] = await controller.list(ctx);
+
+    expect(listed.dataSources).toEqual(['audible', 'amazon']);
   });
 
   it('404s a run this user does not have', async () => {

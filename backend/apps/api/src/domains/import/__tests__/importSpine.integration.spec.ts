@@ -124,6 +124,34 @@ describeWithDatabase(`the import spine (${importDatabase.target})`, () => {
   // Transitions
   // -------------------------------------------------------------------------
 
+  describe('the services a run is named after', () => {
+    it('reads back the array the parse stage stamped on the run', async () => {
+      // The column is `data_sources` and the property is `dataSources`. That gap
+      // is exactly where a driver row once arrived snake_cased and the upload
+      // endpoint answered `dropId is required`, so the mapping is asserted
+      // against a real row rather than assumed.
+      const { run } = await startRun(await stageDrop('All Data Categories.zip'));
+
+      await dataSource.query(
+        `UPDATE ci_import.import_runs SET data_sources = $2::text[] WHERE id = $1::uuid`,
+        [run.id, ['audible', 'amazon', 'prime_video']],
+      );
+
+      const listed = (await service.listRuns({ userId })).find((entry) => entry.id === run.id);
+
+      expect(listed?.dataSources).toEqual(['audible', 'amazon', 'prime_video']);
+    });
+
+    it('is an empty array on a run that has not parsed yet, not null', async () => {
+      // So a reader never has to tell "no services" apart from "not known yet";
+      // the run's status already says which.
+      const { run } = await startRun(await stageDrop());
+      const listed = (await service.listRuns({ userId })).find((entry) => entry.id === run.id);
+
+      expect(listed?.dataSources).toEqual([]);
+    });
+  });
+
   describe('stage transitions', () => {
     it('claims a queued stage once, and refuses the redelivery', async () => {
       const { stages } = await startRun(await stageDrop());

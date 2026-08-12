@@ -24,6 +24,12 @@ export interface RunSummary {
   id: string;
   label: string | null;
   source: string;
+  /**
+   * The services this run turned out to contain, most rows first — what the run
+   * list names it, since the label is only the uploaded archive's filename.
+   * Empty until the parse stage has run.
+   */
+  dataSources: string[];
   status: string;
   percent: number;
   /** Stage kinds this run intends to execute, so the bar can be drawn on the first poll. */
@@ -262,6 +268,7 @@ function toRunSummary(run: ImportRun): RunSummary {
     id: run.id,
     label: run.label,
     source: run.source,
+    dataSources: run.dataSources,
     status: run.status,
     percent: run.percent,
     requestedStages: run.requestedStages,
