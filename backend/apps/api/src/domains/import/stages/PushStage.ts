@@ -487,7 +487,13 @@ export class PushStage implements ImportStageRunner {
 
         // PositionService has no upsert-reporting variant: positions carry no
         // provenance triple, so every call writes.
-        await this.positions.create(ctx, [position]);
+        //
+        // emitCreated:false, like every other destination on this path: bulk
+        // ingest defers indexing to the post-load batch machinery, and the
+        // default would emit one position.created per GPS point — a Location
+        // History import is hundreds of thousands of them, each a warning when
+        // nothing listens on that queue.
+        await this.positions.create(ctx, [position], { emitCreated: false });
 
         return true;
       }

@@ -95,6 +95,7 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
       );
 
     const communications = { createManyDetailed: overrides.communicationCreate ?? record('communications') };
+    const positions = { create: record('position') };
 
     const stage = new PushStage(
       harness.dataSource,
@@ -103,13 +104,13 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
       { createDetailed: record('events') } as never,
       { createManyDetailed: record('inventory') } as never,
       // Positions carry no provenance triple, so this one never reports.
-      { create: record('position') } as never,
+      positions as never,
       { createManyDetailed: record('browser_activity') } as never,
       graph as never,
       logger as never,
     );
 
-    return { stage, sent, graph, communications };
+    return { stage, sent, graph, communications, positions };
   }
 
   function contextFor(runId: string): StageRunContext {
@@ -530,5 +531,33 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
 
     // A geotagged message is both a communication and a GPS donor.
     expect(row.pushed_ref.destinations).toEqual(['communications', 'position']);
+  });
+
+  it('pushes positions without emitting position.created per point', async () => {
+    // Every other destination's batch path already defers indexing to the
+    // post-load machinery; PositionService defers only when ASKED
+    // (emitCreated:false). Without it a Location History import emits one
+    // event per GPS point — hundreds of thousands of warnings when nothing
+    // listens on that queue.
+    const runId = await harness.startRun();
+
+    await harness.dataSource.query(
+      `INSERT INTO ci_import.staged_items
+         (run_id, user_id, data_source, classification, content_hash, occurred_at, latitude, longitude, metadata)
+       VALUES ($1::uuid, $2::uuid, 'google_location', 'location', 'geo-quiet-1', now(), 37.79, -122.39, '{}'::jsonb)`,
+      [runId, harness.userId],
+    );
+
+    const { stage, positions } = makeStage();
+
+    await stage.run(contextFor(runId));
+
+    expect(positions.create).toHaveBeenCalledTimes(1);
+
+    // The mock's declared signature stops at the inputs array, so the options
+    // argument is read past the tuple deliberately.
+    const options = (positions.create.mock.calls[0] as unknown[])[2];
+
+    expect(options).toEqual({ emitCreated: false });
   });
 });
