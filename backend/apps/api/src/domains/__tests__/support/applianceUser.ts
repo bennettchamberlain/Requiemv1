@@ -1,68 +1,52 @@
+import { randomUUID } from 'node:crypto';
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- * WHICH `ci.users` ROW A DB-BACKED SPEC SHOULD ATTACH ITS FIXTURES TO.
+ * THE `ci.users` ROW A DB-BACKED SPEC SEEDS FOR ITSELF.
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * Several suites need a real user id because the table they are seeding carries
- * a foreign key to `ci.users` — `ci.events.user_id`, `ci.entities.owner_user_id`
- * and so on. They all reached for the same statement:
+ * Several suites need a user id because the table they are seeding carries a
+ * foreign key to `ci.users` — `ci.events.user_id`, `ci.entities.owner_user_id`
+ * and so on. They all used to reach for the same statement:
  *
  *     SELECT id FROM ci.users LIMIT 1
  *
- * which was fine for exactly as long as the dev database held one user.
+ * and that is wrong twice over. It is nondeterministic — `LIMIT 1` with no
+ * `ORDER BY` is whatever the heap hands back, so a suite could latch onto a
+ * synthetic user another worker was midway through deleting, and the suite that
+ * then failed was never the one that caused it. And it is a dependency on data
+ * the suite did not create: on a fresh appliance, or in CI, `ci.users` is empty
+ * and every one of those suites failed on a row it had no business expecting.
  *
- * ## Why an unordered LIMIT 1 became a cross-suite failure
+ * Ordering the read fixed the first problem and not the second. A test that
+ * needs a row creates the row.
  *
- * Two suites now CREATE a `ci.users` row, commit it, work against it, and delete
- * it in `afterAll`: the import staging harness and the bulkUpsert integration
- * spec. Both need a committed user because what they are testing writes through
- * a real service on a real connection, so neither can hide inside a transaction
- * the way the stage specs do.
+ * ## What a suite does instead
  *
- * `LIMIT 1` with no `ORDER BY` is not a choice, it is whatever the heap hands
- * back first — so while one of those suites is mid-flight, a spec in another
- * jest worker can latch onto ITS user instead of the appliance owner's. Both
- * outcomes are bad and neither names its cause:
+ * {@link createSyntheticTestUser} inserts one and hands back its id. Every one
+ * of these suites already seeds its own events, communications and entities
+ * inside a transaction it always rolls back; the user simply joins them, and
+ * the rollback takes it away with everything else. Nothing is committed, so no
+ * other worker can see it, there is nothing to clean up, and the suite no
+ * longer cares what the database happened to contain.
  *
- *  - the reader gets there first, opens a transaction and inserts a fixture row
- *    referencing that user; the harness's `DELETE FROM ci.users` then blocks on
- *    the foreign key until the reader's transaction rolls back, which on a slow
- *    suite is a jest timeout in a file that did nothing wrong;
- *  - the harness gets there first and commits the delete; the reader's very next
- *    INSERT fails a foreign key against a user that existed when it was read.
- *
- * Either way the suite that fails is not the suite that caused it, and which
- * one loses depends on worker scheduling — which is exactly the shape of the
- * intermittent failures across `PersonLinkStage`, `ObjectPromoteStage`,
- * `GeocodeStage` and friends.
- *
- * ## The fix, in one place rather than six
- *
- * A synthetic user is marked by its email domain, and this module owns BOTH
- * halves of that marker: the suites that mint one call
- * {@link syntheticTestUserEmail}, and the suites that read one call
- * {@link resolveApplianceUserId}, which excludes them and orders the rest. One
- * constant, both sides, so the exclusion cannot drift away from the convention
- * it excludes.
+ * A suite that CANNOT hide inside a transaction — the import staging harness
+ * and the bulkUpsert spec, which drive real services on real connections —
+ * commits its user and deletes it in teardown. Those name it through
+ * {@link syntheticTestUserEmail}, so a leaked row is recognisable as a test
+ * fixture rather than mistaken for the appliance's own account.
  */
-
 /**
  * The email domain a NEW suite should mint its users under.
  *
- * Existing suites do not agree on one — `@example.invalid`, `@corpus.invalid`
- * and `@example.test` are all in use — which is exactly why the exclusion below
- * is written against the reserved TOP-LEVEL domains rather than against a list
- * of hosts somebody has to remember to extend.
+ * `.invalid` is reserved by RFC 2606 precisely so it can never resolve, which
+ * is what makes an address in it unmistakably a fixture. Existing suites do not
+ * all agree on the host — `@corpus.invalid` and `@example.test` are also in use
+ * — and that is fine now that nothing has to RECOGNISE them: each suite owns
+ * the user it creates.
  */
 export const SYNTHETIC_TEST_USER_DOMAIN = 'example.invalid';
 
-/**
- * The reserved TLDs, from RFC 2606 / RFC 6761. None of them can ever resolve, so
- * an address in one is a test fixture by construction — which makes "not one of
- * these" a sound reading of "belongs to the appliance", and makes the rule hold
- * for suites written after this file without anyone updating it.
- */
-const RESERVED_TEST_TLD_PATTERN = '\\.(invalid|test|example|localhost)$';
 
 /**
  * The email for a `ci.users` row a suite creates for itself.
@@ -75,47 +59,32 @@ export function syntheticTestUserEmail(prefix: string, userId: string): string {
   return `${prefix}-${userId}@${SYNTHETIC_TEST_USER_DOMAIN}`;
 }
 
-/** The one statement, so a caller cannot half-apply the rule. */
-const APPLIANCE_USER_SQL = `
-  SELECT id
-    FROM ci.users
-   WHERE email IS NULL
-      OR email !~* $1
-   ORDER BY created_at, id
-   LIMIT 1`;
-
 /**
- * The appliance owner's user id: the oldest non-synthetic user.
+ * Insert a `ci.users` row for this suite and return its id.
  *
- * Deterministic in both directions. `ORDER BY created_at, id` means two runs of
- * the same suite pick the same row (the `id` tiebreak matters because a seeded
- * database can insert several users in one statement, sharing a timestamp), and
- * the `NOT LIKE` means a test user another worker is mid-way through creating
- * or deleting is never the answer.
+ * Only `id` is required by the schema; `created_at`, `updated_at` and `role`
+ * all default. The email carries the marker so that a row which escapes — a
+ * suite that commits rather than rolls back, and then dies before its teardown
+ * — is identifiable as test litter instead of being taken for a real account.
  *
- * @param query the caller's own query function — usually a `QueryRunner`'s, so
- *   the read happens on the same connection (and inside the same transaction)
- *   as the fixtures that will reference the row it returns.
- * @param label the calling suite, quoted in the error so a fresh appliance says
- *   which spec needs a user rather than just that something did.
+ * `ON CONFLICT (id) DO NOTHING` because a caller may seed idempotently.
+ *
+ * @param query the caller's own query function — normally a `QueryRunner`'s, so
+ *   the row is created on the same connection, and inside the same transaction,
+ *   as the fixtures that reference it. Rolled back with them.
+ * @param label the calling suite, which becomes part of the address.
  */
-export async function resolveApplianceUserId(
+export async function createSyntheticTestUser(
   query: (sql: string, params?: unknown[]) => Promise<unknown>,
   label: string,
+  userId: string = randomUUID(),
 ): Promise<string> {
-  const rows = (await query(APPLIANCE_USER_SQL, [RESERVED_TEST_TLD_PATTERN])) as Array<{ id: string }>;
+  await query(
+    `INSERT INTO ci.users (id, name, email)
+          VALUES ($1::uuid, $2, $3)
+     ON CONFLICT (id) DO NOTHING`,
+    [userId, `${label} spec fixture`, syntheticTestUserEmail(label.toLowerCase(), userId)],
+  );
 
-  if (rows.length === 0) {
-    // A hard failure, never a skip: the database IS reachable (the caller got
-    // this far), so an empty `ci.users` is a setup that has not been finished
-    // rather than an absent one, and skipping would turn it into a green run.
-    throw new Error(
-      `${label}: no appliance user in ci.users to attach fixtures to. Every row is either absent or a ` +
-        'synthetic test user (an address in a reserved TLD — .invalid / .test / .example / .localhost). ' +
-        'Onboard a user on this database, or check whether a previous interrupted test run leaked users ' +
-        'that were never cleaned up.',
-    );
-  }
-
-  return rows[0].id;
+  return userId;
 }

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { DataSource } from 'typeorm';
 
-import { resolveApplianceUserId } from '../../../__tests__/support/applianceUser';
+import { createSyntheticTestUser } from '../../../__tests__/support/applianceUser';
 import { acquireSchemaWriteLock, type SchemaLock } from '../../../__tests__/support/schemaLock';
 import { databaseAvailability, resolveConnection } from '../../__tests__/harness/pipelineHarness';
 import { PipelineStateService } from '../../services/PipelineStateService';
@@ -868,7 +868,7 @@ describeIfDb(`EstimateLocationStage — against real Postgres (${availability.re
     await runner.connect();
     await runner.startTransaction();
 
-    realUserId = await resolveApplianceUserId(
+    realUserId = await createSyntheticTestUser(
       (sql, params) => runner.query(sql, params),
       'EstimateLocationStage',
     );
