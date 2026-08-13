@@ -105,6 +105,30 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@ci/capacitor-local-hub@portal:../../packages/capacitor-local-hub::locator=%40ci%2Ffe-mobile%40workspace%3A.":
+  version: 0.0.0-use.local
+  resolution: "@ci/capacitor-local-hub@portal:../../packages/capacitor-local-hub::locator=%40ci%2Ffe-mobile%40workspace%3A."
+  peerDependencies:
+    "@capacitor/core": ^7.0.0
+  languageName: node
+  linkType: soft
+
+"@ci/capacitor-local-llm@portal:../../packages/capacitor-local-llm::locator=%40ci%2Ffe-mobile%40workspace%3A.":
+  version: 0.0.0-use.local
+  resolution: "@ci/capacitor-local-llm@portal:../../packages/capacitor-local-llm::locator=%40ci%2Ffe-mobile%40workspace%3A."
+  peerDependencies:
+    "@capacitor/core": ^7.0.0
+  languageName: node
+  linkType: soft
+
+"@ci/capacitor-speech@portal:../../packages/capacitor-speech::locator=%40ci%2Ffe-mobile%40workspace%3A.":
+  version: 0.0.0-use.local
+  resolution: "@ci/capacitor-speech@portal:../../packages/capacitor-speech::locator=%40ci%2Ffe-mobile%40workspace%3A."
+  peerDependencies:
+    "@capacitor/core": ^7.0.0
+  languageName: node
+  linkType: soft
+
 "@ci/fe-mobile@workspace:.":
   version: 0.0.0-use.local
   resolution: "@ci/fe-mobile@workspace:."
@@ -118,6 +142,9 @@ __metadata:
     "@capacitor/local-notifications": "npm:^7.0.0"
     "@capacitor/splash-screen": "npm:^7.0.0"
     "@capacitor/status-bar": "npm:^7.0.0"
+    "@ci/capacitor-local-hub": "portal:../../packages/capacitor-local-hub"
+    "@ci/capacitor-local-llm": "portal:../../packages/capacitor-local-llm"
+    "@ci/capacitor-speech": "portal:../../packages/capacitor-speech"
     capacitor-secure-storage-plugin: "npm:^0.11.0"
     typescript: "npm:^5.8.3"
   languageName: unknown

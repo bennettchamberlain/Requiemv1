@@ -1,6 +1,13 @@
 import { type ReactNode, lazy, useEffect } from 'react';
 
-import { DeviceLayoutProvider, LoadingPage, getApiBaseUrl, isNativePlatform } from '@ci/common';
+import {
+  ConnectionModeProvider,
+  DeviceLayoutProvider,
+  LoadingPage,
+  OutboxQueueProvider,
+  getApiBaseUrl,
+  isNativePlatform,
+} from '@ci/common';
 import {
   BrowserRouter as Router,
   Routes,
@@ -13,6 +20,7 @@ import {
 } from 'react-router-dom';
 
 import { ApolloProvider } from '@/api/ApolloProvider';
+import { PowerSyncProvider } from '@/api/powersync/PowerSyncProvider';
 import { FeaturesProvider, useFeatures } from '@/common/feature';
 import NotFoundPage from '@/components/NotFound';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
@@ -81,15 +89,23 @@ function Providers({ children }: { children: ReactNode }) {
       <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme">
         <BackgroundProvider>
           <DeviceLayoutProvider args={[]}>
-            <AuthProvider args={[]}>
-              <FeaturesProvider args={[]}>
-                <ModelProvider args={[]}>
-                  <CaptureModalProvider args={[]}>
-                    <ApolloProvider>{children}</ApolloProvider>
-                  </CaptureModalProvider>
-                </ModelProvider>
-              </FeaturesProvider>
-            </AuthProvider>
+            <ConnectionModeProvider args={[]}>
+              {/* Inside ConnectionModeProvider: the outbox flush loop is driven by the
+                  resolved connection mode rather than a timer of its own. */}
+              <OutboxQueueProvider args={[]}>
+                <AuthProvider args={[]}>
+                  <FeaturesProvider args={[]}>
+                    <ModelProvider args={[]}>
+                      <CaptureModalProvider args={[]}>
+                        <ApolloProvider>
+                          <PowerSyncProvider>{children}</PowerSyncProvider>
+                        </ApolloProvider>
+                      </CaptureModalProvider>
+                    </ModelProvider>
+                  </FeaturesProvider>
+                </AuthProvider>
+              </OutboxQueueProvider>
+            </ConnectionModeProvider>
           </DeviceLayoutProvider>
         </BackgroundProvider>
       </ThemeProvider>
