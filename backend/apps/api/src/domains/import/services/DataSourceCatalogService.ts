@@ -65,6 +65,41 @@ export interface SourceGuide {
 }
 
 /**
+ * One authored source, projected for the wizard's picker and export cards.
+ *
+ * SOURCE-keyed where {@link DataSourceSummary} is IMPORTER-keyed, and the
+ * distinction is the whole reason this exists: several sources share the
+ * `generic` parser, and a source whose importer is not written yet still
+ * belongs in the picker (with its "coming soon" badge) — hiding it reads as
+ * "unsupported" and ends the conversation. The wizard picks over SERVICES a
+ * person recognizes, not over parsers.
+ */
+export interface SourceCatalogEntry {
+  /** Stable authored id (`gmail`, `google_photos`, …). */
+  id: string;
+  title: string;
+  blurb: string;
+  ecosystem: string;
+  category: string;
+  acquisition: string;
+  wait: string;
+  url?: string;
+  stepsTitle?: string;
+  steps: string[];
+  altPath?: { title: string; url?: string; steps: string[] };
+  expectedFormat?: string;
+  whatImported?: string[];
+  caveats?: string[];
+  notes?: string[];
+  /**
+   * Effective importer name (`importer ?? id`) — what a run's detected
+   * `data_sources` records for this source's rows.
+   */
+  importer: string;
+  importerReady: boolean;
+}
+
+/**
  * What this appliance can import.
  *
  * Read from the in-memory registry rather than a table: the registry IS the
@@ -85,8 +120,45 @@ export class DataSourceCatalogService {
 
     return match ? toSummary(match) : null;
   }
+
+  /**
+   * Every authored source, in WIZARD_SOURCES order.
+   *
+   * The array is deliberately sorted tier-then-ecosystem so the wizard reads
+   * best-first within a section — a straight `.map` preserves that; do not
+   * re-sort here or in the frontend.
+   */
+  catalog(): SourceCatalogEntry[] {
+    return WIZARD_SOURCES.map(toCatalogEntry);
+  }
 }
 
+/**
+ * The projection deliberately DROPS `tier` (encoded by array order),
+ * `inboxPath`, `signature`, `provenance` and `alsoImporters` — internal
+ * plumbing that would invite the frontend to grow logic the backend owns.
+ */
+function toCatalogEntry(source: WizardSource): SourceCatalogEntry {
+  return {
+    id: source.id,
+    title: source.title,
+    blurb: source.blurb,
+    ecosystem: source.ecosystem,
+    category: source.category,
+    acquisition: source.acquisition,
+    wait: source.wait,
+    url: source.url,
+    stepsTitle: source.stepsTitle,
+    steps: source.steps,
+    altPath: source.altPath,
+    expectedFormat: source.expectedFormat,
+    whatImported: source.whatImported,
+    caveats: source.caveats,
+    notes: source.notes,
+    importer: source.importer ?? source.id,
+    importerReady: source.importerReady,
+  };
+}
 
 /**
  * Guides indexed by the importer they feed.

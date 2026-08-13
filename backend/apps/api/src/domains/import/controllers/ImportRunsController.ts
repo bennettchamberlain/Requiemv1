@@ -16,7 +16,11 @@ import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { IMPORT_STAGE_KINDS, type ImportStageKindName } from '../constants';
 import type { ImportRun } from '../entities/ImportRunEntity';
 import type { ImportStage } from '../entities/ImportStageEntity';
-import { DataSourceCatalogService, type DataSourceSummary } from '../services/DataSourceCatalogService';
+import {
+  DataSourceCatalogService,
+  type DataSourceSummary,
+  type SourceCatalogEntry,
+} from '../services/DataSourceCatalogService';
 import { ImportRunService } from '../services/ImportRunService';
 
 /** A run as the progress UI reads it. */
@@ -110,6 +114,19 @@ export class ImportRunsController {
   @Get('sources')
   listSources(): DataSourceSummary[] {
     return this.catalog.list();
+  }
+
+  /**
+   * Every AUTHORED source, for the wizard's picker — where `sources` above is
+   * keyed by importer, this is keyed by service: sources sharing one parser
+   * each get a row, and a source whose importer is not written yet appears
+   * with `importerReady: false` instead of being invisible. Order is the
+   * curated array order; the frontend must not re-sort it.
+   */
+  @UseGuards(JwtOrApiKeyAuthGuard)
+  @Get('sources/catalog')
+  sourceCatalog(): SourceCatalogEntry[] {
+    return this.catalog.catalog();
   }
 
   /** Start importing a staged upload. */

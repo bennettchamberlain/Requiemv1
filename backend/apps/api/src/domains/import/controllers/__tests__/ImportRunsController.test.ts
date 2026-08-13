@@ -95,6 +95,7 @@ function makeController(
 
   const catalog = {
     list: jest.fn(() => [{ name: 'gmail', title: 'Gmail', stub: false }]),
+    catalog: jest.fn(() => [{ id: 'gmail', title: 'Gmail (Google Takeout)', importer: 'gmail', importerReady: true }]),
     find: jest.fn((name: string) => (name === 'gmail' ? { name, title: 'Gmail' } : null)),
   };
 
@@ -248,6 +249,16 @@ describe('ImportRunsController.listSources', () => {
     const { controller } = makeController();
 
     expect(controller.listSources()).toEqual([{ name: 'gmail', title: 'Gmail', stub: false }]);
+  });
+});
+
+describe('ImportRunsController.sourceCatalog', () => {
+  it('serves the source-keyed projection verbatim', () => {
+    // Order and content are the service's; re-shaping either here would undo
+    // the curated tier-then-ecosystem ordering the wizard renders.
+    const { controller, catalog } = makeController();
+
+    expect(controller.sourceCatalog()).toBe(catalog.catalog.mock.results[0].value);
   });
 });
 

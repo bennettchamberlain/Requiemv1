@@ -50,6 +50,7 @@ const ConnectionsPage = lazy(() => import('@/pages/ConnectionsPage'));
 const ContentPage = lazy(() => import('@/pages/ContentPage'));
 const EventPage = lazy(() => import('@/pages/EventPage'));
 const ItemPage = lazy(() => import('@/pages/ItemPage'));
+const ImportPage = lazy(() => import('@/pages/ImportPage'));
 const JobsPage = lazy(() => import('@/pages/JobsPage'));
 const InventoryPage = lazy(() => import('@/pages/InventoryPage'));
 const MemoryPage = lazy(() => import('@/pages/MemoryPage'));
@@ -329,6 +330,17 @@ function AppRoutes() {
               element={
                 <ProtectedRoute>
                   <ChatPage />
+                </ProtectedRoute>
+              }
+            />
+          )}
+
+          {isFeatureEnabled('import.page') && (
+            <Route
+              path="/import"
+              element={
+                <ProtectedRoute>
+                  <ImportPage />
                 </ProtectedRoute>
               }
             />

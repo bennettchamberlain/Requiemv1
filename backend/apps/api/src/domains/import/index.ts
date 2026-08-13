@@ -178,7 +178,7 @@ export type {
   UnpushedRunSummary,
 } from './controllers/ImportRunsController';
 export { DataSourceCatalogService } from './services/DataSourceCatalogService';
-export type { DataSourceSummary } from './services/DataSourceCatalogService';
+export type { DataSourceSummary, SourceCatalogEntry } from './services/DataSourceCatalogService';
 export { ImportUploadsController } from './controllers/ImportUploadsController';
 export type { DropSummary } from './controllers/ImportUploadsController';
 
