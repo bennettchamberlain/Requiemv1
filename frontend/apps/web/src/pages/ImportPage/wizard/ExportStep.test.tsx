@@ -97,6 +97,30 @@ describe('ExportStep', () => {
     expect(screen.getByText(/Service 1 of 2/)).toBeInTheDocument();
   });
 
+  it('names the service in the export-page button, below the instructions', () => {
+    renderStep({
+      entries: [
+        {
+          ...SPOTIFY,
+          source: { ...SPOTIFY.source, url: 'https://www.spotify.com/account/privacy/' },
+        },
+      ],
+    });
+
+    const cta = screen.getByRole('link', { name: /open the spotify export page/i });
+
+    expect(cta).toHaveAttribute('href', 'https://www.spotify.com/account/privacy/');
+
+    // Below the steps, as upstream places it: the instructions are read first,
+    // the doorway is the last thing on the way out.
+    const lastStep = screen.getByText('Upload it here.');
+
+    expect(
+       
+      lastStep.compareDocumentPosition(cta) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it('starts one parse-only run per uploaded file, labeled by its filename', async () => {
     const { onRunsStarted } = renderStep();
 

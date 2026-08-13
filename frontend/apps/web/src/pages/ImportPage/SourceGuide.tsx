@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react';
 
-import { Badge, Card } from '@ci/shadcn';
+import { Badge, Button, Card } from '@ci/shadcn';
 import { AlertTriangle, ExternalLink } from '@ci/shadcn/icons';
 
 import { Markdown } from '@/components/Markdown';
 
 import type { ImportSourceGuide } from './useImportApi';
+import { shortTitle } from './wizard/sources';
 
 export interface SourceGuideProps {
   guide: ImportSourceGuide;
@@ -51,23 +52,24 @@ export function SourceGuide({ guide, badges, children }: SourceGuideProps) {
         <p className="text-sm text-muted-foreground">{guide.blurb}</p>
       </div>
 
-      {guide.url ? (
-        <a
-          href={guide.url}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
-        >
-          Open the export page
-          <ExternalLink className="h-3 w-3" aria-hidden />
-        </a>
-      ) : null}
-
       <Steps title={guide.stepsTitle ?? 'How to export'} steps={guide.steps} />
 
+      {guide.url ? (
+        // Below the steps, as upstream places it: the instructions explain what
+        // the page will ask, so the button is the last thing read, not the
+        // first thing clicked.
+        <ExportCta url={guide.url} label={`Open the ${shortTitle(guide.title)} export page`} />
+      ) : null}
+
       {guide.altPath ? (
-        <div className="rounded-md border border-dashed p-3">
-          <Steps title={guide.altPath.title} steps={guide.altPath.steps} url={guide.altPath.url} />
+        <div className="space-y-3 rounded-md border border-dashed p-3">
+          <Steps title={guide.altPath.title} steps={guide.altPath.steps} />
+          {guide.altPath.url ? (
+            <ExportCta
+              url={guide.altPath.url}
+              label={`Open the ${shortTitle(guide.title)} data request page`}
+            />
+          ) : null}
         </div>
       ) : null}
 
@@ -101,22 +103,22 @@ export function SourceGuide({ guide, badges, children }: SourceGuideProps) {
   );
 }
 
-function Steps({ title, steps, url }: { title: string; steps: readonly string[]; url?: string }) {
+/** The named doorway to the service's own export flow, styled as a real button. */
+function ExportCta({ url, label }: { url: string; label: string }) {
+  return (
+    <Button asChild variant="secondary">
+      <a href={url} target="_blank" rel="noreferrer">
+        {label}
+        <ExternalLink aria-hidden />
+      </a>
+    </Button>
+  );
+}
+
+function Steps({ title, steps }: { title: string; steps: readonly string[] }) {
   return (
     <section className="space-y-1">
       <h4 className="text-sm font-medium">{title}</h4>
-
-      {url ? (
-        <a
-          href={url}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
-        >
-          Open this page
-          <ExternalLink className="h-3 w-3" aria-hidden />
-        </a>
-      ) : null}
 
       <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
         {steps.map((step) => (
