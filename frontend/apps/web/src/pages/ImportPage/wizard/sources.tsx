@@ -176,7 +176,9 @@ export const SERVICE_LOGO: Record<string, string> = {
   discord: 'discord.svg',
   signal: 'signal.svg',
   // Browsers
-  chromium: 'chrome.svg',
+  // chromium.svg carries real color; chrome.svg is a monochrome mark whose
+  // four-color logo cannot be restored with a single fill.
+  chromium: 'chromium.svg',
   firefox: 'firefox.svg',
   // Music
   spotify: 'spotify.svg',
