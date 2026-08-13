@@ -142,6 +142,16 @@
     "fetchBatchSize": 10,
     "perQueueConcurrency": 6
   },
+  "accountDeletion": {
+    "graceDays": 30,
+    "purge": {
+      "enabled": true,
+      "batchSize": 500,
+      "maxAccountsPerRun": 5,
+      "retryBackoffMinutes": 60,
+      "excludedColumns": []
+    }
+  },
   "enrichment": {
     "window": {
       "enabled": true,

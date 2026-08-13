@@ -7,6 +7,7 @@ import {
   S3Client,
   HeadBucketCommand,
   CreateBucketCommand,
+  DeleteObjectsCommand,
   GetObjectCommand,
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
@@ -425,6 +426,44 @@ export class FileService implements OnModuleInit {
         Body: body,
       }),
     );
+  }
+
+  /**
+   * Delete objects from a bucket.
+   *
+   * Written for the account purge: until it existed nothing in this repository
+   * ever deleted an object, so every file an account uploaded outlived the row
+   * that pointed at it. S3's batch delete is idempotent for missing keys, which
+   * is what lets the purge re-run a page it already processed.
+   *
+   * `Quiet: true` suppresses the per-key success list; genuine failures still
+   * come back in `Errors`, and one of those means the bytes are still there, so
+   * it is raised rather than logged.
+   */
+  async deleteObjects(bucket: string, keys: string[]): Promise<void> {
+    if (keys.length === 0) {
+      return;
+    }
+
+    // The API caps one DeleteObjects call at 1000 keys.
+    for (let offset = 0; offset < keys.length; offset += 1000) {
+      const page = keys.slice(offset, offset + 1000);
+
+      const response = await this.s3.send(
+        new DeleteObjectsCommand({
+          Bucket: bucket,
+          Delete: { Objects: page.map((Key) => ({ Key })), Quiet: true },
+        }),
+      );
+
+      if (response.Errors && response.Errors.length > 0) {
+        const [first] = response.Errors;
+
+        throw new Error(
+          `Failed to delete ${response.Errors.length} object(s) from ${bucket}: ${first.Key} — ${first.Message}`,
+        );
+      }
+    }
   }
 
   async getFileContent(context: ServiceContext, key: string): Promise<Uint8Array> {

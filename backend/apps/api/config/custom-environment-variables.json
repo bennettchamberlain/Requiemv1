@@ -122,6 +122,28 @@
       "__format": "json"
     }
   },
+  "accountDeletion": {
+    "graceDays": {
+      "__name": "CI_ACCOUNT_PURGE_GRACE_DAYS",
+      "__format": "json"
+    },
+    "purge": {
+      "enabled": "CI_ACCOUNT_PURGE_ENABLED",
+      "batchSize": {
+        "__name": "CI_ACCOUNT_PURGE_BATCH_SIZE",
+        "__format": "json"
+      },
+      "maxAccountsPerRun": {
+        "__name": "CI_ACCOUNT_PURGE_MAX_ACCOUNTS",
+        "__format": "json"
+      },
+      "retryBackoffMinutes": {
+        "__name": "CI_ACCOUNT_PURGE_RETRY_MINUTES",
+        "__format": "json"
+      },
+      "excludedColumns": "CI_ACCOUNT_PURGE_EXCLUDED_COLUMNS"
+    }
+  },
   "enrichment": {
     "window": {
       "enabled": "CI_ENRICHMENT_WINDOW_ENABLED",

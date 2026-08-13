@@ -57,6 +57,22 @@ describe('AccountSection', () => {
     expect(screen.getByRole('button', { name: 'Delete account' })).toBeEnabled();
   });
 
+  it('states what is deleted and when, in both the card and the dialog', () => {
+    // This copy is a promise, and the store disclosures repeat it. It stayed
+    // deliberately vague while nothing consumed `purge_after`; now that
+    // AccountPurgeService does, it names the window and the files. Pinned here
+    // so it cannot drift away from what the server actually does — the grace
+    // period is `accountDeletion.graceDays`.
+    render(<AccountSection />);
+
+    expect(screen.getByText(/permanently deleted from this server after 30 days/i)).toBeInTheDocument();
+    expect(screen.getByText(/files you uploaded/i)).toBeInTheDocument();
+
+    openDialog();
+
+    expect(screen.getByText(/After 30 days this account, its memories/i)).toBeInTheDocument();
+  });
+
   it('keeps deletion disabled until the account address is retyped', async () => {
     render(<AccountSection />);
     openDialog();

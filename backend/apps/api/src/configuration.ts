@@ -265,6 +265,57 @@ export const ConfigSchema = z.object({
     fetchBatchSize: z.coerce.number().int().positive().default(20),
     perQueueConcurrency: z.coerce.number().int().positive().default(6),
   }),
+  // In-app account deletion (App Store Guideline 5.1.1(v), Google Play Data
+  // Deletion). `DELETE /account` revokes access immediately; the purge job
+  // destroys the data afterwards. See docs/architecture/account-deletion.md.
+  accountDeletion: z.object({
+    /**
+     * Days between "delete my account" and the irreversible purge — the window
+     * in which a mistaken deletion can still be undone by an operator.
+     *
+     * Changing this only affects deletions requested *afterwards*: the deadline
+     * is stamped onto the row at request time, precisely so editing a config
+     * value cannot extend a promise already made to someone who has left.
+     */
+    graceDays: z.coerce.number().int().nonnegative().default(30),
+    purge: z.object({
+      /**
+       * Off leaves `purge_after` unenforced — deletion revokes access and keeps
+       * the data. Any deployment that tells its users their data is deleted must
+       * leave this on; it exists so an operator mid-incident can stop an
+       * irreversible job without editing code.
+       */
+      enabled: booleanStringSchema.default(true),
+      /**
+       * Rows per statement. Small enough that no single delete holds a lock long
+       * enough to matter on an appliance, large enough that a million-row table
+       * is thousands of statements rather than millions.
+       */
+      batchSize: z.coerce.number().int().positive().max(100_000).default(500),
+      /** Accounts per run; a backlog is drained across ticks, not in one. */
+      maxAccountsPerRun: z.coerce.number().int().positive().default(5),
+      /** How long a failed account waits before the next attempt. */
+      retryBackoffMinutes: z.coerce.number().int().positive().default(60),
+      /**
+       * `schema.table.column` entries to leave alone.
+       *
+       * The purge finds user-scoped columns by convention as well as by foreign
+       * key, so a `uuid user_id` that does *not* mean "this row belongs to this
+       * account" would be purged wrongly. Empty today; an entry here needs a
+       * comment saying why the column is not account data.
+       */
+      excludedColumns: z.preprocess((val) => {
+        if (typeof val === 'string') {
+          return val
+            .split(',')
+            .map((entry) => entry.trim())
+            .filter((entry) => entry.length > 0);
+        }
+
+        return val;
+      }, z.array(z.string()).default([])),
+    }),
+  }),
   // WHEN the appliance is willing to spend on enrichment, and HOW MUCH. The
   // pipeline's twelve stages share ONE Ollama process with interactive chat,
   // HBPE and the summary sidecar, and two of them egress to a metered geocoding
