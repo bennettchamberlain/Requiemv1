@@ -5,6 +5,7 @@ import type { UserServiceContext } from '@ci/common/context';
 import type { LoggerService } from '@ci/common/logging';
 import { BaseEntity, EventBaseEntity, EventEntity, EventService, GraphDeltaWriter } from '@ci/domains/memory';
 
+import { acquireSchemaWriteLock, type SchemaLock } from '../../../__tests__/support/schemaLock';
 import { EventCandidateEntity } from '../../entities/EventCandidateEntity';
 import { CandidateService } from '../CandidateService';
 
@@ -23,6 +24,7 @@ const describeWithDb = DATABASE_URL ? describe : describe.skip;
 
 describeWithDb('CandidateService — accept / returnToSlate lifecycle (integration)', () => {
   let dataSource: DataSource;
+  let schemaLock: SchemaLock | null = null;
   let candidateService: CandidateService;
   let eventService: EventService;
 
@@ -50,6 +52,11 @@ describeWithDb('CandidateService — accept / returnToSlate lifecycle (integrati
 
     await dataSource.initialize();
 
+    // SHARED: this suite commits and then DELETEs real `ci.users` rows, whose
+    // cascade reaches the shared `ci.*` tables a migration suite alters inside
+    // its own transaction. See `domains/__tests__/support/schemaLock.ts`.
+    schemaLock = await acquireSchemaWriteLock(dataSource, 'CandidateService.lifecycle');
+
     await dataSource.query(
       `INSERT INTO ci.users (id, name, email, password, onboarded, timezone)
        VALUES ($1, 'Schedule Test', $2, 'x', true, 'UTC')
@@ -76,6 +83,8 @@ describeWithDb('CandidateService — accept / returnToSlate lifecycle (integrati
   afterAll(async () => {
     if (dataSource?.isInitialized) {
       await dataSource.query('DELETE FROM ci.users WHERE id = $1', [ctx.userId]);
+      // Before `destroy()`: the lock is held on a runner from this pool.
+      await schemaLock?.release();
       await dataSource.destroy();
     }
   });

@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import { DataSource } from 'typeorm';
 
+import { resolveApplianceUserId } from '../../../__tests__/support/applianceUser';
+import { acquireSchemaWriteLock, type SchemaLock } from '../../../__tests__/support/schemaLock';
 import { databaseAvailability, resolveConnection } from '../../__tests__/harness/pipelineHarness';
 import { PipelineStateService } from '../../services/PipelineStateService';
 import type { StageResult } from '../../types';
@@ -809,6 +811,7 @@ const describeIfDb = availability.available ? describe : describe.skip;
 describeIfDb(`EstimateLocationStage — against real Postgres (${availability.reason})`, () => {
   let dataSource: DataSource;
   let runner: ReturnType<DataSource['createQueryRunner']>;
+  let schemaLock: SchemaLock | null = null;
   let realUserId: string;
 
   /**
@@ -856,12 +859,19 @@ describeIfDb(`EstimateLocationStage — against real Postgres (${availability.re
     });
 
     await dataSource.initialize();
+
+    // SHARED: this suite holds row locks on shared `ci.*` tables for the length
+    // of its transaction. Shared holders never block each other, so this only
+    // ever waits on a suite applying a migration.
+    schemaLock = await acquireSchemaWriteLock(dataSource, 'EstimateLocationStage');
     runner = dataSource.createQueryRunner();
     await runner.connect();
     await runner.startTransaction();
 
-    const users = await runner.query(`SELECT id FROM ci.users LIMIT 1`);
-    realUserId = users[0].id;
+    realUserId = await resolveApplianceUserId(
+      (sql, params) => runner.query(sql, params),
+      'EstimateLocationStage',
+    );
 
     // A candidate with no location of its own, and a donor five minutes later
     // carrying a REAL coordinate.
@@ -902,6 +912,9 @@ describeIfDb(`EstimateLocationStage — against real Postgres (${availability.re
       await runner.rollbackTransaction();
       await runner.release();
     }
+
+    // Before `destroy()`: the lock is held on a runner from this pool.
+    await schemaLock?.release();
 
     if (dataSource != null) {
       await dataSource.destroy();

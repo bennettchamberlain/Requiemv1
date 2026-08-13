@@ -5,6 +5,7 @@ import type { UserServiceContext } from '@ci/common/context';
 import type { LoggerService } from '@ci/common/logging';
 import type { EventService } from '@ci/domains/events';
 
+import { acquireSchemaWriteLock, type SchemaLock } from '../../../__tests__/support/schemaLock';
 import { TaskEntity } from '../../entities/TaskEntity';
 import { TaskService } from '../TaskService';
 
@@ -32,6 +33,7 @@ const describeWithDb = DATABASE_URL ? describe : describe.skip;
 
 describeWithDb('TaskService — tenant isolation (integration)', () => {
   let dataSource: DataSource;
+  let schemaLock: SchemaLock | null = null;
   let service: TaskService;
 
   const alice: UserServiceContext = { userId: uuidv7() } as UserServiceContext;
@@ -55,6 +57,11 @@ describeWithDb('TaskService — tenant isolation (integration)', () => {
 
     await dataSource.initialize();
 
+    // SHARED: this suite commits and then DELETEs real `ci.users` rows, whose
+    // cascade reaches the shared `ci.*` tables a migration suite alters inside
+    // its own transaction. See `domains/__tests__/support/schemaLock.ts`.
+    schemaLock = await acquireSchemaWriteLock(dataSource, 'TaskService.tenancy');
+
     for (const [context, name] of [
       [alice, 'Alice'],
       [bob, 'Bob'],
@@ -74,6 +81,8 @@ describeWithDb('TaskService — tenant isolation (integration)', () => {
     if (dataSource?.isInitialized) {
       // ON DELETE CASCADE takes the tasks with the users.
       await dataSource.query('DELETE FROM ci.users WHERE id = ANY($1)', [[alice.userId, bob.userId]]);
+      // Before `destroy()`: the lock is held on a runner from this pool.
+      await schemaLock?.release();
       await dataSource.destroy();
     }
   });

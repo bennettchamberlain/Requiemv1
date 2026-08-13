@@ -6,6 +6,8 @@ import { DataSource, type QueryRunner } from 'typeorm';
 
 import { normalizeEmail, normalizeName, normalizePhone } from '@ci/domains/graph';
 
+import { resolveApplianceUserId } from '../../../__tests__/support/applianceUser';
+import { acquireSchemaDdlLock, type SchemaLock } from '../../../__tests__/support/schemaLock';
 import { databaseAvailability, resolveConnection } from '../../__tests__/harness/pipelineHarness';
 import { PipelineStateService } from '../../services/PipelineStateService';
 import type { StageResult } from '../../types';
@@ -1057,6 +1059,7 @@ function migrationUp(): string {
 describeWithDatabase(`enrich.person_link against real Postgres (${availability.target})`, () => {
   let dataSource: DataSource;
   let runner: QueryRunner;
+  let schemaLock: SchemaLock | null = null;
   let ownerUserId: string;
 
   const entityId = randomUUID();
@@ -1108,6 +1111,12 @@ describeWithDatabase(`enrich.person_link against real Postgres (${availability.t
 
     await dataSource.initialize();
 
+    // EXCLUSIVE, before the transaction opens: this suite applies a real
+    // migration inside it (ALTER TABLE ci.entity_identifiers), and DDL on a
+    // shared `ci.*` table deadlocks against any suite writing those tables in
+    // another jest worker. See `domains/__tests__/support/schemaLock.ts`.
+    schemaLock = await acquireSchemaDdlLock(dataSource, 'PersonLinkStage');
+
     runner = dataSource.createQueryRunner();
     await runner.connect();
     await runner.startTransaction();
@@ -1120,13 +1129,7 @@ describeWithDatabase(`enrich.person_link against real Postgres (${availability.t
     // guarded, so it is equally correct once the migration HAS been applied.
     await runner.query(migrationUp());
 
-    const users = await q<Array<{ id: string }>>(`SELECT id FROM ci.users LIMIT 1`);
-
-    if (users.length === 0) {
-      throw new Error('No ci.users row to attach the fixtures to.');
-    }
-
-    ownerUserId = users[0].id;
+    ownerUserId = await resolveApplianceUserId((sql, params) => q(sql, params), 'PersonLinkStage');
 
     // A communication is a CTI aggregate too: the base row in ci.entities owns
     // the display name and the FK makes it mandatory. Seeded base-first.
@@ -1166,6 +1169,9 @@ describeWithDatabase(`enrich.person_link against real Postgres (${availability.t
       await runner.rollbackTransaction();
       await runner.release();
     }
+
+    // Before `destroy()`: the lock is held on a runner from this pool.
+    await schemaLock?.release();
 
     if (dataSource?.isInitialized) {
       await dataSource.destroy();
