@@ -713,7 +713,10 @@ describeIfDb(`PlacePromoteStage — against real Postgres (${availability.reason
 
     // `ci.events.user_id` FKs `ci.users`, so the fixture has to belong to a real
     // user. Nothing about the user is asserted.
-    realUserId = await resolveApplianceUserId((sql, params) => runner.query(sql, params), 'PlacePromoteStage');
+    realUserId = await resolveApplianceUserId(
+      (sql, params) => runner.query(sql, params),
+      'PlacePromoteStage',
+    );
   });
 
   afterAll(async () => {

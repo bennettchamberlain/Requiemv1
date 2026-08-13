@@ -868,7 +868,10 @@ describeIfDb(`EstimateLocationStage — against real Postgres (${availability.re
     await runner.connect();
     await runner.startTransaction();
 
-    realUserId = await resolveApplianceUserId((sql, params) => runner.query(sql, params), 'EstimateLocationStage');
+    realUserId = await resolveApplianceUserId(
+      (sql, params) => runner.query(sql, params),
+      'EstimateLocationStage',
+    );
 
     // A candidate with no location of its own, and a donor five minutes later
     // carrying a REAL coordinate.

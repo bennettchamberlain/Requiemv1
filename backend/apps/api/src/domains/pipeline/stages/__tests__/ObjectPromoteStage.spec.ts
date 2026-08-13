@@ -733,7 +733,10 @@ describeIfDb(`ObjectPromoteStage — against real Postgres (${availability.reaso
     await runner.connect();
     await runner.startTransaction();
 
-    realUserId = await resolveApplianceUserId((sql, params) => runner.query(sql, params), 'ObjectPromoteStage');
+    realUserId = await resolveApplianceUserId(
+      (sql, params) => runner.query(sql, params),
+      'ObjectPromoteStage',
+    );
   });
 
   afterAll(async () => {
