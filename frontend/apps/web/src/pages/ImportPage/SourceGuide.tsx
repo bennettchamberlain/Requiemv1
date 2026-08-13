@@ -103,10 +103,18 @@ export function SourceGuide({ guide, badges, children }: SourceGuideProps) {
   );
 }
 
-/** The named doorway to the service's own export flow, styled as a real button. */
+/**
+ * The named doorway to the service's own export flow, styled as a real button.
+ *
+ * Primary, matching the step's other main action ("Finish → Sync") — opening
+ * the export page IS the main thing this card asks the reader to do. And
+ * `self-start`, because the guide card is a flex column whose items stretch
+ * across the cross axis by default: without it the button spans the card
+ * instead of hugging its label.
+ */
 function ExportCta({ url, label }: { url: string; label: string }) {
   return (
-    <Button asChild variant="secondary">
+    <Button asChild className="self-start">
       <a href={url} target="_blank" rel="noreferrer">
         {label}
         <ExternalLink aria-hidden />
