@@ -84,6 +84,11 @@ function makeController(
     getRunDetail: jest.fn(async () =>
       overrides.detail === undefined ? { run: RUN, stages: STAGES } : overrides.detail,
     ),
+    listUnpushed: jest.fn(async () => [{ run: RUN, pendingItems: 3, pendingEntities: 1 }]),
+    startPush: jest.fn<
+      Promise<Array<{ run: typeof RUN; stage: (typeof STAGES)[number] }>>,
+      [unknown, { runIds?: readonly string[] }]
+    >(async () => [{ run: RUN, stage: STAGES[0] }]),
     cancel: jest.fn(async () => overrides.cancel ?? true),
     retryStage: jest.fn(async () => overrides.retry ?? true),
   };
@@ -243,6 +248,75 @@ describe('ImportRunsController.listSources', () => {
     const { controller } = makeController();
 
     expect(controller.listSources()).toEqual([{ name: 'gmail', title: 'Gmail', stub: false }]);
+  });
+});
+
+describe('ImportRunsController.listUnpushed', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('maps each eligible run to its summary plus the pending counts', async () => {
+    const { controller } = makeController();
+
+    const unpushed = await controller.listUnpushed(ctx);
+
+    expect(unpushed).toHaveLength(1);
+    expect(unpushed[0]).toMatchObject({
+      id: 'run-1',
+      status: 'running',
+      pendingItems: 3,
+      pendingEntities: 1,
+    });
+    // The same field-by-field mapper as every other run answer — a new column
+    // does not reach the wire unless it joins toRunSummary.
+    expect(unpushed[0].createdAt).toEqual(RUN.createdAt);
+  });
+
+  it('refuses an unauthenticated caller', async () => {
+    const { controller, runs } = makeController();
+
+    await expect(controller.listUnpushed({} as RequestContext)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(runs.listUnpushed).not.toHaveBeenCalled();
+  });
+});
+
+describe('ImportRunsController.startPush', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('pushes everything when no body is sent — the Sync button’s call', async () => {
+    const { controller, runs } = makeController();
+
+    const result = await controller.startPush(ctx, undefined);
+
+    expect(runs.startPush).toHaveBeenCalledWith({ userId: 'user-1' }, { runIds: undefined });
+    expect(result.runs.map((run) => run.id)).toEqual(['run-1']);
+  });
+
+  it('passes a run-id filter through', async () => {
+    const { controller, runs } = makeController();
+    const id = 'a81bc81b-dead-4e5d-abff-90865d1e13b1';
+
+    await controller.startPush(ctx, { runIds: [id] });
+
+    expect(runs.startPush.mock.calls[0][1]).toEqual({ runIds: [id] });
+  });
+
+  it('refuses a malformed run id before the service is called', async () => {
+    // The service binds these to a ::uuid[] cast, where a typo becomes a
+    // Postgres syntax error — a 500 wearing the wrong blame.
+    const { controller, runs } = makeController();
+
+    await expect(controller.startPush(ctx, { runIds: ['not-a-uuid'] })).rejects.toThrow(/not-a-uuid/);
+    expect(runs.startPush).not.toHaveBeenCalled();
+  });
+
+  it('answers nothing-to-sync with an empty list, not an error', async () => {
+    const { controller, runs } = makeController();
+
+    runs.startPush.mockResolvedValueOnce([]);
+
+    expect(await controller.startPush(ctx, undefined)).toEqual({ runs: [] });
   });
 });
 

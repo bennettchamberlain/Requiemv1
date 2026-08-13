@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource, type EntityManager } from 'typeorm';
+import { DataSource, In, type EntityManager } from 'typeorm';
 
 import type { UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
@@ -36,6 +36,18 @@ export interface StartRunResult {
   stages: ImportStage[];
 }
 
+export interface StartPushInput {
+  /** Restrict the push to these runs. Absent means every eligible run. */
+  runIds?: readonly string[];
+}
+
+/** One run whose parsed rows are waiting for a push — the Sync card's unit. */
+export interface UnpushedRun {
+  run: ImportRun;
+  pendingItems: number;
+  pendingEntities: number;
+}
+
 /**
  * What a run does when the caller does not say: the whole import.
  *
@@ -54,6 +66,48 @@ const DEFAULT_STAGES: readonly ImportStageKindName[] = ['unpack', 'parse', 'push
  * process is gone — crashed, killed, or restarted out from under the work.
  */
 const STALE_STAGE_MINUTES = 10;
+
+/**
+ * A run whose staged rows have never been pushed. `$1` = user id, `$2` =
+ * optional uuid[] filter (NULL means every run). One constant shared VERBATIM
+ * by {@link ImportRunService.listUnpushed} and
+ * {@link ImportRunService.startPush}, so what the Sync card shows is exactly
+ * what Sync acts on — two copies of this predicate would drift, and the drift
+ * would be a card that lists a run the button then skips.
+ *
+ * Why each clause:
+ * - `finished_at IS NOT NULL` — nothing in flight. This excludes a run still
+ *   parsing, and it is also what makes the reopen double as the concurrency
+ *   guard: the loser of two racing Sync clicks re-evaluates this predicate
+ *   against the winner's reopened row and finds `finished_at` NULL.
+ * - `status <> 'cancelled'` — a cancelled run is a decision, not a backlog.
+ *   `partial` runs stay ELIGIBLE: a partially-parsed archive still staged real
+ *   rows, and pushing them is the point.
+ * - completed parse — the staging actually happened.
+ * - no push stage AT ANY STATUS — a failed or cancelled push means this run
+ *   already left the Sync surface; its recovery path is `retryStage`, not a
+ *   second appended stage.
+ * - pending rows in EITHER lane — PushStage pushes entities as well as items,
+ *   and a parse that staged nothing would otherwise sit in the Sync card
+ *   forever showing "0 items".
+ */
+const PUSH_ELIGIBLE_WHERE = `
+      r.user_id = $1::uuid
+  AND r.finished_at IS NOT NULL
+  AND r.status <> 'cancelled'
+  AND ($2::uuid[] IS NULL OR r.id = ANY($2::uuid[]))
+  AND EXISTS (
+        SELECT 1 FROM ci_import.import_stages ps
+         WHERE ps.run_id = r.id AND ps.kind = 'parse' AND ps.status = 'completed')
+  AND NOT EXISTS (
+        SELECT 1 FROM ci_import.import_stages xs
+         WHERE xs.run_id = r.id AND xs.kind = 'push')
+  AND (EXISTS (
+        SELECT 1 FROM ci_import.staged_items i
+         WHERE i.run_id = r.id AND i.push_status = 'pending')
+    OR EXISTS (
+        SELECT 1 FROM ci_import.staged_entities e
+         WHERE e.run_id = r.id AND e.push_status = 'pending'))`;
 
 /**
  * The run/stage spine: what a person sees while their export imports.
@@ -429,6 +483,151 @@ export class ImportRunService {
     this.logger.log('Re-queued a failed import stage', { runId, stageId, userId: ctx.userId });
 
     return true;
+  }
+
+  // -------------------------------------------------------------------------
+  // Deferred push — the wizard's Sync step
+  // -------------------------------------------------------------------------
+
+  /**
+   * The runs the Sync card offers: parse finished, nothing pushed yet.
+   *
+   * Counts come from one raw query (aliased camelCase, `::int` so the driver
+   * hands back numbers); the runs themselves are re-read through the
+   * repository so the entity's column transforms are reused instead of
+   * re-implemented here.
+   */
+  async listUnpushed(ctx: UserServiceContext): Promise<UnpushedRun[]> {
+    const rows = await this.dataSource.query<
+      Array<{ id: string; pendingItems: number; pendingEntities: number }>
+    >(
+      `SELECT r.id,
+              (SELECT count(*)::int FROM ci_import.staged_items i
+                WHERE i.run_id = r.id AND i.push_status = 'pending') AS "pendingItems",
+              (SELECT count(*)::int FROM ci_import.staged_entities e
+                WHERE e.run_id = r.id AND e.push_status = 'pending') AS "pendingEntities"
+         FROM ci_import.import_runs r
+        WHERE ${PUSH_ELIGIBLE_WHERE}
+        ORDER BY r.created_at DESC`,
+      [ctx.userId, null],
+    );
+
+    if (rows.length === 0) {
+      return [];
+    }
+
+    const runs = await this.dataSource.getRepository(ImportRunEntity).find({
+      where: { id: In(rows.map((row) => row.id)) },
+    });
+    const byId = new Map(runs.map((run) => [run.id, run]));
+
+    // The query's order is the answer's order; the repository read is just
+    // hydration and must not reorder it.
+    return rows
+      .map((row) => {
+        const run = byId.get(row.id);
+
+        return run == null
+          ? null
+          : { run, pendingItems: row.pendingItems, pendingEntities: row.pendingEntities };
+      })
+      .filter((entry): entry is UnpushedRun => entry != null);
+  }
+
+  /**
+   * Append a `push` stage to every eligible run and set it running.
+   *
+   * The append-and-reopen is ONE statement, so there is no gap for a run to
+   * change state in: eligibility, the stage insert, and the reopen share a
+   * snapshot, and `FOR UPDATE` makes the loser of two racing Sync clicks
+   * re-evaluate against the winner's reopened row (`finished_at` now NULL) and
+   * come away with nothing. Belt-and-braces beneath that: `UNIQUE (run_id,
+   * seq)` + `ON CONFLICT DO NOTHING` swallows a duplicate insert, and because
+   * the reopen joins FROM the insert's returned rows, a swallowed insert also
+   * skips the reopen and the `requested_stages` append — a complete no-op.
+   *
+   * The outer command is a SELECT for the same TypeORM reason as everywhere
+   * else in this file; the enqueue happens after the statement (which is its
+   * own transaction), honoring startRun's enqueue-after-commit rule.
+   */
+  async startPush(
+    ctx: UserServiceContext,
+    input: StartPushInput = {},
+  ): Promise<Array<{ run: ImportRun; stage: ImportStage }>> {
+    const appended = await this.dataSource.query<Array<{ stageId: string; runId: string }>>(
+      `WITH eligible AS (
+         SELECT r.id
+           FROM ci_import.import_runs r
+          WHERE ${PUSH_ELIGIBLE_WHERE}
+            FOR UPDATE OF r
+       ),
+       appended AS (
+         INSERT INTO ci_import.import_stages (run_id, seq, kind, status, weight)
+         SELECT e.id,
+                (SELECT COALESCE(MAX(s.seq), -1) + 1
+                   FROM ci_import.import_stages s
+                  WHERE s.run_id = e.id),
+                'push', 'queued', $3::int
+           FROM eligible e
+         ON CONFLICT (run_id, seq) DO NOTHING
+         RETURNING id, run_id
+       ),
+       reopened AS (
+         UPDATE ci_import.import_runs r
+            SET status = 'queued', error = NULL, finished_at = NULL,
+                requested_stages = array_append(r.requested_stages, 'push')
+           FROM appended a
+          WHERE r.id = a.run_id
+         RETURNING r.id
+       )
+       SELECT a.id AS "stageId", a.run_id AS "runId" FROM appended a`,
+      [ctx.userId, input.runIds == null ? null : [...input.runIds], IMPORT_STAGE_WEIGHTS.push],
+    );
+
+    if (appended.length === 0) {
+      return [];
+    }
+
+    // Before anything is enqueued: the run finished at percent = 100, and the
+    // reopen alone would leave that stale — a poll must never see a queued push
+    // under a full bar. With `finished_at` NULL again the rollup's guard passes
+    // and percent lands at the honest weighted value (80 for unpack+parse+push).
+    for (const row of appended) {
+      await this.refreshRunRollup(row.stageId);
+    }
+
+    const runs = await this.dataSource.getRepository(ImportRunEntity).find({
+      where: { id: In(appended.map((row) => row.runId)) },
+    });
+    const stages = await this.dataSource.getRepository(ImportStageEntity).find({
+      where: { id: In(appended.map((row) => row.stageId)) },
+    });
+    const runById = new Map(runs.map((run) => [run.id, run]));
+    const stageById = new Map(stages.map((stage) => [stage.id, stage]));
+
+    const results: Array<{ run: ImportRun; stage: ImportStage }> = [];
+
+    for (const row of appended) {
+      const run = runById.get(row.runId);
+      const stage = stageById.get(row.stageId);
+
+      if (run == null || stage == null) {
+        continue;
+      }
+
+      await this.enqueueStage(ctx.userId, run.id, stage);
+      results.push({ run, stage });
+    }
+
+    this.logger.log('Appended deferred push stages', {
+      userId: ctx.userId,
+      runIds: results.map(({ run }) => run.id),
+    });
+
+    // Newest first, matching listUnpushed and the run list.
+    return results.sort(
+      (a, b) => new Date(b.run.createdAt).getTime() - new Date(a.run.createdAt).getTime(),
+    );
   }
 
   // -------------------------------------------------------------------------

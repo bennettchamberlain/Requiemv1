@@ -7,6 +7,7 @@ import { EntityIdentifierEntity, NodeEntity, RelationshipEntity } from '@ci/doma
 import { syntheticTestUserEmail } from '../../../__tests__/support/applianceUser';
 import { databaseAvailability, resolveConnection } from '../../../__tests__/support/databaseConnection';
 import { acquireSchemaWriteLock } from '../../../__tests__/support/schemaLock';
+import type { ImportStageKindName } from '../../constants';
 import { EntityMappingEntity } from '../../entities/EntityMappingEntity';
 import { ImportRunEntity } from '../../entities/ImportRunEntity';
 import { ImportStageEntity } from '../../entities/ImportStageEntity';
@@ -61,7 +62,7 @@ export interface StagingHarness {
    * Callers that reach for `service.startRun` directly leak their run past
    * teardown, so anything that needs the full result goes through here.
    */
-  startRunForDrop(dropId: string): Promise<StartRunResult>;
+  startRunForDrop(dropId: string, stages?: readonly ImportStageKindName[]): Promise<StartRunResult>;
   /** A writer scoped to a fresh run. */
   writerFor(dataSourceName: string): Promise<{ writer: StagedWriter; runId: string }>;
 }
@@ -187,8 +188,11 @@ export async function createStagingHarness(): Promise<{
     return dropId;
   };
 
-  const startRunForDrop = async (dropId: string): Promise<StartRunResult> => {
-    const result = await service.startRun({ userId }, { dropId });
+  const startRunForDrop = async (
+    dropId: string,
+    stages?: readonly ImportStageKindName[],
+  ): Promise<StartRunResult> => {
+    const result = await service.startRun({ userId }, { dropId, stages });
 
     createdRuns.push(result.run.id);
 

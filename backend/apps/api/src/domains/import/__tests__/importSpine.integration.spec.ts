@@ -214,6 +214,24 @@ describeWithDatabase(`the import spine (${importDatabase.target})`, () => {
       expect(after.percent).toBe(30);
     });
 
+    it('normalizes the rollup by the run’s OWN stages, not an assumed 100', async () => {
+      // The wizard starts parse-only runs (unpack + parse, weights 30 + 50).
+      // If the rollup divided by a fixed 100 instead of SUM(weight), this run
+      // would crawl to 80% and jump to 100 at the finish line — the divisor
+      // has to be the 80 the run actually materialized: 100·30/80 = 38.
+      const { run, stages } = await harness.startRunForDrop(await stageDrop(), ['unpack', 'parse']);
+
+      await service.beginStage(stages[0].id);
+      await service.completeStage(stages[0].id, { processed: 1, total: 1, detail: {} });
+
+      const [after] = await dataSource.query<Array<{ percent: number }>>(
+        `SELECT percent FROM ci_import.import_runs WHERE id = $1::uuid`,
+        [run.id],
+      );
+
+      expect(after.percent).toBe(38);
+    });
+
     it('ends a run partial when a stage reported partial, not failed', async () => {
       const { run, stages } = await startRun(await stageDrop());
 

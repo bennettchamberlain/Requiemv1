@@ -126,7 +126,12 @@ export type { RegisterUploadInput } from './services/StagedSourceService';
 export { sanitizeFilename } from './sources/sanitizeFilename';
 
 export { ImportRunService } from './services/ImportRunService';
-export type { StartRunInput, StartRunResult } from './services/ImportRunService';
+export type {
+  StartPushInput,
+  StartRunInput,
+  StartRunResult,
+  UnpushedRun,
+} from './services/ImportRunService';
 export { ImportScratchService } from './services/ImportScratchService';
 
 export { IMPORT_QUEUE, IMPORT_STAGE_KINDS, IMPORT_STAGE_WEIGHTS } from './constants';
@@ -152,7 +157,14 @@ export {
 } from './staging/identity';
 
 export { ImportRunsController } from './controllers/ImportRunsController';
-export type { RunDetail, RunSummary, StageSummary, StartRunBody } from './controllers/ImportRunsController';
+export type {
+  RunDetail,
+  RunSummary,
+  StageSummary,
+  StartPushBody,
+  StartRunBody,
+  UnpushedRunSummary,
+} from './controllers/ImportRunsController';
 export { DataSourceCatalogService } from './services/DataSourceCatalogService';
 export type { DataSourceSummary } from './services/DataSourceCatalogService';
 export { ImportUploadsController } from './controllers/ImportUploadsController';

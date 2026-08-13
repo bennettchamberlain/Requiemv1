@@ -74,6 +74,17 @@ export interface StartRunBody {
   stages?: string[];
 }
 
+/** A run whose parsed rows are waiting for a push, with what is waiting. */
+export interface UnpushedRunSummary extends RunSummary {
+  pendingItems: number;
+  pendingEntities: number;
+}
+
+export interface StartPushBody {
+  /** Restrict the push to these runs. Omit to push everything unpushed. */
+  runIds?: string[];
+}
+
 /**
  * The user-facing surface of an import.
  *
@@ -136,6 +147,25 @@ export class ImportRunsController {
     );
 
     return runs.map(toRunSummary);
+  }
+
+  /**
+   * The runs the Sync card offers: parse finished, nothing pushed yet.
+   *
+   * MUST stay declared above `runs/:runId` — route registration follows
+   * declaration order, and below it Express would match `unpushed` as a runId.
+   */
+  @UseGuards(JwtOrApiKeyAuthGuard)
+  @Get('runs/unpushed')
+  async listUnpushed(@Context() context: RequestContext): Promise<UnpushedRunSummary[]> {
+    const userId = requireUserId(context);
+    const unpushed = await this.runs.listUnpushed({ userId });
+
+    return unpushed.map(({ run, pendingItems, pendingEntities }) => ({
+      ...toRunSummary(run),
+      pendingItems,
+      pendingEntities,
+    }));
   }
 
   /** One run, with its stage bar. The poll target while an import is in flight. */
@@ -212,6 +242,25 @@ export class ImportRunsController {
    * no-ops so a transient blip cannot silently re-unpack a 40GB archive,
    * which leaves asking for it as a deliberate act.
    */
+  /**
+   * The wizard's Sync: push everything staged and never pushed.
+   *
+   * An empty answer is `{ runs: [] }`, not an error — "nothing to sync" is a
+   * state the Sync card renders, not a fault. Progress after this call is the
+   * ordinary run poll; nothing here is worth a second live surface.
+   */
+  @UseGuards(JwtOrApiKeyAuthGuard)
+  @Post('push')
+  async startPush(
+    @Context() context: RequestContext,
+    @Body() body?: StartPushBody,
+  ): Promise<{ runs: RunSummary[] }> {
+    const userId = requireUserId(context);
+    const started = await this.runs.startPush({ userId }, { runIds: parseRunIds(body?.runIds) });
+
+    return { runs: started.map(({ run }) => toRunSummary(run)) };
+  }
+
   @UseGuards(JwtOrApiKeyAuthGuard)
   @Post('runs/:runId/stages/:stageId/retry')
   async retryStage(
@@ -247,6 +296,29 @@ function requireUserId(context: RequestContext): string {
  * fails loudly but only after the run has started — better to refuse it here,
  * where the caller can still fix it.
  */
+/**
+ * Validate a caller-supplied run-id filter as UUID-shaped.
+ *
+ * The service binds these to a `$n::uuid[]` cast, where a typo becomes a
+ * Postgres syntax error — a 500 wearing the wrong blame. Refusing here names
+ * the offending values while the caller can still fix them, the same bargain
+ * `parseStages` makes.
+ */
+function parseRunIds(runIds: string[] | undefined): string[] | undefined {
+  if (runIds == null) {
+    return undefined;
+  }
+
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const invalid = runIds.filter((id) => !UUID.test(id));
+
+  if (invalid.length > 0) {
+    throw new BadRequestException(`Not import run ids: ${invalid.join(', ')}`);
+  }
+
+  return runIds;
+}
+
 function parseStages(stages: string[] | undefined): ImportStageKindName[] | undefined {
   if (stages == null) {
     return undefined;
