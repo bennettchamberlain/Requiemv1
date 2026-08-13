@@ -84,8 +84,11 @@ export function ImportWizard() {
   }, []);
 
   return (
-    <div className="space-y-6">
-      <ol className="grid gap-2 sm:grid-cols-3">
+    <div className="flex h-full min-h-0 flex-col gap-6">
+      {/* Pinned: the stepper never scrolls away, and — because the scroll
+          region is BELOW it — never resizes when that region's scrollbar
+          comes and goes with the Pick facet filter. */}
+      <ol className="grid shrink-0 gap-2 sm:grid-cols-3">
         <StepHeading
           number={1}
           title="Pick"
@@ -114,33 +117,40 @@ export function ImportWizard() {
         />
       </ol>
 
-      {catalogError != null && <p className="text-sm text-destructive">{catalogError}</p>}
+      {catalogError != null && <p className="shrink-0 text-sm text-destructive">{catalogError}</p>}
 
-      {step === 'pick' && (
-        <PickStep
-          catalog={catalog}
-          picked={picked}
-          onToggle={togglePicked}
-          onContinue={() => {
-            setExportIdx(0);
-            setStep('export');
-          }}
-        />
-      )}
+      {/* The scroll region. Pick manages its own scrolling (its search and
+          facet chips stay pinned, only the grid scrolls), so this wrapper
+          hides overflow for it; Export and Sync scroll whole. Either way the
+          scrollbar lives in here, where its appearance only narrows content
+          that is left-aligned or re-laying-out anyway. */}
+      <div className={cn('min-h-0 flex-1', step === 'pick' ? 'overflow-hidden' : 'overflow-y-auto')}>
+        {step === 'pick' && (
+          <PickStep
+            catalog={catalog}
+            picked={picked}
+            onToggle={togglePicked}
+            onContinue={() => {
+              setExportIdx(0);
+              setStep('export');
+            }}
+          />
+        )}
 
-      {step === 'export' && (
-        <ExportStep
-          entries={entries}
-          index={exportIdx}
-          runsByEntry={runsByEntry}
-          onRunsStarted={recordRuns}
-          onIndex={setExportIdx}
-          onBackToPick={() => setStep('pick')}
-          onFinish={() => setStep('sync')}
-        />
-      )}
+        {step === 'export' && (
+          <ExportStep
+            entries={entries}
+            index={exportIdx}
+            runsByEntry={runsByEntry}
+            onRunsStarted={recordRuns}
+            onIndex={setExportIdx}
+            onBackToPick={() => setStep('pick')}
+            onFinish={() => setStep('sync')}
+          />
+        )}
 
-      {step === 'sync' && <SyncStep onBackToExport={() => setStep('export')} />}
+        {step === 'sync' && <SyncStep onBackToExport={() => setStep('export')} />}
+      </div>
     </div>
   );
 }

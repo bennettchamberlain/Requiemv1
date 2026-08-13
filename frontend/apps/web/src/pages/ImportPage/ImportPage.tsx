@@ -20,8 +20,15 @@ export function ImportPage() {
   usePageTitle('Import - Companion Intelligence');
 
   return (
+    // The header, tab bar and (inside the wizard) the step indicators stay
+    // pinned; only what sits BELOW them scrolls, in its own region. Two
+    // things fall out of that. The stepper stays in view however long the
+    // service list gets. And the outer PageContent never overflows, so its
+    // classic scrollbar — whose appearance used to steal ~15px of width and
+    // visibly resize the step headers every time the Pick facet swapped a
+    // ~100-service list for a short one — never exists to begin with.
     <PageContent>
-      <div className="space-y-6">
+      <div className="flex min-h-0 flex-1 flex-col gap-6">
         <header className="space-y-1">
           <h1 className="text-2xl font-semibold">Import</h1>
           <p className="text-muted-foreground">
@@ -30,17 +37,19 @@ export function ImportPage() {
           </p>
         </header>
 
-        <Tabs defaultValue="import">
+        <Tabs defaultValue="import" className="flex min-h-0 flex-1 flex-col">
           <Tabs.List>
             <Tabs.Trigger value="import">Import</Tabs.Trigger>
             <Tabs.Trigger value="history">History</Tabs.Trigger>
           </Tabs.List>
 
-          <Tabs.Content value="import" className="pt-4">
+          {/* overflow-hidden, not auto: the wizard scrolls itself below its
+              stepper. History has no pinned part, so it scrolls whole. */}
+          <Tabs.Content value="import" className="min-h-0 flex-1 overflow-hidden pt-4">
             <ImportWizard />
           </Tabs.Content>
 
-          <Tabs.Content value="history" className="pt-4">
+          <Tabs.Content value="history" className="min-h-0 flex-1 overflow-y-auto pt-4">
             <HistoryTab />
           </Tabs.Content>
         </Tabs>

@@ -42,8 +42,13 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
   }, [facet, query, sections]);
 
   return (
-    <div className="space-y-5">
-      <div className="relative max-w-md">
+    // Search and the facet chips stay pinned with the stepper above; only the
+    // service grid scrolls. The filter controls are what CAUSE the content
+    // swaps, so they must not live in the region whose scrollbar those swaps
+    // toggle — and losing the search box off the top of a 100-service list
+    // was no good either.
+    <div className="flex h-full min-h-0 flex-col gap-5">
+      <div className="relative max-w-md shrink-0">
         <Search
           className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
           aria-hidden
@@ -58,7 +63,7 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
         />
       </div>
 
-      <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter by category">
+      <div className="flex shrink-0 flex-wrap gap-1.5" role="group" aria-label="Filter by category">
         <FacetChip active={facet === 'all'} onClick={() => setFacet('all')}>
           All
         </FacetChip>
@@ -73,7 +78,8 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
         ))}
       </div>
 
-      {visible.map((section) => (
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto">
+        {visible.map((section) => (
         <section key={section.key} className="space-y-2">
           <h3 className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
             <span className="h-4 w-4 [&>svg]:h-4 [&>svg]:w-4">{section.icon}</span>
@@ -131,29 +137,30 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
         </section>
       ))}
 
-      {catalog.length > 0 && visible.length === 0 && (
-        <div className="space-y-2 rounded-md border border-dashed p-6 text-center">
-          <p className="text-sm text-muted-foreground">
-            No services match. Try a different search, or clear the category filter.
-          </p>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setQuery('');
-              setFacet('all');
-            }}
-          >
-            Clear search
+        {catalog.length > 0 && visible.length === 0 && (
+          <div className="space-y-2 rounded-md border border-dashed p-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              No services match. Try a different search, or clear the category filter.
+            </p>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setQuery('');
+                setFacet('all');
+              }}
+            >
+              Clear search
+            </Button>
+          </div>
+        )}
+
+        {catalog.length === 0 && <p className="text-sm text-muted-foreground">Loading services…</p>}
+
+        <div className="flex justify-end">
+          <Button disabled={picked.size === 0} onClick={onContinue}>
+            Continue → {picked.size} selected
           </Button>
         </div>
-      )}
-
-      {catalog.length === 0 && <p className="text-sm text-muted-foreground">Loading services…</p>}
-
-      <div className="flex justify-end">
-        <Button disabled={picked.size === 0} onClick={onContinue}>
-          Continue → {picked.size} selected
-        </Button>
       </div>
     </div>
   );
