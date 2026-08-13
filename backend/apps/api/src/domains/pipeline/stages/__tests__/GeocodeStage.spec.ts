@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { DataSource } from 'typeorm';
 
-import { resolveApplianceUserId } from '../../../__tests__/support/applianceUser';
+import { createSyntheticTestUser } from '../../../__tests__/support/applianceUser';
 import { acquireSchemaWriteLock, type SchemaLock } from '../../../__tests__/support/schemaLock';
 import { databaseAvailability, resolveConnection } from '../../__tests__/harness/pipelineHarness';
 import { PipelineStateService } from '../../services/PipelineStateService';
@@ -970,7 +970,7 @@ describeIfDb(`GeocodeStage — against real Postgres (${availability.reason})`, 
 
     // `ci.events.user_id` has a FK to `ci.users`, so the fixture has to belong to
     // a real user. Nothing about the user is asserted.
-    realUserId = await resolveApplianceUserId((sql, params) => runner.query(sql, params), 'GeocodeStage');
+    realUserId = await createSyntheticTestUser((sql, params) => runner.query(sql, params), 'GeocodeStage');
 
     // An event is a CTI aggregate: the base row in ci.entities owns the title
     // and the FK makes it mandatory. Seeded base-first.

@@ -6,7 +6,7 @@ import { DataSource, type QueryRunner } from 'typeorm';
 
 import { normalizeEmail, normalizeName, normalizePhone } from '@ci/domains/graph';
 
-import { resolveApplianceUserId } from '../../../__tests__/support/applianceUser';
+import { createSyntheticTestUser } from '../../../__tests__/support/applianceUser';
 import { acquireSchemaDdlLock, type SchemaLock } from '../../../__tests__/support/schemaLock';
 import { databaseAvailability, resolveConnection } from '../../__tests__/harness/pipelineHarness';
 import { PipelineStateService } from '../../services/PipelineStateService';
@@ -1129,7 +1129,7 @@ describeWithDatabase(`enrich.person_link against real Postgres (${availability.t
     // guarded, so it is equally correct once the migration HAS been applied.
     await runner.query(migrationUp());
 
-    ownerUserId = await resolveApplianceUserId((sql, params) => q(sql, params), 'PersonLinkStage');
+    ownerUserId = await createSyntheticTestUser((sql, params) => q(sql, params), 'PersonLinkStage');
 
     // A communication is a CTI aggregate too: the base row in ci.entities owns
     // the display name and the FK makes it mandatory. Seeded base-first.

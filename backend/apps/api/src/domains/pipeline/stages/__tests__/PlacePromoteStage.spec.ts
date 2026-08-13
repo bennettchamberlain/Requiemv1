@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { DataSource } from 'typeorm';
 
-import { resolveApplianceUserId } from '../../../__tests__/support/applianceUser';
+import { createSyntheticTestUser } from '../../../__tests__/support/applianceUser';
 import { acquireSchemaWriteLock, type SchemaLock } from '../../../__tests__/support/schemaLock';
 import { databaseAvailability, resolveConnection } from '../../__tests__/harness/pipelineHarness';
 import { FORWARD_GEOCODE_PROVIDER_GENERATION } from '../enrich/GeocodeStage';
@@ -713,7 +713,7 @@ describeIfDb(`PlacePromoteStage — against real Postgres (${availability.reason
 
     // `ci.events.user_id` FKs `ci.users`, so the fixture has to belong to a real
     // user. Nothing about the user is asserted.
-    realUserId = await resolveApplianceUserId(
+    realUserId = await createSyntheticTestUser(
       (sql, params) => runner.query(sql, params),
       'PlacePromoteStage',
     );
@@ -937,11 +937,15 @@ describeIfDb(`PlacePromoteStage — against real Postgres (${availability.reason
     // `findOrCreateForGeocode` does, so the real corpus exercises the real
     // grouping instead of collapsing to one row.
     const candidates: Array<{ id: string }> = await runner.query(
+      // The fixture filter reads the CTI base row: an event's title moved to
+      // ci.entities.name, so excluding this suite's own seeded rows from the
+      // real corpus has to join to find them.
       `SELECT s.event_id AS id
          FROM ci.events s
+         JOIN ci.entities e ON e.entity_id = s.event_id
         WHERE s.user_id = $1::uuid
           AND (${PROMOTE_PLACE_SOURCE.predicate})
-          AND s.title <> 'promote.place fixture'
+          AND e.name IS DISTINCT FROM 'promote.place fixture'
         ORDER BY s.event_id
         LIMIT 200`,
       [realUserId],
