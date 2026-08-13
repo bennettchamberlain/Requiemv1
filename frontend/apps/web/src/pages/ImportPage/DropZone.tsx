@@ -80,9 +80,11 @@ export function DropZone({ onFiles, disabled, hint, label, compact }: DropZonePr
   return (
     <Card
       className={cn(
-        'flex flex-col items-center justify-center gap-3 border-2 border-dashed text-center transition-colors',
+        // border-primary matches the card's action buttons — the zone is the
+        // main thing to do here, and a muted dashed box read as decoration.
+        'flex flex-col items-center justify-center gap-3 border-2 border-dashed border-primary text-center transition-colors',
         compact ? 'p-5' : 'p-10',
-        active && !disabled ? 'border-primary bg-primary/5' : 'border-muted',
+        active && !disabled && 'bg-primary/5',
         disabled && 'opacity-60',
       )}
       onDragEnter={handleDragEnter}

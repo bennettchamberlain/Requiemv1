@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import { Badge, Button, Card } from '@ci/shadcn';
 import { AlertTriangle, ExternalLink } from '@ci/shadcn/icons';
@@ -10,6 +10,8 @@ import { shortTitle } from './wizard/sources';
 
 export interface SourceGuideProps {
   guide: ImportSourceGuide;
+  /** The service's brand logo URL, when one exists. Hidden if it fails to load. */
+  logo?: string | null;
   /** Extra badges beside the wait class — "files staged ✓", "coming soon". */
   badges?: ReactNode;
   /**
@@ -64,12 +66,29 @@ const ACQUISITION_LABELS: Record<string, string> = {
  * to 30 days" is the single most useful thing to know BEFORE starting, and
  * discovering it after clicking through five settings pages is a bad surprise.
  */
-export function SourceGuide({ guide, badges, children }: SourceGuideProps) {
+export function SourceGuide({ guide, logo, badges, children }: SourceGuideProps) {
+  const [logoFailed, setLogoFailed] = useState(false);
+
   return (
     <Card className="space-y-4 p-4">
-      <div className="space-y-1">
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="flex items-start gap-3">
+        {logo != null && !logoFailed ? (
+          <img
+            src={logo}
+            alt=""
+            className="mt-0.5 h-8 w-8 shrink-0 object-contain"
+            onError={() => setLogoFailed(true)}
+          />
+        ) : null}
+
+        <div className="min-w-0 flex-1 space-y-1">
           <h3 className="font-medium">{guide.title}</h3>
+          <p className="text-sm text-muted-foreground">{guide.blurb}</p>
+        </div>
+
+        {/* Pinned to the card's upper right: the chips answer "how long, and
+            how?" at a glance, before anyone reads a word of the steps. */}
+        <div className="flex shrink-0 flex-wrap justify-end gap-2">
           <Badge variant="outline" className={WAIT_BADGE_CLASSES[guide.wait]}>
             {WAIT_LABELS[guide.wait] ?? guide.wait}
           </Badge>
@@ -78,7 +97,6 @@ export function SourceGuide({ guide, badges, children }: SourceGuideProps) {
           ) : null}
           {badges}
         </div>
-        <p className="text-sm text-muted-foreground">{guide.blurb}</p>
       </div>
 
       <Steps title={guide.stepsTitle ?? 'How to export'} steps={guide.steps} />

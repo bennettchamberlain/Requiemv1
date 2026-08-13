@@ -7,7 +7,7 @@ import { SourceGuide } from '../SourceGuide';
 import { useImportApi } from '../useImportApi';
 
 import { LiveRun } from './LiveRun';
-import { bundleToGuide, shortTitle, sourceToGuide, type ExportEntry } from './sources';
+import { bundleToGuide, serviceLogoUrl, shortTitle, sourceToGuide, type ExportEntry } from './sources';
 
 export interface ExportStepProps {
   entries: readonly ExportEntry[];
@@ -106,6 +106,9 @@ export function ExportStep({
 
       <SourceGuide
         guide={guide}
+        logo={
+          entry.kind === 'bundle' ? `/import-logos/${entry.bundle.logo}` : serviceLogoUrl(entry.source.id)
+        }
         badges={
           startedRuns.length > 0 ? (
             <Badge variant="outline" className="border-primary text-primary">

@@ -105,6 +105,14 @@ describe('ExportStep', () => {
     expect(screen.getByText('Web export')).toBeInTheDocument();
   });
 
+  it('leads the card with the service’s logo when one exists', () => {
+    renderStep();
+
+    // spotify has a mapped logo; the img is decorative (empty alt), so it is
+    // found by src rather than by role.
+    expect(document.querySelector('img[src="/import-logos/spotify.svg"]')).not.toBeNull();
+  });
+
   it('renders the expected format and the notes, which most guides carry', () => {
     renderStep({
       entries: [
