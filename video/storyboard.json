@@ -19,9 +19,76 @@
     "control": "Your call"
   },
   "media": {
-    "music": "assets/media/ci-campaign-bed.mp3",
+    "music": "assets/media/ci-campaign-bed-110.mp3",
     "musicLufs": -22
   },
+  "master": [
+    {
+      "ref": "perfect-recall",
+      "caption": "It is just scattered across services you do not own.",
+      "narration": "You already have a perfect memory. Every place, every person, every promise you made — all of it recorded. Just not by you."
+    },
+    {
+      "ref": "your-traces",
+      "caption": "Two dozen services, each keeping a piece of you.",
+      "narration": "Two dozen services each hold a piece of it, and not one of them will hand you the whole."
+    },
+    {
+      "ref": "your-biography",
+      "caption": "Not a diary you have to keep. One that keeps itself.",
+      "narration": "Now imagine all of it written up for you. Not a diary you have to keep — one that keeps itself, hourly, daily and weekly."
+    },
+    {
+      "ref": "the-catch",
+      "title": "So where would all that live?",
+      "caption": "Most people quietly stop telling it the truth.",
+      "narration": "Which leaves one question. Where would all of that live? On hardware you will never see, under terms you did not write."
+    },
+    {
+      "ref": "open",
+      "caption": "The other agents are double agents.",
+      "narration": "The other agents are double agents. Companion Memory works only for you."
+    },
+    {
+      "ref": "bring-it-home",
+      "chapter": "bring",
+      "caption": "Point it at the accounts you already have.",
+      "narration": "Point it at the accounts you already have, and your mail, your calendar and your photos come home to a machine you own."
+    },
+    {
+      "ref": "one-memory",
+      "caption": "One list, on one machine. Nothing is uploaded.",
+      "narration": "Everything lands in one list, on one machine, newest first. Nothing is uploaded, and nothing leaves the box."
+    },
+    {
+      "ref": "the-record",
+      "caption": "Open one and the whole record is there.",
+      "narration": "Open one, and the whole record is there. The place, the address, the exact coordinates."
+    },
+    {
+      "ref": "the-biography",
+      "caption": "Every day, written up. The decisions behind it.",
+      "narration": "And every day gets written up. What happened, and what was decided — by a model on your own hardware."
+    },
+    {
+      "ref": "it-connects",
+      "caption": "It works out who and what belong together.",
+      "narration": "It works out how your people, places and ideas connect — the context anything acting for you actually needs."
+    },
+    {
+      "ref": "your-agents",
+      "caption": "Connected over MCP, on hardware you own.",
+      "narration": "Then give every agent you choose the same memory. Claude Code, OpenCode, Hermes, OpenClaw."
+    },
+    {
+      "ref": "close",
+      "caption": "ci.computer/memory",
+      "cta": "One memory. Every agent you choose. Yours.",
+      "tagline": "UnCloud your life.",
+      "url": "ci.computer/memory",
+      "narration": "One memory. Every agent you choose. Yours. At ci dot computer slash memory. UnCloud your life."
+    }
+  ],
   "scenes": [
     {
       "id": "the-deal",
@@ -44,6 +111,55 @@
         {
           "label": "Calendar",
           "value": "when the house is empty"
+        }
+      ]
+    },
+    {
+      "id": "perfect-recall",
+      "kind": "feature",
+      "reveal": "paced",
+      "seconds": 9,
+      "minSeconds": 7,
+      "title": "You already have a perfect memory.",
+      "caption": "It is just scattered across services you do not own.",
+      "narration": "You already have a perfect memory. Every place, every person, every promise you made — all of it recorded. Just not by you.",
+      "items": [
+        {
+          "label": "Every place",
+          "value": "your phone logged it"
+        },
+        {
+          "label": "Every person",
+          "value": "your mail knows them"
+        },
+        {
+          "label": "Every promise",
+          "value": "your calendar kept it"
+        }
+      ]
+    },
+    {
+      "id": "your-biography",
+      "kind": "feature",
+      "transition": "cut",
+      "reveal": "paced",
+      "seconds": 9,
+      "minSeconds": 7,
+      "title": "Now imagine it written up for you.",
+      "caption": "Not a diary you have to keep. One that keeps itself.",
+      "narration": "Now imagine all of it written up for you. Not a diary you have to keep — one that keeps itself, hourly, daily and weekly.",
+      "items": [
+        {
+          "label": "Hourly",
+          "value": "what just happened"
+        },
+        {
+          "label": "Daily",
+          "value": "what the day came to"
+        },
+        {
+          "label": "Weekly",
+          "value": "what it added up to"
         }
       ]
     },
@@ -227,6 +343,54 @@
       "narration": "Open one, and the whole record is there. The place, the address, the exact coordinates.",
       "shots": [
         {
+          "id": "memory-detail-sheet",
+          "url": "ci-memory-living-room-server-acme.ci.computer/memory",
+          "alt": "The entity details sheet open over the list, showing one event's full record",
+          "motion": "push-in",
+          "_focusNote": "The best beat the old cut had, kept exactly as it was framed, because a rectangle this hard-won should survive a rewrite. The narration promises 'what happened, where it happened, and exactly when', and at rest every one of those field values is about 15px on a 1080-tall canvas. 1.754x makes PLACE, ADDRESS, COORDINATES, TYPE, BEDROOMS and NEIGHBORHOOD readable while still keeping the Details block on screen; a tighter 2.178x version was rejected because it pushed the dates off the bottom, which is one of the three things the line names.\n\nThe left edge of the window falls inside the list underneath, so a few dimmed row subtitles are cut mid-word. That is unavoidable at any usable scale — excluding the list entirely needs a window of 0.48 and the ceiling is 0.526 — and it reads as depth behind the sheet rather than as damage, because the sheet dims everything under it. Flagged rather than hidden. RE-CHECKED against a focus-preview end frame and the rendered cut: agreed, keep it.\n\nPortrait is a full-bleed reframe, not a crop: mobile stacks this record full-width, so w 1.0 asks for coverScale, the phone frame drops away and the record grows 39%.",
+          "focus": {
+            "landscape": {
+              "x": 0.224,
+              "y": 0.112,
+              "w": 0.576,
+              "h": 0.576
+            },
+            "portrait": {
+              "x": 0,
+              "y": 0.015,
+              "w": 0.8,
+              "h": 0.738
+            }
+          },
+          "capture": {
+            "path": "/memory?view=list&includedEntityTypes=Event",
+            "waitFor": "div[role=\"button\"]",
+            "before": [
+              {
+                "click": "div[role=\"button\"] >> nth=0"
+              },
+              {
+                "waitFor": "[data-slot=\"sheet-content\"] [data-slot=\"sheet-title\"]"
+              }
+            ],
+            "mask": [
+              "time"
+            ],
+            "settle": 700
+          }
+        }
+      ]
+    },
+    {
+      "id": "the-biography",
+      "kind": "screen",
+      "chapter": "keep",
+      "transition": "cut",
+      "seconds": 8,
+      "caption": "Every day, written up. The decisions behind it.",
+      "narration": "And every day gets written up. What happened, and what was decided — by a model on your own hardware.",
+      "shots": [
+        {
           "id": "insight-detail-view",
           "url": "ci-memory-living-room-server-acme.ci.computer/insights/01936cb0-0000-7000-8000-000000000003",
           "alt": "A daily project summary with backend development activity, a completed milestone, and a team decision for the next sprint",
@@ -238,7 +402,8 @@
               "time"
             ],
             "settle": 500
-          }
+          },
+          "_focusNote": "This shot used to be `the-record`'s, which put the day's SUMMARY under a caption promising a RECORD. They are different claims and they now have a beat each: the-record opens one event and shows its fields, this one opens the write-up of a whole day. Both are real pages; neither had to be invented.\n\nNo focus rectangle, deliberately, and it is the only shot in the film without one. The subject here is not a field or a row — it is the fact that a page of prose about the viewer's own day exists at all, and the argument is the page's length. A rectangle tight enough to make the body text readable would frame two paragraphs and lose that; at rest the Summary block, the Notable Events list and the Daily Rhythm section are all on the plate at once, which is the shape the line is describing. drift-down travels the column, which is how a page of prose is read.\n\nWHAT IT IS A PICTURE OF: summaries.ts:166, uuid …0003, title 'Daily Summary', periodType daily, 127 activities (82 browser, 24 files, 18 communications), tags backend_development / graphql / team_collaboration / code_review / productive_day. So 'what happened, what was decided' is on the plate, not asserted over it.\n\nRE-SHOOT HAZARD: the committed PNG predates commit dbe341da6 (2026-08-08), which deleted the standalone Insights page and routed summaries through the feed. The path still resolves — /insights/<uuid> redirects to /feed/summaries/<uuid> — but the plate may be a picture of the older page. Verify against a fresh capture before trusting the framing, and see `it-notices` in the library, whose `insights-list` plate films a page that no longer exists at all."
         }
       ]
     },
@@ -416,23 +581,31 @@
       "transition": "cut",
       "reveal": "paced",
       "seconds": 8,
-      "title": "The agents reporting only to you.",
-      "caption": "Hermes and OpenClaw, connected through MCP.",
+      "title": "One memory. Every agent you choose.",
+      "caption": "Connected over MCP, on hardware you own.",
       "narration": "Hermes and OpenClaw connect through separate app backends over MCP. Your context stays on the machine you own.",
       "items": [
         {
-          "label": "MCP server",
-          "value": "companion-memory"
+          "image": "./assets/agents/01-claude-code.png",
+          "alt": "The Claude Code app icon."
         },
         {
-          "label": "Speaks to",
-          "value": "Claude, Codex, OpenCode"
+          "image": "./assets/agents/02-opencode.png",
+          "alt": "The OpenCode app icon."
         },
         {
-          "label": "And to",
-          "value": "Hermes, OpenClaw, NanoClaw"
+          "image": "./assets/agents/03-hermes.png",
+          "alt": "The Hermes Agent app icon."
+        },
+        {
+          "image": "./assets/agents/04-openclaw.png",
+          "alt": "The OpenClaw app icon."
         }
-      ]
+      ],
+      "columns": {
+        "landscape": 4,
+        "portrait": 2
+      }
     },
     {
       "id": "your-call",
@@ -554,47 +727,6 @@
       "mark": "brand:logo.full"
     }
   ],
-  "master": [
-    {
-      "ref": "ask-it",
-      "chapter": "bring",
-      "caption": "The other agents are double agents.",
-      "narration": "The other agents are double agents. Yours should not start from zero. Search the history you chose to keep."
-    },
-    {
-      "ref": "bring-it-home",
-      "caption": "Bring in the mail, calendars, photos, and files you choose.",
-      "narration": "Companion Memory brings the mail, calendars, photos, and files you choose into one searchable memory on hardware you control."
-    },
-    {
-      "ref": "the-record",
-      "caption": "Open a project summary. See the decisions behind it.",
-      "narration": "Open a project summary and inspect the decisions, patterns, and activity behind it."
-    },
-    {
-      "ref": "it-connects",
-      "caption": "People, places, projects, and moments stay connected.",
-      "narration": "Memory connects people, places, projects, and moments so related history is easier to find."
-    },
-    {
-      "ref": "it-notices",
-      "caption": "It can turn activity into useful summaries.",
-      "narration": "It can turn the activity you store into useful summaries and patterns."
-    },
-    {
-      "ref": "your-agents",
-      "caption": "One memory for every agent you choose.",
-      "narration": "Connect the agents you choose. Claude and Codex can use the same Memory, while Hermes and OpenClaw connect through their separate app backends over MCP."
-    },
-    {
-      "ref": "close",
-      "caption": "ci.computer/memory",
-      "cta": "One memory. Every agent you choose. Yours.",
-      "tagline": "UnCloud your life.",
-      "url": "ci.computer/memory",
-      "narration": "One memory. Every agent you choose. Yours. Get Companion Memory at ci dot computer slash memory. UnCloud your life."
-    }
-  ],
   "deliverables": [
     {
       "id": "ci-memory-30",
@@ -603,36 +735,40 @@
       "meta": {
         "pacingTail": 0.16
       },
+      "media": {
+        "music": "assets/media/ci-campaign-bed-110.mp3",
+        "musicLufs": -22
+      },
       "scenes": [
         {
-          "ref": "ask-it",
-          "caption": "The other agents are double agents.",
-          "narration": "The other agents are double agents. Yours should not start from zero.",
-          "seconds": 5.5
+          "ref": "perfect-recall",
+          "caption": "Scattered across services you do not own.",
+          "narration": "You already have a perfect memory. It is just scattered across services you do not own.",
+          "seconds": 6
         },
         {
           "ref": "bring-it-home",
-          "caption": "The history you choose. One searchable memory.",
-          "narration": "Bring the mail, calendars, photos, and files you choose into one searchable Memory.",
+          "caption": "Bring it home to a machine you own.",
+          "narration": "Bring the mail, calendars, photos and files you choose home to a machine you own.",
           "seconds": 6
         },
         {
           "ref": "the-record",
-          "caption": "Open the summary. See the decisions behind it.",
-          "narration": "Open a project summary and see the decisions and activity behind it.",
-          "seconds": 5
+          "caption": "Open one and the whole record is there.",
+          "narration": "Open one, and the whole record is there.",
+          "seconds": 4.5
         },
         {
-          "ref": "it-notices",
-          "caption": "Find patterns across the activity you keep.",
-          "narration": "Find useful summaries and patterns across the activity you keep.",
-          "seconds": 4
+          "ref": "the-biography",
+          "caption": "Every day, written up for you.",
+          "narration": "Every day gets written up for you, by a model you host.",
+          "seconds": 5
         },
         {
           "ref": "your-agents",
-          "caption": "Claude, Codex, Hermes, OpenClaw. One Memory.",
-          "narration": "Give Claude, Codex, Hermes, OpenClaw, and every agent you choose the same Memory.",
-          "seconds": 5
+          "caption": "Claude Code, OpenCode, Hermes, OpenClaw.",
+          "narration": "Then give Claude Code, OpenCode, Hermes and OpenClaw the same memory.",
+          "seconds": 5.5
         },
         {
           "ref": "close",
@@ -640,7 +776,7 @@
           "cta": "One memory. Every agent you choose. Yours.",
           "tagline": "UnCloud your life.",
           "url": "ci.computer/memory",
-          "narration": "One Memory. Every agent you choose. Yours. Get it at ci dot computer slash memory.",
+          "narration": "One memory. Every agent you choose. Yours. At ci dot computer slash memory.",
           "seconds": 5.5
         }
       ]
@@ -653,11 +789,35 @@
         "pacing": "fit",
         "pacingTail": 0.12
       },
+      "media": {
+        "music": "assets/media/ci-campaign-bed-110.mp3",
+        "musicLufs": -22
+      },
       "scenes": [
         {
           "ref": "ask-it",
-          "caption": "One Memory. Every agent you choose. Yours. · ci.computer/memory",
-          "narration": "The other agents are double agents. One Memory. Yours."
+          "caption": "One memory. Every agent you choose. Yours. · ci.computer/memory",
+          "narration": "The other agents are double agents. One memory. Yours."
+        }
+      ]
+    },
+    {
+      "id": "ci-memory-bumper-perfect-recall",
+      "kind": "bumper",
+      "name": "Companion Memory: Perfect recall",
+      "meta": {
+        "pacing": "fit",
+        "pacingTail": 0.12
+      },
+      "media": {
+        "music": "assets/media/ci-campaign-bed-110.mp3",
+        "musicLufs": -22
+      },
+      "scenes": [
+        {
+          "ref": "the-record",
+          "caption": "Perfect recall, on your own hardware · ci.computer/memory",
+          "narration": "Perfect recall. On hardware you own."
         }
       ]
     }
