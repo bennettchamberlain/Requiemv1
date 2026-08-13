@@ -97,6 +97,14 @@ describe('ExportStep', () => {
     expect(screen.getByText(/Service 1 of 2/)).toBeInTheDocument();
   });
 
+  it('badges how the export is obtained beside how long it takes', () => {
+    renderStep();
+
+    // The fixture is a days-wait web-export: both chips, human words.
+    expect(screen.getByText('Takes a day or more')).toBeInTheDocument();
+    expect(screen.getByText('Web export')).toBeInTheDocument();
+  });
+
   it('renders the expected format and the notes, which most guides carry', () => {
     renderStep({
       entries: [

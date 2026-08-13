@@ -29,6 +29,16 @@ const WAIT_LABELS: Record<string, string> = {
   weeks: 'Can take weeks',
 };
 
+/** How the export is obtained, in words. Unknown kinds render as authored. */
+const ACQUISITION_LABELS: Record<string, string> = {
+  'web-export': 'Web export',
+  'app-export': 'App export',
+  'local-file': 'Local file',
+  'manual-upload': 'Manual upload',
+  'one-download': 'One download',
+  api: 'API',
+};
+
 /**
  * How to get one export out of the service that holds it.
  *
@@ -47,6 +57,9 @@ export function SourceGuide({ guide, badges, children }: SourceGuideProps) {
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="font-medium">{guide.title}</h3>
           <Badge variant="outline">{WAIT_LABELS[guide.wait] ?? guide.wait}</Badge>
+          {guide.acquisition ? (
+            <Badge variant="outline">{ACQUISITION_LABELS[guide.acquisition] ?? guide.acquisition}</Badge>
+          ) : null}
           {badges}
         </div>
         <p className="text-sm text-muted-foreground">{guide.blurb}</p>

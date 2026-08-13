@@ -32,6 +32,8 @@ export interface ImportSourceGuide {
   readonly ecosystem: string;
   readonly category: string;
   readonly wait: string;
+  /** How the export is obtained: web-export, app-export, local-file, manual-upload, api. */
+  readonly acquisition?: string;
   readonly url?: string;
   readonly stepsTitle?: string;
   readonly steps: readonly string[];

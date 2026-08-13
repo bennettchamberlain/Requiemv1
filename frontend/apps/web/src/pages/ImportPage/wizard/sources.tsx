@@ -610,6 +610,8 @@ export function bundleToGuide(bundle: Bundle): ImportSourceGuide {
     ecosystem: bundle.ecosystem,
     category: 'misc',
     wait: 'days',
+    // The whole point of a bundle: every member arrives in the one archive.
+    acquisition: 'one-download',
     url: bundle.url,
     steps: bundle.steps,
   };
