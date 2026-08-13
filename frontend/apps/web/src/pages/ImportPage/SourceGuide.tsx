@@ -29,6 +29,20 @@ const WAIT_LABELS: Record<string, string> = {
   weeks: 'Can take weeks',
 };
 
+/**
+ * Upstream's traffic light, in this repo's palette: quick waits green, a day
+ * or more amber, weeks red — white text on all three. The chip is the single
+ * most useful fact on the card ("Spotify can take 30 days"), which is why it
+ * gets color where every other chip stays an outline.
+ */
+const WAIT_BADGE_CLASSES: Record<string, string> = {
+  instant: 'border-transparent bg-emerald-500 text-white',
+  minutes: 'border-transparent bg-emerald-500 text-white',
+  hours: 'border-transparent bg-amber-500 text-white',
+  days: 'border-transparent bg-amber-500 text-white',
+  weeks: 'border-transparent bg-red-500 text-white',
+};
+
 /** How the export is obtained, in words. Unknown kinds render as authored. */
 const ACQUISITION_LABELS: Record<string, string> = {
   'web-export': 'Web export',
@@ -56,7 +70,9 @@ export function SourceGuide({ guide, badges, children }: SourceGuideProps) {
       <div className="space-y-1">
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="font-medium">{guide.title}</h3>
-          <Badge variant="outline">{WAIT_LABELS[guide.wait] ?? guide.wait}</Badge>
+          <Badge variant="outline" className={WAIT_BADGE_CLASSES[guide.wait]}>
+            {WAIT_LABELS[guide.wait] ?? guide.wait}
+          </Badge>
           {guide.acquisition ? (
             <Badge variant="outline">{ACQUISITION_LABELS[guide.acquisition] ?? guide.acquisition}</Badge>
           ) : null}
