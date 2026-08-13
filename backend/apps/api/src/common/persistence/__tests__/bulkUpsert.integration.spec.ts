@@ -5,7 +5,9 @@ import { DataSource } from 'typeorm';
 import { ContentEntity } from '@ci/domains/memory';
 import { UserEntity } from '@ci/domains/user';
 
+import { syntheticTestUserEmail } from '../../../domains/__tests__/support/applianceUser';
 import { databaseAvailability, resolveConnection } from '../../../domains/__tests__/support/databaseConnection';
+import { acquireSchemaWriteLock, type SchemaLock } from '../../../domains/__tests__/support/schemaLock';
 import { EventEntity } from '../../../domains/memory/entities/EventEntity';
 import { bulkInsertIdempotent } from '../bulkUpsert';
 
@@ -52,6 +54,7 @@ jest.setTimeout(60_000);
 
 describeWithDatabase(`bulkInsertIdempotent against real Postgres (${availability.target})`, () => {
   let dataSource: DataSource;
+  let schemaLock: SchemaLock | null = null;
   const userId = randomUUID();
 
   beforeAll(async () => {
@@ -79,20 +82,51 @@ describeWithDatabase(`bulkInsertIdempotent against real Postgres (${availability
 
     await dataSource.initialize();
 
+    // SHARED: this suite commits real `ci.users` / `ci.events` / `ci.content`
+    // rows, which is the DML half of the deadlock documented in
+    // `domains/__tests__/support/schemaLock.ts`.
+    schemaLock = await acquireSchemaWriteLock(dataSource, 'bulkUpsert.integration');
+
     await dataSource.query(
       `INSERT INTO ci.users (id, name, email) VALUES ($1::uuid, 'bulkUpsert spec', $2)
        ON CONFLICT (id) DO NOTHING`,
-      [userId, `bulk-upsert-${userId}@example.invalid`],
+      // The email is the marker that keeps other suites off this row while it
+      // exists — see `domains/__tests__/support/applianceUser.ts`.
+      [userId, syntheticTestUserEmail('bulk-upsert', userId)],
     );
   });
 
   afterAll(async () => {
     if (dataSource?.isInitialized) {
-      await dataSource.query(`DELETE FROM ci.events WHERE user_id = $1::uuid`, [userId]);
-      await dataSource.query(`DELETE FROM ci.content WHERE user_id = $1::uuid`, [userId]);
-      await dataSource.query(`DELETE FROM ci.entities WHERE owner_user_id = $1::uuid`, [userId]);
-      await dataSource.query(`DELETE FROM ci.users WHERE id = $1::uuid`, [userId]);
+      // Independent steps, first error rethrown at the end: a failure in the
+      // events or content delete must not skip the user delete, because a
+      // leaked `ci.users` row is durable, invisible, and exactly what the specs
+      // that pick a user out of `ci.users` can latch onto. Same reasoning, and
+      // the same shape, as the import staging harness's teardown.
+      //
+      // Order is the foreign keys': the CTI detail rows reference their base in
+      // ci.entities, and the base references the user.
+      const failures: unknown[] = [];
+
+      for (const [sql, params] of [
+        [`DELETE FROM ci.events WHERE user_id = $1::uuid`, [userId]],
+        [`DELETE FROM ci.content WHERE user_id = $1::uuid`, [userId]],
+        [`DELETE FROM ci.entities WHERE owner_user_id = $1::uuid`, [userId]],
+        [`DELETE FROM ci.users WHERE id = $1::uuid`, [userId]],
+      ] as Array<[string, unknown[]]>) {
+        try {
+          await dataSource.query(sql, params);
+        } catch (err: unknown) {
+          failures.push(err);
+        }
+      }
+
+      await schemaLock?.release();
       await dataSource.destroy();
+
+      if (failures.length > 0) {
+        throw failures[0];
+      }
     }
   });
 

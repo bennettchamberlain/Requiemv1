@@ -4,7 +4,9 @@ import { DataSource } from 'typeorm';
 
 import { EntityIdentifierEntity, NodeEntity, RelationshipEntity } from '@ci/domains/graph';
 
+import { syntheticTestUserEmail } from '../../../__tests__/support/applianceUser';
 import { databaseAvailability, resolveConnection } from '../../../__tests__/support/databaseConnection';
+import { acquireSchemaWriteLock } from '../../../__tests__/support/schemaLock';
 import { EntityMappingEntity } from '../../entities/EntityMappingEntity';
 import { ImportRunEntity } from '../../entities/ImportRunEntity';
 import { ImportStageEntity } from '../../entities/ImportStageEntity';
@@ -113,6 +115,14 @@ export async function createStagingHarness(): Promise<{
 
   await dataSource.initialize();
 
+  // SHARED, held for the life of the harness. This harness commits real
+  // `ci.entities` / `ci.entity_identifiers` / `ci.users` rows and deletes them
+  // again, which is the DML half of the deadlock documented in
+  // `__tests__/support/schemaLock.ts`. Shared holders never block each other,
+  // so the several import suites using this harness stay as parallel as they
+  // were; they now only ever wait on a suite that is applying a migration.
+  const schemaLock = await acquireSchemaWriteLock(dataSource, 'import staging harness');
+
   const [{ present }] = await dataSource.query<Array<{ present: boolean }>>(
     `SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'ci_import') AS present`,
   );
@@ -154,7 +164,9 @@ export async function createStagingHarness(): Promise<{
   await dataSource.query(
     `INSERT INTO ci.users (id, name, email) VALUES ($1::uuid, 'import harness', $2)
      ON CONFLICT (id) DO NOTHING`,
-    [userId, `import-harness-${userId}@example.invalid`],
+    // The email is the marker that keeps other suites off this row while it
+    // exists — see `__tests__/support/applianceUser.ts`, which owns both halves.
+    [userId, syntheticTestUserEmail('import-harness', userId)],
   );
 
   const stageDrop = async (filename = 'export.zip'): Promise<string> => {
@@ -213,12 +225,36 @@ export async function createStagingHarness(): Promise<{
       return;
     }
 
+    // ── Why every step runs even after one of them fails ──────────────────
+    //
+    // This used to be a straight sequence, and the `ci.users` delete was last.
+    // One failing statement anywhere above it — a run that would not delete, a
+    // connection that blipped — therefore leaked the harness's user row into
+    // the appliance's `ci.users`, permanently, wearing an @example.invalid
+    // address nobody would recognise. Two such rows were found in the dev
+    // database, and while they own nothing, they are what the specs that pick
+    // a user with `LIMIT 1` could latch onto.
+    //
+    // So the steps are independent and the failures accumulate: whatever else
+    // goes wrong, the user row is still attempted, and the first error is
+    // rethrown afterwards so a broken teardown is still LOUD rather than
+    // swallowed.
+    const failures: unknown[] = [];
+
+    const attempt = async (sql: string, params: unknown[]): Promise<void> => {
+      try {
+        await dataSource.query(sql, params);
+      } catch (err: unknown) {
+        failures.push(err);
+      }
+    };
+
     for (const runId of createdRuns) {
-      await dataSource.query(`DELETE FROM ci_import.import_runs WHERE id = $1::uuid`, [runId]);
+      await attempt(`DELETE FROM ci_import.import_runs WHERE id = $1::uuid`, [runId]);
     }
 
     for (const dropId of createdDrops) {
-      await dataSource.query(`DELETE FROM ci_import.staged_sources WHERE user_id = $1::uuid AND drop_id = $2`, [
+      await attempt(`DELETE FROM ci_import.staged_sources WHERE user_id = $1::uuid AND drop_id = $2`, [
         userId,
         dropId,
       ]);
@@ -227,14 +263,19 @@ export async function createStagingHarness(): Promise<{
     // Whatever the push stage resolved into `ci.*` belongs to this harness user
     // alone, so it goes with them. Entities before identifiers and the user
     // last: both reference what precedes them.
-    await dataSource.query(
-      `DELETE FROM ci.entity_identifiers WHERE owner_user_id = $1::uuid`,
-      [userId],
-    );
-    await dataSource.query(`DELETE FROM ci.entities WHERE owner_user_id = $1::uuid`, [userId]);
-    await dataSource.query(`DELETE FROM ci.users WHERE id = $1::uuid`, [userId]);
+    await attempt(`DELETE FROM ci.entity_identifiers WHERE owner_user_id = $1::uuid`, [userId]);
+    await attempt(`DELETE FROM ci.entities WHERE owner_user_id = $1::uuid`, [userId]);
+    await attempt(`DELETE FROM ci.users WHERE id = $1::uuid`, [userId]);
+
+    // Before `destroy()`, and before the rethrow: a lock this harness failed to
+    // release would stall every DDL suite for LOCK_TIMEOUT_MS.
+    await schemaLock.release();
 
     await dataSource.destroy();
+
+    if (failures.length > 0) {
+      throw failures[0];
+    }
   };
 
   return { harness, teardown };
