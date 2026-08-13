@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import { DataSource } from 'typeorm';
 
+import { resolveApplianceUserId } from '../../../__tests__/support/applianceUser';
+import { acquireSchemaWriteLock, type SchemaLock } from '../../../__tests__/support/schemaLock';
 import { databaseAvailability, resolveConnection } from '../../__tests__/harness/pipelineHarness';
 import { PipelineStateService } from '../../services/PipelineStateService';
 import type { StageResult } from '../../types';
@@ -902,6 +904,7 @@ const describeIfDb = availability.available ? describe : describe.skip;
 describeIfDb(`GeocodeStage — against real Postgres (${availability.reason})`, () => {
   let dataSource: DataSource;
   let runner: ReturnType<DataSource['createQueryRunner']>;
+  let schemaLock: SchemaLock | null = null;
   let realUserId: string;
 
   /**
@@ -956,14 +959,18 @@ describeIfDb(`GeocodeStage — against real Postgres (${availability.reason})`, 
     });
 
     await dataSource.initialize();
+
+    // SHARED: this suite holds row locks on shared `ci.*` tables for the length
+    // of its transaction. Shared holders never block each other, so this only
+    // ever waits on a suite applying a migration.
+    schemaLock = await acquireSchemaWriteLock(dataSource, 'GeocodeStage');
     runner = dataSource.createQueryRunner();
     await runner.connect();
     await runner.startTransaction();
 
     // `ci.events.user_id` has a FK to `ci.users`, so the fixture has to belong to
     // a real user. Nothing about the user is asserted.
-    const users = await runner.query(`SELECT id FROM ci.users LIMIT 1`);
-    realUserId = users[0].id;
+    realUserId = await resolveApplianceUserId((sql, params) => runner.query(sql, params), 'GeocodeStage');
 
     // An event is a CTI aggregate: the base row in ci.entities owns the title
     // and the FK makes it mandatory. Seeded base-first.
@@ -987,6 +994,9 @@ describeIfDb(`GeocodeStage — against real Postgres (${availability.reason})`, 
       await runner.rollbackTransaction();
       await runner.release();
     }
+
+    // Before `destroy()`: the lock is held on a runner from this pool.
+    await schemaLock?.release();
 
     if (dataSource != null) {
       await dataSource.destroy();
