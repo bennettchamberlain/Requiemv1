@@ -244,6 +244,161 @@ describeWithDatabase(`the import spine (${importDatabase.target})`, () => {
   });
 
   // -------------------------------------------------------------------------
+  // Crash recovery
+  // -------------------------------------------------------------------------
+
+  describe('resumeInterrupted', () => {
+    /**
+     * The sweep is deliberately appliance-wide, so a parallel suite's runs can
+     * ride along in `events.send`. Every assertion here filters by run id
+     * rather than counting calls.
+     */
+    function sendsFor(runId: string): Array<Record<string, unknown>> {
+      return events.send.mock.calls
+        .map((call) => call[1] as Record<string, unknown>)
+        .filter((payload) => payload.runId === runId);
+    }
+
+    /**
+     * Make a stage read as abandoned. Every recovery gate is a staleness test
+     * on `updated_at` — a live stage is touched by progress writes and the
+     * listener's heartbeat, so silence is what death looks like.
+     */
+    async function age(stageId: string): Promise<void> {
+      await dataSource.query(
+        `UPDATE ci_import.import_stages SET updated_at = now() - interval '20 minutes' WHERE id = $1::uuid`,
+        [stageId],
+      );
+    }
+
+    it('requeues a stage a dead process left running, and re-enqueues its run', async () => {
+      const { run, stages } = await startRun(await stageDrop());
+
+      // The crash: claimed, then the process died — which reads as a claim
+      // that has gone silent past the staleness window.
+      expect(await service.beginStage(stages[0].id)).toBe(true);
+      await age(stages[0].id);
+      events.send.mockClear();
+
+      await service.resumeInterrupted();
+
+      const [stage] = await dataSource.query<Array<{ status: string; started_at: string | null }>>(
+        `SELECT status, started_at FROM ci_import.import_stages WHERE id = $1::uuid`,
+        [stages[0].id],
+      );
+
+      expect(stage.status).toBe('queued');
+      expect(stage.started_at).toBeNull();
+      expect(sendsFor(run.id).map((payload) => payload.stageId)).toEqual([stages[0].id]);
+
+      // And the requeued stage is claimable again — the whole point.
+      expect(await service.beginStage(stages[0].id)).toBe(true);
+    });
+
+    it('leaves a LIVE claim alone, however it got there', async () => {
+      // The failure the staleness gate exists for, observed in the wild: a dev
+      // restart leaked the old process, its push loop was alive and writing
+      // progress, and a sweep that assumed "running at boot means orphaned"
+      // requeued the stage out from under it — two executors then interleaved
+      // progress with different totals. A claim touched inside the window
+      // belongs to somebody.
+      const { run, stages } = await startRun(await stageDrop());
+
+      expect(await service.beginStage(stages[0].id)).toBe(true);
+      events.send.mockClear();
+
+      await service.resumeInterrupted();
+
+      const [stage] = await dataSource.query<Array<{ status: string }>>(
+        `SELECT status FROM ci_import.import_stages WHERE id = $1::uuid`,
+        [stages[0].id],
+      );
+
+      expect(stage.status).toBe('running');
+      expect(sendsFor(run.id)).toEqual([]);
+    });
+
+    it('enqueues the queued stage a crash left jobless', async () => {
+      // The crash landed between completeStage and the enqueue of the next
+      // stage: nothing is running, the next stage is queued, no job carries it.
+      const { run, stages } = await startRun(await stageDrop());
+
+      await service.beginStage(stages[0].id);
+      await service.completeStage(stages[0].id, { processed: 1, total: 1, detail: {} });
+
+      // Fresh, the queued stage is just waiting its turn in the queue and must
+      // not collect a duplicate job from every sweep.
+      events.send.mockClear();
+      await service.resumeInterrupted();
+      expect(sendsFor(run.id)).toEqual([]);
+
+      await age(stages[1].id);
+      await service.resumeInterrupted();
+
+      expect(sendsFor(run.id).map((payload) => payload.stageId)).toEqual([stages[1].id]);
+    });
+
+    it('closes out a run whose last stage completed but never finished', async () => {
+      const { run, stages } = await startRun(await stageDrop());
+
+      for (const stage of stages) {
+        await service.beginStage(stage.id);
+        await service.completeStage(stage.id, { processed: 1, total: 1, detail: {} });
+      }
+
+      events.send.mockClear();
+
+      // Freshly completed, the run is protected: a live worker sits in the
+      // milliseconds between completeStage and advance() exactly here, and a
+      // periodic sweep must not close the run out from under it.
+      await service.resumeInterrupted();
+
+      const [fresh] = await dataSource.query<Array<{ finished_at: string | null }>>(
+        `SELECT finished_at FROM ci_import.import_runs WHERE id = $1::uuid`,
+        [run.id],
+      );
+
+      expect(fresh.finished_at).toBeNull();
+
+      for (const stage of stages) {
+        await age(stage.id);
+      }
+
+      await service.resumeInterrupted();
+
+      const [row] = await dataSource.query<Array<{ status: string; finished_at: string | null }>>(
+        `SELECT status, finished_at FROM ci_import.import_runs WHERE id = $1::uuid`,
+        [run.id],
+      );
+
+      expect(row.status).toBe('completed');
+      expect(row.finished_at).not.toBeNull();
+      expect(sendsFor(run.id)).toEqual([]);
+    });
+
+    it('leaves a cancelled run alone, running stage and all', async () => {
+      // Cancel deliberately does not touch a running stage (the worker notices
+      // at its next transition); recovery must not resurrect the run.
+      const { run, stages } = await startRun(await stageDrop());
+
+      await service.beginStage(stages[0].id);
+      await age(stages[0].id);
+      await service.cancel({ userId }, run.id);
+      events.send.mockClear();
+
+      await service.resumeInterrupted();
+
+      const [stage] = await dataSource.query<Array<{ status: string }>>(
+        `SELECT status FROM ci_import.import_stages WHERE id = $1::uuid`,
+        [stages[0].id],
+      );
+
+      expect(stage.status).toBe('running');
+      expect(sendsFor(run.id)).toEqual([]);
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Staging writes
   // -------------------------------------------------------------------------
 

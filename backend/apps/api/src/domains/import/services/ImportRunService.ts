@@ -10,9 +10,9 @@ import { IMPORT_QUEUE, IMPORT_STAGE_WEIGHTS, type ImportStageKindName } from '..
 import { ImportRunEntity, type ImportRun, type ImportRunSource } from '../entities/ImportRunEntity';
 import { ImportStageEntity, type ImportStage } from '../entities/ImportStageEntity';
 import { ImportStageEvent } from '../events';
+import type { StageOutcome } from '../types';
 
 import { StagedSourceService } from './StagedSourceService';
-import type { StageOutcome } from '../types';
 
 export interface StartRunInput {
   /** The staged upload this run consumes. Claimed as part of starting. */
@@ -46,6 +46,15 @@ export interface StartRunResult {
  * in {@link IMPORT_STAGE_WEIGHTS}; it joins this list with its runner.
  */
 const DEFAULT_STAGES: readonly ImportStageKindName[] = ['unpack', 'parse'];
+
+/**
+ * How silent a stage must go before the recovery sweep treats its claim as
+ * dead. A live stage never gets close: progress writes land up to once a
+ * second while work moves, and the listener heartbeats every thirty seconds
+ * while it merely holds the claim. Ten minutes of silence therefore means the
+ * process is gone — crashed, killed, or restarted out from under the work.
+ */
+const STALE_STAGE_MINUTES = 10;
 
 /**
  * The run/stage spine: what a person sees while their export imports.
@@ -198,6 +207,136 @@ export class ImportRunService {
     return manager.find(ImportStageEntity, { where: { runId }, order: { seq: 'ASC' } });
   }
 
+  /**
+   * Pick every abandoned run back up.
+   *
+   * The stages are durable jobs precisely so an import survives the process
+   * that was running it — but three crash windows would otherwise strand one
+   * forever, because every recovery path shares one guard:
+   * {@link beginStage} only claims a `queued` stage.
+   *
+   *  1. **Killed mid-stage.** The stage sits at `running` with no worker, and
+   *     even pg-boss's own redelivery no-ops against the claim.
+   *  2. **Killed between completing a stage and enqueueing the next.** The next
+   *     stage is `queued` but no job carries it.
+   *  3. **Killed between the last stage completing and {@link finishRun}.** The
+   *     run can never close.
+   *
+   * Every gate here is a STALENESS test on `updated_at`, never an assumption
+   * about who else is running. The first version of this sweep assumed
+   * "at bootstrap, any running stage is orphaned" — and a dev restart that
+   * leaked the old process promptly disproved it: the old worker's push loop
+   * was alive and pushing while the new boot requeued its stage, and the two
+   * (then three) executors interleaved progress writes with different totals.
+   * A live stage is never silent for {@link STALE_STAGE_MINUTES} — progress
+   * writes touch it up to once a second and the listener heartbeats it while
+   * it merely holds the claim — so silence IS death, whoever the worker was.
+   * The price is recovery latency: a crash is picked up by the periodic sweep
+   * within staleness-plus-a-tick rather than instantly at reboot.
+   *
+   * Re-enqueueing a stage whose original job still sits in the queue is
+   * harmless — the extra delivery loses the `beginStage` claim, the same no-op
+   * a redelivery already gets. Nothing is lost by a requeue: every stage
+   * resumes from durable state (the run-keyed scratch tree, the within-run
+   * dedupe on staged rows, the per-row push ledger).
+   */
+  async resumeInterrupted(): Promise<void> {
+    // CTE-wrapped — see the note on the claim in `startRun`. The reclaim
+    // deliberately does NOT touch `updated_at`: the requeued stage must still
+    // read as stale so the enqueue pass below picks it up in the same sweep.
+    const reclaimed = await this.dataSource.query<Array<{ stageId: string; runId: string }>>(
+      `WITH reclaimed AS (
+         UPDATE ci_import.import_stages s
+            SET status = 'queued', error = NULL, started_at = NULL, finished_at = NULL,
+                processed = 0, duration_ms = NULL
+          WHERE s.status = 'running'
+            AND s.updated_at < now() - make_interval(mins => $1::int)
+            AND EXISTS (
+              SELECT 1 FROM ci_import.import_runs r
+               WHERE r.id = s.run_id AND r.finished_at IS NULL
+            )
+      RETURNING s.id, s.run_id)
+       SELECT id AS "stageId", run_id AS "runId" FROM reclaimed`,
+      [STALE_STAGE_MINUTES],
+    );
+
+    const unfinished = await this.dataSource.query<
+      Array<{
+        runId: string;
+        userId: string;
+        stageId: string | null;
+        stageStale: boolean | null;
+        hasLive: boolean;
+        allStale: boolean;
+      }>
+    >(
+      `SELECT r.id AS "runId",
+              r.user_id AS "userId",
+              q.id AS "stageId",
+              q.updated_at < now() - make_interval(mins => $1::int) AS "stageStale",
+              EXISTS (SELECT 1 FROM ci_import.import_stages x
+                       WHERE x.run_id = r.id AND x.status IN ('queued', 'running')) AS "hasLive",
+              COALESCE((SELECT bool_and(x.updated_at < now() - make_interval(mins => $1::int))
+                          FROM ci_import.import_stages x
+                         WHERE x.run_id = r.id), true) AS "allStale"
+         FROM ci_import.import_runs r
+         LEFT JOIN LATERAL (
+           SELECT s.id, s.updated_at
+             FROM ci_import.import_stages s
+            WHERE s.run_id = r.id AND s.status = 'queued'
+            ORDER BY s.seq
+            LIMIT 1
+         ) q ON true
+        WHERE r.finished_at IS NULL`,
+      [STALE_STAGE_MINUTES],
+    );
+
+    let enqueued = 0;
+    let finished = 0;
+
+    for (const run of unfinished) {
+      if (run.stageId != null && run.stageStale === true) {
+        // A queued stage nobody has touched in the staleness window is a stage
+        // whose job was lost — a FRESH queued stage is just waiting its turn in
+        // the queue and must not collect a duplicate job every sweep.
+        await this.enqueueStage(run.userId, run.runId, { id: run.stageId } as ImportStage);
+        enqueued += 1;
+      } else if (!run.hasLive && run.allStale) {
+        // Every stage is terminal, none freshly so — the crash landed after
+        // the last completeStage. Close the run the way advance() would have.
+        // The staleness half of the gate is what keeps a PERIODIC sweep out of
+        // the milliseconds between a live worker's completeStage and its
+        // advance(), where the run momentarily has nothing queued or running.
+        await this.finishRun(run.runId);
+        finished += 1;
+      }
+    }
+
+    if (reclaimed.length > 0 || enqueued > 0 || finished > 0) {
+      this.logger.log('Resumed interrupted import runs', {
+        reclaimedStages: reclaimed.length,
+        enqueuedStages: enqueued,
+        finishedRuns: finished,
+      });
+    }
+  }
+
+  /**
+   * Refresh a running stage's claim.
+   *
+   * The listener calls this on a timer for as long as a runner is inside the
+   * stage, so a stage that is alive but quiet — a giant archive mid-extract
+   * says nothing for minutes — never reads as abandoned to the sweep.
+   */
+  async touchStage(stageId: string): Promise<void> {
+    await this.dataSource.query(
+      `UPDATE ci_import.import_stages
+          SET updated_at = now()
+        WHERE id = $1::uuid AND status = 'running'`,
+      [stageId],
+    );
+  }
+
   // -------------------------------------------------------------------------
   // Reading
   // -------------------------------------------------------------------------
@@ -234,7 +373,7 @@ export class ImportRunService {
     const rows = await this.dataSource.query<unknown[]>(
       `WITH claimed AS (
          UPDATE ci_import.import_stages
-            SET status = 'running', started_at = COALESCE(started_at, now())
+            SET status = 'running', started_at = COALESCE(started_at, now()), updated_at = now()
           WHERE id = $1::uuid AND status = 'queued'
       RETURNING id)
        SELECT id FROM claimed`,
@@ -272,6 +411,7 @@ export class ImportRunService {
           SET processed = $2::bigint,
               total = COALESCE($3::bigint, total),
               phase = COALESCE($4::text, phase),
+              updated_at = now(),
               items_per_sec = CASE
                 WHEN started_at IS NULL THEN items_per_sec
                 WHEN EXTRACT(EPOCH FROM (now() - started_at)) <= 0 THEN items_per_sec
@@ -292,6 +432,7 @@ export class ImportRunService {
       // parameter used in two positions ("inconsistent types deduced").
       `UPDATE ci_import.import_stages
           SET status = 'completed',
+              updated_at = now(),
               processed = $2::bigint,
               total = COALESCE($3::bigint, $2::bigint),
               detail = $4::jsonb,
@@ -311,7 +452,7 @@ export class ImportRunService {
   async failStage(stageId: string, error: string): Promise<void> {
     await this.dataSource.query(
       `UPDATE ci_import.import_stages
-          SET status = 'failed', error = $2, finished_at = now()
+          SET status = 'failed', error = $2, finished_at = now(), updated_at = now()
         WHERE id = $1::uuid`,
       [stageId, error],
     );

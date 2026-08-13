@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, type OnApplicationBootstrap } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/logging';
+import { Cron } from '@ci/common/schedule';
 import { OnEvent } from '@ci/domains/events';
 
 import { IMPORT_QUEUE } from '../constants';
@@ -13,6 +14,23 @@ import { importStagePayloadSchema, type ImportStageRunner, type StageRunContext 
 
 /** Minimum gap between progress writes, whatever a runner asks for. */
 const PROGRESS_THROTTLE_MS = 1_000;
+
+/**
+ * How often a running stage's claim is refreshed while a runner is inside it.
+ *
+ * Progress writes already touch the claim while work moves; the heartbeat is
+ * for the silent stretches — a giant archive mid-extract says nothing for
+ * minutes — so liveness never depends on how chatty a stage kind happens to
+ * be. Well inside the sweep's staleness window.
+ */
+const STAGE_HEARTBEAT_MS = 30_000;
+
+/**
+ * The recovery sweep's cadence — second 30, every fifth minute, offset from
+ * the drop purge. Recovery is periodic rather than boot-only so a crashed
+ * stage is picked up within staleness-plus-a-tick even when nothing restarts.
+ */
+const RESUME_SWEEP_CRON = '30 */5 * * * *';
 
 /**
  * THE worker. One class runs every stage kind that will ever exist.
@@ -35,7 +53,7 @@ const PROGRESS_THROTTLE_MS = 1_000;
  * the import API surfaces.
  */
 @Injectable()
-export class ImportStageListener {
+export class ImportStageListener implements OnApplicationBootstrap {
   private readonly runners: Map<string, ImportStageRunner>;
 
   constructor(
@@ -50,6 +68,35 @@ export class ImportStageListener {
       [unpackStage.kind, unpackStage as ImportStageRunner],
       [parseStage.kind, parseStage as ImportStageRunner],
     ]);
+  }
+
+  /**
+   * Crash recovery at boot — the common case: the appliance restarted, and
+   * whatever was running when it went down is long stale by the time it is
+   * back. Anything more recent (or a claim some still-living process holds —
+   * a dev restart can leak one) is left for the periodic sweep, which applies
+   * the same staleness gates. See {@link ImportRunService.resumeInterrupted}.
+   *
+   * A recovery failure is logged, never thrown — a boot that dies because it
+   * could not resume yesterday's import would turn one stuck run into an
+   * appliance that cannot start.
+   */
+  async onApplicationBootstrap(): Promise<void> {
+    await this.sweep();
+  }
+
+  /** The same sweep, on a clock, so recovery does not depend on a reboot. */
+  @Cron(RESUME_SWEEP_CRON)
+  async sweepOnSchedule(): Promise<void> {
+    await this.sweep();
+  }
+
+  private async sweep(): Promise<void> {
+    try {
+      await this.runs.resumeInterrupted();
+    } catch (err) {
+      this.logger.error(err as Error, { message: 'Could not resume interrupted import runs' });
+    }
   }
 
   // ONE stage job at a time, appliance-wide. Stage jobs run in the API's own
@@ -119,6 +166,14 @@ export class ImportStageListener {
 
     const scratchDir = await this.scratch.ensureDir(payload.userId, payload.runId);
 
+    // The claim's pulse. Progress writes keep the stage fresh while work
+    // moves; this covers the silent stretches, so the recovery sweep can read
+    // staleness as death. Guarded by status = 'running' server-side, so a beat
+    // that fires after completion is a no-op.
+    const heartbeat = setInterval(() => {
+      this.runs.touchStage(stage.id).catch(() => undefined);
+    }, STAGE_HEARTBEAT_MS);
+
     try {
       const outcome = await runner.run(this.contextFor(payload, stage.id, scratchDir));
 
@@ -155,6 +210,8 @@ export class ImportStageListener {
       // Rethrown so pg-boss records it. The retry will find the stage `failed`
       // and no-op — see the class comment.
       throw err;
+    } finally {
+      clearInterval(heartbeat);
     }
   }
 
