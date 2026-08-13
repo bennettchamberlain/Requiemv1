@@ -6,6 +6,7 @@ import {
   Form,
   Input,
   LoadingButton,
+  PasswordInput,
   useForm,
   formDataResolver,
   formDataSchema as s,
@@ -165,7 +166,7 @@ export function SignupForm({ onSubmit }: SignupFormProps) {
             <Form.Item>
               <Form.Label>Email</Form.Label>
               <Form.Control>
-                <Input {...field} />
+                <Input {...field} autoComplete="username" />
               </Form.Control>
               <Form.Message />
             </Form.Item>
@@ -179,7 +180,7 @@ export function SignupForm({ onSubmit }: SignupFormProps) {
             <Form.Item>
               <Form.Label>Password</Form.Label>
               <Form.Control>
-                <Input {...field} type="password" />
+                <PasswordInput {...field} autoComplete="new-password" />
               </Form.Control>
               <Form.Message />
             </Form.Item>
