@@ -884,10 +884,9 @@ describeIfDb(`ObjectPromoteStage — against real Postgres (${availability.reaso
       `SELECT e.name
          FROM ci.inventory inv
          JOIN ci.entities e ON e.entity_id = inv.object_id
-        WHERE inv.user_id = $1 AND inv.source_id = $2`, [
-      realUserId,
-      eventA,
-    ]);
+        WHERE inv.user_id = $1 AND inv.source_id = $2`,
+      [realUserId, eventA],
+    );
 
     expect(row.name).toBe('Potatoes (renamed by the user)');
   });

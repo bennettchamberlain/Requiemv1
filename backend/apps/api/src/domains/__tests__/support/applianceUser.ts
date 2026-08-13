@@ -47,7 +47,6 @@ import { randomUUID } from 'node:crypto';
  */
 export const SYNTHETIC_TEST_USER_DOMAIN = 'example.invalid';
 
-
 /**
  * The email for a `ci.users` row a suite creates for itself.
  *
