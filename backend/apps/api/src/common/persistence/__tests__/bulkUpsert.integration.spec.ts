@@ -90,10 +90,34 @@ describeWithDatabase(`bulkInsertIdempotent against real Postgres (${availability
     if (dataSource?.isInitialized) {
       await dataSource.query(`DELETE FROM ci.events WHERE user_id = $1::uuid`, [userId]);
       await dataSource.query(`DELETE FROM ci.content WHERE user_id = $1::uuid`, [userId]);
+      await dataSource.query(`DELETE FROM ci.entities WHERE owner_user_id = $1::uuid`, [userId]);
       await dataSource.query(`DELETE FROM ci.users WHERE id = $1::uuid`, [userId]);
       await dataSource.destroy();
     }
   });
+
+  /**
+   * The CTI base row every detail row now hangs off.
+   *
+   * `ci.events` and `ci.content` became detail tables of `ci.entities`, and
+   * their composite foreign keys are DEFERRABLE INITIALLY DEFERRED — which is
+   * how `EventService` gets away with inserting the detail rows first and the
+   * bases afterwards inside ONE transaction. This suite calls
+   * `bulkInsertIdempotent` directly, so each statement is its own implicit
+   * transaction and the deferred check fires at the end of it. Seeding the base
+   * first is the honest equivalent, and it keeps the subject of these tests the
+   * `inserted` flag rather than the aggregate write path.
+   */
+  async function seedBase(id: string, entityType: 'Event' | 'Content'): Promise<string> {
+    await dataSource.query(
+      `INSERT INTO ci.entities (entity_id, entity_type, owner_user_id, name)
+            VALUES ($1::uuid, $2, $3::uuid, 'bulk upsert spec')
+       ON CONFLICT (entity_id) DO NOTHING`,
+      [id, entityType, userId],
+    );
+
+    return id;
+  }
 
   /** The provenance triple both tables dedupe on. */
   function triple(entity: { sourceType?: string | null; sourceSystem?: string | null; sourceId?: string | null }) {
@@ -106,14 +130,14 @@ describeWithDatabase(`bulkInsertIdempotent against real Postgres (${availability
 
   async function insertEvent(sourceId: string) {
     const repository = dataSource.getRepository(EventEntity);
+    const id = await seedBase(randomUUID(), 'Event');
 
     return bulkInsertIdempotent({
       repository,
       entities: [
         repository.create({
-          id: randomUUID(),
+          id,
           userId,
-          title: 'bulk upsert spec',
           eventType: 'spec',
           startTime: new Date(),
           sourceType: 'spec',
@@ -132,15 +156,15 @@ describeWithDatabase(`bulkInsertIdempotent against real Postgres (${availability
 
   async function insertContent(sourceId: string) {
     const repository = dataSource.getRepository(ContentEntity);
+    const id = await seedBase(randomUUID(), 'Content');
 
     return bulkInsertIdempotent({
       repository,
       entities: [
         repository.create({
-          id: randomUUID(),
+          id,
           userId,
           type: 'spec',
-          title: 'bulk upsert spec',
           sourceType: 'spec',
           sourceSystem: 'spec',
           sourceId,

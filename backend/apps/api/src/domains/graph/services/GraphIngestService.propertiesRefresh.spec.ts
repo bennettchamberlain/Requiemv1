@@ -46,6 +46,12 @@ function makeService(stored: Record<string, unknown>) {
     { upsertForEntities: jest.fn() } as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() } as any,
+    // The delta writer, doubled to match the repositories above: this suite runs
+    // against fakes and asserts on what the upsert REFRESHES, not on what the
+    // delta ledger records. It became a constructor argument when the
+    // graph_delta triggers were dropped and the application took over the write.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { record: jest.fn(), recordMany: jest.fn() } as any,
   );
 
   return { service, node };
