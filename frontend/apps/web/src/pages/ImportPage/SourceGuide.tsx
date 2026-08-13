@@ -73,6 +73,15 @@ export function SourceGuide({ guide, badges, children }: SourceGuideProps) {
         </div>
       ) : null}
 
+      {guide.expectedFormat ? (
+        <section className="space-y-1">
+          <h4 className="text-sm font-medium">Expected format</h4>
+          <div className="text-sm text-muted-foreground">
+            <Markdown>{guide.expectedFormat}</Markdown>
+          </div>
+        </section>
+      ) : null}
+
       {guide.whatImported?.length ? (
         <section className="space-y-1">
           <h4 className="text-sm font-medium">What this brings in</h4>
@@ -96,6 +105,18 @@ export function SourceGuide({ guide, badges, children }: SourceGuideProps) {
             ))}
           </ul>
         </section>
+      ) : null}
+
+      {guide.notes?.length ? (
+        // Headingless, as upstream: these are asides, not a section anyone
+        // scans for.
+        <ul className="list-disc space-y-0.5 pl-5 text-xs text-muted-foreground">
+          {guide.notes.map((note) => (
+            <li key={note}>
+              <Markdown>{note}</Markdown>
+            </li>
+          ))}
+        </ul>
       ) : null}
 
       {children}

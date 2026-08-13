@@ -39,6 +39,8 @@ export interface ImportSourceGuide {
   readonly expectedFormat?: string;
   readonly whatImported?: readonly string[];
   readonly caveats?: readonly string[];
+  /** Loose addenda, rendered without a heading. */
+  readonly notes?: readonly string[];
 }
 
 /**

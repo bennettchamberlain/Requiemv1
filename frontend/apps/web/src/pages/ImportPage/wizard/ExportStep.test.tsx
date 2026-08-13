@@ -97,6 +97,25 @@ describe('ExportStep', () => {
     expect(screen.getByText(/Service 1 of 2/)).toBeInTheDocument();
   });
 
+  it('renders the expected format and the notes, which most guides carry', () => {
+    renderStep({
+      entries: [
+        {
+          ...SPOTIFY,
+          source: {
+            ...SPOTIFY.source,
+            expectedFormat: 'A zip containing StreamingHistory*.json files.',
+            notes: ['The extended history arrives separately, weeks later.'],
+          },
+        },
+      ],
+    });
+
+    expect(screen.getByRole('heading', { name: /expected format/i })).toBeInTheDocument();
+    expect(screen.getByText(/StreamingHistory\*\.json/)).toBeInTheDocument();
+    expect(screen.getByText(/extended history arrives separately/i)).toBeInTheDocument();
+  });
+
   it('names the service in the export-page button, below the instructions', () => {
     renderStep({
       entries: [
