@@ -7,6 +7,7 @@ import { Injectable } from '@nestjs/common';
 // re-export it for the same reason.
 import '../datasources';
 import { allDataSources, type DataSource } from '../datasources/registry';
+import { WIZARD_SOURCES, type WizardSource } from '../sources/guides';
 
 /** One importer, as the catalog describes it. */
 export interface DataSourceSummary {
@@ -26,6 +27,41 @@ export interface DataSourceSummary {
   supportsFiles: boolean;
   /** Can pull from a live account, given credentials. */
   supportsApi: boolean;
+  /**
+   * How to get this export out of the service that holds it.
+   *
+   * The reason someone is on the import page at all is usually that they do not
+   * know where their data lives. Shipping the instructions with the catalog puts
+   * the answer where the question is asked, instead of in documentation they
+   * would have to go looking for.
+   */
+  guide: SourceGuide | null;
+}
+
+/** The authored export instructions for one source. */
+export interface SourceGuide {
+  title: string;
+  blurb: string;
+  ecosystem: string;
+  category: string;
+  /** Roughly how long between requesting the export and being able to download it. */
+  wait: string;
+  /** How the export is obtained: web-export, app-export, local-file, manual-upload, api. */
+  acquisition?: string;
+  /** Deep link to the export page, when the service has a stable one. */
+  url?: string;
+  stepsTitle?: string;
+  steps: string[];
+  /** A second way to get the data, when the service offers one with different tradeoffs. */
+  altPath?: { title: string; url?: string; steps: string[] };
+  /** What the importer actually reads once the archive is open. */
+  expectedFormat?: string;
+  /** What lands in the timeline from this source. */
+  whatImported?: string[];
+  /** Worth knowing BEFORE spending an hour exporting. */
+  caveats?: string[];
+  /** Loose addenda, rendered without a heading. */
+  notes?: string[];
 }
 
 /**
@@ -51,6 +87,46 @@ export class DataSourceCatalogService {
   }
 }
 
+
+/**
+ * Guides indexed by the importer they feed.
+ *
+ * A guide names its importer explicitly when they differ — several sources share
+ * the `generic` parser, and an ecosystem's one export can feed more than one
+ * importer (an Apple Contacts archive resolves to both `vcard` and
+ * `apple_contacts`). Built once: the registry does not change at runtime.
+ */
+const GUIDES_BY_IMPORTER = new Map<string, WizardSource>(
+  WIZARD_SOURCES.flatMap((source) => {
+    const keys = [source.importer ?? source.id, ...(source.alsoImporters ?? [])];
+
+    return keys.map((key) => [key, source] as const);
+  }),
+);
+
+function toGuide(source: WizardSource | undefined): SourceGuide | null {
+  if (source == null) {
+    return null;
+  }
+
+  return {
+    title: source.title,
+    blurb: source.blurb,
+    ecosystem: source.ecosystem,
+    category: source.category,
+    wait: source.wait,
+    acquisition: source.acquisition,
+    url: source.url,
+    stepsTitle: source.stepsTitle,
+    steps: source.steps,
+    altPath: source.altPath,
+    expectedFormat: source.expectedFormat,
+    whatImported: source.whatImported,
+    caveats: source.caveats,
+    notes: source.notes,
+  };
+}
+
 function toSummary(source: DataSource): DataSourceSummary {
   return {
     name: source.name,
@@ -60,5 +136,6 @@ function toSummary(source: DataSource): DataSourceSummary {
     stub: source.stub === true,
     supportsFiles: source.newFileImporter != null,
     supportsApi: source.newAPIImporter != null,
+    guide: toGuide(GUIDES_BY_IMPORTER.get(source.name)),
   };
 }
