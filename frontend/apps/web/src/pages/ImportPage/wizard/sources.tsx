@@ -154,7 +154,7 @@ export const SERVICE_LOGO: Record<string, string> = {
   apple_photos: 'apple_photos.svg',
   apple_contacts: 'apple_contacts.png',
   apple_calendar: 'apple_calendar.svg',
-  apple_health: 'apple_health.svg',
+  apple_health: 'apple_health.png',
   apple_music: 'apple_music.svg',
   apple_tv_plus: 'apple_tv_plus.svg',
   // Meta / X / Social
