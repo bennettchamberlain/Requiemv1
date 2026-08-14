@@ -24,6 +24,7 @@ import { GlobalExceptionsFilter } from '@ci/common/filters';
 import { IdFormatGuard } from '@ci/common/guards';
 import { LoggingModule, LoggerService, RequestLoggerMiddleware } from '@ci/common/logging';
 import { BodyParserMiddleware } from '@ci/common/middleware';
+import { serves } from '@ci/common/roles';
 import config from '@ci/configuration';
 import { ActivityModule } from '@ci/domains/activity';
 import { AgentModule } from '@ci/domains/agent';
@@ -197,6 +198,14 @@ export class App implements NestModule, OnApplicationBootstrap, OnApplicationShu
 
       exitAfterReporting();
     });
+
+    // The worker never binds; logging a port it does not serve is a lie in
+    // the logs.
+    if (!serves('web')) {
+      this.logger.log('Application started', { role: config.role });
+
+      return;
+    }
 
     let bindings: string[];
 

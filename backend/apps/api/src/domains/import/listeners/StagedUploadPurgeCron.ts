@@ -46,7 +46,9 @@ export class StagedUploadPurgeCron {
    * survives one extra hour costs disk. An unhandled rejection out of a cron
    * exits the process, which is a strictly worse outcome than one missed sweep.
    */
-  @Cron(STAGED_UPLOAD_PURGE_CRON)
+  // Runs where the stages run: the purge deletes staged bytes, and that is
+  // the worker's filesystem duty in a split deployment.
+  @Cron(STAGED_UPLOAD_PURGE_CRON, { role: 'worker' })
   async runOnSchedule(): Promise<void> {
     try {
       await this.purgeOnce();

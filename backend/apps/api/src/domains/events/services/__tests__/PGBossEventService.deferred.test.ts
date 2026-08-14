@@ -31,7 +31,7 @@ describe('PGBossEventService deferred completion', () => {
 
   beforeEach(() => {
     emitter = new EventEmitter2();
-    service = new PGBossEventService(emitter, logger);
+    service = new PGBossEventService(emitter, logger, {} as never);
   });
 
   it('resolves completed when the listener acks done', async () => {

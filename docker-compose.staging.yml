@@ -9,6 +9,7 @@ services:
       - ${CI_IMPORT_WORK_DIR:-./import-work}:/var/lib/ci-import
       - ${CI_REPO_DIR:-~/Downloads}:/repo:ro
     environment:
+      CI_ROLE: web
       DATABASE_HOST: database
       CI_IMPORT_SCRATCH_DIR: ${CI_IMPORT_SCRATCH_DIR:-/var/lib/ci-import/scratch}
       CI_IMPORT_ROOTS: ${CI_IMPORT_ROOTS:-["/repo"]}
@@ -42,6 +43,30 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    depends_on:
+      migrate-database:
+        condition: service_completed_successfully
+      database:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles: [ "staging" ]
+
+  # The headless half of the api — see docker-compose.production.yml.
+  worker:
+    image: ci/api
+    env_file:
+      - .env
+    volumes:
+      - ${CI_IMPORT_WORK_DIR:-./import-work}:/var/lib/ci-import
+    environment:
+      CI_ROLE: worker
+      DATABASE_HOST: database
+      OBJECT_STORE_URL: http://object-store:9000
+      CI_IMPORT_SCRATCH_DIR: ${CI_IMPORT_SCRATCH_DIR:-/var/lib/ci-import/scratch}
+      SENTRY_DSN: ${SENTRY_DSN_API:-}
+      SENTRY_ENV: ${SENTRY_ENV:-}
+    networks:
+      - ci
     depends_on:
       migrate-database:
         condition: service_completed_successfully

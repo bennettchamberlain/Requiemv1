@@ -20,6 +20,16 @@ const booleanStringSchema = z.preprocess((val) => {
 export const ConfigSchema = z.object({
   host: z.string(),
   port: z.number(),
+  /**
+   * Which half of the appliance this process is. `all` (the default) is the
+   * single-process topology: HTTP plus every queue and cron — standalone dev
+   * and role-less deployments keep working untouched. `web` serves HTTP and
+   * everything EXCEPT the queues/crons marked for the worker; `worker` is a
+   * headless process serving exactly those. The split exists because import
+   * stage jobs run long synchronous parser stretches, and sharing an event
+   * loop with interactive requests makes buttons hang.
+   */
+  role: z.enum(['all', 'web', 'worker']).default('all'),
   hostname: z.string(),
   logging: z.object({
     level: z.string(),

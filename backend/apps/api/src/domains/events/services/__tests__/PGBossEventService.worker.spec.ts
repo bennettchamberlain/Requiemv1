@@ -150,7 +150,7 @@ function makeHarness(options: {
   };
 
   const emitter = new EventEmitter2();
-  const service = new PGBossEventService(emitter, logger as unknown as LoggerService);
+  const service = new PGBossEventService(emitter, logger as unknown as LoggerService, {} as never);
 
   const backlogs = new Map<string, QueuedJob[]>();
   const fetchCalls: FetchCall[] = [];

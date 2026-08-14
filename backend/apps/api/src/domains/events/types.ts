@@ -39,6 +39,16 @@ export type QueueOptions = {
    * above the global per-queue ceiling. Ignored by LocalEventService.
    */
   localConcurrency?: number;
+
+  /**
+   * Which process consumes this queue. Defaults to `web`, the process every
+   * topology has. A queue whose jobs are heavy in-process work declares
+   * `worker` and is consumed only by the headless worker process (CI_ROLE) —
+   * pg-boss lives in Postgres, so any process can consume; this decides which
+   * one does. Both roles still CREATE the queue and can SEND to it. Ignored
+   * by LocalEventService (single-process by definition).
+   */
+  role?: 'web' | 'worker';
 };
 
 export type EventPayload<E extends keyof EventPayloads> = EventPayloads[E];

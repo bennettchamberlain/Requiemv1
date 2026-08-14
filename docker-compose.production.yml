@@ -22,6 +22,10 @@ services:
       # deleted. Point CI_REPO_DIR somewhere else to expose a different folder.
       - ${CI_REPO_DIR:-~/Downloads}:/repo:ro
     environment:
+      # This container is the web half; the import worker below consumes the
+      # heavy queues. Remove the worker service and set this to `all` to run
+      # single-process.
+      CI_ROLE: web
       ENABLE_HBPE: ${ENABLE_HBPE:-true}
       # Off /var/tmp deliberately, and load-bearing: scratch must share the
       # inbox's filesystem for the rename above, and living on the mount means
@@ -57,6 +61,40 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    depends_on:
+      generate-secrets:
+        condition: service_completed_successfully
+      migrate-database:
+        condition: service_completed_successfully
+      database:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles: [ "production" ]
+
+  # The headless half of the api: same image, same code, no HTTP. Consumes the
+  # queues and runs the crons marked role: worker — import stage jobs, whose
+  # parsers run long synchronous stretches that must not share an event loop
+  # with interactive requests. Exactly ONE replica: the import recovery sweep
+  # assumes a single worker. No healthcheck on purpose (nothing depends on it,
+  # and it serves no port); restart covers crashes, and the staleness sweep
+  # resumes whatever a crash interrupted.
+  worker:
+    image: ci/api
+    volumes:
+      - secrets:/run/secrets:ro
+      # The same working-area mount as the api: the worker MOVES staged
+      # sources into run scratch, so both halves must see one filesystem.
+      - ${CI_IMPORT_WORK_DIR:-./import-work}:/var/lib/ci-import
+    environment:
+      CI_ROLE: worker
+      CI_IMPORT_SCRATCH_DIR: ${CI_IMPORT_SCRATCH_DIR:-/var/lib/ci-import/scratch}
+      SENTRY_DSN: ${SENTRY_DSN_API:-}
+      SENTRY_ENV: ${SENTRY_ENV:-}
+      CI_TELEMETRY: ${CI_TELEMETRY:-}
+      CI_LOCAL_ONLY: ${CI_LOCAL_ONLY:-}
+      CI_SERVER_VERSION: ${CI_SERVER_VERSION:-}
+    networks:
+      - ci
     depends_on:
       generate-secrets:
         condition: service_completed_successfully

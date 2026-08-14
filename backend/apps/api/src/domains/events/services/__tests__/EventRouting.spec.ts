@@ -68,7 +68,7 @@ describe('event routing', () => {
    */
   function makePgBossService(): PGBossEventService {
     logger = makeLogger();
-    const service = new PGBossEventService(new EventEmitter2(), logger as unknown as LoggerService);
+    const service = new PGBossEventService(new EventEmitter2(), logger as unknown as LoggerService, {} as never);
     bossSend = jest.fn(async (queue: string) => `job-${queue}`);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (service as any).boss = { send: bossSend };

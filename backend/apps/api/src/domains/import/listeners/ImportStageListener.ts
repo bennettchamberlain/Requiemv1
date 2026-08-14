@@ -1,6 +1,7 @@
 import { Injectable, type OnApplicationBootstrap } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/logging';
+import { serves } from '@ci/common/roles';
 import { Cron } from '@ci/common/schedule';
 import { OnEvent } from '@ci/domains/events';
 
@@ -85,11 +86,18 @@ export class ImportStageListener implements OnApplicationBootstrap {
    * appliance that cannot start.
    */
   async onApplicationBootstrap(): Promise<void> {
+    // Only the process that RUNS stages recovers them: two processes racing
+    // resumeInterrupted() over the same runs is the split topology's one
+    // actively harmful duplicate.
+    if (!serves('worker')) {
+      return;
+    }
+
     await this.sweep();
   }
 
   /** The same sweep, on a clock, so recovery does not depend on a reboot. */
-  @Cron(RESUME_SWEEP_CRON)
+  @Cron(RESUME_SWEEP_CRON, { role: 'worker' })
   async sweepOnSchedule(): Promise<void> {
     await this.sweep();
   }
@@ -108,7 +116,10 @@ export class ImportStageListener implements OnApplicationBootstrap {
   // the event loop and the connection pool until Skip on an onboarding page
   // hangs. Serial costs nothing real: the work is disk-bound on one volume,
   // and a run's stages already chain one at a time.
-  @OnEvent(ImportStageEvent, { queue: IMPORT_QUEUE, queueOptions: { localConcurrency: 1 } })
+  // `role: 'worker'`: stage jobs run in the headless worker process (when a
+  // deployment splits roles), so a parser's synchronous stretches cannot
+  // stutter the web process serving buttons.
+  @OnEvent(ImportStageEvent, { queue: IMPORT_QUEUE, queueOptions: { role: 'worker', localConcurrency: 1 } })
   async handleStage(payload: unknown): Promise<void> {
     await this.runStage(payload);
   }

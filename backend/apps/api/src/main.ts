@@ -7,9 +7,27 @@ import cookieParser from 'cookie-parser';
 
 import { App } from '@ci/application';
 import { LoggerService } from '@ci/common/logging';
+import { processRole } from '@ci/common/roles';
 import config from '@ci/configuration';
 
-(async function () {
+/**
+ * The headless half of the appliance: the full application context — same
+ * modules, same DI graph, same config — with no HTTP server. It exists so the
+ * queues and crons marked `role: 'worker'` (import stages, whose parsers run
+ * long synchronous stretches) execute in a process whose event loop no
+ * interactive request shares. The pg-boss loops keep the process alive;
+ * shutdown hooks drain them on SIGTERM exactly as the web process does.
+ */
+async function bootstrapWorker(): Promise<void> {
+  const app = await NestFactory.createApplicationContext(App, { bufferLogs: true });
+
+  const logger = await app.resolve(LoggerService);
+
+  app.useLogger(logger);
+  app.enableShutdownHooks();
+}
+
+async function bootstrapWeb(): Promise<void> {
   const app = await NestFactory.create(App, {
     bufferLogs: true,
     bodyParser: false,
@@ -47,4 +65,12 @@ import config from '@ci/configuration';
   app.enableShutdownHooks();
 
   await app.listen(config.port, config.host);
+}
+
+(async function () {
+  if (processRole() === 'worker') {
+    await bootstrapWorker();
+  } else {
+    await bootstrapWeb();
+  }
 })();

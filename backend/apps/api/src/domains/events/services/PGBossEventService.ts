@@ -1,10 +1,13 @@
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { InjectDataSource } from '@nestjs/typeorm';
 import plimit from 'p-limit';
 import PgBoss, { JobWithMetadata } from 'pg-boss';
+import { DataSource } from 'typeorm';
 
 import { ContextService } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import { serves } from '@ci/common/roles';
 import config from '@ci/configuration';
 
 import { DEFAULT_JOB_PRIORITY } from '../constants';
@@ -23,6 +26,14 @@ interface EventData {
 // parameter/row count so a multi-million-row backfill streams in fixed chunks
 // instead of one enormous statement.
 const PGBOSS_INSERT_CHUNK = 2000;
+
+// Serializes queue PROVISIONING across processes. The web and worker halves
+// both create/update every queue at boot, and pg-boss's create_queue
+// deadlocks when two sessions race the same queue name (the insert into
+// pgboss.queue and the partition DDL take their locks in opposite orders).
+// Arbitrary value; must only be unique among this codebase's advisory locks
+// (the test-side schemaLock uses 728104512).
+const QUEUE_PROVISION_LOCK_KEY = 804_551_297;
 
 @Injectable()
 export class PGBossEventService extends EventService implements OnModuleInit, OnModuleDestroy {
@@ -86,6 +97,7 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
   constructor(
     protected readonly eventEmitter: EventEmitter2,
     protected readonly logger: LoggerService,
+    @InjectDataSource() private readonly dataSource: DataSource,
   ) {
     super();
     this.logger.setContext(PGBossEventService.name);
@@ -128,6 +140,18 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
 
     this.warnOnOrphanEvents();
 
+    // Provisioning is serialized appliance-wide: with the web and worker
+    // processes booting together, unserialized create_queue calls deadlock
+    // intermittently (seen live: 40P01 between the pgboss.queue insert and
+    // partition DDL). Session-level advisory lock on a dedicated app-pool
+    // connection, while the creates themselves run through pg-boss's pool —
+    // an advisory lock cares about sessions, not which pool does the DDL.
+    const provisionLock = this.dataSource.createQueryRunner();
+
+    await provisionLock.connect();
+    await provisionLock.query('SELECT pg_advisory_lock($1)', [QUEUE_PROVISION_LOCK_KEY]);
+
+    try {
     // Create the shared dead-letter queue FIRST so the work queues can reference
     // it. Long retention so exhausted-retry jobs stay inspectable; no worker
     // consumes it (it is not a registered listener queue), so entries accumulate.
@@ -144,10 +168,11 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
       // Listener-requested queue-level options (expiration/retries) — used by
       // deferred-completion queues whose jobs stay active while an external
       // executor works, so their expiration must match the work's runtime.
-      // `localConcurrency` is OURS (it sizes the in-process semaphore below),
-      // not pg-boss's — split it off so the queue-create call sees only real
+      // `localConcurrency` and `role` are OURS (the semaphore size below, and
+      // which process consumes — used by the worker-start loop), not
+      // pg-boss's — split them off so the queue-create call sees only real
       // pg-boss options.
-      const { localConcurrency, ...queueOptions } = EventListenerRegistry.getQueueOptions(queue) ?? {};
+      const { localConcurrency, role, ...queueOptions } = EventListenerRegistry.getQueueOptions(queue) ?? {};
 
       const options = { name: queue, deadLetter: PGBossEventService.DEAD_LETTER_QUEUE, ...queueOptions };
 
@@ -157,18 +182,41 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
         queue,
         plimit(Math.max(1, Math.min(localConcurrency ?? this.perQueueConcurrency, this.perQueueConcurrency))),
       );
-      this.logger.debug(`Created queue: ${queue} (deadLetter=${PGBossEventService.DEAD_LETTER_QUEUE})`);
+      this.logger.debug(
+        `Created queue: ${queue} (role=${role ?? 'web'}, deadLetter=${PGBossEventService.DEAD_LETTER_QUEUE})`,
+      );
+    }
+    } finally {
+      try {
+        await provisionLock.query('SELECT pg_advisory_unlock($1)', [QUEUE_PROVISION_LOCK_KEY]);
+      } finally {
+        await provisionLock.release();
+      }
     }
 
     try {
       this.logger.debug('Initializing work queues...');
 
-      // Start workers for all discovered queues
+      // Start workers for the discovered queues THIS PROCESS serves. Every
+      // process creates every queue and may send to every queue; consumption
+      // is what the role decides — a queue marked `worker` runs its jobs in
+      // the headless worker process, where a parser's synchronous stretches
+      // cannot stutter the web process's event loop.
+      let started = 0;
+
       for (const queue of discoveredQueues) {
+        const queueRole = EventListenerRegistry.getQueueOptions(queue)?.role ?? 'web';
+
+        if (!serves(queueRole)) {
+          this.logger.debug(`Queue ${queue} belongs to role ${queueRole}; not consuming here`);
+          continue;
+        }
+
         this.stopTasks.push(this.work(queue));
+        started += 1;
       }
 
-      this.logger.debug(`Initialized ${discoveredQueues.size} work queues`);
+      this.logger.debug(`Initialized ${started} of ${discoveredQueues.size} work queues for this role`);
     } catch (err: unknown) {
       this.logger.error(
         'Failed to initialize work queue client',
