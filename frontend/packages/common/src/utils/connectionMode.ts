@@ -227,9 +227,10 @@ function useConnectionModeState(): ConnectionModeState {
     // pin the mode to that one answer for the life of the page. Poll, and skip
     // the tick while the document is hidden: a backgrounded tab has nothing to
     // show, and `visibilitychange` re-probes the moment it comes back.
-    // Read through a local binding: this module also runs in non-DOM contexts
-    // (native bootstrap, tests) where `document` is not declared at all, and a
-    // bare reference there is a ReferenceError, not `undefined`.
+    //
+    // `document` is read through a local binding because this module also runs
+    // where it is not declared at all (SSR, node tests) — a bare reference
+    // there is a ReferenceError, not `undefined`.
     const doc = typeof document === 'undefined' ? undefined : document;
 
     const tick = () => {

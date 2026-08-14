@@ -229,13 +229,25 @@ describe('resolveConnectionMode — race respects the per-probe timeout', () => 
     // indicator read "Not synced yet" against a perfectly reachable server.
     const remoteLatencyMs = LOCAL_PROBE_TIMEOUT_MS + 200;
 
+    // Honours the abort signal the way real `fetch` does — a stand-in that
+    // ignores it is immune to fetchJson's timeout (which has no race of its
+    // own: it aborts the request and lets the rejection propagate), so it
+    // would pass under any budget and assert nothing.
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => {
-        await new Promise((resolve) => setTimeout(resolve, remoteLatencyMs));
+      vi.fn(
+        (_input: RequestInfo, init?: RequestInit) =>
+          new Promise<Response>((resolve, reject) => {
+            const timer = setTimeout(() => resolve(okResponse()), remoteLatencyMs);
 
-        return okResponse();
-      }),
+            init?.signal?.addEventListener('abort', () => {
+              clearTimeout(timer);
+              const err = new Error('The operation was aborted');
+              err.name = 'AbortError';
+              reject(err);
+            });
+          }),
+      ),
     );
 
     const resultPromise = resolveConnectionMode();
