@@ -16,6 +16,18 @@ _die() {
   return 1 2>/dev/null || exit 1
 }
 
+# CI already injects NODE_AUTH_TOKEN as a secret, so there is nothing to fetch.
+# Fall through anyway and `gh auth refresh` runs with no TTY, exits asking for
+# --hostname, and takes `make init` — and with it every tag publish — down with
+# it. Honour a token that is already present, wherever it came from.
+if [[ -n "${NODE_AUTH_TOKEN:-}" ]]; then
+  echo "gh-packages-auth: NODE_AUTH_TOKEN already set, using it as-is"
+  if [[ "${1:-}" == "--install" ]]; then
+    yarn install
+  fi
+  return 0 2>/dev/null || exit 0
+fi
+
 command -v gh >/dev/null 2>&1 || _die "gh CLI not found — https://cli.github.com/"
 gh auth status >/dev/null 2>&1 || _die "not logged in — run 'gh auth login' first"
 
