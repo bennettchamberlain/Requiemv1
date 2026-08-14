@@ -99,17 +99,23 @@ export function SourceGuide({ guide, logo, badges, children }: SourceGuideProps)
         </div>
       </div>
 
-      <Steps title={guide.stepsTitle ?? 'How to export'} steps={guide.steps} />
+      {/* One wrapper for the steps AND their button, exactly like the alt
+          path below: as separate flex items they would sit a card gap apart
+          (the shared Card's gap-6 plus this card's space-y margins), which
+          visually orphans the button from the instructions it concludes. */}
+      <div className="space-y-3">
+        <Steps title={guide.stepsTitle ?? 'How to export'} steps={guide.steps} />
 
-      {guide.url ? (
-        // Below the steps, as upstream places it: the instructions explain what
-        // the page will ask, so the button is the last thing read, not the
-        // first thing clicked.
-        <ExportCta url={guide.url} label={`Open the ${shortTitle(guide.title)} export page`} />
-      ) : null}
+        {guide.url ? (
+          // Below the steps, as upstream places it: the instructions explain
+          // what the page will ask, so the button is the last thing read, not
+          // the first thing clicked.
+          <ExportCta url={guide.url} label={`Open the ${shortTitle(guide.title)} export page`} />
+        ) : null}
+      </div>
 
       {guide.altPath ? (
-        <div className="space-y-3 rounded-md border border-dashed p-3">
+        <div className="space-y-3">
           <Steps title={guide.altPath.title} steps={guide.altPath.steps} />
           {guide.altPath.url ? (
             <ExportCta
