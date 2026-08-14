@@ -83,9 +83,7 @@ async function probeHealth(
 
 /** Probes the configured remote CI-Server origin's `/api/health` endpoint. */
 function probeRemote(): Promise<boolean> {
-  return probeHealth(REMOTE_PROBE_TIMEOUT_MS, (signal) =>
-    fetchJson(buildApiUrl('/api/health'), { signal }),
-  );
+  return probeHealth(REMOTE_PROBE_TIMEOUT_MS, (signal) => fetchJson(buildApiUrl('/api/health'), { signal }));
 }
 
 /**

@@ -107,8 +107,14 @@ describe('PrimaryNavigation — status chips', () => {
 
     // Nothing between the chip and the header may take it out of flow: a
     // `fixed`/`absolute` ancestor is what let it land on top of the controls.
+    // Responsive variants count — `md:fixed` lifts it out on exactly the wide
+    // viewports this test speaks for — so an optional `<variant>:` prefix is
+    // part of the match. `className` is coerced because on an SVG element it
+    // is an SVGAnimatedString rather than a string.
+    const outOfFlow = /(^|\s)(?:[\w-]+:)*(fixed|absolute)(\s|$)/;
+
     for (let node = chip.parentElement; node && node !== header; node = node.parentElement) {
-      expect(node.className).not.toMatch(/(^|\s)(fixed|absolute)(\s|$)/);
+      expect(String(node.className)).not.toMatch(outOfFlow);
     }
   });
 
