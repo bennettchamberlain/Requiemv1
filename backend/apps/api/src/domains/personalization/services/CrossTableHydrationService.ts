@@ -124,13 +124,23 @@ export class CrossTableHydrationService {
         continue;
       }
 
+      // No slicing here any more. shouldSkipHydrationCandidate now rejects any
+      // text longer than the 64-char key window, so by this point the label is
+      // short enough that both the name and the key are the text verbatim —
+      // which is what makes the dedupe key meaningful. Slicing was what let a
+      // paragraph become a concept named by an arbitrary cut of itself.
+      //
+      // `type` is not asserted. It used to be hardcoded 'activity', which was
+      // already wrong for the answers this path actually sees ("Documentaries"
+      // is not an activity); guessing a category from a one-word answer is not
+      // something this extractor can do, so it records provenance and nothing more.
       const entities: GraphEntityInputDto[] = [
         {
-          key: `${sourceJob}:concept:${text.slice(0, 64).toLowerCase()}`,
+          key: `${sourceJob}:concept:${text.toLowerCase()}`,
           entityType: 'Concept',
-          name: text.slice(0, 120),
+          name: text,
           sourceSystem: sourceJob,
-          properties: { type: 'activity', source: sourceJob },
+          properties: { source: sourceJob },
         },
       ];
 
