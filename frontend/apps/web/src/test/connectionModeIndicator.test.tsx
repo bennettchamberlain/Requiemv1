@@ -14,41 +14,27 @@
 
 import { setApiKey } from '@ci/common/src/utils/apiAuth';
 import { setApiBaseUrl } from '@ci/common/src/utils/apiBase';
-import { ConnectionModeProvider } from '@ci/common/src/utils/connectionMode';
-import { render, screen, waitFor } from '@testing-library/react';
+import {
+  CONNECTION_REPROBE_INTERVAL_MS,
+  CONNECTION_RESOLVE_TIMEOUT_MS,
+  ConnectionModeProvider,
+} from '@ci/common/src/utils/connectionMode';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ConnectionModeIndicator } from '@/components/ConnectionModeIndicator';
 
+import { okResponse, slowServer } from './fetchFakes';
+
 /** Slower than an on-device sidecar should ever be — the tunnel's real latency. */
 const TUNNEL_LATENCY_MS = 650;
 
-function okResponse(body: unknown = { status: 'ok' }): Response {
-  return { ok: true, status: 200, text: async () => JSON.stringify(body) } as unknown as Response;
-}
-
 /**
- * A healthy server that takes `latencyMs` to answer, and that honours an abort
- * the way real `fetch` does. Honouring it is the whole point: fetchJson's
- * timeout has no race of its own — it aborts the request and lets the
- * rejection propagate — so a stand-in that ignores the signal answers late and
- * succeeds under any budget, and the test asserts nothing.
+ * The one case here that waits on a real timer. `waitFor`'s 1s default leaves
+ * only ~300ms of headroom over the latency being simulated, which is not enough
+ * on a loaded CI runner — the budget is stated explicitly rather than inherited.
  */
-function slowServer(latencyMs: number) {
-  return vi.fn(
-    (_input: RequestInfo, init?: RequestInit) =>
-      new Promise<Response>((resolve, reject) => {
-        const timer = setTimeout(() => resolve(okResponse()), latencyMs);
-
-        init?.signal?.addEventListener('abort', () => {
-          clearTimeout(timer);
-          const err = new Error('The operation was aborted');
-          err.name = 'AbortError';
-          reject(err);
-        });
-      }),
-  );
-}
+const SLOW_SERVER_WAIT_MS = 5_000;
 
 function renderIndicator() {
   return render(
@@ -73,7 +59,9 @@ describe('ConnectionModeIndicator', () => {
 
     // "Connected" is the one mode kept to just the dot, so the label is present
     // for screen readers only — the chip is found by its accessible name.
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Connected' })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Connected' })).toBeInTheDocument(), {
+      timeout: SLOW_SERVER_WAIT_MS,
+    });
     expect(screen.queryByText('Not synced yet')).not.toBeInTheDocument();
   });
 
@@ -114,5 +102,66 @@ describe('ConnectionModeIndicator', () => {
     renderIndicator();
 
     await waitFor(() => expect(screen.getByText('Not synced yet')).toBeInTheDocument());
+  });
+
+  it('re-probes on the interval, so a mode resolved once at mount cannot pin the chip', async () => {
+    vi.useFakeTimers();
+
+    const fetchMock = vi.fn(async () => okResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderIndicator();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // The appliance going away (or coming back) while the network stays up
+    // raises neither `online` nor `offline`; only the timer catches it.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CONNECTION_REPROBE_INTERVAL_MS);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('recovers from a probe that never settles instead of hiding the chip for the life of the page', async () => {
+    vi.useFakeTimers();
+
+    // Answers its headers and then stalls forever — fetchJson clears its abort
+    // timer once headers arrive, so nothing inside the probe can end this.
+    const fetchMock = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          setTimeout(
+            () =>
+              resolve({ ok: true, status: 200, text: () => new Promise(() => {}) } as unknown as Response),
+            10,
+          );
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { container } = renderIndicator();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CONNECTION_RESOLVE_TIMEOUT_MS - 100);
+    });
+    expect(container).toBeEmptyDOMElement();
+
+    // The outer bound settles the hung resolve as "fresh"...
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(screen.getByText('Not synced yet')).toBeInTheDocument();
+
+    // ...and, crucially, leaves the hook able to probe again: a wedged
+    // in-flight ref would make every later tick a silent no-op.
+    const callsSoFar = fetchMock.mock.calls.length;
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CONNECTION_REPROBE_INTERVAL_MS);
+    });
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(callsSoFar);
   });
 });

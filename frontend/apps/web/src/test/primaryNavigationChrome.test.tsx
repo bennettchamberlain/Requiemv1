@@ -22,6 +22,7 @@ import { OutboxQueueProvider } from '@ci/common/src/utils/outboxFlush';
 import { screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { okResponse, urlOf } from './fetchFakes';
 import { renderWithProviders } from './renderWithProviders';
 
 /** The chip's own providers, nested as App.tsx nests them. */
@@ -65,19 +66,13 @@ vi.mock('@/components/modals/AddItemModal', () => ({ AddPersonModal: () => null 
 vi.mock('@/components/modals/AddItemModal/AddConceptModal.tsx', () => ({ AddConceptModal: () => null }));
 vi.mock('@/components/modals/InventoryItemModal', () => ({ InventoryItemModal: () => null }));
 
-function okResponse(body: unknown = { status: 'ok' }): Response {
-  return { ok: true, status: 200, text: async () => JSON.stringify(body) } as unknown as Response;
-}
-
 beforeEach(() => {
   // An unreachable appliance is the case that produced the report: it resolves
   // to the widest label, "Not synced yet".
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo) => {
-      const url = typeof input === 'string' ? input : (input as Request).url;
-
-      if (url.includes('/api/health')) {
+      if (urlOf(input).includes('/api/health')) {
         throw new Error('appliance unreachable');
       }
 
