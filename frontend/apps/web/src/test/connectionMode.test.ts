@@ -1,6 +1,10 @@
 import { setApiKey } from '@ci/common/src/utils/apiAuth';
 import { setApiBaseUrl } from '@ci/common/src/utils/apiBase';
-import { CONNECTION_PROBE_TIMEOUT_MS, resolveConnectionMode } from '@ci/common/src/utils/connectionMode';
+import {
+  LOCAL_PROBE_TIMEOUT_MS,
+  REMOTE_PROBE_TIMEOUT_MS,
+  resolveConnectionMode,
+} from '@ci/common/src/utils/connectionMode';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 type GlobalWithWindow = { window?: unknown };
@@ -200,7 +204,7 @@ describe('resolveConnectionMode — race respects the per-probe timeout', () => 
     });
 
     // Comfortably before the timeout: still pending.
-    await vi.advanceTimersByTimeAsync(CONNECTION_PROBE_TIMEOUT_MS - 100);
+    await vi.advanceTimersByTimeAsync(REMOTE_PROBE_TIMEOUT_MS - 100);
     expect(settled).toBe(false);
 
     // Crossing the timeout aborts the fetch, which the probe treats as a
@@ -214,5 +218,30 @@ describe('resolveConnectionMode — race respects the per-probe timeout', () => 
     // does not hang the race — is the resolved value above; the mock was
     // reached at all is enough signal that the real probe ran.
     expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it('resolves "connected" for a remote that answers slower than an on-device server would', async () => {
+    vi.useFakeTimers();
+    setWindow({});
+
+    // A remote appliance reached over a WAN/tunnel: healthy, but well past the
+    // budget that suits an on-device sidecar. Aborting here is what made the
+    // indicator read "Not synced yet" against a perfectly reachable server.
+    const remoteLatencyMs = LOCAL_PROBE_TIMEOUT_MS + 200;
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        await new Promise((resolve) => setTimeout(resolve, remoteLatencyMs));
+
+        return okResponse();
+      }),
+    );
+
+    const resultPromise = resolveConnectionMode();
+
+    await vi.advanceTimersByTimeAsync(remoteLatencyMs + 10);
+
+    expect(await resultPromise).toBe('connected');
   });
 });

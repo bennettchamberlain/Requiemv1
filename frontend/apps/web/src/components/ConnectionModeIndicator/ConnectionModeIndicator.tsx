@@ -32,7 +32,7 @@ const LABEL_KEY: Record<ConnectionMode, string> = {
  * in a future pass.
  */
 export function ConnectionModeIndicator() {
-  const { mode, refresh } = useConnectionMode();
+  const { mode, isResolved, refresh } = useConnectionMode();
   const { t } = useTranslation();
 
   const label = t(LABEL_KEY[mode]);
@@ -43,6 +43,13 @@ export function ConnectionModeIndicator() {
     console.log(`[ConnectionModeIndicator] tapped, mode=${mode}`);
     refresh();
   }, [mode, refresh]);
+
+  // Nothing to report until the first probe answers: the pre-probe mode is
+  // "fresh", and rendering it would tell the user the app has never synced
+  // every time a page loads, moments before the health check says otherwise.
+  if (!isResolved) {
+    return null;
+  }
 
   return (
     <Badge

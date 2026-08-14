@@ -27,15 +27,30 @@ import { localHubHeaders, localHubSession } from './localHub';
 
 export type ConnectionMode = 'connected' | 'local' | 'cached' | 'fresh';
 
-// Per the design doc: each probe gets a short timeout so the indicator
-// settles quickly instead of hanging on a dead connection. 500ms sits in the
-// middle of the spec'd 300-800ms window.
-export const CONNECTION_PROBE_TIMEOUT_MS = 500;
+// Each probe gets a timeout so the indicator settles instead of hanging on a
+// dead connection. The sidecar is on the device itself, so the design doc's
+// 300-800ms window applies to it: anything slower than that is not a healthy
+// local server.
+export const LOCAL_PROBE_TIMEOUT_MS = 500;
+
+// The remote appliance is not on-device, and the same 500ms budget made the
+// indicator wrong for every deployment reached over a WAN: an appliance served
+// through a Cloudflare tunnel answers /api/health in ~600-700ms, so the probe
+// was aborted while healthy and the chip read "Not synced yet" against a server
+// the rest of the app was talking to perfectly well. This bounds an unreachable
+// server without calling a reachable-but-distant one dead.
+export const REMOTE_PROBE_TIMEOUT_MS = 3_000;
+
+// A mode resolved once at mount goes stale the moment anything changes, and the
+// `online`/`offline` events do not fire for the failure that matters most here
+// (the appliance going away while the network stays up). Re-probe on a timer so
+// the chip — and the outbox drain it gates — recover on their own.
+export const CONNECTION_REPROBE_INTERVAL_MS = 30_000;
 
 /** Probes the configured remote CI-Server origin's `/api/health` endpoint. */
 async function probeRemote(): Promise<boolean> {
   try {
-    await fetchJson(buildApiUrl('/api/health'), { timeout: CONNECTION_PROBE_TIMEOUT_MS });
+    await fetchJson(buildApiUrl('/api/health'), { timeout: REMOTE_PROBE_TIMEOUT_MS });
 
     return true;
   } catch {
@@ -63,7 +78,7 @@ async function probeLocal(): Promise<boolean> {
 
   try {
     await fetchJson(`${session.baseUrl}/api/health`, {
-      timeout: CONNECTION_PROBE_TIMEOUT_MS,
+      timeout: LOCAL_PROBE_TIMEOUT_MS,
       skipApiKey: true,
       headers: localHubHeaders(session),
     });
@@ -137,11 +152,21 @@ export async function resolveConnectionMode(): Promise<ConnectionMode> {
 
 interface ConnectionModeState {
   mode: ConnectionMode;
+  /**
+   * False until the first probe settles. `mode` starts at "fresh" because it
+   * has to start somewhere, but that initial value is an absence of an answer,
+   * not an answer — surfacing it as one makes every load flash "Not synced yet"
+   * before the health check has had a chance to reply. UI that reports the mode
+   * to the user should render nothing until this is true; consumers that act on
+   * it (the outbox drain) need no change, since they only act on "connected".
+   */
+  isResolved: boolean;
   refresh: () => void;
 }
 
 function useConnectionModeState(): ConnectionModeState {
   const [mode, setMode] = useState<ConnectionMode>('fresh');
+  const [isResolved, setIsResolved] = useState(false);
 
   // Coalesces overlapping refreshes (e.g. an `online` event firing while a
   // previous check is still in flight) into a single run.
@@ -161,7 +186,10 @@ function useConnectionModeState(): ConnectionModeState {
     }
 
     const run = resolveConnectionMode()
-      .then(setMode)
+      .then((resolved) => {
+        setMode(resolved);
+        setIsResolved(true);
+      })
       .finally(() => {
         inFlightRef.current = null;
 
@@ -193,13 +221,44 @@ function useConnectionModeState(): ConnectionModeState {
     window.addEventListener('online', refresh);
     window.addEventListener('offline', refresh);
 
+    // Neither event covers the appliance itself going away (or coming back)
+    // while the network stays up, and a single mount-time probe that lost a
+    // race — a slow first paint, a tunnel still warming up — would otherwise
+    // pin the mode to that one answer for the life of the page. Poll, and skip
+    // the tick while the document is hidden: a backgrounded tab has nothing to
+    // show, and `visibilitychange` re-probes the moment it comes back.
+    // Read through a local binding: this module also runs in non-DOM contexts
+    // (native bootstrap, tests) where `document` is not declared at all, and a
+    // bare reference there is a ReferenceError, not `undefined`.
+    const doc = typeof document === 'undefined' ? undefined : document;
+
+    const tick = () => {
+      if (doc?.visibilityState === 'hidden') {
+        return;
+      }
+
+      refresh();
+    };
+
+    const onVisibilityChange = () => {
+      if (doc?.visibilityState === 'visible') {
+        refresh();
+      }
+    };
+
+    const timer = setInterval(tick, CONNECTION_REPROBE_INTERVAL_MS);
+
+    doc?.addEventListener('visibilitychange', onVisibilityChange);
+
     return () => {
+      clearInterval(timer);
+      doc?.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('online', refresh);
       window.removeEventListener('offline', refresh);
     };
   }, [refresh]);
 
-  return { mode, refresh };
+  return { mode, isResolved, refresh };
 }
 
 const { Provider, useHookContext } = createHookContext(useConnectionModeState, 'useConnectionMode');
