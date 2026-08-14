@@ -47,6 +47,10 @@ type DestinationCounts = Partial<Record<Destination, number>>;
  * `push_status = 'pending'` rather than by offset: the query IS the resume
  * point, and it shrinks as the run drains.
  *
+ * The counters do NOT shrink with it: a resume seeds them from the rows the
+ * ledger already holds settled, so `processed`/`total` carry on from where the
+ * dead attempt stopped rather than restarting against the remainder.
+ *
  * ## Idempotency belongs to the destination
  *
  * Nothing here checks whether a record already exists. Every input carries the
@@ -74,10 +78,20 @@ export class PushStage implements ImportStageRunner {
   }
 
   async run(context: StageRunContext): Promise<StageOutcome> {
+    // What earlier attempts already settled — read BEFORE `pushEntities` moves
+    // rows off 'pending', or this attempt's own work would be counted twice.
+    const prior = await this.settledCounts(context.runId);
+
     // Entities first, always. A communication names its participants by server
     // entity id, so the people have to exist — and be recorded in
     // `entity_mappings` — before the record that points at them is built.
-    const entities = await this.pushEntities(context);
+    const attempt = await this.pushEntities(context);
+
+    const entities = {
+      resolved: prior.entities.resolved + attempt.resolved,
+      skipped: prior.entities.skipped + attempt.skipped,
+      failed: prior.entities.failed + attempt.failed,
+    };
 
     // Entities count toward this stage's total, because resolving them IS part
     // of its work — and because the parse stage already counts them, so leaving
@@ -87,18 +101,21 @@ export class PushStage implements ImportStageRunner {
     //
     // Taken from the outcome rather than a second COUNT: `pushEntities` has
     // already moved these rows off 'pending', so counting them now would return
-    // zero. On a resumed push it returns zero anyway — the entities were settled
-    // by the earlier attempt — which is the same shrinking-total behaviour the
-    // item side has.
+    // zero. On a resumed push the outcome alone would ALSO be zero — those
+    // entities were settled by the earlier attempt — which is what the prior
+    // ledger counts folded in above restore.
     const entitiesProcessed = entities.resolved + entities.skipped + entities.failed;
-    const total = (await this.pendingCount(context.runId)) + entitiesProcessed;
 
-    await context.progress({ processed: entitiesProcessed, total, phase: 'pushing' });
-
+    // Per-destination counts cover this attempt only: the ledger records THAT a
+    // row settled, not where it landed, so a resume cannot reconstruct them.
     const counts: DestinationCounts = {};
-    let pushed = 0;
-    let failed = 0;
-    let deduped = 0;
+    let pushed = prior.items.pushed;
+    let deduped = prior.items.deduped;
+    let failed = prior.items.failed;
+
+    const total = (await this.pendingCount(context.runId)) + entitiesProcessed + pushed + deduped + failed;
+
+    await context.progress({ processed: entitiesProcessed + pushed + failed + deduped, total, phase: 'pushing' });
 
     for (;;) {
       const batch = await this.nextBatch(context.runId);
@@ -322,6 +339,59 @@ export class PushStage implements ImportStageRunner {
     );
 
     return Number(count);
+  }
+
+  /**
+   * What earlier attempts of this stage settled, straight from the ledger.
+   *
+   * A resumed or retried push seeds its counters here rather than at zero, so
+   * `processed` and `total` describe the RUN, not the attempt: a push killed at
+   * 50k/305k resumes at 50k/305k instead of restarting the arithmetic against
+   * the 255k remainder. On a first attempt every count is zero.
+   */
+  private async settledCounts(runId: string): Promise<{
+    items: { pushed: number; deduped: number; failed: number };
+    entities: { resolved: number; skipped: number; failed: number };
+  }> {
+    const rows = await this.dataSource.query<Array<{ kind: string; status: string; count: string }>>(
+      `SELECT 'item' AS kind, push_status AS status, count(*) AS count
+         FROM ci_import.staged_items
+        WHERE run_id = $1::uuid AND push_status <> 'pending'
+        GROUP BY push_status
+       UNION ALL
+       SELECT 'entity' AS kind, push_status AS status, count(*) AS count
+         FROM ci_import.staged_entities
+        WHERE run_id = $1::uuid AND push_status <> 'pending'
+        GROUP BY push_status`,
+      [runId],
+    );
+
+    const items = { pushed: 0, deduped: 0, failed: 0 };
+    const entities = { resolved: 0, skipped: 0, failed: 0 };
+
+    for (const row of rows) {
+      const count = Number(row.count);
+
+      if (row.kind === 'item') {
+        if (row.status === 'pushed') {
+          items.pushed = count;
+        } else if (row.status === 'skipped') {
+          items.deduped = count;
+        } else if (row.status === 'failed') {
+          items.failed = count;
+        }
+      } else {
+        if (row.status === 'pushed') {
+          entities.resolved = count;
+        } else if (row.status === 'skipped') {
+          entities.skipped = count;
+        } else if (row.status === 'failed') {
+          entities.failed = count;
+        }
+      }
+    }
+
+    return { items, entities };
   }
 
   /**

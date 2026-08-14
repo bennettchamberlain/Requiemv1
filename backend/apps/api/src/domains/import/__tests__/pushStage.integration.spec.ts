@@ -433,19 +433,65 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
     const runId = await stageEmailWithParticipants();
     const first = makeStage();
 
-    await first.stage.run(contextFor(runId));
+    const firstOutcome = await first.stage.run(contextFor(runId));
 
-    const sentFirst = first.sent.length;
-
-    expect(sentFirst).toBeGreaterThan(0);
+    expect(first.sent.length).toBeGreaterThan(0);
 
     // A second run of the same stage — what a redelivered job looks like. The
-    // query IS the resume point, so there is nothing pending left to send.
+    // query IS the resume point, so there is nothing pending left to send. The
+    // counters are seeded from the ledger, though, so the outcome still
+    // describes the run — not an import that apparently vanished.
     const second = makeStage();
     const outcome = await second.stage.run(contextFor(runId));
 
     expect(second.sent).toHaveLength(0);
-    expect(outcome.processed).toBe(0);
+    expect(outcome.processed).toBe(firstOutcome.processed);
+    expect(outcome.total).toBe(firstOutcome.total);
+  });
+
+  it('counts a dead attempt\'s settled rows when it resumes mid-run', async () => {
+    // A push killed mid-run leaves the ledger half settled. The resumed attempt
+    // sends only the remainder, but its numbers must not restart the arithmetic
+    // against the remainder: a run killed at 50k/305k resumes at 50k/305k, not
+    // 0/255k.
+    const runId = await harness.startRun();
+
+    for (const hash of ['settled-by-dead-attempt', 'left-1', 'left-2']) {
+      await harness.dataSource.query(
+        `INSERT INTO ci_import.staged_items
+           (run_id, user_id, data_source, classification, content_hash, occurred_at, metadata)
+         VALUES ($1::uuid, $2::uuid, 'gmail', 'email', $3, now(), '{}'::jsonb)`,
+        [runId, harness.userId, hash],
+      );
+    }
+
+    await harness.dataSource.query(
+      `UPDATE ci_import.staged_items
+          SET push_status = 'pushed', pushed_at = now()
+        WHERE run_id = $1::uuid AND content_hash = 'settled-by-dead-attempt'`,
+      [runId],
+    );
+
+    const ticks: Array<{ processed: number; total?: number | null; phase?: string }> = [];
+    const { stage, sent } = makeStage();
+    const outcome = await stage.run({
+      ...contextFor(runId),
+      progress: async (update) => {
+        ticks.push(update);
+      },
+    });
+
+    expect(sent).toHaveLength(2);
+
+    expect(outcome.processed).toBe(3);
+    expect(outcome.total).toBe(3);
+    expect(outcome.detail).toMatchObject({ pushed: 3, deduped: 0, failed: 0 });
+
+    // The very first tick of the resumed attempt already stands on the dead
+    // attempt's work — the bar never dips below where the run died.
+    const firstPushing = ticks.find((tick) => tick.phase === 'pushing');
+
+    expect(firstPushing).toMatchObject({ processed: 1, total: 3 });
   });
 
   it('sends every destination a batch, which is the path that upserts', async () => {
