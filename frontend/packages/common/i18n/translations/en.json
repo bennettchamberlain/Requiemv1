@@ -110,6 +110,10 @@
   "CONNECTION_MODE_LOCAL": "On this phone",
   "CONNECTION_MODE_CACHED": "Offline copy",
   "CONNECTION_MODE_FRESH": "Not synced yet",
+  "CONNECTION_MODE_CONNECTED_HINT": "Connected. Your Companion server is answering.",
+  "CONNECTION_MODE_LOCAL_HINT": "On this phone. Your server is unreachable, so this device is serving its own copy.",
+  "CONNECTION_MODE_CACHED_HINT": "Offline copy. Nothing is reachable right now, so this is what was saved here.",
+  "CONNECTION_MODE_FRESH_HINT": "Not synced yet. Nothing has answered, so there is nothing to show.",
   "OUTBOX_PENDING_COUNT": "{{n}} waiting to sync",
   "OUTBOX_NEEDS_ATTENTION_COUNT": "{{n}} need your attention"
 }

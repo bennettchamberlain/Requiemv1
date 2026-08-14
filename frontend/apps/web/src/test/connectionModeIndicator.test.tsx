@@ -19,7 +19,7 @@ import {
   CONNECTION_RESOLVE_TIMEOUT_MS,
   ConnectionModeProvider,
 } from '@ci/common/src/utils/connectionMode';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ConnectionModeIndicator } from '@/components/ConnectionModeIndicator';
@@ -89,6 +89,37 @@ describe('ConnectionModeIndicator', () => {
     release?.();
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Connected' })).toBeInTheDocument());
+  });
+
+  it('explains what the dot means, which is the only on-screen account of it in the connected state', async () => {
+    // This file's `unstubAllGlobals` also clears the ResizeObserver stub that
+    // setup.ts installs once at import, and Radix's positioning needs it — so
+    // the tooltip's own case puts it back.
+    class ResizeObserverStub {
+      observe() {}
+
+      unobserve() {}
+
+      disconnect() {}
+    }
+
+    vi.stubGlobal('ResizeObserver', ResizeObserverStub);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okResponse()),
+    );
+
+    renderIndicator();
+
+    const chip = await screen.findByRole('button', { name: 'Connected' });
+
+    // Focus rather than hover: Radix opens on focus without waiting out the
+    // hover delay, and it is the path a keyboard user takes anyway.
+    fireEvent.focus(chip);
+
+    const tooltip = await screen.findByRole('tooltip');
+
+    expect(tooltip).toHaveTextContent('Your Companion server is answering');
   });
 
   it('reports "Not synced yet" once a genuinely unreachable server has been probed', async () => {
