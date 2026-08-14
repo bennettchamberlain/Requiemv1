@@ -3,11 +3,19 @@ services:
     image: ci/api
     volumes:
       - secrets:/run/secrets:ro
-      # ONE bind mount holding the importer's working areas — uploads/ (staged
-      # uploads, TTL'd) and scratch/ (per-run working trees). Sharing a
-      # filesystem is what lets a staged upload move into a run's scratch as
-      # an atomic rename instead of a copy of a 50GB archive. uploads/ is
-      # root-only: nothing lands there except through the API.
+      # ONE bind mount holding the importer's three working areas — uploads/
+      # (staged uploads, TTL'd), inbox/ (the user's drop-in folder), and
+      # scratch/ (per-run working trees). Sharing a filesystem is what lets a
+      # staged source move into a run's scratch as an atomic rename instead of
+      # a copy of a 50GB tree. Bind rather than named volume so a person can
+      # actually drop export archives into ./import-work/inbox/ on the host.
+      # The API creates inbox/ world-writable with the sticky bit (like /tmp)
+      # — on purpose, since the container runs as root and a root-owned 755
+      # folder would refuse the desktop user's drag-in; it only ever holds
+      # copies the importer consumes. uploads/ stays root-only: nothing lands
+      # there except through the API. Operators who put the inbox elsewhere (a
+      # NAS) can split the mounts; the importer falls back to copy-then-delete
+      # across filesystems.
       - ${CI_IMPORT_WORK_DIR:-./import-work}:/var/lib/ci-import
       # The user's own archives, read-only, as upstream ci-import-tools mounted
       # them: importable in place via the path tools, never modified, never
@@ -16,9 +24,9 @@ services:
     environment:
       ENABLE_HBPE: ${ENABLE_HBPE:-true}
       # Off /var/tmp deliberately, and load-bearing: scratch must share the
-      # uploads directory's filesystem for the rename above, and living on the
-      # mount means an interrupted run's working files survive a container
-      # recreate.
+      # inbox's filesystem for the rename above, and living on the mount means
+      # an interrupted run's working files survive a container recreate, which
+      # is what the resume sweep restarts from.
       CI_IMPORT_SCRATCH_DIR: ${CI_IMPORT_SCRATCH_DIR:-/var/lib/ci-import/scratch}
       # JSON array, not a colon list. /repo is the read-only mount above.
       CI_IMPORT_ROOTS: ${CI_IMPORT_ROOTS:-["/repo"]}

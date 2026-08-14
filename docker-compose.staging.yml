@@ -4,8 +4,8 @@ services:
     env_file:
       - .env
     volumes:
-      # See docker-compose.production.yml for why uploads and scratch share a
-      # mount.
+      # See docker-compose.production.yml for why these two share a mount and
+      # why /repo is read-only.
       - ${CI_IMPORT_WORK_DIR:-./import-work}:/var/lib/ci-import
       - ${CI_REPO_DIR:-~/Downloads}:/repo:ro
     environment:

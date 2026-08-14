@@ -145,7 +145,8 @@
   "import": {
     "scratchDir": "/var/tmp/ci-import",
     "roots": [],
-    "uploadsDir": "/var/lib/ci-import/uploads"
+    "uploadsDir": "/var/lib/ci-import/uploads",
+    "inboxDir": "/var/lib/ci-import/inbox"
   },
   "enrichment": {
     "window": {

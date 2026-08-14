@@ -1,3 +1,5 @@
+import { basename } from 'node:path';
+
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, In, type EntityManager } from 'typeorm';
@@ -14,9 +16,33 @@ import type { StageOutcome } from '../types';
 
 import { StagedSourceService } from './StagedSourceService';
 
+/**
+ * An inbox unit this run will consume in place of an uploaded drop. The path
+ * must already be resolved through `resolveWithinInbox` — this service trusts
+ * its callers on containment because the batch surface is the only code that
+ * constructs one, and re-validation happens again at the move.
+ */
+export interface StartRunLocalSource {
+  /** Realpath of the unit, inside the inbox. */
+  path: string;
+  kind: 'file' | 'directory';
+  /** Aggregate bytes (advisory; feeds the copy-fallback disk preflight). */
+  sizeBytes: number | null;
+}
+
 export interface StartRunInput {
-  /** The staged upload this run consumes. Claimed as part of starting. */
-  dropId: string;
+  /**
+   * The staged upload this run consumes. Claimed as part of starting.
+   * Exactly one of `dropId` and `localSource` must be present.
+   */
+  dropId?: string;
+
+  /**
+   * The inbox unit this run consumes instead of a drop. The claim is an
+   * INSERT into `ci_import.staged_sources`, whose partial unique index is the
+   * race guard the drop claim's constrained UPDATE is — one live run per path.
+   */
+  localSource?: StartRunLocalSource;
 
   /** Display label for the run list. Defaults to the drop's original filename. */
   label?: string | null;
@@ -164,57 +190,99 @@ export class ImportRunService {
       throw new ConflictException('A run needs at least one stage');
     }
 
+    if ((input.dropId == null) === (input.localSource == null)) {
+      throw new ConflictException('A run consumes exactly one source: a dropId or a localSource');
+    }
+
     const result = await this.dataSource.transaction(async (manager) => {
-      const uploads = await manager.query<Array<{ original_filename: string | null; status: string }>>(
-        `SELECT original_filename, status
-           FROM ci_import.staged_sources
-          WHERE user_id = $1::uuid AND drop_id = $2`,
-        [ctx.userId, input.dropId],
-      );
+      let defaultLabel: string | null = null;
 
-      if (uploads.length === 0) {
-        throw new NotFoundException(`No staged upload ${input.dropId}`);
-      }
-
-      // Refusals must tell the truth: an expired upload's bytes are GONE (the
-      // purge took them), which is a different answer from "another run beat
-      // you to it" — the first means re-upload, the second means look at your
-      // runs.
-      if (uploads[0].status === 'expired') {
-        throw new ConflictException(
-          `Upload ${input.dropId} expired before it was imported. Upload the archive again.`,
+      if (input.dropId != null) {
+        const uploads = await manager.query<Array<{ original_filename: string | null; status: string }>>(
+          `SELECT original_filename, status
+             FROM ci_import.staged_sources
+            WHERE user_id = $1::uuid AND drop_id = $2`,
+          [ctx.userId, input.dropId],
         );
+
+        if (uploads.length === 0) {
+          throw new NotFoundException(`No staged upload ${input.dropId}`);
+        }
+
+        // Refusals must tell the truth: an expired upload's bytes are GONE
+        // (the purge took them), which is a different answer from "another
+        // run beat you to it" — the first means re-upload, the second means
+        // look at your runs.
+        if (uploads[0].status === 'expired') {
+          throw new ConflictException(
+            `Upload ${input.dropId} expired before it was imported. Upload the archive again.`,
+          );
+        }
+
+        defaultLabel = uploads[0].original_filename;
+      } else {
+        defaultLabel = basename(input.localSource!.path);
       }
 
       const runRows = await manager.query<Array<{ id: string }>>(
         `INSERT INTO ci_import.import_runs (user_id, label, source, status, requested_stages)
               VALUES ($1::uuid, $2, $3, 'queued', $4::text[])
            RETURNING id`,
-        [ctx.userId, input.label ?? uploads[0].original_filename, input.source ?? 'wizard', kinds],
+        [ctx.userId, input.label ?? defaultLabel, input.source ?? 'wizard', kinds],
       );
 
       const runId = runRows[0].id;
 
-      // Constrained to `staged`, so the UPDATE is the race guard: the second
-      // caller affects no rows and this transaction rolls back, taking its run
-      // with it.
-      // CTE-wrapped so the OUTER command is a SELECT. TypeORM's Postgres driver
-      // special-cases UPDATE/DELETE and resolves `[rows, rowCount]`, so a bare
-      // `UPDATE ... RETURNING` hands back an array whose FIRST element is the
-      // rows array — making `length === 0` never true. Same trap, and same fix,
-      // as `PipelineRunService.finishRun`.
-      const claim = await manager.query<unknown[]>(
-        `WITH claimed AS (
-           UPDATE ci_import.staged_sources
-              SET status = 'claimed', run_id = $1::uuid, claimed_at = now(), updated_at = now()
-            WHERE user_id = $2::uuid AND drop_id = $3 AND status = 'staged'
-        RETURNING id)
-         SELECT id FROM claimed`,
-        [runId, ctx.userId, input.dropId],
-      );
+      if (input.dropId != null) {
+        // Constrained to `staged`, so the UPDATE is the race guard: the second
+        // caller affects no rows and this transaction rolls back, taking its run
+        // with it.
+        // CTE-wrapped so the OUTER command is a SELECT. TypeORM's Postgres driver
+        // special-cases UPDATE/DELETE and resolves `[rows, rowCount]`, so a bare
+        // `UPDATE ... RETURNING` hands back an array whose FIRST element is the
+        // rows array — making `length === 0` never true. Same trap, and same fix,
+        // as `PipelineRunService.finishRun`.
+        const claim = await manager.query<unknown[]>(
+          `WITH claimed AS (
+             UPDATE ci_import.staged_sources
+                SET status = 'claimed', run_id = $1::uuid, claimed_at = now(), updated_at = now()
+              WHERE user_id = $2::uuid AND drop_id = $3 AND status = 'staged'
+          RETURNING id)
+           SELECT id FROM claimed`,
+          [runId, ctx.userId, input.dropId],
+        );
 
-      if (claim.length === 0) {
-        throw new ConflictException(`Upload ${input.dropId} has already been claimed by another import run`);
+        if (claim.length === 0) {
+          throw new ConflictException(`Upload ${input.dropId} has already been claimed by another import run`);
+        }
+      } else {
+        // The inbox claim is the INSERT itself: the partial unique index on
+        // (user_id, source_path) WHERE status IN ('claimed','moved') plays
+        // the role the upload claim's constrained UPDATE plays. The loser's
+        // unique violation rolls this transaction back, run row and all, so a
+        // row never exists without its run.
+        try {
+          await manager.query(
+            `INSERT INTO ci_import.staged_sources
+                    (user_id, origin, run_id, source_path, kind, size_bytes, status, claimed_at)
+             VALUES ($1::uuid, 'inbox', $2::uuid, $3, $4, $5::bigint, 'claimed', now())`,
+            [
+              ctx.userId,
+              runId,
+              input.localSource!.path,
+              input.localSource!.kind,
+              input.localSource!.sizeBytes,
+            ],
+          );
+        } catch (err: unknown) {
+          if ((err as { driverError?: { code?: string } }).driverError?.code === '23505') {
+            throw new ConflictException(
+              `${input.localSource!.path} is already being imported by another run`,
+            );
+          }
+
+          throw err;
+        }
       }
 
       const stages = await this.materializeStages(manager, runId, kinds);
@@ -229,7 +297,8 @@ export class ImportRunService {
     this.logger.log('Started import run', {
       runId: result.run.id,
       userId: ctx.userId,
-      dropId: input.dropId,
+      dropId: input.dropId ?? null,
+      localSource: input.localSource?.path ?? null,
       stages: kinds,
     });
 
@@ -740,11 +809,9 @@ export class ImportRunService {
       [stageId, error],
     );
 
-    // A failed run must never consume its source. Releasing frees an inbox
-    // path for a fresh claim and RE-STAGES an upload (fresh TTL, no run) so
-    // the file reappears on every surface instead of stranding invisibly;
-    // once bytes have moved to scratch, release no-ops and they wait for a
-    // retry.
+    // A failed run must never consume its inbox unit. Release frees the path
+    // for a fresh claim when the unit never left the inbox; once it is
+    // `moved`, release is a no-op and the bytes wait in scratch for retryStage.
     const runRows = await this.dataSource.query<Array<{ run_id: string }>>(
       `SELECT run_id FROM ci_import.import_stages WHERE id = $1::uuid`,
       [stageId],
@@ -798,11 +865,11 @@ export class ImportRunService {
       [runId, status],
     );
 
-    // A completed-or-partial run has consumed its staged source: the bytes now
+    // A completed-or-partial run has consumed its inbox unit: the bytes now
     // live in the corpus, and the moved copy goes with the run's scratch.
     // Placed here rather than in the listener because finishRun is reached by
-    // the listener AND the recovery machinery, so a crash between the last
-    // stage and close-out still consumes on resume. Idempotent.
+    // the listener AND the recovery sweep, so a crash between the last stage
+    // and close-out still consumes on resume. Idempotent; no-op for drop runs.
     if (status === 'completed' || status === 'partial') {
       await this.stagedSources.markConsumed(runId);
     } else {
@@ -842,8 +909,8 @@ export class ImportRunService {
       [runId],
     );
 
-    // Cancelled runs never consume: an inbox claim is released, an upload is
-    // re-staged. A source already moved to scratch stays for a retry.
+    // Cancelled runs never consume. If the unit never left the inbox the path
+    // is freed for a new claim; a moved unit stays in scratch (release no-ops).
     await this.stagedSources.release(runId);
 
     this.logger.log('Cancelled import run', { runId, userId: ctx.userId });

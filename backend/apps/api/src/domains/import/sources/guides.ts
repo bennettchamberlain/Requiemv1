@@ -23,8 +23,8 @@
  * ## What did NOT come across
  *
  * The `data/inbox/` machinery itself: the readiness scanner, the boot-time purge
- * of abandoned drops, the dangling-media sweep. Object storage and
- * `ci_import.inbox_drops` replace all of it.
+ * of abandoned drops, the dangling-media sweep. The uploads staging directory
+ * and `ci_import.staged_sources` replace all of it.
  *
  * `inboxPath` and `signature` survive as DATA because they describe the SHAPE of
  * an export — which files it resolves to, and how to tell two sources sharing a

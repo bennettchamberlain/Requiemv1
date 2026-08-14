@@ -126,6 +126,34 @@ export interface UnpushedRun extends ImportRun {
   readonly pendingEntities: number;
 }
 
+/** One importable thing the inbox scan found — a file, or a whole recognized directory. */
+export interface InboxUnit {
+  /** Path relative to the inbox folder — the handle importInbox takes. */
+  readonly path: string;
+  readonly kind: 'file' | 'directory';
+  readonly sizeBytes: number;
+  readonly fileCount: number;
+  readonly recognized: readonly { dataSource: string; title: string; confidence: number }[];
+  /** An unfinished run already consuming this unit, if any. */
+  readonly activeRunId: string | null;
+}
+
+export interface InboxScan {
+  readonly available: boolean;
+  readonly reason?: string;
+  readonly inboxDir: string;
+  readonly units: readonly InboxUnit[];
+  readonly skippedSymlinks: number;
+  readonly truncated: boolean;
+}
+
+export interface InboxUnitResult {
+  readonly unit: string;
+  readonly runId?: string;
+  readonly label?: string;
+  readonly error?: string;
+}
+
 /** A run is done when the server says so — these are the terminal statuses. */
 export const TERMINAL_RUN_STATUSES = new Set(['completed', 'partial', 'failed', 'cancelled']);
 
@@ -233,6 +261,26 @@ export function useImportApi() {
     [authHeaders],
   );
 
+  /** What is waiting in the appliance's inbox folder. */
+  const scanInbox = useCallback(
+    async (): Promise<InboxScan | null> =>
+      (await fetchJson<InboxScan>('/api/import/inbox', { headers: authHeaders() })) ?? null,
+    [authHeaders],
+  );
+
+  /**
+   * Start one run per inbox unit. Omit `units` to import everything the scan
+   * yields that is not already running. Per-unit failures ride in the results
+   * rather than failing the batch.
+   */
+  const importInbox = useCallback(
+    async (units?: readonly string[]) =>
+      post<{ results: InboxUnitResult[] }>('/api/import/inbox/runs', authHeaders(), {
+        units: units == null ? undefined : [...units],
+      }),
+    [authHeaders],
+  );
+
   const retryStage = useCallback(
     async (runId: string, stageId: string) =>
       post<{ requeued: boolean }>(`/api/import/runs/${runId}/stages/${stageId}/retry`, authHeaders(), {}),
@@ -258,6 +306,8 @@ export function useImportApi() {
       startPush,
       cancelRun,
       retryStage,
+      scanInbox,
+      importInbox,
     }),
     [
       authToken,
@@ -271,6 +321,8 @@ export function useImportApi() {
       startPush,
       cancelRun,
       retryStage,
+      scanInbox,
+      importInbox,
     ],
   );
 }

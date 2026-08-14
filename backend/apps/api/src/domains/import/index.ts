@@ -56,6 +56,7 @@ import { GraphModule } from '@ci/domains/graph';
 import { MemoryModule } from '@ci/domains/memory';
 import { PositionModule } from '@ci/domains/position';
 
+import { ImportInboxController } from './controllers/ImportInboxController';
 import { ImportRunsController } from './controllers/ImportRunsController';
 import { ImportUploadsController } from './controllers/ImportUploadsController';
 import { EntityMappingEntity } from './entities/EntityMappingEntity';
@@ -68,6 +69,7 @@ import { StagedSourceEntity } from './entities/StagedSourceEntity';
 import { ImportStageListener } from './listeners/ImportStageListener';
 import { StagedUploadPurgeCron } from './listeners/StagedUploadPurgeCron';
 import { DataSourceCatalogService } from './services/DataSourceCatalogService';
+import { ImportInboxService } from './services/ImportInboxService';
 import { ImportRunService } from './services/ImportRunService';
 import { ImportScratchService } from './services/ImportScratchService';
 import { StagedSourceService } from './services/StagedSourceService';
@@ -101,6 +103,7 @@ import { UnpackStage } from './stages/UnpackStage';
   ],
   providers: [
     DataSourceCatalogService,
+    ImportInboxService,
     ImportRunService,
     ImportScratchService,
     StagedSourceService,
@@ -110,9 +113,10 @@ import { UnpackStage } from './stages/UnpackStage';
     ImportStageListener,
     StagedUploadPurgeCron,
   ],
-  controllers: [ImportUploadsController, ImportRunsController],
+  controllers: [ImportUploadsController, ImportRunsController, ImportInboxController],
   exports: [
     DataSourceCatalogService,
+    ImportInboxService,
     ImportRunService,
     ImportScratchService,
     StagedSourceService,
@@ -123,12 +127,20 @@ export class ImportModule {}
 export { StagedSourceService, UPLOAD_TTL_MS } from './services/StagedSourceService';
 export { StagedUploadPurgeCron, STAGED_UPLOAD_PURGE_CRON } from './listeners/StagedUploadPurgeCron';
 export type { RegisterUploadInput } from './services/StagedSourceService';
-export { sanitizeFilename } from './sources/sanitizeFilename';
 
+export { ImportInboxService, MAX_INBOX_BATCH_UNITS } from './services/ImportInboxService';
+export type {
+  InboxBatchResult,
+  InboxScan,
+  InboxUnit,
+  InboxUnitResult,
+  StartInboxBatchInput,
+} from './services/ImportInboxService';
 export { ImportRunService } from './services/ImportRunService';
 export type {
   StartPushInput,
   StartRunInput,
+  StartRunLocalSource,
   StartRunResult,
   UnpushedRun,
 } from './services/ImportRunService';
@@ -211,6 +223,7 @@ export type {
   StagedSourceOrigin,
   StagedSourceStatus,
 } from './entities/StagedSourceEntity';
+export { sanitizeFilename } from './sources/sanitizeFilename';
 
 export { StagedEntityEntity } from './entities/StagedEntityEntity';
 export type { StagedEntity } from './entities/StagedEntityEntity';

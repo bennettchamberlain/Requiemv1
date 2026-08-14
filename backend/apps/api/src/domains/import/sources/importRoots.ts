@@ -22,10 +22,21 @@ export function configuredImportRoots(): string[] {
 }
 
 /**
+ * The import inbox: a directory the IMPORTER owns, unlike the roots, which
+ * hold the user's own files. Everything under it is treated as a copy staged
+ * for import — consumed (moved into a run's scratch, then deleted with it)
+ * rather than read in place. That ownership difference is why deletion
+ * eligibility is only ever computed against this root and never against
+ * `configuredImportRoots()`.
+ */
+export function inboxRoot(): string {
+  return path.resolve(config.import.inboxDir);
+}
+
+/**
  * Where uploads are staged: `<uploadsDir>/<dropId>/<filename>`, registered in
- * `ci_import.staged_sources`. Importer-owned, unlike the roots, which hold
- * the user's own files — nothing lands here except through the API, and the
- * TTL purge sweeps it.
+ * `ci_import.staged_sources`. Importer-owned like the inbox, but root-only —
+ * nothing lands here except through the API, and the TTL purge sweeps it.
  */
 export function uploadsRoot(): string {
   return path.resolve(config.import.uploadsDir);
@@ -98,20 +109,33 @@ export async function resolveWithinRoots(requested: string, roots: string[]): Pr
 }
 
 /**
- * The read-side resolver the path tools use: the operator's roots. The uploads
- * directory is deliberately NOT included — staged uploads are per-user, and a
- * path tool must not become a way to read another user's staged archive.
+ * The read-side resolver the path tools use: the operator's roots plus the
+ * inbox, which is always allowed — the same composition upstream made when it
+ * appended its data dir to CI_IMPORT_ROOTS so the wizard's dropped files were
+ * importable. Reading an inbox path through this resolver is fine; only the
+ * inbox batch surface may CONSUME one, and it resolves through
+ * {@link resolveWithinInbox} instead.
  */
 export async function resolveWithinImportRoots(requested: string): Promise<string> {
-  return resolveWithinRoots(requested, configuredImportRoots());
+  return resolveWithinRoots(requested, [...configuredImportRoots(), inboxRoot()]);
 }
 
 /**
- * The mutation-site resolver: the staging areas the importer OWNS. Today that
- * is the uploads directory; `localAcquire` re-validates through this
- * immediately before moving or deleting, so a registry row edited to point
- * elsewhere is refused where the mutating happens, not only at enqueue.
+ * The consume-side resolver for the INBOX surfaces: the inbox alone. Every
+ * path the scan walks or the batch starts goes through this — so a path under
+ * a configured root can never reach the code that claims inbox units, by
+ * construction rather than by a check someone could forget.
+ */
+export async function resolveWithinInbox(requested: string): Promise<string> {
+  return resolveWithinRoots(requested, [inboxRoot()]);
+}
+
+/**
+ * The mutation-site resolver: the two staging areas the importer OWNS — the
+ * inbox and the uploads directory. `localAcquire` re-validates through this
+ * immediately before moving or deleting, so nothing under the user's own
+ * roots can ever be consumed, whichever registry row claims it.
  */
 export async function resolveWithinStaging(requested: string): Promise<string> {
-  return resolveWithinRoots(requested, [uploadsRoot()]);
+  return resolveWithinRoots(requested, [inboxRoot(), uploadsRoot()]);
 }

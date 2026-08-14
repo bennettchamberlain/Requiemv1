@@ -43,10 +43,12 @@ import { GetEntertainmentPreferencesTool } from './tools/GetEntertainmentPrefere
 import { GetFamilyMembersTool } from './tools/GetFamilyMembersTool';
 import { GetStreamingAvailabilityTool } from './tools/GetStreamingAvailabilityTool';
 import { GetUserPreferencesTool } from './tools/GetUserPreferencesTool';
+import { ImportInboxTool } from './tools/ImportInboxTool';
 import { ImportListSourcesTool } from './tools/ImportListSourcesTool';
 import { ImportPathTool } from './tools/ImportPathTool';
 import { ImportRecognizePathTool } from './tools/ImportRecognizePathTool';
 import { ImportRunStatusTool } from './tools/ImportRunStatusTool';
+import { ImportScanInboxTool } from './tools/ImportScanInboxTool';
 import { MediaFindPhotosTool } from './tools/MediaFindPhotosTool';
 import { PeopleFindTool } from './tools/PeopleFindTool';
 import { PlacesFindTool } from './tools/PlacesFindTool';
@@ -68,13 +70,15 @@ const nativeToolInstances = [
   PlacesFindTool,
   CalendarFindEventsTool,
   MediaFindPhotosTool,
-  // The import domain's four intents. They live in that domain because they are
+  // The import domain's intents. They live in that domain because they are
   // thin wrappers over its services; they are REGISTERED here because this is
   // where the native provider is assembled.
   ImportListSourcesTool,
   ImportRecognizePathTool,
   ImportPathTool,
   ImportRunStatusTool,
+  ImportScanInboxTool,
+  ImportInboxTool,
 ];
 
 /**

@@ -98,7 +98,7 @@ describe('ImportPathTool', () => {
     });
   });
 
-  it('refuses a directory — a directory has no single file to stage', async () => {
+  it('refuses a directory and points at the inbox instead', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'ci-pathtool-'));
 
     await mkdir(path.join(root, 'takeout'));
@@ -110,7 +110,7 @@ describe('ImportPathTool', () => {
       const data = result.data as { started: boolean; reason: string };
 
       expect(data.started).toBe(false);
-      expect(data.reason).toContain('is a directory');
+      expect(data.reason).toContain('import.import_inbox');
       expect(sources.registerUpload).not.toHaveBeenCalled();
     });
   });

@@ -105,10 +105,10 @@ export async function createStagingHarness(): Promise<{
       EntityMappingEntity,
       ImportRunEntity,
       ImportStageEntity,
+      StagedSourceEntity,
       StagedEntityEntity,
       StagedItemEntity,
       StagedRelationshipEntity,
-      StagedSourceEntity,
     ],
     synchronize: false,
     extra: { options: '-c search_path=ci,public' },
@@ -146,9 +146,9 @@ export async function createStagingHarness(): Promise<{
     }) as never;
 
   const events = { send: jest.fn(async () => undefined) };
-  // A REAL StagedSourceService over the same connection: the spine specs
-  // assert claim/consume/release transitions, and a mock would agree with
-  // whatever the spec author believed.
+  // A REAL StagedSourceService over the same connection: the spine specs assert
+  // claim/consume/release transitions, and a mock would agree with whatever
+  // the spec author believed.
   const stagedSources = new StagedSourceService(dataSource.getRepository(StagedSourceEntity), stubLogger());
   const service = new ImportRunService(dataSource, events as never, stagedSources, stubLogger());
 

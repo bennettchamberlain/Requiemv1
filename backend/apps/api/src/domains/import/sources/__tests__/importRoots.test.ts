@@ -7,6 +7,7 @@ import config from '@ci/configuration';
 import {
   PathOutsideImportRootsError,
   resolveWithinImportRoots,
+  resolveWithinInbox,
   resolveWithinRoots,
 } from '../importRoots';
 
@@ -36,6 +37,17 @@ async function withRoots<T>(next: string[], run: () => Promise<T>): Promise<T> {
   }
 }
 
+async function withInbox<T>(dir: string, run: () => Promise<T>): Promise<T> {
+  const previous = config.import.inboxDir;
+
+  (config.import as { inboxDir: string }).inboxDir = dir;
+
+  try {
+    return await run();
+  } finally {
+    (config.import as { inboxDir: string }).inboxDir = previous;
+  }
+}
 
 describe('resolveWithinImportRoots', () => {
   it('refuses everything when no roots are configured', async () => {
@@ -119,6 +131,21 @@ describe('resolveWithinImportRoots', () => {
     });
   });
 
+  it('always allows the inbox, even with no roots configured', async () => {
+    // The same composition upstream made when it appended its data dir to
+    // CI_IMPORT_ROOTS: the inbox is importer-owned, so reading it is on by
+    // default regardless of the operator's roots.
+    const inbox = await mkdtemp(path.join(os.tmpdir(), 'ci-inbox-'));
+    const file = path.join(inbox, 'export.zip');
+
+    await writeFile(file, 'bytes');
+
+    await withRoots([], () =>
+      withInbox(inbox, async () => {
+        expect(await resolveWithinImportRoots(file)).toContain('export.zip');
+      }),
+    );
+  });
 
   it('still contains paths when a configured root does not exist', async () => {
     // An unmounted /repo must contribute nothing — not break resolution for
@@ -137,6 +164,29 @@ describe('resolveWithinImportRoots', () => {
   });
 });
 
+describe('resolveWithinInbox', () => {
+  it('allows an inbox path and refuses a configured-root path', async () => {
+    // The consume-side resolver. A file under CI_IMPORT_ROOTS is the user's
+    // own and must never reach the code that moves or deletes — even though
+    // the read-side resolver accepts it.
+    const inbox = await mkdtemp(path.join(os.tmpdir(), 'ci-inbox-'));
+    const root = await mkdtemp(path.join(os.tmpdir(), 'ci-roots-'));
+    const inboxFile = path.join(inbox, 'export.zip');
+    const rootFile = path.join(root, 'export.zip');
+
+    await writeFile(inboxFile, 'bytes');
+    await writeFile(rootFile, 'bytes');
+
+    await withRoots([root], () =>
+      withInbox(inbox, async () => {
+        expect(await resolveWithinInbox(inboxFile)).toContain('export.zip');
+        await expect(resolveWithinInbox(rootFile)).rejects.toBeInstanceOf(
+          PathOutsideImportRootsError,
+        );
+      }),
+    );
+  });
+});
 
 describe('resolveWithinRoots', () => {
   it('refuses everything over an empty root set', async () => {

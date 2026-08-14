@@ -128,7 +128,8 @@
       "__name": "CI_IMPORT_ROOTS",
       "__format": "json"
     },
-    "uploadsDir": "CI_IMPORT_UPLOADS_DIR"
+    "uploadsDir": "CI_IMPORT_UPLOADS_DIR",
+    "inboxDir": "CI_IMPORT_INBOX_DIR"
   },
   "enrichment": {
     "window": {

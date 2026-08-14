@@ -15,21 +15,21 @@ import { acquireLocalUnit } from '../localAcquire';
  * bytes or moves bytes the run does not own.
  */
 
-async function withUploads<T>(dir: string, run: () => Promise<T>): Promise<T> {
-  const previous = config.import.uploadsDir;
+async function withInbox<T>(dir: string, run: () => Promise<T>): Promise<T> {
+  const previous = config.import.inboxDir;
 
-  (config.import as { uploadsDir: string }).uploadsDir = dir;
+  (config.import as { inboxDir: string }).inboxDir = dir;
 
   try {
     return await run();
   } finally {
-    (config.import as { uploadsDir: string }).uploadsDir = previous;
+    (config.import as { inboxDir: string }).inboxDir = previous;
   }
 }
 
 async function fixture(): Promise<{ inbox: string; scratch: string }> {
   const parent = await mkdtemp(path.join(os.tmpdir(), 'ci-acquire-'));
-  const inbox = path.join(parent, 'uploads');
+  const inbox = path.join(parent, 'inbox');
   const scratch = path.join(parent, 'scratch');
 
   await mkdir(inbox);
@@ -47,7 +47,7 @@ describe('acquireLocalUnit', () => {
 
     await writeFile(source, 'bytes');
 
-    await withUploads(inbox, async () => {
+    await withInbox(inbox, async () => {
       const result = await acquireLocalUnit({ sourcePath: source, scratchDir: scratch, sizeBytes: 5, log });
 
       expect(result.method).toBe('rename');
@@ -63,7 +63,7 @@ describe('acquireLocalUnit', () => {
     await mkdir(path.join(source, 'Mail'), { recursive: true });
     await writeFile(path.join(source, 'Mail', 'inbox.mbox'), 'mail');
 
-    await withUploads(inbox, async () => {
+    await withInbox(inbox, async () => {
       const result = await acquireLocalUnit({ sourcePath: source, scratchDir: scratch, sizeBytes: 4, log });
 
       expect(result.method).toBe('rename');
@@ -82,7 +82,7 @@ describe('acquireLocalUnit', () => {
     await writeFile(path.join(scratch, 'export.zip'), 'moved-bytes');
     await writeFile(newcomer, 'newcomer-bytes');
 
-    await withUploads(inbox, async () => {
+    await withInbox(inbox, async () => {
       const result = await acquireLocalUnit({
         sourcePath: newcomer,
         scratchDir: scratch,
@@ -104,7 +104,7 @@ describe('acquireLocalUnit', () => {
 
     await writeFile(path.join(scratch, '.acquiring-export.zip'), 'bytes');
 
-    await withUploads(inbox, async () => {
+    await withInbox(inbox, async () => {
       const result = await acquireLocalUnit({ sourcePath: source, scratchDir: scratch, sizeBytes: 5, log });
 
       expect(result.method).toBe('recovered');
@@ -122,7 +122,7 @@ describe('acquireLocalUnit', () => {
     await writeFile(source, 'bytes');
     await writeFile(path.join(scratch, '.acquiring-export.zip'), 'partial');
 
-    await withUploads(inbox, async () => {
+    await withInbox(inbox, async () => {
       const result = await acquireLocalUnit({ sourcePath: source, scratchDir: scratch, sizeBytes: 5, log });
 
       expect(result.method).toBe('rename');
@@ -153,7 +153,7 @@ describe('acquireLocalUnit', () => {
       return rename(from, to);
     };
 
-    await withUploads(inbox, async () => {
+    await withInbox(inbox, async () => {
       const result = await acquireLocalUnit({
         sourcePath: source,
         scratchDir: scratch,
@@ -169,7 +169,7 @@ describe('acquireLocalUnit', () => {
     });
   });
 
-  it('refuses a source outside the staging area at the mutation site', async () => {
+  it('refuses a source outside the inbox at the mutation site', async () => {
     // Defense in depth: the claim validated the path once, but a row edited to
     // point elsewhere must be refused HERE, where the moving and deleting
     // happens — and refused before anything is touched.
@@ -179,7 +179,7 @@ describe('acquireLocalUnit', () => {
 
     await writeFile(victim, 'root:x:0:0');
 
-    await withUploads(inbox, async () => {
+    await withInbox(inbox, async () => {
       await expect(
         acquireLocalUnit({ sourcePath: victim, scratchDir: scratch, sizeBytes: 10, log }),
       ).rejects.toBeInstanceOf(PathOutsideImportRootsError);

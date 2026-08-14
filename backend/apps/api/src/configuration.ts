@@ -1,5 +1,7 @@
 import './bootstrap';
 
+import path from 'node:path';
+
 import config from 'config';
 import { z } from 'zod';
 
@@ -265,28 +267,66 @@ export const ConfigSchema = z.object({
     fetchBatchSize: z.coerce.number().int().positive().default(20),
     perQueueConcurrency: z.coerce.number().int().positive().default(6),
   }),
-  // The archive importer's working areas. A run MOVES its staged source into
-  // scratch, extracts it, and parses the resulting tree; the whole directory
-  // is reclaimed when the run finishes.
+  // The archive importer's working directory. A run downloads its uploaded
+  // archive here, extracts it, and parses the resulting tree; the whole
+  // directory is reclaimed when the run finishes.
   //
-  // scratchDir is configurable because the default is a trap at real sizes. An
-  // unpacked Google Takeout runs 40-50GB and `/tmp` is tmpfs on a stock
-  // appliance, so extracting there consumes RAM until the machine dies.
-  // Deployments point it at the same volume the uploads directory lives on —
-  // sharing a filesystem is what makes the acquisition an atomic rename.
-  import: z.object({
-    scratchDir: z.string().default('/var/tmp/ci-import'),
-    // Directories the path-based import tools may read. EMPTY BY DEFAULT: an
-    // unconstrained absolute path over an API is a filesystem read primitive,
-    // so path imports stay off until an operator names the directory that holds
-    // exports. Uploading through the API is unaffected. Files here are the
-    // user's own and are never modified or deleted.
-    roots: z.array(z.string()).default([]),
-    // Where uploads are staged: <uploadsDir>/<dropId>/<filename>, registered
-    // in ci_import.staged_sources with a TTL. Importer-owned and root-only —
-    // nothing lands here except through the API.
-    uploadsDir: z.string().default('/var/lib/ci-import/uploads'),
-  }),
+  // Configurable because the default is a trap at real sizes. An unpacked Google
+  // Takeout runs 40-50GB and `/tmp` is tmpfs on a stock appliance, so extracting
+  // there consumes RAM until the machine dies. Deployments point this at the
+  // same volume the object store uses.
+  import: z
+    .object({
+      scratchDir: z.string().default('/var/tmp/ci-import'),
+      // Directories the path-based import tools may read. EMPTY BY DEFAULT: an
+      // unconstrained absolute path over an API is a filesystem read primitive,
+      // so path imports stay off until an operator names the directory that holds
+      // exports. Uploading through the API is unaffected. Files here are the
+      // user's own and are never modified or deleted.
+      roots: z.array(z.string()).default([]),
+      // Where uploads are staged: <uploadsDir>/<dropId>/<filename>, registered
+      // in ci_import.staged_sources with a TTL. Importer-owned and root-only —
+      // unlike the inbox, nothing lands here except through the API. Should
+      // share a filesystem with scratchDir so consuming an upload is an atomic
+      // rename.
+      uploadsDir: z.string().default('/var/lib/ci-import/uploads'),
+      // The import inbox — the folder a user moves export archives into.
+      // Everything in it is a copy staged for import: a batch run consumes it
+      // (the unpack stage moves it into the run's scratch) and the bytes are
+      // deleted with the completed run. Non-empty by default, unlike `roots`,
+      // because the folder only holds what a user deliberately put there, and
+      // compose ships the mount; an absent directory just scans as unavailable.
+      inboxDir: z.string().default('/var/lib/ci-import/inbox'),
+    })
+    .superRefine((value, context) => {
+      // The three areas have different owners and different sweeps: the inbox
+      // is world-writable and user-facing, uploads are root-only and TTL'd,
+      // scratch belongs to runs. Nesting any inside another crosses those
+      // contracts — uploads under the inbox would expose every user's staged
+      // uploads through the inbox scan.
+      const dirs: Array<[string, string]> = [
+        ['scratchDir', path.resolve(value.scratchDir)],
+        ['uploadsDir', path.resolve(value.uploadsDir)],
+        ['inboxDir', path.resolve(value.inboxDir)],
+      ];
+
+      for (const [aName, a] of dirs) {
+        for (const [bName, b] of dirs) {
+          if (aName === bName) {
+            continue;
+          }
+
+          const relative = path.relative(a, b);
+
+          if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) {
+            context.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: `import.${bName} must not be inside import.${aName} (${b} is under ${a})`,
+            });
+          }
+        }
+      }
+    }),
   // WHEN the appliance is willing to spend on enrichment, and HOW MUCH. The
   // pipeline's twelve stages share ONE Ollama process with interactive chat,
   // HBPE and the summary sidecar, and two of them egress to a metered geocoding

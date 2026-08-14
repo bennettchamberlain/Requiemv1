@@ -106,11 +106,14 @@ export class ImportPathTool extends BaseTool<ImportPathInput, unknown> {
     const info = await stat(resolved);
 
     if (!info.isFile()) {
-      // A directory has no single file to stage. Recognition handles
-      // directories; import takes the archive.
+      // A directory has no single set of bytes to stage. Recognition handles
+      // directories; importing one means moving it into the inbox, where the
+      // pipeline can own (and consume) the tree.
       return {
         started: false,
-        reason: `${resolved} is a directory. Point this at the archive file itself.`,
+        reason:
+          `${resolved} is a directory. Point this at the archive file itself, or move the ` +
+          `folder into the import inbox and use import.import_inbox.`,
       };
     }
 

@@ -15,13 +15,14 @@ import { createStagingHarness, importDatabase, type StagingHarness } from './sup
  * STAGED SOURCES END TO END, AGAINST REAL POSTGRES AND A REAL FILESYSTEM.
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * The claim is SQL racing an index, and its correctness story — a lost claim
- * takes its run row with it, a released UPLOAD is re-staged rather than
- * stranded, consumption is terminal-state-driven — is transaction behavior
- * only a real database demonstrates. The filesystem half (the move) runs
- * against real tmp directories through the real UnpackStage, because the
- * consume contract is "the source LEAVES its staging area", and only a
- * filesystem can say whether it did.
+ * The claims are SQL racing indexes, and their correctness story — a lost
+ * claim takes its run row with it, a released inbox claim frees the path, a
+ * released UPLOAD is re-staged rather than stranded, consumption is
+ * terminal-state-driven — is transaction behavior only a real database
+ * demonstrates. The filesystem half (the move) runs against real tmp
+ * directories through the real UnpackStage, because the consume contract is
+ * "the source LEAVES its staging area", and only a filesystem can say
+ * whether it did.
  *
  * Suites here skip without the DB env — see support/stagingHarness.
  */
@@ -39,8 +40,10 @@ describeWithDatabase(`staged source runs (${importDatabase.target})`, () => {
   let teardown: () => Promise<void>;
   let dataSource: DataSource;
   let userId: string;
+  let inbox: string;
   let uploads: string;
   let scratchParent: string;
+  let previousInbox: string;
   let previousUploads: string;
 
   const createdRuns: string[] = [];
@@ -51,16 +54,21 @@ describeWithDatabase(`staged source runs (${importDatabase.target})`, () => {
 
     const parent = await mkdtemp(path.join(os.tmpdir(), 'ci-stagedspine-'));
 
+    inbox = path.join(parent, 'inbox');
     uploads = path.join(parent, 'uploads');
     scratchParent = path.join(parent, 'scratch');
+    await mkdir(inbox);
     await mkdir(uploads);
     await mkdir(scratchParent);
 
+    previousInbox = config.import.inboxDir;
     previousUploads = config.import.uploadsDir;
+    (config.import as { inboxDir: string }).inboxDir = inbox;
     (config.import as { uploadsDir: string }).uploadsDir = uploads;
   });
 
   afterAll(async () => {
+    (config.import as { inboxDir: string }).inboxDir = previousInbox;
     (config.import as { uploadsDir: string }).uploadsDir = previousUploads;
 
     // staged_sources rows survive their run's delete with run_id = NULL (the
@@ -80,6 +88,30 @@ describeWithDatabase(`staged source runs (${importDatabase.target})`, () => {
       harness.stagedSources,
       { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), debug: jest.fn() } as never,
     );
+  }
+
+  async function seedInboxUnit(name: string, kind: 'file' | 'directory'): Promise<string> {
+    const target = path.join(inbox, name);
+
+    if (kind === 'file') {
+      await writeFile(target, 'bytes');
+    } else {
+      await mkdir(path.join(target, 'Mail'), { recursive: true });
+      await writeFile(path.join(target, 'Mail', 'inbox.mbox'), 'mail');
+    }
+
+    return target;
+  }
+
+  async function startInbox(sourcePath: string, kind: 'file' | 'directory') {
+    const result = await harness.service.startRun(
+      { userId },
+      { localSource: { path: sourcePath, kind, sizeBytes: 5 }, source: 'api' },
+    );
+
+    createdRuns.push(result.run.id);
+
+    return result;
   }
 
   /** A REAL staged upload: bytes on disk under the uploads dir, plus its row. */
@@ -107,6 +139,15 @@ describeWithDatabase(`staged source runs (${importDatabase.target})`, () => {
     return result;
   }
 
+  async function rowByRunId(runId: string) {
+    const rows = await dataSource.query<Array<{ status: string; source_path: string; run_id: string | null }>>(
+      `SELECT status, source_path, run_id FROM ci_import.staged_sources WHERE run_id = $1::uuid`,
+      [runId],
+    );
+
+    return rows[0] ?? null;
+  }
+
   async function rowByDropId(dropId: string) {
     const rows = await dataSource.query<
       Array<{ status: string; run_id: string | null; expires_at: Date | null }>
@@ -119,6 +160,42 @@ describeWithDatabase(`staged source runs (${importDatabase.target})`, () => {
     return rows[0] ?? null;
   }
 
+  describe('the inbox claim', () => {
+    it('binds one live run to one path, and a lost claim takes its run with it', async () => {
+      const source = await seedInboxUnit('claim-race.zip', 'file');
+      const { run } = await startInbox(source, 'file');
+
+      expect((await rowByRunId(run.id))?.status).toBe('claimed');
+
+      const runsBefore = await dataSource.query<Array<{ n: string }>>(
+        `SELECT count(*) AS n FROM ci_import.import_runs WHERE user_id = $1::uuid`,
+        [userId],
+      );
+
+      await expect(startInbox(source, 'file')).rejects.toThrow(/already being imported/);
+
+      const runsAfter = await dataSource.query<Array<{ n: string }>>(
+        `SELECT count(*) AS n FROM ci_import.import_runs WHERE user_id = $1::uuid`,
+        [userId],
+      );
+
+      expect(runsAfter[0].n).toBe(runsBefore[0].n);
+    });
+
+    it('releases the path when the run is cancelled before the move', async () => {
+      const source = await seedInboxUnit('cancel-me.zip', 'file');
+      const { run } = await startInbox(source, 'file');
+
+      expect(await harness.service.cancel({ userId }, run.id)).toBe(true);
+      expect((await rowByRunId(run.id))?.status).toBe('released');
+
+      // The path is claimable again.
+      const second = await startInbox(source, 'file');
+
+      expect((await rowByRunId(second.run.id))?.status).toBe('claimed');
+    });
+  });
+
   describe('the upload claim', () => {
     it('claims by dropId, and a second claim conflicts', async () => {
       const { dropId } = await seedUpload('twice.zip');
@@ -128,10 +205,9 @@ describeWithDatabase(`staged source runs (${importDatabase.target})`, () => {
     });
 
     it('re-stages a claimed upload when its run fails before the move — never strands it', async () => {
-      // THE upload-release rule. A terminal `released` would make the file
-      // invisible to the uploads list, untouchable by the purge, and
-      // undeletable by the user; re-staging puts it back on every one of
-      // those surfaces.
+      // THE upload-release rule. `released` would make the file invisible to
+      // the uploads list, untouchable by the purge, and undeletable by the
+      // user; re-staging puts it back on every one of those surfaces.
       const { dropId, sourcePath } = await seedUpload('fails.zip');
       const { run, stages } = await startUpload(dropId);
 
@@ -163,7 +239,28 @@ describeWithDatabase(`staged source runs (${importDatabase.target})`, () => {
   });
 
   describe('the move', () => {
-    it('unpack moves the staged upload into scratch and marks it moved', async () => {
+    it('unpack moves an inbox directory out of the inbox into scratch and marks it moved', async () => {
+      const source = await seedInboxUnit('takeout', 'directory');
+      const { run, stages } = await startInbox(source, 'directory');
+      const scratchDir = path.join(scratchParent, run.id);
+
+      const outcome = await makeUnpackStage().run({
+        userId,
+        runId: run.id,
+        stageId: stages[0].id,
+        scratchDir,
+        progress: async () => undefined,
+      });
+
+      expect(outcome.partial).toBe(false);
+      await expect(stat(source)).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(await readFile(path.join(scratchDir, 'takeout', 'Mail', 'inbox.mbox'), 'utf8')).toBe('mail');
+      expect((await rowByRunId(run.id))?.status).toBe('moved');
+
+      await rm(scratchDir, { recursive: true, force: true });
+    });
+
+    it('unpack moves a staged upload the same way — one acquisition for both origins', async () => {
       const { dropId, sourcePath } = await seedUpload('upload-moves.bin');
       const { run, stages } = await startUpload(dropId);
       const scratchDir = path.join(scratchParent, run.id);
@@ -209,8 +306,8 @@ describeWithDatabase(`staged source runs (${importDatabase.target})`, () => {
 
   describe('consumption', () => {
     it('marks the claim consumed when the run finishes', async () => {
-      const { dropId } = await seedUpload('finishes.zip');
-      const { run } = await startUpload(dropId);
+      const source = await seedInboxUnit('finishes.zip', 'file');
+      const { run } = await startInbox(source, 'file');
 
       await dataSource.query(
         `UPDATE ci_import.import_stages SET status = 'completed', finished_at = now() WHERE run_id = $1::uuid`,
@@ -218,12 +315,12 @@ describeWithDatabase(`staged source runs (${importDatabase.target})`, () => {
       );
       await harness.service.finishRun(run.id);
 
-      expect((await rowByDropId(dropId))?.status).toBe('consumed');
+      expect((await rowByRunId(run.id))?.status).toBe('consumed');
     });
 
     it('never releases a claim that already moved — the bytes wait in scratch for a retry', async () => {
-      const { dropId } = await seedUpload('moved-then-failed.zip');
-      const { run, stages } = await startUpload(dropId);
+      const source = await seedInboxUnit('moved-then-failed', 'directory');
+      const { run, stages } = await startInbox(source, 'directory');
 
       await dataSource.query(
         `UPDATE ci_import.staged_sources SET status = 'moved' WHERE run_id = $1::uuid`,
@@ -232,7 +329,7 @@ describeWithDatabase(`staged source runs (${importDatabase.target})`, () => {
 
       await harness.service.failStage(stages[1].id, 'parser choked');
 
-      expect((await rowByDropId(dropId))?.status).toBe('moved');
+      expect((await rowByRunId(run.id))?.status).toBe('moved');
     });
   });
 });
