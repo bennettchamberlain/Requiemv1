@@ -232,4 +232,44 @@ describe('resolveConnectionMode — race respects the per-probe timeout', () => 
 
     expect(await resultPromise).toBe('connected');
   });
+
+  it('bounds a server that answers its headers and then stalls the body, releasing the request', async () => {
+    vi.useFakeTimers();
+    setWindow({});
+
+    // The budget has to cover the whole exchange, not just the headers: an
+    // unbounded body read leaves one hung request per re-probe tick open
+    // against the origin. The stub only ends when the probe's own signal
+    // aborts, so nothing but that abort can resolve this race.
+    let bodyAborted = false;
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo, init?: RequestInit) => {
+        return {
+          ok: true,
+          status: 200,
+          text: () =>
+            new Promise<string>((_resolve, reject) => {
+              init?.signal?.addEventListener('abort', () => {
+                bodyAborted = true;
+                const err = new Error('The operation was aborted');
+                err.name = 'AbortError';
+                reject(err);
+              });
+            }),
+        } as unknown as Response;
+      }),
+    );
+
+    const resultPromise = resolveConnectionMode();
+
+    await vi.advanceTimersByTimeAsync(REMOTE_PROBE_TIMEOUT_MS - 100);
+    expect(bodyAborted).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(200);
+
+    expect(await resultPromise).toBe('fresh');
+    expect(bodyAborted).toBe(true);
+  });
 });

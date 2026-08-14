@@ -47,15 +47,45 @@ export const REMOTE_PROBE_TIMEOUT_MS = 3_000;
 // the chip — and the outbox drain it gates — recover on their own.
 export const CONNECTION_REPROBE_INTERVAL_MS = 30_000;
 
-/** Probes the configured remote CI-Server origin's `/api/health` endpoint. */
-async function probeRemote(): Promise<boolean> {
+/**
+ * Runs a health request under a bound that covers the whole exchange, and
+ * reports only whether it succeeded.
+ *
+ * The probes own their `AbortController` rather than passing `fetchJson`'s
+ * `timeout`, because that option clears its timer the moment response headers
+ * arrive (see `fetchJson`) and so never covers reading the body. A server that
+ * answers and then stalls mid-body would outlive its budget — and since the
+ * re-probe timer fires regardless, every tick would leave another hung request
+ * open against the same origin until the browser's per-host connection pool is
+ * full and the app's own requests queue behind them. Aborting cancels the body
+ * read too, so each probe releases its connection when its budget expires.
+ *
+ * `fetchJson` only installs its own timer when the caller passes no signal, so
+ * handing it one is the supported way to take over.
+ */
+async function probeHealth(
+  timeoutMs: number,
+  request: (signal: AbortSignal) => Promise<unknown>,
+): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
-    await fetchJson(buildApiUrl('/api/health'), { timeout: REMOTE_PROBE_TIMEOUT_MS });
+    await request(controller.signal);
 
     return true;
   } catch {
     return false;
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+/** Probes the configured remote CI-Server origin's `/api/health` endpoint. */
+function probeRemote(): Promise<boolean> {
+  return probeHealth(REMOTE_PROBE_TIMEOUT_MS, (signal) =>
+    fetchJson(buildApiUrl('/api/health'), { signal }),
+  );
 }
 
 /**
@@ -76,17 +106,13 @@ async function probeLocal(): Promise<boolean> {
     return false;
   }
 
-  try {
-    await fetchJson(`${session.baseUrl}/api/health`, {
-      timeout: LOCAL_PROBE_TIMEOUT_MS,
+  return probeHealth(LOCAL_PROBE_TIMEOUT_MS, (signal) =>
+    fetchJson(`${session.baseUrl}/api/health`, {
+      signal,
       skipApiKey: true,
       headers: localHubHeaders(session),
-    });
-
-    return true;
-  } catch {
-    return false;
-  }
+    }),
+  );
 }
 
 /**
