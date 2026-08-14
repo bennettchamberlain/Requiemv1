@@ -1,6 +1,7 @@
 import { Portal } from '@ci/common';
 import { Breadcrumb } from '@ci/shadcn';
-import { Link } from 'react-router-dom';
+import { Download } from '@ci/shadcn/icons';
+import { Link, useNavigate } from 'react-router-dom';
 
 import { ServiceIntegrationsSection } from '@/components/connect/ServiceIntegrationsSection';
 import { PageContent } from '@/components/layout';
@@ -11,6 +12,7 @@ import { Card } from './Card';
 const CAPTURE_DOWNLOAD_URL = 'https://ci.computer/download#capture';
 
 export function ConnectPage() {
+  const navigate = useNavigate();
   // const openDownload = () => window.open(DOWNLOAD_URL, '_blank', 'noopener,noreferrer');
   const openCaptureDownload = () => window.open(CAPTURE_DOWNLOAD_URL, '_blank', 'noopener,noreferrer');
 
@@ -168,6 +170,24 @@ export function ConnectPage() {
           </div>
         </div>
         */}
+        {/* Import Tools */}
+        <div className="max-w-[1040px] mx-auto mb-8">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">Import Tools</h2>
+          <p className="text-muted-foreground mb-6">
+            Import data archives from a wide range of services
+          </p>
+          {/* The same grid as every other section, so the lone card keeps the
+              shared card size instead of stretching across the row. */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-4">
+            <Card
+              icon={<Download aria-hidden className="h-12 w-12 text-blue-600" />}
+              background="bg-blue-600"
+              border="border-blue-500"
+              text="Import data archives you've exported from your services — Google Takeout, Apple, Spotify, and dozens more."
+              onClick={() => navigate('/import')}
+            />
+          </div>
+        </div>
 
         {/* Service Integrations Section */}
         <div className="max-w-[1040px] mx-auto">
