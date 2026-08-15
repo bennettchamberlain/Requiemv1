@@ -75,6 +75,10 @@ The route deliberately does **not** use `JwtOrApiKeyAuthGuard`: its portal path 
 | **Hostile input** | Bodies are zod-validated against the archetype union and rejected off-contract. Peer *responses* are equally untrusted — `PeerAskClient.normalize()` carries forward only recognized fields and degrades an unknown status to `declined`. |
 | **No enumeration** | Portal search returns only opt-in `discoverable` entries; resolution requires an exact handle. |
 | **Bounded blast radius** | Every outbound call is timeout-bounded; a slow or hostile peer degrades to `declined` rather than hanging the caller. |
+| **No SSRF** | Every server-side fetch passes `checkEgressUrl()`: https only, no credentials, no non-standard ports, no private/loopback/link-local/CGNAT/metadata address — including IPv4-mapped IPv6 in **both** spellings, since `URL` normalizes `::ffff:10.0.0.1` to hex. |
+| **Token can't be replayed at another box** | The peer surface verifies the token against **this box's own `peers.audience`**, not the broad first-party list. It refuses to accept anything until that is configured. |
+| **Inbound flooding is bounded** | `PeerRateLimitService` limits on the verified `(issuer, subject)` **before** the peer-link lookup, so an unknown caller is limited too. |
+| **Timezone-independent availability** | All-day events expand on **UTC** day boundaries, so two boxes in different zones compute identical busy spans. |
 
 ## Data model
 
@@ -94,16 +98,40 @@ The route deliberately does **not** use `JwtOrApiKeyAuthGuard`: its portal path 
   "directoryUrl": "",      // CI-Portal peer-discovery base; empty disables discovery
   "memoryEndpoint": "",    // this box's own /agent/v1, published to the directory
   "handle": "",            // this box's Portal handle
+  "audience": "",          // REQUIRED for inbound: the audience Portal mints for THIS box
   "timeoutMs": 10000       // bound on every outbound peer/directory call
 }
 ```
 
-Env: `CI_PEER_DIRECTORY_URL`, `CI_PEER_MEMORY_ENDPOINT`, `CI_PEER_HANDLE`, `CI_PEER_TIMEOUT_MS`.
+Env: `CI_PEER_DIRECTORY_URL`, `CI_PEER_MEMORY_ENDPOINT`, `CI_PEER_HANDLE`, `CI_PEER_AUDIENCE`, `CI_PEER_TIMEOUT_MS`.
 The inbound surface is additionally gated by the **`ask`** feature flag (`ENABLE_ASK`), off by default.
+
+> **`peers.audience` is not optional for inbound.** Without it, a token issued for *any* first-party client would verify here — including one minted for a different Companion. The peer route refuses every request until it is set, rather than falling back to the broad list.
+
+## Known limitations
+
+- **DNS rebinding** is not closed. `checkEgressUrl` validates the literal host, but a hostname that resolves to a private address at connect time would still be fetched; pinning the resolved IP through the socket is not something Node's `fetch` exposes. The residual exposure is bounded by requiring https, so the target must present a valid certificate for the name.
+- **Rate limits are per-process and in-memory.** Correct for a single-instance appliance; a shared store is needed before the ask path goes multi-instance.
+- **The peer access token is supplied by the caller**, not minted here, until Portal token exchange lands.
+
+## Sending an ask (outbound)
+
+`OutboundAskService` + the `sendPeerAsk` GraphQL mutation are the outbound half. The two directions are deliberately separate services: **inbound** treats the ask as hostile and the local owner as authoritative; **outbound** treats the local user as authoritative and the **peer's response** as untrusted. Conflating them would blur which side of the trust boundary each piece of data came from.
+
+Two details worth knowing:
+
+- The local `Ask` row is written **before** the request leaves, so an outbound ask is auditable even when the peer never answers — a peer that goes silent still leaves a record that this box asked.
+- A **fresh correlation id** is sent per ask, never the local row id, which would leak this box's identifiers to the peer.
+
+An unknown handle and a revoked link are refused **identically**, so a caller cannot use the error to discover which handles the owner has ever been linked to.
+
+### The token
+
+`sendPeerAsk` takes a `peerAccessToken` — a Portal-issued token whose audience is the **peer** box. Until Portal token exchange (RFC 8693) lands, the caller supplies it; this box never mints or caches one. The peer verifies that binding on receipt, which is what stops a token for one box being replayed at another.
 
 ## Status
 
-Inbound is complete: a box can **receive, gate, and answer** a federated ask end-to-end. The **outbound** composer (`PeerAskClient` + `PeerDirectoryService`) is implemented and unit-tested but not yet wired to a UI or agent surface, so a box cannot yet *send* an ask outside of tests. Peer-link management UI and the MCP tool for assistants are the next increment.
+**Both directions work.** A box can receive, gate, and answer a federated ask, and can compose and send one. Still open: peer-link management UI, an MCP tool so assistants can drive asks directly, and Portal token exchange so the access token is minted rather than passed in.
 
 ## See also
 
