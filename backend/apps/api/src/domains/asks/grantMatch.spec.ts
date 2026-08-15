@@ -137,3 +137,80 @@ describe('evaluateGrant', () => {
     expect(evaluateGrant(ask(), [scoped], NOW)).toEqual({ decision: 'review' });
   });
 });
+
+describe('grant vocabulary (Phase 2)', () => {
+  it('archetype scope narrows a grant to the named archetypes', () => {
+    const g = grant({ mode: 'auto', scope: { archetypes: ['content'] } });
+    expect(evaluateGrant(ask({ queryType: 'photos' }), [g], NOW).decision).toBe('review');
+
+    const matching = grant({ mode: 'auto', queryType: 'content', scope: { archetypes: ['content'] } });
+    expect(evaluateGrant(ask({ queryType: 'content' }), [matching], NOW).decision).toBe('auto');
+  });
+
+  it('a validity window requires the ask to declare a window inside it', () => {
+    const g = grant({
+      mode: 'auto',
+      scope: { notBefore: '2026-07-01T00:00:00Z', notAfter: '2026-07-31T00:00:00Z' },
+    });
+
+    // ask with no window cannot be proven inside the grant
+    expect(evaluateGrant(ask(), [g], NOW).decision).toBe('review');
+
+    // inside
+    expect(
+      evaluateGrant(ask({ filters: { from: '2026-07-10T00:00:00Z', to: '2026-07-12T00:00:00Z' } }), [g], NOW)
+        .decision,
+    ).toBe('auto');
+
+    // straddling the end
+    expect(
+      evaluateGrant(ask({ filters: { from: '2026-07-10T00:00:00Z', to: '2026-08-10T00:00:00Z' } }), [g], NOW)
+        .decision,
+    ).toBe('review');
+  });
+
+  it('a purpose-bound grant requires the ask to state that purpose', () => {
+    const g = grant({ mode: 'auto', scope: { purpose: 'Wedding Invites' } });
+
+    expect(evaluateGrant(ask(), [g], NOW).decision).toBe('review');
+    expect(evaluateGrant(ask({ filters: { purpose: 'wedding invites' } }), [g], NOW).decision).toBe('auto');
+    expect(evaluateGrant(ask({ filters: { purpose: 'something else' } }), [g], NOW).decision).toBe('review');
+  });
+
+  it('surfaces the grant maxDisclosure ceiling to the caller', () => {
+    const g = grant({ mode: 'auto', scope: { maxDisclosure: 'count' } });
+    expect(evaluateGrant(ask(), [g], NOW).maxDisclosure).toBe('count');
+
+    // a bogus rung is ignored rather than trusted
+    const bogus = grant({ mode: 'auto', scope: { maxDisclosure: 'everything' as never } });
+    expect(evaluateGrant(ask(), [bogus], NOW).maxDisclosure).toBeUndefined();
+  });
+
+  describe('a block is never narrowed by its own scope', () => {
+    it('still blocks an ask outside the block grant validity window', () => {
+      const blocked = grant({
+        id: 'blk',
+        mode: 'block',
+        scope: { notBefore: '2026-07-01T00:00:00Z', notAfter: '2026-07-31T00:00:00Z' },
+      });
+      const broadAuto = grant({ id: 'auto', mode: 'auto' });
+
+      // an ask well outside the block's window must STILL be denied
+      const outside = ask({ filters: { from: '2027-01-01T00:00:00Z', to: '2027-01-02T00:00:00Z' } });
+      expect(evaluateGrant(outside, [broadAuto, blocked], NOW)).toEqual({
+        decision: 'deny',
+        grantId: 'blk',
+      });
+    });
+
+    it('still blocks an ask that omits the purpose the block names', () => {
+      const blocked = grant({ id: 'blk', mode: 'block', scope: { purpose: 'research' } });
+      const broadAuto = grant({ id: 'auto', mode: 'auto' });
+
+      expect(evaluateGrant(ask(), [broadAuto, blocked], NOW)).toEqual({
+        decision: 'deny',
+        grantId: 'blk',
+      });
+    });
+  });
+});

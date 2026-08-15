@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, NotFoundException, UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
 
-import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
+import { Context, type RequestContext, type UserServiceContext, toServiceContext } from '@ci/common/context';
 import { FeatureService } from '@ci/common/feature';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import {
@@ -12,10 +12,14 @@ import {
   AskRateLimitService,
   AskService,
   GrantService,
+  applyDisclosureCeiling,
   buildDisclosedAnswer,
+  disclosureCeiling,
   inferAnswerForm,
+  type TrustTier,
   type GrantMode,
 } from '@ci/domains/asks';
+import { PeerLinkService } from '@ci/domains/peers';
 
 import { AskAnswerType } from '../types/AskAnswerType';
 import { CreateAskGrantInput, CreateAskInput } from '../types/AskInputs';
@@ -45,6 +49,7 @@ export class AskResolver {
     private readonly rateLimitService: AskRateLimitService,
     private readonly executorService: AskExecutorService,
     private readonly answerService: AskAnswerService,
+    private readonly peerLinkService: PeerLinkService,
     private readonly featureService: FeatureService,
   ) {}
 
@@ -157,12 +162,20 @@ export class AskResolver {
     // for accountability regardless of whether they are itemized to the asker.
     const backingIds = matches.filter((match) => !redacted.has(match.id)).map((match) => match.id);
 
-    const answer = buildDisclosedAnswer({
+    const built = buildDisclosedAnswer({
       form: inferAnswerForm(ask.query),
       matches,
       redactedIds: redactItemIds,
       consentBasis: ask.consentBasis,
     });
+
+    // Phase 2 policy engine: clamp the answer to the asker's tier ceiling. This
+    // is defence in depth, applied AFTER the grant already said yes — a grant
+    // authorizes an ask, the ceiling caps how much any answer to it may reveal,
+    // and the two are enforced independently so a mis-scoped grant cannot leak
+    // more than the relationship allows.
+    const tier = await this.resolveTier(serviceContext, ask);
+    const answer = applyDisclosureCeiling(built, disclosureCeiling(tier, ask.query.dataClass));
 
     const savedAnswer = await this.answerService.create({ askId: id, answer });
     const completed = await this.askService.complete(serviceContext, id, backingIds);
@@ -174,6 +187,24 @@ export class AskResolver {
       disclosedCount: answer.disclosedCount,
       withheldCount: answer.withheldCount,
     };
+  }
+
+  /**
+   * The asker's relationship tier, which sets the disclosure ceiling.
+   *
+   * A local ask comes from a member of the owner's own box (`household`). An ask
+   * carrying a peer link is federated, so the tier is the one the owner assigned
+   * that peer — and a link that has since been revoked or deleted resolves to
+   * `stranger`, the strictest posture, rather than silently widening.
+   */
+  private async resolveTier(context: UserServiceContext, ask: Ask): Promise<TrustTier> {
+    if (ask.peerLinkId == null) {
+      return 'household';
+    }
+
+    const link = await this.peerLinkService.findById(context, ask.peerLinkId);
+
+    return (link?.trustTier as TrustTier | undefined) ?? 'stranger';
   }
 
   /** The disclosure-filtered answer for an ask (visible to asker or responder). */

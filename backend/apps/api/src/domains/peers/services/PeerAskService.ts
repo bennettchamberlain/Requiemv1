@@ -10,9 +10,13 @@ import {
   AskAuditService,
   AskExecutorService,
   AskService,
+  applyDisclosureCeiling,
   buildDisclosedAnswer,
+  disclosureCeiling,
+  minRung,
   GrantService,
   type AskQuery,
+  type DisclosureRung,
 } from '@ci/domains/asks';
 import { EventEntity } from '@ci/domains/memory';
 
@@ -115,7 +119,14 @@ export class PeerAskService {
     // audit both carry a real consent basis rather than null.
     const authorized = await this.askService.setConsentBasis(ask.id, decision.grantId ?? null);
 
-    const answer = await this.answerFor(context, link, body, authorized, decision.grantId ?? null);
+    const answer = await this.answerFor(
+      context,
+      link,
+      body,
+      authorized,
+      decision.grantId ?? null,
+      decision.maxDisclosure,
+    );
 
     return { askId: body.askId, status: 'answered', answer };
   }
@@ -127,6 +138,7 @@ export class PeerAskService {
     body: PeerAskBody,
     ask: Ask,
     consentBasis: string | null,
+    grantCeiling?: DisclosureRung,
   ): Promise<NonNullable<PeerAskResponse['answer']>> {
     const who = link.displayName ?? 'They';
 
@@ -177,7 +189,7 @@ export class PeerAskService {
     const identifiers = await this.executorService.execute(ask);
     const matches = identifiers.map((identifier) => ({ id: identifier.id, type: identifier.type }));
 
-    const disclosed = buildDisclosedAnswer({
+    const built = buildDisclosedAnswer({
       // "Do you know X?" is a yes/no; "have you seen X?" is existence. Neither
       // returns item references — only an explicit retrieval ask would, and the
       // peer protocol does not expose one.
@@ -186,6 +198,18 @@ export class PeerAskService {
       consentBasis,
       responderLabel: who,
     });
+
+    // Phase 2 policy engine. Two independent ceilings are combined by taking the
+    // LESSER: the tier the owner assigned this peer, and any `maxDisclosure` the
+    // deciding grant declared. A grant can tighten the tier default but never
+    // loosen it, so neither a generous grant nor a generous tier alone can widen
+    // what a peer receives.
+    // `dataClass` is only carried by the content archetype; the others have no
+    // class of their own, so the tier's default ceiling applies.
+    const requestedClass = body.request.archetype === 'content' ? body.request.dataClass : undefined;
+    const tierCeiling = disclosureCeiling(link.trustTier, requestedClass);
+    const ceiling = grantCeiling != null ? minRung(tierCeiling, grantCeiling) : tierCeiling;
+    const disclosed = applyDisclosureCeiling(built, ceiling);
 
     await this.answerService.create({ askId: ask.id, answer: disclosed });
     await this.recordAudit(

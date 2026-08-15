@@ -1,5 +1,6 @@
 import type { AskGrant } from './entities/AskGrantEntity';
-import type { AskQuery, GrantEvaluation } from './types';
+import { DISCLOSURE_RUNGS } from './policy';
+import type { AskQuery, DisclosureRung, GrantEvaluation } from './types';
 
 /**
  * Pure, per-query consent evaluation — the heart of the ask gate.
@@ -42,15 +43,24 @@ export function evaluateGrant(
 
   const auto = matches.find((grant) => grant.mode === 'auto');
   if (auto) {
-    return { decision: 'auto', grantId: auto.id };
+    return { decision: 'auto', grantId: auto.id, maxDisclosure: ceilingOf(auto) };
   }
 
   const review = matches.find((grant) => grant.mode === 'review');
   if (review) {
-    return { decision: 'review', grantId: review.id };
+    return { decision: 'review', grantId: review.id, maxDisclosure: ceilingOf(review) };
   }
 
   return { decision: 'review' };
+}
+
+/** The grant's own disclosure ceiling, if it declares one. */
+function ceilingOf(grant: AskGrant): DisclosureRung | undefined {
+  const max = grant.scope?.maxDisclosure;
+
+  return typeof max === 'string' && (DISCLOSURE_RUNGS as readonly string[]).includes(max)
+    ? (max as DisclosureRung)
+    : undefined;
 }
 
 function isActive(grant: AskGrant, now: Date): boolean {
@@ -79,6 +89,17 @@ export function canonicalDataClass(value: string | null | undefined): string | n
  * declared class is that class / in that set.
  */
 function grantMatchesQuery(grant: AskGrant, query: AskQuery): boolean {
+  return classMatchesQuery(grant, query) && scopeCoversQuery(grant, query);
+}
+
+/**
+ * The queryType + data-class half of matching, shared by positive and block
+ * grants.
+ *
+ * Deliberately excludes the narrowing dimensions in {@link scopeCoversQuery}:
+ * a block must stay broad (see {@link blockCoversQuery}).
+ */
+function classMatchesQuery(grant: AskGrant, query: AskQuery): boolean {
   if (grant.queryType !== query.queryType) {
     return false;
   }
@@ -106,6 +127,58 @@ function grantMatchesQuery(grant: AskGrant, query: AskQuery): boolean {
 }
 
 /**
+ * The remaining grant-vocabulary dimensions (archetype, validity window,
+ * purpose). Each only ever NARROWS: an absent field imposes no restriction, and
+ * a present one that fails to match drops the grant out of consideration.
+ *
+ * These are checked for POSITIVE grants only — a `block` must never be narrowed
+ * by its own scope, or an asker could evade it by falling just outside the
+ * window (see {@link blockCoversQuery}).
+ */
+function scopeCoversQuery(grant: AskGrant, query: AskQuery): boolean {
+  const scope = grant.scope;
+  if (scope == null) {
+    return true;
+  }
+
+  // Archetype restriction: the ask's queryType IS its archetype.
+  if (scope.archetypes != null) {
+    const allowed = scope.archetypes.map((a) => canonicalDataClass(a)).filter((a): a is string => a != null);
+    if (!allowed.includes(query.queryType.trim().toLowerCase())) {
+      return false;
+    }
+  }
+
+  // Validity window, evaluated against the ask's own window when it declares
+  // one. An ask with no window can't be proven inside a bounded grant, so a
+  // windowed grant does not cover it.
+  const askFrom = typeof query.filters?.from === 'string' ? query.filters.from : undefined;
+  const askTo = typeof query.filters?.to === 'string' ? query.filters.to : undefined;
+
+  if (scope.notBefore != null) {
+    if (askFrom == null || askFrom < scope.notBefore) {
+      return false;
+    }
+  }
+  if (scope.notAfter != null) {
+    if (askTo == null || askTo > scope.notAfter) {
+      return false;
+    }
+  }
+
+  // Purpose binding: a purpose-limited grant requires the ask to state that
+  // same purpose.
+  if (scope.purpose != null) {
+    const asked = typeof query.filters?.purpose === 'string' ? query.filters.purpose : undefined;
+    if (canonicalDataClass(asked) !== canonicalDataClass(scope.purpose)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
  * Whether a `block` grant covers a query. Same as {@link grantMatchesQuery} for
  * a concrete class, but deny-biased for under-specified asks: a block on the
  * queryType covers an ask that omits its data class, so a scoped block cannot be
@@ -120,5 +193,9 @@ function blockCoversQuery(grant: AskGrant, query: AskQuery): boolean {
     return true;
   }
 
-  return grantMatchesQuery(grant, query);
+  // Note: `classMatchesQuery`, NOT `grantMatchesQuery` — a block is never
+  // narrowed by its own window/purpose/archetype scope. Applying those here
+  // would let an asker slip past a block by falling just outside its validity
+  // window or by omitting the purpose it names.
+  return classMatchesQuery(grant, query);
 }

@@ -65,6 +65,15 @@ export class PeerLinkService {
     return rows.map(PeerLinkEntity.toEgressType);
   }
 
+  /** Owner-scoped lookup by id, used to resolve an inbound ask's trust tier. */
+  async findById(context: UserServiceContext, id: string): Promise<PeerLink | null> {
+    const row = await this.repository.findOne({
+      where: { ownerUserId: context.userId, id },
+    });
+
+    return row ? PeerLinkEntity.toEgressType(row) : null;
+  }
+
   async findByHandle(context: UserServiceContext, handle: string): Promise<PeerLink | null> {
     const row = await this.repository.findOne({
       where: { ownerUserId: context.userId, peerHandle: handle },
