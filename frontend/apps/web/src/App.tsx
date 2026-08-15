@@ -1,16 +1,26 @@
 import { type ReactNode, lazy, useEffect } from 'react';
 
-import { DeviceLayoutProvider, getApiBaseUrl, isNativePlatform } from '@ci/common';
+import {
+  ConnectionModeProvider,
+  DeviceLayoutProvider,
+  LoadingPage,
+  OutboxQueueProvider,
+  getApiBaseUrl,
+  isNativePlatform,
+} from '@ci/common';
 import {
   BrowserRouter as Router,
   Routes,
   Route,
+  Navigate,
   useLocation,
   useNavigate,
+  useParams,
   type Location,
 } from 'react-router-dom';
 
 import { ApolloProvider } from '@/api/ApolloProvider';
+import { PowerSyncProvider } from '@/api/powersync/PowerSyncProvider';
 import { FeaturesProvider, useFeatures } from '@/common/feature';
 import NotFoundPage from '@/components/NotFound';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
@@ -40,12 +50,12 @@ const ConnectionsPage = lazy(() => import('@/pages/ConnectionsPage'));
 const ContentPage = lazy(() => import('@/pages/ContentPage'));
 const EventPage = lazy(() => import('@/pages/EventPage'));
 const ItemPage = lazy(() => import('@/pages/ItemPage'));
-const InsightsPage = lazy(() => import('@/pages/InsightsPage'));
 const JobsPage = lazy(() => import('@/pages/JobsPage'));
 const InventoryPage = lazy(() => import('@/pages/InventoryPage'));
 const MemoryPage = lazy(() => import('@/pages/MemoryPage'));
 const NotePage = lazy(() => import('@/pages/NotePage'));
 const NotesPage = lazy(() => import('@/pages/NotesPage'));
+const PlanPage = lazy(() => import('@/pages/PlanPage'));
 const OAuthCallbackPage = lazy(() => import('@/pages/OAuthCallbackPage'));
 const OnboardingPage = lazy(() => import('@/pages/OnboardingPage'));
 const OpenIDCallbackPage = lazy(() => import('@/pages/OpenIDCallbackPage'));
@@ -54,6 +64,7 @@ const PersonPage = lazy(() => import('@/pages/PersonPage'));
 const PlacePage = lazy(() => import('@/pages/PlacePage'));
 const PlacesPage = lazy(() => import('@/pages/PlacesPage'));
 const ProviderPage = lazy(() => import('@/pages/ProviderPage'));
+const SchedulePage = lazy(() => import('@/pages/SchedulePage'));
 const SearchPage = lazy(() => import('@/pages/SearchPage'));
 const FilesPage = lazy(() => import('@/pages/FilesPage'));
 const SavedSearchesPage = lazy(() => import('@/pages/SavedSearchesPage'));
@@ -66,21 +77,35 @@ const SummaryDetailPage = lazy(() => import('@/pages/SummaryDetailPage'));
 const SystemPage = lazy(() => import('@/pages/SystemPage'));
 const PromptsPage = lazy(() => import('@/pages/PromptsPage'));
 
+function RedirectInsightsSummary() {
+  const { id } = useParams<{ id: string }>();
+
+  return <Navigate to={`/feed/summaries/${id ?? ''}`} replace />;
+}
+
 function Providers({ children }: { children: ReactNode }) {
   return (
     <Router>
       <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme">
         <BackgroundProvider>
           <DeviceLayoutProvider args={[]}>
-            <AuthProvider args={[]}>
-              <FeaturesProvider args={[]}>
-                <ModelProvider args={[]}>
-                  <CaptureModalProvider args={[]}>
-                    <ApolloProvider>{children}</ApolloProvider>
-                  </CaptureModalProvider>
-                </ModelProvider>
-              </FeaturesProvider>
-            </AuthProvider>
+            <ConnectionModeProvider args={[]}>
+              {/* Inside ConnectionModeProvider: the outbox flush loop is driven by the
+                  resolved connection mode rather than a timer of its own. */}
+              <OutboxQueueProvider args={[]}>
+                <AuthProvider args={[]}>
+                  <FeaturesProvider args={[]}>
+                    <ModelProvider args={[]}>
+                      <CaptureModalProvider args={[]}>
+                        <ApolloProvider>
+                          <PowerSyncProvider>{children}</PowerSyncProvider>
+                        </ApolloProvider>
+                      </CaptureModalProvider>
+                    </ModelProvider>
+                  </FeaturesProvider>
+                </AuthProvider>
+              </OutboxQueueProvider>
+            </ConnectionModeProvider>
           </DeviceLayoutProvider>
         </BackgroundProvider>
       </ThemeProvider>
@@ -89,7 +114,7 @@ function Providers({ children }: { children: ReactNode }) {
 }
 
 function AppRoutes() {
-  const { isFeatureEnabled } = useFeatures();
+  const { isFeatureEnabled, loading: featuresLoading } = useFeatures();
   const location = useLocation();
   const navigate = useNavigate();
   const backgroundLocation = (location.state as { backgroundLocation?: Location } | null)?.backgroundLocation;
@@ -200,33 +225,13 @@ function AppRoutes() {
           />
 
           {isFeatureEnabled('enable.inventory.page') && (
-            <Route
-              path="/inventory"
-              element={
-                <ProtectedRoute>
-                  <InventoryPage />
-                </ProtectedRoute>
-              }
-            />
-          )}
-
-          {isFeatureEnabled('insights.page') && (
             <>
+              <Route path="/inventory" element={<Navigate to="/memory/things" replace />} />
               <Route
-                path="/insights"
+                path="/memory/things"
                 element={
                   <ProtectedRoute>
-                    {isFeatureEnabled('new.insights.page') && <InsightsPage />}
-                    {!isFeatureEnabled('new.insights.page') && <PromptsPage />}
-                  </ProtectedRoute>
-                }
-              />
-
-              <Route
-                path="/insights/:id"
-                element={
-                  <ProtectedRoute>
-                    <SummaryDetailPage />
+                    <InventoryPage />
                   </ProtectedRoute>
                 }
               />
@@ -234,14 +239,64 @@ function AppRoutes() {
           )}
 
           {isFeatureEnabled('files.page') && (
-            <Route
-              path="/files"
-              element={
-                <ProtectedRoute>
-                  <FilesPage />
-                </ProtectedRoute>
-              }
-            />
+            <>
+              <Route path="/files" element={<Navigate to="/memory/content" replace />} />
+              <Route
+                path="/memory/content"
+                element={
+                  <ProtectedRoute>
+                    <FilesPage />
+                  </ProtectedRoute>
+                }
+              />
+            </>
+          )}
+
+          <Route
+            path="/feed/summaries/:id"
+            element={
+              <ProtectedRoute>
+                <SummaryDetailPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route path="/insights" element={<Navigate to="/feed" replace />} />
+          <Route
+            path="/insights/:id"
+            element={
+              <ProtectedRoute>
+                <RedirectInsightsSummary />
+              </ProtectedRoute>
+            }
+          />
+
+          {isFeatureEnabled('insights.page') && (
+            <>
+              <Route path="/prompts" element={<Navigate to="/memory/questions" replace />} />
+              <Route
+                path="/memory/questions"
+                element={
+                  <ProtectedRoute>
+                    <PromptsPage />
+                  </ProtectedRoute>
+                }
+              />
+            </>
+          )}
+
+          {isFeatureEnabled('tags.page') && (
+            <>
+              <Route path="/tags" element={<Navigate to="/memory/tags" replace />} />
+              <Route
+                path="/memory/tags"
+                element={
+                  <ProtectedRoute>
+                    <TagsPage />
+                  </ProtectedRoute>
+                }
+              />
+            </>
           )}
 
           {isFeatureEnabled('stats.page') && (
@@ -255,16 +310,18 @@ function AppRoutes() {
             />
           )}
 
-          {isFeatureEnabled('tags.page') && (
+          {isFeatureEnabled('schedule.page') && (
             <Route
-              path="/tags"
+              path="/schedule"
               element={
                 <ProtectedRoute>
-                  <TagsPage />
+                  <SchedulePage />
                 </ProtectedRoute>
               }
             />
           )}
+
+          <Route path="/memory/knowledge" element={<Navigate to="/memory?view=graph" replace />} />
 
           {isFeatureEnabled('chat.page') && (
             <Route
@@ -352,6 +409,17 @@ function AppRoutes() {
             }
           />
 
+          {isFeatureEnabled('planning.page') && (
+            <Route
+              path="/plan"
+              element={
+                <ProtectedRoute>
+                  <PlanPage />
+                </ProtectedRoute>
+              }
+            />
+          )}
+
           <Route
             path="/notes"
             element={
@@ -397,8 +465,9 @@ function AppRoutes() {
             }
           />
 
+          <Route path="/people" element={<Navigate to="/memory/people" replace />} />
           <Route
-            path="/people"
+            path="/memory/people"
             element={
               <ProtectedRoute>
                 <PeoplePage />
@@ -415,8 +484,9 @@ function AppRoutes() {
             }
           />
 
+          <Route path="/places" element={<Navigate to="/memory/places" replace />} />
           <Route
-            path="/places"
+            path="/memory/places"
             element={
               <ProtectedRoute>
                 <PlacesPage />
@@ -468,21 +538,18 @@ function AppRoutes() {
               </ProtectedRoute>
             }
           />
-
-          {isFeatureEnabled('insights.page') && isFeatureEnabled('new.insights.page') && (
-            <Route
-              path="/prompts"
-              element={
-                <ProtectedRoute>
-                  <PromptsPage />
-                </ProtectedRoute>
-              }
-            />
-          )}
         </Route>
 
-        {/* Fallback */}
-        <Route path="*" element={<NotFoundPage />} />
+        {/*
+          Fallback. The feature-gated routes above are absent from the table
+          until `/api/_internal/features` answers, so on a hard load of one of
+          them (/stats, /tags, /prompts, or a settings overlay whose restored
+          backgroundLocation is one of them) this is what "*" matches. Rendering
+          404 there flashed a not-found page over a route that was about to
+          exist; wait for the flags instead, exactly as ProtectedRoute waits for
+          the session. A genuinely unknown URL still lands on 404, one tick later.
+        */}
+        <Route path="*" element={featuresLoading ? <LoadingPage /> : <NotFoundPage />} />
       </Routes>
 
       {backgroundLocation && (

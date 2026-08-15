@@ -10,6 +10,12 @@ import { PageContent } from '@/components/layout';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 
 import {
+  expandActiveJobDistribution,
+  formatJobHandlerLabel,
+  formatSmartRotationJobTitle,
+  SMART_ROTATION_WORK_LABELS,
+} from './smartRotationLabels';
+import {
   useJobsDashboard,
   type ArchivedJobRecord,
   type JobQueue,
@@ -49,17 +55,32 @@ export function JobsPage() {
       return bTime - aTime;
     });
   }, [archive, jobs]);
-  const distribution = useMemo(() => {
-    if (!data?.distribution?.length) {
+  const activeDistribution = useMemo(() => {
+    if (!data?.activeDistribution?.length) {
       return [];
     }
 
-    return data.distribution.map((segment, index) => ({
+    return expandActiveJobDistribution(data.activeDistribution, data.smartRotationDistribution ?? []).map(
+      (segment, index) => ({
+        ...segment,
+        color: palette[index % palette.length],
+        key: `active-${segment.jobName}-${index}`,
+      }),
+    );
+  }, [data?.activeDistribution, data?.smartRotationDistribution]);
+
+  const archiveDistribution = useMemo(() => {
+    if (!data?.archiveDistribution?.length) {
+      return [];
+    }
+
+    return data.archiveDistribution.map((segment, index) => ({
       ...segment,
+      jobName: formatJobHandlerLabel(segment.jobName),
       color: palette[index % palette.length],
-      key: `segment-${index}`,
+      key: `archive-${index}`,
     }));
-  }, [data?.distribution]);
+  }, [data?.archiveDistribution]);
 
   return (
     <>
@@ -84,7 +105,10 @@ export function JobsPage() {
           <SummaryCard
             loading={loading}
             error={error}
-            distribution={distribution}
+            activeDistribution={activeDistribution}
+            archiveDistribution={archiveDistribution}
+            queueDistribution={data?.queueDistribution ?? []}
+            smartRotationDistribution={data?.smartRotationDistribution ?? []}
             summary={data?.summary}
             onRefresh={refresh}
           />
@@ -106,24 +130,41 @@ type SummaryCardProps = {
   loading: boolean;
   error: string | null;
   summary?: JobsDashboardResponse['summary'];
-  distribution: Array<{
+  activeDistribution: Array<{
     readonly key: string;
     readonly jobName: string;
     readonly count: number;
     readonly color: string;
   }>;
+  archiveDistribution: Array<{
+    readonly key: string;
+    readonly jobName: string;
+    readonly count: number;
+    readonly color: string;
+  }>;
+  queueDistribution: ReadonlyArray<{ readonly queue: string; readonly count: number }>;
+  smartRotationDistribution: ReadonlyArray<{ readonly workType: string; readonly count: number }>;
   onRefresh: () => void;
 };
 
-function SummaryCard({ loading, error, summary, distribution, onRefresh }: SummaryCardProps) {
+function SummaryCard({
+  loading,
+  error,
+  summary,
+  activeDistribution,
+  archiveDistribution,
+  queueDistribution,
+  smartRotationDistribution,
+  onRefresh,
+}: SummaryCardProps) {
   const summaryItems = useMemo(
     () => [
-      { label: 'Active', value: summary?.active ?? 0 },
-      { label: 'Completed', value: summary?.completed ?? 0 },
+      { label: 'Pending', value: summary?.pending ?? 0 },
+      { label: 'Running', value: summary?.active ?? 0 },
+      { label: 'Completed (lifetime)', value: summary?.completed ?? 0 },
       { label: 'Failed', value: summary?.failed ?? 0 },
-      { label: 'Scheduled', value: summary?.scheduled ?? 0 },
     ],
-    [summary?.active, summary?.completed, summary?.failed, summary?.scheduled],
+    [summary?.pending, summary?.active, summary?.completed, summary?.failed],
   );
 
   return (
@@ -149,47 +190,59 @@ function SummaryCard({ loading, error, summary, distribution, onRefresh }: Summa
           </div>
         )}
 
-        {loading && !distribution.length ? (
+        {loading && !activeDistribution.length && !archiveDistribution.length ? (
           <Skeleton className="h-60 w-full" />
-        ) : distribution.length ? (
-          <div>
-            <h3 className="text-sm font-medium text-muted-foreground">Jobs by handler</h3>
-            <ChartContainer config={{}} className="mt-2 h-[240px] w-full">
-              <PieChart>
-                <Pie
-                  data={distribution}
-                  dataKey="count"
-                  nameKey="jobName"
-                  innerRadius={60}
-                  outerRadius={100}
-                  paddingAngle={2}
-                  stroke="transparent"
-                >
-                  {distribution.map((segment) => (
-                    <Cell key={segment.key} fill={segment.color} />
-                  ))}
-                </Pie>
-                <ChartTooltip
-                  cursor={{ fill: 'hsla(var(--muted), 0.35)' }}
-                  content={
-                    <ChartTooltipContent
-                      hideLabel
-                      formatter={(value, _name, { payload }) => {
-                        return (
-                          <div className="flex w-full items-center justify-between gap-6">
-                            <span>{payload.jobName}</span>
-                            <span className="font-medium">{value as number}</span>
-                          </div>
-                        );
-                      }}
-                    />
-                  }
-                />
-              </PieChart>
-            </ChartContainer>
-          </div>
         ) : (
-          <p className="text-sm text-muted-foreground">No completed jobs have been archived yet.</p>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <DistributionChart
+              title="Active jobs by handler"
+              description="Pending and in-flight work — smart rotation split by work type"
+              data={activeDistribution}
+              emptyMessage="No active jobs in the queue."
+            />
+            <DistributionChart
+              title="Completed jobs by handler (lifetime)"
+              description="Historical volume from the job archive"
+              data={archiveDistribution}
+              emptyMessage="No completed jobs have been archived yet."
+            />
+          </div>
+        )}
+
+        {(queueDistribution.length > 0 || smartRotationDistribution.length > 0) && (
+          <div className="grid gap-4 md:grid-cols-2">
+            {queueDistribution.length > 0 ? (
+              <div className="rounded-lg border border-border/60 bg-muted/20 p-4">
+                <h3 className="text-sm font-medium">Active jobs by queue</h3>
+                <dl className="mt-3 space-y-2">
+                  {queueDistribution.map((item) => (
+                    <div key={item.queue} className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">{item.queue}</span>
+                      <span className="font-medium">{item.count.toLocaleString()}</span>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            ) : null}
+            {smartRotationDistribution.length > 0 ? (
+              <div className="rounded-lg border border-border/60 bg-muted/20 p-4">
+                <h3 className="text-sm font-medium">Smart rotation (active / retrying)</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Same jobs as above, grouped by what each run is trying to do.
+                </p>
+                <dl className="mt-3 space-y-2">
+                  {smartRotationDistribution.map((item) => (
+                    <div key={item.workType} className="flex items-center justify-between gap-3 text-sm">
+                      <span className="text-muted-foreground">
+                        {SMART_ROTATION_WORK_LABELS[item.workType] ?? item.workType}
+                      </span>
+                      <span className="font-medium tabular-nums">{item.count.toLocaleString()}</span>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            ) : null}
+          </div>
         )}
       </Card.Content>
     </Card>
@@ -274,15 +327,22 @@ type JobCardProps = {
 };
 
 function JobCard({ job }: JobCardProps) {
-  const jobName = getJobName(job.data);
+  const { title, subtitle } = getJobDisplay(job.data);
 
   return (
     <div className="rounded-lg border border-border/60 bg-muted/30 p-3 text-sm">
       <div className="flex items-center justify-between gap-2">
-        <span className="font-medium truncate" title={jobName}>
-          {jobName}
-        </span>
-        <Badge variant="outline" className="text-xs uppercase">
+        <div className="min-w-0">
+          <span className="block font-medium truncate" title={title}>
+            {title}
+          </span>
+          {subtitle ? (
+            <span className="block truncate text-xs text-muted-foreground" title={subtitle}>
+              {subtitle}
+            </span>
+          ) : null}
+        </div>
+        <Badge variant="outline" className="shrink-0 text-xs uppercase">
           {job.state}
         </Badge>
       </div>
@@ -303,17 +363,24 @@ type ArchivedJobCardProps = {
 };
 
 function ArchivedJobCard({ job }: ArchivedJobCardProps) {
-  const jobName = getJobName(job.data);
+  const { title, subtitle } = getJobDisplay(job.data);
 
   return (
     <div className="rounded-lg border border-border/60 bg-muted/30 p-3 text-sm">
       <div className="flex items-center justify-between gap-2">
-        <span className="font-medium truncate" title={jobName}>
-          {jobName}
-        </span>
+        <div className="min-w-0">
+          <span className="block font-medium truncate" title={title}>
+            {title}
+          </span>
+          {subtitle ? (
+            <span className="block truncate text-xs text-muted-foreground" title={subtitle}>
+              {subtitle}
+            </span>
+          ) : null}
+        </div>
         <Badge
           variant={job.state === 'completed' ? 'secondary' : 'destructive'}
-          className="text-xs uppercase"
+          className="shrink-0 text-xs uppercase"
         >
           {job.state}
         </Badge>
@@ -428,6 +495,67 @@ function ErrorBanner({ message }: ErrorBannerProps) {
   );
 }
 
+function DistributionChart({
+  title,
+  description,
+  data,
+  emptyMessage,
+}: {
+  title: string;
+  description: string;
+  data: Array<{
+    readonly key: string;
+    readonly jobName: string;
+    readonly count: number;
+    readonly color: string;
+  }>;
+  emptyMessage: string;
+}) {
+  if (!data.length) {
+    return <p className="text-sm text-muted-foreground">{emptyMessage}</p>;
+  }
+
+  return (
+    <div>
+      <h3 className="text-sm font-medium">{title}</h3>
+      <p className="text-xs text-muted-foreground">{description}</p>
+      <ChartContainer config={{}} className="mt-2 h-[240px] w-full">
+        <PieChart>
+          <Pie
+            data={data}
+            dataKey="count"
+            nameKey="jobName"
+            innerRadius={60}
+            outerRadius={100}
+            paddingAngle={2}
+            stroke="transparent"
+          >
+            {data.map((segment) => (
+              <Cell key={segment.key} fill={segment.color} />
+            ))}
+          </Pie>
+          <ChartTooltip
+            cursor={{ fill: 'hsla(var(--muted), 0.35)' }}
+            content={
+              <ChartTooltipContent
+                hideLabel
+                formatter={(value, _name, { payload }) => {
+                  return (
+                    <div className="flex w-full items-center justify-between gap-6">
+                      <span>{payload.jobName}</span>
+                      <span className="font-medium">{value as number}</span>
+                    </div>
+                  );
+                }}
+              />
+            }
+          />
+        </PieChart>
+      </ChartContainer>
+    </div>
+  );
+}
+
 function formatTimestamp(value?: string) {
   if (!value) {
     return '—';
@@ -449,12 +577,20 @@ function formatTimestamp(value?: string) {
   }).format(date);
 }
 
-function getJobName(data: Record<string, unknown> | null) {
+function getJobDisplay(data: Record<string, unknown> | null): { title: string; subtitle?: string } {
+  const rotationTitle = formatSmartRotationJobTitle(data);
+
+  if (rotationTitle) {
+    return { title: rotationTitle, subtitle: 'smart.rotation.work' };
+  }
+
   if (!data || typeof data !== 'object') {
-    return 'Unnamed job';
+    return { title: 'Unnamed job' };
   }
 
   const name = data['name'];
 
-  return typeof name === 'string' && name.length > 0 ? name : 'Unnamed job';
+  return {
+    title: typeof name === 'string' && name.length > 0 ? name : 'Unnamed job',
+  };
 }

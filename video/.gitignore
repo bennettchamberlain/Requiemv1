@@ -10,3 +10,15 @@ build/
 .auth/
 
 node_modules/
+
+# There is no `npm install` in here any more — make.sh installs the one pinned
+# dependency (playwright) through a scratch project and copies it in, and the
+# kit is run off the CI-Common checkout on disk rather than installed. Nothing
+# should write a lockfile here, and one committed from whichever machine last
+# filmed would be churn, not a record.
+package-lock.json
+
+# NOT ignored, on purpose: assets/shots/*.png and assets/audio/*.mp3.
+# The screenshots are committed INPUTS — the record of what the product looked
+# like, and what lets anyone render a cut without standing up the appliance.
+# Captures are byte-stable, so a diff in them means the UI genuinely changed.

@@ -1,0 +1,3 @@
+files:
+  - source: /frontend/packages/common/i18n/translations/en.json
+    translation: /frontend/packages/common/i18n/translations/%locale%.json

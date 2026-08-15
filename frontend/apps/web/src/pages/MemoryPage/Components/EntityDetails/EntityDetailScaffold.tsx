@@ -1,8 +1,9 @@
-import { type ReactNode, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useMemo, useState } from 'react';
 
 import { GlobalUID } from '@ci/common';
-import { Button, Card, Input, Label, Sheet, Textarea, cn, useToast } from '@ci/shadcn';
+import { Button, Card, IconButton, Input, Label, Sheet, Textarea, cn, useToast } from '@ci/shadcn';
 import { Loader2, Pencil } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
 import { useTagEntityService } from '@/api';
@@ -10,10 +11,12 @@ import {
   EntityRelationshipCards,
   getEntityDetailPath,
   toGlobalResourceType,
+  type RelatedEntityOpenTarget,
 } from '@/components/EntityRelationshipCards/EntityRelationshipCards';
 import { TagInput } from '@/components/TagInput';
 
 import type { MemoryEntity } from '../../../MemoryPage/useEntityService';
+import { useEntityService } from '../../../MemoryPage/useEntityService';
 
 import { useReadOnly } from './readOnly';
 
@@ -222,13 +225,29 @@ export function EntityDetailScaffold({
   taggable = false,
   tagsEditable = false,
 }: EntityDetailScaffoldProps) {
+  const { t } = useTranslation();
   const ref = useMemo(() => resolveEntityRef(entity), [entity]);
   const currentTags = useMemo(() => readTags(entity), [entity]);
   const { tagEntities, untagEntities } = useTagEntityService();
+  const [, { setActiveEntity }] = useEntityService();
   const { toast } = useToast();
   // Shared-search viewer: the drawer is display-only. Suppress every mutation /
   // navigation affordance (the writes are owner-scoped and would silently fail).
   const readOnly = useReadOnly();
+
+  const handleOpenRelatedEntity = useCallback(
+    (target: RelatedEntityOpenTarget) => {
+      setActiveEntity({
+        __typename: 'GenericEntity',
+        id: target.id,
+        name: target.name,
+        entityType: target.entityType,
+        description: target.description,
+        properties: target.properties,
+      });
+    },
+    [setActiveEntity],
+  );
 
   const canEdit = !readOnly && Boolean(onSave && editFields && editFields.length > 0);
   // Tags-only edit mode: no persisted fields, just an editable TagInput. Lets
@@ -312,15 +331,14 @@ export function EntityDetailScaffold({
         <div className="flex items-start justify-between gap-2">
           <Sheet.Title className="text-xl leading-tight tracking-tight">{title}</Sheet.Title>
           {canEnterEditMode && !editing && (
-            <Button
+            <IconButton
               variant="ghost"
-              size="icon"
               className="-mt-1 size-8 shrink-0"
-              aria-label="Edit"
+              label={t('ENTITY_DETAILS_EDIT')}
               onClick={startEditing}
             >
               <Pencil className="size-4" />
-            </Button>
+            </IconButton>
           )}
         </div>
         {/* Always render a description so Radix has an accessible description to
@@ -436,7 +454,13 @@ export function EntityDetailScaffold({
         {/* Relationship cards + the "Open full page" link both navigate to the
             owner's per-entity routes (which resolve under the VIEWER's scope and
             fall outside the shared search). Hide both in read-only mode. */}
-        {!readOnly && ref.rawId && <EntityRelationshipCards key={ref.rawId} entityId={ref.rawId} />}
+        {!readOnly && ref.rawId && (
+          <EntityRelationshipCards
+            key={ref.rawId}
+            entityId={ref.rawId}
+            onOpenRelatedEntity={handleOpenRelatedEntity}
+          />
+        )}
 
         {rawData != null && <RawDataDetails data={rawData} />}
 

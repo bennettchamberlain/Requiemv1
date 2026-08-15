@@ -1,0 +1,119 @@
+import { useCallback, useEffect, useState } from 'react';
+
+import { fetchJson } from '@ci/common';
+import { Button, Card } from '@ci/shadcn';
+import { Check } from '@ci/shadcn/icons';
+
+import { useAuth } from '@/hooks';
+
+import { TRUST_OPTIONS } from '../../OnboardingPage/TrustDialStep';
+
+type TrustMode = 'cautious' | 'balanced' | 'hands_off';
+
+type PersonalizationProfile = {
+  trustMode: TrustMode;
+};
+
+export function AutonomySection() {
+  const [{ authToken }] = useAuth();
+  const [selected, setSelected] = useState<TrustMode>('balanced');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!authToken) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const profile = await fetchJson<PersonalizationProfile>('/api/personalization/profile', {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      setSelected(profile?.trustMode ?? 'balanced');
+    } catch {
+      setError('Failed to load autonomy settings.');
+    } finally {
+      setLoading(false);
+    }
+  }, [authToken]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const handleSave = async () => {
+    if (!authToken) {
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    try {
+      await fetchJson('/api/personalization/trust-mode', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ trustMode: selected }),
+      });
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 2500);
+    } catch {
+      setError('Failed to save autonomy settings.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="mb-6">
+        <h2 className="text-xl font-semibold">Autonomy</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Control how much Companion does on its own — graph growth, inferred answers, schedule suggestions,
+          and feed actions all respect this setting.
+        </p>
+      </div>
+
+      <Card>
+        <Card.Content className="space-y-4 pt-6">
+          <div className="flex flex-col gap-3">
+            {TRUST_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                aria-pressed={selected === opt.value}
+                disabled={loading}
+                className={`rounded-xl border border-border px-5 py-4 text-left transition-colors hover:border-teal-600/60 ${
+                  selected === opt.value ? 'border-teal-600 bg-teal-500/10' : ''
+                }`}
+                onClick={() => setSelected(opt.value)}
+              >
+                <span className="block text-lg font-medium">{opt.label}</span>
+                <span className="block text-sm text-muted-foreground mt-1">{opt.hint}</span>
+              </button>
+            ))}
+          </div>
+
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+
+          <div className="flex items-center gap-3">
+            <Button onClick={handleSave} disabled={loading || saving}>
+              {saving ? 'Saving…' : 'Save'}
+            </Button>
+            {saved ? (
+              <span className="flex items-center gap-1 text-sm text-muted-foreground">
+                <Check className="h-4 w-4" />
+                Saved
+              </span>
+            ) : null}
+          </div>
+        </Card.Content>
+      </Card>
+    </>
+  );
+}

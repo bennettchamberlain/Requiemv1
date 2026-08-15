@@ -9,6 +9,8 @@ import { PersonUpdatedEvent } from '@ci/domains/memory/events';
 
 import { type Person, PersonEntity } from '../entities/PersonEntity';
 
+import { GraphDeltaWriter } from './GraphDeltaWriter';
+
 /** Per-table re-point counts recorded in the ci.entity_merges audit row. */
 export interface MergeCounts {
   identifiers: number;
@@ -39,7 +41,9 @@ export interface MergeCounts {
  *    emails/phones/names arrays are unioned),
  * 6. tombstones each source (is_active = FALSE, merged_into_entity_id =
  *    target) and deletes its search-index embedding,
- * 7. writes one ci.entity_merges audit row per source.
+ * 7. re-points any tombstone that already aimed at a source, so
+ *    merged_into_entity_id stays exactly one hop deep,
+ * 8. writes one ci.entity_merges audit row per source.
  *
  * The user's self person may be a merge TARGET (folding a stub of yourself
  * into you) but never a SOURCE — users.entity_id must keep pointing at a live
@@ -52,6 +56,7 @@ export class PersonMergeService {
     private readonly personRepository: Repository<PersonEntity>,
     private readonly logger: LoggerService,
     private readonly eventService: EventService,
+    private readonly graphDeltaWriter: GraphDeltaWriter,
   ) {
     this.logger.setContext(PersonMergeService.name);
   }
@@ -143,6 +148,53 @@ export class PersonMergeService {
         [ownerUserId, sources, targetId],
       );
 
+      await this.graphDeltaWriter.recordMany(
+        [
+          {
+            nodeType: 'entity' as const,
+            changeType: 'updated' as const,
+            entityId: targetId,
+            entityType: 'Person',
+            ownerUserId,
+            changeSource: 'PersonMergeService.mergePeople',
+            changedByUserId: ownerUserId,
+            changedFields: {
+              name: { new: mergedName },
+              description: { new: mergedDescription },
+              properties: { new: mergedProperties },
+            },
+          },
+          ...sources.map((sourceId) => ({
+            nodeType: 'entity' as const,
+            changeType: 'merged' as const,
+            entityId: sourceId,
+            entityType: 'Person',
+            ownerUserId,
+            changeSource: 'PersonMergeService.mergePeople',
+            changedByUserId: ownerUserId,
+            changedFields: {
+              name: { old: byId.get(sourceId)?.name ?? null },
+              merged_into_entity_id: { new: targetId },
+            },
+          })),
+        ],
+        em,
+      );
+
+      // Path compression. Merging B into C leaves any tombstone that already
+      // pointed at B aiming at a row that is now itself a tombstone, and every
+      // resolver in the codebase follows exactly ONE hop (PersonService's
+      // resolveTombstone, GraphIngestService's canonicalIdOf). Without this,
+      // the second merge in a chain silently re-strands the first one's
+      // sources. Re-pointing them here keeps `merged_into_entity_id` one hop
+      // deep for good, so readers stay a single lookup.
+      await em.query(
+        `UPDATE ci.entities
+            SET merged_into_entity_id = $3, updated_at = now()
+          WHERE owner_user_id = $1 AND merged_into_entity_id = ANY($2::uuid[])`,
+        [ownerUserId, sources, targetId],
+      );
+
       // Tombstones must stop matching in search. Person search rows live in
       // TWO stores (PersonSearchIndexListener writes both): the embedding
       // (semantic) and the ci_search.vectors tsvector row (keyword / boosted
@@ -210,7 +262,7 @@ export class PersonMergeService {
     await this.eventService.send(PersonUpdatedEvent, { personId: targetId });
 
     const entity = await this.personRepository.findOne({
-      where: { id: targetId, user: { id: ownerUserId } },
+      where: { id: targetId, userId: ownerUserId },
     });
 
     if (!entity) {

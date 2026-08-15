@@ -5,6 +5,7 @@ import { type Person } from '@ci/domains/memory';
 import { EntityTagType } from './EntityTagType';
 import { GlobalUID } from './GlobalUID';
 import { Node } from './Node';
+import { RelationshipType } from './RelationshipType';
 import { Taggable } from './Taggable';
 
 @ObjectType({ implements: () => [Node, Taggable] })
@@ -69,6 +70,13 @@ export class PersonType implements Node, Taggable {
   @Field(() => [EntityTagType])
   tags!: EntityTagType[];
 
+  /** Life-graph ego edges — resolved from ci.relationships (WS5). */
+  @Field(() => [RelationshipType], { nullable: true })
+  outgoingRelationships?: RelationshipType[];
+
+  @Field(() => [RelationshipType], { nullable: true })
+  incomingRelationships?: RelationshipType[];
+
   static toType(person: Person): PersonType {
     return {
       __typename: PersonType.name,
@@ -89,7 +97,7 @@ export class PersonType implements Node, Taggable {
       region: person.region,
       country: person.country,
       postalCode: person.postalCode,
-      avatarUrl: person.avatarUrl,
+      avatarUrl: (person.properties?.avatar_url as string) ?? null,
       tags: [], // Resolved by PersonResolver
     };
   }

@@ -19,8 +19,10 @@ export function RedirectKnownUser({ children }: { children: React.ReactNode }) {
     return children;
   }
 
+  // A valid token with no resolved user means the profile query failed or the
+  // account no longer exists — do not spin forever (see ProtectedRoute).
   if (authToken && !user) {
-    return <LoadingPage />;
+    return <Navigate to="/login" replace />;
   }
 
   if (user) {

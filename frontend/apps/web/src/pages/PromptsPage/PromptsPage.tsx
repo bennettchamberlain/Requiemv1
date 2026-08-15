@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 
 import { apiKeyHeaders, buildApiUrl, Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb, Button, Table, Card, ToggleGroup, Badge } from '@ci/shadcn';
+import { Breadcrumb, Button, IconButton, Table, Card, ToggleGroup, Badge, Tooltip } from '@ci/shadcn';
 import {
   AlertCircle,
   RefreshCw,
@@ -13,10 +13,11 @@ import {
   ChevronDown,
   ChevronUp,
 } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
-import { useFeatures } from '@/common/feature';
 import { PageContent } from '@/components/layout';
+import { MemoryHubShell } from '@/components/MemoryHub';
 import { useAuth } from '@/hooks';
 
 import { AnswerQuestionPrompt } from './AnswerQuestionPrompt';
@@ -34,10 +35,9 @@ interface Answer {
 }
 
 export function PromptsPage() {
-  const { isFeatureEnabled } = useFeatures();
+  usePageTitle('Questions - Companion Intelligence');
 
-  usePageTitle(`${isFeatureEnabled('new.insights.page') ? 'Insights' : 'Prompts'} - Companion Intelligence`);
-
+  const { t } = useTranslation();
   const [{ authToken }] = useAuth();
 
   const [answers, setAnswers] = useState<Answer[]>([]);
@@ -79,7 +79,7 @@ export function PromptsPage() {
         } else if (response.status === 404) {
           throw new Error('API endpoint not found');
         } else if (response.status >= 500) {
-          throw new Error('Server error: Please try again later');
+          throw new Error('Memory Server error: Please try again later');
         } else {
           throw new Error(`Error fetching answers: ${response.statusText}`);
         }
@@ -254,201 +254,112 @@ export function PromptsPage() {
             </Breadcrumb.Item>
             <Breadcrumb.Separator className="hidden md:block" />
             <Breadcrumb.Item>
-              <Breadcrumb.Page>
-                {isFeatureEnabled('new.insights.page') ? 'Prompts' : 'Insights'}
-              </Breadcrumb.Page>
+              <Breadcrumb.Page>Questions</Breadcrumb.Page>
             </Breadcrumb.Item>
           </Breadcrumb.List>
         </Breadcrumb>
       </Portal.Slot>
 
-      <PageContent>
-        <AnswerQuestionPrompt onAnswerSubmitted={fetchAnswers} />
+      <PageContent className="gap-4 p-0">
+        <MemoryHubShell>
+          <div className="flex flex-col gap-4 px-4 pb-4">
+            <AnswerQuestionPrompt onAnswerSubmitted={fetchAnswers} />
 
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          {/* Mobile: Title and refresh button in same row */}
-          <div className="flex items-center justify-between lg:justify-start">
-            {!isFeatureEnabled('new.insights.page') && <h1 className="text-2xl font-bold">Insights</h1>}
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={fetchAnswers}
-              disabled={loading}
-              title="Refresh answers"
-              className="lg:hidden"
-            >
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            </Button>
-          </div>
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+              {/* Mobile: Title and refresh button in same row */}
+              <div className="flex items-center justify-between lg:justify-start">
+                <h1 className="text-2xl font-bold">Questions</h1>
+                <IconButton
+                  variant="outline"
+                  onClick={fetchAnswers}
+                  disabled={loading}
+                  label={t('PROMPTS_REFRESH_ANSWERS')}
+                  className="lg:hidden"
+                >
+                  <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                </IconButton>
+              </div>
 
-          {/* Desktop: Toggle and refresh button */}
-          <div className="hidden lg:flex items-center gap-2">
-            <ToggleGroup
-              type="single"
-              value={viewMode}
-              onValueChange={(value) => value && setViewMode(value as 'card' | 'table')}
-            >
-              <ToggleGroup.Item value="card" aria-label="Card view">
-                <Grid3X3 className="h-4 w-4" />
-              </ToggleGroup.Item>
-              <ToggleGroup.Item value="table" aria-label="Table view">
-                <List className="h-4 w-4" />
-              </ToggleGroup.Item>
-            </ToggleGroup>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={fetchAnswers}
-              disabled={loading}
-              title="Refresh answers"
-            >
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            </Button>
-          </div>
-        </div>
-
-        {loading ? (
-          <div className="text-center py-8">
-            <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4" />
-            <p>Loading answers...</p>
-          </div>
-        ) : error ? (
-          <div className="bg-destructive/10 text-destructive rounded-md p-4 flex items-start gap-3">
-            <AlertCircle className="h-5 w-5 mt-0.5 flex-shrink-0" />
-            <div>
-              <h3 className="font-medium">Error loading answers</h3>
-              <p className="text-sm">{error}</p>
-              <Button variant="outline" size="sm" className="mt-2" onClick={fetchAnswers}>
-                Try Again
-              </Button>
+              {/* Desktop: Toggle and refresh button */}
+              <div className="hidden lg:flex items-center gap-2">
+                <ToggleGroup
+                  type="single"
+                  value={viewMode}
+                  onValueChange={(value) => value && setViewMode(value as 'card' | 'table')}
+                >
+                  {/* `data-state` is restated here because Tooltip.Trigger's own
+                      open/closed state would otherwise overwrite the item's on/off
+                      state and kill the selected-item styling. A wrapper span would
+                      fix that too, but it would make every item both :first-child
+                      and :last-child, rounding all four corners of each segment. */}
+                  <Tooltip delayDuration={600}>
+                    <Tooltip.Content>{t('PROMPTS_VIEW_CARD')}</Tooltip.Content>
+                    <Tooltip.Trigger asChild>
+                      <ToggleGroup.Item
+                        value="card"
+                        aria-label={t('PROMPTS_VIEW_CARD')}
+                        data-state={viewMode === 'card' ? 'on' : 'off'}
+                      >
+                        <Grid3X3 className="h-4 w-4" />
+                      </ToggleGroup.Item>
+                    </Tooltip.Trigger>
+                  </Tooltip>
+                  <Tooltip delayDuration={600}>
+                    <Tooltip.Content>{t('PROMPTS_VIEW_TABLE')}</Tooltip.Content>
+                    <Tooltip.Trigger asChild>
+                      <ToggleGroup.Item
+                        value="table"
+                        aria-label={t('PROMPTS_VIEW_TABLE')}
+                        data-state={viewMode === 'table' ? 'on' : 'off'}
+                      >
+                        <List className="h-4 w-4" />
+                      </ToggleGroup.Item>
+                    </Tooltip.Trigger>
+                  </Tooltip>
+                </ToggleGroup>
+                <IconButton
+                  variant="outline"
+                  onClick={fetchAnswers}
+                  disabled={loading}
+                  label={t('PROMPTS_REFRESH_ANSWERS')}
+                >
+                  <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                </IconButton>
+              </div>
             </div>
-          </div>
-        ) : (
-          <>
-            {answers.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">No answers found in the system</div>
+
+            {loading ? (
+              <div className="text-center py-8">
+                <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4" />
+                <p>Loading answers...</p>
+              </div>
+            ) : error ? (
+              <div className="bg-destructive/10 text-destructive rounded-md p-4 flex items-start gap-3">
+                <AlertCircle className="h-5 w-5 mt-0.5 flex-shrink-0" />
+                <div>
+                  <h3 className="font-medium">Error loading answers</h3>
+                  <p className="text-sm">{error}</p>
+                  <Button variant="outline" size="sm" className="mt-2" onClick={fetchAnswers}>
+                    Try Again
+                  </Button>
+                </div>
+              </div>
             ) : (
               <>
-                {/* Card View - Always shown on mobile, toggleable on desktop */}
-                <div
-                  className={`grid gap-4 sm:grid-cols-2 lg:grid-cols-3 ${viewMode === 'table' ? 'lg:hidden' : ''}`}
-                >
-                  {answers.map((answer) => (
-                    <Card key={answer.id} className="p-4">
-                      <Card.Header className="pb-3">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2">
-                              {isManuallyAnswered(answer) ? (
-                                <Badge variant="secondary" className="text-xs">
-                                  Manual
-                                </Badge>
-                              ) : isLLMAnswered(answer) ? (
-                                <Badge variant="outline" className="text-xs">
-                                  AI Generated
-                                </Badge>
-                              ) : null}
-                            </div>
-                            <h3 className="font-semibold text-sm leading-tight">
-                              <ExpandableText
-                                text={answer.question?.text}
-                                textId={`question-${answer.id}`}
-                                maxLength={100}
-                              />
-                            </h3>
-                          </div>
-                        </div>
-                      </Card.Header>
-                      <Card.Content className="space-y-3">
-                        <div>
-                          <h4 className="text-xs font-medium text-muted-foreground mb-1">Answer</h4>
-                          <ExpandableText
-                            text={answer.answer}
-                            textId={`answer-${answer.id}`}
-                            maxLength={120}
-                          />
-                        </div>
-                        {answer.ragAnswer && (
-                          <div>
-                            <h4 className="text-xs font-medium text-muted-foreground mb-1">RAG Answer</h4>
-                            <ExpandableText
-                              text={answer.ragAnswer}
-                              textId={`rag-${answer.id}`}
-                              maxLength={120}
-                            />
-                          </div>
-                        )}
-                      </Card.Content>
-                      <Card.Footer className="pt-3">
-                        <div className="flex items-center justify-between w-full">
-                          <div className="flex items-center gap-1">
-                            {isManuallyAnswered(answer) ? (
-                              <>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-8 px-2"
-                                  onClick={() => handleEditClick(answer)}
-                                >
-                                  <Edit className="h-3 w-3 mr-1" />
-                                  Edit
-                                </Button>
-                              </>
-                            ) : isLLMAnswered(answer) ? (
-                              <>
-                                <Button variant="ghost" size="sm" className="h-8 px-2">
-                                  <ThumbsUp className="h-3 w-3 mr-1" />
-                                </Button>
-                                <Button variant="ghost" size="sm" className="h-8 px-2">
-                                  <ThumbsDown className="h-3 w-3 mr-1" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-8 px-2"
-                                  onClick={() => handleEditClick(answer)}
-                                >
-                                  <Edit className="h-3 w-3 mr-1" />
-                                  Edit
-                                </Button>
-                              </>
-                            ) : null}
-                          </div>
-                        </div>
-                      </Card.Footer>
-                    </Card>
-                  ))}
-                </div>
-
-                {/* Table View - Only shown on desktop when table mode is selected */}
-                {viewMode === 'table' && (
-                  <div className="hidden lg:block relative overflow-auto">
-                    {/* Fixed Header */}
-                    <div className="sticky top-0 z-50 bg-background border-b shadow-sm">
-                      <div className="overflow-x-auto">
-                        <Table className="min-w-full table-fixed">
-                          <Table.Header>
-                            <Table.Row>
-                              <Table.Head className="w-1/4 min-w-[200px] bg-background">Question</Table.Head>
-                              <Table.Head className="w-1/4 min-w-[200px] bg-background">Answer</Table.Head>
-                              <Table.Head className="w-1/4 min-w-[200px] bg-background">
-                                RAG Answer
-                              </Table.Head>
-                              <Table.Head className="w-1/4 min-w-[150px] bg-background">Actions</Table.Head>
-                            </Table.Row>
-                          </Table.Header>
-                        </Table>
-                      </div>
-                    </div>
-
-                    {/* Scrollable Body */}
-                    <Table className="min-w-full table-fixed">
-                      <Table.Body>
-                        {answers.map((answer) => (
-                          <Table.Row key={answer.id}>
-                            <Table.Cell className="break-words align-top">
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-2">
+                {answers.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">No answers found in the system</div>
+                ) : (
+                  <>
+                    {/* Card View - Always shown on mobile, toggleable on desktop */}
+                    <div
+                      className={`grid gap-4 sm:grid-cols-2 lg:grid-cols-3 ${viewMode === 'table' ? 'lg:hidden' : ''}`}
+                    >
+                      {answers.map((answer) => (
+                        <Card key={answer.id} className="p-4">
+                          <Card.Header className="pb-3">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-2">
                                   {isManuallyAnswered(answer) ? (
                                     <Badge variant="secondary" className="text-xs">
                                       Manual
@@ -459,29 +370,39 @@ export function PromptsPage() {
                                     </Badge>
                                   ) : null}
                                 </div>
-                                <ExpandableText
-                                  text={answer.question?.text}
-                                  textId={`table-question-${answer.id}`}
-                                  maxLength={80}
-                                />
+                                <h3 className="font-semibold text-sm leading-tight">
+                                  <ExpandableText
+                                    text={answer.question?.text}
+                                    textId={`question-${answer.id}`}
+                                    maxLength={100}
+                                  />
+                                </h3>
                               </div>
-                            </Table.Cell>
-                            <Table.Cell className="break-words align-top">
+                            </div>
+                          </Card.Header>
+                          <Card.Content className="space-y-3">
+                            <div>
+                              <h4 className="text-xs font-medium text-muted-foreground mb-1">Answer</h4>
                               <ExpandableText
                                 text={answer.answer}
-                                textId={`table-answer-${answer.id}`}
-                                maxLength={100}
+                                textId={`answer-${answer.id}`}
+                                maxLength={120}
                               />
-                            </Table.Cell>
-                            <Table.Cell className="break-words align-top">
-                              <ExpandableText
-                                text={answer.ragAnswer}
-                                textId={`table-rag-${answer.id}`}
-                                maxLength={100}
-                              />
-                            </Table.Cell>
-                            <Table.Cell className="break-words align-top">
-                              <div className="flex items-center gap-1 flex-wrap">
+                            </div>
+                            {answer.ragAnswer && (
+                              <div>
+                                <h4 className="text-xs font-medium text-muted-foreground mb-1">RAG Answer</h4>
+                                <ExpandableText
+                                  text={answer.ragAnswer}
+                                  textId={`rag-${answer.id}`}
+                                  maxLength={120}
+                                />
+                              </div>
+                            )}
+                          </Card.Content>
+                          <Card.Footer className="pt-3">
+                            <div className="flex items-center justify-between w-full">
+                              <div className="flex items-center gap-1">
                                 {isManuallyAnswered(answer) ? (
                                   <>
                                     <Button
@@ -514,20 +435,128 @@ export function PromptsPage() {
                                   </>
                                 ) : null}
                               </div>
-                            </Table.Cell>
-                          </Table.Row>
-                        ))}
-                      </Table.Body>
-                    </Table>
-                  </div>
+                            </div>
+                          </Card.Footer>
+                        </Card>
+                      ))}
+                    </div>
+
+                    {/* Table View - Only shown on desktop when table mode is selected */}
+                    {viewMode === 'table' && (
+                      <div className="hidden lg:block relative overflow-auto">
+                        {/* Fixed Header */}
+                        <div className="sticky top-0 z-50 bg-background border-b shadow-sm">
+                          <div className="overflow-x-auto">
+                            <Table className="min-w-full table-fixed">
+                              <Table.Header>
+                                <Table.Row>
+                                  <Table.Head className="w-1/4 min-w-[200px] bg-background">
+                                    Question
+                                  </Table.Head>
+                                  <Table.Head className="w-1/4 min-w-[200px] bg-background">
+                                    Answer
+                                  </Table.Head>
+                                  <Table.Head className="w-1/4 min-w-[200px] bg-background">
+                                    RAG Answer
+                                  </Table.Head>
+                                  <Table.Head className="w-1/4 min-w-[150px] bg-background">
+                                    Actions
+                                  </Table.Head>
+                                </Table.Row>
+                              </Table.Header>
+                            </Table>
+                          </div>
+                        </div>
+
+                        {/* Scrollable Body */}
+                        <Table className="min-w-full table-fixed">
+                          <Table.Body>
+                            {answers.map((answer) => (
+                              <Table.Row key={answer.id}>
+                                <Table.Cell className="break-words align-top">
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-2">
+                                      {isManuallyAnswered(answer) ? (
+                                        <Badge variant="secondary" className="text-xs">
+                                          Manual
+                                        </Badge>
+                                      ) : isLLMAnswered(answer) ? (
+                                        <Badge variant="outline" className="text-xs">
+                                          AI Generated
+                                        </Badge>
+                                      ) : null}
+                                    </div>
+                                    <ExpandableText
+                                      text={answer.question?.text}
+                                      textId={`table-question-${answer.id}`}
+                                      maxLength={80}
+                                    />
+                                  </div>
+                                </Table.Cell>
+                                <Table.Cell className="break-words align-top">
+                                  <ExpandableText
+                                    text={answer.answer}
+                                    textId={`table-answer-${answer.id}`}
+                                    maxLength={100}
+                                  />
+                                </Table.Cell>
+                                <Table.Cell className="break-words align-top">
+                                  <ExpandableText
+                                    text={answer.ragAnswer}
+                                    textId={`table-rag-${answer.id}`}
+                                    maxLength={100}
+                                  />
+                                </Table.Cell>
+                                <Table.Cell className="break-words align-top">
+                                  <div className="flex items-center gap-1 flex-wrap">
+                                    {isManuallyAnswered(answer) ? (
+                                      <>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-8 px-2"
+                                          onClick={() => handleEditClick(answer)}
+                                        >
+                                          <Edit className="h-3 w-3 mr-1" />
+                                          Edit
+                                        </Button>
+                                      </>
+                                    ) : isLLMAnswered(answer) ? (
+                                      <>
+                                        <Button variant="ghost" size="sm" className="h-8 px-2">
+                                          <ThumbsUp className="h-3 w-3 mr-1" />
+                                        </Button>
+                                        <Button variant="ghost" size="sm" className="h-8 px-2">
+                                          <ThumbsDown className="h-3 w-3 mr-1" />
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-8 px-2"
+                                          onClick={() => handleEditClick(answer)}
+                                        >
+                                          <Edit className="h-3 w-3 mr-1" />
+                                          Edit
+                                        </Button>
+                                      </>
+                                    ) : null}
+                                  </div>
+                                </Table.Cell>
+                              </Table.Row>
+                            ))}
+                          </Table.Body>
+                        </Table>
+                      </div>
+                    )}
+                  </>
                 )}
+                <div className="text-xs text-muted-foreground text-right mt-4">
+                  Total answers: {answers.length}
+                </div>
               </>
             )}
-            <div className="text-xs text-muted-foreground text-right mt-4">
-              Total answers: {answers.length}
-            </div>
-          </>
-        )}
+          </div>
+        </MemoryHubShell>
       </PageContent>
 
       <EditAnswerDialog

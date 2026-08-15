@@ -46,7 +46,6 @@ flowchart LR
             SUM["Summary Agent<br/>(LLM summaries)"]
             DB[("Postgres 18<br/>+ TimescaleDB<br/>+ pgvector<br/>+ PostGIS")]
             OBJ[("MinIO<br/>object store")]
-            ORC["Temporal<br/>(orchestrator)"]
             Web["Web SPA<br/>(React + Vite)"]
         end
         OtherApps["Other Marketplace Apps<br/>(Photo Time Machine, XR-Scan, ...)"]
@@ -76,9 +75,8 @@ flowchart LR
 
     API <--> DB
     API <--> OBJ
-    API --> ORC
-    ORC --> HBPE
-    ORC --> SUM
+    API -- "pg-boss dispatch" --> HBPE
+    API -- "pg-boss dispatch" --> SUM
     HBPE --> DB
     SUM --> DB
 
@@ -90,7 +88,7 @@ flowchart LR
 1. A user (or an app, or a device) hits `https://memory.<user>.ci.app`.
 2. **CI-Portal** authenticates the caller and proxies the request through a tunnel to that user's **CI-Hub**.
 3. **CI-Hub** routes traffic to the installed **CI-Server** app (or to any other app installed from **CI-Marketplace**).
-4. CI-Server resolves the request against its Postgres + object-store, kicking off Temporal workflows for anything async (ETL syncs, summarization, prediction).
+4. CI-Server resolves the request against its Postgres + object-store, enqueueing pg-boss jobs for anything async (ETL syncs, summarization, prediction).
 
 ---
 
@@ -111,7 +109,7 @@ flowchart TB
 
     subgraph Agents["Agent Tier (Python)"]
       HBPE["backend/apps/hbpe<br/>Hierarchical Behavior Prediction<br/>(Torch + ONNX + Qwen3)"]
-      SUM["backend/apps/summary<br/>Temporal/Daily/Weekly summaries<br/>(LLM via Ollama)"]
+      SUM["backend/apps/summary<br/>Hourly/Daily/Weekly summaries<br/>(LLM via Ollama)"]
     end
 
     subgraph Data["Data Tier"]
@@ -120,8 +118,7 @@ flowchart TB
     end
 
     subgraph Orchestration
-      TEMP["Temporal Server<br/>(durable workflows)"]
-      PGBOSS["PGBoss<br/>(in-Postgres job queue)"]
+      PGBOSS["PGBoss<br/>(in-Postgres job queue,<br/>crons + Python function dispatch)"]
     end
 
     subgraph External
@@ -135,13 +132,12 @@ flowchart TB
     WEB <-- "GraphQL/REST" --> API
     API <--> PG
     API <--> OBJ
-    API --> TEMP
     API --> PGBOSS
     API <--> OLLAMA
     API <--> OAUTH
     API --> MCPWS
-    TEMP --> HBPE
-    TEMP --> SUM
+    PGBOSS -- "/functions/run" --> HBPE
+    PGBOSS -- "/functions/run" --> SUM
     HBPE --> PG
     SUM --> PG
     SUM --> OLLAMA
@@ -153,11 +149,9 @@ flowchart TB
 |---|---|---|---|
 | `database` | `ci/database` (Postgres 18 + Timescale + pgvector + PostGIS — [`infrastructure/database/`](../../infrastructure/database/Dockerfile)) | Primary store, hypertables, vector + geo search, PGBoss queue | `db-data` |
 | `object-store` | `ci/object-store` (MinIO) | Files, images, captures | `object-data` |
-| `orchestrator` | `ci/orchestrator` (Temporal) | Durable workflow engine for syncs, summaries, predictions | (Postgres-backed) |
 | `hbpe-service` | `ci/hbpe-service` | Behavior prediction engine: nightly model train + INT8 inference | `hbpe-models`, `hbpe-corpus` |
 | `summary-service` | `ci/summary-service` | Hourly→Daily→Weekly summary agent | (via DB) |
 | `setup-database` | `ci/setup-database` | One-shot: migrations and seed | — |
-| `setup-orchestrator` | `ci/setup-orchestrator` | One-shot: Temporal namespace bootstrap | — |
 | `secrets` / `generate-secrets` | `ci/setup-secrets` | One-shot: generates and mounts `.env.secrets` | — |
 | `gateway` | NGINX ([`infrastructure/gateway/`](../../infrastructure/gateway)) | TLS + routing — **staging/production compose only**; local dev fronts the stack with host Caddy via `make dev` (see the [root README](../../README.md)) | — |
 | `api` | `ci/api` | The NestJS backend — containerized in **staging/production**; under `make dev` it runs on the host via overmind | — |
@@ -259,7 +253,7 @@ sequenceDiagram
     participant U as User / App
     participant API as API (NestJS)
     participant PG as Postgres
-    participant T as Temporal
+    participant B as pg-boss
     participant ETL as ETL Worker
     participant LLM as Ollama
     participant SUM as summary-service
@@ -267,23 +261,25 @@ sequenceDiagram
 
     U->>API: Connect Google account
     API->>PG: store OAuth tokens (connections)
-    API->>T: schedule sync workflow
-    T->>ETL: SyncOrchestrator(provider, scope)
+    API->>B: enqueue sync job
+    B->>ETL: SyncOrchestrator(provider, scope)
     ETL->>PG: write raw events (etl tables)
     ETL->>API: PromoteService → entities + relationships
     API->>LLM: embed new entities/chunks
     API->>PG: upsert embeddings
 
-    Note over T,SUM: hourly cron
-    T->>SUM: SummarizeHour(user, ts)
+    Note over B,SUM: hourly cron (PythonFunctionCrons)
+    B->>SUM: POST /functions/run hourly_summary(user)
     SUM->>PG: aggregate events/communications/messages
     SUM->>LLM: synthesize narrative
     SUM->>PG: write summary rows (ci.summaries)
+    SUM->>API: callback → complete pg-boss job
 
-    Note over T,HB: nightly
-    T->>HB: TrainAndPredict(user)
+    Note over B,HB: nightly cron
+    B->>HB: POST /functions/run nightly(user)
     HB->>PG: load corpus
     HB->>PG: write predictions
+    HB->>API: callback → complete pg-boss job
 ```
 
 Besides the connector ETL above, there are two **direct ingest surfaces** (both idempotent
@@ -337,7 +333,7 @@ flowchart LR
 | CI-Portal → CI-Hub | Authenticated tunnel; tenant identity propagated as HTTP headers / JWT |
 | Client apps → CI-Server | GraphQL + REST under `/api`; OAuth-style API keys for service callers |
 | Agents → CI-Server | Same GraphQL/REST plus signed service JWTs (HBPE / summary) |
-| Tools → Agents | MCP servers (e.g. `mcp-servers/web-search`) called by LLM tooling layer |
+| Tools → Agents | Built-in MCP server (`POST /mcp`, `domains/mcp`) over the shared **ToolRegistry** (`domains/tools`); third-party MCP servers run as their own processes, not vendored here |
 
 ---
 
@@ -345,7 +341,7 @@ flowchart LR
 
 | Environment | Compose file | Use |
 |---|---|---|
-| local | `docker-compose.yml` + `docker-compose.local.yml` | **`make dev`** developer loop — per-worktree stack (Postgres, MinIO, Temporal, hbpe/summary), Vite + nodemon on the host, Caddy route at `https://<project>.localhost` (see the [root README](../../README.md)) |
+| local | `docker-compose.yml` + `docker-compose.local.yml` | **`make dev`** developer loop — per-worktree stack (Postgres, MinIO, hbpe/summary), Vite + nodemon on the host, Caddy route at `https://<project>.localhost` (see the [root README](../../README.md)) |
 | staging | `docker-compose.staging.yml` | Pre-prod parity (containerized `api` + NGINX `gateway`); runs against staging secrets |
 | production | `docker-compose.production.yml` | Production deploys inside CI-Hub |
 | `tooling` (profile) | (profile flag on the above) | DB proxies/shells, ad-hoc admin (`make dbshell`, `make tooling`) |
@@ -375,7 +371,7 @@ The roadmap below is synthesized from the current repo state (domains present, c
 | Native shell | Fill in `frontend/apps/native` (currently placeholder) |
 | HBPE | Move from nightly batch to incremental online updates; expose richer prediction reads in `domains/predictions` |
 | Summary | Add monthly + yearly tiers; surface summary timeline in the web SPA |
-| Tools | Expand `mcp-servers/` beyond web-search (calendar, contacts, files) — these slot into `domains/tools` |
+| Tools | Grow the **ToolRegistry** (`domains/tools`) beyond today's surface (calendar, contacts, files) — exposed through `POST /mcp` and `GET /api/intents` |
 | Devices/XR | First-class `position` query API for AR clients (relative coords + headpose) |
 | Marketplace | Publish CI-Server as a polished marketplace app; ensure `metadata/`, screenshot, and `docker-compose.json` are kept current |
 
@@ -419,7 +415,7 @@ gantt
 | How aggressively to prune the graph? | The old facts-as-cold-storage design was never implemented and its tables were dropped; compaction remains an open design question (§7.3). |
 | Where does multi-user logic live? | Today: single user per Hub. Multi-tenant would touch `auth`, `connections`, `etl`, and Portal contracts. |
 | In-Hub saved-search sharing vs. single-tenant model | Saved searches are link-shareable: the share token authorizes running the search **as the owner** (`SearchResolver.runSharedSearch`; `SavedSearchService.findByShareToken` is intentionally not user-scoped) — the first cross-user read path inside a Hub. Capability-scoped (the token only surfaces the owner's stored query/types/tags; viewer-supplied filters are ignored) and still behind `JwtOrApiKeyAuthGuard` (signed-in viewers only, **not** anonymous). A node's sub-fields (media/relations/tags) resolve under the node's owner, so a shared result's signed media URLs are the owner's — forwardable until the URL's TTL. Distinct from the Portal-brokered federation in §7.3. |
-| Tool surface: NestJS controllers vs. MCP servers? | Largely resolved: the shared **ToolRegistry** (`domains/tools`) now feeds both the MCP server (`POST /mcp`, `domains/mcp`) and the intent catalog (`GET /api/intents`) — see [api/auth-and-conventions.md §5](../api/auth-and-conventions.md#5-mcp-surface). The standalone `mcp-servers/web-search` remains a separate LLM-facing helper. |
+| Tool surface: NestJS controllers vs. MCP servers? | Largely resolved: the shared **ToolRegistry** (`domains/tools`) now feeds both the MCP server (`POST /mcp`, `domains/mcp`) and the intent catalog (`GET /api/intents`) — see [api/auth-and-conventions.md §5](../api/auth-and-conventions.md#5-mcp-surface). There is no in-repo `mcp-servers/` tree — the former `web-search` helper was an upstream third-party server cloned at build time, and its build glue was removed in Feb 2026. |
 | Real-time push to clients | No WebSocket/subscription layer yet — XR and wearable clients currently poll. |
 
 ---

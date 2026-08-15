@@ -123,20 +123,113 @@ xcrun simctl install booted App.app
 xcrun simctl launch booted com.companionintelligence.app
 ```
 
-### Signed / store-ready builds (needs secrets)
+## Store releases (`.github/workflows/mobile-release.yml`)
 
-The default jobs are **unsigned** so they run with no credentials. For device- and
-store-ready artifacts, add signing and swap the build step:
+`mobile-build.yml` above is the **credential-free** lane — unsigned artifacts, no secrets.
+`mobile-release.yml` is the **distribution** lane: a signed `.ipa` to TestFlight and a
+signed `.aab` to Play's internal track.
 
-- **Android release** — add repo secrets `ANDROID_KEYSTORE_BASE64` (base64 of your `.jks`),
-  `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`; decode the
-  keystore in a step, wire it into `android/app/build.gradle`'s `signingConfigs`, and run
-  `./gradlew assembleRelease` (or `bundleRelease` for the Play Store).
-- **Signed iOS `.ipa`** — import an Apple Developer cert + provisioning profile (e.g.
-  `apple-actions/import-codesign-certs`), then replace the Simulator build with
-  `xcodebuild archive … -exportArchive -exportOptionsPlist …`. CI's default Xcode builds
-  the Simulator target fine; a device archive should use an Xcode matching the **iOS-26 SDK
-  fixes** the project carries (see below).
+```bash
+# Rehearsal: build + sign + validate with Apple, but submit nothing.
+gh workflow run mobile-release.yml -f dry_run=true
+
+# The real thing (a tag push always submits — dry_run does not apply):
+git tag mobile-release-v0.1.0 && git push origin mobile-release-v0.1.0
+```
+
+> **This workflow is not dispatchable until it is on the default branch.** GitHub only
+> exposes a `workflow_dispatch` workflow that exists on `main`, so until this file is
+> merged, `gh workflow run mobile-release.yml` answers
+> `HTTP 404: workflow not found on the default branch` — even with `--ref`. To rehearse
+> signing before the rest of the branch is ready, cherry-pick just this file onto `main`.
+
+**Always do a `dry_run: true` run first.** Both stores permanently consume a build number
+on upload, so a failed submission *after* a successful one still costs you that number.
+The dry run exercises the whole chain — keychain import, archive, export, and
+`altool --validate-app`, which catches most rejections (missing icons, bad entitlements,
+a build number already used) — and stops short of submitting.
+
+Each platform **skips rather than fails** when its secrets are missing, so you can wire up
+one store before the other.
+
+## Xcode Cloud (`ci_scripts/ci_post_clone.sh`)
+
+There is a **second** route to TestFlight: an Xcode Cloud workflow named
+`App | BuildTestFlight`, configured in App Store Connect rather than in this repository.
+Nothing in the repo declares it, so it is easy to miss when reasoning about why an iOS
+build is red — check App Store Connect → Xcode Cloud → Manage Workflows.
+
+Xcode Cloud clones the repo and runs `xcodebuild` against `ios/App/App.xcworkspace`
+directly. It has no equivalent of a workflow step, so everything the GitHub Actions lanes
+do before building has to happen in a post-clone script instead. Without one the build
+fails before compiling anything:
+
+```
+Unable to open base configuration reference file
+'.../ios/App/Pods/Target Support Files/Pods-App/Pods-App.debug.xcconfig'
+```
+
+That file — like `App/Pods`, `App/App/public` and `App/App/capacitor.config.json` — is
+generated and correctly gitignored. `ci_scripts/ci_post_clone.sh` at the repository root
+creates them, running the same sequence as `mobile-build.yml`'s iOS job: install Node 22
+and CocoaPods (Xcode Cloud images ship neither), root `yarn install`, `yarn build:web`,
+then `cap sync ios`, which is what finally runs `pod install`.
+
+> **`NODE_AUTH_TOKEN` must be set on the workflow, as a secret.** `@ci/fe-web` depends on
+> `@companionintelligence/tokens` from GitHub Packages, whose archive URL answers `401`
+> unauthenticated, and this repo is not zero-install — so a cold runner has to fetch it.
+> Add it under App Store Connect → Xcode Cloud → Manage Workflows → Environment →
+> Environment Variables, ticking **Secret**, using a GitHub token with `read:packages`.
+> The script fails immediately with this instruction when the variable is absent, rather
+> than letting `yarn install` die on an opaque 401 several minutes in.
+
+A copy of the script also exists at `ios/App/ci_scripts/ci_post_clone.sh`, forwarding to
+the root one. Apple documents `ci_scripts/` as living beside the Xcode project, but
+repository-root placement is also common and which one a workflow honours depends on its
+configuration; both exist so the script cannot silently fail to run. **Once a build log
+shows which location was used, delete the other.**
+
+### Required secrets
+
+| Secret | What it is |
+|---|---|
+| `APPSTORE_ISSUER_ID` | App Store Connect → Users and Access → Integrations |
+| `APPSTORE_KEY_ID` | that API key's ID |
+| `APPSTORE_PRIVATE_KEY` | the `AuthKey_<KEYID>.p8` contents (PEM text) |
+| `APPLE_TEAM_ID` | 10-character team ID |
+| `IOS_DIST_CERT_P12_BASE64` | base64 of the Apple Distribution `.p12` |
+| `IOS_DIST_CERT_PASSWORD` | that `.p12`'s password |
+| `IOS_PROVISIONING_PROFILE_BASE64` | base64 of the App Store `.mobileprovision` for `com.companionintelligence.app` |
+| `ANDROID_KEYSTORE_BASE64` | base64 of the upload `.jks` |
+| `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD` | keystore credentials |
+| `PLAY_SERVICE_ACCOUNT_JSON` | Play service account with *Release to testing tracks* |
+
+An App Store Connect **API key** is used rather than an Apple ID so CI never faces a 2FA
+prompt.
+
+### Version numbers are stamped by CI, not committed
+
+`versionCode` / `versionName` in `build.gradle` and `MARKETING_VERSION` /
+`CURRENT_PROJECT_VERSION` in the Xcode project are **local-dev fallbacks only**. The
+release workflow resolves one version per run and hands identical numbers to both stores:
+the marketing version comes from the `mobile-release-v*` tag, and the build number from
+`github.run_number` (monotonic per workflow, which is exactly the "never repeats, always
+increases" rule both stores enforce). Don't hand-bump the literals expecting them to
+reach a store.
+
+### Local release builds
+
+`./gradlew bundleRelease` **fails at configuration time** unless signing is configured —
+deliberately, because Gradle will otherwise produce an *unsigned* release bundle that Play
+only rejects at the end of the upload, far from the cause. To build one locally:
+
+```bash
+export ANDROID_KEYSTORE_PATH=/path/to/upload.jks
+export ANDROID_KEYSTORE_PASSWORD=… ANDROID_KEY_ALIAS=… ANDROID_KEY_PASSWORD=…
+cd android && ./gradlew bundleRelease
+```
+
+For a sideload build, use `./gradlew assembleDebug` — it needs no keystore.
 
 ## On-device live reload
 

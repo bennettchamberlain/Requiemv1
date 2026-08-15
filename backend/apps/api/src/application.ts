@@ -10,7 +10,8 @@ import {
 } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
-import { ScheduleModule } from '@nestjs/schedule';
+// Aliased: our own schedule domain (@ci/domains/schedule) exports a ScheduleModule too.
+import { ScheduleModule as NestCronModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import * as Sentry from '@sentry/nestjs';
 
@@ -50,11 +51,18 @@ import { OnboardingModule } from '@ci/domains/onboarding';
 import { PairingModule } from '@ci/domains/pairing';
 import { ParsingModule } from '@ci/domains/parsing';
 import { PeersModule } from '@ci/domains/peers';
+import { PersonaModule } from '@ci/domains/persona';
+import { PersonalizationModule } from '@ci/domains/personalization';
+import { PipelineModule } from '@ci/domains/pipeline';
+import { PlanningModule } from '@ci/domains/planning';
 import { PositionModule } from '@ci/domains/position';
 import { PowerSyncModule } from '@ci/domains/powersync';
 import { PredictionsModule } from '@ci/domains/predictions';
+import { PythonFunctionsModule } from '@ci/domains/python-functions';
+import { ScheduleModule } from '@ci/domains/schedule';
 import { SearchIngressModule } from '@ci/domains/search-ingress';
 import { SearchNextModule } from '@ci/domains/search-next';
+import { SmartRotationModule } from '@ci/domains/smart-rotation';
 import { SummariesModule } from '@ci/domains/summaries';
 import { ToolsModule } from '@ci/domains/tools';
 import { UserModule } from '@ci/domains/user';
@@ -81,7 +89,7 @@ import { flushTelemetry, isTelemetryEnabled } from '@ci/instrument';
     FeatureModule,
     LoggingModule,
     EventEmitterModule.forRoot(),
-    ScheduleModule.forRoot(),
+    NestCronModule.forRoot(),
     PairingModule,
     ActivityModule,
     AgentModule,
@@ -96,6 +104,10 @@ import { flushTelemetry, isTelemetryEnabled } from '@ci/instrument';
     ParsingModule,
     EtlModule,
     EventsModule,
+    // Registers the generic pipeline worker, the stage registry and the
+    // dead-letter reaper. Ordered after EventsModule because every stage runs on
+    // a pg-boss queue that EventsModule discovers from listener registration.
+    PipelineModule,
     FilesModule,
     GraphModule,
     GraphQLModule,
@@ -104,14 +116,20 @@ import { flushTelemetry, isTelemetryEnabled } from '@ci/instrument';
     LLMModule,
     McpModule,
     OnboardingModule,
+    PersonalizationModule,
+    PersonaModule,
+    PlanningModule,
     PositionModule,
     PowerSyncModule,
     PredictionsModule,
+    PythonFunctionsModule,
     ToolsModule,
     MemoryModule,
     GeocodeModule,
     MaintenanceModule,
     NotesModule,
+    ScheduleModule,
+    SmartRotationModule,
     SearchIngressModule,
     SearchNextModule,
     SummariesModule,

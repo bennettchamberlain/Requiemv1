@@ -1,18 +1,16 @@
 import { type ReactNode, useState } from 'react';
 
-import { useQuery } from '@apollo/client';
+import { useMutation, useQuery } from '@apollo/client';
 import { GlobalUID, LoadingPage, Portal, usePageTitle, EmptyState } from '@ci/common';
-import { Breadcrumb, Card, Label, Textarea, Toggle, cn } from '@ci/shadcn';
-import { Pencil } from '@ci/shadcn/icons';
+import { Breadcrumb } from '@ci/shadcn';
 import { useParams, Link } from 'react-router-dom';
 
-import { useTagEntityService } from '@/api';
 import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
 import { EntityGraph } from '@/components/EntityGraph';
 import { EntityRelationshipCards } from '@/components/EntityRelationshipCards/EntityRelationshipCards';
+import { EntityEditToggle, EntityTagsDescriptionCard } from '@/components/EntityTagsDescriptionCard';
 import { ItemIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
-import { TagInput } from '@/components/TagInput';
 import { gql } from '@/graphql';
 
 export const GET_ITEM = gql(`
@@ -29,6 +27,18 @@ export const GET_ITEM = gql(`
   }
 `);
 
+const UPDATE_ITEM_DESCRIPTION = gql(`
+  mutation UpdateItemDescription($input: UpdateItemInput!) {
+    updateItem(input: $input) {
+      success
+      item {
+        id
+        description
+      }
+    }
+  }
+`);
+
 export function ItemPage() {
   const { id } = useParams<{ id: string }>();
 
@@ -38,7 +48,7 @@ export function ItemPage() {
     },
   });
 
-  const { tagEntities, untagEntities } = useTagEntityService();
+  const [updateItemDescription] = useMutation(UPDATE_ITEM_DESCRIPTION);
 
   const item = data?.item;
 
@@ -60,65 +70,41 @@ export function ItemPage() {
             <ItemIcon />
             <h1 className="text-2xl font-bold">{item.name}</h1>
           </div>
-          <Toggle
-            aria-label="Toggle edit mode"
-            size="sm"
-            variant="outline"
-            className="data-[state=on]:bg-transparent data-[state=on]:*:[svg]:fill-blue-500 data-[state=on]:*:[svg]:stroke-blue-500"
-            pressed={editMode}
-            onPressedChange={setEditMode}
-          >
-            <Pencil />
-          </Toggle>
+          <EntityEditToggle pressed={editMode} onPressedChange={setEditMode} />
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="md:col-span-2">
             <EntityGraph entityId={id!} />
           </div>
+          <EntityTagsDescriptionCard
+            entityType="item"
+            entityId={id!}
+            resetKey={item.id}
+            tags={item.tags.map((t) => t.label)}
+            description={item.description}
+            editMode={editMode}
+            onDescriptionSave={async (value) => {
+              // UpdateItemInput requires `name`, so a description-only edit has to resend it.
+              // That makes this a last-write-wins update on the name as well: if it was renamed
+              // elsewhere since this page loaded, the cached value here would win. Same trade the
+              // existing MemoryPage detail editors make, and the page has no polling to widen it.
+              // The `?? ''` only fires when the stored name is genuinely null — the query selects
+              // `name`, so it is not a projection gap — and null and '' both render as 'Unnamed'.
+              // Omitting the field instead is not an option: it is non-null on the input.
+              const result = await updateItemDescription({
+                variables: { input: { id: item.id, name: item.name ?? '', description: value } },
+              });
 
-          <Card className="p-0">
-            <Card.Content className="p-4 flex flex-col gap-6">
-              <div className="space-y-2">
-                <Label>Tags</Label>
-
-                <TagInput
-                  key={item.id}
-                  tags={item.tags.map((t) => t.label) ?? []}
-                  readOnly={!editMode}
-                  onTagAdded={async (label) => {
-                    try {
-                      await tagEntities([GlobalUID.encode('item', id!)], [label]);
-
-                      return true;
-                    } catch {
-                      return false;
-                    }
-                  }}
-                  onTagRemoved={async (label) => {
-                    await untagEntities([GlobalUID.encode('item', id!)], [label]);
-                  }}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  key={item.id}
-                  id="description"
-                  defaultValue={item?.description ?? ''}
-                  readOnly={!editMode}
-                  className={cn(
-                    'resize-none min-h-[120px]',
-                    editMode ? '' : 'shadow-none focus-visible:ring-0 focus-visible:border-border',
-                  )}
-                />
-              </div>
-            </Card.Content>
-          </Card>
+              if (!result.data?.updateItem.success) {
+                throw new Error('Update was rejected');
+              }
+            }}
+          />
         </div>
 
         <EntityRelationshipCards entityId={id!} />
-        <EntityEvolutionPanel entityId={id!} />
+        <EntityEvolutionPanel entityId={id!} entityName={item.name} />
       </PageContent>
     );
   }

@@ -1,4 +1,10 @@
-import type { ObjectLiteral, Repository, SelectQueryBuilder, WhereExpressionBuilder } from 'typeorm';
+import type {
+  EntityManager,
+  ObjectLiteral,
+  Repository,
+  SelectQueryBuilder,
+  WhereExpressionBuilder,
+} from 'typeorm';
 import { Brackets } from 'typeorm';
 
 /**
@@ -85,6 +91,14 @@ interface BulkInsertOptions<Entity extends ObjectLiteral> {
    * DEFAULT_CHUNK_ROWS when omitted. Must be >= 1.
    */
   maxRowsPerChunk?: number;
+  /**
+   * Optional transactional EntityManager to run inside. When supplied, the whole
+   * statement sequence joins the CALLER's transaction instead of opening its own,
+   * so a caller can compose this with writes to other tables (e.g. a CTI base
+   * row) atomically. When omitted, the call opens and owns its transaction as
+   * before.
+   */
+  manager?: EntityManager;
 }
 
 /**
@@ -117,6 +131,35 @@ export function computeChunkSize(columnsPerRow: number, requestedMax?: number): 
   const target = requestedMax != null && requestedMax > 0 ? requestedMax : DEFAULT_CHUNK_ROWS;
 
   return Math.max(1, Math.min(target, paramBudgetCap));
+}
+
+/**
+ * Chunked multi-row INSERT with an explicit ON CONFLICT clause: the row list is
+ * split by {@link computeChunkSize} so no statement exceeds the bind-param
+ * budget, and each chunk targets `repository.metadata.target` so STI child
+ * repositories emit their discriminator for every row.
+ *
+ * This is the one canonical copy of the "chunk + insert().onConflict()" loop
+ * the CTI/STI bulk writers previously each hand-rolled; a change to the chunk
+ * math or the (deprecated) `onConflict` API lands here once.
+ */
+export async function chunkedConflictInsert<Entity extends ObjectLiteral>(
+  repository: Repository<Entity>,
+  rows: Entity[],
+  onConflict: string,
+): Promise<void> {
+  const chunkSize = computeChunkSize(repository.metadata.columns.length);
+  for (let offset = 0; offset < rows.length; offset += chunkSize) {
+    await repository
+      .createQueryBuilder()
+      .insert()
+      // Route through `metadata.target` so TS picks the `ObjectLiteral`
+      // overload of `.values()`.
+      .into(repository.metadata.target)
+      .values(rows.slice(offset, offset + chunkSize))
+      .onConflict(onConflict)
+      .execute();
+  }
 }
 
 /**
@@ -160,6 +203,13 @@ export async function bulkInsertIdempotent<Entity extends ObjectLiteral>(
 ): Promise<BulkInsertResult<Entity>[]> {
   if (options.entities.length === 0) {
     return [];
+  }
+
+  if (options.manager) {
+    return executeBulkInsert({
+      ...options,
+      repository: options.manager.withRepository(options.repository),
+    });
   }
 
   return options.repository.manager.transaction(async (tx) =>
@@ -279,26 +329,70 @@ async function executeChunk<Entity extends ObjectLiteral>(
     }
   };
 
-  // OR-list (inside a Brackets) matching the given triples with IS NOT DISTINCT
-  // FROM (NULLs compare equal, matching the prior `?? IsNull()` find). Distinct
-  // parameter prefixes keep multiple invocations on one query from colliding.
+  // OR-list (inside a Brackets) matching the given triples, NULLs-compare-equal
+  // on sourceSystem (matching the prior `?? IsNull()` find semantics).
+  //
+  // This used to emit `col IS NOT DISTINCT FROM :param` for all three columns.
+  // That is semantically right but Postgres CANNOT use a btree index — including
+  // the partial unique index this very arbiter is named after
+  // (browser_activity_source_triple_uniq / content_source_triple_uniq / etc.) —
+  // to satisfy an `IS NOT DISTINCT FROM` qual: verified via EXPLAIN ANALYZE, even
+  // with `enable_seqscan = off`, Postgres falls back to scanning every row
+  // matching the *other* quals (here, just the caller's `scope`, e.g. user_id)
+  // and evaluates the OR'd triple match as a row-by-row Filter. On a bulk ingest
+  // chunk (up to 1000 triples per call, see DEFAULT_CHUNK_ROWS) against a
+  // partially-loaded table this is an O(rows already loaded for that scope)
+  // scan PER CHUNK — exactly the "same query, 8s -> 40s+ and climbing as the
+  // table fills" symptom from a large bulk sync, despite the correct index
+  // existing the whole time.
+  //
+  // typeCol and idCol are guaranteed NOT NULL for every triple reaching this
+  // function (both call sites pre-filter with isDedupable()), so a plain `=` is
+  // always correct for them and IS indexable. systemCol is the only column that
+  // can legitimately be NULL, so it alone needs the two-armed NULL-safe form
+  // (`= :param` when non-null, else a literal `IS NULL` — never bind NULL
+  // through `=`, which would never match). With plain `=`, Postgres's OR/IN
+  // transformation lets a whole chunk's worth of triples resolve to one Index
+  // Scan (confirmed via EXPLAIN ANALYZE: ~1.7s -> ~0.2ms on a 200k-row table).
+  // Distinct parameter prefixes keep multiple invocations on one query from
+  // colliding.
   const tripleBrackets = (triples: SourceTriple[], prefix: string): Brackets =>
     new Brackets((b: WhereExpressionBuilder) => {
       triples.forEach((triple, i) => {
+        const systemParam = `${prefix}_system_${i}`;
+        const systemCond =
+          triple.sourceSystem == null
+            ? `${alias}.${systemCol} IS NULL`
+            : `${alias}.${systemCol} = :${systemParam}`;
+
         b.orWhere(
-          `(${alias}.${typeCol} IS NOT DISTINCT FROM :${prefix}_type_${i}` +
-            ` AND ${alias}.${systemCol} IS NOT DISTINCT FROM :${prefix}_system_${i}` +
-            ` AND ${alias}.${idCol} IS NOT DISTINCT FROM :${prefix}_id_${i})`,
+          `(${alias}.${typeCol} = :${prefix}_type_${i}` +
+            ` AND ${systemCond}` +
+            ` AND ${alias}.${idCol} = :${prefix}_id_${i})`,
           {
-            [`${prefix}_type_${i}`]: triple.sourceType ?? null,
-            [`${prefix}_system_${i}`]: triple.sourceSystem ?? null,
-            [`${prefix}_id_${i}`]: triple.sourceId ?? null,
+            [`${prefix}_type_${i}`]: triple.sourceType,
+            ...(triple.sourceSystem != null ? { [systemParam]: triple.sourceSystem } : {}),
+            [`${prefix}_id_${i}`]: triple.sourceId,
           },
         );
       });
     });
 
+  // Two names for the SAME primary column, and they are NOT interchangeable.
+  // `pkDbName` is the DB column name — Postgres keys RETURNING rows by it, so it
+  // is what we read the returned pk back with below. `pkPropertyPath` is the
+  // ENTITY property path, which is what the ARRAY form of `.returning([...])`
+  // resolves against: QueryBuilder.getReturningColumns() maps every entry through
+  // EntityMetadata.findColumnsWithPropertyPath(), which compares
+  // `column.propertyPath` and NEVER `databaseName`. Passing a column name there
+  // resolves to zero columns and SILENTLY drops the pk from the emitted RETURNING
+  // clause — so `insertedPks` filled with undefined, every dedupable row reported
+  // `inserted: false`, and the CTI base-row write downstream was starved. Entities
+  // whose pk column is plainly named `id` were unaffected, which is why this hid
+  // for seven weeks; it only turned fatal once a deferred FK started requiring the
+  // base row. Affected today: EventEntity (`event_id`) and ItemEntity (`object_id`).
   const pkDbName = meta.primaryColumns[0].databaseName;
+  const pkPropertyPath = meta.primaryColumns[0].propertyPath;
 
   // --- 1. Existence pre-check (single SELECT over all dedupable triples). --------
   // DO NOTHING path only: a row already present is skipped from the INSERT (its
@@ -378,7 +472,11 @@ async function executeChunk<Entity extends ObjectLiteral>(
 
     // Under DO UPDATE every conflicting row is returned, so RETURNING must carry
     // the xmax-derived inserted flag to distinguish inserts from refreshes.
-    insertQb.returning(doUpdate ? `${pkDbName}, (xmax = 0) AS ${insertedFlagAlias}` : [pkDbName]);
+    //
+    // The two branches take DIFFERENT name spaces, deliberately: the string form is
+    // emitted verbatim as SQL (so it wants the DB column name), while the array form
+    // is resolved against entity property paths (see pkPropertyPath above).
+    insertQb.returning(doUpdate ? `${pkDbName}, (xmax = 0) AS ${insertedFlagAlias}` : [pkPropertyPath]);
 
     const insertResult = await insertQb.execute();
 

@@ -1,10 +1,13 @@
 import { type MouseEvent, type MouseEventHandler, type ReactNode, useCallback } from 'react';
 
 import { useDeviceLayout } from '@ci/common';
-import { Button, cn } from '@ci/shadcn';
+import { cn, IconButton } from '@ci/shadcn';
 import { X } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 
+import { ChatWithAgentMenu } from '@/components/ChatWithAgent';
 import { Tag } from '@/components/Tag';
+import type { AgentChatContext } from '@/lib/agentChat';
 
 interface Props {
   title: string;
@@ -16,6 +19,7 @@ interface Props {
   onDismiss?: MouseEventHandler<HTMLButtonElement>;
   dismissLabel?: string;
   showUnseenIndicator?: boolean;
+  chatContext?: AgentChatContext;
 }
 
 export function BentoCard({
@@ -26,9 +30,11 @@ export function BentoCard({
   className,
   onClick,
   onDismiss,
-  dismissLabel = 'Dismiss card',
+  dismissLabel,
   showUnseenIndicator = false,
+  chatContext,
 }: Props) {
+  const { t } = useTranslation();
   const { isMobile } = useDeviceLayout();
 
   const handleClick = useCallback(
@@ -46,26 +52,54 @@ export function BentoCard({
     [onDismiss],
   );
 
-  const dismissButton = onDismiss ? (
-    <Button
-      type="button"
-      variant="outline"
-      size="icon"
-      className="absolute right-3 top-3 z-30 h-7 w-7 bg-background/80 backdrop-blur-sm"
-      onClick={handleDismiss}
-      aria-label={dismissLabel}
-      title={dismissLabel}
-    >
-      <X className="h-4 w-4" />
-    </Button>
-  ) : null;
+  // The controls stack down the right edge rather than sitting side by side: two
+  // buttons in a row ate enough of the header that a long title wrapped underneath
+  // them. The whole stack hangs 1 off the card so the dismiss button sits on the
+  // corner, mirroring the unseen dot opposite, with the chat button lined up under
+  // it. No deeper than 1: the carousel viewport clips at `pt-1`, so a larger offset
+  // would shave the top off the dismiss button.
+  const cardActions =
+    onDismiss || chatContext ? (
+      <div className="absolute -right-1 -top-1 z-30 flex flex-col items-end gap-2">
+        {onDismiss && (
+          <IconButton
+            type="button"
+            variant="outline"
+            className="h-7 w-7 rounded-full bg-background/80 backdrop-blur-sm"
+            onClick={handleDismiss}
+            label={dismissLabel ?? t('FEED_CARD_DISMISS')}
+          >
+            <X className="h-4 w-4" />
+          </IconButton>
+        )}
+        {chatContext && (
+          <ChatWithAgentMenu
+            context={chatContext}
+            className="h-7 w-7 rounded-full bg-background/80 backdrop-blur-sm"
+          />
+        )}
+      </div>
+    ) : null;
+
+  // Gutter the header content has to leave clear so the stack never lands on top of
+  // the title or the tags. Both buttons are 7 wide and hang 1 past the edge, so they
+  // reach 6 back into the card whichever of them is rendered; the extra 3 keeps a
+  // right-aligned tag from butting up against the chat button.
+  const actionGutter = onDismiss || chatContext ? 'pr-9' : undefined;
 
   const unseenIndicator = showUnseenIndicator ? (
-    <span
-      className="pointer-events-none absolute left-0 top-0 z-30 h-3 w-3 -translate-x-1/3 -translate-y-1/3 rounded-full bg-primary ring-2 ring-background"
-      aria-label="New item"
-      title="New item"
-    />
+    <>
+      {/* The dot overhangs the card by a third of its size, so it must stay out
+          of the hit test or it swallows clicks meant for the neighbouring card.
+          That also rules out hovering it, hence the sr-only text rather than a
+          tooltip: a decorative span carries no role, so aria-label on it would
+          be ignored anyway. */}
+      <span
+        className="pointer-events-none absolute left-0 top-0 z-30 h-3 w-3 -translate-x-1/3 -translate-y-1/3 rounded-full bg-primary ring-2 ring-background"
+        aria-hidden="true"
+      />
+      <span className="sr-only">{t('FEED_CARD_UNSEEN')}</span>
+    </>
   ) : null;
 
   if (isMobile) {
@@ -79,22 +113,34 @@ export function BentoCard({
         onClick={handleClick}
       >
         {unseenIndicator}
-        {dismissButton}
+        {cardActions}
         {imageUrl && (
           <div
-            className="relative top-0 left-0 right-0 min-h-42 bg-cover bg-center rounded-t-lg -mx-4 -mt-4 text-4xl font-bold text-center text-white p-4"
+            className={cn(
+              'relative top-0 left-0 right-0 min-h-42 bg-cover bg-center rounded-t-lg -mx-4 -mt-4 text-2xl font-bold text-center text-white p-4',
+              // The action stack is pinned to the top-right; without a reserved gutter
+              // a two-word title ("Weather update") runs straight underneath it.
+              actionGutter,
+            )}
             style={{
               backgroundImage: `
-              linear-gradient(to bottom, rgba(0,0,0,0.6), rgba(0,0,0,0)),
+              linear-gradient(to bottom, rgba(0,0,0,0.75), rgba(0,0,0,0.15) 60%, rgba(0,0,0,0)),
               url(${imageUrl})
             `,
+              // Bright imagery (the weather card's cloud cover) washed the title out
+              // even through the scrim.
+              textShadow: '0 1px 3px rgba(0,0,0,0.6)',
             }}
           >
             {title}
           </div>
         )}
 
-        {!imageUrl && <div className="text-4xl font-bold text-center">{title}</div>}
+        {/* Padded on both sides so the title stays optically centred while clearing
+            the action stack on the right. */}
+        {!imageUrl && (
+          <div className={cn('text-4xl font-bold text-center', actionGutter && 'px-9')}>{title}</div>
+        )}
 
         {(tags?.length ?? 0) > 0 && (
           <div className="flex flex-wrap gap-1 justify-center">
@@ -121,13 +167,13 @@ export function BentoCard({
         onClick={handleClick}
       >
         {unseenIndicator}
-        {dismissButton}
-        <div className="flex w-full justify-between content-start">
+        {cardActions}
+        <div className={cn('flex w-full justify-between content-start', actionGutter)}>
           <h1 className="text-2xl font-semibold">{title}</h1>
 
           {(tags?.length ?? 0) > 0 && (
             <div>
-              <div className={cn('flex flex-wrap gap-1 justify-end', onDismiss && 'pr-10')}>
+              <div className="flex flex-wrap gap-1 justify-end">
                 {tags.map((tag) => (
                   <Tag key={tag} text={tag} />
                 ))}
@@ -153,7 +199,7 @@ export function BentoCard({
       onClick={handleClick}
     >
       {unseenIndicator}
-      {dismissButton}
+      {cardActions}
       <div className="flex flex-col flex-1 gap-4 justify-between p-4">
         <div>
           <h1 className="text-2xl font-semibold">{title}</h1>
@@ -170,7 +216,7 @@ export function BentoCard({
           <div
             className={cn(
               'flex flex-wrap gap-1 justify-end relative z-10 p-4 [background-image:radial-gradient(circle_at_top_right,_rgba(255,255,255,0.9),_rgba(255,255,255,0.1))]',
-              onDismiss && 'pr-12',
+              actionGutter,
             )}
           >
             {tags.map((tag) => (

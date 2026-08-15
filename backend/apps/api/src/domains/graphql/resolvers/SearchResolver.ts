@@ -8,7 +8,19 @@ import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { BrowserActivityEntity, BrowserActivityService } from '@ci/domains/browser-activity';
 import { EntityResolutionService, type ResolvedEntity } from '@ci/domains/entity-resolution';
 import { FileService, SavedSearchService } from '@ci/domains/files';
-import { CommunicationService, EventService, EventEntity, CommunicationEntity } from '@ci/domains/memory';
+import { AnswerService } from '@ci/domains/intelligence';
+import {
+  CommunicationService,
+  ConceptService,
+  ContentService,
+  EventService,
+  EventEntity,
+  CommunicationEntity,
+  ItemService,
+  PersonService,
+  PlaceService,
+} from '@ci/domains/memory';
+import { NoteService } from '@ci/domains/notes';
 import { FileChunkService } from '@ci/domains/parsing';
 import {
   SearchService,
@@ -83,6 +95,10 @@ function timeOf(result: SearchResult): Date {
     return new Date(result.createdAt as string | Date);
   }
 
+  if ('answeredAt' in result && result.answeredAt) {
+    return new Date(result.answeredAt as string | Date);
+  }
+
   return new Date(0);
 }
 
@@ -137,10 +153,17 @@ export class SearchResolver {
   constructor(
     private readonly browserActivityService: BrowserActivityService,
     private readonly communicationService: CommunicationService,
+    private readonly conceptService: ConceptService,
+    private readonly contentService: ContentService,
     private readonly entityResolutionService: EntityResolutionService,
     private readonly eventService: EventService,
     private readonly fileService: FileService,
     private readonly fileChunkService: FileChunkService,
+    private readonly itemService: ItemService,
+    private readonly noteService: NoteService,
+    private readonly personService: PersonService,
+    private readonly placeService: PlaceService,
+    private readonly answerService: AnswerService,
     private readonly savedSearchService: SavedSearchService,
     private readonly searchService: SearchService,
     private readonly tagService: TagService,
@@ -286,6 +309,7 @@ export class SearchResolver {
       identifiers = await this.searchByTimedEntities(serviceContext, {
         includeTypes: input.includeTypes,
         excludeTypes: input.excludeTypes,
+        includeFiles: input.includeFiles === true,
         startTime,
         // With no filters at all, bound to "now" so we return recent items, not the entire history.
         endTime: keyset
@@ -457,6 +481,7 @@ export class SearchResolver {
     {
       includeTypes,
       excludeTypes,
+      includeFiles,
       startTime,
       endTime,
       afterTime,
@@ -467,6 +492,8 @@ export class SearchResolver {
     }: {
       includeTypes?: IndexableEntity[];
       excludeTypes?: IndexableEntity[];
+      /** Opt files into the browse alongside the other types (see SearchInput.includeFiles). */
+      includeFiles?: boolean;
       startTime?: Date;
       endTime?: Date;
       // Composite keyset cursor: page strictly past (afterTime, afterId) in
@@ -486,16 +513,21 @@ export class SearchResolver {
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
     // who / where / connector are event-only dimensions; restrict to events when set.
     const eventsOnly = eventFilter != null;
-    // Files and document chunks are content, not activity: they're opt-in to the
-    // timeline so a document's many same-timestamp chunks don't bury the default
-    // browse. They appear only when the caller explicitly filters to that type
-    // (includeTypes), never in the unfiltered "recent activity" view.
-    const optIn = (type: IndexableEntity) =>
-      type !== 'file' && type !== 'file-chunk' ? true : (includeTypes?.includes(type) ?? false);
+    // Document chunks stay opt-in — a file's many same-timestamp chunks would bury
+    // the default browse. Files themselves are part of the default timeline.
+    const optIn = (type: IndexableEntity) => {
+      if (type === 'file-chunk') {
+        return includeTypes?.includes(type) ?? false;
+      }
+
+      return true;
+    };
+
     const wants = (type: IndexableEntity) =>
       this.matchesTypeFilter(type, includeTypes, excludeTypes) &&
       (!eventsOnly || type === 'event') &&
-      optIn(type);
+      optIn(type) &&
+      (type !== 'file' || includeFiles !== false);
 
     const eventOptions: {
       limit: number;
@@ -600,18 +632,44 @@ export class SearchResolver {
       fileChunkOptions.afterId = afterId;
     }
 
-    const [eventResults, browserActivityResults, communicationResults, fileResults, fileChunkResults] =
-      await Promise.all([
-        wants('event') ? this.eventService.getEntitiesForEvents(context, eventOptions) : [],
-        wants('browser-activity')
-          ? this.browserActivityService.getEntitiesForBrowserActivities(context, browserActivityOptions)
-          : [],
-        wants('communication')
-          ? this.communicationService.getEntitiesForCommunications(context, communicationOptions)
-          : [],
-        wants('file') ? this.fileService.getEntitiesForFiles(context, fileOptions) : [],
-        wants('file-chunk') ? this.fileChunkService.getEntitiesForFileChunks(context, fileChunkOptions) : [],
-      ]);
+    const createdAtOptions = {
+      limit,
+      order: 'DESC' as const,
+      ...(startTime ? { startTime } : {}),
+      ...(endTime ? { endTime } : {}),
+    };
+
+    const [
+      eventResults,
+      browserActivityResults,
+      communicationResults,
+      fileResults,
+      fileChunkResults,
+      noteResults,
+      contentResults,
+      personResults,
+      placeResults,
+      itemResults,
+      conceptResults,
+      answerResults,
+    ] = await Promise.all([
+      wants('event') ? this.eventService.getEntitiesForEvents(context, eventOptions) : [],
+      wants('browser-activity')
+        ? this.browserActivityService.getEntitiesForBrowserActivities(context, browserActivityOptions)
+        : [],
+      wants('communication')
+        ? this.communicationService.getEntitiesForCommunications(context, communicationOptions)
+        : [],
+      wants('file') ? this.fileService.getEntitiesForFiles(context, fileOptions) : [],
+      wants('file-chunk') ? this.fileChunkService.getEntitiesForFileChunks(context, fileChunkOptions) : [],
+      wants('note') ? this.noteService.getEntitiesForNotes(context, createdAtOptions) : [],
+      wants('content') ? this.contentService.getEntitiesForContents(context, createdAtOptions) : [],
+      wants('person') ? this.personService.getEntitiesForPeople(context, createdAtOptions) : [],
+      wants('place') ? this.placeService.getEntitiesForPlaces(context, createdAtOptions) : [],
+      wants('item') ? this.itemService.getEntitiesForItems(context, createdAtOptions) : [],
+      wants('concept') ? this.conceptService.getEntitiesForConcepts(context, createdAtOptions) : [],
+      wants('answer') ? this.answerService.getEntitiesForAnswers(context, createdAtOptions) : [],
+    ]);
 
     return [
       ...eventResults,
@@ -619,6 +677,13 @@ export class SearchResolver {
       ...communicationResults,
       ...fileResults,
       ...fileChunkResults,
+      ...noteResults,
+      ...contentResults,
+      ...personResults,
+      ...placeResults,
+      ...itemResults,
+      ...conceptResults,
+      ...answerResults,
     ];
   }
 
@@ -696,7 +761,7 @@ export class SearchResolver {
     >;
     // Files/chunks have no domain time/startTime — fall back to createdAt so the
     // timeline sort matches timeOf() (the cursor) rather than sinking to epoch.
-    const value = entity.time ?? entity.startTime ?? entity.createdAt ?? null;
+    const value = entity.time ?? entity.startTime ?? entity.createdAt ?? entity.answeredAt ?? null;
 
     if (value instanceof Date) {
       return value;

@@ -22,7 +22,6 @@ node_modules
 .pnp.*
 .aider*
 .env
-.venv
 
 .specstory/
 AGENTS.md
@@ -48,11 +47,15 @@ coverage/
 # Per-worktree overmind sockets created by scripts/dev-stack.ts
 .overmind*.sock
 
-backend/apps/hbpe/src/ci/model/__pycache__/
-
-backend/apps/hbpe/src/ci/tokenizer/__pycache__/
-
-*.pyc
+# Python (uv workspace). One virtual environment at the root, shared by
+# every member; uv.lock beside it is committed.
+.venv/
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
 
 # Local Cloudflare Tunnel config (holds credentials path); keep the example only
 infrastructure/cloudflare/config.yml
@@ -63,3 +66,27 @@ infrastructure/cloudflare/config.yml
 # Local hot-swap compose override (live-testing branch builds against the
 # Hub-installed app); machine-specific, never committed
 .hotswap/
+
+# Nested git worktrees (Claude Code creates them here). Full copies of the
+# repo — never stage them, or root-level tooling will lint/format the copies.
+.claude/worktrees/
+
+# Gradle output for the local Capacitor plugin packages. frontend/apps/mobile/
+# android/.gitignore already covers the app project, but these packages are
+# their own Gradle modules and were never covered — a release build run inside
+# one committed 430 build artifacts (compiled .class files, merged manifests,
+# intermediate jars). Building normally goes through the app project, so this
+# only bites whoever builds a package directly or opens it in Android Studio.
+frontend/packages/*/android/build/
+
+# Local-only architecture visualization (ChartDB, Compodoc, schema dumps,
+# generated dashboards). Scripts live under tools/architecture-viz/; output
+# and npm install under .local/architecture-viz/.
+#
+# Anchored to the repo root on purpose. A bare `tools/` matches a directory of
+# that name at ANY depth, which silently swallowed every NEW file under
+# backend/apps/api/src/domains/tools/ — the intent catalog. The existing files
+# there survived only because git keeps tracking what it already tracks, so the
+# breakage was invisible until someone added a file.
+.local/
+/tools/

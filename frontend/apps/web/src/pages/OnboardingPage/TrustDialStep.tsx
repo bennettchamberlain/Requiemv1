@@ -3,13 +3,21 @@ import { cn } from '@ci/shadcn';
 import type { OnboardingFormData } from './OnboardingPage';
 import { StepHeader } from './StepHeader';
 
-const TRUST_OPTIONS = [
-  { value: 'cautious' as const, label: 'Cautious', hint: 'Review everything yourself' },
-  { value: 'balanced' as const, label: 'Balanced', hint: 'High-confidence items auto-promote' },
+export const TRUST_OPTIONS = [
+  {
+    value: 'cautious' as const,
+    label: 'Cautious',
+    hint: 'Ask before saving inferred answers or graph connections',
+  },
+  {
+    value: 'balanced' as const,
+    label: 'Balanced',
+    hint: 'Strong inferences save automatically; connections and weaker guesses ask first',
+  },
   {
     value: 'hands_off' as const,
     label: 'Hands-off',
-    hint: 'Auto-promote and auto-schedule estimate-bearing work',
+    hint: 'Auto-apply solid inferences and moderately confident connections; low-confidence items still ask',
   },
 ];
 
@@ -31,8 +39,12 @@ export function TrustDialStep({ value, onChange }: TrustDialStepProps) {
           <button
             key={opt.value}
             type="button"
+            // Selection was signalled by border/background alone, so which option is
+            // active reached assistive tech not at all (and colour-blind users only
+            // faintly). aria-pressed exposes the same state non-visually.
+            aria-pressed={selected === opt.value}
             className={cn(
-              'rounded-xl border border-border px-5 py-4 text-left transition-colors',
+              'cursor-pointer rounded-xl border border-border px-5 py-4 text-left transition-colors hover:border-teal-600/60',
               selected === opt.value && 'border-teal-600 bg-teal-500/10',
             )}
             onClick={() => onChange(opt.value)}

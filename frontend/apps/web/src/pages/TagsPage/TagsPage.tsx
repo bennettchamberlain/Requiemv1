@@ -1,11 +1,12 @@
-import { type ReactNode, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { useQuery } from '@apollo/client';
-import { EmptyState, LoadingPage, Portal, usePageTitle } from '@ci/common';
+import { EmptyState, Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb, Input } from '@ci/shadcn';
 import { Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
+import { MemoryHubShell } from '@/components/MemoryHub';
 import { Tag } from '@/components/Tag';
 import { gql } from '@/graphql';
 
@@ -27,47 +28,18 @@ export function TagsPage() {
   usePageTitle('Tags - Companion Intelligence');
 
   const [searchQuery, setSearchQuery] = useState('');
-  const { data, loading } = useQuery(GET_TAGS);
+  const { data, loading, error } = useQuery(GET_TAGS);
 
   const sortedTags = useMemo(() => {
-    if (data == null) {
-      return [];
-    }
+    const edges = data?.tags?.edges ?? [];
 
-    return [...data.tags.edges].sort((a, b) =>
-      a.node.label.toLowerCase().localeCompare(b.node.label.toLowerCase()),
-    );
+    return [...edges].sort((a, b) => a.node.label.toLowerCase().localeCompare(b.node.label.toLowerCase()));
   }, [data]);
 
-  let content: ReactNode | null = null;
-
-  if (loading) {
-    content = <LoadingPage />;
-  } else if (data == null || data.tags.edges.length === 0) {
-    content = <EmptyState message="No tags found" />;
-  } else {
-    const filteredTags = sortedTags.filter(({ node: tag }) =>
-      tag.label.toLowerCase().includes(searchQuery.toLowerCase()),
-    );
-
-    content = (
-      <PageContent>
-        <Input
-          placeholder="Filter tags..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
-
-        <div className="flex flex-wrap gap-2">
-          {filteredTags.map(({ node: tag }) => (
-            <Link key={tag.id} to={`/memory?tags=${encodeURIComponent(tag.label)}`}>
-              <Tag text={tag.label} className="cursor-pointer" />
-            </Link>
-          ))}
-        </div>
-      </PageContent>
-    );
-  }
+  const filteredTags = useMemo(
+    () => sortedTags.filter(({ node: tag }) => tag.label.toLowerCase().includes(searchQuery.toLowerCase())),
+    [searchQuery, sortedTags],
+  );
 
   return (
     <>
@@ -82,14 +54,50 @@ export function TagsPage() {
 
             <Breadcrumb.Separator className="hidden md:block" />
 
-            <Breadcrumb.Item className="hidden md:block">
+            <Breadcrumb.Item>
+              <Breadcrumb.Link asChild>
+                <Link to="/memory">Memory</Link>
+              </Breadcrumb.Link>
+            </Breadcrumb.Item>
+
+            <Breadcrumb.Separator />
+
+            <Breadcrumb.Item>
               <Breadcrumb.Page>Tags</Breadcrumb.Page>
             </Breadcrumb.Item>
           </Breadcrumb.List>
         </Breadcrumb>
       </Portal.Slot>
 
-      {content}
+      <PageContent className="gap-4 p-0">
+        <MemoryHubShell>
+          <div className="flex flex-col gap-4 px-4 pb-4">
+            <Input
+              placeholder="Filter tags..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+
+            {loading ? (
+              <p className="text-sm text-muted-foreground">Loading tags…</p>
+            ) : error ? (
+              <EmptyState message={`Couldn't load tags: ${error.message}`} />
+            ) : sortedTags.length === 0 ? (
+              <EmptyState message="No tags yet. Tags appear as you organize events and other memory." />
+            ) : filteredTags.length === 0 ? (
+              <EmptyState message="No tags match your filter." />
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {filteredTags.map(({ node: tag }) => (
+                  <Link key={tag.id} to={`/memory?tags=${encodeURIComponent(tag.label)}`}>
+                    <Tag text={tag.label} className="cursor-pointer" />
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        </MemoryHubShell>
+      </PageContent>
     </>
   );
 }

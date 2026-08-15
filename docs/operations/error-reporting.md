@@ -30,8 +30,8 @@ narrower than a Sentry default install:
 | Setting | Value | Why |
 |---|---|---|
 | `sendDefaultPii` | `false` | No IPs, cookies, or request bodies. |
-| `tracesSampleRate` | `0` | Errors only. Traces would ship request shapes we have no consent to collect. |
-| Session replay | not installed | Would record the user's own memories on screen. |
+| `tracesSampleRate` | `0.1` by default | Override with `SENTRY_TRACES_SAMPLE_RATE`; keep consent and scrubbing enabled. |
+| Session replay | `0.1` of sessions, 100% of error sessions | Override with the `VITE_SENTRY_REPLAYS_*` variables. |
 | `beforeSend` | scrubber | Redacts credentials and home paths, drops cookies/body/query string. |
 
 Two kill switches disable reporting even when a DSN is baked into an image, so
@@ -47,9 +47,9 @@ over the DSN.
 
 ## What gets scrubbed
 
-`backend/apps/api/src/common/telemetry/scrubEvent.ts` and its Python twins
-(`backend/apps/hbpe/src/ci/telemetry.py`,
-`backend/apps/summary/src/telemetry.py`) implement the same rules:
+`backend/apps/api/src/common/telemetry/scrubEvent.ts` and its Python
+counterpart (`backend/packages/telemetry/src/ci/telemetry/__init__.py`, shared
+by every Python service) implement the same rules:
 
 - Bearer tokens, `api_key=` / `password:` / `token:` style pairs, Tailscale
   `tskey-…`, and credentials in connection URLs → `[Filtered]`
@@ -196,7 +196,7 @@ To confirm reporting is genuinely inert without a DSN, start the API with no
 | `backend/apps/api/src/common/filters/GlobalExceptionsFilter.ts` | Captures unexpected request failures (not 4xx) |
 | `backend/apps/api/src/application.ts` | Crash handlers capture + flush before `process.exit` |
 | `frontend/apps/web/src/main.tsx` | Calls `initTelemetry()` before render |
-| `backend/apps/{hbpe,summary}` | `init_telemetry()` in the FastAPI app and Temporal worker entry points |
+| `backend/apps/{hbpe,summary}` | `init_telemetry()` in the FastAPI app entry points |
 
 ## Not wired up yet
 

@@ -1,8 +1,23 @@
 import { lazy, Suspense, useCallback, useEffect } from 'react';
 
 import { LoadingPage, Portal, usePageTitle } from '@ci/common';
-import { Button, ScrollArea } from '@ci/shadcn';
-import { Braces, Cpu, ExternalLink, Globe, Key, KeyRound, MapPin, Palette, User, X } from '@ci/shadcn/icons';
+import { IconButton, ScrollArea } from '@ci/shadcn';
+import {
+  Braces,
+  Cpu,
+  ExternalLink,
+  Globe,
+  HardDrive,
+  Key,
+  KeyRound,
+  MapPin,
+  Palette,
+  Shield,
+  User,
+  UserRound,
+  X,
+} from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 
 const AppearanceSection = lazy(() =>
@@ -10,6 +25,12 @@ const AppearanceSection = lazy(() =>
 );
 const PreferencesSection = lazy(() =>
   import('./sections/PreferencesSection').then((m) => ({ default: m.PreferencesSection })),
+);
+const AutonomySection = lazy(() =>
+  import('./sections/AutonomySection').then((m) => ({ default: m.AutonomySection })),
+);
+const AboutYouSection = lazy(() =>
+  import('./sections/AboutYouSection').then((m) => ({ default: m.AboutYouSection })),
 );
 const ModelSection = lazy(() => import('./sections/ModelSection').then((m) => ({ default: m.ModelSection })));
 const LocationSection = lazy(() =>
@@ -21,6 +42,9 @@ const ApiKeysSection = lazy(() =>
 const OAuthSection = lazy(() => import('./sections/OAuthSection').then((m) => ({ default: m.OAuthSection })));
 const AccountSection = lazy(() =>
   import('./sections/AccountSection').then((m) => ({ default: m.AccountSection })),
+);
+const DataPortabilitySection = lazy(() =>
+  import('./sections/DataPortabilitySection').then((m) => ({ default: m.DataPortabilitySection })),
 );
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
@@ -34,6 +58,7 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
 export function SettingsPage() {
   usePageTitle('Settings - Companion Intelligence');
 
+  const { t } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
   const backgroundLocation = (
@@ -66,15 +91,15 @@ export function SettingsPage() {
           className="flex w-full max-w-6xl mx-8 h-[calc(100%-4rem)] rounded-xl overflow-hidden shadow-2xl border border-border bg-background relative"
           onClick={(e) => e.stopPropagation()}
         >
-          <Button
+          <IconButton
             variant="ghost"
-            size="icon"
             onClick={handleClose}
-            aria-label="Close Settings"
+            label={t('SETTINGS_CLOSE')}
+            tooltip={t('SETTINGS_CLOSE_HINT')}
             className="absolute top-3 right-3 z-10"
           >
             <X className="h-4 w-4" />
-          </Button>
+          </IconButton>
 
           <ScrollArea className="w-60 flex-shrink-0 border-r border-border">
             <aside className="flex flex-col gap-1 p-4">
@@ -90,6 +115,16 @@ export function SettingsPage() {
               <NavLink to="/settings/preferences" state={{ backgroundLocation }} className={navLinkClass}>
                 <Globe className="h-4 w-4" />
                 Preferences
+              </NavLink>
+
+              <NavLink to="/settings/autonomy" state={{ backgroundLocation }} className={navLinkClass}>
+                <Shield className="h-4 w-4" />
+                Autonomy
+              </NavLink>
+
+              <NavLink to="/settings/about-you" state={{ backgroundLocation }} className={navLinkClass}>
+                <UserRound className="h-4 w-4" />
+                About you
               </NavLink>
 
               <NavLink to="/settings/model" state={{ backgroundLocation }} className={navLinkClass}>
@@ -117,6 +152,11 @@ export function SettingsPage() {
                 Account
               </NavLink>
 
+              <NavLink to="/settings/data" state={{ backgroundLocation }} className={navLinkClass}>
+                <HardDrive className="h-4 w-4" />
+                Your data
+              </NavLink>
+
               {/* GraphiQL is a full-page IDE served by the API, so it opens in a
                   new tab rather than inside the settings modal. Authenticate it
                   with a key from the API Keys section above. */}
@@ -142,11 +182,14 @@ export function SettingsPage() {
                     <Route index element={<Navigate to="appearance" replace />} />
                     <Route path="appearance" element={<AppearanceSection />} />
                     <Route path="preferences" element={<PreferencesSection />} />
+                    <Route path="autonomy" element={<AutonomySection />} />
+                    <Route path="about-you" element={<AboutYouSection />} />
                     <Route path="model" element={<ModelSection />} />
                     <Route path="location" element={<LocationSection />} />
                     <Route path="api-keys" element={<ApiKeysSection />} />
                     <Route path="oauth" element={<OAuthSection />} />
                     <Route path="account" element={<AccountSection />} />
+                    <Route path="data" element={<DataPortabilitySection />} />
                   </Routes>
                 </Suspense>
               </div>

@@ -1,0 +1,191 @@
+# ─────────────────────────────────────────────────────────────────────
+# Python workspace root
+#
+# This file is a container, not a distribution: `package = false` means
+# nothing here is ever built, packaged, or published. Every real Python
+# component is a workspace member with its own pyproject.toml.
+#
+# Naming convention. A member's distribution is named ci-<name> and its
+# import package is ci.<name> (PEP 420 namespace), so `ci` is a shared
+# namespace that no single member owns. That means no member may ship a
+# src/ci/__init__.py — adding one makes every other ci.* package
+# unimportable, and the failure looks like an unrelated ImportError.
+# Enforced by scripts/check-ci-namespace.sh in lint-staged and make lint.
+#
+# Layout. Services live in backend/apps/<name>, shared libraries in
+# backend/packages/<name>, mirroring frontend/packages/* on the JS side.
+#
+# The lockfile. There is exactly one uv.lock, here, covering every
+# member. Never resolve a merge conflict in it by hand: a git merge
+# driver (scripts/merge-uv-lock.sh, registered by `yarn install`) keeps
+# one side automatically; run `uv lock` afterward to reconcile. A
+# forgotten relock is caught by `uv lock --check` in `make lint` and
+# `make build`, and by `uv sync --locked` in CI.
+#
+# Python version. .python-version pins the interpreter and uv downloads
+# it on demand, so Python is not listed in .tool-versions. That keeps
+# asdf out of the loop; uv is the only thing that needs to provision it.
+# ─────────────────────────────────────────────────────────────────────
+
+[project]
+name = "ci-server"
+version = "0.0.0"
+description = "Workspace root for the CI-Server Python services"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.uv]
+package = false
+# The single authoritative uv pin. Everything reads it from here: setup-uv
+# in CI resolves it when no version input is given, and `make build` passes
+# it to the Dockerfiles as UV_VERSION. Exact on purpose — a floor let CI
+# drift onto newer uv than the images. Bump it here and nowhere else.
+required-version = "==0.9.17"
+
+[tool.uv.workspace]
+members = [
+    "backend/apps/hbpe",
+    "backend/apps/summary",
+    "backend/packages/*",
+]
+
+# Tooling for the whole workspace, installed by `uv sync --all-packages`.
+# Dependency groups are never published into a wheel, so members do not
+# declare their own copies of the linters or the test runner.
+[dependency-groups]
+dev = [
+    "mypy>=1.19",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "ruff>=0.14",
+]
+
+# ── Ruff ─────────────────────────────────────────────────────────────
+# One config for every member. Ruff discovers files from the working
+# directory, so `uv run ruff check` at the root covers the workspace
+# without a member list to keep in sync.
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+# Ruff's default file selection includes Markdown, so an unqualified
+# `ruff format` at the root rewrites every doc in docs/. Keep it to
+# Python; Markdown is not ours to reformat.
+include = ["*.py", "*.pyi", "**/pyproject.toml"]
+
+[tool.ruff.lint]
+select = [
+    "ASYNC", # flake8-async — both services are async end to end
+    "B",     # flake8-bugbear
+    "E",     # pycodestyle errors
+    "F",     # pyflakes
+    "I",     # isort
+    "RUF",   # ruff-specific rules
+    "UP",    # pyupgrade
+]
+ignore = [
+    # The formatter already enforces line length on code. Leaving E501 on
+    # only flags comments, docstrings, and URLs it cannot wrap for us.
+    "E501",
+    # Box-drawing and typographic characters in comment banners are house
+    # style here, matching the Makefile and the TypeScript sources.
+    "RUF001",
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["ci"]
+
+# FastAPI's parameter declarations are calls in argument defaults by
+# design, which is exactly what B008 exists to catch everywhere else.
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = [
+    "fastapi.Body",
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Header",
+    "fastapi.Path",
+    "fastapi.Query",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# nest_asyncio.apply() has to run before the modules below are imported,
+# so this import block is deliberately split in two.
+"backend/apps/summary/src/ci/summary/activities.py" = ["E402"]
+# load_dotenv() has to run before pydantic-settings is imported, since the
+# settings classes read the environment at class-definition time.
+"backend/apps/hbpe/src/ci/hbpe/config.py" = ["E402"]
+
+# ── Mypy ─────────────────────────────────────────────────────────────
+# Strict by default, so new code is born typed. Services that predate the
+# workspace are relaxed by module rather than by path, so the exemption
+# travels with the code if it moves and shrinks as annotations land.
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+namespace_packages = true
+explicit_package_bases = true
+warn_unused_configs = true
+
+# Members are checked as installed packages, resolved through the editable
+# installs that `uv sync` writes into the venv, so there are no path lists
+# to keep aligned. Each entry names a member's import package; the member
+# must ship a py.typed marker or mypy refuses to look at it (PEP 561).
+#
+# `packages = ["ci"]` looks tempting but silently checks only the first
+# namespace portion mypy finds on the search path — one member instead of
+# all of them — so every member is named here.
+packages = [
+    "ci.hbpe",
+    "ci.summary",
+    "ci.telemetry",
+]
+
+[[tool.mypy.overrides]]
+# Quarantine, not a clean bill of health. Both services predate the
+# workspace: ci.summary reports 41 errors and ci.hbpe 190 under a relaxed
+# configuration, a mix of genuine defects (unguarded Optional access,
+# values assigned across incompatible types) and missing annotations.
+# Suppressing them keeps both analyzed, so code that imports from them
+# still type-checks against real signatures, without holding a build-system
+# change hostage to a typing cleanup.
+#
+# This entry is debt. Narrow it to specific modules as they are annotated,
+# and delete it when the last one goes green. Anything outside it, which is
+# every new member, is strict.
+module = [
+    "ci.hbpe.*",
+    "ci.summary.*",
+]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+# Third-party packages that ship no type information.
+module = [
+    "markitdown.*",
+    "nest_asyncio.*",
+    "structlog.*",
+]
+ignore_missing_imports = true
+
+# ── Pytest ───────────────────────────────────────────────────────────
+
+# testpaths expands globs, so a new member's tests directory is collected
+# without touching this file.
+[tool.pytest.ini_options]
+testpaths = [
+    "backend/apps/*/tests",
+    "backend/packages/*/tests",
+]
+asyncio_default_fixture_loop_scope = "function"
+
+# importlib import mode, because members have test files that share a
+# basename (every service has a tests/test_telemetry.py). Under the
+# default mode those collide on module name and collection fails, since
+# the tests directories are deliberately not packages.
+addopts = ["--import-mode=importlib"]

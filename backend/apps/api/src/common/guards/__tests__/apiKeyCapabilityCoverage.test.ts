@@ -7,7 +7,10 @@ import { REQUIRE_CAPABILITY_KEY, REQUIRE_SCOPES_KEY } from '@ci/common/decorator
 
 import { IntentsController } from '../../../domains/agent/controllers/IntentsController';
 import { MemoryController } from '../../../domains/agent/controllers/MemoryController';
+import { FilesController } from '../../../domains/files/controllers/FilesController';
+import { BulkIngestController } from '../../../domains/ingest/controllers/BulkIngestController';
 import { McpController } from '../../../domains/mcp/controllers/McpController';
+import { PersonaIntelligenceController } from '../../../domains/persona/controllers/PersonaIntelligenceController';
 
 /**
  * The invariant that makes read-only mean something.
@@ -20,7 +23,17 @@ import { McpController } from '../../../domains/mcp/controllers/McpController';
  * Asserted by reading the metadata off the real controllers rather than by reviewing the source, so
  * a route added later cannot quietly opt out of the second axis while opting into the first.
  */
-const SCOPED_CONTROLLERS = [MemoryController, IntentsController, McpController];
+const SCOPED_CONTROLLERS = [
+  MemoryController,
+  IntentsController,
+  McpController,
+  PersonaIntelligenceController,
+  // The `capture` tier. Both grant at the CLASS level, which is why
+  // effectiveMetadata() below falls back to the class — a per-method scan alone
+  // would see these as unscoped and skip the capability assertion entirely.
+  FilesController,
+  BulkIngestController,
+];
 
 /** Every own method on a controller prototype (route handlers and helpers alike). */
 function methodsOf(controller: new (...args: never[]) => object): string[] {

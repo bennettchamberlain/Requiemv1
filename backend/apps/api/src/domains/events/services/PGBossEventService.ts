@@ -7,9 +7,11 @@ import { ContextService } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 
-import { EventListenerRegistry } from '../event-registration';
+import { DEFAULT_JOB_PRIORITY } from '../constants';
+import { EventDefinitionRegistry, EventListenerRegistry } from '../event-registration';
 import { type EventPayloads } from '../event-registry';
 import { EventRegistry } from '../registry';
+import type { EventSendOptions } from '../types';
 
 import { EventService } from './EventService';
 
@@ -45,12 +47,12 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
   // works this queue, so entries accumulate; it carries a long retention.
   private static readonly DEAD_LETTER_QUEUE = 'dead-letter';
 
-  // Bulk-import escape hatch: send() fans an event out to EVERY registered queue
-  // (each worker then filters by event name), so a large import enqueues ~Nqueues
-  // jobs per row. During a bulk load, set CI_QUEUE_SUPPRESS to a comma-separated
-  // list of queues to skip enqueuing entirely (e.g. file-preview-generation,
-  // image-description,geocode,feed-queue,etl) — keep search-index for searchable
-  // results. Enrichment can be backfilled later.
+  // Bulk-import escape hatch: even with per-event routing, one imported row can
+  // legitimately fan out to several enrichment queues. During a bulk load, set
+  // CI_QUEUE_SUPPRESS to a comma-separated list of queues to skip enqueuing
+  // entirely (e.g. file-preview-generation,image-description,geocode,feed-queue,
+  // etl) — keep search-index for searchable results. Enrichment can be backfilled
+  // later.
   private readonly suppressedQueues = new Set(
     (process.env.CI_QUEUE_SUPPRESS ?? '')
       .split(',')
@@ -124,6 +126,8 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
 
     this.logger.debug(`Discovered queues: ${Array.from(discoveredQueues).join(', ')}`);
 
+    this.warnOnOrphanEvents();
+
     // Create the shared dead-letter queue FIRST so the work queues can reference
     // it. Long retention so exhausted-retry jobs stay inspectable; no worker
     // consumes it (it is not a registered listener queue), so entries accumulate.
@@ -137,7 +141,12 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
     // won't update an existing queue's options, so updateQueue (a COALESCE merge)
     // applies deadLetter to queues that already exist on a live DB too.
     for (const queue of discoveredQueues) {
-      const options = { name: queue, deadLetter: PGBossEventService.DEAD_LETTER_QUEUE };
+      // Listener-requested queue-level options (expiration/retries) — used by
+      // deferred-completion queues whose jobs stay active while an external
+      // executor works, so their expiration must match the work's runtime.
+      const queueOptions = EventListenerRegistry.getQueueOptions(queue) ?? {};
+
+      const options = { name: queue, deadLetter: PGBossEventService.DEAD_LETTER_QUEUE, ...queueOptions };
 
       await this.boss.createQueue(queue, options);
       await this.boss.updateQueue(queue, options);
@@ -187,55 +196,108 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
   }
 
   /**
+   * Cross-check the declared event surface against the listener registry, once,
+   * at boot.
+   *
+   * Every `defineEvent` name that resolves to zero queues is an orphan: emitting
+   * it enqueues nothing. Under the old fan-out this was invisible — the event got
+   * a job on every queue and every worker silently dropped it, so a missing
+   * listener looked exactly like a working one. Now that routing is by listener,
+   * an orphan is a silent no-op, which is worse to debug in the field than a loud
+   * line at startup. Warn rather than throw: dormant events (a domain module not
+   * enabled in this deployment) are legitimate, and refusing to boot over one
+   * would be a self-inflicted outage.
+   */
+  private warnOnOrphanEvents(): void {
+    const orphans = EventDefinitionRegistry.getNames().filter(
+      (eventName) => EventListenerRegistry.getQueuesFor(eventName).size === 0,
+    );
+
+    if (orphans.length === 0) {
+      return;
+    }
+
+    this.logger.warn(
+      `${orphans.length} defined event(s) have no listener on any queue and will enqueue nothing when sent: ` +
+        orphans.join(', '),
+    );
+  }
+
+  /**
    * @deprecated Use the new distributed EventPayloads type instead.
    */
   async send<E extends keyof EventPayloads>(
     name: E,
     event: EventPayloads[E],
-    options?: { queue?: string },
+    options?: EventSendOptions,
   ): Promise<string[]>;
 
   async send<E extends keyof EventRegistry>(
     name: E,
     event: EventRegistry[E],
-    options?: { queue?: string },
+    options?: EventSendOptions,
   ): Promise<string[]>;
 
   async send<E extends string>(
     name: E,
     event: EventRegistry[keyof EventRegistry] | EventPayloads[keyof EventPayloads],
-    options?: { queue?: string },
+    options?: EventSendOptions,
   ): Promise<string[]> {
     const resolvedData = {
       ...event,
       name,
     } satisfies EventData;
 
-    const allQueues = this.getRegisteredQueues();
+    // pg-boss fetches ORDER BY priority DESC, so a higher number is worked
+    // sooner. Every job carries an explicit priority rather than leaning on the
+    // column default, so the ordering is legible from the enqueue side.
+    const sendOptions: PgBoss.SendOptions = {
+      priority: options?.priority ?? DEFAULT_JOB_PRIORITY,
+      ...(options?.singletonKey ? { singletonKey: options.singletonKey } : {}),
+    };
 
     // If a specific queue is provided and that queue exists, send only to that queue.
+    // Validated against every EXISTING queue rather than this event's listener
+    // set: naming a queue explicitly is how a backfill re-drives an event onto
+    // one worker, and that is legitimate even for a queue that would not be part
+    // of the event's normal fan-out.
     if (options?.queue) {
-      if (!allQueues.has(options.queue)) {
+      if (!this.getRegisteredQueues().has(options.queue)) {
         this.logger.warn(`Requested queue ${options.queue} does not exist. Event ${name} will not be sent.`);
 
         return [];
       }
 
-      const jobId = await this.boss.send(options.queue, resolvedData);
+      const jobId = await this.boss.send(options.queue, resolvedData, sendOptions);
 
       return jobId ? [jobId] : [];
     }
 
-    // Otherwise, send to all registered queues (minus any suppressed for a bulk load).
+    // Otherwise, send only to the queues that actually have a listener for THIS
+    // event (minus any suppressed for a bulk load). This used to be every
+    // registered queue, with each worker fetching the job and discarding it after
+    // finding no listener — one real job plus N-1 pure-waste jobs per send.
+    const targetQueues = this.getQueuesForEvent(name);
+
+    if (targetQueues.size === 0) {
+      // Not fatal: an event with no consumer is a no-op, and throwing here would
+      // turn a dormant integration into a request failure. But it is always a
+      // mistake worth surfacing — either the listener module never loaded, or the
+      // emitter outlived its consumer.
+      this.logger.warn(`Event ${name} has no registered listeners on any queue; nothing was enqueued.`);
+
+      return [];
+    }
+
     const jobIds: string[] = [];
 
-    for (const queue of allQueues) {
+    for (const queue of targetQueues) {
       if (this.suppressedQueues.has(queue)) {
         continue;
       }
 
       try {
-        const jobId = await this.boss.send(queue, resolvedData);
+        const jobId = await this.boss.send(queue, resolvedData, sendOptions);
 
         if (jobId) {
           jobIds.push(jobId);
@@ -256,6 +318,7 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
   async sendMany(
     queue: string,
     events: Array<{ name: string; data: Record<string, unknown> }>,
+    options?: Omit<EventSendOptions, 'queue'>,
   ): Promise<void> {
     if (events.length === 0) {
       return;
@@ -287,9 +350,12 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
     // minutes while it enqueues ~1M rows. job.name is the queue; job.data mirrors
     // send()'s resolvedData ({ ...event, name }) so executeJob + listeners consume
     // it identically.
+    const priority = options?.priority ?? DEFAULT_JOB_PRIORITY;
+
     const jobs: PgBoss.JobInsert[] = events.map((event) => ({
       name: queue,
       data: { ...event.data, name: event.name },
+      priority,
     }));
 
     for (let i = 0; i < jobs.length; i += PGBOSS_INSERT_CHUNK) {
@@ -344,8 +410,14 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
         perQueueSemaphore(async () => {
           await this.globalSemaphore(async () => {
             try {
-              await this.executeJob(queueName, job);
-              await this.boss.complete(queueName, job.id);
+              const outcome = await this.executeJob(queueName, job);
+
+              // Deferred jobs stay `active` in pg-boss: an out-of-band caller
+              // (webhook) completes/fails them by id, or the queue's
+              // expireInSeconds elapses and pg-boss retries.
+              if (outcome !== 'deferred') {
+                await this.boss.complete(queueName, job.id);
+              }
             } catch (err) {
               this.logger.error(
                 `Failed to complete job in queue ${queueName}`,
@@ -394,11 +466,33 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
     return count;
   }
 
-  private async executeJob(queue: string, job: JobWithMetadata<EventData>): Promise<void> {
+  /**
+   * Complete a job that a listener deferred (see {@link Acknowledgement.defer}).
+   * Called out-of-band, typically by a webhook controller once the external
+   * executor reports success.
+   */
+  async completeJob(queue: string, jobId: string, output?: Record<string, unknown>): Promise<void> {
+    await this.boss.complete(queue, jobId, output);
+    this.logger.log('Completed deferred job', { queue, jobId });
+  }
+
+  /**
+   * Fail a deferred job so pg-boss applies its retry/dead-letter policy. The
+   * output is persisted on the job row so the failure stays diagnosable.
+   */
+  async failJob(queue: string, jobId: string, output?: Record<string, unknown>): Promise<void> {
+    await this.boss.fail(queue, jobId, output);
+    this.logger.warn(`Failed deferred job ${jobId} on queue ${queue}`);
+  }
+
+  private async executeJob(
+    queue: string,
+    job: JobWithMetadata<EventData>,
+  ): Promise<'completed' | 'deferred'> {
     const userId = (job as { userId?: string }).userId;
 
     return ContextService.run({ traceId: job.id, userId }, () => {
-      return new Promise<void>((resolve, reject) => {
+      return new Promise<'completed' | 'deferred'>((resolve, reject) => {
         const { name, ...data } = job.data;
 
         const resolvedData = {
@@ -414,7 +508,7 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
 
         const done = () => {
           this.logger.log('Completed job');
-          resolve();
+          resolve('completed');
         };
 
         const fail = (reason: unknown) => {
@@ -422,15 +516,20 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
           reject(reason instanceof Error ? reason : new Error(String(reason)));
         };
 
+        const defer = () => {
+          this.logger.log('Deferred job completion', { queue, jobId: job.id });
+          resolve('deferred');
+        };
+
         const skip = () => {
           this.logger.log('No listeners found, skipping job');
-          resolve();
+          resolve('completed');
         };
 
         const queueSpecificEventName = `${name}:${queue}`;
 
         if (this.eventEmitter.hasListeners(queueSpecificEventName)) {
-          this.eventEmitter.emit(queueSpecificEventName, resolvedData, { done, fail });
+          this.eventEmitter.emit(queueSpecificEventName, resolvedData, { done, fail, defer });
         } else {
           skip();
         }

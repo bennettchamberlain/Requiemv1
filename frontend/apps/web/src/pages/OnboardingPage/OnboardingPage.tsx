@@ -60,6 +60,10 @@ export const OnboardingFormSchema = s.object({
 
 export type OnboardingFormData = s.input<typeof OnboardingFormSchema>;
 
+const EMPTY_PERSON = { first: '', last: '', relationship: '' } as const;
+
+const DEFAULT_PEOPLE = [EMPTY_PERSON, EMPTY_PERSON, EMPTY_PERSON] as OnboardingFormData['people'];
+
 const DEFAULT_FORM_VALUES: OnboardingFormData = {
   name: null,
   timezone: BROWSER_TIMEZONE,
@@ -71,11 +75,19 @@ const DEFAULT_FORM_VALUES: OnboardingFormData = {
   },
   trust_mode: 'balanced',
   focus_areas: null,
-  people: null,
+  people: DEFAULT_PEOPLE,
   food_preference: null,
   movie_preference: null,
   activity_preference: null,
 };
+
+function normalizePeopleDraft(people: OnboardingFormData['people']): OnboardingFormData['people'] {
+  if (people == null || people.length === 0) {
+    return DEFAULT_PEOPLE;
+  }
+
+  return people;
+}
 
 export function OnboardingPage() {
   usePageTitle('Onboarding - Companion Intelligence');
@@ -101,9 +113,13 @@ export function OnboardingPage() {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
   const [hydrated, setHydrated] = useState(false);
-  const [resumeUpdatedAt, setResumeUpdatedAt] = useState<string | null>(null);
+  const [showWelcomeBackBanner, setShowWelcomeBackBanner] = useState(false);
 
   const currentStepKey = stepKeys[stepIndex] ?? 'intro';
+
+  const dismissWelcomeBackBanner = useCallback(() => {
+    setShowWelcomeBackBanner(false);
+  }, []);
 
   useEffect(() => {
     if (userLoading || hydrated) {
@@ -112,11 +128,15 @@ export function OnboardingPage() {
 
     void (async () => {
       const progress = await fetchProgress();
-      const draft = { ...DEFAULT_FORM_VALUES, ...(progress?.draft ?? {}) } as OnboardingFormData;
+      const mergedDraft = { ...DEFAULT_FORM_VALUES, ...(progress?.draft ?? {}) } as OnboardingFormData;
+      const draft = {
+        ...mergedDraft,
+        people: normalizePeopleDraft(mergedDraft.people),
+      };
       form.reset(draft);
 
       if (progress?.updatedAt) {
-        setResumeUpdatedAt(progress.updatedAt);
+        setShowWelcomeBackBanner(true);
       }
 
       const oauthResume = localStorage.getItem(ONBOARDING_OAUTH_RESUME_KEY);
@@ -157,11 +177,12 @@ export function OnboardingPage() {
 
   const goToStep = useCallback(
     async (nextIndex: number) => {
+      dismissWelcomeBackBanner();
       await persistProgress(nextIndex);
       setStepIndex(nextIndex);
       scrollToTop();
     },
-    [persistProgress, scrollToTop],
+    [dismissWelcomeBackBanner, persistProgress, scrollToTop],
   );
 
   const handleNext = useCallback(() => {
@@ -187,6 +208,11 @@ export function OnboardingPage() {
     [form],
   );
 
+  // Watched outside the memo below: reading it inside would subscribe (so the page
+  // re-renders on change) without being a dependency, so the memo kept handing back
+  // the element built from the first value and the dial looked unclickable.
+  const trustMode = form.watch('trust_mode');
+
   const stepContent = useMemo(() => {
     switch (currentStepKey) {
       case 'intro':
@@ -208,13 +234,13 @@ export function OnboardingPage() {
       case 'connect-source':
         return <ConnectSourceStep />;
       case 'trust-dial':
-        return <TrustDialStep value={form.watch('trust_mode')} onChange={setTrustMode} />;
+        return <TrustDialStep value={trustMode} onChange={setTrustMode} />;
       case 'run-first-sync':
         return <RunFirstSyncStep />;
       default:
         return <Intro />;
     }
-  }, [currentStepKey, form, setTrustMode]);
+  }, [currentStepKey, setTrustMode, trustMode]);
 
   const contentMaxWidth =
     currentStepKey === 'connect-source'
@@ -253,6 +279,16 @@ export function OnboardingPage() {
             <img src={logo} className="w-7 h-7" alt="" />
           </div>
 
+          {showWelcomeBackBanner && (
+            <div
+              className={cn('w-full mx-auto px-5 md:px-8 -mt-1 mb-1 flex justify-center', contentMaxWidth)}
+            >
+              <div className="max-w-lg rounded-lg border border-green-800/30 bg-background/95 px-4 py-2.5 text-sm text-foreground text-center shadow-sm backdrop-blur-sm">
+                Welcome back. Everything you&apos;ve entered is saved.
+              </div>
+            </div>
+          )}
+
           <div
             ref={scrollRef}
             className={cn(
@@ -260,14 +296,6 @@ export function OnboardingPage() {
               contentMaxWidth,
             )}
           >
-            {resumeUpdatedAt && (
-              <div className="pointer-events-none absolute inset-x-5 md:inset-x-8 top-1 z-20 flex justify-center">
-                <div className="pointer-events-auto max-w-lg rounded-lg border border-green-800/30 bg-background/95 px-4 py-2.5 text-sm text-foreground text-center shadow-sm backdrop-blur-sm">
-                  Welcome back. Everything you&apos;ve entered is saved.
-                </div>
-              </div>
-            )}
-
             <div
               className={cn(
                 'flex flex-col items-center text-center w-full py-2',
@@ -279,7 +307,7 @@ export function OnboardingPage() {
           </div>
 
           {showNav && (
-            <div className="flex items-center gap-2 sm:gap-3 px-4">
+            <div className="mb-5 flex items-center gap-2 px-4 sm:mb-6 sm:gap-3">
               {stepIndex > 0 && (
                 <Button type="button" variant="ghost" size="lg" className="text-base" onClick={handleBack}>
                   Back

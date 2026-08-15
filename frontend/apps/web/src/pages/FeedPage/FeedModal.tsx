@@ -1,12 +1,14 @@
 import { useCallback, useMemo, type ReactNode } from 'react';
 
 import { ErrorPage, LoadingPage, useDeviceLayout } from '@ci/common';
-import { Button, Dialog, cn } from '@ci/shadcn';
+import { Dialog, IconButton, cn } from '@ci/shadcn';
 import { X } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
 
 import { useActionService, useThreadService } from '@/api';
 import { Chat } from '@/components/Chat';
+import { ChatWithAgentMenu } from '@/components/ChatWithAgent';
 import { InlineModal } from '@/components/InlineModal';
 import { Markdown } from '@/components/Markdown';
 import { Tag } from '@/components/Tag';
@@ -20,6 +22,7 @@ interface Props {
 export function FeedModal({ onClose }: Props) {
   const { id: actionId } = useParams<{ id?: string }>();
 
+  const { t } = useTranslation();
   const { isMobile } = useDeviceLayout();
 
   const [{ data: action, loading: actionLoading, error: actionError }] = useActionService(actionId ?? null);
@@ -48,6 +51,19 @@ export function FeedModal({ onClose }: Props) {
   }, [action?.metadata]);
 
   const rationaleText = actionContext ?? 'No rationale available yet.';
+
+  const chatContext = useMemo(() => {
+    if (!action) {
+      return null;
+    }
+
+    return {
+      title: action.title,
+      body: action.text,
+      sourceKind: 'action' as const,
+      sourceId: action.id,
+    };
+  }, [action]);
 
   const messages = useMemo(() => {
     const baseMessages = thread?.messages ?? [];
@@ -93,10 +109,11 @@ export function FeedModal({ onClose }: Props) {
 
           <div className="font-bold">{action?.title}</div>
 
-          <div className="flex flex-1 justify-end">
-            <Button variant="ghost" size="icon" onClick={onClose}>
+          <div className="flex flex-1 justify-end gap-1">
+            {chatContext ? <ChatWithAgentMenu context={chatContext} size="sm" /> : null}
+            <IconButton variant="ghost" onClick={onClose} label={t('COMMON_CLOSE')}>
               <X />
-            </Button>
+            </IconButton>
           </div>
         </div>
 
@@ -141,9 +158,9 @@ export function FeedModal({ onClose }: Props) {
           </div>
 
           <div className="flex items-center justify-end">
-            <Button variant="ghost" size="icon" onClick={onClose}>
+            <IconButton variant="ghost" onClick={onClose} label={t('COMMON_CLOSE')}>
               <X />
-            </Button>
+            </IconButton>
           </div>
         </Dialog.Header>
 
@@ -156,8 +173,11 @@ export function FeedModal({ onClose }: Props) {
             )}
 
             <div className="flex-1 prose dark:prose-invert">
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Why this suggestion
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Why this suggestion
+                </div>
+                {chatContext ? <ChatWithAgentMenu context={chatContext} size="sm" /> : null}
               </div>
               <Markdown>{rationaleText}</Markdown>
             </div>

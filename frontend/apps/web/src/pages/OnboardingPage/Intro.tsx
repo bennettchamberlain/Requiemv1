@@ -2,6 +2,22 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 
 import { useCurrentUser } from '@/hooks';
 
+function formatDisplayName(name: string | null | undefined): string {
+  if (!name?.trim()) {
+    return '';
+  }
+
+  if (name.includes('@')) {
+    return name;
+  }
+
+  return name
+    .trim()
+    .split(/\s+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ');
+}
+
 interface TypingEffectProps {
   text: string;
   speed?: number;
@@ -79,7 +95,7 @@ export function Intro() {
 
   const messages = [
     {
-      text: `Welcome, ${user?.name}`,
+      text: `Welcome, ${formatDisplayName(user?.name)}`,
       className:
         'text-[2rem] sm:text-5xl md:text-6xl mb-2 text-center font-semibold tracking-tight leading-[1.1]',
       pause: 350,

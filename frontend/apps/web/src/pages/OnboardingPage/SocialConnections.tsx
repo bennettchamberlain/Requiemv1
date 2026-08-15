@@ -1,5 +1,6 @@
-import { Button, Form, Input, Select, useFieldArray, useFormContext } from '@ci/shadcn';
+import { Button, Form, IconButton, Input, Select, useFieldArray, useFormContext } from '@ci/shadcn';
 import { X } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 
 import { StepHeader } from './StepHeader';
 
@@ -33,6 +34,7 @@ const RELATIONSHIP_GROUPS = [
 ];
 
 export function SocialConnections() {
+  const { t } = useTranslation();
   const form = useFormContext<{ people: Person[] }>();
   const { fields, append, remove } = useFieldArray({
     control: form.control,
@@ -91,15 +93,15 @@ export function SocialConnections() {
                       name={`people.${index}.relationship`}
                       render={({ field }) => (
                         <Select value={field.value ?? ''} onValueChange={field.onChange}>
-                          <Select.Trigger className="w-28 md:w-36 h-12 text-base overflow-hidden truncate min-w-0">
+                          <Select.Trigger className="w-full sm:w-44 h-12 min-h-12 data-[size=default]:h-12 text-lg px-3 overflow-hidden [&_svg:not([class*='size-'])]:size-5">
                             <Select.Value placeholder="Relation" />
                           </Select.Trigger>
                           <Select.Content>
                             {RELATIONSHIP_GROUPS.map((group) => (
                               <Select.Group key={group.label}>
-                                <Select.Label>{group.label}</Select.Label>
+                                <Select.Label className="text-sm">{group.label}</Select.Label>
                                 {group.options.map((opt) => (
-                                  <Select.Item key={opt.value} value={opt.value}>
+                                  <Select.Item key={opt.value} value={opt.value} className="text-lg py-2.5">
                                     {opt.label}
                                   </Select.Item>
                                 ))}
@@ -113,15 +115,16 @@ export function SocialConnections() {
                   <Form.Message />
                 </Form.Item>
 
-                <Button
+                <IconButton
                   className="-ml-2 -mr-1 cursor-pointer"
                   type="button"
                   size="lg"
                   variant="ghost"
                   onClick={() => remove(index)}
+                  label={t('ONBOARDING_REMOVE_PERSON')}
                 >
                   <X className="h-5 w-5" />
-                </Button>
+                </IconButton>
               </>
             )}
           />

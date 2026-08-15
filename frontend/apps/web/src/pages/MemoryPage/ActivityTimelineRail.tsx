@@ -12,14 +12,16 @@ import {
 import type { TimelineGridRange } from '@/components/TimelineGrid/useTimelineGridSelection';
 import { gql } from '@/graphql';
 
+import { activityTimelineFiltersFromSearchParams } from './activityTimelineFilters';
+
 // The rollup table only holds days that actually have activity, so an
 // effectively-unbounded start fetches the user's whole history in one query —
 // the earliest returned bucket then bounds how far back the grid can scroll.
 const HISTORY_START = '1970-01-01';
 
 const ACTIVITY_TIMELINE = gql(`
-  query ActivityTimeline($start: String!, $end: String!) {
-    activityTimeline(start: $start, end: $end) {
+  query ActivityTimeline($start: String!, $end: String!, $filters: ActivityTimelineFiltersInput) {
+    activityTimeline(start: $start, end: $end, filters: $filters) {
       date
       count
     }
@@ -83,8 +85,13 @@ function RailContent() {
   // day appears on the next visit, same as the 15-minute rollup lag.
   const [endKey] = useState(() => localDayKey(new Date()));
 
+  const timelineFilters = useMemo(
+    () => activityTimelineFiltersFromSearchParams(searchParams),
+    [searchParams],
+  );
+
   const { data } = useQuery(ACTIVITY_TIMELINE, {
-    variables: { start: HISTORY_START, end: endKey },
+    variables: { start: HISTORY_START, end: endKey, filters: timelineFilters },
   });
 
   const buckets = data?.activityTimeline;
@@ -150,7 +157,7 @@ function RailContent() {
 export function ActivityTimelineRail({ className }: { className?: string }) {
   return (
     <TimelineGridSelectionProvider args={[]}>
-      <div className={cn('flex min-h-0 flex-col px-3 py-2', className)}>
+      <div className={cn('flex min-h-0 flex-col py-1 pl-0 pr-1', className)}>
         <RailContent />
       </div>
     </TimelineGridSelectionProvider>

@@ -10,6 +10,7 @@ export interface FeedQuestion {
   category?: string | null;
   questionType?: string | null;
   contextTags?: string[] | null;
+  /** Feed queue row id — changes when the same question rotates to the back. */
   presentationId: string;
 }
 
@@ -25,6 +26,9 @@ type ReturnType = [
     submitAnswer: (input: { questionId: string; text: string }) => Promise<boolean>;
   },
 ];
+
+/** Poll for a rotated question while one remains unanswered on the feed. */
+const FEED_QUESTION_POLL_MS = 2 * 60 * 1000;
 
 export function useFeedQuestionService(): ReturnType {
   const [{ authToken }] = useAuth();
@@ -66,11 +70,13 @@ export function useFeedQuestionService(): ReturnType {
         throw new Error(`Fetch failed: ${response.status} ${response.statusText}`);
       }
 
-      const data = (await response.json()) as Omit<FeedQuestion, 'presentationId'>;
+      const data = (await response.json()) as Omit<FeedQuestion, 'presentationId'> & {
+        presentationId?: string;
+      };
 
       setQuestion({
         ...data,
-        presentationId: data.id,
+        presentationId: data.presentationId ?? data.id,
       });
     } catch (err) {
       setError(err);
@@ -121,6 +127,19 @@ export function useFeedQuestionService(): ReturnType {
   useEffect(() => {
     void fetchUnansweredQuestion();
   }, [fetchUnansweredQuestion]);
+
+  // Re-fetch periodically so stale unanswered questions can rotate server-side.
+  useEffect(() => {
+    if (!authToken || !question) {
+      return;
+    }
+
+    const handle = setInterval(() => {
+      void fetchUnansweredQuestion();
+    }, FEED_QUESTION_POLL_MS);
+
+    return () => clearInterval(handle);
+  }, [authToken, question, fetchUnansweredQuestion]);
 
   return [
     {

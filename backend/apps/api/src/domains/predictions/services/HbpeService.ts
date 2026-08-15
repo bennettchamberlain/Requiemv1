@@ -4,7 +4,7 @@ import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 
-import type { ForecastResponse } from '../types';
+import type { DueResponse, ForecastResponse, WeekForecastResponse } from '../types';
 
 @Injectable()
 export class HbpeService {
@@ -15,7 +15,33 @@ export class HbpeService {
   }
 
   async getForecast(context: UserServiceContext, horizon = '24h'): Promise<ForecastResponse> {
-    const url = `${this.baseUrl}/histogram?horizon=${horizon}&user_id=${context.userId}`;
+    return this.get<ForecastResponse>(`/histogram?horizon=${horizon}&user_id=${context.userId}`);
+  }
+
+  /**
+   * @param includeToday start the window at today rather than tomorrow. The
+   *   schedule grid needs it (its first row is today); the feed's Week Ahead
+   *   card does not, and leaving it false preserves that card's semantics.
+   */
+  async getWeekForecast(
+    context: UserServiceContext,
+    includeToday: boolean = false,
+    timezone?: string,
+  ): Promise<WeekForecastResponse> {
+    const todayParam = includeToday ? '&include_today=true' : '';
+    const tzParam = timezone ? `&timezone=${encodeURIComponent(timezone)}` : '';
+
+    return this.get<WeekForecastResponse>(
+      `/forecast?horizon=7d&user_id=${context.userId}${todayParam}${tzParam}`,
+    );
+  }
+
+  async getDueList(context: UserServiceContext): Promise<DueResponse> {
+    return this.get<DueResponse>(`/forecast/due?user_id=${context.userId}`);
+  }
+
+  private async get<T>(path: string): Promise<T> {
+    const url = `${this.baseUrl}${path}`;
 
     let response: Response;
 
@@ -35,27 +61,6 @@ export class HbpeService {
       throw new ServiceUnavailableException('Forecast service error');
     }
 
-    return response.json() as Promise<ForecastResponse>;
-  }
-
-  async triggerPipeline(userId: string): Promise<string> {
-    const url = `${this.baseUrl}/trigger?user_id=${userId}`;
-
-    try {
-      const response = await fetch(url, { method: 'POST', signal: AbortSignal.timeout(5_000) });
-      if (!response.ok) {
-        this.logger.warn('HBPE trigger returned error', { url, status: response.status });
-
-        return 'error';
-      }
-
-      const body = (await response.json()) as { status: string };
-
-      return body.status ?? 'triggered';
-    } catch (err) {
-      this.logger.warn('HBPE trigger unreachable', { url, err });
-
-      return 'error';
-    }
+    return response.json() as Promise<T>;
   }
 }

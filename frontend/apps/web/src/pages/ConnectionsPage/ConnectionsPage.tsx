@@ -2,8 +2,9 @@ import { useState, useMemo } from 'react';
 
 import { useQuery } from '@apollo/client';
 import { GlobalUID, Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb, Button, Dialog, Card } from '@ci/shadcn';
+import { Breadcrumb, Dialog, Card, IconButton } from '@ci/shadcn';
 import { AlertCircle, RefreshCw, Plus } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
@@ -81,6 +82,8 @@ const GET_CONNECTIONS = gql(`
 `);
 
 export function ConnectionsPage() {
+  const { t } = useTranslation();
+
   usePageTitle('Connections - Companion Intelligence');
 
   const navigate = useNavigate();
@@ -150,11 +153,11 @@ export function ConnectionsPage() {
         <div className="flex flex-row items-center justify-between">
           <h1 className="text-2xl font-bold">Connections</h1>
 
-          <Button variant="outline" size="icon" title="Create Connection" asChild>
+          <IconButton variant="outline" label={t('CONNECTIONS_CREATE')} asChild>
             <Link to={'/connect'}>
               <Plus />
             </Link>
-          </Button>
+          </IconButton>
         </div>
 
         {connectionsLoading ? (

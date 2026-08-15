@@ -1,18 +1,8 @@
 import { useMemo } from 'react';
 
-import { GlobalUID } from '@ci/common';
-import { Avatar, DropdownMenu } from '@ci/shadcn';
-import {
-  BadgeQuestionMark,
-  ListTodo,
-  LogOut,
-  SunMoon,
-  Settings2,
-  Cable,
-  Palette,
-  ChartPie,
-  Tags,
-} from '@ci/shadcn/icons';
+import { Avatar, DropdownMenu, Tooltip } from '@ci/shadcn';
+import { ListTodo, LogOut, SunMoon, Settings2, Cable, Palette } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 import { Link, useLocation } from 'react-router-dom';
 
 import { useFeatures } from '@/common/feature';
@@ -20,6 +10,7 @@ import { useTheme, ColorPicker } from '@/components/ThemePicker';
 import { useAuth, useCurrentUser } from '@/hooks';
 
 export function NavUser() {
+  const { t } = useTranslation();
   const [, { logout }] = useAuth();
   const { user } = useCurrentUser();
   const { themeState, setTheme } = useTheme();
@@ -48,12 +39,24 @@ export function NavUser() {
 
   return (
     <DropdownMenu modal={false}>
-      <DropdownMenu.Trigger asChild>
-        <Avatar className="h-9 w-9 rounded-full select-none cursor-pointer">
-          <Avatar.Image src={currentUser.avatar} alt={currentUser.name} />
-          <Avatar.Fallback>{initials}</Avatar.Fallback>
-        </Avatar>
-      </DropdownMenu.Trigger>
+      <Tooltip delayDuration={600}>
+        <Tooltip.Content>{t('NAV_ACCOUNT')}</Tooltip.Content>
+        {/* Avatar renders a span, so as the bare trigger it took no role and no
+            tab stop — the account menu was unreachable by keyboard, and an
+            aria-label on it would have been ignored. The button supplies both.
+            Dropdown trigger outermost so its `data-state` is not overwritten by
+            the tooltip's. */}
+        <DropdownMenu.Trigger asChild>
+          <Tooltip.Trigger asChild>
+            <button type="button" aria-label={t('NAV_ACCOUNT')} className="rounded-full cursor-pointer">
+              <Avatar className="h-9 w-9 rounded-full select-none">
+                <Avatar.Image src={currentUser.avatar} alt={currentUser.name} />
+                <Avatar.Fallback>{initials}</Avatar.Fallback>
+              </Avatar>
+            </button>
+          </Tooltip.Trigger>
+        </DropdownMenu.Trigger>
+      </Tooltip>
       <DropdownMenu.Content className="min-w-56 rounded-lg" side="bottom" align="end" sideOffset={4}>
         <DropdownMenu.Group>
           <DropdownMenu.Label className="p-0 font-normal select-none">
@@ -72,62 +75,60 @@ export function NavUser() {
 
         <DropdownMenu.Separator />
 
+        {/* The entries carry visible labels, so each tooltip says what the entry leads
+            to rather than repeating it. side="left" puts the bubble on the open side of
+            this right-aligned menu, and pointer-events-none stops it stealing hover. */}
         <DropdownMenu.Group>
-          <DropdownMenu.Item asChild>
-            <Link to={`/people/${user?.entity?.id ? GlobalUID.parse('person', user.entity.id) : ''}`}>
-              <ChartPie />
-              Knowledge
-            </Link>
-          </DropdownMenu.Item>
+          <Tooltip delayDuration={600}>
+            <Tooltip.Content side="left" className="pointer-events-none">
+              {t('NAV_ACCOUNT_SETTINGS')}
+            </Tooltip.Content>
+            <Tooltip.Trigger asChild>
+              <DropdownMenu.Item asChild>
+                <Link to="/settings/appearance" state={{ backgroundLocation: location }}>
+                  <Settings2 />
+                  Settings
+                </Link>
+              </DropdownMenu.Item>
+            </Tooltip.Trigger>
+          </Tooltip>
 
-          {isFeatureEnabled('tags.page') && (
-            <DropdownMenu.Item asChild>
-              <Link to="/tags">
-                <Tags />
-                Tags
-              </Link>
-            </DropdownMenu.Item>
-          )}
-
-          {isFeatureEnabled('insights.page') && isFeatureEnabled('new.insights.page') && (
-            <DropdownMenu.Item asChild>
-              <Link to="/prompts">
-                <BadgeQuestionMark />
-                Prompts
-              </Link>
-            </DropdownMenu.Item>
-          )}
-        </DropdownMenu.Group>
-
-        <DropdownMenu.Separator />
-
-        <DropdownMenu.Group>
-          <DropdownMenu.Item asChild>
-            <Link to="/settings/appearance" state={{ backgroundLocation: location }}>
-              <Settings2 />
-              Settings
-            </Link>
-          </DropdownMenu.Item>
-
-          <DropdownMenu.Item asChild>
-            <Link to="/connections">
-              <Cable />
-              Connections
-            </Link>
-          </DropdownMenu.Item>
+          <Tooltip delayDuration={600}>
+            <Tooltip.Content side="left" className="pointer-events-none">
+              {t('NAV_ACCOUNT_CONNECTIONS')}
+            </Tooltip.Content>
+            <Tooltip.Trigger asChild>
+              <DropdownMenu.Item asChild>
+                <Link to="/connections">
+                  <Cable />
+                  Connections
+                </Link>
+              </DropdownMenu.Item>
+            </Tooltip.Trigger>
+          </Tooltip>
 
           {isFeatureEnabled('jobs.page') && (
-            <DropdownMenu.Item asChild>
-              <Link to="/jobs">
-                <ListTodo />
-                Jobs
-              </Link>
-            </DropdownMenu.Item>
+            <Tooltip delayDuration={600}>
+              <Tooltip.Content side="left" className="pointer-events-none">
+                {t('NAV_ACCOUNT_JOBS')}
+              </Tooltip.Content>
+              <Tooltip.Trigger asChild>
+                <DropdownMenu.Item asChild>
+                  <Link to="/jobs">
+                    <ListTodo />
+                    Jobs
+                  </Link>
+                </DropdownMenu.Item>
+              </Tooltip.Trigger>
+            </Tooltip>
           )}
         </DropdownMenu.Group>
 
         <DropdownMenu.Separator />
 
+        {/* No tooltips on the two sub-triggers: they style on data-[state=open], which
+            Tooltip.Trigger would overwrite, and hovering them already opens the submenu
+            that shows the choices — a bubble would only fight it. */}
         <DropdownMenu.Group>
           <DropdownMenu.Sub>
             <DropdownMenu.SubTrigger>
@@ -159,10 +160,17 @@ export function NavUser() {
 
         <DropdownMenu.Separator />
 
-        <DropdownMenu.Item onClick={logout}>
-          <LogOut />
-          Log out
-        </DropdownMenu.Item>
+        <Tooltip delayDuration={600}>
+          <Tooltip.Content side="left" className="pointer-events-none">
+            {t('NAV_ACCOUNT_LOGOUT')}
+          </Tooltip.Content>
+          <Tooltip.Trigger asChild>
+            <DropdownMenu.Item onClick={logout}>
+              <LogOut />
+              Log out
+            </DropdownMenu.Item>
+          </Tooltip.Trigger>
+        </Tooltip>
       </DropdownMenu.Content>
     </DropdownMenu>
   );

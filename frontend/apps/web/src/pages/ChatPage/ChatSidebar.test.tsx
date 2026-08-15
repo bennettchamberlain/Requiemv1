@@ -53,14 +53,14 @@ describe('ChatSidebar', () => {
     fireEvent.click(screen.getByText('New Thread'));
     expect(onNewThread).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByTitle('Refresh threads'));
+    fireEvent.click(screen.getByLabelText('Refresh threads'));
     expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 
   it('deletes a thread without also selecting it', () => {
     const { onDeleteThread, onSelectThread } = setup();
 
-    fireEvent.click(screen.getAllByTitle('Delete thread')[0]);
+    fireEvent.click(screen.getAllByLabelText('Delete thread')[0]);
 
     expect(onDeleteThread).toHaveBeenCalledWith('t1');
     expect(onSelectThread).not.toHaveBeenCalled();

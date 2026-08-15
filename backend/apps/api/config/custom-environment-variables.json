@@ -68,6 +68,11 @@
       "secretAccessKey": "OBJECT_STORE_PASSWORD"
     }
   },
+  "llm": {
+    "apiBase": "LLM_API_BASE",
+    "apiKey": "LLM_API_KEY",
+    "chatModel": "LLM_DEFAULT_CHAT_MODEL"
+  },
   "services": {
     "ollama": {
       "host": "OLLAMA_HOST"
@@ -77,6 +82,9 @@
     },
     "parser": {
       "host": "PARSER_HOST"
+    },
+    "summary": {
+      "host": "SUMMARY_HOST"
     }
   },
   "embedding": {
@@ -114,6 +122,31 @@
       "__format": "json"
     }
   },
+  "enrichment": {
+    "window": {
+      "enabled": "CI_ENRICHMENT_WINDOW_ENABLED",
+      "start": "CI_ENRICHMENT_WINDOW_START",
+      "durationMinutes": {
+        "__name": "CI_ENRICHMENT_WINDOW_DURATION_MINUTES",
+        "__format": "json"
+      },
+      "budgetMinutes": {
+        "__name": "CI_ENRICHMENT_WINDOW_BUDGET_MINUTES",
+        "__format": "json"
+      },
+      "timezone": "CI_ENRICHMENT_WINDOW_TIMEZONE"
+    },
+    "rotation": {
+      "turnMinutes": {
+        "__name": "CI_ENRICHMENT_TURN_MINUTES",
+        "__format": "json"
+      },
+      "usersPerTurn": {
+        "__name": "CI_ENRICHMENT_USERS_PER_TURN",
+        "__format": "json"
+      }
+    }
+  },
   "features": {
     "scheduled.answer.inferencing": "ENABLE_SCHEDULED_ANSWER_INFERENCING",
     "scheduled.connection.sync": "ENABLE_SCHEDULED_CONNECTION_SYNC",
@@ -128,14 +161,19 @@
     "insights.page": "ENABLE_INSIGHTS_PAGE",
     "chat.page": "ENABLE_CHAT_PAGE",
     "jobs.page": "ENABLE_JOBS_PAGE",
+    "planning.enabled": "ENABLE_PLANNING",
+    "planning.page": "ENABLE_PLANNING_PAGE",
+    "planning.emptyState": "ENABLE_PLANNING_EMPTY_STATE",
     "stats.page": "ENABLE_STATS_PAGE",
+    "schedule.page": "ENABLE_SCHEDULE_PAGE",
     "tags.page": "ENABLE_TAGS_PAGE",
     "hbpe": "ENABLE_HBPE",
     "agent.memory.compaction": "ENABLE_AGENT_MEMORY_COMPACTION",
     "shared.search": "ENABLE_SHARED_SEARCH",
     "ask": "ENABLE_ASK",
     "onboarding.preference.steps": "ENABLE_ONBOARDING_PREFERENCE_STEPS",
-    "actions": "ENABLE_ACTIONS"
+    "actions": "ENABLE_ACTIONS",
+    "smart.rotation": "ENABLE_SMART_ROTATION"
   },
   "environment": {
     "database.query.logging": "DATABASE_QUERY_LOGGING"
@@ -154,7 +192,9 @@
     "rateLimitPerSecond": {
       "__name": "GEOCODING_RATE_LIMIT_PER_SECOND",
       "__format": "json"
-    }
+    },
+    "provider": "GEOCODING_PROVIDER",
+    "portalBaseUrl": "GEOCODING_PORTAL_BASE_URL"
   },
   "peers": {
     "directoryUrl": "CI_PEER_DIRECTORY_URL",

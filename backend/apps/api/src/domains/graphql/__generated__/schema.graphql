@@ -71,6 +71,35 @@ type ActivityCountsType {
   total: Int!
 }
 
+"""
+Optional filters applied to the activity heatmap — mirrors the Memory explorer search filters.
+"""
+input ActivityTimelineFiltersInput {
+  """Restrict to events from these connectors"""
+  connectors: [String!]
+
+  """Restrict to these event types (How filter)"""
+  eventTypes: [String!]
+
+  """Exclude these indexable entity types"""
+  excludeTypes: [String!]
+
+  """Include only these indexable entity types"""
+  includeTypes: [String!]
+
+  """Restrict to events mentioning these people"""
+  people: [String!]
+
+  """Restrict to events at these places"""
+  places: [String!]
+
+  """Free-text search query"""
+  query: String
+
+  """Restrict to entities carrying these tags"""
+  tags: [String!]
+}
+
 input AddPersonIdentifierInput {
   kind: String!
   label: String
@@ -652,6 +681,32 @@ type CreateSavedSearchPayload {
   success: Boolean!
 }
 
+input CreateTaskInput {
+  """User-local calendar date, `YYYY-MM-DD`."""
+  deferUntil: String
+  description: String
+  dueAt: DateTime
+  estimatedMinutes: Int
+  notes: String
+  parentId: ID
+
+  """0 (highest) to 5 (lowest). Defaults to 3."""
+  priority: Int
+
+  """User-local calendar date, `YYYY-MM-DD`."""
+  scheduledFor: String
+  status: TaskStatus
+
+  """Wall-clock `HH:MM`, user timezone. Zoneless."""
+  taskTime: String
+  title: String!
+}
+
+type CreateTaskPayload {
+  success: Boolean!
+  task: TaskType
+}
+
 """
 A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
 """
@@ -669,6 +724,45 @@ type DeleteByIdPayload {
 type DisclosedItemType {
   id: String!
   type: String!
+}
+
+"""HBPE renewal predictions: periodic behaviors coming due or overdue"""
+type DueForecastType {
+  due: [DueItemType!]!
+
+  """ISO-8601 timestamp when this list was generated"""
+  generatedAt: String!
+}
+
+"""A periodic behavior and when it is next expected (renewal prediction)"""
+type DueItemType {
+  clusterId: String!
+
+  """Periodicity confidence in [0,1]"""
+  confidence: Float!
+  daysSinceLast: Int!
+
+  """Days until due (negative = past the median interval)"""
+  dueInDays: Float!
+
+  """Parent L0 behavioral class"""
+  l0Class: String!
+
+  """ISO date of the last observed occurrence"""
+  lastSeen: String!
+  medianIntervalDays: Float!
+
+  """Human-readable cluster name"""
+  name: String!
+
+  """True once the gap exceeds the p90 inter-arrival interval"""
+  overdue: Boolean!
+
+  """ISO date of the next matching booked calendar event, or null if none"""
+  scheduledDate: String
+
+  """Credible due window [earliest, latest] in days from now"""
+  window: [Float!]!
 }
 
 interface Edge {
@@ -696,10 +790,18 @@ type EventEdge implements Edge {
 type EventType implements Node & Taggable {
   category: String
   confidenceScore: Float
+
+  """Content rows linked to this event via ci.content.event_id."""
+  contents(after: String, before: String, first: Int, last: Int): ContentConnection!
   description: String
   durationMinutes: Int
   endTime: DateTime
   eventType: String
+
+  """
+  'pending' when the local row has been changed here but not pushed back to `sourceSystem`.
+  """
+  externalSyncStatus: String
   id: ID!
   isAllDay: Boolean
   isRecurring: Boolean
@@ -786,7 +888,7 @@ type ForecastBucketType {
   startTime: String!
 }
 
-"""48-bucket HBPE day-ahead forecast"""
+"""48-bucket (30-min) HBPE day-ahead forecast"""
 type ForecastType {
   buckets: [ForecastBucketType!]!
 
@@ -808,6 +910,17 @@ enum GrantMode {
   review
 }
 
+"""A directed typed edge (ci.relationships row)"""
+type GraphEdgeType {
+  fromEntityId: ID!
+  id: ID!
+  isActive: Boolean!
+  properties: JSON
+  strength: Float
+  toEntityId: ID!
+  type: String!
+}
+
 input GraphEntityInput {
   description: String
   entityType: String!
@@ -817,11 +930,28 @@ input GraphEntityInput {
   sourceSystem: String!
 }
 
+"""A graph node (ci.entities row, including CTI bases)"""
+type GraphNodeType {
+  description: String
+  entityType: String!
+  id: ID!
+  linkedId: String
+  linkedTable: String
+  name: String
+  properties: JSON
+}
+
 input GraphRelationshipInput {
   fromKey: String!
   properties: JSON
   toKey: String!
   type: String!
+}
+
+"""Knowledge graph projection over entities + relationships"""
+type GraphType {
+  edges: [GraphEdgeType!]!
+  nodes: [GraphNodeType!]!
 }
 
 input IngestUserSnapshotInput {
@@ -969,10 +1099,22 @@ type MessageType implements Node {
 }
 
 type Mutation {
+  """Accept a candidate at a chosen time, minting a real event"""
+  acceptCandidate(endTime: DateTime, id: ID!, startTime: DateTime!): EventType!
   addPersonIdentifier(input: AddPersonIdentifierInput!): [PersonIdentifierType!]!
   approveAsk(id: ID!): AskPayload!
+
+  """
+  Break free text into schedule candidates. Adds to the slate; schedules nothing.
+  """
+  breakDownTasks(text: String!): [ScheduleCandidateType!]!
   bulkIngestGraph(input: BulkGraphInput!): BulkGraphPayload!
   bulkIngestItemRelationships(input: [ItemRelationshipInput!]!): BulkItemRelationshipResult!
+
+  """
+  Mark a task done. Idempotent — the original completion instant is preserved.
+  """
+  completeTask(actualMinutes: Int, id: ID!): TaskType
   createAnswer(input: CreateAnswerInput!): AnswerType!
   createAnswers(input: [CreateAnswerInput!]!): [AnswerType!]!
   createAsk(input: CreateAskInput!): CreateAskPayload!
@@ -1000,7 +1142,18 @@ type Mutation {
   createQuestions(input: [CreateQuestionInput!]!): [QuestionType!]!
   createRelationship(input: CreateRelationshipInput!): CreateRelationshipPayload!
   createSavedSearch(input: CreateSavedSearchInput!): CreateSavedSearchPayload!
+  createTask(input: CreateTaskInput!): CreateTaskPayload!
   declineAsk(id: ID!): AskPayload!
+
+  """
+  Reject a candidate. reason: not_now | wrong_time | not_like_this | never
+  """
+  declineCandidate(id: ID!, reason: String = "not_now"): ScheduleCandidateType!
+
+  """
+  Push a task to a later user-local date (`YYYY-MM-DD`) and count the push.
+  """
+  deferTask(id: ID!, until: String!): TaskType
   deleteConcept(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteConnection(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteConnectionSyncJob(input: DeleteByIdInput!): DeleteByIdPayload!
@@ -1010,6 +1163,7 @@ type Mutation {
   deleteProviderKey(id: ID!): Boolean!
   deleteRelationship(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteSavedSearch(input: DeleteByIdInput!): DeleteByIdPayload!
+  deleteTask(input: DeleteByIdInput!): DeleteByIdPayload!
   ingestUserSnapshot(input: IngestUserSnapshotInput!): IngestUserSnapshotPayload!
 
   """Mark an action as dismissed"""
@@ -1024,16 +1178,40 @@ type Mutation {
   """Mark a summary as seen"""
   markSummaryAsSeen(id: ID!): SummaryType
   mergePeople(input: MergePeopleInput!): MergePeoplePayload!
+
+  """
+  Mark a suggested duplicate group as distinct people, so it is never re-proposed
+  """
+  rejectPersonDuplicates(personIds: [ID!]!): Boolean!
   removeAnswer(id: String!): Boolean!
   removeContent(id: String!): Boolean!
   removeEvent(id: String!): Boolean!
   removePersonIdentifier(input: RemovePersonIdentifierInput!): [PersonIdentifierType!]!
   removePlace(id: String!): Boolean!
   removeQuestion(id: String!): Boolean!
+
+  """Move a completed task back to open."""
+  reopenTask(id: ID!): TaskType
+
+  """
+  Move an event to a new time, keeping its duration. Externally-sourced events are moved locally only and marked pending — the change is not pushed to the source calendar.
+  """
+  rescheduleEvent(endTime: DateTime, id: ID!, startTime: DateTime!): EventType
+
+  """Return a placed event to the slate, deleting the event it minted"""
+  returnEventToSlate(eventId: ID!): ScheduleCandidateType!
   revokeAskGrant(id: ID!): AskGrantPayload!
   runAsk(id: ID!, redactItemIds: [String!]): RunAskPayload!
   setSavedSearchSharing(input: SetSavedSearchSharingInput!): UpdateSavedSearchPayload!
+
+  """Defer a candidate until a future instant"""
+  snoozeCandidate(id: ID!, until: DateTime!): ScheduleCandidateType!
   startPairing: StartPairingPayload!
+
+  """
+  Refresh the slate from current actions and insight key_actions. Idempotent; returns rows written.
+  """
+  syncScheduleSuggestions: Int!
   tagEntities(input: TagEntitiesInput!): [TaggableEntityType!]!
 
   """Manually trigger the HBPE pipeline for the current user"""
@@ -1058,6 +1236,7 @@ type Mutation {
   updateQuestion(input: UpdateQuestionInput!): QuestionType
   updateRelationship(input: UpdateRelationshipInput!): UpdateRelationshipPayload!
   updateSavedSearch(input: UpdateSavedSearchInput!): UpdateSavedSearchPayload!
+  updateTask(input: UpdateTaskInput!): UpdateTaskPayload!
 }
 
 interface Node {
@@ -1146,11 +1325,13 @@ type PersonType implements Node & Taggable {
   gender: String
   id: ID!
   identifiers: [PersonIdentifierType!]!
+  incomingRelationships(limit: Int): [RelationshipType!]
   interactionStats: PersonInteractionStatsType!
   isSelf: Boolean!
   lastName: String
   middleName: String
   name: String
+  outgoingRelationships(limit: Int): [RelationshipType!]
   postalCode: String
   region: String
   streetAddress: String
@@ -1181,10 +1362,12 @@ type PlaceType implements Node & Taggable {
   geoFormat: String
   geolocation: JSON
   id: ID!
+  incomingRelationships(limit: Int): [RelationshipType!]
   latitude: Float
   locationBoundary: JSON
   longitude: Float
   name: String
+  outgoingRelationships(limit: Int): [RelationshipType!]
   parent: PlaceType
   parentId: ID
   placeKind: String
@@ -1261,14 +1444,16 @@ type Query {
   actions(after: String, before: String, first: Int, last: Int): ActionConnection!
 
   """
-  Precomputed activity counts per local calendar day, with day boundaries in the user profile timezone. Eventually consistent: refreshed from the source tables every 15 minutes.
+  Precomputed activity counts per local calendar day, with day boundaries in the user profile timezone. Eventually consistent: refreshed from the source tables every 15 minutes. When filters are supplied, counts reflect the same Memory explorer constraints as the search results.
   """
   activityTimeline(
     """Inclusive last day, yyyy-MM-dd"""
     end: String!
 
-    """Restrict to these activity sources; all sources when omitted"""
-    sources: [String!]
+    """
+    Optional Memory explorer filters (entity types, tags, who/where/how, search query)
+    """
+    filters: ActivityTimelineFiltersInput
 
     """Inclusive first day, yyyy-MM-dd"""
     start: String!
@@ -1292,6 +1477,11 @@ type Query {
   connections(after: String, before: String, first: Int, last: Int): ConnectionConnection!
   content(id: ID!): ContentType
   contents(after: String, before: String, first: Int, last: Int): ContentConnection!
+
+  """
+  Fetch HBPE renewal predictions: periodic behaviors coming due or overdue
+  """
+  dueForecast: DueForecastType
   event(id: ID!): EventType
 
   """
@@ -1303,6 +1493,11 @@ type Query {
   eventTypes: [String!]!
   events(after: String, before: String, first: Int, last: Int): EventConnection!
 
+  """
+  Events overlapping [from, to) — calendar read path. Excludes cancelled/no-show; keeps tentative. Limited to calendar event types (see SCHEDULE_EVENT_TYPES) plus events with no event_type, which is how user-created and accepted-suggestion events arrive.
+  """
+  eventsInRange(from: DateTime!, to: DateTime!): [EventType!]!
+
   """Get actions for the feed, prioritizing unseen actions"""
   feedActions(limit: Int! = 5): [ActionType!]!
   file(id: ID!): FileType
@@ -1310,6 +1505,11 @@ type Query {
 
   """Fetch the HBPE day-ahead forecast histogram"""
   forecast(horizon: String = "24h"): ForecastType
+
+  """
+  User knowledge graph (entities + relationships). Preferred over REST /api/graph/*.
+  """
+  graph(entityType: String, limit: Int = 200): GraphType!
   item(id: ID!): ItemType
   items(after: String, before: String, first: Int, last: Int): ItemConnection!
   knownPlaceCandidates: [KnownPlaceCandidateType!]!
@@ -1335,14 +1535,33 @@ type Query {
   relationships(after: String, before: String, first: Int, last: Int): RelationshipConnection!
   savedSearch(id: ID!): SavedSearchType
   savedSearches(after: String, before: String, first: Int, last: Int): SavedSearchConnection!
+
+  """Open schedule candidates whose plausible window overlaps [from, to)"""
+  scheduleCandidates(from: DateTime!, to: DateTime!): [ScheduleCandidateType!]!
   search(input: SearchInput!): SearchResultConnection!
   sharedSavedSearch(token: String!): SavedSearchType
   summaries(after: String, before: String, first: Int, last: Int): SummaryConnection!
   summary(id: ID!): SummaryType
   tag(id: ID!): TagType
   tags(after: String, before: String, first: Int, last: Int): TagConnection!
+  task(id: ID!): TaskType
+  tasks(
+    after: String
+    before: String
+    first: Int
+    last: Int
+
+    """User-local calendar date, `YYYY-MM-DD`."""
+    scheduledFor: String
+    status: [TaskStatus!]
+  ): TaskConnection!
   thread(id: ID!): ThreadType
   threads(after: String, before: String, first: Int, last: Int): ThreadConnection!
+
+  """
+  Fetch the HBPE week-horizon occurrence forecast (per-day cluster probabilities)
+  """
+  weekForecast(includeToday: Boolean = false): WeekForecastType
 }
 
 type QuestionConnection implements Connection {
@@ -1363,6 +1582,15 @@ type QuestionType implements Node {
   isSeedQuestion: Boolean
   questionType: String
   text: String!
+}
+
+"""Where a candidate came from — the "because" behind a suggestion"""
+type RationaleSourceType {
+  id: ID!
+
+  """summary | insight | answer | item | relationship | due | action"""
+  kind: String!
+  note: String
 }
 
 type RelationshipConnection implements Connection {
@@ -1417,6 +1645,7 @@ type SavedSearchEdge implements Edge {
 
 input SavedSearchFiltersInput {
   connectors: [String!]
+  datePreset: String
   endTime: String
   eventTypes: [String!]
   hasLocation: Boolean
@@ -1430,6 +1659,7 @@ input SavedSearchFiltersInput {
 
 type SavedSearchFiltersType {
   connectors: [String!]
+  datePreset: String
   endTime: String
   eventTypes: [String!]
   hasLocation: Boolean
@@ -1455,6 +1685,36 @@ type SavedSearchType implements Node {
   updatedAt: DateTime!
 }
 
+"""A proposed activity — the "possible" layer of the schedule"""
+type ScheduleCandidateType {
+  confidence: Float
+  description: String
+  durationMinutes: Int
+  energyCost: Int
+
+  """Best-slot score; null until the solver runs"""
+  fitScore: Float
+  generator: String
+  id: ID!
+  l0Class: String
+
+  """
+  Saved how-you'd-do-it compose for this card, when the user has personalized it
+  """
+  personalization: JSON
+
+  """The sentence shown to the user. Never empty."""
+  rationale: String!
+  rationaleSources: [RationaleSourceType!]!
+  status: String!
+
+  """exact | day | week | month | season"""
+  timeFlex: String!
+  title: String!
+  windowEnd: DateTime!
+  windowStart: DateTime!
+}
+
 input SearchInput {
   after: String
   bbox: [Float!]
@@ -1464,6 +1724,7 @@ input SearchInput {
   excludeTypes: [String!]
   first: Int
   hasLocation: Boolean
+  includeFiles: Boolean
   includeTypes: [String!]
   people: [String!]
   places: [String!]
@@ -1580,6 +1841,67 @@ type TaggableEntityEdge {
 }
 
 union TaggableEntityType = ActionType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileType | ItemType | NoteType | PersonType | PlaceType | ThreadType
+
+type TaskConnection implements Connection {
+  edges: [TaskEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type TaskEdge implements Edge {
+  cursor: String!
+  node: TaskType!
+}
+
+"""Lifecycle state of a planning task."""
+enum TaskStatus {
+  archived
+  done
+  in_progress
+  open
+  skipped
+}
+
+type TaskType implements Node {
+  actualMinutes: Int!
+  completedAt: DateTime
+  createdAt: DateTime!
+
+  """How many times this task has been pushed to a later day."""
+  deferCount: Int!
+
+  """
+  User-local calendar date, `YYYY-MM-DD`, before which the task stays hidden.
+  """
+  deferUntil: String
+  description: String
+
+  """Deadline, as an instant."""
+  dueAt: DateTime
+  estimatedMinutes: Int
+  id: ID!
+  notes: String
+
+  """Parent task, for subtasks."""
+  parentId: ID
+
+  """0 (highest) to 5 (lowest). Defaults to 3."""
+  priority: Int!
+
+  """User-local calendar date, `YYYY-MM-DD`. Not an instant."""
+  scheduledFor: String
+
+  """Where the task came from: `manual`, or an ingest source."""
+  sourceKind: String!
+  status: TaskStatus!
+
+  """
+  Wall-clock time of day, `HH:MM:SS`, in the user timezone. Zoneless by design.
+  """
+  taskTime: String
+  title: String!
+  updatedAt: DateTime!
+}
 
 type ThreadConnection implements Connection {
   edges: [ThreadEdge!]!
@@ -1831,6 +2153,33 @@ type UpdateSavedSearchPayload {
   success: Boolean!
 }
 
+input UpdateTaskInput {
+  actualMinutes: Int
+
+  """User-local calendar date, `YYYY-MM-DD`."""
+  deferUntil: String
+  description: String
+  dueAt: DateTime
+  estimatedMinutes: Int
+  id: ID!
+  notes: String
+  parentId: ID
+  priority: Int
+
+  """User-local calendar date, `YYYY-MM-DD`."""
+  scheduledFor: String
+  status: TaskStatus
+
+  """Wall-clock `HH:MM`, user timezone. Zoneless."""
+  taskTime: String
+  title: String
+}
+
+type UpdateTaskPayload {
+  success: Boolean!
+  task: TaskType
+}
+
 type UserType implements Node {
   email: String!
   entity: PersonType
@@ -1839,4 +2188,48 @@ type UserType implements Node {
   needsIdentityStep: Boolean!
   onboarded: Boolean!
   timezone: String!
+}
+
+"""One L1 cluster likely to occur on a forecast day"""
+type WeekForecastClusterType {
+  clusterId: String!
+
+  """Time-of-day tendency (night/morning/afternoon/evening shares)"""
+  daypartProbs: [ProbabilityEntryType!]!
+
+  """Parent L0 behavioral class (WORK, EXERCISE, ...)"""
+  l0Class: String!
+
+  """Human-readable cluster name (user-specific, discovered from behavior)"""
+  name: String!
+
+  """Probability the cluster occurs at least once that day"""
+  pOccur: Float!
+
+  """
+  True when a booked calendar event pins this cell (known, not predicted)
+  """
+  scheduled: Boolean!
+}
+
+"""Occurrence forecast for a single day of the week horizon"""
+type WeekForecastDayType {
+  clusters: [WeekForecastClusterType!]!
+
+  """ISO date (UTC calendar day)"""
+  date: String!
+
+  """Day-of-week name"""
+  dow: String!
+}
+
+"""
+HBPE week-horizon occurrence forecast (event-level, not bucket occupancy)
+"""
+type WeekForecastType {
+  days: [WeekForecastDayType!]!
+
+  """ISO-8601 timestamp when this forecast was generated"""
+  generatedAt: String!
+  horizon: String!
 }

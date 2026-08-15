@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
 
 import { useQuery } from '@apollo/client';
-import { Button, Dialog } from '@ci/shadcn';
+import { Dialog, IconButton } from '@ci/shadcn';
 import { Download, FileIcon, Loader2, X } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 
 import { gql } from '@/graphql';
 
@@ -20,6 +21,8 @@ const GET_FILE_PREVIEW = gql(`
 `);
 
 export function FileModal({ fileId, onClose }: { fileId: string | null; onClose: () => void }) {
+  const { t } = useTranslation();
+
   const { data, loading } = useQuery(GET_FILE_PREVIEW, {
     variables: { id: fileId! },
     skip: fileId == null,
@@ -49,14 +52,14 @@ export function FileModal({ fileId, onClose }: { fileId: string | null; onClose:
               target="_blank"
               rel="noopener noreferrer"
             >
-              <Button variant="ghost" size="icon" aria-label="Download file">
+              <IconButton label={t('FILE_DOWNLOAD')} variant="ghost" size="icon">
                 <Download />
-              </Button>
+              </IconButton>
             </a>
           )}
-          <Button variant="ghost" size="icon" onClick={onClose}>
+          <IconButton label={t('COMMON_CLOSE')} variant="ghost" size="icon" onClick={onClose}>
             <X />
-          </Button>
+          </IconButton>
         </Dialog.Header>
 
         <div className="flex items-center justify-center max-h-[85vh]">

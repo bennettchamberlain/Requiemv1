@@ -55,7 +55,7 @@ export function SummaryDetailPage() {
             <Breadcrumb.Separator className="hidden md:block" />
             <Breadcrumb.Item>
               <Breadcrumb.Link asChild>
-                <Link to="/insights">Insights</Link>
+                <Link to="/feed">Feed</Link>
               </Breadcrumb.Link>
             </Breadcrumb.Item>
             {summary && (

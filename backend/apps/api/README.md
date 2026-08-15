@@ -15,7 +15,7 @@ browser's `/api` prefix (Caddy under `make dev`).
 ## Getting started
 
 See the [repo README](../../../README.md) for prerequisites and `make dev`, which brings up
-the whole per-worktree stack (Postgres, MinIO, Temporal, hbpe/summary services, Caddy route,
+the whole per-worktree stack (Postgres, MinIO, hbpe/summary services, Caddy route,
 api + web dev servers). To run just this service against an already-running stack:
 
 ```bash
@@ -60,7 +60,9 @@ src/
 | `files` | Uploads, previews, MinIO-backed storage, saved searches |
 | `events` | **The in-process event bus** (PGBoss) — not calendar events; see below |
 | `agent` / `mcp` / `tools` | Agent memory (`/memory/*`), the MCP server (`POST /mcp`), the shared ToolRegistry + intent catalog |
-| `notes`, `devices`, `position`, `browser-activity`, `geocode`, `entity-resolution`, `summaries`, `predictions`, `audit` | What they say on the tin |
+| `planning` | Task list CRUD (`ci.tasks`), defer/reopen, tenancy isolation |
+| `schedule` | Schedule surface: `event_candidates` live in their own table (not `ci.events`) so HBPE never trains on hypotheticals; accept mints a real event, decline/snooze/return-to-slate manage the possible layer. `ci.rhythms` is P2 fit-solver scaffolding (schema only). |
+| `notes`, `devices`, `position`, `browser-activity`, `geocode`, `entity-resolution`, `summaries`, `predictions`, `audit` | What they say on the tin — `predictions` proxies HBPE histogram/week/due forecasts |
 
 ### Common infrastructure (`src/common/`)
 

@@ -2,11 +2,12 @@
 
 > **Private & Confidential — Property of Lifescope Inc. Do not distribute.**
 >
-> Last verified against the migration set on **2026-07-06**
-> (`backend/apps/api/db/postgres/migrations/`, 159 files). The hand-written SQL
-> migrations are the **source of truth** for the schema; the TypeORM entities under
+> Last verified against the migration set on **2026-08-08**
+> (`backend/apps/api/db/postgres/migrations/`). The hand-written SQL migrations
+> are the **source of truth** for the schema; the TypeORM entities under
 > `backend/apps/api/src/domains/*/entities/` must be kept in sync with them — see
-> [Migration workflow](#migration-workflow).
+> [Migration workflow](#migration-workflow). Schema consolidation status:
+> [schema-consolidation.md](./schema-consolidation.md).
 >
 > Related: [API reference](../api/README.md) ·
 > [GraphQL bulk-ingest contract](../api/graphql.md#47-bulk-ingest-mutations-the-importer-surface--detailed) ·
@@ -49,13 +50,13 @@ Authoritative column lists live in the migrations and the matching TypeORM entit
 
 | Table | What it holds | Entity |
 |---|---|---|
-| `ci.events` | Timeline events (calendar, photos-as-events, captures) — PostGIS coordinates, provenance, participants, confidence | `memory/entities/EventEntity.ts` |
-| `ci.communications` | Email/SMS/chat/calls — **TimescaleDB hypertable**, see [Hypertables](#hypertables) | `memory/entities/CommunicationEntity.ts` |
-| `ci.communications_source_dedup` | Companion idempotency table for the hypertable — see [Idempotency](#idempotency--dedup-design) | — |
-| `ci.content` | Rich content records (articles, media payloads), optional link to an event | `memory/entities/ContentEntity.ts` |
+| `ci.events` | Timeline events (calendar, photos-as-events, captures, browser views) — PostGIS coordinates, provenance, participants, confidence | `memory/entities/EventEntity.ts` |
+| `ci.event_analytics` | Side table for rarely-written analytics columns moved off the hot events row (`salience`, `access_count`, …) | — |
+| `ci.communications` | Email/SMS/chat/calls — **plain table** (de-hypertabled; see [Hypertables](#hypertables)) | `memory/entities/CommunicationEntity.ts` |
+| `ci.content` | Rich content records (articles, media, web pages), optional FK to an event (`content.event_id`) | `memory/entities/ContentEntity.ts` |
 | `ci.inventory` | Items the user owns | `memory/entities/ItemEntity.ts` |
-| `ci.browser_activity` | Page visits from the browser extension | `browser-activity/entities/BrowserActivityEntity.ts` |
-| `ci.capture_events` | Append-only raw capture log behind `POST /v1/events`, soft link to the materialized `ci.events` row (`20260621021634`) | — |
+| `ci.browser_activity` | **Deprecated** — page visits from the browser extension; folded into `ci.events` (`view`) + `ci.content` (`web-page`); dual-read until drop | `browser-activity/entities/BrowserActivityEntity.ts` |
+| `ci.capture_events` | Append-only raw capture log behind `POST /v1/*`, soft link to the materialized row (`20260621021634`) | — |
 | `ci.files` | File metadata (MinIO-backed objects, previews) | `files/entities/FileEntity.ts` |
 | `ci.notes` | First-class user notes | `notes/entities/NoteEntity.ts` |
 
@@ -63,7 +64,7 @@ Authoritative column lists live in the migrations and the matching TypeORM entit
 
 | Table | What it holds |
 |---|---|
-| `ci.entities` | Graph nodes — one physical table, **single-table-inheritance** discriminated by `entity_type` (`Person`, `Place`, `Concept`, `Thing`, `File`, …; see `memory/entities/BaseEntity.ts`). Each row carries a mutable **JSONB `properties`** bag. |
+| `ci.entities` | Graph nodes — one physical table, discriminated by `entity_type` (`Person`, `Location`, `Concept`, `Object`, `File`, …). Typed columns for Person identity and Location geography; remaining fields in mutable **JSONB `properties`**. |
 | `ci.relationships` | Directed, typed edges between entities (`PREFERS`, `KNOWS`, `LIVES_IN`, …) with their own JSONB `properties`; unique on the directed `(from_entity_id, to_entity_id, relationship_type)` while active (`relationships_unique_directed_idx … WHERE is_active = TRUE`). |
 | `ci.entity_identifiers` | Normalized email/phone identifiers per entity (`20260624140000`) — powers communications↔people linking. Unique on `(owner_user_id, kind, value_normalized)`. |
 | `ci.item_relationships` | Item↔item edges (email→attachment, photo→album) keyed by **provenance triples on both endpoints**, table-agnostic (`20260707000001`). |
@@ -93,20 +94,28 @@ FTS index), `ci.questions` / `ci.answers` (the "ask my memory" surface), `ci.act
 
 `ci.providers` / `ci.connections` / `ci.provider_keys` (OAuth connector catalog +
 instances), `ci_etl.connection_sync_jobs`; `ci.users`, `ci.sessions`, `ci.signup_code`,
-`ci.api_keys`; `ci.devices`, `ci.position` (GPS/relative-coordinate **hypertable**, supports
-AR headpose), `ci.geocode_cache` (`20260622120000`), `ci.saved_searches` (captured explorer
+`ci.api_keys`; `ci.devices`, `ci.position` (GPS/relative-coordinate **time-only
+hypertable**, supports AR headpose), `ci.user_snapshots` (time-only hypertable),
+`ci.geocode_cache` (`20260622120000`), `ci.saved_searches` (captured explorer
 `filters` JSONB + `is_public`/`share_token` sharing — see
 [saved-search-sharing.md](../saved-search-sharing.md)), `ci.agent_memories`.
+
+Commerce / object-identity tables (`ci.product_models`, `ci.receipts`,
+`ci.receipt_line_items`, `ci.object_observations`) are **pre-implementation** —
+schema present, product surface not shipped (see table `COMMENT`s).
 
 ### Dropped tables (historical)
 
 `measurements`, `sensors`, `documents`, `document_chunks`, `facts`, `goals`, `habits`,
-`voice_recordings`, `activities`, `screen_captures`, and the pre-graph `people`/`places`/
-`contacts`/`things`/`locations` tables were all removed
-(`20251006113900_prune_old_tables.sql`, `20260212191500_drop_unused_tables…`,
-`20260213131500_drop_screen_captures_and_sensors.sql`). Older docs describing the
-documents→chunks→facts pipeline or the devices→sensors→measurements hierarchy refer to
-these dead tables.
+`voice_recordings`, `activities`, `screen_captures`, the pre-graph `people`/`places`/
+`contacts`/`things`/`locations` tables, chat-agent `ci.agents` / `ci.agent_messages`,
+and the communications hypertable companion `ci.communications_source_dedup` were
+removed (`20251006113900_prune_old_tables.sql`, `20260212191500_drop_unused_tables…`,
+`20260213131500_drop_screen_captures_and_sensors.sql`,
+`20260808065716_drop_agents_and_agent_messages.sql`,
+`20260807072321_dehypertable_communications.sql`). Older docs describing the
+documents→chunks→facts pipeline, the devices→sensors→measurements hierarchy, or
+the agents chat tables refer to these dead tables.
 
 ## Idempotency & dedup design
 
@@ -120,30 +129,23 @@ and [graphql.md §4.7](../api/graphql.md#47-bulk-ingest-mutations-the-importer-s
 
 | Table | Idempotency arbiter | Migration |
 |---|---|---|
-| `ci.events` | `events_source_triple_uniq (source_type, source_system, source_id) WHERE source_id IS NOT NULL` — note: **no user scope** | `20260620213807` |
+| `ci.events` | `events_source_triple_uniq (user_id, + triple) WHERE source_id IS NOT NULL` | `20260620213807` (user-scoped `20260808065724`) |
 | `ci.content` | `content_source_triple_uniq (user_id, + triple) WHERE source_id IS NOT NULL` | `20260623120300` |
 | `ci.inventory` | `inventory_source_triple_uniq (owner_user_id, + triple) WHERE source_id IS NOT NULL` | `20260623120000` |
-| `ci.browser_activity` | `browser_activity_source_triple_uniq (user_id, + triple) WHERE source_id IS NOT NULL` | `20260623120200` |
-| `ci.communications` | **companion table** `ci.communications_source_dedup`, PK `(user_id, source_type, source_system, source_id)` — see below | `20260702012519` |
+| `ci.browser_activity` | `browser_activity_source_triple_uniq (user_id, + triple) WHERE source_id IS NOT NULL` (deprecated table; dual-writes events/content) | `20260623120200` |
+| `ci.communications` | `communications_source_triple_uniq (user_id, + triple) WHERE source_id IS NOT NULL` on the plain table | `20260807072321` (replaces retired `communications_source_dedup`) |
 | `ci.entities` | `entities_linked_uniq (owner_user_id, entity_type, linked_table, linked_id) WHERE linked_table IS NOT NULL` — importer-stable graph upserts | `20260621020120` |
-| `ci.capture_events` | `UNIQUE (user_id, source_system, source_id)` | `20260621021634` |
+| `ci.capture_events` | `UNIQUE (user_id, destination, source_type, source_system, source_id)` | `20260621021634` / `20260716131500` |
 | `ci.item_relationships` | `item_relationships_edge_uniq (user_id, from-triple, to-triple, relation)` | `20260707000001` |
 | `ci_search.embeddings` / `ci_search.vectors` | `UNIQUE (entity_type, entity_id)` — index writes are upserts | `20251210022334` / `20251210040404` |
 
-**Why communications is special.** `ci.communications` is a hypertable, and TimescaleDB
-requires every UNIQUE index to include the partition column (`time`) — which breaks pure
-triple dedup (the same message re-imported with a corrected timestamp would duplicate). The
-old `communications_source_triple_uniq` index (which had to include `time`) was **dropped**
-and replaced by the non-hypertable `ci.communications_source_dedup` table keyed on the pure
-triple, with a soft pointer (`communication_id`, `communication_time`) back to the canonical
-row. An `AFTER DELETE` trigger on the hypertable removes the dedup row so a deleted
-communication can be re-ingested. **Gotcha:** `TRUNCATE` does *not* fire that per-row
-trigger — truncating `ci.communications` without truncating the dedup table in the same
-statement leaves poison rows that silently swallow the next re-import (see the
-[ingest reset runbook](../../backend/apps/api/db/postgres/INGEST_RESET_RUNBOOK.md)).
-The communications path is also the only one that **self-heals** selected source-derived
-columns on conflict (`ON CONFLICT … DO UPDATE`; the per-entity contract is
-`INGEST_REFRESH_COLUMNS` in `common/persistence/ingestRefreshColumns.ts`).
+**Communications (plain table).** `ci.communications` used to be a hypertable, which
+forced `time` into any UNIQUE index and broke pure triple dedup — hence the temporary
+`communications_source_dedup` companion. After `20260807072321` it is a **plain table**
+with `communications_source_triple_uniq` on `(user_id, source_type, source_system,
+source_id)` and the companion table is gone. The communications path still
+**self-heals** selected source-derived columns on conflict (`ON CONFLICT … DO UPDATE`;
+see `INGEST_REFRESH_COLUMNS` in `common/persistence/ingestRefreshColumns.ts`).
 
 ## Indexing
 
@@ -167,21 +169,21 @@ against dropping. See the
 
 ## Hypertables
 
-Two TimescaleDB hypertables remain (the others — `measurements`, `event_history`,
-`activities` — were dropped with their features):
+Hypertables that remain (criteria in [ADR-0002](./adr/0002-timescaledb-hypertable-criteria.md);
+`ci.communications` was de-hypertabled):
 
-| Table | Partitioning | Compression policy |
+| Table | Partitioning | Notes |
 |---|---|---|
-| `ci.communications` | `create_hypertable('communications', 'time', 'user_id', 4)` | columnar after **30 days** |
-| `ci.position` | `create_hypertable('position', 'time', 'user_id', 4)` | columnar after **7 days** |
+| `ci.position` | **time-only** hypertable on `time` | space partition removed (`20260807071631`); sensor stream |
+| `ci.user_snapshots` | **time-only** hypertable | space partition removed (`20260807072056`) |
+| `hbpe.prediction_log` | time hypertable | reference specimen in ADR-0002 |
 
 Notes:
 
-- `ci.communications` has a **surrogate composite PK** `(time, user_id, id)`
-  (`20260624130000`) — the `id` is a `uuidv7()`, and the triple-dedup invariant lives in the
-  companion table, not a hypertable index (see above).
-- Every UNIQUE index on a hypertable must include the partition column — this constraint is
-  why the dedup companion table exists.
+- **Never space-partition** on `user_id` for this appliance (1–5 users) — empty buckets
+  multiply chunk count for no upside.
+- Every UNIQUE index on a hypertable must include the partition column — this is why
+  communications could not stay a hypertable while keeping a pure provenance triple key.
 - Inserting into already-compressed chunks (older than the policy window) is slow; deep
   historical backfills should pause/re-add the compression policy — procedure in the
   [bulk load runbook §4](../../backend/apps/api/db/postgres/BULK_LOAD_RUNBOOK.md#4-timescaledb-aware-loading).

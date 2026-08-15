@@ -166,6 +166,16 @@ export const ConfigSchema = z.object({
   graphql: z.object({
     maxQueryComplexity: z.number().int(),
   }),
+  // OpenAI-compatible chat backend (Hub-injected LLM_* env, or Settings → Model).
+  // When the chat port differs from Ollama's, the NestJS chat path speaks OpenAI
+  // protocol (vLLM, etc.); embeddings continue to use OLLAMA_HOST / OLLAMA_EMBED_HOST.
+  llm: z
+    .object({
+      apiBase: z.string().optional(),
+      apiKey: z.string().default('ollama'),
+      chatModel: z.string().default('gemma3:1b'),
+    })
+    .default({}),
   // Local-first sync (PowerSync). The server issues short-lived client tokens via
   // /api/powersync/token; the sync engine runs in the `powersync` container. Empty
   // url/jwtSecret = feature scaffolded but not enabled (the endpoint returns 503).
@@ -191,6 +201,14 @@ export const ConfigSchema = z.object({
     }),
     parser: z.object({
       host: z.string(),
+    }),
+    /**
+     * Summary service API (function runner + manual triggers). Distinct from
+     * `parser`, which is the document-parsing app on a different port of the
+     * same container.
+     */
+    summary: z.object({
+      host: z.string().default('http://summary-service:8001'),
     }),
   }),
   signalCli: z.object({
@@ -247,6 +265,68 @@ export const ConfigSchema = z.object({
     fetchBatchSize: z.coerce.number().int().positive().default(20),
     perQueueConcurrency: z.coerce.number().int().positive().default(6),
   }),
+  // WHEN the appliance is willing to spend on enrichment, and HOW MUCH. The
+  // pipeline's twelve stages share ONE Ollama process with interactive chat,
+  // HBPE and the summary sidecar, and two of them egress to a metered geocoding
+  // provider — so background enrichment is not free-running work, it is a
+  // nightly allowance with an owner-visible cost. `window` bounds the hours;
+  // `rotation` decides who inside them gets served. Consumed by
+  // `domains/pipeline/constants.ts` → `EnrichmentWindowService`, which explains
+  // every number. Defaults suit an appliance whose owner is asleep.
+  enrichment: z.object({
+    window: z.object({
+      /**
+       * Off makes enrichment free-running again — the pre-window behaviour, and
+       * the right setting for a supervised first-import burn-in where somebody
+       * is watching the box and wants the archive processed today.
+       */
+      enabled: booleanStringSchema.default(true),
+      /** Local wall-clock time the window opens, `HH:MM`, 24-hour. */
+      start: z
+        .string()
+        .regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'must be a 24-hour HH:MM local time, e.g. "01:00"')
+        .default('01:00'),
+      /** How long the window stays open. May cross midnight. */
+      durationMinutes: z.coerce
+        .number()
+        .int()
+        .positive()
+        .max(24 * 60)
+        .default(300),
+      /**
+       * Minutes of ACTUAL enrichment activity the appliance will spend inside
+       * the window. Distinct from the window length on purpose: the window is
+       * permission (do not run while the owner is awake), the budget is spend
+       * (do not be a permanent background tenant). A night with nothing to do
+       * costs nothing, and a box that boots at 03:00 still gets its full budget.
+       */
+      budgetMinutes: z.coerce
+        .number()
+        .int()
+        .positive()
+        .max(24 * 60)
+        .default(90),
+      /**
+       * IANA zone the window's wall clock is read in. Empty = the host's zone,
+       * which on an appliance is the owner's.
+       */
+      timezone: z.string().default(''),
+    }),
+    rotation: z.object({
+      /**
+       * How long one user holds the window before it passes to the
+       * least-recently-served user. This is the bound on how long user 2 waits
+       * behind user 1's archive: one turn, not one import.
+       */
+      turnMinutes: z.coerce.number().int().positive().default(20),
+      /**
+       * Users served concurrently. 1 by default: the appliance-wide sweep and
+       * queue-depth caps are already the ceiling, so splitting them across
+       * users makes every user slower without making anyone earlier.
+       */
+      usersPerTurn: z.coerce.number().int().positive().default(1),
+    }),
+  }),
   features: z.object({
     'scheduled.answer.inferencing': booleanStringSchema,
     'scheduled.connection.sync': booleanStringSchema,
@@ -264,9 +344,22 @@ export const ConfigSchema = z.object({
     'chat.page': booleanStringSchema,
     /** Wholesale gate for the Jobs page (/jobs + nav entry points). */
     'jobs.page': booleanStringSchema,
+    /**
+     * Backend gate for the planning domain: ci.tasks, planned-block events and
+     * the planning GraphQL surface. See docs/architecture/planning-roadmap.md.
+     */
+    'planning.enabled': booleanStringSchema,
+    /** Wholesale gate for the Plan page (/plan + nav entry points). */
+    'planning.page': booleanStringSchema,
+    /** Shows the "Nothing planned yet" empty state on the Plan page when there are no tasks. */
+    'planning.emptyState': booleanStringSchema,
     /** Enables the memory stats page (`/stats`): timeline totals plus entity
      * breakdowns by data source and by tag. */
     'stats.page': booleanStringSchema,
+    /** Wholesale gate for the Schedule surface (`/schedule` + nav entry point):
+     * committed events, the HBPE rhythm layer, and proposed candidates. Off by
+     * default while the proposer is still being tuned. */
+    'schedule.page': booleanStringSchema,
     /** The standalone all-tags browse page (`/tags`). Restored — on by default —
      * after #1512 removed it and left no way to see every tag in the system.
      * Chips open the explorer filtered by the tag (`/memory?tags=<label>`). */
@@ -295,9 +388,16 @@ export const ConfigSchema = z.object({
     /**
      * Wholesale gate for the Actions system: feed action cards, action GraphQL/REST,
      * feed badge contribution from actions, and the deferred (~24h post-setup) seed
-     * initializer. Off by default.
+     * initializer. On by default; set ENABLE_ACTIONS=false to disable.
      */
     actions: booleanStringSchema,
+    /**
+     * Meta flag for background intelligence scheduling. When on, each pipeline
+     * (question feed, answer inference, schedule sync, insights, summaries,
+     * graph enrichment) runs on its own cadence via SmartRotationScheduledCrons
+     * instead of the legacy standalone crons.
+     */
+    'smart.rotation': booleanStringSchema,
   }),
   environment: z.object({
     'database.query.logging': booleanStringSchema,
@@ -320,13 +420,31 @@ export const ConfigSchema = z.object({
     /** Bound on every outbound call to a peer or the directory. */
     timeoutMs: z.coerce.number().int().positive().default(10_000),
   }),
-  // Forward-geocoding (geodata-plan Phase 1). The key is read from
-  // GEOCODING_API_KEY, falling back to the legacy GOOGLE_MAPS_KEY (see
-  // custom-environment-variables.json + the fallback transform below).
+  // Geocoding, both directions (address <-> coordinates). Egress normally goes
+  // through CI-Portal, which holds the provider key and fronts a cache shared by
+  // every appliance; `google` is the direct-key fallback and is the only mode
+  // that reads `apiKey` (GEOCODING_API_KEY, falling back to the legacy
+  // GOOGLE_MAPS_KEY — see custom-environment-variables.json + the transform below).
   geocoding: z.object({
     apiKey: z.string().optional(),
     batchSize: z.coerce.number().int().positive().default(200),
     rateLimitPerSecond: z.coerce.number().int().positive().default(10),
+    /**
+     * Which implementation backs the GEOCODE_PROVIDER token.
+     *   portal (default) — proxy through CI-Portal; no provider key on the box.
+     *   google           — call Google directly with `apiKey`; kept as a fallback
+     *                      for deployments with no Portal reachability.
+     */
+    provider: z.enum(['portal', 'google']).default('portal'),
+    /**
+     * Base origin of the geocoding proxy — CI-Portal itself, or the hub host
+     * that fronts it. WHICH of the two a deployment uses is still undecided, so
+     * this is the single knob that answers it and the only place a Portal URL is
+     * configured for geocoding. Defaults to ciPortal.url (CI_CLOUD_URL) below,
+     * so a box that already talks to Portal needs no extra env var; set
+     * GEOCODING_PORTAL_BASE_URL to route via the hub instead.
+     */
+    portalBaseUrl: z.string().default(''),
   }),
 });
 
@@ -339,6 +457,18 @@ if (!parsed.embedding.host) {
   parsed.embedding.host = parsed.services.ollama.host;
 }
 
+if (!parsed.llm.apiBase) {
+  parsed.llm.apiBase = undefined;
+}
+
+if (!parsed.llm.apiKey) {
+  parsed.llm.apiKey = 'ollama';
+}
+
+if (!parsed.llm.chatModel) {
+  parsed.llm.chatModel = 'gemma3:1b';
+}
+
 // GEOCODING_API_KEY takes precedence; fall back to the legacy GOOGLE_MAPS_KEY so
 // existing deployments keep working until the billed key is supplied. (config's
 // custom-environment-variables.json maps one env var per field, not a fallback
@@ -347,12 +477,30 @@ if (!parsed.geocoding.apiKey && process.env.GOOGLE_MAPS_KEY) {
   parsed.geocoding.apiKey = process.env.GOOGLE_MAPS_KEY;
 }
 
-if (!parsed.geocoding.apiKey) {
-  // Warn (don't throw): the server must still boot without a geocoding key; the
-  // backfill simply no-ops / returns REQUEST_DENIED until one is configured.
+// The geocoding proxy follows the Portal URL the box already uses unless an
+// explicit base URL is configured (GEOCODING_PORTAL_BASE_URL), so routing
+// geocoding via the hub host instead of Portal directly is a one-variable
+// change. Same shape as the embedding-host fallback above: the OR lives here so
+// the provider reads exactly one config value.
+if (!parsed.geocoding.portalBaseUrl) {
+  parsed.geocoding.portalBaseUrl = parsed.ciPortal.url ?? '';
+}
+
+// Warn (don't throw) on a geocoding misconfiguration: the server must still
+// boot, and the backfill simply reports a transient/denied status until it is
+// fixed. Each provider has its own requirement, so only warn about the one in use.
+if (parsed.geocoding.provider === 'google' && !parsed.geocoding.apiKey) {
   console.warn(
-    '[configuration] No geocoding API key configured (GEOCODING_API_KEY / GOOGLE_MAPS_KEY). ' +
-      'Forward-geocode backfills will be skipped until one is set.',
+    '[configuration] geocoding.provider is "google" but no API key is configured ' +
+      '(GEOCODING_API_KEY / GOOGLE_MAPS_KEY). Geocode backfills will be skipped until one is set.',
+  );
+}
+
+if (parsed.geocoding.provider === 'portal' && !parsed.geocoding.portalBaseUrl) {
+  console.warn(
+    '[configuration] geocoding.provider is "portal" but no base URL is configured ' +
+      '(GEOCODING_PORTAL_BASE_URL / CI_CLOUD_URL). Geocode backfills will report a transient ' +
+      'failure until one is set.',
   );
 }
 

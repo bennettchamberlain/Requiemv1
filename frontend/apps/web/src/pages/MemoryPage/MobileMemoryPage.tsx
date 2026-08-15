@@ -1,21 +1,17 @@
 import { useState, useEffect } from 'react';
 
-import { Portal } from '@ci/common';
-import { Breadcrumb, Tabs, Sheet } from '@ci/shadcn';
+import { Tabs, Sheet } from '@ci/shadcn';
 import { ChartNetwork, Images, List, Map as MapIcon } from '@ci/shadcn/icons';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
+import { MemoryHubShell } from '@/components/MemoryHub';
 import { FileChunkModal } from '@/components/modals/FileChunkModal/FileChunkModal';
 
 import { useEntityService } from '../MemoryPage/useEntityService';
 
 import { EntityDetails } from './Components';
-import {
-  AdvancedSearchToggle,
-  ExplorerToolbar,
-  MemorySearchField,
-} from './Components/ExplorerToolbar/ExplorerToolbar';
+import { ExplorerToolbar, MemorySearchField } from './Components/ExplorerToolbar/ExplorerToolbar';
 import { countActiveFilters } from './Components/ExplorerToolbar/filterParams';
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
@@ -43,12 +39,13 @@ export default function MobileMemoryPage() {
       return nextParams;
     });
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   const activeFilterCount = countActiveFilters(searchParams);
 
   // Reflect the default view in the URL so the query is shareable/restorable.
+  // Events is a What-bar filter, not a top-level view — rewrite legacy ?view=events.
   useEffect(() => {
-    if (!searchParams.get('view')) {
+    const view = searchParams.get('view');
+    if (!view || view === 'events') {
       setSearchParams(
         (params) => {
           const nextParams = new URLSearchParams(params);
@@ -73,30 +70,10 @@ export default function MobileMemoryPage() {
 
   return (
     <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item>
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-            <Breadcrumb.Separator />
-            <Breadcrumb.Item>
-              <Breadcrumb.Page>Memory</Breadcrumb.Page>
-            </Breadcrumb.Item>
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
-      <PageContent>
-        <div className="space-y-3">
-          {/* The global header search isn't shown on mobile, so the search field
-              lives here inline, next to the Advanced toggle; the advanced drawer
-              (Who/What/When/Where/How + tags, semantic, sort, save) renders
-              below via the shared ExplorerToolbar. Applied filters chip inside
-              the drawer's drop area; while it's closed, the count text beside
-              the toggle stands in (mirroring the desktop header search). */}
+      <PageContent className="gap-2 p-0">
+        <div className="flex min-h-0 flex-1 flex-col gap-2 px-2">
+          {/* The global header search isn't shown on mobile — keep it first, like
+              the desktop header, above entity-type nav and filters. */}
           <div className="flex items-center gap-2">
             <div className="flex-1">
               <MemorySearchField />
@@ -106,43 +83,47 @@ export default function MobileMemoryPage() {
                 {activeFilterCount} {activeFilterCount === 1 ? 'filter' : 'filters'}
               </span>
             )}
-            <AdvancedSearchToggle open={advancedOpen} onToggle={() => setAdvancedOpen((open) => !open)} />
           </div>
-          <ExplorerToolbar open={advancedOpen} />
 
-          {/* Tab Navigation */}
-          <Tabs defaultValue="list" onValueChange={setActiveTab} value={activeTab}>
-            <Tabs.List className="grid grid-cols-4 w-full">
-              <Tabs.Trigger value="list" className="text-sm flex items-center gap-1">
-                <List className="h-4 w-4" />
-                List
-              </Tabs.Trigger>
-              <Tabs.Trigger value="map" className="text-sm flex items-center gap-1">
-                <MapIcon className="h-4 w-4" />
-                Map
-              </Tabs.Trigger>
-              <Tabs.Trigger value="gallery" className="text-sm flex items-center gap-1">
-                <Images className="h-4 w-4" />
-                Gallery
-              </Tabs.Trigger>
-              <Tabs.Trigger value="graph" className="text-sm flex items-center gap-1">
-                <ChartNetwork className="h-4 w-4" />
-                Graph
-              </Tabs.Trigger>
-            </Tabs.List>
-          </Tabs>
+          <MemoryHubShell fillHeight>
+            <div className="space-y-2">
+              <ExplorerToolbar open />
+
+              {/* Tab Navigation */}
+              <Tabs defaultValue="list" onValueChange={setActiveTab} value={activeTab}>
+                <Tabs.List className="grid grid-cols-4 w-full">
+                  <Tabs.Trigger value="list" className="text-sm flex items-center gap-1">
+                    <List className="h-4 w-4" />
+                    List
+                  </Tabs.Trigger>
+                  <Tabs.Trigger value="map" className="text-sm flex items-center gap-1">
+                    <MapIcon className="h-4 w-4" />
+                    Map
+                  </Tabs.Trigger>
+                  <Tabs.Trigger value="gallery" className="text-sm flex items-center gap-1">
+                    <Images className="h-4 w-4" />
+                    Gallery
+                  </Tabs.Trigger>
+                  <Tabs.Trigger value="graph" className="text-sm flex items-center gap-1">
+                    <ChartNetwork className="h-4 w-4" />
+                    Graph
+                  </Tabs.Trigger>
+                </Tabs.List>
+              </Tabs>
+            </div>
+
+            {/* Content */}
+            <>
+              {activeTab === 'list' && <ListView />}
+
+              {activeTab === 'map' && <MobileMapView />}
+
+              {activeTab === 'gallery' && <GalleryView />}
+
+              {activeTab === 'graph' && <GraphView variant="mobile" />}
+            </>
+          </MemoryHubShell>
         </div>
-
-        {/* Content */}
-        <>
-          {activeTab === 'list' && <ListView />}
-
-          {activeTab === 'map' && <MobileMapView />}
-
-          {activeTab === 'gallery' && <GalleryView />}
-
-          {activeTab === 'graph' && <GraphView variant="mobile" />}
-        </>
       </PageContent>
       {activeSheetEntity && (
         <Sheet open={detailsOpen} onOpenChange={toggleactiveEntity}>

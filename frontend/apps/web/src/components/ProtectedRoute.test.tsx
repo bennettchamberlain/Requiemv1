@@ -44,14 +44,13 @@ describe('ProtectedRoute', () => {
     expect(screen.queryByText('login page')).not.toBeInTheDocument();
   });
 
-  it('waits (loading) when authenticated but the user has not loaded yet', () => {
+  it('redirects to login when authenticated but the profile never resolved', () => {
     h.auth = { authToken: 'tok', expired: false, loading: false, error: null };
     h.user = { user: null, loading: false };
 
     renderProtected();
 
-    expect(screen.queryByText('secret content')).not.toBeInTheDocument();
-    expect(screen.queryByText('login page')).not.toBeInTheDocument();
+    expect(screen.getByText('login page')).toBeInTheDocument();
   });
 
   it('redirects to /login when expired or unauthenticated', () => {

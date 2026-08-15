@@ -10,12 +10,41 @@
  * falls back to `localStorage`, and external links fall back to a normal navigation.
  */
 
-import { isNativePlatform } from './apiBase';
+import { apiKeyHeaders } from './apiAuth';
+import { buildApiUrl, isNativePlatform } from './apiBase';
 
+/**
+ * `capacitor-secure-storage-plugin`. **Legacy — read-only, for migration.** It used to hold
+ * the appliance API key and has two defects that made it unfit for that:
+ *
+ * - iOS writes with `kSecAttrAccessibleAfterFirstUnlock` (not `…ThisDeviceOnly`), so the
+ *   credential is included in encrypted iTunes/Finder backups and restores onto new
+ *   hardware — the long-lived appliance key silently migrates with a backup.
+ * - Android falls back from AndroidKeyStore RSA wrapping to plain Base64 in the same
+ *   `MODE_PRIVATE` SharedPreferences file if Keystore init throws for any reason, logging
+ *   one line and reporting success.
+ *
+ * New writes go to {@link LocalHubPlugin}'s keystore-backed store instead; this interface
+ * survives only so an existing install's value can be read once and moved across.
+ */
 interface SecureStoragePlugin {
   get(options: { key: string }): Promise<{ value: string }>;
   set(options: { key: string; value: string }): Promise<{ value: boolean }>;
   remove(options: { key: string }): Promise<{ value: boolean }>;
+}
+
+/**
+ * Local Hub sidecar (see `frontend/packages/capacitor-local-hub`). Declared locally rather
+ * than imported from that package for the same reason as every other plugin interface here:
+ * it keeps the web bundle free of `@capacitor/*` deps.
+ *
+ * Only the secure-storage surface is declared — the sidecar's HTTP lifecycle is reached
+ * through `apiBase`, not from this module.
+ */
+interface LocalHubPlugin {
+  secureGet(options: { key: string }): Promise<{ value: string | null }>;
+  secureSet(options: { key: string; value: string }): Promise<void>;
+  secureRemove(options: { key: string }): Promise<void>;
 }
 
 interface BrowserPlugin {
@@ -59,13 +88,30 @@ interface LocalNotificationsPlugin {
   schedule(options: { notifications: LocalNotification[] }): Promise<unknown>;
 }
 
+/**
+ * On-device LLM plugin (Android only; see `frontend/packages/capacitor-local-llm`).
+ * Declared locally rather than imported from that package — same reason every other
+ * plugin interface here is: it keeps the web bundle free of `@capacitor/*` deps.
+ */
+interface LocalLlmPlugin {
+  isAvailable(): Promise<{ available: boolean; reason?: string }>;
+  generate(options: { prompt: string }): Promise<{ text: string }>;
+  generateStream(options: { prompt: string }): Promise<void>;
+  addListener(
+    eventName: 'llmToken',
+    listener: (event: { partial: string; done: boolean }) => void,
+  ): Promise<PluginListenerHandle>;
+}
+
 interface CapacitorPlugins {
   SecureStoragePlugin?: SecureStoragePlugin;
+  LocalHub?: LocalHubPlugin;
   Browser?: BrowserPlugin;
   App?: AppPlugin;
   SplashScreen?: SplashScreenPlugin;
   StatusBar?: StatusBarPlugin;
   LocalNotifications?: LocalNotificationsPlugin;
+  LocalLLM?: LocalLlmPlugin;
 }
 
 export interface LocalNotification {
@@ -87,13 +133,86 @@ function plugins(): CapacitorPlugins | undefined {
 }
 
 /**
+ * Reads through to the legacy `capacitor-secure-storage-plugin` and moves whatever it finds
+ * into the Local Hub's keystore-backed store, so an existing install is never asked to log in
+ * again just because the credential moved house.
+ *
+ * **Order of operations is the safety property.** The old copy is removed only after the new
+ * write has resolved. If the new write fails, the old copy stays exactly where it was and the
+ * next launch tries again; the failure mode is "the value briefly exists in two places", never
+ * "the value exists in none". Losing it would force a full re-login against an appliance whose
+ * URL the user may no longer remember, so a duplicate is by far the cheaper mistake.
+ *
+ * Returns the migrated value, or null when there was nothing to migrate.
+ */
+async function migrateLegacySecureValue(hub: LocalHubPlugin, key: string): Promise<string | null> {
+  const legacy = plugins()?.SecureStoragePlugin;
+
+  if (!legacy) {
+    return null;
+  }
+
+  let legacyValue: string | null = null;
+
+  try {
+    const { value } = await legacy.get({ key });
+
+    legacyValue = value ?? null;
+  } catch {
+    // The legacy plugin throws when the key does not exist — the overwhelmingly common case
+    // on a fresh install. Nothing to migrate.
+    return null;
+  }
+
+  if (legacyValue === null) {
+    return null;
+  }
+
+  await hub.secureSet({ key, value: legacyValue });
+
+  try {
+    await legacy.remove({ key });
+  } catch {
+    // The new copy is already durable, so a failed cleanup is cosmetic: every later read
+    // finds the keystore copy first and never consults the legacy plugin again.
+  }
+
+  return legacyValue;
+}
+
+/**
  * Read a value from the OS keystore (iOS Keychain / Android Keystore) on native, or
  * `localStorage` on web. Returns null when absent.
+ *
+ * On native this is the Local Hub plugin's `CompanionSecureStore`, which fails closed rather
+ * than degrading to unencrypted storage. Any native failure is collapsed to null here — the
+ * app then behaves as if signed out, which is recoverable (sign in again) and never results
+ * in a credential being written somewhere weaker.
  */
 export async function secureStorageGet(key: string): Promise<string | null> {
+  const hub = plugins()?.LocalHub;
+
+  if (isNativePlatform() && hub) {
+    try {
+      const { value } = await hub.secureGet({ key });
+
+      if (value !== null && value !== undefined) {
+        return value;
+      }
+
+      return await migrateLegacySecureValue(hub, key);
+    } catch {
+      // Keystore unusable, or a stored blob that no longer decrypts. Treat as "no value":
+      // the recovery is re-authentication, and nothing here writes a weaker copy.
+      return null;
+    }
+  }
+
   const secure = plugins()?.SecureStoragePlugin;
 
   if (isNativePlatform() && secure) {
+    // Native shell without the Local Hub plugin (older build). Fall back rather than lose
+    // access to a credential that install already has.
     try {
       const { value } = await secure.get({ key });
 
@@ -111,8 +230,33 @@ export async function secureStorageGet(key: string): Promise<string | null> {
   }
 }
 
-/** Persist a value to the OS keystore on native, or `localStorage` on web. */
+/**
+ * Persist a value to the OS keystore on native, or `localStorage` on web.
+ *
+ * Failures propagate on purpose: a caller that just stored an API key needs to know if it did
+ * not stick, and the native side rejects rather than falling back to unprotected storage.
+ */
 export async function secureStorageSet(key: string, value: string): Promise<void> {
+  const hub = plugins()?.LocalHub;
+
+  if (isNativePlatform() && hub) {
+    await hub.secureSet({ key, value });
+
+    // Nothing should be left in the legacy store once the keystore copy is authoritative;
+    // otherwise a stale credential lingers in the weaker store indefinitely.
+    const legacy = plugins()?.SecureStoragePlugin;
+
+    if (legacy) {
+      try {
+        await legacy.remove({ key });
+      } catch {
+        // Already absent, which is the normal case after the first migration.
+      }
+    }
+
+    return;
+  }
+
   const secure = plugins()?.SecureStoragePlugin;
 
   if (isNativePlatform() && secure) {
@@ -130,13 +274,26 @@ export async function secureStorageSet(key: string, value: string): Promise<void
 
 /** Remove a value from the OS keystore on native, or `localStorage` on web. */
 export async function secureStorageRemove(key: string): Promise<void> {
+  const hub = plugins()?.LocalHub;
   const secure = plugins()?.SecureStoragePlugin;
 
-  if (isNativePlatform() && secure) {
-    try {
-      await secure.remove({ key });
-    } catch {
-      // Already gone — nothing to do.
+  if (isNativePlatform() && (hub || secure)) {
+    // Both stores are cleared: a sign-out that left a copy behind in the legacy store would
+    // be worse than one that throws.
+    if (hub) {
+      try {
+        await hub.secureRemove({ key });
+      } catch {
+        // Already gone — nothing to do.
+      }
+    }
+
+    if (secure) {
+      try {
+        await secure.remove({ key });
+      } catch {
+        // Already gone — nothing to do.
+      }
     }
 
     return;
@@ -391,4 +548,174 @@ export async function syncNativeIntentConfig(): Promise<void> {
   } catch {
     // Best-effort — App Intents simply won't be configured until this succeeds.
   }
+}
+
+export interface GenerateOfflineOptions {
+  /** Forwarded to the remote endpoint; the on-device engine always uses its loaded model. */
+  model?: string;
+  threadId?: string | null;
+  enableTools?: boolean;
+  enableThinking?: boolean;
+  fileIds?: string[];
+  /** Bearer token for the remote fallback (web session auth). Native auth uses `apiKeyHeaders()` instead. */
+  authToken?: string;
+  signal?: AbortSignal;
+  /** Called with each incremental chunk of text, from either the local model or the remote stream. */
+  onToken?: (token: string) => void;
+}
+
+export interface GenerateOfflineResult {
+  text: string;
+  /** Which path answered: the on-device model, or the CI-Server `/api/llm/generate` endpoint. */
+  source: 'local' | 'remote';
+}
+
+/**
+ * Answer `prompt` using the on-device LLM when it's present, loaded, and reports itself
+ * available (native only) — falling through to the CI-Server `/api/llm/generate` endpoint
+ * (same request/response shape as `useChatRequester`) on web, when the plugin is absent,
+ * when `isAvailable()` says no, or on any error from the local path. Callers that already
+ * called `loadModel()` (e.g. after the user opted into downloading the on-device model)
+ * get a local answer; everyone else transparently gets the remote one.
+ */
+export async function generateOffline(
+  prompt: string,
+  options: GenerateOfflineOptions = {},
+): Promise<GenerateOfflineResult> {
+  const llm = plugins()?.LocalLLM;
+
+  if (isNativePlatform() && llm) {
+    try {
+      const { available } = await llm.isAvailable();
+
+      if (available) {
+        const text = options.onToken
+          ? await generateLocalStreaming(llm, prompt, options.onToken)
+          : (await llm.generate({ prompt })).text;
+
+        return { text, source: 'local' };
+      }
+    } catch {
+      // Local engine errored (not loaded, OOM, cancelled, ...) — fall through to remote.
+    }
+  }
+
+  const text = await generateRemote(prompt, options);
+
+  return { text, source: 'remote' };
+}
+
+/** Drives `generateStream` + the `llmToken` event into a single buffered result, forwarding partials. */
+async function generateLocalStreaming(
+  llm: LocalLlmPlugin,
+  prompt: string,
+  onToken: (token: string) => void,
+): Promise<string> {
+  let full = '';
+
+  const handle = await llm.addListener('llmToken', (event) => {
+    if (event.partial) {
+      full += event.partial;
+      onToken(event.partial);
+    }
+  });
+
+  try {
+    await llm.generateStream({ prompt });
+
+    return full;
+  } finally {
+    void handle.remove();
+  }
+}
+
+/**
+ * POSTs to `/api/llm/generate` with the same request shape `useChatRequester` uses, and
+ * decodes the streamed response — a sequence of length-prefixed binary frames
+ * (`[channel<<6|flags][UInt32 BE length][payload]`; see
+ * `frontend/apps/web/src/components/Chat/utils/FrameDecoder.ts` and its Swift port,
+ * `CompanionAPI.swift`) — keeping only channel 0 (TEXT). Kept self-contained here rather
+ * than importing the web app's decoder: `@ci/common` must not depend on `@ci/fe-web`.
+ */
+async function generateRemote(prompt: string, options: GenerateOfflineOptions): Promise<string> {
+  const res = await fetch(buildApiUrl('/api/llm/generate'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...apiKeyHeaders(),
+      ...(options.authToken ? { Authorization: `Bearer ${options.authToken}` } : {}),
+    },
+    body: JSON.stringify({
+      prompt,
+      model: options.model,
+      threadId: options.threadId ?? null,
+      enableTools: options.enableTools ?? false,
+      enableThinking: options.enableThinking ?? false,
+      fileIds: options.fileIds,
+    }),
+    signal: options.signal,
+  });
+
+  if (!res.ok || !res.body) {
+    throw new Error(`LLM request failed (${res.status})`);
+  }
+
+  return decodeTextFrames(res.body, options.onToken);
+}
+
+const TEXT_CHANNEL = 0;
+const FRAME_HEADER_BYTES = 5;
+
+/** Reads a frame-encoded response body, returning the concatenated TEXT-channel payload. */
+async function decodeTextFrames(
+  body: ReadableStream<Uint8Array>,
+  onToken?: (token: string) => void,
+): Promise<string> {
+  const reader = body.getReader();
+  const textDecoder = new TextDecoder();
+  let buffer = new Uint8Array(0);
+  let full = '';
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+
+      if (value && value.length > 0) {
+        const merged = new Uint8Array(buffer.length + value.length);
+
+        merged.set(buffer, 0);
+        merged.set(value, buffer.length);
+        buffer = merged;
+
+        while (buffer.length >= FRAME_HEADER_BYTES) {
+          const header = buffer[0];
+          const channel = (header >> 6) & 0b11;
+          const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+          const payloadLength = view.getUint32(1, false);
+          const frameSize = FRAME_HEADER_BYTES + payloadLength;
+
+          if (buffer.length < frameSize) {
+            break; // Wait for more bytes — the frame isn't fully buffered yet.
+          }
+
+          if (channel === TEXT_CHANNEL) {
+            const chunk = textDecoder.decode(buffer.slice(FRAME_HEADER_BYTES, frameSize), { stream: true });
+
+            full += chunk;
+            onToken?.(chunk);
+          }
+
+          buffer = buffer.slice(frameSize);
+        }
+      }
+
+      if (done) {
+        break;
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return full;
 }

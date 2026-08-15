@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { GlobalUID, Portal } from '@ci/common';
-import { cn } from '@ci/shadcn';
-import { Clock, FilterX, Search, SearchX, SlidersHorizontal, X } from '@ci/shadcn/icons';
+import { GlobalUID } from '@ci/common';
+import { Tooltip } from '@ci/shadcn';
+import { Clock, FilterX, Search, SearchX, X } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
+import { DropdownProvider } from '@/components/SearchBox/useDropdown';
 import { useRecentSearches } from '@/hooks';
 import { useKeyboardShortcut } from '@/hooks/useKeyboardShortcut';
+import { SearchPanelFilters } from '@/pages/MemoryPage/Components/ExplorerToolbar/ExplorerToolbar';
 import {
   FILTER_PARAMS,
   addEntityFilter,
@@ -28,12 +31,19 @@ import { ThreadResult } from './results/ThreadResult';
 import { SearchBox, type SearchResultItem } from './SearchBox';
 import { useSearchService } from './useSearchService';
 
+function isMemoryExplorerPath(pathname: string): boolean {
+  return pathname === '/memory';
+}
+
+function isMemoryHubPath(pathname: string): boolean {
+  return pathname === '/memory' || pathname.startsWith('/memory/');
+}
+
 const RECENT_PREFIX = 'recent:';
 // Tag suggestion ids carry the label, not a GlobalUID — selecting one applies
 // the tag as an explorer filter rather than opening a detail route.
 const TAG_PREFIX = 'tagfilter:';
 const SEARCH_ACTION_ID = 'action:search';
-const ADVANCED_ACTION_ID = 'action:advanced';
 const CLEAR_FILTERS_ACTION_ID = 'action:clear-filters';
 const CLEAR_QUERY_ACTION_ID = 'action:clear-query';
 
@@ -41,7 +51,11 @@ const CLEAR_QUERY_ACTION_ID = 'action:clear-query';
  * The unified search in the primary navigation header — visible on every page
  * and the single free-text search for the Memory explorer (the explorer no
  * longer renders its own search box; its toolbar holds only the advanced
- * Who/What/When/Where/How filters).
+ * Who/What/When/Where/How filters on mobile).
+ *
+ * Advanced filters live inline on the Events explorer page only — not in this
+ * header dropdown. On other pages (and Memory hub sub-routes), What / When /
+ * How / toggles / sort open in the panel footer when the search bar is focused.
  *
  * - On `/memory`, typing writes `?search` live (debounced) so results filter as
  *   you type, and the input mirrors `?search` via `defaultQuery` (so external
@@ -53,21 +67,15 @@ const CLEAR_QUERY_ACTION_ID = 'action:clear-query';
  * - Recent searches (locally persisted) surface on focus.
  */
 export function GlobalSearchBox() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const onMemory = location.pathname === '/memory';
+  const onMemoryExplorer = isMemoryExplorerPath(location.pathname);
+  const onMemoryHub = isMemoryHubPath(location.pathname);
   const semantic = searchParams.get('semantic') === '1';
-  // Memory's advanced-filter drawer state lives in the URL so the explorer page
-  // (which owns the toggle and the filter content) and this box stay in sync.
-  const advancedOpen = onMemory && searchParams.get('advanced') === '1';
-  // With filters active the clear-X must show even on an empty input — it
-  // resets the filters too. The count renders as subtle text beside the box in
-  // both states (statusSlot when expanded, left of the button when collapsed).
-  const activeFilterCount = onMemory ? countActiveFilters(searchParams) : 0;
-  const filterCountText =
-    activeFilterCount > 0 ? `${activeFilterCount} ${activeFilterCount === 1 ? 'filter' : 'filters'}` : null;
+  const activeFilterCount = countActiveFilters(searchParams);
   // On /memory the input mirrors the live `?search` param; elsewhere it stays a
   // transient launcher value, so we don't seed it from the URL.
   const urlSearch = searchParams.get('search') ?? '';
@@ -77,65 +85,11 @@ export function GlobalSearchBox() {
   // Bumped to remount SearchBox after a commit/navigation, clearing input + dropdown.
   const [resetKey, setResetKey] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const engageSearchRef = useRef<(() => void) | null>(null);
+  const resetKeyFocusSkipRef = useRef(true);
 
-  // GitHub-style: collapsed, the header shows a compact search *button*; clicking
-  // it (or `/`) expands the real SearchBox as an overlay across the header region
-  // (breadcrumbs, view tabs). The expanded box is CSS-hidden rather than
-  // unmounted while collapsed so the nav-tools / nav-search-panel portal targets
-  // stay in the DOM for Portal.Slot.
-  const [expanded, setExpanded] = useState(false);
+  // Always expanded — the search bar stays visible in the header.
   const overlayRef = useRef<HTMLDivElement | null>(null);
-  const buttonRef = useRef<HTMLButtonElement | null>(null);
-
-  // `?advanced=1` implies the expanded box (the pinned filter panel hangs off
-  // it). Closing the filters keeps the wide bar and refocuses the input — the
-  // user is still mid-search — which re-arms the blur/Escape collapse rules.
-  // Only while focus is still in the overlay, though: when the close came from
-  // a window-level Escape after clicking out to the page, pulling focus back
-  // would pop the results dropdown open again (openOnFocus). That guard also
-  // covers the old no-op cases — the mount run and off-memory transitions run
-  // with focus elsewhere.
-  useEffect(() => {
-    if (advancedOpen) {
-      setExpanded(true);
-    } else if (overlayRef.current?.contains(document.activeElement)) {
-      inputRef.current?.focus();
-    }
-  }, [advancedOpen]);
-
-  // Focus once the overlay is visible (a display:none input can't take focus).
-  useEffect(() => {
-    if (expanded) {
-      inputRef.current?.focus();
-    }
-  }, [expanded]);
-
-  // Collapse on outside pointerdown — except while the advanced panel is pinned
-  // (it's toggle-controlled), and never for clicks inside Radix poppers (filter
-  // dropdowns portal to document.body).
-  useEffect(() => {
-    if (!expanded || advancedOpen) {
-      return;
-    }
-
-    const handlePointerDown = (e: PointerEvent) => {
-      const target = e.target as Node;
-
-      if (overlayRef.current?.contains(target)) {
-        return;
-      }
-
-      if (target instanceof Element && target.closest('[data-radix-popper-content-wrapper]')) {
-        return;
-      }
-
-      setExpanded(false);
-    };
-
-    document.addEventListener('pointerdown', handlePointerDown);
-
-    return () => document.removeEventListener('pointerdown', handlePointerDown);
-  }, [expanded, advancedOpen]);
 
   const [recentSearches, { addRecentSearch, removeRecentSearch }] = useRecentSearches();
 
@@ -143,12 +97,8 @@ export function GlobalSearchBox() {
   // filter so the dropdown agrees with the pinned filters above it. The other
   // dimensions (who / when / where / tags / connectors) aren't part of the
   // search API's input yet, so only the page results honor them.
-  const includeTypes = onMemory
-    ? searchParams.get('includedEntityTypes')?.split(',').filter(Boolean)
-    : undefined;
-  const userExcludedTypes = onMemory
-    ? (searchParams.get('excludedEntityTypes')?.split(',').filter(Boolean) ?? [])
-    : [];
+  const includeTypes = searchParams.get('includedEntityTypes')?.split(',').filter(Boolean);
+  const userExcludedTypes = searchParams.get('excludedEntityTypes')?.split(',').filter(Boolean) ?? [];
   // Keep the box's default exclusions on top of the explorer's (the service
   // only applies its defaults when excludeTypes is omitted entirely).
   const excludeTypes =
@@ -167,7 +117,6 @@ export function GlobalSearchBox() {
   const clearInput = useCallback(() => {
     setQuery(null);
     setResetKey((key) => key + 1);
-    setExpanded(false);
   }, []);
 
   // Open a free-text query in the explorer. Keep existing filters when already on
@@ -183,7 +132,7 @@ export function GlobalSearchBox() {
 
       addRecentSearch(trimmed);
 
-      if (onMemory) {
+      if (onMemoryExplorer) {
         setSearchParams((params) => {
           params.set('search', trimmed);
 
@@ -191,10 +140,15 @@ export function GlobalSearchBox() {
         });
       } else {
         const params = new URLSearchParams();
+
         params.set('search', trimmed);
 
-        if (semantic) {
-          params.set('semantic', '1');
+        for (const param of FILTER_PARAMS) {
+          const value = searchParams.get(param);
+
+          if (value) {
+            params.set(param, value);
+          }
         }
 
         navigate(`/memory?${params.toString()}`);
@@ -202,54 +156,8 @@ export function GlobalSearchBox() {
 
       clearInput();
     },
-    [addRecentSearch, clearInput, navigate, onMemory, semantic, setSearchParams],
+    [addRecentSearch, clearInput, navigate, onMemoryExplorer, searchParams, setSearchParams],
   );
-
-  // Open the advanced-filter drawer. On /memory that's the `?advanced=1` param
-  // (DesktopMemoryPage owns the toggle button and the drawer content); elsewhere
-  // the drawer doesn't exist, so go to the explorer with it open, carrying the
-  // typed query like a committed search.
-  const openAdvanced = useCallback(() => {
-    if (onMemory) {
-      setSearchParams(
-        (params) => {
-          params.set('advanced', '1');
-
-          return params;
-        },
-        { replace: true },
-      );
-
-      return;
-    }
-
-    const trimmed = (query ?? '').trim();
-    const params = new URLSearchParams();
-    params.set('advanced', '1');
-
-    if (trimmed) {
-      addRecentSearch(trimmed);
-      params.set('search', trimmed);
-    }
-
-    if (semantic) {
-      params.set('semantic', '1');
-    }
-
-    navigate(`/memory?${params.toString()}`);
-    clearInput();
-  }, [addRecentSearch, clearInput, navigate, onMemory, query, semantic, setSearchParams]);
-
-  const closeAdvanced = useCallback(() => {
-    setSearchParams(
-      (params) => {
-        params.delete('advanced');
-
-        return params;
-      },
-      { replace: true },
-    );
-  }, [setSearchParams]);
 
   // The query only — the counterpart to `clearFilters`. Remounting SearchBox
   // empties the input; on /memory the live `?search` param goes with it. The
@@ -267,7 +175,7 @@ export function GlobalSearchBox() {
     setQuery(null);
     setClearQueryPending(true);
 
-    if (onMemory) {
+    if (onMemoryExplorer) {
       setSearchParams(
         (params) => {
           params.delete('search');
@@ -277,21 +185,28 @@ export function GlobalSearchBox() {
         { replace: true },
       );
     }
-  }, [onMemory, setSearchParams]);
+  }, [onMemoryExplorer, setSearchParams]);
 
   useEffect(() => {
-    if (!clearQueryPending || (onMemory && urlSearch)) {
+    if (!clearQueryPending || (onMemoryExplorer && urlSearch)) {
       return;
     }
 
     setClearQueryPending(false);
     setResetKey((key) => key + 1);
-  }, [clearQueryPending, onMemory, urlSearch]);
+  }, [clearQueryPending, onMemoryExplorer, urlSearch]);
 
   // A remount replaces the input with a fresh, unfocused one. Refocus so an
   // in-place reset (the clear-query row) keeps the user typing; when the bump
   // came with a collapse (clearInput) the input is hidden, so this is a no-op.
   useEffect(() => {
+    if (resetKeyFocusSkipRef.current) {
+      resetKeyFocusSkipRef.current = false;
+
+      return;
+    }
+
+    engageSearchRef.current?.();
     inputRef.current?.focus();
   }, [resetKey]);
 
@@ -365,20 +280,6 @@ export function GlobalSearchBox() {
   const results = useMemo<SearchResultItem[]>(() => {
     const trimmed = (query ?? '').trim();
 
-    // In-place actions that don't depend on a typed query: the advanced-search
-    // toggle, and clear-filters while filters are active. They lead the dropdown
-    // in both states — with no query, active filters still need both handles.
-    const advancedRow: SearchResultItem = {
-      id: ADVANCED_ACTION_ID,
-      content: (
-        <div className="flex items-center gap-2">
-          <SlidersHorizontal className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
-          <span className="text-muted-foreground">
-            {advancedOpen ? 'Close advanced search' : 'Open advanced search'}
-          </span>
-        </div>
-      ),
-    };
     const clearFiltersRows: SearchResultItem[] =
       activeFilterCount > 0
         ? [
@@ -394,12 +295,9 @@ export function GlobalSearchBox() {
           ]
         : [];
 
-    // Typing → the in-place actions plus a clear-query action and a "search
-    // Memory" action, then matching tags (draggable filter rows, few and
-    // precise), then live entity suggestions.
+    // Typing → clear-query, "search Memory", matching tags, then live suggestions.
     if (trimmed) {
       return [
-        advancedRow,
         {
           id: CLEAR_QUERY_ACTION_ID,
           content: (
@@ -416,7 +314,7 @@ export function GlobalSearchBox() {
             <div className="flex items-center gap-2">
               <Search className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
               <span className="text-muted-foreground">
-                {onMemory ? 'Search Memory for' : 'Search all of Memory for'}
+                {onMemoryExplorer ? 'Search Memory for' : 'Search all of Memory for'}
               </span>
               <span className="font-medium">“{trimmed}”</span>
             </div>
@@ -431,9 +329,8 @@ export function GlobalSearchBox() {
       ];
     }
 
-    // Empty + focused → the same in-place actions, then recent searches.
+    // Empty + focused → clear-filters (when active), then recent searches.
     return [
-      advancedRow,
       ...clearFiltersRows,
       ...recentSearches.map((recent) => ({
         id: `${RECENT_PREFIX}${recent}`,
@@ -441,32 +338,28 @@ export function GlobalSearchBox() {
           <div className="flex items-center gap-2">
             <Clock className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
             <span className="flex-1 truncate">{recent}</span>
-            <button
-              type="button"
-              aria-label={`Remove "${recent}" from recent searches`}
-              className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={(e) => {
-                e.stopPropagation();
-                removeRecentSearch(recent);
-              }}
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
+            <Tooltip delayDuration={600}>
+              <Tooltip.Content>{t('SEARCH_RECENT_REMOVE', { query: recent })}</Tooltip.Content>
+              <Tooltip.Trigger asChild>
+                <button
+                  type="button"
+                  aria-label={t('SEARCH_RECENT_REMOVE', { query: recent })}
+                  className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeRecentSearch(recent);
+                  }}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </Tooltip.Trigger>
+            </Tooltip>
           </div>
         ),
       })),
     ];
-  }, [
-    activeFilterCount,
-    advancedOpen,
-    onMemory,
-    query,
-    recentSearches,
-    removeRecentSearch,
-    suggestions,
-    tags,
-  ]);
+  }, [activeFilterCount, onMemoryExplorer, query, recentSearches, removeRecentSearch, suggestions, t, tags]);
 
   // Live, debounced. Drives the suggestion query everywhere, and on /memory also
   // writes `?search` so the explorer filters as you type (replace: keep history clean).
@@ -474,7 +367,7 @@ export function GlobalSearchBox() {
     ({ query: searchQuery }: { query: string }) => {
       setQuery(searchQuery);
 
-      if (onMemory) {
+      if (onMemoryExplorer) {
         const trimmed = searchQuery.trim();
 
         setSearchParams(
@@ -491,7 +384,7 @@ export function GlobalSearchBox() {
         );
       }
     },
-    [onMemory, setSearchParams],
+    [onMemoryExplorer, setSearchParams],
   );
 
   // The X is a full reset: the query, every explorer filter (the same set as
@@ -499,24 +392,25 @@ export function GlobalSearchBox() {
   const handleClear = useCallback(() => {
     setQuery(null);
 
-    if (onMemory) {
-      setSearchParams(
-        (params) => {
-          params.delete('search');
-          params.delete('advanced');
+    if (onMemoryHub && !onMemoryExplorer) {
+      navigate('/memory', { replace: true });
 
-          for (const param of FILTER_PARAMS) {
-            params.delete(param);
-          }
-
-          return params;
-        },
-        { replace: true },
-      );
+      return;
     }
 
-    setExpanded(false);
-  }, [onMemory, setSearchParams]);
+    setSearchParams(
+      (params) => {
+        params.delete('search');
+
+        for (const param of FILTER_PARAMS) {
+          params.delete(param);
+        }
+
+        return params;
+      },
+      { replace: true },
+    );
+  }, [navigate, onMemoryExplorer, onMemoryHub, setSearchParams]);
 
   // Arrow-key analogue of dragging a person/place/tag row onto the explorer's
   // filter drop area: right adds the highlighted row's filter. Same
@@ -549,17 +443,6 @@ export function GlobalSearchBox() {
       // falls back to recent searches.
       if (id === CLEAR_QUERY_ACTION_ID) {
         clearQuery();
-
-        return;
-      }
-
-      // Toggles the drawer in place — the typed query and the dropdown stay.
-      if (id === ADVANCED_ACTION_ID) {
-        if (advancedOpen) {
-          closeAdvanced();
-        } else {
-          openAdvanced();
-        }
 
         return;
       }
@@ -634,189 +517,48 @@ export function GlobalSearchBox() {
           break;
       }
     },
-    [
-      addRecentSearch,
-      advancedOpen,
-      clearFilters,
-      clearInput,
-      clearQuery,
-      closeAdvanced,
-      commitSearch,
-      navigate,
-      openAdvanced,
-      query,
-    ],
+    [addRecentSearch, clearFilters, clearInput, clearQuery, commitSearch, navigate, query],
   );
 
   // Expand + focus. The focus call only lands when already expanded (a hidden
   // input can't take focus); the expanded-effect above covers the fresh expand.
   useKeyboardShortcut('/', () => {
-    setExpanded(true);
+    engageSearchRef.current?.();
     inputRef.current?.focus();
   });
 
-  // Escape closes the expanded bar and nothing else: the typed text survives
-  // hidden, clearing stays on the X. Focus lands on the collapsed button so
-  // Enter/Space reopens. (Reached via handleEscape, so the advanced drawer is
-  // already closed; the param delete is belt-and-braces.)
-  const collapseBar = useCallback(() => {
-    setSearchParams(
-      (params) => {
-        params.delete('advanced');
-
-        return params;
-      },
-      { replace: true },
-    );
-    setExpanded(false);
-    buttonRef.current?.focus();
-  }, [setSearchParams]);
-
-  // The Escape stack: an open advanced drawer closes first (the bar stays
-  // expanded, and the input refocuses via the advancedOpen effect when focus
-  // was still in the overlay); the next Escape collapses the bar.
-  const handleEscape = useCallback(() => {
-    if (advancedOpen) {
-      closeAdvanced();
-
-      return;
-    }
-
-    collapseBar();
-  }, [advancedOpen, closeAdvanced, collapseBar]);
-
-  // The overlay's Escape handlers above are all focus-bound, and with the
-  // advanced drawer pinned a click on the page moves focus out without
-  // collapsing anything (by design) — leaving no handler to hear the key. This
-  // window-level listener keeps the Escape stack working from anywhere: events
-  // originating inside the overlay are skipped (the input and inset controls
-  // report through the handlers above), as are ones a Radix layer already
-  // dismissed on (it preventDefaults when it closes).
-  useEffect(() => {
-    if (!expanded) {
-      return;
-    }
-
-    const handleWindowKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented) {
-        return;
-      }
-
-      if (e.target instanceof Node && overlayRef.current?.contains(e.target)) {
-        return;
-      }
-
-      handleEscape();
-    };
-
-    window.addEventListener('keydown', handleWindowKeyDown);
-
-    return () => window.removeEventListener('keydown', handleWindowKeyDown);
-  }, [expanded, handleEscape]);
-
   return (
-    <>
-      {/* Collapsed state: a button dressed as a small search field. On /memory it
-          echoes the committed query — and the active-filter count beside it — so
-          the collapsed bar still shows what's filtering the page. */}
-      {filterCountText && (
-        <span className="mr-2 whitespace-nowrap text-xs text-muted-foreground">{filterCountText}</span>
-      )}
-      <button
-        ref={buttonRef}
-        type="button"
-        onClick={() => setExpanded(true)}
-        aria-label="Search"
-        aria-expanded={expanded}
-        className="flex h-9 w-64 max-w-full cursor-pointer items-center gap-2 rounded-md border bg-background px-3 text-sm text-muted-foreground shadow-xs hover:bg-accent/50"
-      >
-        <Search className="h-4 w-4 shrink-0" strokeWidth={1.75} />
-        <span className={cn('truncate', onMemory && urlSearch && 'text-foreground')}>
-          {onMemory && urlSearch ? urlSearch : 'Search'}
-        </span>
-        <kbd className="ml-auto rounded border bg-muted px-1.5 font-mono text-[10px]">/</kbd>
-      </button>
-
-      {/* Expanded state: the real SearchBox, overlaying the header's relative
-          region (breadcrumbs + view tabs). Hidden, not unmounted, while collapsed
-          so its portal targets survive. Escape past the panel/clear stages (i.e.
-          on an empty box) collapses back to the button. */}
-      <div
-        ref={overlayRef}
-        className={cn('absolute inset-0 z-40 flex items-center bg-background', !expanded && 'hidden')}
-        // Escape from anywhere in the overlay — the input stops propagation and
-        // reports via SearchBox's onKeyDown instead, so this only catches ESC on
-        // the inset controls and filter triggers (focus lives there after a
-        // filter interaction).
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') {
-            handleEscape();
+    <div ref={overlayRef} className="relative flex min-w-0 items-center">
+      <div className="min-w-0 flex-1">
+        <SearchBox
+          key={resetKey}
+          ref={inputRef}
+          engageRef={engageSearchRef}
+          defaultQuery={onMemoryExplorer ? urlSearch : undefined}
+          onSearch={handleSearch}
+          onSubmit={({ query: submitted }) => commitSearch(submitted)}
+          onClear={handleClear}
+          onResultSelect={handleResultSelect}
+          onFilterAdd={onMemoryExplorer ? handleFilterAdd : undefined}
+          variant="compact"
+          placeholder="Search memory…"
+          autoSubmit
+          autoSubmitEmpty={onMemoryExplorer}
+          displayResults
+          openOnFocus
+          loading={loading}
+          error={error}
+          results={results}
+          showClear={activeFilterCount > 0 || Boolean(onMemoryExplorer ? urlSearch : query?.trim())}
+          panelFooter={
+            !onMemoryExplorer ? (
+              <DropdownProvider args={[{ changeSearchParams: true }]}>
+                <SearchPanelFilters modal={false} />
+              </DropdownProvider>
+            ) : undefined
           }
-        }}
-        // Panel closed ⇒ collapsed: when focus leaves the overlay entirely the
-        // dropdown is gone, so the box goes with it (suggestion clicks hold focus
-        // via mousedown-preventDefault; the pinned filter panel is chevron-owned).
-        onBlur={(e) => {
-          // Window deactivation isn't a real focus change — stay expanded so
-          // everything is intact when the window comes back.
-          if (!document.hasFocus()) {
-            return;
-          }
-
-          if (!advancedOpen && !overlayRef.current?.contains(e.relatedTarget as Node)) {
-            setExpanded(false);
-          }
-        }}
-      >
-        <div className="min-w-0 flex-1">
-          <SearchBox
-            key={resetKey}
-            ref={inputRef}
-            defaultQuery={onMemory ? urlSearch : undefined}
-            onSearch={handleSearch}
-            onSubmit={({ query: submitted }) => commitSearch(submitted)}
-            onClear={handleClear}
-            onResultSelect={handleResultSelect}
-            onFilterAdd={onMemory ? handleFilterAdd : undefined}
-            // Escape stack, stage 1: an open advanced drawer closes via
-            // SearchBox's unpin stage (which swallows that press here — this
-            // handler captured advancedOpen before the unpin). Stage 2: the
-            // bar collapses.
-            onPanelUnpin={closeAdvanced}
-            onKeyDown={(_value, e) => {
-              if (e.key === 'Escape' && !advancedOpen) {
-                collapseBar();
-              }
-            }}
-            variant="compact"
-            placeholder="Search"
-            autoSubmit
-            autoSubmitEmpty={onMemory}
-            displayResults
-            openOnFocus
-            loading={loading}
-            error={error}
-            results={results}
-            // Inset tool target at the input's right edge; Memory portals its
-            // advanced-filter toggle here (empty — and hidden — on other pages).
-            // Passive status text before the clear-X.
-            statusSlot={
-              filterCountText && (
-                <span className="whitespace-nowrap text-xs text-muted-foreground">{filterCountText}</span>
-              )
-            }
-            showClear={activeFilterCount > 0}
-            toolsSlot={<Portal id="nav-tools" className="flex items-center empty:hidden" />}
-            // Filters section pinned above the results while `?advanced=1`; Memory
-            // portals its filter row here. The trailing border only renders when
-            // results follow (the target is last-child otherwise).
-            panelHeader={
-              <Portal id="nav-search-panel" className="empty:hidden [&:not(:last-child)]:border-b" />
-            }
-            panelPinned={advancedOpen}
-          />
-        </div>
+        />
       </div>
-    </>
+    </div>
   );
 }

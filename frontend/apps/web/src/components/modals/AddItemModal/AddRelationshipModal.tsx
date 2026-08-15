@@ -2,8 +2,9 @@ import { useCallback, useState, useMemo } from 'react';
 
 import { useMutation } from '@apollo/client';
 import { GlobalUID } from '@ci/common';
-import { Button, Calendar, Dialog, Label, Select } from '@ci/shadcn';
+import { Button, Calendar, Dialog, IconButton, Label, Select } from '@ci/shadcn';
 import { X } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 
 import { type SearchResultItem, SearchBox } from '@/components/SearchBox';
 import { CommunicationResult } from '@/components/SearchBox/results/CommunicationResult.tsx';
@@ -63,6 +64,7 @@ export function AddRelationshipModal({
   open,
   onClose,
 }: Props) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState<string | null>(null);
   const [selectedEntity, setSelectedEntity] = useState<SearchResultItem | null>(null);
   const [selectedRelationshipType, setSelectedRelationshipType] = useState<string | undefined>(undefined);
@@ -217,7 +219,8 @@ export function AddRelationshipModal({
         {selectedEntity && (
           <div className="flex items-center gap-2">
             <div className="flex-1">{selectedEntity.content}</div>
-            <Button
+            <IconButton
+              label={t('RELATIONSHIP_CLEAR_ENTITY')}
               size="sm"
               variant="ghost"
               onClick={() => {
@@ -227,7 +230,7 @@ export function AddRelationshipModal({
               className="text-gray-500 hover:text-red-400 hover:bg-red-50"
             >
               <X className="h-4 w-4" />
-            </Button>
+            </IconButton>
           </div>
         )}
 
@@ -269,14 +272,15 @@ export function AddRelationshipModal({
               {startDate && (
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-sm">{startDate.toLocaleDateString()}</span>
-                  <Button
+                  <IconButton
+                    label={t('RELATIONSHIP_CLEAR_START_DATE')}
                     size="sm"
                     variant="ghost"
                     onClick={() => setStartDate(undefined)}
                     className="text-gray-500 hover:text-red-400 hover:bg-red-50 h-6 w-6 p-0"
                   >
                     <X className="h-3 w-3" />
-                  </Button>
+                  </IconButton>
                 </div>
               )}
               <Calendar
@@ -294,14 +298,15 @@ export function AddRelationshipModal({
               {endDate && (
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-sm">{endDate.toLocaleDateString()}</span>
-                  <Button
+                  <IconButton
+                    label={t('RELATIONSHIP_CLEAR_END_DATE')}
                     size="sm"
                     variant="ghost"
                     onClick={() => setEndDate(undefined)}
                     className="text-gray-500 hover:text-red-400 hover:bg-red-50 h-6 w-6 p-0"
                   >
                     <X className="h-3 w-3" />
-                  </Button>
+                  </IconButton>
                 </div>
               )}
               <Calendar

@@ -23,9 +23,11 @@ import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import config from '@ci/configuration';
+import { PortabilityModule } from '@ci/domains/portability';
 import { UserModule } from '@ci/domains/user';
 
 import { AccountController } from './controllers/AccountController';
+import { AccountDataController } from './controllers/AccountDataController';
 import { ApiKeyController } from './controllers/ApiKeyController';
 import { ConnectController } from './controllers/ConnectController';
 import { OidcController } from './controllers/OidcController';
@@ -54,6 +56,7 @@ import { SignupCodeService } from './services/SignupCodeService';
   imports: [
     TypeOrmModule.forFeature([SessionEntity, SignupCodeEntity, ApiKeyEntity, ConnectCodeEntity]),
     UserModule,
+    PortabilityModule,
     PassportModule,
     JwtModule.register({
       secret: config.auth.jwt.authTokenSecret,
@@ -79,6 +82,7 @@ import { SignupCodeService } from './services/SignupCodeService';
     SessionController,
     SignupController,
     AccountController,
+    AccountDataController,
     ApiKeyController,
     OidcController,
     ConnectController,

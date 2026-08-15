@@ -7,13 +7,14 @@ import { ProviderConnectDialog } from '@/components/connect/ProviderConnectDialo
 import { ServiceIntegrationsSection } from '@/components/connect/ServiceIntegrationsSection';
 import { Card } from '@/pages/ConnectPage/Card';
 
-import { CHROME_EXTENSION_URL, CI_DOWNLOAD_URL, IMPORT_TOOLS_URL } from './constants';
+import { CAPTURE_DOWNLOAD_URL, CHROME_EXTENSION_URL, CI_DOWNLOAD_URL, IMPORT_TOOLS_URL } from './constants';
 import { StepHeader } from './StepHeader';
 
 export function ConnectSourceStep() {
   const [dialogProviderId, setDialogProviderId] = useState<string | null>(null);
 
   const openDownload = () => window.open(CI_DOWNLOAD_URL, '_blank', 'noopener,noreferrer');
+  const openCaptureDownload = () => window.open(CAPTURE_DOWNLOAD_URL, '_blank', 'noopener,noreferrer');
 
   return (
     <div className="space-y-6 w-full mx-auto">
@@ -50,6 +51,36 @@ export function ConnectSourceStep() {
             border="border-blue-400"
             text="Download the iOS app to track your mobile usage, screen time, and app interactions on iPhone and iPad."
             onClick={openDownload}
+          />
+        </div>
+      </div>
+
+      <div className="space-y-4 max-w-5xl mx-auto w-full">
+        <p className="text-lg sm:text-xl leading-snug text-muted-foreground text-center px-2">
+          On the computer you use most, download Companion Capture. It streams screenshots and activity logs
+          into your memory.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
+          <Card
+            logo="/branding/mac/logo.svg"
+            background="bg-gray-600"
+            border="border-gray-500"
+            text="Download Companion Capture for macOS (Apple Silicon and Intel)."
+            onClick={openCaptureDownload}
+          />
+          <Card
+            logo="/branding/windows/logo.svg"
+            background="bg-blue-600"
+            border="border-blue-500"
+            text="Download Companion Capture for Windows."
+            onClick={openCaptureDownload}
+          />
+          <Card
+            logo="/branding/linux/logo.svg"
+            background="bg-yellow-600"
+            border="border-yellow-500"
+            text="Download Companion Capture for Linux (deb and AppImage)."
+            onClick={openCaptureDownload}
           />
         </div>
       </div>

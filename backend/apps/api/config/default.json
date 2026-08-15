@@ -121,6 +121,9 @@
     },
     "parser": {
       "host": "http://summary-service:8002"
+    },
+    "summary": {
+      "host": "http://summary-service:8001"
     }
   },
   "signalCli": {
@@ -139,28 +142,46 @@
     "fetchBatchSize": 10,
     "perQueueConcurrency": 6
   },
+  "enrichment": {
+    "window": {
+      "enabled": true,
+      "start": "01:00",
+      "durationMinutes": 300,
+      "budgetMinutes": 90,
+      "timezone": ""
+    },
+    "rotation": {
+      "turnMinutes": 20,
+      "usersPerTurn": 1
+    }
+  },
   "features": {
     "scheduled.answer.inferencing": true,
     "scheduled.connection.sync": true,
     "scheduled.entity.promotion": true,
     "pinned.demo.models": false,
     "enable.system.prompt": true,
-    "enable.inventory.page": false,
+    "enable.inventory.page": true,
     "advanced.theme.tab": false,
     "new.insights.page": true,
     "require.signup.codes": true,
-    "files.page": false,
+    "files.page": true,
     "insights.page": true,
-    "chat.page": false,
-    "jobs.page": false,
-    "stats.page": false,
+    "chat.page": true,
+    "jobs.page": true,
+    "planning.enabled": false,
+    "planning.page": false,
+    "planning.emptyState": false,
+    "stats.page": true,
+    "schedule.page": true,
     "tags.page": true,
     "hbpe": true,
     "agent.memory.compaction": false,
-    "shared.search": false,
+    "shared.search": true,
     "ask": false,
     "onboarding.preference.steps": false,
-    "actions": false
+    "actions": true,
+    "smart.rotation": false
   },
   "environment": {
     "database.query.logging": false
@@ -173,7 +194,9 @@
   "geocoding": {
     "apiKey": "",
     "batchSize": 200,
-    "rateLimitPerSecond": 10
+    "rateLimitPerSecond": 10,
+    "provider": "portal",
+    "portalBaseUrl": ""
   },
   "peers": {
     "directoryUrl": "",

@@ -8,9 +8,28 @@ import {
   PersonCreatedEvent,
 } from '@ci/domains/memory/events';
 
-import { SearchIndexBackfillService } from './SearchIndexBackfillService';
+import { SearchIndexBackfillService, expandBackfillEntityTypes } from './SearchIndexBackfillService';
 
 const SEARCH_INDEX_QUEUE = 'search-index';
+
+describe('expandBackfillEntityTypes', () => {
+  it('expands browser-activity to also include event and content (Wave D dual-write)', () => {
+    expect(expandBackfillEntityTypes(['browser-activity'])).toEqual(['event', 'content', 'browser-activity']);
+  });
+
+  it('is a no-op when browser-activity is not in the scope', () => {
+    expect(expandBackfillEntityTypes(['communication', 'event'])).toEqual(['communication', 'event']);
+  });
+
+  it('does not duplicate when event/content are already requested', () => {
+    expect(expandBackfillEntityTypes(['browser-activity', 'event', 'content', 'item'])).toEqual([
+      'event',
+      'content',
+      'item',
+      'browser-activity',
+    ]);
+  });
+});
 
 /**
  * Build a DataSource whose `query` serves a queue of id pages PER entity type
@@ -146,6 +165,40 @@ describe('SearchIndexBackfillService', () => {
     for (const call of sendMany.mock.calls) {
       expect((call as unknown[])[0]).toBe(SEARCH_INDEX_QUEUE);
     }
+  });
+
+  it('expands a browser-activity-only scope to also sweep dual-written event + content', async () => {
+    const { service, sendMany } = makeService({
+      'browser-activity': [['b1'], []],
+      event: [['e1'], []],
+      content: [['c1'], []],
+      communication: [['should-not-run'], []],
+    });
+
+    const result = await service.backfill({
+      entityTypes: ['browser-activity'],
+      batchSize: 100,
+    });
+
+    expect(result.perType).toEqual({
+      'browser-activity': 1,
+      event: 1,
+      content: 1,
+    });
+    expect(result.enqueued).toBe(3);
+    expect(sendMany).toHaveBeenCalledWith(SEARCH_INDEX_QUEUE, [
+      { name: EventCreatedEvent, data: { eventId: 'e1' } },
+    ]);
+    expect(sendMany).toHaveBeenCalledWith(SEARCH_INDEX_QUEUE, [
+      { name: ContentCreatedEvent, data: { contentId: 'c1' } },
+    ]);
+    expect(sendMany).toHaveBeenCalledWith(SEARCH_INDEX_QUEUE, [
+      { name: BrowserActivityCreatedEvent, data: { browserActivityId: 'b1' } },
+    ]);
+    const communicationEmitted = sendMany.mock.calls.some((call) =>
+      ((call as unknown[])[1] as Array<{ name: string }>).some((e) => e.name === CommunicationCreatedEvent),
+    );
+    expect(communicationEmitted).toBe(false);
   });
 
   it('surfaces the embedded (drain) count per type and in total, alongside enqueued', async () => {

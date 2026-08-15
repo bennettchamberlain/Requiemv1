@@ -25,7 +25,7 @@ This is **not** the normal release process. It is a deliberate, one-off shortcut
 | **Compose digest pins** | Bypassed via local override file | Honored from marketplace manifest |
 
 Only **`api`** and **`gateway`** need rebuilding for most UI + API PRs (including the
-onboarding port). Other services (database, object-store, orchestrator, hbpe, summary)
+onboarding port). Other services (database, object-store, hbpe, summary)
 can keep running on the pinned production images.
 
 ## Prerequisites

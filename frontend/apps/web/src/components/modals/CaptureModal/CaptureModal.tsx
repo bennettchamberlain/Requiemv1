@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { Camera } from '@ci/capture';
 import { fetchJson, useDeviceLayout } from '@ci/common';
-import { Dialog, cn, Button, Popover, useToast } from '@ci/shadcn';
+import { Dialog, cn, IconButton, Popover, useToast } from '@ci/shadcn';
 import { Send, Settings, X } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 
 import { useUploadFile } from '@/api';
 import type { File as FileData, Thread } from '@/api/types';
@@ -25,6 +26,7 @@ interface ModelCapabilitiesResponse {
 }
 
 export function CaptureModal({ open = false, onClose }: Props) {
+  const { t } = useTranslation();
   const [{ authToken }] = useAuth();
   const [{ selectedVisionModel: selectedModel }] = useModel();
   const { toast } = useToast();
@@ -278,9 +280,9 @@ export function CaptureModal({ open = false, onClose }: Props) {
         <InlineModal open={open} onClose={handleClose} className="fixed">
           <div className="absolute top-[env(safe-area-inset-top)] right-0 z-10">
             <div className="flex-1 text-right text-white">
-              <Button variant="ghost" size="icon" onClick={handleClose}>
+              <IconButton label={t('COMMON_CLOSE')} variant="ghost" size="icon" onClick={handleClose}>
                 <X />
-              </Button>
+              </IconButton>
             </div>
           </div>
 
@@ -303,10 +305,15 @@ export function CaptureModal({ open = false, onClose }: Props) {
         <div className="flex flex-row items-center border-b bg-stone-50 dark:bg-secondary gap-2 p-2 pt-[max(1rem,env(safe-area-inset-top))]">
           <div className="flex items-center flex-1">
             <Popover>
-              <Popover.Trigger>
-                <Button className="flex-1" variant="ghost" size="icon">
+              <Popover.Trigger asChild>
+                <IconButton
+                  label={t('CAPTURE_MODEL_SETTINGS')}
+                  className="flex-1"
+                  variant="ghost"
+                  size="icon"
+                >
                   <Settings />
-                </Button>
+                </IconButton>
               </Popover.Trigger>
               <Popover.Content className="p-2 relative left-2 w-auto">
                 <ModelSelector withToggles visionOnly />
@@ -317,9 +324,9 @@ export function CaptureModal({ open = false, onClose }: Props) {
           <div className="flex items-center justify-center font-bold">{fileData[0]?.name}</div>
 
           <div className="flex items-center justify-end flex-1">
-            <Button variant="ghost" size="icon" onClick={handleClose}>
+            <IconButton label={t('COMMON_CLOSE')} variant="ghost" size="icon" onClick={handleClose}>
               <X />
-            </Button>
+            </IconButton>
           </div>
         </div>
 
@@ -354,9 +361,9 @@ export function CaptureModal({ open = false, onClose }: Props) {
           <ModelSelector withToggles visionOnly />
 
           <div className="flex items-center justify-end">
-            <Button variant="ghost" size="icon" onClick={handleClose}>
+            <IconButton label={t('COMMON_CLOSE')} variant="ghost" size="icon" onClick={handleClose}>
               <X />
-            </Button>
+            </IconButton>
           </div>
         </Dialog.Header>
 

@@ -1,8 +1,9 @@
 import { useCallback, useState, type FormEvent } from 'react';
 
-import { Badge, Button, Dialog, Spinner } from '@ci/shadcn';
+import { Badge, Button, Dialog, IconButton, Spinner } from '@ci/shadcn';
 import { FilePlus, Scan, X } from '@ci/shadcn/icons';
 import { useDropzone } from 'react-dropzone';
+import { useTranslation } from 'react-i18next';
 
 interface Props {
   open?: boolean;
@@ -11,6 +12,7 @@ interface Props {
 }
 
 export function UploadModal({ open, onClose, onSubmit }: Props) {
+  const { t } = useTranslation();
   const [files, setFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -74,12 +76,12 @@ export function UploadModal({ open, onClose, onSubmit }: Props) {
       <Dialog.Content className="p-0 flex flex-col gap-0" showCloseButton={false}>
         <Dialog.Header className="flex flex-row items-center justify-between border-b bg-stone-50 dark:bg-secondary rounded-t-lg gap-2 p-2 pl-4">
           <Dialog.Title>Upload files</Dialog.Title>
-          <Dialog.Description className="hidden">Upload files to your server.</Dialog.Description>
+          <Dialog.Description className="hidden">Upload files to your Companion Memory.</Dialog.Description>
 
           <div className="flex items-center justify-end">
-            <Button variant="ghost" size="icon" onClick={handleClose}>
+            <IconButton label={t('COMMON_CLOSE')} variant="ghost" size="icon" onClick={handleClose}>
               <X />
-            </Button>
+            </IconButton>
           </div>
         </Dialog.Header>
 
@@ -103,7 +105,8 @@ export function UploadModal({ open, onClose, onSubmit }: Props) {
                   className="max-w-32 flex flex-row justify-between items-center p-1 pl-2 gap-1"
                 >
                   <div className="truncate">{f.name}</div>
-                  <Button
+                  <IconButton
+                    label={t('UPLOAD_REMOVE_FILE', { name: f.name })}
                     variant="ghost"
                     size="icon"
                     className="h-4 w-4 p-1 hover:bg-primary! hover:text-primary-foreground!"
@@ -111,10 +114,9 @@ export function UploadModal({ open, onClose, onSubmit }: Props) {
                       e.stopPropagation();
                       removeFile(f.name);
                     }}
-                    aria-label={`Remove ${f.name}`}
                   >
                     <X className="h-3 w-3" />
-                  </Button>
+                  </IconButton>
                 </Badge>
               ))}
             </div>

@@ -103,6 +103,11 @@ export class BrowserActivityService {
    * lost insert race. Bulk ingest does NOT emit a per-row BrowserActivityCreatedEvent
    * — search indexing is deferred to the post-load batch embed
    * (POST /api/maintenance/search-index/backfill); single-row create() still emits.
+   *
+   * `ci.browser_activity` is the sole home for these rows. Wave D's dual-write
+   * into `ci.events` + `ci.content` was reverted (see the migration paired with
+   * this change): page views are not timeline events, and folding them there
+   * flooded the schedule calendar and the HBPE training corpus.
    */
   async createMany(
     context: UserServiceContext,
@@ -152,11 +157,13 @@ export class BrowserActivityService {
       conflictUpdateColumns: INGEST_REFRESH_COLUMNS.browser_activity,
     });
 
+    const egress = results.map(({ entity }) => BrowserActivityEntity.toEgressType(entity));
+
     // Bulk ingest does NOT emit a per-row BrowserActivityCreatedEvent: the per-row
     // pgboss fan-out was the dominant cost at import volume. Search indexing for
     // bulk-loaded rows is deferred to the post-load batch embed
     // (POST /api/maintenance/search-index/backfill). Single-row create() still emits.
-    return results.map(({ entity }) => BrowserActivityEntity.toEgressType(entity));
+    return egress;
   }
 
   async findAll(context: ServiceContext): Promise<BrowserActivity[]> {

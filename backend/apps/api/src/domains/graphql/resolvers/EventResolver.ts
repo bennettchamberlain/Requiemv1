@@ -1,4 +1,4 @@
-import { UseGuards } from '@nestjs/common';
+import { BadRequestException, UseGuards } from '@nestjs/common';
 import { Args, Float, ID, Int, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
@@ -7,10 +7,14 @@ import { MaxArraySizePipe } from '@ci/common/pipes';
 import { EventService } from '@ci/domains/memory';
 import { type Person } from '@ci/domains/memory';
 
+import { EventContentsLoader } from '../loaders/EventContentsLoader';
 import { type EventMedia, EventMediaLoader } from '../loaders/EventMediaLoader';
 import { PersonLoader } from '../loaders/PersonLoader';
 import { PlaceLoader } from '../loaders/PlaceLoader';
 import { TagLoader } from '../loaders/TagLoader';
+import { ContentConnection } from '../types/ContentConnection';
+import { ContentEdge } from '../types/ContentEdge';
+import { ContentType } from '../types/ContentType';
 import { CreateEventInput } from '../types/CreateEventInput';
 import { EntityTagType } from '../types/EntityTagType';
 import { EventConnection } from '../types/EventConnection';
@@ -26,6 +30,9 @@ import { UpdateEventInput } from '../types/UpdateEventInput';
 import { entityOwnerScope } from '../utils/entityOwnerScope';
 import { Paginator } from '../utils/Paginator';
 
+/** Widest window eventsInRange will serve — a quarter, enough for the month view. */
+const MAX_RANGE_DAYS = 92;
+
 @UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => EventType)
 export class EventResolver {
@@ -35,6 +42,7 @@ export class EventResolver {
     private readonly placeLoader: PlaceLoader,
     private readonly tagLoader: TagLoader,
     private readonly eventMediaLoader: EventMediaLoader,
+    private readonly eventContentsLoader: EventContentsLoader,
   ) {}
 
   /** Map a CreateEventInput (GraphQL) to the service's CreateEventDto. */
@@ -170,6 +178,67 @@ export class EventResolver {
     };
   }
 
+  /**
+   * Committed time in a window — the schedule surface's read path.
+   *
+   * Returns the full set rather than a Connection: the date range is already the
+   * bound, and a calendar that paginated its own week would be a strange object.
+   * MAX_RANGE_DAYS keeps that from becoming an unbounded scan.
+   */
+  @Query(() => [EventType], {
+    description:
+      'Events overlapping [from, to) — calendar read path. Excludes cancelled/no-show; keeps tentative. Limited to calendar event types (see SCHEDULE_EVENT_TYPES) plus events with no event_type, which is how user-created and accepted-suggestion events arrive.',
+  })
+  async eventsInRange(
+    @Context() context: RequestContext,
+    @Args('from', { type: () => Date }) from: Date,
+    @Args('to', { type: () => Date }) to: Date,
+  ): Promise<EventType[]> {
+    if (to <= from) {
+      throw new BadRequestException('`to` must be after `from`');
+    }
+
+    const spanDays = (to.getTime() - from.getTime()) / 86_400_000;
+
+    if (spanDays > MAX_RANGE_DAYS) {
+      throw new BadRequestException(`Range too wide: ${Math.ceil(spanDays)}d exceeds ${MAX_RANGE_DAYS}d`);
+    }
+
+    const serviceContext = toServiceContext(context);
+
+    const entities = await this.eventService.findInRange(serviceContext, from, to);
+
+    return entities.map((entity) => EventType.toType(entity));
+  }
+
+  /**
+   * Move an event on the calendar. Duration is preserved when `endTime` is
+   * omitted, which is what dragging a chip does.
+   */
+  @Mutation(() => EventType, {
+    nullable: true,
+    description:
+      'Move an event to a new time, keeping its duration. Externally-sourced events are moved ' +
+      'locally only and marked pending — the change is not pushed to the source calendar.',
+  })
+  async rescheduleEvent(
+    @Context() context: RequestContext,
+    @Args('id', { type: () => ID }) gid: string,
+    @Args('startTime', { type: () => Date }) startTime: Date,
+    @Args('endTime', { type: () => Date, nullable: true }) endTime?: Date,
+  ): Promise<EventType | null> {
+    if (endTime && endTime < startTime) {
+      throw new BadRequestException('`endTime` must not precede `startTime`');
+    }
+
+    const serviceContext = toServiceContext(context);
+    const id = GlobalUID.parse('event', gid);
+
+    const entity = await this.eventService.reschedule(serviceContext, id, startTime, endTime);
+
+    return entity ? EventType.toType(entity) : null;
+  }
+
   @Query(() => [String], {
     description: 'Distinct event types ("how things happened") present for the user.',
   })
@@ -283,6 +352,41 @@ export class EventResolver {
     });
 
     return tags.map((tag) => EntityTagType.toType(tag));
+  }
+
+  /**
+   * Content linked to this event via `ci.content.event_id`. Batched per request
+   * through {@link EventContentsLoader} so a page of events costs one query.
+   */
+  @ResolveField(() => ContentConnection)
+  async contents(
+    @Context() context: RequestContext,
+    @Parent() parent: EventType,
+    @Args() pagination: PaginationArgs,
+  ): Promise<ContentConnection> {
+    const serviceContext = entityOwnerScope(context, parent.__source.userId);
+
+    const entities = await this.eventContentsLoader.load(serviceContext, parent.__source.id);
+
+    const { slice, pageInfo, totalCount } = Paginator.paginate(entities, {
+      ...pagination,
+      getId: (entity) => GlobalUID.encode('content', entity.id),
+    });
+
+    const edges: ContentEdge[] = slice.map((entity) => {
+      const node = ContentType.toType(entity);
+
+      return {
+        node,
+        cursor: node.id,
+      };
+    });
+
+    return {
+      edges,
+      pageInfo,
+      totalCount,
+    };
   }
 
   /**

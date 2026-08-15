@@ -1,0 +1,45 @@
+# ROCm device passthrough for the HBPE service.
+#
+# An overlay, never the base: `devices:` entries must exist on the host or
+# compose refuses to start the service, so mounting /dev/kfd unconditionally
+# would break every machine without an AMD GPU — including all of CI. It is
+# layered in only where the device nodes are actually present; the dev
+# supervisor (scripts/dev-stack/index.ts) makes that decision and exports the
+# group IDs below. For staging/production, add it by hand alongside the
+# env-specific file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.production.yml \
+#                  -f docker-compose.rocm.yml --profile production up -d
+#
+# This is required for the GPU to be usable at all. The ci/hbpe-service image
+# can be built with a working HIP backend (see backend/apps/hbpe/Dockerfile.rocm)
+# and still run entirely on the CPU, because a container with no /dev/kfd
+# simply finds no HSA agent — llama.cpp then falls back silently rather than
+# failing, which is exactly how a GPU appliance ends up quietly not using its
+# GPU.
+services:
+  hbpe-service:
+    devices:
+      # The KFD compute interface — the one ROCm actually dispatches through.
+      - /dev/kfd
+      # The DRM render nodes. /dev/dri as a whole rather than a specific
+      # renderD12x: the number depends on how many DRM devices the host
+      # enumerated, and a machine with both an APU and a discrete card has
+      # more than one.
+      - /dev/dri
+
+    # Numeric GIDs, resolved from the host's own device nodes rather than
+    # written literally. Group NAMES would be resolved inside the container,
+    # where `render` may not exist or may carry a different number; the kernel
+    # checks the numeric GID as seen from the host. They are not portable
+    # constants either — `render` is 109 on this developer's Ubuntu and 105 on
+    # other distributions — which is why they arrive as variables.
+    group_add:
+      - "${AMD_RENDER_GID}"
+      - "${AMD_VIDEO_GID}"
+
+    # ROCm's userspace maps a large doorbell/aperture region and probes with
+    # ioctls that Docker's default seccomp profile rejects. This is the
+    # long-standing requirement from AMD's own container documentation.
+    security_opt:
+      - seccomp:unconfined

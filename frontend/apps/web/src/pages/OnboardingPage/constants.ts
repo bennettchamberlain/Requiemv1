@@ -22,6 +22,8 @@ export const CHROME_EXTENSION_URL =
 
 export const CI_DOWNLOAD_URL = 'https://ci.computer/download';
 
+export const CAPTURE_DOWNLOAD_URL = 'https://ci.computer/download#capture';
+
 export const IMPORT_TOOLS_URL = 'https://hub.ci.computer/store/ci-import-tools';
 
 export const BROWSER_TIMEZONE = (() => {

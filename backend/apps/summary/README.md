@@ -133,7 +133,7 @@ For testing and debugging, you can manually trigger summary generation without g
 
 ```bash
 # Start the API server
-uvicorn src.api:app --reload
+uvicorn ci.summary.api:app --reload
 
 # Trigger a summary (defaults to last hour)
 curl -X POST http://localhost:8000/summary/manual-trigger \
@@ -337,18 +337,18 @@ $$);
 
 ```
 CI-Summary/
-├── src/
-│   ├── main.py                 # Entry point
+├── src/ci/summary/
+│   ├── api.py                  # FastAPI app (manual triggers + function runner)
+│   ├── runner.py               # /functions/run worker pool + pg-boss callbacks
+│   ├── functions.py            # Named background functions (summaries, insights, ...)
+│   ├── activities.py           # Step functions the named functions compose
 │   ├── config.py               # Configuration management
 │   ├── database.py             # Database connections
-│   ├── agent_registration.py   # Agent lifecycle
-│   ├── message_listener.py     # Task queue processor
 │   ├── data_aggregator.py      # Multi-table data aggregation
 │   ├── summarizer.py           # LLM-based summarization
-│   └── storage.py              # Graph storage
+│   └── parser.py               # Document-parser FastAPI app
 ├── Dockerfile
-├── docker-compose.yml
-├── requirements.txt
+├── pyproject.toml
 └── README.md
 ```
 

@@ -13,6 +13,8 @@ import { PlaceEntity, type Place, type PlaceKind } from '../entities/PlaceEntity
 import { PlaceCreatedEvent, PlaceUpdatedEvent, PlaceRemovedEvent } from '../events';
 import type { CreatePlaceDto, UpdatePlaceDto } from '../types';
 
+import { GraphDeltaWriter } from './GraphDeltaWriter';
+
 /** One Google-style address component ({long_name, short_name, types[]}). */
 interface AddressComponent {
   long_name?: string;
@@ -44,6 +46,7 @@ export class PlaceService {
     @InjectRepository(PlaceEntity)
     private readonly placeRepository: Repository<PlaceEntity>,
     private readonly eventService: EventService,
+    private readonly graphDeltaWriter: GraphDeltaWriter,
   ) {}
 
   /**
@@ -52,15 +55,11 @@ export class PlaceService {
    * named location resolves to exactly one Place row, so events can be linked
    * via `events.location_entity_id` and "events at <place>" queries work.
    *
-   * Uniqueness key: `(owner_user_id, lower(btrim(name)), round(lat, 3),
-   * round(lng, 3))`. 3 decimal places ≈ 110 m, which absorbs GPS jitter at the
-   * same address without merging geographically distinct places that share a
-   * generic name like "Starbucks".
-   *
-   * Backed by the partial unique index `entities_reverse_geocode_dedup_idx`
-   * scoped to `properties.source = 'reverse_geocode'`. The two-step flow —
+   * Uniqueness key: `(owner_user_id, ST_SnapToGrid(location_point, 0.001))`.
+   * 0.001° ≈ 110 m, which absorbs GPS jitter at the same address. Backed by
+   * `entities_location_snap_dedup_uniq` (Wave C). The two-step flow —
    * INSERT ... ON CONFLICT DO NOTHING followed by SELECT — is atomic against
-   * concurrent callers: at most one INSERT wins per (user, key) tuple, and any
+   * concurrent callers: at most one INSERT wins per (user, cell) tuple, and any
    * loser falls through to SELECT and returns the same id.
    *
    * Emits `PlaceCreatedEvent` only on actual insertion (so search-indexing and
@@ -120,11 +119,10 @@ export class PlaceService {
       ...(placeId ? { place_id: placeId } : {}),
     };
 
-    // 2. INSERT ... ON CONFLICT DO NOTHING keyed on the name+3dp-cell index:
-    // races safely with concurrent callers for the same key. Loser sees zero
+    // 2. INSERT ... ON CONFLICT DO NOTHING keyed on the snap-cell unique index:
+    // races safely with concurrent callers for the same cell. Loser sees zero
     // rows affected; both fall through to the SELECT below and return the same
-    // id. location_point carries FULL precision (the 3dp rounding lives only in
-    // the dedup key).
+    // id. location_point carries FULL precision (snap lives only in the index).
     await this.placeRepository.manager.query(
       `INSERT INTO ci.entities (entity_id, entity_type, owner_user_id, name, properties, location_point, place_kind)
        VALUES ($1, 'Location', $2, $3, $4::jsonb,
@@ -134,19 +132,17 @@ export class PlaceService {
     );
 
     // Read back the canonical row (whether we inserted or hit a conflict).
-    // The predicate matches the partial unique index exactly so the lookup
-    // can use it.
+    // Predicate matches entities_location_snap_dedup_uniq.
     const rows: Array<{ entity_id: string; was_new: boolean }> = await this.placeRepository.manager.query(
       `SELECT entity_id, entity_id = $1 AS was_new
          FROM ci.entities
         WHERE entity_type = 'Location'
           AND owner_user_id = $2
-          AND properties->>'source' = 'reverse_geocode'
-          AND lower(btrim(name)) = lower(btrim($3))
-          AND round((properties->>'lat')::numeric, 3) = $4::numeric
-          AND round((properties->>'lng')::numeric, 3) = $5::numeric
+          AND location_point IS NOT NULL
+          AND ST_SnapToGrid(location_point::geometry, 0.001) =
+              ST_SnapToGrid(ST_SetSRID(ST_MakePoint($3, $4), 4326), 0.001)
         LIMIT 1`,
-      [newId, context.userId, trimmedName, latR, lngR],
+      [newId, context.userId, input.lng, input.lat],
     );
 
     if (rows.length === 0) {
@@ -187,7 +183,7 @@ export class PlaceService {
     const { entity_id, was_new } = rows[0];
 
     if (!was_new) {
-      // Pre-existing row matched by name+cell: enrich it with what this
+      // Pre-existing row matched by snap cell: enrich it with what this
       // resolution knows (full-precision point if missing, the place_id claim).
       await this.enrichResolvedPlace(context, entity_id, input.lat, input.lng, placeId);
     }
@@ -195,6 +191,14 @@ export class PlaceService {
     await this.ensureHierarchy(context, entity_id, input.components ?? null);
 
     if (was_new) {
+      await this.graphDeltaWriter.entityCreated({
+        entityId: entity_id,
+        entityType: 'Location',
+        name: trimmedName,
+        ownerUserId: context.userId,
+        changeSource: 'PlaceService.findOrCreateForGeocode',
+        changedByUserId: typeof context.userId === 'string' ? context.userId : null,
+      });
       await this.eventService.send(PlaceCreatedEvent, { placeId: entity_id });
     }
 

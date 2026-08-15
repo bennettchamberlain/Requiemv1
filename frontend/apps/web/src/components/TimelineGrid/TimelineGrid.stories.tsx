@@ -195,3 +195,32 @@ export const Empty: Story = {
     ),
   ],
 };
+
+/**
+ * The bulk-import case. One day carries ~18,000 entries — the day the user
+ * imported their history — against ordinary days in the single-to-low-hundreds.
+ *
+ * Scaled against the raw maximum this grid is uniformly level 1 with a single
+ * dark cell. The outlier-robust ceiling clamps the import to full intensity and
+ * spreads the ramp over the days around it, so day-to-day variation stays
+ * readable. Hovering still reports every day's true count.
+ */
+export const BulkImportOutlier: Story = {
+  args: {
+    data: [
+      ...YEAR_DATA.map((datum) =>
+        // Lift the ordinary range into the tens/hundreds so the flattening the
+        // raw-max scale used to cause is unmistakable.
+        datum.date === '2026-03-04' ? datum : { ...datum, count: datum.count * 18 },
+      ),
+      { date: '2026-03-04', count: 18_000 },
+    ],
+  },
+  decorators: [
+    (Story) => (
+      <div className="h-[640px]">
+        <Story />
+      </div>
+    ),
+  ],
+};

@@ -9,26 +9,88 @@ import {
 } from 'ollama';
 
 import type { RequestContext } from '@ci/common/context';
+import { type ApiKeyCapability, FULL_CAPABILITY } from '@ci/common/decorators';
 import { FeatureService } from '@ci/common/feature';
 import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
-import { ToolRegistry, intentToolName, type ToolSchema } from '@ci/domains/tools';
+import {
+  ToolRegistry,
+  capabilityAllows,
+  intentToolName,
+  type ToolInvocationContext,
+  type ToolSchema,
+} from '@ci/domains/tools';
 
 import type { OllamaModel } from '../types';
 
-/** Default model used for background inference tasks (extraction, Q&A, etc.).
- *  Import this constant rather than hardcoding the model name. */
-export const PROMPT_MODEL = 'gemma3:1b';
+import { LlmEndpointService } from './LlmEndpointService';
+
+/** Default model used for background inference tasks (extraction, Q&A, etc.). */
+export const PROMPT_MODEL = config.llm.chatModel;
 const DEMO_VISION_MODEL = 'gemma3:27b';
 const DEMO_TEXT_MODEL = 'qwen3:14b';
 const INTERNAL_MODELS = new Set(['nomic-embed-text', 'nomic-embed-text-v2-moe']);
+
+const OPENAI_MODE_CAPABILITIES = ['completion', 'tools'];
+
+function chatChunkToGenerateResponse(chunk: ChatResponse): GenerateResponse {
+  return {
+    model: chunk.model,
+    created_at: chunk.created_at,
+    response: chunk.message.content,
+    done: chunk.done,
+    done_reason: chunk.done_reason,
+    context: [],
+    total_duration: chunk.total_duration,
+    load_duration: chunk.load_duration,
+    prompt_eval_count: chunk.prompt_eval_count,
+    prompt_eval_duration: chunk.prompt_eval_duration,
+    eval_count: chunk.eval_count,
+    eval_duration: chunk.eval_duration,
+  };
+}
+
+/**
+ * A request context that may also carry the **authority of the principal driving the chat**.
+ *
+ * Tool calls made from a chat turn are made on behalf of whoever opened that chat, and the model
+ * choosing to call `memory.forget` does not grant authority the caller never had. This is how the
+ * caller's capability reaches {@link ToolRegistry.executeTool} — which is where it is enforced.
+ *
+ * Optional so the many in-process callers (`persona`, `schedule`, the listeners) that pass a bare
+ * `RequestContext` keep compiling: every one of them passes `enableTools: false` and is the
+ * appliance acting as itself, which is full authority. {@link resolveInvocationCapability} makes
+ * that reading explicit rather than accidental.
+ */
+export interface ChatRequestContext extends RequestContext {
+  capability?: ApiKeyCapability;
+}
+
+/**
+ * The authority a chat turn's tool calls run with.
+ *
+ * Absent means "not an outside caller" — the same reading `apiKeyCapabilityOf` gives a session:
+ * a background job or an internal service is the appliance acting on its own behalf. Any surface
+ * that accepts an outside request MUST set it (see OllamaController, which reads it off the
+ * express request); leaving it unset there is what the ungated-LLM-path bug was.
+ */
+function resolveInvocationCapability(context: ChatRequestContext): ApiKeyCapability {
+  return context.capability ?? FULL_CAPABILITY;
+}
 
 interface PromptOptions {
   model: string;
   signal?: AbortSignal;
   enableTools?: boolean;
   enableThinking?: boolean;
-  format?: string;
+  /**
+   * `'json'` asks for syntactically valid JSON and nothing more — the model is
+   * still free to invent key names, which small models reliably do. A JSON
+   * Schema object instead constrains generation to that shape via grammar, so
+   * the caller gets the fields it asked for rather than valid-but-unusable
+   * JSON. Prefer the schema form for anything that will be parsed.
+   */
+  format?: string | Record<string, unknown>;
 }
 
 interface ValidateModelOptions {
@@ -44,13 +106,43 @@ interface ValidateModelResult {
   enableTools: boolean;
 }
 
+/**
+ * Settle with `promise`, or reject the moment `signal` aborts — whichever comes
+ * first. Without a signal the promise is handed back untouched, so a caller that
+ * passes none is completely unaffected.
+ *
+ * Racing is the only way to honour a signal on a non-streaming request: the
+ * ollama client builds its own AbortController on the STREAMING path only, and
+ * posts a one-shot request with no signal at all, so there is nothing for it to
+ * cancel. The socket is left to the runtime; what the race buys is that the
+ * caller stops waiting on a host that is down or a model still loading.
+ */
+function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) {
+    return promise;
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason ?? new Error('Aborted'));
+
+    if (signal.aborted) {
+      onAbort();
+
+      return;
+    }
+
+    signal.addEventListener('abort', onAbort, { once: true });
+
+    // Attaching a rejection handler here also keeps a late failure on an
+    // already-abandoned request from surfacing as an unhandled rejection.
+    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
+  });
+}
+
 @Injectable()
 export class OllamaService {
-  private readonly ollama = new Ollama({
-    host: config.services.ollama.host,
-  });
-
   constructor(
+    private readonly llmEndpointService: LlmEndpointService,
     private readonly toolRegistry: ToolRegistry,
     private readonly logger: LoggerService,
     private readonly featureService: FeatureService,
@@ -58,8 +150,29 @@ export class OllamaService {
     this.logger.setContext(OllamaService.name);
   }
 
+  private get ollama(): Ollama {
+    return new Ollama({ host: this.llmEndpointService.getOllamaHost() });
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async getAvailableModels(context: RequestContext): Promise<OllamaModel[]> {
+    const openAiDriver = this.llmEndpointService.getOpenAiDriver();
+
+    if (openAiDriver) {
+      const modelIds = await openAiDriver.listModels();
+
+      return modelIds
+        .map((id) => this.parseOllamaModel(id))
+        .filter((model) => !INTERNAL_MODELS.has(model.name))
+        .map((model) => ({
+          ...model,
+          capabilities: OPENAI_MODE_CAPABILITIES,
+          vision: false,
+          tools: true,
+          thinking: false,
+        }));
+    }
+
     const result = await this.ollama.list();
     const models = result.models.map((model) => this.parseOllamaModel(model.name));
     const visibleModels = models.filter((model) => !INTERNAL_MODELS.has(model.name));
@@ -93,8 +206,27 @@ export class OllamaService {
     { model, signal }: PromptOptions,
   ): Promise<AsyncGenerator<GenerateResponse> & { buffer: string }> {
     const chunks: string[] = [];
+    const openAiDriver = this.llmEndpointService.getOpenAiDriver();
 
     const stream = (async function* (self) {
+      if (openAiDriver) {
+        const iterator = openAiDriver.chatStream({
+          model,
+          messages: [{ role: 'user', content: prompt }],
+          signal,
+        });
+
+        for await (const chunk of iterator) {
+          if (chunk.message.content) {
+            chunks.push(chunk.message.content);
+          }
+
+          yield chatChunkToGenerateResponse(chunk);
+        }
+
+        return;
+      }
+
       const iterator = await self.ollama.generate({
         model,
         prompt,
@@ -129,6 +261,17 @@ export class OllamaService {
   ): Promise<GenerateResponse> {
     await this.validateModel(context, model);
 
+    const openAiDriver = this.llmEndpointService.getOpenAiDriver();
+
+    if (openAiDriver) {
+      const response = await openAiDriver.chat({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+      });
+
+      return chatChunkToGenerateResponse(response);
+    }
+
     return this.ollama.generate({
       model,
       prompt,
@@ -136,15 +279,16 @@ export class OllamaService {
   }
 
   async chatStream(
-    context: RequestContext,
+    context: ChatRequestContext,
     messages: OllamaMessage[],
     { model, signal, enableTools = false, enableThinking = true }: PromptOptions,
   ): Promise<AsyncGenerator<ChatResponse> & { messages: OllamaMessage[] }> {
     await this.validateModel(context, model);
 
     const inputMessages = messages.slice();
-    const availableTools = enableTools ? this.toolRegistry.getAgentFacingTools(context) : [];
+    const availableTools = enableTools ? this.toolsWithinCapability(context) : [];
     const ollamaTools: Tool[] = availableTools.map(this.convertToOllamaTool);
+    const openAiDriver = this.llmEndpointService.getOpenAiDriver();
 
     const textChunks: string[] = [];
     const thinkChunks: string[] = [];
@@ -160,61 +304,76 @@ export class OllamaService {
         let lastChunk: ChatResponse | undefined;
         let handleAbort = () => {};
 
-        // Flush the chunk buffers at the start of every iteration.
         textChunks.splice(0, textChunks.length);
         thinkChunks.splice(0, thinkChunks.length);
 
-        // Pop off any previously required tool calls and evaluate them.
-        // Notably this will always be empty on the first iteration.
         const iterationToolCalls = toolCalls.splice(0, toolCalls.length);
         const toolEvaluations = await self.handleToolCalls(context, iterationToolCalls);
 
-        // Tool evaluations may result in new accumulated messages.
-        // We feed these forward into additional Ollama calls.
         accumulatedMessages.push(...toolEvaluations);
 
-        // We only enable tools in this iteration if:
-        //
-        //   1. Tools are enabled for the service call
-        //   2. Tools are configured / available in the system
-        //   3. We did not evaluate any tools from the previous iteration
-        //
-        // This is important to get right.
         const iterationWillCallTools = enableTools && ollamaTools.length > 0 && toolEvaluations.length === 0;
 
         try {
-          const iterator = await self.ollama.chat({
-            model,
-            messages: inputMessages.concat(accumulatedMessages),
-            stream: true,
-            ...(enableThinking && { think: true }),
-            ...(iterationWillCallTools && { tools: ollamaTools }),
-          });
+          if (openAiDriver) {
+            const iterator = openAiDriver.chatStream({
+              model,
+              messages: inputMessages.concat(accumulatedMessages),
+              tools: iterationWillCallTools ? ollamaTools : undefined,
+              signal,
+            });
 
-          handleAbort = () => iterator.abort();
+            for await (const chunk of iterator) {
+              lastChunk = chunk;
 
-          signal?.addEventListener('abort', handleAbort);
+              if (chunk.message.content) {
+                textChunks.push(chunk.message.content);
+              }
 
-          for await (const chunk of iterator) {
-            lastChunk = chunk;
+              if (chunk.message.thinking) {
+                thinkChunks.push(chunk.message.thinking);
+              }
 
-            if (chunk.message.content) {
-              textChunks.push(chunk.message.content);
+              if (chunk.message.tool_calls) {
+                toolCalls.push(...chunk.message.tool_calls);
+              }
+
+              yield chunk;
             }
+          } else {
+            const iterator = await self.ollama.chat({
+              model,
+              messages: inputMessages.concat(accumulatedMessages),
+              stream: true,
+              ...(enableThinking && { think: true }),
+              ...(iterationWillCallTools && { tools: ollamaTools }),
+            });
 
-            if (chunk.message.thinking) {
-              thinkChunks.push(chunk.message.thinking);
+            handleAbort = () => iterator.abort();
+
+            signal?.addEventListener('abort', handleAbort);
+
+            for await (const chunk of iterator) {
+              lastChunk = chunk;
+
+              if (chunk.message.content) {
+                textChunks.push(chunk.message.content);
+              }
+
+              if (chunk.message.thinking) {
+                thinkChunks.push(chunk.message.thinking);
+              }
+
+              if (chunk.message.tool_calls) {
+                toolCalls.push(...chunk.message.tool_calls);
+              }
+
+              yield chunk;
             }
-
-            if (chunk.message.tool_calls) {
-              toolCalls.push(...chunk.message.tool_calls);
-            }
-
-            yield chunk;
           }
 
           if (lastChunk?.done) {
-            self.logger.log('Ollama prompt evaluation completed', {
+            self.logger.log('LLM prompt evaluation completed', {
               model: lastChunk.model,
               totalDuration: lastChunk.total_duration ? lastChunk.total_duration / 1_000_000 : undefined,
               loadDuration: lastChunk.load_duration ? lastChunk.load_duration / 1_000_000 : undefined,
@@ -230,7 +389,7 @@ export class OllamaService {
           if (!(err instanceof DOMException && err.name === 'AbortError')) {
             const error = err as Error;
 
-            self.logger.error('Ollama prompt evaluation completed', {
+            self.logger.error('LLM prompt evaluation completed', {
               model: lastChunk?.model ?? model,
               doneReason: 'error',
               errorMessage: error?.message ?? String(err),
@@ -254,7 +413,7 @@ export class OllamaService {
           signal?.removeEventListener('abort', handleAbort);
 
           if (signal?.aborted) {
-            self.logger.log('Ollama prompt evaluation completed', {
+            self.logger.log('LLM prompt evaluation completed', {
               model: lastChunk?.model ?? model,
               doneReason: 'canceled',
             });
@@ -271,25 +430,47 @@ export class OllamaService {
     return stream as typeof stream & { messages: OllamaMessage[] };
   }
 
+  /**
+   * `signal` is optional and additive: it now bounds the whole call — the model
+   * lookup included, since that is its own round trip to a host that may be
+   * down — rather than being dropped from the parameter type as it used to be.
+   */
   async chat(
-    context: RequestContext,
+    context: ChatRequestContext,
     messages: OllamaMessage[],
-    { model, enableTools = false, format }: Omit<PromptOptions, 'signal'>,
+    options: PromptOptions,
+  ): Promise<ChatResponse> {
+    return abortable(this.runChat(context, messages, options), options.signal);
+  }
+
+  private async runChat(
+    context: ChatRequestContext,
+    messages: OllamaMessage[],
+    { model, enableTools = false, format }: PromptOptions,
   ): Promise<ChatResponse> {
     await this.validateModel(context, model);
 
     const inputMessages = messages.slice();
-    const availableTools = enableTools ? this.toolRegistry.getAgentFacingTools(context) : [];
+    const availableTools = enableTools ? this.toolsWithinCapability(context) : [];
     const ollamaTools: Tool[] = availableTools.map(this.convertToOllamaTool);
+    const openAiDriver = this.llmEndpointService.getOpenAiDriver();
+    const openAiFormat = typeof format === 'string' ? format : undefined;
 
     const accumulatedMessages: OllamaMessage[] = [];
 
-    const response = await this.ollama.chat({
-      model: model,
-      messages: inputMessages,
-      ...(format && { format }),
-      ...(enableTools && ollamaTools.length > 0 && { tools: ollamaTools }),
-    });
+    const response = openAiDriver
+      ? await openAiDriver.chat({
+          model,
+          messages: inputMessages,
+          tools: enableTools && ollamaTools.length > 0 ? ollamaTools : undefined,
+          format: openAiFormat,
+        })
+      : await this.ollama.chat({
+          model: model,
+          messages: inputMessages,
+          ...(format && { format }),
+          ...(enableTools && ollamaTools.length > 0 && { tools: ollamaTools }),
+        });
 
     const willCallTools =
       enableTools && response.message.tool_calls && response.message.tool_calls.length > 0;
@@ -308,6 +489,15 @@ export class OllamaService {
 
     accumulatedMessages.push(...toolEvaluations);
 
+    if (openAiDriver) {
+      return openAiDriver.chat({
+        model,
+        messages: inputMessages.concat(accumulatedMessages),
+        tools: enableTools && ollamaTools.length > 0 ? ollamaTools : undefined,
+        format: openAiFormat,
+      });
+    }
+
     return this.ollama.chat({
       model,
       messages: inputMessages.concat(accumulatedMessages),
@@ -323,12 +513,9 @@ export class OllamaService {
 
     const pinnedDemoModelsEnabled = await this.featureService.isFeatureEnabled('pinned.demo.models');
 
-    // If pinned demo models feature is enabled, always use demo models
     if (pinnedDemoModelsEnabled) {
-      // Check if any message contains image content
       const hasVisualContent = messages.some((message) => message.images && message.images.length > 0);
 
-      // Use vision model for images, text model for regular chat
       resolvedModel = hasVisualContent ? DEMO_VISION_MODEL : DEMO_TEXT_MODEL;
       resolvedThinking = hasVisualContent ? false : true;
       resolvedTools = hasVisualContent ? false : true;
@@ -344,7 +531,7 @@ export class OllamaService {
   }
 
   private parseOllamaModel(model: string): OllamaModel {
-    const [fullName, tag = 'latest'] = model.split(':'); // `namespace/model:tag`
+    const [fullName, tag = 'latest'] = model.split(':');
     const parts = fullName.split('/');
 
     if (parts.length === 2) {
@@ -367,9 +554,25 @@ export class OllamaService {
   }
 
   /**
-   * Initialize tools registry with available tools
+   * The tools to advertise to the model for this caller.
+   *
+   * Mirrors what MCP's `getToolsForRequest` does for its catalog: do not offer a read-only caller
+   * a delete it will be refused. This is presentation, not enforcement — the model can name any
+   * tool it likes regardless of what it was shown, which is why the registry re-checks — but a
+   * model handed a catalog whose entries fail is a model that retries them.
    */
-  private async handleToolCalls(context: RequestContext, toolCalls: ToolCall[]): Promise<OllamaMessage[]> {
+  private toolsWithinCapability(context: ChatRequestContext): ToolSchema[] {
+    const capability = resolveInvocationCapability(context);
+
+    return this.toolRegistry
+      .getAgentFacingTools(context)
+      .filter((schema) => capabilityAllows(schema.privacy, capability));
+  }
+
+  private async handleToolCalls(
+    context: ChatRequestContext,
+    toolCalls: ToolCall[],
+  ): Promise<OllamaMessage[]> {
     if (toolCalls.length === 0) {
       this.logger.debug('No tool calls to evaluate, skipping handling', {
         userId: context.userId,
@@ -384,13 +587,20 @@ export class OllamaService {
       userId: context.userId,
     });
 
-    // Execute each tool call
+    // The name and arguments below came out of a language model that was reading user-supplied
+    // text, so they are attacker-influenced input, not a decision the caller made. The capability
+    // carried here is what bounds them: the registry refuses anything above it.
+    const invocationContext: ToolInvocationContext = {
+      ...context,
+      capability: resolveInvocationCapability(context),
+    };
+
     const toolResults = await Promise.all(
       toolCalls.map(async (toolCall) => {
         const { name, arguments: args } = toolCall.function;
 
         try {
-          const result = await this.toolRegistry.executeTool(name, context, args);
+          const result = await this.toolRegistry.executeTool(name, invocationContext, args);
 
           return {
             call: toolCall,
@@ -413,8 +623,6 @@ export class OllamaService {
       }),
     );
 
-    // Build messages with tool results
-
     return toolResults.map(
       ({ result }) =>
         ({
@@ -424,15 +632,10 @@ export class OllamaService {
     );
   }
 
-  /**
-   * Convert our ToolSchema to Ollama Tool format
-   */
   private convertToOllamaTool(toolSchema: ToolSchema): Tool {
     return {
       type: 'function',
       function: {
-        // schema.name is the dotted intent id; the LLM must call back with the executable
-        // (underscored) name the ToolRegistry is keyed by.
         name: intentToolName(toolSchema.name),
         description: toolSchema.description,
         parameters: toolSchema.parameters,
@@ -441,6 +644,18 @@ export class OllamaService {
   }
 
   private async validateModel(_context: RequestContext, requestedModel: string) {
+    const openAiDriver = this.llmEndpointService.getOpenAiDriver();
+
+    if (openAiDriver) {
+      const modelIds = await openAiDriver.listModels();
+
+      if (!modelIds.includes(requestedModel)) {
+        throw new Error(`Invalid model specified: ${requestedModel}`);
+      }
+
+      return;
+    }
+
     const result = await this.ollama.list();
     const validModel = result.models.find((model) => model.name === requestedModel);
 
@@ -454,6 +669,10 @@ export class OllamaService {
     options: { throwOnError?: boolean } = {},
   ): Promise<string[]> {
     const { throwOnError = true } = options;
+
+    if (this.llmEndpointService.usesOpenAiDriver()) {
+      return OPENAI_MODE_CAPABILITIES;
+    }
 
     try {
       const response = (await this.ollama.show({ model: requestedModel })) as {

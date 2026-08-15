@@ -1,15 +1,17 @@
 name: Publish
 
-# >>> ci-local:gated original triggers below, restore with `ci-local restore`
-# on:
-#   push:
-#     tags:
-#       - '*'
-#
-# # Only one publish run at a time per tag.
-# <<< ci-local:gated
 on:
+  push:
+    tags:
+      - '*'
+  # Retained from the gating period: the release-recovery path. v2026.8.8's
+  # tag-triggered publish failed, and the fixed build was re-run by dispatching
+  # this workflow on the existing tag — without it the only retry is to delete
+  # and re-push the tag. Dispatch it on a TAG ref; VERSION is parsed from the
+  # ref, so dispatching on a branch would publish garbage image tags.
   workflow_dispatch:
+
+# Only one publish run at a time per tag.
 concurrency:
   group: publish-${{ github.ref }}
   cancel-in-progress: false
@@ -41,6 +43,9 @@ jobs:
     env:
       REGISTRY: ${{ vars.REGISTRY || 'ghcr.io/companionintelligence' }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Required for yarn install in `make publish` → init: @companionintelligence/tokens
+      # lives on npm.pkg.github.com (.yarnrc.yml maps the scope to NODE_AUTH_TOKEN).
+      NODE_AUTH_TOKEN: ${{ secrets.GHPR_READ_TOKEN || secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Checkout repository
@@ -99,6 +104,16 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y jq
           fi
+
+      # `make publish` runs `init`, which since the uv adoption ends in
+      # `uv sync --all-packages` — without uv on PATH the target dies with
+      # `make: uv: No such file or directory` (exit 127) before a single image
+      # is built. Same step ci.yml's `python` job uses; the version comes from
+      # `required-version` in pyproject.toml, so this stays pinned with everything else.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
 
       - name: Build and push ${{ matrix.arch }} images
         env:
