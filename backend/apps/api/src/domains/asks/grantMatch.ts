@@ -1,6 +1,9 @@
+import { canonicalDataClass } from './canonical';
 import type { AskGrant } from './entities/AskGrantEntity';
 import { DISCLOSURE_RUNGS } from './policy';
 import type { AskQuery, DisclosureRung, GrantEvaluation } from './types';
+
+export { canonicalDataClass };
 
 /**
  * Pure, per-query consent evaluation — the heart of the ask gate.
@@ -65,22 +68,6 @@ function ceilingOf(grant: AskGrant): DisclosureRung | undefined {
 
 function isActive(grant: AskGrant, now: Date): boolean {
   return grant.revokedAt == null || grant.revokedAt > now;
-}
-
-/**
- * Canonical form of a data class, used for BOTH grant matching and query
- * execution.
- *
- * These two must agree exactly. The executor resolves its entity-type hints
- * with `dataClass.toLowerCase()`, so if grant matching compared raw strings a
- * peer could send `dataClass: 'Photos'` — evading a `block` grant pinned to
- * `photos` while still resolving to the photo entity types downstream. Any
- * normalization added here MUST be mirrored by every consumer of `dataClass`.
- */
-export function canonicalDataClass(value: string | null | undefined): string | null {
-  const trimmed = value?.trim().toLowerCase();
-
-  return trimmed ? trimmed : null;
 }
 
 /**
@@ -160,6 +147,7 @@ function scopeCoversQuery(grant: AskGrant, query: AskQuery): boolean {
       return false;
     }
   }
+
   if (scope.notAfter != null) {
     if (askTo == null || askTo > scope.notAfter) {
       return false;

@@ -45,6 +45,7 @@ describe('disclosureCeiling', () => {
       expect(disclosureCeiling('peer', cls)).toBe('none');
       expect(disclosureCeiling('trusted', cls)).toBe('none');
     }
+
     // household/family may still receive them (subject to a grant)
     expect(disclosureCeiling('family', 'health')).not.toBe('none');
   });

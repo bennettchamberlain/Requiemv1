@@ -1,6 +1,5 @@
+import { canonicalDataClass } from './canonical';
 import type { AnswerForm, DisclosedAnswer, DisclosureRung, TrustTier } from './types';
-
-import { canonicalDataClass } from './grantMatch';
 
 /**
  * The disclosure ladder, coarsest first. Every rung discloses strictly less than

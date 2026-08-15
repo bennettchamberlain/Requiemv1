@@ -6,7 +6,6 @@ import { GraphQLModule as NestGraphQLModule } from '@nestjs/graphql';
 
 import { ActivityModule } from '@ci/domains/activity';
 import { AsksModule } from '@ci/domains/asks';
-import { PeersModule } from '@ci/domains/peers';
 import { BrowserActivityModule } from '@ci/domains/browser-activity';
 import { ConnectionsModule } from '@ci/domains/connections';
 import { ConversationModule } from '@ci/domains/conversations';
@@ -20,6 +19,7 @@ import { MemoryModule } from '@ci/domains/memory';
 import { NotesModule } from '@ci/domains/notes';
 import { PairingModule } from '@ci/domains/pairing';
 import { ParsingModule } from '@ci/domains/parsing';
+import { PeersModule } from '@ci/domains/peers';
 import { PlanningModule } from '@ci/domains/planning';
 import { PredictionsModule } from '@ci/domains/predictions';
 import { PythonFunctionsModule } from '@ci/domains/python-functions';
