@@ -143,7 +143,8 @@ export type AskDirection = 'local' | 'outbound' | 'inbound';
 
 export interface CreateAskDto {
   id?: string;
-  responderUserId: string;
+  /** NULL for an OUTBOUND ask — the responder is the peer named by `peerLinkId`. */
+  responderUserId: string | null;
   query: AskQuery;
   expiresAt?: Date | null;
   /**
@@ -173,7 +174,7 @@ export interface RecordAskAuditDto {
   askerUserId: string | null;
   peerLinkId?: string | null;
   peerHandle?: string | null;
-  responderUserId: string;
+  responderUserId: string | null;
   query: AskQuery;
   consentBasis?: string | null;
   outcome: AskAuditOutcome;

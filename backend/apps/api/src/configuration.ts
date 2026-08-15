@@ -417,6 +417,13 @@ export const ConfigSchema = z.object({
     memoryEndpoint: z.string().optional(),
     /** This box's Portal handle. */
     handle: z.string().optional(),
+    /**
+     * The audience value CI-Portal mints into tokens addressed to THIS box.
+     * Required for the inbound peer surface: without it a token issued for any
+     * first-party client would be accepted here, so a token minted for another
+     * Companion could be replayed against this one.
+     */
+    audience: z.string().optional(),
     /** Bound on every outbound call to a peer or the directory. */
     timeoutMs: z.coerce.number().int().positive().default(10_000),
   }),

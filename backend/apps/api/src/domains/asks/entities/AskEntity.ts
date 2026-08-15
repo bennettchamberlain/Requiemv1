@@ -28,8 +28,9 @@ export class AskEntity {
   @Column({ type: 'text', name: 'direction', default: 'local' })
   direction!: AskDirection;
 
-  @Column({ type: 'uuid', name: 'responder_user_id' })
-  responderUserId!: string;
+  /** NULL for an OUTBOUND ask — the responder is the peer, not a local user. */
+  @Column({ type: 'uuid', name: 'responder_user_id', nullable: true })
+  responderUserId!: string | null;
 
   @Column({ type: 'jsonb', name: 'query' })
   query!: AskQuery;

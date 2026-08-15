@@ -4,6 +4,7 @@ import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 
 import type { PeerDescriptor } from '../protocol';
+import { checkEgressUrl } from '../urlPolicy';
 
 interface PortalPeerRow {
   handle?: unknown;
@@ -68,6 +69,17 @@ export class PeerDirectoryService {
   }
 
   private async fetchJson(url: string, accessToken: string): Promise<unknown | null> {
+    // SSRF guard. `directoryUrl` is operator-supplied config rather than peer
+    // data, but it is still a server-side fetch target — validating it here
+    // means a mis-set env var cannot turn discovery into an internal port
+    // scanner, and keeps one policy for every outbound call this domain makes.
+    const policy = checkEgressUrl(url);
+    if (!policy.ok) {
+      this.logger.warn(`refusing directory URL ${url}: ${policy.reason}`);
+
+      return null;
+    }
+
     try {
       const response = await fetch(url, {
         headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },

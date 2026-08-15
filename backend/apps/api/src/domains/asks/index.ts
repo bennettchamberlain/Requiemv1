@@ -69,6 +69,7 @@ export {
   AskAnswerService,
 };
 export { evaluateGrant, canonicalDataClass } from './grantMatch';
+export { checkSlidingWindow } from './rateLimit';
 export { inferAnswerForm, buildDisclosedAnswer, formDisclosesItems } from './disclosure';
 export {
   DISCLOSURE_RUNGS,

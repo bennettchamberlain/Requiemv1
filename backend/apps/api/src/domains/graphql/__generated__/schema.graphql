@@ -169,7 +169,7 @@ type AskAuditType {
   outcome: AskAuditOutcome!
   peerHandle: String
   query: AskQueryType!
-  responderId: ID!
+  responderId: ID
 }
 
 type AskGrantPayload {
@@ -225,7 +225,7 @@ type AskType {
   id: ID!
   peerHandle: String
   query: AskQueryType!
-  responderId: ID!
+  responderId: ID
   status: AskStatus!
   updatedAt: DateTime!
 }
@@ -1202,6 +1202,7 @@ type Mutation {
   returnEventToSlate(eventId: ID!): ScheduleCandidateType!
   revokeAskGrant(id: ID!): AskGrantPayload!
   runAsk(id: ID!, redactItemIds: [String!]): RunAskPayload!
+  sendPeerAsk(input: SendPeerAskInput!): SendPeerAskPayload!
   setSavedSearchSharing(input: SetSavedSearchSharingInput!): UpdateSavedSearchPayload!
 
   """Defer a candidate until a future instant"""
@@ -1750,6 +1751,27 @@ type SearchResultEdge {
 }
 
 union SearchResultType = ActionType | AnswerType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileChunkType | FileType | ItemType | NoteType | PersonType | PlaceType | ThreadType
+
+input SendPeerAskInput {
+  archetype: String!
+  dataClass: String
+  from: String
+  handle: String!
+  minMinutes: Int
+  peerAccessToken: String!
+  prompt: String!
+  purpose: String
+  subject: String
+  to: String
+}
+
+type SendPeerAskPayload {
+  answer: AskAnswerType
+  ask: AskType
+  reason: String
+  status: String
+  success: Boolean!
+}
 
 input SetSavedSearchSharingInput {
   id: ID!

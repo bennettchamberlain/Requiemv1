@@ -5,6 +5,7 @@ import config from '@ci/configuration';
 
 import { type PeerLink } from '../entities/PeerLinkEntity';
 import type { PeerAskBody, PeerAskResponse } from '../protocol';
+import { checkEgressUrl } from '../urlPolicy';
 
 /**
  * Sends an OUTBOUND ask to a peer Companion's `/agent/v1/ask`.
@@ -23,6 +24,16 @@ export class PeerAskClient {
 
   async send(peer: PeerLink, body: PeerAskBody, accessToken: string): Promise<PeerAskResponse> {
     const url = `${peer.memoryEndpoint.replace(/\/+$/, '')}/ask`;
+
+    // SSRF guard. `memoryEndpoint` originates from a directory descriptor, so it
+    // is attacker-influenced; refuse anything pointing at private, loopback, or
+    // metadata space before this box makes the request on their behalf.
+    const policy = checkEgressUrl(url);
+    if (!policy.ok) {
+      this.logger.warn(`refusing peer endpoint ${url}: ${policy.reason}`);
+
+      return { askId: body.askId, status: 'declined', reason: 'Peer endpoint not permitted' };
+    }
 
     try {
       const response = await fetch(url, {

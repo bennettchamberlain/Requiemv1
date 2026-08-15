@@ -86,6 +86,9 @@ export const peerAskBodySchema = z.object({
 });
 
 export type PeerAskBody = z.infer<typeof peerAskBodySchema>;
+
+/** The archetype-discriminated request carried by an ask. */
+export type PeerAskRequest = PeerAskBody['request'];
 export type RelationshipAsk = z.infer<typeof relationshipAskSchema>;
 export type ContentAsk = z.infer<typeof contentAskSchema>;
 export type AvailabilityAsk = z.infer<typeof availabilityAskSchema>;

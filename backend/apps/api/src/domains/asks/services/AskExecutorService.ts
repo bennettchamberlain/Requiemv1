@@ -53,6 +53,13 @@ export class AskExecutorService {
     ask: Ask,
     options: { maxResults?: number } = {},
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
+    // Only an ask with a LOCAL responder has memory here to search. An outbound
+    // ask is answered by the peer's box, so reaching the executor with one is a
+    // programming error, not a runtime condition to paper over.
+    if (ask.responderUserId == null) {
+      throw new Error(`Ask ${ask.id} has no local responder and cannot be executed here`);
+    }
+
     const responderContext: UserServiceContext = { userId: ask.responderUserId };
     const includeTypes = toIncludeTypes(ask.query);
     const base = {

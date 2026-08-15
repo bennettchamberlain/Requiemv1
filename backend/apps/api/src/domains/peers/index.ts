@@ -15,20 +15,39 @@ import { MemoryModule, EventEntity } from '@ci/domains/memory';
 
 import { PeerAskController } from './controllers/PeerAskController';
 import { PeerLinkEntity } from './entities/PeerLinkEntity';
+import { OutboundAskService } from './services/OutboundAskService';
 import { PeerAskClient } from './services/PeerAskClient';
 import { PeerAskService } from './services/PeerAskService';
 import { PeerDirectoryService } from './services/PeerDirectoryService';
 import { PeerLinkService } from './services/PeerLinkService';
+import { PeerRateLimitService } from './services/PeerRateLimitService';
 
 @Module({
   imports: [TypeOrmModule.forFeature([PeerLinkEntity, EventEntity]), AsksModule, AuthModule, MemoryModule],
   controllers: [PeerAskController],
-  providers: [PeerLinkService, PeerDirectoryService, PeerAskClient, PeerAskService],
-  exports: [PeerLinkService, PeerDirectoryService, PeerAskClient, PeerAskService],
+  providers: [
+    PeerLinkService,
+    PeerDirectoryService,
+    PeerAskClient,
+    PeerAskService,
+    PeerRateLimitService,
+    OutboundAskService,
+  ],
+  exports: [
+    PeerLinkService,
+    PeerDirectoryService,
+    PeerAskClient,
+    PeerAskService,
+    PeerRateLimitService,
+    OutboundAskService,
+  ],
 })
 export class PeersModule {}
 
 export { PeerLinkEntity };
+export { PeerRateLimitService } from './services/PeerRateLimitService';
+export { OutboundAskService } from './services/OutboundAskService';
+export type { SendAskDto, SendAskResult } from './services/OutboundAskService';
 export { PeerLinkService, PeerDirectoryService, PeerAskClient, PeerAskService };
 export { computeFreeBusy, summarizeAvailability } from './availability';
 export { PEER_ASK_ARCHETYPES, peerAskBodySchema } from './protocol';
@@ -36,6 +55,7 @@ export type { PeerLink, PeerTrustTier, PeerLinkStatus } from './entities/PeerLin
 export type {
   PeerAskArchetype,
   PeerAskBody,
+  PeerAskRequest,
   PeerAskResponse,
   PeerDescriptor,
   BusyInterval,

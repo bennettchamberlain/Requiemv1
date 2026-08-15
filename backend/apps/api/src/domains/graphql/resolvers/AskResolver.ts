@@ -19,11 +19,17 @@ import {
   type TrustTier,
   type GrantMode,
 } from '@ci/domains/asks';
-import { PeerLinkService } from '@ci/domains/peers';
+import { OutboundAskService, type PeerAskRequest, PeerLinkService } from '@ci/domains/peers';
 
 import { AskAnswerType } from '../types/AskAnswerType';
-import { CreateAskGrantInput, CreateAskInput } from '../types/AskInputs';
-import { AskGrantPayload, AskPayload, CreateAskPayload, RunAskPayload } from '../types/AskPayloads';
+import { CreateAskGrantInput, CreateAskInput, SendPeerAskInput } from '../types/AskInputs';
+import {
+  AskGrantPayload,
+  AskPayload,
+  CreateAskPayload,
+  RunAskPayload,
+  SendPeerAskPayload,
+} from '../types/AskPayloads';
 import { AskAuditType, AskGrantType, AskType } from '../types/AskType';
 import { GlobalUID } from '../types/GlobalUID';
 
@@ -50,6 +56,7 @@ export class AskResolver {
     private readonly executorService: AskExecutorService,
     private readonly answerService: AskAnswerService,
     private readonly peerLinkService: PeerLinkService,
+    private readonly outboundAskService: OutboundAskService,
     private readonly featureService: FeatureService,
   ) {}
 
@@ -229,6 +236,42 @@ export class AskResolver {
     return answer ? AskAnswerType.toType(answer) : null;
   }
 
+  /**
+   * Send an ask to a linked peer Companion — the OUTBOUND half of federation.
+   *
+   * The peer's box applies its owner's consent rules; this box learns only the
+   * outcome. A declined result is indistinguishable from an unreachable peer.
+   */
+  @Mutation(() => SendPeerAskPayload)
+  async sendPeerAsk(
+    @Context() context: RequestContext,
+    @Args('input') input: SendPeerAskInput,
+  ): Promise<SendPeerAskPayload> {
+    if (!(await this.enabled())) {
+      return { success: false };
+    }
+
+    const serviceContext = toServiceContext(context);
+    // Outbound asks consume the same per-user budget as local ones, so a
+    // compromised client cannot use the peer path to bypass the limit.
+    this.rateLimitService.consume(serviceContext.userId);
+
+    const request = toPeerAskRequest(input);
+
+    const { ask, response } = await this.outboundAskService.send(
+      serviceContext,
+      { handle: input.handle, prompt: input.prompt, request },
+      input.peerAccessToken,
+    );
+
+    return {
+      success: true,
+      ask: AskType.toType(ask),
+      status: response.status,
+      reason: response.reason,
+    };
+  }
+
   @Mutation(() => AskGrantPayload)
   async createAskGrant(
     @Context() context: RequestContext,
@@ -343,6 +386,50 @@ export class AskResolver {
  * authorized it (`delivered` carrying a consent basis). Kept in sync with
  * AskService.complete — both must agree or the gate is bypassable.
  */
+/**
+ * Narrow the flat GraphQL input back to the discriminated protocol shape.
+ *
+ * Fields belonging to other archetypes are DROPPED rather than passed through,
+ * so a caller cannot smuggle (say) a content `dataClass` into an availability
+ * request and have the peer interpret it.
+ */
+function toPeerAskRequest(input: SendPeerAskInput): PeerAskRequest {
+  switch (input.archetype) {
+    case 'availability':
+      if (!input.from || !input.to) {
+        throw new BadRequestException('An availability ask requires from and to');
+      }
+
+      return {
+        archetype: 'availability',
+        from: input.from,
+        to: input.to,
+        minMinutes: input.minMinutes,
+        purpose: input.purpose,
+      } as PeerAskRequest;
+    case 'relationship':
+      if (!input.subject) {
+        throw new BadRequestException('A relationship ask requires a subject');
+      }
+
+      return { archetype: 'relationship', subject: input.subject } as PeerAskRequest;
+    case 'content':
+      if (!input.subject) {
+        throw new BadRequestException('A content ask requires a subject');
+      }
+
+      return {
+        archetype: 'content',
+        subject: input.subject,
+        dataClass: input.dataClass,
+        from: input.from,
+        to: input.to,
+      } as PeerAskRequest;
+    default:
+      throw new BadRequestException(`Unsupported ask archetype: ${input.archetype}`);
+  }
+}
+
 function isAnswerable(ask: Ask): boolean {
   return ask.status === 'answering' || (ask.status === 'delivered' && ask.consentBasis != null);
 }

@@ -96,8 +96,10 @@ export class GrantService {
         ? { granteePeerLinkId: ask.peerLinkId ?? undefined }
         : { granteeUserId: ask.askerUserId ?? undefined };
 
-    if (Object.values(grantee)[0] == null) {
-      // No identifiable asker → no grant can match; fall through to review.
+    if (Object.values(grantee)[0] == null || ask.responderUserId == null) {
+      // No identifiable asker, or no local responder whose grants could apply
+      // (an outbound ask is gated by the PEER's policy, not ours) → no grant can
+      // match; fall through to review.
       return evaluateGrant(ask.query, [], now);
     }
 

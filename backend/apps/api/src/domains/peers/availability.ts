@@ -1,5 +1,7 @@
 import type { BusyInterval } from './protocol';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 /** The minimum an event must carry to contribute to a free/busy computation. */
 export interface BusySource {
   startTime: Date;
@@ -55,11 +57,18 @@ export function computeFreeBusy(
 
     if (event.isAllDay) {
       // An all-day event blocks the entire day it starts on.
-      const dayStart = new Date(event.startTime);
-      dayStart.setHours(0, 0, 0, 0);
-      const dayEnd = new Date(dayStart);
-      dayEnd.setDate(dayEnd.getDate() + 1);
-      spans.push(clamp(dayStart.getTime(), dayEnd.getTime(), windowStart, windowEnd));
+      //
+      // Day boundaries are computed in UTC, NOT server-local time. `setHours`
+      // would snap to whatever timezone the appliance happens to run in, so the
+      // same event would produce different busy spans on two boxes — and near
+      // midnight a day could be shifted far enough to mark a genuinely free
+      // window as busy, or (worse) leave a busy day looking free. UTC is the
+      // one frame both sides already agree on, since the ask window itself is
+      // exchanged as ISO instants.
+      const start = new Date(event.startTime);
+      const dayStart = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate(), 0, 0, 0, 0);
+      const dayEnd = dayStart + DAY_MS;
+      spans.push(clamp(dayStart, dayEnd, windowStart, windowEnd));
       continue;
     }
 

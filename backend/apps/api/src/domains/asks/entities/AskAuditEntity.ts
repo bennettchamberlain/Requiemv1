@@ -30,8 +30,9 @@ export class AskAuditEntity {
   @Column({ type: 'text', name: 'peer_handle', nullable: true })
   peerHandle!: string | null;
 
-  @Column({ type: 'uuid', name: 'responder_user_id' })
-  responderUserId!: string;
+  /** NULL for an OUTBOUND ask — the responder is the peer, not a local user. */
+  @Column({ type: 'uuid', name: 'responder_user_id', nullable: true })
+  responderUserId!: string | null;
 
   @Column({ type: 'jsonb', name: 'query' })
   query!: AskQuery;

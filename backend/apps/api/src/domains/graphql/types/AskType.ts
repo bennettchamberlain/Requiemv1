@@ -70,8 +70,9 @@ export class AskType {
   direction!: string;
 
   /** Opaque user id of the responder (owner). */
-  @Field(() => ID)
-  responderId!: string;
+  /** NULL for an OUTBOUND ask — the responder is the peer, not a local user. */
+  @Field(() => ID, { nullable: true })
+  responderId!: string | null;
 
   @Field(() => AskQueryType)
   query!: AskQueryType;
@@ -98,7 +99,7 @@ export class AskType {
       askerId: ask.askerUserId ? GlobalUID.encode('user', ask.askerUserId) : null,
       peerHandle: null,
       direction: ask.direction,
-      responderId: GlobalUID.encode('user', ask.responderUserId),
+      responderId: ask.responderUserId ? GlobalUID.encode('user', ask.responderUserId) : null,
       query: AskQueryType.toType(ask.query),
       status: ask.status as AskStatusEnum,
       consentBasis: ask.consentBasis,
@@ -173,8 +174,9 @@ export class AskAuditType {
   @Field(() => String, { nullable: true })
   peerHandle!: string | null;
 
-  @Field(() => ID)
-  responderId!: string;
+  /** NULL for an OUTBOUND ask — the responder is the peer, not a local user. */
+  @Field(() => ID, { nullable: true })
+  responderId!: string | null;
 
   @Field(() => AskQueryType)
   query!: AskQueryType;
@@ -194,7 +196,7 @@ export class AskAuditType {
       askId: audit.askId ? GlobalUID.encode('ask', audit.askId) : null,
       askerId: audit.askerUserId ? GlobalUID.encode('user', audit.askerUserId) : null,
       peerHandle: audit.peerHandle,
-      responderId: GlobalUID.encode('user', audit.responderUserId),
+      responderId: audit.responderUserId ? GlobalUID.encode('user', audit.responderUserId) : null,
       query: AskQueryType.toType(audit.query),
       consentBasis: audit.consentBasis,
       outcome: audit.outcome as AskAuditOutcomeEnum,

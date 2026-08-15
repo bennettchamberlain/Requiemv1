@@ -98,18 +98,30 @@ export class PortalTokenService implements PortalTokenVerifier {
    * it must never mint a local account (that would let any portal user
    * accumulate a shadow user on every box they can reach).
    */
-  async verifyClaims(token: string): Promise<{ issuer: string; subject: string } | null> {
+  async verifyClaims(
+    token: string,
+    options?: { audience?: string[] },
+  ): Promise<{ issuer: string; subject: string } | null> {
     if (!this.enabled) {
       return null;
     }
 
+    // A caller-supplied audience REPLACES the broad first-party list. The peer
+    // surface uses this to bind a token to this specific box; jose fails the
+    // verification when `aud` does not intersect, so a token addressed to a
+    // different Companion is rejected rather than silently honoured.
+    const audience =
+      options?.audience && options.audience.length > 0
+        ? options.audience
+        : config.auth.portal.audience
+            .split(',')
+            .map((a) => a.trim())
+            .filter(Boolean);
+
     try {
       const { payload } = await jwtVerify(token, this.getJwks(), {
         issuer: config.auth.portal.issuer,
-        audience: config.auth.portal.audience
-          .split(',')
-          .map((a) => a.trim())
-          .filter(Boolean),
+        audience,
       });
 
       const issuer = payload.iss ?? config.auth.portal.issuer;

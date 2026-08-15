@@ -110,3 +110,36 @@ describe('summarizeAvailability', () => {
     );
   });
 });
+
+describe('all-day events use UTC day boundaries', () => {
+  // The appliance's local timezone must not change the answer: two boxes in
+  // different zones holding the same event must produce identical busy spans.
+  const ALL_DAY = [{ startTime: new Date('2026-08-07T00:00:00Z'), endTime: null, isAllDay: true }];
+
+  it('blocks exactly the UTC day the event starts on', () => {
+    const result = computeFreeBusy(ALL_DAY, {
+      from: new Date('2026-08-06T00:00:00Z'),
+      to: new Date('2026-08-09T00:00:00Z'),
+    });
+
+    expect(result.busy).toEqual([{ start: '2026-08-07T00:00:00.000Z', end: '2026-08-08T00:00:00.000Z' }]);
+  });
+
+  it('is invariant to the server timezone', () => {
+    const original = process.env.TZ;
+    const spans: string[] = [];
+
+    for (const tz of ['UTC', 'America/Los_Angeles', 'Asia/Tokyo']) {
+      process.env.TZ = tz;
+      const result = computeFreeBusy(ALL_DAY, {
+        from: new Date('2026-08-06T00:00:00Z'),
+        to: new Date('2026-08-09T00:00:00Z'),
+      });
+      spans.push(JSON.stringify(result.busy));
+    }
+
+    process.env.TZ = original;
+    // All three must agree — a local-time implementation would differ.
+    expect(new Set(spans).size).toBe(1);
+  });
+});

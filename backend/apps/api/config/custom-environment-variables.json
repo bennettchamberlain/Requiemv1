@@ -200,6 +200,7 @@
     "directoryUrl": "CI_PEER_DIRECTORY_URL",
     "memoryEndpoint": "CI_PEER_MEMORY_ENDPOINT",
     "handle": "CI_PEER_HANDLE",
+    "audience": "CI_PEER_AUDIENCE",
     "timeoutMs": "CI_PEER_TIMEOUT_MS"
   }
 }
