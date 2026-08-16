@@ -114,7 +114,9 @@ describeWithDatabase(`deferred push (${importDatabase.target})`, () => {
     return row;
   }
 
-  async function pushStagesOf(runId: string): Promise<Array<{ id: string; seq: number; status: string; weight: number }>> {
+  async function pushStagesOf(
+    runId: string,
+  ): Promise<Array<{ id: string; seq: number; status: string; weight: number }>> {
     return dataSource.query(
       `SELECT id, seq, status, weight FROM ci_import.import_stages
         WHERE run_id = $1::uuid AND kind = 'push' ORDER BY seq`,

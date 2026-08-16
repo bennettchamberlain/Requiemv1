@@ -214,7 +214,10 @@ export class CommunicationService {
    * "already saved" count reads zero on an import that was almost entirely
    * repeats.
    */
-  async createManyDetailed(context: UserServiceContext, data: CreateCommunicationDto[]): Promise<Array<BulkInsertResult<Communication>>> {
+  async createManyDetailed(
+    context: UserServiceContext,
+    data: CreateCommunicationDto[],
+  ): Promise<Array<BulkInsertResult<Communication>>> {
     if (data.length === 0) {
       return [];
     }
@@ -314,7 +317,10 @@ export class CommunicationService {
       return detailResults;
     });
 
-    return results.map(({ entity, inserted }) => ({ entity: CommunicationEntity.toEgressType(entity), inserted }));
+    return results.map(({ entity, inserted }) => ({
+      entity: CommunicationEntity.toEgressType(entity),
+      inserted,
+    }));
   }
 
   async findAll(context: UserServiceContext): Promise<Communication[]> {

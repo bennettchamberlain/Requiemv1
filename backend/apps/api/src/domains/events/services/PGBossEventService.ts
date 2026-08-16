@@ -152,40 +152,43 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
     await provisionLock.query('SELECT pg_advisory_lock($1)', [QUEUE_PROVISION_LOCK_KEY]);
 
     try {
-    // Create the shared dead-letter queue FIRST so the work queues can reference
-    // it. Long retention so exhausted-retry jobs stay inspectable; no worker
-    // consumes it (it is not a registered listener queue), so entries accumulate.
-    await this.boss.createQueue(PGBossEventService.DEAD_LETTER_QUEUE, {
-      name: PGBossEventService.DEAD_LETTER_QUEUE,
-      retentionDays: 30,
-    });
+      // Create the shared dead-letter queue FIRST so the work queues can reference
+      // it. Long retention so exhausted-retry jobs stay inspectable; no worker
+      // consumes it (it is not a registered listener queue), so entries accumulate.
+      await this.boss.createQueue(PGBossEventService.DEAD_LETTER_QUEUE, {
+        name: PGBossEventService.DEAD_LETTER_QUEUE,
+        retentionDays: 30,
+      });
 
-    // Create all discovered queues, routing exhausted-retry jobs to the DLQ and
-    // giving each its own concurrency semaphore. createQueue is idempotent and
-    // won't update an existing queue's options, so updateQueue (a COALESCE merge)
-    // applies deadLetter to queues that already exist on a live DB too.
-    for (const queue of discoveredQueues) {
-      // Listener-requested queue-level options (expiration/retries) — used by
-      // deferred-completion queues whose jobs stay active while an external
-      // executor works, so their expiration must match the work's runtime.
-      // `localConcurrency` and `role` are OURS (the semaphore size below, and
-      // which process consumes — used by the worker-start loop), not
-      // pg-boss's — split them off so the queue-create call sees only real
-      // pg-boss options.
-      const { localConcurrency, role, ...queueOptions } = EventListenerRegistry.getQueueOptions(queue) ?? {};
+      // Create all discovered queues, routing exhausted-retry jobs to the DLQ and
+      // giving each its own concurrency semaphore. createQueue is idempotent and
+      // won't update an existing queue's options, so updateQueue (a COALESCE merge)
+      // applies deadLetter to queues that already exist on a live DB too.
+      for (const queue of discoveredQueues) {
+        // Listener-requested queue-level options (expiration/retries) — used by
+        // deferred-completion queues whose jobs stay active while an external
+        // executor works, so their expiration must match the work's runtime.
+        // `localConcurrency` and `role` are OURS (the semaphore size below, and
+        // which process consumes — used by the worker-start loop), not
+        // pg-boss's — split them off so the queue-create call sees only real
+        // pg-boss options.
+        const { localConcurrency, role, ...queueOptions } =
+          EventListenerRegistry.getQueueOptions(queue) ?? {};
 
-      const options = { name: queue, deadLetter: PGBossEventService.DEAD_LETTER_QUEUE, ...queueOptions };
+        const options = { name: queue, deadLetter: PGBossEventService.DEAD_LETTER_QUEUE, ...queueOptions };
 
-      await this.boss.createQueue(queue, options);
-      await this.boss.updateQueue(queue, options);
-      this.perQueueSemaphores.set(
-        queue,
-        plimit(Math.max(1, Math.min(localConcurrency ?? this.perQueueConcurrency, this.perQueueConcurrency))),
-      );
-      this.logger.debug(
-        `Created queue: ${queue} (role=${role ?? 'web'}, deadLetter=${PGBossEventService.DEAD_LETTER_QUEUE})`,
-      );
-    }
+        await this.boss.createQueue(queue, options);
+        await this.boss.updateQueue(queue, options);
+        this.perQueueSemaphores.set(
+          queue,
+          plimit(
+            Math.max(1, Math.min(localConcurrency ?? this.perQueueConcurrency, this.perQueueConcurrency)),
+          ),
+        );
+        this.logger.debug(
+          `Created queue: ${queue} (role=${role ?? 'web'}, deadLetter=${PGBossEventService.DEAD_LETTER_QUEUE})`,
+        );
+      }
     } finally {
       try {
         await provisionLock.query('SELECT pg_advisory_unlock($1)', [QUEUE_PROVISION_LOCK_KEY]);

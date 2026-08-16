@@ -110,9 +110,8 @@ export function InboxPanel() {
           <h2 className="text-lg font-medium">Inbox folder</h2>
           <p className="text-muted-foreground text-sm">
             Move export archives — or whole unzipped export folders — into{' '}
-            <code className="text-xs">{scan.inboxDir}</code> and import them all at once. Everything
-            here is treated as a copy: each item is removed from the folder as its import consumes
-            it.
+            <code className="text-xs">{scan.inboxDir}</code> and import them all at once. Everything here is
+            treated as a copy: each item is removed from the folder as its import consumes it.
           </p>
         </div>
 
@@ -135,8 +134,7 @@ export function InboxPanel() {
 
       {scan.truncated ? (
         <Alert>
-          The inbox holds more than this scan lists. Import what is shown, then rescan for the
-          rest.
+          The inbox holds more than this scan lists. Import what is shown, then rescan for the rest.
         </Alert>
       ) : null}
 
@@ -170,14 +168,10 @@ export function InboxPanel() {
                     )}
                   </div>
 
-                  <ServiceBadges
-                    services={unit.recognized.map((recognition) => recognition.dataSource)}
-                  />
+                  <ServiceBadges services={unit.recognized.map((recognition) => recognition.dataSource)} />
 
                   {unit.activeRunId != null || result?.runId != null ? (
-                    <span className="text-muted-foreground shrink-0 text-xs">
-                      Importing — see History
-                    </span>
+                    <span className="text-muted-foreground shrink-0 text-xs">Importing — see History</span>
                   ) : (
                     <Button
                       variant="outline"

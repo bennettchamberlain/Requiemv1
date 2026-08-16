@@ -9,7 +9,6 @@ import { PathOutsideImportRootsError, resolveWithinImportRoots } from '@ci/domai
 import { BaseTool } from '../core/BaseTool';
 import type { IntentDefinition, ToolExecutionContext } from '../core/types';
 
-
 interface RecognizePathInput {
   path?: string;
 }

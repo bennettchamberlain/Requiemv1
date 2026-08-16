@@ -563,10 +563,7 @@ export type ExportEntry =
  * picked service not covered by a bundle is one card, walked in the same
  * ecosystem order the picker displays.
  */
-export function exportEntries(
-  catalog: readonly CatalogSource[],
-  picked: ReadonlySet<string>,
-): ExportEntry[] {
+export function exportEntries(catalog: readonly CatalogSource[], picked: ReadonlySet<string>): ExportEntry[] {
   const byEcosystem = new Map<string, CatalogSource[]>();
 
   for (const source of catalog) {

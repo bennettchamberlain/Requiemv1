@@ -71,10 +71,12 @@ describeWithDatabase(`the staged source registry (${availability.target})`, () =
 
     await dataSource.initialize();
 
-    service = new StagedSourceService(
-      dataSource.getRepository(StagedSourceEntity),
-      { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), debug: jest.fn() } as never,
-    );
+    service = new StagedSourceService(dataSource.getRepository(StagedSourceEntity), {
+      setContext: jest.fn(),
+      log: jest.fn(),
+      warn: jest.fn(),
+      debug: jest.fn(),
+    } as never);
   });
 
   afterAll(async () => {

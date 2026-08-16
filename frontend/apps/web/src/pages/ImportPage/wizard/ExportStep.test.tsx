@@ -150,10 +150,7 @@ describe('ExportStep', () => {
     // the doorway is the last thing on the way out.
     const lastStep = screen.getByText('Upload it here.');
 
-    expect(
-       
-      lastStep.compareDocumentPosition(cta) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(lastStep.compareDocumentPosition(cta) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('starts one parse-only run per uploaded file, labeled by its filename', async () => {

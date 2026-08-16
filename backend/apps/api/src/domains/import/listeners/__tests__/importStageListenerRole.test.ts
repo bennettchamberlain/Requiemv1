@@ -8,7 +8,13 @@ import { ImportStageListener } from '../ImportStageListener';
  * Only the process that RUNS stages may recover them.
  */
 
-const stubLogger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() };
+const stubLogger = {
+  setContext: jest.fn(),
+  log: jest.fn(),
+  warn: jest.fn(),
+  debug: jest.fn(),
+  error: jest.fn(),
+};
 const stage = (kind: string) => ({ kind }) as never;
 
 function build() {

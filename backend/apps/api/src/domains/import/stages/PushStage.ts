@@ -115,7 +115,11 @@ export class PushStage implements ImportStageRunner {
 
     const total = (await this.pendingCount(context.runId)) + entitiesProcessed + pushed + deduped + failed;
 
-    await context.progress({ processed: entitiesProcessed + pushed + failed + deduped, total, phase: 'pushing' });
+    await context.progress({
+      processed: entitiesProcessed + pushed + failed + deduped,
+      total,
+      phase: 'pushing',
+    });
 
     for (;;) {
       const batch = await this.nextBatch(context.runId);
@@ -130,7 +134,11 @@ export class PushStage implements ImportStageRunner {
       failed += outcome.failed;
       deduped += outcome.deduped;
 
-      await context.progress({ processed: entitiesProcessed + pushed + failed + deduped, total, phase: 'pushing' });
+      await context.progress({
+        processed: entitiesProcessed + pushed + failed + deduped,
+        total,
+        phase: 'pushing',
+      });
     }
 
     return {
@@ -219,7 +227,10 @@ export class PushStage implements ImportStageRunner {
       return { resolved: 0, skipped, failed: 0 };
     }
 
-    const result = await this.graph.ingest({ userId: context.userId }, { entities: inputs, relationships: [] });
+    const result = await this.graph.ingest(
+      { userId: context.userId },
+      { entities: inputs, relationships: [] },
+    );
 
     let resolved = 0;
 
@@ -236,7 +247,8 @@ export class PushStage implements ImportStageRunner {
     // Whatever ingest did not echo back failed; its reason is in `errors`, which
     // is per-batch rather than per-entity, so the whole list is recorded against
     // each unresolved row.
-    const reason = result.errors.length > 0 ? result.errors.join('; ') : 'entity not resolved by graph ingest';
+    const reason =
+      result.errors.length > 0 ? result.errors.join('; ') : 'entity not resolved by graph ingest';
     let failed = 0;
 
     for (const rows of byKey.values()) {
@@ -544,7 +556,9 @@ export class PushStage implements ImportStageRunner {
       case 'inventory':
         return wroteAnything(await this.items.createManyDetailed(ctx, [toInventoryInput(record)]));
       case 'browser_activity':
-        return wroteAnything(await this.browserActivity.createManyDetailed(ctx, [toBrowserActivityInput(record)]));
+        return wroteAnything(
+          await this.browserActivity.createManyDetailed(ctx, [toBrowserActivityInput(record)]),
+        );
       case 'position': {
         const position = toPositionInput(record);
 

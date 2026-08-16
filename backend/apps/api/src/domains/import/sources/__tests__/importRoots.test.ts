@@ -180,9 +180,7 @@ describe('resolveWithinInbox', () => {
     await withRoots([root], () =>
       withInbox(inbox, async () => {
         expect(await resolveWithinInbox(inboxFile)).toContain('export.zip');
-        await expect(resolveWithinInbox(rootFile)).rejects.toBeInstanceOf(
-          PathOutsideImportRootsError,
-        );
+        await expect(resolveWithinInbox(rootFile)).rejects.toBeInstanceOf(PathOutsideImportRootsError);
       }),
     );
   });
@@ -190,8 +188,6 @@ describe('resolveWithinInbox', () => {
 
 describe('resolveWithinRoots', () => {
   it('refuses everything over an empty root set', async () => {
-    await expect(resolveWithinRoots('/etc/passwd', [])).rejects.toBeInstanceOf(
-      PathOutsideImportRootsError,
-    );
+    await expect(resolveWithinRoots('/etc/passwd', [])).rejects.toBeInstanceOf(PathOutsideImportRootsError);
   });
 });

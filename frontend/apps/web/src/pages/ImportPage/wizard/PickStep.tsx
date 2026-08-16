@@ -80,62 +80,60 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
 
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto">
         {visible.map((section) => (
-        <section key={section.key} className="space-y-2">
-          <h3 className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-            <span className="h-4 w-4 [&>svg]:h-4 [&>svg]:w-4">{section.icon}</span>
-            {section.label}
-          </h3>
+          <section key={section.key} className="space-y-2">
+            <h3 className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+              <span className="h-4 w-4 [&>svg]:h-4 [&>svg]:w-4">{section.icon}</span>
+              {section.label}
+            </h3>
 
-          <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
-            {section.items.map((item) => {
-              const on = picked.has(item.key);
-              const showLogo = item.logo != null && !logoFailed.has(item.key);
+            <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+              {section.items.map((item) => {
+                const on = picked.has(item.key);
+                const showLogo = item.logo != null && !logoFailed.has(item.key);
 
-              return (
-                <li key={item.key}>
-                  <button
-                    type="button"
-                    aria-pressed={on}
-                    title={item.ready ? item.label : `${item.label} — importer coming soon`}
-                    onClick={() => onToggle(item.key)}
-                    className={cn(
-                      'relative flex w-full items-center gap-2 rounded-md border p-2.5 text-left text-sm transition-colors',
-                      on ? 'border-primary bg-primary/5' : 'hover:bg-muted/50',
-                      !item.ready && 'opacity-60',
-                    )}
-                  >
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground [&>svg]:h-5 [&>svg]:w-5">
-                      {showLogo ? (
-                        <img
-                          src={item.logo!}
-                          alt=""
-                          className="h-6 w-6 object-contain"
-                          onError={() =>
-                            setLogoFailed((previous) => new Set(previous).add(item.key))
-                          }
-                        />
-                      ) : (
-                        (ECOSYSTEM_ICONS[item.ecosystem] ?? null)
+                return (
+                  <li key={item.key}>
+                    <button
+                      type="button"
+                      aria-pressed={on}
+                      title={item.ready ? item.label : `${item.label} — importer coming soon`}
+                      onClick={() => onToggle(item.key)}
+                      className={cn(
+                        'relative flex w-full items-center gap-2 rounded-md border p-2.5 text-left text-sm transition-colors',
+                        on ? 'border-primary bg-primary/5' : 'hover:bg-muted/50',
+                        !item.ready && 'opacity-60',
                       )}
-                    </span>
+                    >
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground [&>svg]:h-5 [&>svg]:w-5">
+                        {showLogo ? (
+                          <img
+                            src={item.logo!}
+                            alt=""
+                            className="h-6 w-6 object-contain"
+                            onError={() => setLogoFailed((previous) => new Set(previous).add(item.key))}
+                          />
+                        ) : (
+                          (ECOSYSTEM_ICONS[item.ecosystem] ?? null)
+                        )}
+                      </span>
 
-                    <span className="min-w-0 flex-1 truncate">
-                      {item.label}
-                      {!item.ready && (
-                        <Badge variant="outline" className="ml-1.5 text-[10px]">
-                          Coming soon
-                        </Badge>
-                      )}
-                    </span>
+                      <span className="min-w-0 flex-1 truncate">
+                        {item.label}
+                        {!item.ready && (
+                          <Badge variant="outline" className="ml-1.5 text-[10px]">
+                            Coming soon
+                          </Badge>
+                        )}
+                      </span>
 
-                    {on && <Check className="h-4 w-4 shrink-0 text-primary" aria-hidden />}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ))}
+                      {on && <Check className="h-4 w-4 shrink-0 text-primary" aria-hidden />}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ))}
 
         {catalog.length > 0 && visible.length === 0 && (
           <div className="space-y-2 rounded-md border border-dashed p-6 text-center">

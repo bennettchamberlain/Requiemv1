@@ -45,7 +45,9 @@ describe('naturalKeyFor', () => {
   it('falls back to the name for the things that have no handle by nature', () => {
     // Artists, genres and dishes are most of what a media archive stages. The
     // old lane skipped every one of them.
-    expect(naturalKeyFor(staged({ type: 'person', name: 'Foghat', identityKey: null }))).toBe('person:foghat');
+    expect(naturalKeyFor(staged({ type: 'person', name: 'Foghat', identityKey: null }))).toBe(
+      'person:foghat',
+    );
   });
 
   it('is case-insensitive on the name, so one artist is not two', () => {

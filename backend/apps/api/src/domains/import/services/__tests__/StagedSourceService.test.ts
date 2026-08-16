@@ -192,7 +192,12 @@ describe('releaseUpload', () => {
 
   it('dismisses an expired tombstone without touching the filesystem', async () => {
     const { service, repo } = build([
-      { id: 'row-e', dropId: 'drop-e', sourcePath: path.join(uploadsDir, 'gone', 'x.zip'), status: 'expired' },
+      {
+        id: 'row-e',
+        dropId: 'drop-e',
+        sourcePath: path.join(uploadsDir, 'gone', 'x.zip'),
+        status: 'expired',
+      },
     ]);
 
     expect(await service.releaseUpload({ userId: 'u' }, 'drop-e')).toBe(true);

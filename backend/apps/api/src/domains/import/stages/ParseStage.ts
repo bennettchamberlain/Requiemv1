@@ -118,10 +118,10 @@ export class ParseStage implements ImportStageRunner {
     runId: string,
     perSource: ReadonlyArray<Record<string, unknown>>,
   ): Promise<void> {
-    await this.dataSource.query(`UPDATE ci_import.import_runs SET data_sources = $2::text[] WHERE id = $1::uuid`, [
-      runId,
-      rankDataSources(perSource),
-    ]);
+    await this.dataSource.query(
+      `UPDATE ci_import.import_runs SET data_sources = $2::text[] WHERE id = $1::uuid`,
+      [runId, rankDataSources(perSource)],
+    );
   }
 
   /**

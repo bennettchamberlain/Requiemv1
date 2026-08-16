@@ -173,9 +173,7 @@ export function ConnectPage() {
         {/* Import Tools */}
         <div className="max-w-[1040px] mx-auto mb-8">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">Import Tools</h2>
-          <p className="text-muted-foreground mb-6">
-            Import data archives from a wide range of services
-          </p>
+          <p className="text-muted-foreground mb-6">Import data archives from a wide range of services</p>
           {/* The same grid as every other section, so the lone card keeps the
               shared card size instead of stretching across the row. */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-4">

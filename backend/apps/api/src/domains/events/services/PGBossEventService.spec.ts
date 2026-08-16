@@ -21,7 +21,11 @@ describe('PGBossEventService.sendMany', () => {
 
   function makeService(): PGBossEventService {
     logger = { setContext: jest.fn(), debug: jest.fn(), warn: jest.fn(), error: jest.fn(), log: jest.fn() };
-    const service = new PGBossEventService(new EventEmitter2(), logger as unknown as LoggerService, {} as never);
+    const service = new PGBossEventService(
+      new EventEmitter2(),
+      logger as unknown as LoggerService,
+      {} as never,
+    );
     insert = jest.fn(async () => undefined);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (service as any).boss = { insert };

@@ -95,7 +95,14 @@ describe('ImportRunStatusTool', () => {
     // The sentence an assistant reads out. "Failed" here is what makes someone
     // re-export and re-upload a 40GB archive over one file.
     const { tool } = makeTool({
-      run: { id: 'run-1', label: 'Takeout', status: 'partial', percent: 100, finishedAt: new Date(), error: null },
+      run: {
+        id: 'run-1',
+        label: 'Takeout',
+        status: 'partial',
+        percent: 100,
+        finishedAt: new Date(),
+        error: null,
+      },
       stages: [],
     });
 
@@ -109,7 +116,15 @@ describe('ImportRunStatusTool', () => {
     const { tool } = makeTool({
       run: { id: 'run-1', label: null, status: 'running', percent: 40, finishedAt: null, error: null },
       stages: [
-        { kind: 'parse', status: 'running', phase: 'parsing gmail', processed: '412', total: null, error: null, detail: {} },
+        {
+          kind: 'parse',
+          status: 'running',
+          phase: 'parsing gmail',
+          processed: '412',
+          total: null,
+          error: null,
+          detail: {},
+        },
       ],
     });
 
@@ -129,9 +144,7 @@ describe('ImportRunStatusTool', () => {
 
     const data = (await tool.execute(ctx, {})).data as { runs: Array<{ runId: string; finished: boolean }> };
 
-    expect(data.runs).toEqual([
-      expect.objectContaining({ runId: 'run-9', finished: false }),
-    ]);
+    expect(data.runs).toEqual([expect.objectContaining({ runId: 'run-9', finished: false })]);
   });
 
   it("says plainly when a run is not this user's", async () => {

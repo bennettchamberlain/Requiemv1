@@ -31,3 +31,6 @@ frontend/apps/web/src/graphql/gql.ts
 frontend/apps/web/src/graphql/graphql.ts
 frontend/apps/web/src/graphql/fragment-masking.ts
 frontend/apps/web/src/graphql/possibleTypes.ts
+
+# Importer test fixtures (preserve vendor raw export payloads)
+backend/apps/api/src/domains/import/datasources/__tests__/fixtures/**

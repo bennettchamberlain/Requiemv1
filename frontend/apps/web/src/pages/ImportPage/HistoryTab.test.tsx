@@ -74,9 +74,7 @@ describe('HistoryTab', () => {
     fireEvent.click(screen.getByRole('button', { name: /close/i }));
 
     // Collapsed into the grid, not gone: both runs now offer View.
-    await waitFor(() =>
-      expect(screen.getAllByRole('button', { name: /view/i })).toHaveLength(2),
-    );
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /view/i })).toHaveLength(2));
     expect(screen.getByText('Takeout.zip')).toBeInTheDocument();
   });
 });

@@ -84,10 +84,12 @@ describeWithDatabase(`staged source runs (${importDatabase.target})`, () => {
   });
 
   function makeUnpackStage() {
-    return new UnpackStage(
-      harness.stagedSources,
-      { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), debug: jest.fn() } as never,
-    );
+    return new UnpackStage(harness.stagedSources, {
+      setContext: jest.fn(),
+      log: jest.fn(),
+      warn: jest.fn(),
+      debug: jest.fn(),
+    } as never);
   }
 
   async function seedInboxUnit(name: string, kind: 'file' | 'directory'): Promise<string> {
@@ -140,10 +142,9 @@ describeWithDatabase(`staged source runs (${importDatabase.target})`, () => {
   }
 
   async function rowByRunId(runId: string) {
-    const rows = await dataSource.query<Array<{ status: string; source_path: string; run_id: string | null }>>(
-      `SELECT status, source_path, run_id FROM ci_import.staged_sources WHERE run_id = $1::uuid`,
-      [runId],
-    );
+    const rows = await dataSource.query<
+      Array<{ status: string; source_path: string; run_id: string | null }>
+    >(`SELECT status, source_path, run_id FROM ci_import.staged_sources WHERE run_id = $1::uuid`, [runId]);
 
     return rows[0] ?? null;
   }
@@ -322,10 +323,9 @@ describeWithDatabase(`staged source runs (${importDatabase.target})`, () => {
       const source = await seedInboxUnit('moved-then-failed', 'directory');
       const { run, stages } = await startInbox(source, 'directory');
 
-      await dataSource.query(
-        `UPDATE ci_import.staged_sources SET status = 'moved' WHERE run_id = $1::uuid`,
-        [run.id],
-      );
+      await dataSource.query(`UPDATE ci_import.staged_sources SET status = 'moved' WHERE run_id = $1::uuid`, [
+        run.id,
+      ]);
 
       await harness.service.failStage(stages[1].id, 'parser choked');
 

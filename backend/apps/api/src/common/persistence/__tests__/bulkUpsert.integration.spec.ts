@@ -6,7 +6,10 @@ import { ContentEntity } from '@ci/domains/memory';
 import { UserEntity } from '@ci/domains/user';
 
 import { syntheticTestUserEmail } from '../../../domains/__tests__/support/applianceUser';
-import { databaseAvailability, resolveConnection } from '../../../domains/__tests__/support/databaseConnection';
+import {
+  databaseAvailability,
+  resolveConnection,
+} from '../../../domains/__tests__/support/databaseConnection';
 import { acquireSchemaWriteLock, type SchemaLock } from '../../../domains/__tests__/support/schemaLock';
 import { EventEntity } from '../../../domains/memory/entities/EventEntity';
 import { bulkInsertIdempotent } from '../bulkUpsert';
@@ -154,7 +157,11 @@ describeWithDatabase(`bulkInsertIdempotent against real Postgres (${availability
   }
 
   /** The provenance triple both tables dedupe on. */
-  function triple(entity: { sourceType?: string | null; sourceSystem?: string | null; sourceId?: string | null }) {
+  function triple(entity: {
+    sourceType?: string | null;
+    sourceSystem?: string | null;
+    sourceId?: string | null;
+  }) {
     return {
       sourceType: entity.sourceType,
       sourceSystem: entity.sourceSystem,

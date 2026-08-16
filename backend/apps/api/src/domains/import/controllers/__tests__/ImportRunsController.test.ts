@@ -95,7 +95,9 @@ function makeController(
 
   const catalog = {
     list: jest.fn(() => [{ name: 'gmail', title: 'Gmail', stub: false }]),
-    catalog: jest.fn(() => [{ id: 'gmail', title: 'Gmail (Google Takeout)', importer: 'gmail', importerReady: true }]),
+    catalog: jest.fn(() => [
+      { id: 'gmail', title: 'Gmail (Google Takeout)', importer: 'gmail', importerReady: true },
+    ]),
     find: jest.fn((name: string) => (name === 'gmail' ? { name, title: 'Gmail' } : null)),
   };
 
@@ -285,9 +287,7 @@ describe('ImportRunsController.listUnpushed', () => {
   it('refuses an unauthenticated caller', async () => {
     const { controller, runs } = makeController();
 
-    await expect(controller.listUnpushed({} as RequestContext)).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(controller.listUnpushed({} as RequestContext)).rejects.toBeInstanceOf(BadRequestException);
     expect(runs.listUnpushed).not.toHaveBeenCalled();
   });
 });

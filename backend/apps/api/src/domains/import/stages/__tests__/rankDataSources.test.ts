@@ -25,7 +25,9 @@ describe('rankDataSources', () => {
   it('counts entities as well as items, so an entity-only source still appears', () => {
     // contact_list produced one entity and no items in a real run. Counting
     // items alone would have dropped it entirely.
-    expect(rankDataSources([{ dataSource: 'contact_list', items: 0, entities: 1 }])).toEqual(['contact_list']);
+    expect(rankDataSources([{ dataSource: 'contact_list', items: 0, entities: 1 }])).toEqual([
+      'contact_list',
+    ]);
   });
 
   it('drops a source that produced nothing', () => {
@@ -62,7 +64,9 @@ describe('rankDataSources', () => {
   it('survives a source entry with nothing useful on it', () => {
     // perSource is assembled from parser output, so it is not worth trusting to
     // always carry counts.
-    expect(rankDataSources([{}, { dataSource: '' }, { dataSource: 'audible', items: 1 }])).toEqual(['audible']);
+    expect(rankDataSources([{}, { dataSource: '' }, { dataSource: 'audible', items: 1 }])).toEqual([
+      'audible',
+    ]);
   });
 
   it('is empty for a run that parsed nothing', () => {

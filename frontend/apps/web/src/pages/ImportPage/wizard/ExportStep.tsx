@@ -119,8 +119,8 @@ export function ExportStep({
       >
         {notReady ? (
           <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-            This importer is not finished yet — the export instructions above still work, and an
-            archive uploaded once it ships will import without re-exporting.
+            This importer is not finished yet — the export instructions above still work, and an archive
+            uploaded once it ships will import without re-exporting.
           </p>
         ) : (
           <DropZone

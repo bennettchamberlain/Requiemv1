@@ -56,13 +56,11 @@ async function importFile(name: string, fullPath: string): Promise<Item[]> {
 
   const pipeline: EmittedGraph[] = [];
 
-  await dataSource
-    .newFileImporter()
-    .fileImport({}, { filename: path.basename(fullPath), fullPath }, {
-      pipeline,
-      timeframe: {},
-      log: () => {},
-    } as unknown as ImportParams);
+  await dataSource.newFileImporter().fileImport({}, { filename: path.basename(fullPath), fullPath }, {
+    pipeline,
+    timeframe: {},
+    log: () => {},
+  } as unknown as ImportParams);
 
   return pipeline.filter((graph) => graph.item).map((graph) => graph.item);
 }

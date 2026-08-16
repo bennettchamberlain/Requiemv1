@@ -49,11 +49,7 @@ const stubLogger = () =>
 function build(overrides?: { startRun?: jest.Mock; findActiveByPaths?: jest.Mock }) {
   const startRun = overrides?.startRun ?? jest.fn(async () => ({ run: { id: 'run-1', label: 'x' } }));
   const findActiveByPaths = overrides?.findActiveByPaths ?? jest.fn(async () => []);
-  const service = new ImportInboxService(
-    { startRun } as never,
-    { findActiveByPaths } as never,
-    stubLogger(),
-  );
+  const service = new ImportInboxService({ startRun } as never, { findActiveByPaths } as never, stubLogger());
 
   return { service, startRun, findActiveByPaths };
 }

@@ -3,11 +3,7 @@ import { BadRequestException, Body, Controller, Get, Post, UseGuards } from '@ne
 import { Context, type RequestContext } from '@ci/common/context';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 
-import {
-  ImportInboxService,
-  type InboxBatchResult,
-  type InboxScan,
-} from '../services/ImportInboxService';
+import { ImportInboxService, type InboxBatchResult, type InboxScan } from '../services/ImportInboxService';
 
 export interface StartInboxRunsBody {
   /**

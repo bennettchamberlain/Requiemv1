@@ -6,7 +6,6 @@ import { DataSourceCatalogService } from '@ci/domains/import';
 import { BaseTool } from '../core/BaseTool';
 import type { IntentDefinition, ToolExecutionContext } from '../core/types';
 
-
 interface ListSourcesInput {
   /** Narrow to sources whose name, title or description matches. */
   query?: string;
@@ -35,11 +34,7 @@ export class ImportListSourcesTool extends BaseTool<ListSourcesInput, unknown> {
     privacy: { access: 'read', sensitivity: 'low', destructive: false, external: false },
     // The importer registry lives in the server process; the device mirrors records, not importers.
     localCapable: false,
-    phrases: [
-      'What can you import',
-      'Can you import my $service data',
-      'How do I export my $service data',
-    ],
+    phrases: ['What can you import', 'Can you import my $service data', 'How do I export my $service data'],
     description:
       'List every export this appliance can read, with a short description and whether it supports ' +
       'file or API import. Optionally include the authored step-by-step instructions for obtaining ' +

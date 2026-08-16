@@ -253,7 +253,9 @@ export class ImportRunService {
         );
 
         if (claim.length === 0) {
-          throw new ConflictException(`Upload ${input.dropId} has already been claimed by another import run`);
+          throw new ConflictException(
+            `Upload ${input.dropId} has already been claimed by another import run`,
+          );
         }
       } else {
         // The inbox claim is the INSERT itself: the partial unique index on
@@ -694,9 +696,7 @@ export class ImportRunService {
     });
 
     // Newest first, matching listUnpushed and the run list.
-    return results.sort(
-      (a, b) => new Date(b.run.createdAt).getTime() - new Date(a.run.createdAt).getTime(),
-    );
+    return results.sort((a, b) => new Date(b.run.createdAt).getTime() - new Date(a.run.createdAt).getTime());
   }
 
   // -------------------------------------------------------------------------

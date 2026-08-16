@@ -147,7 +147,10 @@ export class ItemService {
    * "already saved" count reads zero on an import that was almost entirely
    * repeats.
    */
-  async createManyDetailed(context: UserServiceContext, data: CreateItemDto[]): Promise<Array<BulkInsertResult<Item>>> {
+  async createManyDetailed(
+    context: UserServiceContext,
+    data: CreateItemDto[],
+  ): Promise<Array<BulkInsertResult<Item>>> {
     if (data.length === 0) {
       return [];
     }

@@ -117,9 +117,7 @@ describe('InboxPanel', () => {
     await screen.findByText('takeout');
     fireEvent.click(screen.getByRole('button', { name: 'Import all' }));
 
-    expect(
-      await screen.findByText(/contacts\.vcf is already being imported/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/contacts\.vcf is already being imported/)).toBeInTheDocument();
     // Consumed units leave the folder; the list must not go stale.
     await waitFor(() => expect(scanInbox).toHaveBeenCalledTimes(2));
   });

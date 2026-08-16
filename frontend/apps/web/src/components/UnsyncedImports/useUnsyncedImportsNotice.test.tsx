@@ -1,10 +1,7 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  resetUnsyncedImportsNoticeForTests,
-  useUnsyncedImportsNotice,
-} from './useUnsyncedImportsNotice';
+import { resetUnsyncedImportsNoticeForTests, useUnsyncedImportsNotice } from './useUnsyncedImportsNotice';
 
 /**
  * The whole point is the gap it closes: parse finishes after the user walked

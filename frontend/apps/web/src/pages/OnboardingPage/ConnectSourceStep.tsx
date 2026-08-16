@@ -57,7 +57,6 @@ export function ConnectSourceStep() {
         </div>
       </div>
 
-
       <div className="space-y-4 max-w-5xl mx-auto w-full">
         <p className="text-lg sm:text-xl leading-snug text-muted-foreground">
           Have local exports? Import tools can seed your memory faster.

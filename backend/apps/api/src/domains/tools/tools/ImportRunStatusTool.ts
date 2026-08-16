@@ -6,7 +6,6 @@ import { ImportRunService } from '@ci/domains/import';
 import { BaseTool } from '../core/BaseTool';
 import type { IntentDefinition, ToolExecutionContext } from '../core/types';
 
-
 interface RunStatusInput {
   runId?: string;
 }

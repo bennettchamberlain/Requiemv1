@@ -24,7 +24,6 @@ export const CI_DOWNLOAD_URL = 'https://ci.computer/download';
 
 export const CAPTURE_DOWNLOAD_URL = 'https://ci.computer/download#capture';
 
-
 export const BROWSER_TIMEZONE = (() => {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';

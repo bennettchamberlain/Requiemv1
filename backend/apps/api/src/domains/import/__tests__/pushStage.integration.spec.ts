@@ -52,7 +52,11 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
 
   /** A stage wired to recording doubles for every destination. */
   function makeStage(
-    overrides: { communicationCreate?: jest.Mock; contentCreate?: jest.Mock; graph?: GraphIngestService } = {},
+    overrides: {
+      communicationCreate?: jest.Mock;
+      contentCreate?: jest.Mock;
+      graph?: GraphIngestService;
+    } = {},
   ) {
     const sent: Array<{ destination: string; input: Record<string, unknown> }> = [];
     // Every destination takes an ARRAY and reports `inserted` per row — that is
@@ -76,7 +80,13 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
     // Nothing resolved, and because `entity_mappings` stayed empty the
     // participant join silently produced nothing for any record. The mock
     // agreed with the code at every step.
-    const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() };
+    const logger = {
+      setContext: jest.fn(),
+      log: jest.fn(),
+      warn: jest.fn(),
+      debug: jest.fn(),
+      error: jest.fn(),
+    };
     const graph =
       overrides.graph ??
       new GraphIngestService(
@@ -449,7 +459,7 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
     expect(outcome.total).toBe(firstOutcome.total);
   });
 
-  it('counts a dead attempt\'s settled rows when it resumes mid-run', async () => {
+  it("counts a dead attempt's settled rows when it resumes mid-run", async () => {
     // A push killed mid-run leaves the ledger half settled. The resumed attempt
     // sends only the remainder, but its numbers must not restart the arithmetic
     // against the remainder: a run killed at 50k/305k resumes at 50k/305k, not

@@ -57,8 +57,7 @@ describe('SyncStep', () => {
 
     // The sentence is split across <strong> nodes; assert the assembled text.
     const summary = screen.getByText(
-      (_, element) =>
-        element?.tagName === 'P' && /staged across 2 imports/.test(element.textContent ?? ''),
+      (_, element) => element?.tagName === 'P' && /staged across 2 imports/.test(element.textContent ?? ''),
     );
 
     expect(summary).toBeInTheDocument();

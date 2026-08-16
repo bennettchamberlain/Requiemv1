@@ -11,7 +11,13 @@ function build() {
     purgeExpired: jest.fn(async () => 2),
     sweepUploadOrphans: jest.fn(async () => 1),
   };
-  const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() };
+  const logger = {
+    setContext: jest.fn(),
+    log: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+    error: jest.fn(),
+  };
   const cron = new StagedUploadPurgeCron(sources as never, logger as never);
 
   return { cron, sources, logger };
