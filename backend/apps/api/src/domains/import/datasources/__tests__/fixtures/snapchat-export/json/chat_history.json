@@ -1,0 +1,18 @@
+{
+  "Received Chat History": [
+    {
+      "From": "alice_snaps",
+      "Created": "2023-02-01 09:15:00 UTC",
+      "Text": "hey, you around?",
+      "Media Type": "TEXT"
+    }
+  ],
+  "Sent Chat History": [
+    {
+      "To": "alice_snaps",
+      "Created": "2023-02-01 09:16:20 UTC",
+      "Text": "yeah what's up",
+      "Media Type": "TEXT"
+    }
+  ]
+}

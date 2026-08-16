@@ -1,11 +1,14 @@
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 
 import { cn } from '@ci/shadcn';
 
 interface Props {
   background: string;
   border: string;
-  logo: string;
+  /** Image URL for the badge. Provide either this or `icon`. */
+  logo?: string;
+  /** An icon element for the badge, for entries with no brand image. */
+  icon?: ReactNode;
   text: string;
   disabled?: boolean;
   onClick?: () => void;
@@ -19,6 +22,7 @@ export function Card({
   background,
   border,
   logo,
+  icon,
   text,
   disabled = false,
   onClick,
@@ -83,7 +87,7 @@ export function Card({
           )}
           style={borderStyle}
         >
-          <img src={logo} className="w-12 h-12" alt="" />
+          {icon ?? <img src={logo} className="w-12 h-12" alt="" />}
         </div>
       </div>
       <div className="p-5 text-sm font-semibold leading-relaxed text-slate-800 dark:text-slate-100">

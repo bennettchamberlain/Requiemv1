@@ -1,0 +1,22 @@
+{
+  "participants": [{"name": "alice"}, {"name": "testuser"}],
+  "messages": [
+    {
+      "sender_name": "alice",
+      "timestamp_ms": 1609459200000,
+      "content": "Hey! How are you doing?"
+    },
+    {
+      "sender_name": "testuser",
+      "timestamp_ms": 1609459260000,
+      "content": "Great, thanks! Just got back from a hike."
+    },
+    {
+      "sender_name": "alice",
+      "timestamp_ms": 1609459320000,
+      "content": "That sounds amazing!"
+    }
+  ],
+  "title": "alice",
+  "thread_type": "Regular"
+}

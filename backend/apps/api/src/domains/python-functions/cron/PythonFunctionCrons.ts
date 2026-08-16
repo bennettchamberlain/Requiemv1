@@ -5,6 +5,7 @@ import { DataSource } from 'typeorm';
 
 import { FeatureService } from '@ci/common/feature';
 import { LoggerService } from '@ci/common/logging';
+import { serves } from '@ci/common/roles';
 
 import { PythonFunctionService } from '../services/PythonFunctionService';
 import type { PythonFunctionTarget } from '../types';
@@ -71,6 +72,12 @@ export class PythonFunctionCrons implements OnApplicationBootstrap {
 
   /** Sweep cold users into bootstrap shortly after the API comes up. */
   onApplicationBootstrap(): void {
+    // Web-role work: the delayed HBPE bootstrap sweep fanned out twice is
+    // duplicate jobs, not resilience.
+    if (!serves('web')) {
+      return;
+    }
+
     // Fire-and-forget: pg-boss may still be initialising its queues during
     // bootstrap, and a failed sweep is retried by the daily cron anyway.
     setTimeout(() => {

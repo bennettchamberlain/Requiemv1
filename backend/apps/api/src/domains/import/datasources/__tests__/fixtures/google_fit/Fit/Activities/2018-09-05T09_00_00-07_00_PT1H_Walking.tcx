@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TrainingCenterDatabase
+    xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2">
+    <Activities>
+        <Activity Sport="Walking">
+            <Id>2018-09-05T16:00:00.000Z</Id>
+            <Lap StartTime="2018-09-05T16:00:00.000Z">
+                <TotalTimeSeconds>3600</TotalTimeSeconds>
+                <Track>
+                    <Trackpoint>
+                        <Time>2018-09-05T16:00:38.775Z</Time>
+                        <Position>
+                            <LatitudeDegrees>33.5159276</LatitudeDegrees>
+                            <LongitudeDegrees>-117.7219496</LongitudeDegrees>
+                        </Position>
+                        <AltitudeMeters>113.29999542236328</AltitudeMeters>
+                    </Trackpoint>
+                    <Trackpoint>
+                        <Time>2018-09-05T16:01:12.500Z</Time>
+                        <Position>
+                            <LatitudeDegrees>33.5161</LatitudeDegrees>
+                            <LongitudeDegrees>-117.7221</LongitudeDegrees>
+                        </Position>
+                    </Trackpoint>
+                    <!-- No fix: trackpoint without <Position> is silently skipped. -->
+                    <Trackpoint>
+                        <Time>2018-09-05T16:01:45.000Z</Time>
+                    </Trackpoint>
+                    <!-- Malformed fix: empty coordinates → drop ledger. -->
+                    <Trackpoint>
+                        <Time>2018-09-05T16:02:00.000Z</Time>
+                        <Position>
+                            <LatitudeDegrees></LatitudeDegrees>
+                            <LongitudeDegrees></LongitudeDegrees>
+                        </Position>
+                    </Trackpoint>
+                </Track>
+            </Lap>
+        </Activity>
+    </Activities>
+    <Courses>
+        <Course>
+            <Name>Ridge Loop</Name>
+            <Lap>
+                <BeginPosition>
+                    <LatitudeDegrees>33.51</LatitudeDegrees>
+                    <LongitudeDegrees>-117.71</LongitudeDegrees>
+                </BeginPosition>
+            </Lap>
+            <CoursePoint>
+                <Name>Summit</Name>
+                <Time>2018-09-05T16:20:00.000Z</Time>
+                <Position>
+                    <LatitudeDegrees>33.52</LatitudeDegrees>
+                    <LongitudeDegrees>-117.73</LongitudeDegrees>
+                </Position>
+                <PointType>Summit</PointType>
+                <Notes>Top of the ridge</Notes>
+                <AltitudeMeters>240.5</AltitudeMeters>
+            </CoursePoint>
+            <CoursePoint>
+                <Name>Water</Name>
+                <Time>2018-09-05T16:25:30.250Z</Time>
+                <Position>
+                    <LatitudeDegrees>33.5165</LatitudeDegrees>
+                    <LongitudeDegrees>-117.7225</LongitudeDegrees>
+                </Position>
+            </CoursePoint>
+            <CoursePoint>
+                <Name>Broken</Name>
+                <Time>2018-09-05T16:30:00.000Z</Time>
+                <Position>
+                    <LatitudeDegrees></LatitudeDegrees>
+                    <LongitudeDegrees>-117.72</LongitudeDegrees>
+                </Position>
+            </CoursePoint>
+            <CoursePoint>
+                <Name>Untimed</Name>
+                <Position>
+                    <LatitudeDegrees>33.517</LatitudeDegrees>
+                    <LongitudeDegrees>-117.723</LongitudeDegrees>
+                </Position>
+            </CoursePoint>
+        </Course>
+    </Courses>
+</TrainingCenterDatabase>

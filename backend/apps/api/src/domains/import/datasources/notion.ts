@@ -1,0 +1,196 @@
+/* Notion — "Export → Markdown & CSV" output.
+   Produces a directory tree of "*.md" files (one per page; names often end with
+   a 32-hex id) plus optional "*.csv" for databases. Each .md page begins with a
+   "# Title" heading. Notion markdown does not embed a reliable created date, so
+   the timestamp is omitted unless a "Created: <date>" property line appears near
+   the top of the body. One 'note' event per .md file.
+*/
+import fs from 'node:fs';
+import path from 'node:path';
+
+import type { FileImporter, Recognition, DirEntry } from './registry';
+import { registerDataSource } from './registry';
+import type { ImportParams } from './timeline';
+import { timeframeContains } from './timeline';
+
+// Recurse a directory up to `depth` levels, returning absolute paths of *.md files.
+function findMarkdownFiles(dir: string, depth: number, out: string[]): void {
+  let names: fs.Dirent[];
+  try {
+    names = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  for (const ent of names) {
+    const full = path.join(dir, ent.name);
+    if (ent.isFile()) {
+      if (path.extname(ent.name).toLowerCase() === '.md') {
+        out.push(full);
+      }
+    } else if (ent.isDirectory() && depth > 0) {
+      findMarkdownFiles(full, depth - 1, out);
+    }
+  }
+}
+
+// Strip the leading "# " of the first non-empty line to get a page title.
+function extractTitle(text: string): string | undefined {
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    const m = /^#+\s+(.*)$/.exec(trimmed);
+
+    return (m ? m[1] : trimmed).trim() || undefined;
+  }
+
+  return undefined;
+}
+
+// Look for a "Created: <date>" style property line within the first ~15 lines.
+function extractCreated(text: string): Date | undefined {
+  const lines = text.split(/\r?\n/);
+  const limit = Math.min(lines.length, 15);
+  for (let i = 0; i < limit; i++) {
+    const m = /^\s*Created\s*:\s*(.+?)\s*$/i.exec(lines[i]);
+    if (!m) {
+      continue;
+    }
+
+    const d = new Date(m[1]);
+    if (!isNaN(d.getTime())) {
+      return d;
+    }
+
+    return undefined;
+  }
+
+  return undefined;
+}
+
+export class NotionFileImporter implements FileImporter {
+  async recognize(_ctx: unknown, entry: DirEntry): Promise<Recognition> {
+    const root = entry.fullPath || entry.fsRoot || entry.filename;
+    if (!root) {
+      return { confidence: 0 };
+    }
+
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(root);
+    } catch {
+      return { confidence: 0 };
+    }
+
+    if (stat.isFile()) {
+      // A single markdown page dropped directly — recognize modestly so a more
+      // specific importer can outrank us.
+      if (path.extname(root).toLowerCase() === '.md') {
+        return { confidence: 0.6 };
+      }
+
+      return { confidence: 0 };
+    }
+
+    if (stat.isDirectory()) {
+      const found: string[] = [];
+      findMarkdownFiles(root, 2, found);
+      if (found.length > 0) {
+        return { confidence: 0.65, dir_threshold: 0.7 };
+      }
+
+      return { confidence: 0, dir_threshold: 0.7 };
+    }
+
+    return { confidence: 0 };
+  }
+
+  async fileImport(_ctx: unknown, entry: DirEntry, params: ImportParams): Promise<void> {
+    const root = entry.fullPath || entry.fsRoot || entry.filename;
+    if (!root) {
+      return;
+    }
+
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(root);
+    } catch {
+      return;
+    }
+
+    const files: string[] = [];
+    if (stat.isFile()) {
+      if (path.extname(root).toLowerCase() === '.md') {
+        files.push(root);
+      }
+    } else if (stat.isDirectory()) {
+      findMarkdownFiles(root, 2, files);
+    }
+
+    for (const fpath of files) {
+      try {
+        await this.processFile(fpath, params);
+      } catch (e) {
+        params.log?.('error', `Failed to import Notion page ${path.basename(fpath)}`, {
+          error: (e as Error).message,
+        });
+      }
+    }
+  }
+
+  private async processFile(fpath: string, params: ImportParams): Promise<void> {
+    let raw: string;
+    try {
+      raw = await fs.promises.readFile(fpath, 'utf8');
+    } catch (e) {
+      params.log?.('error', `Failed to read Notion page ${path.basename(fpath)}`, {
+        error: (e as Error).message,
+      });
+
+      return;
+    }
+
+    // Strip a UTF-8 BOM if present.
+    if (raw.charCodeAt(0) === 0xfeff) {
+      raw = raw.slice(1);
+    }
+
+    if (!raw.trim()) {
+      return;
+    }
+
+    const title = extractTitle(raw);
+    const ts = extractCreated(raw);
+    if (!timeframeContains(params.timeframe, ts)) {
+      return;
+    }
+
+    params.pipeline.push({
+      item: {
+        id: 'notion:' + path.basename(fpath),
+        classification: 'note',
+        timestamp: ts,
+        content: {
+          filename: 'note.txt',
+          mediaType: 'text/plain',
+          data: async () => Buffer.from(raw),
+        },
+        metadata: {
+          Title: title || undefined,
+          Source: 'Notion',
+        },
+      },
+    });
+  }
+}
+
+registerDataSource({
+  name: 'notion',
+  title: 'Notion',
+  icon: '',
+  description: 'Pages from a Notion Markdown export.',
+  newFileImporter: () => new NotionFileImporter(),
+});

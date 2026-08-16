@@ -1,4 +1,5 @@
 {
+  "role": "CI_ROLE",
   "hostname": "APP_PUBLIC_HOSTNAME",
   "port": {
     "__name": "PORT",
@@ -121,6 +122,15 @@
       "__name": "CI_QUEUE_PER_QUEUE_CONCURRENCY",
       "__format": "json"
     }
+  },
+  "import": {
+    "scratchDir": "CI_IMPORT_SCRATCH_DIR",
+    "roots": {
+      "__name": "CI_IMPORT_ROOTS",
+      "__format": "json"
+    },
+    "uploadsDir": "CI_IMPORT_UPLOADS_DIR",
+    "inboxDir": "CI_IMPORT_INBOX_DIR"
   },
   "enrichment": {
     "window": {

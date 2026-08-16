@@ -1,0 +1,46 @@
+[
+  {
+    "uuid": "11111111-1111-1111-1111-111111111111",
+    "name": "Brainstorming names",
+    "created_at": "2024-02-01T10:00:00Z",
+    "updated_at": "2024-02-01T10:05:00Z",
+    "chat_messages": [
+      {
+        "uuid": "msg-1",
+        "text": "Help me brainstorm names for a coffee shop.",
+        "sender": "human",
+        "created_at": "2024-02-01T10:00:00Z",
+        "content": [{ "type": "text", "text": "Help me brainstorm names for a coffee shop." }]
+      },
+      {
+        "uuid": "msg-2",
+        "text": "How about 'The Daily Grind' or 'Bean There'?",
+        "sender": "assistant",
+        "created_at": "2024-02-01T10:01:00Z",
+        "content": [{ "type": "text", "text": "How about 'The Daily Grind' or 'Bean There'?" }]
+      }
+    ]
+  },
+  {
+    "uuid": "22222222-2222-2222-2222-222222222222",
+    "name": "Explaining recursion",
+    "created_at": "2024-02-02T14:00:00Z",
+    "updated_at": "2024-02-02T14:10:00Z",
+    "chat_messages": [
+      {
+        "uuid": "msg-3",
+        "text": "",
+        "sender": "human",
+        "created_at": "2024-02-02T14:00:00Z",
+        "content": [{ "type": "text", "text": "Explain recursion simply." }]
+      },
+      {
+        "uuid": "msg-4",
+        "text": "Recursion is when a function calls itself with a smaller input.",
+        "sender": "assistant",
+        "created_at": "2024-02-02T14:01:00Z",
+        "content": [{ "type": "text", "text": "Recursion is when a function calls itself with a smaller input." }]
+      }
+    ]
+  }
+]

@@ -8,6 +8,7 @@ import { Outlet } from 'react-router-dom';
 import logo from '@/assets/logo.png';
 import { ConnectionModeIndicator, OutboxQueueIndicator } from '@/components/ConnectionModeIndicator';
 import { useTheme } from '@/components/ThemePicker';
+import { useUnsyncedImportsNotice } from '@/components/UnsyncedImports/useUnsyncedImportsNotice';
 
 import { MobileNavigation } from './MobileNavigation/MobileNavigation';
 import { PrimaryNavigation } from './PrimaryNavigation';
@@ -17,6 +18,10 @@ export function Main() {
   const { t } = useTranslation();
   const { isMobile } = useDeviceLayout();
   const { themeState } = useTheme();
+
+  // Every authenticated page passes through this layout, which makes it the
+  // one place a page-load check reaches "across all pages".
+  useUnsyncedImportsNotice();
 
   if (isMobile) {
     return (

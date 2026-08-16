@@ -1,0 +1,21 @@
+{
+  "Received Snap History": [
+    {
+      "From": "alice_snaps",
+      "Media Type": "IMAGE",
+      "Created": "2023-01-15 10:30:00 UTC"
+    },
+    {
+      "From": "bob_w",
+      "Media Type": "VIDEO",
+      "Created": "2023-01-16 18:45:12 UTC"
+    }
+  ],
+  "Sent Snap History": [
+    {
+      "To": "alice_snaps",
+      "Media Type": "VIDEO",
+      "Created": "2023-01-15 11:02:33 UTC"
+    }
+  ]
+}

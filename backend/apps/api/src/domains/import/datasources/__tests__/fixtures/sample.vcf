@@ -1,0 +1,20 @@
+BEGIN:VCARD
+VERSION:3.0
+FN:John Doe
+N:Doe;John;;;
+TEL;TYPE=HOME:+1-555-123-4567
+TEL;TYPE=WORK:+1-555-987-6543
+EMAIL;TYPE=INTERNET:john.doe@example.com
+EMAIL;TYPE=WORK:jdoe@company.com
+BDAY:19850315
+NICKNAME:Johnny
+URL:https://johndoe.example.com
+NOTE:Test contact for vCard importer
+END:VCARD
+BEGIN:VCARD
+VERSION:3.0
+FN:Jane Smith
+N:Smith;Jane;Marie;;
+TEL;TYPE=CELL:+1-555-456-7890
+EMAIL;TYPE=INTERNET:jane.smith@example.com
+END:VCARD

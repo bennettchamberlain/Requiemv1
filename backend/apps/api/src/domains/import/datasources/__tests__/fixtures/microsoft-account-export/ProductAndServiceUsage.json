@@ -1,0 +1,6 @@
+{
+  "pages": [
+    { "EndDateTime": "2024-01-05T10:00:00Z", "AppName": "Microsoft Edge", "Publisher": "Microsoft" },
+    { "EndDateTime": "2024-01-06T11:30:00Z", "AppName": "Word", "Publisher": "Microsoft" }
+  ]
+}

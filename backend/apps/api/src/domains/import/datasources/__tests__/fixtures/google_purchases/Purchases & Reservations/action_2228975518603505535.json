@@ -1,0 +1,15 @@
+{
+  "order": {
+    "name": "Pixel Buds Pro",
+    "merchant": "Google Store",
+    "orderDate": "2023-05-14T18:02:11Z",
+    "total": {
+      "amount": 199.99,
+      "currency": "USD"
+    },
+    "status": "Delivered",
+    "orderId": "GS.0123-4567-8901"
+  },
+  "uniqueId": "2228975518603505535",
+  "lastModifiedTime": "2023-05-14T18:05:00.123456Z"
+}

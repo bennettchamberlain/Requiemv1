@@ -1,0 +1,4 @@
+[
+  { "DateTime": "2024-02-01T09:00:00Z", "Title": "A Documentary", "Type": "Movie" },
+  { "DateTime": "/Date(1700000000000)/", "Title": "Some Song", "Type": "Music" }
+]

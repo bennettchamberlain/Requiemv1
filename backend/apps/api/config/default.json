@@ -142,6 +142,12 @@
     "fetchBatchSize": 10,
     "perQueueConcurrency": 6
   },
+  "import": {
+    "scratchDir": "/var/tmp/ci-import",
+    "roots": [],
+    "uploadsDir": "/var/lib/ci-import/uploads",
+    "inboxDir": "/var/lib/ci-import/inbox"
+  },
   "enrichment": {
     "window": {
       "enabled": true,
@@ -169,6 +175,7 @@
     "insights.page": true,
     "chat.page": true,
     "jobs.page": true,
+    "import.page": true,
     "planning.enabled": false,
     "planning.page": false,
     "planning.emptyState": false,

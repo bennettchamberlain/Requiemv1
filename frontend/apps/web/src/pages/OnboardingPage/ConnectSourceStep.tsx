@@ -1,17 +1,19 @@
 import { useState } from 'react';
 
-import { ExternalLink } from '@ci/shadcn/icons';
+import { Dialog } from '@ci/shadcn';
+import { Download } from '@ci/shadcn/icons';
 
-import { BrandPrimaryButton } from '@/components/BrandPrimaryButton/BrandPrimaryButton';
 import { ProviderConnectDialog } from '@/components/connect/ProviderConnectDialog';
 import { ServiceIntegrationsSection } from '@/components/connect/ServiceIntegrationsSection';
 import { Card } from '@/pages/ConnectPage/Card';
+import { ImportSurface } from '@/pages/ImportPage/ImportPage';
 
-import { CAPTURE_DOWNLOAD_URL, CHROME_EXTENSION_URL, CI_DOWNLOAD_URL, IMPORT_TOOLS_URL } from './constants';
+import { CAPTURE_DOWNLOAD_URL, CHROME_EXTENSION_URL, CI_DOWNLOAD_URL } from './constants';
 import { StepHeader } from './StepHeader';
 
 export function ConnectSourceStep() {
   const [dialogProviderId, setDialogProviderId] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   const openDownload = () => window.open(CI_DOWNLOAD_URL, '_blank', 'noopener,noreferrer');
   const openCaptureDownload = () => window.open(CAPTURE_DOWNLOAD_URL, '_blank', 'noopener,noreferrer');
@@ -56,6 +58,37 @@ export function ConnectSourceStep() {
       </div>
 
       <div className="space-y-4 max-w-5xl mx-auto w-full">
+        <p className="text-lg sm:text-xl leading-snug text-muted-foreground">
+          Have local exports? Import tools can seed your memory faster.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-4">
+          <Card
+            icon={<Download aria-hidden className="h-12 w-12 text-blue-600" />}
+            background="bg-blue-600"
+            border="border-blue-500"
+            text="Import data archives you've exported from your services — Google Takeout, Apple, Spotify, and dozens more."
+            onClick={() => setImportOpen(true)}
+          />
+        </div>
+      </div>
+
+      {/* The import surface comes to the user as a dialog rather than
+          navigating to /import: the onboarding gate bounces main-app routes
+          straight back here, and a dialog dismisses back into the step so
+          onboarding can be finished. */}
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <Dialog.Content className="flex h-[85vh] flex-col overflow-hidden sm:max-w-5xl [&>button]:cursor-pointer">
+          <Dialog.Header>
+            <Dialog.Title>Import your data</Dialog.Title>
+            <Dialog.Description>
+              Everything you import stays on this appliance. Close this any time to finish setting up.
+            </Dialog.Description>
+          </Dialog.Header>
+          <ImportSurface variant="onboarding" />
+        </Dialog.Content>
+      </Dialog>
+
+      <div className="space-y-4 max-w-5xl mx-auto w-full">
         <p className="text-lg sm:text-xl leading-snug text-muted-foreground text-center px-2">
           On the computer you use most, download Companion Capture. It streams screenshots and activity logs
           into your memory.
@@ -83,18 +116,6 @@ export function ConnectSourceStep() {
             onClick={openCaptureDownload}
           />
         </div>
-      </div>
-
-      <div className="rounded-xl border border-border/70 bg-background/70 p-5 space-y-3 max-w-2xl mx-auto w-full">
-        <p className="text-lg sm:text-xl leading-snug text-muted-foreground">
-          Have local exports? Import tools can seed your memory faster.
-        </p>
-        <BrandPrimaryButton className="w-full sm:w-auto text-base sm:text-lg h-12 px-6" asChild>
-          <a href={IMPORT_TOOLS_URL} target="_blank" rel="noopener noreferrer">
-            Get import tools
-            <ExternalLink className="ml-2 h-4 w-4" />
-          </a>
-        </BrandPrimaryButton>
       </div>
 
       <ProviderConnectDialog
