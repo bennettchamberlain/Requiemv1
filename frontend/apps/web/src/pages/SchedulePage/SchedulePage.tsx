@@ -252,6 +252,15 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
   // the brief below it. `min-h-60` gives that spinner somewhere to be, since
   // while it shows there is nothing else in this column to give the box height.
   //
+  // `shrink-0` is what makes `min-h-60` safe. The host is a definite-height
+  // flex column, and a flex item's default `min-height: auto` — its
+  // content-based automatic minimum — is the only reason pages overflow and
+  // scroll instead of squashing. Setting min-height REPLACES that automatic
+  // minimum, which would re-enable shrinking: schedule and brief together
+  // exceed any normal viewport, so both would be compressed below their
+  // content, painting over each other and putting part of the page out of
+  // scroll range. Refusing to shrink restores overflow-and-scroll.
+  //
   // `PageContent` is a stable module-level reference and `'div'` is a string,
   // so `Frame` keeps the same element type across renders — no remounting, and
   // `weekOffset` / `selectedDay` survive the host re-rendering.
@@ -262,7 +271,7 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
       <Frame
         className={
           embedded
-            ? 'relative flex min-h-60 w-full min-w-0 flex-col gap-3'
+            ? 'relative flex min-h-60 w-full min-w-0 shrink-0 flex-col gap-3'
             : 'gap-3 pt-[max(0.75rem,env(safe-area-inset-top))] md:gap-3'
         }
       >
