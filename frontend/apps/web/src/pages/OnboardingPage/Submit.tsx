@@ -32,7 +32,7 @@ export function Submit() {
       );
     }
 
-    return <Navigate to="/feed" />;
+    return <Navigate to="/plan" />;
   }
 
   return (

@@ -7,11 +7,11 @@ import {
   Cable,
   CalendarRange,
   ChartColumn,
+  CloudSun,
   LifeBuoy,
   Inbox,
   ListTodo,
   MessagesSquare,
-  NotebookPen,
   FolderSearch2,
   Workflow,
 } from '@ci/shadcn/icons';
@@ -39,10 +39,7 @@ function ExternalNavLink({ href, label, children }: ExternalNavLinkProps) {
       target="_blank"
       rel="noopener noreferrer"
       aria-label={label}
-      className={cn(
-        'relative rounded-md transition will-change-transform hover:bg-accent hover:text-accent-foreground active:scale-95',
-        expanded ? 'flex items-center gap-3 px-2 py-2' : 'p-2',
-      )}
+      className="relative flex items-center gap-3 rounded-md px-2 py-2 transition will-change-transform hover:bg-accent hover:text-accent-foreground active:scale-95"
     >
       {children}
       {expanded && <span className="truncate text-sm">{label}</span>}
@@ -105,17 +102,13 @@ export function SecondaryNavigation() {
               </NavLink>
             )}
 
-            {/* Stand-in for predictions / actions / insights until those
-                surfaces are split out of Feed. */}
-            <NavLink to="/feed" label="Feed" badgeCount={feedBadgeCount}>
-              <Inbox className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+            <NavLink to="/forecast" label="Forecast">
+              <CloudSun className="h-6 w-6 shrink-0" strokeWidth={1.25} />
             </NavLink>
 
-            {isFeatureEnabled('jobs.page') && (
-              <NavLink to="/jobs" label="Jobs">
-                <Workflow className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-              </NavLink>
-            )}
+            <NavLink to="/brief" label="Brief" badgeCount={feedBadgeCount}>
+              <Inbox className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+            </NavLink>
 
             <NavLink to="/memory" label="Memory">
               <Brain className="h-6 w-6 shrink-0" strokeWidth={1.25} />
@@ -124,15 +117,8 @@ export function SecondaryNavigation() {
 
           <RailGroupLabel>More</RailGroupLabel>
           <div className="flex flex-col gap-1">
-            {/* One entry. Connect, import, and devices are paths on the same
-                page — a rail submenu that opened a second accordion was a
-                second way to do what the tiles already do. */}
-            <NavLink to="/sources" label="Sources" end={false}>
-              <Cable className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-            </NavLink>
-
-            <NavLink to="/notes" label="Notes" end={false}>
-              <NotebookPen className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+            <NavLink to="/saved-searches" label="Saved Searches">
+              <FolderSearch2 className="h-6 w-6 shrink-0" strokeWidth={1.25} />
             </NavLink>
 
             {isFeatureEnabled('chat.page') && (
@@ -141,15 +127,24 @@ export function SecondaryNavigation() {
               </NavLink>
             )}
 
+            {/* One entry. Connect, import, and devices are paths on the same
+                page — a rail submenu that opened a second accordion was a
+                second way to do what the tiles already do. */}
+            <NavLink to="/sources" label="Sources" end={false}>
+              <Cable className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+            </NavLink>
+
+            {isFeatureEnabled('jobs.page') && (
+              <NavLink to="/jobs" label="Jobs">
+                <Workflow className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+              </NavLink>
+            )}
+
             {isFeatureEnabled('stats.page') && (
               <NavLink to="/stats" label="Stats">
                 <ChartColumn className="h-6 w-6 shrink-0" strokeWidth={1.25} />
               </NavLink>
             )}
-
-            <NavLink to="/saved-searches" label="Saved Searches">
-              <FolderSearch2 className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-            </NavLink>
           </div>
         </div>
 

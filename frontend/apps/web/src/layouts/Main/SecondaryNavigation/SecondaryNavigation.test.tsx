@@ -45,7 +45,7 @@ beforeEach(() => {
   localStorage.removeItem(STORAGE_KEY);
 });
 
-function renderRail(route = '/feed', { expanded = false }: { expanded?: boolean } = {}) {
+function renderRail(route = '/plan', { expanded = false }: { expanded?: boolean } = {}) {
   if (expanded) {
     localStorage.setItem(STORAGE_KEY, 'true');
   }
@@ -61,7 +61,7 @@ function renderRail(route = '/feed', { expanded = false }: { expanded?: boolean 
   );
 }
 
-function renderToggleAndRail(route = '/feed') {
+function renderToggleAndRail(route = '/plan') {
   return render(
     <MemoryRouter initialEntries={[route]}>
       <PowerRailProvider>
@@ -81,16 +81,29 @@ describe('SecondaryNavigation', () => {
     expect(screen.getByRole('link', { name: 'Sources' })).toHaveAttribute('href', '/sources');
   });
 
-  it('carries Jobs in the primary rail', () => {
+  it('carries Jobs in the rail', () => {
     renderRail();
 
     expect(screen.getByRole('link', { name: 'Jobs' })).toHaveAttribute('href', '/jobs');
+  });
+
+  it('does not carry Notes in the rail', () => {
+    renderRail();
+
+    expect(screen.queryByRole('link', { name: 'Notes' })).not.toBeInTheDocument();
   });
 
   it('carries Plan in the primary rail', () => {
     renderRail();
 
     expect(screen.getByRole('link', { name: 'Plan' })).toHaveAttribute('href', '/plan');
+  });
+
+  it('carries Forecast and Brief in the primary rail', () => {
+    renderRail();
+
+    expect(screen.getByRole('link', { name: 'Forecast' })).toHaveAttribute('href', '/forecast');
+    expect(screen.getByRole('link', { name: 'Brief' })).toHaveAttribute('href', '/brief');
   });
 
   it('carries the account control in the rail', () => {
@@ -116,7 +129,7 @@ describe('SecondaryNavigation', () => {
   });
 
   it('shows labels and groups when expanded, without a Sources submenu', () => {
-    renderRail('/feed', { expanded: true });
+    renderRail('/plan', { expanded: true });
 
     expect(screen.getByRole('navigation')).toHaveAttribute('data-state', 'expanded');
     expect(screen.getByText('Plan')).toBeInTheDocument();
@@ -126,15 +139,20 @@ describe('SecondaryNavigation', () => {
     expect(screen.queryByRole('link', { name: 'Import' })).not.toBeInTheDocument();
   });
 
-  it('lists Plan, then Schedule, then Feed, then Jobs, then Memory', () => {
+  it('lists the spine then More in time-and-tool order', () => {
     renderRail();
 
     const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
 
     expect(hrefs.indexOf('/plan')).toBeLessThan(hrefs.indexOf('/schedule'));
-    expect(hrefs.indexOf('/schedule')).toBeLessThan(hrefs.indexOf('/feed'));
-    expect(hrefs.indexOf('/feed')).toBeLessThan(hrefs.indexOf('/jobs'));
-    expect(hrefs.indexOf('/jobs')).toBeLessThan(hrefs.indexOf('/memory'));
+    expect(hrefs.indexOf('/schedule')).toBeLessThan(hrefs.indexOf('/forecast'));
+    expect(hrefs.indexOf('/forecast')).toBeLessThan(hrefs.indexOf('/brief'));
+    expect(hrefs.indexOf('/brief')).toBeLessThan(hrefs.indexOf('/memory'));
+    expect(hrefs.indexOf('/memory')).toBeLessThan(hrefs.indexOf('/saved-searches'));
+    expect(hrefs.indexOf('/saved-searches')).toBeLessThan(hrefs.indexOf('/chat'));
+    expect(hrefs.indexOf('/chat')).toBeLessThan(hrefs.indexOf('/sources'));
+    expect(hrefs.indexOf('/sources')).toBeLessThan(hrefs.indexOf('/jobs'));
+    expect(hrefs.indexOf('/jobs')).toBeLessThan(hrefs.indexOf('/stats'));
   });
 });
 
@@ -152,12 +170,14 @@ describe('PowerRailToggle', () => {
     fireEvent.click(toggle);
 
     expect(screen.getByRole('button', { name: 'Close menu' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Companion Intelligence')).toBeInTheDocument();
     expect(screen.getByText('Main')).toBeInTheDocument();
     expect(localStorage.getItem(STORAGE_KEY)).toBe('true');
 
     fireEvent.click(screen.getByRole('button', { name: 'Close menu' }));
 
     expect(screen.getByRole('button', { name: 'Open menu' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('Companion Intelligence')).not.toBeInTheDocument();
     expect(screen.queryByText('Main')).not.toBeInTheDocument();
     expect(localStorage.getItem(STORAGE_KEY)).toBe('false');
   });

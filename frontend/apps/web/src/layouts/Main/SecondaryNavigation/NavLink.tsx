@@ -42,7 +42,9 @@ export function NavLink({ to, label, children, badgeCount = 0, className, ...pro
         <span
           className={cn(
             'pointer-events-none inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground',
-            expanded ? 'ml-auto' : 'absolute -right-1 -top-1',
+            // Inset when collapsed: the rail's overflow-y-auto scrollport
+            // clips anything that hangs outside the icon cell.
+            expanded ? 'ml-auto' : 'absolute right-0 top-0',
           )}
         >
           {badgeCount > 99 ? '99+' : badgeCount}

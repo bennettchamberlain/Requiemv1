@@ -49,7 +49,7 @@ export function SummaryDetailPage() {
           <Breadcrumb.List>
             <Breadcrumb.Item>
               <Breadcrumb.Link asChild>
-                <Link to="/feed">Feed</Link>
+                <Link to="/brief">Brief</Link>
               </Breadcrumb.Link>
             </Breadcrumb.Item>
             {summary && (

@@ -5,11 +5,11 @@ import { expect, test } from '@playwright/test';
 // stable signals (URL, view tabs, container) and each test saves a screenshot
 // artifact (uploaded by .github/workflows/e2e.yml).
 
-test('feed renders on mobile', async ({ page }) => {
-  await page.goto('/feed');
+test('brief renders on mobile', async ({ page }) => {
+  await page.goto('/brief');
 
-  await expect(page).toHaveURL(/\/feed/);
-  await page.screenshot({ path: 'test-results/screenshots/feed-mobile.png', fullPage: true });
+  await expect(page).toHaveURL(/\/brief/);
+  await page.screenshot({ path: 'test-results/screenshots/brief-mobile.png', fullPage: true });
 });
 
 test('memory list view renders on mobile', async ({ page }) => {

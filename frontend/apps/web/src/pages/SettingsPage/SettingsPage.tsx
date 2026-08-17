@@ -20,6 +20,8 @@ import {
 import { useTranslation } from 'react-i18next';
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 
+import { useFeatures } from '@/common/feature';
+
 const AppearanceSection = lazy(() =>
   import('./sections/AppearanceSection').then((m) => ({ default: m.AppearanceSection })),
 );
@@ -61,13 +63,14 @@ export function SettingsPage() {
   const { t } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
+  const { isFeatureEnabled } = useFeatures();
   const backgroundLocation = (
     location.state as { backgroundLocation?: { pathname: string; search: string; hash: string } } | null
   )?.backgroundLocation;
 
   const handleClose = useCallback(() => {
-    navigate(backgroundLocation ?? '/feed');
-  }, [backgroundLocation, navigate]);
+    navigate(backgroundLocation ?? (isFeatureEnabled('planning.page') ? '/plan' : '/brief'));
+  }, [backgroundLocation, isFeatureEnabled, navigate]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {

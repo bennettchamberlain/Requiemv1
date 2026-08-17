@@ -1,6 +1,7 @@
 import { LoadingPage } from '@ci/common';
 import { Navigate } from 'react-router-dom';
 
+import { useFeatures } from '@/common/feature';
 import { useAuth, useCurrentUser } from '@/hooks';
 
 export function RedirectKnownUser({ children }: { children: React.ReactNode }) {
@@ -10,8 +11,9 @@ export function RedirectKnownUser({ children }: { children: React.ReactNode }) {
   // state needed to attach the server's field errors.
   const [{ expired, authToken, initializing }] = useAuth();
   const { user, loading: userLoading } = useCurrentUser();
+  const { isFeatureEnabled, loading: featuresLoading } = useFeatures();
 
-  if (initializing || userLoading) {
+  if (initializing || userLoading || (user?.onboarded && featuresLoading)) {
     return <LoadingPage />;
   }
 
@@ -27,7 +29,7 @@ export function RedirectKnownUser({ children }: { children: React.ReactNode }) {
 
   if (user) {
     if (user.onboarded) {
-      return <Navigate to="/feed" />;
+      return <Navigate to={isFeatureEnabled('planning.page') ? '/plan' : '/brief'} />;
     }
 
     return <Navigate to="/onboarding" />;
