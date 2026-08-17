@@ -165,6 +165,8 @@ export {
 // its barrel rather than into its internals.
 export { dataSourcesRecognize } from './datasources/registry';
 export type { DirEntry, DataSourceRecognition } from './datasources/registry';
+export { recognizePathWithinRoots } from './datasources/recognizePath';
+export type { PathRecognition, PathRecognitionMatch } from './datasources/recognizePath';
 
 export { ParseStage } from './stages/ParseStage';
 export { PushStage } from './stages/PushStage';
@@ -186,6 +188,7 @@ export {
 
 export { ImportRunsController } from './controllers/ImportRunsController';
 export type {
+  RecognizeBody,
   RunDetail,
   RunSummary,
   StageSummary,
