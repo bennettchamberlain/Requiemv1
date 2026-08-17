@@ -125,6 +125,38 @@ describe('ImportUploadsController.upload', () => {
     expect(fs.existsSync(survivor.path)).toBe(false);
   });
 
+  it('stages a folder as one directory drop when relative paths are sent', async () => {
+    const { controller, sources } = makeController();
+    const conversations = incomingUpload('conversations.json', '{"mapping":{}}');
+    const html = incomingUpload('chat.html', '<html></html>');
+
+    const staged = await controller.upload(ctx, [conversations, html], {
+      paths: ['chatgpt-export/conversations.json', 'chatgpt-export/chat.html'],
+    });
+
+    expect(staged).toHaveLength(1);
+    expect(sources.registerUpload).toHaveBeenCalledTimes(1);
+    expect(sources.registerUpload.mock.calls[0][1]).toMatchObject({
+      kind: 'directory',
+      originalFilename: 'chatgpt-export',
+    });
+
+    const sourcePath = sources.registerUpload.mock.calls[0][1].sourcePath as string;
+
+    expect(fs.statSync(sourcePath).isDirectory()).toBe(true);
+    expect(fs.readFileSync(path.join(sourcePath, 'conversations.json'), 'utf8')).toBe('{"mapping":{}}');
+    expect(fs.readFileSync(path.join(sourcePath, 'chat.html'), 'utf8')).toBe('<html></html>');
+  });
+
+  it('refuses a folder upload whose path count does not match the files', async () => {
+    const { controller, sources } = makeController();
+
+    await expect(
+      controller.upload(ctx, [incomingUpload('a.json')], { paths: ['a/a.json', 'a/b.json'] }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(sources.registerUpload).not.toHaveBeenCalled();
+  });
+
   it('refuses an empty upload before touching anything', async () => {
     const { controller, sources } = makeController();
 

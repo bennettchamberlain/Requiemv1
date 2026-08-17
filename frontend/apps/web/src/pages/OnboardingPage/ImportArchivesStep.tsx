@@ -26,7 +26,8 @@ const HEADINGS: Record<ImportStage, { title: string; description: string }> = {
   },
   export: {
     title: 'Export your data',
-    description: 'Follow the steps for each service, then drop the file it gives you onto the card.',
+    description:
+      'Follow the steps for each service, then drop the file or folder it gives you onto the card.',
   },
   sync: {
     title: 'Add it to your memory',
