@@ -1,8 +1,7 @@
 import { type ReactNode, useState } from 'react';
 
 import { useMutation, useQuery } from '@apollo/client';
-import { GlobalUID, LoadingPage, Portal, usePageTitle, EmptyState } from '@ci/common';
-import { Breadcrumb } from '@ci/shadcn';
+import { GlobalUID, LoadingPage, usePageTitle, EmptyState } from '@ci/common';
 import { useParams } from 'react-router-dom';
 
 import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
@@ -105,28 +104,5 @@ export function ContentPage() {
     );
   }
 
-  return (
-    <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Page>Content</Breadcrumb.Page>
-            </Breadcrumb.Item>
-
-            {contentItem && (
-              <>
-                <Breadcrumb.Separator className="hidden md:block" />
-                <Breadcrumb.Item>
-                  <Breadcrumb.Page>{contentItem.title}</Breadcrumb.Page>
-                </Breadcrumb.Item>
-              </>
-            )}
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
-      {content}
-    </>
-  );
+  return <>{content}</>;
 }

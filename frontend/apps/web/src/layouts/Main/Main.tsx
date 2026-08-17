@@ -55,9 +55,10 @@ export function Main() {
           <PrimaryNavigation />
         </div>
 
-        <div className="bg-secondary/20 border-r border-r-secondary/90">
-          <SecondaryNavigation />
-        </div>
+        {/* No background or border here: the rail is a drawer that floats over
+            the content when hovered, so it owns its own surface. Painting the
+            lane too would double the tint wherever the two overlap. */}
+        <SecondaryNavigation />
 
         <div className="overflow-hidden min-w-0 min-h-0 flex flex-col">
           <Suspense fallback={<LoadingPage />}>

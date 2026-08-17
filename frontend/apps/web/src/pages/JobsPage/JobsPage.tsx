@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 
-import { Portal, usePageTitle } from '@ci/common';
-import { Badge, Breadcrumb, Button, Card, Skeleton } from '@ci/shadcn';
+import { usePageTitle } from '@ci/common';
+import { Badge, Button, Card, Skeleton } from '@ci/shadcn';
 import { AlertTriangle, RefreshCcw } from '@ci/shadcn/icons';
 
 import { PageContent } from '@/components/layout';
@@ -48,16 +48,6 @@ export function JobsPage() {
 
   return (
     <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item>
-              <Breadcrumb.Page>Jobs</Breadcrumb.Page>
-            </Breadcrumb.Item>
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
       <PageContent>
         <div className="flex flex-col gap-3">
           <SummaryCard

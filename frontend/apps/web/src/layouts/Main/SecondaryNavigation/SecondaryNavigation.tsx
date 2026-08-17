@@ -73,96 +73,122 @@ function RailGroupLabel({ children }: { children: ReactNode }) {
 }
 
 export function SecondaryNavigation() {
-  const { expanded } = usePowerRail();
+  const { expanded, pinned, setHovered } = usePowerRail();
   const { isFeatureEnabled } = useFeatures();
   const feedBadgeCount = useFeedBadgeCount();
 
   return (
-    <nav
-      id="power-rail"
-      data-state={expanded ? 'expanded' : 'collapsed'}
-      className={cn(
-        'flex h-full flex-col overflow-x-hidden p-2 transition-[width] duration-200',
-        expanded ? 'w-56' : 'w-14',
-      )}
+    // A drawer, not a column that shoves the page around.
+    //
+    // The wrapper always occupies the collapsed width, so the layout beside it
+    // never moves on hover. The rail itself is absolutely positioned inside
+    // that lane and grows over the content when it opens — brushing past on
+    // the way to something else costs you a widening panel, not a reflow of
+    // everything you were reading.
+    //
+    // Pinning is the exception, and deliberately so: a pinned rail takes real
+    // width, the content settles beside it once, and it stays that way.
+    <div
+      className={cn('relative h-full shrink-0 transition-[width] duration-200', pinned ? 'w-56' : 'w-14')}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocusCapture={() => setHovered(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setHovered(false);
+        }
+      }}
     >
-      <Tooltip.Provider>
-        <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
-          <RailGroupLabel>Main</RailGroupLabel>
-          <div className="flex flex-col gap-1">
-            {isFeatureEnabled('planning.page') && (
-              <NavLink to="/plan" label="Plan">
-                <ListTodo className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+      <nav
+        id="power-rail"
+        data-state={expanded ? 'expanded' : 'collapsed'}
+        className={cn(
+          'absolute inset-y-0 left-0 z-30 flex flex-col overflow-x-hidden p-2 transition-[width] duration-200',
+          'bg-secondary/20 backdrop-blur-sm',
+          expanded ? 'w-56' : 'w-14',
+          // Only when it is floating over the content does it need to look
+          // like it: pinned, it is part of the furniture.
+          expanded && !pinned && 'border-r border-r-secondary/90 shadow-xl',
+        )}
+      >
+        <Tooltip.Provider>
+          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+            <RailGroupLabel>Main</RailGroupLabel>
+            <div className="flex flex-col gap-1">
+              {isFeatureEnabled('planning.page') && (
+                <NavLink to="/plan" label="Plan">
+                  <ListTodo className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+                </NavLink>
+              )}
+
+              {isFeatureEnabled('schedule.page') && (
+                <NavLink to="/schedule" label="Schedule">
+                  <CalendarRange className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+                </NavLink>
+              )}
+
+              <NavLink to="/forecast" label="Forecast">
+                <CloudSun className="h-6 w-6 shrink-0" strokeWidth={1.25} />
               </NavLink>
-            )}
 
-            {isFeatureEnabled('schedule.page') && (
-              <NavLink to="/schedule" label="Schedule">
-                <CalendarRange className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+              <NavLink to="/brief" label="Brief" badgeCount={feedBadgeCount}>
+                <Inbox className="h-6 w-6 shrink-0" strokeWidth={1.25} />
               </NavLink>
-            )}
 
-            <NavLink to="/forecast" label="Forecast">
-              <CloudSun className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-            </NavLink>
-
-            <NavLink to="/brief" label="Brief" badgeCount={feedBadgeCount}>
-              <Inbox className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-            </NavLink>
-
-            <NavLink to="/memory" label="Memory">
-              <Brain className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-            </NavLink>
-          </div>
-
-          <RailGroupLabel>More</RailGroupLabel>
-          <div className="flex flex-col gap-1">
-            <NavLink to="/saved-searches" label="Saved Searches">
-              <FolderSearch2 className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-            </NavLink>
-
-            {isFeatureEnabled('chat.page') && (
-              <NavLink to="/chat" label="Chat">
-                <MessagesSquare className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+              <NavLink to="/memory" label="Memory">
+                <Brain className="h-6 w-6 shrink-0" strokeWidth={1.25} />
               </NavLink>
-            )}
+            </div>
 
-            {/* One entry. Connect, import, and devices are paths on the same
+            <RailGroupLabel>More</RailGroupLabel>
+            <div className="flex flex-col gap-1">
+              <NavLink to="/saved-searches" label="Saved Searches">
+                <FolderSearch2 className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+              </NavLink>
+
+              {isFeatureEnabled('chat.page') && (
+                <NavLink to="/chat" label="Chat">
+                  <MessagesSquare className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+                </NavLink>
+              )}
+
+              {/* One entry. Connect, import, and devices are paths on the same
                 page — a rail submenu that opened a second accordion was a
                 second way to do what the tiles already do. */}
-            <NavLink to="/sources" label="Sources" end={false}>
-              <Cable className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-            </NavLink>
-
-            {isFeatureEnabled('jobs.page') && (
-              <NavLink to="/jobs" label="Jobs">
-                <Workflow className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+              <NavLink to="/sources" label="Sources" end={false}>
+                <Cable className="h-6 w-6 shrink-0" strokeWidth={1.25} />
               </NavLink>
-            )}
 
-            {isFeatureEnabled('stats.page') && (
-              <NavLink to="/stats" label="Stats">
-                <ChartColumn className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-              </NavLink>
-            )}
+              {isFeatureEnabled('jobs.page') && (
+                <NavLink to="/jobs" label="Jobs">
+                  <Workflow className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+                </NavLink>
+              )}
+
+              {isFeatureEnabled('stats.page') && (
+                <NavLink to="/stats" label="Stats">
+                  <ChartColumn className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+                </NavLink>
+              )}
+            </div>
           </div>
-        </div>
 
-        <div className="mt-auto flex flex-col gap-1 pb-2">
-          <ExternalNavLink href="https://ci.computer/support" label="Support">
-            <LifeBuoy className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-          </ExternalNavLink>
+          <div className="mt-auto flex flex-col gap-1 pb-2">
+            <ExternalNavLink href="https://ci.computer/support" label="Support">
+              <LifeBuoy className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+            </ExternalNavLink>
 
-          <ExternalNavLink
-            href="https://docs.ci.computer/docs/first-party-apps/digital-memory-server"
-            label="Docs"
-          >
-            <BookOpen className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-          </ExternalNavLink>
+            <ExternalNavLink
+              href="https://docs.ci.computer/docs/first-party-apps/digital-memory-server"
+              label="Docs"
+            >
+              <BookOpen className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+            </ExternalNavLink>
 
-          <NavUser />
-        </div>
-      </Tooltip.Provider>
-    </nav>
+            <NavUser />
+          </div>
+        </Tooltip.Provider>
+      </nav>
+    </div>
   );
 }

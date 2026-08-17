@@ -1,8 +1,7 @@
 import { useCallback, useState } from 'react';
 
 import { useQuery } from '@apollo/client';
-import { Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb } from '@ci/shadcn';
+import { usePageTitle } from '@ci/common';
 
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
@@ -40,16 +39,6 @@ export function FilesPage() {
 
   return (
     <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item>
-              <Breadcrumb.Page>Content</Breadcrumb.Page>
-            </Breadcrumb.Item>
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
       <PageContent className="gap-4 p-0">
         <MemoryHubShell>
           <div className="flex flex-col gap-4 px-4 pb-4">
