@@ -20,12 +20,11 @@ import path from 'node:path';
  * tell those two apart, so the run surfaces a disk error for a filename problem
  * and a multi-gigabyte import dies at 0%.
  *
- * macOS ships a second extractor that gets this right — `ditto`, which reads
- * the same archive, honours UTF-8 entry names, and is what the Finder uses. So
- * rather than special-casing the error, fall back to it whenever `unzip` fails
- * for any reason: on macOS that turns the common failure into a success, and on
- * Linux `ditto` does not exist, the probe returns false, and behaviour is
- * exactly what it was.
+ * Linux Info-ZIP (Debian/Ubuntu) accepts `-O`/`-I` charset flags. Passing
+ * UTF-8 there makes Takeout names land correctly instead of as CP437
+ * mojibake (`ñ` → `├▒`). macOS Info-ZIP has no such flags, so we still fall
+ * back to `ditto` whenever `unzip` fails: on macOS that turns the common
+ * failure into a success, and on Linux `ditto` does not exist.
  *
  * Path containment is deliberately NOT this module's job — callers that need it
  * (see `extract.ts`) assert it against the archive's listed entry names before
@@ -61,6 +60,43 @@ export function systemUnzipAvailable(): boolean {
   }
 
   return unzipProbe;
+}
+
+let unzipUtf8CharsetProbe: boolean | undefined;
+
+/**
+ * Whether this `unzip` accepts `-O`/`-I` charset flags (Debian/Ubuntu yes,
+ * stock macOS Info-ZIP 6.00 no). Cached; probes once via `unzip -hh`.
+ */
+export function unzipSupportsUtf8Charset(): boolean {
+  if (unzipUtf8CharsetProbe === undefined) {
+    if (!systemUnzipAvailable()) {
+      unzipUtf8CharsetProbe = false;
+    } else {
+      try {
+        const help = spawnSync('unzip', ['-hh'], { encoding: 'utf8' });
+        const text = `${help.stdout ?? ''}\n${help.stderr ?? ''}`;
+        unzipUtf8CharsetProbe = /(?:^|\s)-O\s+CHARSET/i.test(text);
+      } catch {
+        unzipUtf8CharsetProbe = false;
+      }
+    }
+  }
+
+  return unzipUtf8CharsetProbe;
+}
+
+function unzipExtractArgs(archive: string, destDir: string): string[] {
+  const args = ['-o', '-qq'];
+  if (unzipSupportsUtf8Charset()) {
+    // -O = DOS/Windows/OEM names (Takeout); -I = UNIX names. Both UTF-8 so
+    // bit-11-clear archives keep the bytes Google actually wrote.
+    args.push('-O', 'UTF-8', '-I', 'UTF-8');
+  }
+
+  args.push(archive, '-d', destDir);
+
+  return args;
 }
 
 let dittoProbe: boolean | undefined;
@@ -117,7 +153,7 @@ export function systemExtract(archive: string, destDir: string): SystemExtractRe
   let detail = '';
 
   if (systemUnzipAvailable()) {
-    const r = spawnSync('unzip', ['-o', '-qq', archive, '-d', destDir], { stdio: 'ignore' });
+    const r = spawnSync('unzip', unzipExtractArgs(archive, destDir), { stdio: 'ignore' });
 
     if (r.status === 0 || r.status === 1) {
       return { ok: true, tool: 'unzip', detail: '' };
