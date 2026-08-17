@@ -34,8 +34,16 @@ export class SyncOrchestrator {
   async orchestrateSyncJobs(): Promise<void> {
     const activeConnections = await this.connectionService.findActiveConnections();
 
-    activeConnections.forEach(({ connection }) => {
-      connection.activeEndpoints.forEach(async (endpoint) => {
+    // for...of, not forEach. `Array.prototype.forEach` discards the promise an
+    // async callback returns, so a rejection inside the body is orphaned: it
+    // reaches neither this method's caller, nor the @Cron wrapper, nor Nest's
+    // own scheduler catch — it surfaces as an unhandled rejection, which
+    // application.ts turns into process.exit(1). The body below makes six
+    // awaited database calls and runs every minute, so one pool timeout was
+    // enough to restart the API. Awaiting also bounds the concurrency, which was
+    // previously every connection × every endpoint at once.
+    for (const { connection } of activeConnections) {
+      for (const endpoint of connection.activeEndpoints) {
         const providerEndpoint = connection.provider!.endpoints.find((e) => e.name === endpoint);
         if (!providerEndpoint) {
           this.logger.error('Active endpoint not found on provider', {
@@ -43,7 +51,10 @@ export class SyncOrchestrator {
             endpoint,
           });
 
-          return;
+          // `continue`, not `return`: inside the old async forEach callback this
+          // skipped one endpoint, but in a for...of it would abandon every
+          // remaining endpoint AND every remaining connection in the sweep.
+          continue;
         }
 
         const iterationType = providerEndpoint.iterationType;
@@ -88,14 +99,16 @@ export class SyncOrchestrator {
             );
 
             if (stalledInProgress) {
-              stalledInProgress.forEach(async (sync) => {
+              // for...of: an async forEach callback orphans its rejection (see
+              // orchestrateSyncJobs above).
+              for (const sync of stalledInProgress) {
                 await this.connectionSyncJobService.markAsCompleted(
                   { userId: connection.userId },
                   sync.id,
                   'failed',
                   { error: 'Sync job stalled in progress' },
                 );
-              });
+              }
             }
 
             if (successes.length > 0 && (!pendingOrInProgress || stalledInProgress.length > 0)) {
@@ -153,18 +166,21 @@ export class SyncOrchestrator {
             );
 
             if (stalledInProgress.length > 0) {
-              stalledInProgress.forEach(async (sync) => {
+              // for...of: an async forEach callback orphans its rejection (see
+              // orchestrateSyncJobs above).
+              for (const sync of stalledInProgress) {
                 await this.connectionSyncJobService.markAsCompleted(
                   { userId: connection.userId },
                   sync.id,
                   'failed',
                   { error: 'Sync job stalled in progress' },
                 );
-              });
+              }
             }
 
             if (pendingOrInProgress) {
-              return;
+              // `continue`, not `return` — see the note at the top of the loop.
+              continue;
             }
 
             if (successes.length > 0) {
@@ -207,8 +223,8 @@ export class SyncOrchestrator {
             }
           }
         }
-      });
-    });
+      }
+    }
   }
 
   /**
@@ -271,6 +287,24 @@ export class SyncOrchestrator {
     if (!syncJob) {
       this.logger.error('Sync job not found for execution', {
         connectionSyncJobId: payload.connectionSyncJobId,
+      });
+
+      return;
+    }
+
+    // Claim check. `executeSyncJobs` selects rows by `status: 'pending'` every
+    // 30 seconds and enqueues without an idempotency key, so a sync still
+    // running when the next tick fires gets enqueued again — and pg-boss will
+    // not stop it, because every queue here uses the default `standard` policy
+    // under which a singletonKey is stored but not enforced. Without this check
+    // the handler would then set `in_progress` a second time and re-run
+    // `serviceFunction` against the same un-advanced cursor: a duplicate
+    // provider fetch and a duplicate ingest. It also stops a completed row from
+    // being resurrected by a late redelivery.
+    if (syncJob.status !== 'pending') {
+      this.logger.debug('Sync job is no longer pending; skipping duplicate delivery', {
+        connectionSyncJobId: syncJob.id,
+        status: syncJob.status,
       });
 
       return;
@@ -427,6 +461,21 @@ export class SyncOrchestrator {
     if (!syncJob) {
       this.logger.error('Sync job not found for transformation', {
         connectionSyncJobId: payload.connectionSyncJobId,
+      });
+
+      return;
+    }
+
+    // The self-DoS this prevents: `executeTransformJobs` runs every minute and
+    // selects rows with `lastTransformed: null`, which is only written on
+    // COMPLETION — and `updated_at` does not move while the transform runs. So
+    // any transform exceeding 60 seconds was re-enqueued once a minute until it
+    // finished, and with the `etl` per-queue ceiling of 6 a five-minute
+    // transform ended up with six concurrent copies of itself, each holding a
+    // slot. GmailTransformService.transformGmail routinely exceeds a minute.
+    if (syncJob.lastTransformed != null) {
+      this.logger.debug('Sync job has already been transformed; skipping duplicate delivery', {
+        connectionSyncJobId: syncJob.id,
       });
 
       return;

@@ -120,7 +120,12 @@ describe('PickStep', () => {
             ecosystem: 'amazon',
             category: 'reading',
           }),
-          catalogSource({ id: 'amazon_music', title: 'Amazon Music', ecosystem: 'amazon', category: 'audio' }),
+          catalogSource({
+            id: 'amazon_music',
+            title: 'Amazon Music',
+            ecosystem: 'amazon',
+            category: 'audio',
+          }),
         ]}
         picked={new Set()}
         onToggle={onToggle}
@@ -130,7 +135,13 @@ describe('PickStep', () => {
 
     const amazon = screen.getByRole('button', { name: /Amazon/ });
 
-    for (const kind of ['Orders & payments', 'Watch history', 'Listening', 'Playlists', 'Books & highlights']) {
+    for (const kind of [
+      'Orders & payments',
+      'Watch history',
+      'Listening',
+      'Playlists',
+      'Books & highlights',
+    ]) {
       expect(amazon).toHaveTextContent(kind);
     }
   });

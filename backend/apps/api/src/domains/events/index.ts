@@ -23,12 +23,15 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { JobsController } from './controllers/JobsController';
+import { JobMetricEntity } from './entities/JobMetricEntity';
 import { PgBossArchiveEntity } from './entities/PgBossArchiveEntity';
 import { PgBossJobEntity } from './entities/PgBossJobEntity';
 import { PgBossQueueEntity } from './entities/PgBossQueueEntity';
 import { PgBossScheduleEntity } from './entities/PgBossScheduleEntity';
 import { EventService } from './services/EventService';
+import { JobMetricsCollector } from './services/JobMetricsCollector';
 import { JobMonitorService } from './services/JobMonitorService';
+import { JobQueryService } from './services/JobQueryService';
 import { LocalEventService } from './services/LocalEventService';
 import { PGBossEventService } from './services/PGBossEventService';
 
@@ -37,7 +40,13 @@ import { PGBossEventService } from './services/PGBossEventService';
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([PgBossJobEntity, PgBossArchiveEntity, PgBossScheduleEntity, PgBossQueueEntity]),
+    TypeOrmModule.forFeature([
+      PgBossJobEntity,
+      PgBossArchiveEntity,
+      PgBossScheduleEntity,
+      PgBossQueueEntity,
+      JobMetricEntity,
+    ]),
   ],
   providers: [
     {
@@ -45,6 +54,8 @@ import { PGBossEventService } from './services/PGBossEventService';
       useClass: PGBossEventService,
     },
     JobMonitorService,
+    JobQueryService,
+    JobMetricsCollector,
   ],
   controllers: [JobsController],
   exports: [EventService],
