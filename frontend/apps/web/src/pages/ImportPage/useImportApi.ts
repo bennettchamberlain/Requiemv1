@@ -197,8 +197,10 @@ export function useImportApi() {
   );
 
   const listRuns = useCallback(
-    async (): Promise<ImportRun[]> =>
-      (await fetchJson<ImportRun[]>('/api/import/runs', { headers: authHeaders() })) ?? [],
+    async (limit?: number): Promise<ImportRun[]> =>
+      (await fetchJson<ImportRun[]>(limit == null ? '/api/import/runs' : `/api/import/runs?limit=${limit}`, {
+        headers: authHeaders(),
+      })) ?? [],
     [authHeaders],
   );
 

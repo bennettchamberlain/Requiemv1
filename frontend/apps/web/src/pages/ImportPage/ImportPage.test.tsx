@@ -12,6 +12,9 @@ vi.mock('./HistoryTab', () => ({ HistoryTab: () => <div>history surface</div> })
  * surface (the page exists to walk someone through an import), with the Inbox
  * folder and History one click away on the same row. There is no "Import" tab
  * — the steps are it, and clicking one is the way back.
+ *
+ * Not a tablist: the wizard has no trigger of its own, and a tablist whose
+ * selected panel has no trigger is malformed. Two toggle buttons instead.
  */
 describe('ImportSurface', () => {
   it('opens on the wizard', () => {
@@ -22,35 +25,44 @@ describe('ImportSurface', () => {
     expect(screen.queryByText('history surface')).not.toBeInTheDocument();
   });
 
-  it('switches to the Inbox tab', () => {
+  it('switches to the Inbox', () => {
     render(<ImportSurface />);
 
-    const inbox = screen.getByRole('tab', { name: /inbox/i });
-
-    fireEvent.mouseDown(inbox, { button: 0 });
-    fireEvent.click(inbox);
+    fireEvent.click(screen.getByRole('button', { name: /inbox/i }));
     expect(screen.getByText('inbox surface')).toBeInTheDocument();
   });
 
   it('switches to History, and a step button is the way back', () => {
     render(<ImportSurface />);
 
-    // Radix activates a tab from mousedown, not the synthesized click alone.
-    const history = screen.getByRole('tab', { name: /history/i });
-
-    fireEvent.mouseDown(history, { button: 0 });
-    fireEvent.click(history);
+    fireEvent.click(screen.getByRole('button', { name: /history/i }));
     expect(screen.getByText('history surface')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Pick/ }));
     expect(screen.getByText('wizard surface')).toBeInTheDocument();
   });
 
-  it('offers no Import tab — the steps name that surface already', () => {
+  it('pressing the surface you are on returns to the wizard', () => {
     render(<ImportSurface />);
 
-    expect(screen.queryByRole('tab', { name: /^import$/i })).not.toBeInTheDocument();
-    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Inbox', 'History']);
+    const inbox = screen.getByRole('button', { name: /inbox/i });
+
+    fireEvent.click(inbox);
+    expect(inbox).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.click(inbox);
+    expect(inbox).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByText('inbox surface')).not.toBeInTheDocument();
+  });
+
+  // A tablist whose selected panel has no trigger is malformed: Radix labels
+  // every panel `aria-labelledby` its trigger id, so the wizard's panel pointed
+  // at an element that had been removed.
+  it('is not a tablist at all', () => {
+    render(<ImportSurface />);
+
+    expect(screen.queryAllByRole('tab')).toHaveLength(0);
+    expect(screen.queryAllByRole('tabpanel')).toHaveLength(0);
   });
 
   it('marks no step current while another surface is showing', () => {
@@ -58,12 +70,28 @@ describe('ImportSurface', () => {
 
     expect(screen.getByRole('button', { name: /Pick/ })).toHaveAttribute('aria-current', 'step');
 
-    const inbox = screen.getByRole('tab', { name: /inbox/i });
-
-    fireEvent.mouseDown(inbox, { button: 0 });
-    fireEvent.click(inbox);
+    fireEvent.click(screen.getByRole('button', { name: /inbox/i }));
 
     // Saying "you are on Pick" while the Inbox is on screen would be a lie.
     expect(screen.getByRole('button', { name: /Pick/ })).not.toHaveAttribute('aria-current');
+  });
+
+  // The defect this file exists to pin: the wizard holds the services you
+  // picked, the export card you are on and the runs each card started. It used
+  // to be UNMOUNTED on a trip to History, so coming back via the Export step
+  // landed you on an Export screen with nothing in it.
+  it('keeps the wizard mounted across a trip to History', () => {
+    render(<ImportSurface />);
+
+    const wizard = screen.getByText('wizard surface');
+
+    fireEvent.click(screen.getByRole('button', { name: /history/i }));
+
+    // Still in the DOM, merely hidden — so none of its state was thrown away.
+    expect(wizard).toBeInTheDocument();
+    expect(wizard.closest('[hidden], .hidden')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /Pick/ }));
+    expect(screen.getByText('wizard surface')).toBe(wizard);
   });
 });

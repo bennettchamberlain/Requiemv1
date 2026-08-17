@@ -1,12 +1,14 @@
 import type { ReactNode } from 'react';
 
 import { cn } from '@ci/shadcn';
-import { ArrowRight, Cable, PackageOpen } from '@ci/shadcn/icons';
+import { ArrowRight, Cable, MonitorSmartphone, PackageOpen } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
 import type { SourceCounts } from './useSourceCounts';
 
-export type SourcePath = 'connect' | 'import';
+export type SourcePath = 'connect' | 'import' | 'devices';
+
+export const SOURCE_PATHS: readonly SourcePath[] = ['connect', 'import', 'devices'];
 
 interface PathDefinition {
   readonly path: SourcePath;
@@ -31,7 +33,7 @@ const PATHS: Record<SourcePath, PathDefinition> = {
     path: 'connect',
     to: '/sources/connect',
     icon: <Cable aria-hidden className="h-7 w-7" strokeWidth={1.25} />,
-    title: 'Connect a service',
+    title: 'Services',
     effort: 'About a minute, once.',
     gets: 'Everything from now on, plus whatever recent history the service hands over.',
     cta: 'Browse services',
@@ -40,60 +42,83 @@ const PATHS: Record<SourcePath, PathDefinition> = {
     path: 'import',
     to: '/sources/import',
     icon: <PackageOpen aria-hidden className="h-7 w-7" strokeWidth={1.25} />,
-    title: 'Import an export',
+    title: 'Import',
     effort: 'You request it from the service and wait hours or days, then it takes minutes.',
     gets: 'Your whole history, as far back as the service keeps it.',
     cta: 'Start an import',
   },
+  devices: {
+    path: 'devices',
+    to: '/sources/devices',
+    icon: <MonitorSmartphone aria-hidden className="h-7 w-7" strokeWidth={1.25} />,
+    title: 'Devices',
+    effort: 'Install once, on each browser and machine you use.',
+    gets: 'What you read, and what you do on your own computer — neither of which any export contains.',
+    cta: 'Add a device',
+  },
 };
 
 interface Props {
-  /** Which half is on screen, so the switch can say so. */
+  /** Which path is on screen, so the switch can say so. */
   active: SourcePath;
   counts: SourceCounts;
-  /** Hidden entirely when the appliance has importing turned off. */
-  importEnabled: boolean;
+  /** The paths this appliance actually offers, in order. */
+  paths: readonly SourcePath[];
+}
+
+/** What this path has to show for itself, as its tile reports it. */
+function countFor(path: SourcePath, counts: SourceCounts): { value: number; noun: string } {
+  switch (path) {
+    case 'connect':
+      return { value: counts.connections, noun: 'connected' };
+    case 'import':
+      return { value: counts.imports, noun: counts.imports === 1 ? 'import' : 'imports' };
+    case 'devices':
+      return { value: counts.devices, noun: counts.devices === 1 ? 'device' : 'devices' };
+  }
 }
 
 /**
- * The two ways data gets in, as one control.
+ * The ways data gets in, as one control.
  *
  * This is both the page's navigation and its empty state, on purpose. A
- * separate first-run screen is a second thing to keep true; here the same two
- * tiles simply render louder when there is nothing yet — with what each path is
- * best for, what it costs you, and a button — and quieter once something is
- * flowing, with counts.
+ * separate first-run screen is a second thing to keep true; here the same tiles
+ * simply render louder when there is nothing yet — with what each path is best
+ * for, what it costs you, and a button — and quieter once something is flowing,
+ * with counts.
  *
- * The distinction the first-run copy draws is the one people actually get
- * wrong: connecting is cheap and forward-looking, an export is slow and
- * backward-looking, and most people want both. Saying that here is the whole
- * job of the screen a new user lands on.
+ * Three paths, not two. Services and Import are the two halves of "the
+ * services I use"; Devices is what you install rather than sign into — the
+ * browser extension and Capture, which between them are the only source of
+ * what you read and what you do on your own machine. They spent this page's
+ * first version as sections below the whole service catalogue, which put the
+ * two least substitutable sources behind the longest scroll.
+ *
+ * The pitch is per path, not per page: a tile makes its case only while THAT
+ * path has nothing to show, so someone with services connected and no devices
+ * is told what a device would give them and nothing else.
  */
-export function SourcePathTiles({ active, counts, importEnabled }: Props) {
-  // With importing turned off there is only one path, and a switch with one
-  // position is furniture. The half below is the page.
-  if (!importEnabled) {
-    return null;
-  }
-
-  const firstRun = counts.isFirstRun;
-
-  // No heading above the tiles, first run or not. A line saying "there are two
-  // ways in" sits directly on top of two tiles that show exactly that, and on
-  // an empty appliance it was the third restatement of the page's own name.
-  // The tiles carry the guidance themselves.
+export function SourcePathTiles({ active, counts, paths }: Props) {
   return (
     <section aria-label="Ways to add data" className="w-full">
-      <div className={cn('grid gap-4', firstRun ? 'md:grid-cols-2' : 'sm:grid-cols-2')}>
-        {(['connect', 'import'] as const).map((key) => (
-          <PathTile
-            key={key}
-            definition={PATHS[key]}
-            active={active === key}
-            firstRun={firstRun}
-            count={key === 'connect' ? counts.connections : counts.imports}
-          />
-        ))}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {paths.map((key) => {
+          const count = countFor(key, counts);
+
+          return (
+            <PathTile
+              key={key}
+              definition={PATHS[key]}
+              active={active === key}
+              // PER PATH, not per page. Someone with three services connected
+              // and no devices still needs to be told what a device would give
+              // them — and no longer needs to be told what a service would.
+              // A page-wide flag showed the pitch for everything or nothing.
+              firstRun={!counts.loading && count.value === 0}
+              count={count}
+            />
+          );
+        })}
       </div>
     </section>
   );
@@ -103,7 +128,7 @@ interface PathTileProps {
   definition: PathDefinition;
   active: boolean;
   firstRun: boolean;
-  count: number;
+  count: { value: number; noun: string };
 }
 
 function PathTile({ definition, active, firstRun, count }: PathTileProps) {
@@ -130,11 +155,9 @@ function PathTile({ definition, active, firstRun, count }: PathTileProps) {
           {definition.icon}
         </span>
         <span className={cn('font-semibold', firstRun ? 'text-lg' : 'text-base')}>{definition.title}</span>
-        {!firstRun && count > 0 && (
+        {count.value > 0 && (
           <span className="text-muted-foreground ml-auto text-xs font-medium tabular-nums">
-            {definition.path === 'connect'
-              ? `${count} connected`
-              : `${count} ${count === 1 ? 'import' : 'imports'}`}
+            {count.value} {count.noun}
           </span>
         )}
       </div>

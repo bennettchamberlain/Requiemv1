@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 
-import { Tabs } from '@ci/shadcn';
+import { cn } from '@ci/shadcn';
 
 import { HistoryTab } from './HistoryTab';
 import { InboxPanel } from './InboxPanel';
@@ -41,8 +41,11 @@ export interface ImportSurfaceProps {
  * pinned and only what sits below it scrolls, which needs a real ceiling to
  * scroll against.
  */
+/** The three things the import surface can be showing. */
+type Surface = 'import' | 'inbox' | 'history';
+
 export function ImportSurface({ variant = 'page', onStageChange }: ImportSurfaceProps) {
-  const [tab, setTab] = useState('import');
+  const [surface, setSurface] = useState<Surface>('import');
   const [stage, setStage] = useState<ImportStage>('pick');
   const [canExport, setCanExport] = useState(false);
 
@@ -55,13 +58,19 @@ export function ImportSurface({ variant = 'page', onStageChange }: ImportSurface
   );
 
   return (
-    <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col gap-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
       {/* ONE navigation row, not two. The wizard's step buttons used to sit in
           a row of their own directly under an Import/Inbox/History tab bar —
           two bands of chrome, and the tab bar's first entry ("Import") named
           the same thing as the row beneath it ("1 Pick"). The steps ARE the
-          import tab now: clicking one comes back here from Inbox or History,
-          and the tab bar keeps only the two destinations the steps do not name.
+          import surface: clicking one comes back here from Inbox or History,
+          and only the two destinations the steps do not name get a button.
+
+          Deliberately NOT a Radix `Tabs`. A tablist whose selected panel has no
+          trigger is malformed — Radix labels every panel `aria-labelledby` its
+          trigger id, so the wizard's panel pointed at an element that had been
+          removed, and assistive tech announced a tabpanel with no accessible
+          name. Two toggle buttons say what this actually is.
 
           Onboarding shows none of it. History is meaningless on a first run —
           there are no runs to revisit — and the Inbox is the batch path for
@@ -72,43 +81,95 @@ export function ImportSurface({ variant = 'page', onStageChange }: ImportSurface
       {variant === 'page' ? (
         <div className="flex shrink-0 flex-col gap-2 lg:flex-row lg:items-start">
           <WizardSteps
-            step={tab === 'import' ? stage : null}
+            step={surface === 'import' ? stage : null}
             canExport={canExport}
             onStep={(next) => {
               handleStage(next);
-              setTab('import');
+              setSurface('import');
             }}
             className="min-w-0 flex-1"
           />
 
-          <Tabs.List className="shrink-0 lg:h-auto lg:self-stretch">
-            <Tabs.Trigger value="inbox">Inbox</Tabs.Trigger>
-            <Tabs.Trigger value="history">History</Tabs.Trigger>
-          </Tabs.List>
+          <div
+            role="group"
+            aria-label="Other import views"
+            className="flex shrink-0 gap-1 rounded-md bg-muted p-1 text-sm"
+          >
+            <SurfaceToggle
+              active={surface === 'inbox'}
+              onClick={() => setSurface((current) => (current === 'inbox' ? 'import' : 'inbox'))}
+            >
+              Inbox
+            </SurfaceToggle>
+            <SurfaceToggle
+              active={surface === 'history'}
+              onClick={() => setSurface((current) => (current === 'history' ? 'import' : 'history'))}
+            >
+              History
+            </SurfaceToggle>
+          </div>
         </div>
       ) : null}
 
-      {/* overflow-hidden, not auto: the wizard scrolls itself below the row.
-          Inbox and History have no pinned part, so they scroll whole. */}
-      <Tabs.Content value="import" className="min-h-0 flex-1 overflow-hidden">
+      {/* The wizard stays MOUNTED and is hidden, never unmounted.
+
+          Everything it holds — the services you picked, which export card you
+          are on, and which runs each card has already started — lives in its
+          own state. Unmounting it threw all of that away, so glancing at
+          History and clicking back to Export returned you to an Export step
+          with nothing in it: silent loss of work that the persistent step row
+          actively invites you to risk. `hidden` costs a hidden subtree and
+          keeps the work.
+
+          overflow-hidden, not auto: the wizard scrolls itself below the row. */}
+      <div className={cn('min-h-0 flex-1 overflow-hidden', surface !== 'import' && 'hidden')}>
         <ImportWizard
           step={variant === 'page' ? stage : undefined}
           onStepChange={handleStage}
           onCanExportChange={setCanExport}
         />
-      </Tabs.Content>
+      </div>
 
-      {variant === 'page' ? (
-        <Tabs.Content value="inbox" className="min-h-0 flex-1 overflow-y-auto">
+      {/* Inbox and History hold nothing you can lose — both re-read the server
+          on mount — so they are mounted only while shown. */}
+      {variant === 'page' && surface === 'inbox' ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
           <InboxPanel />
-        </Tabs.Content>
+        </div>
       ) : null}
 
-      {variant === 'page' ? (
-        <Tabs.Content value="history" className="min-h-0 flex-1 overflow-y-auto">
+      {variant === 'page' && surface === 'history' ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
           <HistoryTab />
-        </Tabs.Content>
+        </div>
       ) : null}
-    </Tabs>
+    </div>
+  );
+}
+
+function SurfaceToggle({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: string;
+}) {
+  return (
+    <button
+      type="button"
+      // A real toggle: pressing the one you are on returns you to the wizard,
+      // which is what makes `aria-pressed` the honest state for it.
+      aria-pressed={active}
+      onClick={onClick}
+      className={cn(
+        'cursor-pointer rounded-sm px-3 py-1.5 font-medium transition-colors',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        active ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+      )}
+    >
+      {children}
+    </button>
   );
 }

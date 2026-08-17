@@ -136,49 +136,73 @@ describe('pickableSections', () => {
 
 /**
  * The picker used to show a name and nothing else, so "what would adding this
- * give me" was answerable only by picking it and reading the next step. These
- * lists are derived from each source's authored `whatImported` rather than a
- * second field that would drift out of sync with it.
+ * give me" was answerable only by picking it and reading the next step.
+ *
+ * These lists key off each source's `category`, not off its authored
+ * `whatImported` prose. The prose matcher this replaced failed both ways at
+ * once: only 17 of 100 catalog entries carry `whatImported`, and where it did
+ * exist it produced false claims — the cases pinned below.
  */
 describe('objectsFor', () => {
-  it('reads the object nouns out of the authored sentences', () => {
-    expect(
-      objectsFor([
-        'Every message with sender, recipients, subject, and date',
-        'Thread relationships and inline + attached files',
-      ]).map((object) => object.label),
-    ).toEqual(['Messages', 'Files']);
+  it('gives every catalog category a list', () => {
+    // The categories the backend actually uses (guides.ts). A new one falling
+    // through is caught here rather than by a user seeing a bare tile.
+    const CATEGORIES = [
+      'mail',
+      'photos',
+      'location',
+      'calendar',
+      'contacts',
+      'video',
+      'messages',
+      'health',
+      'audio',
+      'social',
+      'browser',
+      'reading',
+      'misc',
+      'travel',
+      'ai',
+      'productivity',
+      'gaming',
+      'finance',
+      'code',
+    ];
+
+    for (const category of CATEGORIES) {
+      expect(objectsFor(category), category).not.toHaveLength(0);
+    }
   });
 
-  it('orders by the vocabulary, not by how the sentences happened to be phrased', () => {
-    const forwards = objectsFor(['Photos and videos with GPS']);
-    const backwards = objectsFor(['GPS coordinates, videos and photos']);
-
-    expect(forwards.map((object) => object.label)).toEqual(backwards.map((object) => object.label));
-    expect(forwards.map((object) => object.label)).toEqual(['Photos', 'Videos', 'Places']);
+  it('gives a GPS format Places, not Listening and Orders', () => {
+    // GPX's authored prose is "Track points (lat/lon) in route order" — which
+    // the old keyword matcher read as music tracks and shop orders, while
+    // missing location entirely because "lat/lon" is not "coordinates".
+    expect(objectsFor('location').map((o) => o.label)).toEqual(['Places']);
   });
 
-  it('claims nothing for a source with no authored list', () => {
-    // An importer nobody has written yet must not have its output invented.
+  it('claims nothing for a category it has not been taught', () => {
+    expect(objectsFor('brand-new-category')).toEqual([]);
     expect(objectsFor(undefined)).toEqual([]);
-    expect(objectsFor([])).toEqual([]);
   });
 
   it('caps a long list rather than growing the tile without limit', () => {
-    expect(
-      objectsFor([
-        'Messages, photos, videos, calendar events, contacts, GPS',
-        'Posts, listening history, watch history, bookmarks, orders',
-      ]),
-    ).toHaveLength(4);
+    for (const category of ['photos', 'social', 'browser', 'code', 'audio']) {
+      expect(objectsFor(category).length).toBeLessThanOrEqual(4);
+    }
   });
 
   it('gives a bundle the union of what its members import, deduplicated', () => {
     expect(
-      mergeObjects([objectsFor(['Every message and photo']), objectsFor(['Photos and calendar events'])]).map(
-        (object) => object.label,
-      ),
-    ).toEqual(['Messages', 'Photos', 'Calendar']);
+      mergeObjects([objectsFor('mail'), objectsFor('photos'), objectsFor('mail')]).map((o) => o.label),
+    ).toEqual(['Mail', 'Photos', 'Videos']);
+  });
+
+  it('orders a bundle by the vocabulary, not by member order', () => {
+    const forwards = mergeObjects([objectsFor('mail'), objectsFor('calendar')]);
+    const backwards = mergeObjects([objectsFor('calendar'), objectsFor('mail')]);
+
+    expect(forwards.map((o) => o.label)).toEqual(backwards.map((o) => o.label));
   });
 });
 

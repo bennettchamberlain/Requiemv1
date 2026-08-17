@@ -7,7 +7,8 @@ import { PageContent } from '@/components/layout';
 import { ImportSurface } from '@/pages/ImportPage/ImportPage';
 
 import { ConnectPanel } from './ConnectPanel';
-import { SourcePathTiles, type SourcePath } from './SourcePathTiles';
+import { DevicesPanel } from './DevicesPanel';
+import { SOURCE_PATHS, SourcePathTiles, type SourcePath } from './SourcePathTiles';
 import { useSourceCounts } from './useSourceCounts';
 
 /**
@@ -30,21 +31,27 @@ export function SourcesPage() {
   const importEnabled = isFeatureEnabled('import.page');
   const counts = useSourceCounts();
 
-  // One route with a `:half` param rather than two sibling routes, so the
-  // header, the switch and the counts mount once and survive the crossing —
-  // no page-level remount, no refetch, when someone flips between halves.
+  // One route with a `:half` param rather than sibling routes, so the switch
+  // and the counts mount once and survive the crossing — no page-level
+  // remount, no refetch, when someone moves between paths.
   const { half } = useParams<{ half?: string }>();
-  const active: SourcePath = half === 'import' ? 'import' : 'connect';
 
-  usePageTitle(`Sources - Companion Intelligence`);
+  // Only the import path is gated. A gated ROUTE in this app is never
+  // registered rather than blocked, which is why /sources itself is not one:
+  // the other three paths must exist whatever `import.page` says.
+  const paths = SOURCE_PATHS.filter((path) => path !== 'import' || importEnabled);
 
-  // A half that does not exist gets normalised rather than 404'd: /sources
+  usePageTitle('Sources - Companion Intelligence');
+
+  // A path that does not exist gets normalised rather than 404'd: /sources
   // itself, a typo, and — the case that matters — /sources/import on an
   // appliance with importing turned off, which must land somewhere real
-  // instead of on a path whose surface is not registered.
-  if (half !== 'connect' && (half !== 'import' || !importEnabled)) {
+  // instead of on a surface that is not registered.
+  if (!paths.includes(half as SourcePath)) {
     return <Navigate to="/sources/connect" replace />;
   }
+
+  const active = half as SourcePath;
 
   return (
     <>
@@ -64,23 +71,23 @@ export function SourcesPage() {
 
       <PageContent>
         {/* No page heading or standfirst: the breadcrumb above already reads
-            "Companion › Sources › Connect", the rail entry says Sources, and
-            the tiles below say what each path is for. A title and a paragraph
-            restating all three pushed the only actionable thing on the screen
-            below the fold.
+            "Sources", the rail entry says Sources, and the tiles below say what
+            each path is for. A title and a paragraph restating all three pushed
+            the only actionable thing on the screen below the fold.
 
-            The switch stays put; only the active half scrolls, in its own
-            region. The import half needs that anyway — its wizard pins a
-            stepper and a Continue button and scrolls the service list between
-            them, which needs a real ceiling to scroll against. */}
+            The switch stays put; only the active path scrolls, in its own
+            region. The import path needs that anyway — its wizard pins a step
+            row and a Continue button and scrolls the service list between them,
+            which needs a real ceiling to scroll against. */}
         <div className="flex min-h-0 flex-1 flex-col gap-6">
-          <SourcePathTiles active={active} counts={counts} importEnabled={importEnabled} />
+          <SourcePathTiles active={active} counts={counts} paths={paths} />
 
           {active === 'import' ? (
             <ImportSurface />
           ) : (
             <div className="min-h-0 flex-1 overflow-y-auto">
-              <ConnectPanel />
+              {active === 'connect' && <ConnectPanel />}
+              {active === 'devices' && <DevicesPanel />}
             </div>
           )}
         </div>

@@ -355,12 +355,31 @@ export class SyncOrchestrator {
         historical: syncJob.type === 'historical',
       });
 
+      const completedAt = new Date();
+
       await this.connectionSyncJobService.update({ userId: SYSTEM_USER }, syncJob.id, {
         data: results.data,
         nextCursor: results.nextCursor || {},
         error: undefined,
         status: 'success',
-        completedAt: new Date(),
+        completedAt,
+      });
+
+      // Stamp the connection itself, not just the job row.
+      //
+      // `syncState.lastSyncedAt` was already the convention — `findActiveConnections`
+      // reads exactly this key for its own summary — but nothing in the codebase
+      // ever WROTE it, so every reader got null forever and the UI's "synced N
+      // days ago" could never appear. The successful completion of a sync job is
+      // the one moment that fact is true, so it is recorded here.
+      //
+      // Merged into the existing object rather than replacing it: syncState also
+      // carries per-endpoint cursors that the next run needs.
+      await this.connectionService.update({ userId: connection!.userId }, connection!.id, {
+        syncState: {
+          ...(connection!.syncState ?? {}),
+          lastSyncedAt: completedAt.toISOString(),
+        },
       });
     } catch (err) {
       this.logger.error('Error executing sync job', {
