@@ -62,6 +62,10 @@ export class ConnectionEntity {
   @Column({ type: 'text', nullable: true, name: 'external_id' })
   externalId!: string | null;
 
+  /** Email, login, or other human account id. Distinct from external_id. */
+  @Column({ type: 'text', nullable: true, name: 'account_label' })
+  accountLabel!: string | null;
+
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date;
 
@@ -85,6 +89,7 @@ export class ConnectionEntity {
       activeEndpoints: entity.activeEndpoints,
       needsReauth: entity.needsReauth,
       externalId: entity.externalId,
+      accountLabel: entity.accountLabel,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };

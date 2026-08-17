@@ -35,6 +35,7 @@ export interface Connection {
   readonly name?: string | null;
   readonly active: boolean;
   readonly externalId?: string | null;
+  readonly accountLabel?: string | null;
   readonly schedule?: string | null;
   readonly tokenExpiry?: Date | null;
   readonly provider?: Provider;
@@ -59,6 +60,7 @@ const GET_CONNECTIONS = gql(`
           providerId
           needsReauth
           externalId
+          accountLabel
           provider {
             id
             name
@@ -233,9 +235,8 @@ export function ConnectionsPage() {
                     <div
                       className={`font-medium ${connection.needsReauth ? 'text-yellow-600 dark:text-yellow-500' : ''}`}
                     >
-                      {connection.name}
+                      {connection.accountLabel || connection.name || 'Connected account'}
                     </div>
-                    <div className="text-sm text-muted-foreground">{connection.externalId}</div>
                   </div>
                   {connection.needsReauth && (
                     <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-500" />

@@ -361,6 +361,7 @@ type ConnectionSyncJobType implements Node {
 }
 
 type ConnectionType implements Node {
+  accountLabel: String
   active: Boolean!
   activeEndpoints: [String!]!
   externalId: String
