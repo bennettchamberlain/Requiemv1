@@ -498,6 +498,11 @@ export const ConfigSchema = z.object({
      * (mutations report failure, queries return empty) until enabled.
      */
     ask: booleanStringSchema,
+    /**
+     * Lets context-prompt generation ask one number-grounded selector from
+     * ci_derived.daily_metrics. Off until the store has rows.
+     */
+    'grounded.prompts': booleanStringSchema,
   }),
   environment: z.object({
     'database.query.logging': booleanStringSchema,

@@ -186,7 +186,8 @@
     "onboarding.preference.steps": "ENABLE_ONBOARDING_PREFERENCE_STEPS",
     "actions": "ENABLE_ACTIONS",
     "smart.rotation": "ENABLE_SMART_ROTATION",
-    "ask": "ENABLE_ASK"
+    "ask": "ENABLE_ASK",
+    "grounded.prompts": "ENABLE_GROUNDED_PROMPTS"
   },
   "environment": {
     "database.query.logging": "DATABASE_QUERY_LOGGING"

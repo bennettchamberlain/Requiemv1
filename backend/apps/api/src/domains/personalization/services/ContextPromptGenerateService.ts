@@ -4,7 +4,14 @@ import { DataSource } from 'typeorm';
 import { z } from 'zod';
 
 import { type RequestContext, type UserServiceContext } from '@ci/common/context';
+import { FeatureService } from '@ci/common/feature';
 import { LoggerService } from '@ci/common/logging';
+import {
+  DailyMetricsService,
+  pickMetricSurprise,
+  shiftIso,
+  todayIsoInTimezone,
+} from '@ci/domains/daily-metrics';
 import { OllamaService, PROMPT_MODEL } from '@ci/domains/llm';
 import { UserContextService } from '@ci/domains/memory';
 import { localDateInTZ, todayInTZ, zonedWallTimeToUTC } from '@ci/domains/planning';
@@ -60,7 +67,7 @@ const GENERATED_PROMPT_JSON_SCHEMA: Record<string, unknown> = {
       properties: {
         kind: {
           type: 'string',
-          enum: ['answer', 'question', 'entity', 'category_gap', 'event', 'candidate'],
+          enum: ['answer', 'question', 'entity', 'category_gap', 'event', 'candidate', 'daily_metric'],
         },
         id: { type: 'string' },
         label: { type: 'string' },
@@ -92,6 +99,8 @@ export class ContextPromptGenerateService {
     private readonly userContextService: UserContextService,
     private readonly placement: PlacementService,
     private readonly ollamaService: OllamaService,
+    private readonly dailyMetricsService: DailyMetricsService,
+    private readonly featureService: FeatureService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(ContextPromptGenerateService.name);
@@ -147,6 +156,7 @@ export class ContextPromptGenerateService {
       '',
       'For radio_list, a_b, tag_cloud, and checklist you MUST supply 2–6 short options with stable ids.',
       'For "what did you do" questions, options may be WORK, EXERCISE, SOCIAL, ERRAND, LEISURE, TRANSIT, SLEEP, or use one_line.',
+      'If a note is kind daily_metric, it already contains the true numbers. Copy those numbers into the spoken prompt. Do not invent or change a number.',
       'Name the source you are using (copy its kind and id from Useful gaps, or kind "category_gap").',
       'Set source.place: future_this_week for a plan this week, last_night for last night, further_back for an older evening.',
       'Reply with ONLY a JSON object, no prose. Shape:',
@@ -713,6 +723,8 @@ export class ContextPromptGenerateService {
       [userId],
     )) as GapRow[];
 
+    const metricGaps = await this.collectMetricGaps(userId, timezone);
+
     return [
       ...eveningGaps,
       ...hbpeGaps,
@@ -723,7 +735,54 @@ export class ContextPromptGenerateService {
       ...questions,
       ...categoryGaps,
       ...followUps,
+      ...metricGaps,
     ];
+  }
+
+  /**
+   * Coverage-safe surprises from yesterday vs the trailing week. Skipped when
+   * the last written prompt was already a daily_metric so generators take turns.
+   */
+  private async collectMetricGaps(userId: string, timezone: string): Promise<GapRow[]> {
+    if (!(await this.featureService.isFeatureEnabled('grounded.prompts'))) {
+      return [];
+    }
+
+    const lastKind = (await this.dataSource.query(
+      `
+      SELECT source->>'kind' AS kind
+      FROM ci.context_prompts
+      WHERE user_id = $1 AND status IN ('answered', 'written')
+      ORDER BY created_at DESC
+      LIMIT 1
+      `,
+      [userId],
+    )) as Array<{ kind: string | null }>;
+
+    if (lastKind[0]?.kind === 'daily_metric') {
+      return [];
+    }
+
+    try {
+      const today = todayIsoInTimezone(timezone);
+      const yesterday = shiftIso(today, -1);
+      const from = shiftIso(yesterday, -6);
+      const rows = await this.dailyMetricsService.getRange({ userId }, from, yesterday);
+      const surprise = pickMetricSurprise(
+        rows.find((row) => row.date === yesterday) ?? null,
+        rows.filter((row) => row.date !== yesterday),
+      );
+
+      return surprise ? [{ kind: 'daily_metric', id: surprise.id, label: surprise.label }] : [];
+    } catch (error) {
+      this.logger.warn('Daily-metric gap collection skipped', {
+        userId,
+        timezone,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      return [];
+    }
   }
 
   private async collectEveningGaps(userId: string, timezone: string): Promise<GapRow[]> {
