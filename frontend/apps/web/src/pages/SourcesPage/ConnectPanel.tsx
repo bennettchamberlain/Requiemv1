@@ -14,7 +14,7 @@ export function ConnectPanel() {
     <div className="w-full">
       <ConnectedAccountsSection />
 
-      <section className="mx-auto w-full max-w-[1280px]">
+      <section className="w-full">
         {/* The cards name what each service hands over, so the standfirst no
             longer lists it too. What is left is the part they cannot say. */}
         <h2 className="mb-1 text-2xl font-bold">Services</h2>

@@ -34,6 +34,11 @@ export const CAPTURE_TRACKS: readonly TrackedObject[] = [
 /**
  * The devices path: everything you install rather than sign into.
  *
+ * Three to a row, full width. Every gallery here holds exactly three entries —
+ * three browsers, three desktop platforms — so a fourth column was a permanent
+ * empty cell, and capping the width left the three that were there huddled
+ * against the left of the page.
+ *
  * Browsers and desktops share one path because the appliance already treats
  * them as one thing — both register in the device table, `device_type:
  * 'browser'` alongside `laptop` and `desktop`, and both answer the same
@@ -49,10 +54,10 @@ export function DevicesPanel() {
   return (
     <div className="w-full">
       {!loading && devices.length > 0 && (
-        <section className="mx-auto mb-8 w-full max-w-[1280px]">
+        <section className="mb-8 w-full">
           <h2 className="mb-1 text-2xl font-bold">Your devices</h2>
           <p className="text-muted-foreground mb-6">Everything that has reported in, most recent first.</p>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:gap-4 lg:grid-cols-3">
             {devices.map((device) => (
               <DeviceCard key={device.device_id} device={device} />
             ))}
@@ -60,13 +65,13 @@ export function DevicesPanel() {
         </section>
       )}
 
-      <section className="mx-auto mb-8 w-full max-w-[1280px]">
+      <section className="mb-8 w-full">
         <h2 className="mb-1 text-2xl font-bold">Browser extensions</h2>
         <p className="text-muted-foreground mb-6">
           Install it in the browser you actually use. The pages you read are the part of your day no service
           exports.
         </p>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:gap-4 lg:grid-cols-3">
           <SourceCard
             logo="/branding/chrome/logo.svg"
             name="Chrome"
@@ -78,12 +83,12 @@ export function DevicesPanel() {
         </div>
       </section>
 
-      <section className="mx-auto w-full max-w-[1280px]">
+      <section className="w-full">
         <h2 className="mb-1 text-2xl font-bold">Companion Capture</h2>
         <p className="text-muted-foreground mb-6">
           Install it on the machine you work on. Everything it records stays on your Hub.
         </p>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:gap-4 lg:grid-cols-3">
           <SourceCard
             logo="/branding/mac/logo.svg"
             name="macOS"

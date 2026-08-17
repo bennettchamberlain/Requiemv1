@@ -168,7 +168,7 @@ export function ConnectedAccountsSection() {
   const reauthCount = connections.filter((connection) => connection.needsReauth).length;
 
   return (
-    <section className="mx-auto mb-8 w-full max-w-[1280px]">
+    <section className="mb-8 w-full">
       <h2 className="mb-1 text-2xl font-bold">Connected accounts</h2>
       <p className="text-muted-foreground mb-6">
         {reauthCount > 0
