@@ -342,6 +342,22 @@ help: ## List make commands with their descriptions
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 	@printf "\n"
 
+.PHONY: cli
+cli: ## Run the CI-Server CLI (pass args with ARGS="...")
+	@scripts/cli/ci-server.sh $(ARGS)
+
+.PHONY: wizard
+wizard: ## Run the interactive CI-Server CLI wizard
+	@scripts/cli/ci-server.sh wizard
+
+.PHONY: man
+man: ## Show the CI-Server CLI manual
+	@scripts/cli/ci-server.sh man
+
+.PHONY: test-cli
+test-cli: ## Run focused tests for the CI-Server CLI wizard UX
+	@bash scripts/cli/ci-server.test.sh
+
 .PHONY: distribute-license
 distribute-license:
 	@for dir in $(LICENSE_DIRS); do \
@@ -430,6 +446,10 @@ endif
 	@$(MAKE) clean-license
 
 	@printf "\n"
+
+.PHONY: build
+build: ## Build the application (alias for build-production)
+	@$(MAKE) build-production
 
 .PHONY: dbclear
 dbclear: ## Clear the data stored in the PostgreSQL database
