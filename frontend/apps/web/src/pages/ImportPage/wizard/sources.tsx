@@ -1,21 +1,26 @@
 import type { ReactElement } from 'react';
 
 import {
-  Activity,
+  BookOpen,
   Bookmark,
   Calendar,
   Contact,
+  Files,
   FileText,
+  Gamepad2,
+  GitBranch,
+  GitCommit,
   Globe,
   HeartPulse,
   Image,
+  ListMusic,
+  Mail,
   MapPin,
   MessageSquare,
   Music,
-  Package,
+  Plane,
   Play,
   ShoppingBag,
-  Star,
   Video,
 } from '@ci/shadcn/icons';
 
@@ -459,63 +464,65 @@ export const BUNDLE_BY_ECO: Record<string, Bundle> = Object.fromEntries(
 // ---------------------------------------------------------------------------
 
 /**
- * Object vocabulary, matched against a source's authored `whatImported` lines.
+ * What each CATEGORY of source puts in your memory.
  *
- * The picker used to show a name and nothing else, so "what would adding this
- * actually give me" was answerable only by picking it and reading the export
- * guide on the next step. The connect half of Sources answers that on the card
- * itself, and this is the same answer for archives.
+ * This replaced a keyword matcher run over each guide's authored
+ * `whatImported` prose, which failed in both directions at once. Only 17 of the
+ * 100 catalog entries carry `whatImported` at all, so 83% of the grid showed a
+ * bare name; and where the prose did exist the matcher inferred nonsense from
+ * it — GPX, a GPS track format, advertised "Listening, Orders, Files" (from
+ * "Track points", "in route order" and "the file includes them") while failing
+ * to mention Places, because "lat/lon" is not the word "coordinates".
  *
- * Derived from the authored text rather than a second field nobody would keep
- * in sync: `whatImported` is written per source in the backend's `guides.ts`
- * ("Photos and videos with their original timestamps", "Saved bookmarks, with
- * their folder and the date added"), and the object nouns are already in it.
- * Order here is the order shown, so it stays stable regardless of how the
- * sentences were phrased.
+ * Every catalog entry has a `category`, and the backend's category vocabulary
+ * is already the list of things an import produces. Keying off it gives all 100
+ * sources an accurate list from one reviewable table, and nothing has to be
+ * inferred from a sentence written for a human.
+ *
+ * Two entries only where a category genuinely yields two distinct kinds.
  */
-const OBJECT_VOCABULARY: readonly {
-  readonly object: TrackedObject;
-  readonly match: RegExp;
-}[] = [
-  {
-    object: { icon: MessageSquare, label: 'Messages' },
-    match: /\b(message|dm|chat|imessage|sms|mms|thread|conversation|email|mail)/i,
-  },
-  { object: { icon: Image, label: 'Photos' }, match: /\bphoto|\bimage|\bpicture/i },
-  { object: { icon: Video, label: 'Videos' }, match: /\bvideo|\breel|\bstor(y|ies)/i },
-  { object: { icon: Calendar, label: 'Calendar' }, match: /\bcalendar|\bevent\b|\bappointment/i },
-  { object: { icon: Contact, label: 'Contacts' }, match: /\bcontact|\bfriend|\bfollower|\bconnection/i },
-  {
-    object: { icon: MapPin, label: 'Places' },
-    match: /\bgps|\blocation|\bplace|\bcoordinate|\bvisit\b|\btrip\b/i,
-  },
-  { object: { icon: MessageSquare, label: 'Posts' }, match: /\bpost|\btweet|\bcomment|\bnote\b/i },
-  {
-    object: { icon: Music, label: 'Listening' },
-    match: /\blisten|\btrack\b|\bplaylist|\bsong|\balbum\b(?!\s+membership)/i,
-  },
-  { object: { icon: Play, label: 'Watch history' }, match: /\bwatch|\bviewing|\bepisode|\bstream/i },
-  {
-    object: { icon: Globe, label: 'Browsing' },
-    match: /\burl\b|\bbrowsing|\bhistory of|\bsearch(es|ed)?\b|\bvisited/i,
-  },
-  { object: { icon: Bookmark, label: 'Bookmarks' }, match: /\bbookmark/i },
-  {
-    object: { icon: HeartPulse, label: 'Health' },
-    match: /\bstep|\bheart rate|\bsleep|\bworkout|\bactivity summar|\bsensor/i,
-  },
-  {
-    object: { icon: ShoppingBag, label: 'Orders' },
-    match: /\border|\bpurchase|\btransaction|\bpayment|\binvoice/i,
-  },
-  { object: { icon: Package, label: 'Games' }, match: /\bgame|\bplaytime|\bachievement/i },
-  { object: { icon: Star, label: 'Ratings' }, match: /\brating|\breview\b|\blikes\b/i },
-  {
-    object: { icon: FileText, label: 'Files' },
-    match: /\bfile|\bdocument|\battachment|\bpage\b|\bdatabase/i,
-  },
-  { object: { icon: Activity, label: 'Activity' }, match: /\bcommit|\brepositor|\bpull request|\bissue/i },
-];
+const OBJECTS_BY_CATEGORY: Readonly<Record<string, readonly TrackedObject[]>> = {
+  mail: [{ icon: Mail, label: 'Mail' }],
+  messages: [{ icon: MessageSquare, label: 'Messages' }],
+  photos: [
+    { icon: Image, label: 'Photos' },
+    { icon: Video, label: 'Videos' },
+  ],
+  video: [{ icon: Play, label: 'Watch history' }],
+  audio: [
+    { icon: Music, label: 'Listening' },
+    { icon: ListMusic, label: 'Playlists' },
+  ],
+  location: [{ icon: MapPin, label: 'Places' }],
+  calendar: [{ icon: Calendar, label: 'Calendar' }],
+  contacts: [{ icon: Contact, label: 'Contacts' }],
+  health: [{ icon: HeartPulse, label: 'Health & activity' }],
+  social: [
+    { icon: MessageSquare, label: 'Posts' },
+    { icon: Image, label: 'Photos' },
+  ],
+  browser: [
+    { icon: Globe, label: 'Browsing' },
+    { icon: Bookmark, label: 'Bookmarks' },
+  ],
+  reading: [{ icon: BookOpen, label: 'Books & highlights' }],
+  travel: [{ icon: Plane, label: 'Trips' }],
+  ai: [{ icon: MessageSquare, label: 'Conversations' }],
+  productivity: [{ icon: FileText, label: 'Notes & pages' }],
+  gaming: [{ icon: Gamepad2, label: 'Games & playtime' }],
+  finance: [{ icon: ShoppingBag, label: 'Orders & payments' }],
+  code: [
+    { icon: GitBranch, label: 'Repositories' },
+    { icon: GitCommit, label: 'Commits' },
+  ],
+  misc: [{ icon: Files, label: 'Files' }],
+};
+
+/** Vocabulary order, so a bundle and its members always agree on ordering. */
+const OBJECT_ORDER: readonly string[] = Object.values(OBJECTS_BY_CATEGORY)
+  .flat()
+  .map((object) => object.label)
+  .filter((label, index, all) => all.indexOf(label) === index);
 
 /** How many object rows a pick tile shows before it starts hiding them. */
 const MAX_OBJECTS = 4;
@@ -523,20 +530,16 @@ const MAX_OBJECTS = 4;
 /**
  * The kinds of thing importing this source puts in your memory.
  *
- * Empty when the source has no authored `whatImported` yet — the tile then
- * shows its name alone, exactly as the whole grid used to, rather than
- * inventing a claim about what an unwritten importer produces.
+ * Empty for a category the backend grew that this table has not been taught —
+ * the tile then shows its name alone rather than claiming something wrong,
+ * which is the failure mode the old prose matcher had.
  */
-export function objectsFor(whatImported: readonly string[] | undefined): TrackedObject[] {
-  if (!whatImported || whatImported.length === 0) {
+export function objectsFor(category: string | undefined): TrackedObject[] {
+  if (!category) {
     return [];
   }
 
-  const haystack = whatImported.join(' \n ');
-
-  return OBJECT_VOCABULARY.filter((entry) => entry.match.test(haystack))
-    .map((entry) => entry.object)
-    .slice(0, MAX_OBJECTS);
+  return [...(OBJECTS_BY_CATEGORY[category] ?? [])].slice(0, MAX_OBJECTS);
 }
 
 /** A bundle button covers several sources, so it claims the union of theirs. */
@@ -545,11 +548,13 @@ export function mergeObjects(all: readonly TrackedObject[][]): TrackedObject[] {
   const merged: TrackedObject[] = [];
 
   // Vocabulary order, not encounter order, so a bundle and its members agree.
-  for (const entry of OBJECT_VOCABULARY) {
+  for (const label of OBJECT_ORDER) {
     for (const objects of all) {
-      if (objects.some((object) => object.label === entry.object.label) && !seen.has(entry.object.label)) {
-        seen.add(entry.object.label);
-        merged.push(entry.object);
+      const match = objects.find((object) => object.label === label);
+
+      if (match && !seen.has(label)) {
+        seen.add(label);
+        merged.push(match);
       }
     }
   }
@@ -615,7 +620,7 @@ export function pickableSections(catalog: readonly CatalogSource[]): PickSection
           objects: mergeObjects(
             (byEcosystem.get(eco) ?? [])
               .filter((source) => bundle.members.includes(source.id))
-              .map((source) => objectsFor(source.whatImported)),
+              .map((source) => objectsFor(source.category)),
           ),
           importers: [
             ...new Set(
@@ -638,7 +643,7 @@ export function pickableSections(catalog: readonly CatalogSource[]): PickSection
           logo: serviceLogoUrl(source.id),
           ecosystem: eco,
           ready: source.importerReady,
-          objects: objectsFor(source.whatImported),
+          objects: objectsFor(source.category),
           importers: [source.importer],
         });
       }

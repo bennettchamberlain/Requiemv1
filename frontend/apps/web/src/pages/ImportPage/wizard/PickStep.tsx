@@ -6,7 +6,7 @@ import { Check } from '@ci/shadcn/icons';
 import type { CatalogSource } from '../useImportApi';
 
 import { ECOSYSTEM_ICONS, pickableSections } from './sources';
-import { useSourceUsage } from './useSourceUsage';
+import { unambiguousImporters, useSourceUsage } from './useSourceUsage';
 
 export interface PickStepProps {
   catalog: readonly CatalogSource[];
@@ -26,7 +26,8 @@ export interface PickStepProps {
  */
 export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProps) {
   const [logoFailed, setLogoFailed] = useState<ReadonlySet<string>>(new Set());
-  const usage = useSourceUsage();
+  const lastImportedAt = useSourceUsage();
+  const ownedImporters = useMemo(() => unambiguousImporters(catalog), [catalog]);
 
   // No search box and no category chips. Both were answers to a grid of ~100
   // one-line names with nothing to tell them apart; the tiles now carry a logo,
@@ -49,24 +50,20 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
               {section.label}
             </h3>
 
-            {/* Four to a row, matching the connect half's service grid — the
-                tiles carry an object list now, not just a name. */}
-            <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {/* Three to a row, matching every other gallery on the page. */}
+            <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {section.items.map((item) => {
                 const on = picked.has(item.key);
                 const showLogo = item.logo != null && !logoFailed.has(item.key);
-                // A bundle covers several importers, so it reports their sum.
-                const used = item.importers
-                  .map((importer) => usage.get(importer))
-                  .filter((entry) => entry != null);
-                const records = used.reduce((sum, entry) => sum + entry.records, 0);
-                const lastImportedAt = used.reduce<string | null>(
-                  (latest, entry) =>
-                    entry.lastImportedAt != null && (latest == null || entry.lastImportedAt > latest)
-                      ? entry.lastImportedAt
-                      : latest,
-                  null,
-                );
+                // Newest across the importers this tile covers — and only the
+                // ones it owns outright, since a shared parser cannot say WHICH
+                // of its services an import came from.
+                const imported = item.importers
+                  .filter((importer) => ownedImporters.has(importer))
+                  .map((importer) => lastImportedAt.get(importer))
+                  .filter((at): at is string => at != null)
+                  .sort()
+                  .at(-1);
 
                 return (
                   <li key={item.key}>
@@ -79,7 +76,7 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
                         'relative flex h-full w-full flex-col gap-3 rounded-md border p-3 text-left text-sm transition-colors',
                         on
                           ? 'border-primary bg-primary/5'
-                          : records > 0
+                          : imported
                             ? 'border-green-700/50 bg-green-950/[0.06] dark:border-green-700/45 dark:bg-green-950/40'
                             : 'hover:bg-muted/50',
                         !item.ready && 'opacity-60',
@@ -103,7 +100,7 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
 
                         {on ? (
                           <Check className="h-4 w-4 shrink-0 text-primary" aria-hidden />
-                        ) : records > 0 ? (
+                        ) : imported ? (
                           <Check
                             className="h-4 w-4 shrink-0 text-green-700 dark:text-green-400"
                             aria-hidden
@@ -129,27 +126,18 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
                         </span>
                       )}
 
-                      {/* What this source has already given the appliance —
-                          the difference between "I could import this" and "I
-                          did, in March, and it brought 42,318 records". */}
-                      {records > 0 && (
-                        <span className="mt-auto flex flex-wrap items-center gap-x-2 pt-1 text-xs text-muted-foreground">
-                          <span>
-                            {records.toLocaleString()} {records === 1 ? 'record' : 'records'}
-                          </span>
-                          {lastImportedAt && (
-                            <>
-                              <span aria-hidden>·</span>
-                              <span>
-                                imported{' '}
-                                {new Date(lastImportedAt).toLocaleDateString(undefined, {
-                                  day: 'numeric',
-                                  month: 'short',
-                                  year: 'numeric',
-                                })}
-                              </span>
-                            </>
-                          )}
+                      {/* The difference between "I could import this" and "I
+                          already did, in March" — which is what stops someone
+                          re-importing an archive they have. How MUCH it brought
+                          is a fact about the run, and lives on the run. */}
+                      {imported && (
+                        <span className="mt-auto pt-1 text-xs text-muted-foreground">
+                          imported{' '}
+                          {new Date(imported).toLocaleDateString(undefined, {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric',
+                          })}
                         </span>
                       )}
                     </button>

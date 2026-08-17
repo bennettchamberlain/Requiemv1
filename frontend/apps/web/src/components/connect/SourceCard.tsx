@@ -126,7 +126,10 @@ export function SourceCard({
         >
           {logo ? <img src={logo} alt="" className="h-full w-full object-contain" /> : icon}
         </span>
-        <span className="truncate font-semibold">{name}</span>
+        {/* `break-words`, not `truncate`: a service name is short, but a
+            device names itself ("Liam's MacBook Pro") and a card that clips it
+            to "Liam's MacBo…" cannot be told apart from the next one. */}
+        <span className="min-w-0 flex-1 font-semibold break-words">{name}</span>
 
         {inUse ? (
           <span className="ml-auto flex shrink-0 items-center gap-1 text-xs font-medium text-green-700 dark:text-green-400">

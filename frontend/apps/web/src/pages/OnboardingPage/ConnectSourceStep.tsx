@@ -1,38 +1,19 @@
 import { useState } from 'react';
 
 import { Dialog } from '@ci/shadcn';
-import {
-  AppWindow,
-  Bookmark,
-  Download,
-  History,
-  Monitor,
-  MousePointerClick,
-  Package,
-  Search,
-  Smartphone,
-} from '@ci/shadcn/icons';
+import { AppWindow, Download, History, Package, Smartphone } from '@ci/shadcn/icons';
 
 import { ProviderConnectDialog } from '@/components/connect/ProviderConnectDialog';
 import { ServiceIntegrationsSection } from '@/components/connect/ServiceIntegrationsSection';
-import { SourceCard, type TrackedObject } from '@/components/connect/SourceCard';
+import { SourceCard } from '@/components/connect/SourceCard';
 import { ImportSurface } from '@/pages/ImportPage/ImportPage';
+import { BROWSER_TRACKS, CAPTURE_TRACKS } from '@/pages/SourcesPage/DevicesPanel';
 
 import { CAPTURE_DOWNLOAD_URL, CHROME_EXTENSION_URL, CI_DOWNLOAD_URL } from './constants';
 import { StepHeader } from './StepHeader';
 
-/** Same cards, same lists, as `/sources` — so setup and the page do not diverge. */
-const BROWSER_TRACKS: readonly TrackedObject[] = [
-  { icon: History, label: 'Browsing history' },
-  { icon: Bookmark, label: 'Bookmarks' },
-  { icon: Search, label: 'Searches' },
-];
-
-const CAPTURE_TRACKS: readonly TrackedObject[] = [
-  { icon: Monitor, label: 'Screen context' },
-  { icon: AppWindow, label: 'App usage' },
-  { icon: MousePointerClick, label: 'Desktop activity' },
-];
+// The lists are imported from the panels that own them, so setup and
+// /sources cannot drift apart.
 
 export function ConnectSourceStep() {
   const [dialogProviderId, setDialogProviderId] = useState<string | null>(null);

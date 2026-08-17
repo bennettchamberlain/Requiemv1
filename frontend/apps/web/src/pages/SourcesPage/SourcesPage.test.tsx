@@ -15,6 +15,7 @@ import { SourcesPage } from './SourcesPage';
 const h = vi.hoisted(() => ({
   connections: 0,
   imports: 0,
+  devices: 0,
   importEnabled: true,
 }));
 
@@ -33,7 +34,8 @@ vi.mock('./useSourceCounts', () => ({
   useSourceCounts: () => ({
     connections: h.connections,
     imports: h.imports,
-    isFirstRun: h.connections === 0 && h.imports === 0,
+    devices: h.devices,
+    isFirstRun: h.connections === 0 && h.imports === 0 && h.devices === 0,
     loading: false,
   }),
 }));
@@ -41,6 +43,7 @@ vi.mock('./useSourceCounts', () => ({
 // Both halves are real surfaces with their own network graphs. This page's job
 // is which one is on screen, so they are stubbed down to a marker.
 vi.mock('./ConnectPanel', () => ({ ConnectPanel: () => <div>connect panel</div> }));
+vi.mock('./DevicesPanel', () => ({ DevicesPanel: () => <div>devices panel</div> }));
 vi.mock('@/pages/ImportPage/ImportPage', () => ({
   ImportSurface: ({ variant }: { variant?: string }) => <div>import surface: {variant ?? 'page'}</div>,
 }));
@@ -48,6 +51,7 @@ vi.mock('@/pages/ImportPage/ImportPage', () => ({
 beforeEach(() => {
   h.connections = 0;
   h.imports = 0;
+  h.devices = 0;
   h.importEnabled = true;
 });
 
@@ -56,13 +60,23 @@ function renderAt(route: string) {
 }
 
 describe('SourcesPage', () => {
-  it('offers both ways in from either half', async () => {
+  it('offers every way in from any of them', async () => {
     renderAt('/sources/connect');
 
-    // The switch is the point: someone who lands on the wrong half can see the
-    // other one without going back.
-    expect(await screen.findByRole('link', { name: /Connect a service/ })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Import an export/ })).toBeInTheDocument();
+    // The switch is the point: someone who lands on the wrong path can see the
+    // others without going back.
+    expect(await screen.findByRole('link', { name: /Services/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Import/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Devices/ })).toBeInTheDocument();
+  });
+
+  // The extension and Capture spent this page's first version as sections
+  // below the whole service catalogue, which put the two sources nothing else
+  // can substitute behind the longest scroll.
+  it('gives devices a path of its own', async () => {
+    renderAt('/sources/devices');
+
+    expect(await screen.findByText('devices panel')).toBeInTheDocument();
   });
 
   it('normalises /sources to the connect half', async () => {
@@ -89,37 +103,40 @@ describe('SourcesPage', () => {
     expect(screen.queryByText(/Nothing is feeding your memory yet/i)).not.toBeInTheDocument();
   });
 
-  describe('when nothing has ever fed the appliance', () => {
-    it('draws the distinction people actually get wrong', async () => {
-      renderAt('/sources/connect');
+  // The pitch moved off the switch and into each path's own content. On the
+  // tiles it made three tiles three different heights and pushed the content
+  // below the fold.
+  it('keeps the switch to a switch', async () => {
+    renderAt('/sources/connect');
 
-      // Connecting is cheap and forward-looking; an export is slow and
-      // backward-looking. Someone choosing between them needs both halves of
-      // that, not two equally-weighted buttons.
-      expect(await screen.findByText(/About a minute, once\./)).toBeInTheDocument();
-      expect(screen.getByText(/wait hours or days/i)).toBeInTheDocument();
-      expect(screen.getByText(/Your whole history/i)).toBeInTheDocument();
-    });
+    // ConnectPanel is stubbed here, so nothing but a tile could supply these.
+    await waitFor(() => expect(screen.getByText('connect panel')).toBeInTheDocument());
+    expect(screen.queryByText('Effort')).not.toBeInTheDocument();
+    expect(screen.queryByText('You get')).not.toBeInTheDocument();
+    expect(screen.queryByText(/About a minute, once\./)).not.toBeInTheDocument();
+  });
 
-    it('gives each path its own call to action', async () => {
-      renderAt('/sources/connect');
+  it('introduces a path above its own content', async () => {
+    // The import path's header is rendered by the page, outside the surface's
+    // scroll region, so this is the one it can assert directly.
+    renderAt('/sources/import');
 
-      expect(await screen.findByText('Browse services')).toBeInTheDocument();
-      expect(screen.getByText('Start an import')).toBeInTheDocument();
-    });
+    expect(await screen.findByText('Effort')).toBeInTheDocument();
+    expect(screen.getByText(/wait hours or days/i)).toBeInTheDocument();
+    expect(screen.getByText(/Your whole history/i)).toBeInTheDocument();
   });
 
   describe('once something is flowing', () => {
     it('drops the first-run guidance and reports counts instead', async () => {
       h.connections = 3;
       h.imports = 2;
+      h.devices = 1;
 
       renderAt('/sources/connect');
 
       await waitFor(() => expect(screen.getByText('3 connected')).toBeInTheDocument());
       expect(screen.getByText('2 imports')).toBeInTheDocument();
-      expect(screen.queryByText(/About a minute, once\./)).not.toBeInTheDocument();
-      expect(screen.queryByText('Browse services')).not.toBeInTheDocument();
+      expect(screen.getByText('1 device')).toBeInTheDocument();
     });
 
     it('counts a single import in the singular', async () => {
@@ -129,6 +146,20 @@ describe('SourcesPage', () => {
       renderAt('/sources/connect');
 
       await waitFor(() => expect(screen.getByText('1 import')).toBeInTheDocument());
+    });
+
+    // A path with nothing yet says so by omission — no count — rather than by
+    // becoming a different shape from the other two.
+    it('reports a count only for the paths that have one', async () => {
+      h.connections = 3;
+      h.imports = 0;
+      h.devices = 0;
+
+      renderAt('/sources/connect');
+
+      await waitFor(() => expect(screen.getByText('3 connected')).toBeInTheDocument());
+      expect(screen.queryByText(/0 imports/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/0 devices/)).not.toBeInTheDocument();
     });
   });
 
@@ -141,7 +172,11 @@ describe('SourcesPage', () => {
       renderAt('/sources/connect');
 
       await waitFor(() => expect(screen.getByText('connect panel')).toBeInTheDocument());
-      expect(screen.queryByRole('link', { name: /Import an export/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: /Import/ })).not.toBeInTheDocument();
+
+      // Only import is gated — the other two must survive the flag.
+      expect(screen.getByRole('link', { name: /Services/ })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /Devices/ })).toBeInTheDocument();
     });
 
     it('lands /sources/import on the connect half rather than an empty page', async () => {
