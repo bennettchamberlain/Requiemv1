@@ -3041,6 +3041,8 @@ __metadata:
     uuid: "npm:^11.1.0"
     xml2js: "npm:^0.6.2"
     zod: "npm:^3.25.34"
+  bin:
+    ci-import: dist/src/domains/import/cli/main.js
   languageName: unknown
   linkType: soft
 

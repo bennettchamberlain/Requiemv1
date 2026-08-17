@@ -14,6 +14,7 @@ import { Context, type RequestContext } from '@ci/common/context';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 
 import { IMPORT_STAGE_KINDS, type ImportStageKindName } from '../constants';
+import { recognizePathWithinRoots, type PathRecognition } from '../datasources/recognizePath';
 import type { ImportRun } from '../entities/ImportRunEntity';
 import type { ImportStage } from '../entities/ImportStageEntity';
 import {
@@ -89,6 +90,11 @@ export interface StartPushBody {
   runIds?: string[];
 }
 
+export interface RecognizeBody {
+  /** Absolute path on the appliance, within a configured import root. */
+  path?: string;
+}
+
 /**
  * The user-facing surface of an import.
  *
@@ -127,6 +133,35 @@ export class ImportRunsController {
   @Get('sources/catalog')
   sourceCatalog(): SourceCatalogEntry[] {
     return this.catalog.catalog();
+  }
+
+  /**
+   * What every parser makes of a path the appliance can already see.
+   *
+   * The read-before-you-commit question, and the one thing the rest of this
+   * controller cannot answer: everywhere else an archive is opaque bytes until a
+   * run unpacks it, so `runs/:runId/recognized` reports what the parse stage
+   * found — after the import. This answers first, which is what makes
+   * `ci-import recognize` (and the identical `import.recognize_path` MCP tool,
+   * which shares the implementation) able to say "that folder is a Google
+   * Takeout" before anything is written.
+   *
+   * POST, not GET, because the argument is a filesystem path: a query string
+   * ends up in access logs and proxy history, and the reply is not cacheable
+   * anyway — the folder it describes changes.
+   *
+   * Confined to `CI_IMPORT_ROOTS`, exactly as the MCP tool is. A path outside
+   * them answers `allowed: false` with the remedy rather than 4xx: "not
+   * permitted, upload instead" is a state the caller renders, not a fault.
+   */
+  @UseGuards(JwtOrApiKeyAuthGuard)
+  @Post('recognize')
+  async recognize(@Body() body: RecognizeBody): Promise<PathRecognition> {
+    if (!body?.path) {
+      throw new BadRequestException('path is required');
+    }
+
+    return recognizePathWithinRoots(body.path);
   }
 
   /** Start importing a staged upload. */

@@ -1,10 +1,7 @@
-import path from 'node:path';
-
 import { Injectable } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/logging';
-import { dataSourcesRecognize, type DirEntry } from '@ci/domains/import';
-import { PathOutsideImportRootsError, resolveWithinImportRoots } from '@ci/domains/import';
+import { recognizePathWithinRoots } from '@ci/domains/import';
 
 import { BaseTool } from '../core/BaseTool';
 import type { IntentDefinition, ToolExecutionContext } from '../core/types';
@@ -26,6 +23,10 @@ interface RecognizePathInput {
  * Scoped to the configured import roots. An unconstrained absolute path over an
  * API is a filesystem read primitive, and "which of these paths exists?" is
  * information on its own.
+ *
+ * The work itself is {@link recognizePathWithinRoots}, shared verbatim with
+ * `POST /import/recognize` — the tool and the endpoint must never come to
+ * different conclusions about the same folder.
  */
 @Injectable()
 export class ImportRecognizePathTool extends BaseTool<RecognizePathInput, unknown> {
@@ -64,41 +65,9 @@ export class ImportRecognizePathTool extends BaseTool<RecognizePathInput, unknow
       throw new Error('path is required');
     }
 
-    let resolved: string;
-
-    try {
-      resolved = await resolveWithinImportRoots(input.path);
-    } catch (err) {
-      if (err instanceof PathOutsideImportRootsError) {
-        // Returned rather than thrown: an agent can act on "not allowed, upload
-        // instead", where a tool error reads as a malfunction.
-        return { allowed: false, reason: err.message, recognized: [] };
-      }
-
-      throw err;
-    }
-
-    const entry: DirEntry = {
-      filename: path.basename(resolved),
-      fullPath: resolved,
-      fsRoot: resolved,
-    };
-
-    // `descend` because the caller points at a folder they downloaded into, and
-    // the export is usually a level or two inside it.
-    const matches = await dataSourcesRecognize(undefined, entry, {}, { descend: true });
-
-    return {
-      allowed: true,
-      path: resolved,
-      recognized: matches
-        .sort((a, b) => b.recognition.confidence - a.recognition.confidence)
-        .map((match) => ({
-          dataSource: match.data_source.name,
-          title: match.data_source.title,
-          confidence: match.recognition.confidence,
-          matchedPath: match.matchedPath ?? resolved,
-        })),
-    };
+    // An out-of-bounds path comes back as `allowed: false` rather than thrown:
+    // an agent can act on "not allowed, upload instead", where a tool error
+    // reads as a malfunction.
+    return recognizePathWithinRoots(input.path);
   }
 }
