@@ -84,7 +84,7 @@ describeWithDatabase(`staged source runs (${importDatabase.target})`, () => {
   });
 
   function makeUnpackStage() {
-    return new UnpackStage(harness.stagedSources, {
+    return new UnpackStage(dataSource, harness.stagedSources, {
       setContext: jest.fn(),
       log: jest.fn(),
       warn: jest.fn(),
@@ -306,9 +306,19 @@ describeWithDatabase(`staged source runs (${importDatabase.target})`, () => {
   });
 
   describe('consumption', () => {
-    it('marks the claim consumed when the run finishes', async () => {
+    it('marks the claim consumed when the run finishes having pulled records', async () => {
       const source = await seedInboxUnit('finishes.zip', 'file');
       const { run } = await startInbox(source, 'file');
+
+      // A staged row, because `finishRun` asks `pulledRecords` before it stamps
+      // `consumed`: a run that took nothing out of its source has not consumed
+      // it, and stamping it would hand the user's only copy to the reclaim.
+      await dataSource.query(
+        `INSERT INTO ci_import.staged_items
+           (run_id, user_id, data_source, classification, content_hash, occurred_at, metadata)
+         VALUES ($1::uuid, $2::uuid, 'generic', 'note', 'consume-1', now(), '{}'::jsonb)`,
+        [run.id, userId],
+      );
 
       await dataSource.query(
         `UPDATE ci_import.import_stages SET status = 'completed', finished_at = now() WHERE run_id = $1::uuid`,
@@ -317,6 +327,22 @@ describeWithDatabase(`staged source runs (${importDatabase.target})`, () => {
       await harness.service.finishRun(run.id);
 
       expect((await rowByRunId(run.id))?.status).toBe('consumed');
+    });
+
+    it('releases rather than consumes when the run staged nothing at all', async () => {
+      // The data-loss guard from the consolidation audit: an inbox unit no
+      // parser recognized still closes `partial`, and `consumed` would send the
+      // user's only copy out with the scratch tree.
+      const source = await seedInboxUnit('recognized-by-nobody.zip', 'file');
+      const { run } = await startInbox(source, 'file');
+
+      await dataSource.query(
+        `UPDATE ci_import.import_stages SET status = 'completed', finished_at = now() WHERE run_id = $1::uuid`,
+        [run.id],
+      );
+      await harness.service.finishRun(run.id);
+
+      expect((await rowByRunId(run.id))?.status).toBe('released');
     });
 
     it('never releases a claim that already moved — the bytes wait in scratch for a retry', async () => {

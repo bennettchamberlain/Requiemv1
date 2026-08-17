@@ -439,6 +439,72 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
     expect(rows[2].push_error).toMatch(/rejected this record/);
   });
 
+  /**
+   * Out of disk is the one error the per-row quarantine gets wrong. Nothing
+   * about the record caused it and nothing about the next one avoids it, so
+   * marking it `failed` and carrying on wrote the same failure into every
+   * remaining row — hammering a full database on the way — and then reported
+   * `partial` over an import that had simply run out of room. The real incident
+   * surfaced as an OCI error from the container runtime; the import itself said
+   * nothing about disk at all.
+   */
+  it('aborts the whole stage on a full database instead of failing every remaining row', async () => {
+    const runId = await harness.startRun();
+    const { dataSource, userId } = harness;
+
+    for (const hash of ['nospc-1', 'nospc-2', 'nospc-3']) {
+      await dataSource.query(
+        `INSERT INTO ci_import.staged_items
+           (run_id, user_id, data_source, classification, content_hash, occurred_at, metadata)
+         VALUES ($1::uuid, $2::uuid, 'gmail', 'email', $3, now(), '{}'::jsonb)`,
+        [runId, userId, hash],
+      );
+    }
+
+    // Exactly what node-postgres hands back when Postgres cannot extend a file.
+    const communicationCreate = jest.fn(async () => {
+      throw Object.assign(new Error('could not extend file "base/16384/2619": No space left on device'), {
+        code: '53100',
+      });
+    });
+
+    const { stage } = makeStage({ communicationCreate });
+
+    await expect(stage.run(contextFor(runId))).rejects.toThrow(/database volume/);
+
+    const rows = await dataSource.query<Array<{ push_status: string }>>(
+      `SELECT push_status FROM ci_import.staged_items WHERE run_id = $1::uuid`,
+      [runId],
+    );
+
+    // NOT three `failed` rows with no route back. The stage stopped at the
+    // first one, and everything it never reached is still `pending` — which is
+    // exactly the state the push resumes from once space is freed.
+    expect(rows.filter((row) => row.push_status === 'failed')).toHaveLength(0);
+    expect(rows.filter((row) => row.push_status === 'pending')).toHaveLength(3);
+
+    // One attempt, then stop — not one per remaining row.
+    expect(communicationCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports both the database size and its remaining room on every push', async () => {
+    const runId = await harness.startRun();
+
+    await harness.dataSource.query(
+      `INSERT INTO ci_import.staged_items
+         (run_id, user_id, data_source, classification, content_hash, occurred_at, metadata)
+       VALUES ($1::uuid, $2::uuid, 'gmail', 'email', 'storage-1', now(), '{}'::jsonb)`,
+      [runId, harness.userId],
+    );
+
+    const { stage } = makeStage();
+    const outcome = await stage.run(contextFor(runId));
+
+    // "How much room did the last import leave?" is the number that says
+    // whether the next one fits, and nothing recorded it before.
+    expect(outcome.detail.storage).toMatchObject({ databaseBytes: expect.any(Number) });
+  });
+
   it('resumes over what is left rather than re-sending what already went', async () => {
     const runId = await stageEmailWithParticipants();
     const first = makeStage();

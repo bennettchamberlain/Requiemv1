@@ -175,12 +175,21 @@ export class StagedSourceService {
   /**
    * Reclaim still-staged uploads past their TTL.
    *
-   * The FILE goes first, and `expired` is stamped only when the delete
-   * succeeded: a failed unlink leaves the row `staged` for the next sweep to
-   * retry. (The previous design stamped first and claimed the opposite — but
-   * its sweep only ever read un-stamped rows, so a failed delete orphaned the
-   * bytes forever.) The row is kept after a successful reclaim, so a user who
-   * comes back finds "this upload expired" instead of a bare 404.
+   * The row is taken out of the staged pool FIRST, with a compare-and-swap on
+   * the very state `startRun`'s claim also competes for, and only then are the
+   * bytes deleted. That ordering is the whole point.
+   *
+   * The previous shape read the stale rows, then deleted each file, then
+   * stamped `expired` with an UNCONSTRAINED update — so a run that claimed an
+   * upload in the gap between the read and the delete had its archive removed
+   * out from under it AND its live `claimed` row overwritten with an `expired`
+   * tombstone. The unpack then failed with "no claimed source" over bytes that
+   * no longer existed, and there was nothing left to say where they went. A
+   * constrained update cannot do that: the claim and the purge race for the
+   * same `status = 'staged'` row and exactly one of them wins.
+   *
+   * A failed delete puts the row back to `staged` so the next sweep retries it
+   * — the property the old file-first ordering was protecting, kept.
    */
   async purgeExpired(now: Date = new Date()): Promise<number> {
     const stale = await this.sources.find({
@@ -190,9 +199,27 @@ export class StagedSourceService {
     let reclaimed = 0;
 
     for (const source of stale) {
+      // The CAS. `status: 'staged'` in the WHERE is what makes a run that
+      // claimed this upload since the read above win the race outright.
+      const claimed = await this.sources.update(
+        { id: source.id, status: 'staged', expiresAt: LessThan(now) },
+        { status: 'expired' },
+      );
+
+      if ((claimed.affected ?? 0) === 0) {
+        this.logger.log('Expired upload was claimed by a run before the sweep reached it; leaving it', {
+          dropId: source.dropId,
+        });
+        continue;
+      }
+
       try {
         await this.removeStagedUploadDir(source.sourcePath);
       } catch (err: unknown) {
+        // Put it back: an `expired` row whose file survived is invisible to
+        // this sweep forever, which is how bytes leak.
+        await this.sources.update({ id: source.id, status: 'expired' }, { status: 'staged' });
+
         this.logger.warn('Could not reclaim an expired upload; will retry next sweep', {
           dropId: source.dropId,
           error: (err as Error).message,
@@ -200,7 +227,6 @@ export class StagedSourceService {
         continue;
       }
 
-      await this.sources.update({ id: source.id }, { status: 'expired' });
       reclaimed += 1;
     }
 
@@ -263,15 +289,12 @@ export class StagedSourceService {
           continue;
         }
 
-        // A drop directory is live while ANY row still points into it.
-        const live = await this.sources.exist({
-          where: { dropId: name, status: In(['staged', 'claimed', 'moved']) },
-        });
-
-        if (!live) {
-          await this.removeDropDir(fullPath);
-          removed += 1;
+        if (await this.dropDirIsLive(name)) {
+          continue;
         }
+
+        await this.removeDropDir(fullPath);
+        removed += 1;
       } catch (err: unknown) {
         this.logger.warn('Orphan sweep skipped an entry', {
           entry: name,
@@ -296,19 +319,35 @@ export class StagedSourceService {
    * `claimed`/`moved` deliberately: a stage retried after its claim was
    * released (or its upload re-staged) must fail with "no claimed source"
    * rather than acquire a path some newer run now owns.
+   *
+   * Scoped by user as well as by run. The run id alone is enough to identify
+   * the row, so this is not the gate that keeps accounts apart — it is the
+   * check that makes a mismatch impossible to reach: a stage job whose payload
+   * names one user and whose run belongs to another finds no source and fails
+   * honestly, rather than moving somebody else's archive into this run's
+   * scratch tree.
    */
-  async findByRunId(runId: string): Promise<StagedSource | null> {
-    return this.sources.findOne({ where: { runId, status: In(['claimed', 'moved']) } });
+  async findByRunId(userId: string, runId: string): Promise<StagedSource | null> {
+    return this.sources.findOne({ where: { userId, runId, status: In(['claimed', 'moved']) } });
   }
 
-  /** Live claims (claimed or moved) for a set of paths — the inbox scan's "already importing" lookup. */
-  async findActiveByPaths(userId: string, paths: string[]): Promise<StagedSource[]> {
+  /**
+   * Live claims (claimed or moved) for a set of paths — the inbox scan's
+   * "already importing" lookup.
+   *
+   * Deliberately NOT scoped by user. The inbox is one shared folder, so a unit
+   * another account is importing is unavailable to this one — the claim index
+   * is appliance-wide for the same reason. What the caller does with the answer
+   * IS scoped: see {@link ImportInboxService.scan}, which reports another
+   * user's claim as `claimed` without handing over their run id.
+   */
+  async findActiveByPaths(paths: string[]): Promise<StagedSource[]> {
     if (paths.length === 0) {
       return [];
     }
 
     return this.sources.find({
-      where: { userId, sourcePath: In(paths), status: In(['claimed', 'moved']) },
+      where: { sourcePath: In(paths), status: In(['claimed', 'moved']) },
     });
   }
 
@@ -382,6 +421,44 @@ export class StagedSourceService {
         restagedUploads: uploads.affected ?? 0,
       });
     }
+  }
+
+  /**
+   * Is anything still entitled to the bytes in `<uploadsDir>/<dropId>/`?
+   *
+   * Two independent reasons to keep them, and the second is the one the status
+   * test alone got wrong:
+   *
+   *  - a row in a live STATUS (`staged`/`claimed`/`moved`) — an upload awaiting
+   *    its import decision, or one a run currently holds;
+   *  - a row of ANY status whose run has not finished. A run whose stage failed
+   *    releases its claim (the upload goes back to `staged`, so this is usually
+   *    the same answer) — but a run that was retried, or one whose row was
+   *    stamped by a racing sweep, can hold an unfinished run against a status
+   *    this test would otherwise read as dead. Deleting an in-flight run's
+   *    archive is unrecoverable, and keeping bytes an extra hour costs disk, so
+   *    the tie goes to the run.
+   */
+  private async dropDirIsLive(dropId: string): Promise<boolean> {
+    const liveStatus = await this.sources.exist({
+      where: { dropId, status: In(['staged', 'claimed', 'moved']) },
+    });
+
+    if (liveStatus) {
+      return true;
+    }
+
+    const rows = (await this.sources.query(
+      `SELECT EXISTS (
+                SELECT 1
+                  FROM ci_import.staged_sources s
+                  JOIN ci_import.import_runs r ON r.id = s.run_id
+                 WHERE s.drop_id = $1 AND r.finished_at IS NULL
+              ) AS live`,
+      [dropId],
+    )) as Array<{ live: boolean }>;
+
+    return rows[0]?.live === true;
   }
 
   /** Delete a registered upload's bytes: its whole `<uploadsDir>/<dropId>/` directory. */

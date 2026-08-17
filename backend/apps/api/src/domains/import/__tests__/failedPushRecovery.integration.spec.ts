@@ -1,0 +1,242 @@
+import type { DataSource } from 'typeorm';
+
+import type { ImportRunService } from '../services/ImportRunService';
+import { StagedWriter } from '../staging/StagedWriter';
+
+import { createStagingHarness, importDatabase, type StagingHarness } from './support/stagingHarness';
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * A ROW THE PUSH COULD NOT WRITE MUST HAVE A WAY BACK.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * 297 rows were sitting at `push_status = 'failed'` on the dev appliance with
+ * nothing in the product able to reach them, and three separate mechanisms
+ * each independently closed the door:
+ *
+ *  - `PushStage` reads `push_status = 'pending'`, so it never reconsiders a
+ *    failed row — that is the resumability design, and it is right;
+ *  - `PUSH_ELIGIBLE_WHERE` excludes any run that already has a push stage AT
+ *    ANY STATUS, so the Sync card never offers the run again;
+ *  - `retryStage` only accepts a stage at `failed`/`cancelled`, and the push
+ *    that stranded these rows COMPLETED — a push that writes 461,000 records
+ *    and misses 297 is a success by every measure the stage has.
+ *
+ * The first half of this spec pins those three closed doors, because they are
+ * each correct on their own and the trap is what they add up to. The second
+ * half is the door that was missing.
+ */
+
+const describeWithDatabase = importDatabase.available ? describe : describe.skip;
+
+if (!importDatabase.available) {
+  console.warn(`[import/failedPushRecovery.integration] SKIPPED — ${importDatabase.reason}`);
+}
+
+jest.setTimeout(60_000);
+
+describeWithDatabase(`failed push rows (${importDatabase.target})`, () => {
+  let harness: StagingHarness;
+  let teardown: () => Promise<void>;
+  let dataSource: DataSource;
+  let events: { send: jest.Mock };
+  let service: ImportRunService;
+  let userId: string;
+
+  beforeAll(async () => {
+    ({ harness, teardown } = await createStagingHarness());
+    ({ dataSource, events, service, userId } = harness);
+  });
+
+  afterAll(async () => {
+    await teardown();
+  });
+
+  /**
+   * A run whose push COMPLETED having failed some of its rows — the exact
+   * shape the appliance was found in.
+   */
+  async function runWithFailedRows(): Promise<{ runId: string; pushStageId: string }> {
+    const dropId = await harness.stageDrop('export.zip');
+    const { run, stages } = await harness.startRunForDrop(dropId, ['unpack', 'parse', 'push']);
+    const writer = new StagedWriter(dataSource.manager, {
+      userId,
+      runId: run.id,
+      dataSource: 'google_photos',
+    });
+
+    for (const suffix of ['a', 'b', 'c']) {
+      writer.push({
+        item: {
+          id: `photo-${run.id.slice(0, 8)}-${suffix}`,
+          classification: 'photo',
+          timestamp: new Date('2012-07-04T10:00:00Z'),
+          content: { filename: `IMG-${suffix}.jpg` },
+        },
+      });
+    }
+
+    // One staged person too: `pushEntities` marks its casualties the same way,
+    // and an unresolved person costs every record that names them.
+    writer.push({ entity: { name: 'Alice', attributes: [{ name: 'email', value: 'alice@example.com' }] } });
+
+    await writer.settled();
+
+    for (const stage of stages) {
+      expect(await service.beginStage(stage.id)).toBe(true);
+      await service.completeStage(stage.id, { processed: 3, total: 4, detail: { failed: 2 } });
+    }
+
+    // Two items and the entity land where a real push would have left them.
+    await dataSource.query(
+      `UPDATE ci_import.staged_items
+          SET push_status = 'failed', push_error = 'no space left on device'
+        WHERE id IN (SELECT id FROM ci_import.staged_items WHERE run_id = $1::uuid ORDER BY id LIMIT 2)`,
+      [run.id],
+    );
+    await dataSource.query(
+      `UPDATE ci_import.staged_items SET push_status = 'pushed', pushed_at = now()
+        WHERE run_id = $1::uuid AND push_status = 'pending'`,
+      [run.id],
+    );
+    await dataSource.query(
+      `UPDATE ci_import.staged_entities SET push_status = 'failed', push_error = 'graph ingest refused'
+        WHERE run_id = $1::uuid`,
+      [run.id],
+    );
+
+    await service.advance(userId, run.id, stages[stages.length - 1].seq);
+
+    return { runId: run.id, pushStageId: stages[2].id };
+  }
+
+  async function pushStatuses(runId: string): Promise<{ items: string[]; entities: string[] }> {
+    const items = await dataSource.query<Array<{ push_status: string }>>(
+      `SELECT push_status FROM ci_import.staged_items WHERE run_id = $1::uuid ORDER BY id`,
+      [runId],
+    );
+    const entities = await dataSource.query<Array<{ push_status: string }>>(
+      `SELECT push_status FROM ci_import.staged_entities WHERE run_id = $1::uuid ORDER BY id`,
+      [runId],
+    );
+
+    return {
+      items: items.map((row) => row.push_status),
+      entities: entities.map((row) => row.push_status),
+    };
+  }
+
+  async function stageRow(stageId: string): Promise<{ status: string; processed: string }> {
+    const [row] = await dataSource.query(
+      `SELECT status, processed FROM ci_import.import_stages WHERE id = $1::uuid`,
+      [stageId],
+    );
+
+    return row;
+  }
+
+  describe('the trap', () => {
+    it('leaves the rows unreachable by every other route', async () => {
+      const { runId, pushStageId } = await runWithFailedRows();
+
+      expect((await pushStatuses(runId)).items).toEqual(
+        expect.arrayContaining(['failed', 'failed', 'pushed']),
+      );
+
+      // Sync does not offer the run: it already has a push stage.
+      const unpushed = await service.listUnpushed({ userId });
+
+      expect(unpushed.find((entry) => entry.run.id === runId)).toBeUndefined();
+      expect(await service.startPush({ userId }, { runIds: [runId] })).toEqual([]);
+
+      // And the stage retry refuses, because the stage did not fail.
+      expect(await service.retryStage({ userId }, runId, pushStageId)).toBe(false);
+    });
+  });
+
+  describe('retryFailedPush', () => {
+    it('resets both lanes to pending and re-queues the run push stage', async () => {
+      const { runId, pushStageId } = await runWithFailedRows();
+
+      events.send.mockClear();
+
+      const result = await service.retryFailedPush({ userId }, runId);
+
+      expect(result).toEqual({ items: 2, entities: 1, requeued: true });
+
+      const after = await pushStatuses(runId);
+
+      // Only the failures move. A row already `pushed` must not be re-sent —
+      // the destinations upsert, but re-walking a 460k-row import to re-decide
+      // what is already there is the cost the per-row ledger exists to avoid.
+      expect(after.items.filter((status) => status === 'pending')).toHaveLength(2);
+      expect(after.items.filter((status) => status === 'pushed')).toHaveLength(1);
+      expect(after.entities).toEqual(['pending']);
+
+      const [row] = await dataSource.query<Array<{ push_error: string | null }>>(
+        `SELECT push_error FROM ci_import.staged_items
+          WHERE run_id = $1::uuid AND push_status = 'pending' LIMIT 1`,
+        [runId],
+      );
+
+      // Cleared, so a second failure records its own reason rather than the first's.
+      expect(row.push_error).toBeNull();
+
+      // The stage is runnable again — `beginStage` only claims a `queued` stage,
+      // so anything else would make the next job a no-op.
+      expect(await stageRow(pushStageId)).toMatchObject({ status: 'queued' });
+
+      const [runAfter] = await dataSource.query<Array<{ status: string; finished_at: string | null }>>(
+        `SELECT status, finished_at FROM ci_import.import_runs WHERE id = $1::uuid`,
+        [runId],
+      );
+
+      expect(runAfter).toMatchObject({ status: 'queued', finished_at: null });
+      expect(events.send).toHaveBeenCalledTimes(1);
+      expect(events.send.mock.calls[0][1]).toMatchObject({ runId, stageId: pushStageId, userId });
+    });
+
+    it('re-queues the SAME push stage rather than appending a second one', async () => {
+      const { runId } = await runWithFailedRows();
+
+      await service.retryFailedPush({ userId }, runId);
+
+      const pushStages = await dataSource.query<Array<{ id: string }>>(
+        `SELECT id FROM ci_import.import_stages WHERE run_id = $1::uuid AND kind = 'push'`,
+        [runId],
+      );
+
+      // A second row would double the weight the percent rollup divides by, and
+      // leave the bar reading half done over a finished import.
+      expect(pushStages).toHaveLength(1);
+    });
+
+    it('is a no-op when nothing is stranded, rather than an error', async () => {
+      const dropId = await harness.stageDrop('clean.zip');
+      const { run, stages } = await harness.startRunForDrop(dropId, ['unpack', 'parse']);
+
+      for (const stage of stages) {
+        expect(await service.beginStage(stage.id)).toBe(true);
+        await service.completeStage(stage.id, { processed: 1, total: 1, detail: {} });
+      }
+
+      events.send.mockClear();
+
+      expect(await service.retryFailedPush({ userId }, run.id)).toEqual({
+        items: 0,
+        entities: 0,
+        requeued: false,
+      });
+      expect(events.send).not.toHaveBeenCalled();
+    });
+
+    it('is scoped to the caller — another user cannot revive this run', async () => {
+      const { runId } = await runWithFailedRows();
+
+      expect(await service.retryFailedPush({ userId: crypto.randomUUID() }, runId)).toBeNull();
+      expect((await pushStatuses(runId)).items).toEqual(
+        expect.arrayContaining(['failed', 'failed', 'pushed']),
+      );
+    });
+  });
+});

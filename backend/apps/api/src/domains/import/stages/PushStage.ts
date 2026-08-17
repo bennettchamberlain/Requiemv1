@@ -20,10 +20,27 @@ import {
   toInventoryInput,
   toPositionInput,
 } from '../push/inputs';
+import {
+  DATABASE_FREE_FLOOR_BYTES,
+  DatabaseVolumeFullError,
+  isOutOfDiskError,
+  readDatabaseSpace,
+  type DatabaseSpace,
+} from '../storage/databaseSpace';
 import type { ImportStageRunner, StageOutcome, StageRunContext } from '../types';
 
 /** Staged rows read (and pushed) per batch. */
 const PUSH_BATCH = 500;
+
+/**
+ * How often the push re-measures the database volume mid-run.
+ *
+ * `pg_database_size` stats every file the database owns, so this cannot be
+ * per-batch: a 460k-row import is ~920 batches. Fifteen seconds is far shorter
+ * than the time it takes to write {@link DATABASE_FREE_FLOOR_BYTES} of rows,
+ * which is what the reading has to stay ahead of.
+ */
+const SPACE_CHECK_INTERVAL_MS = 15_000;
 
 /** What one batch's fan-out produced, per destination. */
 type DestinationCounts = Partial<Record<Destination, number>>;
@@ -58,10 +75,28 @@ type DestinationCounts = Partial<Record<Destination, number>>;
  * has a `*_source_triple_uniq` index over it, so a re-push is a no-op decided by
  * the database. Re-implementing that check here would be a second answer to a
  * question `ci.*` already answers — and the two would drift.
+ *
+ * ## Running out of disk is a STAGE failure, not a row failure
+ *
+ * The per-row quarantine above is right for a poisoned record and catastrophic
+ * for a full volume: nothing about the next row is different, so a disk-full
+ * push marched through the remaining rows marking every one of them `failed`,
+ * hammering a full database on the way, and finished "partial" over an import
+ * that had simply run out of room. The real incident surfaced as an OCI error
+ * from the container runtime with nothing in the import saying what happened.
+ *
+ * So the stage watches the database's own volume — see `storage/databaseSpace`
+ * — and stops on the first sign of the end: a free-space reading under the
+ * floor, or SQLSTATE 53100 from any row. Stopping leaves the untouched rows
+ * `pending`, which is exactly the state the push resumes from once somebody
+ * frees space.
  */
 @Injectable()
 export class PushStage implements ImportStageRunner {
   readonly kind = 'push' as const;
+
+  /** When {@link assertDatabaseHasRoom} last measured. See SPACE_CHECK_INTERVAL_MS. */
+  private lastSpaceCheck = 0;
 
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
@@ -78,6 +113,11 @@ export class PushStage implements ImportStageRunner {
   }
 
   async run(context: StageRunContext): Promise<StageOutcome> {
+    // The other half of the disk budget. `archive/unpack` preflights the
+    // SCRATCH volume before extracting; this is the volume the rows land on,
+    // and until now nothing measured it at all.
+    const space = await this.assertDatabaseHasRoom(context);
+
     // What earlier attempts already settled — read BEFORE `pushEntities` moves
     // rows off 'pending', or this attempt's own work would be counted twice.
     const prior = await this.settledCounts(context.runId);
@@ -121,6 +161,8 @@ export class PushStage implements ImportStageRunner {
       phase: 'pushing',
     });
 
+    let latestSpace = space;
+
     for (;;) {
       const batch = await this.nextBatch(context.runId);
 
@@ -139,6 +181,12 @@ export class PushStage implements ImportStageRunner {
         total,
         phase: 'pushing',
       });
+
+      // On a timer, not per batch. `pg_database_size` stats every file the
+      // database owns, so at 500 rows a batch a 460k-row import would run it
+      // ~920 times; a volume with gigabytes of headroom cannot cross the floor
+      // inside fifteen seconds of pushing.
+      latestSpace = await this.assertDatabaseHasRoom(context, latestSpace);
     }
 
     return {
@@ -157,8 +205,67 @@ export class PushStage implements ImportStageRunner {
       // `deduped` is reported separately from `pushed`: it is a real outcome
       // (the record is in ci.*, it just arrived earlier) and reads as neither a
       // write nor a loss.
-      detail: { pushed, deduped, failed, destinations: counts, entities },
+      detail: {
+        pushed,
+        deduped,
+        failed,
+        destinations: counts,
+        entities,
+        // Reported whether or not it was ever close to the floor. An import
+        // that filled a volume is obvious afterwards; what nobody could see is
+        // how much room the last one left, which is the number that says
+        // whether the next one will fit.
+        storage: {
+          databaseBytes: latestSpace.databaseBytes,
+          databaseFreeBytes: latestSpace.freeBytes,
+          databaseDataDir: latestSpace.dataDir,
+        },
+      },
     };
+  }
+
+  /**
+   * Stop before the database volume runs out, rather than after.
+   *
+   * Returns the reading so the caller can report it. Throttled to
+   * {@link SPACE_CHECK_INTERVAL_MS}: passing the previous reading in means a
+   * mid-push call inside the window returns it unchanged instead of paying for
+   * another `pg_database_size`. The first call of a stage always measures.
+   *
+   * A volume this process cannot see (`freeBytes: null` — the api and the
+   * database in separate containers with no shared mount, and
+   * `CI_IMPORT_DB_DATA_DIR` unset) is not treated as full: the push proceeds
+   * and relies on {@link isOutOfDiskError} to turn the eventual write failure
+   * into the same message. Guessing "full" from an unreadable probe would
+   * refuse every import on the shipped topology.
+   */
+  private async assertDatabaseHasRoom(
+    context: StageRunContext,
+    previous?: DatabaseSpace,
+  ): Promise<DatabaseSpace> {
+    const now = Date.now();
+
+    if (previous != null && now - this.lastSpaceCheck < SPACE_CHECK_INTERVAL_MS) {
+      return previous;
+    }
+
+    this.lastSpaceCheck = now;
+
+    const space = await readDatabaseSpace(this.dataSource);
+
+    if (space.freeBytes != null && space.freeBytes < DATABASE_FREE_FLOOR_BYTES) {
+      const error = new DatabaseVolumeFullError(
+        space,
+        `the push stops while at least ${DATABASE_FREE_FLOOR_BYTES / 1024 ** 3}GiB of headroom is ` +
+          `required for the database to stay recoverable`,
+      );
+
+      this.logger.error(error, { runId: context.runId });
+
+      throw error;
+    }
+
+    return space;
   }
 
   /**
@@ -499,6 +606,20 @@ export class PushStage implements ImportStageRunner {
           await this.markSkipped(row.id);
           deduped += 1;
           continue;
+        }
+
+        // Out of disk is the one error the per-row quarantine gets wrong.
+        // Nothing about this record caused it and nothing about the next one
+        // will avoid it, so marking it `failed` and carrying on writes the same
+        // failure into every remaining row — 460k of them in the run that found
+        // this — and strands them all in a state with no route back. Rethrown
+        // so the stage fails with a cause: the rows it never reached are still
+        // `pending`, which is what the push resumes from.
+        if (isOutOfDiskError(err)) {
+          throw new DatabaseVolumeFullError(
+            await readDatabaseSpace(this.dataSource),
+            `the database refused a write while saving ${record.sourceSystem} record ${row.id}`,
+          );
         }
 
         await this.markFailed(row.id, (err as Error).message);

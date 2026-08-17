@@ -66,12 +66,15 @@ describeWithDatabase(`the import spine (${importDatabase.target})`, () => {
 
       expect(run.status).toBe('queued');
       expect(run.label).toBe('Takeout.zip');
-      expect(stages.map((stage) => stage.kind)).toEqual(['unpack', 'parse', 'push']);
-      expect(stages.map((stage) => stage.seq)).toEqual([0, 1, 2]);
+      // Four, since the media stage joined IMPORT_STAGE_KINDS: the default is
+      // taken from that list rather than restated, so a new kind reaches every
+      // new run without anything here having to be told.
+      expect(stages.map((stage) => stage.kind)).toEqual(['unpack', 'parse', 'media', 'push']);
+      expect(stages.map((stage) => stage.seq)).toEqual([0, 1, 2, 3]);
 
       // The stage bar is recorded up front so the UI can draw the whole thing on
       // the first poll instead of growing it a box at a time.
-      expect(run.requestedStages).toEqual(['unpack', 'parse', 'push']);
+      expect(run.requestedStages).toEqual(['unpack', 'parse', 'media', 'push']);
 
       const [drop] = await dataSource.query<Array<{ status: string; run_id: string }>>(
         `SELECT status, run_id FROM ci_import.staged_sources WHERE user_id = $1::uuid AND drop_id = $2`,
@@ -210,15 +213,15 @@ describeWithDatabase(`the import spine (${importDatabase.target})`, () => {
         [run.id],
       );
 
-      // unpack is 30 of the run's 100 weight (30 + 50 + 20), not 1 of 3.
-      expect(after.percent).toBe(30);
+      // unpack is 20 of the run's 100 weight (20 + 35 + 30 + 15), not 1 of 4.
+      expect(after.percent).toBe(20);
     });
 
     it('normalizes the rollup by the run’s OWN stages, not an assumed 100', async () => {
-      // The wizard starts parse-only runs (unpack + parse, weights 30 + 50).
+      // The wizard starts parse-only runs (unpack + parse, weights 20 + 35).
       // If the rollup divided by a fixed 100 instead of SUM(weight), this run
-      // would crawl to 80% and jump to 100 at the finish line — the divisor
-      // has to be the 80 the run actually materialized: 100·30/80 = 38.
+      // would crawl to 20% and jump to 100 at the finish line — the divisor
+      // has to be the 55 the run actually materialized: 100·20/55 = 36.
       const { run, stages } = await harness.startRunForDrop(await stageDrop(), ['unpack', 'parse']);
 
       await service.beginStage(stages[0].id);
@@ -229,7 +232,7 @@ describeWithDatabase(`the import spine (${importDatabase.target})`, () => {
         [run.id],
       );
 
-      expect(after.percent).toBe(38);
+      expect(after.percent).toBe(36);
     });
 
     it('ends a run partial when a stage reported partial, not failed', async () => {

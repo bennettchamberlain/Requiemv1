@@ -148,7 +148,8 @@
     "uploadsDir": "/var/lib/ci-import/uploads",
     "inboxDir": "/var/lib/ci-import/inbox",
     "maxArchiveEntries": 2000000,
-    "maxArchiveBytes": 107374182400
+    "maxArchiveBytes": 107374182400,
+    "databaseDataDir": ""
   },
   "enrichment": {
     "window": {

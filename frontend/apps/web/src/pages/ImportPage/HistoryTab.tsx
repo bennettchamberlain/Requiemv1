@@ -79,6 +79,26 @@ export function HistoryTab() {
     [activeRunId, api, refresh],
   );
 
+  /**
+   * Re-queue the rows a completed push could not write.
+   *
+   * A separate handler from `handleRetryStage` because it is a separate kind of
+   * failure: that one re-runs a stage that failed, this one revives individual
+   * rows a stage that SUCCEEDED left behind.
+   */
+  const handleRetryFailedPush = useCallback(async () => {
+    if (activeRunId == null) {
+      return;
+    }
+
+    try {
+      await api.retryFailedPush(activeRunId);
+      await refresh();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [activeRunId, api, refresh]);
+
   return (
     <div className="space-y-6">
       {error ? (
@@ -93,6 +113,7 @@ export function HistoryTab() {
           run={run}
           onCancel={() => void handleCancel()}
           onRetryStage={(stageId) => void handleRetryStage(stageId)}
+          onRetryFailedPush={() => void handleRetryFailedPush()}
           onClose={() => setActiveRunId(null)}
           services={serviceLabels(run.dataSources, sources)}
         />

@@ -157,7 +157,7 @@ describeWithDatabase(`deferred push (${importDatabase.target})`, () => {
       expect(pushes).toHaveLength(1);
       expect(pushes[0].seq).toBe(2);
       expect(pushes[0].status).toBe('queued');
-      expect(pushes[0].weight).toBe(20);
+      expect(pushes[0].weight).toBe(15);
 
       const after = await runRow(runId);
 
@@ -165,10 +165,10 @@ describeWithDatabase(`deferred push (${importDatabase.target})`, () => {
       expect(after.finished_at).toBeNull();
       expect(after.error).toBeNull();
       expect(after.requested_stages).toEqual(['unpack', 'parse', 'push']);
-      // 30 (unpack done) + 50 (parse done) + 20·0 (push queued) over 100 — the
+      // 20 (unpack done) + 35 (parse done) + 15·0 (push queued) over 70 — the
       // stale 100 from finishRun must be gone BEFORE anything could poll a
       // queued push under a full bar.
-      expect(after.percent).toBe(80);
+      expect(after.percent).toBe(79);
 
       expect(events.send).toHaveBeenCalledTimes(1);
       expect(events.send.mock.calls[0][1]).toMatchObject({ runId, stageId: pushes[0].id, userId });
@@ -222,16 +222,17 @@ describeWithDatabase(`deferred push (${importDatabase.target})`, () => {
 
     it('a run that already has a push stage — its recovery path is retryStage', async () => {
       const dropId = await harness.stageDrop('full-run.zip');
-      const { run, stages } = await harness.startRunForDrop(dropId); // default: all three stages
+      const { run, stages } = await harness.startRunForDrop(dropId); // default: every stage kind
 
       await driveStage(stages[0].id);
       await stageItem(run.id, 'full-run.jpg');
       await driveStage(stages[1].id);
 
       expect(await service.startPush({ userId }, { runIds: [run.id] })).toEqual([]);
-      // Its one push stage is the materialized one, untouched.
+      // Its one push stage is the materialized one, untouched — last of the
+      // four kinds, so seq 3 since `media` joined them.
       expect(await pushStagesOf(run.id)).toHaveLength(1);
-      expect((await pushStagesOf(run.id))[0].seq).toBe(2);
+      expect((await pushStagesOf(run.id))[0].seq).toBe(3);
     });
 
     it('a cancelled run', async () => {

@@ -73,7 +73,10 @@ export function InboxPanel() {
   );
 
   const handleImportAll = useCallback(async () => {
-    const pending = scan?.units.filter((unit) => unit.activeRunId == null) ?? [];
+    // `claimed`, not `activeRunId`: the inbox is one folder shared by every
+    // account, so a unit another user's run already holds is unavailable here
+    // too — and their run id is deliberately not exposed to this client.
+    const pending = scan?.units.filter((unit) => !unit.claimed) ?? [];
 
     if (pending.length === 0) {
       return;
@@ -123,7 +126,7 @@ export function InboxPanel() {
           <Button
             size="sm"
             onClick={() => void handleImportAll()}
-            disabled={busy || scan.units.every((unit) => unit.activeRunId != null)}
+            disabled={busy || scan.units.every((unit) => unit.claimed)}
           >
             Import all
           </Button>
@@ -170,8 +173,12 @@ export function InboxPanel() {
 
                   <ServiceBadges services={unit.recognized.map((recognition) => recognition.dataSource)} />
 
-                  {unit.activeRunId != null || result?.runId != null ? (
-                    <span className="text-muted-foreground shrink-0 text-xs">Importing — see History</span>
+                  {unit.claimed || result?.runId != null ? (
+                    <span className="text-muted-foreground shrink-0 text-xs">
+                      {unit.activeRunId != null || result?.runId != null
+                        ? 'Importing — see History'
+                        : 'Importing on this appliance'}
+                    </span>
                   ) : (
                     <Button
                       variant="outline"

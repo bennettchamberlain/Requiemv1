@@ -2,13 +2,30 @@ import type { EntityManager } from 'typeorm';
 
 import type { Entity, Graph, ImportPipeline, Item, Metadata } from '../datasources/timeline';
 
+import { digestFile, type ContentDigest } from './contentDigest';
 import {
   entityIdentityKey,
   entityKey,
   hashItem,
   mergeAccumulatedMetadata,
+  needsContentDigest,
   resolveEntityType,
 } from './identity';
+
+/**
+ * The `drops` slug for an item swallowed by the within-run unique index whose
+ * identity we could NOT prove was the same thing.
+ *
+ * Distinct from `itemsDeduped`, which is the honest, expected collapse — one
+ * photo replicated across three albums. This slug is the other kind: two
+ * records that hashed alike arriving from different places, with nothing to
+ * confirm they are one record. That was previously indistinguishable from a
+ * legitimate dedup, so a file that vanished left no trace beyond a counter.
+ */
+export const COLLAPSED_DISTINCT_PATH = 'collapsed-distinct-path';
+
+/** Digests computed for one batch, keyed by the item object the parser emitted. */
+type BatchDigests = Map<Item, ContentDigest>;
 
 /** What one run's staging produced. Folded into the parse stage's `detail`. */
 export interface StagedCounts {
@@ -169,15 +186,50 @@ export class StagedWriter implements ImportPipeline {
       return;
     }
 
+    // BEFORE the transaction opens. Fingerprinting reads files off disk, and
+    // holding a Postgres transaction open across that would pin a pooled
+    // connection for the length of the slowest read in the batch.
+    const digests = await this.digestBatch(batch);
+
     await this.manager.transaction(async (tx) => {
       for (const graph of batch) {
-        await this.writeGraph(tx, graph);
+        await this.writeGraph(tx, graph, digests);
       }
     });
   }
 
-  private async writeGraph(tx: EntityManager, graph: Graph): Promise<string | null> {
-    const itemId = graph.item ? await this.writeItem(tx, graph.item) : null;
+  /**
+   * Fingerprint the items in this batch whose identity would otherwise
+   * degenerate to their basename.
+   *
+   * Only those — see {@link needsContentDigest}. An export is mostly records
+   * that already carry a parser id or a timestamp, and reading all 12GB of a
+   * Takeout to learn what a Gmail message id already says would multiply the
+   * cost of every import to fix a fault that touches a fraction of it.
+   *
+   * Sequential, because these reads are disk-bound on the same volume the
+   * parser is already walking and the parse is what the user is waiting on.
+   */
+  private async digestBatch(batch: Graph[]): Promise<BatchDigests> {
+    const digests: BatchDigests = new Map();
+
+    for (const item of collectItems(batch)) {
+      if (digests.has(item) || !needsContentDigest(item) || !item.intermediateLocation) {
+        continue;
+      }
+
+      const digest = await digestFile(item.intermediateLocation);
+
+      if (digest != null) {
+        digests.set(item, digest);
+      }
+    }
+
+    return digests;
+  }
+
+  private async writeGraph(tx: EntityManager, graph: Graph, digests: BatchDigests): Promise<string | null> {
+    const itemId = graph.item ? await this.writeItem(tx, graph.item, digests) : null;
     const entityId = graph.entity ? await this.writeEntity(tx, graph.entity) : null;
 
     for (const edge of graph.edges ?? []) {
@@ -188,7 +240,7 @@ export class StagedWriter implements ImportPipeline {
         continue;
       }
 
-      const targetItemId = edge.to.item ? await this.writeItem(tx, edge.to.item) : null;
+      const targetItemId = edge.to.item ? await this.writeItem(tx, edge.to.item, digests) : null;
       const targetEntityId = edge.to.entity ? await this.writeEntity(tx, edge.to.entity) : null;
 
       await this.writeRelationship(tx, itemId, edge.relation, edge.metadata, {
@@ -211,19 +263,21 @@ export class StagedWriter implements ImportPipeline {
     return itemId ?? entityId;
   }
 
-  private async writeItem(tx: EntityManager, item: Item): Promise<string> {
+  private async writeItem(tx: EntityManager, item: Item, digests: BatchDigests): Promise<string> {
     // An item may name a different source than the importer running the job:
     // the Fitbit parser also reads the Google Fit half of one Takeout, and those
     // records are Google Fit's — they must stage (and dedup) as `google_fit`.
     const dataSource = item.dataSource ?? this.scope.dataSource;
-    const contentHash = hashItem(item, dataSource);
+    const digest = digests.get(item) ?? null;
+    const contentHash = hashItem(item, dataSource, digest?.sha256);
 
     const rows = await tx.query<Array<{ id: string; inserted: boolean }>>(
       `INSERT INTO ci_import.staged_items
          (run_id, user_id, data_source, classification, content_hash, occurred_at, timespan_end,
-          latitude, longitude, filename, media_type, original_location, intermediate_location, metadata)
+          latitude, longitude, filename, media_type, original_location, intermediate_location, metadata,
+          content_sha256, size_bytes)
        VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::timestamptz, $7::timestamptz,
-               $8, $9, $10, $11, $12, $13, $14::jsonb)
+               $8, $9, $10, $11, $12, $13, $14::jsonb, $15, $16::bigint)
        ON CONFLICT (run_id, data_source, content_hash) DO NOTHING
        RETURNING id, true AS inserted`,
       [
@@ -241,6 +295,8 @@ export class StagedWriter implements ImportPipeline {
         item.originalLocation ?? null,
         item.intermediateLocation ?? null,
         JSON.stringify(item.metadata ?? {}),
+        digest?.sha256 ?? null,
+        digest?.sizeBytes ?? null,
       ],
     );
 
@@ -256,13 +312,53 @@ export class StagedWriter implements ImportPipeline {
     // a question people ask.
     this.counts.itemsDeduped += 1;
 
-    const existing = await tx.query<Array<{ id: string }>>(
-      `SELECT id FROM ci_import.staged_items
+    const existing = await tx.query<
+      Array<{ id: string; intermediate_location: string | null; content_sha256: string | null }>
+    >(
+      `SELECT id, intermediate_location, content_sha256 FROM ci_import.staged_items
         WHERE run_id = $1::uuid AND data_source = $2 AND content_hash = $3`,
       [this.scope.runId, dataSource, contentHash],
     );
 
+    this.recordCollapse(item, digest, existing[0]);
+
     return existing[0].id;
+  }
+
+  /**
+   * Tell a legitimate collapse apart from a swallowed record, and put the
+   * second in the drop ledger.
+   *
+   * A collapse is PROVEN when the two rows carry the same content digest, or
+   * when they came from the same place — the album-replicated photo, a parser
+   * re-emitting one record. What is left is two records from different paths
+   * that we could not show are the same thing: something was consumed by the
+   * rename and deleted with the run's scratch tree, and until now the only
+   * evidence was an `itemsDeduped` tick indistinguishable from the honest case.
+   *
+   * Reported, not refused. Staging a second row would violate the within-run
+   * unique index the dedup depends on, and the parse continuing is the whole
+   * contract of the drop ledger — what changes is that the loss is now a
+   * number someone can see.
+   */
+  private recordCollapse(
+    item: Item,
+    digest: ContentDigest | null,
+    existing: { intermediate_location: string | null; content_sha256: string | null } | undefined,
+  ): void {
+    if (existing == null) {
+      return;
+    }
+
+    if (digest != null && existing.content_sha256 === digest.sha256) {
+      return;
+    }
+
+    if ((existing.intermediate_location ?? null) === (item.intermediateLocation ?? null)) {
+      return;
+    }
+
+    this.drop(COLLAPSED_DISTINCT_PATH);
   }
 
   private async writeEntity(tx: EntityManager, entity: Entity): Promise<string> {
@@ -421,4 +517,23 @@ export class StagedWriter implements ImportPipeline {
       this.counts.relationships += 1;
     }
   }
+}
+
+/** Every item a batch will write, including the far side of each edge. */
+function collectItems(batch: Graph[]): Item[] {
+  const items: Item[] = [];
+
+  for (const graph of batch) {
+    if (graph.item) {
+      items.push(graph.item);
+    }
+
+    for (const edge of graph.edges ?? []) {
+      if (edge.to.item) {
+        items.push(edge.to.item);
+      }
+    }
+  }
+
+  return items;
 }

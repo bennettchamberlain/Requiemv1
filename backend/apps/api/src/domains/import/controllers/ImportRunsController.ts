@@ -278,6 +278,34 @@ export class ImportRunsController {
     return { runs: started.map(({ run }) => toRunSummary(run)) };
   }
 
+  /**
+   * Push the rows a completed push could not write.
+   *
+   * The counterpart to the stage retry below, for the other kind of failure: a
+   * push that mostly worked leaves its casualties at `push_status = 'failed'`,
+   * where nothing looks at them again — the push reads only `pending`, Sync
+   * skips a run that already has a push stage, and a stage retry refuses a
+   * stage that completed. This resets those rows and re-queues the push.
+   *
+   * `{ items: 0, entities: 0 }` is a fine answer, not an error: it means there
+   * was nothing stranded, which is what the caller wanted to be true.
+   */
+  @UseGuards(JwtOrApiKeyAuthGuard)
+  @Post('runs/:runId/push/retry')
+  async retryFailedPush(
+    @Context() context: RequestContext,
+    @Param('runId') runId: string,
+  ): Promise<{ items: number; entities: number; requeued: boolean }> {
+    const userId = requireUserId(context);
+    const result = await this.runs.retryFailedPush({ userId }, runId);
+
+    if (result == null) {
+      throw new NotFoundException(`No import run ${runId}`);
+    }
+
+    return result;
+  }
+
   @UseGuards(JwtOrApiKeyAuthGuard)
   @Post('runs/:runId/stages/:stageId/retry')
   async retryStage(

@@ -10,6 +10,13 @@ export interface RunPipelineProps {
   run: ImportRunDetail;
   onCancel?: () => void;
   onRetryStage?: (stageId: string) => void;
+  /**
+   * Re-queue the rows a COMPLETED push could not write. Distinct from
+   * `onRetryStage`, which re-runs a stage that failed outright — a push that
+   * mostly worked completes, and its casualties sit at `failed` where nothing
+   * would ever look at them again.
+   */
+  onRetryFailedPush?: () => void;
   /** Collapse this run back to its summary card in the list. */
   onClose?: () => void;
   /** Detected services, already resolved to display titles. */
@@ -25,7 +32,14 @@ export interface RunPipelineProps {
  * bar that gave each stage a third would sit at 66% for most of an import and
  * then finish in a blink.
  */
-export function RunPipeline({ run, onCancel, onRetryStage, onClose, services = [] }: RunPipelineProps) {
+export function RunPipeline({
+  run,
+  onCancel,
+  onRetryStage,
+  onRetryFailedPush,
+  onClose,
+  services = [],
+}: RunPipelineProps) {
   const finished = run.finishedAt != null;
 
   return (
@@ -59,7 +73,12 @@ export function RunPipeline({ run, onCancel, onRetryStage, onClose, services = [
 
       <ol className="space-y-3">
         {run.stages.map((stage) => (
-          <StageRow key={stage.id} stage={stage} onRetry={onRetryStage} />
+          <StageRow
+            key={stage.id}
+            stage={stage}
+            onRetry={onRetryStage}
+            onRetryFailedPush={onRetryFailedPush}
+          />
         ))}
       </ol>
 
@@ -83,7 +102,15 @@ export function RunPipeline({ run, onCancel, onRetryStage, onClose, services = [
   );
 }
 
-function StageRow({ stage, onRetry }: { stage: ImportStage; onRetry?: (stageId: string) => void }) {
+function StageRow({
+  stage,
+  onRetry,
+  onRetryFailedPush,
+}: {
+  stage: ImportStage;
+  onRetry?: (stageId: string) => void;
+  onRetryFailedPush?: () => void;
+}) {
   const retryable = stage.status === 'failed' || stage.status === 'cancelled';
 
   return (
@@ -115,7 +142,7 @@ function StageRow({ stage, onRetry }: { stage: ImportStage; onRetry?: (stageId: 
 
       {stage.error ? <p className="text-xs text-destructive">{stage.error}</p> : null}
 
-      <StageDetail stage={stage} />
+      <StageDetail stage={stage} onRetryFailedPush={onRetryFailedPush} />
     </li>
   );
 }
@@ -127,7 +154,7 @@ function StageRow({ stage, onRetry }: { stage: ImportStage; onRetry?: (stageId: 
  * was saved and where, what could not be read. A stage that simply worked says
  * nothing beyond its bar.
  */
-function StageDetail({ stage }: { stage: ImportStage }) {
+function StageDetail({ stage, onRetryFailedPush }: { stage: ImportStage; onRetryFailedPush?: () => void }) {
   const detail = stage.detail ?? {};
 
   const recognized = Array.isArray(detail.recognized) ? (detail.recognized as string[]) : [];
@@ -188,7 +215,22 @@ function StageDetail({ stage }: { stage: ImportStage }) {
         <p>{compactNumber(deduped)} already in your memory (repeat references to the same thing)</p>
       ) : null}
 
-      {failed ? <p className="text-destructive">{compactNumber(failed)} could not be saved</p> : null}
+      {/* The only route back for these rows. The push reads `pending` and these
+          are `failed`, Sync skips a run that already has a push stage, and the
+          stage retry refuses a stage that completed — so before this button
+          existed a run that saved 461,000 records and missed 297 kept missing
+          them forever, with the count above as the only evidence. */}
+      {failed ? (
+        <div className="flex items-center gap-2">
+          <p className="text-destructive">{compactNumber(failed)} could not be saved</p>
+          {stage.kind === 'push' && onRetryFailedPush ? (
+            <Button variant="ghost" size="sm" className="h-6 px-2" onClick={onRetryFailedPush}>
+              <RefreshCcw className="mr-1 h-3 w-3" />
+              Try these again
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* Surfaced rather than swallowed: these are records that did NOT arrive. */}
       {skippedEntities ? <p>{skippedEntities} groups skipped (albums, threads and places)</p> : null}

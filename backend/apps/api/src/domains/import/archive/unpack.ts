@@ -79,6 +79,12 @@ export const REJECTED_DIR = '.rejected';
  * the target filesystem has free. Raised BEFORE anything extracts, so the run
  * fails with an actionable message instead of ENOSPC-ing midway with the disk
  * full of half-extracted trees.
+ *
+ * SCOPED TO THE SCRATCH VOLUME, and the message now says so. This guard covers
+ * the tree the parsers read and nothing else — the records themselves land in
+ * Postgres, on a volume this module never looks at, and reading a clean unpack
+ * preflight as "the import has room" is how a 2.7GB Takeout filled a 96GB VM
+ * during the PUSH. `storage/databaseSpace` is the other half.
  */
 export class InsufficientDiskError extends Error {
   constructor(
@@ -89,7 +95,8 @@ export class InsufficientDiskError extends Error {
     super(
       `not enough disk space to unpack: archives under ${dir} declare ` +
         `${(neededBytes / 1e9).toFixed(1)}GB uncompressed but only ` +
-        `${(freeBytes / 1e9).toFixed(1)}GB is free — free up space and retry`,
+        `${(freeBytes / 1e9).toFixed(1)}GB is free on that volume — free up space and retry. ` +
+        `(This measures the extraction volume only; the database keeps its own.)`,
     );
     this.name = 'InsufficientDiskError';
   }

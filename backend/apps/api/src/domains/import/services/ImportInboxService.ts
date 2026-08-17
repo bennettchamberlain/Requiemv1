@@ -46,8 +46,23 @@ export interface InboxUnit {
   sizeBytes: number;
   fileCount: number;
   recognized: InboxUnitRecognition[];
-  /** An unfinished run already consuming this unit, if any. */
+  /**
+   * An unfinished run of THIS user's already consuming the unit, if any.
+   * Null when the claim belongs to someone else — see {@link claimed}, which
+   * is the field to test before offering a unit for import.
+   */
   activeRunId: string | null;
+  /**
+   * Some run holds this unit, whoever started it.
+   *
+   * The inbox is one folder shared by every account on the appliance, so
+   * "already being imported" is not a per-user fact. Reporting only the
+   * caller's own claims let two accounts start runs over the same archive, and
+   * the unpack acquires by RENAME — the winner took the bytes and the loser
+   * found an empty path. Another user's run id is deliberately not exposed;
+   * this boolean is all a client needs to know the unit is unavailable.
+   */
+  claimed: boolean;
 }
 
 export interface InboxScan {
@@ -149,14 +164,21 @@ export class ImportInboxService {
 
     await this.walk(inboxDir, inboxDir, 0, state, units);
 
+    // Every live claim on these paths, not just this user's — the folder is
+    // shared, so a unit another account is importing is gone for this one too.
     const active = await this.stagedSources.findActiveByPaths(
-      ctx.userId,
       units.map((unit) => path.join(inboxDir, unit.path)),
     );
-    const activeByPath = new Map(active.map((row) => [row.sourcePath, row.runId]));
+    const claimedBy = new Map(active.map((row) => [row.sourcePath, row]));
 
     for (const unit of units) {
-      unit.activeRunId = activeByPath.get(path.join(inboxDir, unit.path)) ?? null;
+      const claim = claimedBy.get(path.join(inboxDir, unit.path));
+
+      unit.claimed = claim != null;
+      // The run id only when it is theirs to look at. A client uses it to open
+      // the run; another user's would 404 there and disclose that the run
+      // exists on the way.
+      unit.activeRunId = claim != null && claim.userId === ctx.userId ? claim.runId : null;
     }
 
     return {
@@ -184,7 +206,7 @@ export class ImportInboxService {
         throw new BadRequestException(scanned.reason ?? 'The inbox is not available');
       }
 
-      requested = scanned.units.filter((unit) => unit.activeRunId == null).map((unit) => unit.path);
+      requested = scanned.units.filter((unit) => !unit.claimed).map((unit) => unit.path);
     } else {
       requested = input.units;
     }
@@ -289,6 +311,7 @@ export class ImportInboxService {
           fileCount: 1,
           recognized: await this.recognize(fullPath),
           activeRunId: null,
+          claimed: false,
         });
         continue;
       }
@@ -309,6 +332,7 @@ export class ImportInboxService {
           fileCount: aggregate.fileCount,
           recognized,
           activeRunId: null,
+          claimed: false,
         });
         continue;
       }
