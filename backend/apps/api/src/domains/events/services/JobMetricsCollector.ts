@@ -152,7 +152,10 @@ export class JobMetricsCollector {
   async purge(now: Date = new Date()): Promise<void> {
     const cutoff = new Date(now.getTime() - RETENTION_DAYS * 24 * 60 * 60_000);
 
-    const result = await this.metricRepository.manager.query(`DELETE FROM ci.job_metrics WHERE sampled_at < $1`, [cutoff]);
+    const result = await this.metricRepository.manager.query(
+      `DELETE FROM ci.job_metrics WHERE sampled_at < $1`,
+      [cutoff],
+    );
 
     this.logger.debug(`Purged job metrics older than ${cutoff.toISOString()}`, {
       rows: Array.isArray(result) ? result.length : undefined,
