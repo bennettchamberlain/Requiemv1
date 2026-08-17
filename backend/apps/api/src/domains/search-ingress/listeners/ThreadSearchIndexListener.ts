@@ -6,10 +6,14 @@ import { LoggerService } from '@ci/common/logging';
 import { type Message, MessageService, type Thread, ThreadService } from '@ci/domains/conversations';
 import {
   MessageCreatedEvent,
+  MessageDeletedEvent,
+  MessageUpdatedEvent,
   ThreadCreatedEvent,
   ThreadRemovedEvent,
   ThreadUpdatedEvent,
   type MessageCreatedPayload,
+  type MessageDeletedPayload,
+  type MessageUpdatedPayload,
   type ThreadCreatedPayload,
   type ThreadRemovedPayload,
   type ThreadUpdatedPayload,
@@ -71,6 +75,59 @@ export class ThreadSearchIndexListener {
     await this.upsertThread({
       threadId: message?.threadId,
     });
+  }
+
+  /**
+   * An edited or deleted message changes the thread text that was indexed.
+   *
+   * `MessageUpdatedEvent` and `MessageDeletedEvent` are declared and actively
+   * sent by `MessageService`, but nothing listened for them on any queue — so
+   * `send()` enqueued nothing, and a thread kept whatever text it had when its
+   * last message was CREATED. An edited message kept its stale indexed text; a
+   * deleted one stayed searchable indefinitely.
+   *
+   * Both re-derive the thread the same way a new message does. Deletion needs no
+   * separate branch: the message is already gone by the time this runs, so the
+   * upsert simply rebuilds the thread from what survives.
+   */
+  @OnEvent(MessageUpdatedEvent, { queue: 'search-index' })
+  async updateThreadOnMessageUpdated(payload: MessageUpdatedPayload) {
+    this.logger.log('Re-indexing thread after a message was edited', {
+      messageId: payload.messageId,
+    });
+
+    await this.reindexThreadForMessage(payload.messageId);
+  }
+
+  @OnEvent(MessageDeletedEvent, { queue: 'search-index' })
+  async updateThreadOnMessageDeleted(payload: MessageDeletedPayload) {
+    this.logger.log('Re-indexing thread after a message was deleted', {
+      messageId: payload.messageId,
+    });
+
+    await this.reindexThreadForMessage(payload.messageId);
+  }
+
+  /**
+   * Re-derive a thread's indexed text from the message that changed.
+   *
+   * A deleted message no longer resolves, so its thread cannot always be found
+   * this way. That is not an error — it means there is nothing left to re-index
+   * from this event, and the thread's own removal event covers the whole-thread
+   * case.
+   */
+  private async reindexThreadForMessage(messageId: string): Promise<void> {
+    const context = { userId: SYSTEM_USER } satisfies ServiceContext;
+
+    const message = await this.messageService.findById(context, messageId);
+
+    if (!message?.threadId) {
+      this.logger.log('Message has no resolvable thread, skipping re-index', { messageId });
+
+      return;
+    }
+
+    await this.upsertThread({ threadId: message.threadId });
   }
 
   @OnEvent(ThreadRemovedEvent, { queue: 'search-index' })

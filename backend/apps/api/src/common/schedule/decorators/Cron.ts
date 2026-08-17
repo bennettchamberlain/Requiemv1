@@ -1,8 +1,28 @@
+import { Logger } from '@nestjs/common';
 import { Cron as NestCron, type CronOptions } from '@nestjs/schedule';
 import { v4 as uuidv4 } from 'uuid';
 
 import { ContextService } from '@ci/common/context';
 import { serves, type ServedRole } from '@ci/common/roles';
+
+/**
+ * Diagnosability, not containment.
+ *
+ * `@nestjs/schedule` already stops a rejecting tick from taking the process
+ * down: `SchedulerRegistry.addCronJob` wraps `fireOnTick` in
+ * `wrapFunctionInTryCatchBlocks`, which awaits the method and logs whatever it
+ * throws. What that wrapper does NOT do is say which job failed — it calls
+ * `this.logger.error(error)` with a `SchedulerRegistry` context and nothing
+ * else, so a stack trace from a cron body arrives with no schedule name and no
+ * correlation to the traceId this decorator just minted.
+ *
+ * With ~34 scheduled methods across the appliance, "something in the scheduler
+ * threw" is not a diagnosis. Catching here — one layer inside Nest's own catch,
+ * where the class, the method and the traceId are all in scope — turns it into
+ * one. The rethrow-free return matches the framework's existing behaviour: the
+ * tick is lost, the schedule keeps running.
+ */
+const cronLogger = new Logger('Cron');
 
 export type CiCronOptions = CronOptions & {
   /**
@@ -21,10 +41,24 @@ export function Cron(expression: string, options?: CiCronOptions) {
   return function (target: object, propertyName: string, descriptor: PropertyDescriptor) {
     const originalMethod = descriptor.value;
 
+    const label = `${(target as { constructor?: { name?: string } }).constructor?.name ?? 'Cron'}.${propertyName}`;
+
     descriptor.value = async function (...args: unknown[]) {
       const traceId = uuidv4();
 
-      return ContextService.run({ traceId }, () => originalMethod.apply(this, args));
+      try {
+        return await ContextService.run({ traceId }, () => originalMethod.apply(this, args));
+      } catch (err: unknown) {
+        // Swallowed on purpose — see the note on `cronLogger`. Nest would
+        // otherwise catch this one frame further out and log it without saying
+        // which schedule produced it.
+        cronLogger.error(
+          `Scheduled job ${label} failed (traceId=${traceId})`,
+          err instanceof Error ? err.stack : String(err),
+        );
+
+        return undefined;
+      }
     };
 
     if (!serves(role)) {
