@@ -45,11 +45,6 @@ export function Main() {
 
   return (
     <div className="grid h-lvh min-h-0 grid-cols-[auto_1fr] grid-rows-[auto_1fr]">
-      <div className="fixed top-2 right-2 z-40 flex items-center gap-1.5">
-        <ConnectionModeIndicator />
-        <OutboxQueueIndicator />
-      </div>
-
       <div className="flex items-center justify-center py-2 px-3 bg-secondary">
         <Tooltip delayDuration={600}>
           <Tooltip.Content>{t('NAV_LOGO_EXTERNAL')}</Tooltip.Content>

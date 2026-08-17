@@ -14,7 +14,9 @@ export {
   setApiBaseUrl,
 } from './src/utils/apiBase';
 export {
-  CONNECTION_PROBE_TIMEOUT_MS,
+  CONNECTION_REPROBE_INTERVAL_MS,
+  LOCAL_PROBE_TIMEOUT_MS,
+  REMOTE_PROBE_TIMEOUT_MS,
   ConnectionModeProvider,
   resolveConnectionMode,
   useConnectionMode,

@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { useUploadFile, useTriggerHbpe } from '@/api';
+import { ConnectionModeIndicator, OutboxQueueIndicator } from '@/components/ConnectionModeIndicator';
 import { AddPersonModal } from '@/components/modals/AddItemModal';
 import { AddConceptModal } from '@/components/modals/AddItemModal/AddConceptModal.tsx';
 import { CaptureModal } from '@/components/modals/CaptureModal';
@@ -102,8 +103,17 @@ export function PrimaryNavigation() {
           )}
         </div>
 
-        {/* Right: page actions, new, account (Tags lives in the account menu) */}
+        {/* Right: status chips, page actions, new, account (Tags lives in the account menu).
+            The chips sit in the header's flow rather than in a fixed overlay: an overlay
+            pinned to the viewport's top-right lands on top of this cluster and covers the
+            add button and the account avatar (only the mobile layout, which has no header,
+            positions them that way). */}
         <div className="flex shrink-0 flex-row items-center gap-2">
+          <div className="flex flex-row items-center gap-1.5 empty:hidden">
+            <ConnectionModeIndicator />
+            <OutboxQueueIndicator />
+          </div>
+
           <Portal ref={actionsRef} id="actions" className="flex flex-row items-center empty:hidden" />
 
           {hasActions && <Separator orientation="vertical" className="data-[orientation=vertical]:h-6" />}

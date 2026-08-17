@@ -27,20 +27,63 @@ import { localHubHeaders, localHubSession } from './localHub';
 
 export type ConnectionMode = 'connected' | 'local' | 'cached' | 'fresh';
 
-// Per the design doc: each probe gets a short timeout so the indicator
-// settles quickly instead of hanging on a dead connection. 500ms sits in the
-// middle of the spec'd 300-800ms window.
-export const CONNECTION_PROBE_TIMEOUT_MS = 500;
+// Each probe gets a timeout so the indicator settles instead of hanging on a
+// dead connection. The sidecar is on the device itself, so the design doc's
+// 300-800ms window applies to it: anything slower than that is not a healthy
+// local server.
+export const LOCAL_PROBE_TIMEOUT_MS = 500;
 
-/** Probes the configured remote CI-Server origin's `/api/health` endpoint. */
-async function probeRemote(): Promise<boolean> {
+// The remote appliance is not on-device, and the same 500ms budget made the
+// indicator wrong for every deployment reached over a WAN: an appliance served
+// through a Cloudflare tunnel answers /api/health in ~600-700ms, so the probe
+// was aborted while healthy and the chip read "Not synced yet" against a server
+// the rest of the app was talking to perfectly well. This bounds an unreachable
+// server without calling a reachable-but-distant one dead.
+export const REMOTE_PROBE_TIMEOUT_MS = 3_000;
+
+// A mode resolved once at mount goes stale the moment anything changes, and the
+// `online`/`offline` events do not fire for the failure that matters most here
+// (the appliance going away while the network stays up). Re-probe on a timer so
+// the chip — and the outbox drain it gates — recover on their own.
+export const CONNECTION_REPROBE_INTERVAL_MS = 30_000;
+
+/**
+ * Runs a health request under a bound that covers the whole exchange, and
+ * reports only whether it succeeded.
+ *
+ * The probes own their `AbortController` rather than passing `fetchJson`'s
+ * `timeout`, because that option clears its timer the moment response headers
+ * arrive (see `fetchJson`) and so never covers reading the body. A server that
+ * answers and then stalls mid-body would outlive its budget — and since the
+ * re-probe timer fires regardless, every tick would leave another hung request
+ * open against the same origin until the browser's per-host connection pool is
+ * full and the app's own requests queue behind them. Aborting cancels the body
+ * read too, so each probe releases its connection when its budget expires.
+ *
+ * `fetchJson` only installs its own timer when the caller passes no signal, so
+ * handing it one is the supported way to take over.
+ */
+async function probeHealth(
+  timeoutMs: number,
+  request: (signal: AbortSignal) => Promise<unknown>,
+): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
-    await fetchJson(buildApiUrl('/api/health'), { timeout: CONNECTION_PROBE_TIMEOUT_MS });
+    await request(controller.signal);
 
     return true;
   } catch {
     return false;
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+/** Probes the configured remote CI-Server origin's `/api/health` endpoint. */
+function probeRemote(): Promise<boolean> {
+  return probeHealth(REMOTE_PROBE_TIMEOUT_MS, (signal) => fetchJson(buildApiUrl('/api/health'), { signal }));
 }
 
 /**
@@ -61,25 +104,25 @@ async function probeLocal(): Promise<boolean> {
     return false;
   }
 
-  try {
-    await fetchJson(`${session.baseUrl}/api/health`, {
-      timeout: CONNECTION_PROBE_TIMEOUT_MS,
+  return probeHealth(LOCAL_PROBE_TIMEOUT_MS, (signal) =>
+    fetchJson(`${session.baseUrl}/api/health`, {
+      signal,
       skipApiKey: true,
       headers: localHubHeaders(session),
-    });
-
-    return true;
-  } catch {
-    return false;
-  }
+    }),
+  );
 }
 
 /**
  * Resolves to the first probe that yields a non-null value (whichever
  * responds first genuinely wins the race — "connected" has no fixed
  * priority over "local"), or `null` once every probe has settled to null.
- * The probes above already swallow their own errors and resolve
- * `false`/`null` on failure or timeout, so there is nothing to reject here.
+ *
+ * A rejecting probe counts as a failed one rather than being dropped. The
+ * probes above each swallow their own errors today, but nothing here can
+ * enforce that: an unhandled rejection would never decrement `remaining`, so
+ * one throwing probe would leave the race pending forever instead of falling
+ * through to `null`.
  */
 function firstSuccess<T>(probes: Array<Promise<T | null>>): Promise<T | null> {
   if (probes.length === 0) {
@@ -89,6 +132,14 @@ function firstSuccess<T>(probes: Array<Promise<T | null>>): Promise<T | null> {
   return new Promise((resolve) => {
     let remaining = probes.length;
 
+    const settleFailure = () => {
+      remaining -= 1;
+
+      if (remaining === 0) {
+        resolve(null);
+      }
+    };
+
     for (const probe of probes) {
       void probe.then((value) => {
         if (value != null) {
@@ -97,12 +148,8 @@ function firstSuccess<T>(probes: Array<Promise<T | null>>): Promise<T | null> {
           return;
         }
 
-        remaining -= 1;
-
-        if (remaining === 0) {
-          resolve(null);
-        }
-      });
+        settleFailure();
+      }, settleFailure);
     }
   });
 }
@@ -135,13 +182,49 @@ export async function resolveConnectionMode(): Promise<ConnectionMode> {
   return 'fresh';
 }
 
+// Nothing bounds a resolve as a whole. `fetchJson` clears its abort timer the
+// moment response headers arrive, so a server that answers and then stalls its
+// body leaves the probe pending indefinitely; on native, the sidecar's `start()`
+// bridge call has no timeout of its own either. Left unbounded, one such hang
+// pins `inFlightRef` below for the life of the page, and every later refresh —
+// including the re-probe timer that exists to recover from exactly this — would
+// short-circuit and never run again. Twice the slowest probe budget: long enough
+// that a healthy-but-distant appliance is never cut off, short enough that a
+// wedged one is not permanent.
+export const CONNECTION_RESOLVE_TIMEOUT_MS = 2 * REMOTE_PROBE_TIMEOUT_MS;
+
+/**
+ * {@link resolveConnectionMode} under a hard bound, and never rejecting. A probe
+ * that hangs or throws resolves "fresh" — the same verdict an unreachable server
+ * gets — so the caller's bookkeeping always runs.
+ */
+function resolveConnectionModeBounded(): Promise<ConnectionMode> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve('fresh'), CONNECTION_RESOLVE_TIMEOUT_MS);
+
+    void resolveConnectionMode()
+      .then(resolve, () => resolve('fresh'))
+      .finally(() => clearTimeout(timer));
+  });
+}
+
 interface ConnectionModeState {
   mode: ConnectionMode;
+  /**
+   * False until the first probe settles. `mode` starts at "fresh" because it
+   * has to start somewhere, but that initial value is an absence of an answer,
+   * not an answer — surfacing it as one makes every load flash "Not synced yet"
+   * before the health check has had a chance to reply. UI that reports the mode
+   * to the user should render nothing until this is true; consumers that act on
+   * it (the outbox drain) need no change, since they only act on "connected".
+   */
+  isResolved: boolean;
   refresh: () => void;
 }
 
 function useConnectionModeState(): ConnectionModeState {
   const [mode, setMode] = useState<ConnectionMode>('fresh');
+  const [isResolved, setIsResolved] = useState(false);
 
   // Coalesces overlapping refreshes (e.g. an `online` event firing while a
   // previous check is still in flight) into a single run.
@@ -152,6 +235,10 @@ function useConnectionModeState(): ConnectionModeState {
   // that straddles a single probe leaves the mode pinned to the offline answer
   // until the next event, and the outbox drain never sees the reconnect.
   const requeuedRef = useRef(false);
+  // A probe outlives the tree that started it: the answer must not land on an
+  // unmounted hook, and the trailing re-run must not start a fresh probe (up to
+  // the bound above) against a server the app has already navigated away from.
+  const mountedRef = useRef(true);
 
   const refresh = useCallback(() => {
     if (inFlightRef.current) {
@@ -160,18 +247,36 @@ function useConnectionModeState(): ConnectionModeState {
       return;
     }
 
-    const run = resolveConnectionMode()
-      .then(setMode)
+    const run = resolveConnectionModeBounded()
+      .then((resolved) => {
+        if (!mountedRef.current) {
+          return;
+        }
+
+        setMode(resolved);
+        setIsResolved(true);
+      })
       .finally(() => {
         inFlightRef.current = null;
 
         if (requeuedRef.current) {
           requeuedRef.current = false;
-          refresh();
+
+          if (mountedRef.current) {
+            refresh();
+          }
         }
       });
 
     inFlightRef.current = run;
+  }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -193,13 +298,41 @@ function useConnectionModeState(): ConnectionModeState {
     window.addEventListener('online', refresh);
     window.addEventListener('offline', refresh);
 
+    // Neither event covers the appliance itself going away (or coming back)
+    // while the network stays up, and a single mount-time probe that lost a
+    // race — a slow first paint, a tunnel still warming up — would otherwise
+    // pin the mode to that one answer for the life of the page. Poll, and skip
+    // the tick while the document is hidden: a backgrounded tab has nothing to
+    // show, and `visibilitychange` re-probes the moment it comes back.
+    //
+    // `document` is read through a local binding because this module also runs
+    // where it is not declared at all (SSR, node tests) — a bare reference
+    // there is a ReferenceError, not `undefined`.
+    const doc = typeof document === 'undefined' ? undefined : document;
+
+    // One rule, one closure: re-probe unless the document is hidden. As the
+    // interval's tick it skips backgrounded tabs; as the `visibilitychange`
+    // handler it fires on the way back to the foreground and does nothing on
+    // the way out.
+    const refreshIfVisible = () => {
+      if (doc?.visibilityState !== 'hidden') {
+        refresh();
+      }
+    };
+
+    const timer = setInterval(refreshIfVisible, CONNECTION_REPROBE_INTERVAL_MS);
+
+    doc?.addEventListener('visibilitychange', refreshIfVisible);
+
     return () => {
+      clearInterval(timer);
+      doc?.removeEventListener('visibilitychange', refreshIfVisible);
       window.removeEventListener('online', refresh);
       window.removeEventListener('offline', refresh);
     };
   }, [refresh]);
 
-  return { mode, refresh };
+  return { mode, isResolved, refresh };
 }
 
 const { Provider, useHookContext } = createHookContext(useConnectionModeState, 'useConnectionMode');
