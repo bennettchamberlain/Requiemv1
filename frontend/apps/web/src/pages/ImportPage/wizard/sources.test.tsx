@@ -135,6 +135,49 @@ describe('pickableSections', () => {
 });
 
 /**
+ * Amazon is one Privacy Central flow feeding five importers, modelled as five
+ * catalog sources under one bundle. The tile's chips are the full member
+ * union — there is no cap; a tile with more than four kinds wraps into a
+ * second column instead of dropping the ones that sort last.
+ */
+describe('the Amazon bundle', () => {
+  const amazonCatalog = [
+    source({ id: 'amazon', title: 'Amazon orders', ecosystem: 'amazon', category: 'finance' }),
+    source({ id: 'prime_video', title: 'Prime Video', ecosystem: 'amazon', category: 'video' }),
+    source({ id: 'audible', title: 'Audible', ecosystem: 'amazon', category: 'audio' }),
+    source({ id: 'kindle_reading', title: 'Kindle reading', ecosystem: 'amazon', category: 'reading' }),
+    source({ id: 'amazon_music', title: 'Amazon Music', ecosystem: 'amazon', category: 'audio' }),
+  ];
+
+  it('collapses all five sources into one button claiming every importer', () => {
+    const sections = pickableSections(amazonCatalog);
+    const amazon = sections.find((section) => section.key === 'amazon');
+
+    expect(amazon?.items.map((item) => item.key)).toEqual(['b:amazon']);
+    expect(amazon?.items[0].importers.sort()).toEqual([
+      'amazon',
+      'amazon_music',
+      'audible',
+      'kindle_reading',
+      'prime_video',
+    ]);
+  });
+
+  it('shows every kind its members bring, Orders & payments included', () => {
+    const sections = pickableSections(amazonCatalog);
+    const tile = sections.find((section) => section.key === 'amazon')?.items[0];
+
+    expect(tile?.objects.map((o) => o.label)).toEqual([
+      'Watch history',
+      'Listening',
+      'Playlists',
+      'Books & highlights',
+      'Orders & payments',
+    ]);
+  });
+});
+
+/**
  * The picker used to show a name and nothing else, so "what would adding this
  * give me" was answerable only by picking it and reading the next step.
  *
@@ -184,12 +227,6 @@ describe('objectsFor', () => {
   it('claims nothing for a category it has not been taught', () => {
     expect(objectsFor('brand-new-category')).toEqual([]);
     expect(objectsFor(undefined)).toEqual([]);
-  });
-
-  it('caps a long list rather than growing the tile without limit', () => {
-    for (const category of ['photos', 'social', 'browser', 'code', 'audio']) {
-      expect(objectsFor(category).length).toBeLessThanOrEqual(4);
-    }
   });
 
   it('gives a bundle the union of what its members import, deduplicated', () => {

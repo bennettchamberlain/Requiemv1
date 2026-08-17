@@ -3,7 +3,7 @@ import { type ReactNode, useState } from 'react';
 import { useMutation, useQuery } from '@apollo/client';
 import { GlobalUID, LoadingPage, Portal, usePageTitle, EmptyState } from '@ci/common';
 import { Breadcrumb } from '@ci/shadcn';
-import { useParams, Link } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 
 import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
 import { EntityGraph } from '@/components/EntityGraph';
@@ -114,14 +114,6 @@ export function ItemPage() {
       <Portal.Slot id="breadcrumbs">
         <Breadcrumb>
           <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-
-            <Breadcrumb.Separator className="hidden md:block" />
-
             <Breadcrumb.Item className="hidden md:block">
               <Breadcrumb.Page>Item</Breadcrumb.Page>
             </Breadcrumb.Item>

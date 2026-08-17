@@ -15,7 +15,7 @@ NestJS pg-boss scheduler through the function runner):
   4c. recurrence_profile  <  5 min    — rebuild hbpe.recurrence_profiles (week/
                                         month-horizon occurrence + due forecasts)
                                         and backfill occurrence_log actuals.
-  5. drift_detection                  [Phase 5 stub]
+  5. drift_detection                  score prediction_log vs actuals (Brier/ECE)
   6. cache_invalidation               [Phase 5 stub]
 
 Each step has fail-continue semantics in the orchestrator: one step's error
@@ -337,8 +337,17 @@ async def recurrence_profile(user_id: str) -> dict:
 
 
 async def drift_detection(user_id: str) -> str:
-    log.info("drift_detection: stub — Phase 5 (user=%s)", user_id)
-    return "skipped"
+    import asyncio
+
+    from ci.hbpe.pipeline.scoring import score_and_store
+
+    result = await asyncio.get_event_loop().run_in_executor(
+        None, lambda: score_and_store(user_id)
+    )
+    status = str(result.get("status", "scored"))
+    log.info("drift_detection: %s (user=%s)", status, user_id)
+
+    return status
 
 
 async def cache_invalidation(user_id: str) -> str:

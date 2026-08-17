@@ -23,10 +23,14 @@ import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
 import { Channel, FrameEncoder } from '@ci/common/rpc';
 import { MessageService, ThreadService, type Thread, type Message } from '@ci/domains/conversations';
+import { DescriptiveQuestionService } from '@ci/domains/daily-metrics';
 import { Events, type EventPayloads, EventService, OnEvent } from '@ci/domains/events';
 import { FileService } from '@ci/domains/files';
 import { ActionService } from '@ci/domains/intelligence';
 import { UserContextService } from '@ci/domains/memory';
+import { TaskService } from '@ci/domains/planning';
+import { HbpeService } from '@ci/domains/predictions';
+import { SummaryService } from '@ci/domains/summaries';
 
 import { OllamaService, type ChatRequestContext } from '../services/OllamaService';
 import type { PromptInput } from '../types';
@@ -60,6 +64,10 @@ export class OllamaController {
     private readonly threadService: ThreadService,
     private readonly fileService: FileService,
     private readonly userContextService: UserContextService,
+    private readonly taskService: TaskService,
+    private readonly hbpeService: HbpeService,
+    private readonly summaryService: SummaryService,
+    private readonly descriptiveQuestionService: DescriptiveQuestionService,
     private readonly logger: LoggerService,
     private readonly featureService: FeatureService,
   ) {
@@ -385,12 +393,25 @@ export class OllamaController {
    */
   private async buildSystemPrompt(context: RequestContext, options?: SystemPromptOptions): Promise<string> {
     const basePrompt = `You are Companion, a helpful AI assistant with access to various tools and information about the user.
-    You are designed to take in various data sources that the user connects you to (via connections) and help the user with not just everyday tasks, but with their pursuit of happiness.
-    
+    You are designed to take in various data sources that the user connects you to (via Sources) and help the user with not just everyday tasks, but with their pursuit of happiness.
+
+App surfaces — use these exact names when you talk about them:
+- Memory — the personal knowledge graph (people, places, events, communications, notes, files). Query it with memory.recall and knowledge.search. Do not invent facts that should be in Memory.
+- Plan — to-dos / tasks (open work, due dates, scheduled items). Use the Plan snapshot below; say "Plan" not "todo list".
+- Forecast — predicted rest-of-day / tomorrow. Use the Forecast snapshot below.
+- Brief — inbox of actions, insights, and summaries. Use the Brief snapshot below.
+- Schedule — calendar and planned blocks. Query with calendar.findEvents.
+- Sources — connected services and imports that feed Memory.
+- Saved Searches — stored Memory queries.
+- Chat — this conversation. The user can attach files or images; look at attachments when present.
+- Stats / Jobs — analytics and background work.
+
 Your capabilities:
-- You can query the user's knowledge graph to find information about their preferences, family, and relationships
+- You can query Memory (memory.recall, knowledge.search) for preferences, family, and relationships
 - You can compose multiple tool calls in sequence to answer complex questions
-- You have access to various tools - use them when appropriate
+- You have access to various tools — use them when the snapshots below are not enough
+- When the user asks about Memory, Plan, Forecast, Brief, Schedule, or Sources, use those words and the matching tools or snapshots
+- Forecast details: forecast.read. Forecast quality: forecast.calibration. Brief inbox query: brief.list.
 
 Communication style:
 - Be natural, warm, and conversational
@@ -414,19 +435,19 @@ Communication style:
 
     try {
       const userContext = await this.userContextService.getUserContextForLLM(context.userId);
+      const liveBlocks = await this.buildLiveAppBlocks(context);
 
-      if (!userContext) {
-        // User hasn't completed onboarding yet
-        return promptWithPrefillContext;
+      const sections = [promptWithPrefillContext];
+
+      if (userContext) {
+        sections.push(this.userContextService.formatContextForSystemPrompt(userContext));
       }
 
-      const contextMarkdown = this.userContextService.formatContextForSystemPrompt(userContext);
+      if (liveBlocks) {
+        sections.push(liveBlocks);
+      }
 
-      const systemPrompt = `${promptWithPrefillContext}
-
----
-
-${contextMarkdown}`;
+      const systemPrompt = sections.join('\n\n---\n\n');
 
       this.logger.debug('Ollama system prompt generated', {
         userId: context.userId,
@@ -442,6 +463,160 @@ ${contextMarkdown}`;
       });
 
       return promptWithPrefillContext;
+    }
+  }
+
+  /**
+   * Compact snapshots of Plan, Forecast, and Brief so Chat can answer with the
+   * same names the rail uses, without extra tool hops for the current state.
+   */
+  private async buildLiveAppBlocks(context: RequestContext): Promise<string> {
+    const serviceContext = toServiceContext(context);
+    const [plan, forecast, brief, stats] = await Promise.all([
+      this.buildPlanBlock(serviceContext),
+      this.buildForecastBlock(serviceContext),
+      this.buildBriefBlock(serviceContext),
+      this.buildStatsBlock(serviceContext),
+    ]);
+
+    return [plan, forecast, brief, stats].filter(Boolean).join('\n\n');
+  }
+
+  private async buildPlanBlock(context: ReturnType<typeof toServiceContext>): Promise<string> {
+    if (!(await this.featureService.isFeatureEnabled('planning.enabled'))) {
+      return '';
+    }
+
+    try {
+      const tasks = await this.taskService.findAll(context, {
+        status: ['open', 'in_progress'],
+        limit: 20,
+      });
+
+      if (tasks.length === 0) {
+        return '## Plan\nNo open to-dos.';
+      }
+
+      const lines = ['## Plan', 'Open to-dos:'];
+
+      for (const task of tasks) {
+        const dueAt = task.dueAt instanceof Date ? task.dueAt.toISOString().slice(0, 10) : task.dueAt;
+        const when = dueAt ? ` due ${dueAt}` : task.scheduledFor ? ` scheduled ${task.scheduledFor}` : '';
+
+        lines.push(`- [${task.status}] ${task.title}${when}`);
+      }
+
+      return lines.join('\n');
+    } catch (error) {
+      this.logger.warn('Failed to hydrate Plan snapshot for chat', {
+        userId: context.userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      return '';
+    }
+  }
+
+  private async buildForecastBlock(context: ReturnType<typeof toServiceContext>): Promise<string> {
+    if (!(await this.featureService.isFeatureEnabled('hbpe'))) {
+      return '';
+    }
+
+    try {
+      const forecast = await this.hbpeService.getForecast(context, '24h');
+      const upcoming = forecast.buckets.slice(0, 8);
+
+      if (upcoming.length === 0) {
+        return '## Forecast\nNo Forecast buckets yet.';
+      }
+
+      const lines = [
+        '## Forecast',
+        `Status: ${forecast.system_status}. Generated: ${forecast.generated_at}.`,
+      ];
+
+      for (const bucket of upcoming) {
+        const top = Object.entries(bucket.l0_probs).sort(([, a], [, b]) => b - a)[0];
+        const label = top ? `${top[0]} ${Math.round(top[1] * 100)}%` : 'unknown';
+
+        lines.push(`- ${bucket.start_time}: ${label}`);
+      }
+
+      return lines.join('\n');
+    } catch (error) {
+      this.logger.warn('Failed to hydrate Forecast snapshot for chat', {
+        userId: context.userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      return '';
+    }
+  }
+
+  private async buildBriefBlock(context: ReturnType<typeof toServiceContext>): Promise<string> {
+    try {
+      const lines = ['## Brief'];
+      const actionsEnabled = await this.featureService.isFeatureEnabled('actions');
+
+      if (actionsEnabled) {
+        const actions = (await this.actionService.findAll(context))
+          .filter((action) => !action.dismissed)
+          .slice(0, 8);
+
+        if (actions.length > 0) {
+          lines.push('Actions:');
+          for (const action of actions) {
+            lines.push(`- ${action.title || action.text || action.id}`);
+          }
+        }
+      }
+
+      const summaries = (await this.summaryService.findRecent(context, 4)).filter(
+        (summary) => !summary.dismissed,
+      );
+
+      if (summaries.length > 0) {
+        lines.push('Summaries:');
+        for (const summary of summaries) {
+          const headline = summary.title?.trim() || summary.summaryText?.trim() || '(untitled)';
+          lines.push(`- [${summary.periodType}] ${headline.slice(0, 160)}`);
+        }
+      }
+
+      if (lines.length === 1) {
+        return '## Brief\nNothing waiting in Brief.';
+      }
+
+      return lines.join('\n');
+    } catch (error) {
+      this.logger.warn('Failed to hydrate Brief snapshot for chat', {
+        userId: context.userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      return '';
+    }
+  }
+
+  private async buildStatsBlock(context: ReturnType<typeof toServiceContext>): Promise<string> {
+    try {
+      const answers = await this.descriptiveQuestionService.answerAll(context, {});
+      const facts = answers
+        .filter((answer) => answer.value !== null && answer.provenance.coveragePct >= 50)
+        .slice(0, 5);
+
+      if (facts.length === 0) {
+        return '';
+      }
+
+      return ['## Stats', ...facts.map((fact) => `- ${fact.text}`)].join('\n');
+    } catch (error) {
+      this.logger.warn('Failed to hydrate Stats snapshot for chat', {
+        userId: context.userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      return '';
     }
   }
 

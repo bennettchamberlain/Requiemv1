@@ -102,6 +102,39 @@ describe('PickStep', () => {
     expect(screen.getByRole('button', { name: /Spotify/ })).toHaveTextContent('Listening');
   });
 
+  it('renders every kind on a tile that has more than four, none dropped', () => {
+    const onToggle = vi.fn();
+    const onContinue = vi.fn();
+
+    // The Amazon bundle's five members span four categories — five kinds in
+    // all, which the tile lays out in two columns rather than truncating.
+    render(
+      <PickStep
+        catalog={[
+          catalogSource({ id: 'amazon', title: 'Amazon orders', ecosystem: 'amazon', category: 'finance' }),
+          catalogSource({ id: 'prime_video', title: 'Prime Video', ecosystem: 'amazon', category: 'video' }),
+          catalogSource({ id: 'audible', title: 'Audible', ecosystem: 'amazon', category: 'audio' }),
+          catalogSource({
+            id: 'kindle_reading',
+            title: 'Kindle reading',
+            ecosystem: 'amazon',
+            category: 'reading',
+          }),
+          catalogSource({ id: 'amazon_music', title: 'Amazon Music', ecosystem: 'amazon', category: 'audio' }),
+        ]}
+        picked={new Set()}
+        onToggle={onToggle}
+        onContinue={onContinue}
+      />,
+    );
+
+    const amazon = screen.getByRole('button', { name: /Amazon/ });
+
+    for (const kind of ['Orders & payments', 'Watch history', 'Listening', 'Playlists', 'Books & highlights']) {
+      expect(amazon).toHaveTextContent(kind);
+    }
+  });
+
   // "I could import this" and "I already did, in March" are different
   // answers, and the second is what stops someone re-importing an archive
   // they already have. How MUCH it brought is a fact about the run, not about

@@ -145,7 +145,7 @@ other two passes run and leaves `assets/shots/` empty. The three passes in the Q
 above are the authoritative list.
 
 1. **authenticated** — the seeded `jsmith`; the five shots behind `ProtectedRoute`. Not
-   `/onboarding`, which redirects this identity to `/feed`;
+   `/onboarding`, which redirects this identity to `/plan`;
 2. **`VIDEO_FRESH_USER=1`** ×2 — the seeded user is already onboarded, so the wizard is only
    reachable from a throwaway account. One capture invocation per onboarding shot, because
    onboarding progress is persisted per user and a shared account would resume mid-wizard.
@@ -153,7 +153,7 @@ above are the authoritative list.
 It was five passes until the narrative re-cut. The signed-out pass (`VIDEO_LOGGED_OUT=1`, for `/`
 and `/login`) has nothing left to shoot now that the splash and login scenes are gone, and would be
 needed again the moment either comes back — those two routes are wrapped in `RedirectKnownUser` and
-send an onboarded user to `/feed`.
+send an onboarded user to `/plan`.
 
 **`make.sh` now refuses to shoot when its pass lists and the storyboard disagree**, in both
 directions: an id named in a pass that the storyboard does not declare (silently skipped by

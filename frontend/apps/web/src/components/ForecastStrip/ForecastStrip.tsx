@@ -164,7 +164,7 @@ function SlotTooltip({ bucket, localMin }: { bucket: ForecastBucket; localMin: n
         <p className="pt-1 border-t border-current/20 text-[10px] opacity-60">
           Top context:{' '}
           {isFeatureEnabled('insights.page') ? (
-            <Link to="/feed" className="underline underline-offset-2 hover:opacity-100 transition-opacity">
+            <Link to="/brief" className="underline underline-offset-2 hover:opacity-100 transition-opacity">
               {top1.name.slice(0, 24)}
             </Link>
           ) : (

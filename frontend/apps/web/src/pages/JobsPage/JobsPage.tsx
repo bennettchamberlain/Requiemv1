@@ -3,7 +3,6 @@ import { useCallback, useMemo, useState } from 'react';
 import { Portal, usePageTitle } from '@ci/common';
 import { Badge, Breadcrumb, Button, Card, Skeleton } from '@ci/shadcn';
 import { AlertTriangle, RefreshCcw } from '@ci/shadcn/icons';
-import { Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 
@@ -52,12 +51,6 @@ export function JobsPage() {
       <Portal.Slot id="breadcrumbs">
         <Breadcrumb>
           <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-            <Breadcrumb.Separator className="hidden md:block" />
             <Breadcrumb.Item>
               <Breadcrumb.Page>Jobs</Breadcrumb.Page>
             </Breadcrumb.Item>

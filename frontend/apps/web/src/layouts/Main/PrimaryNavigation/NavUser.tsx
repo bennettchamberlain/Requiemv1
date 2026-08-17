@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 
-import { Avatar, DropdownMenu, Tooltip, cn } from '@ci/shadcn';
+import { Avatar, DropdownMenu, Tooltip } from '@ci/shadcn';
 import { LogOut, SunMoon, Settings2, Palette } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation } from 'react-router-dom';
@@ -41,10 +41,7 @@ export function NavUser() {
     <button
       type="button"
       aria-label={t('NAV_ACCOUNT')}
-      className={cn(
-        'rounded-md cursor-pointer',
-        expanded ? 'flex w-full items-center gap-2 px-1 py-1.5 text-left' : 'rounded-full',
-      )}
+      className="flex w-full cursor-pointer items-center gap-2 rounded-md px-0.5 py-0.5 text-left"
     >
       <Avatar className="h-9 w-9 shrink-0 rounded-full select-none">
         <Avatar.Image src={currentUser.avatar} alt={currentUser.name} />

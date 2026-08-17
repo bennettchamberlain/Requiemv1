@@ -5,9 +5,7 @@ import { cn, IconButton } from '@ci/shadcn';
 import { X } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 
-import { ChatWithAgentMenu } from '@/components/ChatWithAgent';
 import { Tag } from '@/components/Tag';
-import type { AgentChatContext } from '@/lib/agentChat';
 
 interface Props {
   title: string;
@@ -19,7 +17,6 @@ interface Props {
   onDismiss?: MouseEventHandler<HTMLButtonElement>;
   dismissLabel?: string;
   showUnseenIndicator?: boolean;
-  chatContext?: AgentChatContext;
 }
 
 export function BentoCard({
@@ -32,7 +29,6 @@ export function BentoCard({
   onDismiss,
   dismissLabel,
   showUnseenIndicator = false,
-  chatContext,
 }: Props) {
   const { t } = useTranslation();
   const { isMobile } = useDeviceLayout();
@@ -52,40 +48,27 @@ export function BentoCard({
     [onDismiss],
   );
 
-  // The controls stack down the right edge rather than sitting side by side: two
-  // buttons in a row ate enough of the header that a long title wrapped underneath
-  // them. The whole stack hangs 1 off the card so the dismiss button sits on the
-  // corner, mirroring the unseen dot opposite, with the chat button lined up under
-  // it. No deeper than 1: the carousel viewport clips at `pt-1`, so a larger offset
-  // would shave the top off the dismiss button.
-  const cardActions =
-    onDismiss || chatContext ? (
-      <div className="absolute -right-1 -top-1 z-30 flex flex-col items-end gap-2">
-        {onDismiss && (
-          <IconButton
-            type="button"
-            variant="outline"
-            className="h-7 w-7 rounded-full bg-background/80 backdrop-blur-sm"
-            onClick={handleDismiss}
-            label={dismissLabel ?? t('FEED_CARD_DISMISS')}
-          >
-            <X className="h-4 w-4" />
-          </IconButton>
-        )}
-        {chatContext && (
-          <ChatWithAgentMenu
-            context={chatContext}
-            className="h-7 w-7 rounded-full bg-background/80 backdrop-blur-sm"
-          />
-        )}
-      </div>
-    ) : null;
+  // Dismiss hangs 1 off the card so it sits on the corner, mirroring the unseen
+  // dot opposite. Chat is the card click itself — a second button under the X
+  // was a duplicate. No deeper than 1: the carousel viewport clips at `pt-1`.
+  const cardActions = onDismiss ? (
+    <div className="absolute -right-1 -top-1 z-30">
+      <IconButton
+        type="button"
+        variant="outline"
+        className="h-7 w-7 rounded-full bg-background/80 backdrop-blur-sm"
+        onClick={handleDismiss}
+        label={dismissLabel ?? t('FEED_CARD_DISMISS')}
+      >
+        <X className="h-4 w-4" />
+      </IconButton>
+    </div>
+  ) : null;
 
-  // Gutter the header content has to leave clear so the stack never lands on top of
-  // the title or the tags. Both buttons are 7 wide and hang 1 past the edge, so they
-  // reach 6 back into the card whichever of them is rendered; the extra 3 keeps a
-  // right-aligned tag from butting up against the chat button.
-  const actionGutter = onDismiss || chatContext ? 'pr-9' : undefined;
+  // The dismiss button is 7 wide and hangs 1 past the edge, so it reaches 6
+  // back into the card; the extra 3 keeps a right-aligned tag from butting up
+  // against it.
+  const actionGutter = onDismiss ? 'pr-9' : undefined;
 
   const unseenIndicator = showUnseenIndicator ? (
     <>

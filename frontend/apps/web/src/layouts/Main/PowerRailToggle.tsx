@@ -1,4 +1,4 @@
-import { Tooltip } from '@ci/shadcn';
+import { Tooltip, cn } from '@ci/shadcn';
 import { useTranslation } from 'react-i18next';
 
 import logo from '@/assets/logo.png';
@@ -25,9 +25,17 @@ export function PowerRailToggle() {
           aria-expanded={expanded}
           aria-controls="power-rail"
           onClick={toggle}
-          className="rounded-md p-1 transition hover:bg-accent hover:text-accent-foreground"
+          className={cn(
+            'flex items-center rounded-md p-1 transition hover:bg-accent hover:text-accent-foreground',
+            expanded && 'w-full gap-2',
+          )}
         >
-          <img src={logo} alt="" className="h-8 w-8" />
+          <img src={logo} alt="" className="h-8 w-8 shrink-0" />
+          {expanded && (
+            <span className="truncate text-left text-sm font-semibold leading-tight">
+              Companion Intelligence
+            </span>
+          )}
         </button>
       </Tooltip.Trigger>
     </Tooltip>

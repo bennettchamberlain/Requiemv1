@@ -179,7 +179,7 @@ export const CONTEXT_PROMPT_PLACES = ['future_this_week', 'last_night', 'further
 export type ContextPromptPlace = (typeof CONTEXT_PROMPT_PLACES)[number];
 
 export const ContextPromptSourceSchema = z.object({
-  kind: z.enum(['answer', 'question', 'entity', 'category_gap', 'event', 'candidate']),
+  kind: z.enum(['answer', 'question', 'entity', 'category_gap', 'event', 'candidate', 'daily_metric']),
   id: z.string().optional(),
   label: z.string().optional(),
   /** Local calendar day `YYYY-MM-DD` when this prompt is offering a specific date. */

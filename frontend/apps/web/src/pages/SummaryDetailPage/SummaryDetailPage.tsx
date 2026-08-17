@@ -47,15 +47,9 @@ export function SummaryDetailPage() {
       <Portal.Slot id="breadcrumbs">
         <Breadcrumb>
           <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-            <Breadcrumb.Separator className="hidden md:block" />
             <Breadcrumb.Item>
               <Breadcrumb.Link asChild>
-                <Link to="/feed">Feed</Link>
+                <Link to="/brief">Brief</Link>
               </Breadcrumb.Link>
             </Breadcrumb.Item>
             {summary && (

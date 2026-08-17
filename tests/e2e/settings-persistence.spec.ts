@@ -5,7 +5,7 @@ import { expect, test } from '@playwright/test';
 // needs no LLM or external service.
 
 test('persists the chosen theme across a reload', async ({ page }) => {
-  await page.goto('/feed');
+  await page.goto('/plan');
 
   await page.evaluate(() => localStorage.setItem('ci-ui-theme', 'dark'));
   await page.reload();

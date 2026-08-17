@@ -1,19 +1,17 @@
 import type { ReactNode } from 'react';
 
-import { Collapsible, Tooltip, cn } from '@ci/shadcn';
+import { Tooltip, cn } from '@ci/shadcn';
 import {
   BookOpen,
   Brain,
   Cable,
   CalendarRange,
   ChartColumn,
-  ChevronRight,
-  Download,
+  CloudSun,
   LifeBuoy,
   Inbox,
   ListTodo,
   MessagesSquare,
-  NotebookPen,
   FolderSearch2,
   Workflow,
 } from '@ci/shadcn/icons';
@@ -41,10 +39,7 @@ function ExternalNavLink({ href, label, children }: ExternalNavLinkProps) {
       target="_blank"
       rel="noopener noreferrer"
       aria-label={label}
-      className={cn(
-        'relative rounded-md transition will-change-transform hover:bg-accent hover:text-accent-foreground active:scale-95',
-        expanded ? 'flex items-center gap-3 px-2 py-2' : 'p-2',
-      )}
+      className="relative flex items-center gap-3 rounded-md px-2 py-2 transition will-change-transform hover:bg-accent hover:text-accent-foreground active:scale-95"
     >
       {children}
       {expanded && <span className="truncate text-sm">{label}</span>}
@@ -77,47 +72,6 @@ function RailGroupLabel({ children }: { children: ReactNode }) {
   );
 }
 
-function SourcesSubmenu() {
-  const { expanded } = usePowerRail();
-  const { isFeatureEnabled } = useFeatures();
-
-  if (!expanded) {
-    return (
-      <NavLink to="/sources" label="Sources" end={false}>
-        <Cable className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-      </NavLink>
-    );
-  }
-
-  return (
-    <Collapsible defaultOpen className="flex flex-col">
-      <div className="flex items-center">
-        <NavLink to="/sources" label="Sources" end={false} className="flex-1">
-          <Cable className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-        </NavLink>
-        <Collapsible.Trigger
-          aria-label="Sources submenu"
-          className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground [&[data-state=open]>svg]:rotate-90"
-        >
-          <ChevronRight className="h-4 w-4 transition-transform" />
-        </Collapsible.Trigger>
-      </div>
-      <Collapsible.Content>
-        <div className="ml-5 flex flex-col border-l border-border/70 pl-2">
-          <NavLink to="/sources/connect" label="Connect">
-            <Cable className="h-4 w-4 shrink-0" strokeWidth={1.25} />
-          </NavLink>
-          {isFeatureEnabled('import.page') && (
-            <NavLink to="/sources/import" label="Import">
-              <Download className="h-4 w-4 shrink-0" strokeWidth={1.25} />
-            </NavLink>
-          )}
-        </div>
-      </Collapsible.Content>
-    </Collapsible>
-  );
-}
-
 export function SecondaryNavigation() {
   const { expanded } = usePowerRail();
   const { isFeatureEnabled } = useFeatures();
@@ -136,9 +90,11 @@ export function SecondaryNavigation() {
         <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
           <RailGroupLabel>Main</RailGroupLabel>
           <div className="flex flex-col gap-1">
-            <NavLink to="/feed" label="Feed" badgeCount={feedBadgeCount}>
-              <Inbox className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-            </NavLink>
+            {isFeatureEnabled('planning.page') && (
+              <NavLink to="/plan" label="Plan">
+                <ListTodo className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+              </NavLink>
+            )}
 
             {isFeatureEnabled('schedule.page') && (
               <NavLink to="/schedule" label="Schedule">
@@ -146,21 +102,17 @@ export function SecondaryNavigation() {
               </NavLink>
             )}
 
+            <NavLink to="/forecast" label="Forecast">
+              <CloudSun className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+            </NavLink>
+
+            <NavLink to="/brief" label="Brief" badgeCount={feedBadgeCount}>
+              <Inbox className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+            </NavLink>
+
             <NavLink to="/memory" label="Memory">
               <Brain className="h-6 w-6 shrink-0" strokeWidth={1.25} />
             </NavLink>
-
-            {isFeatureEnabled('chat.page') && (
-              <NavLink to="/chat" label="Chat">
-                <MessagesSquare className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-              </NavLink>
-            )}
-
-            {isFeatureEnabled('planning.page') && (
-              <NavLink to="/plan" label="Plan">
-                <ListTodo className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-              </NavLink>
-            )}
           </div>
 
           <RailGroupLabel>More</RailGroupLabel>
@@ -169,27 +121,28 @@ export function SecondaryNavigation() {
               <FolderSearch2 className="h-6 w-6 shrink-0" strokeWidth={1.25} />
             </NavLink>
 
-            {isFeatureEnabled('stats.page') && (
-              <NavLink to="/stats" label="Stats">
-                <ChartColumn className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+            {isFeatureEnabled('chat.page') && (
+              <NavLink to="/chat" label="Chat">
+                <MessagesSquare className="h-6 w-6 shrink-0" strokeWidth={1.25} />
               </NavLink>
             )}
 
-            <NavLink to="/notes" label="Notes" end={false}>
-              <NotebookPen className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+            {/* One entry. Connect, import, and devices are paths on the same
+                page — a rail submenu that opened a second accordion was a
+                second way to do what the tiles already do. */}
+            <NavLink to="/sources" label="Sources" end={false}>
+              <Cable className="h-6 w-6 shrink-0" strokeWidth={1.25} />
             </NavLink>
-
-            {/* Getting data in belongs in the rail that lists what the app is
-                FOR, not in the account dropdown next to Settings and Log out —
-                that is a menu you open to change a setting, not to add data.
-                `end={false}` so both halves of Sources light it up. Not
-                flag-gated: the route is not either, and the connect half exists
-                whatever `import.page` says. */}
-            <SourcesSubmenu />
 
             {isFeatureEnabled('jobs.page') && (
               <NavLink to="/jobs" label="Jobs">
                 <Workflow className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+              </NavLink>
+            )}
+
+            {isFeatureEnabled('stats.page') && (
+              <NavLink to="/stats" label="Stats">
+                <ChartColumn className="h-6 w-6 shrink-0" strokeWidth={1.25} />
               </NavLink>
             )}
           </div>

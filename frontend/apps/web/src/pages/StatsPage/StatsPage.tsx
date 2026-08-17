@@ -9,10 +9,17 @@ import { useFeatures } from '@/common/feature';
 import { PageContent } from '@/components/layout';
 import { Tag } from '@/components/Tag';
 
+import { DailySeries } from './DailySeries';
 import { ConversationChart, InsightCards, SocialChart, SpendChart, TimeChart } from './LifeCharts';
 import { groupSourcesByKind } from './sourceLabels';
 import { formatCount, formatDay } from './statsFormat';
-import { DEFAULT_STATS_RANGE, STATS_RANGE_LABELS, STATS_RANGES, type StatsRange } from './statsRange';
+import {
+  DEFAULT_STATS_RANGE,
+  STATS_RANGE_LABELS,
+  STATS_RANGES,
+  rangeToBounds,
+  type StatsRange,
+} from './statsRange';
 import { useStatsService, type MemoryStats } from './useStatsService';
 
 const BAR_COLOR = 'var(--chart-2)';
@@ -28,12 +35,6 @@ export function StatsPage() {
       <Portal.Slot id="breadcrumbs">
         <Breadcrumb>
           <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-            <Breadcrumb.Separator className="hidden md:block" />
             <Breadcrumb.Item>
               <Breadcrumb.Page>Stats</Breadcrumb.Page>
             </Breadcrumb.Item>
@@ -124,6 +125,7 @@ function StatsBody({
       </div>
 
       <InsightCards insights={stats.insights} />
+      <DailySeries {...rangeToBounds(range)} />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <SpendChart rows={stats.spend.rows} />

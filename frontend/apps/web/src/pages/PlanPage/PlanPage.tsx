@@ -4,7 +4,6 @@ import { useMutation, useQuery } from '@apollo/client';
 import { EmptyState, LoadingPage, Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb } from '@ci/shadcn';
 import { ListTodo } from '@ci/shadcn/icons';
-import { Link } from 'react-router-dom';
 
 import { useFeatures } from '@/common/feature';
 import { PageContent } from '@/components/layout';
@@ -130,14 +129,6 @@ export function PlanPage() {
       <Portal.Slot id="breadcrumbs">
         <Breadcrumb>
           <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-
-            <Breadcrumb.Separator className="hidden md:block" />
-
             <Breadcrumb.Item>
               <Breadcrumb.Page>Plan</Breadcrumb.Page>
             </Breadcrumb.Item>

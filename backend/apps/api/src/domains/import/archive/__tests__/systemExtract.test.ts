@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -89,19 +88,17 @@ function zipWithoutUtf8Flag(filename: string, contents: string): Buffer {
 
 describeIfZip('systemExtract', () => {
   it('extracts an archive whose entry names are plain ASCII', () => {
+    // Built in-process so CI's node:22 image does not need a `zip` binary.
     const work = scratch();
-    const src = path.join(work, 'src');
     const dest = path.join(work, 'dest');
-    fs.mkdirSync(src, { recursive: true });
     fs.mkdirSync(dest, { recursive: true });
-    fs.writeFileSync(path.join(src, 'hello.txt'), 'hello');
 
     const archive = path.join(work, 'plain.zip');
-    spawnSync('zip', ['-rq', archive, '.'], { cwd: src });
+    fs.writeFileSync(archive, zipWithoutUtf8Flag('hello.txt', 'hello'));
 
     const result = systemExtract(archive, dest);
 
-    expect(result.ok).toBe(true);
+    expect({ ok: result.ok, detail: result.detail }).toEqual({ ok: true, detail: '' });
     expect(fs.readFileSync(path.join(dest, 'hello.txt'), 'utf8')).toBe('hello');
 
     fs.rmSync(work, { recursive: true, force: true });
@@ -112,11 +109,11 @@ describeIfZip('systemExtract', () => {
     //
     // Note it is NOT enough to zip an accented filename with the `zip` binary:
     // that sets general-purpose bit 11 (the "names are UTF-8" flag) and Info-ZIP
-    // then reads it correctly. Google's writer leaves the bit CLEAR, so unzip
-    // decodes the name as CP437, produces an illegal byte sequence for the
-    // filesystem, and aborts the WHOLE archive with exit 50 — whose documented
-    // meaning is "disk full". Hence the hand-built fixture: it is the only way
-    // to reproduce the failure the appliance actually hits.
+    // then reads it correctly. Google's writer leaves the bit CLEAR. Without a
+    // charset flag, Linux unzip decodes the name as CP437 (ñ → ├▒) and macOS
+    // unzip aborts the whole archive with exit 50 ("disk full"). The extractor
+    // must still write the real UTF-8 name: `-O UTF-8` on Debian, `ditto` on
+    // macOS. The hand-built fixture is the only way to reproduce that shape.
     const work = scratch();
     const dest = path.join(work, 'dest');
     fs.mkdirSync(dest, { recursive: true });

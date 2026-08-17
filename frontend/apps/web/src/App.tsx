@@ -47,6 +47,7 @@ const ConceptPage = lazy(() => import('@/pages/ConceptPage'));
 const ConnectionPage = lazy(() => import('@/pages/ConnectionPage'));
 const ContentPage = lazy(() => import('@/pages/ContentPage'));
 const EventPage = lazy(() => import('@/pages/EventPage'));
+const ForecastPage = lazy(() => import('@/pages/ForecastPage'));
 const ItemPage = lazy(() => import('@/pages/ItemPage'));
 const SourcesPage = lazy(() => import('@/pages/SourcesPage'));
 const JobsPage = lazy(() => import('@/pages/JobsPage'));
@@ -79,7 +80,19 @@ const PromptsPage = lazy(() => import('@/pages/PromptsPage'));
 function RedirectInsightsSummary() {
   const { id } = useParams<{ id: string }>();
 
-  return <Navigate to={`/feed/summaries/${id ?? ''}`} replace />;
+  return <Navigate to={`/brief/summaries/${id ?? ''}`} replace />;
+}
+
+function RedirectFeedToBrief() {
+  const { id } = useParams<{ id?: string }>();
+
+  return <Navigate to={id ? `/brief/${id}` : '/brief'} replace />;
+}
+
+function RedirectFeedSummaryToBrief() {
+  const { id } = useParams<{ id: string }>();
+
+  return <Navigate to={`/brief/summaries/${id ?? ''}`} replace />;
 }
 
 function Providers({ children }: { children: ReactNode }) {
@@ -197,13 +210,34 @@ function AppRoutes() {
         >
           {/* Intelligence */}
           <Route
-            path="/feed/:id?"
+            path="/brief/summaries/:id"
+            element={
+              <ProtectedRoute>
+                <SummaryDetailPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/brief/:id?"
             element={
               <ProtectedRoute>
                 <FeedPage />
               </ProtectedRoute>
             }
           />
+
+          <Route
+            path="/forecast"
+            element={
+              <ProtectedRoute>
+                <ForecastPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route path="/feed/summaries/:id" element={<RedirectFeedSummaryToBrief />} />
+          <Route path="/feed/:id?" element={<RedirectFeedToBrief />} />
 
           <Route
             path="/search"
@@ -251,16 +285,7 @@ function AppRoutes() {
             </>
           )}
 
-          <Route
-            path="/feed/summaries/:id"
-            element={
-              <ProtectedRoute>
-                <SummaryDetailPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route path="/insights" element={<Navigate to="/feed" replace />} />
+          <Route path="/insights" element={<Navigate to="/brief" replace />} />
           <Route
             path="/insights/:id"
             element={
