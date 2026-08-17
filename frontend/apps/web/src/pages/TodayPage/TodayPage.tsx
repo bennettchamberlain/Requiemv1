@@ -1,5 +1,4 @@
-import { Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb } from '@ci/shadcn';
+import { usePageTitle } from '@ci/common';
 
 import { useFeatures } from '@/common/feature';
 import { PageContent } from '@/components/layout';
@@ -23,9 +22,9 @@ import { SchedulePage } from '@/pages/SchedulePage';
  * Composed from the two page components rather than a copy of their contents,
  * in their `embedded` variant — the same idiom `ImportSurface` uses. Each keeps
  * its own data fetching and its own standalone route; embedded, they drop the
- * chrome this page owns (breadcrumb, document title, PageContent), because two
- * of any of those on one screen is two answers to "where am I", and PageContent
- * is the scroll container, so nesting it gives the screen two scrollbars.
+ * two things this page owns, the document title and the PageContent frame.
+ * PageContent is the scroll container, so nesting it would give the screen two
+ * scrollbars and two sets of padding.
  *
  * "Today" rather than "Home": the page opens on a schedule that already carries
  * date navigation, so the name stays true when you page to another week — it is
@@ -42,35 +41,22 @@ export function TodayPage() {
   const scheduleEnabled = isFeatureEnabled('schedule.page');
 
   return (
-    <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item>
-              <Breadcrumb.Page>Today</Breadcrumb.Page>
-            </Breadcrumb.Item>
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
+    <PageContent>
+      {scheduleEnabled && (
+        <>
+          <SchedulePage embedded />
 
-      <PageContent>
-        {scheduleEnabled && (
-          <>
-            <SchedulePage embedded />
+          {/* A rule, not a heading. The seam between "your day" and "what your
+              companion noticed" needs to be visible — otherwise the first card
+              of the brief reads as another row of the calendar — but naming it
+              would add a piece of furniture to a page that exists to remove
+              one. It goes with the schedule: a rule above the only thing on
+              the page separates it from nothing. */}
+          <hr className="border-border" />
+        </>
+      )}
 
-            {/* A rule, not a heading. The seam between "your day" and "what
-                your companion noticed" needs to be visible — otherwise the
-                first card of the brief reads as another row of the calendar —
-                but naming it would add a piece of navigation furniture to a
-                page that exists to remove one. It goes with the schedule: a
-                rule above the only thing on the page separates it from
-                nothing. */}
-            <hr className="border-border" />
-          </>
-        )}
-
-        <FeedPage embedded />
-      </PageContent>
-    </>
+      <FeedPage embedded />
+    </PageContent>
   );
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ElementType } from 'react';
 
 import { EmptyState, LoadingPage, usePageTitle } from '@ci/common';
 import { Button, IconButton, cn } from '@ci/shadcn';
@@ -136,12 +136,22 @@ function ScheduleLegend({
   );
 }
 
-export function SchedulePage() {
+export interface SchedulePageProps {
+  /**
+   * Rendered inside a host page (Today) that already owns the document title
+   * and the page frame. Embedded, this contributes the schedule and nothing
+   * else — PageContent is the page's scroll container, so a second one nests
+   * its padding and its scrollbar inside the host's.
+   */
+  embedded?: boolean;
+}
+
+export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
   const { t } = useTranslation();
   const [weekOffset, setWeekOffset] = useState(0);
   const [colorMode, setColorMode] = useState<ColorMode>('type');
 
-  usePageTitle('Schedule - Companion Intelligence');
+  usePageTitle(embedded ? null : 'Schedule - Companion Intelligence');
 
   const { start, end } = useMemo(() => {
     const from = addDays(startOfLocalDay(new Date()), weekOffset * DAYS_IN_VIEW);
@@ -232,9 +242,30 @@ export function SchedulePage() {
     !loading && !fetching && !hasAnything && !error && !candidatesError && weekOffset === 0;
   const showScheduleSurface = weekOffset !== 0 || hasAnything || candidatesError || fetching;
 
+  // Embedded, the host supplies the frame, so this keeps only the column gap
+  // and drops the safe-area top padding, which belongs to whatever is actually
+  // at the top of the page.
+  //
+  // `relative` is not decoration: LoadingPage is `absolute inset-0 z-10`, so
+  // without a positioned boundary here it anchors to the HOST's PageContent
+  // and blankets the whole composed page — the schedule's spinner would cover
+  // the brief below it. `min-h-60` gives that spinner somewhere to be, since
+  // while it shows there is nothing else in this column to give the box height.
+  //
+  // `PageContent` is a stable module-level reference and `'div'` is a string,
+  // so `Frame` keeps the same element type across renders — no remounting, and
+  // `weekOffset` / `selectedDay` survive the host re-rendering.
+  const Frame: ElementType = embedded ? 'div' : PageContent;
+
   return (
     <>
-      <PageContent className="gap-3 pt-[max(0.75rem,env(safe-area-inset-top))] md:gap-3">
+      <Frame
+        className={
+          embedded
+            ? 'relative flex min-h-60 w-full min-w-0 flex-col gap-3'
+            : 'gap-3 pt-[max(0.75rem,env(safe-area-inset-top))] md:gap-3'
+        }
+      >
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <div className="flex items-center gap-0.5">
             <IconButton variant="ghost" label={t('SCHEDULE_PREVIOUS_WEEK')} onClick={goBack}>
@@ -351,7 +382,7 @@ export function SchedulePage() {
             </div>
           </>
         )}
-      </PageContent>
+      </Frame>
     </>
   );
 }

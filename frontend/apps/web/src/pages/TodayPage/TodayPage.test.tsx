@@ -5,21 +5,7 @@ import { TodayPage } from './TodayPage';
 
 const features = vi.hoisted(() => ({ scheduleEnabled: true }));
 
-vi.mock('@ci/common', () => ({
-  usePageTitle: () => undefined,
-  Portal: { Slot: ({ children }: { children: React.ReactNode }) => <div>{children}</div> },
-}));
-vi.mock('@ci/shadcn', () => {
-  const Breadcrumb = Object.assign(({ children }: { children: React.ReactNode }) => <nav>{children}</nav>, {
-    List: ({ children }: { children: React.ReactNode }) => <ol>{children}</ol>,
-    Item: ({ children }: { children: React.ReactNode }) => <li>{children}</li>,
-    Link: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
-    Separator: () => <span />,
-    Page: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
-  });
-
-  return { Breadcrumb };
-});
+vi.mock('@ci/common', () => ({ usePageTitle: () => undefined }));
 vi.mock('@/common/feature', () => ({
   useFeatures: () => ({
     isFeatureEnabled: (flag: string) => (flag === 'schedule.page' ? features.scheduleEnabled : true),
@@ -43,11 +29,10 @@ vi.mock('@/pages/FeedPage', () => ({
 /**
  * Today is the schedule plus the brief on one page. Three things have to hold:
  * the order (the part with a time on it leads; the commentary follows), that
- * both are asked for in their embedded variant — a child rendering its own
- * breadcrumb, title and PageContent is what put two of each on one screen, and
- * PageContent is the scroll container, so nesting it nests scrollbars — and
- * that `schedule.page` still hides the schedule, which it used to do by
- * removing a route that no longer exists.
+ * both are asked for in their embedded variant — PageContent is the page's
+ * scroll container, so a child rendering its own would put two scrollbars and
+ * two sets of padding on one screen — and that `schedule.page` still hides the
+ * schedule, which it used to do by removing a route that no longer exists.
  */
 describe('TodayPage', () => {
   beforeEach(() => {
@@ -71,12 +56,6 @@ describe('TodayPage', () => {
 
     expect(screen.getByTestId('schedule')).toHaveTextContent('embedded=true');
     expect(screen.getByTestId('feed')).toHaveTextContent('embedded=true');
-  });
-
-  it('names itself Today in the breadcrumb', () => {
-    render(<TodayPage />);
-
-    expect(screen.getByText('Today')).toBeInTheDocument();
   });
 
   it('drops the schedule, and its rule, when schedule.page is off', () => {
