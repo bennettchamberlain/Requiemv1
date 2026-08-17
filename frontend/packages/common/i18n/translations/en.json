@@ -15,6 +15,8 @@
   "NAV_ACCOUNT_JOBS": "Track background jobs and their status",
   "NAV_ACCOUNT_LOGOUT": "Sign out of this account",
   "NAV_LOGO_EXTERNAL": "Companion Intelligence, opens in a new tab",
+  "NAV_RAIL_EXPAND": "Open menu",
+  "NAV_RAIL_COLLAPSE": "Close menu",
   "CHAT_SIDEBAR_EXPAND": "Expand sidebar",
   "CHAT_SIDEBAR_COLLAPSE": "Collapse sidebar",
   "CHAT_THREADS_REFRESH": "Refresh threads",
