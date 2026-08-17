@@ -7,8 +7,8 @@
  * `docs/architecture/planning-roadmap.md` for the object model, the six
  * `ci.events` guardrails, and the milestone plan.
  *
- * The surface is GraphQL only (`domains/graphql/resolvers/TaskResolver.ts`);
- * there are no planning REST controllers.
+ * The surface is GraphQL only (`domains/graphql/resolvers/TaskResolver.ts`),
+ * gated by `planning.enabled`. There are no planning REST controllers.
  *
  * @module PlanningModule
  */

@@ -1714,8 +1714,7 @@ Every endpoint is user-scoped (`WHERE user_id = context.userId`), fixing the cro
 `JobMonitorService` asserts `context.userId` and then queries pg-boss globally, returning every
 user's `job.data` verbatim.
 
-**Flip `"jobs.page": false` → `true` in `backend/apps/api/config/default.json:155` in Phase 5.**
-Without it a multi-hour import runs with no UI whatsoever unless someone sets `ENABLE_JOBS_PAGE`.
+**Landed.** `"jobs.page"` is `true` in `backend/apps/api/config/default.json`. Set `ENABLE_JOBS_PAGE=false` to hide it.
 
 ### 9.7 Worker process model — recommendation
 
@@ -1995,7 +1994,7 @@ trends to 0 across two runs at successive versions.
 ### Phase 5 — Operator UI + worker process split
 
 **Scope.** `PipelinePage` with SSE, pause/resume/cancel, coverage tiles, queue strip, dead-letter
-drawer. Flip `"jobs.page": true`. `ClusteredCron`. **Then** `worker.ts`, the Procfile line, the
+drawer. `"jobs.page"` is already `true`. `ClusteredCron`. **Then** `worker.ts`, the Procfile line, the
 compose service with `mem_limit`/`cpus`, and `CI_PROCESS_ROLE`.
 
 **Hard ordering.** The durable lock (Phase 2) and `ClusteredCron` must both be in place before the
