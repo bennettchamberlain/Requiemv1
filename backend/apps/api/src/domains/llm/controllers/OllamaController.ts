@@ -23,6 +23,7 @@ import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
 import { Channel, FrameEncoder } from '@ci/common/rpc';
 import { MessageService, ThreadService, type Thread, type Message } from '@ci/domains/conversations';
+import { DescriptiveQuestionService } from '@ci/domains/daily-metrics';
 import { Events, type EventPayloads, EventService, OnEvent } from '@ci/domains/events';
 import { FileService } from '@ci/domains/files';
 import { ActionService } from '@ci/domains/intelligence';
@@ -66,6 +67,7 @@ export class OllamaController {
     private readonly taskService: TaskService,
     private readonly hbpeService: HbpeService,
     private readonly summaryService: SummaryService,
+    private readonly descriptiveQuestionService: DescriptiveQuestionService,
     private readonly logger: LoggerService,
     private readonly featureService: FeatureService,
   ) {
@@ -409,6 +411,7 @@ Your capabilities:
 - You can compose multiple tool calls in sequence to answer complex questions
 - You have access to various tools — use them when the snapshots below are not enough
 - When the user asks about Memory, Plan, Forecast, Brief, Schedule, or Sources, use those words and the matching tools or snapshots
+- Forecast details: forecast.read. Forecast quality: forecast.calibration. Brief inbox query: brief.list.
 
 Communication style:
 - Be natural, warm, and conversational
@@ -469,13 +472,14 @@ Communication style:
    */
   private async buildLiveAppBlocks(context: RequestContext): Promise<string> {
     const serviceContext = toServiceContext(context);
-    const [plan, forecast, brief] = await Promise.all([
+    const [plan, forecast, brief, stats] = await Promise.all([
       this.buildPlanBlock(serviceContext),
       this.buildForecastBlock(serviceContext),
       this.buildBriefBlock(serviceContext),
+      this.buildStatsBlock(serviceContext),
     ]);
 
-    return [plan, forecast, brief].filter(Boolean).join('\n\n');
+    return [plan, forecast, brief, stats].filter(Boolean).join('\n\n');
   }
 
   private async buildPlanBlock(context: ReturnType<typeof toServiceContext>): Promise<string> {
@@ -586,6 +590,28 @@ Communication style:
       return lines.join('\n');
     } catch (error) {
       this.logger.warn('Failed to hydrate Brief snapshot for chat', {
+        userId: context.userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      return '';
+    }
+  }
+
+  private async buildStatsBlock(context: ReturnType<typeof toServiceContext>): Promise<string> {
+    try {
+      const answers = await this.descriptiveQuestionService.answerAll(context, {});
+      const facts = answers
+        .filter((answer) => answer.value !== null && answer.provenance.coveragePct >= 50)
+        .slice(0, 5);
+
+      if (facts.length === 0) {
+        return '';
+      }
+
+      return ['## Stats', ...facts.map((fact) => `- ${fact.text}`)].join('\n');
+    } catch (error) {
+      this.logger.warn('Failed to hydrate Stats snapshot for chat', {
         userId: context.userId,
         error: error instanceof Error ? error.message : String(error),
       });
