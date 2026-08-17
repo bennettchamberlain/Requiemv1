@@ -71,6 +71,26 @@ export class StagedWriter implements ImportPipeline {
   /** Serializes scheduled flushes so batches land in the order they were pushed. */
   private chain: Promise<void> = Promise.resolve();
 
+  /**
+   * The first flush error, held until {@link settled} can throw it.
+   *
+   * `scheduleFlush` is called from `push`, which is synchronous and has nowhere
+   * to put an error — so the chain used to be left rejected until `settled`
+   * awaited it. Between those two moments nothing was observing it, and a parse
+   * is a long single `await fileImport(...)`: Node saw an unhandled rejection
+   * and the process-level handler in `application.ts` exited the WORKER. One
+   * bad row took down every import on the appliance, and the staleness sweep
+   * then re-queued the stage into a crash loop.
+   *
+   * It is reachable from parser data, not just infrastructure: several location
+   * parsers validate coordinates with `isNaN` only, while `staged_items` has
+   * CHECK constraints on latitude/longitude — so a malformed GPX is enough.
+   *
+   * Captured rather than rethrown so the chain always settles, and re-raised at
+   * `settled()`, which is where the contract always said it should surface.
+   */
+  private failure: Error | null = null;
+
   constructor(
     private readonly manager: EntityManager,
     private readonly scope: { userId: string; runId: string; dataSource: string },
@@ -103,9 +123,20 @@ export class StagedWriter implements ImportPipeline {
   private scheduleFlush(): void {
     const batch = this.buffer.splice(0, this.buffer.length);
 
-    this.chain = this.chain.then(async () => {
-      await this.writeBatch(batch);
-    });
+    this.chain = this.chain
+      .then(async () => {
+        // Once one batch has failed the parse is going to fail at `settled`;
+        // writing the rest would only add rows to a run that is about to be
+        // reported as broken, and would compound one bad record into many.
+        if (this.failure != null) {
+          return;
+        }
+
+        await this.writeBatch(batch);
+      })
+      .catch((err: unknown) => {
+        this.failure ??= err instanceof Error ? err : new Error(String(err));
+      });
   }
 
   /**
@@ -117,6 +148,11 @@ export class StagedWriter implements ImportPipeline {
    */
   async settled(): Promise<void> {
     await this.chain;
+
+    if (this.failure != null) {
+      throw this.failure;
+    }
+
     await this.flush();
   }
 
