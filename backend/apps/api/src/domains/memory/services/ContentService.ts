@@ -523,7 +523,14 @@ export class ContentService {
    */
   async getEntitiesForContents(
     context: ServiceContext,
-    options: { limit?: number; startTime?: Date; endTime?: Date; order?: 'ASC' | 'DESC' } = {},
+    options: {
+      limit?: number;
+      startTime?: Date;
+      endTime?: Date;
+      afterTime?: Date;
+      afterId?: string;
+      order?: 'ASC' | 'DESC';
+    } = {},
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
     let query = this.contentRepository
       .createQueryBuilder('content')
@@ -538,7 +545,18 @@ export class ContentService {
       query = query.andWhere('content.created_at <= :endTime', { endTime: options.endTime });
     }
 
-    query = query.orderBy('content.created_at', options.order ?? 'DESC');
+    // Composite keyset: page strictly past (afterTime, afterId) in
+    // (created_at DESC, id DESC). Without it the search feed re-fetched the same
+    // top-N rows every page and dead-ended at `first * FETCH_MULTIPLIER` rows.
+    if (options.afterTime && options.afterId) {
+      query = query.andWhere(
+        '(content.created_at < :afterTime OR (content.created_at = :afterTime AND content.id < :afterId))',
+        { afterTime: options.afterTime, afterId: options.afterId },
+      );
+    }
+
+    // Deterministic tiebreak so same-timestamp rows page consistently.
+    query = query.orderBy('content.created_at', options.order ?? 'DESC').addOrderBy('content.id', 'DESC');
 
     if (options.limit) {
       query = query.limit(options.limit);

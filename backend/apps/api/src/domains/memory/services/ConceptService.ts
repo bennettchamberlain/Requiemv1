@@ -216,7 +216,14 @@ export class ConceptService extends EntityService<ConceptEntity, Concept> {
    */
   async getEntitiesForConcepts(
     context: ServiceContext,
-    options: { limit?: number; startTime?: Date; endTime?: Date; order?: 'ASC' | 'DESC' } = {},
+    options: {
+      limit?: number;
+      startTime?: Date;
+      endTime?: Date;
+      afterTime?: Date;
+      afterId?: string;
+      order?: 'ASC' | 'DESC';
+    } = {},
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
     let query = this.repository
       .createQueryBuilder('concept')
@@ -232,7 +239,19 @@ export class ConceptService extends EntityService<ConceptEntity, Concept> {
       query = query.andWhere('concept.created_at <= :endTime', { endTime: options.endTime });
     }
 
-    query = query.orderBy('concept.created_at', options.order ?? 'DESC');
+    // Composite keyset: page strictly past (afterTime, afterId) in
+    // (created_at DESC, entity_id DESC) — see ContentService.getEntitiesForContents.
+    if (options.afterTime && options.afterId) {
+      query = query.andWhere(
+        '(concept.created_at < :afterTime OR (concept.created_at = :afterTime AND concept.entity_id < :afterId))',
+        { afterTime: options.afterTime, afterId: options.afterId },
+      );
+    }
+
+    // Deterministic tiebreak so same-timestamp rows page consistently.
+    query = query
+      .orderBy('concept.created_at', options.order ?? 'DESC')
+      .addOrderBy('concept.entity_id', 'DESC');
 
     if (options.limit) {
       query = query.limit(options.limit);

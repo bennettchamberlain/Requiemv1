@@ -316,7 +316,14 @@ export class NoteService {
    */
   async getEntitiesForNotes(
     context: ServiceContext,
-    options: { limit?: number; startTime?: Date; endTime?: Date; order?: 'ASC' | 'DESC' } = {},
+    options: {
+      limit?: number;
+      startTime?: Date;
+      endTime?: Date;
+      afterTime?: Date;
+      afterId?: string;
+      order?: 'ASC' | 'DESC';
+    } = {},
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
     let query = this.noteRepository
       .createQueryBuilder('note')
@@ -331,7 +338,17 @@ export class NoteService {
       query = query.andWhere('note.created_at <= :endTime', { endTime: options.endTime });
     }
 
-    query = query.orderBy('note.created_at', options.order ?? 'DESC');
+    // Composite keyset: page strictly past (afterTime, afterId) in
+    // (created_at DESC, id DESC) — see ContentService.getEntitiesForContents.
+    if (options.afterTime && options.afterId) {
+      query = query.andWhere(
+        '(note.created_at < :afterTime OR (note.created_at = :afterTime AND note.id < :afterId))',
+        { afterTime: options.afterTime, afterId: options.afterId },
+      );
+    }
+
+    // Deterministic tiebreak so same-timestamp rows page consistently.
+    query = query.orderBy('note.created_at', options.order ?? 'DESC').addOrderBy('note.id', 'DESC');
 
     if (options.limit) {
       query = query.limit(options.limit);
