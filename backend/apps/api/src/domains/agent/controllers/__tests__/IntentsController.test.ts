@@ -39,6 +39,22 @@ function controllerWith(manifest: IntentManifest = MANIFEST): IntentsController 
   return new IntentsController(catalog);
 }
 
+/** Captures what the controller forwarded to the catalog, which is the whole contract of `?tier=`. */
+function controllerSpy(): { controller: IntentsController; calls: unknown[] } {
+  const calls: unknown[] = [];
+  const catalog = {
+    getManifest: (options: unknown) => {
+      calls.push(options);
+
+      return MANIFEST;
+    },
+    getDomains: () => MANIFEST.domains,
+    getEntities: () => MANIFEST.entities,
+  } as unknown as IntentCatalogService;
+
+  return { controller: new IntentsController(catalog), calls };
+}
+
 describe('IntentsController', () => {
   it('publishes the full manifest', () => {
     expect(controllerWith().getManifest()).toEqual(MANIFEST);
@@ -55,5 +71,42 @@ describe('IntentsController', () => {
 
   it('404s an unknown intent', () => {
     expect(() => controllerWith().getIntent('nope.notReal')).toThrow('Unknown intent: nope.notReal');
+  });
+
+  describe('?tier=', () => {
+    it('asks the catalog for no tier when the param is absent or empty', () => {
+      const { controller, calls } = controllerSpy();
+
+      controller.getManifest();
+      controller.getManifest('');
+
+      expect(calls).toEqual([{ tier: undefined }, { tier: undefined }]);
+    });
+
+    it('forwards a recognized tier', () => {
+      const { controller, calls } = controllerSpy();
+
+      controller.getManifest('local');
+      controller.getManifest('appliance');
+
+      expect(calls).toEqual([{ tier: 'local' }, { tier: 'appliance' }]);
+    });
+
+    it('rejects an unrecognized tier instead of silently ignoring it', () => {
+      // Load-bearing: a client that asked for rulings and silently got none would read every
+      // `dispatch` as undefined and — depending on how it defaults — either refuse everything or,
+      // far worse, run everything.
+      expect(() => controllerWith().getManifest('locale')).toThrow('Unknown dispatch tier: locale');
+      expect(() => controllerWith().getManifest('LOCAL')).toThrow('Unknown dispatch tier: LOCAL');
+    });
+
+    it('honours the tier on the single-intent route too', () => {
+      const { controller, calls } = controllerSpy();
+
+      controller.getIntent('people.find', 'local');
+
+      expect(calls).toEqual([{ tier: 'local' }]);
+      expect(() => controllerWith().getIntent('people.find', 'nope')).toThrow('Unknown dispatch tier: nope');
+    });
   });
 });
