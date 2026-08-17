@@ -53,6 +53,11 @@ jobs:
     name: Run backend tests
     needs: install
     runs-on: ubuntu-latest
+    # The suite does ~1 minute of actual work. With no ceiling, the hang this
+    # job has been hitting held a runner for 30-50 minutes before being
+    # cancelled, and reported nothing useful when it was. Ten minutes is a wide
+    # margin over the real cost and turns a hang into a fast, legible failure.
+    timeout-minutes: 10
     container:
       image: node:22
     steps:
@@ -79,6 +84,23 @@ jobs:
 
       - name: Run backend API tests
         run: yarn workspace @ci/be-api test
+
+      # Runs only when the step above fails, to capture what a laptop cannot.
+      #
+      # The suite passes locally in ~60s, but prints "a worker process has
+      # failed to exit gracefully" — a real leak. Under `--detectOpenHandles`,
+      # which forces serial execution, it is clean and reports no handles at
+      # all. So whatever leaks only leaks when workers run in parallel, and CI
+      # parallelises differently to a developer machine (2 cores against 10+).
+      #
+      # Rather than guess from the outside, this takes the evidence from the
+      # machine that actually reproduces it. `continue-on-error` because its
+      # job is to report, not to decide the build.
+      - name: Diagnose leaked handles
+        if: failure()
+        continue-on-error: true
+        timeout-minutes: 15
+        run: yarn workspace @ci/be-api test --detectOpenHandles --runInBand
 
   test-frontend:
     name: Run frontend tests
