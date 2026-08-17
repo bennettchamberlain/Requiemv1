@@ -1,5 +1,4 @@
-import { EmptyState, ErrorPage, LoadingPage, Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb } from '@ci/shadcn';
+import { EmptyState, ErrorPage, LoadingPage, usePageTitle } from '@ci/common';
 import { CloudSun } from '@ci/shadcn/icons';
 
 import { useForecastService, useWeekAheadService } from '@/api';
@@ -22,16 +21,6 @@ export function ForecastPage() {
 
   return (
     <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item>
-              <Breadcrumb.Page>Forecast</Breadcrumb.Page>
-            </Breadcrumb.Item>
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
       <PageContent>
         {!hbpeEnabled ? (
           <div className="relative min-h-60 flex-1">

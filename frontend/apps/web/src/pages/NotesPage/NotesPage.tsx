@@ -1,8 +1,8 @@
 import { type ReactNode, useState } from 'react';
 
 import { useQuery } from '@apollo/client';
-import { EmptyState, LoadingPage, Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb, Button } from '@ci/shadcn';
+import { EmptyState, LoadingPage, usePageTitle } from '@ci/common';
+import { Button } from '@ci/shadcn';
 import { Link } from 'react-router-dom';
 
 import { NoteIcon } from '@/components/icons';
@@ -77,16 +77,6 @@ export function NotesPage() {
 
   return (
     <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item>
-              <Breadcrumb.Page>Notes</Breadcrumb.Page>
-            </Breadcrumb.Item>
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
       {content}
 
       {focusedNote && <DeleteNoteModal noteId={focusedNote} onClose={() => setFocusedNote(null)} />}

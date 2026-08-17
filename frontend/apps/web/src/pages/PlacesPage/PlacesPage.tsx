@@ -1,8 +1,8 @@
 import { type ReactNode, useMemo, useState } from 'react';
 
 import { useMutation, useQuery } from '@apollo/client';
-import { EmptyState, GlobalUID, LoadingPage, Portal, usePageTitle } from '@ci/common';
-import { Badge, Breadcrumb, Button, Card, Input } from '@ci/shadcn';
+import { EmptyState, GlobalUID, LoadingPage, usePageTitle } from '@ci/common';
+import { Badge, Button, Card, Input } from '@ci/shadcn';
 import { MapPin } from '@ci/shadcn/icons';
 import { useNavigate } from 'react-router-dom';
 
@@ -352,22 +352,5 @@ export function PlacesPage() {
     );
   }
 
-  return (
-    <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item>
-              <Breadcrumb.Page className="flex items-center gap-1">
-                <MapPin className="h-4 w-4" />
-                Places
-              </Breadcrumb.Page>
-            </Breadcrumb.Item>
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
-      {content}
-    </>
-  );
+  return <>{content}</>;
 }

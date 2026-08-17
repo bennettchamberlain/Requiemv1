@@ -1,10 +1,17 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 
 const STORAGE_KEY = 'ci-power-rail-expanded';
 
 interface PowerRailContextValue {
+  /** Showing labels right now — pinned open, or hovered open. */
   expanded: boolean;
+  /** Pinned open by a deliberate choice. Persisted; survives the pointer leaving. */
+  pinned: boolean;
+  /** Open only because the pointer (or focus) is in it. */
+  hovered: boolean;
+  /** Pin it open, or unpin it. */
   toggle: () => void;
+  setHovered: (hovered: boolean) => void;
 }
 
 const PowerRailContext = createContext<PowerRailContextValue | null>(null);
@@ -26,10 +33,16 @@ function writeStoredExpanded(expanded: boolean) {
 }
 
 export function PowerRailProvider({ children }: { children: ReactNode }) {
-  const [expanded, setExpanded] = useState(readStoredExpanded);
+  // Two reasons the rail is open, and they must not fight. `pinned` is a
+  // decision: it survives the pointer leaving, and a reload. `hovered` is a
+  // passing intention that expires the moment you move away. Pinned wins, so
+  // brushing across a pinned rail never collapses it, and a mouse passing
+  // through never overwrites the stored preference.
+  const [pinned, setPinned] = useState(readStoredExpanded);
+  const [hovered, setHovered] = useState(false);
 
   const toggle = useCallback(() => {
-    setExpanded((current) => {
+    setPinned((current) => {
       const next = !current;
       writeStoredExpanded(next);
 
@@ -37,7 +50,12 @@ export function PowerRailProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  return <PowerRailContext.Provider value={{ expanded, toggle }}>{children}</PowerRailContext.Provider>;
+  const value = useMemo(
+    () => ({ expanded: pinned || hovered, pinned, hovered, toggle, setHovered }),
+    [pinned, hovered, toggle],
+  );
+
+  return <PowerRailContext.Provider value={value}>{children}</PowerRailContext.Provider>;
 }
 
 export function usePowerRail() {

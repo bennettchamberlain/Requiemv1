@@ -1,9 +1,9 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useMutation, useQuery } from '@apollo/client';
-import { EmptyState, GlobalUID, LoadingPage, Portal, usePageTitle } from '@ci/common';
-import { AlertDialog, Avatar, Badge, Breadcrumb, Button, Card, Input } from '@ci/shadcn';
-import { Merge, Users } from '@ci/shadcn/icons';
+import { EmptyState, GlobalUID, LoadingPage, usePageTitle } from '@ci/common';
+import { AlertDialog, Avatar, Badge, Button, Card, Input } from '@ci/shadcn';
+import { Merge } from '@ci/shadcn/icons';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
@@ -513,22 +513,5 @@ export function PeoplePage() {
     );
   }
 
-  return (
-    <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item>
-              <Breadcrumb.Page className="flex items-center gap-1">
-                <Users className="h-4 w-4" />
-                People & communications
-              </Breadcrumb.Page>
-            </Breadcrumb.Item>
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
-      {content}
-    </>
-  );
+  return <>{content}</>;
 }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { EmptyState, LoadingPage, Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb, Button, IconButton, cn } from '@ci/shadcn';
+import { EmptyState, LoadingPage, usePageTitle } from '@ci/common';
+import { Button, IconButton, cn } from '@ci/shadcn';
 import { CalendarRange, ChevronLeft, ChevronRight } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 
@@ -234,16 +234,6 @@ export function SchedulePage() {
 
   return (
     <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item>
-              <Breadcrumb.Page>Schedule</Breadcrumb.Page>
-            </Breadcrumb.Item>
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
       <PageContent className="gap-3 pt-[max(0.75rem,env(safe-area-inset-top))] md:gap-3">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <div className="flex items-center gap-0.5">

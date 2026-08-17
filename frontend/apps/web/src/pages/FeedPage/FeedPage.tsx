@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
 
-import { GlobalUID, ErrorPage, LoadingPage, Portal, useDeviceLayout, usePageTitle } from '@ci/common';
-import { Breadcrumb, useToast } from '@ci/shadcn';
+import { GlobalUID, ErrorPage, LoadingPage, useDeviceLayout, usePageTitle } from '@ci/common';
+import { useToast } from '@ci/shadcn';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -371,16 +371,6 @@ export function FeedPage() {
 
   return (
     <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item>
-              <Breadcrumb.Page>Brief</Breadcrumb.Page>
-            </Breadcrumb.Item>
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
       <PageContent>
         <ContextPromptCard />
 
