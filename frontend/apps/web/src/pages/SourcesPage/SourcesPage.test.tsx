@@ -103,24 +103,27 @@ describe('SourcesPage', () => {
     expect(screen.queryByText(/Nothing is feeding your memory yet/i)).not.toBeInTheDocument();
   });
 
-  describe('when nothing has ever fed the appliance', () => {
-    it('draws the distinction people actually get wrong', async () => {
-      renderAt('/sources/connect');
+  // The pitch moved off the switch and into each path's own content. On the
+  // tiles it made three tiles three different heights and pushed the content
+  // below the fold.
+  it('keeps the switch to a switch', async () => {
+    renderAt('/sources/connect');
 
-      // Connecting is cheap and forward-looking; an export is slow and
-      // backward-looking. Someone choosing between them needs both halves of
-      // that, not two equally-weighted buttons.
-      expect(await screen.findByText(/About a minute, once\./)).toBeInTheDocument();
-      expect(screen.getByText(/wait hours or days/i)).toBeInTheDocument();
-      expect(screen.getByText(/Your whole history/i)).toBeInTheDocument();
-    });
+    // ConnectPanel is stubbed here, so nothing but a tile could supply these.
+    await waitFor(() => expect(screen.getByText('connect panel')).toBeInTheDocument());
+    expect(screen.queryByText('Effort')).not.toBeInTheDocument();
+    expect(screen.queryByText('You get')).not.toBeInTheDocument();
+    expect(screen.queryByText(/About a minute, once\./)).not.toBeInTheDocument();
+  });
 
-    it('gives each path its own call to action', async () => {
-      renderAt('/sources/connect');
+  it('introduces a path above its own content', async () => {
+    // The import path's header is rendered by the page, outside the surface's
+    // scroll region, so this is the one it can assert directly.
+    renderAt('/sources/import');
 
-      expect(await screen.findByText('Browse services')).toBeInTheDocument();
-      expect(screen.getByText('Start an import')).toBeInTheDocument();
-    });
+    expect(await screen.findByText('Effort')).toBeInTheDocument();
+    expect(screen.getByText(/wait hours or days/i)).toBeInTheDocument();
+    expect(screen.getByText(/Your whole history/i)).toBeInTheDocument();
   });
 
   describe('once something is flowing', () => {
@@ -134,8 +137,6 @@ describe('SourcesPage', () => {
       await waitFor(() => expect(screen.getByText('3 connected')).toBeInTheDocument());
       expect(screen.getByText('2 imports')).toBeInTheDocument();
       expect(screen.getByText('1 device')).toBeInTheDocument();
-      expect(screen.queryByText(/About a minute, once\./)).not.toBeInTheDocument();
-      expect(screen.queryByText('Browse services')).not.toBeInTheDocument();
     });
 
     it('counts a single import in the singular', async () => {
@@ -147,22 +148,18 @@ describe('SourcesPage', () => {
       await waitFor(() => expect(screen.getByText('1 import')).toBeInTheDocument());
     });
 
-    // The pitch is per path. Someone with services connected and no devices
-    // needs to hear what a device would give them — and nothing about
-    // services, which they have already done.
-    it('makes its case only for the paths with nothing to show', async () => {
+    // A path with nothing yet says so by omission — no count — rather than by
+    // becoming a different shape from the other two.
+    it('reports a count only for the paths that have one', async () => {
       h.connections = 3;
-      h.imports = 2;
+      h.imports = 0;
       h.devices = 0;
 
       renderAt('/sources/connect');
 
       await waitFor(() => expect(screen.getByText('3 connected')).toBeInTheDocument());
-
-      expect(screen.getByText('Add a device')).toBeInTheDocument();
-      expect(screen.getByText(/neither of which any export contains/)).toBeInTheDocument();
-      expect(screen.queryByText('Browse services')).not.toBeInTheDocument();
-      expect(screen.queryByText('Start an import')).not.toBeInTheDocument();
+      expect(screen.queryByText(/0 imports/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/0 devices/)).not.toBeInTheDocument();
     });
   });
 

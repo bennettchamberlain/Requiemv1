@@ -50,9 +50,8 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
               {section.label}
             </h3>
 
-            {/* Four to a row, matching the connect half's service grid — the
-                tiles carry an object list now, not just a name. */}
-            <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {/* Three to a row, matching every other gallery on the page. */}
+            <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {section.items.map((item) => {
                 const on = picked.has(item.key);
                 const showLogo = item.logo != null && !logoFailed.has(item.key);

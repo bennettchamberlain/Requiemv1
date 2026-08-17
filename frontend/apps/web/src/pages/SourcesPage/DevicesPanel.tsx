@@ -10,6 +10,7 @@ import {
 
 import { SourceCard, type TrackedObject } from '@/components/connect/SourceCard';
 
+import { PathHeader } from './PathHeader';
 import { useDevices, type RegisteredDevice } from './useDevices';
 
 export const CHROME_EXTENSION_URL =
@@ -53,6 +54,8 @@ export function DevicesPanel() {
 
   return (
     <div className="w-full">
+      <PathHeader path="devices" />
+
       {!loading && devices.length > 0 && (
         <section className="mb-8 w-full">
           <h2 className="mb-1 text-2xl font-bold">Your devices</h2>
@@ -66,11 +69,7 @@ export function DevicesPanel() {
       )}
 
       <section className="mb-8 w-full">
-        <h2 className="mb-1 text-2xl font-bold">Browser extensions</h2>
-        <p className="text-muted-foreground mb-6">
-          Install it in the browser you actually use. The pages you read are the part of your day no service
-          exports.
-        </p>
+        <h3 className="mb-3 text-lg font-semibold">Browser extensions</h3>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:gap-4 lg:grid-cols-3">
           <SourceCard
             logo="/branding/chrome/logo.svg"
@@ -84,10 +83,7 @@ export function DevicesPanel() {
       </section>
 
       <section className="w-full">
-        <h2 className="mb-1 text-2xl font-bold">Companion Capture</h2>
-        <p className="text-muted-foreground mb-6">
-          Install it on the machine you work on. Everything it records stays on your Hub.
-        </p>
+        <h3 className="mb-3 text-lg font-semibold">Companion Capture</h3>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:gap-4 lg:grid-cols-3">
           <SourceCard
             logo="/branding/mac/logo.svg"

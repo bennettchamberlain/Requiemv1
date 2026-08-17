@@ -1,6 +1,8 @@
 import { ConnectedAccountsSection } from '@/components/connect/ConnectedAccountsSection';
 import { ServiceIntegrationsSection } from '@/components/connect/ServiceIntegrationsSection';
 
+import { PathHeader } from './PathHeader';
+
 /**
  * The services half: accounts you sign into, and what is already signed in.
  *
@@ -12,17 +14,11 @@ import { ServiceIntegrationsSection } from '@/components/connect/ServiceIntegrat
 export function ConnectPanel() {
   return (
     <div className="w-full">
+      <PathHeader path="connect" />
+
       <ConnectedAccountsSection />
 
-      <section className="w-full">
-        {/* The cards name what each service hands over, so the standfirst no
-            longer lists it too. What is left is the part they cannot say. */}
-        <h2 className="mb-1 text-2xl font-bold">Services</h2>
-        <p className="text-muted-foreground mb-6">
-          Sign in once; Companion keeps pulling on its own. Nothing leaves this appliance.
-        </p>
-        <ServiceIntegrationsSection variant="page" />
-      </section>
+      <ServiceIntegrationsSection variant="page" />
     </div>
   );
 }

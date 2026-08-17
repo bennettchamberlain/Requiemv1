@@ -51,9 +51,11 @@ treats them as one thing: both register in `ci.devices`, where `device_type`
 is `browser` alongside `laptop` and `desktop`, and both answer the same
 question — which of my machines is feeding this, and is it still doing it.
 
-Each path has the same shape: **what you already have, then what you could
-add.** Connected accounts above the service gallery; registered devices above
-the install gallery; run history behind the import wizard.
+Each path has the same shape: a header saying what it costs and what it gives,
+then **what you already have, then what you could add** — connected accounts
+above the service gallery, registered devices above the install gallery, run
+history behind the import wizard. Every gallery is three cards to a row, full
+width.
 
 ### Why "Sources" and not "Connect" or "Data"
 
@@ -79,16 +81,16 @@ something you usually already have in hand and came here deliberately to add.
 
 ### Why the empty state is the switch, made loud
 
-Rather than a separate first-run screen, the same tiles render in a
-**first-run** density: bigger, with what each path is best for, how long it
-takes, and an explicit button. When there is data, the same component renders
-compact with a count.
+The switch is three tiles of one shape: an icon, a name, and what you have of
+that path. It briefly carried the pitch too — `Effort` and `You get` on each
+tile — which made every tile as tall as its longest sentence, gave the row three
+different heights, and pushed the actual content below the fold.
 
-That density is decided **per path, not per page**. Someone with three services
-connected and no devices is told what a device would give them, and nothing
-about services — which they have already done. A page-wide flag could only
-show every pitch or none, and the page has three different answers to "have you
-done this yet".
+The pitch lives at the top of each path's own content instead, as a
+`PathHeader`: name, what it costs, what you get, in that order, on all three.
+Moving between paths changes the answers and not the shape — and it is read at
+the moment someone has already chosen to look, rather than shouted at them
+three times at once.
 
 The page carries **no heading and no standfirst**. The breadcrumb already reads
 "Sources", the rail entry is labelled Sources, and the

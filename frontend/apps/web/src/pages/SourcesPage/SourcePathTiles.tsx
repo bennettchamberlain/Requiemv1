@@ -10,25 +10,27 @@ export type SourcePath = 'connect' | 'import' | 'devices';
 
 export const SOURCE_PATHS: readonly SourcePath[] = ['connect', 'import', 'devices'];
 
-interface PathDefinition {
+export interface PathDefinition {
   readonly path: SourcePath;
   readonly to: string;
   readonly icon: ReactNode;
   readonly title: string;
-  /**
-   * The honest trade-off, shown only in the first-run density.
-   *
-   * There is no summary line above these. A blurb saying "sign in to Google,
-   * Microsoft, Spotify and the rest" sat directly on top of a `You get` row
-   * saying the same thing in more useful terms; the compact density needs no
-   * prose at all, being a switch rather than an explainer.
-   */
+  /** The honest trade-off, rendered by `PathHeader` above the path's content. */
   readonly effort: string;
   readonly gets: string;
   readonly cta: string;
 }
 
-const PATHS: Record<SourcePath, PathDefinition> = {
+/**
+ * What each path is, what it costs, and what it gives you.
+ *
+ * The `effort`/`gets` pair is rendered by {@link PathHeader} at the top of the
+ * path's own content, not on the tile. On the tile it made three tiles three
+ * different heights and pushed the content below the fold; in the content it
+ * is the answer to "what am I looking at" in the one place someone is already
+ * looking, and every path reads the same way.
+ */
+export const SOURCE_PATH_INFO: Record<SourcePath, PathDefinition> = {
   connect: {
     path: 'connect',
     to: '/sources/connect',
@@ -81,22 +83,12 @@ function countFor(path: SourcePath, counts: SourceCounts): { value: number; noun
 /**
  * The ways data gets in, as one control.
  *
- * This is both the page's navigation and its empty state, on purpose. A
- * separate first-run screen is a second thing to keep true; here the same tiles
- * simply render louder when there is nothing yet — with what each path is best
- * for, what it costs you, and a button — and quieter once something is flowing,
- * with counts.
- *
- * Three paths, not two. Services and Import are the two halves of "the
- * services I use"; Devices is what you install rather than sign into — the
- * browser extension and Capture, which between them are the only source of
- * what you read and what you do on your own machine. They spent this page's
- * first version as sections below the whole service catalogue, which put the
- * two least substitutable sources behind the longest scroll.
- *
- * The pitch is per path, not per page: a tile makes its case only while THAT
- * path has nothing to show, so someone with services connected and no devices
- * is told what a device would give them and nothing else.
+ * Three tiles of one shape: an icon, a name, and what you have of it. They used
+ * to carry the pitch as well — `Effort` and `You get` — which made each tile as
+ * tall as its longest sentence, gave the row three different heights, and
+ * pushed the actual content below the fold. The pitch belongs where you are
+ * already looking once you pick a path, so it moved into the path's own header
+ * and the switch went back to being a switch.
  */
 export function SourcePathTiles({ active, counts, paths }: Props) {
   return (
@@ -108,13 +100,8 @@ export function SourcePathTiles({ active, counts, paths }: Props) {
           return (
             <PathTile
               key={key}
-              definition={PATHS[key]}
+              definition={SOURCE_PATH_INFO[key]}
               active={active === key}
-              // PER PATH, not per page. Someone with three services connected
-              // and no devices still needs to be told what a device would give
-              // them — and no longer needs to be told what a service would.
-              // A page-wide flag showed the pitch for everything or nothing.
-              firstRun={!counts.loading && count.value === 0}
               count={count}
             />
           );
@@ -127,11 +114,10 @@ export function SourcePathTiles({ active, counts, paths }: Props) {
 interface PathTileProps {
   definition: PathDefinition;
   active: boolean;
-  firstRun: boolean;
   count: { value: number; noun: string };
 }
 
-function PathTile({ definition, active, firstRun, count }: PathTileProps) {
+function PathTile({ definition, active, count }: PathTileProps) {
   return (
     <Link
       to={definition.to}
@@ -139,47 +125,31 @@ function PathTile({ definition, active, firstRun, count }: PathTileProps) {
       // reader saying "current page" is the same thing the ring says visually.
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'group flex flex-col rounded-lg border bg-card text-left transition',
+        'group flex items-center gap-3 rounded-lg border bg-card p-4 text-left transition',
         'hover:border-primary/60 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         active ? 'border-primary ring-1 ring-primary/40' : 'border-border',
-        firstRun ? 'gap-3 p-5' : 'gap-2 p-4',
       )}
     >
-      <div className="flex items-center gap-3">
-        <span
-          className={cn(
-            'flex items-center justify-center rounded-md p-2',
-            active ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground',
-          )}
-        >
-          {definition.icon}
-        </span>
-        <span className={cn('font-semibold', firstRun ? 'text-lg' : 'text-base')}>{definition.title}</span>
-        {count.value > 0 && (
-          <span className="text-muted-foreground ml-auto text-xs font-medium tabular-nums">
-            {count.value} {count.noun}
-          </span>
+      <span
+        className={cn(
+          'flex shrink-0 items-center justify-center rounded-md p-2',
+          active ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground',
         )}
-      </div>
+      >
+        {definition.icon}
+      </span>
 
-      {firstRun && (
-        <>
-          <dl className="text-sm">
-            <div className="flex gap-2">
-              <dt className="text-muted-foreground w-20 shrink-0">Effort</dt>
-              <dd>{definition.effort}</dd>
-            </div>
-            <div className="mt-1 flex gap-2">
-              <dt className="text-muted-foreground w-20 shrink-0">You get</dt>
-              <dd>{definition.gets}</dd>
-            </div>
-          </dl>
+      <span className="min-w-0 flex-1 font-semibold">{definition.title}</span>
 
-          <span className="text-primary mt-auto inline-flex items-center gap-1 pt-1 text-sm font-medium">
-            {definition.cta}
-            <ArrowRight aria-hidden className="h-4 w-4 transition group-hover:translate-x-0.5" />
-          </span>
-        </>
+      {count.value > 0 ? (
+        <span className="text-muted-foreground shrink-0 text-xs font-medium tabular-nums">
+          {count.value} {count.noun}
+        </span>
+      ) : (
+        <ArrowRight
+          aria-hidden
+          className="text-muted-foreground h-4 w-4 shrink-0 transition group-hover:translate-x-0.5"
+        />
       )}
     </Link>
   );
