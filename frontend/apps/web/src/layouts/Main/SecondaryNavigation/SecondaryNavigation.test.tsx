@@ -99,11 +99,20 @@ describe('SecondaryNavigation', () => {
     expect(screen.getByRole('link', { name: 'Plan' })).toHaveAttribute('href', '/plan');
   });
 
-  it('carries Forecast and Brief in the primary rail', () => {
+  it('carries Forecast and Today in the primary rail', () => {
     renderRail();
 
     expect(screen.getByRole('link', { name: 'Forecast' })).toHaveAttribute('href', '/forecast');
-    expect(screen.getByRole('link', { name: 'Brief' })).toHaveAttribute('href', '/brief');
+    expect(screen.getByRole('link', { name: 'Today' })).toHaveAttribute('href', '/today');
+  });
+
+  // Schedule and Brief were folded into Today, so the rail must not offer a
+  // second way to reach either — that was the point of combining them.
+  it('no longer offers Schedule or Brief as their own destinations', () => {
+    renderRail();
+
+    expect(screen.queryByRole('link', { name: 'Schedule' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Brief' })).not.toBeInTheDocument();
   });
 
   // One row that opens, not five flat ones. A wall of settings sitting level
@@ -209,10 +218,9 @@ describe('SecondaryNavigation', () => {
 
     const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
 
-    expect(hrefs.indexOf('/plan')).toBeLessThan(hrefs.indexOf('/schedule'));
-    expect(hrefs.indexOf('/schedule')).toBeLessThan(hrefs.indexOf('/forecast'));
-    expect(hrefs.indexOf('/forecast')).toBeLessThan(hrefs.indexOf('/brief'));
-    expect(hrefs.indexOf('/brief')).toBeLessThan(hrefs.indexOf('/memory'));
+    expect(hrefs.indexOf('/plan')).toBeLessThan(hrefs.indexOf('/today'));
+    expect(hrefs.indexOf('/today')).toBeLessThan(hrefs.indexOf('/forecast'));
+    expect(hrefs.indexOf('/forecast')).toBeLessThan(hrefs.indexOf('/memory'));
     expect(hrefs.indexOf('/memory')).toBeLessThan(hrefs.indexOf('/saved-searches'));
     expect(hrefs.indexOf('/saved-searches')).toBeLessThan(hrefs.indexOf('/chat'));
     expect(hrefs.indexOf('/chat')).toBeLessThan(hrefs.indexOf('/sources'));

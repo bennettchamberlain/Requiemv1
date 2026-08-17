@@ -1326,6 +1326,11 @@ type Mutation {
   mergePeople(input: MergePeopleInput!): MergePeoplePayload!
 
   """
+  Rebuild stay-point clusters and recency-decayed transitions for the current user
+  """
+  rebuildPlaces: String!
+
+  """
   Recompute and upsert a trailing window of daily metrics for the signed-in user.
   """
   refreshDailyMetrics(days: Int, timezone: String): [DailyMetricsType!]!
@@ -1501,11 +1506,17 @@ type PlaceEdge implements Edge {
   node: PlaceType!
 }
 
-"""A likely next place from recent stay cells"""
+"""
+A likely next place from the stay-point transition model (recency-decayed, hour/dow backoff)
+"""
 type PlaceForecastItemType {
+  backoffLevel: String
+  clusterId: String
+  label: String
   lastSeen: String
   lat: Float!
   lng: Float!
+  probability: Float!
   share: Float!
   visits: Int!
 }
@@ -1738,8 +1749,10 @@ type Query {
   personDuplicates(limit: Int): [PersonDuplicateGroupType!]!
   place(id: ID!): PlaceType
 
-  """Likely next places from recent stay cells"""
-  placeForecast(k: Int = 5): [PlaceForecastItemType!]!
+  """
+  Likely next places from the stay-point transition model (recency-decayed, hour/dow backoff)
+  """
+  placeForecast(horizonHours: Int = 4, k: Int = 5): [PlaceForecastItemType!]!
   places(after: String, before: String, first: Int, last: Int, query: String): PlaceConnection!
   placesNear(latitude: Float!, limit: Int, longitude: Float!, radiusMeters: Float): [PlaceNearType!]!
 

@@ -11,13 +11,15 @@ describe('zipFilesStore', () => {
     });
 
     const zip = await zipFilesStore([conversations]);
-    const bytes = new Uint8Array(await new Promise<ArrayBuffer>((resolve, reject) => {
-      const reader = new FileReader();
+    const bytes = new Uint8Array(
+      await new Promise<ArrayBuffer>((resolve, reject) => {
+        const reader = new FileReader();
 
-      reader.onload = () => resolve(reader.result as ArrayBuffer);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsArrayBuffer(zip);
-    }));
+        reader.onload = () => resolve(reader.result as ArrayBuffer);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsArrayBuffer(zip);
+      }),
+    );
 
     expect(zip.name).toBe('chatgpt-export.zip');
     expect(zip.type).toBe('application/zip');

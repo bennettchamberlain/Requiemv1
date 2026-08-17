@@ -53,11 +53,13 @@ jobs:
     name: Run backend tests
     needs: install
     runs-on: ubuntu-latest
-    # The suite does ~1 minute of actual work. With no ceiling, the hang this
-    # job has been hitting held a runner for 30-50 minutes before being
-    # cancelled, and reported nothing useful when it was. Ten minutes is a wide
-    # margin over the real cost and turns a hang into a fast, legible failure.
-    timeout-minutes: 10
+    # Headroom for checkout + install + the test step's own ceiling below. The
+    # meaningful limit is on the step, not here: a JOB timeout cancels the whole
+    # job, which is reported as `cancelled` (and rendered as "fail" by
+    # `gh pr checks`) with no indication of which step ran out of time, and it
+    # skips every remaining step, so nothing can report on the way out. A STEP
+    # timeout fails that step and lets the job finish normally.
+    timeout-minutes: 15
     container:
       image: node:22
     steps:
@@ -82,25 +84,21 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Several times the measured cost: ~400 files in about 2.5 minutes in a
+      # two-core container, so a few minutes on a runner whose cores are slower.
+      # Anything approaching ten means the suite has stopped making progress
+      # rather than merely got slower, and failing the step says so while
+      # leaving the job alive to finish and report.
+      #
+      # What used to sit here was a `--detectOpenHandles --runInBand` step meant
+      # to diagnose the hang on failure. It never once ran — the job timeout
+      # cancelled the job before any `if: failure()` step could start — and it
+      # could not have helped if it had: both of those flags force jest to run
+      # in the main process, which is precisely the configuration that hangs.
+      # See the note in backend/apps/api/jest.config.mjs.
       - name: Run backend API tests
+        timeout-minutes: 10
         run: yarn workspace @ci/be-api test
-
-      # Runs only when the step above fails, to capture what a laptop cannot.
-      #
-      # The suite passes locally in ~60s, but prints "a worker process has
-      # failed to exit gracefully" — a real leak. Under `--detectOpenHandles`,
-      # which forces serial execution, it is clean and reports no handles at
-      # all. So whatever leaks only leaks when workers run in parallel, and CI
-      # parallelises differently to a developer machine (2 cores against 10+).
-      #
-      # Rather than guess from the outside, this takes the evidence from the
-      # machine that actually reproduces it. `continue-on-error` because its
-      # job is to report, not to decide the build.
-      - name: Diagnose leaked handles
-        if: failure()
-        continue-on-error: true
-        timeout-minutes: 15
-        run: yarn workspace @ci/be-api test --detectOpenHandles --runInBand
 
   test-frontend:
     name: Run frontend tests

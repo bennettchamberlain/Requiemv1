@@ -1,8 +1,11 @@
 import { Injectable, OnApplicationBootstrap } from '@nestjs/common';
 
+import type { UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { Cron } from '@ci/common/schedule';
+import { UserService } from '@ci/domains/user';
 
+import { PlaceTransitionService } from '../places/PlaceTransitionService';
 import { DailyMetricsService, DEFAULT_REFRESH_WINDOW_DAYS } from '../services/DailyMetricsService';
 import { DerivationScanService } from '../services/DerivationScanService';
 
@@ -18,6 +21,8 @@ export class DailyMetricsCron implements OnApplicationBootstrap {
 
   constructor(
     private readonly dailyMetricsService: DailyMetricsService,
+    private readonly placeTransitionService: PlaceTransitionService,
+    private readonly userService: UserService,
     private readonly derivationScanService: DerivationScanService,
     private readonly logger: LoggerService,
   ) {
@@ -47,23 +52,59 @@ export class DailyMetricsCron implements OnApplicationBootstrap {
     this.running = true;
 
     try {
-      await this.dailyMetricsService.refreshAll(options.windowDays);
-    } catch (err) {
-      this.logger.error(
-        'Daily metrics refresh failed',
-        err instanceof Error ? err : new Error(String(err)),
-      );
-    }
+      try {
+        await this.dailyMetricsService.refreshAll(options.windowDays);
+      } catch (err) {
+        this.logger.error(
+          'Daily metrics refresh failed',
+          err instanceof Error ? err : new Error(String(err)),
+        );
+      }
 
-    try {
-      await this.derivationScanService.scanAll();
-    } catch (err) {
-      this.logger.error(
-        'Derivation scan failed',
-        err instanceof Error ? err : new Error(String(err)),
-      );
+      try {
+        await this.refreshPlaces();
+      } catch (err) {
+        this.logger.error(
+          'Place engine refresh failed',
+          err instanceof Error ? err : new Error(String(err)),
+        );
+      }
+
+      try {
+        await this.derivationScanService.scanAll();
+      } catch (err) {
+        this.logger.error(
+          'Derivation scan failed',
+          err instanceof Error ? err : new Error(String(err)),
+        );
+      }
     } finally {
       this.running = false;
+    }
+  }
+
+  /**
+   * Rebuild stay-point clusters + recency-decayed transitions for every user,
+   * then score elapsed place_forecast_log rows. Failures for one user do not
+   * abort the rest of the run.
+   */
+  private async refreshPlaces(): Promise<void> {
+    const users = await this.userService.findAll();
+    this.logger.log('Refreshing place engine', { users: users.length });
+
+    for (const user of users) {
+      const timezone = user.timezone || 'UTC';
+      const context: UserServiceContext = { userId: user.id };
+
+      try {
+        await this.placeTransitionService.rebuild(context, { timezone });
+        await this.placeTransitionService.scoreLog(context);
+      } catch (err) {
+        this.logger.error(
+          `Place engine refresh failed for user ${user.id} (${timezone})`,
+          err instanceof Error ? err : new Error(String(err)),
+        );
+      }
     }
   }
 }

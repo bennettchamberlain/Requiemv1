@@ -19,6 +19,9 @@ const GET_FORECAST_EXTRAS = gql`
       lng
       visits
       share
+      label
+      probability
+      backoffLevel
     }
     predictionCalibration(limit: 14) {
       basis

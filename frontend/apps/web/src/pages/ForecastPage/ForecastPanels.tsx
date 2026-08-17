@@ -21,6 +21,9 @@ type PlaceItem = {
   lng: number;
   visits: number;
   share: number;
+  label?: string | null;
+  probability?: number;
+  backoffLevel?: string | null;
 };
 
 type Calibration = {
@@ -163,23 +166,34 @@ export function NextPlacesPanel({ places }: { places: PlaceItem[] }) {
     return null;
   }
 
+  const backoff = places[0]?.backoffLevel;
+
   return (
     <Card>
       <Card.Header>
         <Card.Title>Next places</Card.Title>
-        <Card.Description>Where you have been most often in the last 30 days.</Card.Description>
+        <Card.Description>
+          Likely next stay from your recent place transitions, given where you are and the time of
+          day
+          {backoff ? ` (${backoff.replace(/_/g, ' ').toLowerCase()})` : ''}.
+        </Card.Description>
       </Card.Header>
       <Card.Content className="flex flex-col gap-2 text-sm">
-        {places.map((place) => (
-          <div key={`${place.lat},${place.lng}`} className="flex items-baseline justify-between">
-            <span className="font-medium">
-              {place.lat.toFixed(3)}, {place.lng.toFixed(3)}
-            </span>
-            <span className="text-muted-foreground">
-              {place.visits} visits · {Math.round(place.share * 100)}%
-            </span>
-          </div>
-        ))}
+        {places.map((place) => {
+          const probability = place.probability ?? place.share;
+
+          return (
+            <div key={`${place.lat},${place.lng}`} className="flex items-baseline justify-between">
+              <span className="min-w-0 flex-1 truncate font-medium">
+                {place.label?.trim() || `${place.lat.toFixed(3)}, ${place.lng.toFixed(3)}`}
+              </span>
+              <span className="shrink-0 text-muted-foreground">
+                {Math.round(probability * 100)}%
+                {place.visits > 0 ? ` · ${place.visits} stays` : ''}
+              </span>
+            </div>
+          );
+        })}
       </Card.Content>
     </Card>
   );

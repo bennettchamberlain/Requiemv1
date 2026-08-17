@@ -11,22 +11,37 @@ import { DailyMetricEntity } from './entities/DailyMetricEntity';
 import { MetricAnomalyEntity } from './entities/MetricAnomalyEntity';
 import { MetricCorrelationEntity } from './entities/MetricCorrelationEntity';
 import { MetricSuggestionEntity } from './entities/MetricSuggestionEntity';
+import { PlaceClusterEntity } from './entities/PlaceClusterEntity';
+import { PlaceForecastLogEntity } from './entities/PlaceForecastLogEntity';
+import { PlaceTransitionEntity } from './entities/PlaceTransitionEntity';
 import { SuggestionArmEntity } from './entities/SuggestionArmEntity';
 import { MetricForecastService } from './forecast/MetricForecastService';
 import { DescriptiveQuestionService } from './narrate/DescriptiveQuestionService';
 import { NARRATOR, TemplateNarrator } from './narrate/Narrator';
+import { PlaceClusterService } from './places/PlaceClusterService';
+import { PlaceTransitionService } from './places/PlaceTransitionService';
 import { DailyMetricsService } from './services/DailyMetricsService';
 import { DerivationScanService } from './services/DerivationScanService';
 import { SuggestionEngine } from './suggest/SuggestionEngine';
 
 /**
- * The daily-metrics domain: the Daily Feature Store plus compute-then-narrate
- * and the correlation / anomaly / suggestion engines.
+ * The daily-metrics domain: the Daily Feature Store (DailyMetricsService over
+ * ci_derived.daily_metrics) plus the descriptive compute-then-narrate question
+ * engine (DescriptiveQuestionService). NARRATOR is bound to the dependency-free
+ * TemplateNarrator by default; a deployment can rebind it to an Ollama-backed
+ * OllamaNarrator without touching the compute path.
+ *
+ * Also owns the 1729 stay-point / recency-decayed transition engine
+ * (PlaceClusterService + PlaceTransitionService over ci_derived.place_*) and
+ * the correlation / anomaly / suggestion engines.
  */
 @Module({
   imports: [
     TypeOrmModule.forFeature([
       DailyMetricEntity,
+      PlaceClusterEntity,
+      PlaceTransitionEntity,
+      PlaceForecastLogEntity,
       MetricCorrelationEntity,
       MetricAnomalyEntity,
       MetricSuggestionEntity,
@@ -40,6 +55,8 @@ import { SuggestionEngine } from './suggest/SuggestionEngine';
     DailyMetricsCron,
     DescriptiveQuestionService,
     MetricForecastService,
+    PlaceClusterService,
+    PlaceTransitionService,
     CorrelationEngine,
     AnomalyEngine,
     SuggestionEngine,
@@ -50,6 +67,7 @@ import { SuggestionEngine } from './suggest/SuggestionEngine';
     DailyMetricsService,
     DescriptiveQuestionService,
     MetricForecastService,
+    PlaceTransitionService,
     CorrelationEngine,
     AnomalyEngine,
     SuggestionEngine,
@@ -75,6 +93,12 @@ export type { MetricSuggestion } from './entities/MetricSuggestionEntity';
 export { CorrelationEngine } from './correlation/CorrelationEngine';
 export { AnomalyEngine } from './anomaly/AnomalyEngine';
 export { SuggestionEngine } from './suggest/SuggestionEngine';
+export { PlaceClusterEntity } from './entities/PlaceClusterEntity';
+export { PlaceTransitionEntity } from './entities/PlaceTransitionEntity';
+export { PlaceForecastLogEntity } from './entities/PlaceForecastLogEntity';
+export { PlaceClusterService } from './places/PlaceClusterService';
+export { PlaceTransitionService } from './places/PlaceTransitionService';
+export type { PlaceForecast, PlacePrediction, PlaceForecastScore } from './places/types';
 export { NARRATOR, TemplateNarrator, OllamaNarrator, interpolateTemplate } from './narrate/Narrator';
 export type { Narrator, TextGenerator, NarrationInput, AnswerProvenance } from './narrate/Narrator';
 export { QUESTION_CATALOG } from './narrate/questionCatalog';
