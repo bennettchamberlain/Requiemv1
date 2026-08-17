@@ -153,12 +153,23 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
         )}
 
         {catalog.length === 0 && <p className="text-sm text-muted-foreground">Loading services…</p>}
+      </div>
 
-        <div className="flex justify-end">
-          <Button disabled={picked.size === 0} onClick={onContinue}>
-            Continue → {picked.size} selected
-          </Button>
-        </div>
+      {/* OUTSIDE the scroll region, deliberately.
+
+          The service list is ~100 entries — 2,300px against a 290px viewport
+          when this surface is embedded in onboarding. With the button at the
+          end of that list, you picked a service at the top and the control
+          that acts on your pick was two thousand pixels below the fold, while
+          onboarding's own "Next" sat permanently visible directly beneath the
+          surface and did the opposite thing: skip the step. Two buttons, and
+          the reachable one was wrong.
+
+          Pinned, it is always the nearest control to the choice being made. */}
+      <div className="flex shrink-0 justify-end border-t pt-4">
+        <Button disabled={picked.size === 0} onClick={onContinue}>
+          Continue → {picked.size} selected
+        </Button>
       </div>
     </div>
   );

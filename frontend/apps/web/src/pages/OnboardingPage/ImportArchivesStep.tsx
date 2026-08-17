@@ -26,14 +26,20 @@ import { StepHeader } from './StepHeader';
 export function ImportArchivesStep() {
   return (
     <div className="mx-auto w-full space-y-6">
+      {/* Deliberately terse. Every line here is taken straight out of the
+          surface below it: the description ran three lines at this width and
+          left the ~100-entry service list 290px to scroll in. The one thing a
+          first-run user needs that the surface cannot tell them — that having
+          no export yet is fine — is the second sentence, and nothing more. */}
       <StepHeader
         title="Bring in an export"
-        description="Already downloaded your data from Google, Apple, Spotify or anywhere else? Add it now and your memory starts years deep instead of empty. No export yet? Skip — you can import any time."
+        description="Already downloaded your data from Google, Apple or anywhere else? Add it now. No export yet? Skip — you can import any time."
       />
 
-      {/* Bounded height: the wizard pins its stepper and scrolls only what sits
-          below it, which needs a real ceiling to scroll against. */}
-      <div className="flex h-[60vh] min-h-0 flex-col overflow-hidden rounded-lg border">
+      {/* Bounded height: the wizard pins its stepper and its Continue, and
+          scrolls only the list between them — which needs a real ceiling to
+          scroll against. Generous, because that list is long. */}
+      <div className="flex h-[68vh] min-h-[26rem] flex-col overflow-hidden rounded-lg border">
         <ImportSurface variant="onboarding" />
       </div>
 
