@@ -1,5 +1,26 @@
 import type { ReactElement } from 'react';
 
+import {
+  Activity,
+  Bookmark,
+  Calendar,
+  Contact,
+  FileText,
+  Globe,
+  HeartPulse,
+  Image,
+  MapPin,
+  MessageSquare,
+  Music,
+  Package,
+  Play,
+  ShoppingBag,
+  Star,
+  Video,
+} from '@ci/shadcn/icons';
+
+import type { TrackedObject } from '@/components/connect/SourceCard';
+
 import type { CatalogSource, ImportSourceGuide } from '../useImportApi';
 
 /**
@@ -437,6 +458,105 @@ export const BUNDLE_BY_ECO: Record<string, Bundle> = Object.fromEntries(
 // Selection — pure derivations the picker and the export sequence share.
 // ---------------------------------------------------------------------------
 
+/**
+ * Object vocabulary, matched against a source's authored `whatImported` lines.
+ *
+ * The picker used to show a name and nothing else, so "what would adding this
+ * actually give me" was answerable only by picking it and reading the export
+ * guide on the next step. The connect half of Sources answers that on the card
+ * itself, and this is the same answer for archives.
+ *
+ * Derived from the authored text rather than a second field nobody would keep
+ * in sync: `whatImported` is written per source in the backend's `guides.ts`
+ * ("Photos and videos with their original timestamps", "Saved bookmarks, with
+ * their folder and the date added"), and the object nouns are already in it.
+ * Order here is the order shown, so it stays stable regardless of how the
+ * sentences were phrased.
+ */
+const OBJECT_VOCABULARY: readonly {
+  readonly object: TrackedObject;
+  readonly match: RegExp;
+}[] = [
+  {
+    object: { icon: MessageSquare, label: 'Messages' },
+    match: /\b(message|dm|chat|imessage|sms|mms|thread|conversation|email|mail)/i,
+  },
+  { object: { icon: Image, label: 'Photos' }, match: /\bphoto|\bimage|\bpicture/i },
+  { object: { icon: Video, label: 'Videos' }, match: /\bvideo|\breel|\bstor(y|ies)/i },
+  { object: { icon: Calendar, label: 'Calendar' }, match: /\bcalendar|\bevent\b|\bappointment/i },
+  { object: { icon: Contact, label: 'Contacts' }, match: /\bcontact|\bfriend|\bfollower|\bconnection/i },
+  {
+    object: { icon: MapPin, label: 'Places' },
+    match: /\bgps|\blocation|\bplace|\bcoordinate|\bvisit\b|\btrip\b/i,
+  },
+  { object: { icon: MessageSquare, label: 'Posts' }, match: /\bpost|\btweet|\bcomment|\bnote\b/i },
+  {
+    object: { icon: Music, label: 'Listening' },
+    match: /\blisten|\btrack\b|\bplaylist|\bsong|\balbum\b(?!\s+membership)/i,
+  },
+  { object: { icon: Play, label: 'Watch history' }, match: /\bwatch|\bviewing|\bepisode|\bstream/i },
+  {
+    object: { icon: Globe, label: 'Browsing' },
+    match: /\burl\b|\bbrowsing|\bhistory of|\bsearch(es|ed)?\b|\bvisited/i,
+  },
+  { object: { icon: Bookmark, label: 'Bookmarks' }, match: /\bbookmark/i },
+  {
+    object: { icon: HeartPulse, label: 'Health' },
+    match: /\bstep|\bheart rate|\bsleep|\bworkout|\bactivity summar|\bsensor/i,
+  },
+  {
+    object: { icon: ShoppingBag, label: 'Orders' },
+    match: /\border|\bpurchase|\btransaction|\bpayment|\binvoice/i,
+  },
+  { object: { icon: Package, label: 'Games' }, match: /\bgame|\bplaytime|\bachievement/i },
+  { object: { icon: Star, label: 'Ratings' }, match: /\brating|\breview\b|\blikes\b/i },
+  {
+    object: { icon: FileText, label: 'Files' },
+    match: /\bfile|\bdocument|\battachment|\bpage\b|\bdatabase/i,
+  },
+  { object: { icon: Activity, label: 'Activity' }, match: /\bcommit|\brepositor|\bpull request|\bissue/i },
+];
+
+/** How many object rows a pick tile shows before it starts hiding them. */
+const MAX_OBJECTS = 4;
+
+/**
+ * The kinds of thing importing this source puts in your memory.
+ *
+ * Empty when the source has no authored `whatImported` yet — the tile then
+ * shows its name alone, exactly as the whole grid used to, rather than
+ * inventing a claim about what an unwritten importer produces.
+ */
+export function objectsFor(whatImported: readonly string[] | undefined): TrackedObject[] {
+  if (!whatImported || whatImported.length === 0) {
+    return [];
+  }
+
+  const haystack = whatImported.join(' \n ');
+
+  return OBJECT_VOCABULARY.filter((entry) => entry.match.test(haystack))
+    .map((entry) => entry.object)
+    .slice(0, MAX_OBJECTS);
+}
+
+/** A bundle button covers several sources, so it claims the union of theirs. */
+export function mergeObjects(all: readonly TrackedObject[][]): TrackedObject[] {
+  const seen = new Set<string>();
+  const merged: TrackedObject[] = [];
+
+  // Vocabulary order, not encounter order, so a bundle and its members agree.
+  for (const entry of OBJECT_VOCABULARY) {
+    for (const objects of all) {
+      if (objects.some((object) => object.label === entry.object.label) && !seen.has(entry.object.label)) {
+        seen.add(entry.object.label);
+        merged.push(entry.object);
+      }
+    }
+  }
+
+  return merged.slice(0, MAX_OBJECTS);
+}
+
 /** One toggle button in the pick grid: a bundle (`b:<id>`) or a service. */
 export interface PickItem {
   key: string;
@@ -444,6 +564,14 @@ export interface PickItem {
   logo: string | null;
   ecosystem: string;
   ready: boolean;
+  /** What importing it puts in your memory — see {@link objectsFor}. */
+  objects: TrackedObject[];
+  /**
+   * Importer names this button covers — one for a service, several for a
+   * bundle. A run records which importers it fed, so this is what lets a tile
+   * say whether it has been imported before and how much it brought.
+   */
+  importers: string[];
 }
 
 export interface PickSection {
@@ -484,6 +612,18 @@ export function pickableSections(catalog: readonly CatalogSource[]): PickSection
           logo: `/import-logos/${bundle.logo}`,
           ecosystem: eco,
           ready: true,
+          objects: mergeObjects(
+            (byEcosystem.get(eco) ?? [])
+              .filter((source) => bundle.members.includes(source.id))
+              .map((source) => objectsFor(source.whatImported)),
+          ),
+          importers: [
+            ...new Set(
+              (byEcosystem.get(eco) ?? [])
+                .filter((source) => bundle.members.includes(source.id))
+                .map((source) => source.importer),
+            ),
+          ],
         });
       }
 
@@ -498,6 +638,8 @@ export function pickableSections(catalog: readonly CatalogSource[]): PickSection
           logo: serviceLogoUrl(source.id),
           ecosystem: eco,
           ready: source.importerReady,
+          objects: objectsFor(source.whatImported),
+          importers: [source.importer],
         });
       }
     }

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { cn } from '@ci/shadcn';
-import { Check } from '@ci/shadcn/icons';
 
 import { useImportApi, type CatalogSource } from '../useImportApi';
 
@@ -25,20 +24,36 @@ type Step = 'pick' | 'export' | 'sync';
  */
 export interface ImportWizardProps {
   /**
-   * `onboarding` drops the wizard's OWN stepper. Embedded in the first-run
-   * flow the page already has a step indicator and a Back/Skip/Next footer, and
-   * two steppers on one screen is two answers to "where am I". The phase is
-   * reported upward instead, so the host can narrate it in the one heading the
-   * screen has.
+   * Drive the wizard from outside.
+   *
+   * The page host owns the step, because the row of step buttons lives up
+   * there — combined with the Inbox/History tabs into one navigation row —
+   * and has to keep working while this component is unmounted on another tab.
+   * Left undefined (onboarding), the wizard keeps its own step.
    */
-  variant?: 'page' | 'onboarding';
+  step?: Step;
   /** Told the current phase whenever it changes, for hosts that narrate it. */
   onStepChange?: (step: Step) => void;
+  /** Whether Export is reachable yet, for a host rendering the step buttons. */
+  onCanExportChange?: (canExport: boolean) => void;
 }
 
-export function ImportWizard({ variant = 'page', onStepChange }: ImportWizardProps = {}) {
+export function ImportWizard({
+  step: controlledStep,
+  onStepChange,
+  onCanExportChange,
+}: ImportWizardProps = {}) {
   const api = useImportApi();
-  const [step, setStep] = useState<Step>('pick');
+  const [ownStep, setOwnStep] = useState<Step>('pick');
+  const step = controlledStep ?? ownStep;
+
+  const setStep = useCallback(
+    (next: Step) => {
+      setOwnStep(next);
+      onStepChange?.(next);
+    },
+    [onStepChange],
+  );
 
   useEffect(() => {
     onStepChange?.(step);
@@ -76,6 +91,10 @@ export function ImportWizard({ variant = 'page', onStepChange }: ImportWizardPro
 
   const entries = useMemo(() => exportEntries(catalog, picked), [catalog, picked]);
 
+  useEffect(() => {
+    onCanExportChange?.(picked.size > 0);
+  }, [picked.size, onCanExportChange]);
+
   const togglePicked = useCallback((key: string) => {
     setPicked((previous) => {
       const next = new Set(previous);
@@ -102,47 +121,13 @@ export function ImportWizard({ variant = 'page', onStepChange }: ImportWizardPro
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-6">
-      {/* Pinned: the stepper never scrolls away, and — because the scroll
-          region is BELOW it — never resizes when that region's scrollbar
-          comes and goes with the Pick facet filter. */}
-      {variant === 'page' && (
-      <ol className="grid shrink-0 gap-2 sm:grid-cols-3">
-        <StepHeading
-          number={1}
-          title="Pick"
-          caption="the platforms and services you use"
-          state={step === 'pick' ? 'active' : 'done'}
-          onClick={() => setStep('pick')}
-        />
-        <StepHeading
-          number={2}
-          title="Export"
-          caption="your data from the sources you picked"
-          state={step === 'export' ? 'active' : step === 'sync' ? 'done' : 'todo'}
-          onClick={() => {
-            if (picked.size > 0) {
-              setExportIdx(0);
-              setStep('export');
-            }
-          }}
-        />
-        <StepHeading
-          number={3}
-          title="Sync"
-          caption="the staged data into your memory"
-          state={step === 'sync' ? 'active' : 'todo'}
-          onClick={() => setStep('sync')}
-        />
-      </ol>
-      )}
-
       {catalogError != null && <p className="shrink-0 text-sm text-destructive">{catalogError}</p>}
 
-      {/* The scroll region. Pick manages its own scrolling (its search and
-          facet chips stay pinned, only the grid scrolls), so this wrapper
-          hides overflow for it; Export and Sync scroll whole. Either way the
-          scrollbar lives in here, where its appearance only narrows content
-          that is left-aligned or re-laying-out anyway. */}
+      {/* The scroll region. Pick manages its own scrolling (its Continue stays
+          pinned, only the grid scrolls), so this wrapper hides overflow for it;
+          Export and Sync scroll whole. Either way the scrollbar lives in here,
+          where its appearance only narrows content that is left-aligned or
+          re-laying-out anyway. */}
       <div className={cn('min-h-0 flex-1', step === 'pick' ? 'overflow-hidden' : 'overflow-y-auto')}>
         {step === 'pick' && (
           <PickStep
@@ -171,50 +156,5 @@ export function ImportWizard({ variant = 'page', onStepChange }: ImportWizardPro
         {step === 'sync' && <SyncStep onBackToExport={() => setStep('export')} />}
       </div>
     </div>
-  );
-}
-
-function StepHeading({
-  number,
-  title,
-  caption,
-  state,
-  onClick,
-}: {
-  number: number;
-  title: string;
-  caption: string;
-  state: 'todo' | 'active' | 'done';
-  onClick: () => void;
-}) {
-  return (
-    <li>
-      <button
-        type="button"
-        onClick={onClick}
-        aria-current={state === 'active' ? 'step' : undefined}
-        className={cn(
-          'flex w-full items-center gap-3 rounded-md border p-3 text-left transition-colors',
-          state === 'active' ? 'border-primary bg-primary/5' : 'hover:bg-muted/50',
-        )}
-      >
-        <span
-          className={cn(
-            'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-medium',
-            state === 'done'
-              ? 'bg-primary text-primary-foreground'
-              : state === 'active'
-                ? 'border-2 border-primary text-primary'
-                : 'border text-muted-foreground',
-          )}
-        >
-          {state === 'done' ? <Check className="h-4 w-4" aria-hidden /> : number}
-        </span>
-        <span className="min-w-0">
-          <span className="block text-sm font-medium">{title}</span>
-          <span className="block truncate text-xs text-muted-foreground">{caption}</span>
-        </span>
-      </button>
-    </li>
   );
 }

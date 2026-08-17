@@ -162,4 +162,34 @@ describe('App routing', () => {
 
     await waitFor(() => expect(notFound()).toBeInTheDocument());
   });
+
+  // `/connect`, `/connections` and `/import` were three destinations for one
+  // intention; Sources is the merge. They stay as redirects so bookmarks, docs
+  // and any link still in the wild keep working.
+  describe('the routes Sources replaced', () => {
+    it.each([
+      ['/connect', '/sources/connect'],
+      ['/connections', '/sources/connect'],
+      ['/import', '/sources/import'],
+    ])('redirects %s to %s', async (from, to) => {
+      h.features = { loading: false, enabled: true };
+
+      renderAt(from);
+
+      await waitFor(() => expect(window.location.pathname).toBe(to));
+      expect(notFound()).not.toBeInTheDocument();
+    });
+
+    // `/import` was flag-gated, and a gated route here is never registered
+    // rather than blocked — so with the flag off it 404'd. Sources itself is
+    // deliberately ungated: the connect half has to exist either way.
+    it('keeps /sources reachable with every flag off', async () => {
+      h.features = { loading: false, enabled: false };
+
+      renderAt('/sources');
+
+      await waitFor(() => expect(screen.getAllByRole('navigation').length).toBeGreaterThan(0));
+      expect(notFound()).not.toBeInTheDocument();
+    });
+  });
 });

@@ -44,13 +44,11 @@ import SplashPage from '@/pages/SplashPage';
 const ChatPage = lazy(() => import('@/pages/ChatPage'));
 const CommunicationPage = lazy(() => import('@/pages/CommunicationPage'));
 const ConceptPage = lazy(() => import('@/pages/ConceptPage'));
-const ConnectPage = lazy(() => import('@/pages/ConnectPage'));
 const ConnectionPage = lazy(() => import('@/pages/ConnectionPage'));
-const ConnectionsPage = lazy(() => import('@/pages/ConnectionsPage'));
 const ContentPage = lazy(() => import('@/pages/ContentPage'));
 const EventPage = lazy(() => import('@/pages/EventPage'));
 const ItemPage = lazy(() => import('@/pages/ItemPage'));
-const ImportPage = lazy(() => import('@/pages/ImportPage'));
+const SourcesPage = lazy(() => import('@/pages/SourcesPage'));
 const JobsPage = lazy(() => import('@/pages/JobsPage'));
 const InventoryPage = lazy(() => import('@/pages/InventoryPage'));
 const MemoryPage = lazy(() => import('@/pages/MemoryPage'));
@@ -335,17 +333,6 @@ function AppRoutes() {
             />
           )}
 
-          {isFeatureEnabled('import.page') && (
-            <Route
-              path="/import"
-              element={
-                <ProtectedRoute>
-                  <ImportPage />
-                </ProtectedRoute>
-              }
-            />
-          )}
-
           {/* Admin / System */}
           {isFeatureEnabled('jobs.page') && (
             <Route
@@ -358,23 +345,26 @@ function AppRoutes() {
             />
           )}
 
+          {/* Getting data in — one page, two halves. `/sources` and any
+              unrecognised half normalise to /sources/connect inside the page,
+              which is also where /sources/import lands when `import.page` is
+              off. Deliberately NOT flag-gated as a route: a flag-gated route in
+              this app is never registered rather than blocked, and the connect
+              half has to exist whatever the import flag says. */}
           <Route
-            path="/connect"
+            path="/sources/:half?"
             element={
               <ProtectedRoute>
-                <ConnectPage />
+                <SourcesPage />
               </ProtectedRoute>
             }
           />
 
-          <Route
-            path="/connections"
-            element={
-              <ProtectedRoute>
-                <ConnectionsPage />
-              </ProtectedRoute>
-            }
-          />
+          {/* The three routes Sources replaced. Kept as redirects so bookmarks,
+              docs and any link still in the wild keep working. */}
+          <Route path="/connect" element={<Navigate to="/sources/connect" replace />} />
+          <Route path="/connections" element={<Navigate to="/sources/connect" replace />} />
+          <Route path="/import" element={<Navigate to="/sources/import" replace />} />
 
           <Route
             path="/connections/:id"

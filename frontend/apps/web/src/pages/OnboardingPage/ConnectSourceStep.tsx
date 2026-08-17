@@ -1,15 +1,38 @@
 import { useState } from 'react';
 
 import { Dialog } from '@ci/shadcn';
-import { Download } from '@ci/shadcn/icons';
+import {
+  AppWindow,
+  Bookmark,
+  Download,
+  History,
+  Monitor,
+  MousePointerClick,
+  Package,
+  Search,
+  Smartphone,
+} from '@ci/shadcn/icons';
 
 import { ProviderConnectDialog } from '@/components/connect/ProviderConnectDialog';
 import { ServiceIntegrationsSection } from '@/components/connect/ServiceIntegrationsSection';
-import { Card } from '@/pages/ConnectPage/Card';
+import { SourceCard, type TrackedObject } from '@/components/connect/SourceCard';
 import { ImportSurface } from '@/pages/ImportPage/ImportPage';
 
 import { CAPTURE_DOWNLOAD_URL, CHROME_EXTENSION_URL, CI_DOWNLOAD_URL } from './constants';
 import { StepHeader } from './StepHeader';
+
+/** Same cards, same lists, as `/sources` — so setup and the page do not diverge. */
+const BROWSER_TRACKS: readonly TrackedObject[] = [
+  { icon: History, label: 'Browsing history' },
+  { icon: Bookmark, label: 'Bookmarks' },
+  { icon: Search, label: 'Searches' },
+];
+
+const CAPTURE_TRACKS: readonly TrackedObject[] = [
+  { icon: Monitor, label: 'Screen context' },
+  { icon: AppWindow, label: 'App usage' },
+  { icon: MousePointerClick, label: 'Desktop activity' },
+];
 
 export function ConnectSourceStep() {
   const [dialogProviderId, setDialogProviderId] = useState<string | null>(null);
@@ -33,26 +56,22 @@ export function ConnectSourceStep() {
           Want your memory to include desktop or mobile browser history? Get the browser extension.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
-          <Card
+          <SourceCard
             logo="/branding/chrome/logo.svg"
-            background="bg-blue-500"
-            border="border-blue-400"
-            text="Install the Chrome extension to automatically track your browsing history, bookmarks, and web activity."
-            onClick={() => window.open(CHROME_EXTENSION_URL, '_blank', 'noopener,noreferrer')}
+            name="Chrome"
+            tracks={BROWSER_TRACKS}
+            onSelect={() => window.open(CHROME_EXTENSION_URL, '_blank', 'noopener,noreferrer')}
           />
-          <Card
-            logo="/branding/firefox/logo.svg"
-            background="bg-orange-500"
-            border="border-orange-400"
-            text="Get the Firefox extension to capture your web browsing patterns and site interactions."
-            disabled
-          />
-          <Card
+          <SourceCard logo="/branding/firefox/logo.svg" name="Firefox" tracks={BROWSER_TRACKS} comingSoon />
+          <SourceCard
             logo="/branding/ios/logo.svg"
-            background="bg-blue-500"
-            border="border-blue-400"
-            text="Download the iOS app to track your mobile usage, screen time, and app interactions on iPhone and iPad."
-            onClick={openDownload}
+            name="iPhone & iPad"
+            tracks={[
+              { icon: Smartphone, label: 'Mobile browsing' },
+              { icon: AppWindow, label: 'App usage' },
+              { icon: History, label: 'Screen time' },
+            ]}
+            onSelect={openDownload}
           />
         </div>
       </div>
@@ -62,12 +81,15 @@ export function ConnectSourceStep() {
           Have local exports? Import tools can seed your memory faster.
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-4">
-          <Card
-            icon={<Download aria-hidden className="h-12 w-12 text-blue-600" />}
-            background="bg-blue-600"
-            border="border-blue-500"
-            text="Import data archives you've exported from your services — Google Takeout, Apple, Spotify, and dozens more."
-            onClick={() => setImportOpen(true)}
+          <SourceCard
+            icon={<Download aria-hidden className="h-full w-full" strokeWidth={1.5} />}
+            name="An export you already have"
+            tracks={[
+              { icon: Package, label: 'Google Takeout' },
+              { icon: Package, label: 'Apple privacy download' },
+              { icon: Package, label: 'And dozens more' },
+            ]}
+            onSelect={() => setImportOpen(true)}
           />
         </div>
       </div>
@@ -94,26 +116,23 @@ export function ConnectSourceStep() {
           into your memory.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
-          <Card
+          <SourceCard
             logo="/branding/mac/logo.svg"
-            background="bg-gray-600"
-            border="border-gray-500"
-            text="Download Companion Capture for macOS (Apple Silicon and Intel)."
-            onClick={openCaptureDownload}
+            name="macOS"
+            tracks={CAPTURE_TRACKS}
+            onSelect={openCaptureDownload}
           />
-          <Card
+          <SourceCard
             logo="/branding/windows/logo.svg"
-            background="bg-blue-600"
-            border="border-blue-500"
-            text="Download Companion Capture for Windows."
-            onClick={openCaptureDownload}
+            name="Windows"
+            tracks={CAPTURE_TRACKS}
+            onSelect={openCaptureDownload}
           />
-          <Card
+          <SourceCard
             logo="/branding/linux/logo.svg"
-            background="bg-yellow-600"
-            border="border-yellow-500"
-            text="Download Companion Capture for Linux (deb and AppImage)."
-            onClick={openCaptureDownload}
+            name="Linux"
+            tracks={CAPTURE_TRACKS}
+            onSelect={openCaptureDownload}
           />
         </div>
       </div>

@@ -106,6 +106,11 @@ export interface ImportRun {
   readonly createdAt: string;
   readonly startedAt: string | null;
   readonly finishedAt: string | null;
+  /**
+   * Records this run pushed into `ci.*`. Sent on the LIST only — the detail
+   * endpoint carries the same number spread across its stages.
+   */
+  readonly records?: number;
 }
 
 export interface ImportRunDetail extends ImportRun {

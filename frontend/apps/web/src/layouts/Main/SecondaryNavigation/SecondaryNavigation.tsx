@@ -4,6 +4,7 @@ import { Tooltip } from '@ci/shadcn';
 import {
   BookOpen,
   Brain,
+  Cable,
   CalendarRange,
   ChartColumn,
   LifeBuoy,
@@ -90,6 +91,16 @@ export function SecondaryNavigation() {
 
           <NavLink to="/notes" label="Notes" end={false}>
             <NotebookPen className="h-6 w-6" strokeWidth={1.25} />
+          </NavLink>
+
+          {/* Getting data in belongs in the rail that lists what the app is
+              FOR, not in the account dropdown next to Settings and Log out —
+              that is a menu you open to change a setting, not to add data.
+              `end={false}` so both halves of Sources light it up. Not
+              flag-gated: the route is not either, and the connect half exists
+              whatever `import.page` says. */}
+          <NavLink to="/sources" label="Sources" end={false}>
+            <Cable className="h-6 w-6" strokeWidth={1.25} />
           </NavLink>
         </div>
 

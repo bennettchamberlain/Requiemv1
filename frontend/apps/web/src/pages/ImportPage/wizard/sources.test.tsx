@@ -11,6 +11,8 @@ import {
   PICKER_SECTIONS,
   SERVICE_LOGO,
   exportEntries,
+  mergeObjects,
+  objectsFor,
   pickableSections,
   shortTitle,
 } from './sources';
@@ -129,6 +131,54 @@ describe('pickableSections', () => {
     ]);
 
     expect(sections.map((section) => section.key)).toContain('brand-new-ecosystem');
+  });
+});
+
+/**
+ * The picker used to show a name and nothing else, so "what would adding this
+ * give me" was answerable only by picking it and reading the next step. These
+ * lists are derived from each source's authored `whatImported` rather than a
+ * second field that would drift out of sync with it.
+ */
+describe('objectsFor', () => {
+  it('reads the object nouns out of the authored sentences', () => {
+    expect(
+      objectsFor([
+        'Every message with sender, recipients, subject, and date',
+        'Thread relationships and inline + attached files',
+      ]).map((object) => object.label),
+    ).toEqual(['Messages', 'Files']);
+  });
+
+  it('orders by the vocabulary, not by how the sentences happened to be phrased', () => {
+    const forwards = objectsFor(['Photos and videos with GPS']);
+    const backwards = objectsFor(['GPS coordinates, videos and photos']);
+
+    expect(forwards.map((object) => object.label)).toEqual(backwards.map((object) => object.label));
+    expect(forwards.map((object) => object.label)).toEqual(['Photos', 'Videos', 'Places']);
+  });
+
+  it('claims nothing for a source with no authored list', () => {
+    // An importer nobody has written yet must not have its output invented.
+    expect(objectsFor(undefined)).toEqual([]);
+    expect(objectsFor([])).toEqual([]);
+  });
+
+  it('caps a long list rather than growing the tile without limit', () => {
+    expect(
+      objectsFor([
+        'Messages, photos, videos, calendar events, contacts, GPS',
+        'Posts, listening history, watch history, bookmarks, orders',
+      ]),
+    ).toHaveLength(4);
+  });
+
+  it('gives a bundle the union of what its members import, deduplicated', () => {
+    expect(
+      mergeObjects([objectsFor(['Every message and photo']), objectsFor(['Photos and calendar events'])]).map(
+        (object) => object.label,
+      ),
+    ).toEqual(['Messages', 'Photos', 'Calendar']);
   });
 });
 

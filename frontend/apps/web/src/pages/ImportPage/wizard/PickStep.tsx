@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
 
-import { Badge, Button, Input, cn } from '@ci/shadcn';
-import { Check, Search } from '@ci/shadcn/icons';
+import { Badge, Button, cn } from '@ci/shadcn';
+import { Check } from '@ci/shadcn/icons';
 
 import type { CatalogSource } from '../useImportApi';
 
-import { ECOSYSTEM_ICONS, pickableSections, type PickItem } from './sources';
+import { ECOSYSTEM_ICONS, pickableSections } from './sources';
+import { useSourceUsage } from './useSourceUsage';
 
 export interface PickStepProps {
   catalog: readonly CatalogSource[];
@@ -24,22 +25,14 @@ export interface PickStepProps {
  * materially different answer from silence, which reads as unsupported.
  */
 export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProps) {
-  const [query, setQuery] = useState('');
-  const [facet, setFacet] = useState('all');
   const [logoFailed, setLogoFailed] = useState<ReadonlySet<string>>(new Set());
+  const usage = useSourceUsage();
 
-  const sections = useMemo(() => pickableSections(catalog), [catalog]);
-
-  const visible = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    const matches = (item: PickItem) =>
-      !needle || item.label.toLowerCase().includes(needle) || item.key.toLowerCase().includes(needle);
-
-    return sections
-      .filter((section) => facet === 'all' || section.key === facet)
-      .map((section) => ({ ...section, items: section.items.filter(matches) }))
-      .filter((section) => section.items.length > 0);
-  }, [facet, query, sections]);
+  // No search box and no category chips. Both were answers to a grid of ~100
+  // one-line names with nothing to tell them apart; the tiles now carry a logo,
+  // a name and what each one imports, and the list is already grouped under the
+  // same headings the chips repeated. Scrolling is the navigation.
+  const visible = useMemo(() => pickableSections(catalog), [catalog]);
 
   return (
     // Search and the facet chips stay pinned with the stepper above; only the
@@ -48,36 +41,6 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
     // toggle — and losing the search box off the top of a 100-service list
     // was no good either.
     <div className="flex h-full min-h-0 flex-col gap-5">
-      <div className="relative max-w-md shrink-0">
-        <Search
-          className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-          aria-hidden
-        />
-        <Input
-          type="search"
-          className="pl-9"
-          placeholder="Search services…"
-          aria-label="Search services"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-      </div>
-
-      <div className="flex shrink-0 flex-wrap gap-1.5" role="group" aria-label="Filter by category">
-        <FacetChip active={facet === 'all'} onClick={() => setFacet('all')}>
-          All
-        </FacetChip>
-        {sections.map((section) => (
-          <FacetChip
-            key={section.key}
-            active={facet === section.key}
-            onClick={() => setFacet((current) => (current === section.key ? 'all' : section.key))}
-          >
-            {section.label}
-          </FacetChip>
-        ))}
-      </div>
-
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto">
         {visible.map((section) => (
           <section key={section.key} className="space-y-2">
@@ -86,10 +49,24 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
               {section.label}
             </h3>
 
-            <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+            {/* Four to a row, matching the connect half's service grid — the
+                tiles carry an object list now, not just a name. */}
+            <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {section.items.map((item) => {
                 const on = picked.has(item.key);
                 const showLogo = item.logo != null && !logoFailed.has(item.key);
+                // A bundle covers several importers, so it reports their sum.
+                const used = item.importers
+                  .map((importer) => usage.get(importer))
+                  .filter((entry) => entry != null);
+                const records = used.reduce((sum, entry) => sum + entry.records, 0);
+                const lastImportedAt = used.reduce<string | null>(
+                  (latest, entry) =>
+                    entry.lastImportedAt != null && (latest == null || entry.lastImportedAt > latest)
+                      ? entry.lastImportedAt
+                      : latest,
+                  null,
+                );
 
                 return (
                   <li key={item.key}>
@@ -99,34 +76,82 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
                       title={item.ready ? item.label : `${item.label} — importer coming soon`}
                       onClick={() => onToggle(item.key)}
                       className={cn(
-                        'relative flex w-full items-center gap-2 rounded-md border p-2.5 text-left text-sm transition-colors',
-                        on ? 'border-primary bg-primary/5' : 'hover:bg-muted/50',
+                        'relative flex h-full w-full flex-col gap-3 rounded-md border p-3 text-left text-sm transition-colors',
+                        on
+                          ? 'border-primary bg-primary/5'
+                          : records > 0
+                            ? 'border-green-700/50 bg-green-950/[0.06] dark:border-green-700/45 dark:bg-green-950/40'
+                            : 'hover:bg-muted/50',
                         !item.ready && 'opacity-60',
                       )}
                     >
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground [&>svg]:h-5 [&>svg]:w-5">
-                        {showLogo ? (
-                          <img
-                            src={item.logo!}
-                            alt=""
-                            className="h-6 w-6 object-contain"
-                            onError={() => setLogoFailed((previous) => new Set(previous).add(item.key))}
-                          />
-                        ) : (
-                          (ECOSYSTEM_ICONS[item.ecosystem] ?? null)
-                        )}
-                      </span>
+                      <span className="flex items-center gap-2.5">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white p-1.5 ring-1 ring-black/5 text-muted-foreground [&>svg]:h-5 [&>svg]:w-5">
+                          {showLogo ? (
+                            <img
+                              src={item.logo!}
+                              alt=""
+                              className="h-full w-full object-contain"
+                              onError={() => setLogoFailed((previous) => new Set(previous).add(item.key))}
+                            />
+                          ) : (
+                            (ECOSYSTEM_ICONS[item.ecosystem] ?? null)
+                          )}
+                        </span>
 
-                      <span className="min-w-0 flex-1 truncate">
-                        {item.label}
-                        {!item.ready && (
-                          <Badge variant="outline" className="ml-1.5 text-[10px]">
+                        <span className="min-w-0 flex-1 truncate font-medium">{item.label}</span>
+
+                        {on ? (
+                          <Check className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+                        ) : records > 0 ? (
+                          <Check
+                            className="h-4 w-4 shrink-0 text-green-700 dark:text-green-400"
+                            aria-hidden
+                          />
+                        ) : !item.ready ? (
+                          <Badge variant="outline" className="shrink-0 text-[10px]">
                             Coming soon
                           </Badge>
-                        )}
+                        ) : null}
                       </span>
 
-                      {on && <Check className="h-4 w-4 shrink-0 text-primary" aria-hidden />}
+                      {item.objects.length > 0 && (
+                        <span className="flex flex-col gap-1">
+                          {item.objects.map((object) => (
+                            <span
+                              key={object.label}
+                              className="flex items-center gap-2 text-xs text-muted-foreground"
+                            >
+                              <object.icon aria-hidden className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+                              <span className="truncate">{object.label}</span>
+                            </span>
+                          ))}
+                        </span>
+                      )}
+
+                      {/* What this source has already given the appliance —
+                          the difference between "I could import this" and "I
+                          did, in March, and it brought 42,318 records". */}
+                      {records > 0 && (
+                        <span className="mt-auto flex flex-wrap items-center gap-x-2 pt-1 text-xs text-muted-foreground">
+                          <span>
+                            {records.toLocaleString()} {records === 1 ? 'record' : 'records'}
+                          </span>
+                          {lastImportedAt && (
+                            <>
+                              <span aria-hidden>·</span>
+                              <span>
+                                imported{' '}
+                                {new Date(lastImportedAt).toLocaleDateString(undefined, {
+                                  day: 'numeric',
+                                  month: 'short',
+                                  year: 'numeric',
+                                })}
+                              </span>
+                            </>
+                          )}
+                        </span>
+                      )}
                     </button>
                   </li>
                 );
@@ -134,23 +159,6 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
             </ul>
           </section>
         ))}
-
-        {catalog.length > 0 && visible.length === 0 && (
-          <div className="space-y-2 rounded-md border border-dashed p-6 text-center">
-            <p className="text-sm text-muted-foreground">
-              No services match. Try a different search, or clear the category filter.
-            </p>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setQuery('');
-                setFacet('all');
-              }}
-            >
-              Clear search
-            </Button>
-          </div>
-        )}
 
         {catalog.length === 0 && <p className="text-sm text-muted-foreground">Loading services…</p>}
       </div>
@@ -172,28 +180,5 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
         </Button>
       </div>
     </div>
-  );
-}
-
-function FacetChip({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'rounded-full border px-3 py-1 text-xs transition-colors',
-        active ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted/50',
-      )}
-    >
-      {children}
-    </button>
   );
 }
