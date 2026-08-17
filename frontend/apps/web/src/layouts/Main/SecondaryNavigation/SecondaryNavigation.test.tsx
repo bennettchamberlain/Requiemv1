@@ -115,24 +115,53 @@ describe('SecondaryNavigation', () => {
     expect(screen.queryByRole('link', { name: 'Brief' })).not.toBeInTheDocument();
   });
 
-  // The account's destinations are drawer rows now, not a dropdown behind an
-  // avatar: one list of everywhere you can go, opening in one direction.
-  it('carries the account destinations as rows, not a menu', () => {
-    renderRail();
+  // One row that opens, not five flat ones. A wall of settings sitting level
+  // with the places you actually work is the thing this replaced.
+  it('keeps the account to one entry that opens', () => {
+    renderRail('/feed', { expanded: true });
+
+    const account = screen.getByRole('button', { name: /Test User/ });
+
+    expect(account).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Settings' })).not.toBeInTheDocument();
+
+    fireEvent.click(account);
 
     expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Log out' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Colours' })).toBeInTheDocument();
-
-    // Nothing is reachable only by opening a second surface.
-    expect(screen.queryByRole('button', { name: 'Account' })).not.toBeInTheDocument();
   });
 
-  it('cycles the theme from one icon while collapsed', () => {
+  // Appearance is a setting, not a peer of the places you work.
+  it('nests theme and colours inside the account, not in the drawer', () => {
+    renderRail('/feed', { expanded: true });
+
+    fireEvent.click(screen.getByRole('button', { name: /Test User/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Theme' }));
+
+    expect(screen.getByRole('radiogroup', { name: 'Theme' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Colours' })).toBeInTheDocument();
+  });
+
+  // Collapsed, the account is the avatar and one destination — a 56px rail is
+  // no place for a nested accordion.
+  it('collapses the account to a single link', () => {
     renderRail();
 
-    // The segmented control needs width the collapsed rail does not have.
-    expect(screen.getByRole('button', { name: /Theme:/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Test User/ })).toHaveAttribute('href', '/settings/appearance');
+  });
+
+  // Support and Docs were two permanent rows for one question.
+  it('puts Support and Docs under one Help entry', () => {
+    renderRail('/feed', { expanded: true });
+
+    const help = screen.getByRole('button', { name: 'Help' });
+
+    expect(screen.queryByRole('link', { name: 'Support' })).not.toBeInTheDocument();
+
+    fireEvent.click(help);
+
+    expect(screen.getByRole('link', { name: 'Support' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Docs' })).toBeInTheDocument();
   });
 
   // The drawer floats over the content on hover, so the lane it sits in keeps
@@ -147,6 +176,19 @@ describe('SecondaryNavigation', () => {
     expect(nav).toHaveClass('absolute');
   });
 
+  // The toggle shares the rail's `auto` grid column, so a wordmark appearing
+  // there on hover widens the column and shoves the page — the exact reflow
+  // the absolute drawer above exists to avoid.
+  it('keeps the wordmark out of the toggle until the rail is pinned', () => {
+    renderToggleAndRail();
+
+    expect(screen.queryByText('Companion Memory')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+
+    expect(screen.getByText('Companion Memory')).toBeInTheDocument();
+  });
+
   // `end={false}`: both halves are Sources, and the rail should say so on
   // either one.
   it.each(['/sources', '/sources/connect', '/sources/import'])('marks itself active on %s', (route) => {
@@ -159,17 +201,14 @@ describe('SecondaryNavigation', () => {
     renderRail();
 
     expect(screen.getByRole('navigation')).toHaveAttribute('data-state', 'collapsed');
-    expect(screen.queryByText('Main')).not.toBeInTheDocument();
-    expect(screen.queryByText('More')).not.toBeInTheDocument();
+    expect(screen.queryByText('Memory')).not.toBeInTheDocument();
   });
 
-  it('shows labels and groups when expanded, without a Sources submenu', () => {
+  it('shows labels when expanded, without a Sources submenu', () => {
     renderRail('/plan', { expanded: true });
 
     expect(screen.getByRole('navigation')).toHaveAttribute('data-state', 'expanded');
     expect(screen.getByText('Plan')).toBeInTheDocument();
-    expect(screen.getByText('Main')).toBeInTheDocument();
-    expect(screen.getByText('More')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Connect' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Import' })).not.toBeInTheDocument();
   });
@@ -199,19 +238,19 @@ describe('PowerRailToggle', () => {
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     expect(toggle).toHaveAttribute('aria-controls', 'power-rail');
     expect(screen.queryByRole('link', { name: /Companion Intelligence/i })).not.toBeInTheDocument();
-    expect(screen.queryByText('Main')).not.toBeInTheDocument();
+    expect(screen.queryByText('Memory')).not.toBeInTheDocument();
 
     fireEvent.click(toggle);
 
     expect(screen.getByRole('button', { name: 'Close menu' })).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByText('Companion Intelligence')).toBeInTheDocument();
-    expect(screen.getByText('Main')).toBeInTheDocument();
+    expect(screen.getByText('Memory')).toBeInTheDocument();
+    expect(screen.getByText('Companion Memory')).toBeInTheDocument();
     expect(localStorage.getItem(STORAGE_KEY)).toBe('true');
 
     fireEvent.click(screen.getByRole('button', { name: 'Close menu' }));
 
     expect(screen.getByRole('button', { name: 'Open menu' })).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByText('Companion Intelligence')).not.toBeInTheDocument();
+    expect(screen.queryByText('Companion Memory')).not.toBeInTheDocument();
     expect(screen.queryByText('Main')).not.toBeInTheDocument();
     expect(localStorage.getItem(STORAGE_KEY)).toBe('false');
   });
