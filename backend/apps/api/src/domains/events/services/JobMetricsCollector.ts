@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 
 import { LoggerService } from '@ci/common/logging';
 import { Cron } from '@ci/common/schedule';
 
 import { DEAD_LETTER_QUEUE } from '../constants';
+import { JobMetricEntity } from '../entities/JobMetricEntity';
 
 /**
  * How often a sample is taken. Also the width of the `completed`/`failed`
@@ -45,7 +46,13 @@ const RETENTION_DAYS = 30;
 @Injectable()
 export class JobMetricsCollector {
   constructor(
-    @InjectDataSource() private readonly dataSource: DataSource,
+    // The entity manager behind this repository, not an injected DataSource:
+    // the collector's queries span `pgboss.job` and `ci.job_metrics`, so no
+    // single repository covers them — but `manager.query()` does, and taking it
+    // this way keeps EventsModule compilable without a DataSource provider
+    // (which is what an isolated test module has).
+    @InjectRepository(JobMetricEntity)
+    private readonly metricRepository: Repository<JobMetricEntity>,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(JobMetricsCollector.name);
@@ -107,7 +114,7 @@ export class JobMetricsCollector {
     // ON CONFLICT DO NOTHING rather than an upsert: the primary key is
     // (sampled_at, queue), and two collectors racing the same tick are writing
     // the same observation. First one wins, silently.
-    await this.dataSource.query(
+    await this.metricRepository.manager.query(
       `
       INSERT INTO ci.job_metrics
         (sampled_at, queue, pending, active, retry, dead_lettered, completed, failed, avg_duration_ms, p95_duration_ms)
@@ -145,7 +152,7 @@ export class JobMetricsCollector {
   async purge(now: Date = new Date()): Promise<void> {
     const cutoff = new Date(now.getTime() - RETENTION_DAYS * 24 * 60 * 60_000);
 
-    const result = await this.dataSource.query(`DELETE FROM ci.job_metrics WHERE sampled_at < $1`, [cutoff]);
+    const result = await this.metricRepository.manager.query(`DELETE FROM ci.job_metrics WHERE sampled_at < $1`, [cutoff]);
 
     this.logger.debug(`Purged job metrics older than ${cutoff.toISOString()}`, {
       rows: Array.isArray(result) ? result.length : undefined,
@@ -153,7 +160,7 @@ export class JobMetricsCollector {
   }
 
   private async pgBossInstalled(): Promise<boolean> {
-    const [{ present }] = (await this.dataSource.query(
+    const [{ present }] = (await this.metricRepository.manager.query(
       `SELECT to_regclass('pgboss.job') IS NOT NULL AS present`,
     )) as [{ present: boolean }];
 
@@ -172,7 +179,7 @@ export class JobMetricsCollector {
   private async readGauges(): Promise<
     Map<string, { pending: number; active: number; retry: number; deadLettered: number }>
   > {
-    const rows = (await this.dataSource.query(
+    const rows = (await this.metricRepository.manager.query(
       `
       SELECT name AS queue,
              COUNT(*) FILTER (WHERE state = 'created' AND name <> $1)::int AS pending,
@@ -220,7 +227,7 @@ export class JobMetricsCollector {
       { completed: number; failed: number; avgDurationMs: number | null; p95DurationMs: number | null }
     >
   > {
-    const rows = (await this.dataSource.query(
+    const rows = (await this.metricRepository.manager.query(
       `
       WITH settled AS (
         SELECT name, state, started_on, completed_on FROM pgboss.job    WHERE completed_on >= $1
