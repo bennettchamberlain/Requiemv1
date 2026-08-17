@@ -48,6 +48,22 @@ const QUEUE_PROVISION_LOCK_KEY = 804_551_297;
 // the createQueue call in onModuleInit).
 const DEAD_LETTER_RETENTION_MINUTES = 30 * 24 * 60;
 
+/**
+ * The retry policy, stated once and applied in both places it has to hold.
+ *
+ * pg-boss resolves a job's retry settings as COALESCE(job, queue, constructor
+ * default). Passing these to the constructor alone leaves every queue row with
+ * NULL retry columns, so the policy is invisible to anything reading
+ * `pgboss.queue` — including the dashboard, which rendered "null" for retry
+ * limit and delay on 20 of 22 queues. Writing them onto the queue too makes the
+ * effective policy the one the database actually reports.
+ */
+const QUEUE_RETRY_POLICY = {
+  retryLimit: 3,
+  retryDelay: 10,
+  retryBackoff: true,
+} as const;
+
 @Injectable()
 export class PGBossEventService extends EventService implements OnModuleInit, OnModuleDestroy {
   // Global in-flight job ceiling across ALL queues (bounds total DB/Ollama load).
@@ -103,12 +119,16 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
     user: config.db.username,
     password: config.db.password,
     schema: 'pgboss',
-    retryLimit: 3,
-    retryDelay: 10,
-    retryBackoff: true,
+    ...QUEUE_RETRY_POLICY,
     expireInHours: 12,
     deleteAfterHours: 24,
     max: 10,
+    // pg-boss's cron scheduler, off. Nothing in this codebase calls
+    // `boss.schedule()` — every recurring job is a NestJS `@Cron` — so leaving
+    // it enabled bought a phantom `__pgboss__send-it` queue, a 5-second clock
+    // poll and a 30-second cron pass in EVERY process, forever, to service zero
+    // schedules.
+    schedule: false,
   });
 
   constructor(
@@ -131,6 +151,14 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
       );
     });
 
+    // Attached BEFORE start(). PgBoss is an EventEmitter, and an EventEmitter
+    // that emits 'error' with no listener throws — so a failure during startup
+    // (the exact window where one is most likely) used to escape as an
+    // unhandled exception instead of the logged error it becomes here.
+    this.boss.on('error', (err) => {
+      this.logger.error('PgBoss error', err);
+    });
+
     try {
       this.logger.debug('Initializing PgBoss client...');
 
@@ -145,10 +173,6 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
 
       throw err;
     }
-
-    this.boss.on('error', (err) => {
-      this.logger.error('PgBoss error', err);
-    });
 
     // Discover all queues from registered listeners
     const discoveredQueues = this.getRegisteredQueues();
@@ -208,7 +232,17 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
         const { localConcurrency, role, ...queueOptions } =
           EventListenerRegistry.getQueueOptions(queue) ?? {};
 
-        const options = { name: queue, deadLetter: PGBossEventService.DEAD_LETTER_QUEUE, ...queueOptions };
+        // Retry policy first so a listener's own `queueOptions` still override
+        // it. Stating it explicitly is what puts it in the queue ROW: pg-boss
+        // resolves COALESCE(job, queue, constructor), so constructor-only
+        // settings left 20 of 22 queue rows with NULL retry columns and the
+        // dashboard rendering "null" where the policy should be.
+        const options = {
+          name: queue,
+          deadLetter: PGBossEventService.DEAD_LETTER_QUEUE,
+          ...QUEUE_RETRY_POLICY,
+          ...queueOptions,
+        };
 
         await this.boss.createQueue(queue, options);
         await this.boss.updateQueue(queue, options);
@@ -368,6 +402,17 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
     if (options?.queue) {
       if (!this.getRegisteredQueues().has(options.queue)) {
         this.logger.warn(`Requested queue ${options.queue} does not exist. Event ${name} will not be sent.`);
+
+        return [];
+      }
+
+      // Suppression applies here too. This branch used to return before the
+      // check below ever ran, so CI_QUEUE_SUPPRESS silenced the listener-routed
+      // fan-out while every `send(..., { queue })` call sailed straight past it
+      // — which is exactly backwards, since naming a queue explicitly is what a
+      // backfill does, and a backfill is what the suppression exists to stop.
+      if (this.suppressedQueues.has(options.queue)) {
+        this.logger.debug(`Queue ${options.queue} is suppressed; dropping event ${name}`);
 
         return [];
       }

@@ -9,6 +9,7 @@ import { PageContent } from '@/components/layout';
 
 import { JobHistoryCharts } from './JobHistoryCharts';
 import { JobsTable } from './JobsTable';
+import { COMPACT_CARD } from './layout';
 import { useJobHistory } from './useJobHistory';
 import { useJobsDashboard, type JobsDashboardResponse } from './useJobsDashboard';
 import { DEFAULT_JOB_FILTERS, useJobsList, type JobFilters } from './useJobsList';
@@ -65,7 +66,7 @@ export function JobsPage() {
       </Portal.Slot>
 
       <PageContent>
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3">
           <SummaryCard
             summary={dashboard.data?.summary}
             loading={dashboard.loading}
@@ -135,10 +136,10 @@ function SummaryCard({
   );
 
   return (
-    <Card>
+    <Card className={COMPACT_CARD}>
       <Card.Header className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
-          <Card.Title className="text-xl">Queue Activity</Card.Title>
+          <Card.Title className="text-lg">Queue Activity</Card.Title>
           <Card.Description>
             {updatedAt
               ? `Updated ${new Intl.DateTimeFormat(undefined, {
@@ -153,7 +154,7 @@ function SummaryCard({
           <RefreshCcw className="mr-2 h-4 w-4" /> Refresh
         </Button>
       </Card.Header>
-      <Card.Content className="space-y-4">
+      <Card.Content className="space-y-3">
         {staleSince ? (
           <div
             role="status"
@@ -184,10 +185,10 @@ function SummaryCard({
                 key={tile.label}
                 type="button"
                 onClick={() => onSelectState(tile.state)}
-                className="rounded-lg border border-border/60 bg-muted/30 p-4 text-left transition-colors hover:border-border hover:bg-muted/60"
+                className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-left transition-colors hover:border-border hover:bg-muted/60"
               >
                 <p className="text-xs uppercase text-muted-foreground">{tile.label}</p>
-                <p className="mt-1 text-2xl font-semibold tabular-nums">
+                <p className="mt-0.5 text-xl font-semibold tabular-nums">
                   {tile.value.toLocaleString()}
                 </p>
               </button>
@@ -214,7 +215,7 @@ function SchedulesCard({
   loading: boolean;
 }) {
   return (
-    <Card>
+    <Card className={COMPACT_CARD}>
       <Card.Header>
         <Card.Title className="text-base">Schedules</Card.Title>
         <Card.Description>
@@ -231,7 +232,7 @@ function SchedulesCard({
             {crons.map((cron) => (
               <div
                 key={cron.name}
-                className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-sm"
+                className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-1.5 text-sm"
               >
                 <div className="min-w-0">
                   <p className="truncate font-medium" title={cron.name}>

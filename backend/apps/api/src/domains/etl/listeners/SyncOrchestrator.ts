@@ -292,6 +292,24 @@ export class SyncOrchestrator {
       return;
     }
 
+    // Claim check. `executeSyncJobs` selects rows by `status: 'pending'` every
+    // 30 seconds and enqueues without an idempotency key, so a sync still
+    // running when the next tick fires gets enqueued again — and pg-boss will
+    // not stop it, because every queue here uses the default `standard` policy
+    // under which a singletonKey is stored but not enforced. Without this check
+    // the handler would then set `in_progress` a second time and re-run
+    // `serviceFunction` against the same un-advanced cursor: a duplicate
+    // provider fetch and a duplicate ingest. It also stops a completed row from
+    // being resurrected by a late redelivery.
+    if (syncJob.status !== 'pending') {
+      this.logger.debug('Sync job is no longer pending; skipping duplicate delivery', {
+        connectionSyncJobId: syncJob.id,
+        status: syncJob.status,
+      });
+
+      return;
+    }
+
     await this.connectionSyncJobService.update({ userId: SYSTEM_USER }, syncJob.id, {
       status: 'in_progress',
     });
@@ -443,6 +461,21 @@ export class SyncOrchestrator {
     if (!syncJob) {
       this.logger.error('Sync job not found for transformation', {
         connectionSyncJobId: payload.connectionSyncJobId,
+      });
+
+      return;
+    }
+
+    // The self-DoS this prevents: `executeTransformJobs` runs every minute and
+    // selects rows with `lastTransformed: null`, which is only written on
+    // COMPLETION — and `updated_at` does not move while the transform runs. So
+    // any transform exceeding 60 seconds was re-enqueued once a minute until it
+    // finished, and with the `etl` per-queue ceiling of 6 a five-minute
+    // transform ended up with six concurrent copies of itself, each holding a
+    // slot. GmailTransformService.transformGmail routinely exceeds a minute.
+    if (syncJob.lastTransformed != null) {
+      this.logger.debug('Sync job has already been transformed; skipping duplicate delivery', {
+        connectionSyncJobId: syncJob.id,
       });
 
       return;

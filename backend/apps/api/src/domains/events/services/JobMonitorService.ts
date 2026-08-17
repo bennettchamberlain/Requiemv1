@@ -104,9 +104,15 @@ export interface CronScheduleDto {
 export interface JobQueueDto {
   readonly name: string;
   readonly policy?: string | null;
-  readonly retryLimit: number;
-  readonly retryDelay: number;
-  readonly retryBackoff: boolean;
+  /**
+   * Null when the queue never set its own — pg-boss resolves retries as
+   * COALESCE(job, queue, constructor default), so a NULL here means "inherits
+   * the client default", not "no retries". Typed nullable because it genuinely
+   * is: declaring it `number` made the UI print the string "null".
+   */
+  readonly retryLimit: number | null;
+  readonly retryDelay: number | null;
+  readonly retryBackoff: boolean | null;
   readonly expireInSeconds?: number | null;
   readonly retentionMinutes?: number | null;
   readonly deadLetter?: string | null;

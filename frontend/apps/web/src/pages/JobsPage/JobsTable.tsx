@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Badge, Button, Card, Input, Skeleton } from '@ci/shadcn';
 import { AlertTriangle, ChevronDown, ChevronRight } from '@ci/shadcn/icons';
 
+import { COMPACT_CARD } from './layout';
 import type { JobFilters, JobListItem, JobListResponse } from './useJobsList';
 
 type Props = {
@@ -68,8 +69,8 @@ export function JobsTable({ data, loading, error, filters, categories, onChange 
   );
 
   return (
-    <Card>
-      <Card.Header className="gap-4">
+    <Card className={COMPACT_CARD}>
+      <Card.Header className="gap-2.5">
         <div className="flex flex-col gap-1">
           <Card.Title className="text-base">Jobs</Card.Title>
           <Card.Description>
@@ -148,7 +149,7 @@ export function JobsTable({ data, loading, error, filters, categories, onChange 
         </div>
       </Card.Header>
 
-      <Card.Content className="space-y-3">
+      <Card.Content className="space-y-2">
         {error ? (
           <p role="alert" className="text-sm text-destructive">
             {error}
@@ -166,23 +167,23 @@ export function JobsTable({ data, loading, error, filters, categories, onChange 
             <table className="w-full min-w-[720px] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-border/60 text-left text-xs uppercase text-muted-foreground">
-                  <th scope="col" className="w-8 py-2" />
-                  <th scope="col" className="py-2 pr-3 font-medium">
+                  <th scope="col" className="w-8 py-1.5" />
+                  <th scope="col" className="py-1.5 pr-3 font-medium">
                     Job
                   </th>
-                  <th scope="col" className="py-2 pr-3 font-medium">
+                  <th scope="col" className="py-1.5 pr-3 font-medium">
                     Queue
                   </th>
-                  <th scope="col" className="py-2 pr-3 font-medium">
+                  <th scope="col" className="py-1.5 pr-3 font-medium">
                     State
                   </th>
-                  <th scope="col" className="py-2 pr-3 text-right font-medium">
+                  <th scope="col" className="py-1.5 pr-3 text-right font-medium">
                     Duration
                   </th>
-                  <th scope="col" className="py-2 pr-3 text-right font-medium">
+                  <th scope="col" className="py-1.5 pr-3 text-right font-medium">
                     Retries
                   </th>
-                  <th scope="col" className="py-2 text-right font-medium">
+                  <th scope="col" className="py-1.5 text-right font-medium">
                     Created
                   </th>
                 </tr>
@@ -245,7 +246,7 @@ function JobRow({
         className="cursor-pointer border-b border-border/40 align-top hover:bg-muted/40"
         onClick={onToggle}
       >
-        <td className="py-2">
+        <td className="py-1.5">
           <button
             type="button"
             aria-expanded={expanded}
@@ -259,7 +260,7 @@ function JobRow({
             <Chevron className="h-4 w-4" />
           </button>
         </td>
-        <td className="py-2 pr-3">
+        <td className="py-1.5 pr-3">
           <div className="flex flex-col">
             <span className="font-medium">{job.label}</span>
             <span className="text-xs text-muted-foreground">
@@ -276,24 +277,24 @@ function JobRow({
             </span>
           ) : null}
         </td>
-        <td className="py-2 pr-3 text-xs text-muted-foreground">{job.queue}</td>
-        <td className="py-2 pr-3">
+        <td className="py-1.5 pr-3 text-xs text-muted-foreground">{job.queue}</td>
+        <td className="py-1.5 pr-3">
           <StateBadge job={job} />
         </td>
-        <td className="py-2 pr-3 text-right tabular-nums text-xs text-muted-foreground">
+        <td className="py-1.5 pr-3 text-right tabular-nums text-xs text-muted-foreground">
           {formatDuration(job.durationMs)}
         </td>
-        <td className="py-2 pr-3 text-right tabular-nums text-xs text-muted-foreground">
+        <td className="py-1.5 pr-3 text-right tabular-nums text-xs text-muted-foreground">
           {job.retryCount}/{job.retryLimit}
         </td>
-        <td className="py-2 text-right text-xs text-muted-foreground">
+        <td className="py-1.5 text-right text-xs text-muted-foreground">
           {formatTimestamp(job.createdOn)}
         </td>
       </tr>
       {expanded ? (
         <tr className="border-b border-border/40 bg-muted/20">
           <td />
-          <td colSpan={6} className="py-3 pr-3">
+          <td colSpan={6} className="py-2 pr-3">
             <p className="mb-2 max-w-3xl text-xs text-muted-foreground">{job.description}</p>
             <dl className="grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2 lg:grid-cols-3">
               <Detail label="Job id" value={job.id} mono />

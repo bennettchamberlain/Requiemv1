@@ -16,6 +16,7 @@ import {
 
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 
+import { COMPACT_CARD } from './layout';
 import { HISTORY_WINDOWS, type JobHistoryPoint, type JobHistoryResponse } from './useJobHistory';
 
 type Props = {
@@ -59,8 +60,8 @@ export function JobHistoryCharts({
   const hasLatency = points.some((point) => point.avgSeconds != null || point.p95Seconds != null);
 
   return (
-    <Card>
-      <Card.Header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+    <Card className={COMPACT_CARD}>
+      <Card.Header className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
           <Card.Title className="text-base">History</Card.Title>
           <Card.Description>
@@ -83,7 +84,7 @@ export function JobHistoryCharts({
         </div>
       </Card.Header>
 
-      <Card.Content className="space-y-6">
+      <Card.Content className="space-y-4">
         {error ? (
           <p role="alert" className="text-sm text-destructive">
             Could not load history: {error}
@@ -91,14 +92,14 @@ export function JobHistoryCharts({
         ) : null}
 
         {loading && !points.length ? (
-          <Skeleton className="h-[220px] w-full" />
+          <Skeleton className="h-[170px] w-full" />
         ) : !points.length ? (
           <p className="text-sm text-muted-foreground">
             No history recorded yet. Samples are written every 5 minutes — the first points appear
             once the collector has run.
           </p>
         ) : (
-          <div className="grid gap-6 xl:grid-cols-3">
+          <div className="grid gap-4 xl:grid-cols-3">
             <ChartPanel
               title="Backlog"
               hint="Jobs waiting, running or retrying. Rising means work is arriving faster than it clears."
@@ -235,14 +236,14 @@ function ChartPanel({
 }) {
   return (
     <div className="min-w-0">
-      <h3 className="text-sm font-medium">{title}</h3>
-      <p className="mb-2 text-xs text-muted-foreground">{hint}</p>
+      <h3 className="text-sm font-medium leading-tight">{title}</h3>
+      <p className="mb-1.5 text-xs leading-snug text-muted-foreground">{hint}</p>
       {empty ? (
-        <div className="flex h-[200px] items-center justify-center rounded-lg border border-dashed border-border/60">
+        <div className="flex h-[170px] items-center justify-center rounded-lg border border-dashed border-border/60">
           <p className="text-xs text-muted-foreground">{emptyMessage}</p>
         </div>
       ) : (
-        <ChartContainer config={{}} className="h-[220px] w-full">
+        <ChartContainer config={{}} className="h-[170px] w-full">
           {children}
         </ChartContainer>
       )}
