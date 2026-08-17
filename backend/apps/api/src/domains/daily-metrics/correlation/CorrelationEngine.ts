@@ -12,7 +12,9 @@ import { DailyMetricsService } from '../services/DailyMetricsService';
 import type { MetricKey } from '../types';
 
 import {
+  canonicalPair,
   decayNovelty,
+  rankScore,
   scanWindow,
   WINDOWS,
   type WindowDays,
@@ -36,11 +38,15 @@ export class CorrelationEngine {
     const from = shiftIso(yesterday, -(HISTORY_DAYS - 1));
     const rows = await this.metricsService.getRange(context, from, yesterday);
 
-    const byKey = new Map<string, ReturnType<typeof scanWindow>[number][]>();
-    for (const windowDays of WINDOWS) {
+    const testsByWindow = WINDOWS.map((windowDays) => {
       const windowFrom = shiftIso(yesterday, -(windowDays - 1));
       const windowRows = rows.filter((row) => row.date >= windowFrom);
-      const tests = scanWindow(windowRows, windowDays);
+
+      return scanWindow(windowRows, windowDays);
+    });
+
+    const byKey = new Map<string, ReturnType<typeof scanWindow>[number][]>();
+    for (const tests of testsByWindow) {
       for (const test of tests) {
         const key = `${test.metricA}|${test.metricB}|${test.lagDays}`;
         const list = byKey.get(key) ?? [];
@@ -65,28 +71,31 @@ export class CorrelationEngine {
     const persisted: MetricCorrelation[] = [];
     const now = new Date();
 
-    for (const windowDays of WINDOWS) {
-      const windowFrom = shiftIso(yesterday, -(windowDays - 1));
-      const windowRows = rows.filter((row) => row.date >= windowFrom);
-      for (const test of scanWindow(windowRows, windowDays)) {
+    for (const tests of testsByWindow) {
+      for (const test of tests) {
+        if (!test.survives) {
+          continue;
+        }
+
         const key = `${test.metricA}|${test.metricB}|${test.lagDays}`;
-        const row = await this.upsert(context.userId, {
-          metricA: test.metricA,
-          metricB: test.metricB,
-          lagDays: test.lagDays,
-          windowDays: test.windowDays,
-          n: test.association.n,
-          pearson: test.association.pearson,
-          spearman: test.association.spearman,
-          mutualInfo: test.association.mutualInfo,
-          pValue: test.association.pValue,
-          qValue: test.qValue,
-          effect: test.association.effect,
-          robust: robustKeys.has(key),
-          coverageMean: test.association.coverageMean,
-          computedAt: now,
-        });
-        persisted.push(row);
+        persisted.push(
+          await this.upsert(context.userId, {
+            metricA: test.metricA,
+            metricB: test.metricB,
+            lagDays: test.lagDays,
+            windowDays: test.windowDays,
+            n: test.association.n,
+            pearson: test.association.pearson,
+            spearman: test.association.spearman,
+            mutualInfo: test.association.mutualInfo,
+            pValue: test.association.pValue,
+            qValue: test.qValue,
+            effect: test.association.effect,
+            robust: robustKeys.has(key),
+            coverageMean: test.association.coverageMean,
+            computedAt: now,
+          }),
+        );
       }
     }
 
@@ -118,8 +127,14 @@ export class CorrelationEngine {
     }
 
     const rows = await qb.getMany();
+    const egress = rows.map((entity) => MetricCorrelationEntity.toEgressType(entity));
+    egress.sort(
+      (left, right) =>
+        rankScore(right.effect ?? 0, right.robust, right.novelty, right.coverageMean ?? 0) -
+        rankScore(left.effect ?? 0, left.robust, left.novelty, left.coverageMean ?? 0),
+    );
 
-    return rows.map((entity) => MetricCorrelationEntity.toEgressType(entity));
+    return egress;
   }
 
   async findPair(
@@ -129,17 +144,21 @@ export class CorrelationEngine {
     lagDays: number,
     windowDays: WindowDays,
   ): Promise<MetricCorrelation | null> {
+    const pair = canonicalPair(metricA, metricB, lagDays);
     const entity = await this.repository.findOne({
-      where: { userId: context.userId, metricA, metricB, lagDays, windowDays },
+      where: {
+        userId: context.userId,
+        metricA: pair.metricA,
+        metricB: pair.metricB,
+        lagDays: pair.lagDays,
+        windowDays,
+      },
     });
 
     return entity ? MetricCorrelationEntity.toEgressType(entity) : null;
   }
 
-  /**
-   * Reserved for event-study / interrupted time series. v1 does not persist
-   * ITS results — discrete life events need a cleaner taxonomy first.
-   */
+  /** Reserved for event-study / ITS once we have a discrete event taxonomy. */
   async scanAround(
     context: UserServiceContext,
     event: { date: string; kind: string },

@@ -70,12 +70,28 @@ function memoryRepo() {
         Object.assign(row, patch);
       }
     }),
+    find: jest.fn(async ({ where }: { where: Record<string, unknown> }) => {
+      return rows.filter((row) =>
+        Object.entries(where).every(([key, value]) => {
+          if (value && typeof value === 'object' && '_type' in (value as object)) {
+            return row[key] == null;
+          }
+
+          return row[key] === value;
+        }),
+      );
+    }),
     createQueryBuilder: jest.fn(),
   };
 }
 
 function logger(): LoggerService {
-  return { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() } as unknown as LoggerService;
+  return {
+    setContext: jest.fn(),
+    log: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+  } as unknown as LoggerService;
 }
 
 function quietConversationRows(yesterday: string, from: string, to: string): DailyMetrics[] {
@@ -130,9 +146,11 @@ describe('SuggestionEngine.propose', () => {
         ),
       } as unknown as DailyMetricsService,
       {
-        list: jest.fn().mockResolvedValue([
-          { id: 'corr-1', metricA: 'n_conversations', metricB: 'avg_sentiment', robust: true },
-        ]),
+        list: jest
+          .fn()
+          .mockResolvedValue([
+            { id: 'corr-1', metricA: 'n_conversations', metricB: 'avg_sentiment', robust: true },
+          ]),
       } as unknown as CorrelationEngine,
       { create } as unknown as ActionService,
       { isFeatureEnabled: jest.fn().mockResolvedValue(false) } as unknown as FeatureService,
@@ -176,9 +194,11 @@ describe('SuggestionEngine.propose', () => {
         ),
       } as unknown as DailyMetricsService,
       {
-        list: jest.fn().mockResolvedValue([
-          { id: 'corr-1', metricA: 'n_conversations', metricB: 'avg_sentiment', robust: true },
-        ]),
+        list: jest
+          .fn()
+          .mockResolvedValue([
+            { id: 'corr-1', metricA: 'n_conversations', metricB: 'avg_sentiment', robust: true },
+          ]),
       } as unknown as CorrelationEngine,
       { create } as unknown as ActionService,
       { isFeatureEnabled: jest.fn().mockResolvedValue(true) } as unknown as FeatureService,

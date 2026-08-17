@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { z } from 'zod';
@@ -9,8 +9,10 @@ import { LoggerService } from '@ci/common/logging';
 import {
   DailyMetricsService,
   pickMetricSurprise,
+  pickMetricSurpriseFromAnomalies,
   shiftIso,
   todayIsoInTimezone,
+  AnomalyEngine,
 } from '@ci/domains/daily-metrics';
 import { OllamaService, PROMPT_MODEL } from '@ci/domains/llm';
 import { UserContextService } from '@ci/domains/memory';
@@ -102,6 +104,7 @@ export class ContextPromptGenerateService {
     private readonly dailyMetricsService: DailyMetricsService,
     private readonly featureService: FeatureService,
     private readonly logger: LoggerService,
+    @Optional() private readonly anomalyEngine?: AnomalyEngine,
   ) {
     this.logger.setContext(ContextPromptGenerateService.name);
   }
@@ -767,6 +770,14 @@ export class ContextPromptGenerateService {
       const today = todayIsoInTimezone(timezone);
       const yesterday = shiftIso(today, -1);
       const from = shiftIso(yesterday, -6);
+      if (this.anomalyEngine) {
+        const anomalies = await this.anomalyEngine.list({ userId }, { since: yesterday });
+        const fromStore = pickMetricSurpriseFromAnomalies(anomalies, yesterday);
+        if (fromStore) {
+          return [{ kind: 'daily_metric', id: fromStore.id, label: fromStore.label }];
+        }
+      }
+
       const rows = await this.dailyMetricsService.getRange({ userId }, from, yesterday);
       const surprise = pickMetricSurprise(
         rows.find((row) => row.date === yesterday) ?? null,

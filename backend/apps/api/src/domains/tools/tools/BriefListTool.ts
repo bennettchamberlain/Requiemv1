@@ -94,7 +94,8 @@ export class BriefListTool extends BaseTool<BriefListInput, BriefListOutput> {
       this.actionService.findAll(serviceContext),
     ]);
 
-    const items: BriefListItem[] = [];
+    const derived: BriefListItem[] = [];
+    const other: BriefListItem[] = [];
 
     for (const summary of summaries) {
       const occurredAt = toIsoOrNull(summary.periodEnd);
@@ -103,16 +104,13 @@ export class BriefListTool extends BaseTool<BriefListInput, BriefListOutput> {
       }
 
       for (const text of summary.keyInsights ?? []) {
-        pushItem(items, { id: summary.summaryId, type: 'insight', text, occurredAt });
+        pushItem(other, { id: summary.summaryId, type: 'insight', text, occurredAt });
       }
 
       for (const text of summary.anomalies ?? []) {
-        pushItem(items, { id: summary.summaryId, type: 'anomaly', text, occurredAt });
+        pushItem(other, { id: summary.summaryId, type: 'anomaly', text, occurredAt });
       }
     }
-
-    const derived: BriefListItem[] = [];
-    const legacy: BriefListItem[] = [];
 
     for (const action of actions) {
       if (action.dismissed) {
@@ -130,35 +128,32 @@ export class BriefListTool extends BaseTool<BriefListInput, BriefListOutput> {
         occurredAt: toIsoOrNull(action.createdAt),
       };
       if (action.source === 'anomaly' || action.source === 'suggestion') {
-        derived.push(item);
+        pushItem(derived, item);
       } else {
-        legacy.push(item);
+        pushItem(other, item);
       }
     }
 
-    for (const item of derived) {
-      pushItem(items, item);
-    }
-
-    for (const item of legacy) {
-      pushItem(items, item);
-    }
-
-    items.sort((a, b) => {
-      if (a.occurredAt === b.occurredAt) {
-        return a.id.localeCompare(b.id);
+    const byRecency = (left: BriefListItem, right: BriefListItem) => {
+      if (left.occurredAt === right.occurredAt) {
+        return left.id.localeCompare(right.id);
       }
 
-      if (a.occurredAt === null) {
+      if (left.occurredAt === null) {
         return 1;
       }
 
-      if (b.occurredAt === null) {
+      if (right.occurredAt === null) {
         return -1;
       }
 
-      return b.occurredAt.localeCompare(a.occurredAt);
-    });
+      return right.occurredAt.localeCompare(left.occurredAt);
+    };
+
+    derived.sort(byRecency);
+    other.sort(byRecency);
+
+    const items = derived.length > 0 ? [...derived, ...other] : other;
 
     return { items: items.slice(0, input.limit) };
   }

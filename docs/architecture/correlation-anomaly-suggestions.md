@@ -2,7 +2,7 @@
 
 > **Private & Confidential — Property of Lifescope Inc. Do not distribute.**
 >
-> Status: **implemented** on `docs/correlation-anomaly-suggestions` (this PR). Later workstreams in §10 stay out of scope.
+> Status: **implemented** on `feat/derivation-engines` (PR #2029). Later workstreams in §10 stay out of scope.
 > Tracker: [CI-Engineering #55](https://github.com/companionintelligence/CI-Engineering/issues/55)
 > · epic [#49](https://github.com/companionintelligence/CI-Engineering/issues/49)
 > · ADRs [0006–0008](https://github.com/companionintelligence/CI-Engineering/pull/56).

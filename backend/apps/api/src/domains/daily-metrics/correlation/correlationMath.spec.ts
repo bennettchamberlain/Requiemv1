@@ -145,9 +145,7 @@ describe('pairDays coverage gating', () => {
       const a = i;
       const b = i * 2;
       // 40% of km_traveled missing
-      rows.push(
-        day(date, i % 5 === 0 ? { n_conversations: a } : { n_conversations: a, km_traveled: b }),
-      );
+      rows.push(day(date, i % 5 === 0 ? { n_conversations: a } : { n_conversations: a, km_traveled: b }));
     }
 
     const points = pairDays(rows, 'n_conversations', 'km_traveled', 0);

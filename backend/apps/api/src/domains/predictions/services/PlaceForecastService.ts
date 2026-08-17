@@ -35,11 +35,7 @@ export class PlaceForecastService {
     this.logger.setContext(PlaceForecastService.name);
   }
 
-  async predictNext(
-    context: UserServiceContext,
-    k = 5,
-    horizonHours = 4,
-  ): Promise<PlaceForecastItem[]> {
+  async predictNext(context: UserServiceContext, k = 5, horizonHours = 4): Promise<PlaceForecastItem[]> {
     try {
       const timezone = await this.timezoneOf(context);
       let forecast = await this.placeTransitionService.predictNext(context, {

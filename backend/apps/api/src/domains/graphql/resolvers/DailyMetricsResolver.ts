@@ -48,12 +48,14 @@ export class DailyMetricsResolver {
   descriptiveQuestions(
     @Args('analyticType', { type: () => String, nullable: true }) analyticType?: string,
   ): DescriptiveQuestionType[] {
-    return this.descriptiveQuestionService.listQuestions(analyticType as AnalyticType | undefined).map((spec) => ({
-      key: spec.key,
-      category: spec.category,
-      question: spec.question,
-      analyticType: spec.analyticType ?? 'descriptive',
-    }));
+    return this.descriptiveQuestionService
+      .listQuestions(analyticType as AnalyticType | undefined)
+      .map((spec) => ({
+        key: spec.key,
+        category: spec.category,
+        question: spec.question,
+        analyticType: spec.analyticType ?? 'descriptive',
+      }));
   }
 
   @Query(() => [DescriptiveAnswerType], {
@@ -69,7 +71,8 @@ export class DailyMetricsResolver {
   }
 
   @Query(() => [DescriptiveAnswerType], {
-    description: 'Answers catalog questions of one analytic type (descriptive, correlational, anomaly, optimization, predictive).',
+    description:
+      'Answers catalog questions of one analytic type (descriptive, correlational, anomaly, optimization, predictive).',
   })
   async catalogAnswers(
     @Context() context: RequestContext,
@@ -111,7 +114,7 @@ export class DailyMetricsResolver {
   }
 
   @Query(() => [MetricSuggestionType], {
-    description: 'Evidence-linked suggestions. Empty when derivation.engines has not produced any.',
+    description: 'Evidence-linked suggestions. Findings persist even when derivation.engines is off.',
   })
   async metricSuggestions(
     @Context() context: RequestContext,

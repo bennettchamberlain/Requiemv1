@@ -3,7 +3,8 @@ import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { UserServiceContext } from '@ci/common/context';
 
 import { robustZAt, type SeriesPoint } from '../anomaly/anomalyMath';
-import { associate, pairDays } from '../correlation/correlationMath';
+import { CorrelationEngine } from '../correlation/CorrelationEngine';
+import { canonicalPair, WINDOWS, type WindowDays } from '../correlation/correlationMath';
 import { shiftIso, todayIso } from '../dateUtil';
 import { MetricForecastService } from '../forecast/MetricForecastService';
 import { DailyMetricsService } from '../services/DailyMetricsService';
@@ -44,6 +45,7 @@ export class DescriptiveQuestionService {
     private readonly metricsService: DailyMetricsService,
     @Inject(NARRATOR) private readonly narrator: Narrator,
     @Optional() private readonly metricForecastService?: MetricForecastService,
+    @Optional() private readonly correlationEngine?: CorrelationEngine,
   ) {}
 
   listQuestions(analyticType?: AnalyticType): readonly QuestionSpec[] {
@@ -92,7 +94,7 @@ export class DescriptiveQuestionService {
   ): Promise<DescriptiveAnswer> {
     const type = spec.analyticType ?? 'descriptive';
     if (type === 'correlational') {
-      return this.answerCorrelation(spec, rows);
+      return this.answerCorrelation(context, spec);
     }
 
     if (type === 'anomaly') {
@@ -119,29 +121,33 @@ export class DescriptiveQuestionService {
     return this.finish(spec, scaled, daysWithData, coveragePct);
   }
 
-  private async answerCorrelation(spec: QuestionSpec, rows: DailyMetrics[]): Promise<DescriptiveAnswer> {
+  private async answerCorrelation(
+    context: UserServiceContext,
+    spec: QuestionSpec,
+  ): Promise<DescriptiveAnswer> {
     const other = spec.pairMetric;
-    if (!other) {
+    const windowDays = asWindowDays(spec.timeframe.days);
+    if (!other || !this.correlationEngine || windowDays === null) {
       return this.finish(spec, null, 0, 0);
     }
 
-    const points = pairDays(rows, spec.metric, other, spec.lagDays ?? 0);
-    const association = associate(points);
-    if (!association) {
-      return this.finish(spec, null, points.length, 0, { lag: spec.lagDays ?? 0, q: 'n/a', effect: 'n/a' });
+    const pair = canonicalPair(spec.metric, other, spec.lagDays ?? 0);
+    const row = await this.correlationEngine.findPair(
+      context,
+      pair.metricA,
+      pair.metricB,
+      pair.lagDays,
+      windowDays,
+    );
+    if (!row || row.qValue === null || row.qValue > 0.1 || row.effect === null) {
+      return this.finish(spec, null, row?.n ?? 0, 0, { lag: spec.lagDays ?? 0, q: 'n/a', effect: 'n/a' });
     }
 
-    return this.finish(
-      spec,
-      association.effect,
-      association.n,
-      Math.round(association.coverageMean * 100),
-      {
-        effect: association.effect.toFixed(2),
-        lag: spec.lagDays ?? 0,
-        q: association.pValue.toExponential(2),
-      },
-    );
+    return this.finish(spec, row.effect, row.n, Math.round((row.coverageMean ?? 0) * 100), {
+      effect: row.effect.toFixed(2),
+      lag: spec.lagDays ?? 0,
+      q: row.qValue.toExponential(2),
+    });
   }
 
   private async answerAnomaly(
@@ -176,8 +182,10 @@ export class DescriptiveQuestionService {
   ): Promise<DescriptiveAnswer> {
     const yesterday = rows.find((row) => row.date === anchor) ?? null;
     const window = rows.filter((row) => row.date !== anchor);
-    const triggers = detectArmTriggers(yesterday, window, Math.min(3, SUGGESTION_MIN_BASELINE_N));
-    const hit = triggers.find((trigger) => trigger.key === spec.suggestionKey || trigger.metric === spec.metric);
+    const triggers = detectArmTriggers(yesterday, window, SUGGESTION_MIN_BASELINE_N);
+    const hit = triggers.find(
+      (trigger) => trigger.key === spec.suggestionKey || trigger.metric === spec.metric,
+    );
     if (!hit) {
       return this.finish(spec, null, window.length, 0, { baseline: 'n/a' });
     }
@@ -251,4 +259,8 @@ function lookbackDays(spec: QuestionSpec): number {
   }
 
   return spec.timeframe.days;
+}
+
+function asWindowDays(days: number): WindowDays | null {
+  return (WINDOWS as readonly number[]).includes(days) ? (days as WindowDays) : null;
 }

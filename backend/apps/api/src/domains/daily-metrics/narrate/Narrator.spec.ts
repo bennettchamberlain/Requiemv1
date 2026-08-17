@@ -55,6 +55,29 @@ describe('OllamaNarrator', () => {
       'You had 7 conversations today.',
     );
   });
+
+  it('keeps the template for Body and Mind even when the model rephrases', async () => {
+    const generator: TextGenerator = {
+      async generate() {
+        return 'Tone sat at 0.2 yesterday.';
+      },
+    };
+    const input: NarrationInput = {
+      ...INPUT,
+      spec: {
+        ...INPUT.spec,
+        category: 'Mind',
+        metric: 'avg_sentiment',
+        format: 'signed2',
+        template: 'Yesterday conversation tone was {value}.',
+      },
+      value: 0.2,
+    };
+
+    await expect(new OllamaNarrator(generator).narrate(input)).resolves.toBe(
+      'Yesterday conversation tone was +0.20.',
+    );
+  });
 });
 
 describe('TemplateNarrator', () => {

@@ -1,10 +1,3 @@
-/**
- * v1 suggestion-arm triggers: personal baseline gap on metrics we actually
- * have. Shared by SuggestionEngine. pickMetricSurprise keeps its own selector
- * ids (including sentiment_dip, which is not a suggestion arm — Body/Mind
- * nudges wait on #63).
- */
-
 import { MIN_ANOMALY_COVERAGE } from '../anomaly/anomalyMath';
 import type { DailyMetrics, MetricKey } from '../types';
 
@@ -45,10 +38,12 @@ function covered(row: DailyMetrics | null, metric: MetricKey): row is DailyMetri
   return row !== null && coverageOf(row, metric) >= MIN_ANOMALY_COVERAGE && row.metrics[metric] !== null;
 }
 
-export function baselineMean(rows: DailyMetrics[], metric: MetricKey, minN = SUGGESTION_MIN_BASELINE_N): number | null {
-  const values = rows
-    .filter((row) => covered(row, metric))
-    .map((row) => row.metrics[metric] as number);
+export function baselineMean(
+  rows: DailyMetrics[],
+  metric: MetricKey,
+  minN = SUGGESTION_MIN_BASELINE_N,
+): number | null {
+  const values = rows.filter((row) => covered(row, metric)).map((row) => row.metrics[metric] as number);
 
   if (values.length < minN) {
     return null;
@@ -65,10 +60,6 @@ function money(value: number): string {
   return value.toFixed(2);
 }
 
-/**
- * Ordered arm triggers for yesterday vs a trailing window. SuggestionEngine
- * still requires an evidence FK before writing ci.actions.
- */
 export function detectArmTriggers(
   yesterday: DailyMetrics | null,
   window: DailyMetrics[],
@@ -87,9 +78,7 @@ export function detectArmTriggers(
         baseline: typical,
         gap: typical - actual,
         title: 'Quiet day',
-        text:
-          `You had ${whole(actual)} conversations yesterday vs about ${whole(typical)} most days. ` +
-          'That has been associated with how connected the week feels.',
+        text: `You had ${whole(actual)} conversations yesterday vs about ${whole(typical)} most days.`,
         priority: 2,
       });
     }
@@ -97,8 +86,8 @@ export function detectArmTriggers(
 
   if (covered(yesterday, 'n_places')) {
     const places = yesterday.metrics.n_places as number;
-    if (places === 1) {
-      const typical = baselineMean(window, 'n_places', Math.min(minBaselineN, 3)) ?? 1;
+    const typical = baselineMean(window, 'n_places', minBaselineN);
+    if (places === 1 && typical !== null && typical > 1) {
       triggers.push({
         key: 'places.one_place',
         metric: 'n_places',
@@ -153,16 +142,16 @@ export function updateArm(alpha: number, beta: number, accepted: boolean): { alp
   return accepted ? { alpha: alpha + 1, beta } : { alpha, beta: beta + 1 };
 }
 
+/** Posterior mean of Beta(alpha, beta). Dismissed arms sink; used to pick the live card. */
+export function armMean(alpha: number, beta: number): number {
+  const denom = alpha + beta;
+
+  return denom <= 0 ? 0.5 : alpha / denom;
+}
+
 export const SUGGESTION_ARM_KEYS: readonly SuggestionArmKey[] = [
   'rel.conversations_low',
   'attention.screen_spike',
   'places.one_place',
   'money.spend_spike',
-];
-
-export const SELECTOR_METRICS: readonly MetricKey[] = [
-  'n_conversations',
-  'n_places',
-  'avg_sentiment',
-  'screen_minutes',
 ];

@@ -1735,7 +1735,7 @@ type Query {
   metricForecast(days: Int = 3): [MetricForecastType!]!
 
   """
-  Evidence-linked suggestions. Empty when derivation.engines has not produced any.
+  Evidence-linked suggestions. Findings persist even when derivation.engines is off.
   """
   metricSuggestions(includeDismissed: Boolean): [MetricSuggestionType!]!
   myAskGrants: [AskGrantType!]!

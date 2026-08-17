@@ -106,9 +106,19 @@ describe('IntentCatalogService broadcast (real tools)', () => {
     for (const intent of manifest.intents) {
       expect(intent.tool).toBe(intent.name.replace(/\./g, '_'));
       expect(intent.parameters.type).toBe('object');
-      expect(['memory', 'knowledge', 'people', 'places', 'calendar', 'media', 'forecast', 'brief', 'insights', 'anomalies', 'suggestions']).toContain(
-        intent.domain,
-      );
+      expect([
+        'memory',
+        'knowledge',
+        'people',
+        'places',
+        'calendar',
+        'media',
+        'forecast',
+        'brief',
+        'insights',
+        'anomalies',
+        'suggestions',
+      ]).toContain(intent.domain);
       expect(['read', 'write', 'delete']).toContain(intent.privacy.access);
       expect(intent.title).toBeTruthy();
       expect(intent.description).toBeTruthy();

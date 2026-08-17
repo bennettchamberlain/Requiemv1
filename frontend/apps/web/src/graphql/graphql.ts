@@ -2235,7 +2235,7 @@ export type Query = {
   metricCorrelations: Array<MetricCorrelationType>;
   /** 1–7 day seasonal-naive + EWMA forecast of daily-metrics scalars */
   metricForecast: Array<MetricForecastType>;
-  /** Evidence-linked suggestions. Empty when derivation.engines has not produced any. */
+  /** Evidence-linked suggestions. Findings persist even when derivation.engines is off. */
   metricSuggestions: Array<MetricSuggestionType>;
   myAskGrants: Array<AskGrantType>;
   node?: Maybe<Node>;

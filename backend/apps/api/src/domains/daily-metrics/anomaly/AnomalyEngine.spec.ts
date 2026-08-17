@@ -39,9 +39,7 @@ function memoryRepo() {
   return {
     rows,
     findOne: jest.fn(async ({ where }: { where: Record<string, unknown> }) => {
-      return (
-        rows.find((row) => Object.entries(where).every(([key, value]) => row[key] === value)) ?? null
-      );
+      return rows.find((row) => Object.entries(where).every(([key, value]) => row[key] === value)) ?? null;
     }),
     create: jest.fn((value: Record<string, unknown>) => ({ ...value })),
     save: jest.fn(async (entity: Record<string, unknown>) => {
@@ -64,7 +62,12 @@ function memoryRepo() {
 }
 
 function logger(): LoggerService {
-  return { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() } as unknown as LoggerService;
+  return {
+    setContext: jest.fn(),
+    log: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+  } as unknown as LoggerService;
 }
 
 describe('AnomalyEngine.scan', () => {

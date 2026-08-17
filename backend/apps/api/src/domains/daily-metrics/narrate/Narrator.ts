@@ -97,6 +97,10 @@ export class OllamaNarrator implements Narrator {
       return deterministic;
     }
 
+    if (input.spec.category === 'Body' || input.spec.category === 'Mind') {
+      return deterministic;
+    }
+
     const formatted = formatValue(input.value, input.spec.format);
 
     try {

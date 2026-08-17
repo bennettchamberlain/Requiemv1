@@ -204,10 +204,7 @@ export class AnomalyEngine {
     }
   }
 
-  private async upsert(
-    userId: string,
-    finding: AnomalyFinding & { metric: string },
-  ): Promise<MetricAnomaly> {
+  private async upsert(userId: string, finding: AnomalyFinding & { metric: string }): Promise<MetricAnomaly> {
     const existing = await this.repository.findOne({
       where: {
         userId,

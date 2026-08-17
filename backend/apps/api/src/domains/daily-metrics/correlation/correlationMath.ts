@@ -145,17 +145,25 @@ export function bhFdr(pValues: number[]): number[] {
   return out;
 }
 
-export function rankScore(
-  effect: number,
-  robust: boolean,
-  novelty: number,
-  coverageMean: number,
-): number {
+export function rankScore(effect: number, robust: boolean, novelty: number, coverageMean: number): number {
   return Math.abs(effect) * (robust ? 1 : 0.4) * novelty * coverageMean;
 }
 
 export function decayNovelty(current: number): number {
   return Math.max(NOVELTY_FLOOR, current * NOVELTY_DISMISS_DECAY);
+}
+
+/** Lag 0 stores lexicographic a < b so the same pair is not inserted twice. */
+export function canonicalPair(
+  metricA: MetricKey,
+  metricB: MetricKey,
+  lagDays: number,
+): { metricA: MetricKey; metricB: MetricKey; lagDays: number } {
+  if (lagDays === 0 && metricA > metricB) {
+    return { metricA: metricB, metricB: metricA, lagDays: 0 };
+  }
+
+  return { metricA, metricB, lagDays };
 }
 
 /**
@@ -467,7 +475,9 @@ function erfc(x: number): number {
                   (0.09678418 +
                     t *
                       (-0.18628806 +
-                        t * (0.27886807 + t * (-1.13520398 + t * (1.48851587 + t * (-0.82215223 + t * 0.17087277)))))))),
+                        t *
+                          (0.27886807 +
+                            t * (-1.13520398 + t * (1.48851587 + t * (-0.82215223 + t * 0.17087277)))))))),
     );
 
   return x >= 0 ? ans : 2 - ans;

@@ -36,9 +36,18 @@ function makeMetricsService(rows: DailyMetrics[]) {
   };
 }
 
-function makeService(rows: DailyMetrics[], narrator: Narrator = new TemplateNarrator()) {
+function makeService(
+  rows: DailyMetrics[],
+  narrator: Narrator = new TemplateNarrator(),
+  correlationEngine?: { findPair: jest.Mock },
+) {
   const metricsService = makeMetricsService(rows);
-  const service = new DescriptiveQuestionService(metricsService as unknown as DailyMetricsService, narrator);
+  const service = new DescriptiveQuestionService(
+    metricsService as unknown as DailyMetricsService,
+    narrator,
+    undefined,
+    correlationEngine as never,
+  );
 
   return { service, metricsService };
 }
@@ -222,10 +231,19 @@ describe('DescriptiveQuestionService correlational answers', () => {
     });
 
     const spec = QUESTION_CATALOG.find((item) => item.key === 'corr.conversations_sentiment_90')!;
-    const { service } = makeService(rows);
+    const { service } = makeService(rows, new TemplateNarrator(), {
+      findPair: jest.fn().mockResolvedValue({
+        effect: 0.62,
+        n: 30,
+        qValue: 0.02,
+        coverageMean: 1,
+      }),
+    });
     const answer = await service.answer(CONTEXT, spec, { date: '2026-07-07' });
 
-    expect(answer.value).not.toBeNull();
+    expect(answer.value).toBe(0.62);
+    expect(answer.text).toContain('0.62');
+    expect(answer.text).toContain('q=2.00e-2');
     expect(answer.text.toLowerCase()).toContain('associated');
     expect(answer.text.toLowerCase()).not.toMatch(/\bcauses\b/);
   });

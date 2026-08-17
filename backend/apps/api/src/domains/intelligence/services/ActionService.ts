@@ -47,11 +47,13 @@ export class ActionService {
     return ActionEntity.toEgressType(entity);
   }
 
-  async findAll(
-    context: ServiceContext,
-    options: { source?: string | string[] } = {},
-  ): Promise<Action[]> {
-    const sources = options.source === undefined ? undefined : Array.isArray(options.source) ? options.source : [options.source];
+  async findAll(context: ServiceContext, options: { source?: string | string[] } = {}): Promise<Action[]> {
+    const sources =
+      options.source === undefined
+        ? undefined
+        : Array.isArray(options.source)
+          ? options.source
+          : [options.source];
 
     const entities = await this.actionRepository.find({
       where: {

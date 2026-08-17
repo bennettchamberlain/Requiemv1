@@ -39,11 +39,7 @@ export class InsightsExplainTool extends BaseTool<InsightsExplainInput, Insights
       'Language is "associated with", never "causes".',
     privacy: { access: 'read', sensitivity: 'personal', destructive: false, external: false },
     localCapable: true,
-    phrases: [
-      'What is associated with my mood',
-      'How are exercise and mood related',
-      'Explain this insight',
-    ],
+    phrases: ['What is associated with my mood', 'How are exercise and mood related', 'Explain this insight'],
     parameters: {
       type: 'object',
       properties: {

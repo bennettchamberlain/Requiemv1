@@ -118,7 +118,9 @@ export class MetricAnomalyType {
   }
 }
 
-@ObjectType({ description: 'An evidence-linked suggestion. Never emitted without a correlation or anomaly FK.' })
+@ObjectType({
+  description: 'An evidence-linked suggestion. Never emitted without a correlation or anomaly FK.',
+})
 export class MetricSuggestionType {
   @Field(() => String)
   id!: string;

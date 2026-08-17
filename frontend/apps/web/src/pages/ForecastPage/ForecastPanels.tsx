@@ -173,8 +173,7 @@ export function NextPlacesPanel({ places }: { places: PlaceItem[] }) {
       <Card.Header>
         <Card.Title>Next places</Card.Title>
         <Card.Description>
-          Likely next stay from your recent place transitions, given where you are and the time of
-          day
+          Likely next stay from your recent place transitions, given where you are and the time of day
           {backoff ? ` (${backoff.replace(/_/g, ' ').toLowerCase()})` : ''}.
         </Card.Description>
       </Card.Header>
@@ -188,8 +187,7 @@ export function NextPlacesPanel({ places }: { places: PlaceItem[] }) {
                 {place.label?.trim() || `${place.lat.toFixed(3)}, ${place.lng.toFixed(3)}`}
               </span>
               <span className="shrink-0 text-muted-foreground">
-                {Math.round(probability * 100)}%
-                {place.visits > 0 ? ` · ${place.visits} stays` : ''}
+                {Math.round(probability * 100)}%{place.visits > 0 ? ` · ${place.visits} stays` : ''}
               </span>
             </div>
           );

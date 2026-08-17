@@ -1,5 +1,4 @@
 import type { AnomalyFinding } from '../anomaly/anomalyMath';
-import { SELECTOR_METRICS } from '../suggest/suggestionMath';
 import type { DailyMetrics, MetricKey } from '../types';
 
 const MIN_COVERAGE = 0.5;
@@ -39,6 +38,13 @@ function oneDecimal(value: number): string {
   return (Math.round(value * 10) / 10).toFixed(1);
 }
 
+const SELECTOR_METRICS: readonly MetricKey[] = [
+  'n_conversations',
+  'n_places',
+  'avg_sentiment',
+  'screen_minutes',
+];
+
 const SELECTOR_IDS: Record<string, string> = {
   n_conversations: 'conversations_low',
   n_places: 'one_place',
@@ -46,13 +52,7 @@ const SELECTOR_IDS: Record<string, string> = {
   screen_minutes: 'screen_spike',
 };
 
-/**
- * At most one coverage-gated surprise from yesterday vs the trailing week.
- * The label injects the SQL numbers so a model can only choose phrasing.
- *
- * Standing mode prefers persisted anomaly rows via {@link pickMetricSurpriseFromAnomalies};
- * this in-memory path keeps the selector generator working before a scan has run.
- */
+/** Fallback used before a derivation scan has persisted yesterday's anomalies. */
 export function pickMetricSurprise(
   yesterday: DailyMetrics | null,
   week: DailyMetrics[],

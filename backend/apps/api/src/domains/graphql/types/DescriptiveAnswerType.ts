@@ -13,7 +13,10 @@ export class DescriptiveQuestionType {
   @Field(() => String)
   question!: string;
 
-  @Field(() => String, { nullable: true, description: 'descriptive | predictive | correlational | anomaly | optimization' })
+  @Field(() => String, {
+    nullable: true,
+    description: 'descriptive | predictive | correlational | anomaly | optimization',
+  })
   analyticType?: string;
 }
 

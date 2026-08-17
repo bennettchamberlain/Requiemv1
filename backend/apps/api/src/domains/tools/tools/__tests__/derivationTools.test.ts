@@ -111,14 +111,15 @@ describe('derivation tools', () => {
 
   it('suggestions.feedback writes accept/dismiss through the engine', async () => {
     const feedback = jest.fn().mockResolvedValue({ id: 'sug-1' });
-    const tool = new SuggestionsFeedbackTool(
-      { feedback } as unknown as SuggestionEngine,
-      logger(),
-    );
+    const tool = new SuggestionsFeedbackTool({ feedback } as unknown as SuggestionEngine, logger());
 
     const result = await tool.execute(CONTEXT, { id: 'sug-1', accepted: false });
 
-    expect(feedback).toHaveBeenCalledWith(expect.objectContaining({ userId: CONTEXT.userId }), 'sug-1', false);
+    expect(feedback).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: CONTEXT.userId }),
+      'sug-1',
+      false,
+    );
     expect(result.data?.ok).toBe(true);
     expect(result.data?.text).toContain('dismissed');
   });

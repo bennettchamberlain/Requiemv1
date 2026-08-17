@@ -64,19 +64,13 @@ export class DailyMetricsCron implements OnApplicationBootstrap {
       try {
         await this.refreshPlaces();
       } catch (err) {
-        this.logger.error(
-          'Place engine refresh failed',
-          err instanceof Error ? err : new Error(String(err)),
-        );
+        this.logger.error('Place engine refresh failed', err instanceof Error ? err : new Error(String(err)));
       }
 
       try {
         await this.derivationScanService.scanAll();
       } catch (err) {
-        this.logger.error(
-          'Derivation scan failed',
-          err instanceof Error ? err : new Error(String(err)),
-        );
+        this.logger.error('Derivation scan failed', err instanceof Error ? err : new Error(String(err)));
       }
     } finally {
       this.running = false;

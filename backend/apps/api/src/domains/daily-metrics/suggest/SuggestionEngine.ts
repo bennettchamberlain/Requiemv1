@@ -17,6 +17,7 @@ import { DailyMetricsService } from '../services/DailyMetricsService';
 import { METRIC_SOURCES, type MetricKey } from '../types';
 
 import {
+  armMean,
   detectArmTriggers,
   SUGGESTION_BASELINE_DAYS,
   SUGGESTION_MIN_BASELINE_N,
@@ -56,14 +57,10 @@ export class SuggestionEngine {
     const persisted: MetricSuggestion[] = [];
 
     for (const trigger of triggers) {
-      const anomaly = anomalies.find(
-        (row) => row.date === yesterday && row.metric === trigger.metric,
-      );
-      const correlation = correlations.find(
-        (row) => row.metricA === trigger.metric || row.metricB === trigger.metric,
-      );
+      const anomaly = anomalies.find((row) => row.date === yesterday && row.metric === trigger.metric);
+      const correlation = driverCorrelation(trigger.key, trigger.metric, correlations);
 
-      if (!anomaly && !correlation) {
+      if (!hasRequiredEvidence(trigger.key, anomaly, correlation)) {
         continue;
       }
 
@@ -158,11 +155,28 @@ export class SuggestionEngine {
   }
 
   private async promote(context: UserServiceContext, rows: MetricSuggestion[]): Promise<void> {
-    if (rows.some((row) => row.actionId)) {
+    if (rows.length === 0) {
       return;
     }
 
-    const chosen = [...rows].sort((left, right) => (left.priority ?? 5) - (right.priority ?? 5))[0];
+    const live = await this.suggestions.find({
+      where: { userId: context.userId, acceptedAt: IsNull(), dismissedAt: IsNull() },
+    });
+    if (live.some((row) => row.actionId)) {
+      return;
+    }
+
+    const scored = await Promise.all(
+      rows.map(async (row) => {
+        const arm = await this.arms.findOne({ where: { userId: context.userId, key: row.key } });
+
+        return { row, mean: armMean(arm?.alpha ?? 1, arm?.beta ?? 1) };
+      }),
+    );
+    scored.sort(
+      (left, right) => right.mean - left.mean || (left.row.priority ?? 5) - (right.row.priority ?? 5),
+    );
+    const chosen = scored[0]?.row;
     if (!chosen) {
       return;
     }
@@ -232,6 +246,52 @@ export class SuggestionEngine {
       }),
     );
   }
+}
+
+function involves(metricA: string, metricB: string, metric: string): boolean {
+  return metricA === metric || metricB === metric;
+}
+
+function driverCorrelation(
+  key: SuggestionArmKey,
+  metric: string,
+  correlations: Array<{ id: string; metricA: string; metricB: string }>,
+): { id: string; metricA: string; metricB: string } | undefined {
+  if (key === 'rel.conversations_low') {
+    return correlations.find(
+      (row) =>
+        involves(row.metricA, row.metricB, 'n_conversations') &&
+        (involves(row.metricA, row.metricB, 'avg_sentiment') ||
+          involves(row.metricA, row.metricB, 'n_unique_contacts')),
+    );
+  }
+
+  if (key === 'attention.screen_spike') {
+    return correlations.find(
+      (row) =>
+        involves(row.metricA, row.metricB, 'screen_minutes') &&
+        (involves(row.metricA, row.metricB, 'avg_sentiment') ||
+          involves(row.metricA, row.metricB, 'spend_total')),
+    );
+  }
+
+  return correlations.find((row) => involves(row.metricA, row.metricB, metric));
+}
+
+function hasRequiredEvidence(
+  key: SuggestionArmKey,
+  anomaly: MetricAnomaly | undefined,
+  correlation: { id: string } | undefined,
+): boolean {
+  if (key === 'rel.conversations_low') {
+    return Boolean(correlation);
+  }
+
+  if (key === 'places.one_place' || key === 'money.spend_spike') {
+    return Boolean(anomaly);
+  }
+
+  return Boolean(anomaly || correlation);
 }
 
 function withAssociation(

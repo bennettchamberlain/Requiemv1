@@ -50,9 +50,7 @@ function memoryRepo() {
   return {
     rows,
     findOne: jest.fn(async ({ where }: { where: Record<string, unknown> }) => {
-      return (
-        rows.find((row) => Object.entries(where).every(([key, value]) => row[key] === value)) ?? null
-      );
+      return rows.find((row) => Object.entries(where).every(([key, value]) => row[key] === value)) ?? null;
     }),
     create: jest.fn((value: Record<string, unknown>) => ({ ...value })),
     save: jest.fn(async (entity: Record<string, unknown>) => {
@@ -72,7 +70,12 @@ function memoryRepo() {
 }
 
 function logger(): LoggerService {
-  return { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() } as unknown as LoggerService;
+  return {
+    setContext: jest.fn(),
+    log: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+  } as unknown as LoggerService;
 }
 
 describe('CorrelationEngine.scan', () => {
@@ -116,7 +119,7 @@ describe('CorrelationEngine.scan', () => {
     expect(metricsService.getRange).toHaveBeenCalled();
     expect(pair.length).toBeGreaterThan(0);
     expect(pair.some((row) => row.robust)).toBe(true);
-    expect(pair.every((row) => (row.qValue ?? 1) <= 0.1 || !row.robust || row.windowDays !== 90)).toBe(true);
+    expect(persisted.every((row) => (row.qValue ?? 1) <= 0.1)).toBe(true);
     expect(JSON.stringify(pair).toLowerCase()).not.toContain('cause');
     expect(yesterday).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
