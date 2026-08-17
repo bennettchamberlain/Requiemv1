@@ -180,7 +180,7 @@
     "jobs.page": true,
     "import.page": true,
     "planning.enabled": false,
-    "planning.page": false,
+    "planning.page": true,
     "planning.emptyState": false,
     "stats.page": true,
     "schedule.page": true,

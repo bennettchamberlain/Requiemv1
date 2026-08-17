@@ -88,6 +88,12 @@ describe('SecondaryNavigation', () => {
     expect(screen.getByRole('link', { name: 'Jobs' })).toHaveAttribute('href', '/jobs');
   });
 
+  it('carries Plan in the primary rail', () => {
+    renderRail();
+
+    expect(screen.getByRole('link', { name: 'Plan' })).toHaveAttribute('href', '/plan');
+  });
+
   it('carries the account control in the rail', () => {
     renderRail();
 
