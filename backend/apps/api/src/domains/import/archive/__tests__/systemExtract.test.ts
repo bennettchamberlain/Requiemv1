@@ -4,6 +4,8 @@ import path from 'node:path';
 
 import { dittoAvailable, systemExtract, systemUnzipAvailable } from '../systemExtract';
 
+import { buildZip, zipWithoutUtf8Flag } from './zipFixtures';
+
 /**
  * The regression these guard is a real one: a 2.7GB Google Takeout failed at 0%
  * with `system unzip failed (exit 50)` because macOS ships Info-ZIP 6.00 (2009),
@@ -12,6 +14,13 @@ import { dittoAvailable, systemExtract, systemUnzipAvailable } from '../systemEx
  *
  * Both extractors are system binaries, so the meaningful assertions are made
  * against a real zip rather than a mock — but only where the binary exists.
+ *
+ * The non-ASCII cases below are deliberately NOT skipped per-platform. Every
+ * environment gets a correct name out of `systemExtract`, because where the
+ * extractor cannot manage it the repair pass does (see `../repairEntryNames`)
+ * — including Debian, whose `unzip` has no `-O CHARSET` and silently writes
+ * mojibake instead of failing. A skip here would have hidden the appliance's
+ * actual behaviour, which is where the export really gets imported.
  */
 
 const describeIfZip = systemUnzipAvailable() || dittoAvailable() ? describe : describe.skip;
@@ -20,70 +29,39 @@ function scratch(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'ci-systemextract-'));
 }
 
-const CRC_TABLE = (() => {
-  const table = new Uint32Array(256);
-  for (let n = 0; n < 256; n += 1) {
-    let c = n;
-    for (let k = 0; k < 8; k += 1) {
-      c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+/**
+ * Relative paths of every file under `root`, NFC-normalised and `/`-joined.
+ *
+ * A mangled name is not valid UTF-8, so it reaches JS with U+FFFD in it and
+ * cannot be used to descend back into its own directory. That is recorded as a
+ * marker instead of throwing, so a regression shows up as a readable diff
+ * rather than an ENOENT from the test helper.
+ */
+function filesUnder(root: string): string[] {
+  const found: string[] = [];
+  const walk = (dir: string, prefix: string): void => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      found.push(`${prefix}/<unreadable>`);
+
+      return;
     }
 
-    table[n] = c >>> 0;
-  }
+    for (const entry of entries) {
+      const rel = `${prefix}${prefix ? '/' : ''}${entry.name}`.normalize('NFC');
+      if (entry.isDirectory()) {
+        walk(path.join(dir, entry.name), rel);
+      } else {
+        found.push(rel);
+      }
+    }
+  };
 
-  return table;
-})();
+  walk(root, '');
 
-function crc32(buf: Buffer): number {
-  let c = 0xffffffff;
-  for (const byte of buf) {
-    c = CRC_TABLE[(c ^ byte) & 0xff] ^ (c >>> 8);
-  }
-
-  return (c ^ 0xffffffff) >>> 0;
-}
-
-/**
- * A one-entry, stored (uncompressed) zip whose filename bytes are UTF-8 but
- * whose general-purpose bit 11 is left clear — i.e. what Google Takeout emits.
- */
-function zipWithoutUtf8Flag(filename: string, contents: string): Buffer {
-  const name = Buffer.from(filename, 'utf8');
-  const data = Buffer.from(contents, 'utf8');
-  const crc = crc32(data);
-
-  const local = Buffer.alloc(30);
-  local.writeUInt32LE(0x04034b50, 0); // local file header signature
-  local.writeUInt16LE(20, 4); // version needed
-  local.writeUInt16LE(0, 6); // flags — bit 11 deliberately CLEAR
-  local.writeUInt16LE(0, 8); // method: stored
-  local.writeUInt32LE(crc, 14);
-  local.writeUInt32LE(data.length, 18);
-  local.writeUInt32LE(data.length, 22);
-  local.writeUInt16LE(name.length, 26);
-  const localChunk = Buffer.concat([local, name, data]);
-
-  const central = Buffer.alloc(46);
-  central.writeUInt32LE(0x02014b50, 0); // central directory signature
-  central.writeUInt16LE(20, 4);
-  central.writeUInt16LE(20, 6);
-  central.writeUInt16LE(0, 8); // flags — clear here too
-  central.writeUInt16LE(0, 10);
-  central.writeUInt32LE(crc, 16);
-  central.writeUInt32LE(data.length, 20);
-  central.writeUInt32LE(data.length, 24);
-  central.writeUInt16LE(name.length, 28);
-  central.writeUInt32LE(0, 42); // relative offset of local header
-  const centralChunk = Buffer.concat([central, name]);
-
-  const eocd = Buffer.alloc(22);
-  eocd.writeUInt32LE(0x06054b50, 0); // end of central directory
-  eocd.writeUInt16LE(1, 8);
-  eocd.writeUInt16LE(1, 10);
-  eocd.writeUInt32LE(centralChunk.length, 12);
-  eocd.writeUInt32LE(localChunk.length, 16);
-
-  return Buffer.concat([localChunk, centralChunk, eocd]);
+  return found.sort();
 }
 
 describeIfZip('systemExtract', () => {
@@ -110,10 +88,10 @@ describeIfZip('systemExtract', () => {
     // Note it is NOT enough to zip an accented filename with the `zip` binary:
     // that sets general-purpose bit 11 (the "names are UTF-8" flag) and Info-ZIP
     // then reads it correctly. Google's writer leaves the bit CLEAR. Without a
-    // charset flag, Linux unzip decodes the name as CP437 (ñ → ├▒) and macOS
-    // unzip aborts the whole archive with exit 50 ("disk full"). The extractor
-    // must still write the real UTF-8 name: `-O UTF-8` on Debian, `ditto` on
-    // macOS. The hand-built fixture is the only way to reproduce that shape.
+    // charset flag, Debian unzip translates the name through a compiled-in CP437
+    // table (ñ → +¦) and macOS unzip aborts the whole archive with exit 50
+    // ("disk full"). The hand-built fixture is the only way to reproduce that
+    // shape.
     const work = scratch();
     const dest = path.join(work, 'dest');
     fs.mkdirSync(dest, { recursive: true });
@@ -122,7 +100,7 @@ describeIfZip('systemExtract', () => {
     const archive = path.join(work, 'no-utf8-flag.zip');
     fs.writeFileSync(archive, zipWithoutUtf8Flag(name, '<html></html>'));
 
-    const result = systemExtract(archive, dest);
+    const result = systemExtract(archive, dest, { exclusiveDest: true });
 
     expect(result.ok).toBe(true);
     // Compare on the decoded set rather than the literal name: the extractors
@@ -130,6 +108,82 @@ describeIfZip('systemExtract', () => {
     // is that the entry survived at all.
     const written = fs.readdirSync(dest).map((entry) => entry.normalize('NFC'));
     expect(written).toContain(name.normalize('NFC'));
+    // …and that it survived ONCE. A mangled twin left beside it imports as a
+    // second, garbled copy of the same conversation.
+    expect(written).toHaveLength(1);
+    expect(fs.readFileSync(path.join(dest, name), 'utf8')).toBe('<html></html>');
+
+    fs.rmSync(work, { recursive: true, force: true });
+  });
+
+  it('extracts non-ASCII names nested under a non-ASCII directory', () => {
+    // A mangled DIRECTORY component misplaces every file beneath it, so the
+    // repair has to fix whole paths rather than basenames — and then clear the
+    // mangled directory too, not just its contents.
+    const work = scratch();
+    const dest = path.join(work, 'dest');
+    fs.mkdirSync(dest, { recursive: true });
+
+    const archive = path.join(work, 'nested.zip');
+    fs.writeFileSync(
+      archive,
+      buildZip([
+        { name: 'Takeout/Fotos de Mariña/', contents: '' },
+        // Deflated, to cover the compressed path as well as the stored one.
+        { name: 'Takeout/Fotos de Mariña/día 1.json', contents: '{"a":1}', deflate: true },
+        { name: 'Takeout/Fotos de Mariña/día 2.json', contents: '{"a":2}' },
+        { name: 'Takeout/plain.txt', contents: 'ascii' },
+      ]),
+    );
+
+    const result = systemExtract(archive, dest, { exclusiveDest: true });
+
+    expect(result.ok).toBe(true);
+    expect(filesUnder(dest)).toEqual(
+      ['Takeout/Fotos de Mariña/día 1.json', 'Takeout/Fotos de Mariña/día 2.json', 'Takeout/plain.txt'].map(
+        (p) => p.normalize('NFC'),
+      ),
+    );
+    expect(fs.readFileSync(path.join(dest, 'Takeout/Fotos de Mariña/día 1.json'), 'utf8')).toBe('{"a":1}');
+
+    fs.rmSync(work, { recursive: true, force: true });
+  });
+
+  it('reports no name repair for an all-ASCII archive', () => {
+    // The overwhelmingly common archive. Nothing is at risk, so the pass must
+    // cost one central-directory read and report nothing.
+    const work = scratch();
+    const dest = path.join(work, 'dest');
+    fs.mkdirSync(dest, { recursive: true });
+
+    const archive = path.join(work, 'ascii.zip');
+    fs.writeFileSync(archive, buildZip([{ name: 'Takeout/plain.txt', contents: 'ascii' }]));
+
+    const result = systemExtract(archive, dest);
+
+    expect(result.ok).toBe(true);
+    expect(result.nameRepair).toBeUndefined();
+    expect(filesUnder(dest)).toEqual(['Takeout/plain.txt']);
+
+    fs.rmSync(work, { recursive: true, force: true });
+  });
+
+  it('extracts a non-ASCII name even when the UTF-8 flag IS set', () => {
+    // Setting general-purpose bit 11 is the well-formed thing to do, and it
+    // does not save you: Debian's unzip picks its charset from the "version
+    // made by" host byte and ignores bit 11 entirely, so a correctly-flagged
+    // archive is mangled just the same. Verified against `node:22`.
+    const work = scratch();
+    const dest = path.join(work, 'dest');
+    fs.mkdirSync(dest, { recursive: true });
+
+    const archive = path.join(work, 'flagged.zip');
+    fs.writeFileSync(archive, buildZip([{ name: 'Mariña.txt', contents: 'ok', utf8Flag: true }]));
+
+    const result = systemExtract(archive, dest, { exclusiveDest: true });
+
+    expect(result.ok).toBe(true);
+    expect(filesUnder(dest)).toEqual(['Mariña.txt'.normalize('NFC')]);
 
     fs.rmSync(work, { recursive: true, force: true });
   });

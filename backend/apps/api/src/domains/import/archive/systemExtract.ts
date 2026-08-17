@@ -2,6 +2,9 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import type { NameRepairOptions, NameRepairResult } from './repairEntryNames';
+import { repairEntryNames } from './repairEntryNames';
+
 /**
  * Extracting a zip through whichever system extractor can actually read it.
  *
@@ -20,15 +23,22 @@ import path from 'node:path';
  * tell those two apart, so the run surfaces a disk error for a filename problem
  * and a multi-gigabyte import dies at 0%.
  *
- * Linux Info-ZIP (Debian/Ubuntu) accepts `-O`/`-I` charset flags. Passing
- * UTF-8 there makes Takeout names land correctly instead of as CP437
- * mojibake (`ñ` → `├▒`). macOS Info-ZIP has no such flags, so we still fall
- * back to `ditto` whenever `unzip` fails: on macOS that turns the common
- * failure into a success, and on Linux `ditto` does not exist.
+ * The `-O`/`-I` charset flags that would make Info-ZIP read those names as
+ * UTF-8 are a Fedora/RHEL patch. Debian and Ubuntu — and therefore the
+ * appliance image and CI's `node:22` — do NOT carry it: their `unzip` has no
+ * `-O`, and instead translates the bytes through a compiled-in CP437 table, so
+ * the same Takeout that dies on macOS lands mojibake'd (`ñ` → `+¦`) on Linux.
+ * That is not a locale setting; `LC_ALL=C.UTF-8` and `-UU` change nothing. So
+ * neither of the two extractors can be relied on to write the real name, and
+ * `./repairEntryNames` fixes the difference afterwards by reading the archive's
+ * own central directory. `ditto` is still the macOS fallback for the exit-50
+ * abort, which is a failure to extract at all rather than a naming problem.
  *
  * Path containment is deliberately NOT this module's job — callers that need it
  * (see `extract.ts`) assert it against the archive's listed entry names before
- * extracting, which holds whichever extractor then runs.
+ * extracting, which holds whichever extractor then runs. The one exception is
+ * the repair pass, which writes names the caller never saw and so re-checks
+ * containment itself.
  */
 
 export interface SystemExtractResult {
@@ -45,6 +55,22 @@ export interface SystemExtractResult {
   tool: 'unzip' | 'ditto' | null;
   /** Human-readable cause, for the error a caller raises. Empty when ok. */
   detail: string;
+  /**
+   * Outcome of the UTF-8 name repair (see `./repairEntryNames`). Absent when
+   * the archive had no at-risk names, which is the common case.
+   */
+  nameRepair?: NameRepairResult;
+}
+
+export interface SystemExtractOptions {
+  /**
+   * `destDir` holds the output of THIS archive and nothing else, so the name
+   * repair may delete the mangled copies it replaces (see
+   * `NameRepairOptions.sweep`). `extract.ts` extracts into a directory named
+   * after the archive and passes this; `unpack.ts` expands into the folder
+   * that CONTAINS the archives and must not.
+   */
+  exclusiveDest?: boolean;
 }
 
 let unzipProbe: boolean | undefined;
@@ -149,14 +175,49 @@ function extractedAnything(destDir: string): boolean {
   return walk(destDir);
 }
 
-export function systemExtract(archive: string, destDir: string): SystemExtractResult {
+/**
+ * Attach the UTF-8 name repair to a successful extraction.
+ *
+ * Runs on EVERY success rather than only where we expect mangling: it verifies
+ * against the archive instead of predicting extractor behaviour, so it is a
+ * cheap no-op wherever the names already landed correctly (macOS `ditto`,
+ * Fedora `unzip -O`) and there is no environment sniffing to keep true. The
+ * repair never fails the extraction — a raised error here would throw away a
+ * tree that is already on disk.
+ */
+function withNameRepair(
+  result: SystemExtractResult,
+  archive: string,
+  destDir: string,
+  options: NameRepairOptions,
+): SystemExtractResult {
+  let repair: NameRepairResult;
+  try {
+    repair = repairEntryNames(archive, destDir, options);
+  } catch {
+    return result;
+  }
+
+  if (repair.repaired === 0 && repair.unrepaired === 0) {
+    return result;
+  }
+
+  return { ...result, nameRepair: repair };
+}
+
+export function systemExtract(
+  archive: string,
+  destDir: string,
+  options: SystemExtractOptions = {},
+): SystemExtractResult {
+  const repair: NameRepairOptions = { sweep: options.exclusiveDest ?? false };
   let detail = '';
 
   if (systemUnzipAvailable()) {
     const r = spawnSync('unzip', unzipExtractArgs(archive, destDir), { stdio: 'ignore' });
 
     if (r.status === 0 || r.status === 1) {
-      return { ok: true, tool: 'unzip', detail: '' };
+      return withNameRepair({ ok: true, tool: 'unzip', detail: '' }, archive, destDir, repair);
     }
 
     detail =
@@ -171,7 +232,7 @@ export function systemExtract(archive: string, destDir: string): SystemExtractRe
     const d = spawnSync('ditto', ['-x', '-k', archive, destDir], { stdio: 'ignore' });
 
     if (d.status === 0) {
-      return { ok: true, tool: 'ditto', detail: '' };
+      return withNameRepair({ ok: true, tool: 'ditto', detail: '' }, archive, destDir, repair);
     }
 
     detail += `; ditto exit ${d.status}`;
@@ -182,7 +243,7 @@ export function systemExtract(archive: string, destDir: string): SystemExtractRe
   // bad entries, having already extracted 2.8GB across 1,087 files. Discarding
   // that is a worse answer than importing it and saying what was missed.
   if (extractedAnything(destDir)) {
-    return { ok: true, tool: null, partial: true, detail };
+    return withNameRepair({ ok: true, tool: null, partial: true, detail }, archive, destDir, repair);
   }
 
   return { ok: false, tool: null, detail };

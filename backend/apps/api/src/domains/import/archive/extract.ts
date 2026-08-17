@@ -280,8 +280,11 @@ function extractViaSystemUnzip(
   assertDiskFits(declared, destDir);
 
   // Containment was asserted above against the archive's own entry names, so it
-  // holds whichever extractor systemExtract picks.
-  const r = systemExtract(archivePath, destDir);
+  // holds whichever extractor systemExtract picks. `exclusiveDest` says this
+  // directory is named after (and holds only) this archive — see
+  // `extractionDestDir` — which lets the UTF-8 name repair delete the mangled
+  // copies it supersedes instead of leaving them to import as duplicates.
+  const r = systemExtract(archivePath, destDir, { exclusiveDest: true });
   if (!r.ok) {
     throw new Error(`archive extraction failed (${r.detail})`);
   }
