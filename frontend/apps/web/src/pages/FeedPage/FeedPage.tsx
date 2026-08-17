@@ -328,12 +328,6 @@ export function FeedPage() {
                   onDismiss={() => void handleActionDismiss(card.action.id)}
                   dismissLabel={t('FEED_CARD_DISMISS_ACTION')}
                   showUnseenIndicator={!card.action.seen}
-                  chatContext={{
-                    title: card.action.title,
-                    body: card.action.text,
-                    sourceKind: 'action',
-                    sourceId: card.action.id,
-                  }}
                 />
               ),
             )}
@@ -457,12 +451,6 @@ export function FeedPage() {
                       onDismiss={() => void handleActionDismiss(card.action.id)}
                       dismissLabel={t('FEED_CARD_DISMISS_ACTION')}
                       showUnseenIndicator={!card.action.seen}
-                      chatContext={{
-                        title: card.action.title,
-                        body: card.action.text,
-                        sourceKind: 'action',
-                        sourceId: card.action.id,
-                      }}
                       className="hover:shadow-lg transition-shadow duration-200"
                     />
                   ),
