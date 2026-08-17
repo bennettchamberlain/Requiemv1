@@ -54,6 +54,7 @@ export type Ecosystem =
   | 'apple'
   | 'meta'
   | 'microsoft'
+  | 'amazon'
   | 'x'
   | 'browser'
   | 'wearable'
@@ -2191,32 +2192,124 @@ export const WIZARD_SOURCES: WizardSource[] = [
       'Walmart order history is also visible in-app under Account → Purchase History, but no machine-readable export exists without the privacy request. No importer yet.',
     ],
   },
+  // --- Amazon ---------------------------------------------------------------
+  // One Privacy Central flow serves every `amazon`-ecosystem source: each can
+  // be requested as its own category export, and "Request All Your Data"
+  // yields one archive carrying all of them — the frontend collapses the five
+  // into a single bundle card. The standalone and all-data archives use
+  // different layouts and column dialects; the importers read both.
   {
     id: 'amazon',
-    title: 'Amazon',
-    blurb: 'Order history and browsing.',
-    ecosystem: 'finance',
+    title: 'Amazon orders',
+    blurb: 'Order history — retail, digital, and Audible purchases.',
+    ecosystem: 'amazon',
     category: 'finance',
     tier: 3,
     acquisition: 'web-export',
     wait: 'days',
     url: 'https://www.amazon.com/hz/privacy-central/data-requests/preview.html',
     steps: [
-      'Open Amazon Privacy Central → "Request Your Data" → choose categories (e.g. "Your Orders", or everything) → Submit.',
-      'Confirm by email; the archive can take up to 30 days.',
-      'Unzip — look for Retail.OrderHistory.*.csv (orders), PrimeVideo.ViewingHistory.csv (viewing), and ' +
-        UPLOAD_STEP,
+      'Open Amazon Privacy Central → "Request Your Data" → choose "Your Orders" (or "Request All Your Data" — one archive covers every Amazon source here) → Submit.',
+      'Confirm the request by email. A single-category export usually arrives within days; the full archive can take up to 30.',
+      UPLOAD_STEP,
     ],
     expectedFormat:
-      'An Amazon "Your Orders" `Retail.OrderHistory*.csv` (modern or legacy `Order History.csv`); ' +
-      'a full-categories archive also carries `PrimeVideo.ViewingHistory.csv` (read by the prime_video importer), ' +
-      'the Audible `Listening History.csv` + `Library.csv` pair (read by the audible importer), ' +
-      '`Kindle.Devices.ReadingSession_v0.csv` (read by the kindle_reading importer, titles joined from `Digital Items.csv`), and ' +
-      'the "Your Music Library" CSVs (read by the amazon_music importer as a library snapshot).',
+      'An Amazon orders CSV in any of its dialects: `Order History.csv` (standalone "Your Orders" export) ' +
+      'or `Retail.OrderHistory*.csv` (the all-data archive), plus the digital ledger `Digital Items.csv` ' +
+      'and the Audible `Purchase History.csv` when the archive carries them.',
     inboxPath: 'amazon',
+    signature: ['Order History.csv', 'Retail.OrderHistory*', 'Digital Items.csv', 'Purchase History.csv'],
     importer: 'amazon',
-    // The one archive feeds the Prime Video, Audible, Kindle, and Music importers too.
-    alsoImporters: ['prime_video', 'audible', 'kindle_reading', 'amazon_music'],
+    importerReady: true,
+  },
+  {
+    id: 'prime_video',
+    title: 'Prime Video',
+    blurb: 'Viewing history — what you watched, and when.',
+    ecosystem: 'amazon',
+    category: 'video',
+    tier: 3,
+    acquisition: 'web-export',
+    wait: 'days',
+    url: 'https://www.amazon.com/hz/privacy-central/data-requests/preview.html',
+    steps: [
+      'Open Amazon Privacy Central → "Request Your Data" → choose "Prime Video" (or "Request All Your Data") → Submit.',
+      'Confirm the request by email and download the zip when it arrives.',
+      UPLOAD_STEP,
+    ],
+    expectedFormat: 'The `PrimeVideo.ViewingHistory.csv` from an Amazon data export.',
+    inboxPath: 'amazon',
+    signature: ['PrimeVideo.ViewingHistory*'],
+    importer: 'prime_video',
+    importerReady: true,
+  },
+  {
+    id: 'audible',
+    title: 'Audible',
+    blurb: 'Listening history — every audiobook session.',
+    ecosystem: 'amazon',
+    category: 'audio',
+    tier: 3,
+    acquisition: 'web-export',
+    wait: 'days',
+    url: 'https://www.amazon.com/hz/privacy-central/data-requests/preview.html',
+    steps: [
+      'Open Amazon Privacy Central → "Request Your Data" → choose "Audible" (or "Request All Your Data") → Submit.',
+      'Confirm the request by email and download the zip when it arrives.',
+      UPLOAD_STEP,
+    ],
+    expectedFormat:
+      'The Audible `Listening History.csv` from an Amazon data export, enriched from the sibling ' +
+      '`Library.csv` when present. Audible purchases ride the Amazon orders source instead.',
+    inboxPath: 'amazon',
+    signature: ['Listening History.csv'],
+    importer: 'audible',
+    importerReady: true,
+  },
+  {
+    id: 'kindle_reading',
+    title: 'Kindle reading',
+    blurb: 'Reading sessions — which book, when, and for how long.',
+    ecosystem: 'amazon',
+    category: 'reading',
+    tier: 3,
+    acquisition: 'web-export',
+    wait: 'days',
+    url: 'https://www.amazon.com/hz/privacy-central/data-requests/preview.html',
+    steps: [
+      'Open Amazon Privacy Central → "Request Your Data" → choose "Kindle" (or "Request All Your Data") → Submit.',
+      'Confirm the request by email and download the zip when it arrives.',
+      UPLOAD_STEP,
+    ],
+    expectedFormat:
+      '`Kindle.Devices.ReadingSession_v0.csv` or the `Kindle.reading-insights-sessions` CSV from an ' +
+      'Amazon data export; book titles joined from `Digital Items.csv` when present.',
+    inboxPath: 'amazon',
+    signature: ['Kindle.Devices.ReadingSession*', 'Kindle.reading-insights-sessions*'],
+    importer: 'kindle_reading',
+    importerReady: true,
+  },
+  {
+    id: 'amazon_music',
+    title: 'Amazon Music',
+    blurb: 'Music library — saved tracks, playlists, and followed artists.',
+    ecosystem: 'amazon',
+    category: 'audio',
+    tier: 3,
+    acquisition: 'web-export',
+    wait: 'days',
+    url: 'https://www.amazon.com/hz/privacy-central/data-requests/preview.html',
+    steps: [
+      'Open Amazon Privacy Central → "Request Your Data" → choose "Amazon Music" (or "Request All Your Data") → Submit.',
+      'Confirm the request by email and download the zip when it arrives.',
+      UPLOAD_STEP,
+    ],
+    expectedFormat:
+      'The "Your Music Library" CSVs from an Amazon data export (`Saved Music.csv`, `Playlists.csv`, ' +
+      '`Followed Artists and Accounts.csv`) — a library snapshot, not listening history.',
+    inboxPath: 'amazon',
+    signature: ['Saved Music.csv', 'Playlists.csv', 'Followed Artists and Accounts.csv'],
+    importer: 'amazon_music',
     importerReady: true,
   },
   {
