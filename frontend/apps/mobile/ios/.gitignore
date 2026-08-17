@@ -3,6 +3,10 @@ App/Pods
 App/output
 App/App/public
 DerivedData
+# Any DerivedData-* variant too: a device build needs its own derived-data path
+# (`-derivedDataPath ./DerivedData-device`) so it does not fight the simulator build's
+# cache, and the bare `DerivedData` line above does not match the suffixed name.
+DerivedData-*
 xcuserdata
 
 # Cordova plugins for Capacitor
