@@ -36,7 +36,6 @@ import {
   usePreventOverscroll,
 } from '@/hooks';
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
-import FeedPage from '@/pages/FeedPage';
 import LoginPage from '@/pages/LoginPage';
 import SignupPage from '@/pages/SignupPage';
 import SplashPage from '@/pages/SplashPage';
@@ -64,7 +63,6 @@ const PersonPage = lazy(() => import('@/pages/PersonPage'));
 const PlacePage = lazy(() => import('@/pages/PlacePage'));
 const PlacesPage = lazy(() => import('@/pages/PlacesPage'));
 const ProviderPage = lazy(() => import('@/pages/ProviderPage'));
-const SchedulePage = lazy(() => import('@/pages/SchedulePage'));
 const SearchPage = lazy(() => import('@/pages/SearchPage'));
 const FilesPage = lazy(() => import('@/pages/FilesPage'));
 const SavedSearchesPage = lazy(() => import('@/pages/SavedSearchesPage'));
@@ -73,6 +71,8 @@ const SharedSearchPage = lazy(() => import('@/pages/SharedSearchPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 const StatsPage = lazy(() => import('@/pages/StatsPage'));
 const TagsPage = lazy(() => import('@/pages/TagsPage'));
+// Pulls SchedulePage and FeedPage in with it — neither is routed on its own.
+const TodayPage = lazy(() => import('@/pages/TodayPage'));
 const SummaryDetailPage = lazy(() => import('@/pages/SummaryDetailPage'));
 const SystemPage = lazy(() => import('@/pages/SystemPage'));
 const PromptsPage = lazy(() => import('@/pages/PromptsPage'));
@@ -83,10 +83,18 @@ function RedirectInsightsSummary() {
   return <Navigate to={`/brief/summaries/${id ?? ''}`} replace />;
 }
 
-function RedirectFeedToBrief() {
+/**
+ * The brief now lives inside Today, so both of its old addresses land there.
+ *
+ * Aimed at /today rather than chained through /brief, which would cost a second
+ * redirect on every old link. The action id is carried across because the
+ * brief's cards deep-link by it — dropping it would open the page but not the
+ * card someone was sent.
+ */
+function RedirectToToday() {
   const { id } = useParams<{ id?: string }>();
 
-  return <Navigate to={id ? `/brief/${id}` : '/brief'} replace />;
+  return <Navigate to={id ? `/today/${id}` : '/today'} replace />;
 }
 
 function RedirectFeedSummaryToBrief() {
@@ -219,10 +227,10 @@ function AppRoutes() {
           />
 
           <Route
-            path="/brief/:id?"
+            path="/today/:id?"
             element={
               <ProtectedRoute>
-                <FeedPage />
+                <TodayPage />
               </ProtectedRoute>
             }
           />
@@ -236,8 +244,14 @@ function AppRoutes() {
             }
           />
 
+          {/* Both former destinations now resolve to the page that absorbed
+              them. /brief/summaries/:id is declared above and is more specific,
+              so it still reaches the summary detail page. */}
+          <Route path="/brief/:id?" element={<RedirectToToday />} />
+          <Route path="/schedule" element={<RedirectToToday />} />
+
           <Route path="/feed/summaries/:id" element={<RedirectFeedSummaryToBrief />} />
-          <Route path="/feed/:id?" element={<RedirectFeedToBrief />} />
+          <Route path="/feed/:id?" element={<RedirectToToday />} />
 
           <Route
             path="/search"
@@ -285,7 +299,7 @@ function AppRoutes() {
             </>
           )}
 
-          <Route path="/insights" element={<Navigate to="/brief" replace />} />
+          <Route path="/insights" element={<Navigate to="/today" replace />} />
           <Route
             path="/insights/:id"
             element={
@@ -329,17 +343,6 @@ function AppRoutes() {
               element={
                 <ProtectedRoute>
                   <StatsPage />
-                </ProtectedRoute>
-              }
-            />
-          )}
-
-          {isFeatureEnabled('schedule.page') && (
-            <Route
-              path="/schedule"
-              element={
-                <ProtectedRoute>
-                  <SchedulePage />
                 </ProtectedRoute>
               }
             />
