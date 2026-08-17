@@ -31,11 +31,7 @@ describe('ParseStage generic exclusion', () => {
   const stage = new ParseStage({ manager: {} } as never, { setContext: jest.fn() } as never);
 
   it('drops generic when a real parser also claimed the tree', () => {
-    const selected = select(stage, [
-      match('google_voice'),
-      match('generic'),
-      match('google_photos'),
-    ]);
+    const selected = select(stage, [match('google_voice'), match('generic'), match('google_photos')]);
 
     expect(names(selected)).toEqual(['google_voice', 'google_photos']);
   });
