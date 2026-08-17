@@ -47,6 +47,16 @@ export const INTENT_DOMAINS: readonly IntentDomain[] = [
     description:
       'Discover what an export archive holds, bring it into the personal corpus, and follow the import.',
   },
+  {
+    key: 'forecast',
+    title: 'Forecast',
+    description: 'Read the day-ahead behavior forecast and its calibration.',
+  },
+  {
+    key: 'brief',
+    title: 'Brief',
+    description: 'List insights, anomalies, and open actions waiting in Brief.',
+  },
 ] as const;
 
 const DOMAIN_KEYS = new Set<string>(INTENT_DOMAINS.map((d) => d.key));

@@ -29,15 +29,20 @@ import { ImportModule } from '@ci/domains/import';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule } from '@ci/domains/memory';
 import { ParsingModule } from '@ci/domains/parsing';
+import { PredictionsModule } from '@ci/domains/predictions';
 import { SearchNextModule } from '@ci/domains/search-next';
+import { SummariesModule } from '@ci/domains/summaries';
 
 import { IntentCatalogService } from './catalog/IntentCatalogService';
 import { ToolInvokedListener } from './listeners/ToolInvokedListener';
 import { NativeToolProvider } from './providers/NativeToolProvider';
 import { ToolRegistry } from './registry/ToolRegistry';
 import { ToolsRegistrationService } from './services/ToolsRegistrationService';
+import { BriefListTool } from './tools/BriefListTool';
 import { CalendarFindEventsTool } from './tools/CalendarFindEventsTool';
 import { DatabaseSearchTool } from './tools/DatabaseSearchTool';
+import { ForecastCalibrationTool } from './tools/ForecastCalibrationTool';
+import { ForecastReadTool } from './tools/ForecastReadTool';
 import { ForgetKnowledgeTool } from './tools/ForgetKnowledgeTool';
 import { GetEntertainmentPreferencesTool } from './tools/GetEntertainmentPreferencesTool';
 import { GetFamilyMembersTool } from './tools/GetFamilyMembersTool';
@@ -70,6 +75,9 @@ const nativeToolInstances = [
   PlacesFindTool,
   CalendarFindEventsTool,
   MediaFindPhotosTool,
+  ForecastCalibrationTool,
+  ForecastReadTool,
+  BriefListTool,
   // The import domain's intents. They live in that domain because they are
   // thin wrappers over its services; they are REGISTERED here because this is
   // where the native provider is assembled.
@@ -94,6 +102,8 @@ const nativeToolInstances = [
     ParsingModule,
     SearchNextModule,
     ImportModule,
+    PredictionsModule,
+    SummariesModule,
   ],
   providers: [
     ToolRegistry,

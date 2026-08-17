@@ -5,6 +5,7 @@
 import { Module } from '@nestjs/common';
 
 import { ConversationModule } from '@ci/domains/conversations';
+import { DailyMetricsModule } from '@ci/domains/daily-metrics';
 import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
 import { IntelligenceModule } from '@ci/domains/intelligence';
@@ -29,6 +30,7 @@ import { InventoryListener } from './listeners/InventoryListener';
   imports: [
     LlmCoreModule,
     ConversationModule,
+    DailyMetricsModule,
     EventsModule,
     FilesModule,
     IntelligenceModule,

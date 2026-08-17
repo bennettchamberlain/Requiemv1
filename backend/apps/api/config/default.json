@@ -190,7 +190,8 @@
     "onboarding.preference.steps": false,
     "actions": true,
     "smart.rotation": false,
-    "ask": false
+    "ask": false,
+    "grounded.prompts": false
   },
   "environment": {
     "database.query.logging": false
