@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import { Alert, Button, Card } from '@ci/shadcn';
+import { Alert, Button, Card, cn } from '@ci/shadcn';
 import { AlertTriangle } from '@ci/shadcn/icons';
 
-import { serviceLabels } from './runFormat';
+import { runStatusLabel, serviceLabels } from './runFormat';
 import { RunPipeline } from './RunPipeline';
 import { ServiceBadges } from './ServiceBadges';
 import { useImportApi, useRunProgress, type ImportRun, type ImportSource } from './useImportApi';
@@ -116,6 +116,23 @@ export function HistoryTab() {
                       <p className="truncate font-medium">{entry.label ?? 'Import'}</p>
                       <p className="truncate text-sm text-muted-foreground">
                         {new Date(entry.createdAt).toLocaleString()}
+                      </p>
+                      {/* Whether it worked. The card carried a label, a date
+                          and its services, so a run that FAILED looked exactly
+                          like one that imported — on a surface whose whole job
+                          is telling you what happened to your archives. The
+                          status was on every entry the API returns and simply
+                          was not rendered. Only non-success is coloured: a list
+                          where every row shouts is a list you stop reading. */}
+                      <p
+                        className={cn(
+                          'truncate text-sm',
+                          entry.status === 'failed' || entry.status === 'cancelled'
+                            ? 'text-destructive'
+                            : 'text-muted-foreground',
+                        )}
+                      >
+                        {runStatusLabel(entry.status)}
                       </p>
                       <ServiceBadges services={serviceLabels(entry.dataSources, sources)} />
                     </div>
