@@ -5,6 +5,17 @@ import { renderWithProviders } from '@/test/renderWithProviders';
 
 import { Chat } from './Chat';
 
+vi.mock('@/components/ModelSelector', () => ({
+  ModelSelector: () => <div data-testid="model-selector" />,
+}));
+
+vi.mock('@/api/useUploadFile', () => ({
+  useUploadFile: () => [
+    { files: [], loading: false, error: null },
+    { upload: vi.fn(), reset: vi.fn() },
+  ],
+}));
+
 describe('Chat', () => {
   it('shows the empty state when there are no messages', () => {
     const { getByText } = renderWithProviders(<Chat emptyState={<div>Start the conversation</div>} />);

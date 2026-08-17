@@ -8,6 +8,7 @@ import logo from '@/assets/logo.png';
 import { useFeatures } from '@/common/feature';
 import { ThemeToggle } from '@/components/ThemePicker';
 import { useCurrentUser } from '@/hooks';
+import { appHomePath } from '@/lib/appHome';
 
 import { ActivityPreferences } from './ActivityPreferences';
 import { ConnectSourceStep } from './ConnectSourceStep';
@@ -264,7 +265,7 @@ export function OnboardingPage() {
     currentStepKey !== 'people';
 
   if (user?.onboarded) {
-    return <Navigate to="/feed" replace />;
+    return <Navigate to={appHomePath(isFeatureEnabled('planning.page'))} replace />;
   }
 
   if (userLoading || progressLoading || !hydrated) {

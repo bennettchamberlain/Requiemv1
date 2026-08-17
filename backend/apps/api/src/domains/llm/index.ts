@@ -9,7 +9,10 @@ import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule } from '@ci/domains/memory';
+import { PlanningModule } from '@ci/domains/planning';
+import { PredictionsModule } from '@ci/domains/predictions';
 import { SearchNextModule } from '@ci/domains/search-next';
+import { SummariesModule } from '@ci/domains/summaries';
 import { ToolsModule } from '@ci/domains/tools';
 
 import { LlmEndpointController } from './controllers/LlmEndpointController';
@@ -30,7 +33,10 @@ import { InventoryListener } from './listeners/InventoryListener';
     FilesModule,
     IntelligenceModule,
     MemoryModule,
+    PlanningModule,
+    PredictionsModule,
     SearchNextModule,
+    SummariesModule,
     ToolsModule,
   ],
   providers: [CvDetectionsListener, ImageDescriptionListener, InventoryListener],

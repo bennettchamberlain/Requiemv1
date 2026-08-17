@@ -5,7 +5,7 @@ import { test } from '@playwright/test';
 //   1. Sign up a unique throwaway user via /signup (requires signup codes off —
 //      ENABLE_REQUIRE_SIGNUP_CODES defaults to false).
 //   2. Land on /onboarding, complete the wizard.
-//   3. Assert redirect to /feed.
+//   3. Assert redirect to /plan.
 // Marked fixme so it documents the coverage gap without flaking CI. Remove the
 // fixme and implement once a per-run signup helper is in place.
 test.fixme('completes onboarding for a new user', async ({ page }) => {

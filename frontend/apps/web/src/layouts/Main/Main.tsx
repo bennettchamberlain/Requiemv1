@@ -45,7 +45,9 @@ export function Main() {
   return (
     <PowerRailProvider>
       <div className="grid h-lvh min-h-0 grid-cols-[auto_1fr] grid-rows-[auto_1fr]">
-        <div className="flex items-center justify-center py-2 px-3 bg-secondary">
+        {/* Left-aligned so the mark stays put when the rail widens. Centering
+            it here walks the logo to the middle of the expanded column. */}
+        <div className="flex items-center justify-start py-2 px-3 bg-secondary">
           <PowerRailToggle />
         </div>
 
