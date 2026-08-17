@@ -171,18 +171,83 @@ function dateToIso(value: Date | undefined): string | null {
 }
 
 /**
+ * True when {@link hashItem}'s fallback has nothing but the item's BASENAME to
+ * go on — no parser id, no timestamp, no coordinates.
+ *
+ * The degenerate case, and it is not rare: 99.8% of a real 462k-record run's
+ * `generic` rows carried no timestamp, and 24 parsers assign no `item.id` at
+ * all. Every such item under one data source whose filename repeats —
+ * `note.txt`, `message_1.json`, `IMG_0001.JPG` — hashes identically and all but
+ * the first is swallowed by the `ON CONFLICT DO NOTHING` in `StagedWriter`.
+ *
+ * Exported so the writer knows which items are worth reading off disk to
+ * fingerprint: hashing every file in a 12GB export to disambiguate the handful
+ * that need it would cost the whole import.
+ */
+export function needsContentDigest(item: Item): boolean {
+  if (item.id) {
+    return false;
+  }
+
+  if (dateToIso(item.timestamp) != null) {
+    return false;
+  }
+
+  return !(item.location?.latitude != null && item.location?.longitude != null);
+}
+
+/**
+ * The discriminator folded into a degenerate item's hash, strongest first.
+ *
+ * Order is the whole design. A CONTENT digest is preferred over the path
+ * because it keeps the album-replication collapse working for items that have
+ * no timestamp either: two copies of one photo under `European Vacation/` and
+ * `Photos from 2012/` have identical bytes, so they still hash to one row. The
+ * path is the fallback for a record whose bytes we could not read, and the
+ * metadata digest the fallback for a record that has no bytes at all (a note
+ * parsed out of a JSON blob). An item with none of the three is genuinely
+ * indistinguishable from its twin and collapses as before.
+ */
+function degenerateDiscriminator(item: Item, contentDigest: string | null | undefined): string {
+  if (contentDigest) {
+    return `sha256:${contentDigest}`;
+  }
+
+  if (item.intermediateLocation) {
+    return `path:${item.intermediateLocation}`;
+  }
+
+  if (item.originalLocation) {
+    return `origin:${item.originalLocation}`;
+  }
+
+  const metadata = item.metadata == null ? '' : JSON.stringify(item.metadata);
+
+  return metadata && metadata !== '{}' ? `meta:${metadata}` : '';
+}
+
+/**
  * Stable hash for an item: an explicit parser id when there is one, otherwise a
  * sha1 over fields that describe the CONTENT.
  *
- * `intermediateLocation` is INTENTIONALLY EXCLUDED. Google Photos Takeout
- * replicates the same photo into every album folder it belongs to; with the file
- * path in the hash, `IMAG0262.jpg` under `European Vacation/` and the identical
- * file under `Photos from 2012/` hash differently and stage as two items — and
- * then reach ci.* as two events. Hashing only content-derived fields collapses
- * them on `staged_items_run_source_hash_uniq`, which is the whole reason that
- * index exists.
+ * `intermediateLocation` is INTENTIONALLY EXCLUDED from the ordinary fallback.
+ * Google Photos Takeout replicates the same photo into every album folder it
+ * belongs to; with the file path in the hash, `IMAG0262.jpg` under
+ * `European Vacation/` and the identical file under `Photos from 2012/` hash
+ * differently and stage as two items — and then reach ci.* as two events.
+ * Hashing only content-derived fields collapses them on
+ * `staged_items_run_source_hash_uniq`, which is the whole reason that index
+ * exists.
+ *
+ * The exception is the degenerate case {@link needsContentDigest} names, where
+ * excluding everything positional leaves `sha1(source, classification,
+ * basename)` — a key so coarse that two unrelated files called `note.txt` in
+ * two different threads collapse and one of them is DELETED with the scratch
+ * tree, recorded nowhere but an `itemsDeduped` counter. There the caller's
+ * `contentDigest` (or, failing that, the path) is folded in, which separates
+ * genuinely different bytes while still collapsing identical ones.
  */
-export function hashItem(item: Item, dataSource: string): string {
+export function hashItem(item: Item, dataSource: string, contentDigest?: string | null): string {
   if (item.id) {
     return item.id;
   }
@@ -200,6 +265,13 @@ export function hashItem(item: Item, dataSource: string): string {
 
   if (item.location?.latitude != null && item.location?.longitude != null) {
     hash.update(`${item.location.latitude},${item.location.longitude}`);
+
+    return hash.digest('hex');
+  }
+
+  if (needsContentDigest(item)) {
+    hash.update('\0');
+    hash.update(degenerateDiscriminator(item, contentDigest));
   }
 
   return hash.digest('hex');

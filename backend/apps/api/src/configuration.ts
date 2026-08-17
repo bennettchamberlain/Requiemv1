@@ -321,6 +321,15 @@ export const ConfigSchema = z.object({
         .int()
         .positive()
         .default(100 * 1024 ** 3),
+      // Where the DATABASE's volume is visible to THIS process, for the push's
+      // free-space preflight. Empty by default and usually right that way:
+      // `readDatabaseSpace` asks Postgres for its own `data_directory` first,
+      // which resolves whenever the two share a filesystem namespace. Set this
+      // when they do not — the shipped topology runs the api and the database
+      // in separate containers — to the api-side mount of the same volume.
+      // Unreadable or unset simply means the push reports "cannot say" and
+      // relies on catching the disk-full error instead of predicting it.
+      databaseDataDir: z.string().default(''),
     })
     .superRefine((value, context) => {
       // The three areas have different owners and different sweeps: the inbox

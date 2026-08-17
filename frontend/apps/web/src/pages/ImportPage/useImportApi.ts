@@ -134,8 +134,14 @@ export interface InboxUnit {
   readonly sizeBytes: number;
   readonly fileCount: number;
   readonly recognized: readonly { dataSource: string; title: string; confidence: number }[];
-  /** An unfinished run already consuming this unit, if any. */
+  /** An unfinished run of THIS user's already consuming the unit, if any. */
   readonly activeRunId: string | null;
+  /**
+   * Some run holds this unit, whoever started it. The inbox is one folder
+   * shared by every account, so this — not `activeRunId` — is what says a unit
+   * cannot be imported. Another user's run id is never exposed.
+   */
+  readonly claimed: boolean;
 }
 
 export interface InboxScan {
@@ -287,6 +293,23 @@ export function useImportApi() {
     [authHeaders],
   );
 
+  /**
+   * Push the rows a completed push could not write.
+   *
+   * Distinct from `retryStage`, which re-runs a stage that FAILED. A push that
+   * mostly worked completes, and its casualties sit at `failed` where nothing
+   * looks at them again — this is the only way back for them.
+   */
+  const retryFailedPush = useCallback(
+    async (runId: string) =>
+      post<{ items: number; entities: number; requeued: boolean }>(
+        `/api/import/runs/${runId}/push/retry`,
+        authHeaders(),
+        {},
+      ),
+    [authHeaders],
+  );
+
   // Memoized, and it has to be. Every call below is already a stable
   // `useCallback`, but a fresh object literal here is a new reference on every
   // render — and a caller with `[api]` in an effect then re-runs that effect on
@@ -306,6 +329,7 @@ export function useImportApi() {
       startPush,
       cancelRun,
       retryStage,
+      retryFailedPush,
       scanInbox,
       importInbox,
     }),
@@ -321,6 +345,7 @@ export function useImportApi() {
       startPush,
       cancelRun,
       retryStage,
+      retryFailedPush,
       scanInbox,
       importInbox,
     ],

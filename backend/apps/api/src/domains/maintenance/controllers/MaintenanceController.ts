@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   ConflictException,
   Controller,
@@ -1246,19 +1247,31 @@ export class MaintenanceController {
    * hypertable (TRUNCATE skips the AFTER DELETE trigger — leaving it populated
    * is the "0 comms on re-import" incident), the whole ci_search index
    * (embeddings/vectors/index_skips), and deletes the not-yet-run search-index
-   * queue jobs. Destructive across ALL users — requires the exact confirm
-   * literal. Returns counts-before per table. The importer's own watermark
-   * (`ci_server.last_push`) must be reset separately; see
-   * db/postgres/INGEST_RESET_RUNBOOK.md.
+   * queue jobs. Requires the exact confirm literal. Returns counts-before per
+   * table. The importer's own watermark (`ci_server.last_push`) must be reset
+   * separately; see db/postgres/INGEST_RESET_RUNBOOK.md.
+   *
+   * It truncates, so it cannot take one user's rows and leave another's — and
+   * this route is behind ordinary user auth, not an admin role, because the
+   * appliance has none. The service therefore REFUSES when any of those tables
+   * still holds another account's data; the confirm literal proves the caller
+   * meant it, not that they were entitled to everyone else's memory.
    */
   @Post('ingest/reset')
   async resetIngest(
+    @Context() context: RequestContext,
     @Body(new ValidationPipe(ingestResetSchema)) body: { confirm: 'RESET_ALL_INGESTED_DATA' },
   ): Promise<IngestResetResult> {
     // The ValidationPipe enforces the confirm literal; the value isn't otherwise used.
     void body;
 
-    return this.ingestResetService.reset();
+    const { userId } = toServiceContext(context);
+
+    if (typeof userId !== 'string') {
+      throw new BadRequestException('An authenticated user is required to reset ingested data');
+    }
+
+    return this.ingestResetService.reset({ userId });
   }
 
   /**

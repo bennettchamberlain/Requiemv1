@@ -5,6 +5,7 @@ import {
   hasContactIdentity,
   hashItem,
   mergeAccumulatedMetadata,
+  needsContentDigest,
   normalizeHandle,
   resolveEntityType,
 } from '../identity';
@@ -126,6 +127,78 @@ describe('hashItem', () => {
     const there: Item = { classification: 'visit', location: { latitude: 3, longitude: 4 } };
 
     expect(hashItem(here, 'google_location')).not.toBe(hashItem(there, 'google_location'));
+  });
+
+  /**
+   * The degenerate fallback — no parser id, no timestamp, no coordinates —
+   * which is not an edge case: 79,906 of 80,067 `generic` rows in a real 462k
+   * run carried no timestamp, and 24 parsers assign no id at all.
+   *
+   * Reproduced live before the fix: `AliceThread/note.txt` (25 bytes) and
+   * `BobThread/note.txt` (29 bytes) in one unit staged as ONE row. The 29-byte
+   * file was consumed by the unpack's rename and deleted with the run's scratch
+   * tree, leaving no record of it anywhere but an `itemsDeduped` tick.
+   */
+  describe('when the item has neither a timestamp nor coordinates', () => {
+    const note = (folder: string): Item => ({
+      classification: 'note',
+      content: { filename: 'note.txt' },
+      intermediateLocation: `${folder}/note.txt`,
+    });
+
+    it('keeps two same-named files in different folders apart', () => {
+      expect(hashItem(note('AliceThread'), 'generic')).not.toBe(hashItem(note('BobThread'), 'generic'));
+    });
+
+    it('prefers the content digest, so identical bytes still collapse across folders', () => {
+      // The album-replication guarantee, preserved for items that have no
+      // timestamp to collapse on: same bytes, two paths, one staged row.
+      expect(hashItem(note('European Vacation'), 'google_photos', 'deadbeef')).toBe(
+        hashItem(note('Photos from 2012'), 'google_photos', 'deadbeef'),
+      );
+    });
+
+    it('separates different bytes at the same path', () => {
+      expect(hashItem(note('Thread'), 'generic', 'aaaa')).not.toBe(
+        hashItem(note('Thread'), 'generic', 'bbbb'),
+      );
+    });
+
+    it('falls back to the metadata for a record that carries no file at all', () => {
+      const record = (body: string): Item => ({ classification: 'note', metadata: { body } });
+
+      expect(hashItem(record('one'), 'generic')).not.toBe(hashItem(record('two'), 'generic'));
+    });
+  });
+
+  it('leaves the hash of every non-degenerate item exactly as it was', () => {
+    // The fold-in must not reach items that already key on something real, or
+    // an in-flight run's staged rows would stop matching their own dedup index.
+    const dated: Item = {
+      classification: 'photo',
+      timestamp: new Date('2012-07-04T10:00:00Z'),
+      content: { filename: 'IMAG0262.jpg' },
+      intermediateLocation: 'European Vacation/IMAG0262.jpg',
+    };
+    const elsewhere: Item = { ...dated, intermediateLocation: 'Photos from 2012/IMAG0262.jpg' };
+
+    expect(hashItem(dated, 'google_photos', 'aaaa')).toBe(hashItem(elsewhere, 'google_photos', 'bbbb'));
+  });
+});
+
+describe('needsContentDigest', () => {
+  it('is true only when nothing else identifies the item', () => {
+    expect(needsContentDigest({ classification: 'note', content: { filename: 'note.txt' } })).toBe(true);
+  });
+
+  it('is false as soon as a parser id, a timestamp or a location is present', () => {
+    expect(needsContentDigest({ id: 'gmail-1' })).toBe(false);
+    expect(needsContentDigest({ timestamp: new Date('2012-07-04T10:00:00Z') })).toBe(false);
+    expect(needsContentDigest({ location: { latitude: 1, longitude: 2 } })).toBe(false);
+  });
+
+  it('is true for an unparseable timestamp, which identifies nothing', () => {
+    expect(needsContentDigest({ timestamp: new Date('not a date') })).toBe(true);
   });
 });
 

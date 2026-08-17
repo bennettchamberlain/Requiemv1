@@ -11,8 +11,11 @@ import { StagedSourceService } from '../StagedSourceService';
  * uploads directory — the SQL half lives in stagedSourceRegistry/Spine
  * against real Postgres. What is pinned here:
  *
- *  - the purge deletes the FILE first and stamps `expired` only on success —
- *    a failed unlink must leave the row for the next sweep, not orphan bytes;
+ *  - the purge takes the row out of the staged pool with a COMPARE-AND-SWAP
+ *    before it deletes anything, so a run that claims the upload in the gap
+ *    wins outright — the old ordering deleted a live run's archive and then
+ *    overwrote its `claimed` row with an `expired` tombstone;
+ *  - a failed unlink puts the row back, so bytes are never orphaned;
  *  - the orphan sweep takes only what no row accounts for, and only past the
  *    TTL;
  *  - the deletion site refuses paths outside the uploads root, whatever a
@@ -61,13 +64,16 @@ function build(rows: Array<Record<string, unknown>> = []) {
     update: jest.fn(async () => ({ affected: 1 })),
     delete: jest.fn(async () => ({ affected: 1 })),
     exist: jest.fn<Promise<boolean>, [{ where: { dropId: string } }]>(async () => false),
+    // `dropDirIsLive` falls through to a raw EXISTS over the run join when no
+    // row is in a live status; unfinished runs are opt-in per test.
+    query: jest.fn(async () => [{ live: false }]),
   };
 
   return { service: new StagedSourceService(repo as never, stubLogger()), repo };
 }
 
 describe('purgeExpired', () => {
-  it('deletes the file first and stamps expired only on success', async () => {
+  it('claims the row out of the staged pool, then deletes the bytes', async () => {
     const filePath = await seedDropDir('drop-1');
     const { service, repo } = build([
       { id: 'row-1', dropId: 'drop-1', sourcePath: filePath, status: 'staged' },
@@ -75,10 +81,60 @@ describe('purgeExpired', () => {
 
     expect(await service.purgeExpired()).toBe(1);
     await expect(stat(path.dirname(filePath))).rejects.toMatchObject({ code: 'ENOENT' });
-    expect(repo.update).toHaveBeenCalledWith({ id: 'row-1' }, { status: 'expired' });
+    // Constrained to `status: 'staged'` — that predicate IS the race guard.
+    expect(repo.update).toHaveBeenCalledWith(expect.objectContaining({ id: 'row-1', status: 'staged' }), {
+      status: 'expired',
+    });
   });
 
-  it('refuses to delete a row pointing outside the uploads root, and does not stamp it', async () => {
+  /**
+   * The reproduced race. `purgeExpired` reads the stale rows, then deletes each
+   * file, then stamps `expired`. A run that claimed the upload in the gap used
+   * to have its archive deleted out from under it AND its live `claimed` row
+   * overwritten by the unconstrained stamp — so the unpack failed with "no
+   * claimed source" over bytes that no longer existed, and nothing was left to
+   * say where they had gone.
+   */
+  it('leaves an upload a run claimed between the read and the delete', async () => {
+    const filePath = await seedDropDir('drop-raced');
+    const { service, repo } = build([
+      { id: 'row-raced', dropId: 'drop-raced', sourcePath: filePath, status: 'staged' },
+    ]);
+
+    // The CAS finds the row no longer `staged` — a run got there first.
+    repo.update.mockResolvedValue({ affected: 0 } as never);
+
+    expect(await service.purgeExpired()).toBe(0);
+
+    // The live run's archive is untouched...
+    expect((await stat(filePath)).size).toBe(5);
+    // ...and its claim was never tombstoned.
+    expect(repo.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('puts the row back when the delete fails, so the next sweep retries it', async () => {
+    const outside = await mkdtemp(path.join(os.tmpdir(), 'ci-outside-'));
+    const { service, repo } = build([
+      {
+        id: 'row-undeletable',
+        dropId: 'drop-undeletable',
+        sourcePath: path.join(outside, 'x.zip'),
+        status: 'staged',
+      },
+    ]);
+
+    expect(await service.purgeExpired()).toBe(0);
+
+    // An `expired` row whose file survived is invisible to this sweep forever.
+    expect(repo.update).toHaveBeenLastCalledWith(
+      { id: 'row-undeletable', status: 'expired' },
+      {
+        status: 'staged',
+      },
+    );
+  });
+
+  it('refuses to delete a row pointing outside the uploads root, and leaves it staged', async () => {
     const outside = await mkdtemp(path.join(os.tmpdir(), 'ci-outside-'));
     const victim = path.join(outside, 'passwd');
 
@@ -88,10 +144,15 @@ describe('purgeExpired', () => {
       { id: 'row-evil', dropId: 'drop-evil', sourcePath: victim, status: 'staged' },
     ]);
 
-    // Counted as not-reclaimed; the row is left for a human to notice.
+    // Counted as not-reclaimed; the row is put back for a human to notice.
     expect(await service.purgeExpired()).toBe(0);
     expect((await stat(victim)).size).toBeGreaterThan(0);
-    expect(repo.update).not.toHaveBeenCalled();
+    expect(repo.update).toHaveBeenLastCalledWith(
+      { id: 'row-evil', status: 'expired' },
+      {
+        status: 'staged',
+      },
+    );
   });
 });
 
@@ -129,6 +190,27 @@ describe('sweepUploadOrphans', () => {
 
     expect(await service.sweepUploadOrphans()).toBe(1);
     expect(await readdir(incoming)).toEqual(['fresh']);
+  });
+
+  /**
+   * The status test alone is not enough. A row can leave the live statuses
+   * while its run is still going — a retried stage, or a status stamped by a
+   * racing sweep — and deleting an in-flight run's archive is unrecoverable
+   * where keeping it an extra hour costs disk. The tie goes to the run.
+   */
+  it('leaves a drop directory whose run has not finished, whatever its row status says', async () => {
+    await seedDropDir('running-drop');
+    await ageOut(path.join(uploadsDir, 'running-drop'));
+
+    const { service, repo } = build();
+
+    // No row in a live STATUS...
+    repo.exist.mockResolvedValue(false as never);
+    // ...but the run behind it is unfinished.
+    repo.query.mockResolvedValue([{ live: true }] as never);
+
+    expect(await service.sweepUploadOrphans()).toBe(0);
+    expect(await readdir(uploadsDir)).toContain('running-drop');
   });
 
   it('touches nothing younger than the TTL', async () => {

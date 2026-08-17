@@ -21,6 +21,7 @@ const UNITS = [
     fileCount: 1042,
     recognized: [{ dataSource: 'gmail', title: 'Gmail', confidence: 0.9 }],
     activeRunId: null,
+    claimed: false,
   },
   {
     path: 'phone/contacts.vcf',
@@ -29,6 +30,18 @@ const UNITS = [
     fileCount: 1,
     recognized: [],
     activeRunId: 'run-live',
+    claimed: true,
+  },
+  // Claimed by ANOTHER account: the inbox folder is shared, so this unit is
+  // unavailable here too — and its run id is not this caller's to see.
+  {
+    path: 'other/photos.zip',
+    kind: 'file' as const,
+    sizeBytes: 5_000,
+    fileCount: 1,
+    recognized: [],
+    activeRunId: null,
+    claimed: true,
   },
 ];
 
@@ -77,9 +90,12 @@ describe('InboxPanel', () => {
 
     await screen.findByText('takeout');
 
-    // One importable unit ⇒ one per-row Import button.
+    // One importable unit ⇒ one per-row Import button. The other two are
+    // claimed — one by this user, one by somebody else.
     expect(screen.getAllByRole('button', { name: 'Import' })).toHaveLength(1);
     expect(screen.getByText('Importing — see History')).toBeInTheDocument();
+    // A claim held by another account offers no Import button and no run link.
+    expect(screen.getByText('Importing on this appliance')).toBeInTheDocument();
   });
 
   it('Import all confirms with the consume warning before starting anything', async () => {

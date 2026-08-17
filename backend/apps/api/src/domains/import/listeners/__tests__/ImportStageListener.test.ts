@@ -27,9 +27,11 @@ function makeListener(
     run?: jest.Mock;
     pulled?: boolean;
     unstoredMedia?: boolean;
+    runBelongsTo?: boolean;
   } = {},
 ) {
   const runs = {
+    runBelongsTo: jest.fn(async () => overrides.runBelongsTo ?? true),
     pulledRecords: jest.fn(async () => overrides.pulled ?? true),
     hasUnstoredMedia: jest.fn(async () => overrides.unstoredMedia ?? false),
     getStage: jest.fn(async () =>
@@ -105,6 +107,23 @@ describe('ImportStageListener claiming', () => {
     expect(runs.beginStage).toHaveBeenCalledWith(payload.stageId);
     expect(unpackStage.run).toHaveBeenCalledTimes(1);
     expect(runs.completeStage).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * The stage row is the authority on whose import this is; the payload is a
+   * convenience copy written when the job was enqueued. Every row the pipeline
+   * writes carries `payload.userId`, so running a job whose payload names a
+   * different user than its run files one account's export under another's.
+   * There is no reading of a mismatch under which the work should proceed.
+   */
+  it('refuses a job whose payload names a different user than its run', async () => {
+    const { listener, runs, unpackStage } = makeListener({ runBelongsTo: false });
+
+    await listener.runStage(payload);
+
+    expect(unpackStage.run).not.toHaveBeenCalled();
+    expect(runs.beginStage).not.toHaveBeenCalled();
+    expect(runs.failStage).toHaveBeenCalledWith(payload.stageId, expect.stringMatching(/different user/));
   });
 
   it('does no work when another worker already owns the stage', async () => {

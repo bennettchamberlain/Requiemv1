@@ -1,14 +1,21 @@
 import path from 'node:path';
 
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 
 import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 
 import { extractUploadedArchive, isExtractableArchive } from '../archive/extract';
-import { stripSymlinks, unpackArchives, type RejectedArchive } from '../archive/unpack';
+import { freeBytesAt, stripSymlinks, unpackArchives, type RejectedArchive } from '../archive/unpack';
 import { StagedSourceService } from '../services/StagedSourceService';
 import { acquireLocalUnit } from '../sources/localAcquire';
+import {
+  DATABASE_FREE_FLOOR_BYTES,
+  DatabaseVolumeFullError,
+  readDatabaseSpace,
+} from '../storage/databaseSpace';
 import type { ImportStageRunner, StageOutcome, StageRunContext } from '../types';
 
 /**
@@ -38,6 +45,7 @@ export class UnpackStage implements ImportStageRunner {
   readonly kind = 'unpack' as const;
 
   constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
     private readonly stagedSources: StagedSourceService,
     private readonly logger: LoggerService,
   ) {
@@ -45,6 +53,21 @@ export class UnpackStage implements ImportStageRunner {
   }
 
   async run(context: StageRunContext): Promise<StageOutcome> {
+    // Both volumes, before 40GB of anything moves. The archive preflight inside
+    // `unpackArchives` covers scratch; this covers the one the push will write
+    // into, which is a separate and much smaller disk on this appliance. Only
+    // the already-empty case is refused here — how many database bytes an
+    // archive becomes is not predictable from its size, so this is a floor
+    // check, not an estimate, and the push re-checks as it goes.
+    const databaseSpace = await readDatabaseSpace(this.dataSource);
+
+    if (databaseSpace.freeBytes != null && databaseSpace.freeBytes < DATABASE_FREE_FLOOR_BYTES) {
+      throw new DatabaseVolumeFullError(
+        databaseSpace,
+        'refusing to unpack an archive whose records could not be saved afterwards',
+      );
+    }
+
     const { localPath, filename } = await this.acquire(context);
 
     const rejected: RejectedArchive[] = [];
@@ -120,6 +143,13 @@ export class UnpackStage implements ImportStageRunner {
         nestedArchives: nested.length,
         nestedFiles,
         symlinksRemoved,
+        // Both volumes, named, so "did this import have room?" is answerable
+        // from the run rather than from a shell on the appliance. The scratch
+        // figure is what the archive preflight measured; the database figure is
+        // what it never did.
+        scratchFreeBytes: freeBytesAt(context.scratchDir),
+        databaseFreeBytes: databaseSpace.freeBytes,
+        databaseBytes: databaseSpace.databaseBytes,
         rejected: rejected.map((entry) => ({
           archive: path.basename(entry.archive),
           reason: entry.reason,
@@ -146,7 +176,7 @@ export class UnpackStage implements ImportStageRunner {
    * re-enters through recovery.
    */
   private async acquire(context: StageRunContext): Promise<{ localPath: string; filename: string | null }> {
-    const source = await this.stagedSources.findByRunId(context.runId);
+    const source = await this.stagedSources.findByRunId(context.userId, context.runId);
 
     if (source == null) {
       throw new NotFoundException(`Run ${context.runId} has no claimed source to unpack`);

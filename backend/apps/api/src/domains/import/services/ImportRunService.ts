@@ -121,8 +121,9 @@ const STALE_STAGE_MINUTES = 10;
  *   rows, and pushing them is the point.
  * - completed parse — the staging actually happened.
  * - no push stage AT ANY STATUS — a failed or cancelled push means this run
- *   already left the Sync surface; its recovery path is `retryStage`, not a
- *   second appended stage.
+ *   already left the Sync surface; its recovery path is `retryStage` (for the
+ *   stage) or {@link ImportRunService.retryFailedPush} (for individual rows the
+ *   push could not write), not a second appended stage.
  * - pending rows in EITHER lane — PushStage pushes entities as well as items,
  *   and a parse that staged nothing would otherwise sit in the Sync card
  *   forever showing "0 items".
@@ -485,6 +486,19 @@ export class ImportRunService {
     return this.dataSource.getRepository(ImportStageEntity).findOne({ where: { id: stageId } });
   }
 
+  /**
+   * Is this run this user's?
+   *
+   * The check the worker makes before it executes a stage. Every row a stage
+   * writes is stamped with the payload's `userId`, so a payload that disagrees
+   * with the run row would file one account's export under another's — see
+   * {@link ImportStageListener.runStage}, which fails the stage rather than
+   * reconciling the two.
+   */
+  async runBelongsTo(runId: string, userId: string): Promise<boolean> {
+    return this.dataSource.getRepository(ImportRunEntity).exist({ where: { id: runId, userId } });
+  }
+
   async stagesFor(runId: string): Promise<ImportStage[]> {
     return this.dataSource.getRepository(ImportStageEntity).find({ where: { runId }, order: { seq: 'ASC' } });
   }
@@ -562,6 +576,125 @@ export class ImportRunService {
     await this.enqueueStage(ctx.userId, runId, { id: rows[0].id } as ImportStage);
 
     this.logger.log('Re-queued a failed import stage', { runId, stageId, userId: ctx.userId });
+
+    return true;
+  }
+
+  /**
+   * Put a run's individually-failed staged rows back in the push queue.
+   *
+   * THE recovery path for a row that `PushStage` marked `failed`, which until
+   * now had none. Every other route is closed to it: the push reads only
+   * `push_status = 'pending'`, so it never reconsiders the row;
+   * {@link PUSH_ELIGIBLE_WHERE} excludes a run that already has a push stage at
+   * any status, so Sync will not offer it; and `retryStage` moves STAGES, not
+   * rows, and refuses one that completed. A push that wrote 461,000 records and
+   * failed 297 therefore stranded those 297 forever — invisible except as a
+   * count in the stage detail, and unreachable by anything the UI could click.
+   *
+   * The rows go back to `pending` and the run's push stage is re-queued, which
+   * is what makes the next attempt real rather than a no-op: `beginStage` only
+   * claims a `queued` stage. A run that somehow has no push stage at all takes
+   * the ordinary {@link startPush} route instead, which now finds pending rows
+   * and appends one.
+   *
+   * Re-running the push over these rows is safe by the same argument the stage
+   * itself rests on: every destination upserts on its provenance triple, so a
+   * row whose failure was transient writes, and one whose failure was the
+   * record itself fails again and lands back where it was.
+   */
+  async retryFailedPush(
+    ctx: UserServiceContext,
+    runId: string,
+  ): Promise<{ items: number; entities: number; requeued: boolean } | null> {
+    const run = await this.getRun(ctx, runId);
+
+    if (run == null) {
+      return null;
+    }
+
+    // Both lanes: `pushEntities` marks a staged entity `failed` the same way,
+    // and an unresolved person costs every record that names them.
+    const items = await this.resetFailedRows('staged_items', runId);
+    const entities = await this.resetFailedRows('staged_entities', runId);
+
+    if (items + entities === 0) {
+      return { items: 0, entities: 0, requeued: false };
+    }
+
+    const requeued = await this.requeuePushStage(ctx, runId);
+
+    this.logger.log('Re-queued failed push rows', { runId, userId: ctx.userId, items, entities, requeued });
+
+    return { items, entities, requeued };
+  }
+
+  /**
+   * Move one staging table's `failed` rows back to `pending`, clearing the
+   * error so a second failure records its own reason rather than the first's.
+   *
+   * The table name is interpolated because it is a literal from this method's
+   * two call sites and Postgres takes no parameter in that position; the run id
+   * — the only caller-influenced value — is bound.
+   */
+  private async resetFailedRows(table: 'staged_items' | 'staged_entities', runId: string): Promise<number> {
+    // CTE-wrapped so the outer command is a SELECT — see the note on the claim
+    // in `startRun`; a bare UPDATE resolves as `[rows, rowCount]` here.
+    const rows = await this.dataSource.query<Array<{ id: string }>>(
+      `WITH reset AS (
+         UPDATE ci_import.${table}
+            SET push_status = 'pending', push_error = NULL, pushed_at = NULL
+          WHERE run_id = $1::uuid AND push_status = 'failed'
+      RETURNING id)
+       SELECT id FROM reset`,
+      [runId],
+    );
+
+    return rows.length;
+  }
+
+  /**
+   * Make the run's push stage runnable again, however it ended.
+   *
+   * The LAST push stage by seq, because a run can accumulate more than one —
+   * the deferred Sync appends its own. Re-queued rather than appended: a second
+   * stage row for the same work would double the weight the rollup divides by
+   * and leave the bar reading half done over a finished import.
+   *
+   * A run with no push stage at all (parse-only, then a failure that never got
+   * that far) falls through to `startPush`, which appends one.
+   */
+  private async requeuePushStage(ctx: UserServiceContext, runId: string): Promise<boolean> {
+    const rows = await this.dataSource.query<Array<{ id: string }>>(
+      `WITH requeued AS (
+         UPDATE ci_import.import_stages s
+            SET status = 'queued', error = NULL, started_at = NULL, finished_at = NULL,
+                processed = 0, duration_ms = NULL
+          WHERE s.id = (
+                SELECT x.id FROM ci_import.import_stages x
+                 WHERE x.run_id = $1::uuid AND x.kind = 'push'
+                 ORDER BY x.seq DESC
+                 LIMIT 1)
+      RETURNING s.id)
+       SELECT id FROM requeued`,
+      [runId],
+    );
+
+    if (rows.length === 0) {
+      return (await this.startPush(ctx, { runIds: [runId] })).length > 0;
+    }
+
+    await this.dataSource.query(
+      `UPDATE ci_import.import_runs
+          SET status = 'queued', error = NULL, finished_at = NULL
+        WHERE id = $1::uuid`,
+      [runId],
+    );
+
+    // The run finished at percent = 100 and the reopen alone would leave that
+    // stale — the same reason startPush refreshes before enqueueing.
+    await this.refreshRunRollup(rows[0].id);
+    await this.enqueueStage(ctx.userId, runId, { id: rows[0].id } as ImportStage);
 
     return true;
   }

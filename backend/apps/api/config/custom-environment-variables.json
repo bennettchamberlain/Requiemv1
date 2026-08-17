@@ -132,7 +132,8 @@
     "uploadsDir": "CI_IMPORT_UPLOADS_DIR",
     "inboxDir": "CI_IMPORT_INBOX_DIR",
     "maxArchiveEntries": "CI_IMPORT_MAX_ARCHIVE_ENTRIES",
-    "maxArchiveBytes": "CI_IMPORT_MAX_ARCHIVE_BYTES"
+    "maxArchiveBytes": "CI_IMPORT_MAX_ARCHIVE_BYTES",
+    "databaseDataDir": "CI_IMPORT_DB_DATA_DIR"
   },
   "enrichment": {
     "window": {

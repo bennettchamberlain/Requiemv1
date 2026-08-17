@@ -148,6 +148,27 @@ export class ImportStageListener implements OnApplicationBootstrap {
       return;
     }
 
+    // The stage row is the authority on whose import this is; the payload is a
+    // convenience copy written when the job was enqueued. A disagreement means
+    // a hand-edited or replayed job, and running it would stage one account's
+    // archive under another's user id — every row this pipeline writes carries
+    // `payload.userId`. Refused rather than corrected, because there is no
+    // reading of a mismatch under which the work should proceed.
+    if (!(await this.runs.runBelongsTo(payload.runId, payload.userId))) {
+      await this.runs.failStage(
+        stage.id,
+        'The stage job names a different user than the run it points at; refusing to run it',
+      );
+
+      this.logger.error(new Error('Import stage payload user does not match its run'), {
+        runId: payload.runId,
+        stageId: stage.id,
+        payloadUserId: payload.userId,
+      });
+
+      return;
+    }
+
     if (await this.runs.isFinished(payload.runId)) {
       this.logger.log('Run already finished; not starting its stage', {
         runId: payload.runId,

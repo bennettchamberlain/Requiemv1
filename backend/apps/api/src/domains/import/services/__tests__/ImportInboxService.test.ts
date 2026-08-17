@@ -215,13 +215,64 @@ describe('ImportInboxService.scan', () => {
     await writeFile(file, 'bytes');
 
     const { service } = build({
-      findActiveByPaths: jest.fn(async () => [{ sourcePath: file, runId: 'run-9' }]),
+      findActiveByPaths: jest.fn(async () => [{ sourcePath: file, runId: 'run-9', userId: ctx.userId }]),
     });
 
     await withInbox(inbox, async () => {
       const scan = await service.scan(ctx);
 
-      expect(scan.units[0].activeRunId).toBe('run-9');
+      expect(scan.units[0]).toMatchObject({ activeRunId: 'run-9', claimed: true });
+    });
+  });
+
+  /**
+   * The inbox is ONE folder shared by every account on the appliance. Reporting
+   * only the caller's own claims let two users start runs over the same
+   * archive, and `UnpackStage` acquires BY RENAME — so the first run to reach
+   * the move took the bytes into its own scratch tree and imported another
+   * person's export into its own account, while the second found nothing where
+   * its claim said there was something.
+   */
+  it('marks a unit another account is importing as claimed, without exposing their run', async () => {
+    const inbox = await freshInbox();
+    const file = path.join(inbox, 'export.zip');
+
+    await writeFile(file, 'bytes');
+
+    const { service, findActiveByPaths } = build({
+      findActiveByPaths: jest.fn(async () => [
+        { sourcePath: file, runId: 'run-of-somebody-else', userId: 'ffffffff-0000-0000-0000-000000000009' },
+      ]),
+    });
+
+    await withInbox(inbox, async () => {
+      const scan = await service.scan(ctx);
+
+      expect(scan.units[0].claimed).toBe(true);
+      // Their run id is not this caller's to see: it would 404 on the run
+      // route and disclose that the run exists on the way.
+      expect(scan.units[0].activeRunId).toBeNull();
+    });
+
+    // The lookup itself must not be user-scoped, or the claim is invisible.
+    expect(findActiveByPaths).toHaveBeenCalledWith([file]);
+  });
+
+  it('does not offer a unit another account is importing', async () => {
+    const inbox = await freshInbox();
+    const claimed = path.join(inbox, 'claimed.zip');
+
+    await writeFile(claimed, 'bytes');
+
+    const { service, startRun } = build({
+      findActiveByPaths: jest.fn(async () => [
+        { sourcePath: claimed, runId: 'run-live', userId: 'ffffffff-0000-0000-0000-000000000009' },
+      ]),
+    });
+
+    await withInbox(inbox, async () => {
+      expect((await service.startBatch(ctx, { source: 'api' })).results).toEqual([]);
+      expect(startRun).not.toHaveBeenCalled();
     });
   });
 
@@ -318,7 +369,9 @@ describe('ImportInboxService.startBatch', () => {
     await writeFile(claimed, 'bytes');
 
     const { service, startRun } = build({
-      findActiveByPaths: jest.fn(async () => [{ sourcePath: claimed, runId: 'run-live' }]),
+      findActiveByPaths: jest.fn(async () => [
+        { sourcePath: claimed, runId: 'run-live', userId: ctx.userId },
+      ]),
     });
 
     await withInbox(inbox, async () => {
