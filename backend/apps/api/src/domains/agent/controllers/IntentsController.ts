@@ -1,4 +1,12 @@
-import { BadRequestException, Controller, Get, Param, NotFoundException, Query, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  Get,
+  Param,
+  NotFoundException,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 
 import { INTENTS_SCOPE, READ_CAPABILITY, RequireCapability, RequireScopes } from '@ci/common/decorators';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
@@ -77,7 +85,9 @@ function parseTier(tier: string | undefined): DispatchTier | undefined {
   }
 
   if (!(DISPATCH_TIERS as readonly string[]).includes(tier)) {
-    throw new BadRequestException(`Unknown dispatch tier: ${tier}. Expected one of: ${DISPATCH_TIERS.join(', ')}`);
+    throw new BadRequestException(
+      `Unknown dispatch tier: ${tier}. Expected one of: ${DISPATCH_TIERS.join(', ')}`,
+    );
   }
 
   return tier as DispatchTier;

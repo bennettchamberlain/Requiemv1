@@ -98,12 +98,7 @@ export function SourcePathTiles({ active, counts, paths }: Props) {
           const count = countFor(key, counts);
 
           return (
-            <PathTile
-              key={key}
-              definition={SOURCE_PATH_INFO[key]}
-              active={active === key}
-              count={count}
-            />
+            <PathTile key={key} definition={SOURCE_PATH_INFO[key]} active={active === key} count={count} />
           );
         })}
       </div>
