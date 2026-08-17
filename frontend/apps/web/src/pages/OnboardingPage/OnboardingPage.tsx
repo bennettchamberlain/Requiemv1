@@ -264,7 +264,7 @@ export function OnboardingPage() {
     currentStepKey !== 'people';
 
   if (user?.onboarded) {
-    return <Navigate to="/feed" replace />;
+    return <Navigate to="/today" replace />;
   }
 
   if (userLoading || progressLoading || !hydrated) {

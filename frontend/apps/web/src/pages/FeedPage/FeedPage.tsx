@@ -29,8 +29,23 @@ import { useSummariesService } from './useSummariesService';
 type CarouselProps = Partial<ComponentProps<typeof Carousel>>;
 const MAX_INSIGHT_SUMMARY_CARDS = 20;
 
-export function FeedPage() {
-  usePageTitle('Feed - Companion Intelligence');
+export interface FeedPageProps {
+  /**
+   * Rendered inside another page (Today) rather than as a route of its own.
+   * Embedded, it drops the breadcrumb slot, the page title and the
+   * PageContent wrapper — the host owns all three, and nesting PageContent
+   * nests its padding and its scroll container.
+   */
+  embedded?: boolean;
+}
+
+export function FeedPage({ embedded = false }: FeedPageProps = {}) {
+  usePageTitle(embedded ? null : 'Feed - Companion Intelligence');
+
+  // Chosen once, above the early returns: every exit from this component has to
+  // use the same frame, or the loading and mobile paths keep nesting a second
+  // PageContent inside Today's.
+  const Frame = embedded ? FeedEmbeddedFrame : FeedStandaloneFrame;
 
   const { t } = useTranslation();
 
@@ -275,17 +290,17 @@ export function FeedPage() {
 
   if (actionsEnabled && loading) {
     return (
-      <PageContent>
+      <Frame>
         <LoadingPage />
-      </PageContent>
+      </Frame>
     );
   }
 
   if (actionsEnabled && error) {
     return (
-      <PageContent>
+      <Frame>
         <ErrorPage error={error} />
-      </PageContent>
+      </Frame>
     );
   }
 
@@ -298,7 +313,7 @@ export function FeedPage() {
     } satisfies CarouselProps;
 
     return (
-      <PageContent>
+      <Frame>
         {showMobileEmptyState ? (
           <div className="flex min-h-[40vh] items-center justify-center py-10">
             <p className="text-center text-xl font-medium text-muted-foreground opacity-70">All Caught Up!</p>
@@ -380,7 +395,7 @@ export function FeedPage() {
         )}
 
         {isModalOpen && <FeedModal onClose={handleModalClose} />}
-      </PageContent>
+      </Frame>
     );
   }
 
@@ -391,24 +406,7 @@ export function FeedPage() {
   } satisfies CarouselProps;
 
   return (
-    <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-            <Breadcrumb.Separator className="hidden md:block" />
-            <Breadcrumb.Item>
-              <Breadcrumb.Page>Feed</Breadcrumb.Page>
-            </Breadcrumb.Item>
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
-      <PageContent>
+    <Frame>
         {hbpeEnabled && forecast && (
           // `display: contents` so the heading and the strip stay direct flex items of
           // PageContent (identical layout), while still being one addressable section —
@@ -520,9 +518,37 @@ export function FeedPage() {
             </Carousel>
           )}
         </div>
-      </PageContent>
-
       {isModalOpen && <FeedModal onClose={handleModalClose} />}
+    </Frame>
+  );
+}
+
+/** Standalone route: owns the breadcrumb trail and the page padding. */
+function FeedStandaloneFrame({ children }: { children: React.ReactNode }) {
+  return (
+    <>
+      <Portal.Slot id="breadcrumbs">
+        <Breadcrumb>
+          <Breadcrumb.List>
+            <Breadcrumb.Item className="hidden md:block">
+              <Breadcrumb.Link asChild>
+                <Link to="/today">Companion</Link>
+              </Breadcrumb.Link>
+            </Breadcrumb.Item>
+            <Breadcrumb.Separator className="hidden md:block" />
+            <Breadcrumb.Item>
+              <Breadcrumb.Page>Feed</Breadcrumb.Page>
+            </Breadcrumb.Item>
+          </Breadcrumb.List>
+        </Breadcrumb>
+      </Portal.Slot>
+
+      <PageContent>{children}</PageContent>
     </>
   );
+}
+
+/** Inside Today: contribute content only. */
+function FeedEmbeddedFrame({ children }: { children: React.ReactNode }) {
+  return <div className="flex flex-col gap-6">{children}</div>;
 }

@@ -7,7 +7,7 @@ export default function NotFoundPage() {
   const [{ expired }] = useAuth();
   const { user } = useCurrentUser();
 
-  const homePath = !expired && user ? '/feed' : '/';
+  const homePath = !expired && user ? '/today' : '/';
 
   return (
     <div className="flex h-lvh w-full items-center justify-center p-6 md:p-10">

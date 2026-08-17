@@ -137,7 +137,7 @@ export function PlacePage() {
           <Breadcrumb.List>
             <Breadcrumb.Item className="hidden md:block">
               <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
+                <Link to="/today">Companion</Link>
               </Breadcrumb.Link>
             </Breadcrumb.Item>
 

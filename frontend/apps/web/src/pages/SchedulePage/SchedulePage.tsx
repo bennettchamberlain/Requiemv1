@@ -137,12 +137,23 @@ function ScheduleLegend({
   );
 }
 
-export function SchedulePage() {
+export interface SchedulePageProps {
+  /**
+   * Rendered inside another page (Today) rather than as a route of its own.
+   * Embedded, it drops the chrome the host already provides — the breadcrumb
+   * slot, the page title and the PageContent wrapper — because two of those on
+   * one screen is two answers to "where am I", and nesting PageContent nests
+   * its padding and its scroll container.
+   */
+  embedded?: boolean;
+}
+
+export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
   const { t } = useTranslation();
   const [weekOffset, setWeekOffset] = useState(0);
   const [colorMode, setColorMode] = useState<ColorMode>('type');
 
-  usePageTitle('Schedule - Companion Intelligence');
+  usePageTitle(embedded ? null : 'Schedule - Companion Intelligence');
 
   const { start, end } = useMemo(() => {
     const from = addDays(startOfLocalDay(new Date()), weekOffset * DAYS_IN_VIEW);
@@ -233,25 +244,12 @@ export function SchedulePage() {
     !loading && !fetching && !hasAnything && !error && !candidatesError && weekOffset === 0;
   const showScheduleSurface = weekOffset !== 0 || hasAnything || candidatesError || fetching;
 
-  return (
-    <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-            <Breadcrumb.Separator className="hidden md:block" />
-            <Breadcrumb.Item>
-              <Breadcrumb.Page>Schedule</Breadcrumb.Page>
-            </Breadcrumb.Item>
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
+  // Embedded, the host owns the breadcrumb and the page padding; standalone,
+  // this page owns both. Same body either way.
+  const Frame = embedded ? EmbeddedFrame : StandaloneFrame;
 
-      <PageContent className="gap-3 pt-[max(0.75rem,env(safe-area-inset-top))] md:gap-3">
+  return (
+    <Frame>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <div className="flex items-center gap-0.5">
             <IconButton variant="ghost" label={t('SCHEDULE_PREVIOUS_WEEK')} onClick={goBack}>
@@ -368,7 +366,38 @@ export function SchedulePage() {
             </div>
           </>
         )}
+    </Frame>
+  );
+}
+
+/** Standalone route: owns the breadcrumb trail and the page padding. */
+function StandaloneFrame({ children }: { children: React.ReactNode }) {
+  return (
+    <>
+      <Portal.Slot id="breadcrumbs">
+        <Breadcrumb>
+          <Breadcrumb.List>
+            <Breadcrumb.Item className="hidden md:block">
+              <Breadcrumb.Link asChild>
+                <Link to="/today">Companion</Link>
+              </Breadcrumb.Link>
+            </Breadcrumb.Item>
+            <Breadcrumb.Separator className="hidden md:block" />
+            <Breadcrumb.Item>
+              <Breadcrumb.Page>Schedule</Breadcrumb.Page>
+            </Breadcrumb.Item>
+          </Breadcrumb.List>
+        </Breadcrumb>
+      </Portal.Slot>
+
+      <PageContent className="gap-3 pt-[max(0.75rem,env(safe-area-inset-top))] md:gap-3">
+        {children}
       </PageContent>
     </>
   );
+}
+
+/** Inside Today: the host already provides both, so contribute only content. */
+function EmbeddedFrame({ children }: { children: React.ReactNode }) {
+  return <div className="flex flex-col gap-3">{children}</div>;
 }

@@ -8,7 +8,6 @@ import {
   CalendarRange,
   ChartColumn,
   LifeBuoy,
-  Inbox,
   ListTodo,
   MessagesSquare,
   NotebookPen,
@@ -53,15 +52,14 @@ export function SecondaryNavigation() {
     <nav className="flex h-full flex-col p-2">
       <Tooltip.Provider>
         <div className="flex flex-col gap-2">
-          <NavLink to="/feed" label="Feed" badgeCount={feedBadgeCount}>
-            <Inbox className="h-6 w-6" strokeWidth={1.25} />
+          {/* One entry, because Schedule and Feed are one page now. The
+              calendar icon rather than the inbox tray: the page opens on the
+              day's schedule, and a tray promised a queue of things to clear
+              that this page never was. The feed's badge count rides along,
+              since its cards are still the part that wants attention. */}
+          <NavLink to="/today" label="Today" badgeCount={feedBadgeCount}>
+            <CalendarRange className="h-6 w-6" strokeWidth={1.25} />
           </NavLink>
-
-          {isFeatureEnabled('schedule.page') && (
-            <NavLink to="/schedule" label="Schedule">
-              <CalendarRange className="h-6 w-6" strokeWidth={1.25} />
-            </NavLink>
-          )}
 
           <NavLink to="/memory" label="Memory">
             <Brain className="h-6 w-6" strokeWidth={1.25} />
