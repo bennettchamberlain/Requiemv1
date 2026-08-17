@@ -1,6 +1,12 @@
 import { WebPlugin } from '@capacitor/core';
 
-import type { GenerateResult, LocalLlmAvailability, LocalLlmPlugin, ModelStatusResult } from './definitions';
+import type {
+  GenerateResult,
+  LoadModelResult,
+  LocalLlmAvailability,
+  LocalLlmPlugin,
+  ModelStatusResult,
+} from './definitions';
 
 /**
  * Web/no-op implementation. There is no on-device LiteRT-LM engine in a browser, so
@@ -29,8 +35,13 @@ export class LocalLlmWeb extends WebPlugin implements LocalLlmPlugin {
     // Nothing to delete on web — treat as a no-op rather than an error.
   }
 
-  async loadModel(): Promise<void> {
+  async loadModel(): Promise<LoadModelResult> {
     throw this.unavailable('loadModel is not available on web.');
+  }
+
+  async configureIntentTools(): Promise<void> {
+    // There is no local model to give tools to — accept and ignore, so callers can configure
+    // unconditionally at startup without branching on platform.
   }
 
   async unloadModel(): Promise<void> {

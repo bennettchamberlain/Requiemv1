@@ -1,10 +1,12 @@
-import { Controller, Get, Param, NotFoundException, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Param, NotFoundException, Query, UseGuards } from '@nestjs/common';
 
 import { INTENTS_SCOPE, READ_CAPABILITY, RequireCapability, RequireScopes } from '@ci/common/decorators';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import {
+  DISPATCH_TIERS,
   IntentCatalogService,
   type CiEntityDescriptor,
+  type DispatchTier,
   type IntentDomain,
   type IntentManifest,
   type ManifestIntent,
@@ -26,10 +28,16 @@ import {
 export class IntentsController {
   constructor(private readonly catalog: IntentCatalogService) {}
 
-  /** The full manifest: domains + entities + intents. */
+  /**
+   * The full manifest: domains + entities + intents.
+   *
+   * `?tier=local` additionally attaches this server's own dispatch ruling to each intent, which is
+   * what the on-device tier should ask for — it reads `dispatch.decision` rather than shipping a
+   * Kotlin and a Swift copy of the policy. Omitting `tier` returns the manifest unchanged.
+   */
   @Get()
-  getManifest(): IntentManifest {
-    return this.catalog.getManifest();
+  getManifest(@Query('tier') tier?: string): IntentManifest {
+    return this.catalog.getManifest({ tier: parseTier(tier) });
   }
 
   /** The standardized schema-domain vocabulary. */
@@ -44,10 +52,10 @@ export class IntentsController {
     return { entities: this.catalog.getEntities() };
   }
 
-  /** A single intent by its dotted name, e.g. `memory.recall`. */
+  /** A single intent by its dotted name, e.g. `memory.recall`. Honours `?tier=` as above. */
   @Get(':name')
-  getIntent(@Param('name') name: string): ManifestIntent {
-    const manifest = this.catalog.getManifest();
+  getIntent(@Param('name') name: string, @Query('tier') tier?: string): ManifestIntent {
+    const manifest = this.catalog.getManifest({ tier: parseTier(tier) });
     const intent = manifest.intents.find((i) => i.name === name);
 
     if (!intent) {
@@ -56,4 +64,21 @@ export class IntentsController {
 
     return intent;
   }
+}
+
+/**
+ * Validates the optional `tier` query param. Rejects an unrecognized value rather than ignoring it:
+ * a client that asks for rulings and silently receives none would read every `dispatch` as
+ * `undefined` and, depending on how it defaults, either refuse everything or run everything.
+ */
+function parseTier(tier: string | undefined): DispatchTier | undefined {
+  if (tier == null || tier === '') {
+    return undefined;
+  }
+
+  if (!(DISPATCH_TIERS as readonly string[]).includes(tier)) {
+    throw new BadRequestException(`Unknown dispatch tier: ${tier}. Expected one of: ${DISPATCH_TIERS.join(', ')}`);
+  }
+
+  return tier as DispatchTier;
 }
