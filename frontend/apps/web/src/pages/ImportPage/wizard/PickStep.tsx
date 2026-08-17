@@ -6,6 +6,7 @@ import { Check } from '@ci/shadcn/icons';
 import type { CatalogSource } from '../useImportApi';
 
 import { ECOSYSTEM_ICONS, pickableSections } from './sources';
+import { useSourceUsage } from './useSourceUsage';
 
 export interface PickStepProps {
   catalog: readonly CatalogSource[];
@@ -25,6 +26,7 @@ export interface PickStepProps {
  */
 export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProps) {
   const [logoFailed, setLogoFailed] = useState<ReadonlySet<string>>(new Set());
+  const usage = useSourceUsage();
 
   // No search box and no category chips. Both were answers to a grid of ~100
   // one-line names with nothing to tell them apart; the tiles now carry a logo,
@@ -53,6 +55,18 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
               {section.items.map((item) => {
                 const on = picked.has(item.key);
                 const showLogo = item.logo != null && !logoFailed.has(item.key);
+                // A bundle covers several importers, so it reports their sum.
+                const used = item.importers
+                  .map((importer) => usage.get(importer))
+                  .filter((entry) => entry != null);
+                const records = used.reduce((sum, entry) => sum + entry.records, 0);
+                const lastImportedAt = used.reduce<string | null>(
+                  (latest, entry) =>
+                    entry.lastImportedAt != null && (latest == null || entry.lastImportedAt > latest)
+                      ? entry.lastImportedAt
+                      : latest,
+                  null,
+                );
 
                 return (
                   <li key={item.key}>
@@ -63,7 +77,11 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
                       onClick={() => onToggle(item.key)}
                       className={cn(
                         'relative flex h-full w-full flex-col gap-3 rounded-md border p-3 text-left text-sm transition-colors',
-                        on ? 'border-primary bg-primary/5' : 'hover:bg-muted/50',
+                        on
+                          ? 'border-primary bg-primary/5'
+                          : records > 0
+                            ? 'border-green-700/50 bg-green-950/[0.06] dark:border-green-700/45 dark:bg-green-950/40'
+                            : 'hover:bg-muted/50',
                         !item.ready && 'opacity-60',
                       )}
                     >
@@ -85,6 +103,11 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
 
                         {on ? (
                           <Check className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+                        ) : records > 0 ? (
+                          <Check
+                            className="h-4 w-4 shrink-0 text-green-700 dark:text-green-400"
+                            aria-hidden
+                          />
                         ) : !item.ready ? (
                           <Badge variant="outline" className="shrink-0 text-[10px]">
                             Coming soon
@@ -103,6 +126,30 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
                               <span className="truncate">{object.label}</span>
                             </span>
                           ))}
+                        </span>
+                      )}
+
+                      {/* What this source has already given the appliance —
+                          the difference between "I could import this" and "I
+                          did, in March, and it brought 42,318 records". */}
+                      {records > 0 && (
+                        <span className="mt-auto flex flex-wrap items-center gap-x-2 pt-1 text-xs text-muted-foreground">
+                          <span>
+                            {records.toLocaleString()} {records === 1 ? 'record' : 'records'}
+                          </span>
+                          {lastImportedAt && (
+                            <>
+                              <span aria-hidden>·</span>
+                              <span>
+                                imported{' '}
+                                {new Date(lastImportedAt).toLocaleDateString(undefined, {
+                                  day: 'numeric',
+                                  month: 'short',
+                                  year: 'numeric',
+                                })}
+                              </span>
+                            </>
+                          )}
                         </span>
                       )}
                     </button>

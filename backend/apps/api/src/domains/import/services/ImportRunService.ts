@@ -510,12 +510,37 @@ export class ImportRunService {
    * stages — that cache exists precisely so this list is cheap, because it is
    * polled while an import is in flight.
    */
-  async listRuns(ctx: UserServiceContext, options: { limit?: number } = {}): Promise<ImportRun[]> {
-    return this.dataSource.getRepository(ImportRunEntity).find({
+  async listRuns(
+    ctx: UserServiceContext,
+    options: { limit?: number } = {},
+  ): Promise<(ImportRun & { records: number })[]> {
+    const runs = await this.dataSource.getRepository(ImportRunEntity).find({
       where: { userId: ctx.userId },
       order: { createdAt: 'DESC' },
       take: Math.min(options.limit ?? 50, 200),
     });
+
+    if (runs.length === 0) {
+      return [];
+    }
+
+    // How many records the run actually landed, so a caller can say what an
+    // import produced without fetching every run's stages one at a time. The
+    // PUSH stage is the one that answers it: unpack counts archive members and
+    // parse counts rows staged, but push is what reaches ci.*.
+    //
+    // One extra query for the whole page, not one per run.
+    const rows = await this.dataSource.query<Array<{ run_id: string; records: string | null }>>(
+      `SELECT run_id, SUM(processed)::bigint AS records
+         FROM ci_import.import_stages
+        WHERE run_id = ANY($1::uuid[]) AND kind = 'push'
+        GROUP BY run_id`,
+      [runs.map((run) => run.id)],
+    );
+
+    const recordsByRun = new Map(rows.map((row) => [row.run_id, Number(row.records ?? 0)]));
+
+    return runs.map((run) => ({ ...run, records: recordsByRun.get(run.id) ?? 0 }));
   }
 
   /** One run with its stage bar, or null when it is not this user's. */

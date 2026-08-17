@@ -566,6 +566,12 @@ export interface PickItem {
   ready: boolean;
   /** What importing it puts in your memory — see {@link objectsFor}. */
   objects: TrackedObject[];
+  /**
+   * Importer names this button covers — one for a service, several for a
+   * bundle. A run records which importers it fed, so this is what lets a tile
+   * say whether it has been imported before and how much it brought.
+   */
+  importers: string[];
 }
 
 export interface PickSection {
@@ -611,6 +617,13 @@ export function pickableSections(catalog: readonly CatalogSource[]): PickSection
               .filter((source) => bundle.members.includes(source.id))
               .map((source) => objectsFor(source.whatImported)),
           ),
+          importers: [
+            ...new Set(
+              (byEcosystem.get(eco) ?? [])
+                .filter((source) => bundle.members.includes(source.id))
+                .map((source) => source.importer),
+            ),
+          ],
         });
       }
 
@@ -626,6 +639,7 @@ export function pickableSections(catalog: readonly CatalogSource[]): PickSection
           ecosystem: eco,
           ready: source.importerReady,
           objects: objectsFor(source.whatImported),
+          importers: [source.importer],
         });
       }
     }

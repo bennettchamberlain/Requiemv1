@@ -24,7 +24,41 @@ export interface SourceCardProps {
   locked?: boolean;
   /** Active connections, when the source has any. */
   count?: number;
+  /**
+   * Records this source has actually put in the memory, across every
+   * connection and import. Omitted (or 0) hides the line.
+   */
+  records?: number;
+  /** ISO timestamp of the last successful sync or import, when there was one. */
+  lastActivityAt?: string | null;
+  /** What the last activity was, so the line can name it honestly. */
+  activityVerb?: 'synced' | 'imported';
   onSelect?: () => void;
+}
+
+/** "3 minutes ago", "yesterday", "12 Mar" — precision nobody has to parse. */
+function relativeDay(iso: string): string | null {
+  const then = new Date(iso);
+
+  if (Number.isNaN(then.getTime())) {
+    return null;
+  }
+
+  const days = Math.floor((Date.now() - then.getTime()) / 86_400_000);
+
+  if (days <= 0) {
+    return 'today';
+  }
+
+  if (days === 1) {
+    return 'yesterday';
+  }
+
+  if (days < 30) {
+    return `${days} days ago`;
+  }
+
+  return then.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 /**
@@ -54,10 +88,18 @@ export function SourceCard({
   comingSoon = false,
   locked = false,
   count = 0,
+  records = 0,
+  lastActivityAt,
+  activityVerb = 'synced',
   onSelect,
 }: SourceCardProps) {
   const isConnected = count > 0;
   const disabled = comingSoon || locked;
+  const lastActivity = lastActivityAt ? relativeDay(lastActivityAt) : null;
+  // "In use" is a broader claim than "connected": an archive import leaves no
+  // connection behind, and a source that gave you a decade of history should
+  // not read as untouched next to one you signed into a minute ago.
+  const inUse = isConnected || records > 0 || lastActivity != null;
 
   return (
     <button
@@ -70,7 +112,7 @@ export function SourceCard({
         disabled
           ? 'cursor-not-allowed opacity-60'
           : 'cursor-pointer hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-md',
-        isConnected
+        inUse
           ? 'border-green-700/50 bg-green-950/[0.06] dark:border-green-700/45 dark:bg-green-950/40'
           : 'border-border',
       )}
@@ -86,10 +128,10 @@ export function SourceCard({
         </span>
         <span className="truncate font-semibold">{name}</span>
 
-        {isConnected ? (
+        {inUse ? (
           <span className="ml-auto flex shrink-0 items-center gap-1 text-xs font-medium text-green-700 dark:text-green-400">
             <Check aria-hidden className="h-3.5 w-3.5" />
-            {count === 1 ? 'Connected' : `${count} connected`}
+            {isConnected ? (count === 1 ? 'Connected' : `${count} connected`) : 'In use'}
           </span>
         ) : comingSoon ? (
           <span className="text-muted-foreground ml-auto shrink-0 text-xs font-medium">Coming soon</span>
@@ -104,6 +146,25 @@ export function SourceCard({
           </li>
         ))}
       </ul>
+
+      {/* What this source has actually done, once it has done something. Two
+          facts, because they answer different worries: how much of my life is
+          in here, and is it still keeping up. */}
+      {(records > 0 || lastActivity) && (
+        <span className="mt-auto flex flex-wrap items-center gap-x-2 gap-y-0.5 pt-1 text-xs text-muted-foreground">
+          {records > 0 && (
+            <span>
+              {records.toLocaleString()} {records === 1 ? 'record' : 'records'}
+            </span>
+          )}
+          {records > 0 && lastActivity && <span aria-hidden>·</span>}
+          {lastActivity && (
+            <span>
+              {activityVerb} {lastActivity}
+            </span>
+          )}
+        </span>
+      )}
     </button>
   );
 }

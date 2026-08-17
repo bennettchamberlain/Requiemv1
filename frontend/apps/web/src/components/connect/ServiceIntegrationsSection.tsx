@@ -45,11 +45,30 @@ const GET_CONNECTIONS = gql`
           active
           needsReauth
           providerId
+          syncState
         }
       }
     }
   }
 `;
+
+/**
+ * When this connection last actually pulled something.
+ *
+ * `syncState` is an untyped JSON column the connection runner owns; the server
+ * reads `lastSyncedAt` off it for its own summaries, so this reads the same
+ * key rather than inventing a second convention. Anything else in there is
+ * none of this card's business.
+ */
+function lastSyncedAt(syncState: unknown): string | null {
+  if (syncState == null || typeof syncState !== 'object') {
+    return null;
+  }
+
+  const value = (syncState as { lastSyncedAt?: unknown }).lastSyncedAt;
+
+  return typeof value === 'string' ? value : null;
+}
 
 export interface ServiceProviderConfig {
   rawId: string;
@@ -291,17 +310,27 @@ export function ServiceIntegrationsSection({
 
   const connections =
     connectionsData?.connections?.edges?.map(
-      (edge: { node: { providerId: string; active: boolean } }) => edge.node,
+      (edge: { node: { providerId: string; active: boolean; syncState?: unknown } }) => edge.node,
     ) ?? [];
 
   const connectionsCount: Record<string, number> = {};
-  connections.forEach((c: { providerId: string; active: boolean }) => {
+  const lastSyncByProvider: Record<string, string> = {};
+
+  connections.forEach((c: { providerId: string; active: boolean; syncState?: unknown }) => {
     if (!c.active) {
       return;
     }
 
     const rawId = toRawProviderId(c.providerId);
     connectionsCount[rawId] = (connectionsCount[rawId] ?? 0) + 1;
+
+    // Newest wins: with two Google accounts the card should report the one
+    // that ran most recently, not whichever the server listed first.
+    const synced = lastSyncedAt(c.syncState);
+
+    if (synced && (lastSyncByProvider[rawId] == null || synced > lastSyncByProvider[rawId])) {
+      lastSyncByProvider[rawId] = synced;
+    }
   });
 
   const providers =
@@ -377,6 +406,8 @@ export function ServiceIntegrationsSection({
               name={config.name}
               tracks={config.tracks}
               count={count}
+              lastActivityAt={lastSyncByProvider[config.rawId] ?? null}
+              activityVerb="synced"
               // `disabled` is "not implemented yet"; `disabledWhenConnected` is
               // onboarding asking for one account per service. Same inert card,
               // different reason — so they read differently to the user.

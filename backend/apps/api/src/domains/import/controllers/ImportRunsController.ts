@@ -42,6 +42,14 @@ export interface RunSummary {
   createdAt: Date;
   startedAt: Date | null;
   finishedAt: Date | null;
+  /**
+   * Records this run pushed into `ci.*`.
+   *
+   * Present on the LIST only — it is one grouped query for the whole page,
+   * which is what lets a caller say "42,318 records from Google" without
+   * fetching every run's stages. Zero for a run that has not pushed yet.
+   */
+  records?: number;
 }
 
 /** One box of the stage bar. */
@@ -163,7 +171,7 @@ export class ImportRunsController {
       { limit: Number.isFinite(parsed) ? parsed : undefined },
     );
 
-    return runs.map(toRunSummary);
+    return runs.map((run) => ({ ...toRunSummary(run), records: run.records }));
   }
 
   /**

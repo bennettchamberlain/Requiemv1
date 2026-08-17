@@ -5,6 +5,12 @@ import type { CatalogSource } from '../useImportApi';
 
 import { PickStep } from './PickStep';
 
+// The usage rollup reaches the import API through auth context, which the bare
+// render here does not provide — the documented pattern is to stub the hook.
+const usage = vi.hoisted(() => ({ value: new Map<string, { records: number; lastImportedAt: string }>() }));
+
+vi.mock('./useSourceUsage', () => ({ useSourceUsage: () => usage.value }));
+
 /**
  * Step 1's contract: recognizable brands in sections, each tile saying what
  * picking it imports, coming-soon visible-but-badged, and Continue earned by
@@ -46,7 +52,10 @@ function renderStep(picked: ReadonlySet<string> = new Set()) {
 }
 
 describe('PickStep', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    usage.value = new Map();
+  });
 
   it('groups services into their sections', () => {
     renderStep();
@@ -86,6 +95,21 @@ describe('PickStep', () => {
     // Answering "what would picking this give me" on the tile is the whole
     // reason it is a card rather than a one-line label.
     expect(screen.getByRole('button', { name: /Spotify/ })).toHaveTextContent('Listening');
+  });
+
+  // "I could import this" and "I did, in March, and it brought 42,318
+  // records" are different answers, and the second is the one that stops
+  // someone re-importing an archive they already have.
+  it('says what a source has already given the appliance', () => {
+    usage.value = new Map([['spotify', { records: 42318, lastImportedAt: '2026-03-14T00:00:00.000Z' }]]);
+
+    renderStep();
+
+    const spotify = screen.getByRole('button', { name: /Spotify/ });
+
+    expect(spotify).toHaveTextContent('42,318 records');
+    expect(spotify).toHaveTextContent(/imported/);
+    expect(screen.getByRole('button', { name: /Strava/ })).not.toHaveTextContent('records');
   });
 
   it('toggling reports the source key upward', () => {
