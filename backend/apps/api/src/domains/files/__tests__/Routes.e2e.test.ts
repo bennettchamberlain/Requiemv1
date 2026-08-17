@@ -27,6 +27,11 @@ describe('File routes', () => {
   beforeAll(async () => {
     mockCanActivate.mockImplementation(() => true);
 
+    // FilesModule pulls in EventsModule, which registers these through
+    // TypeOrmModule.forFeature — so every entity that domain declares has to be
+    // stubbed here, or Nest cannot resolve its repository against the DataSource
+    // this test never provides. Adding an entity there without adding it here is
+    // what breaks this suite.
     const repositoryTokensToMock = [
       getRepositoryToken(FileEntity),
       getRepositoryToken(SavedSearchEntity),
@@ -34,6 +39,7 @@ describe('File routes', () => {
       'PgBossArchiveEntityRepository',
       'PgBossScheduleEntityRepository',
       'PgBossQueueEntityRepository',
+      'JobMetricEntityRepository',
     ];
 
     let moduleBuilder = Test.createTestingModule({

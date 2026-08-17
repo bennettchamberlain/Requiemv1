@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Optional, UnauthorizedException } from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -184,7 +184,16 @@ export class JobMonitorService {
     private readonly scheduleRepository: Repository<PgBossScheduleEntity>,
     @InjectRepository(PgBossQueueEntity)
     private readonly queueRepository: Repository<PgBossQueueEntity>,
-    private readonly schedulerRegistry: SchedulerRegistry,
+    /**
+     * Optional on purpose. `ScheduleModule.forRoot()` is registered globally in
+     * `application.ts`, so the real app always has this — but EventsModule does
+     * not import it, and a module compiled in isolation (the files e2e suite
+     * pulls EventsModule in transitively) therefore cannot resolve it. Marking
+     * it optional keeps this module standalone-compilable, and the degraded
+     * behaviour is honest rather than approximate: no scheduler in the process
+     * means there genuinely are no recurring jobs to report.
+     */
+    @Optional() private readonly schedulerRegistry?: SchedulerRegistry,
   ) {}
 
   async getDashboard(context: RequestContext): Promise<JobDashboardDto> {
@@ -302,6 +311,10 @@ export class JobMonitorService {
    */
   private getCronSchedules(): CronScheduleDto[] {
     const schedules: CronScheduleDto[] = [];
+
+    if (!this.schedulerRegistry) {
+      return schedules;
+    }
 
     for (const [name, job] of this.schedulerRegistry.getCronJobs()) {
       let nextRunAt: string | null = null;
