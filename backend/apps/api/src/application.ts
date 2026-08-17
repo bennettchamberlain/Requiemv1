@@ -28,6 +28,7 @@ import { serves } from '@ci/common/roles';
 import config from '@ci/configuration';
 import { ActivityModule } from '@ci/domains/activity';
 import { AgentModule } from '@ci/domains/agent';
+import { AsksModule } from '@ci/domains/asks';
 import { AuditModule } from '@ci/domains/audit';
 import { AuthModule } from '@ci/domains/auth';
 import { PortalAuthModule } from '@ci/domains/auth/PortalAuthModule';
@@ -100,6 +101,7 @@ import { flushTelemetry, isTelemetryEnabled } from '@ci/instrument';
     PairingModule,
     ActivityModule,
     AgentModule,
+    AsksModule,
     AuditModule,
     AuthModule,
     PortalAuthModule,

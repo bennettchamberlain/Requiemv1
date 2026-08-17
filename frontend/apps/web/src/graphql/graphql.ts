@@ -131,6 +131,17 @@ export type AnswerEdge = Edge & {
   node: AnswerType;
 };
 
+export type AnswerForm =
+  | 'attribute'
+  | 'boolean'
+  | 'existence'
+  | 'identity'
+  | 'retrieval';
+
+export type AnswerSource =
+  | 'peer'
+  | 'self';
+
 export type AnswerType = Node & {
   __typename?: 'AnswerType';
   answer: Scalars['String']['output'];
@@ -139,6 +150,97 @@ export type AnswerType = Node & {
   answeredAt: Scalars['DateTime']['output'];
   id: Scalars['ID']['output'];
   question: QuestionType;
+};
+
+export type AskAnswerType = {
+  __typename?: 'AskAnswerType';
+  answerSource: AnswerSource;
+  askId: Scalars['ID']['output'];
+  consentBasis?: Maybe<Scalars['String']['output']>;
+  createdAt: Scalars['DateTime']['output'];
+  disclosedCount: Scalars['Int']['output'];
+  form: AnswerForm;
+  id: Scalars['ID']['output'];
+  items: Array<DisclosedItemType>;
+  summary?: Maybe<Scalars['String']['output']>;
+  withheldCount: Scalars['Int']['output'];
+};
+
+export type AskAuditOutcome =
+  | 'answered'
+  | 'auto_answered'
+  | 'declined'
+  | 'expired';
+
+export type AskAuditType = {
+  __typename?: 'AskAuditType';
+  askId?: Maybe<Scalars['ID']['output']>;
+  askerId: Scalars['ID']['output'];
+  consentBasis?: Maybe<Scalars['String']['output']>;
+  createdAt: Scalars['DateTime']['output'];
+  id: Scalars['ID']['output'];
+  outcome: AskAuditOutcome;
+  query: AskQueryType;
+  responderId: Scalars['ID']['output'];
+};
+
+export type AskGrantPayload = {
+  __typename?: 'AskGrantPayload';
+  grant?: Maybe<AskGrantType>;
+  success: Scalars['Boolean']['output'];
+};
+
+export type AskGrantType = {
+  __typename?: 'AskGrantType';
+  createdAt: Scalars['DateTime']['output'];
+  dataClass?: Maybe<Scalars['String']['output']>;
+  granteeId: Scalars['ID']['output'];
+  id: Scalars['ID']['output'];
+  mode: GrantMode;
+  purpose?: Maybe<Scalars['String']['output']>;
+  queryType: Scalars['String']['output'];
+  revokedAt?: Maybe<Scalars['DateTime']['output']>;
+};
+
+export type AskPayload = {
+  __typename?: 'AskPayload';
+  ask?: Maybe<AskType>;
+  success: Scalars['Boolean']['output'];
+};
+
+export type AskQueryInput = {
+  dataClass?: InputMaybe<Scalars['String']['input']>;
+  prompt: Scalars['String']['input'];
+  queryType: Scalars['String']['input'];
+};
+
+export type AskQueryType = {
+  __typename?: 'AskQueryType';
+  dataClass?: Maybe<Scalars['String']['output']>;
+  prompt: Scalars['String']['output'];
+  queryType: Scalars['String']['output'];
+};
+
+export type AskStatus =
+  | 'answered'
+  | 'answering'
+  | 'declined'
+  | 'delivered'
+  | 'expired'
+  | 'sent'
+  | 'under_review';
+
+export type AskType = {
+  __typename?: 'AskType';
+  askerId: Scalars['ID']['output'];
+  consentBasis?: Maybe<Scalars['String']['output']>;
+  createdAt: Scalars['DateTime']['output'];
+  expiresAt?: Maybe<Scalars['DateTime']['output']>;
+  id: Scalars['ID']['output'];
+  query: AskQueryType;
+  responderId: Scalars['ID']['output'];
+  status: AskStatus;
+  updatedAt: Scalars['DateTime']['output'];
 };
 
 export type BrowserActivityConnection = Connection & {
@@ -346,6 +448,27 @@ export type ContentType = Node & Taggable & {
 export type CreateAnswerInput = {
   answer: Scalars['String']['input'];
   questionId: Scalars['String']['input'];
+};
+
+export type CreateAskGrantInput = {
+  dataClass?: InputMaybe<Scalars['String']['input']>;
+  dataClasses?: InputMaybe<Array<Scalars['String']['input']>>;
+  granteeId: Scalars['ID']['input'];
+  mode: GrantMode;
+  purpose?: InputMaybe<Scalars['String']['input']>;
+  queryType: Scalars['String']['input'];
+};
+
+export type CreateAskInput = {
+  query: AskQueryInput;
+  responderId: Scalars['ID']['input'];
+};
+
+export type CreateAskPayload = {
+  __typename?: 'CreateAskPayload';
+  ask?: Maybe<AskType>;
+  decision?: Maybe<Scalars['String']['output']>;
+  success: Scalars['Boolean']['output'];
 };
 
 export type CreateBrowserActivityInput = {
@@ -643,6 +766,12 @@ export type DeleteByIdPayload = {
   success: Scalars['Boolean']['output'];
 };
 
+export type DisclosedItemType = {
+  __typename?: 'DisclosedItemType';
+  id: Scalars['String']['output'];
+  type: Scalars['String']['output'];
+};
+
 /** HBPE renewal predictions: periodic behaviors coming due or overdue */
 export type DueForecastType = {
   __typename?: 'DueForecastType';
@@ -837,6 +966,11 @@ export type ForecastType = {
   /** System status of the HBPE engine (COLD_START, TRAINING, READY) */
   systemStatus: Scalars['String']['output'];
 };
+
+export type GrantMode =
+  | 'auto'
+  | 'block'
+  | 'review';
 
 /** A directed typed edge (ci.relationships row) */
 export type GraphEdgeType = {
@@ -1040,6 +1174,7 @@ export type Mutation = {
   /** Accept a candidate at a chosen time, minting a real event */
   acceptCandidate: EventType;
   addPersonIdentifier: Array<PersonIdentifierType>;
+  approveAsk: AskPayload;
   /** Break free text into schedule candidates. Adds to the slate; schedules nothing. */
   breakDownTasks: Array<ScheduleCandidateType>;
   bulkIngestGraph: BulkGraphPayload;
@@ -1048,6 +1183,8 @@ export type Mutation = {
   completeTask?: Maybe<TaskType>;
   createAnswer: AnswerType;
   createAnswers: Array<AnswerType>;
+  createAsk: CreateAskPayload;
+  createAskGrant: AskGrantPayload;
   createBrowserActivities: Array<BrowserActivityType>;
   createCommunications: Array<CommunicationType>;
   createConcept: CreateConceptPayload;
@@ -1072,6 +1209,7 @@ export type Mutation = {
   createRelationship: CreateRelationshipPayload;
   createSavedSearch: CreateSavedSearchPayload;
   createTask: CreateTaskPayload;
+  declineAsk: AskPayload;
   /** Reject a candidate. reason: not_now | wrong_time | not_like_this | never */
   declineCandidate: ScheduleCandidateType;
   /** Push a task to a later user-local date (`YYYY-MM-DD`) and count the push. */
@@ -1110,6 +1248,8 @@ export type Mutation = {
   rescheduleEvent?: Maybe<EventType>;
   /** Return a placed event to the slate, deleting the event it minted */
   returnEventToSlate: ScheduleCandidateType;
+  revokeAskGrant: AskGrantPayload;
+  runAsk: RunAskPayload;
   setSavedSearchSharing: UpdateSavedSearchPayload;
   /** Defer a candidate until a future instant */
   snoozeCandidate: ScheduleCandidateType;
@@ -1155,6 +1295,11 @@ export type MutationAddPersonIdentifierArgs = {
 };
 
 
+export type MutationApproveAskArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
 export type MutationBreakDownTasksArgs = {
   text: Scalars['String']['input'];
 };
@@ -1183,6 +1328,16 @@ export type MutationCreateAnswerArgs = {
 
 export type MutationCreateAnswersArgs = {
   input: Array<CreateAnswerInput>;
+};
+
+
+export type MutationCreateAskArgs = {
+  input: CreateAskInput;
+};
+
+
+export type MutationCreateAskGrantArgs = {
+  input: CreateAskGrantInput;
 };
 
 
@@ -1303,6 +1458,11 @@ export type MutationCreateSavedSearchArgs = {
 
 export type MutationCreateTaskArgs = {
   input: CreateTaskInput;
+};
+
+
+export type MutationDeclineAskArgs = {
+  id: Scalars['ID']['input'];
 };
 
 
@@ -1447,6 +1607,17 @@ export type MutationRescheduleEventArgs = {
 
 export type MutationReturnEventToSlateArgs = {
   eventId: Scalars['ID']['input'];
+};
+
+
+export type MutationRevokeAskGrantArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type MutationRunAskArgs = {
+  id: Scalars['ID']['input'];
+  redactItemIds?: InputMaybe<Array<Scalars['String']['input']>>;
 };
 
 
@@ -1822,6 +1993,11 @@ export type Query = {
   activityTimeline: Array<ActivityBucketType>;
   answer?: Maybe<AnswerType>;
   answers: AnswerConnection;
+  ask?: Maybe<AskType>;
+  askAnswer?: Maybe<AskAnswerType>;
+  askDisclosureHistory: Array<AskAuditType>;
+  askInbox: Array<AskType>;
+  askOutbox: Array<AskType>;
   browserActivities: BrowserActivityConnection;
   browserActivity?: Maybe<BrowserActivityType>;
   communication?: Maybe<CommunicationType>;
@@ -1857,6 +2033,7 @@ export type Query = {
   knownPlaceCandidates: Array<KnownPlaceCandidateType>;
   knownPlaces: Array<KnownPlaceType>;
   me?: Maybe<UserType>;
+  myAskGrants: Array<AskGrantType>;
   node?: Maybe<Node>;
   note?: Maybe<NoteType>;
   notes: NoteConnection;
@@ -1923,6 +2100,16 @@ export type QueryAnswersArgs = {
   before?: InputMaybe<Scalars['String']['input']>;
   first?: InputMaybe<Scalars['Int']['input']>;
   last?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryAskArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type QueryAskAnswerArgs = {
+  id: Scalars['ID']['input'];
 };
 
 
@@ -2328,6 +2515,15 @@ export type RemovePersonIdentifierInput = {
   kind: Scalars['String']['input'];
   personId: Scalars['ID']['input'];
   value: Scalars['String']['input'];
+};
+
+export type RunAskPayload = {
+  __typename?: 'RunAskPayload';
+  answer?: Maybe<AskAnswerType>;
+  ask?: Maybe<AskType>;
+  disclosedCount?: Maybe<Scalars['Int']['output']>;
+  success: Scalars['Boolean']['output'];
+  withheldCount?: Maybe<Scalars['Int']['output']>;
 };
 
 export type SavedSearchConnection = Connection & {

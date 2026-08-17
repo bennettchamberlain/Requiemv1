@@ -1,0 +1,157 @@
+import { type UserServiceContext } from '@ci/common/context';
+
+import { type Ask } from '../entities/AskEntity';
+import type { CreateAskDto } from '../types';
+
+import { AskService } from './AskService';
+
+const CTX: UserServiceContext = { userId: 'asker-1' };
+
+const DTO: CreateAskDto = {
+  responderUserId: 'responder-1',
+  query: { queryType: 'photos', prompt: 'do you have photos of us?' },
+};
+
+function fakeAsk(overrides: Partial<Ask> = {}): Ask {
+  return {
+    id: 'ask-1',
+    askerUserId: 'asker-1',
+    responderUserId: 'responder-1',
+    query: DTO.query,
+    status: 'delivered',
+    consentBasis: null,
+    createdAt: new Date('2026-07-15T00:00:00Z'),
+    updatedAt: new Date('2026-07-15T00:00:00Z'),
+    expiresAt: null,
+    ...overrides,
+  } as Ask;
+}
+
+function makeService() {
+  const grantService = { evaluate: jest.fn() };
+  const auditService = { record: jest.fn().mockResolvedValue(undefined) };
+  const logger = { setContext: jest.fn() };
+  const service = new AskService(
+    {} as never, // repository — create/systemTransition/setConsentBasis are spied
+    grantService as never,
+    auditService as never,
+    logger as never,
+  );
+
+  return { service, grantService, auditService };
+}
+
+describe('AskService.submit — grant decision wiring', () => {
+  it('auto-declines and audits when a block grant denies the ask', async () => {
+    const { service, grantService, auditService } = makeService();
+    grantService.evaluate.mockResolvedValue({ decision: 'deny', grantId: 'grant-block' });
+    jest.spyOn(service, 'create').mockResolvedValue(fakeAsk());
+    const declined = fakeAsk({ status: 'declined', consentBasis: 'grant-block' });
+    const sysSpy = jest.spyOn(service, 'systemTransition').mockResolvedValue(declined);
+
+    const result = await service.submit(CTX, DTO);
+
+    expect(sysSpy).toHaveBeenCalledWith('ask-1', 'declined', { consentBasis: 'grant-block' });
+    expect(auditService.record).toHaveBeenCalledWith(
+      expect.objectContaining({ askId: 'ask-1', outcome: 'declined', consentBasis: 'grant-block' }),
+    );
+    expect(result).toEqual({ ask: declined, decision: 'deny' });
+  });
+
+  it('records the consent basis and leaves the ask delivered when auto-authorized', async () => {
+    const { service, grantService, auditService } = makeService();
+    grantService.evaluate.mockResolvedValue({ decision: 'auto', grantId: 'grant-auto' });
+    jest.spyOn(service, 'create').mockResolvedValue(fakeAsk());
+    const preauth = fakeAsk({ consentBasis: 'grant-auto' });
+    const consentSpy = jest.spyOn(service, 'setConsentBasis').mockResolvedValue(preauth);
+    const sysSpy = jest.spyOn(service, 'systemTransition');
+
+    const result = await service.submit(CTX, DTO);
+
+    expect(consentSpy).toHaveBeenCalledWith('ask-1', 'grant-auto');
+    expect(sysSpy).not.toHaveBeenCalled(); // stays delivered for the executor
+    expect(auditService.record).not.toHaveBeenCalled(); // no terminal outcome yet
+    expect(result).toEqual({ ask: preauth, decision: 'auto' });
+  });
+
+  it('routes to the owner review inbox when no grant matches', async () => {
+    const { service, grantService, auditService } = makeService();
+    grantService.evaluate.mockResolvedValue({ decision: 'review' });
+    jest.spyOn(service, 'create').mockResolvedValue(fakeAsk());
+    const inboxed = fakeAsk({ status: 'under_review' });
+    const sysSpy = jest.spyOn(service, 'systemTransition').mockResolvedValue(inboxed);
+
+    const result = await service.submit(CTX, DTO);
+
+    expect(sysSpy).toHaveBeenCalledWith('ask-1', 'under_review');
+    expect(auditService.record).not.toHaveBeenCalled();
+    expect(result).toEqual({ ask: inboxed, decision: 'review' });
+  });
+});
+
+function mutableEntity(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'ask-1',
+    askerUserId: 'asker-1',
+    responderUserId: 'responder-1',
+    query: DTO.query,
+    status: 'answering',
+    consentBasis: null,
+    createdAt: new Date('2026-07-15T00:00:00Z'),
+    updatedAt: new Date('2026-07-15T00:00:00Z'),
+    expiresAt: null,
+    ...overrides,
+  };
+}
+
+function makeServiceWithRepo(entity: Record<string, unknown>) {
+  const repo = {
+    findOne: jest.fn().mockResolvedValue(entity),
+    save: jest.fn().mockImplementation((e: unknown) => Promise.resolve(e)),
+  };
+  const grantService = { evaluate: jest.fn() };
+  const auditService = { record: jest.fn().mockResolvedValue(undefined) };
+  const logger = { setContext: jest.fn() };
+  const service = new AskService(
+    repo as never,
+    grantService as never,
+    auditService as never,
+    logger as never,
+  );
+
+  return { service, repo, auditService };
+}
+
+const OWNER: UserServiceContext = { userId: 'responder-1' };
+
+describe('AskService.complete', () => {
+  it('finalizes an owner-approved ask to answered and audits it', async () => {
+    const entity = mutableEntity({ status: 'answering' });
+    const { service, auditService } = makeServiceWithRepo(entity);
+
+    const result = await service.complete(OWNER, 'ask-1', ['e1', 'e2']);
+
+    expect(result.status).toBe('answered');
+    expect(auditService.record).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'answered', disclosedEntities: ['e1', 'e2'] }),
+    );
+  });
+
+  it('finalizes an auto-authorized (delivered + consent) ask as auto_answered', async () => {
+    const entity = mutableEntity({ status: 'delivered', consentBasis: 'grant-auto' });
+    const { service, auditService } = makeServiceWithRepo(entity);
+
+    const result = await service.complete(OWNER, 'ask-1', []);
+
+    expect(result.status).toBe('answered'); // delivered → answering → answered
+    expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'auto_answered' }));
+  });
+
+  it('refuses to complete an ask that is not yet answerable', async () => {
+    const entity = mutableEntity({ status: 'under_review' });
+    const { service, auditService } = makeServiceWithRepo(entity);
+
+    await expect(service.complete(OWNER, 'ask-1', [])).rejects.toThrow();
+    expect(auditService.record).not.toHaveBeenCalled();
+  });
+});

@@ -5,6 +5,7 @@ import { Module } from '@nestjs/common';
 import { GraphQLModule as NestGraphQLModule } from '@nestjs/graphql';
 
 import { ActivityModule } from '@ci/domains/activity';
+import { AsksModule } from '@ci/domains/asks';
 import { BrowserActivityModule } from '@ci/domains/browser-activity';
 import { ConnectionsModule } from '@ci/domains/connections';
 import { ConversationModule } from '@ci/domains/conversations';
@@ -50,6 +51,7 @@ import { ComplexityPlugin } from './plugins/ComplexityPlugin';
 import { ActionResolver } from './resolvers/ActionResolver';
 import { ActivityResolver } from './resolvers/ActivityResolver';
 import { AnswerResolver } from './resolvers/AnswerResolver';
+import { AskResolver } from './resolvers/AskResolver';
 import { BrowserActivityResolver } from './resolvers/BrowserActivityResolver';
 import { CommunicationResolver } from './resolvers/CommunicationResolver';
 import { ConceptResolver } from './resolvers/ConceptResolver';
@@ -101,6 +103,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
       introspection: process.env.NODE_ENV !== 'production',
       graphiql: false,
     }),
+    AsksModule,
     PairingModule,
     ActivityModule,
     BrowserActivityModule,
@@ -127,6 +130,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
   providers: [
     ActionResolver,
     ActivityResolver,
+    AskResolver,
     ForecastResolver,
     ScheduleCandidateResolver,
     PairingResolver,
