@@ -73,4 +73,12 @@ describe('LifeStatsService SQL contracts', () => {
 
     expect(query.mock.calls[0][1][3]).toBe('month');
   });
+
+  it('casts communication_type to text so COALESCE can mix it with source_system', async () => {
+    const { service, query } = setup();
+    await service.channels('user-1', range);
+
+    const [sql] = query.mock.calls[0];
+    expect(sql.replace(/\s+/g, ' ')).toContain("COALESCE(NULLIF(c.source_system, ''), c.communication_type::text, 'unknown')");
+  });
 });

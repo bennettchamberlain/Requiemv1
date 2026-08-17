@@ -332,7 +332,7 @@ export class LifeStatsService {
 
   async channels(userId: string, range: LifeStatsRange): Promise<ChannelRow[]> {
     const rows: Array<{ source: string; n: string }> = await this.eventRepository.manager.query(
-      `SELECT COALESCE(NULLIF(c.source_system, ''), c.communication_type, 'unknown') AS source,
+      `SELECT COALESCE(NULLIF(c.source_system, ''), c.communication_type::text, 'unknown') AS source,
               COUNT(*)::text AS n
          FROM ci.communications c
         WHERE c.user_id = $1
