@@ -1,5 +1,5 @@
 import { usePageTitle } from '@ci/common';
-import { Tabs } from '@ci/shadcn';
+import { cn, Tabs } from '@ci/shadcn';
 
 import { PageContent } from '@/components/layout';
 
@@ -60,7 +60,12 @@ export function ImportSurface({ variant = 'page', onStageChange }: ImportSurface
       {/* overflow-hidden, not auto: the wizard scrolls itself below its
           stepper. Inbox and History have no pinned part, so they scroll
           whole. */}
-      <Tabs.Content value="import" className="min-h-0 flex-1 overflow-hidden pt-4">
+      {/* pt-4 clears the tab bar. With no tab bar (onboarding) it is a stray
+          gap above the first control. */}
+      <Tabs.Content
+        value="import"
+        className={cn('min-h-0 flex-1 overflow-hidden', variant === 'page' && 'pt-4')}
+      >
         <ImportWizard variant={variant} onStepChange={onStageChange} />
       </Tabs.Content>
 

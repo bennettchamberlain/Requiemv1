@@ -56,13 +56,21 @@ export function ImportArchivesStep() {
   const heading = HEADINGS[stage];
 
   return (
-    <div className="mx-auto w-full space-y-6">
+    <div className="mx-auto w-full space-y-4">
       <StepHeader title={heading.title} description={heading.description} />
 
-      {/* Bounded height: the wizard pins its Continue and scrolls only the list
-          above it, which needs a real ceiling to scroll against. Generous,
-          because that list is ~100 services long. */}
-      <div className="flex h-[68vh] min-h-[26rem] flex-col overflow-hidden rounded-lg border">
+      {/* `text-left` undoes the step wrapper's `text-center`, which onboarding
+          applies to every step. Centering is right for a typeform-style
+          question — it is wrong for an application surface, where it centred
+          the export guide's numbered instructions, the service cards and the
+          form controls inside them.
+          Bounded height: the wizard pins its Continue and scrolls only the list
+          above it, which needs a real ceiling to scroll against. Sized so the
+          WHOLE step — heading, surface and the line below it — fits the
+          viewport without the step itself scrolling: an outer scrollbar here
+          hides the surface's own controls (the drop zone, Back, the bundle
+          pager) below the fold, and nothing tells you they are there. */}
+      <div className="flex h-[58vh] min-h-[22rem] flex-col overflow-hidden rounded-lg border text-left">
         <ImportSurface variant="onboarding" onStageChange={handleStage} />
       </div>
 
