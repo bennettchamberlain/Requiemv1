@@ -38,6 +38,7 @@ export interface UpdateConnectionDto {
   endpoints?: string[];
   needsReauth?: boolean;
   externalId?: string;
+  accountLabel?: string | null;
 }
 
 export interface connectProviderDto {

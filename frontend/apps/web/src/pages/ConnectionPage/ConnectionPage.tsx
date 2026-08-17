@@ -47,6 +47,7 @@ export interface Connection {
   readonly name?: string | null;
   readonly active: boolean;
   readonly externalId?: string | null;
+  readonly accountLabel?: string | null;
   readonly schedule?: string | null;
   readonly tokenExpiry?: Date | null;
   readonly provider?: Provider;
@@ -74,6 +75,7 @@ const GET_CONNECTION = gql(`
       providerId
       needsReauth
       externalId
+      accountLabel
       provider {
         id
         name
@@ -104,6 +106,7 @@ const UPDATE_CONNECTION = gql(`
           providerId
           needsReauth
           externalId
+          accountLabel
           provider {
               id
               name
@@ -512,6 +515,11 @@ export function ConnectionPage() {
             </div>
 
             <div className="flex flex-col gap-2">
+              <Label>Account</Label>
+              <div className="text-sm">{connection.accountLabel || 'N/A'}</div>
+            </div>
+
+            <div className="flex flex-col gap-2">
               <Label>External ID</Label>
               <div className="text-sm">{connection.externalId || 'N/A'}</div>
             </div>
@@ -668,6 +676,15 @@ export function ConnectionPage() {
                     <Label>Provider</Label>
                     <div className="text-sm text-muted-foreground bg-muted px-3 py-2 rounded-md">
                       {connection.provider.name} (cannot be changed)
+                    </div>
+                  </div>
+                )}
+
+                {connection?.accountLabel && (
+                  <div className="grid gap-2">
+                    <Label>Account</Label>
+                    <div className="text-sm text-muted-foreground bg-muted px-3 py-2 rounded-md">
+                      {connection.accountLabel} (cannot be changed)
                     </div>
                   </div>
                 )}
