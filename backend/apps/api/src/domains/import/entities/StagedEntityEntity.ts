@@ -66,6 +66,17 @@ export class StagedEntityEntity {
   identityKey!: string | null;
 
   /**
+   * Dedup key for entities that have NO identity_key — a sha256 of
+   * `entityKey(entity)`, unique per run. Handle-less entities cannot share the
+   * identity index (they would all collapse on NULL), and holding their dedup
+   * in a per-attempt Map meant a resumed parse re-inserted everything the dead
+   * attempt had written. NULL for identity-keyed rows and for anything written
+   * before the column existed.
+   */
+  @Column({ type: 'text', name: 'dedupe_key', nullable: true })
+  dedupeKey!: string | null;
+
+  /**
    * Set when an already-staged entity's metadata GREW after a later sighting
    * (the `accumulate[]` contract on the parsers' `Entity` type — an Uber Eats
    * dish costing $10.19 in January and $15.92 in March is two true facts, not a

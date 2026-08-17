@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import type { EntityManager } from 'typeorm';
 
 import type { Entity, Graph, ImportPipeline, Item, Metadata } from '../datasources/timeline';
@@ -59,12 +61,16 @@ export class StagedWriter implements ImportPipeline {
   };
 
   /**
-   * Handle-less entities seen in this run, keyed by {@link entityKey}.
+   * A CACHE of handle-less entities seen by THIS attempt, keyed by
+   * {@link entityKey}, saving a round trip on a repeat sighting.
    *
-   * Entities WITH a handle dedup in the database on a partial unique index.
-   * Handle-less ones (threads, places) deliberately have no such constraint —
-   * they would all collapse into each other on a NULL key — so their dedup is
-   * this map, matching upstream's first-match-wins probe.
+   * It is no longer the dedup. Entities with a handle collapse on
+   * `(run_id, identity_key)`; handle-less ones cannot share that index — they
+   * would all collide on NULL — so they collapse on `(run_id, dedupe_key)`
+   * instead. Holding the dedup here was the bug: a StagedWriter is constructed
+   * per parse ATTEMPT, so a resume after a crash began with an empty map and
+   * re-inserted everything the dead attempt had already written (2,000
+   * duplicate entities and 2,000 spurious edges on a 20k-card run).
    */
   private readonly handleless = new Map<string, string>();
 
@@ -350,6 +356,9 @@ export class StagedWriter implements ImportPipeline {
     metadata: Metadata,
   ): Promise<string> {
     const key = entityKey(entity);
+    // Hashed because `entityKey` embeds the attribute JSON and has no length
+    // bound, while a btree index entry does.
+    const dedupeKey = createHash('sha256').update(key).digest('hex');
     const seen = this.handleless.get(key);
 
     if (seen != null) {
@@ -368,9 +377,16 @@ export class StagedWriter implements ImportPipeline {
       return seen;
     }
 
+    // ON CONFLICT against `staged_entities_run_dedupe_uniq`, mirroring the
+    // identity-keyed path above. The in-process map is a cache in front of this,
+    // not the dedup itself: a StagedWriter is constructed per parse ATTEMPT, so
+    // a resume after a crash starts with an empty map and — before this — simply
+    // re-inserted everything the dead attempt had already written.
     const rows = await tx.query<Array<{ id: string }>>(
-      `INSERT INTO ci_import.staged_entities (run_id, user_id, type, name, metadata, identity_key, data_source)
-            VALUES ($1::uuid, $2::uuid, $3, $4, $5::jsonb, NULL, $6)
+      `INSERT INTO ci_import.staged_entities
+              (run_id, user_id, type, name, metadata, identity_key, data_source, dedupe_key)
+            VALUES ($1::uuid, $2::uuid, $3, $4, $5::jsonb, NULL, $6, $7)
+         ON CONFLICT (run_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING
          RETURNING id`,
       [
         this.scope.runId,
@@ -379,13 +395,35 @@ export class StagedWriter implements ImportPipeline {
         entity.name ?? null,
         JSON.stringify(metadata),
         this.scope.dataSource,
+        dedupeKey,
       ],
     );
 
-    this.counts.entities += 1;
-    this.handleless.set(key, rows[0].id);
+    if (rows.length > 0) {
+      this.counts.entities += 1;
+      this.handleless.set(key, rows[0].id);
 
-    return rows[0].id;
+      return rows[0].id;
+    }
+
+    // A previous attempt wrote it. Read it back and accumulate onto it, exactly
+    // as a repeat sighting within one attempt would — the resumed parse is
+    // replaying records the dead one had already seen, and treating them as new
+    // is what produced the duplicate edges alongside the duplicate rows.
+    const existing = await tx.query<Array<{ id: string; metadata: Record<string, unknown> }>>(
+      `SELECT id, metadata FROM ci_import.staged_entities
+        WHERE run_id = $1::uuid AND dedupe_key = $2`,
+      [this.scope.runId, dedupeKey],
+    );
+
+    if (existing.length === 0) {
+      throw new Error('staged entity conflicted on its dedupe key but could not be read back');
+    }
+
+    await this.growEntity(tx, existing[0].id, existing[0].metadata ?? {}, entity);
+    this.handleless.set(key, existing[0].id);
+
+    return existing[0].id;
   }
 
   /**
