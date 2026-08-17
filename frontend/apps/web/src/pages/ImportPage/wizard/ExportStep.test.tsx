@@ -193,15 +193,22 @@ describe('ExportStep', () => {
     expect(onRunsStarted).toHaveBeenCalledWith('spotify', ['run-drop-1', 'run-drop-2']);
   });
 
-  it('starts one parse-and-store run for a dropped folder', async () => {
+  it('packs a dropped folder into one zip and starts one run', async () => {
+    uploadFiles.mockResolvedValueOnce([{ dropId: 'drop-folder', originalFilename: 'chatgpt-export.zip' }]);
+
     const { onRunsStarted } = renderStep();
 
     fireEvent.click(screen.getByRole('button', { name: /drop folder/i }));
 
-    await waitFor(() => expect(uploadFolder).toHaveBeenCalledTimes(1));
-    expect(uploadFiles).not.toHaveBeenCalled();
+    await waitFor(() => expect(uploadFiles).toHaveBeenCalledTimes(1));
+    expect(uploadFolder).not.toHaveBeenCalled();
+
+    const packed = (uploadFiles.mock.calls[0] as unknown as [File[]])[0];
+
+    expect(packed).toHaveLength(1);
+    expect(packed[0].name).toBe('chatgpt-export.zip');
     expect(startRun).toHaveBeenCalledWith('drop-folder', {
-      label: 'chatgpt-export',
+      label: 'chatgpt-export.zip',
       stages: ['unpack', 'parse', 'media'],
     });
     expect(onRunsStarted).toHaveBeenCalledWith('spotify', ['run-drop-folder']);

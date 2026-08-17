@@ -7,6 +7,8 @@ import { collectDroppedFiles } from './collectDroppedFiles';
 
 export interface DropZoneProps {
   onFiles: (files: File[]) => void;
+  /** Fired as soon as a drop starts walking, before files are ready. */
+  onCollectStart?: () => void;
   disabled?: boolean;
   /** Shown under the prompt — what the appliance is waiting for. */
   hint?: string;
@@ -29,7 +31,7 @@ export interface DropZoneProps {
  * highlight flicker as the cursor moves over the text inside the zone. Counting
  * enters against leaves is what keeps it steady.
  */
-export function DropZone({ onFiles, disabled, hint, label, compact }: DropZoneProps) {
+export function DropZone({ onFiles, onCollectStart, disabled, hint, label, compact }: DropZoneProps) {
   const [active, setActive] = useState(false);
   const [dropError, setDropError] = useState<string | null>(null);
   const depth = useRef(0);
@@ -87,13 +89,14 @@ export function DropZone({ onFiles, disabled, hint, label, compact }: DropZonePr
         return;
       }
 
+      onCollectStart?.();
       void collectDroppedFiles(event.dataTransfer)
         .then(emitFiles)
         .catch(() => {
           setDropError('Could not read that folder. Choose folder, or drop the .zip.');
         });
     },
-    [disabled, emitFiles, reset],
+    [disabled, emitFiles, onCollectStart, reset],
   );
 
   return (

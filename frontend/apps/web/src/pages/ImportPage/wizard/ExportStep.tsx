@@ -6,6 +6,7 @@ import { DropZone } from '../DropZone';
 import { groupImportFiles } from '../groupImportFiles';
 import { SourceGuide } from '../SourceGuide';
 import { useImportApi, type StagedDrop } from '../useImportApi';
+import { zipFilesStore } from '../zipStore';
 
 import { LiveRun } from './LiveRun';
 import { bundleToGuide, serviceLogoUrl, shortTitle, sourceToGuide, type ExportEntry } from './sources';
@@ -42,6 +43,7 @@ export function ExportStep({
 }: ExportStepProps) {
   const api = useImportApi();
   const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   if (entries.length === 0) {
@@ -62,17 +64,27 @@ export function ExportStep({
   async function handleFiles(files: File[]) {
     setBusy(true);
     setError(null);
+    setPhase(files.length > 1 ? `Reading ${files.length} files…` : 'Uploading…');
 
     try {
       const drops: StagedDrop[] = [];
 
       for (const batch of groupImportFiles(files)) {
-        const staged =
-          batch.kind === 'directory'
-            ? await api.uploadFolder(batch.files)
-            : await api.uploadFiles(batch.files);
+        // A folder becomes ONE zip, then one upload. Shipping each file as its
+        // own multipart part is what hung the tab: the browser buffered the
+        // whole ChatGPT tree before fetch ever left, so the API never saw it.
+        if (batch.kind === 'directory') {
+          setPhase(`Packing ${batch.files.length} files…`);
+          const zip = await zipFilesStore(batch.files, (done, total) => {
+            setPhase(`Packing ${done} of ${total} files…`);
+          });
 
-        drops.push(...staged);
+          setPhase('Uploading…');
+          drops.push(...(await api.uploadFiles([zip])));
+        } else {
+          setPhase('Uploading…');
+          drops.push(...(await api.uploadFiles(batch.files)));
+        }
       }
 
       if (drops.length === 0) {
@@ -103,6 +115,7 @@ export function ExportStep({
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
+      setPhase(null);
     }
   }
 
@@ -148,11 +161,15 @@ export function ExportStep({
                 : 'A zip, a file, or the unzipped folder. It starts processing below.'
             }
             disabled={busy || !api.ready}
+            onCollectStart={() => {
+              setBusy(true);
+              setPhase('Reading folder…');
+            }}
             onFiles={(files) => void handleFiles(files)}
           />
         )}
 
-        {busy && <p className="text-sm text-muted-foreground">Uploading…</p>}
+        {busy && <p className="text-sm text-muted-foreground">{phase ?? 'Uploading…'}</p>}
         {error != null && <p className="text-sm text-destructive">{error}</p>}
       </SourceGuide>
 
