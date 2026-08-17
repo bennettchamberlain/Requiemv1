@@ -17,6 +17,7 @@ import {
 import { ImportRunEntity, type ImportRun, type ImportRunSource } from '../entities/ImportRunEntity';
 import { ImportStageEntity, type ImportStage } from '../entities/ImportStageEntity';
 import { ImportStageEvent } from '../events';
+import { FILE_CLASSIFICATIONS } from '../push/canonical';
 import type { StageOutcome } from '../types';
 
 import { StagedSourceService } from './StagedSourceService';
@@ -880,6 +881,37 @@ export class ImportRunService {
     )) as Array<{ pulled: boolean }>;
 
     return row?.pulled === true;
+  }
+
+  /**
+   * Does this run still hold bytes on disk that nothing has stored?
+   *
+   * The invariant that makes losing an archive's media impossible rather than
+   * merely unlikely. `MediaStage` is what stamps `FileId` (or `FileMediaError`)
+   * onto a staged row; until one of those is present, the row's bytes exist
+   * ONLY inside the run's scratch tree. Reclaiming that tree while any such row
+   * remains destroys them with no way back — which is exactly what happened to
+   * every wizard import, because the wizard requested `[unpack, parse]` and the
+   * deferred push appended a bare `push`, so `media` never ran.
+   *
+   * Asked at reclaim time rather than trusted from the stage list, because the
+   * stage list is configuration and this is the thing configuration must not be
+   * able to get wrong. Mirrors `MediaStage.mediaPredicate()`.
+   */
+  async hasUnstoredMedia(runId: string): Promise<boolean> {
+    const [row] = (await this.dataSource.query(
+      `SELECT EXISTS (
+                SELECT 1 FROM ci_import.staged_items
+                 WHERE run_id = $1::uuid
+                   AND (media_type ~ '^(image|video|audio)/' OR classification = ANY($2::text[]))
+                   AND COALESCE(intermediate_location, original_location) IS NOT NULL
+                   AND metadata->>'FileId' IS NULL
+                   AND metadata->>'FileMediaError' IS NULL
+              ) AS pending`,
+      [runId, [...FILE_CLASSIFICATIONS]],
+    )) as Array<{ pending: boolean }>;
+
+    return row?.pending === true;
   }
 
   /**

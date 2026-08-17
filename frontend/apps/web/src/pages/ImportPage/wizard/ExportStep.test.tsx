@@ -153,7 +153,7 @@ describe('ExportStep', () => {
     expect(lastStep.compareDocumentPosition(cta) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('starts one parse-only run per uploaded file, labeled by its filename', async () => {
+  it('starts one parse-and-store run per uploaded file, labeled by its filename', async () => {
     const { onRunsStarted } = renderStep();
 
     fireEvent.click(screen.getByRole('button', { name: /drop your spotify export here/i }));
@@ -161,13 +161,17 @@ describe('ExportStep', () => {
     await waitFor(() => expect(startRun).toHaveBeenCalledTimes(2));
 
     // Parse now, push at Sync — the whole reason the wizard has a step 3.
+    // `media` goes with parse, NOT with the deferred push: it reads bytes out of
+    // the run's scratch tree, which is reclaimed when the run's last stage
+    // finishes. Deferring it is what made every wizard import parse its photos
+    // and then delete them.
     expect(startRun).toHaveBeenCalledWith('drop-1', {
       label: 'spotify.zip',
-      stages: ['unpack', 'parse'],
+      stages: ['unpack', 'parse', 'media'],
     });
     expect(startRun).toHaveBeenCalledWith('drop-2', {
       label: 'spotify-extended.zip',
-      stages: ['unpack', 'parse'],
+      stages: ['unpack', 'parse', 'media'],
     });
     expect(onRunsStarted).toHaveBeenCalledWith('spotify', ['run-drop-1', 'run-drop-2']);
   });

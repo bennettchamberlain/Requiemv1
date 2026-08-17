@@ -210,14 +210,29 @@ export class ImportStageListener implements OnApplicationBootstrap {
         // here on that path is an unrecoverable loss of data the appliance was
         // handed. Keeping tens of gigabytes costs disk; the alternative costs
         // the archive.
-        if (await this.runs.pulledRecords(payload.runId)) {
-          await this.scratch.reclaim(payload.userId, payload.runId);
-        } else {
+        //
+        // And not while any staged row's bytes are still only here. A media row
+        // that never reached MediaStage has its photo/video/voicemail in this
+        // tree and nowhere else; deleting it leaves a content row pointing at a
+        // file that does not exist, unrecoverably. Checked against the rows
+        // rather than the run's stage list, because a run whose stages omit
+        // `media` is precisely the case that lost the bytes.
+        const unstoredMedia = await this.runs.hasUnstoredMedia(payload.runId);
+
+        if (!(await this.runs.pulledRecords(payload.runId))) {
           this.logger.warn('Import staged no records; keeping its scratch tree rather than reclaiming it', {
             runId: payload.runId,
             userId: payload.userId,
             scratchDir,
           });
+        } else if (unstoredMedia) {
+          this.logger.warn(
+            'Import still holds media whose bytes were never stored; keeping its scratch tree. ' +
+              'Run the media stage for this run before the tree is reclaimed.',
+            { runId: payload.runId, userId: payload.userId, scratchDir },
+          );
+        } else {
+          await this.scratch.reclaim(payload.userId, payload.runId);
         }
       }
 
