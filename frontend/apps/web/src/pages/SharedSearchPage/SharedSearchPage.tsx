@@ -4,7 +4,7 @@ import { useQuery } from '@apollo/client';
 import { EmptyState, LoadingPage, Portal, useDeviceLayout, usePageTitle } from '@ci/common';
 import { Breadcrumb, Sheet, Tabs } from '@ci/shadcn';
 import { Images, List, Map as MapIcon, Share2, type LucideIcon } from '@ci/shadcn/icons';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { gql } from '@/graphql';
@@ -35,18 +35,12 @@ const GET_SHARED_SAVED_SEARCH = gql(`
   }
 `);
 
-/** Breadcrumb that leads home like the rest of the app, trailing with the share. */
+/** Page name only — same as the rest of the app, trailing with the share. */
 function SharedBreadcrumb({ trail }: { trail: string }) {
   return (
     <Portal.Slot id="breadcrumbs">
       <Breadcrumb>
         <Breadcrumb.List>
-          <Breadcrumb.Item className="hidden md:block">
-            <Breadcrumb.Link asChild>
-              <Link to="/feed">Companion</Link>
-            </Breadcrumb.Link>
-          </Breadcrumb.Item>
-          <Breadcrumb.Separator className="hidden md:block" />
           <Breadcrumb.Item>
             <Breadcrumb.Page className="flex items-center gap-1.5">
               <Share2 className="h-4 w-4" />
