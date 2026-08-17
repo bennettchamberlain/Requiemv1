@@ -88,7 +88,9 @@ export interface ContentLine {
 export class VCardFileImporter implements FileImporter {
   async recognize(_ctx: unknown, entry: DirEntry): Promise<Recognition> {
     const full = entry.fullPath || entry.fsRoot || entry.filename;
-    if (!full) {return { confidence: 0 };}
+    if (!full) {
+      return { confidence: 0 };
+    }
 
     if (fs.existsSync(full) && fs.statSync(full).isFile()) {
       const ext = path.extname(full).toLowerCase();
@@ -102,7 +104,9 @@ export class VCardFileImporter implements FileImporter {
           await fd.read(buf, 0, 14, 0);
           await fd.close();
           const head = stripBom(buf.toString('utf8')).toUpperCase();
-          if (head.startsWith('BEGIN:VCARD')) {return { confidence: 1.0 };}
+          if (head.startsWith('BEGIN:VCARD')) {
+            return { confidence: 1.0 };
+          }
         } catch {
           /* ignore */
         }
@@ -111,18 +115,26 @@ export class VCardFileImporter implements FileImporter {
       }
     }
 
-    if (fs.existsSync(full) && fs.statSync(full).isDirectory()) {return { confidence: 0, dir_threshold: 0.9 };}
+    if (fs.existsSync(full) && fs.statSync(full).isDirectory()) {
+      return { confidence: 0, dir_threshold: 0.9 };
+    }
 
     return { confidence: 0 };
   }
 
   async fileImport(_ctx: unknown, entry: DirEntry, params: ImportParams): Promise<void> {
     const start = entry.fullPath || entry.fsRoot || entry.filename;
-    if (!start) {return;}
+    if (!start) {
+      return;
+    }
 
     const stat = fs.statSync(start);
     if (stat.isDirectory()) {
-      for await (const f of this.walkDir(start)) {if (this.isVcf(f)) {await this.processFile(f, params);}}
+      for await (const f of this.walkDir(start)) {
+        if (this.isVcf(f)) {
+          await this.processFile(f, params);
+        }
+      }
     } else if (this.isVcf(start)) {
       await this.processFile(start, params);
     }
@@ -139,10 +151,14 @@ export class VCardFileImporter implements FileImporter {
     for (const e of ents) {
       const full = path.join(root, e.name);
       if (e.isDirectory()) {
-        if (e.name.startsWith('.')) {continue;}
+        if (e.name.startsWith('.')) {
+          continue;
+        }
 
         yield* this.walkDir(full);
-      } else if (e.isFile()) {yield full;}
+      } else if (e.isFile()) {
+        yield full;
+      }
     }
   }
 
@@ -165,26 +181,36 @@ export class VCardFileImporter implements FileImporter {
       const trimmed = line.trim();
       if (/^BEGIN:VCARD$/i.test(trimmed)) {
         // A second BEGIN before an END means the previous card was truncated.
-        if (card) {params.pipeline.drop?.('no_end_marker', file);}
+        if (card) {
+          params.pipeline.drop?.('no_end_marker', file);
+        }
 
         card = [];
         continue;
       }
 
       if (/^END:VCARD$/i.test(trimmed)) {
-        if (card) {this.emitCard(card, file, params);}
+        if (card) {
+          this.emitCard(card, file, params);
+        }
 
         card = null;
         continue;
       }
 
-      if (!card) {continue;}
+      if (!card) {
+        continue;
+      }
 
       const parsed = parseContentLine(line);
-      if (parsed) {card.push(parsed);}
+      if (parsed) {
+        card.push(parsed);
+      }
     }
 
-    if (card) {params.pipeline.drop?.('no_end_marker', file);}
+    if (card) {
+      params.pipeline.drop?.('no_end_marker', file);
+    }
   }
 
   private emitCard(lines: ContentLine[], file: string, params: ImportParams): void {
@@ -232,7 +258,9 @@ export function unfoldContentLines(raw: string): string[] {
   let tailIsBinary = false;
   for (const line of physical) {
     if (out.length && (line.startsWith(' ') || line.startsWith('\t'))) {
-      if (!tailIsBinary) {out[out.length - 1] += line.slice(1);}
+      if (!tailIsBinary) {
+        out[out.length - 1] += line.slice(1);
+      }
 
       continue;
     }
@@ -311,11 +339,15 @@ export function parseContentLine(line: string): ContentLine | null {
     }
   }
 
-  if (colon < 0) {return null;}
+  if (colon < 0) {
+    return null;
+  }
 
   const segments = splitUnquoted(line.slice(0, colon), ';');
   let nameToken = segments[0].trim();
-  if (!nameToken) {return null;}
+  if (!nameToken) {
+    return null;
+  }
 
   let group = '';
   const dot = nameToken.indexOf('.');
@@ -325,7 +357,9 @@ export function parseContentLine(line: string): ContentLine | null {
   }
 
   const name = nameToken.toUpperCase();
-  if (!/^[A-Za-z0-9-]+$/.test(name)) {return null;}
+  if (!/^[A-Za-z0-9-]+$/.test(name)) {
+    return null;
+  }
 
   const params: Record<string, string[]> = {};
   const addParam = (key: string, value: string) => {
@@ -334,15 +368,20 @@ export function parseContentLine(line: string): ContentLine | null {
 
   for (const segment of segments.slice(1)) {
     const seg = segment.trim();
-    if (!seg) {continue;}
+    if (!seg) {
+      continue;
+    }
 
     const eq = seg.indexOf('=');
     if (eq === -1) {
       // vCard 2.1 shorthand: `TEL;CELL;VOICE:` (bare TYPE values) and a bare
       // `;QUOTED-PRINTABLE` transport marker.
       const bare = stripQuotes(seg);
-      if (BARE_ENCODINGS.has(bare.toUpperCase())) {addParam('ENCODING', bare);}
-      else if (bare) {addParam('TYPE', bare);}
+      if (BARE_ENCODINGS.has(bare.toUpperCase())) {
+        addParam('ENCODING', bare);
+      } else if (bare) {
+        addParam('TYPE', bare);
+      }
 
       continue;
     }
@@ -350,7 +389,9 @@ export function parseContentLine(line: string): ContentLine | null {
     const key = seg.slice(0, eq).trim().toUpperCase();
     for (const v of splitUnquoted(seg.slice(eq + 1), ',')) {
       const value = stripQuotes(v);
-      if (value) {addParam(key, value);}
+      if (value) {
+        addParam(key, value);
+      }
     }
   }
 
@@ -375,7 +416,9 @@ const NODE_ENCODINGS: Record<string, BufferEncoding> = {
 
 function decodeTransport(value: string, params: Record<string, string[]>): { text: string; binary: boolean } {
   const encoding = (params.ENCODING?.[0] ?? '').toUpperCase();
-  if (encoding === 'B' || encoding === 'BASE64') {return { text: '', binary: true };}
+  if (encoding === 'B' || encoding === 'BASE64') {
+    return { text: '', binary: true };
+  }
 
   if (encoding === 'QUOTED-PRINTABLE') {
     const charset = (params.CHARSET?.[0] ?? 'utf-8').toLowerCase();
@@ -404,7 +447,9 @@ export function decodeQuotedPrintable(value: string, charset: string): string {
       continue;
     }
 
-    for (const b of Buffer.from(ch, 'utf8')) {bytes.push(b);}
+    for (const b of Buffer.from(ch, 'utf8')) {
+      bytes.push(b);
+    }
   }
 
   return Buffer.from(bytes).toString(NODE_ENCODINGS[charset] ?? 'utf8');
@@ -461,17 +506,23 @@ const NON_LABEL_TYPES = new Set(['INTERNET', 'VOICE', 'PREF', 'X-INTERNET', 'OTH
  */
 function labelFor(line: ContentLine, groupLabels: Map<string, string>): string | undefined {
   const grouped = line.group ? groupLabels.get(line.group) : undefined;
-  if (grouped) {return grouped;}
+  if (grouped) {
+    return grouped;
+  }
 
   for (const t of line.params.TYPE ?? []) {
-    if (!NON_LABEL_TYPES.has(t.toUpperCase())) {return t;}
+    if (!NON_LABEL_TYPES.has(t.toUpperCase())) {
+      return t;
+    }
   }
 
   return undefined;
 }
 
 function isPreferred(line: ContentLine): boolean {
-  if (line.params.PREF?.length) {return true;}
+  if (line.params.PREF?.length) {
+    return true;
+  }
 
   return (line.params.TYPE ?? []).some((t) => t.toUpperCase() === 'PREF');
 }
@@ -539,10 +590,14 @@ export function buildContact(lines: ContentLine[], file: string): BuiltContact |
   // orders occur in real files, so the map must be complete before it is read.
   const groupLabels = new Map<string, string>();
   for (const line of lines) {
-    if (!line.group || line.binary || line.name !== 'X-ABLABEL') {continue;}
+    if (!line.group || line.binary || line.name !== 'X-ABLABEL') {
+      continue;
+    }
 
     const label = cleanLabel(line.value);
-    if (label) {groupLabels.set(line.group, label);}
+    if (label) {
+      groupLabels.set(line.group, label);
+    }
   }
 
   const attributes: ContactAttribute[] = [];
@@ -562,7 +617,9 @@ export function buildContact(lines: ContentLine[], file: string): BuiltContact |
   let uid = '';
 
   for (const line of lines) {
-    if (line.binary) {continue;}
+    if (line.binary) {
+      continue;
+    }
 
     const label = labelFor(line, groupLabels);
     const labelled = label ? { label } : {};
@@ -571,16 +628,22 @@ export function buildContact(lines: ContentLine[], file: string): BuiltContact |
 
     switch (line.name) {
       case 'FN':
-        if (!fn) {fn = text();}
+        if (!fn) {
+          fn = text();
+        }
 
         break;
       case 'N':
-        if (!structuredName) {structuredName = nameFromN(line.value);}
+        if (!structuredName) {
+          structuredName = nameFromN(line.value);
+        }
 
         break;
       case 'TEL': {
         const v = text();
-        if (!v) {break;}
+        if (!v) {
+          break;
+        }
 
         phones.push(v);
         attributes.push({ name: 'phone', value: v, identity: true, ...labelled, ...preferred });
@@ -589,7 +652,9 @@ export function buildContact(lines: ContentLine[], file: string): BuiltContact |
 
       case 'EMAIL': {
         const v = text();
-        if (!v) {break;}
+        if (!v) {
+          break;
+        }
 
         emails.push(v);
         attributes.push({ name: 'email', value: v, identity: true, ...labelled, ...preferred });
@@ -598,7 +663,9 @@ export function buildContact(lines: ContentLine[], file: string): BuiltContact |
 
       case 'URL': {
         const v = text();
-        if (!v) {break;}
+        if (!v) {
+          break;
+        }
 
         urls.push(v);
         attributes.push({ name: 'url', value: v, ...labelled });
@@ -608,7 +675,9 @@ export function buildContact(lines: ContentLine[], file: string): BuiltContact |
       case 'ORG': {
         // ORG is structured (org;unit;unit…) and Apple writes the trailing `;`.
         const v = splitStructured(line.value, ';').filter(Boolean).join(' — ');
-        if (!v) {break;}
+        if (!v) {
+          break;
+        }
 
         orgs.push(v);
         attributes.push({ name: 'organization', value: v });
@@ -618,7 +687,9 @@ export function buildContact(lines: ContentLine[], file: string): BuiltContact |
       case 'TITLE':
       case 'ROLE': {
         const v = text();
-        if (!v) {break;}
+        if (!v) {
+          break;
+        }
 
         titles.push(v);
         attributes.push({ name: 'job_title', value: v });
@@ -627,7 +698,9 @@ export function buildContact(lines: ContentLine[], file: string): BuiltContact |
 
       case 'ADR': {
         const v = formatAddress(line.value);
-        if (!v) {break;}
+        if (!v) {
+          break;
+        }
 
         addresses.push(v);
         attributes.push({ name: 'address', value: v, ...labelled });
@@ -636,7 +709,9 @@ export function buildContact(lines: ContentLine[], file: string): BuiltContact |
 
       case 'NOTE': {
         const v = text();
-        if (!v) {break;}
+        if (!v) {
+          break;
+        }
 
         notes.push(v);
         attributes.push({ name: 'note', value: v });
@@ -645,7 +720,9 @@ export function buildContact(lines: ContentLine[], file: string): BuiltContact |
 
       case 'NICKNAME': {
         const v = text();
-        if (!v) {break;}
+        if (!v) {
+          break;
+        }
 
         nicknames.push(v);
         attributes.push({ name: 'nickname', value: v });
@@ -654,19 +731,27 @@ export function buildContact(lines: ContentLine[], file: string): BuiltContact |
 
       case 'BDAY':
         // BDAY is a DATE(-TIME) value, not TEXT — no backslash escaping applies.
-        if (!birthday) {birthday = line.value.trim();}
+        if (!birthday) {
+          birthday = line.value.trim();
+        }
 
         break;
       case 'CATEGORIES':
         // Google Takeout writes one .vcf per label and repeats the label set
         // here; it is the only record of which groups a contact belongs to.
-        for (const c of splitStructured(line.value, ',')) {if (c) {categories.push(c);}}
+        for (const c of splitStructured(line.value, ',')) {
+          if (c) {
+            categories.push(c);
+          }
+        }
 
         break;
       case 'IMPP':
       case 'X-SOCIALPROFILE': {
         const v = text();
-        if (!v) {break;}
+        if (!v) {
+          break;
+        }
 
         const service = line.params['X-SERVICE-TYPE']?.[0] ?? label;
         socials.push(service ? `${service}: ${v}` : v);
@@ -675,7 +760,9 @@ export function buildContact(lines: ContentLine[], file: string): BuiltContact |
       }
 
       case 'UID':
-        if (!uid) {uid = text();}
+        if (!uid) {
+          uid = text();
+        }
 
         break;
       default:
@@ -683,10 +770,14 @@ export function buildContact(lines: ContentLine[], file: string): BuiltContact |
     }
   }
 
-  if (birthday) {attributes.push({ name: 'birth_date', value: birthday });}
+  if (birthday) {
+    attributes.push({ name: 'birth_date', value: birthday });
+  }
 
   const name = fn || structuredName;
-  if (!name && attributes.length === 0) {return null;}
+  if (!name && attributes.length === 0) {
+    return null;
+  }
 
   const item: Item = {
     id: contactId(uid, file, lines),
@@ -760,7 +851,9 @@ function contactId(uid: string, file: string, lines: ContentLine[]): string {
     h.update(uid);
   } else {
     for (const line of lines) {
-      if (line.binary) {continue;}
+      if (line.binary) {
+        continue;
+      }
 
       h.update(`${line.group}.${line.name}:${line.value}\n`);
     }
