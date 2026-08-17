@@ -8,7 +8,12 @@ import type { UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { EventService } from '@ci/domains/events';
 
-import { IMPORT_QUEUE, IMPORT_STAGE_WEIGHTS, type ImportStageKindName } from '../constants';
+import {
+  IMPORT_QUEUE,
+  IMPORT_STAGE_KINDS,
+  IMPORT_STAGE_WEIGHTS,
+  type ImportStageKindName,
+} from '../constants';
 import { ImportRunEntity, type ImportRun, type ImportRunSource } from '../entities/ImportRunEntity';
 import { ImportStageEntity, type ImportStage } from '../entities/ImportStageEntity';
 import { ImportStageEvent } from '../events';
@@ -77,12 +82,16 @@ export interface UnpushedRun {
 /**
  * What a run does when the caller does not say: the whole import.
  *
- * `push` joined this list with its runner. Until then it was deliberately
- * absent, because a run listing a stage nothing can execute would either strand
- * there or "skip" it and report a complete import over data that never reached
- * `ci.*` — and the second is worse, since it looks like success.
+ * Taken from {@link IMPORT_STAGE_KINDS} rather than restated. A stage kind
+ * joins this list with its runner — until then a run listing a stage nothing
+ * can execute would either strand there or "skip" it and report a complete
+ * import over data that never reached `ci.*`, and the second is worse, since it
+ * looks like success. Restating the list is how that guarantee silently breaks
+ * in the other direction: `media` was added to the kinds, the CHECK constraint
+ * and the weights, and every new run went on being created without it because
+ * this copy had not heard.
  */
-const DEFAULT_STAGES: readonly ImportStageKindName[] = ['unpack', 'parse', 'push'];
+const DEFAULT_STAGES: readonly ImportStageKindName[] = IMPORT_STAGE_KINDS;
 
 /**
  * How silent a stage must go before the recovery sweep treats its claim as
@@ -848,6 +857,32 @@ export class ImportRunService {
   }
 
   /**
+   * Did this run actually pull a record out of its source?
+   *
+   * The question every destructive close-out step turns on. A run can reach
+   * `completed`/`partial` having staged nothing at all — `ParseStage` returns
+   * `partial: true, reason: 'no recognized data sources'` for a tree this
+   * appliance has no parser for, and calls that an honest report rather than a
+   * failure. Treating that as "consumed" is what made a zero-record run delete
+   * the user's only copy: `UnpackStage` acquires by rename, so the move IS the
+   * consume, and `retryStage` only accepts `failed`/`cancelled`, leaving no way
+   * back.
+   *
+   * Asked of the staging tables rather than of the parse stage's `processed`
+   * count, because that is the durable record of what was actually pulled and
+   * it stays true across a stage retry or a resumed run.
+   */
+  async pulledRecords(runId: string): Promise<boolean> {
+    const [row] = (await this.dataSource.query(
+      `SELECT EXISTS (SELECT 1 FROM ci_import.staged_items WHERE run_id = $1::uuid)
+           OR EXISTS (SELECT 1 FROM ci_import.staged_entities WHERE run_id = $1::uuid) AS pulled`,
+      [runId],
+    )) as Array<{ pulled: boolean }>;
+
+    return row?.pulled === true;
+  }
+
+  /**
    * Close a run whose stages are all done, choosing between `completed` and
    * `partial` from what the stages recorded.
    */
@@ -865,18 +900,24 @@ export class ImportRunService {
       [runId, status],
     );
 
-    // A completed-or-partial run has consumed its inbox unit: the bytes now
-    // live in the corpus, and the moved copy goes with the run's scratch.
-    // Placed here rather than in the listener because finishRun is reached by
-    // the listener AND the recovery sweep, so a crash between the last stage
-    // and close-out still consumes on resume. Idempotent; no-op for drop runs.
-    if (status === 'completed' || status === 'partial') {
+    // A completed-or-partial run has consumed its inbox unit — but ONLY if some
+    // import actually pulled a record out of it. A run that staged nothing has
+    // taken nothing, so stamping `consumed` would record an ingest that never
+    // happened and hand the bytes to the scratch reclaim. Left `moved` instead:
+    // the tree stays on disk (see ImportStageListener) and the row still says
+    // where it went. Placed here rather than in the listener because finishRun
+    // is reached by the listener AND the recovery sweep, so a crash between the
+    // last stage and close-out still consumes on resume. Idempotent; no-op for
+    // drop runs.
+    const pulled = await this.pulledRecords(runId);
+
+    if ((status === 'completed' || status === 'partial') && pulled) {
       await this.stagedSources.markConsumed(runId);
     } else {
       await this.stagedSources.release(runId);
     }
 
-    this.logger.log('Finished import run', { runId, status });
+    this.logger.log('Finished import run', { runId, status, pulledRecords: pulled });
   }
 
   /**

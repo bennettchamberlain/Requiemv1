@@ -9,6 +9,7 @@ import { IMPORT_QUEUE } from '../constants';
 import { ImportStageEvent } from '../events';
 import { ImportRunService } from '../services/ImportRunService';
 import { ImportScratchService } from '../services/ImportScratchService';
+import { MediaStage } from '../stages/MediaStage';
 import { ParseStage } from '../stages/ParseStage';
 import { PushStage } from '../stages/PushStage';
 import { UnpackStage } from '../stages/UnpackStage';
@@ -63,6 +64,7 @@ export class ImportStageListener implements OnApplicationBootstrap {
     private readonly scratch: ImportScratchService,
     unpackStage: UnpackStage,
     parseStage: ParseStage,
+    mediaStage: MediaStage,
     pushStage: PushStage,
     private readonly logger: LoggerService,
   ) {
@@ -70,6 +72,7 @@ export class ImportStageListener implements OnApplicationBootstrap {
     this.runners = new Map([
       [unpackStage.kind, unpackStage as ImportStageRunner],
       [parseStage.kind, parseStage as ImportStageRunner],
+      [mediaStage.kind, mediaStage as ImportStageRunner],
       [pushStage.kind, pushStage as ImportStageRunner],
     ]);
   }
@@ -199,7 +202,23 @@ export class ImportStageListener implements OnApplicationBootstrap {
         // Last stage: the tree has done its job. Reclaimed here rather than on a
         // sweep because these directories hold tens of gigabytes and nothing
         // else knows the run is over.
-        await this.scratch.reclaim(payload.userId, payload.runId);
+        //
+        // Unless nothing was pulled out of it. `UnpackStage` acquires by rename,
+        // so for an inbox unit this tree is not a copy — it is the user's only
+        // one. A run that recognized no data source still closes as `partial`
+        // (ParseStage calls that an honest report, not a failure), and deleting
+        // here on that path is an unrecoverable loss of data the appliance was
+        // handed. Keeping tens of gigabytes costs disk; the alternative costs
+        // the archive.
+        if (await this.runs.pulledRecords(payload.runId)) {
+          await this.scratch.reclaim(payload.userId, payload.runId);
+        } else {
+          this.logger.warn('Import staged no records; keeping its scratch tree rather than reclaiming it', {
+            runId: payload.runId,
+            userId: payload.userId,
+            scratchDir,
+          });
+        }
       }
 
       this.logger.log('Completed import stage', {

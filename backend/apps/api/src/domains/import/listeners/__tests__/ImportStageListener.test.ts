@@ -25,9 +25,11 @@ function makeListener(
     claimed?: boolean;
     next?: Record<string, unknown> | null;
     run?: jest.Mock;
+    pulled?: boolean;
   } = {},
 ) {
   const runs = {
+    pulledRecords: jest.fn(async () => overrides.pulled ?? true),
     getStage: jest.fn(async () =>
       overrides.stage === undefined
         ? { id: payload.stageId, runId: payload.runId, kind: 'unpack', seq: 0, status: 'queued' }
@@ -56,6 +58,11 @@ function makeListener(
     run: jest.fn(async () => ({ processed: 0, total: 0, detail: {} })),
   };
 
+  const mediaStage = {
+    kind: 'media' as const,
+    run: jest.fn(async () => ({ processed: 0, total: 0, detail: {} })),
+  };
+
   const pushStage = {
     kind: 'push' as const,
     run: jest.fn(async () => ({ processed: 0, total: 0, detail: {} })),
@@ -75,6 +82,7 @@ function makeListener(
       scratch as never,
       unpackStage as never,
       parseStage as never,
+      mediaStage as never,
       pushStage as never,
       logger as never,
     ),
@@ -163,6 +171,19 @@ describe('ImportStageListener advancing', () => {
 
     // The parse stage reads what unpack extracted; reclaiming here would delete
     // the tree between the two jobs.
+    expect(scratch.reclaim).not.toHaveBeenCalled();
+  });
+
+  it('keeps the scratch tree when the run pulled no records out of it', async () => {
+    // The data-loss path: a tree this appliance has no parser for still closes
+    // as `partial` (ParseStage calls that an honest report, not a failure), and
+    // unpack acquired it by rename — so for an inbox unit this IS the user's
+    // only copy. Reclaiming here destroyed it with no way back, because
+    // retryStage only accepts failed/cancelled runs.
+    const { listener, scratch } = makeListener({ next: null, pulled: false });
+
+    await listener.runStage(payload);
+
     expect(scratch.reclaim).not.toHaveBeenCalled();
   });
 });
