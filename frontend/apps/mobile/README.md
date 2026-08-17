@@ -399,12 +399,19 @@ schema-string entry point), so iOS cannot construct tools dynamically at all.
 Execution goes over MCP `tools/call` (`POST /mcp`) — there is no REST "execute this intent"
 endpoint — authenticated with the same `x-api-key` the App Intents already use.
 
-**iOS caveats.** The iOS plugin implements the same JS contract as `@ci/capacitor-local-llm`
-(`isAvailable`/`loadModel`/`generate`/`generateStream`/`cancel` + the `llmToken` event), so
-`@ci/common`'s `generateOffline()` picks it up with no web changes. But it lives in the app target
-rather than that package (which declares itself Android-only), and it has **no model downloader** —
-`loadModel` takes a path to a `.litertlm` file already on the device. Moving it into the package
-(podspec + vendored xcframework + Podfile regeneration) and adding a downloader are the follow-ups.
+**iOS.** The iOS plugin implements the same JS contract as `@ci/capacitor-local-llm`
+(`isAvailable`/`getModelStatus`/`downloadModel`/`deleteModel`/`loadModel`/`generate`/`generateStream`/
+`cancel`, plus the `llmToken` and `modelDownloadProgress` events), so `@ci/common`'s
+`generateOffline()` picks it up with no web changes. Downloads are resumable: a partial lands in
+`<name>.part` and the next attempt continues with an HTTP `Range` request, so a force-quit or a lost
+connection costs nothing. It still lives in the app target rather than that package (which declares
+itself Android-only); moving it there needs a podspec + vendored xcframework + Podfile regeneration.
+
+> ⚠️ **Android's model catalog is currently broken and this is not an iOS problem.** Every
+> Gemma-derived repo under `litert-community` is now `gated: "auto"` on Hugging Face, so the `.task`
+> URL in `LocalLlmModels.kt` / `definitions.ts` answers `401 GatedRepo` to an anonymous download —
+> meaning no new Android user can fetch the only model offered. iOS ships the ungated Qwen3-0.6B
+> instead. Android needs the same swap (or a token); see `LocalLLMModels.swift` for the measurements.
 
 ## Not yet wired (later phases)
 
