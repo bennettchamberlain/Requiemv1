@@ -28,6 +28,31 @@ export const TIME_BUCKET_LABELS: Readonly<Record<TimeBucket, string>> = {
   other: 'Other',
 };
 
+/** Show hours only when at least this share of considered events have a duration. */
+export const TIME_HOURS_COVERAGE = 0.25;
+
+const CHANNEL_LABELS: Readonly<Record<string, string>> = {
+  imessage: 'iMessage',
+  whatsapp: 'WhatsApp',
+  gmail: 'Gmail',
+  email: 'Email',
+  sms: 'SMS',
+  signal: 'Signal',
+  twitter: 'Twitter',
+  instagram: 'Instagram',
+  telegram: 'Telegram',
+};
+
+export function labelChannel(source: string): string {
+  return CHANNEL_LABELS[source.toLowerCase()] ?? source;
+}
+
+export function resolveTimeMode(timedEvents: number, consideredEvents: number, totalMinutes: number): 'hours' | 'counts' {
+  const coverage = consideredEvents > 0 ? timedEvents / consideredEvents : 0;
+
+  return totalMinutes > 0 && coverage >= TIME_HOURS_COVERAGE ? 'hours' : 'counts';
+}
+
 /**
  * Postgres expression that turns `column->>'Amount'` (`-$12.00`, `+$74.00`,
  * `$1,299.00`) into integer minor units. Same cleanup as {@link parseAmountToMinor}.
@@ -238,7 +263,7 @@ export function buildLifeInsights(series: {
     insights.push({
       id: 'top-channel',
       title: 'Busiest channel',
-      body: `${topChannel.source} (${topChannel.count.toLocaleString()} messages)`,
+      body: `${labelChannel(topChannel.source)} (${topChannel.count.toLocaleString()} messages)`,
     });
   }
 

@@ -2,8 +2,10 @@ import {
   amountToMinorSql,
   buildLifeInsights,
   isOutgoingSpend,
+  labelChannel,
   parseAmountToMinor,
   parseStatsBound,
+  resolveTimeMode,
   timeBucketForEventType,
   type TimeSeries,
 } from '../lifeStats';
@@ -121,7 +123,12 @@ describe('buildLifeInsights', () => {
     expect(insights[1].body).toContain('Cafe Nero');
     expect(insights[1].body).toContain('$28.00');
     expect(insights[2].body).toBe('Calendar (2h)');
-    expect(insights[3].body).toContain('imessage');
+    expect(insights[3].body).toContain('iMessage');
+  });
+
+  it('labels known channels', () => {
+    expect(labelChannel('imessage')).toBe('iMessage');
+    expect(labelChannel('unknown-app')).toBe('unknown-app');
   });
 
   it('uses event counts when duration coverage is empty', () => {
@@ -137,5 +144,19 @@ describe('buildLifeInsights', () => {
     });
 
     expect(insights[0]).toMatchObject({ title: 'Most events', body: 'Media (10 events)' });
+  });
+});
+
+describe('resolveTimeMode', () => {
+  it('uses counts when duration coverage is thin', () => {
+    expect(resolveTimeMode(1, 20, 60)).toBe('counts');
+  });
+
+  it('uses hours when enough events have a duration', () => {
+    expect(resolveTimeMode(8, 20, 120)).toBe('hours');
+  });
+
+  it('uses counts when no minutes exist', () => {
+    expect(resolveTimeMode(20, 20, 0)).toBe('counts');
   });
 });

@@ -163,7 +163,8 @@ function SpendScatter({ rows }: { rows: readonly SpendRow[] }) {
 
 export function TimeChart({ time }: { time: TimeSeries }) {
   const usingHours = time.mode === 'hours';
-  const data = time.rows.map((row, index) => ({
+  const chartRows = usingHours ? time.rows.filter((row) => row.minutes > 0) : time.rows;
+  const data = chartRows.map((row, index) => ({
     ...row,
     value: usingHours ? row.minutes : row.count,
     color: PALETTE[index % PALETTE.length],
@@ -358,8 +359,13 @@ function pivotSocial(rows: readonly SocialRow[]): {
   for (const row of rows) {
     const key = row.bucket.slice(0, 10);
     const current = byBucket.get(key) ?? { bucket: key };
-    const previous = typeof current[row.sourceSystem] === 'number' ? Number(current[row.sourceSystem]) : 0;
-    current[row.sourceSystem] = previous + row.count;
+    for (const source of sources) {
+      if (typeof current[source] !== 'number') {
+        current[source] = 0;
+      }
+    }
+
+    current[row.sourceSystem] = Number(current[row.sourceSystem]) + row.count;
     byBucket.set(key, current);
   }
 

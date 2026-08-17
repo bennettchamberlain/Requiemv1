@@ -15,6 +15,7 @@ import {
   SIGNED_TRANSACTION_TYPE,
   SOCIAL_EVENT_TYPES,
   TIME_BUCKET_LABELS,
+  resolveTimeMode,
   TRAVEL_EVENT_TYPES,
   buildLifeInsights,
   type ChannelRow,
@@ -235,10 +236,11 @@ export class LifeStatsService {
     const timedEvents =
       eventRows.reduce((sum, row) => sum + Number(row.timed_count), 0) + (callCount > 0 ? callCount : 0);
     const totalMinutes = rows.reduce((sum, row) => sum + row.minutes, 0);
-    const ordered = rows.sort((a, b) => (totalMinutes > 0 ? b.minutes - a.minutes : b.count - a.count));
+    const mode = resolveTimeMode(timedEvents, consideredEvents, totalMinutes);
+    const ordered = rows.sort((a, b) => (mode === 'hours' ? b.minutes - a.minutes : b.count - a.count));
 
     return {
-      mode: totalMinutes > 0 ? 'hours' : 'counts',
+      mode,
       coverage: { timedEvents, consideredEvents },
       rows: ordered,
     };

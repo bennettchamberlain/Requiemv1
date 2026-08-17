@@ -42,9 +42,14 @@ export function StatsPage() {
       </Portal.Slot>
 
       <PageContent>
-        {error && <ErrorNotice message={error} onRetry={refresh} />}
-        {!error && loading && <StatsSkeleton />}
-        {!error && !loading && data && <StatsBody stats={data} range={range} onRangeChange={setRange} />}
+        {error && !data && <ErrorNotice message={error} onRetry={refresh} />}
+        {loading && !data && <StatsSkeleton />}
+        {data && (
+          <div className="flex flex-col gap-4">
+            {error && <ErrorNotice message={error} onRetry={refresh} />}
+            <StatsBody stats={data} range={range} onRangeChange={setRange} refreshing={loading} />
+          </div>
+        )}
       </PageContent>
     </>
   );
@@ -83,10 +88,12 @@ function StatsBody({
   stats,
   range,
   onRangeChange,
+  refreshing,
 }: {
   stats: MemoryStats;
   range: StatsRange;
   onRangeChange: (range: StatsRange) => void;
+  refreshing: boolean;
 }) {
   const { isFeatureEnabled } = useFeatures();
   const earliest = formatDay(stats.dateRange.earliest);
@@ -99,6 +106,7 @@ function StatsBody({
           <h1 className="text-lg font-semibold">Life stats</h1>
           <p className="text-sm text-muted-foreground">
             Patterns in spend, time, and conversations for this window.
+            {refreshing ? ' Updating…' : ''}
           </p>
         </div>
         <ToggleGroup
