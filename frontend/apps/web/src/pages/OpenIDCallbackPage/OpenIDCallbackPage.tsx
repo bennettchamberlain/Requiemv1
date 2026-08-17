@@ -84,7 +84,7 @@ export function OpenIDCallbackPage() {
       } catch (err: unknown) {
         toast.error(String(err));
       } finally {
-        navigate('/connections');
+        navigate('/sources/connect');
       }
     })();
   }, [authToken]);

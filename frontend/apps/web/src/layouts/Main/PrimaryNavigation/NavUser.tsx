@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 
 import { Avatar, DropdownMenu, Tooltip } from '@ci/shadcn';
-import { ListTodo, LogOut, SunMoon, Settings2, Cable, Palette } from '@ci/shadcn/icons';
+import { ListTodo, LogOut, SunMoon, Settings2, Palette } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation } from 'react-router-dom';
 
@@ -93,19 +93,9 @@ export function NavUser() {
             </Tooltip.Trigger>
           </Tooltip>
 
-          <Tooltip delayDuration={600}>
-            <Tooltip.Content side="left" className="pointer-events-none">
-              {t('NAV_ACCOUNT_CONNECTIONS')}
-            </Tooltip.Content>
-            <Tooltip.Trigger asChild>
-              <DropdownMenu.Item asChild>
-                <Link to="/connections">
-                  <Cable />
-                  Connections
-                </Link>
-              </DropdownMenu.Item>
-            </Tooltip.Trigger>
-          </Tooltip>
+          {/* Connections used to sit here, which is why nobody found it: this
+              is the menu you open to change a setting, not to add data. It is
+              now Sources in the primary sidebar. */}
 
           {isFeatureEnabled('jobs.page') && (
             <Tooltip delayDuration={600}>

@@ -423,7 +423,7 @@ export function ConnectionPage() {
       });
 
       toast.success('Connection deleted successfully');
-      navigate('/connections');
+      navigate('/sources/connect');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
       console.error('Error deleting connection:', errorMessage, err);
@@ -625,7 +625,7 @@ export function ConnectionPage() {
 
             <Breadcrumb.Item className="hidden md:block">
               <Breadcrumb.Link asChild>
-                <Link to="/connections">Connections</Link>
+                <Link to="/sources/connect">Sources</Link>
               </Breadcrumb.Link>
             </Breadcrumb.Item>
 

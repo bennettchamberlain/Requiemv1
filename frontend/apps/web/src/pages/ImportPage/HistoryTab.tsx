@@ -167,7 +167,7 @@ export function HistoryTab() {
         </section>
       ) : (
         <p className="text-sm text-muted-foreground">
-          Nothing imported yet — the Import tab walks you through it.
+          Nothing imported yet — Pick, Export and Sync above walk you through it.
         </p>
       )}
     </div>

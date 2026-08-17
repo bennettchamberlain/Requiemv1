@@ -6,9 +6,9 @@ import type { CatalogSource } from '../useImportApi';
 import { PickStep } from './PickStep';
 
 /**
- * Step 1's contract: recognizable brands in sections, search and facets narrow
- * without losing anyone, coming-soon is visible-but-badged, and Continue is
- * earned by picking something.
+ * Step 1's contract: recognizable brands in sections, each tile saying what
+ * picking it imports, coming-soon visible-but-badged, and Continue earned by
+ * picking something.
  */
 
 function catalogSource(overrides: Partial<CatalogSource> & { id: string }): CatalogSource {
@@ -27,7 +27,11 @@ function catalogSource(overrides: Partial<CatalogSource> & { id: string }): Cata
 }
 
 const CATALOG = [
-  catalogSource({ id: 'spotify', title: 'Spotify' }),
+  catalogSource({
+    id: 'spotify',
+    title: 'Spotify',
+    whatImported: ['Your full listening history', 'Playlists you made and followed'],
+  }),
   catalogSource({ id: 'deezer', title: 'Deezer', importerReady: false }),
   catalogSource({ id: 'strava', title: 'Strava', ecosystem: 'wearable', category: 'health' }),
 ];
@@ -49,7 +53,7 @@ describe('PickStep', () => {
 
     expect(screen.getByRole('heading', { name: /music/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /fitness/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Spotify' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Spotify/ })).toBeInTheDocument();
   });
 
   it('badges a coming-soon importer instead of hiding it', () => {
@@ -61,31 +65,33 @@ describe('PickStep', () => {
     expect(screen.getByText(/coming soon/i)).toBeInTheDocument();
   });
 
-  it('search narrows the grid', () => {
+  // The search box and the category chips were answers to a grid of ~100
+  // one-line names with nothing to tell them apart. The tiles carry a logo, a
+  // name and what each source imports now, and the list is already grouped
+  // under the same headings the chips repeated — so both are gone and every
+  // section is simply present.
+  it('shows the whole catalogue with no filter chrome in front of it', () => {
     renderStep();
 
-    fireEvent.change(screen.getByRole('searchbox', { name: /search services/i }), {
-      target: { value: 'strav' },
-    });
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: /filter by category/i })).not.toBeInTheDocument();
 
-    expect(screen.getByRole('button', { name: 'Strava' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Spotify' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Spotify/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Strava/ })).toBeInTheDocument();
   });
 
-  it('a facet chip narrows to one section, and clicking it again clears', () => {
+  it('says what each source imports, not just its name', () => {
     renderStep();
 
-    fireEvent.click(screen.getByRole('button', { name: /^music$/i }));
-    expect(screen.queryByRole('button', { name: 'Strava' })).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: /^music$/i }));
-    expect(screen.getByRole('button', { name: 'Strava' })).toBeInTheDocument();
+    // Answering "what would picking this give me" on the tile is the whole
+    // reason it is a card rather than a one-line label.
+    expect(screen.getByRole('button', { name: /Spotify/ })).toHaveTextContent('Listening');
   });
 
   it('toggling reports the source key upward', () => {
     const { onToggle } = renderStep();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Spotify' }));
+    fireEvent.click(screen.getByRole('button', { name: /Spotify/ }));
     expect(onToggle).toHaveBeenCalledWith('spotify');
   });
 

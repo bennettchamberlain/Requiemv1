@@ -233,7 +233,7 @@ export function PrimaryNavigation() {
                       </Tooltip.Content>
                       <Tooltip.Trigger asChild>
                         <DropdownMenu.Item
-                          onSelect={() => navigate('/connect')}
+                          onSelect={() => navigate('/sources')}
                           className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
                         >
                           <Cable className="h-6! w-6!" strokeWidth={1.25} />

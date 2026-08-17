@@ -99,7 +99,7 @@ export function ProviderPage() {
   }, [connect, provider, form]);
 
   const handleGoBack = useCallback(() => {
-    navigate('/connect');
+    navigate('/sources/connect');
   }, [navigate]);
 
   useEffect(() => {
@@ -109,7 +109,7 @@ export function ProviderPage() {
 
     if (authorizationUrl === '') {
       toast.success(`Connected to ${provider?.name ?? 'provider'}`);
-      navigate('/connect');
+      navigate('/sources/connect');
 
       return;
     }
