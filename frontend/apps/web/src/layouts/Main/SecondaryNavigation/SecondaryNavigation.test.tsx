@@ -1,10 +1,9 @@
 /**
  * Where destinations live in the chrome.
  *
- * The left rail is the whole menu now: major pages, minor tools (including
- * Jobs, which used to hide in the account dropdown), and the account cluster
- * itself. These assertions pin that — present in the rail, not in the
- * account menu — and that expanding the rail reveals labels and submenus.
+ * The left rail is the whole menu now: major pages, minor tools, and the
+ * account cluster itself. These assertions pin that — present in the rail,
+ * not in the account menu — and that expanding the rail reveals labels.
  */
 import { Tooltip } from '@ci/shadcn';
 import { fireEvent, render, screen } from '@testing-library/react';
@@ -114,18 +113,28 @@ describe('SecondaryNavigation', () => {
     expect(screen.getByRole('navigation')).toHaveAttribute('data-state', 'collapsed');
     expect(screen.queryByText('Main')).not.toBeInTheDocument();
     expect(screen.queryByText('More')).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Connect' })).not.toBeInTheDocument();
   });
 
-  it('shows labels, groups, and the Sources submenu when expanded', () => {
+  it('shows labels and groups when expanded, without a Sources submenu', () => {
     renderRail('/feed', { expanded: true });
 
     expect(screen.getByRole('navigation')).toHaveAttribute('data-state', 'expanded');
-    expect(screen.getByText('Feed')).toBeInTheDocument();
+    expect(screen.getByText('Plan')).toBeInTheDocument();
     expect(screen.getByText('Main')).toBeInTheDocument();
     expect(screen.getByText('More')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Connect' })).toHaveAttribute('href', '/sources/connect');
-    expect(screen.getByRole('link', { name: 'Import' })).toHaveAttribute('href', '/sources/import');
+    expect(screen.queryByRole('link', { name: 'Connect' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Import' })).not.toBeInTheDocument();
+  });
+
+  it('lists Plan, then Schedule, then Feed, then Jobs, then Memory', () => {
+    renderRail();
+
+    const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
+
+    expect(hrefs.indexOf('/plan')).toBeLessThan(hrefs.indexOf('/schedule'));
+    expect(hrefs.indexOf('/schedule')).toBeLessThan(hrefs.indexOf('/feed'));
+    expect(hrefs.indexOf('/feed')).toBeLessThan(hrefs.indexOf('/jobs'));
+    expect(hrefs.indexOf('/jobs')).toBeLessThan(hrefs.indexOf('/memory'));
   });
 });
 
