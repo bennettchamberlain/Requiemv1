@@ -431,6 +431,18 @@ async function up(key: string): Promise<void> {
       SUMMARY_HOST: `http://localhost:${summaryPort}`,
       PARSER_HOST: `http://localhost:${parserPort}`,
       APP_PUBLIC_HOSTNAME: host, // this stack's own origin (<key>.localhost); OAuth host is separate
+      // Vite's own `/api` proxy, for anyone who opens the raw dev-server port
+      // instead of the Caddy route. Without this it falls back to the hardcoded
+      // `http://localhost:64669` in vite.config.ts — a port nothing listens on —
+      // so EVERY /api call from that origin fails with ECONNREFUSED: no feature
+      // flags (which silently unregisters flag-gated routes, so /import serves a
+      // 404 that reads like "not signed in"), no GraphQL, and an OAuth link that
+      // lands on a blank page.
+      //
+      // 127.0.0.1, not `localhost`: the API binds IPv4 (`0.0.0.0`), while
+      // `localhost` resolves to ::1 first on a dual-stack host. curl falls back
+      // to IPv4; Node's proxy agent reports the AggregateError instead.
+      API_PROXY_TARGET: `http://127.0.0.1:${apiPort}`,
       OVERMIND_SOCKET: overmindSocket,
       // Overmind reloads .env over the environment we hand it, which would
       // overwrite the dynamic per-worktree ports set above. This env already
