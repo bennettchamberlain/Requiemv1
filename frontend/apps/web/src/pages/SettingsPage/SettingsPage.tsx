@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next';
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 
 import { useFeatures } from '@/common/feature';
+import { appHomePath } from '@/lib/appHome';
 
 const AppearanceSection = lazy(() =>
   import('./sections/AppearanceSection').then((m) => ({ default: m.AppearanceSection })),
@@ -69,7 +70,7 @@ export function SettingsPage() {
   )?.backgroundLocation;
 
   const handleClose = useCallback(() => {
-    navigate(backgroundLocation ?? (isFeatureEnabled('planning.page') ? '/plan' : '/brief'));
+    navigate(backgroundLocation ?? appHomePath(isFeatureEnabled('planning.page')));
   }, [backgroundLocation, isFeatureEnabled, navigate]);
 
   useEffect(() => {
