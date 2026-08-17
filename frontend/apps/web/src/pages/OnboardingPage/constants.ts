@@ -8,6 +8,7 @@ export const ONBOARDING_STEP_KEYS = [
   'preferences-movie',
   'preferences-activity',
   'connect-source',
+  'import-archives',
   'trust-dial',
   'run-first-sync',
 ] as const;
@@ -35,6 +36,7 @@ export const BROWSER_TIMEZONE = (() => {
 export function buildOnboardingStepKeys(options: {
   needsIdentity: boolean;
   preferenceStepsEnabled: boolean;
+  importEnabled?: boolean;
 }): OnboardingStepKey[] {
   const keys: OnboardingStepKey[] = ['intro'];
 
@@ -48,7 +50,20 @@ export function buildOnboardingStepKeys(options: {
     keys.push('preferences-food', 'preferences-movie', 'preferences-activity');
   }
 
-  keys.push('connect-source', 'trust-dial', 'run-first-sync');
+  // `import-archives` sits directly after `connect-source`: both answer "where
+  // does my memory come from", and the order is deliberate — connectors are the
+  // low-effort default, an export is the high-value one someone may already
+  // have downloaded. Always present and always skippable, like every other
+  // step; it is gated by the same `import.page` feature flag as /import, so an
+  // appliance with importing turned off does not offer a step that leads
+  // nowhere.
+  keys.push('connect-source');
+
+  if (options.importEnabled) {
+    keys.push('import-archives');
+  }
+
+  keys.push('trust-dial', 'run-first-sync');
 
   return keys;
 }
