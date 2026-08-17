@@ -387,12 +387,13 @@ export function ServiceIntegrationsSection({
 
   return (
     <>
-      {/* Four to a row on a wide screen. The cards are a list of names now
-          rather than seventeen full-bleed brand panels, so the whole catalogue
-          is comparable at a glance instead of a screen per six. */}
+      {/* Three to a row, as on every other path. The cards are a list of names
+          rather than seventeen full-bleed brand panels, so the catalogue is
+          comparable at a glance either way — and matching the other paths
+          matters more than fitting one more column. */}
       <div
         className={cn(
-          'grid grid-cols-1 gap-2 sm:grid-cols-2 md:gap-4 lg:grid-cols-3 xl:grid-cols-4',
+          'grid grid-cols-1 gap-2 sm:grid-cols-2 md:gap-4 lg:grid-cols-3',
           variant === 'onboarding' && 'max-w-6xl',
         )}
       >

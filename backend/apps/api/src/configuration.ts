@@ -430,20 +430,24 @@ export const ConfigSchema = z.object({
     'enable.system.prompt': booleanStringSchema,
     'enable.inventory.page': booleanStringSchema,
     'advanced.theme.tab': booleanStringSchema,
-    'new.insights.page': booleanStringSchema,
     'require.signup.codes': booleanStringSchema,
     'files.page': booleanStringSchema,
     /** The archive-import surface (/import): upload, run progress, the source catalogue and the guide. */
     'import.page': booleanStringSchema,
-    /** Wholesale gate for the Insights surface (/insights, /insights/:id, /prompts + nav entry points). */
+    /**
+     * Wholesale gate for the Prompts browse page (`/memory/questions`) and the
+     * Forecast tooltip link into Brief. `/insights` itself always redirects to
+     * `/brief`; this flag does not hide Brief.
+     */
     'insights.page': booleanStringSchema,
     /** Wholesale gate for the Chat page (/chat + nav entry points). */
     'chat.page': booleanStringSchema,
-    /** Wholesale gate for the Jobs page (/jobs + nav entry points). */
+    /** Wholesale gate for the Jobs page (`/jobs` + rail entry). */
     'jobs.page': booleanStringSchema,
     /**
-     * Backend gate for the planning domain: ci.tasks, planned-block events and
-     * the planning GraphQL surface. See docs/architecture/planning-roadmap.md.
+     * Backend gate for the planning domain: `ci.tasks` and the planning GraphQL
+     * surface (`TaskResolver`, `node(id)` for tasks). Off returns empty reads
+     * and refuses writes. See docs/architecture/planning-roadmap.md.
      */
     'planning.enabled': booleanStringSchema,
     /** Wholesale gate for the Plan page (/plan + nav entry points). */
@@ -454,8 +458,8 @@ export const ConfigSchema = z.object({
      * breakdowns by data source and by tag. */
     'stats.page': booleanStringSchema,
     /** Wholesale gate for the Schedule surface (`/schedule` + nav entry point):
-     * committed events, the HBPE rhythm layer, and proposed candidates. Off by
-     * default while the proposer is still being tuned. */
+     * committed events, the HBPE rhythm layer, and proposed candidates. On by
+     * default. */
     'schedule.page': booleanStringSchema,
     /** The standalone all-tags browse page (`/tags`). Restored — on by default —
      * after #1512 removed it and left no way to see every tag in the system.
@@ -494,6 +498,11 @@ export const ConfigSchema = z.object({
      * (mutations report failure, queries return empty) until enabled.
      */
     ask: booleanStringSchema,
+    /**
+     * Lets context-prompt generation ask one number-grounded selector from
+     * ci_derived.daily_metrics. Off until the store has rows.
+     */
+    'grounded.prompts': booleanStringSchema,
   }),
   environment: z.object({
     'database.query.logging': booleanStringSchema,

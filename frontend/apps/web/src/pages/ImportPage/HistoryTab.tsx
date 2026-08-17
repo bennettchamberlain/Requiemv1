@@ -137,6 +137,14 @@ export function HistoryTab() {
                       <p className="truncate font-medium">{entry.label ?? 'Import'}</p>
                       <p className="truncate text-sm text-muted-foreground">
                         {new Date(entry.createdAt).toLocaleString()}
+                        {/* What the run actually yielded. This is the one place
+                            the number is true of the thing it is next to: a run
+                            has one record count, where a per-SOURCE figure could
+                            only be the archive's total misattributed to each
+                            service inside it. */}
+                        {entry.records != null && entry.records > 0 && (
+                          <> · {entry.records.toLocaleString()} records</>
+                        )}
                       </p>
                       {/* Whether it worked. The card carried a label, a date
                           and its services, so a run that FAILED looked exactly

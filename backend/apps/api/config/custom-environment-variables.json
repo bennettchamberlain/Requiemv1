@@ -168,12 +168,12 @@
     "enable.system.prompt": "ENABLE_SYSTEM_PROMPT",
     "enable.inventory.page": "ENABLE_INVENTORY_PAGE",
     "advanced.theme.tab": "ENABLE_ADVANCED_THEME_TAB",
-    "new.insights.page": "ENABLE_NEW_INSIGHTS_PAGE",
     "require.signup.codes": "ENABLE_REQUIRE_SIGNUP_CODES",
     "files.page": "ENABLE_FILES_PAGE",
     "insights.page": "ENABLE_INSIGHTS_PAGE",
     "chat.page": "ENABLE_CHAT_PAGE",
     "jobs.page": "ENABLE_JOBS_PAGE",
+    "import.page": "ENABLE_IMPORT_PAGE",
     "planning.enabled": "ENABLE_PLANNING",
     "planning.page": "ENABLE_PLANNING_PAGE",
     "planning.emptyState": "ENABLE_PLANNING_EMPTY_STATE",
@@ -186,7 +186,8 @@
     "onboarding.preference.steps": "ENABLE_ONBOARDING_PREFERENCE_STEPS",
     "actions": "ENABLE_ACTIONS",
     "smart.rotation": "ENABLE_SMART_ROTATION",
-    "ask": "ENABLE_ASK"
+    "ask": "ENABLE_ASK",
+    "grounded.prompts": "ENABLE_GROUNDED_PROMPTS"
   },
   "environment": {
     "database.query.logging": "DATABASE_QUERY_LOGGING"

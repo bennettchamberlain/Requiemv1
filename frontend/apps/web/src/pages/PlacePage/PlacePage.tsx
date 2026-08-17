@@ -137,14 +137,6 @@ export function PlacePage() {
           <Breadcrumb.List>
             <Breadcrumb.Item className="hidden md:block">
               <Breadcrumb.Link asChild>
-                <Link to="/today">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-
-            <Breadcrumb.Separator className="hidden md:block" />
-
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
                 <Link to="/places">Places</Link>
               </Breadcrumb.Link>
             </Breadcrumb.Item>

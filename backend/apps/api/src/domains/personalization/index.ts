@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { DailyMetricsModule } from '@ci/domains/daily-metrics';
 import { EventsModule } from '@ci/domains/events';
 import { GraphModule } from '@ci/domains/graph';
 import { IntelligenceModule } from '@ci/domains/intelligence';
@@ -24,6 +25,7 @@ import { PersonalizationService } from './services/PersonalizationService';
 
 @Module({
   imports: [
+    DailyMetricsModule,
     EventsModule,
     TypeOrmModule.forFeature([ContextPromptEntity]),
     MemoryModule,

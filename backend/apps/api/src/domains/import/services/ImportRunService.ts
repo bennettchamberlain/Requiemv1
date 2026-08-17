@@ -529,11 +529,20 @@ export class ImportRunService {
     // PUSH stage is the one that answers it: unpack counts archive members and
     // parse counts rows staged, but push is what reaches ci.*.
     //
+    // `detail.pushed`, NOT the stage's `processed`. `processed` is deliberately
+    // a PROGRESS number — `entitiesProcessed + pushed + deduped + failed`, all
+    // of it counted because examining a row is the stage's work whatever the
+    // outcome (see PushStage). Reporting that as "records imported" credits an
+    // import with rows that already existed, rows that failed to send, and
+    // entity resolutions that are not records at all. `detail.pushed` is the
+    // count of rows this run actually wrote.
+    //
     // One extra query for the whole page, not one per run.
     const rows = await this.dataSource.query<Array<{ run_id: string; records: string | null }>>(
-      `SELECT run_id, SUM(processed)::bigint AS records
+      `SELECT run_id, SUM((detail->>'pushed')::bigint)::bigint AS records
          FROM ci_import.import_stages
         WHERE run_id = ANY($1::uuid[]) AND kind = 'push'
+          AND detail ? 'pushed'
         GROUP BY run_id`,
       [runs.map((run) => run.id)],
     );

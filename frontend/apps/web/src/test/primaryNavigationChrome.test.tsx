@@ -36,9 +36,8 @@ function ChipProviders({ children }: { children: ReactNode }) {
 
 // Auth / Model / Features context all fetch on mount, so `renderWithProviders`
 // deliberately does not provide them — components that consume them stub them
-// instead (the documented pattern). The header's own children pull in all
-// three: NavUser (auth, current user, features) and the capture modal the add
-// menu mounts (auth, model).
+// instead (the documented pattern). The header still mounts the capture modal
+// from the add menu (auth, model).
 vi.mock('@/hooks', async () => {
   const actual = await vi.importActual<typeof import('@/hooks')>('@/hooks');
 
@@ -118,7 +117,7 @@ describe('PrimaryNavigation — status chips', () => {
     }
   });
 
-  it('keeps the add menu and the account avatar clickable rather than covered by the chip', async () => {
+  it('keeps the add menu clickable rather than covered by the chip', async () => {
     const { PrimaryNavigation } = await import('@/layouts/Main/PrimaryNavigation');
 
     renderWithProviders(
@@ -130,15 +129,27 @@ describe('PrimaryNavigation — status chips', () => {
 
     const chip = await waitFor(() => screen.getByText('Not synced yet'));
 
-    // The two controls the overlay used to cover. The chip shares their flow
-    // row, so the row lays all three out side by side instead of stacking the
-    // chip on top of them.
+    // Account moved into the rail. The chip shares the header flow row with
+    // Add, so the row lays them out side by side instead of stacking the chip
+    // on top of the primary action.
     const addButton = screen.getByRole('button', { name: 'Add' });
-    const accountButton = screen.getByRole('button', { name: 'Account' });
     const cluster = chip.closest('div')?.parentElement;
 
     expect(cluster).not.toBeNull();
     expect(cluster).toContainElement(addButton);
-    expect(cluster).toContainElement(accountButton);
+    expect(screen.queryByRole('button', { name: 'Account' })).not.toBeInTheDocument();
+  });
+
+  it('makes Add the visually primary header action', async () => {
+    const { PrimaryNavigation } = await import('@/layouts/Main/PrimaryNavigation');
+
+    renderWithProviders(
+      <ChipProviders>
+        <PrimaryNavigation />
+      </ChipProviders>,
+      { withTheme: true },
+    );
+
+    expect(screen.getByRole('button', { name: 'Add' })).toHaveClass('ci-primary-surface');
   });
 });

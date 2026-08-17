@@ -3,7 +3,6 @@ import { useCallback, useState } from 'react';
 import { useQuery } from '@apollo/client';
 import { Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb } from '@ci/shadcn';
-import { Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
@@ -44,12 +43,6 @@ export function FilesPage() {
       <Portal.Slot id="breadcrumbs">
         <Breadcrumb>
           <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/today">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-            <Breadcrumb.Separator className="hidden md:block" />
             <Breadcrumb.Item>
               <Breadcrumb.Page>Content</Breadcrumb.Page>
             </Breadcrumb.Item>

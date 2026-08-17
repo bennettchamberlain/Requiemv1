@@ -73,6 +73,7 @@ import { GraphReadService } from './services/GraphReadService';
 import { GraphUtilityService } from './services/GraphUtilityService';
 import { ItemService } from './services/ItemService';
 import { KnownPlacesService } from './services/KnownPlacesService';
+import { LifeStatsService } from './services/LifeStatsService';
 import { PersonActivityService } from './services/PersonActivityService';
 import { PersonDuplicateService } from './services/PersonDuplicateService';
 import { PersonMergeService } from './services/PersonMergeService';
@@ -136,6 +137,7 @@ import { UserContextService } from './services/UserContextService';
     FileService,
     PlaceService,
     KnownPlacesService,
+    LifeStatsService,
   ],
   controllers: [GraphController],
   exports: [

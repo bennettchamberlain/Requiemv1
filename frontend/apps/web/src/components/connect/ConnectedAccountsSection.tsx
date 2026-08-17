@@ -168,13 +168,15 @@ export function ConnectedAccountsSection() {
   const reauthCount = connections.filter((connection) => connection.needsReauth).length;
 
   return (
-    <section className="mx-auto mb-8 w-full max-w-[1280px]">
-      <h2 className="mb-1 text-2xl font-bold">Connected accounts</h2>
-      <p className="text-muted-foreground mb-6">
-        {reauthCount > 0
-          ? `${reauthCount === 1 ? 'One account needs' : `${reauthCount} accounts need`} you to sign in again before they can sync.`
-          : 'These are syncing on their own. Open one to change its schedule or what it pulls.'}
-      </p>
+    <section className="mb-8 w-full">
+      <h3 className="mb-3 text-lg font-semibold">
+        Connected accounts
+        {reauthCount > 0 && (
+          <span className="ml-2 text-sm font-medium text-yellow-600 dark:text-yellow-500">
+            {reauthCount === 1 ? 'one needs signing in again' : `${reauthCount} need signing in again`}
+          </span>
+        )}
+      </h3>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         {providerGroups.map(({ provider, connections }) => {

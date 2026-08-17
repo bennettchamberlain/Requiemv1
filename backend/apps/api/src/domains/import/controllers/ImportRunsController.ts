@@ -44,10 +44,12 @@ export interface RunSummary {
   startedAt: Date | null;
   finishedAt: Date | null;
   /**
-   * Records this run pushed into `ci.*`.
+   * Rows this run actually WROTE into `ci.*` — the push stage's `detail.pushed`.
    *
-   * Present on the LIST only — it is one grouped query for the whole page,
-   * which is what lets a caller say "42,318 records from Google" without
+   * Deliberately not the push stage's `processed`, which is a progress number
+   * that also counts rows already present, rows that failed, and entity
+   * resolutions. Present on the LIST only: it is one grouped query for the
+   * whole page, which is what lets a caller report a run's yield without
    * fetching every run's stages. Zero for a run that has not pushed yet.
    */
   records?: number;

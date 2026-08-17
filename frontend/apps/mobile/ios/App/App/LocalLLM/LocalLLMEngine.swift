@@ -31,9 +31,9 @@ actor LocalLLMEngine {
   var isLoaded: Bool { engine != nil }
 
   /// Loads `modelPath`. Native init can take several seconds (per LiteRT-LM's own docs).
-  func load(modelPath: String) async throws {
+  func load(modelPath: String, maxTokens: Int? = nil) async throws {
     unloadSync()
-    let config = try EngineConfig(modelPath: modelPath, backend: .cpu())
+    let config = try EngineConfig(modelPath: modelPath, backend: .cpu(), maxNumTokens: maxTokens)
     let newEngine = Engine(engineConfig: config)
     try await newEngine.initialize()
     self.engine = newEngine
@@ -99,11 +99,15 @@ actor LocalLLMEngine {
           )
           await self.setActiveConversation(conversation)
           defer { Task { await self.setActiveConversation(nil) } }
-          var previousFull = ""
+          var previousVisible = ""
           for try await message in conversation.sendMessageStream(Message(last.text)) {
-            let full = message.toString
-            let delta = full.hasPrefix(previousFull) ? String(full.dropFirst(previousFull.count)) : full
-            previousFull = full
+            // Diff on the *stripped* text, not the raw text: emitting a delta computed from raw
+            // output and then stripping would leak partial `<think>` markup at chunk boundaries.
+            let visible = Self.strippingThinking(message.toString)
+            let delta =
+              visible.hasPrefix(previousVisible)
+              ? String(visible.dropFirst(previousVisible.count)) : visible
+            previousVisible = visible
             if !delta.isEmpty {
               continuation.yield(delta)
             }
@@ -118,6 +122,38 @@ actor LocalLLMEngine {
 
   private func setActiveConversation(_ conversation: Conversation?) {
     activeConversation = conversation
+  }
+
+  /// Removes `<think>…</think>` reasoning from model output, including an unterminated trailing
+  /// block mid-stream.
+  ///
+  /// Qwen3's chat template gates reasoning on `{%- if not enable_thinking|default(true) %}`, and
+  /// LiteRT-LM only writes `enable_thinking` into the Jinja context when it is *true* — so an
+  /// unset flag resolves to `default(true)` and thinking is ON. The Swift `ConversationConfig`
+  /// exposes no knob to turn it off (its fields are systemMessage/initialMessages/tools/
+  /// samplerConfig/loraPath/audioLoraPath/enableToolCallStreaming), so it is stripped here instead.
+  /// Dropping the open-ended tail matters: without it the user watches raw chain-of-thought stream
+  /// in until the closing tag finally arrives.
+  static func strippingThinking(_ text: String) -> String {
+    guard text.contains("<think>") else { return text }
+
+    var output = ""
+    var rest = Substring(text)
+
+    while let open = rest.range(of: "<think>") {
+      output += rest[rest.startIndex..<open.lowerBound]
+
+      guard let close = rest.range(of: "</think>", range: open.upperBound..<rest.endIndex) else {
+        // Unterminated: the model is still reasoning. Everything after the tag is hidden until it closes.
+        return output.trimmingCharacters(in: .whitespacesAndNewlines)
+      }
+
+      rest = rest[close.upperBound...]
+    }
+
+    output += rest
+
+    return output.trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
   private static let toolSystemInstruction =

@@ -1,16 +1,30 @@
 import { useEffect, useState } from 'react';
 
 import { useQuery } from '@apollo/client';
+import { useLocation } from 'react-router-dom';
 
 import { useFeatures } from '@/common/feature';
 import { GET_CONNECTIONS } from '@/components/connect/ConnectedAccountsSection';
 import { useImportApi } from '@/pages/ImportPage/useImportApi';
 
+import { useDevices } from './useDevices';
+
+/**
+ * `GET /import/runs` caps at 200 and defaults to 50, and returns rows rather
+ * than a total — so the count below is "runs on the first page", and asking for
+ * the cap is what keeps that honest for any realistic appliance rather than
+ * quietly meaning 50.
+ */
+const RUN_PAGE = 200;
+
 export interface SourceCounts {
   readonly connections: number;
+  /** Runs on the first page of {@link RUN_PAGE}; see the note there. */
   readonly imports: number;
+  /** Browsers and machines that have registered with this appliance. */
+  readonly devices: number;
   /**
-   * Nothing has ever fed this appliance — no connection, no import run.
+   * Nothing has ever fed this appliance — no connection, no import, no device.
    *
    * Deliberately false until both counts have actually come back. A page that
    * renders its first-run state during the first paint and then swaps it for a
@@ -34,8 +48,16 @@ export function useSourceCounts(): SourceCounts {
 
   const api = useImportApi();
   const { data, loading: connectionsLoading } = useQuery(GET_CONNECTIONS);
+  const { devices, loading: devicesLoading } = useDevices();
 
   const [imports, setImports] = useState<number | null>(null);
+
+  // `/sources/:half?` is ONE route, so crossing between paths does not remount
+  // this page. Without a reason to re-ask, the count fetched on arrival would
+  // outlive the thing it counts: run an import, cross back to the connect path,
+  // and the tiles would still be in their "nothing has ever fed this appliance"
+  // first-run state. Every crossing is a cheap, well-timed moment to re-ask.
+  const { pathname } = useLocation();
 
   useEffect(() => {
     if (!importEnabled) {
@@ -51,7 +73,7 @@ export function useSourceCounts(): SourceCounts {
     let cancelled = false;
 
     void api
-      .listRuns()
+      .listRuns(RUN_PAGE)
       .then((runs) => {
         if (!cancelled) {
           setImports(runs.length);
@@ -70,15 +92,16 @@ export function useSourceCounts(): SourceCounts {
     return () => {
       cancelled = true;
     };
-  }, [api, importEnabled]);
+  }, [api, importEnabled, pathname]);
 
   const connections = data?.connections.totalCount ?? 0;
-  const loading = connectionsLoading || imports === null;
+  const loading = connectionsLoading || devicesLoading || imports === null;
 
   return {
     connections,
     imports: imports ?? 0,
-    isFirstRun: !loading && connections === 0 && imports === 0,
+    devices: devices.length,
+    isFirstRun: !loading && connections === 0 && imports === 0 && devices.length === 0,
     loading,
   };
 }

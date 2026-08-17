@@ -35,7 +35,7 @@ export function SavedSearchesPage() {
   usePageTitle('Saved Searches - Companion Intelligence');
 
   const { data, loading } = useQuery(GET_SAVED_SEARCHES, {
-    variables: { first: 50 },
+    variables: { first: 300 },
   });
 
   const [savedSearchToDelete, setSavedSearchToDelete] = useState<FragmentType<
@@ -141,14 +141,6 @@ export function SavedSearchesPage() {
       <Portal.Slot id="breadcrumbs">
         <Breadcrumb>
           <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/today">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-
-            <Breadcrumb.Separator className="hidden md:block" />
-
             <Breadcrumb.Item>
               <Breadcrumb.Page>Saved Searches</Breadcrumb.Page>
             </Breadcrumb.Item>

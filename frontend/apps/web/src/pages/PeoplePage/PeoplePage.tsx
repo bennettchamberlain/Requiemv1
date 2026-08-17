@@ -518,15 +518,7 @@ export function PeoplePage() {
       <Portal.Slot id="breadcrumbs">
         <Breadcrumb>
           <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/today">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-
-            <Breadcrumb.Separator className="hidden md:block" />
-
-            <Breadcrumb.Item className="hidden md:block">
+            <Breadcrumb.Item>
               <Breadcrumb.Page className="flex items-center gap-1">
                 <Users className="h-4 w-4" />
                 People & communications

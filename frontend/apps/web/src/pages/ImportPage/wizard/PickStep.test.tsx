@@ -7,9 +7,14 @@ import { PickStep } from './PickStep';
 
 // The usage rollup reaches the import API through auth context, which the bare
 // render here does not provide — the documented pattern is to stub the hook.
-const usage = vi.hoisted(() => ({ value: new Map<string, { records: number; lastImportedAt: string }>() }));
+// `unambiguousImporters` is a pure derivation over the catalog and stays real.
+const usage = vi.hoisted(() => ({ value: new Map<string, string>() }));
 
-vi.mock('./useSourceUsage', () => ({ useSourceUsage: () => usage.value }));
+vi.mock('./useSourceUsage', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./useSourceUsage')>();
+
+  return { ...actual, useSourceUsage: () => usage.value };
+});
 
 /**
  * Step 1's contract: recognizable brands in sections, each tile saying what
@@ -97,19 +102,72 @@ describe('PickStep', () => {
     expect(screen.getByRole('button', { name: /Spotify/ })).toHaveTextContent('Listening');
   });
 
-  // "I could import this" and "I did, in March, and it brought 42,318
-  // records" are different answers, and the second is the one that stops
-  // someone re-importing an archive they already have.
-  it('says what a source has already given the appliance', () => {
-    usage.value = new Map([['spotify', { records: 42318, lastImportedAt: '2026-03-14T00:00:00.000Z' }]]);
+  it('renders every kind on a tile that has more than four, none dropped', () => {
+    const onToggle = vi.fn();
+    const onContinue = vi.fn();
+
+    // The Amazon bundle's five members span four categories — five kinds in
+    // all, which the tile lays out in two columns rather than truncating.
+    render(
+      <PickStep
+        catalog={[
+          catalogSource({ id: 'amazon', title: 'Amazon orders', ecosystem: 'amazon', category: 'finance' }),
+          catalogSource({ id: 'prime_video', title: 'Prime Video', ecosystem: 'amazon', category: 'video' }),
+          catalogSource({ id: 'audible', title: 'Audible', ecosystem: 'amazon', category: 'audio' }),
+          catalogSource({
+            id: 'kindle_reading',
+            title: 'Kindle reading',
+            ecosystem: 'amazon',
+            category: 'reading',
+          }),
+          catalogSource({ id: 'amazon_music', title: 'Amazon Music', ecosystem: 'amazon', category: 'audio' }),
+        ]}
+        picked={new Set()}
+        onToggle={onToggle}
+        onContinue={onContinue}
+      />,
+    );
+
+    const amazon = screen.getByRole('button', { name: /Amazon/ });
+
+    for (const kind of ['Orders & payments', 'Watch history', 'Listening', 'Playlists', 'Books & highlights']) {
+      expect(amazon).toHaveTextContent(kind);
+    }
+  });
+
+  // "I could import this" and "I already did, in March" are different
+  // answers, and the second is what stops someone re-importing an archive
+  // they already have. How MUCH it brought is a fact about the run, not about
+  // the source, so it is not claimed here.
+  it('says when a source was last imported', () => {
+    usage.value = new Map([['spotify', '2026-03-14T00:00:00.000Z']]);
 
     renderStep();
 
-    const spotify = screen.getByRole('button', { name: /Spotify/ });
+    expect(screen.getByRole('button', { name: /Spotify/ })).toHaveTextContent(/imported/);
+    expect(screen.getByRole('button', { name: /Strava/ })).not.toHaveTextContent(/imported/);
+  });
 
-    expect(spotify).toHaveTextContent('42,318 records');
-    expect(spotify).toHaveTextContent(/imported/);
-    expect(screen.getByRole('button', { name: /Strava/ })).not.toHaveTextContent('records');
+  // A run records which IMPORTER it fed, and thirteen catalog sources share
+  // four parsers. Crediting Apple Calendar because a Google Calendar was
+  // imported is a claim about the wrong service.
+  it('claims nothing for a source whose parser is shared with another', () => {
+    usage.value = new Map([['calendar', '2026-03-14T00:00:00.000Z']]);
+
+    render(
+      <PickStep
+        catalog={[
+          catalogSource({ id: 'google_calendar', title: 'Google Calendar', importer: 'calendar' }),
+          catalogSource({ id: 'apple_calendar', title: 'Apple Calendar', importer: 'calendar' }),
+        ]}
+        picked={new Set()}
+        onToggle={vi.fn()}
+        onContinue={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: /Google Calendar/ })).not.toHaveTextContent(/imported/);
+    expect(screen.getByRole('button', { name: /Apple Calendar/ })).not.toHaveTextContent(/imported/);
   });
 
   it('toggling reports the source key upward', () => {

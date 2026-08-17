@@ -26,10 +26,10 @@ function renderGate(initialPath: string) {
     <MemoryRouter initialEntries={[initialPath]}>
       <Routes>
         <Route
-          path="/feed"
+          path="/brief"
           element={
             <RequireOnboarded>
-              <div>Feed</div>
+              <div>Brief</div>
             </RequireOnboarded>
           }
         />
@@ -43,7 +43,7 @@ describe('RequireOnboarded', () => {
   it('redirects un-onboarded users to onboarding', () => {
     h.user = { user: { id: '1', onboarded: false }, loading: false };
 
-    renderGate('/feed');
+    renderGate('/brief');
 
     expect(screen.getByText('Onboarding')).toBeInTheDocument();
   });
@@ -51,8 +51,8 @@ describe('RequireOnboarded', () => {
   it('allows onboarded users through', () => {
     h.user = { user: { id: '1', onboarded: true }, loading: false };
 
-    renderGate('/feed');
+    renderGate('/brief');
 
-    expect(screen.getByText('Feed')).toBeInTheDocument();
+    expect(screen.getByText('Brief')).toBeInTheDocument();
   });
 });

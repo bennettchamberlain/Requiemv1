@@ -3,11 +3,10 @@ import { useCallback, useEffect, useMemo, useState, type ComponentProps } from '
 import { GlobalUID, ErrorPage, LoadingPage, Portal, useDeviceLayout, usePageTitle } from '@ci/common';
 import { Breadcrumb, useToast } from '@ci/shadcn';
 import { useTranslation } from 'react-i18next';
-import { useNavigate, useParams, Link } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 
-import { useActionListService, useForecastService } from '@/api';
+import { useActionListService } from '@/api';
 import { useFeatures } from '@/common/feature';
-import { ForecastStrip } from '@/components/ForecastStrip';
 import { PageContent } from '@/components/layout';
 import { Markdown } from '@/components/Markdown';
 import { type FragmentType } from '@/graphql';
@@ -29,23 +28,8 @@ import { useSummariesService } from './useSummariesService';
 type CarouselProps = Partial<ComponentProps<typeof Carousel>>;
 const MAX_INSIGHT_SUMMARY_CARDS = 20;
 
-export interface FeedPageProps {
-  /**
-   * Rendered inside another page (Today) rather than as a route of its own.
-   * Embedded, it drops the breadcrumb slot, the page title and the
-   * PageContent wrapper — the host owns all three, and nesting PageContent
-   * nests its padding and its scroll container.
-   */
-  embedded?: boolean;
-}
-
-export function FeedPage({ embedded = false }: FeedPageProps = {}) {
-  usePageTitle(embedded ? null : 'Feed - Companion Intelligence');
-
-  // Chosen once, above the early returns: every exit from this component has to
-  // use the same frame, or the loading and mobile paths keep nesting a second
-  // PageContent inside Today's.
-  const Frame = embedded ? FeedEmbeddedFrame : FeedStandaloneFrame;
+export function FeedPage() {
+  usePageTitle('Brief - Companion Intelligence');
 
   const { t } = useTranslation();
 
@@ -55,7 +39,6 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
 
   const { id: actionId } = useParams<{ id?: string }>();
   const { isFeatureEnabled } = useFeatures();
-  const hbpeEnabled = isFeatureEnabled('hbpe');
   const actionsEnabled = isFeatureEnabled('actions');
   const [{ data: actions, loading, error }, { markActionAsSeen, markActionAsDismissed }] =
     useActionListService(5, { skip: !actionsEnabled });
@@ -67,7 +50,6 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
     { question, submitting: questionSubmitting, error: questionError },
     { submitAnswer: submitQuestionAnswer },
   ] = useFeedQuestionService();
-  const [{ data: forecast, stalled: forecastStalled }] = useForecastService();
   const [dismissedActionIds, setDismissedActionIds] = useState<Set<string>>(new Set());
   const [dismissedSummaryIds, setDismissedSummaryIds] = useState<Set<string>>(new Set());
   // Session-only hide for rare legacy nested insights (no dedicated summary row).
@@ -224,7 +206,7 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
 
   const handleCardClick = useCallback(
     async (id: string) => {
-      navigate(`/feed/${id}`, { replace: true });
+      navigate(`/brief/${id}`, { replace: true });
       openModal();
       await markActionAsSeen(id);
     },
@@ -236,7 +218,7 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
       setDismissedActionIds((prev) => new Set(prev).add(id));
 
       if (actionId === id) {
-        navigate('/feed', { replace: true });
+        navigate('/brief', { replace: true });
       }
 
       await markActionAsDismissed(id);
@@ -267,14 +249,14 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
   );
 
   const handleModalClose = useCallback(() => {
-    navigate('/feed', { replace: true });
+    navigate('/brief', { replace: true });
     closeModal();
   }, [navigate, closeModal]);
 
   const handleSummaryClick = useCallback(
     async (encodedId: string) => {
       await markSummaryAsSeen(encodedId);
-      navigate(`/feed/summaries/${GlobalUID.parse('summary', encodedId)}`);
+      navigate(`/brief/summaries/${GlobalUID.parse('summary', encodedId)}`);
     },
     [markSummaryAsSeen, navigate],
   );
@@ -290,17 +272,17 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
 
   if (actionsEnabled && loading) {
     return (
-      <Frame>
+      <PageContent>
         <LoadingPage />
-      </Frame>
+      </PageContent>
     );
   }
 
   if (actionsEnabled && error) {
     return (
-      <Frame>
+      <PageContent>
         <ErrorPage error={error} />
-      </Frame>
+      </PageContent>
     );
   }
 
@@ -313,7 +295,7 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
     } satisfies CarouselProps;
 
     return (
-      <Frame>
+      <PageContent>
         {showMobileEmptyState ? (
           <div className="flex min-h-[40vh] items-center justify-center py-10">
             <p className="text-center text-xl font-medium text-muted-foreground opacity-70">All Caught Up!</p>
@@ -343,12 +325,6 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
                   onDismiss={() => void handleActionDismiss(card.action.id)}
                   dismissLabel={t('FEED_CARD_DISMISS_ACTION')}
                   showUnseenIndicator={!card.action.seen}
-                  chatContext={{
-                    title: card.action.title,
-                    body: card.action.text,
-                    sourceKind: 'action',
-                    sourceId: card.action.id,
-                  }}
                 />
               ),
             )}
@@ -382,20 +358,8 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
           </div>
         )}
 
-        {hbpeEnabled && forecast && (
-          <div className="px-2 pb-4" data-testid="tomorrows-forecast">
-            <h3 className="text-sm font-semibold text-foreground mb-2">Tomorrow's Forecast</h3>
-            <ForecastStrip
-              buckets={forecast.buckets}
-              generatedAt={forecast.generatedAt}
-              systemStatus={forecast.systemStatus}
-              stalled={forecastStalled}
-            />
-          </div>
-        )}
-
         {isModalOpen && <FeedModal onClose={handleModalClose} />}
-      </Frame>
+      </PageContent>
     );
   }
 
@@ -406,23 +370,18 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
   } satisfies CarouselProps;
 
   return (
-    <Frame>
-        {hbpeEnabled && forecast && (
-          // `display: contents` so the heading and the strip stay direct flex items of
-          // PageContent (identical layout), while still being one addressable section —
-          // video/capture.config.mjs hides it at the shutter rather than masking it, which
-          // left a dead grey bar under a live heading in the committed shot.
-          <div className="contents" data-testid="tomorrows-forecast">
-            <h2 className="text-2xl font-bold text-foreground">Tomorrow's Forecast</h2>
-            <ForecastStrip
-              buckets={forecast.buckets}
-              generatedAt={forecast.generatedAt}
-              systemStatus={forecast.systemStatus}
-              stalled={forecastStalled}
-            />
-          </div>
-        )}
+    <>
+      <Portal.Slot id="breadcrumbs">
+        <Breadcrumb>
+          <Breadcrumb.List>
+            <Breadcrumb.Item>
+              <Breadcrumb.Page>Brief</Breadcrumb.Page>
+            </Breadcrumb.Item>
+          </Breadcrumb.List>
+        </Breadcrumb>
+      </Portal.Slot>
 
+      <PageContent>
         <ContextPromptCard />
 
         {(actionsEnabled || Boolean(question)) && (
@@ -461,12 +420,6 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
                       onDismiss={() => void handleActionDismiss(card.action.id)}
                       dismissLabel={t('FEED_CARD_DISMISS_ACTION')}
                       showUnseenIndicator={!card.action.seen}
-                      chatContext={{
-                        title: card.action.title,
-                        body: card.action.text,
-                        sourceKind: 'action',
-                        sourceId: card.action.id,
-                      }}
                       className="hover:shadow-lg transition-shadow duration-200"
                     />
                   ),
@@ -518,37 +471,9 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
             </Carousel>
           )}
         </div>
+      </PageContent>
+
       {isModalOpen && <FeedModal onClose={handleModalClose} />}
-    </Frame>
-  );
-}
-
-/** Standalone route: owns the breadcrumb trail and the page padding. */
-function FeedStandaloneFrame({ children }: { children: React.ReactNode }) {
-  return (
-    <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/today">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-            <Breadcrumb.Separator className="hidden md:block" />
-            <Breadcrumb.Item>
-              <Breadcrumb.Page>Feed</Breadcrumb.Page>
-            </Breadcrumb.Item>
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
-      <PageContent>{children}</PageContent>
     </>
   );
-}
-
-/** Inside Today: contribute content only. */
-function FeedEmbeddedFrame({ children }: { children: React.ReactNode }) {
-  return <div className="flex flex-col gap-6">{children}</div>;
 }

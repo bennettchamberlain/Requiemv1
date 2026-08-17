@@ -36,6 +36,7 @@ import {
   usePreventOverscroll,
 } from '@/hooks';
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
+import FeedPage from '@/pages/FeedPage';
 import LoginPage from '@/pages/LoginPage';
 import SignupPage from '@/pages/SignupPage';
 import SplashPage from '@/pages/SplashPage';
@@ -46,6 +47,7 @@ const ConceptPage = lazy(() => import('@/pages/ConceptPage'));
 const ConnectionPage = lazy(() => import('@/pages/ConnectionPage'));
 const ContentPage = lazy(() => import('@/pages/ContentPage'));
 const EventPage = lazy(() => import('@/pages/EventPage'));
+const ForecastPage = lazy(() => import('@/pages/ForecastPage'));
 const ItemPage = lazy(() => import('@/pages/ItemPage'));
 const SourcesPage = lazy(() => import('@/pages/SourcesPage'));
 const JobsPage = lazy(() => import('@/pages/JobsPage'));
@@ -62,7 +64,7 @@ const PersonPage = lazy(() => import('@/pages/PersonPage'));
 const PlacePage = lazy(() => import('@/pages/PlacePage'));
 const PlacesPage = lazy(() => import('@/pages/PlacesPage'));
 const ProviderPage = lazy(() => import('@/pages/ProviderPage'));
-const TodayPage = lazy(() => import('@/pages/TodayPage'));
+const SchedulePage = lazy(() => import('@/pages/SchedulePage'));
 const SearchPage = lazy(() => import('@/pages/SearchPage'));
 const FilesPage = lazy(() => import('@/pages/FilesPage'));
 const SavedSearchesPage = lazy(() => import('@/pages/SavedSearchesPage'));
@@ -78,7 +80,19 @@ const PromptsPage = lazy(() => import('@/pages/PromptsPage'));
 function RedirectInsightsSummary() {
   const { id } = useParams<{ id: string }>();
 
-  return <Navigate to={`/feed/summaries/${id ?? ''}`} replace />;
+  return <Navigate to={`/brief/summaries/${id ?? ''}`} replace />;
+}
+
+function RedirectFeedToBrief() {
+  const { id } = useParams<{ id?: string }>();
+
+  return <Navigate to={id ? `/brief/${id}` : '/brief'} replace />;
+}
+
+function RedirectFeedSummaryToBrief() {
+  const { id } = useParams<{ id: string }>();
+
+  return <Navigate to={`/brief/summaries/${id ?? ''}`} replace />;
 }
 
 function Providers({ children }: { children: ReactNode }) {
@@ -195,26 +209,35 @@ function AppRoutes() {
           }
         >
           {/* Intelligence */}
-          {/* Today is Schedule + Feed in one page. `/feed/:id?` keeps working
-              because the feed's card deep-links point at it, and it renders the
-              same combined page rather than redirecting away from an id. */}
           <Route
-            path="/today"
+            path="/brief/summaries/:id"
             element={
               <ProtectedRoute>
-                <TodayPage />
+                <SummaryDetailPage />
               </ProtectedRoute>
             }
           />
 
           <Route
-            path="/feed/:id?"
+            path="/brief/:id?"
             element={
               <ProtectedRoute>
-                <TodayPage />
+                <FeedPage />
               </ProtectedRoute>
             }
           />
+
+          <Route
+            path="/forecast"
+            element={
+              <ProtectedRoute>
+                <ForecastPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route path="/feed/summaries/:id" element={<RedirectFeedSummaryToBrief />} />
+          <Route path="/feed/:id?" element={<RedirectFeedToBrief />} />
 
           <Route
             path="/search"
@@ -262,16 +285,7 @@ function AppRoutes() {
             </>
           )}
 
-          <Route
-            path="/feed/summaries/:id"
-            element={
-              <ProtectedRoute>
-                <SummaryDetailPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route path="/insights" element={<Navigate to="/today" replace />} />
+          <Route path="/insights" element={<Navigate to="/brief" replace />} />
           <Route
             path="/insights/:id"
             element={
@@ -320,10 +334,15 @@ function AppRoutes() {
             />
           )}
 
-          {/* The schedule now lives at the top of Today. Kept as a redirect so
-              bookmarks and any link still in the wild land somewhere real. */}
           {isFeatureEnabled('schedule.page') && (
-            <Route path="/schedule" element={<Navigate to="/today" replace />} />
+            <Route
+              path="/schedule"
+              element={
+                <ProtectedRoute>
+                  <SchedulePage />
+                </ProtectedRoute>
+              }
+            />
           )}
 
           <Route path="/memory/knowledge" element={<Navigate to="/memory?view=graph" replace />} />

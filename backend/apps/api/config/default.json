@@ -172,15 +172,14 @@
     "enable.system.prompt": true,
     "enable.inventory.page": true,
     "advanced.theme.tab": false,
-    "new.insights.page": true,
     "require.signup.codes": true,
     "files.page": true,
     "insights.page": true,
     "chat.page": true,
     "jobs.page": true,
     "import.page": true,
-    "planning.enabled": false,
-    "planning.page": false,
+    "planning.enabled": true,
+    "planning.page": true,
     "planning.emptyState": false,
     "stats.page": true,
     "schedule.page": true,
@@ -191,7 +190,8 @@
     "onboarding.preference.steps": false,
     "actions": true,
     "smart.rotation": false,
-    "ask": false
+    "ask": false,
+    "grounded.prompts": false
   },
   "environment": {
     "database.query.logging": false

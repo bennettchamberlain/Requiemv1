@@ -617,14 +617,6 @@ export function ConnectionPage() {
           <Breadcrumb.List>
             <Breadcrumb.Item className="hidden md:block">
               <Breadcrumb.Link asChild>
-                <Link to="/today">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-
-            <Breadcrumb.Separator className="hidden md:block" />
-
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
                 <Link to="/sources/connect">Sources</Link>
               </Breadcrumb.Link>
             </Breadcrumb.Item>

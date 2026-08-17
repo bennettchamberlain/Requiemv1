@@ -4,7 +4,7 @@ import { useMutation, useQuery } from '@apollo/client';
 import { EmptyState, GlobalUID, LoadingPage, Portal, usePageTitle } from '@ci/common';
 import { Badge, Breadcrumb, Button, Card, Input } from '@ci/shadcn';
 import { MapPin } from '@ci/shadcn/icons';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { Map } from '@/components/Map';
@@ -357,15 +357,7 @@ export function PlacesPage() {
       <Portal.Slot id="breadcrumbs">
         <Breadcrumb>
           <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/today">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-
-            <Breadcrumb.Separator className="hidden md:block" />
-
-            <Breadcrumb.Item className="hidden md:block">
+            <Breadcrumb.Item>
               <Breadcrumb.Page className="flex items-center gap-1">
                 <MapPin className="h-4 w-4" />
                 Places

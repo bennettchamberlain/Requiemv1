@@ -16,8 +16,6 @@ import { UploadModal } from '@/components/modals/UploadModal';
 import { GlobalSearchBox } from '@/components/SearchBox';
 import { useModalControls } from '@/hooks';
 
-import { NavUser } from './NavUser';
-
 export function PrimaryNavigation() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -103,10 +101,11 @@ export function PrimaryNavigation() {
           )}
         </div>
 
-        {/* Right: status chips, page actions, new, account (Tags lives in the account menu).
-            The chips sit in the header's flow rather than in a fixed overlay: an overlay
-            pinned to the viewport's top-right lands on top of this cluster and covers the
-            add button and the account avatar (only the mobile layout, which has no header,
+        {/* Right: status chips, page actions, and the primary Add control.
+            Account/settings live in the left rail now. The chips sit in the
+            header's flow rather than in a fixed overlay: an overlay pinned to
+            the viewport's top-right lands on top of this cluster and covers
+            the add button (only the mobile layout, which has no header,
             positions them that way). */}
         <div className="flex shrink-0 flex-row items-center gap-2">
           <div className="flex flex-row items-center gap-1.5 empty:hidden">
@@ -121,8 +120,8 @@ export function PrimaryNavigation() {
           <div className="flex items-center">
             <DropdownMenu modal={false}>
               <DropdownMenu.Trigger asChild>
-                <IconButton variant="ghost" label={t('NAV_ADD')}>
-                  <Plus strokeWidth={1.5} />
+                <IconButton variant="default" size="icon-lg" label={t('NAV_ADD')}>
+                  <Plus strokeWidth={2} className="h-5 w-5" />
                 </IconButton>
               </DropdownMenu.Trigger>
               <DropdownMenu.Content className="rounded-lg p-2" side="bottom" align="end" sideOffset={4}>
@@ -273,7 +272,6 @@ export function PrimaryNavigation() {
               </DropdownMenu.Content>
             </DropdownMenu>
           </div>
-          <NavUser />
         </div>
       </header>
 

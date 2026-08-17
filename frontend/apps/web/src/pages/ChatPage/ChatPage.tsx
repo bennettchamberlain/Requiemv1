@@ -1,6 +1,6 @@
 import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
-import { Portal, useDeviceLayout, usePageTitle } from '@ci/common';
+import { Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb, Button, Card } from '@ci/shadcn';
 import { Loader2, RefreshCw, Send, Sparkles, X } from '@ci/shadcn/icons';
 import { useNavigate, useParams, Link } from 'react-router-dom';
@@ -9,7 +9,6 @@ import { useThreadService } from '@/api';
 import { usePersonaCompose } from '@/api/usePersonaCompose';
 import { Chat, type FormData } from '@/components/Chat';
 import { HowYoudDoItCard } from '@/components/HowYoudDoItCard';
-import { ModelSelector } from '@/components/ModelSelector';
 import { useChatRequester, useCounter, useModel } from '@/hooks';
 import { clearAgentChatContext, readAgentChatContext } from '@/lib/agentChat';
 
@@ -18,8 +17,6 @@ import { type Message } from './types';
 import { useThreadListService } from './useThreadListService';
 
 function ChatPageContent() {
-  const { isMobile } = useDeviceLayout();
-
   const resolvedThreadId = useRef<string | null>(null);
   const hasSetInitialMessages = useRef(false);
   const lastProcessedResponseRef = useRef<string>('');
@@ -187,7 +184,9 @@ function ChatPageContent() {
   const loading = threadsLoading || threadLoading || chatRequestLoading;
   const isSubmitDisabled = selectedModel == null;
   const inputPlaceholder =
-    resolvedThreadId.current == null ? 'Start a new conversation...' : 'Continue the conversation...';
+    resolvedThreadId.current == null
+      ? 'Ask about Memory, Plan, Forecast, Brief…'
+      : 'Continue — Memory, Plan, Forecast, Brief…';
 
   let emptyState: ReactNode;
 
@@ -223,7 +222,9 @@ function ChatPageContent() {
           <Send className="relative -left-0.5 top-0.5 h-8 w-8 text-zinc-400" />
         </div>
         <p className="mb-1 text-sm">Start a conversation with your Companion</p>
-        <p className="mb-6 text-xs text-gray-400">Ask questions, get recommendations, or explore ideas</p>
+        <p className="mb-6 text-xs text-gray-400">
+          Ask about Memory, Plan to-dos, Forecast, or Brief — or attach a file
+        </p>
 
         <div className="w-full rounded-xl border border-border bg-background p-3 text-left">
           <p className="mb-2 text-xs font-medium text-foreground">How you’d do it</p>
@@ -281,12 +282,6 @@ function ChatPageContent() {
       <Portal.Slot id="breadcrumbs">
         <Breadcrumb>
           <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/today">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-            <Breadcrumb.Separator className="hidden md:block" />
             <Breadcrumb.Item>
               <Breadcrumb.Link asChild>
                 <Link to="/chat">Chat</Link>
@@ -304,10 +299,6 @@ function ChatPageContent() {
         </Breadcrumb>
       </Portal.Slot>
 
-      <Portal.Slot id="actions">
-        <ModelSelector withToggles />
-      </Portal.Slot>
-
       <Portal.Slot id="tertiary-navigation">
         <ChatSidebar
           threads={threads}
@@ -321,12 +312,6 @@ function ChatPageContent() {
       </Portal.Slot>
 
       <div className="flex flex-col h-full">
-        {isMobile && (
-          <div className="flex flex-row items-center justify-end border-b bg-stone-50 dark:bg-secondary gap-2 p-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
-            <ModelSelector withToggles />
-          </div>
-        )}
-
         <Chat
           key={initialThreadId ?? `new-thread-${newThreadCount}`}
           loading={loading}
