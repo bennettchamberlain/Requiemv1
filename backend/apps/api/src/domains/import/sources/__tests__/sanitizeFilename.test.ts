@@ -1,4 +1,4 @@
-import { sanitizeFilename } from '../sanitizeFilename';
+import { sanitizeFilename, sanitizeRelativePath } from '../sanitizeFilename';
 
 /**
  * The name is attacker-controlled text — a browser sends whatever it likes as
@@ -27,5 +27,19 @@ describe('sanitizeFilename', () => {
   it('bounds the length and never returns an empty name', () => {
     expect(sanitizeFilename('x'.repeat(400)).length).toBe(180);
     expect(sanitizeFilename('///')).toBe('upload.zip');
+  });
+});
+
+describe('sanitizeRelativePath', () => {
+  it('keeps a folder tree and sanitizes each segment', () => {
+    expect(sanitizeRelativePath('ChatGPT Data/conversations.json')).toBe('ChatGPT_Data/conversations.json');
+  });
+
+  it('wraps a bare filename so the staged source is a directory', () => {
+    expect(sanitizeRelativePath('conversations.json')).toBe('export/conversations.json');
+  });
+
+  it('refuses a traversal segment', () => {
+    expect(() => sanitizeRelativePath('ok/../etc/passwd')).toThrow(/escapes/);
   });
 });

@@ -1,8 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 
 import { useMutation, useQuery } from '@apollo/client';
-import { EmptyState, LoadingPage, Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb } from '@ci/shadcn';
+import { EmptyState, LoadingPage, usePageTitle } from '@ci/common';
 import { ListTodo } from '@ci/shadcn/icons';
 
 import { useFeatures } from '@/common/feature';
@@ -126,16 +125,6 @@ export function PlanPage() {
 
   return (
     <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item>
-              <Breadcrumb.Page>Plan</Breadcrumb.Page>
-            </Breadcrumb.Item>
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
       <PageContent>
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
           <NewTaskForm onCreated={() => void refetch()} />

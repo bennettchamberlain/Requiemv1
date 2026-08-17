@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState, type ComponentProps, type ElementType } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
 
-import { GlobalUID, ErrorPage, LoadingPage, Portal, useDeviceLayout, usePageTitle } from '@ci/common';
-import { Breadcrumb, useToast } from '@ci/shadcn';
+import { GlobalUID, ErrorPage, LoadingPage, useDeviceLayout, usePageTitle } from '@ci/common';
+import { useToast } from '@ci/shadcn';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -28,18 +28,8 @@ import { useSummariesService } from './useSummariesService';
 type CarouselProps = Partial<ComponentProps<typeof Carousel>>;
 const MAX_INSIGHT_SUMMARY_CARDS = 20;
 
-export interface FeedPageProps {
-  /**
-   * Rendered inside a host page (Today) that already owns the breadcrumb, the
-   * document title and the page frame. PageContent is the page's scroll
-   * container (`h-full overflow-auto`), so nesting a second one gives the
-   * screen two scrollbars and two sets of padding.
-   */
-  embedded?: boolean;
-}
-
-export function FeedPage({ embedded = false }: FeedPageProps = {}) {
-  usePageTitle(embedded ? null : 'Brief - Companion Intelligence');
+export function FeedPage() {
+  usePageTitle('Brief - Companion Intelligence');
 
   const { t } = useTranslation();
 
@@ -48,32 +38,6 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
   const navigate = useNavigate();
 
   const { id: actionId } = useParams<{ id?: string }>();
-
-  /**
-   * Where this brief lives, so its own links stay inside it.
-   *
-   * The cards deep-link by action id and the modal writes that id into the URL.
-   * Embedded in Today those have to address /today, or opening a card would
-   * navigate you off the page you opened it from.
-   */
-  const basePath = embedded ? '/today' : '/brief';
-
-  // Embedded, the host owns the frame; this keeps the column gap PageContent
-  // would have supplied, and none of its padding, height or scrolling. No
-  // padding on purpose — the desktop carousel bleeds with `-mx-6` against
-  // PageContent's `p-6`, so padding here would double it.
-  //
-  // `relative` matters on all four exits: LoadingPage and ErrorPage are
-  // `absolute inset-0 z-10`, and without a positioned boundary they anchor to
-  // the HOST's PageContent, so a brief that is merely loading would black out
-  // the schedule above it. `min-h-60` gives those overlays height to fill.
-  //
-  // `Frame` is a stable reference either way (a module-level component or the
-  // string 'div'), so this never remounts the subtree it wraps.
-  const Frame: ElementType = embedded ? 'div' : PageContent;
-  const frameClassName = embedded
-    ? `relative flex min-h-60 w-full min-w-0 flex-col ${isMobile ? 'gap-2' : 'gap-6'}`
-    : undefined;
   const { isFeatureEnabled } = useFeatures();
   const actionsEnabled = isFeatureEnabled('actions');
   const [{ data: actions, loading, error }, { markActionAsSeen, markActionAsDismissed }] =
@@ -242,11 +206,11 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
 
   const handleCardClick = useCallback(
     async (id: string) => {
-      navigate(`${basePath}/${id}`, { replace: true });
+      navigate(`/brief/${id}`, { replace: true });
       openModal();
       await markActionAsSeen(id);
     },
-    [basePath, markActionAsSeen, navigate, openModal],
+    [markActionAsSeen, navigate, openModal],
   );
 
   const handleActionDismiss = useCallback(
@@ -254,12 +218,12 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
       setDismissedActionIds((prev) => new Set(prev).add(id));
 
       if (actionId === id) {
-        navigate(basePath, { replace: true });
+        navigate('/brief', { replace: true });
       }
 
       await markActionAsDismissed(id);
     },
-    [actionId, basePath, markActionAsDismissed, navigate],
+    [actionId, markActionAsDismissed, navigate],
   );
 
   const handleSummaryDismiss = useCallback(
@@ -285,9 +249,9 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
   );
 
   const handleModalClose = useCallback(() => {
-    navigate(basePath, { replace: true });
+    navigate('/brief', { replace: true });
     closeModal();
-  }, [basePath, navigate, closeModal]);
+  }, [navigate, closeModal]);
 
   const handleSummaryClick = useCallback(
     async (encodedId: string) => {
@@ -308,17 +272,17 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
 
   if (actionsEnabled && loading) {
     return (
-      <Frame className={frameClassName}>
+      <PageContent>
         <LoadingPage />
-      </Frame>
+      </PageContent>
     );
   }
 
   if (actionsEnabled && error) {
     return (
-      <Frame className={frameClassName}>
+      <PageContent>
         <ErrorPage error={error} />
-      </Frame>
+      </PageContent>
     );
   }
 
@@ -331,7 +295,7 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
     } satisfies CarouselProps;
 
     return (
-      <Frame className={frameClassName}>
+      <PageContent>
         {showMobileEmptyState ? (
           <div className="flex min-h-[40vh] items-center justify-center py-10">
             <p className="text-center text-xl font-medium text-muted-foreground opacity-70">All Caught Up!</p>
@@ -395,7 +359,7 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
         )}
 
         {isModalOpen && <FeedModal onClose={handleModalClose} />}
-      </Frame>
+      </PageContent>
     );
   }
 
@@ -407,19 +371,7 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
 
   return (
     <>
-      {!embedded && (
-        <Portal.Slot id="breadcrumbs">
-          <Breadcrumb>
-            <Breadcrumb.List>
-              <Breadcrumb.Item>
-                <Breadcrumb.Page>Brief</Breadcrumb.Page>
-              </Breadcrumb.Item>
-            </Breadcrumb.List>
-          </Breadcrumb>
-        </Portal.Slot>
-      )}
-
-      <Frame className={frameClassName}>
+      <PageContent>
         <ContextPromptCard />
 
         {(actionsEnabled || Boolean(question)) && (
@@ -509,7 +461,7 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
             </Carousel>
           )}
         </div>
-      </Frame>
+      </PageContent>
 
       {isModalOpen && <FeedModal onClose={handleModalClose} />}
     </>

@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import {
   BadRequestException,
+  Body,
   Controller,
   Delete,
   Get,
@@ -24,7 +25,7 @@ import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import config from '@ci/configuration';
 
 import { StagedSourceService } from '../services/StagedSourceService';
-import { sanitizeFilename } from '../sources/sanitizeFilename';
+import { sanitizeFilename, sanitizeRelativePath } from '../sources/sanitizeFilename';
 
 /**
  * Ceiling on a single uploaded archive. Real exports are large — Google Takeout
@@ -32,6 +33,9 @@ import { sanitizeFilename } from '../sources/sanitizeFilename';
  * how much someone may import.
  */
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024 * 1024;
+
+/** Ceiling on files inside one dropped folder. Unzipped Takeout belongs in a zip. */
+const MAX_DIRECTORY_FILES = 10_000;
 
 /** What the caller gets back per uploaded file. */
 export interface DropSummary {
@@ -119,6 +123,7 @@ export class ImportUploadsController implements OnModuleInit {
   async upload(
     @Context() context: RequestContext,
     @UploadedFiles() files: Express.Multer.File[],
+    @Body() body?: { paths?: string | string[] },
   ): Promise<DropSummary[]> {
     const userId = requireUserId(context);
 
@@ -126,35 +131,20 @@ export class ImportUploadsController implements OnModuleInit {
       throw new BadRequestException('At least one file is required');
     }
 
+    const paths = asStringList(body?.paths);
+
     try {
+      if (paths.length > 0) {
+        return [await this.stageDirectory(userId, files, paths)];
+      }
+
       const staged: DropSummary[] = [];
 
       // Sequential, not Promise.all: a multi-part export arriving at once
       // should settle into the registry in a stable order, and there is no
       // wall-clock win to parallel renames on one filesystem.
       for (const file of files) {
-        const dropId = uuidv7();
-        // The name is attacker-controlled text landing on a real filesystem;
-        // sanitizing it is containment, not cosmetics.
-        const filename = sanitizeFilename(file.originalname);
-        const dropDir = path.join(config.import.uploadsDir, dropId);
-        const sourcePath = path.join(dropDir, filename);
-
-        await mkdir(dropDir, { recursive: true });
-        await rename(file.path, sourcePath);
-
-        const source = await this.sources.registerUpload(
-          { userId },
-          {
-            dropId,
-            sourcePath,
-            originalFilename: file.originalname,
-            contentType: file.mimetype,
-            sizeBytes: file.size,
-          },
-        );
-
-        staged.push(toSummary(source));
+        staged.push(await this.stageFile(userId, file));
       }
 
       return staged;
@@ -204,6 +194,107 @@ export class ImportUploadsController implements OnModuleInit {
 
     return { released };
   }
+
+  private async stageFile(userId: string, file: Express.Multer.File): Promise<DropSummary> {
+    const dropId = uuidv7();
+    // The name is attacker-controlled text landing on a real filesystem;
+    // sanitizing it is containment, not cosmetics.
+    const filename = sanitizeFilename(file.originalname);
+    const dropDir = path.join(config.import.uploadsDir, dropId);
+    const sourcePath = path.join(dropDir, filename);
+
+    await mkdir(dropDir, { recursive: true });
+    await rename(file.path, sourcePath);
+
+    const source = await this.sources.registerUpload(
+      { userId },
+      {
+        dropId,
+        sourcePath,
+        originalFilename: file.originalname,
+        contentType: file.mimetype,
+        sizeBytes: file.size,
+      },
+    );
+
+    return toSummary(source);
+  }
+
+  /**
+   * One drop for a whole folder: files land under `<uploadsDir>/<dropId>/`
+   * at their relative paths, and the staged source is the root folder so
+   * unpack can move the tree the same way an inbox directory unit does.
+   */
+  private async stageDirectory(
+    userId: string,
+    files: Express.Multer.File[],
+    rawPaths: string[],
+  ): Promise<DropSummary> {
+    if (rawPaths.length !== files.length) {
+      throw new BadRequestException('Each uploaded file needs a relative path');
+    }
+
+    if (files.length > MAX_DIRECTORY_FILES) {
+      throw new BadRequestException(
+        `A folder upload cannot contain more than ${MAX_DIRECTORY_FILES} files — zip the export instead`,
+      );
+    }
+
+    const dropId = uuidv7();
+    const dropDir = path.join(config.import.uploadsDir, dropId);
+    const dropRoot = path.resolve(dropDir);
+
+    await mkdir(dropDir, { recursive: true });
+
+    let sizeBytes = 0;
+    let rootName: string | null = null;
+
+    for (let i = 0; i < files.length; i += 1) {
+      let relative: string;
+
+      try {
+        relative = sanitizeRelativePath(rawPaths[i]);
+      } catch (err: unknown) {
+        throw new BadRequestException(err instanceof Error ? err.message : 'Invalid relative path');
+      }
+
+      const segments = relative.split('/');
+      rootName ??= segments[0];
+      const dest = path.resolve(dropDir, ...segments);
+
+      if (dest !== dropRoot && !dest.startsWith(`${dropRoot}${path.sep}`)) {
+        throw new BadRequestException('Path escapes the upload directory');
+      }
+
+      await mkdir(path.dirname(dest), { recursive: true });
+      await rename(files[i].path, dest);
+      sizeBytes += files[i].size;
+    }
+
+    const folder = rootName ?? 'export';
+    const sourcePath = path.join(dropDir, folder);
+    const source = await this.sources.registerUpload(
+      { userId },
+      {
+        dropId,
+        sourcePath,
+        originalFilename: folder,
+        contentType: 'application/x-directory',
+        sizeBytes,
+        kind: 'directory',
+      },
+    );
+
+    return toSummary(source);
+  }
+}
+
+function asStringList(value: string | string[] | undefined): string[] {
+  if (value == null) {
+    return [];
+  }
+
+  return Array.isArray(value) ? value : [value];
 }
 
 function requireUserId(context: RequestContext): string {

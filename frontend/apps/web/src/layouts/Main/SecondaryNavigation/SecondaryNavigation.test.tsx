@@ -115,10 +115,36 @@ describe('SecondaryNavigation', () => {
     expect(screen.queryByRole('link', { name: 'Brief' })).not.toBeInTheDocument();
   });
 
-  it('carries the account control in the rail', () => {
+  // The account's destinations are drawer rows now, not a dropdown behind an
+  // avatar: one list of everywhere you can go, opening in one direction.
+  it('carries the account destinations as rows, not a menu', () => {
     renderRail();
 
-    expect(screen.getByRole('button', { name: 'Account' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Log out' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Colours' })).toBeInTheDocument();
+
+    // Nothing is reachable only by opening a second surface.
+    expect(screen.queryByRole('button', { name: 'Account' })).not.toBeInTheDocument();
+  });
+
+  it('cycles the theme from one icon while collapsed', () => {
+    renderRail();
+
+    // The segmented control needs width the collapsed rail does not have.
+    expect(screen.getByRole('button', { name: /Theme:/ })).toBeInTheDocument();
+  });
+
+  // The drawer floats over the content on hover, so the lane it sits in keeps
+  // the collapsed width and the page beside it never reflows.
+  it('does not reflow the page when hover opens it', () => {
+    const { container } = renderRail();
+
+    const lane = container.querySelector('div.relative');
+    const nav = screen.getByRole('navigation');
+
+    expect(lane).toHaveClass('w-14');
+    expect(nav).toHaveClass('absolute');
   });
 
   // `end={false}`: both halves are Sources, and the rail should say so on
