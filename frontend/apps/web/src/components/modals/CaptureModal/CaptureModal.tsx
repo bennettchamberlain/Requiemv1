@@ -338,6 +338,7 @@ export function CaptureModal({ open = false, onClose }: Props) {
           readable={stream ?? undefined}
           onSubmit={handleSubmit}
           onStop={stopChatRequest}
+          showModelControls={false}
         >
           <Files files={files} />
         </Chat>
@@ -396,6 +397,7 @@ export function CaptureModal({ open = false, onClose }: Props) {
                 readable={stream ?? undefined}
                 onSubmit={handleSubmit}
                 onStop={stopChatRequest}
+                showModelControls={false}
                 placeholder="Ask about this content..."
                 emptyState={
                   <div className="text-center text-gray-500 mt-8">
