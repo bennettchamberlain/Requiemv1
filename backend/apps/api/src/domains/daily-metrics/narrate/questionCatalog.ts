@@ -23,12 +23,13 @@ export interface Timeframe {
   label: string;
 }
 
+export type AnalyticType = 'descriptive' | 'predictive' | 'correlational' | 'anomaly' | 'optimization';
+
 export type ValueFormat = 'int' | 'float1' | 'float2' | 'money' | 'signed2';
 
 /**
- * A declarative descriptive question: it names a metric, how to aggregate it
- * over a timeframe, and how to phrase the result. The plan is fully data — no
- * per-question code — so the compute-then-narrate service can execute any spec.
+ * A declarative question: a compute plan plus a narration template.
+ * `analyticType` defaults to descriptive so the original 18 specs stay valid.
  */
 export interface QuestionSpec {
   key: string;
@@ -39,7 +40,8 @@ export interface QuestionSpec {
   timeframe: Timeframe;
   /**
    * Narration template. Available placeholders: {value}, {unit}, {timeframe},
-   * {days}, {daysWithData}, {coveragePct}.
+   * {days}, {daysWithData}, {coveragePct}, plus {effect}, {lag}, {q}, {baseline}
+   * for non-descriptive types.
    */
   template: string;
   unit?: string;
@@ -47,6 +49,10 @@ export interface QuestionSpec {
   /** Optional multiplier applied to the aggregated value before formatting
    *  (e.g. 100 for a ratio→percent, 1/60 for minutes→hours). */
   scale?: number;
+  analyticType?: AnalyticType;
+  pairMetric?: MetricKey;
+  lagDays?: number;
+  suggestionKey?: string;
 }
 
 export const TODAY: Timeframe = { days: 1, label: 'today' };
@@ -263,5 +269,162 @@ export const QUESTION_CATALOG: readonly QuestionSpec[] = [
     format: 'money',
     unit: '$',
     template: 'You acquired items worth ${value} over {timeframe}.',
+  },
+
+  // ── Correlational ────────────────────────────────────────────────
+  {
+    key: 'corr.conversations_sentiment_90',
+    category: 'Relationships',
+    analyticType: 'correlational',
+    question: 'Are my conversations associated with conversation tone this quarter?',
+    metric: 'n_conversations',
+    pairMetric: 'avg_sentiment',
+    lagDays: 0,
+    aggregate: 'avg',
+    timeframe: { days: 90, label: 'the last 90 days' },
+    format: 'signed2',
+    template:
+      'Conversations and conversation tone have been associated (r={effect}) over {timeframe} (q={q}, {daysWithData} overlapping days). This is a hypothesis, not a cause.',
+  },
+  {
+    key: 'corr.conversations_sentiment_lag1',
+    category: 'Relationships',
+    analyticType: 'correlational',
+    question: 'Does conversation volume tend to precede tone the next day?',
+    metric: 'n_conversations',
+    pairMetric: 'avg_sentiment',
+    lagDays: 1,
+    aggregate: 'avg',
+    timeframe: { days: 90, label: 'the last 90 days' },
+    format: 'signed2',
+    template:
+      'Conversation volume has tended to precede next-day tone (r={effect}, lag {lag} day) over {timeframe} (q={q}). Associated with, not caused by.',
+  },
+  {
+    key: 'corr.screen_sentiment_90',
+    category: 'Attention',
+    analyticType: 'correlational',
+    question: 'Is web time associated with conversation tone?',
+    metric: 'screen_minutes',
+    pairMetric: 'avg_sentiment',
+    lagDays: 0,
+    aggregate: 'avg',
+    timeframe: { days: 90, label: 'the last 90 days' },
+    format: 'signed2',
+    template:
+      'Web time and conversation tone have been associated (r={effect}) over {timeframe} (q={q}, {daysWithData} overlapping days). This is a hypothesis, not a cause.',
+  },
+  {
+    key: 'corr.km_sentiment_90',
+    category: 'Body',
+    analyticType: 'correlational',
+    question: 'Is distance traveled associated with conversation tone?',
+    metric: 'km_traveled',
+    pairMetric: 'avg_sentiment',
+    lagDays: 0,
+    aggregate: 'avg',
+    timeframe: { days: 90, label: 'the last 90 days' },
+    format: 'signed2',
+    template:
+      'Distance traveled and conversation tone have been associated (r={effect}) over {timeframe} (q={q}, {daysWithData} overlapping days). This is a hypothesis, not a cause.',
+  },
+
+  // ── Anomaly ──────────────────────────────────────────────────────
+  {
+    key: 'anom.conversations_yesterday',
+    category: 'Relationships',
+    analyticType: 'anomaly',
+    question: 'Was yesterday unusual for conversations?',
+    metric: 'n_conversations',
+    aggregate: 'latest',
+    timeframe: TODAY,
+    format: 'int',
+    template: 'Yesterday had {value} conversations vs a typical {baseline}.',
+  },
+  {
+    key: 'anom.places_yesterday',
+    category: 'Places',
+    analyticType: 'anomaly',
+    question: 'Was yesterday unusual for how many places I visited?',
+    metric: 'n_places',
+    aggregate: 'latest',
+    timeframe: TODAY,
+    format: 'int',
+    template: 'Yesterday you visited {value} places vs a typical {baseline}.',
+  },
+  {
+    key: 'anom.sentiment_yesterday',
+    category: 'Mind',
+    analyticType: 'anomaly',
+    question: 'Was yesterday unusual for conversation tone?',
+    metric: 'avg_sentiment',
+    aggregate: 'latest',
+    timeframe: TODAY,
+    format: 'signed2',
+    template: 'Yesterday conversation tone was {value} vs a typical {baseline}.',
+  },
+  {
+    key: 'anom.screen_yesterday',
+    category: 'Attention',
+    analyticType: 'anomaly',
+    question: 'Was yesterday unusual for web time?',
+    metric: 'screen_minutes',
+    aggregate: 'latest',
+    timeframe: TODAY,
+    format: 'float1',
+    unit: 'min',
+    template: 'Yesterday web time was {value} minutes vs a typical {baseline}.',
+  },
+
+  // ── Optimization ─────────────────────────────────────────────────
+  {
+    key: 'opt.conversations_low',
+    category: 'Relationships',
+    analyticType: 'optimization',
+    suggestionKey: 'rel.conversations_low',
+    question: 'Should I reach out given a quiet day?',
+    metric: 'n_conversations',
+    aggregate: 'latest',
+    timeframe: TODAY,
+    format: 'int',
+    template: '{value} conversations yesterday vs about {baseline} most days. Associated with, not caused by, how connected the week feels.',
+  },
+  {
+    key: 'opt.screen_spike',
+    category: 'Attention',
+    analyticType: 'optimization',
+    suggestionKey: 'attention.screen_spike',
+    question: 'Was yesterday a high web-time day relative to my baseline?',
+    metric: 'screen_minutes',
+    aggregate: 'latest',
+    timeframe: TODAY,
+    format: 'float1',
+    unit: 'min',
+    template: 'About {value} minutes on the web yesterday vs about {baseline} most days.',
+  },
+
+  // ── Predictive (wraps MetricForecastService) ──────────────────────
+  {
+    key: 'pred.conversations',
+    category: 'Relationships',
+    analyticType: 'predictive',
+    question: 'How many conversations are typical over the next few days?',
+    metric: 'n_conversations',
+    aggregate: 'avg',
+    timeframe: { days: 3, label: 'the next 3 days' },
+    format: 'float1',
+    template: 'A typical next few days looks like about {value} conversations per day.',
+  },
+  {
+    key: 'pred.screen',
+    category: 'Attention',
+    analyticType: 'predictive',
+    question: 'What does typical daily web time look like over the next few days?',
+    metric: 'screen_minutes',
+    aggregate: 'avg',
+    timeframe: { days: 3, label: 'the next 3 days' },
+    format: 'float1',
+    unit: 'min',
+    template: 'A typical next few days looks like about {value} minutes of web time per day.',
   },
 ];

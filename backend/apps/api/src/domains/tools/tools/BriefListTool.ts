@@ -42,7 +42,8 @@ export class BriefListTool extends BaseTool<BriefListInput, BriefListOutput> {
     title: 'List Brief',
     description:
       'List recent derived insights and anomalies from the summary engine plus active (non-dismissed) ' +
-      'suggested actions, newest first.',
+      'suggested actions, newest first. Prefers computed anomaly/suggestion cards when present; ' +
+      'legacy onboarding stubs remain visible.',
     privacy: { access: 'read', sensitivity: 'personal', destructive: false, external: false },
     localCapable: true,
     phrases: [
@@ -110,6 +111,9 @@ export class BriefListTool extends BaseTool<BriefListInput, BriefListOutput> {
       }
     }
 
+    const derived: BriefListItem[] = [];
+    const legacy: BriefListItem[] = [];
+
     for (const action of actions) {
       if (action.dismissed) {
         continue;
@@ -119,12 +123,25 @@ export class BriefListTool extends BaseTool<BriefListInput, BriefListOutput> {
         continue;
       }
 
-      pushItem(items, {
+      const item: BriefListItem = {
         id: action.id,
         type: 'action',
         text: action.text ?? action.title ?? '',
         occurredAt: toIsoOrNull(action.createdAt),
-      });
+      };
+      if (action.source === 'anomaly' || action.source === 'suggestion') {
+        derived.push(item);
+      } else {
+        legacy.push(item);
+      }
+    }
+
+    for (const item of derived) {
+      pushItem(items, item);
+    }
+
+    for (const item of legacy) {
+      pushItem(items, item);
     }
 
     items.sort((a, b) => {

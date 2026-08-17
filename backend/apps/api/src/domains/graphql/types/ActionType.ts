@@ -40,6 +40,12 @@ export class ActionType implements Node, Taggable {
   @Field(() => String)
   text!: string | null;
 
+  @Field(() => String, {
+    nullable: true,
+    description: 'Provenance: legacy | correlation | anomaly | suggestion',
+  })
+  source?: string;
+
   @Field(() => String, { nullable: true })
   imageUrl!: string | null;
 
@@ -73,6 +79,7 @@ export class ActionType implements Node, Taggable {
       id: GlobalUID.encode('action', action.id),
       title: action.title,
       text: action.text,
+      source: action.source ?? 'legacy',
       imageUrl: action.imageUrl,
       seen: action.seen ?? false,
       dismissed: action.dismissed ?? false,

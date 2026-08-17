@@ -4,6 +4,7 @@ import { LoggerService } from '@ci/common/logging';
 import { Cron } from '@ci/common/schedule';
 
 import { DailyMetricsService, DEFAULT_REFRESH_WINDOW_DAYS } from '../services/DailyMetricsService';
+import { DerivationScanService } from '../services/DerivationScanService';
 
 /** Hourly at minute 10 — staggered from the activity rollup's :00/:15/:30/:45 ticks. */
 const DAILY_METRICS_CRON = '0 10 * * * *';
@@ -17,6 +18,7 @@ export class DailyMetricsCron implements OnApplicationBootstrap {
 
   constructor(
     private readonly dailyMetricsService: DailyMetricsService,
+    private readonly derivationScanService: DerivationScanService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(DailyMetricsCron.name);
@@ -47,7 +49,19 @@ export class DailyMetricsCron implements OnApplicationBootstrap {
     try {
       await this.dailyMetricsService.refreshAll(options.windowDays);
     } catch (err) {
-      this.logger.error('Daily metrics refresh failed', err instanceof Error ? err : new Error(String(err)));
+      this.logger.error(
+        'Daily metrics refresh failed',
+        err instanceof Error ? err : new Error(String(err)),
+      );
+    }
+
+    try {
+      await this.derivationScanService.scanAll();
+    } catch (err) {
+      this.logger.error(
+        'Derivation scan failed',
+        err instanceof Error ? err : new Error(String(err)),
+      );
     } finally {
       this.running = false;
     }

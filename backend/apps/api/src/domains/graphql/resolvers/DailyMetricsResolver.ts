@@ -4,12 +4,17 @@ import { Args, Int, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import {
+  AnomalyEngine,
+  CorrelationEngine,
   DailyMetricsService,
   DEFAULT_REFRESH_WINDOW_DAYS,
   DescriptiveQuestionService,
+  SuggestionEngine,
+  type AnalyticType,
 } from '@ci/domains/daily-metrics';
 
 import { DailyMetricsType } from '../types/DailyMetricsType';
+import { MetricAnomalyType, MetricCorrelationType, MetricSuggestionType } from '../types/DerivationTypes';
 import { DescriptiveAnswerType, DescriptiveQuestionType } from '../types/DescriptiveAnswerType';
 
 @UseGuards(JwtOrApiKeyAuthGuard)
@@ -18,6 +23,9 @@ export class DailyMetricsResolver {
   constructor(
     private readonly dailyMetricsService: DailyMetricsService,
     private readonly descriptiveQuestionService: DescriptiveQuestionService,
+    private readonly correlationEngine: CorrelationEngine,
+    private readonly anomalyEngine: AnomalyEngine,
+    private readonly suggestionEngine: SuggestionEngine,
   ) {}
 
   @Query(() => [DailyMetricsType], {
@@ -35,13 +43,16 @@ export class DailyMetricsResolver {
   }
 
   @Query(() => [DescriptiveQuestionType], {
-    description: 'The descriptive question catalog the compute-then-narrate engine can answer.',
+    description: 'The question catalog the compute-then-narrate engine can answer.',
   })
-  descriptiveQuestions(): DescriptiveQuestionType[] {
-    return this.descriptiveQuestionService.listQuestions().map((spec) => ({
+  descriptiveQuestions(
+    @Args('analyticType', { type: () => String, nullable: true }) analyticType?: string,
+  ): DescriptiveQuestionType[] {
+    return this.descriptiveQuestionService.listQuestions(analyticType as AnalyticType | undefined).map((spec) => ({
       key: spec.key,
       category: spec.category,
       question: spec.question,
+      analyticType: spec.analyticType ?? 'descriptive',
     }));
   }
 
@@ -55,6 +66,60 @@ export class DailyMetricsResolver {
     const answers = await this.descriptiveQuestionService.answerAll(toServiceContext(context), { date });
 
     return answers.map(DescriptiveAnswerType.toType);
+  }
+
+  @Query(() => [DescriptiveAnswerType], {
+    description: 'Answers catalog questions of one analytic type (descriptive, correlational, anomaly, optimization, predictive).',
+  })
+  async catalogAnswers(
+    @Context() context: RequestContext,
+    @Args('analyticType', { type: () => String }) analyticType: string,
+    @Args('date', { type: () => String, nullable: true }) date?: string,
+  ): Promise<DescriptiveAnswerType[]> {
+    const answers = await this.descriptiveQuestionService.answerAll(toServiceContext(context), {
+      date,
+      analyticType: analyticType as AnalyticType,
+    });
+
+    return answers.map(DescriptiveAnswerType.toType);
+  }
+
+  @Query(() => [MetricCorrelationType], {
+    description: 'Pairwise / lagged associations. Hypotheses ("associated with"), never causes.',
+  })
+  async metricCorrelations(
+    @Context() context: RequestContext,
+    @Args('windowDays', { type: () => Int, nullable: true }) windowDays?: number,
+    @Args('robustOnly', { type: () => Boolean, nullable: true }) robustOnly?: boolean,
+  ): Promise<MetricCorrelationType[]> {
+    const rows = await this.correlationEngine.list(toServiceContext(context), { windowDays, robustOnly });
+
+    return rows.map(MetricCorrelationType.toType);
+  }
+
+  @Query(() => [MetricAnomalyType], {
+    description: 'Computed metric and behavioral anomalies. Not the free-text list inside summaries.',
+  })
+  async metricAnomalies(
+    @Context() context: RequestContext,
+    @Args('since', { type: () => String, nullable: true }) since?: string,
+    @Args('metric', { type: () => String, nullable: true }) metric?: string,
+  ): Promise<MetricAnomalyType[]> {
+    const rows = await this.anomalyEngine.list(toServiceContext(context), { since, metric });
+
+    return rows.map(MetricAnomalyType.toType);
+  }
+
+  @Query(() => [MetricSuggestionType], {
+    description: 'Evidence-linked suggestions. Empty when derivation.engines has not produced any.',
+  })
+  async metricSuggestions(
+    @Context() context: RequestContext,
+    @Args('includeDismissed', { type: () => Boolean, nullable: true }) includeDismissed?: boolean,
+  ): Promise<MetricSuggestionType[]> {
+    const rows = await this.suggestionEngine.list(toServiceContext(context), includeDismissed ?? false);
+
+    return rows.map(MetricSuggestionType.toType);
   }
 
   @Mutation(() => [DailyMetricsType], {

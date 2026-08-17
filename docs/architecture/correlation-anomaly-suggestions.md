@@ -2,7 +2,7 @@
 
 > **Private & Confidential — Property of Lifescope Inc. Do not distribute.**
 >
-> Status: **plan** (this document). Implementation is the next PR on this track.
+> Status: **implemented** on `docs/correlation-anomaly-suggestions` (this PR). Later workstreams in §10 stay out of scope.
 > Tracker: [CI-Engineering #55](https://github.com/companionintelligence/CI-Engineering/issues/55)
 > · epic [#49](https://github.com/companionintelligence/CI-Engineering/issues/49)
 > · ADRs [0006–0008](https://github.com/companionintelligence/CI-Engineering/pull/56).
@@ -615,9 +615,10 @@ flowchart LR
 
 ---
 
-## 11. Implementation slices (after this plan merges)
+## 11. Implementation slices
 
-Do not land engines in one PR. Suggested cut, each mergeable alone:
+Landed together on this PR (the plan originally split them; the math + schema
+were already designed so they compose):
 
 | Slice | Ships | Acceptance of the slice |
 |---|---|---|
@@ -636,20 +637,20 @@ exist. Estimate: A is the largest (math + FDR + migration).
 From [#55](https://github.com/companionintelligence/CI-Engineering/issues/55),
 translated onto this tree:
 
-- [ ] Pairwise + lagged (0/1/2/7) Pearson/Spearman across `METRIC_KEYS`, coverage-gated.
-- [ ] BH-FDR; rank by effect × robustness × novelty; copy is hypothesis language.
-- [ ] Robust survivors persist in `ci_derived.metric_correlations`.
-- [ ] Per-metric robust z + CUSUM; HBPE L0 divergence as a third detector.
-- [ ] Anomalies persist in `ci_derived.metric_anomalies` and optionally
+- [x] Pairwise + lagged (0/1/2/7) Pearson/Spearman across `METRIC_KEYS`, coverage-gated.
+- [x] BH-FDR; rank by effect × robustness × novelty; copy is hypothesis language.
+- [x] Robust survivors persist in `ci_derived.metric_correlations`.
+- [x] Per-metric robust z + CUSUM; HBPE L0 divergence as a third detector.
+- [x] Anomalies persist in `ci_derived.metric_anomalies` and optionally
       `ci.actions` with `source='anomaly'`.
-- [ ] Suggestions require an evidence FK, emit `source='suggestion'`, and
+- [x] Suggestions require an evidence FK, emit `source='suggestion'`, and
       learn from `suggestions.feedback`.
-- [ ] Catalog answers correlational / anomaly / optimization questions from
+- [x] Catalog answers correlational / anomaly / optimization questions from
       those tables (compute-then-narrate; TemplateNarrator default).
-- [ ] `insights.explain`, `anomalies.recent`, `suggestions.list` /
+- [x] `insights.explain`, `anomalies.recent`, `suggestions.list` /
       `suggestions.feedback` are registered intents.
-- [ ] Flag-off: no Brief/feed cards. Cold series: no "you usually".
-- [ ] Body/Mind suggestion arms absent until thicker metrics + #63.
+- [x] Flag-off: no Brief/feed cards. Cold series: no "you usually".
+- [x] Body/Mind suggestion arms absent until thicker metrics + #63.
 
 The original "how much did exercise change my mood this quarter" is answerable
 **as a catalog question** the day `km_traveled` (or a future `active_minutes`)

@@ -503,6 +503,12 @@ export const ConfigSchema = z.object({
      * ci_derived.daily_metrics. Off until the store has rows.
      */
     'grounded.prompts': booleanStringSchema,
+    /**
+     * Lets the correlation / anomaly / suggestion engines enqueue ci.actions
+     * (and therefore Brief/feed cards). Findings still persist when this is
+     * off. Default off until coverage is real.
+     */
+    'derivation.engines': booleanStringSchema,
   }),
   environment: z.object({
     'database.query.logging': booleanStringSchema,

@@ -29,9 +29,9 @@ export class ActionService {
       priority: data.priority,
       seen: data.seen ?? false,
       dismissed: data.dismissed ?? false,
-      thread: {
-        id: data.threadId,
-      },
+      source: data.source ?? 'legacy',
+      metadata: data.metadata ?? {},
+      ...(data.threadId ? { thread: { id: data.threadId } } : {}),
       user: {
         id: context.userId,
       },
@@ -47,7 +47,12 @@ export class ActionService {
     return ActionEntity.toEgressType(entity);
   }
 
-  async findAll(context: ServiceContext): Promise<Action[]> {
+  async findAll(
+    context: ServiceContext,
+    options: { source?: string | string[] } = {},
+  ): Promise<Action[]> {
+    const sources = options.source === undefined ? undefined : Array.isArray(options.source) ? options.source : [options.source];
+
     const entities = await this.actionRepository.find({
       where: {
         ...(context.userId !== SYSTEM_USER && {
@@ -55,6 +60,7 @@ export class ActionService {
             id: context.userId,
           },
         }),
+        ...(sources ? { source: In(sources) } : {}),
       },
       order: {
         priority: 'asc',

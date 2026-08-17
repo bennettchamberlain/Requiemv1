@@ -187,7 +187,8 @@
     "actions": "ENABLE_ACTIONS",
     "smart.rotation": "ENABLE_SMART_ROTATION",
     "ask": "ENABLE_ASK",
-    "grounded.prompts": "ENABLE_GROUNDED_PROMPTS"
+    "grounded.prompts": "ENABLE_GROUNDED_PROMPTS",
+    "derivation.engines": "ENABLE_DERIVATION_ENGINES"
   },
   "environment": {
     "database.query.logging": "DATABASE_QUERY_LOGGING"

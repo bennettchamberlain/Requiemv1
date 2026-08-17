@@ -1,3 +1,5 @@
+import type { AnomalyFinding } from '../anomaly/anomalyMath';
+import { SELECTOR_METRICS } from '../suggest/suggestionMath';
 import type { DailyMetrics, MetricKey } from '../types';
 
 const MIN_COVERAGE = 0.5;
@@ -37,9 +39,19 @@ function oneDecimal(value: number): string {
   return (Math.round(value * 10) / 10).toFixed(1);
 }
 
+const SELECTOR_IDS: Record<string, string> = {
+  n_conversations: 'conversations_low',
+  n_places: 'one_place',
+  avg_sentiment: 'sentiment_dip',
+  screen_minutes: 'screen_spike',
+};
+
 /**
  * At most one coverage-gated surprise from yesterday vs the trailing week.
  * The label injects the SQL numbers so a model can only choose phrasing.
+ *
+ * Standing mode prefers persisted anomaly rows via {@link pickMetricSurpriseFromAnomalies};
+ * this in-memory path keeps the selector generator working before a scan has run.
  */
 export function pickMetricSurprise(
   yesterday: DailyMetrics | null,
@@ -97,4 +109,32 @@ export function pickMetricSurprise(
   }
 
   return null;
+}
+
+/**
+ * Standing-mode adapter: highest-score anomaly from yesterday whose metric is
+ * one of the four the selector generator already understands.
+ */
+export function pickMetricSurpriseFromAnomalies(
+  anomalies: Array<Pick<AnomalyFinding, 'date' | 'score' | 'value' | 'baseline'> & { metric: string }>,
+  yesterday: string,
+): MetricSurprise | null {
+  const candidates = anomalies
+    .filter((row) => row.date === yesterday && (SELECTOR_METRICS as readonly string[]).includes(row.metric))
+    .sort((left, right) => right.score - left.score);
+
+  const top = candidates[0];
+  if (!top) {
+    return null;
+  }
+
+  const id = SELECTOR_IDS[top.metric] ?? top.metric;
+  const value = top.value;
+  const baseline = top.baseline;
+  const label =
+    value !== null && baseline !== null
+      ? `${top.metric} was ${oneDecimal(value)} yesterday vs about ${oneDecimal(baseline)} most days. Do not change the numbers.`
+      : `${top.metric} looked unusual yesterday. Do not invent a number.`;
+
+  return { id, label };
 }

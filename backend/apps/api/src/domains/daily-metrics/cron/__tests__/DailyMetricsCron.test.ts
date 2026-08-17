@@ -1,6 +1,7 @@
 import type { LoggerService } from '@ci/common/logging';
 
 import type { DailyMetricsService } from '../../services/DailyMetricsService';
+import type { DerivationScanService } from '../../services/DerivationScanService';
 import { DailyMetricsCron } from '../DailyMetricsCron';
 
 function makeCron() {
@@ -11,14 +12,16 @@ function makeCron() {
         pendingResolvers.push(resolve);
       }),
   );
+  const scanAll = jest.fn().mockResolvedValue(undefined);
   const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
   const cron = new DailyMetricsCron(
     { refreshAll } as unknown as DailyMetricsService,
+    { scanAll } as unknown as DerivationScanService,
     logger as unknown as LoggerService,
   );
 
-  return { cron, refreshAll, logger, finishRefresh: () => pendingResolvers.shift()?.() };
+  return { cron, refreshAll, scanAll, logger, finishRefresh: () => pendingResolvers.shift()?.() };
 }
 
 describe('DailyMetricsCron.refreshRecent', () => {
@@ -43,18 +46,31 @@ describe('DailyMetricsCron.refreshRecent', () => {
 
   it('releases the overlap guard when a refresh fails', async () => {
     const refreshAll = jest.fn().mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce(undefined);
+    const scanAll = jest.fn().mockResolvedValue(undefined);
     const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
     const cron = new DailyMetricsCron(
       { refreshAll } as unknown as DailyMetricsService,
+      { scanAll } as unknown as DerivationScanService,
       logger as unknown as LoggerService,
     );
 
     await cron.refreshRecent();
 
     expect(logger.error).toHaveBeenCalled();
+    expect(scanAll).toHaveBeenCalledTimes(1);
 
     await cron.refreshRecent();
 
     expect(refreshAll).toHaveBeenCalledTimes(2);
+  });
+
+  it('runs the derivation scan after metrics refresh', async () => {
+    const { cron, scanAll, finishRefresh } = makeCron();
+
+    const run = cron.refreshRecent();
+    finishRefresh();
+    await run;
+
+    expect(scanAll).toHaveBeenCalledTimes(1);
   });
 });
