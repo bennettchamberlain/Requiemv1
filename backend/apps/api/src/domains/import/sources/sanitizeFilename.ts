@@ -15,3 +15,31 @@ export function sanitizeFilename(filename: string): string {
 
   return trimmed.length > 0 ? trimmed : 'upload.zip';
 }
+
+/**
+ * A folder-upload relative path, kept as a tree under the drop directory.
+ *
+ * Each segment is run through {@link sanitizeFilename} so a `../` or a slash
+ * inside one component cannot escape the drop. The result always has at least
+ * two segments (a folder and a file) — a bare filename is wrapped in `export/`
+ * so the staged source can be a real directory the unpack stage can move.
+ */
+export function sanitizeRelativePath(relativePath: string): string {
+  const parts = relativePath.split(/[\\/]+/).filter((part) => part.length > 0 && part !== '.');
+
+  if (parts.some((part) => part === '..')) {
+    throw new Error('path escapes the upload directory');
+  }
+
+  const cleaned = parts.map((part) => sanitizeFilename(part));
+
+  if (cleaned.length === 0) {
+    throw new Error('a relative path is required');
+  }
+
+  if (cleaned.length === 1) {
+    cleaned.unshift('export');
+  }
+
+  return cleaned.join('/');
+}

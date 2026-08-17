@@ -15,10 +15,11 @@
  *
  * Upstream ended each guide by telling people to unzip their export into
  * `data/inbox/<folder>/`, because the standalone app watched a directory. Here
- * they upload the file and the unpack stage expands it, so every step that named
- * an inbox path is replaced by {@link UPLOAD_STEP}. Everything BEFORE it — which
- * button on which settings page, how long the wait runs, what the archive
- * contains — is untouched, and is the part that took real work to write.
+ * they upload the file or unzipped folder and the unpack stage expands it, so
+ * every step that named an inbox path is replaced by {@link UPLOAD_STEP}.
+ * Everything BEFORE it — which button on which settings page, how long the wait
+ * runs, what the archive contains — is untouched, and is the part that took
+ * real work to write.
  *
  * ## What did NOT come across
  *
@@ -35,10 +36,10 @@
  * How every guide ends now.
  *
  * One sentence, identical everywhere, because the answer is identical
- * everywhere: the unpack stage expands whatever arrives, so unzipping first is
- * work the person does not need to do.
+ * everywhere: the unpack stage expands a zip, and a dropped folder is already
+ * a tree, so unzipping first is work the person does not need to do.
  */
-export const UPLOAD_STEP = 'Upload the downloaded file here — it does not need unzipping first.';
+export const UPLOAD_STEP = 'Upload the downloaded file or folder here — a zip does not need unzipping first.';
 
 /** Roughly how soon the user can expect the export to be downloadable. */
 export type WaitClass =

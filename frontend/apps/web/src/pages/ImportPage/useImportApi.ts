@@ -231,15 +231,29 @@ export function useImportApi() {
         form.append('files', file);
       }
 
-      const response = await fetch('/api/import/uploads', {
-        method: 'POST',
-        headers: authHeaders(),
-        body: form,
-      });
+      const response = await postUpload(form, authHeaders());
 
-      if (!response.ok) {
-        throw new Error(await describeFailure(response, 'Upload failed'));
+      return (await response.json()) as StagedDrop[];
+    },
+    [authHeaders],
+  );
+
+  /**
+   * Upload one unzipped folder as a single drop.
+   *
+   * Each file is sent with its `webkitRelativePath` so the API can rebuild the
+   * tree. One drop, one run — the same unit the inbox uses for a directory.
+   */
+  const uploadFolder = useCallback(
+    async (files: readonly File[]): Promise<StagedDrop[]> => {
+      const form = new FormData();
+
+      for (const file of files) {
+        form.append('files', file);
+        form.append('paths', file.webkitRelativePath || file.name);
       }
+
+      const response = await postUpload(form, authHeaders());
 
       return (await response.json()) as StagedDrop[];
     },
@@ -332,6 +346,7 @@ export function useImportApi() {
       listUnpushed,
       getRun,
       uploadFiles,
+      uploadFolder,
       startRun,
       startPush,
       cancelRun,
@@ -348,6 +363,7 @@ export function useImportApi() {
       listUnpushed,
       getRun,
       uploadFiles,
+      uploadFolder,
       startRun,
       startPush,
       cancelRun,
@@ -421,6 +437,28 @@ export function useRunProgress(runId: string | null, intervalMs = 2_000) {
   }, [intervalMs, load, ready, run, runId]);
 
   return { run, error, refresh: load } as const;
+}
+
+async function postUpload(form: FormData, headers: Record<string, string>): Promise<Response> {
+  let response: Response;
+
+  try {
+    response = await fetch('/api/import/uploads', {
+      method: 'POST',
+      headers,
+      body: form,
+    });
+  } catch {
+    throw new Error(
+      'Could not reach the appliance. If you dropped a folder, use Choose folder — or upload the .zip.',
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error(await describeFailure(response, 'Upload failed'));
+  }
+
+  return response;
 }
 
 async function post<T>(url: string, headers: Record<string, string>, body: unknown): Promise<T> {

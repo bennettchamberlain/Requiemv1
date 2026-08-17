@@ -16,11 +16,13 @@ const uploadFiles = vi.fn(async () => [
   { dropId: 'drop-1', originalFilename: 'spotify.zip' },
   { dropId: 'drop-2', originalFilename: 'spotify-extended.zip' },
 ]);
+const uploadFolder = vi.fn(async () => [{ dropId: 'drop-folder', originalFilename: 'chatgpt-export' }]);
 const startRun = vi.fn(async (dropId: string) => ({ id: `run-${dropId}`, stages: [] }));
 
 const API = {
   ready: true,
   uploadFiles,
+  uploadFolder,
   startRun,
 };
 
@@ -34,9 +36,24 @@ vi.mock('./LiveRun', () => ({
 
 vi.mock('../DropZone', () => ({
   DropZone: ({ onFiles, label }: { onFiles: (files: File[]) => void; label?: string }) => (
-    <button type="button" onClick={() => onFiles([new File(['x'], 'spotify.zip')])}>
-      {label ?? 'drop'}
-    </button>
+    <div>
+      <button type="button" onClick={() => onFiles([new File(['x'], 'spotify.zip')])}>
+        {label ?? 'drop'}
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          const conversations = new File(['{}'], 'conversations.json');
+
+          Object.defineProperty(conversations, 'webkitRelativePath', {
+            value: 'chatgpt-export/conversations.json',
+          });
+          onFiles([conversations]);
+        }}
+      >
+        drop folder
+      </button>
+    </div>
   ),
 }));
 
@@ -174,6 +191,27 @@ describe('ExportStep', () => {
       stages: ['unpack', 'parse', 'media'],
     });
     expect(onRunsStarted).toHaveBeenCalledWith('spotify', ['run-drop-1', 'run-drop-2']);
+  });
+
+  it('packs a dropped folder into one zip and starts one run', async () => {
+    uploadFiles.mockResolvedValueOnce([{ dropId: 'drop-folder', originalFilename: 'chatgpt-export.zip' }]);
+
+    const { onRunsStarted } = renderStep();
+
+    fireEvent.click(screen.getByRole('button', { name: /drop folder/i }));
+
+    await waitFor(() => expect(uploadFiles).toHaveBeenCalledTimes(1));
+    expect(uploadFolder).not.toHaveBeenCalled();
+
+    const packed = (uploadFiles.mock.calls[0] as unknown as [File[]])[0];
+
+    expect(packed).toHaveLength(1);
+    expect(packed[0].name).toBe('chatgpt-export.zip');
+    expect(startRun).toHaveBeenCalledWith('drop-folder', {
+      label: 'chatgpt-export.zip',
+      stages: ['unpack', 'parse', 'media'],
+    });
+    expect(onRunsStarted).toHaveBeenCalledWith('spotify', ['run-drop-folder']);
   });
 
   it('renders the live pipeline for runs already started from this card', () => {

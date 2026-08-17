@@ -3,8 +3,12 @@ import { useCallback, useRef, useState, type DragEvent } from 'react';
 import { Button, Card, cn } from '@ci/shadcn';
 import { Upload } from '@ci/shadcn/icons';
 
+import { collectDroppedFiles } from './collectDroppedFiles';
+
 export interface DropZoneProps {
   onFiles: (files: File[]) => void;
+  /** Fired as soon as a drop starts walking, before files are ready. */
+  onCollectStart?: () => void;
   disabled?: boolean;
   /** Shown under the prompt — what the appliance is waiting for. */
   hint?: string;
@@ -17,24 +21,41 @@ export interface DropZoneProps {
 /**
  * Where an export lands.
  *
- * Drag-and-drop over a click-to-browse fallback, because the thing being dropped
- * is a file someone just downloaded from Google or Apple and dragging it out of
- * a Downloads folder is the shortest path from there to here.
+ * Drag-and-drop over click-to-browse, because the thing being dropped is a
+ * file or unzipped folder someone just downloaded. A folder is walked via
+ * `webkitGetAsEntry` so it becomes the real files, not a 0-byte directory
+ * placeholder that FormData cannot send.
  *
  * The counter matters more than it looks: `dragenter` and `dragleave` fire for
  * every child element the pointer crosses, so tracking a boolean makes the
  * highlight flicker as the cursor moves over the text inside the zone. Counting
  * enters against leaves is what keeps it steady.
  */
-export function DropZone({ onFiles, disabled, hint, label, compact }: DropZoneProps) {
+export function DropZone({ onFiles, onCollectStart, disabled, hint, label, compact }: DropZoneProps) {
   const [active, setActive] = useState(false);
+  const [dropError, setDropError] = useState<string | null>(null);
   const depth = useRef(0);
-  const input = useRef<HTMLInputElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const folderInput = useRef<HTMLInputElement>(null);
 
   const reset = useCallback(() => {
     depth.current = 0;
     setActive(false);
   }, []);
+
+  const emitFiles = useCallback(
+    (files: File[]) => {
+      if (files.length === 0) {
+        setDropError('Nothing readable in that drop. Choose a folder, or drop the .zip.');
+
+        return;
+      }
+
+      setDropError(null);
+      onFiles(files);
+    },
+    [onFiles],
+  );
 
   const handleDragEnter = useCallback(
     (event: DragEvent<HTMLDivElement>) => {
@@ -68,13 +89,14 @@ export function DropZone({ onFiles, disabled, hint, label, compact }: DropZonePr
         return;
       }
 
-      const files = Array.from(event.dataTransfer?.files ?? []);
-
-      if (files.length) {
-        onFiles(files);
-      }
+      onCollectStart?.();
+      void collectDroppedFiles(event.dataTransfer)
+        .then(emitFiles)
+        .catch(() => {
+          setDropError('Could not read that folder. Choose folder, or drop the .zip.');
+        });
     },
-    [disabled, onFiles, reset],
+    [disabled, emitFiles, onCollectStart, reset],
   );
 
   return (
@@ -99,29 +121,41 @@ export function DropZone({ onFiles, disabled, hint, label, compact }: DropZonePr
       <div className="space-y-1">
         <p className="font-medium">{label ?? 'Drop your export here'}</p>
         <p className="text-sm text-muted-foreground">
-          {hint ?? 'A .zip straight from Google Takeout, Apple, Twitter or anywhere else.'}
+          {hint ?? 'A .zip, a single file, or the unzipped folder.'}
         </p>
       </div>
 
-      <Button variant="outline" disabled={disabled} onClick={() => input.current?.click()}>
-        Choose a file
-      </Button>
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <Button variant="outline" disabled={disabled} onClick={() => fileInput.current?.click()}>
+          Choose files
+        </Button>
+        <Button variant="outline" disabled={disabled} onClick={() => folderInput.current?.click()}>
+          Choose folder
+        </Button>
+      </div>
+
+      {dropError != null && <p className="text-sm text-destructive">{dropError}</p>}
 
       <input
-        ref={input}
+        ref={fileInput}
         type="file"
         multiple
         className="hidden"
-        aria-label="Choose an export to import"
+        aria-label="Choose export files to import"
         onChange={(event) => {
-          const files = Array.from(event.target.files ?? []);
-
-          if (files.length) {
-            onFiles(files);
-          }
-
-          // Clear it, or picking the SAME file twice fires no change event and
-          // a retry after a failed upload silently does nothing.
+          emitFiles(Array.from(event.target.files ?? []));
+          event.target.value = '';
+        }}
+      />
+      <input
+        ref={folderInput}
+        type="file"
+        multiple
+        className="hidden"
+        aria-label="Choose an export folder to import"
+        {...{ webkitdirectory: '', directory: '' }}
+        onChange={(event) => {
+          emitFiles(Array.from(event.target.files ?? []));
           event.target.value = '';
         }}
       />

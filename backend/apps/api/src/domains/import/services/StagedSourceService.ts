@@ -56,6 +56,8 @@ export interface RegisterUploadInput {
   sizeBytes?: number | null;
   /** Override the TTL for this upload. Defaults to {@link UPLOAD_TTL_MS}. */
   ttlMs?: number;
+  /** A dropped folder is a directory unit; a zip or single file is a file. */
+  kind?: StagedSourceKind;
 }
 
 /**
@@ -110,7 +112,7 @@ export class StagedSourceService {
         origin: 'upload',
         dropId: input.dropId,
         sourcePath: input.sourcePath,
-        kind: 'file',
+        kind: input.kind ?? 'file',
         originalFilename: input.originalFilename ?? null,
         contentType: input.contentType ?? null,
         sizeBytes: input.sizeBytes ?? null,
