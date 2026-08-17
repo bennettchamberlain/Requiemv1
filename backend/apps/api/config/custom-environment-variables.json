@@ -173,6 +173,7 @@
     "insights.page": "ENABLE_INSIGHTS_PAGE",
     "chat.page": "ENABLE_CHAT_PAGE",
     "jobs.page": "ENABLE_JOBS_PAGE",
+    "import.page": "ENABLE_IMPORT_PAGE",
     "planning.enabled": "ENABLE_PLANNING",
     "planning.page": "ENABLE_PLANNING_PAGE",
     "planning.emptyState": "ENABLE_PLANNING_EMPTY_STATE",
