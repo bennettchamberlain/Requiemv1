@@ -1,5 +1,7 @@
+import { useState } from 'react';
+
 import { Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb, Button, Card, Skeleton } from '@ci/shadcn';
+import { Breadcrumb, Button, Card, Skeleton, ToggleGroup } from '@ci/shadcn';
 import { AlertTriangle, RefreshCcw } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
@@ -7,31 +9,19 @@ import { useFeatures } from '@/common/feature';
 import { PageContent } from '@/components/layout';
 import { Tag } from '@/components/Tag';
 
+import { ConversationChart, InsightCards, SocialChart, SpendChart, TimeChart } from './LifeCharts';
 import { groupSourcesByKind } from './sourceLabels';
+import { formatCount, formatDay } from './statsFormat';
+import { DEFAULT_STATS_RANGE, STATS_RANGE_LABELS, STATS_RANGES, type StatsRange } from './statsRange';
 import { useStatsService, type MemoryStats } from './useStatsService';
 
-/** Single-series magnitude bars use one theme chart hue; identity comes from
- * the row label, so no legend is needed. */
 const BAR_COLOR = 'var(--chart-2)';
-
-function formatCount(value: number): string {
-  return value.toLocaleString();
-}
-
-function formatDay(value: string | null): string | null {
-  if (!value) {
-    return null;
-  }
-
-  const parsed = new Date(value);
-
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
-}
 
 export function StatsPage() {
   usePageTitle('Stats - Companion Intelligence');
 
-  const { data, loading, error, refresh } = useStatsService();
+  const [range, setRange] = useState<StatsRange>(DEFAULT_STATS_RANGE);
+  const { data, loading, error, refresh } = useStatsService(range);
 
   return (
     <>
@@ -52,9 +42,14 @@ export function StatsPage() {
       </Portal.Slot>
 
       <PageContent>
-        {error && <ErrorNotice message={error} onRetry={refresh} />}
-        {!error && loading && <StatsSkeleton />}
-        {!error && !loading && data && <StatsBody stats={data} />}
+        {error && !data && <ErrorNotice message={error} onRetry={refresh} />}
+        {loading && !data && <StatsSkeleton />}
+        {data && (
+          <div className="flex flex-col gap-4">
+            {error && <ErrorNotice message={error} onRetry={refresh} />}
+            <StatsBody stats={data} range={range} onRangeChange={setRange} refreshing={loading} />
+          </div>
+        )}
       </PageContent>
     </>
   );
@@ -89,13 +84,54 @@ function StatsSkeleton() {
   );
 }
 
-function StatsBody({ stats }: { stats: MemoryStats }) {
+function StatsBody({
+  stats,
+  range,
+  onRangeChange,
+  refreshing,
+}: {
+  stats: MemoryStats;
+  range: StatsRange;
+  onRangeChange: (range: StatsRange) => void;
+  refreshing: boolean;
+}) {
   const { isFeatureEnabled } = useFeatures();
   const earliest = formatDay(stats.dateRange.earliest);
   const latest = formatDay(stats.dateRange.latest);
 
   return (
     <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-lg font-semibold">Life stats</h1>
+          <p className="text-sm text-muted-foreground">
+            Patterns in spend, time, and conversations for this window.
+            {refreshing ? ' Updating…' : ''}
+          </p>
+        </div>
+        <ToggleGroup
+          type="single"
+          value={range}
+          onValueChange={(value) => value && onRangeChange(value as StatsRange)}
+          className="justify-start"
+        >
+          {STATS_RANGES.map((key) => (
+            <ToggleGroup.Item key={key} value={key} className="text-xs" aria-label={STATS_RANGE_LABELS[key]}>
+              {STATS_RANGE_LABELS[key]}
+            </ToggleGroup.Item>
+          ))}
+        </ToggleGroup>
+      </div>
+
+      <InsightCards insights={stats.insights} />
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <SpendChart rows={stats.spend.rows} />
+        <TimeChart time={stats.time} />
+        <ConversationChart rows={stats.conversations.rows} />
+        <SocialChart rows={stats.social.rows} granularity={stats.social.granularity} />
+      </div>
+
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatTile label="Events" value={formatCount(stats.totals.events)} detail="Timeline entries" />
         <StatTile
@@ -127,6 +163,11 @@ function StatsBody({ stats }: { stats: MemoryStats }) {
           detail="Earliest → latest timeline event"
         />
       </div>
+
+      <BarListCard
+        title="Entities by type"
+        rows={stats.byEntityType.map((row) => ({ label: row.type, count: row.count }))}
+      />
 
       <BarListCard
         title="Entities by tag"
