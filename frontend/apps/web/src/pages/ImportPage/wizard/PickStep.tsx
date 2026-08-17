@@ -64,6 +64,10 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
                   .filter((at): at is string => at != null)
                   .sort()
                   .at(-1);
+                // Kinds wrap into extra columns as they accumulate — a second
+                // at five, a third at nine — so a rich bundle stays shallow
+                // without ever dropping a kind.
+                const chipColumns = item.objects.length > 8 ? 3 : item.objects.length > 4 ? 2 : 1;
 
                 return (
                   <li key={item.key}>
@@ -113,7 +117,25 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
                       </span>
 
                       {item.objects.length > 0 && (
-                        <span className="flex flex-col gap-1">
+                        // Filled column-first, so the vocabulary order reads
+                        // down each column and then across.
+                        <span
+                          className={
+                            chipColumns === 1
+                              ? 'flex flex-col gap-1'
+                              : cn(
+                                  'grid grid-flow-col gap-x-3 gap-y-1',
+                                  chipColumns === 2 ? 'grid-cols-2' : 'grid-cols-3',
+                                )
+                          }
+                          style={
+                            chipColumns === 1
+                              ? undefined
+                              : {
+                                  gridTemplateRows: `repeat(${Math.ceil(item.objects.length / chipColumns)}, auto)`,
+                                }
+                          }
+                        >
                           {item.objects.map((object) => (
                             <span
                               key={object.label}

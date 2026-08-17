@@ -118,6 +118,13 @@ export const ECOSYSTEM_ICONS: Record<string, ReactElement> = {
       <rect x="13" y="13" width="8" height="8" />
     </>,
   ),
+  amazon: glyph(
+    <>
+      <circle cx="9" cy="21" r="1" />
+      <circle cx="20" cy="21" r="1" />
+      <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+    </>,
+  ),
   messaging: glyph(
     <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />,
   ),
@@ -253,6 +260,11 @@ export const SERVICE_LOGO: Record<string, string> = {
   roblox: 'roblox.svg',
   steam: 'steam.svg',
   twitch: 'twitch.svg',
+  // Amazon — the members share the house mark; no per-service logos ship.
+  prime_video: 'amazon.svg',
+  audible: 'amazon.svg',
+  kindle_reading: 'amazon.svg',
+  amazon_music: 'amazon.svg',
   // Finance & shopping
   instacart: 'instacart.svg',
   walmart: 'walmart.svg',
@@ -286,6 +298,7 @@ export const ECOSYSTEM_LABELS: Record<string, string> = {
   google: 'Google',
   apple: 'Apple',
   meta: 'Meta',
+  amazon: 'Amazon',
   x: 'Twitter / X',
   music: 'Music',
   browser: 'Browsers',
@@ -307,6 +320,7 @@ export const ECOSYSTEM_ORDER = [
   'google',
   'apple',
   'meta',
+  'amazon',
   'x',
   'ai',
   'music',
@@ -334,6 +348,7 @@ export const PICKER_SECTIONS: ReadonlyArray<{
   { key: 'google', label: 'Google', icon: 'google', ecosystems: ['google'] },
   { key: 'apple', label: 'Apple', icon: 'apple', ecosystems: ['apple'] },
   { key: 'microsoft', label: 'Microsoft', icon: 'microsoft', ecosystems: ['microsoft'] },
+  { key: 'amazon', label: 'Amazon', icon: 'amazon', ecosystems: ['amazon'] },
   { key: 'ai', label: 'AI assistants', icon: 'ai', ecosystems: ['ai'] },
   { key: 'social', label: 'Social', icon: 'social', ecosystems: ['meta', 'x', 'social'] },
   { key: 'messaging', label: 'Messaging', icon: 'messaging', ecosystems: ['messaging'] },
@@ -453,6 +468,23 @@ export const BUNDLES: readonly Bundle[] = [
     members: ['facebook', 'instagram'],
     logo: 'meta.svg',
   },
+  {
+    id: 'amazon',
+    ecosystem: 'amazon',
+    title: 'Amazon (Privacy Central)',
+    blurb:
+      'One "Request All Your Data" archive covers your orders, Prime Video, Audible, Kindle reading, and Amazon Music. Each is also requestable on its own.',
+    url: 'https://www.amazon.com/hz/privacy-central/data-requests/preview.html',
+    steps: [
+      'Open Amazon Privacy Central (link below) and sign in.',
+      'Click "Request Your Data" and choose "Request All Your Data" — or a single category; a category export imports on its own too.',
+      'Confirm the request by email. A single-category export usually arrives within days; the full archive can take up to 30.',
+      'Download the zip from the email link.',
+      'Upload the zip here — every Amazon source inside it gets imported.',
+    ],
+    members: ['amazon', 'prime_video', 'audible', 'kindle_reading', 'amazon_music'],
+    logo: 'amazon.svg',
+  },
 ];
 
 export const BUNDLE_BY_ECO: Record<string, Bundle> = Object.fromEntries(
@@ -524,9 +556,6 @@ const OBJECT_ORDER: readonly string[] = Object.values(OBJECTS_BY_CATEGORY)
   .map((object) => object.label)
   .filter((label, index, all) => all.indexOf(label) === index);
 
-/** How many object rows a pick tile shows before it starts hiding them. */
-const MAX_OBJECTS = 4;
-
 /**
  * The kinds of thing importing this source puts in your memory.
  *
@@ -539,7 +568,7 @@ export function objectsFor(category: string | undefined): TrackedObject[] {
     return [];
   }
 
-  return [...(OBJECTS_BY_CATEGORY[category] ?? [])].slice(0, MAX_OBJECTS);
+  return [...(OBJECTS_BY_CATEGORY[category] ?? [])];
 }
 
 /** A bundle button covers several sources, so it claims the union of theirs. */
@@ -559,7 +588,7 @@ export function mergeObjects(all: readonly TrackedObject[][]): TrackedObject[] {
     }
   }
 
-  return merged.slice(0, MAX_OBJECTS);
+  return merged;
 }
 
 /** One toggle button in the pick grid: a bundle (`b:<id>`) or a service. */
