@@ -29,7 +29,9 @@ export class AnswerProvenanceType {
   coveragePct!: number;
 }
 
-@ObjectType({ description: 'A grounded catalog answer. The number is computed; the sentence is phrasing only.' })
+@ObjectType({
+  description: 'A grounded catalog answer. The number is computed; the sentence is phrasing only.',
+})
 export class DescriptiveAnswerType {
   @Field(() => String)
   key!: string;

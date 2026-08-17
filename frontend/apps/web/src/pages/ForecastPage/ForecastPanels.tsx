@@ -40,11 +40,7 @@ function topLabel(
   return top ?? null;
 }
 
-function baselineProbability(
-  historyDays: HistoryDay[],
-  bucketIndex: number,
-  label: string,
-): number | null {
+function baselineProbability(historyDays: HistoryDay[], bucketIndex: number, label: string): number | null {
   const samples = historyDays.flatMap((day) => {
     const bucket = day.buckets.find((item) => item.bucketIndex === bucketIndex);
     if (!bucket) {
@@ -90,7 +86,9 @@ export function NextUpPanel({
     <Card>
       <Card.Header>
         <Card.Title>Next up</Card.Title>
-        <Card.Description>Coming slots vs your usual baseline. Deltas hide until history exists.</Card.Description>
+        <Card.Description>
+          Coming slots vs your usual baseline. Deltas hide until history exists.
+        </Card.Description>
       </Card.Header>
       <Card.Content className="flex flex-col gap-2">
         {upcoming.map(({ bucket, top, l1, deltaPp }) => (
@@ -104,7 +102,9 @@ export function NextUpPanel({
                 <span className="text-muted-foreground"> · {l1.label.slice(0, 28)}</span>
               ) : null}
             </span>
-            <span className="tabular-nums text-muted-foreground">{Math.round((top?.probability ?? 0) * 100)}%</span>
+            <span className="tabular-nums text-muted-foreground">
+              {Math.round((top?.probability ?? 0) * 100)}%
+            </span>
             {deltaPp != null && (
               <span className="w-12 shrink-0 text-right tabular-nums text-muted-foreground">
                 {deltaPp > 0 ? '+' : ''}

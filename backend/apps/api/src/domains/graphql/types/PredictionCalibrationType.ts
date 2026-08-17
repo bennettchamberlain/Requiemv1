@@ -30,8 +30,7 @@ export class CalibrationScoreType {
 }
 
 @ObjectType({
-  description:
-    'Forecast self-consistency against Qwen-derived behavior labels — not ground-truth accuracy.',
+  description: 'Forecast self-consistency against Qwen-derived behavior labels — not ground-truth accuracy.',
 })
 export class PredictionCalibrationType {
   @Field(() => String)

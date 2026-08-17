@@ -47,10 +47,7 @@ export class DailyMetricsCron implements OnApplicationBootstrap {
     try {
       await this.dailyMetricsService.refreshAll(options.windowDays);
     } catch (err) {
-      this.logger.error(
-        'Daily metrics refresh failed',
-        err instanceof Error ? err : new Error(String(err)),
-      );
+      this.logger.error('Daily metrics refresh failed', err instanceof Error ? err : new Error(String(err)));
     } finally {
       this.running = false;
     }

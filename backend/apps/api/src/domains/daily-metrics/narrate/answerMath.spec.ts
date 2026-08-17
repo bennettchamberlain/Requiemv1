@@ -1,4 +1,10 @@
-import { METRIC_KEYS, type DailyMetrics, type MetricCoverage, type MetricKey, type MetricValues } from '../types';
+import {
+  METRIC_KEYS,
+  type DailyMetrics,
+  type MetricCoverage,
+  type MetricKey,
+  type MetricValues,
+} from '../types';
 
 import { aggregateMetric, applyScale, formatValue, meanCoverage } from './answerMath';
 

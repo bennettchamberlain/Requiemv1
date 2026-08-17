@@ -1,4 +1,10 @@
-import { METRIC_KEYS, type DailyMetrics, type MetricCoverage, type MetricKey, type MetricValues } from '../types';
+import {
+  METRIC_KEYS,
+  type DailyMetrics,
+  type MetricCoverage,
+  type MetricKey,
+  type MetricValues,
+} from '../types';
 
 import { pickMetricSurprise } from './metricSurprises';
 
@@ -27,7 +33,10 @@ function weekOf(metric: MetricKey, value: number): DailyMetrics[] {
 
 describe('pickMetricSurprise', () => {
   it('flags conversations well below the week average and injects both numbers', () => {
-    const surprise = pickMetricSurprise(day('2026-08-16', { n_conversations: 2 }), weekOf('n_conversations', 11));
+    const surprise = pickMetricSurprise(
+      day('2026-08-16', { n_conversations: 2 }),
+      weekOf('n_conversations', 11),
+    );
 
     expect(surprise?.id).toBe('conversations_low');
     expect(surprise?.label).toContain('2 conversations');
@@ -42,7 +51,10 @@ describe('pickMetricSurprise', () => {
   });
 
   it('flags a sentiment dip', () => {
-    const surprise = pickMetricSurprise(day('2026-08-16', { avg_sentiment: -0.4 }), weekOf('avg_sentiment', 0.2));
+    const surprise = pickMetricSurprise(
+      day('2026-08-16', { avg_sentiment: -0.4 }),
+      weekOf('avg_sentiment', 0.2),
+    );
 
     expect(surprise?.id).toBe('sentiment_dip');
     expect(surprise?.label).toContain('-0.4');
@@ -50,7 +62,10 @@ describe('pickMetricSurprise', () => {
   });
 
   it('flags a screen-time spike', () => {
-    const surprise = pickMetricSurprise(day('2026-08-16', { screen_minutes: 240 }), weekOf('screen_minutes', 80));
+    const surprise = pickMetricSurprise(
+      day('2026-08-16', { screen_minutes: 240 }),
+      weekOf('screen_minutes', 80),
+    );
 
     expect(surprise?.id).toBe('screen_spike');
     expect(surprise?.label).toContain('240 minutes');

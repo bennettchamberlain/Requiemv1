@@ -97,11 +97,7 @@ export class MetricForecastService {
     return { metric, status: 'OK', coverage, horizonDays, points };
   }
 
-  async forecastAll(
-    context: UserServiceContext,
-    days = 3,
-    timezone = 'UTC',
-  ): Promise<MetricForecast[]> {
+  async forecastAll(context: UserServiceContext, days = 3, timezone = 'UTC'): Promise<MetricForecast[]> {
     const out: MetricForecast[] = [];
     for (const metric of METRIC_KEYS) {
       out.push(await this.forecast(context, metric, days, { timezone }));

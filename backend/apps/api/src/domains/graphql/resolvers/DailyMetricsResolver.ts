@@ -21,7 +21,8 @@ export class DailyMetricsResolver {
   ) {}
 
   @Query(() => [DailyMetricsType], {
-    description: 'Precomputed daily feature-store rows for the signed-in user over an inclusive yyyy-MM-dd range.',
+    description:
+      'Precomputed daily feature-store rows for the signed-in user over an inclusive yyyy-MM-dd range.',
   })
   async dailyMetrics(
     @Context() context: RequestContext,

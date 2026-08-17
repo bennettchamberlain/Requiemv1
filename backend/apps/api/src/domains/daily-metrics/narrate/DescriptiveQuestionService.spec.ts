@@ -2,7 +2,13 @@ import type { UserServiceContext } from '@ci/common/context';
 
 import { shiftIso } from '../dateUtil';
 import type { DailyMetricsService } from '../services/DailyMetricsService';
-import { METRIC_KEYS, type DailyMetrics, type MetricCoverage, type MetricKey, type MetricValues } from '../types';
+import {
+  METRIC_KEYS,
+  type DailyMetrics,
+  type MetricCoverage,
+  type MetricKey,
+  type MetricValues,
+} from '../types';
 
 import { DescriptiveQuestionService } from './DescriptiveQuestionService';
 import { TemplateNarrator, type Narrator } from './Narrator';
