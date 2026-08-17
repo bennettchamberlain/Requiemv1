@@ -79,6 +79,8 @@ describe('LifeStatsService SQL contracts', () => {
     await service.channels('user-1', range);
 
     const [sql] = query.mock.calls[0];
-    expect(sql.replace(/\s+/g, ' ')).toContain("COALESCE(NULLIF(c.source_system, ''), c.communication_type::text, 'unknown')");
+    expect(sql.replace(/\s+/g, ' ')).toContain(
+      "COALESCE(NULLIF(c.source_system, ''), c.communication_type::text, 'unknown')",
+    );
   });
 });

@@ -47,7 +47,11 @@ export function labelChannel(source: string): string {
   return CHANNEL_LABELS[source.toLowerCase()] ?? source;
 }
 
-export function resolveTimeMode(timedEvents: number, consideredEvents: number, totalMinutes: number): 'hours' | 'counts' {
+export function resolveTimeMode(
+  timedEvents: number,
+  consideredEvents: number,
+  totalMinutes: number,
+): 'hours' | 'counts' {
   const coverage = consideredEvents > 0 ? timedEvents / consideredEvents : 0;
 
   return totalMinutes > 0 && coverage >= TIME_HOURS_COVERAGE ? 'hours' : 'counts';
