@@ -184,7 +184,8 @@
     "shared.search": "ENABLE_SHARED_SEARCH",
     "onboarding.preference.steps": "ENABLE_ONBOARDING_PREFERENCE_STEPS",
     "actions": "ENABLE_ACTIONS",
-    "smart.rotation": "ENABLE_SMART_ROTATION"
+    "smart.rotation": "ENABLE_SMART_ROTATION",
+    "ask": "ENABLE_ASK"
   },
   "environment": {
     "database.query.logging": "DATABASE_QUERY_LOGGING"

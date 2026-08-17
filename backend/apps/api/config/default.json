@@ -189,7 +189,8 @@
     "shared.search": true,
     "onboarding.preference.steps": false,
     "actions": true,
-    "smart.rotation": false
+    "smart.rotation": false,
+    "ask": false
   },
   "environment": {
     "database.query.logging": false
