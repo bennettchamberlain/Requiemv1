@@ -76,35 +76,26 @@ const EMPTY_PAGE_INFO = {
 };
 
 /**
- * The time a result is ordered by: events use startTime, timeline types use
- * time, and types with only a row timestamp (files, document chunks) fall back
- * to createdAt so they interleave into the browse timeline by upload time rather
- * than sinking to the epoch. Must stay in lockstep with getEntityTimestamp, or
- * a result's cursor position won't match its sort position.
+ * A result paired with the exact timestamp {@link SearchResolver.sortEntries}
+ * ordered it by.
+ *
+ * The cursor is minted from `sortTime` rather than re-derived from the GraphQL
+ * result, because the two are not the same thing: the sort reads the *domain
+ * entity* (getEntityTimestamp), while a GraphQL type only exposes the fields it
+ * declares. ContentType/PersonType/PlaceType/ConceptType declare no time field
+ * at all, so re-deriving produced an epoch cursor for a row the sort had placed
+ * by its 2026 createdAt. That epoch then travelled back as `afterTime` and
+ * windowed every sibling type's query to "before 1970", emptying the browse.
+ * Carrying the sort key forward makes the two identical by construction.
  */
-function timeOf(result: SearchResult): Date {
-  if ('time' in result && result.time) {
-    return new Date(result.time as string | Date);
-  }
-
-  if ('startTime' in result && result.startTime) {
-    return new Date(result.startTime as string | Date);
-  }
-
-  if ('createdAt' in result && result.createdAt) {
-    return new Date(result.createdAt as string | Date);
-  }
-
-  if ('answeredAt' in result && result.answeredAt) {
-    return new Date(result.answeredAt as string | Date);
-  }
-
-  return new Date(0);
+interface OrderedResult {
+  result: SearchResult;
+  sortTime: Date;
 }
 
 /** Opaque, time-ordered cursor: base64(`<iso-time>::<id>`). */
-function searchCursorOf(result: SearchResult): string {
-  return Buffer.from(`${timeOf(result).toISOString()}::${result.id}`).toString('base64');
+function searchCursorOf({ result, sortTime }: OrderedResult): string {
+  return Buffer.from(`${sortTime.toISOString()}::${result.id}`).toString('base64');
 }
 
 /**
@@ -403,17 +394,23 @@ export class SearchResolver {
     }
 
     const sorted = this.sortEntries(entries, input.sortBy, input.sortOrder, candidateSource);
-    const results = sorted.map((entry) => this.toSearchResult(entry));
+    // Carry each entry's sort key alongside its GraphQL result so the cursor is
+    // minted from the very value the sort used. `?? new Date(0)` mirrors
+    // sortEntries' own `?? 0` fallback for entries with no domain timestamp.
+    const ordered: OrderedResult[] = sorted.map((entry) => ({
+      result: this.toSearchResult(entry),
+      sortTime: SearchResolver.getEntityTimestamp(entry) ?? new Date(0),
+    }));
 
-    const { slice, pageInfo, totalCount } = Paginator.paginate(results, {
+    const { slice, pageInfo, totalCount } = Paginator.paginate(ordered, {
       getId: searchCursorOf,
       first,
       after: input.after ?? undefined,
     });
 
-    const edges = slice.map((result) => ({
-      node: result,
-      cursor: searchCursorOf(result),
+    const edges = slice.map((item) => ({
+      node: item.result,
+      cursor: searchCursorOf(item),
     }));
 
     // Tag suggestions ride alongside the entity results (the header search box
@@ -632,11 +629,17 @@ export class SearchResolver {
       fileChunkOptions.afterId = afterId;
     }
 
+    // Types ordered by their row timestamp (created_at, or answered_at for
+    // answers). They take the same keyset cursor as the timeline types above —
+    // omitting it made every page re-run the identical top-N query, so paging
+    // dead-ended after `first * FETCH_MULTIPLIER` rows no matter how many rows
+    // existed (the Paginator could only slice within that one fetched window).
     const createdAtOptions = {
       limit,
       order: 'DESC' as const,
       ...(startTime ? { startTime } : {}),
       ...(endTime ? { endTime } : {}),
+      ...(afterTime && afterId ? { afterTime, afterId } : {}),
     };
 
     const [
@@ -753,14 +756,22 @@ export class SearchResolver {
     });
   }
 
+  /**
+   * The single source of truth for "when" an entry happened: it drives both the
+   * timeline sort and — via {@link OrderedResult} — the cursor minted for it, so
+   * the two can never disagree. Whatever column a type is ordered by in SQL
+   * (start_time, time, created_at, answered_at) must be readable here, or that
+   * type's keyset window will not line up with its position in the merged page.
+   */
   private static getEntityTimestamp(entry: ResolvedEntity): Date | null {
     // File chunks carry a { chunk, file } join; read the chunk's own fields.
     const entity = (entry.type === 'file-chunk' ? entry.entity.chunk : entry.entity) as Record<
       string,
       unknown
     >;
-    // Files/chunks have no domain time/startTime — fall back to createdAt so the
-    // timeline sort matches timeOf() (the cursor) rather than sinking to epoch.
+    // Files/chunks/content have no domain time/startTime — fall back to the row
+    // timestamp so they interleave into the browse by upload time rather than
+    // sinking to the epoch.
     const value = entity.time ?? entity.startTime ?? entity.createdAt ?? entity.answeredAt ?? null;
 
     if (value instanceof Date) {

@@ -310,7 +310,14 @@ export class ItemService {
    */
   async getEntitiesForItems(
     context: ServiceContext,
-    options: { limit?: number; startTime?: Date; endTime?: Date; order?: 'ASC' | 'DESC' } = {},
+    options: {
+      limit?: number;
+      startTime?: Date;
+      endTime?: Date;
+      afterTime?: Date;
+      afterId?: string;
+      order?: 'ASC' | 'DESC';
+    } = {},
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
     let query = this.itemRepository
       .createQueryBuilder('item')
@@ -325,7 +332,17 @@ export class ItemService {
       query = query.andWhere('item.created_at <= :endTime', { endTime: options.endTime });
     }
 
-    query = query.orderBy('item.created_at', options.order ?? 'DESC');
+    // Composite keyset: page strictly past (afterTime, afterId) in
+    // (created_at DESC, object_id DESC) — see ContentService.getEntitiesForContents.
+    if (options.afterTime && options.afterId) {
+      query = query.andWhere(
+        '(item.created_at < :afterTime OR (item.created_at = :afterTime AND item.object_id < :afterId))',
+        { afterTime: options.afterTime, afterId: options.afterId },
+      );
+    }
+
+    // Deterministic tiebreak so same-timestamp rows page consistently.
+    query = query.orderBy('item.created_at', options.order ?? 'DESC').addOrderBy('item.object_id', 'DESC');
 
     if (options.limit) {
       query = query.limit(options.limit);
