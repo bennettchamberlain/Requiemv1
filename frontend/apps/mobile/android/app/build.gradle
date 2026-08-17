@@ -1,6 +1,16 @@
 apply plugin: 'com.android.application'
+apply plugin: 'org.jetbrains.kotlin.android'
 
 android {
+    // LiteRT-LM's Android artifact declares minSdk 31 in its own manifest. The app
+    // itself stays at minSdk 23 (rootProject.ext.minSdkVersion below) so pre-Android-12
+    // devices can still install and use everything except the LocalLLM plugin, which
+    // gates itself at runtime with Build.VERSION.SDK_INT (see LocalLlmPlugin.kt) — this
+    // override just tells the manifest merger that mismatch is intentional.
+    kotlinOptions {
+        // Matches capacitor.build.gradle's compileOptions (VERSION_21), applied below.
+        jvmTarget = '21'
+    }
     namespace "com.companionintelligence.app"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
@@ -40,6 +50,14 @@ dependencies {
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
+
+    // LocalLLM plugin (on-device chat completion): LiteRT-LM for inference, a tiny
+    // embedded HTTP server for the loopback OpenAI-compatible endpoint, Kotlin
+    // coroutines to bridge LiteRT-LM's callback API into the server's request handling.
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.2.21"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0"
+    implementation "com.google.ai.edge.litertlm:litertlm-android:0.15.0"
+    implementation "org.nanohttpd:nanohttpd:2.3.1"
 }
 
 apply from: 'capacitor.build.gradle'

@@ -59,6 +59,20 @@ interface LocalNotificationsPlugin {
   schedule(options: { notifications: LocalNotification[] }): Promise<unknown>;
 }
 
+/** Mirrors LocalLlmPlugin.kt / LocalLLMPlugin.swift's JS-facing method names exactly. */
+interface LocalLLMPlugin {
+  getStatus(): Promise<LocalLlmStatus>;
+  start(): Promise<LocalLlmServerInfo>;
+  stop(): Promise<void>;
+  loadModel(options: { path: string }): Promise<void>;
+  unloadModel(): Promise<void>;
+  downloadModel(options: { url: string; fileName: string }): Promise<{ path: string }>;
+  addListener(
+    eventName: 'downloadProgress',
+    listener: (event: LocalLlmDownloadProgress) => void,
+  ): Promise<PluginListenerHandle>;
+}
+
 interface CapacitorPlugins {
   SecureStoragePlugin?: SecureStoragePlugin;
   Browser?: BrowserPlugin;
@@ -66,6 +80,7 @@ interface CapacitorPlugins {
   SplashScreen?: SplashScreenPlugin;
   StatusBar?: StatusBarPlugin;
   LocalNotifications?: LocalNotificationsPlugin;
+  LocalLLM?: LocalLLMPlugin;
 }
 
 export interface LocalNotification {
@@ -74,6 +89,29 @@ export interface LocalNotification {
   body: string;
   /** Optional fire time; omit to deliver immediately. */
   schedule?: { at: Date };
+}
+
+export interface LocalLlmStatus {
+  /** False on devices below the plugin's platform floor (Android 12 / iOS 15). */
+  supported: boolean;
+  running: boolean;
+  modelLoaded: boolean;
+  modelPath?: string;
+  /** The sidecar's loopback origin, e.g. `http://127.0.0.1:54213`. Only set while running. */
+  baseUrl?: string;
+}
+
+export interface LocalLlmServerInfo {
+  baseUrl: string;
+  /** Per-launch bearer token — required on every sidecar request but `/api/health`. */
+  token: string;
+}
+
+export interface LocalLlmDownloadProgress {
+  fileName: string;
+  downloaded: number;
+  /** -1 when the server didn't send Content-Length. */
+  total: number;
 }
 
 const noop = () => {};
@@ -361,6 +399,98 @@ function hashString(value: string): number {
   }
 
   return hash | 0;
+}
+
+/** Whether the LocalLLM plugin is present (native platform, plugin registered). No-op → false on web. */
+export function isLocalLlmAvailable(): boolean {
+  return isNativePlatform() && plugins()?.LocalLLM != null;
+}
+
+/** Current sidecar status. Returns null on web / when the plugin is unavailable. */
+export async function getLocalLlmStatus(): Promise<LocalLlmStatus | null> {
+  const localLlm = plugins()?.LocalLLM;
+
+  if (!isNativePlatform() || !localLlm) {
+    return null;
+  }
+
+  return localLlm.getStatus();
+}
+
+/** Starts the loopback sidecar (idempotent — repeat calls return the same connection). */
+export async function startLocalLlm(): Promise<LocalLlmServerInfo | null> {
+  const localLlm = plugins()?.LocalLLM;
+
+  if (!isNativePlatform() || !localLlm) {
+    return null;
+  }
+
+  return localLlm.start();
+}
+
+/** Stops the sidecar and unloads any model. No-op on web. */
+export async function stopLocalLlm(): Promise<void> {
+  const localLlm = plugins()?.LocalLLM;
+
+  if (isNativePlatform() && localLlm) {
+    await localLlm.stop();
+  }
+}
+
+/** Loads a `.litertlm` model from an on-device absolute path. No-op → false on web. */
+export async function loadLocalLlmModel(path: string): Promise<boolean> {
+  const localLlm = plugins()?.LocalLLM;
+
+  if (!isNativePlatform() || !localLlm) {
+    return false;
+  }
+
+  await localLlm.loadModel({ path });
+
+  return true;
+}
+
+/** Unloads the currently loaded model, freeing memory. No-op on web. */
+export async function unloadLocalLlmModel(): Promise<void> {
+  const localLlm = plugins()?.LocalLLM;
+
+  if (isNativePlatform() && localLlm) {
+    await localLlm.unloadModel();
+  }
+}
+
+/**
+ * Downloads a `.litertlm` model file from `url` into app-private storage, reporting
+ * progress via the `downloadProgress` event (see `addLocalLlmDownloadProgressListener`).
+ * Returns the on-device path on success, null on web / when the plugin is unavailable.
+ */
+export async function downloadLocalLlmModel(url: string, fileName: string): Promise<string | null> {
+  const localLlm = plugins()?.LocalLLM;
+
+  if (!isNativePlatform() || !localLlm) {
+    return null;
+  }
+
+  const { path } = await localLlm.downloadModel({ url, fileName });
+
+  return path;
+}
+
+/** Subscribes to model-download progress. Returns an unsubscribe function; no-op on web. */
+export async function addLocalLlmDownloadProgressListener(
+  handler: (progress: LocalLlmDownloadProgress) => void,
+): Promise<() => void> {
+  const localLlm = plugins()?.LocalLLM;
+
+  if (!isNativePlatform() || !localLlm) {
+    return noop;
+  }
+
+  const handle = await localLlm.addListener('downloadProgress', handler);
+
+  return () => {
+    void handle.remove();
+  };
 }
 
 // Keep in sync with apiBase.ts `STORAGE_KEY`. Native App Intents read the base URL

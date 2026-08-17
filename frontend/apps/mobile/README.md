@@ -254,6 +254,31 @@ the Keychain rather than `localStorage`: `CompanionConfig` reads the API key
 server / signed in. (Execution is direct REST/GraphQL today; it can later target a
 deterministic Intent-Catalog execute endpoint when `feat/intent-catalog` lands.)
 
+**On-device chat completion (LocalLLM, early preview).** A `LocalLLM` Capacitor plugin
+(`android/.../localllm/`, `ios/App/App/LocalLLM/`) starts a loopback-only HTTP server
+(`127.0.0.1`, random port, per-launch bearer token) exposing an OpenAI-compatible
+`POST /v1/chat/completions` (SSE) backed by [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM)
+running fully on-device — no appliance connection needed. JS reaches it via
+`@ci/common`'s `startLocalLlm`/`loadLocalLlmModel`/etc. (`nativeBridge.ts`) plus a direct
+SSE client (`localLlm.ts`); try it from Settings → On-device model. This is a skeleton,
+not the full offline-mode design: no model download UI wired to a real source yet (push
+a `.litertlm` file onto the device and paste its path), no capability gating, no
+integration with the appliance-routed chat page.
+
+- **Android:** minSdk stays 23; the plugin itself gates on `Build.VERSION.SDK_INT >= 31`
+  (LiteRT-LM's AAR requires Android 12), so older devices keep the rest of the app.
+- **iOS:** the LiteRT-LM Swift package is vendored, not consumed via SPM — Apple blocks
+  an Xcode *target* from linking a *remote* SPM package that declares unsafe linker
+  flags (LiteRT-LM needs `-Xlinker -all_load`), so `ios/App/App/Vendor/LiteRTLM/` holds
+  the package's own Swift wrapper source directly, and `ios/App/Frameworks/` holds the
+  binary `CLiteRTLM.xcframework` it links against as a plain framework instead. **That
+  xcframework is 81MB and not committed** — run
+  `ios/App/Frameworks/fetch-clitertlm-xcframework.sh` once before building for iOS (also
+  needed in any CI job that builds this target).
+- Neither platform's Simulator/emulator reliably runs LiteRT-LM inference (confirmed via
+  an open upstream issue for iOS Simulator; untested on Android emulator) — test on a
+  real device.
+
 ## Not yet wired (later phases)
 
 - **Local-first sync (PowerSync client)** — the on-device SQLite layer. The server

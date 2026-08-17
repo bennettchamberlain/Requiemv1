@@ -1,9 +1,14 @@
 import {
   addAppUrlOpenListener,
   addBackButtonListener,
+  addLocalLlmDownloadProgressListener,
+  downloadLocalLlmModel,
   exitApp,
+  getLocalLlmStatus,
   hasNotificationPermission,
   hideSplashScreen,
+  isLocalLlmAvailable,
+  loadLocalLlmModel,
   openExternalUrl,
   requestNotificationPermission,
   scheduleLocalNotification,
@@ -11,6 +16,9 @@ import {
   secureStorageRemove,
   secureStorageSet,
   setStatusBarStyle,
+  startLocalLlm,
+  stopLocalLlm,
+  unloadLocalLlmModel,
 } from '@ci/common/src/utils/nativeBridge';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -353,5 +361,103 @@ describe('nativeBridge — local notifications', () => {
     expect(await hasNotificationPermission()).toBe(false);
     expect(await requestNotificationPermission()).toBe(false);
     expect(await scheduleLocalNotification('a', 'b')).toBe(false);
+  });
+});
+
+describe('nativeBridge — LocalLLM', () => {
+  function fakeLocalLlmWindow() {
+    const status = { supported: true, running: true, modelLoaded: false, baseUrl: 'http://127.0.0.1:54213' };
+    const getStatus = vi.fn(async () => status);
+    const start = vi.fn(async () => ({ baseUrl: 'http://127.0.0.1:54213', token: 'tok' }));
+    const stop = vi.fn(async () => {});
+    const loadModel = vi.fn(async () => {});
+    const unloadModel = vi.fn(async () => {});
+    const downloadModel = vi.fn(async () => ({ path: '/data/models/gemma.litertlm' }));
+    const remove = vi.fn();
+    let progressHandler: ((e: { fileName: string; downloaded: number; total: number }) => void) | undefined;
+    const addListener = vi.fn(async (_event: string, listener: typeof progressHandler) => {
+      progressHandler = listener;
+
+      return { remove };
+    });
+
+    const win = {
+      Capacitor: {
+        isNativePlatform: () => true,
+        Plugins: {
+          LocalLLM: { getStatus, start, stop, loadModel, unloadModel, downloadModel, addListener },
+        },
+      },
+    };
+
+    return { win, getStatus, start, stop, loadModel, unloadModel, downloadModel, remove, fireProgress: (e: { fileName: string; downloaded: number; total: number }) => progressHandler?.(e) };
+  }
+
+  it('isLocalLlmAvailable reflects plugin presence', () => {
+    setWindow({});
+    expect(isLocalLlmAvailable()).toBe(false);
+
+    const { win } = fakeLocalLlmWindow();
+    setWindow(win);
+    expect(isLocalLlmAvailable()).toBe(true);
+  });
+
+  it('getStatus, start, stop, loadModel, unloadModel go through the plugin', async () => {
+    const { win, getStatus, start, stop, loadModel, unloadModel } = fakeLocalLlmWindow();
+    setWindow(win);
+
+    expect(await getLocalLlmStatus()).toEqual({
+      supported: true,
+      running: true,
+      modelLoaded: false,
+      baseUrl: 'http://127.0.0.1:54213',
+    });
+    expect(getStatus).toHaveBeenCalledTimes(1);
+
+    expect(await startLocalLlm()).toEqual({ baseUrl: 'http://127.0.0.1:54213', token: 'tok' });
+    expect(start).toHaveBeenCalledTimes(1);
+
+    expect(await loadLocalLlmModel('/data/models/gemma.litertlm')).toBe(true);
+    expect(loadModel).toHaveBeenCalledWith({ path: '/data/models/gemma.litertlm' });
+
+    await unloadLocalLlmModel();
+    expect(unloadModel).toHaveBeenCalledTimes(1);
+
+    await stopLocalLlm();
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('downloadModel resolves the on-device path and streams progress', async () => {
+    const { win, downloadModel, remove, fireProgress } = fakeLocalLlmWindow();
+    setWindow(win);
+
+    const seen: Array<{ fileName: string; downloaded: number; total: number }> = [];
+    const unsubscribe = await addLocalLlmDownloadProgressListener((progress) => seen.push(progress));
+
+    fireProgress({ fileName: 'gemma.litertlm', downloaded: 512, total: 1024 });
+    expect(seen).toEqual([{ fileName: 'gemma.litertlm', downloaded: 512, total: 1024 }]);
+
+    unsubscribe();
+    expect(remove).toHaveBeenCalledTimes(1);
+
+    const path = await downloadLocalLlmModel('https://example.com/gemma.litertlm', 'gemma.litertlm');
+    expect(path).toBe('/data/models/gemma.litertlm');
+    expect(downloadModel).toHaveBeenCalledWith({ url: 'https://example.com/gemma.litertlm', fileName: 'gemma.litertlm' });
+  });
+
+  it('is inert on web: returns null/false and never throws', async () => {
+    setWindow({});
+
+    expect(await getLocalLlmStatus()).toBeNull();
+    expect(await startLocalLlm()).toBeNull();
+    expect(await loadLocalLlmModel('/x')).toBe(false);
+    expect(await downloadLocalLlmModel('https://example.com/x', 'x')).toBeNull();
+    await expect(stopLocalLlm()).resolves.toBeUndefined();
+    await expect(unloadLocalLlmModel()).resolves.toBeUndefined();
+
+    const handler = vi.fn();
+    const unsubscribe = await addLocalLlmDownloadProgressListener(handler);
+    unsubscribe();
+    expect(handler).not.toHaveBeenCalled();
   });
 });

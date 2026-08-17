@@ -13,6 +13,7 @@ import {
   MapPin,
   Palette,
   Shield,
+  Smartphone,
   User,
   UserRound,
   X,
@@ -33,6 +34,9 @@ const AboutYouSection = lazy(() =>
   import('./sections/AboutYouSection').then((m) => ({ default: m.AboutYouSection })),
 );
 const ModelSection = lazy(() => import('./sections/ModelSection').then((m) => ({ default: m.ModelSection })));
+const OnDeviceModelSection = lazy(() =>
+  import('./sections/OnDeviceModelSection').then((m) => ({ default: m.OnDeviceModelSection })),
+);
 const LocationSection = lazy(() =>
   import('./sections/LocationSection').then((m) => ({ default: m.LocationSection })),
 );
@@ -132,6 +136,11 @@ export function SettingsPage() {
                 Model
               </NavLink>
 
+              <NavLink to="/settings/on-device-model" state={{ backgroundLocation }} className={navLinkClass}>
+                <Smartphone className="h-4 w-4" />
+                On-device model
+              </NavLink>
+
               <NavLink to="/settings/location" state={{ backgroundLocation }} className={navLinkClass}>
                 <MapPin className="h-4 w-4" />
                 Location
@@ -185,6 +194,7 @@ export function SettingsPage() {
                     <Route path="autonomy" element={<AutonomySection />} />
                     <Route path="about-you" element={<AboutYouSection />} />
                     <Route path="model" element={<ModelSection />} />
+                    <Route path="on-device-model" element={<OnDeviceModelSection />} />
                     <Route path="location" element={<LocationSection />} />
                     <Route path="api-keys" element={<ApiKeysSection />} />
                     <Route path="oauth" element={<OAuthSection />} />

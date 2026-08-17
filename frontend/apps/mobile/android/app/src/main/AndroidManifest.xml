@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+    <!-- LiteRT-LM's AAR declares minSdk 31 in its own manifest; the app stays at
+         minSdkVersion 23 (variables.gradle) so pre-Android-12 devices still install
+         and use everything except the LocalLLM plugin, which the plugin itself gates
+         at runtime via Build.VERSION.SDK_INT (see LocalLlmPlugin.kt). -->
+    <uses-sdk tools:overrideLibrary="com.google.ai.edge.litertlm" />
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"

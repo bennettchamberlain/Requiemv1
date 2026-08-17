@@ -19,9 +19,14 @@ export {
   addAppStateListener,
   addAppUrlOpenListener,
   addBackButtonListener,
+  addLocalLlmDownloadProgressListener,
+  downloadLocalLlmModel,
   exitApp,
+  getLocalLlmStatus,
   hasNotificationPermission,
   hideSplashScreen,
+  isLocalLlmAvailable,
+  loadLocalLlmModel,
   openExternalUrl,
   requestNotificationPermission,
   scheduleLocalNotification,
@@ -29,9 +34,23 @@ export {
   secureStorageRemove,
   secureStorageSet,
   setStatusBarStyle,
+  startLocalLlm,
+  stopLocalLlm,
   syncNativeIntentConfig,
+  unloadLocalLlmModel,
 } from './src/utils/nativeBridge';
-export type { LocalNotification } from './src/utils/nativeBridge';
+export type {
+  LocalLlmDownloadProgress,
+  LocalLlmServerInfo,
+  LocalLlmStatus,
+  LocalNotification,
+} from './src/utils/nativeBridge';
+export {
+  getLocalLlmCompletion,
+  streamLocalLlmCompletion,
+  type LocalLlmChatMessage,
+  type LocalLlmConnection,
+} from './src/utils/localLlm';
 export {
   OIDC_NATIVE_CALLBACK_URL,
   OIDC_NATIVE_CLIENT_FLAG,

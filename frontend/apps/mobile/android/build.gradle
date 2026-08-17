@@ -9,6 +9,14 @@ buildscript {
     dependencies {
         classpath 'com.android.tools.build:gradle:8.7.2'
         classpath 'com.google.gms:google-services:4.4.2'
+        // Kotlin is required by the LocalLLM plugin (LiteRT-LM's Android API is
+        // Kotlin-first — coroutines, sealed classes). The rest of this module is
+        // Java; only android/app/src/main/java/.../localllm is Kotlin. Hardcoded
+        // (not sourced from variables.gradle) because buildscript{} resolves
+        // before `apply from: "variables.gradle"` runs, same as the AGP line above.
+        // 2.2.21, not 2.0.x: litertlm-android's Kotlin module metadata is version 2.3.0
+        // (kotlin-reflect/kotlin-stdlib 2.2.21 are already pulled in transitively by it).
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.2.21'
 
         // NOTE: Do not place your application dependencies here; they belong
         // in the individual module build.gradle files

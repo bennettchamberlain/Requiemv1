@@ -11,3 +11,7 @@ capacitor-cordova-ios-plugins
 # Generated Config files
 App/App/capacitor.config.json
 App/App/config.xml
+
+# LocalLLM plugin: 81MB binary, not committed — run
+# App/Frameworks/fetch-clitertlm-xcframework.sh before building.
+App/Frameworks/CLiteRTLM.xcframework
