@@ -18,23 +18,48 @@ import {
 import {
   useJobsDashboard,
   type ArchivedJobRecord,
+  type CronSchedule,
   type JobQueue,
   type JobRecord,
-  type JobSchedule,
   type JobsDashboardResponse,
 } from './useJobsDashboard';
 
 const palette = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)'];
 
+/** States describing work the appliance still intends to do. */
+const LIVE_JOB_STATES = new Set(['created', 'active', 'retry']);
+
+/**
+ * pg-boss copies a job here once it exhausts its retries — in state `created`,
+ * which is why every "pending work" view has to exclude it by name.
+ */
+const DEAD_LETTER_QUEUE = 'dead-letter';
+
 export function JobsPage() {
   usePageTitle('Jobs - Companion Intelligence');
 
-  const { data, loading, error, refresh } = useJobsDashboard();
+  const { data, loading, error, staleSince, updatedAt, refresh } = useJobsDashboard();
 
   const jobs = data?.jobs ?? [];
   const archive = data?.archive ?? [];
 
-  const activeJobs = useMemo(() => jobs.filter((job) => job.state !== 'completed'), [jobs]);
+  // `created`, `active` and `retry` are the only states describing work the
+  // appliance still intends to do. The previous filter was `!== 'completed'`,
+  // which swept `failed` and `cancelled` jobs into a column headed "Jobs waiting
+  // to run or currently executing" — so a queue full of permanently failed jobs
+  // read as a busy one. Dead letters are excluded outright: pg-boss inserts them
+  // in state `created`, and they would otherwise dominate this column.
+  const activeJobs = useMemo(
+    () => jobs.filter((job) => LIVE_JOB_STATES.has(job.state) && job.queue !== DEAD_LETTER_QUEUE),
+    [jobs],
+  );
+
+  // Failures, from both directions: jobs that failed on their own queue, and the
+  // copies pg-boss parked on the dead-letter queue after the retries ran out.
+  const failedJobs = useMemo(
+    () => jobs.filter((job) => job.state === 'failed' || job.queue === DEAD_LETTER_QUEUE),
+    [jobs],
+  );
 
   const completedJobs = useMemo<ArchivedJobRecord[]>(() => {
     const archiveIds = new Set(archive.map((item) => item.id));
@@ -105,6 +130,8 @@ export function JobsPage() {
           <SummaryCard
             loading={loading}
             error={error}
+            staleSince={staleSince}
+            updatedAt={updatedAt}
             activeDistribution={activeDistribution}
             archiveDistribution={archiveDistribution}
             queueDistribution={data?.queueDistribution ?? []}
@@ -116,8 +143,9 @@ export function JobsPage() {
           <ColumnsGrid
             loading={loading}
             activeJobs={activeJobs}
+            failedJobs={failedJobs}
             completed={completedJobs}
-            schedules={data?.schedules ?? []}
+            crons={data?.crons ?? []}
             queues={data?.queues ?? []}
           />
         </div>
@@ -144,6 +172,8 @@ type SummaryCardProps = {
   }>;
   queueDistribution: ReadonlyArray<{ readonly queue: string; readonly count: number }>;
   smartRotationDistribution: ReadonlyArray<{ readonly workType: string; readonly count: number }>;
+  staleSince: Date | null;
+  updatedAt: Date | null;
   onRefresh: () => void;
 };
 
@@ -155,16 +185,31 @@ function SummaryCard({
   archiveDistribution,
   queueDistribution,
   smartRotationDistribution,
+  staleSince,
+  updatedAt,
   onRefresh,
 }: SummaryCardProps) {
   const summaryItems = useMemo(
     () => [
+      // "Pending" now means what it says. It used to include the dead-letter
+      // queue, whose jobs sit in state `created` — so on a real appliance 1,191
+      // jobs that had already given up were reported as waiting work, and the
+      // same 1,191 were counted again under "Failed".
       { label: 'Pending', value: summary?.pending ?? 0 },
       { label: 'Running', value: summary?.active ?? 0 },
-      { label: 'Completed (lifetime)', value: summary?.completed ?? 0 },
+      { label: 'Retrying', value: summary?.retry ?? 0 },
+      { label: 'Completed', value: summary?.completed ?? 0 },
       { label: 'Failed', value: summary?.failed ?? 0 },
+      { label: 'Dead-lettered', value: summary?.deadLettered ?? 0 },
     ],
-    [summary?.pending, summary?.active, summary?.completed, summary?.failed],
+    [
+      summary?.pending,
+      summary?.active,
+      summary?.retry,
+      summary?.completed,
+      summary?.failed,
+      summary?.deadLettered,
+    ],
   );
 
   return (
@@ -172,18 +217,24 @@ function SummaryCard({
       <Card.Header className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
           <Card.Title className="text-xl">Queue Activity</Card.Title>
-          <Card.Description>Current job workload and recent completions</Card.Description>
+          <Card.Description>
+            {updatedAt ? `Updated ${formatTimestamp(updatedAt.toISOString())}` : 'Current job workload'}
+          </Card.Description>
         </div>
         <Button variant="outline" size="sm" onClick={onRefresh} className="w-full md:w-auto">
           <RefreshCcw className="mr-2 h-4 w-4" /> Refresh
         </Button>
       </Card.Header>
       <Card.Content className="space-y-4">
-        {error ? <ErrorBanner message={error} /> : null}
+        {staleSince ? (
+          <StaleBanner since={staleSince} message={error} />
+        ) : error ? (
+          <ErrorBanner message={error} />
+        ) : null}
         {loading && !summary ? (
           <Skeleton className="h-24 w-full" />
         ) : (
-          <div className="grid gap-3 md:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
             {summaryItems.map((item) => (
               <StatTile key={item.label} label={item.label} value={item.value} />
             ))}
@@ -252,40 +303,53 @@ function SummaryCard({
 type ColumnsGridProps = {
   loading: boolean;
   activeJobs: readonly JobRecord[];
+  failedJobs: readonly JobRecord[];
   completed: readonly ArchivedJobRecord[];
-  schedules: readonly JobSchedule[];
+  crons: readonly CronSchedule[];
   queues: readonly JobQueue[];
 };
 
-function ColumnsGrid({ loading, activeJobs, completed, schedules, queues }: ColumnsGridProps) {
+function ColumnsGrid({ loading, activeJobs, failedJobs, completed, crons, queues }: ColumnsGridProps) {
   return (
-    <div className="grid gap-4 xl:grid-cols-4">
+    <div className="grid gap-4 xl:grid-cols-5">
       <DataColumn
         title="Active Jobs"
-        description="Jobs waiting to run or currently executing"
+        description="Queued, running, or awaiting retry"
         loading={loading}
         items={activeJobs}
+        emptyMessage="Nothing queued — the appliance is idle."
+        renderItem={(job) => <JobCard key={job.id} job={job} />}
+      />
+      <DataColumn
+        title="Failures"
+        description="Failed jobs and dead letters — expand one for its error"
+        loading={loading}
+        items={failedJobs}
+        emptyMessage="No failures. "
         renderItem={(job) => <JobCard key={job.id} job={job} />}
       />
       <DataColumn
         title="Completed Jobs"
-        description="Recently completed or failed jobs (including unarchived completions)"
+        description="Recently completed (including unarchived completions)"
         loading={loading}
         items={completed}
+        emptyMessage="Nothing has completed recently."
         renderItem={(job) => <ArchivedJobCard key={job.id} job={job} />}
       />
       <DataColumn
         title="Schedules"
-        description="Recurring system jobs"
+        description="Recurring jobs registered in this process"
         loading={loading}
-        items={schedules}
-        renderItem={(schedule) => <ScheduleCard key={schedule.name} schedule={schedule} />}
+        items={crons}
+        emptyMessage="No recurring jobs are registered here."
+        renderItem={(cron) => <CronCard key={cron.name} cron={cron} />}
       />
       <DataColumn
         title="Queues"
         description="Queue configuration and policies"
         loading={loading}
         items={queues}
+        emptyMessage="No queues have been created yet."
         renderItem={(queue) => <QueueCard key={queue.name} queue={queue} />}
       />
     </div>
@@ -297,10 +361,11 @@ type DataColumnProps<T> = {
   description: string;
   loading: boolean;
   items: readonly T[];
+  emptyMessage?: string;
   renderItem: (item: T) => React.ReactNode;
 };
 
-function DataColumn<T>({ title, description, loading, items, renderItem }: DataColumnProps<T>) {
+function DataColumn<T>({ title, description, loading, items, emptyMessage, renderItem }: DataColumnProps<T>) {
   return (
     <Card className="flex h-full flex-col">
       <Card.Header>
@@ -315,7 +380,9 @@ function DataColumn<T>({ title, description, loading, items, renderItem }: DataC
             {items.map((item) => renderItem(item))}
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">No data available.</p>
+          // "No data available" reads as a fetch problem. Each column says what
+          // its own emptiness means instead — an idle queue is good news.
+          <p className="text-sm text-muted-foreground">{emptyMessage ?? 'No data available.'}</p>
         )}
       </Card.Content>
     </Card>
@@ -354,8 +421,91 @@ function JobCard({ job }: JobCardProps) {
         {job.completedOn ? <KeyValue label="Completed" value={formatTimestamp(job.completedOn)} /> : null}
         <KeyValue label="Retries" value={`${job.retryCount}/${job.retryLimit}`} />
       </dl>
+      <JobFailureDetail job={job} />
     </div>
   );
+}
+
+/**
+ * Why a job failed.
+ *
+ * The API has always sent this: `JobMonitorService` selects `pgboss.job.output`,
+ * the worker writes `{ message, stack, failedAt }` into it on every failure, and
+ * the DTO carries it all the way to the browser — where the page dropped it on
+ * the floor. So the dashboard could tell an operator that 1,191 jobs had failed
+ * and nothing whatsoever about why, while the answer sat in memory one property
+ * away. On the appliance this was written against, 628 of those failures were a
+ * single missing binary ("Cannot find ffmpeg") and the rest were two more
+ * one-line causes.
+ *
+ * Collapsed by default — the stack traces are long and most jobs never fail —
+ * and rendered with `<details>` so it costs no state and stays keyboard- and
+ * screen-reader-navigable for free.
+ */
+function JobFailureDetail({ job }: { job: JobRecord }) {
+  const failure = readFailure(job.output);
+
+  if (!failure) {
+    return null;
+  }
+
+  return (
+    <details className="mt-2 rounded-md border border-destructive/30 bg-destructive/5">
+      <summary className="cursor-pointer list-none px-2 py-1.5 text-xs font-medium text-destructive marker:hidden">
+        <span className="inline-flex items-center gap-1.5">
+          <AlertTriangle aria-hidden className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate" title={failure.message}>
+            {failure.message}
+          </span>
+        </span>
+      </summary>
+      <div className="space-y-2 border-t border-destructive/20 px-2 py-2">
+        {failure.failedAt ? (
+          <dl className="text-xs text-muted-foreground">
+            <KeyValue label="Failed at" value={formatTimestamp(failure.failedAt)} />
+          </dl>
+        ) : null}
+        {failure.stack ? (
+          <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/60 p-2 text-[11px] leading-snug text-muted-foreground">
+            {failure.stack}
+          </pre>
+        ) : null}
+      </div>
+    </details>
+  );
+}
+
+type JobFailure = {
+  message: string;
+  stack?: string;
+  failedAt?: string;
+};
+
+/**
+ * Pull a readable failure out of a job's `output`.
+ *
+ * The worker writes `{ message, stack, failedAt }`, but `output` is an untyped
+ * jsonb column that also holds deliberate success payloads from deferred
+ * completions, and older rows predate the current shape. Anything without a
+ * usable message is treated as "not a failure" rather than rendered as `[object
+ * Object]`.
+ */
+function readFailure(output: Record<string, unknown> | null): JobFailure | null {
+  if (!output || typeof output !== 'object') {
+    return null;
+  }
+
+  const message = typeof output['message'] === 'string' ? output['message'].trim() : '';
+
+  if (!message) {
+    return null;
+  }
+
+  return {
+    message,
+    stack: typeof output['stack'] === 'string' ? output['stack'] : undefined,
+    failedAt: typeof output['failedAt'] === 'string' ? output['failedAt'] : undefined,
+  };
 }
 
 type ArchivedJobCardProps = {
@@ -392,30 +542,40 @@ function ArchivedJobCard({ job }: ArchivedJobCardProps) {
         {job.deadLetter ? <KeyValue label="Dead letter" value={job.deadLetter} /> : null}
         <KeyValue label="Retries" value={`${job.retryCount}/${job.retryLimit}`} />
       </dl>
+      <JobFailureDetail job={job} />
     </div>
   );
 }
 
-type ScheduleCardProps = {
-  schedule: JobSchedule;
+type CronCardProps = {
+  cron: CronSchedule;
 };
 
-function ScheduleCard({ schedule }: ScheduleCardProps) {
+/**
+ * A recurring job as this appliance actually schedules them.
+ *
+ * The column this replaces rendered `pgboss.schedule`, which nothing in the
+ * codebase writes — no call to `boss.schedule()` exists — so it showed an empty
+ * list on every appliance ever shipped while ~34 NestJS `@Cron` methods ran
+ * beside it, invisible. These come from Nest's live `SchedulerRegistry`, so the
+ * list is what is registered in this process, `role` gating included.
+ */
+function CronCard({ cron }: CronCardProps) {
   return (
     <div className="rounded-lg border border-border/60 bg-muted/30 p-3 text-sm">
       <div className="flex items-center justify-between gap-2">
-        <span className="font-medium truncate" title={schedule.name}>
-          {schedule.name}
+        <span className="min-w-0 flex-1 font-medium truncate" title={cron.name}>
+          {cron.name}
         </span>
-        <Badge variant="outline" className="text-xs uppercase">
-          cron
+        <Badge variant={cron.running ? 'outline' : 'secondary'} className="shrink-0 text-xs uppercase">
+          {cron.running ? 'scheduled' : 'stopped'}
         </Badge>
       </div>
       <dl className="mt-2 space-y-1 text-xs text-muted-foreground">
-        <KeyValue label="Expression" value={schedule.cron} />
-        {schedule.timezone ? <KeyValue label="Time zone" value={schedule.timezone} /> : null}
-        <KeyValue label="Created" value={formatTimestamp(schedule.createdOn)} />
-        <KeyValue label="Updated" value={formatTimestamp(schedule.updatedOn)} />
+        <KeyValue label="Expression" value={cron.cron || '—'} />
+        {cron.timezone ? <KeyValue label="Time zone" value={cron.timezone} /> : null}
+        <KeyValue label="Next run" value={cron.nextRunAt ? formatTimestamp(cron.nextRunAt) : '—'} />
+        <KeyValue label="Last run" value={cron.lastRunAt ? formatTimestamp(cron.lastRunAt) : 'not yet'} />
       </dl>
     </div>
   );
@@ -488,9 +648,35 @@ type ErrorBannerProps = {
 
 function ErrorBanner({ message }: ErrorBannerProps) {
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-      <AlertTriangle className="h-4 w-4" />
-      <span className="truncate">{message}</span>
+    <div
+      role="alert"
+      className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+    >
+      <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
+      <span className="min-w-0 break-words">{message}</span>
+    </div>
+  );
+}
+
+/**
+ * Shown when refreshes are failing but the last good data is still on screen.
+ *
+ * Without this the page kept auto-refreshing and silently kept displaying
+ * whatever it had last received, so a dead API looked identical to a quiet
+ * queue. An operator watching a backlog drain could not tell "nothing changed"
+ * from "nothing is being reported".
+ */
+function StaleBanner({ since, message }: { since: Date; message: string | null }) {
+  return (
+    <div
+      role="status"
+      className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400"
+    >
+      <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
+      <span className="min-w-0 break-words">
+        Showing data from {formatTimestamp(since.toISOString())} — refreshes have been failing since then
+        {message ? ` (${message})` : ''}.
+      </span>
     </div>
   );
 }

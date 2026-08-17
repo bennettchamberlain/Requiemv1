@@ -10,7 +10,7 @@ import { LoggerService } from '@ci/common/logging';
 import { serves } from '@ci/common/roles';
 import config from '@ci/configuration';
 
-import { DEFAULT_JOB_PRIORITY } from '../constants';
+import { DEAD_LETTER_QUEUE, DEFAULT_JOB_PRIORITY } from '../constants';
 import { EventDefinitionRegistry, EventListenerRegistry } from '../event-registration';
 import { type EventPayloads } from '../event-registry';
 import { EventRegistry } from '../registry';
@@ -20,6 +20,14 @@ import { EventService } from './EventService';
 
 interface EventData {
   name: string;
+
+  /**
+   * Set by senders that act on behalf of a user. Read back out in
+   * {@link PGBossEventService.executeJob} to restore the request context the
+   * job was enqueued under, so a listener's `ContextService.getUserId()` matches
+   * the user whose action created the work.
+   */
+  userId?: string;
 }
 
 // Rows per pg-boss insert() call in sendMany(). Bounds the single INSERT's
@@ -34,6 +42,11 @@ const PGBOSS_INSERT_CHUNK = 2000;
 // Arbitrary value; must only be unique among this codebase's advisory locks
 // (the test-side schemaLock uses 728104512).
 const QUEUE_PROVISION_LOCK_KEY = 804_551_297;
+
+// How long a dead-lettered job stays inspectable. 30 days, in minutes, because
+// minutes is the only retention unit pg-boss v10 persists on a queue row (see
+// the createQueue call in onModuleInit).
+const DEAD_LETTER_RETENTION_MINUTES = 30 * 24 * 60;
 
 @Injectable()
 export class PGBossEventService extends EventService implements OnModuleInit, OnModuleDestroy {
@@ -56,7 +69,11 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
   // (payload + failure output preserved) instead of vanishing when pgboss deletes
   // failed jobs after deleteAfterHours — so a failure stays inspectable. Nothing
   // works this queue, so entries accumulate; it carries a long retention.
-  private static readonly DEAD_LETTER_QUEUE = 'dead-letter';
+  //
+  // The name lives in `../constants` rather than here because JobMonitorService
+  // has to exclude this queue from every "pending work" aggregate, and two
+  // copies of the string is exactly how that exclusion silently stops matching.
+  private static readonly DEAD_LETTER_QUEUE = DEAD_LETTER_QUEUE;
 
   // Bulk-import escape hatch: even with per-event routing, one imported row can
   // legitimately fan out to several enrichment queues. During a bulk load, set
@@ -155,9 +172,25 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
       // Create the shared dead-letter queue FIRST so the work queues can reference
       // it. Long retention so exhausted-retry jobs stay inspectable; no worker
       // consumes it (it is not a registered listener queue), so entries accumulate.
+      //
+      // retentionMinutes, NOT retentionDays: pg-boss v10 only ever writes the
+      // MINUTES form to the queue row. `applyRetentionConfig` (attorney.js)
+      // folds retentionDays into a `keepUntil` interval string, `createQueue`
+      // (manager.js) then destructures `retentionMinutes` alone, and the
+      // `create_queue` PL/pgSQL reads `options->>'retentionMinutes'` — so
+      // `retentionDays: 30` was dropped on the floor and the live queue row
+      // carried `retention_minutes = NULL`. Same 30 days, expressed in the one
+      // unit that survives the trip.
       await this.boss.createQueue(PGBossEventService.DEAD_LETTER_QUEUE, {
         name: PGBossEventService.DEAD_LETTER_QUEUE,
-        retentionDays: 30,
+        retentionMinutes: DEAD_LETTER_RETENTION_MINUTES,
+      });
+
+      // createQueue is a no-op when the queue already exists, so a DLQ created
+      // before this fix keeps its NULL retention forever without this line.
+      await this.boss.updateQueue(PGBossEventService.DEAD_LETTER_QUEUE, {
+        name: PGBossEventService.DEAD_LETTER_QUEUE,
+        retentionMinutes: DEAD_LETTER_RETENTION_MINUTES,
       });
 
       // Create all discovered queues, routing exhausted-retry jobs to the DLQ and
@@ -450,10 +483,30 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
         continue;
       }
 
-      const jobs = await this.boss.fetch<EventData>(queueName, {
-        includeMetadata: true,
-        batchSize: Math.min(available, this.fetchBatchSize),
-      });
+      let jobs: JobWithMetadata<EventData>[];
+
+      try {
+        jobs = await this.boss.fetch<EventData>(queueName, {
+          includeMetadata: true,
+          batchSize: Math.min(available, this.fetchBatchSize),
+        });
+      } catch (err: unknown) {
+        // A fetch failure is transient by nature — a dropped connection, a
+        // failover, a statement timeout under load. Unguarded, it escaped the
+        // `while` loop and rejected the promise sitting in `stopTasks`, which
+        // nothing awaits until shutdown: an unhandled rejection that takes the
+        // whole process down AND, if it did not, would leave this queue with no
+        // worker for the rest of the process's life while every other queue kept
+        // running. Log, back off, and go round again.
+        this.logger.error(
+          `Failed to fetch jobs from queue ${queueName}; retrying after backoff`,
+          err instanceof Error ? err : new Error(String(err)),
+        );
+
+        await new Promise((resolve) => setTimeout(resolve, this.backoffWhenEmpty));
+
+        continue;
+      }
 
       if (jobs.length === 0) {
         await new Promise((resolve) => setTimeout(resolve, this.backoffWhenEmpty));
@@ -464,34 +517,99 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
       for (const job of jobs) {
         // Hold a per-queue slot for the whole job, and a global slot for the work
         // itself — so total in-flight respects both the per-queue and global caps.
-        perQueueSemaphore(async () => {
-          await this.globalSemaphore(async () => {
-            try {
-              const outcome = await this.executeJob(queueName, job);
-
-              // Deferred jobs stay `active` in pg-boss: an out-of-band caller
-              // (webhook) completes/fails them by id, or the queue's
-              // expireInSeconds elapses and pg-boss retries.
-              if (outcome !== 'deferred') {
-                await this.boss.complete(queueName, job.id);
-              }
-            } catch (err) {
-              this.logger.error(
-                `Failed to complete job in queue ${queueName}`,
-                err instanceof Error ? err : new Error(String(err)),
-              );
-              // Persist the failure reason in the job's output so it survives in
-              // pgboss.job — without this arg the error is lost and a failed job
-              // is undiagnosable after the fact.
-              await this.boss.fail(queueName, job.id, {
-                message: err instanceof Error ? err.message : String(err),
-                stack: err instanceof Error ? err.stack : undefined,
-                failedAt: new Date().toISOString(),
-              });
-            }
-          });
+        //
+        // Deliberately not awaited: the loop's job is to keep fetching while
+        // these run. But an un-awaited promise that rejects is an unhandled
+        // rejection, so the chain below must be total — `runJob` catches
+        // everything it can, and this `.catch` is the backstop for anything it
+        // cannot (a semaphore that throws, an error thrown by the logger itself).
+        void perQueueSemaphore(() => this.runJob(queueName, job)).catch((err: unknown) => {
+          this.logger.error(
+            `Job supervision failed on queue ${queueName}`,
+            err instanceof Error ? err : new Error(String(err)),
+          );
         });
       }
+    }
+  }
+
+  /**
+   * Run one fetched job to a terminal outcome.
+   *
+   * The completion bookkeeping is deliberately NOT inside the same `try` as the
+   * listener. It used to be, and that conflated two unrelated failures: when
+   * `boss.complete()` threw on a job whose listener had already SUCCEEDED, the
+   * shared catch called `boss.fail()` — burning a retry on completed work and,
+   * once the retries ran out, dead-lettering a job that had done its job. A
+   * transient error on the acknowledgement round trip became duplicated work.
+   *
+   * Split, the two failures get the treatment each deserves: a listener failure
+   * fails the job (pg-boss retries, then dead-letters), while a completion
+   * failure is only logged. The job stays `active` and pg-boss's own expiration
+   * re-queues it on schedule — at-least-once, which is what a queue promises
+   * anyway, instead of a false negative that looks like a bug in the handler.
+   */
+  private async runJob(queueName: string, job: JobWithMetadata<EventData>): Promise<void> {
+    await this.globalSemaphore(async () => {
+      let outcome: 'completed' | 'deferred';
+
+      try {
+        outcome = await this.executeJob(queueName, job);
+      } catch (err: unknown) {
+        // Persist the failure reason in the job's output so it survives in
+        // pgboss.job — without this arg the error is lost and a failed job
+        // is undiagnosable after the fact.
+        await this.failJobQuietly(queueName, job.id, err);
+
+        return;
+      }
+
+      // Deferred jobs stay `active` in pg-boss: an out-of-band caller
+      // (webhook) completes/fails them by id, or the queue's
+      // expireInSeconds elapses and pg-boss retries.
+      if (outcome === 'deferred') {
+        return;
+      }
+
+      try {
+        await this.boss.complete(queueName, job.id);
+      } catch (err: unknown) {
+        this.logger.error(
+          `Job ${job.id} on queue ${queueName} succeeded but could not be marked complete; ` +
+            `it will be retried when its lease expires`,
+          err instanceof Error ? err : new Error(String(err)),
+        );
+      }
+    });
+  }
+
+  /**
+   * Mark a job failed, recording why, and never throw while doing it.
+   *
+   * `boss.fail()` is itself a database round trip and can fail for the same
+   * reasons the job did. When that happened inside the worker's un-awaited
+   * callback it became an unhandled rejection — a job failure escalating into a
+   * process exit. The job is left `active` here and pg-boss's expiration will
+   * retry it, which is the same outcome as a crash, minus the crash.
+   */
+  private async failJobQuietly(queueName: string, jobId: string, reason: unknown): Promise<void> {
+    this.logger.error(
+      `Job ${jobId} failed on queue ${queueName}`,
+      reason instanceof Error ? reason : new Error(String(reason)),
+    );
+
+    try {
+      await this.boss.fail(queueName, jobId, {
+        message: reason instanceof Error ? reason.message : String(reason),
+        stack: reason instanceof Error ? reason.stack : undefined,
+        failedAt: new Date().toISOString(),
+      });
+    } catch (err: unknown) {
+      this.logger.error(
+        `Could not record the failure of job ${jobId} on queue ${queueName}; ` +
+          `it will be retried when its lease expires`,
+        err instanceof Error ? err : new Error(String(err)),
+      );
     }
   }
 
@@ -546,7 +664,15 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
     queue: string,
     job: JobWithMetadata<EventData>,
   ): Promise<'completed' | 'deferred'> {
-    const userId = (job as { userId?: string }).userId;
+    // The user id travels in the job PAYLOAD, not on the job row: pgboss.job has
+    // no userId column (its columns are id, name, priority, data, state,
+    // retry_*, start_after, started_on, singleton_*, expire_in, created_on,
+    // completed_on, keep_until, output, dead_letter, policy). This used to read
+    // `(job as { userId?: string }).userId`, i.e. a field that cannot exist, so
+    // ContextService.getUserId() returned null inside EVERY background job —
+    // measured on a live appliance as 36,923 of 41,580 queued jobs carrying a
+    // `data->>'userId'` that never reached the context they were executed in.
+    const userId = job.data?.userId;
 
     return ContextService.run({ traceId: job.id, userId }, () => {
       return new Promise<'completed' | 'deferred'>((resolve, reject) => {

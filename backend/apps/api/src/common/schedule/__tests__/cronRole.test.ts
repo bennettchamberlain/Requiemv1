@@ -1,5 +1,6 @@
 import { SCHEDULE_CRON_OPTIONS } from '@nestjs/schedule/dist/schedule.constants';
 
+import { ContextService } from '@ci/common/context';
 import config from '@ci/configuration';
 
 import { Cron } from '../decorators/Cron';
@@ -42,5 +43,52 @@ describe('Cron role gating', () => {
     expect(defineUnderRole('web')).toBe(true);
     expect(defineUnderRole('all')).toBe(true);
     expect(defineUnderRole('worker')).toBe(false);
+  });
+});
+
+/**
+ * Nest already catches a rejecting tick one frame further out
+ * (`SchedulerRegistry.wrapFunctionInTryCatchBlocks`), but it logs the error with
+ * no schedule name and no traceId. Catching here — where the class, method and
+ * traceId are in scope — is what makes a cron failure diagnosable. The observable
+ * contract is that the decorated method resolves rather than rejects, so the
+ * failure is attributed here rather than anonymously upstream.
+ */
+describe('Cron failure reporting', () => {
+  it('resolves instead of rejecting so the failure is attributed here', async () => {
+    class Probe {
+      @Cron('0 0 * * * *')
+      async tick(): Promise<void> {
+        throw new Error('transient database failure');
+      }
+    }
+
+    await expect(new Probe().tick()).resolves.toBeUndefined();
+  });
+
+  it('still returns the body’s value when it succeeds', async () => {
+    class Probe {
+      @Cron('0 0 * * * *')
+      async tick(): Promise<string> {
+        return 'swept';
+      }
+    }
+
+    await expect(new Probe().tick()).resolves.toBe('swept');
+  });
+
+  it('runs the body inside a trace context', async () => {
+    let seen: string | null = null;
+
+    class Probe {
+      @Cron('0 0 * * * *')
+      async tick(): Promise<void> {
+        seen = ContextService.getTraceId();
+      }
+    }
+
+    await new Probe().tick();
+
+    expect(seen).toEqual(expect.any(String));
   });
 });

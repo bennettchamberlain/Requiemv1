@@ -1,5 +1,19 @@
 export const DEFAULT_QUEUE = 'default';
 
+/**
+ * The shared dead-letter queue. Jobs that exhaust their retries are copied here
+ * by pg-boss (payload + failure output preserved) so a failure stays
+ * inspectable after the original row is archived.
+ *
+ * Nothing consumes this queue, which makes its rows a trap for anything that
+ * counts by state: a dead-lettered job is inserted in state `created`, exactly
+ * like work that is waiting to run. Every aggregate over "pending" work has to
+ * exclude this queue by name or it reports dead jobs as a live backlog — on a
+ * live appliance that was 1,191 of a reported 13,907 "pending" jobs, each of
+ * them ALSO counted under "failed" on its original queue.
+ */
+export const DEAD_LETTER_QUEUE = 'dead-letter';
+
 // ---------------------------------------------------------------------------
 // Job priority tiers.
 //
