@@ -1,66 +1,73 @@
 import { Injectable } from '@nestjs/common';
-import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
 
 import type { UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import { PlaceTransitionService } from '@ci/domains/daily-metrics';
+import { UserService } from '@ci/domains/user';
 
 export interface PlaceForecastItem {
+  clusterId: string;
   lat: number;
   lng: number;
   visits: number;
   share: number;
   lastSeen: string | null;
+  label: string | null;
+  probability: number;
+  backoffLevel: string | null;
 }
 
 /**
- * Lightweight next-place prior: recent stay cells from ci.position, ranked by
- * visit count. The 1729 Markov engine can replace this once stay-point tables
- * land; Forecast can already show a useful list.
+ * Forecast adapter over the 1729 stay-point / recency-decayed transition
+ * engine. `share` is the model's probability (not a visit-count prior).
+ * Rebuilds once on first read if the user has no clusters yet.
  */
 @Injectable()
 export class PlaceForecastService {
+  /** Users already lazy-rebuilt in this process — avoid a 90-day rescan per Forecast load. */
+  private readonly lazyRebuilt = new Set<string>();
+
   constructor(
-    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly placeTransitionService: PlaceTransitionService,
+    private readonly userService: UserService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(PlaceForecastService.name);
   }
 
-  async predictNext(context: UserServiceContext, k = 5): Promise<PlaceForecastItem[]> {
-    const limit = Math.min(20, Math.max(1, k));
-
+  async predictNext(
+    context: UserServiceContext,
+    k = 5,
+    horizonHours = 4,
+  ): Promise<PlaceForecastItem[]> {
     try {
-      const rows = (await this.dataSource.query(
-        `
-        SELECT
-          round(ST_Y(location::geometry)::numeric, 3)::float AS lat,
-          round(ST_X(location::geometry)::numeric, 3)::float AS lng,
-          count(*)::int AS visits,
-          max(time) AS last_seen
-        FROM ci.position
-        WHERE user_id = $1
-          AND location IS NOT NULL
-          AND time > now() - interval '30 days'
-        GROUP BY 1, 2
-        ORDER BY visits DESC
-        LIMIT $2
-        `,
-        [context.userId, limit],
-      )) as Array<{ lat: number; lng: number; visits: number; last_seen: Date | string | null }>;
+      const timezone = await this.timezoneOf(context);
+      let forecast = await this.placeTransitionService.predictNext(context, {
+        k,
+        horizonHours,
+        timezone,
+      });
 
-      const total = rows.reduce((sum, row) => sum + Number(row.visits), 0) || 1;
+      if (forecast.status === 'NO_HISTORY' && !this.lazyRebuilt.has(context.userId)) {
+        this.lazyRebuilt.add(context.userId);
+        await this.placeTransitionService.rebuild(context, { timezone });
+        forecast = await this.placeTransitionService.predictNext(context, {
+          k,
+          horizonHours,
+          timezone,
+        });
+      }
 
-      return rows.map((row) => ({
-        lat: Number(row.lat),
-        lng: Number(row.lng),
-        visits: Number(row.visits),
-        share: Number(row.visits) / total,
-        lastSeen: row.last_seen
-          ? row.last_seen instanceof Date
-            ? row.last_seen.toISOString()
-            : String(row.last_seen)
-          : null,
+      return forecast.predictions.map((place) => ({
+        clusterId: place.clusterId,
+        lat: place.lat,
+        lng: place.lng,
+        visits: place.visitCount,
+        share: place.probability,
+        lastSeen: place.lastSeen ? place.lastSeen.toISOString() : null,
+        label: place.label,
+        probability: place.probability,
+        backoffLevel: forecast.backoffLevel,
       }));
     } catch (error) {
       this.logger.warn('Place forecast failed', {
@@ -70,5 +77,20 @@ export class PlaceForecastService {
 
       return [];
     }
+  }
+
+  async rebuild(
+    context: UserServiceContext,
+    timezone = 'UTC',
+  ): Promise<{ clusters: number; transitions: number }> {
+    this.lazyRebuilt.add(context.userId);
+
+    return this.placeTransitionService.rebuild(context, { timezone });
+  }
+
+  private async timezoneOf(context: UserServiceContext): Promise<string> {
+    const user = await this.userService.findById(context, context.userId);
+
+    return user?.timezone || 'UTC';
   }
 }
