@@ -64,6 +64,20 @@ export interface GenerateResult {
   text: string;
 }
 
+export interface LoadModelResult {
+  /** How many intents were bound as callable tools. `0` = the model runs without tools. */
+  toolCount: number;
+}
+
+export interface ConfigureIntentToolsOptions {
+  /** Pass `false` to drop any configured appliance and run the model without tools. */
+  enabled?: boolean;
+  /** The configured CI-Server origin (the same value `@ci/common`'s `apiBase` resolves). */
+  baseUrl?: string;
+  /** The device's API key — sent as `x-api-key`, exactly as the iOS App Intents already do. */
+  apiKey?: string;
+}
+
 /** Emitted by `generateStream()`; one or more partials followed by a final `done: true`. */
 export interface LlmTokenEvent {
   /** Incremental text since the last event. Empty on the terminal `done: true` event. */
@@ -98,8 +112,25 @@ export interface LocalLlmPlugin {
   /** Delete a downloaded model's files, freeing disk space. */
   deleteModel(options: ModelIdOptions): Promise<void>;
 
-  /** Load a downloaded model into memory (LiteRT-LM `Engine` + `Conversation`), CPU backend. */
-  loadModel(options: LoadModelOptions): Promise<void>;
+  /**
+   * Load a downloaded model into memory (LiteRT-LM `Engine` + `Conversation`), CPU backend.
+   *
+   * If {@link LocalLlmPlugin.configureIntentTools} has been called, the intent catalog is fetched
+   * here and the resulting tools are bound to the conversation — LiteRT-LM fixes the tool set at
+   * conversation-creation time, so they cannot be attached later. `toolCount` reports how many were
+   * bound; `0` means the model will answer without tools (catalog unreachable, appliance older than
+   * manifest 1.2.0, or intent tools never configured).
+   */
+  loadModel(options: LoadModelOptions): Promise<LoadModelResult>;
+
+  /**
+   * Point on-device tool calling at a CI-Server, or disable it.
+   *
+   * Takes effect on the next {@link LocalLlmPlugin.loadModel}. Credentials are supplied by the
+   * caller (the web layer already holds the configured origin and the minted API key) so this
+   * plugin never has to know how the app stores them.
+   */
+  configureIntentTools(options: ConfigureIntentToolsOptions): Promise<void>;
 
   /** Close the active conversation + engine, freeing memory. */
   unloadModel(): Promise<void>;

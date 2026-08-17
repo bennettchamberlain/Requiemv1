@@ -1,15 +1,20 @@
 import { Injectable } from '@nestjs/common';
 
+import type { ApiKeyCapability } from '@ci/common/decorators';
+
 import { intentToolName } from '../core/types';
+import { resolveDispatch, type DispatchTier } from '../policy/dispatchPolicy';
 import { ToolRegistry } from '../registry/ToolRegistry';
 
 import { INTENT_DOMAINS } from './domains';
 import { CI_ENTITIES } from './entities';
 import type { CiEntityDescriptor, IntentDomain, IntentManifest, ManifestIntent } from './types';
 
-// 1.1.0 — added `localCapable` per intent. Additive, so a 1.0.0 client keeps working; a client
-// that wants to decide anything offline needs the field, hence the minor bump rather than silence.
-const MANIFEST_VERSION = '1.1.0';
+// 1.2.0 — added the optional per-intent `dispatch` ruling (and the echoed `tier`), populated only
+// when the caller names a tier. Additive: a 1.1.0 client that never passes `tier` sees byte-identical
+// output. The bump is so an on-device client can tell "this appliance computes rulings for me" from
+// "this appliance is old enough that I must fall back to reading localCapable + privacy myself".
+const MANIFEST_VERSION = '1.2.0';
 
 /**
  * Public read API over the intent catalog — the single seam through which REST (the agent-domain
@@ -23,8 +28,20 @@ const MANIFEST_VERSION = '1.1.0';
 export class IntentCatalogService {
   constructor(private readonly tools: ToolRegistry) {}
 
-  /** The full discoverable capability declaration. */
-  getManifest(): IntentManifest {
+  /**
+   * The full discoverable capability declaration.
+   *
+   * Pass `options.tier` to have the server attach its own {@link resolveDispatch} ruling to every
+   * intent. That is what the on-device tier should ask for: it turns "here are the inputs to the
+   * rule" into "here is the rule's answer", so the phone branches on a decision instead of
+   * carrying a second (and eventually third) implementation of the policy.
+   *
+   * `capability` narrows the ruling to a specific principal's authority; omitted, `resolveDispatch`
+   * assumes full — the device owner acting as themselves, which is the on-device tier's normal case.
+   */
+  getManifest(options: { tier?: DispatchTier; capability?: ApiKeyCapability } = {}): IntentManifest {
+    const { tier, capability } = options;
+
     const intents: ManifestIntent[] = this.tools.getAvailableTools().map((schema) => ({
       name: schema.name,
       tool: intentToolName(schema.name),
@@ -40,6 +57,10 @@ export class IntentCatalogService {
       consumes: schema.consumes ?? [],
       produces: schema.produces ?? [],
       phrases: schema.phrases ?? [],
+      // Only when asked. Without a tier there is no such thing as "the" ruling — the same intent
+      // executes on the appliance and queues on-device — so publishing one unconditionally would
+      // be publishing a guess.
+      ...(tier ? { dispatch: resolveDispatch(schema, { tier, capability }) } : {}),
     }));
 
     intents.sort((a, b) => a.name.localeCompare(b.name));
@@ -50,6 +71,7 @@ export class IntentCatalogService {
       domains: this.getDomains(),
       entities: this.getEntities(),
       intents,
+      ...(tier ? { tier } : {}),
     };
   }
 

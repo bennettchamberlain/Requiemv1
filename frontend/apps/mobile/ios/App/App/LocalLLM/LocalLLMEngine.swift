@@ -24,6 +24,7 @@ enum LocalLLMEngineError: Error, LocalizedError {
 /// user turn, which is submitted live via `Conversation.sendMessageStream`).
 actor LocalLLMEngine {
   private var engine: Engine?
+  private var activeConversation: Conversation?
 
   private(set) var modelPath: String?
 
@@ -40,7 +41,14 @@ actor LocalLLMEngine {
   }
 
   func unload() {
+    activeConversation = nil
     unloadSync()
+  }
+
+  /// Cancels the in-flight generation, if any. Safe to call with nothing in flight.
+  func cancel() {
+    try? activeConversation?.cancel()
+    activeConversation = nil
   }
 
   private func unloadSync() {
@@ -56,7 +64,7 @@ actor LocalLLMEngine {
   /// engine versions, so each emission is diffed against the running total rather than
   /// assumed to be an incremental chunk — correct whether the SDK yields deltas or
   /// cumulative text.
-  func streamCompletion(turns: [ChatTurn]) throws -> AsyncThrowingStream<String, Error> {
+  func streamCompletion(turns: [ChatTurn], tools: [any Tool] = []) throws -> AsyncThrowingStream<String, Error> {
     guard let engine else {
       throw LocalLLMEngineError.notLoaded
     }
@@ -73,14 +81,24 @@ actor LocalLLMEngine {
     let priorMessages: [Message] = history.dropLast().map {
       Message($0.text, role: $0.role == "user" ? .user : .model)
     }
-    let systemMessage = systemText.map { Message($0, role: .system) }
+    // With tools attached the model needs to be told what it is for, or a 1B model will happily
+    // answer from its own weights instead of calling anything. Scoped narrowly on purpose: the
+    // disconnected-mode design's explicit non-goal is "a general-purpose local chatbot".
+    let systemMessage =
+      systemText.map { Message($0, role: .system) }
+      ?? (tools.isEmpty ? nil : Message(Self.toolSystemInstruction, role: .system))
 
     return AsyncThrowingStream { continuation in
       Task {
         do {
+          // Tools are fixed when the conversation is created — LiteRT-LM captures the ToolManager in
+          // the native handle, so they cannot be attached per message.
           let conversation = try await engine.createConversation(
-            with: ConversationConfig(systemMessage: systemMessage, initialMessages: priorMessages)
+            with: ConversationConfig(
+              systemMessage: systemMessage, initialMessages: priorMessages, tools: tools)
           )
+          await self.setActiveConversation(conversation)
+          defer { Task { await self.setActiveConversation(nil) } }
           var previousFull = ""
           for try await message in conversation.sendMessageStream(Message(last.text)) {
             let full = message.toString
@@ -97,4 +115,14 @@ actor LocalLLMEngine {
       }
     }
   }
+
+  private func setActiveConversation(_ conversation: Conversation?) {
+    activeConversation = conversation
+  }
+
+  private static let toolSystemInstruction =
+    "You are Companion, answering questions about the user's own memory on their device. "
+    + "Use the provided tools to look things up rather than guessing, and cite what you found. "
+    + "If a tool reports an error or says an action must be confirmed on the appliance, tell the "
+    + "user plainly instead of pretending it succeeded."
 }

@@ -372,6 +372,40 @@ integration with the appliance-routed chat page.
   an open upstream issue for iOS Simulator; untested on Android emulator) — test on a
   real device.
 
+## On-device agent tooling (intent hooks, both platforms)
+
+The local model can call CI's **published intents** as tools, so it answers from your memory instead
+of its own weights. Enable it per platform with `LocalLLM.configureIntentTools({ baseUrl, apiKey })`;
+the plugin then fetches `GET /api/intents?tier=local` and binds what the appliance allows.
+
+**One security rule, not three.** The appliance computes the `execute` / `queue` / `deny` ruling
+(`dispatchPolicy.ts`) and publishes it per intent; the phone reads `dispatch.decision` and obeys it.
+Neither Kotlin nor Swift re-derives the policy — `dispatchPolicy.ts` says why ("two copies of a
+security rule are two rules"), and it means a policy change ships with the appliance instead of
+waiting on two app-store releases. Destructive and external intents always queue on-device.
+
+**The binding is per-platform, because the runtimes genuinely differ:**
+
+| | Android | iOS |
+|---|---|---|
+| Mechanism | `OpenApiTool` — runtime JSON-schema string + raw args | `Tool` protocol — `Mirror` over compile-time `@ToolParam` |
+| Coverage | **Every** published intent, automatically | Hand-written struct per intent |
+| New server-side intent | Picked up on next catalog fetch | Needs an app release |
+
+That asymmetry is structural, not an oversight: the LiteRT-LM Swift surface has no `OpenApiTool`
+equivalent (verified against the vendored source — 18 public types, one tool protocol, no
+schema-string entry point), so iOS cannot construct tools dynamically at all.
+
+Execution goes over MCP `tools/call` (`POST /mcp`) — there is no REST "execute this intent"
+endpoint — authenticated with the same `x-api-key` the App Intents already use.
+
+**iOS caveats.** The iOS plugin implements the same JS contract as `@ci/capacitor-local-llm`
+(`isAvailable`/`loadModel`/`generate`/`generateStream`/`cancel` + the `llmToken` event), so
+`@ci/common`'s `generateOffline()` picks it up with no web changes. But it lives in the app target
+rather than that package (which declares itself Android-only), and it has **no model downloader** —
+`loadModel` takes a path to a `.litertlm` file already on the device. Moving it into the package
+(podspec + vendored xcframework + Podfile regeneration) and adding a downloader are the follow-ups.
+
 ## Not yet wired (later phases)
 
 - **Local-first sync (PowerSync client)** — the on-device SQLite layer. The server

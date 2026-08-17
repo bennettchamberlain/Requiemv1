@@ -11,6 +11,7 @@ import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.Message
 import com.google.ai.edge.litertlm.MessageCallback
 import com.google.ai.edge.litertlm.SamplerConfig
+import com.google.ai.edge.litertlm.ToolProvider
 import java.util.concurrent.CancellationException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -42,7 +43,14 @@ class LocalLlmEngine(private val context: Context) {
      * always call from a background dispatcher (see `LocalLlmPlugin`'s `pluginScope`).
      */
     @Synchronized
-    fun load(modelPath: String, maxTokens: Int, topK: Int, topP: Double, temperature: Double) {
+    fun load(
+        modelPath: String,
+        maxTokens: Int,
+        topK: Int,
+        topP: Double,
+        temperature: Double,
+        tools: List<ToolProvider> = emptyList(),
+    ) {
         unload()
 
         // visionBackend/audioBackend are explicitly null (image/audio input is out of
@@ -61,12 +69,15 @@ class LocalLlmEngine(private val context: Context) {
         val newEngine = Engine(engineConfig)
         newEngine.initialize()
 
+        // Tools are fixed at conversation-creation time — LiteRT-LM captures the provider list in
+        // the native conversation handle, so they cannot be added per message. That is why the
+        // catalog fetch happens during load() rather than lazily on the first tool call.
         val newConversation =
             newEngine.createConversation(
                 ConversationConfig(
                     samplerConfig = SamplerConfig(topK = topK, topP = topP, temperature = temperature),
-                    systemInstruction = null,
-                    tools = emptyList(),
+                    systemInstruction = if (tools.isEmpty()) null else Contents.of(TOOL_SYSTEM_INSTRUCTION),
+                    tools = tools,
                 ),
             )
 
@@ -180,5 +191,19 @@ class LocalLlmEngine(private val context: Context) {
         } catch (e: IllegalStateException) {
             // Conversation already finished/closed — nothing to cancel.
         }
+    }
+
+    private companion object {
+        /**
+         * Scopes the local model to the user's own memory. Deliberately narrow: the disconnected-mode
+         * design's explicit non-goal is "a general-purpose local chatbot" — that category is free and
+         * saturated, and a 1B model competing there loses. Its job is answering from *your* records,
+         * which is also the only thing it can do better than a cloud model.
+         */
+        const val TOOL_SYSTEM_INSTRUCTION =
+            "You are Companion, answering questions about the user's own memory on their device. " +
+                "Use the provided tools to look things up rather than guessing, and cite what you found. " +
+                "If a tool reports an error or says an action must be confirmed on the appliance, tell " +
+                "the user plainly instead of pretending it succeeded."
     }
 }

@@ -1,84 +1,72 @@
 import Capacitor
 import Foundation
 
-/// On-device chat completion (Phase 3 "Thinks" of the disconnected-mode design doc). The
-/// JS bridge is control-plane only — start/stop/status/model management — matching
-/// `frontend/packages/common/src/utils/nativeBridge.ts`'s `LocalLLMPlugin` interface.
-/// Actual chat traffic goes straight from the web bundle to the loopback HTTP server this
-/// plugin starts, so the same fetch/SSE code path used for the appliance works unchanged.
+/// On-device chat completion for iOS, implementing the **same JS contract** as the Android
+/// `@ci/capacitor-local-llm` plugin (`isAvailable` / `loadModel` / `unloadModel` / `generate` /
+/// `generateStream` / `cancel`, plus the `llmToken` event). That is deliberate: `@ci/common`'s
+/// `generateOffline()` already drives that contract and falls back to the appliance's
+/// `/api/llm/generate` when the plugin is absent, so implementing it here makes on-device inference
+/// work on iOS with **no web-layer changes at all**.
 ///
-/// LiteRT-LM's Swift package targets iOS 15+ (matches this project's deployment target),
-/// so unlike the Android plugin this one has no extra platform-floor gate.
+/// Two differences from Android, both forced rather than chosen:
+///
+/// - **No model download.** Android ships a WorkManager downloader; here `loadModel` takes a path
+///   to a `.litertlm` file already on the device. Wiring a downloader is follow-up work.
+/// - **Hand-written tools.** See `CompanionIntentTools.swift` — LiteRT-LM's Swift `Tool` reflects
+///   over compile-time properties and has no runtime-schema equivalent of Android's `OpenApiTool`.
+///
+/// This lives in the app target rather than in `@ci/capacitor-local-llm` (which declares itself
+/// Android-only and has no `ios/`) because moving it into that package needs a podspec, a vendored
+/// xcframework inside the pod, and a Podfile regeneration — mechanical, but a separate change.
 @objc(LocalLLMPlugin)
 public class LocalLLMPlugin: CAPPlugin, CAPBridgedPlugin {
   public let identifier = "LocalLLMPlugin"
   public let jsName = "LocalLLM"
   public let pluginMethods: [CAPPluginMethod] = [
-    CAPPluginMethod(name: "getStatus", returnType: CAPPluginReturnPromise),
-    CAPPluginMethod(name: "start", returnType: CAPPluginReturnPromise),
-    CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
+    CAPPluginMethod(name: "isAvailable", returnType: CAPPluginReturnPromise),
     CAPPluginMethod(name: "loadModel", returnType: CAPPluginReturnPromise),
     CAPPluginMethod(name: "unloadModel", returnType: CAPPluginReturnPromise),
-    CAPPluginMethod(name: "downloadModel", returnType: CAPPluginReturnPromise),
+    CAPPluginMethod(name: "generate", returnType: CAPPluginReturnPromise),
+    CAPPluginMethod(name: "generateStream", returnType: CAPPluginReturnPromise),
+    CAPPluginMethod(name: "cancel", returnType: CAPPluginReturnPromise),
+    CAPPluginMethod(name: "configureIntentTools", returnType: CAPPluginReturnPromise),
   ]
 
   private let engine = LocalLLMEngine()
-  private var server: LocalLLMHTTPServer?
-  private var token: String?
-  private var downloadTask: URLSessionDownloadTask?
+  private var generationTask: Task<Void, Never>?
 
-  @objc func getStatus(_ call: CAPPluginCall) {
-    Task {
-      let isLoaded = await engine.isLoaded
-      let modelPath = await engine.modelPath
-      var result: [String: Any] = [
-        "supported": true,
-        "running": server != nil,
-        "modelLoaded": isLoaded,
-      ]
-      if let modelPath { result["modelPath"] = modelPath }
-      if let server { result["baseUrl"] = "http://127.0.0.1:\(server.port)" }
-      call.resolve(result)
-    }
-  }
+  /// Capability probe, matching Android's: no side effects, no downloads.
+  ///
+  /// The RAM floor mirrors the Android plugin's rationale — a ~530 MiB int4 model needs roughly 2 GB
+  /// resident, and jetsam kills the app rather than failing the allocation, so refusing up front is
+  /// the difference between "unavailable" and "the app disappeared mid-sentence".
+  @objc func isAvailable(_ call: CAPPluginCall) {
+    let totalMemory = ProcessInfo.processInfo.physicalMemory
 
-  @objc func start(_ call: CAPPluginCall) {
-    if let server, let token {
-      call.resolve(["baseUrl": "http://127.0.0.1:\(server.port)", "token": token])
+    guard totalMemory >= Self.minimumPhysicalMemoryBytes else {
+      call.resolve([
+        "available": false,
+        "reason": "This device does not have enough memory to run an on-device model.",
+      ])
+
       return
     }
 
-    Task {
-      let newToken = Self.generateToken()
-      let newServer = LocalLLMHTTPServer(engine: engine, token: newToken)
-      do {
-        try await newServer.start()
-      } catch {
-        call.reject("Failed to start local server: \(error.localizedDescription)")
-        return
-      }
-      self.server = newServer
-      self.token = newToken
-      call.resolve(["baseUrl": "http://127.0.0.1:\(newServer.port)", "token": newToken])
-    }
-  }
-
-  @objc func stop(_ call: CAPPluginCall) {
-    server?.stop()
-    server = nil
-    token = nil
-    call.resolve()
+    call.resolve(["available": true])
   }
 
   @objc func loadModel(_ call: CAPPluginCall) {
     guard let path = call.getString("path") else {
-      call.reject("path is required")
+      call.reject("path is required (iOS has no model downloader yet — pass an on-device file path)")
+
       return
     }
     guard FileManager.default.fileExists(atPath: path) else {
       call.reject("Model file not found at \(path)")
+
       return
     }
+
     Task {
       do {
         try await engine.load(modelPath: path)
@@ -96,91 +84,112 @@ public class LocalLLMPlugin: CAPPlugin, CAPBridgedPlugin {
     }
   }
 
-  @objc func downloadModel(_ call: CAPPluginCall) {
-    guard let urlString = call.getString("url"), let url = URL(string: urlString) else {
-      call.reject("url is required")
-      return
-    }
-    guard let fileName = call.getString("fileName") else {
-      call.reject("fileName is required")
+  /// Non-streaming: buffers the whole reply. Tools are attached when the conversation is created.
+  @objc func generate(_ call: CAPPluginCall) {
+    guard let prompt = call.getString("prompt") else {
+      call.reject("prompt is required")
+
       return
     }
 
-    let destinationDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-      .appendingPathComponent("local-llm-models", isDirectory: true)
-    try? FileManager.default.createDirectory(at: destinationDir, withIntermediateDirectories: true)
-    let destination = destinationDir.appendingPathComponent(fileName)
+    Task {
+      do {
+        let tools = CompanionToolContext.executableTools()
+        let stream = try await engine.streamCompletion(
+          turns: [ChatTurn(role: "user", text: prompt)], tools: tools)
+        var text = ""
 
-    let delegate = DownloadProgressDelegate(
-      onProgress: { [weak self] downloaded, total in
-        self?.notifyListeners(
-          "downloadProgress",
-          data: ["fileName": fileName, "downloaded": downloaded, "total": total])
-      },
-      onFinished: { [weak self] result in
-        switch result {
-        case .success(let tempURL):
-          do {
-            if FileManager.default.fileExists(atPath: destination.path) {
-              try FileManager.default.removeItem(at: destination)
-            }
-            try FileManager.default.moveItem(at: tempURL, to: destination)
-            call.resolve(["path": destination.path])
-          } catch {
-            call.reject("Failed to save downloaded model: \(error.localizedDescription)")
-          }
-        case .failure(let error):
-          call.reject("Download failed: \(error.localizedDescription)")
+        for try await delta in stream {
+          text += delta
         }
-        self?.downloadTask = nil
+
+        call.resolve(["text": text])
+      } catch {
+        call.reject("Generation failed: \(error.localizedDescription)")
       }
-    )
-
-    let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
-    let task = session.downloadTask(with: url)
-    downloadTask = task
-    task.resume()
-  }
-
-  private static func generateToken() -> String {
-    var bytes = [UInt8](repeating: 0, count: 32)
-    _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-    return bytes.map { String(format: "%02x", $0) }.joined()
-  }
-}
-
-/// Bridges `URLSessionDownloadDelegate`'s callback API to plain closures.
-private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelegate {
-  private let onProgress: (Int64, Int64) -> Void
-  private let onFinished: (Result<URL, Error>) -> Void
-
-  init(onProgress: @escaping (Int64, Int64) -> Void, onFinished: @escaping (Result<URL, Error>) -> Void) {
-    self.onProgress = onProgress
-    self.onFinished = onFinished
-  }
-
-  func urlSession(
-    _ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
-    totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64
-  ) {
-    onProgress(totalBytesWritten, totalBytesExpectedToWrite)
-  }
-
-  func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-    // The delegate-provided file is deleted once this method returns, so it must be
-    // moved to a stable temp location before handing control back to the caller.
-    let stableTemp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    do {
-      try FileManager.default.moveItem(at: location, to: stableTemp)
-      onFinished(.success(stableTemp))
-    } catch {
-      onFinished(.failure(error))
     }
   }
 
-  func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-    if let error {
-      onFinished(.failure(error))
+  /// Streaming: emits `llmToken` events (`{partial, done}`), resolving once generation completes —
+  /// the exact shape `generateOffline`'s `generateLocalStreaming` subscribes to.
+  @objc func generateStream(_ call: CAPPluginCall) {
+    guard let prompt = call.getString("prompt") else {
+      call.reject("prompt is required")
+
+      return
+    }
+
+    generationTask?.cancel()
+    generationTask = Task {
+      do {
+        let tools = CompanionToolContext.executableTools()
+        let stream = try await engine.streamCompletion(
+          turns: [ChatTurn(role: "user", text: prompt)], tools: tools)
+
+        for try await delta in stream {
+          notifyListeners("llmToken", data: ["partial": delta, "done": false])
+        }
+
+        notifyListeners("llmToken", data: ["partial": "", "done": true])
+        call.resolve()
+      } catch {
+        // A cancel() is a normal end, not a failure: report the terminal event and resolve, so the
+        // JS side's `finally` unsubscribes cleanly instead of surfacing an error to the user.
+        if Task.isCancelled {
+          notifyListeners("llmToken", data: ["partial": "", "done": true])
+          call.resolve()
+        } else {
+          call.reject("Generation failed: \(error.localizedDescription)")
+        }
+      }
     }
   }
+
+  @objc func cancel(_ call: CAPPluginCall) {
+    generationTask?.cancel()
+    generationTask = nil
+    Task {
+      await engine.cancel()
+      call.resolve()
+    }
+  }
+
+  /// Points the on-device model's tool calling at a CI-Server, or turns it off.
+  ///
+  /// Credentials are passed in from the web layer (which already holds the configured origin and the
+  /// minted API key) rather than read from the Keychain here, so this matches the Android plugin's
+  /// contract exactly and only one place knows how the app stores credentials.
+  ///
+  /// Fetches the catalog immediately, so `toolCount` reflects what the appliance will actually allow.
+  @objc func configureIntentTools(_ call: CAPPluginCall) {
+    let enabled = call.getBool("enabled") ?? true
+
+    guard enabled else {
+      CompanionToolContext.disable()
+      call.resolve(["toolCount": 0])
+
+      return
+    }
+
+    guard
+      let baseUrlString = call.getString("baseUrl"),
+      let baseURL = URL(string: baseUrlString),
+      let apiKey = call.getString("apiKey"),
+      !apiKey.isEmpty
+    else {
+      call.reject("baseUrl and apiKey are required to enable intent tools")
+
+      return
+    }
+
+    CompanionToolContext.client = CompanionIntentClient(baseURL: baseURL, apiKey: apiKey)
+
+    Task {
+      let tools = await CompanionToolContext.refreshRulings()
+      call.resolve(["toolCount": tools.count])
+    }
+  }
+
+  /// 6 GB, matching the RAM floor the Android catalog declares for the same class of int4 model.
+  private static let minimumPhysicalMemoryBytes: UInt64 = 6 * 1024 * 1024 * 1024
 }
