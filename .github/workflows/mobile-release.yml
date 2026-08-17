@@ -1,3 +1,10 @@
+# GATED TO MANUAL. The `mobile-release-v*` tag trigger was removed so this only
+# runs when dispatched — CI silence here means "nobody dispatched it", NOT
+# "everything passed".
+#
+# RELEASE IMPACT: pushing a `mobile-release-v*` tag NO LONGER builds or submits.
+# Dispatch this workflow instead (its inputs are preserved below):
+#   gh workflow run mobile-release.yml --ref <tag> -f dry_run=false -f version_name=X.Y.Z
 name: Mobile Release
 
 # Signed, store-bound builds of the Capacitor app: a TestFlight upload and a Play
@@ -49,9 +56,6 @@ on:
         description: 'Marketing version (e.g. 0.1.0). Defaults to the tag or 0.1.0.'
         type: string
         required: false
-  push:
-    tags:
-      - 'mobile-release-v*'
 
 # The root install pulls the private @companionintelligence/tokens package from GitHub
 # Packages; .yarnrc.yml authenticates with ${NODE_AUTH_TOKEN}. Without `packages: read`
