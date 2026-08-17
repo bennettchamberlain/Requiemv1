@@ -190,7 +190,7 @@
     "onboarding.preference.steps": false,
     "actions": true,
     "smart.rotation": false,
-    "ask": false,
+    "ask": true,
     "grounded.prompts": false
   },
   "environment": {

@@ -493,9 +493,16 @@ export const ConfigSchema = z.object({
     'smart.rotation': booleanStringSchema,
     /**
      * Interpersonal "ask" feature (epic #1712): questions directed at another
-     * user's memory, gated by consent. Off by default while the surface and the
-     * disclosure filter are built; the whole ask GraphQL surface stays dark
-     * (mutations report failure, queries return empty) until enabled.
+     * user's memory, gated by consent.
+     *
+     * ON by default now that the consent gate, disclosure filter, tier ceilings
+     * and per-item redaction are all in place — the reason it shipped dark
+     * ("while the surface is being built") no longer holds.
+     *
+     * Enabling this does NOT open federation: an inbound peer ask additionally
+     * requires `peers.audience` to be configured, and the peer route refuses
+     * every request until it is. What this flag turns on is the LOCAL ask
+     * surface, where every ask still defaults to owner review.
      */
     ask: booleanStringSchema,
     /**
