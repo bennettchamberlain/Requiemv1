@@ -122,10 +122,7 @@ export class JobQueryService {
       .take(limit)
       .getManyAndCount();
 
-    const [queues, stateCounts] = await Promise.all([
-      this.distinctQueues(),
-      this.stateCounts(query),
-    ]);
+    const [queues, stateCounts] = await Promise.all([this.distinctQueues(), this.stateCounts(query)]);
 
     return {
       items: rows.map((row) => this.toListItem(row)),
@@ -287,10 +284,7 @@ export class JobQueryService {
   private async stateCounts(query: JobQuery): Promise<Record<string, number>> {
     const builder = this.jobRepository
       .createQueryBuilder('job')
-      .select(
-        `CASE WHEN job.name = :deadLetter THEN 'dead-letter' ELSE job.state END`,
-        'bucket',
-      )
+      .select(`CASE WHEN job.name = :deadLetter THEN 'dead-letter' ELSE job.state END`, 'bucket')
       .addSelect('COUNT(*)::int', 'count')
       .setParameter('deadLetter', DEAD_LETTER_QUEUE)
       .groupBy('1');

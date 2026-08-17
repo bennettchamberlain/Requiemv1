@@ -63,10 +63,7 @@ export function JobsTable({ data, loading, error, filters, categories, onChange 
   const to = Math.min(filters.offset + filters.limit, total);
 
   // Every state bucket added up — what "All" means under the non-state filters.
-  const allStatesTotal = Object.values(data?.stateCounts ?? {}).reduce(
-    (sum, count) => sum + count,
-    0,
-  );
+  const allStatesTotal = Object.values(data?.stateCounts ?? {}).reduce((sum, count) => sum + count, 0);
 
   return (
     <Card className={COMPACT_CARD}>
@@ -139,9 +136,7 @@ export function JobsTable({ data, loading, error, filters, categories, onChange 
             <Button
               size="sm"
               variant="ghost"
-              onClick={() =>
-                onChange({ state: '', queue: '', category: '', search: '', offset: 0 })
-              }
+              onClick={() => onChange({ state: '', queue: '', category: '', search: '', offset: 0 })}
             >
               Clear
             </Button>
@@ -159,9 +154,7 @@ export function JobsTable({ data, loading, error, filters, categories, onChange 
         {loading && !data ? (
           <Skeleton className="h-[400px] w-full" />
         ) : items.length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            Nothing matches these filters.
-          </p>
+          <p className="py-8 text-center text-sm text-muted-foreground">Nothing matches these filters.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[720px] border-collapse text-sm">
@@ -229,23 +222,12 @@ export function JobsTable({ data, loading, error, filters, categories, onChange 
   );
 }
 
-function JobRow({
-  job,
-  expanded,
-  onToggle,
-}: {
-  job: JobListItem;
-  expanded: boolean;
-  onToggle: () => void;
-}) {
+function JobRow({ job, expanded, onToggle }: { job: JobListItem; expanded: boolean; onToggle: () => void }) {
   const Chevron = expanded ? ChevronDown : ChevronRight;
 
   return (
     <>
-      <tr
-        className="cursor-pointer border-b border-border/40 align-top hover:bg-muted/40"
-        onClick={onToggle}
-      >
+      <tr className="cursor-pointer border-b border-border/40 align-top hover:bg-muted/40" onClick={onToggle}>
         <td className="py-1.5">
           <button
             type="button"
@@ -287,9 +269,7 @@ function JobRow({
         <td className="py-1.5 pr-3 text-right tabular-nums text-xs text-muted-foreground">
           {job.retryCount}/{job.retryLimit}
         </td>
-        <td className="py-1.5 text-right text-xs text-muted-foreground">
-          {formatTimestamp(job.createdOn)}
-        </td>
+        <td className="py-1.5 text-right text-xs text-muted-foreground">{formatTimestamp(job.createdOn)}</td>
       </tr>
       {expanded ? (
         <tr className="border-b border-border/40 bg-muted/20">

@@ -155,8 +155,8 @@ function SummaryCard({
           >
             <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
             <span className="min-w-0 break-words">
-              Showing data from {staleSince.toLocaleTimeString()} — refreshes have been failing
-              since then{error ? ` (${error})` : ''}.
+              Showing data from {staleSince.toLocaleTimeString()} — refreshes have been failing since then
+              {error ? ` (${error})` : ''}.
             </span>
           </div>
         ) : error ? (
@@ -181,9 +181,7 @@ function SummaryCard({
                 className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-left transition-colors hover:border-border hover:bg-muted/60"
               >
                 <p className="text-xs uppercase text-muted-foreground">{tile.label}</p>
-                <p className="mt-0.5 text-xl font-semibold tabular-nums">
-                  {tile.value.toLocaleString()}
-                </p>
+                <p className="mt-0.5 text-xl font-semibold tabular-nums">{tile.value.toLocaleString()}</p>
               </button>
             ))}
           </div>
@@ -200,20 +198,12 @@ function SummaryCard({
  * codebase writes — so it was empty on every appliance ever shipped while ~34
  * `@Cron` methods ran beside it, invisible.
  */
-function SchedulesCard({
-  crons,
-  loading,
-}: {
-  crons: JobsDashboardResponse['crons'];
-  loading: boolean;
-}) {
+function SchedulesCard({ crons, loading }: { crons: JobsDashboardResponse['crons']; loading: boolean }) {
   return (
     <Card className={COMPACT_CARD}>
       <Card.Header>
         <Card.Title className="text-base">Schedules</Card.Title>
-        <Card.Description>
-          Recurring jobs registered in this process ({crons.length})
-        </Card.Description>
+        <Card.Description>Recurring jobs registered in this process ({crons.length})</Card.Description>
       </Card.Header>
       <Card.Content>
         {loading && !crons.length ? (
@@ -234,16 +224,11 @@ function SchedulesCard({
                   <p className="font-mono text-xs text-muted-foreground">{cron.cron || '—'}</p>
                 </div>
                 <div className="shrink-0 text-right">
-                  <Badge
-                    variant={cron.running ? 'outline' : 'secondary'}
-                    className="text-[10px] uppercase"
-                  >
+                  <Badge variant={cron.running ? 'outline' : 'secondary'} className="text-[10px] uppercase">
                     {cron.running ? 'scheduled' : 'stopped'}
                   </Badge>
                   <p className="mt-1 text-[11px] text-muted-foreground">
-                    {cron.nextRunAt
-                      ? `next ${new Date(cron.nextRunAt).toLocaleTimeString()}`
-                      : 'no next run'}
+                    {cron.nextRunAt ? `next ${new Date(cron.nextRunAt).toLocaleTimeString()}` : 'no next run'}
                   </p>
                 </div>
               </div>

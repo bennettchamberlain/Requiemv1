@@ -68,10 +68,7 @@ export interface JobTypeDescriptor {
  * Entity lifecycle events all mean the same thing to the search index, so they
  * are generated rather than written out 40 times.
  */
-function searchIndexTypes(
-  entity: string,
-  label: string,
-): Record<string, JobTypeDescriptor> {
+function searchIndexTypes(entity: string, label: string): Record<string, JobTypeDescriptor> {
   const verbs: Array<[string, string]> = [
     ['created', `Index a new ${label} for search`],
     ['updated', `Re-index an edited ${label}`],

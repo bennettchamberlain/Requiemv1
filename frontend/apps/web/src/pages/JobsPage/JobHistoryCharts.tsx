@@ -45,14 +45,7 @@ type Props = {
  *    image-description averages ~33s while search-index averages ~0.5s, and one
  *    aggregate number across both is meaningless.
  */
-export function JobHistoryCharts({
-  data,
-  loading,
-  error,
-  windowHours,
-  onWindowChange,
-  queue,
-}: Props) {
+export function JobHistoryCharts({ data, loading, error, windowHours, onWindowChange, queue }: Props) {
   const points = useMemo(() => (data?.points ?? []).map(toChartPoint), [data?.points]);
 
   const hasThroughput = points.some((point) => point.completed > 0 || point.failed > 0);
@@ -95,8 +88,8 @@ export function JobHistoryCharts({
           <Skeleton className="h-[170px] w-full" />
         ) : !points.length ? (
           <p className="text-sm text-muted-foreground">
-            No history recorded yet. Samples are written every 5 minutes — the first points appear
-            once the collector has run.
+            No history recorded yet. Samples are written every 5 minutes — the first points appear once the
+            collector has run.
           </p>
         ) : (
           <div className="grid gap-4 xl:grid-cols-3">
@@ -154,12 +147,7 @@ export function JobHistoryCharts({
                 {/* Throughput is the one axis that reaches six figures during a
                     bulk import — a 44px gutter silently clipped "100000" to
                     "00000". Compact notation keeps it narrow AND readable. */}
-                <YAxis
-                  {...AXIS_PROPS}
-                  width={52}
-                  allowDecimals={false}
-                  tickFormatter={formatCompact}
-                />
+                <YAxis {...AXIS_PROPS} width={52} allowDecimals={false} tickFormatter={formatCompact} />
                 <ChartTooltip content={<ChartTooltipContent />} />
                 <Legend {...LEGEND_PROPS} />
                 <Bar dataKey="completed" name="Completed" stackId="flow" fill="var(--chart-2)" />
@@ -295,7 +283,5 @@ function round(value: number): number {
 
 /** 79,913 → "80K". Keeps a six-figure import inside a narrow axis gutter. */
 function formatCompact(value: number): string {
-  return new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(
-    value,
-  );
+  return new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(value);
 }

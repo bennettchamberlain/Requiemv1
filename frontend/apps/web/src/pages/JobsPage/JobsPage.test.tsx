@@ -151,13 +151,15 @@ function dashboard(overrides: Partial<JobsDashboardResponse> = {}): JobsDashboar
   };
 }
 
-function render(options: {
-  dashboard?: JobsDashboardResponse;
-  list?: JobListResponse;
-  history?: JobHistoryResponse;
-  staleSince?: Date | null;
-  error?: string | null;
-} = {}) {
+function render(
+  options: {
+    dashboard?: JobsDashboardResponse;
+    list?: JobListResponse;
+    history?: JobHistoryResponse;
+    staleSince?: Date | null;
+    error?: string | null;
+  } = {},
+) {
   Object.assign(dashboardState, {
     data: options.dashboard ?? dashboard(),
     loading: false,

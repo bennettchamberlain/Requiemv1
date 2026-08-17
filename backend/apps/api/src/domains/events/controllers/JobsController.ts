@@ -77,10 +77,7 @@ export class JobsController {
   @Get('types')
   types(): {
     categories: string[];
-    types: Record<
-      string,
-      { label: string; category: string; description: string; interactive: boolean }
-    >;
+    types: Record<string, { label: string; category: string; description: string; interactive: boolean }>;
   } {
     return {
       categories: Object.values(JOB_CATEGORIES),

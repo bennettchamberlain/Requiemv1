@@ -79,10 +79,7 @@ export class JobMetricsCollector {
 
     const since = new Date(now.getTime() - SAMPLE_INTERVAL_MINUTES * 60_000);
 
-    const [gauges, throughput] = await Promise.all([
-      this.readGauges(),
-      this.readThroughput(since),
-    ]);
+    const [gauges, throughput] = await Promise.all([this.readGauges(), this.readThroughput(since)]);
 
     const queues = new Set([...gauges.keys(), ...throughput.keys()]);
 
@@ -148,9 +145,7 @@ export class JobMetricsCollector {
   async purge(now: Date = new Date()): Promise<void> {
     const cutoff = new Date(now.getTime() - RETENTION_DAYS * 24 * 60 * 60_000);
 
-    const result = await this.dataSource.query(`DELETE FROM ci.job_metrics WHERE sampled_at < $1`, [
-      cutoff,
-    ]);
+    const result = await this.dataSource.query(`DELETE FROM ci.job_metrics WHERE sampled_at < $1`, [cutoff]);
 
     this.logger.debug(`Purged job metrics older than ${cutoff.toISOString()}`, {
       rows: Array.isArray(result) ? result.length : undefined,
@@ -217,7 +212,9 @@ export class JobMetricsCollector {
    * is almost always still in `job`, but a delayed tick after a restart would
    * otherwise silently under-count.
    */
-  private async readThroughput(since: Date): Promise<
+  private async readThroughput(
+    since: Date,
+  ): Promise<
     Map<
       string,
       { completed: number; failed: number; avgDurationMs: number | null; p95DurationMs: number | null }
