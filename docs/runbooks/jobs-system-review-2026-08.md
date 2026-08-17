@@ -356,23 +356,25 @@ Ranked, not yet done. Severities and file references come from the multi-agent
 review (61 findings confirmed, 17 refuted); the full plan is in the workflow
 transcript.
 
-1. **The ETL crons re-enqueue a row that is still running.** `executeTransformJobs` (`EVERY_MINUTE`) selects `status:'success', lastTransformed: null` and sends with no idempotency guard; `lastTransformed` is written only on completion and `updated_at` does not move, so any transform exceeding 60 s is re-enqueued every minute until it finishes. With the `etl` per-queue ceiling of 6, a 5-minute transform gets six concurrent copies of itself — a positive-feedback self-DoS. The handler at `SyncOrchestrator.ts:271` also sets `in_progress` with no status check, so a completed row can be resurrected and re-fetched from the provider. *Fix:* bail in the handlers unless `status === 'pending'` / `lastTransformed == null`. A `singletonKey` alone will not do it — every queue uses the default `standard` policy, under which pg-boss v10 stores but does not enforce one.
-2. **No ack timeout.** `executeJob`'s promise settles only via `done`/`fail`/`defer`. `ImageDescriptionListener` awaits `ollamaService.chat()` with no AbortSignal, so a black-holed Ollama host parks a concurrency slot forever; after six, the queue spins on its backoff and `flush()` makes SIGTERM hang until SIGKILL.
-3. **Leases are taken before global capacity is reserved**, so far more jobs are held `active` than the global cap allows (~108 against a cap of 32 on the shipped config).
-4. **No pagination** — 25 recent jobs rebuilt every poll.
-5. **No job actions.** `retry` / `cancel` / `deleteJob` / `purgeQueue` exist in the installed pg-boss and are unwired; the dashboard is read-only for no technical reason.
-6. **No filtering or search** by state, queue, or date.
-7. **`monitorStateIntervalSeconds` is off** (`version.monitored_on` is NULL). Enabling it makes pg-boss emit per-queue state counts from one `GROUP BY rollup`, replacing the polled counts entirely.
-8. **Handlers that swallow transient failures** report success and never retry — `FileDocumentParseListener`, `FileChunkSearchIndexListener`, and all 12 `GraphEventListener` handlers. Land this *after* the DLQ is visible in the UI, because it will raise dead-letter volume on a broken appliance. That is the point.
-9. **`MessageUpdatedEvent` and `MessageDeletedEvent` have no listener**, so an edited message keeps its stale indexed text and a deleted one stays searchable forever. 21 declared events are orphaned in total; `position.created` is emitted once per GPS fix.
-10. **pg-boss's scheduler is enabled with zero schedules**, creating a phantom `__pgboss__send-it` queue polled every 5 s in every process. Pass `schedule: false`.
-11. **"Completed (lifetime)" is really a ~36-hour window** — `deleteAfterHours: 24` on top of a 12-hour archive delay.
-12. **The `default` queue mixes multi-minute LLM inference with graph writes and new-user seeding** on one 6-slot semaphore at equal priority.
-13. **`ci.pipeline_dead_letters` only grows.** The reaper inserts; nothing purges.
-14. **`PythonFunctionCrons` and `McpController` import `Cron` from `@nestjs/schedule` directly**, bypassing the role gate and the traceId scope.
-15. **No queue metrics over time** — depth, latency, failure rate, DLQ depth.
-16. **20 of 22 work queues declare no `queueOptions`**, inheriting one 12-hour expiry and 3-retry policy for very different workloads.
-17. **`CI_QUEUE_SUPPRESS` is bypassed by any `send()` that names a queue**, while `sendMany` honours it.
+1. **No ack timeout.** `executeJob`'s promise settles only via `done`/`fail`/`defer`. `ImageDescriptionListener` awaits `ollamaService.chat()` with no AbortSignal, so a black-holed Ollama host parks a concurrency slot forever; after six, the queue spins on its backoff and `flush()` makes SIGTERM hang until SIGKILL. **The highest-value item left** — it is the one remaining way the appliance can wedge itself.
+2. **Leases are taken before global capacity is reserved**, so far more jobs are held `active` than the global cap allows (~108 against a cap of 32 on the shipped config). Land it with the ack timeout, or the reduced lease count just moves the stall.
+3. **No job actions.** `retry` / `cancel` / `deleteJob` / `purgeQueue` exist in the installed pg-boss and are unwired; the dashboard is still read-only for no technical reason. Now that there is a table to select rows in, this is the natural next feature.
+4. **`monitorStateIntervalSeconds` is off** (`version.monitored_on` is NULL). Enabling it makes pg-boss emit per-queue state counts from one `GROUP BY rollup`, which could replace the summary's two grouped scans entirely.
+5. **Handlers that swallow transient failures** report success and never retry — `FileDocumentParseListener`, `FileChunkSearchIndexListener`, and all 12 `GraphEventListener` handlers. Safe to land now that failures are visible in the UI; expect dead-letter volume to rise on a broken appliance, which is the point.
+6. **19 declared events remain orphaned** — `send()` on them enqueues nothing. `position.created` is emitted once per GPS fix. (Message update/delete are fixed; the rest are mostly `device.*`, `question.*`, `savedSearch.*`.)
+7. **"Completed (lifetime)" is really a ~36-hour window** — `deleteAfterHours: 24` on top of a 12-hour archive delay. The label is now just "Completed", but the number still means less than it looks like. `ci.job_metrics` is the honest long-run source.
+8. **The `default` queue mixes multi-minute LLM inference with graph writes and new-user seeding** on one 6-slot semaphore at equal priority.
+9. **`ci.pipeline_dead_letters` only grows.** The reaper inserts; nothing purges.
+10. **`PythonFunctionCrons` and `McpController` import `Cron` from `@nestjs/schedule` directly**, bypassing the role gate and the traceId scope.
+11. **20 of 22 work queues declare no per-queue `expireInSeconds`**, inheriting one 12-hour expiry for very different workloads. (Retry policy is now written onto every queue row; expiry still is not.)
+
+### Closed since the first pass
+
+The ETL self-DoS (duplicate transform execution), the phantom pg-boss scheduler,
+the error listener attached after `start()`, NULL retry columns rendering as
+`"null"`, `CI_QUEUE_SUPPRESS` being bypassed by explicit-queue sends, the missing
+message update/delete search listeners, and the absence of pagination, filtering
+and queue metrics over time.
 
 ---
 
