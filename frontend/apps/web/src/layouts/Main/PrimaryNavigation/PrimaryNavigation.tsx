@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { useUploadFile, useTriggerHbpe } from '@/api';
+import { ConnectionModeIndicator, OutboxQueueIndicator } from '@/components/ConnectionModeIndicator';
 import { AddPersonModal } from '@/components/modals/AddItemModal';
 import { AddConceptModal } from '@/components/modals/AddItemModal/AddConceptModal.tsx';
 import { CaptureModal } from '@/components/modals/CaptureModal';
@@ -14,8 +15,6 @@ import { InventoryItemModal } from '@/components/modals/InventoryItemModal';
 import { UploadModal } from '@/components/modals/UploadModal';
 import { GlobalSearchBox } from '@/components/SearchBox';
 import { useModalControls } from '@/hooks';
-
-import { NavUser } from './NavUser';
 
 export function PrimaryNavigation() {
   const { t } = useTranslation();
@@ -90,7 +89,6 @@ export function PrimaryNavigation() {
           ) : (
             <>
               <div className="flex min-w-0 shrink-0 flex-row flex-wrap items-center gap-2">
-                <Portal id="breadcrumbs" />
                 <Portal id="nav-views" className="flex flex-row items-center empty:hidden" />
               </div>
               {!isSharedView && (
@@ -102,8 +100,18 @@ export function PrimaryNavigation() {
           )}
         </div>
 
-        {/* Right: page actions, new, account (Tags lives in the account menu) */}
+        {/* Right: status chips, page actions, and the primary Add control.
+            Account/settings live in the left rail now. The chips sit in the
+            header's flow rather than in a fixed overlay: an overlay pinned to
+            the viewport's top-right lands on top of this cluster and covers
+            the add button (only the mobile layout, which has no header,
+            positions them that way). */}
         <div className="flex shrink-0 flex-row items-center gap-2">
+          <div className="flex flex-row items-center gap-1.5 empty:hidden">
+            <ConnectionModeIndicator />
+            <OutboxQueueIndicator />
+          </div>
+
           <Portal ref={actionsRef} id="actions" className="flex flex-row items-center empty:hidden" />
 
           {hasActions && <Separator orientation="vertical" className="data-[orientation=vertical]:h-6" />}
@@ -111,8 +119,8 @@ export function PrimaryNavigation() {
           <div className="flex items-center">
             <DropdownMenu modal={false}>
               <DropdownMenu.Trigger asChild>
-                <IconButton variant="ghost" label={t('NAV_ADD')}>
-                  <Plus strokeWidth={1.5} />
+                <IconButton variant="default" size="icon-lg" label={t('NAV_ADD')}>
+                  <Plus strokeWidth={2} className="h-5 w-5" />
                 </IconButton>
               </DropdownMenu.Trigger>
               <DropdownMenu.Content className="rounded-lg p-2" side="bottom" align="end" sideOffset={4}>
@@ -223,7 +231,7 @@ export function PrimaryNavigation() {
                       </Tooltip.Content>
                       <Tooltip.Trigger asChild>
                         <DropdownMenu.Item
-                          onSelect={() => navigate('/connect')}
+                          onSelect={() => navigate('/sources')}
                           className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
                         >
                           <Cable className="h-6! w-6!" strokeWidth={1.25} />
@@ -263,7 +271,6 @@ export function PrimaryNavigation() {
               </DropdownMenu.Content>
             </DropdownMenu>
           </div>
-          <NavUser />
         </div>
       </header>
 

@@ -1,0 +1,32 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-122.4194, 37.7749, 10]
+      },
+      "properties": {
+        "name": "San Francisco",
+        "timestamp": "2025-01-15T12:00:00Z",
+        "description": "Sample location point"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [-122.4194, 37.7749],
+          [-122.4084, 37.7858],
+          [-122.3959, 37.7914]
+        ]
+      },
+      "properties": {
+        "name": "Sample route",
+        "timestamp": "2025-01-16T14:30:00Z"
+      }
+    }
+  ]
+}

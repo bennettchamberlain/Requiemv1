@@ -150,7 +150,7 @@ function makeHarness(options: {
   };
 
   const emitter = new EventEmitter2();
-  const service = new PGBossEventService(emitter, logger as unknown as LoggerService);
+  const service = new PGBossEventService(emitter, logger as unknown as LoggerService, {} as never);
 
   const backlogs = new Map<string, QueuedJob[]>();
   const fetchCalls: FetchCall[] = [];
@@ -665,6 +665,61 @@ describe('PGBossEventService work loop', () => {
     });
   });
 
+  /**
+   * The loop's two un-awaited edges. A rejection escaping either one is not a
+   * logged error — it is an unhandled rejection, which under Node's default (and
+   * NestJS's) takes the whole appliance down. Both paths are reached by ordinary
+   * transient database trouble, so "the DB hiccupped" must not mean "the server
+   * restarted", nor "this queue silently stopped working until the next deploy".
+   */
+  describe('database faults', () => {
+    it('keeps polling after a fetch throws instead of killing the worker', async () => {
+      const harness = makeHarness({ queues: ['search-index'] });
+
+      harness.listen('search-index', 'note.created');
+      harness.boss.fetch.mockRejectedValueOnce(new Error('connection terminated'));
+      harness.start('search-index');
+
+      await jest.advanceTimersByTimeAsync(1);
+
+      expect(harness.boss.fetch).toHaveBeenCalledTimes(1);
+      expect(harness.logger.error).toHaveBeenCalled();
+
+      // The pre-fix loop propagated this out of `while`, rejecting the promise
+      // parked in stopTasks: the process died, and had it survived, this queue
+      // would have had no worker for the rest of its life while every other
+      // queue kept running. It must simply back off and poll again.
+      harness.enqueue('search-index', 'note.created', [0]);
+      await jest.advanceTimersByTimeAsync(BACKOFF_WHEN_EMPTY_MS);
+
+      expect(harness.boss.fetch.mock.calls.length).toBeGreaterThan(1);
+      expect(harness.executed).toEqual(['search-index-job-1']);
+
+      await runUntilSettled(harness.service.onModuleDestroy());
+    });
+
+    it('survives a fail() that itself throws', async () => {
+      const harness = makeHarness({ queues: ['search-index'] });
+
+      harness.listen('search-index', 'note.created', 'fail');
+      harness.enqueue('search-index', 'note.created', [0]);
+      harness.boss.fail.mockRejectedValue(new Error('connection terminated'));
+      harness.start('search-index');
+
+      await jest.advanceTimersByTimeAsync(1);
+
+      // A failing job whose failure cannot be recorded used to reject inside the
+      // un-awaited semaphore callback — a job error escalating into a process
+      // exit. It is logged and left for pg-boss's expiration instead.
+      expect(harness.boss.fail).toHaveBeenCalledTimes(1);
+      expect(harness.logger.error).toHaveBeenCalled();
+
+      await runUntilSettled(harness.service.onModuleDestroy());
+
+      expect(harness.boss.stop).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('shutdown', () => {
     it('drains in-flight work before stopping pg-boss instead of abandoning it', async () => {
       const harness = makeHarness({
@@ -733,10 +788,32 @@ describe('PGBossEventService work loop', () => {
       await jest.advanceTimersByTimeAsync(1);
       await runUntilSettled(harness.service.onModuleDestroy());
 
-      // complete() throwing routes the job into fail(), which is the loop's
-      // catch — shutdown must survive it and still close the client.
-      expect(harness.boss.fail).toHaveBeenCalledTimes(1);
+      // A complete() that throws must NOT be escalated into fail(): the listener
+      // already succeeded, and failing it burns a retry on work that is done —
+      // repeatedly, until the job dead-letters. The job is left `active` for
+      // pg-boss's expiration to re-queue, and shutdown still closes the client.
+      expect(harness.boss.fail).not.toHaveBeenCalled();
       expect(harness.boss.stop).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not fail a job whose listener succeeded but whose completion errored', async () => {
+      const harness = makeHarness({ queues: ['search-index'] });
+
+      harness.listen('search-index', 'note.created');
+      harness.enqueue('search-index', 'note.created', [0]);
+      harness.boss.complete.mockRejectedValue(new Error('connection reset'));
+      harness.start('search-index');
+
+      await jest.advanceTimersByTimeAsync(1);
+
+      // The work ran exactly once and was never marked failed. Before this, the
+      // shared try/catch around executeJob + complete() turned a transient
+      // acknowledgement error into a false failure — and, once the retries ran
+      // out, dead-lettered a job that had actually done its work.
+      expect(harness.executed).toHaveLength(1);
+      expect(harness.boss.fail).not.toHaveBeenCalled();
+
+      await runUntilSettled(harness.service.onModuleDestroy());
     });
   });
 });

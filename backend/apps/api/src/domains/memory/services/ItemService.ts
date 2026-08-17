@@ -5,7 +5,7 @@ import { v7 as uuid7 } from 'uuid';
 
 import { SYSTEM_USER, type UserServiceContext, type ServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { bulkInsertIdempotent, INGEST_REFRESH_COLUMNS } from '@ci/common/persistence';
+import { type BulkInsertResult, bulkInsertIdempotent, INGEST_REFRESH_COLUMNS } from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
 import { ItemCreatedEvent, ItemUpdatedEvent, ItemRemovedEvent } from '@ci/domains/memory/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
@@ -133,6 +133,24 @@ export class ItemService {
    * unique index, which also absorbs a lost insert race.
    */
   async createMany(context: UserServiceContext, data: CreateItemDto[]): Promise<Item[]> {
+    return (await this.createManyDetailed(context, data)).map(({ entity }) => entity);
+  }
+
+  /**
+   * Same ingest as {@link createMany}, reporting which rows this call actually
+   * INSERTED rather than found already present.
+   *
+   * The batch paths upsert, so a re-sent row resolves silently and is
+   * indistinguishable in the returned entities from one written for the first
+   * time. The importer needs the difference: without it a push of 7,339 content
+   * records that collapsed onto 2,354 rows reports 7,339 writes, and its
+   * "already saved" count reads zero on an import that was almost entirely
+   * repeats.
+   */
+  async createManyDetailed(
+    context: UserServiceContext,
+    data: CreateItemDto[],
+  ): Promise<Array<BulkInsertResult<Item>>> {
     if (data.length === 0) {
       return [];
     }
@@ -252,7 +270,10 @@ export class ItemService {
     // fan-out was the dominant cost at import volume. Search indexing for
     // bulk-loaded rows is deferred to the post-load batch embed
     // (POST /api/maintenance/search-index/backfill).
-    return detailResults.map(({ entity }) => ItemEntity.toEgressType(entity, bases.get(entity.id)));
+    return detailResults.map(({ entity, inserted }) => ({
+      entity: ItemEntity.toEgressType(entity, bases.get(entity.id)),
+      inserted,
+    }));
   }
 
   async findAll(context: ServiceContext): Promise<Item[]> {
@@ -289,7 +310,14 @@ export class ItemService {
    */
   async getEntitiesForItems(
     context: ServiceContext,
-    options: { limit?: number; startTime?: Date; endTime?: Date; order?: 'ASC' | 'DESC' } = {},
+    options: {
+      limit?: number;
+      startTime?: Date;
+      endTime?: Date;
+      afterTime?: Date;
+      afterId?: string;
+      order?: 'ASC' | 'DESC';
+    } = {},
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
     let query = this.itemRepository
       .createQueryBuilder('item')
@@ -304,7 +332,17 @@ export class ItemService {
       query = query.andWhere('item.created_at <= :endTime', { endTime: options.endTime });
     }
 
-    query = query.orderBy('item.created_at', options.order ?? 'DESC');
+    // Composite keyset: page strictly past (afterTime, afterId) in
+    // (created_at DESC, object_id DESC) — see ContentService.getEntitiesForContents.
+    if (options.afterTime && options.afterId) {
+      query = query.andWhere(
+        '(item.created_at < :afterTime OR (item.created_at = :afterTime AND item.object_id < :afterId))',
+        { afterTime: options.afterTime, afterId: options.afterId },
+      );
+    }
+
+    // Deterministic tiebreak so same-timestamp rows page consistently.
+    query = query.orderBy('item.created_at', options.order ?? 'DESC').addOrderBy('item.object_id', 'DESC');
 
     if (options.limit) {
       query = query.limit(options.limit);

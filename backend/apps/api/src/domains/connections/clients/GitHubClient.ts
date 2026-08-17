@@ -4,6 +4,7 @@ import { LoggerService } from '@ci/common/logging';
 
 import type { Connection } from '../entities/ConnectionEntity';
 
+import { firstAccountLabel } from './accountLabel';
 import { BaseOAuth2Client } from './BaseOAuth2Client';
 
 @Injectable()
@@ -35,6 +36,12 @@ export class GitHubClient extends BaseOAuth2Client {
 
   getAccountIdentifier(connection: Connection) {
     return this.fetchUser(connection).then((result) => result.login);
+  }
+
+  async getAccountLabel(connection: Connection): Promise<string | null> {
+    const user = await this.fetchUser(connection);
+
+    return firstAccountLabel(user.email, user.login);
   }
 
   /**

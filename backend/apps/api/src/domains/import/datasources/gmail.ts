@@ -1,0 +1,564 @@
+/* Gmail datasource (stub TypeScript port) */
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import readline from 'node:readline';
+
+import { extractAttachmentToFile, attachmentMediaKind } from './attachment_extract';
+import { mboxFromLineDate, receivedDate } from './email_date';
+import { emailDirection, isDraft } from './email_direction';
+import { parseMime } from './email_mime';
+import type { FileImporter, Recognition, DirEntry } from './registry';
+import { registerDataSource } from './registry';
+import type { ImportParams, Graph, Entity, EntityAttribute, Metadata, Relationship } from './timeline';
+import { timeframeContains } from './timeline';
+
+// Read whole-file only for archives comfortably below Node's max string length
+// (~512MB). Larger .mbox files are streamed line-by-line so we never hold the
+// entire file — or all messages — in memory at once.
+const WHOLE_FILE_LIMIT = 256 * 1024 * 1024; // 256 MB
+
+type GmailOptions = Record<string, never>;
+
+export class GmailFileImporter implements FileImporter {
+  async recognize(_ctx: unknown, entry: DirEntry): Promise<Recognition> {
+    const full = entry.fullPath || entry.fsRoot || entry.filename;
+    if (!full) {
+      return { confidence: 0 };
+    }
+
+    if (fs.existsSync(full) && fs.statSync(full).isFile()) {
+      const ext = path.extname(full).toLowerCase();
+      if (ext === '.mbox') {
+        // Boost to 1.0 when the path contains Takeout markers — outranks generic email@0.95.
+        const lp = full.toLowerCase();
+        if (lp.includes('takeout') || lp.includes('google') || lp.includes('gmail')) {
+          return { confidence: 1.0 };
+        }
+
+        return { confidence: 0.9 };
+      }
+
+      try {
+        const fd = await fs.promises.open(full, 'r');
+        const buf = Buffer.alloc(5);
+        await fd.read(buf, 0, 5, 0);
+        await fd.close();
+        if (buf.toString() === 'From ') {
+          return { confidence: 0.7 };
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if (fs.existsSync(full) && fs.statSync(full).isDirectory()) {
+      // Gmail Takeout folder often contains "All mail Including Spam and Trash.mbox"
+      const entries = fs.readdirSync(full);
+      const lp = full.toLowerCase();
+      const isTakeout = lp.includes('takeout') || lp.includes('google') || lp.includes('gmail');
+      if (entries.some((e) => e.toLowerCase().endsWith('.mbox'))) {
+        return { confidence: isTakeout ? 0.95 : 0.6, dir_threshold: 0.9 };
+      }
+    }
+
+    return { confidence: 0 };
+  }
+
+  async fileImport(_ctx: unknown, entry: DirEntry, params: ImportParams): Promise<void> {
+    const start = entry.fullPath || entry.fsRoot || entry.filename;
+    if (!start) {
+      return;
+    }
+
+    const stat = fs.statSync(start);
+    if (stat.isDirectory()) {
+      for await (const f of this.walkDir(start)) {
+        if (f.toLowerCase().endsWith('.mbox')) {
+          await this.processMbox(f, params);
+        }
+      }
+    } else if (start.toLowerCase().endsWith('.mbox')) {
+      await this.processMbox(start, params);
+    }
+  }
+
+  private async *walkDir(root: string): AsyncGenerator<string> {
+    const ents = await fs.promises.readdir(root, { withFileTypes: true });
+    for (const e of ents) {
+      const full = path.join(root, e.name);
+      if (e.isDirectory()) {
+        if (e.name.startsWith('.')) {
+          continue;
+        }
+
+        yield* this.walkDir(full);
+      } else if (e.isFile()) {
+        yield full;
+      }
+    }
+  }
+
+  private async processMbox(fpath: string, params: ImportParams): Promise<void> {
+    let size = 0;
+    try {
+      size = fs.statSync(fpath).size;
+    } catch {
+      /* fall through to streaming */
+    }
+
+    // Small archives: keep the original whole-file behavior (fast, simple, and
+    // exercised by the unit tests). Large archives are streamed so a multi-GB
+    // .mbox never has to fit in a single string/Buffer.
+    if (size > 0 && size <= WHOLE_FILE_LIMIT) {
+      let raw: string;
+      try {
+        raw = await fs.promises.readFile(fpath, 'utf8');
+      } catch (e) {
+        params.log?.('error', 'read mbox failed', {
+          file: path.basename(fpath),
+          error: (e as Error).message,
+        });
+
+        return;
+      }
+
+      // Normalize CRLF to LF
+      raw = raw.replace(/\r\n/g, '\n');
+      // Split on "\nFrom " separators (mbox) but keep first if starts that way
+      const chunks = raw.split(/\nFrom /).map((m, i) => (i === 0 ? m : 'From ' + m));
+      for (const chunk of chunks) {
+        this.parseMessage(chunk, fpath, params);
+      }
+
+      return;
+    }
+
+    await this.streamMbox(fpath, params);
+  }
+
+  // Stream a (potentially multi-GB) mbox line-by-line. Each mbox record begins
+  // with a "From " separator line at column 0; we accumulate lines for the
+  // current message and flush it the moment the next separator appears, parsing
+  // and pushing each message before reading the next. Memory stays bounded to a
+  // single message regardless of total file size.
+  private async streamMbox(fpath: string, params: ImportParams): Promise<void> {
+    let stream: fs.ReadStream;
+    try {
+      stream = fs.createReadStream(fpath, { encoding: 'utf8' });
+    } catch (e) {
+      params.log?.('error', 'read mbox failed', { file: path.basename(fpath), error: (e as Error).message });
+
+      return;
+    }
+
+    try {
+      const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+      let current: string[] = [];
+      let started = false;
+      const flush = () => {
+        if (!started) {
+          return;
+        }
+
+        const chunk = current.join('\n');
+        current = [];
+        try {
+          this.parseMessage(chunk, fpath, params);
+        } catch (e) {
+          params.log?.('error', 'parse message failed', {
+            file: path.basename(fpath),
+            error: (e as Error).message,
+          });
+        }
+      };
+
+      for await (const line of rl) {
+        // A "From " at column 0 marks the start of a new mbox record.
+        if (line.startsWith('From ')) {
+          flush();
+          started = true;
+          current.push(line);
+        } else if (started) {
+          current.push(line);
+        }
+        // Lines before the first "From " separator are leading noise; skip them.
+      }
+
+      flush();
+    } catch (e) {
+      params.log?.('error', 'read mbox failed', { file: path.basename(fpath), error: (e as Error).message });
+    } finally {
+      stream.destroy();
+    }
+  }
+
+  // Parse a single raw mbox message (one record, "From "-separator included or
+  // not) and push the resulting item + entities. Shared by both the whole-file
+  // and streaming code paths so behavior is identical regardless of file size.
+  private parseMessage(chunk: string, fpath: string, params: ImportParams): void {
+    // Normalize CRLF in case a streamed line carried a stray \r.
+    chunk = chunk.replace(/\r\n/g, '\n');
+    // Separate headers and body; allow folded headers per RFC 5322 (continuation lines start with space or tab)
+    // Every early return below MUST report to pipeline.drop: a 5GB Takeout mbox
+    // loses ~90% of its messages to the bulk filter, and without ledger entries
+    // that entire funnel is invisible in the job record (the "89k collected,
+    // 15k inserted, drops={dedup:62}" mystery).
+    const parts = chunk.split(/\n\n/);
+    if (parts.length < 2) {
+      params.pipeline.drop?.('non_message');
+
+      return;
+    }
+
+    let headersRaw = parts[0];
+    const bodyRaw = parts.slice(1).join('\n\n');
+    // Unfold headers: replace CRLF + WSP with single space
+    headersRaw = headersRaw.replace(/\n[ \t]+/g, ' ');
+    const headersMap = parseHeaders(headersRaw);
+    if (!headersMap.Subject && !headersMap.Date) {
+      params.pipeline.drop?.('non_message');
+
+      return;
+    } // skip non-message chunks
+
+    // Timestamp: Date header (the author's send time) → first Received stamp
+    // (final delivery) → mbox separator-line date. Bulk senders omit Date:
+    // entirely, and without the fallbacks those messages landed dated at
+    // import wall-clock (see email_date.ts).
+    let ts: Date | undefined;
+    if (headersMap.Date) {
+      const d = new Date(headersMap.Date);
+      if (!isNaN(d.getTime())) {
+        ts = d;
+      }
+    }
+
+    if (!ts) {
+      ts = receivedDate(headersRaw) ?? mboxFromLineDate(chunk);
+    }
+
+    if (!timeframeContains(params.timeframe, ts)) {
+      params.pipeline.drop?.('outside_timeframe');
+
+      return;
+    }
+
+    // Never-sent drafts aren't correspondence — skip them entirely.
+    if (isDraft(headersMap)) {
+      params.pipeline.drop?.('draft');
+
+      return;
+    }
+
+    // Keep only real human correspondence: drop spam, newsletters, promotions,
+    // social/forum/update notifications, and other bulk/automated mail. Set
+    // CI_GMAIL_INCLUDE_BULK=1 to import everything. See isHumanCorrespondence.
+    if (process.env.CI_GMAIL_INCLUDE_BULK !== '1' && !isHumanCorrespondence(headersMap)) {
+      params.pipeline.drop?.('bulk_filtered');
+
+      return;
+    }
+
+    // MIME parse (single-level) for body + attachments
+    const mime = parseMime(headersRaw, bodyRaw);
+    const bodyText = mime.textBody || mime.htmlBody || '';
+
+    // Participants
+    const from = headersMap.From;
+    const to = headersMap.To;
+    const cc = headersMap.Cc;
+    const msgID = headersMap['Message-ID'];
+    const refs = headersMap.References;
+    const inReply = headersMap['In-Reply-To'];
+    const subject = headersMap.Subject;
+    // Participants hang off the email graph as edges (relation 'from'/'to'/'cc')
+    // so persistGraph records an item→entity relationship for each. They used to
+    // be pushed as SEPARATE top-level entity-only graphs, which persisted the
+    // people but never a single email↔person relationship row (a live full-mbox
+    // import recorded relationships_inserted=0 against 12k entities).
+    const edges: Relationship[] = [];
+    const seenParticipants = new Set<string>();
+    const addParticipants = (line: string | undefined, kind: string) => {
+      if (!line) {
+        return;
+      }
+
+      for (const addr of line.split(/,/)) {
+        const parsed = parseEmailAddress(addr.trim());
+        // Bare addresses use the address as the name: entity dedup in persistence
+        // keys on (type, name), so nameless participants would all merge into one
+        // blank 'contact' row — and every relationship would point at it.
+        const name = parsed.name || parsed.email;
+        if (!name) {
+          continue;
+        }
+
+        const dedupKey = `${kind}|${(parsed.email ?? name).toLowerCase()}`;
+        if (seenParticipants.has(dedupKey)) {
+          continue;
+        }
+
+        seenParticipants.add(dedupKey);
+        edges.push({
+          relation: kind,
+          to: {
+            entity: {
+              name,
+              attributes: [{ name: kind, value: parsed.email, identity: true } as EntityAttribute],
+            },
+          },
+        });
+      }
+    };
+
+    addParticipants(from, 'from');
+    addParticipants(to, 'to');
+    addParticipants(cc, 'cc');
+
+    const cleanMsgID = msgID ? msgID.replace(/[<>]/g, '') : undefined;
+    // Direction: outbound when this is the user's own mail — Gmail tags it with
+    // a `Sent` label, and a submission-filed copy carries no receiving-MTA
+    // delivery-trace headers (see email_direction.ts); else inbound. The
+    // canonical mapping reads `Direction` (mapping.ts#directionFor), so the
+    // communication row carries it through to CI-Server.
+    const direction = emailDirection(headersMap);
+    // Body snippet so the canonical mapping carries text to CI-Server; capped to
+    // keep metadata/embeddings sane (full body still lives in content.data).
+    // From/To ride along too so the comms mapping can fill participants_metadata.
+    // Attachments ride the communication itself as metadata.MediaAttachments —
+    // the descriptor lane the push's comms media leg reads (upload + content
+    // row + the message's attachments column; see graphql.ts
+    // withCommunicationMedia). They used to be separate sub-items routed by
+    // MIME to events, which minted one ci.events row per attachment at the
+    // email's timestamp titled by the email's subject — pure duplication of
+    // the communication (a live ci.events held nothing but such rows).
+    // `path` is the attachment's OWN extracted bytes — NEVER the mbox
+    // container. Pointing at the container made the media-retention pass copy
+    // (and the push upload) the entire multi-GB mbox once per media attachment
+    // (a live import copied 5.3 GB × 18 attachments = 95 GB before freezing).
+    // Extraction failure (or zero bytes) → no descriptor: nothing on disk to
+    // upload.
+    const mediaAttachments = mime.attachments.flatMap((att, attIdx) => {
+      const extracted = extractAttachmentToFile(fpath, att, params.log);
+      if (!extracted) {
+        return [];
+      }
+
+      return [
+        {
+          path: extracted,
+          filename: att.filename || `attachment-${attIdx}`,
+          type: attachmentMediaKind(att.mediaType),
+          mimetype: att.mediaType,
+        },
+      ];
+    });
+    const itemMetadata: Metadata = {
+      Source: 'GmailMbox',
+      Subject: subject,
+      From: from,
+      To: to,
+      Cc: cc,
+      Direction: direction,
+      MessageID: cleanMsgID,
+      InReplyTo: inReply?.replace(/[<>]/g, ''),
+      References: refs?.replace(/[<>]/g, ' '),
+      Text: bodyText ? bodyText.slice(0, 4000) : undefined,
+      MediaAttachments: mediaAttachments.length ? mediaAttachments : undefined,
+    };
+    const item = {
+      // Message-ID is the natural unique key. Without it the dedup hash collapses
+      // to (dataSource, 'email', mbox basename, timestamp-second), so distinct
+      // emails sharing a second would silently overwrite each other.
+      id: cleanMsgID
+        ? `gmail:${cleanMsgID}`
+        : `gmail:nomid:${crypto
+            .createHash('sha1')
+            .update(headersRaw + '\0' + bodyText)
+            .digest('hex')}`,
+      classification: 'email',
+      timestamp: ts,
+      intermediateLocation: fpath,
+      content: {
+        filename: path.basename(fpath),
+        mediaType: 'text/plain',
+        data: async () => Buffer.from(bodyText || ''),
+      },
+      metadata: itemMetadata,
+    };
+    const g: Graph = { item, edges: edges.length ? edges : undefined };
+    // naïve threading: create entity for thread id via Message-ID sans angle brackets
+    if (cleanMsgID) {
+      const threadID = cleanMsgID;
+      g.entity = { name: threadID, type: 'email_thread' } as Entity; // simplistic; could use separate graph
+    }
+
+    params.pipeline.push(g);
+  }
+}
+
+// Gmail category / user labels that mark non-human mail (bulk, automated, spam).
+// Google Takeout writes these in the `X-Gmail-Labels` header. "Google Voice" is
+// excluded because those SMS/voicemail rows arrive via the dedicated googlevoice
+// source; "Chat" is Hangouts logs, not email correspondence.
+const BULK_GMAIL_LABELS = new Set([
+  'spam',
+  'trash',
+  'junk',
+  'category promotions',
+  'category social',
+  'category forums',
+  'category updates',
+  'newsletters',
+  'notifications',
+  'google voice',
+  'chat',
+]);
+// Labels that affirmatively mark human correspondence and override the heuristics
+// below: Gmail's own Primary-tab classification, and the user's own Sent mail.
+const HUMAN_GMAIL_LABELS = new Set(['category personal', 'sent']);
+// Engagement/importance signals that rescue a message filed ONLY under Gmail's
+// "Updates" category. Updates swallows transactional mail users consider real —
+// receipts, bills, bookings (a live mailbox had 2,849 of 3,846 Inbox messages
+// there, 1,679 of them Gmail-flagged Important). Important/Starred are Gmail's
+// own significance verdicts, Opened is the user's engagement, and the
+// Purchases/Travel/Bills co-categories mark transactional records worth keeping.
+const UPDATES_OVERRIDE_LABELS = new Set([
+  'important',
+  'opened',
+  'starred',
+  'category purchases',
+  'category travel',
+  'category bills',
+]);
+
+/**
+ * Decide whether a parsed email is real human correspondence (vs spam, a
+ * newsletter, a promotion, or an automated notification). Order of evidence:
+ *   1. X-Gmail-Labels — trust Gmail's own classification. Personal/Sent → keep;
+ *      a bulk category/Spam/Junk → drop — EXCEPT a message filed only under
+ *      "Category Updates" that also carries an engagement/importance label
+ *      (Important, Starred, Opened, or a Purchases/Travel/Bills co-category),
+ *      which is kept (see UPDATES_OVERRIDE_LABELS).
+ *   2. Bulk headers — List-Unsubscribe / List-Id / Precedence: bulk|list|auto /
+ *      Auto-Submitted mark mailing-list and machine-generated mail.
+ *   3. Sender shape — no-reply@, notifications@, marketing@, mailer-daemon, etc.
+ * Defaults to KEEP when there is no bulk signal, so ambiguous/older mail (which
+ * predates Gmail categories) is preserved rather than silently dropped.
+ */
+export function isHumanCorrespondence(h: Record<string, string>): boolean {
+  const labels = (h['X-Gmail-Labels'] || '')
+    .toLowerCase()
+    .split(',')
+    .map((l) => l.replace(/^imap_\$?/, '').trim()) // IMAP_$Junk → junk, IMAP_NotJunk → notjunk
+    .filter(Boolean);
+
+  // Google Voice SMS/voicemail notification emails are machine-generated and
+  // duplicate the dedicated googlevoice source — drop them even though Gmail
+  // tends to file them under "Category Personal".
+  const from = (h['From'] || '').toLowerCase();
+  const subject = h['Subject'] || '';
+  if (
+    from.includes('voice.google.com') ||
+    /^(New (text|picture|group) message|New voicemail|New missed call) from /i.test(subject)
+  ) {
+    return false;
+  }
+
+  if (labels.some((l) => HUMAN_GMAIL_LABELS.has(l))) {
+    return true;
+  }
+
+  const bulk = labels.filter((l) => BULK_GMAIL_LABELS.has(l));
+  if (bulk.length) {
+    // A message whose ONLY bulk signal is "Category Updates" is kept when an
+    // engagement/importance label says it mattered to the user. KEEP outright
+    // rather than falling through: receipts/bills nearly always come from
+    // no-reply senders with List-Unsubscribe headers, so the heuristics below
+    // would immediately re-drop everything this override is for. A message
+    // that ALSO carries Spam/Trash/Promotions/etc. is never rescued.
+    if (bulk.every((l) => l === 'category updates') && labels.some((l) => UPDATES_OVERRIDE_LABELS.has(l))) {
+      return true;
+    }
+
+    return false;
+  }
+
+  if (h['List-Unsubscribe'] || h['List-Id'] || h['List-ID']) {
+    return false;
+  }
+
+  if (/\b(bulk|list|junk|auto_reply|auto-reply)\b/i.test(h['Precedence'] || '')) {
+    return false;
+  }
+
+  const autoSubmitted = (h['Auto-Submitted'] || '').toLowerCase();
+  if (autoSubmitted && autoSubmitted !== 'no') {
+    return false;
+  }
+
+  if (
+    /(?:^|[<\s."'])(?:no-?reply|do-?not-?reply|donotreply|notifications?|newsletter|news|mailer-daemon|postmaster|bounce[sd]?|marketing|noreply)[._-]?@/.test(
+      from,
+    )
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function parseHeaders(raw: string): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const line of raw.split(/\n/)) {
+    const idx = line.indexOf(':');
+    if (idx === -1) {
+      continue;
+    }
+
+    const key = line.slice(0, idx).trim();
+    const val = line.slice(idx + 1).trim();
+    if (!map[key]) {
+      map[key] = val;
+    } else {
+      map[key] += ', ' + val;
+    } // combine duplicates
+  }
+
+  return map;
+}
+
+function parseEmailAddress(raw: string): { name?: string; email?: string } {
+  // Formats: Name <email@domain>, "Name" <email@domain>, bare email@domain.
+  // Linear indexOf/slice — NOT a regex. The previous
+  // /^(?:"?([^"<]+)"?\s*)?<([^>]+)>$/ overlaps [^"<]+ and \s* on whitespace and
+  // backtracks quadratically: a 120k-char address header took 8.5s, and a longer
+  // one hung the ENTIRE mbox import on a single pathological message (CPU-spun at
+  // 94% with zero progress, no way to skip it).
+  const lt = raw.indexOf('<');
+  if (lt !== -1) {
+    const gt = raw.indexOf('>', lt + 1);
+    if (gt !== -1) {
+      const email = raw.slice(lt + 1, gt).trim();
+      const name = raw.slice(0, lt).trim().replace(/^"|"$/g, '').trim() || undefined;
+
+      return { name, email };
+    }
+  }
+
+  if (/^[^@]+@[^@]+$/.test(raw)) {
+    return { email: raw };
+  }
+
+  return { name: raw };
+}
+
+registerDataSource({
+  name: 'gmail',
+  title: 'Gmail (mbox)',
+  icon: 'gmail.svg',
+  description: 'Gmail Takeout .mbox files (minimal stub)',
+  newOptions: () => ({}) as GmailOptions,
+  newFileImporter: () => new GmailFileImporter(),
+});

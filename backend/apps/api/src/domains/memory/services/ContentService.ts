@@ -5,6 +5,7 @@ import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/context';
 import {
+  type BulkInsertResult,
   bulkInsertIdempotent,
   INGEST_REFRESH_COLUMNS,
   keysetPaginate,
@@ -210,6 +211,25 @@ export class ContentService {
     data: CreateContentDto[],
     options?: { emitCreated?: boolean },
   ): Promise<Content[]> {
+    return (await this.createManyDetailed(context, data, options)).map(({ entity }) => entity);
+  }
+
+  /**
+   * Same ingest as {@link createMany}, reporting which rows this call actually
+   * INSERTED rather than found already present.
+   *
+   * The batch paths upsert, so a re-sent row resolves silently and is
+   * indistinguishable in the returned entities from one written for the first
+   * time. The importer needs the difference: without it a push of 7,339 content
+   * records that collapsed onto 2,354 rows reports 7,339 writes, and its
+   * "already saved" count reads zero on an import that was almost entirely
+   * repeats.
+   */
+  async createManyDetailed(
+    context: UserServiceContext,
+    data: CreateContentDto[],
+    options?: { emitCreated?: boolean },
+  ): Promise<Array<BulkInsertResult<Content>>> {
     if (data.length === 0) {
       return [];
     }
@@ -328,7 +348,10 @@ export class ContentService {
       }
     }
 
-    return detailResults.map(({ entity }) => ContentEntity.toEgressType(entity, bases.get(entity.id)));
+    return detailResults.map(({ entity, inserted }) => ({
+      entity: ContentEntity.toEgressType(entity, bases.get(entity.id)),
+      inserted,
+    }));
   }
 
   /**
@@ -500,7 +523,14 @@ export class ContentService {
    */
   async getEntitiesForContents(
     context: ServiceContext,
-    options: { limit?: number; startTime?: Date; endTime?: Date; order?: 'ASC' | 'DESC' } = {},
+    options: {
+      limit?: number;
+      startTime?: Date;
+      endTime?: Date;
+      afterTime?: Date;
+      afterId?: string;
+      order?: 'ASC' | 'DESC';
+    } = {},
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
     let query = this.contentRepository
       .createQueryBuilder('content')
@@ -515,7 +545,18 @@ export class ContentService {
       query = query.andWhere('content.created_at <= :endTime', { endTime: options.endTime });
     }
 
-    query = query.orderBy('content.created_at', options.order ?? 'DESC');
+    // Composite keyset: page strictly past (afterTime, afterId) in
+    // (created_at DESC, id DESC). Without it the search feed re-fetched the same
+    // top-N rows every page and dead-ended at `first * FETCH_MULTIPLIER` rows.
+    if (options.afterTime && options.afterId) {
+      query = query.andWhere(
+        '(content.created_at < :afterTime OR (content.created_at = :afterTime AND content.id < :afterId))',
+        { afterTime: options.afterTime, afterId: options.afterId },
+      );
+    }
+
+    // Deterministic tiebreak so same-timestamp rows page consistently.
+    query = query.orderBy('content.created_at', options.order ?? 'DESC').addOrderBy('content.id', 'DESC');
 
     if (options.limit) {
       query = query.limit(options.limit);

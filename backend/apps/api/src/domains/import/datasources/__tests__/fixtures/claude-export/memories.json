@@ -1,0 +1,14 @@
+[
+  {
+    "uuid": "3f2a9c1e-0001-4d6b-9a1f-52e10a77c001",
+    "content": "User is a data engineer who prefers concise, code-first answers.",
+    "created_at": "2026-03-05T12:00:00.000Z",
+    "updated_at": "2026-03-10T08:30:00.000Z"
+  },
+  {
+    "uuid": "3f2a9c1e-0002-4d6b-9a1f-52e10a77c002",
+    "summary": "Building a home automation dashboard with a Raspberry Pi.",
+    "category": "projects",
+    "created_at": "2026-03-08T15:45:00.000Z"
+  }
+]

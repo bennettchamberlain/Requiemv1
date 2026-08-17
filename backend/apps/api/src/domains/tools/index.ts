@@ -25,23 +25,35 @@ import { LoggerService } from '@ci/common/logging';
 import { ConversationModule } from '@ci/domains/conversations';
 import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
+import { ImportModule } from '@ci/domains/import';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule } from '@ci/domains/memory';
 import { ParsingModule } from '@ci/domains/parsing';
+import { PredictionsModule } from '@ci/domains/predictions';
 import { SearchNextModule } from '@ci/domains/search-next';
+import { SummariesModule } from '@ci/domains/summaries';
 
 import { IntentCatalogService } from './catalog/IntentCatalogService';
 import { ToolInvokedListener } from './listeners/ToolInvokedListener';
 import { NativeToolProvider } from './providers/NativeToolProvider';
 import { ToolRegistry } from './registry/ToolRegistry';
 import { ToolsRegistrationService } from './services/ToolsRegistrationService';
+import { BriefListTool } from './tools/BriefListTool';
 import { CalendarFindEventsTool } from './tools/CalendarFindEventsTool';
 import { DatabaseSearchTool } from './tools/DatabaseSearchTool';
+import { ForecastCalibrationTool } from './tools/ForecastCalibrationTool';
+import { ForecastReadTool } from './tools/ForecastReadTool';
 import { ForgetKnowledgeTool } from './tools/ForgetKnowledgeTool';
 import { GetEntertainmentPreferencesTool } from './tools/GetEntertainmentPreferencesTool';
 import { GetFamilyMembersTool } from './tools/GetFamilyMembersTool';
 import { GetStreamingAvailabilityTool } from './tools/GetStreamingAvailabilityTool';
 import { GetUserPreferencesTool } from './tools/GetUserPreferencesTool';
+import { ImportInboxTool } from './tools/ImportInboxTool';
+import { ImportListSourcesTool } from './tools/ImportListSourcesTool';
+import { ImportPathTool } from './tools/ImportPathTool';
+import { ImportRecognizePathTool } from './tools/ImportRecognizePathTool';
+import { ImportRunStatusTool } from './tools/ImportRunStatusTool';
+import { ImportScanInboxTool } from './tools/ImportScanInboxTool';
 import { MediaFindPhotosTool } from './tools/MediaFindPhotosTool';
 import { PeopleFindTool } from './tools/PeopleFindTool';
 import { PlacesFindTool } from './tools/PlacesFindTool';
@@ -63,6 +75,18 @@ const nativeToolInstances = [
   PlacesFindTool,
   CalendarFindEventsTool,
   MediaFindPhotosTool,
+  ForecastCalibrationTool,
+  ForecastReadTool,
+  BriefListTool,
+  // The import domain's intents. They live in that domain because they are
+  // thin wrappers over its services; they are REGISTERED here because this is
+  // where the native provider is assembled.
+  ImportListSourcesTool,
+  ImportRecognizePathTool,
+  ImportPathTool,
+  ImportRunStatusTool,
+  ImportScanInboxTool,
+  ImportInboxTool,
 ];
 
 /**
@@ -77,6 +101,9 @@ const nativeToolInstances = [
     IntelligenceModule,
     ParsingModule,
     SearchNextModule,
+    ImportModule,
+    PredictionsModule,
+    SummariesModule,
   ],
   providers: [
     ToolRegistry,

@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ScheduleEvent } from '@/api/useScheduleService';
@@ -52,7 +52,7 @@ vi.mock('@/components/HorizonGrid', () => ({
       <p>{footer}</p>
     </div>
   ),
-  // SchedulePage mounts this above the week when weekOffset === 0; keep it inert.
+  // SchedulePage mounts this above the week; keep it inert.
   TodayStoryTimeline: () => null,
 }));
 
@@ -298,5 +298,43 @@ describe('SchedulePage — week paging', () => {
     expect(screen.getByText('stub-drop')).toBeInTheDocument();
     expect(screen.queryByText(/Connect a calendar/)).not.toBeInTheDocument();
     expect(screen.getByText(/Nothing on the calendar this week/)).toBeInTheDocument();
+  });
+
+  /**
+   * Embedded in Today, this page contributes content and no chrome.
+   *
+   * The positioning assertion is the one that would fail silently in the
+   * browser rather than in CI: LoadingPage is `absolute inset-0 z-10`, so an
+   * unpositioned wrapper sends it to the host's PageContent, and the schedule's
+   * spinner covers the brief stacked below it.
+   */
+  describe('embedded', () => {
+    it('leaves the document title to the host', () => {
+      document.title = 'set by the host';
+
+      renderWithProviders(<SchedulePage embedded />);
+      expect(document.title).toBe('set by the host');
+
+      cleanup();
+
+      renderWithProviders(<SchedulePage />);
+      expect(document.title).toContain('Schedule');
+    });
+
+    it('anchors its own overlays instead of the host page', () => {
+      setSchedule({ fetching: true, events: [], rhythm: [] });
+
+      const { container } = renderWithProviders(<SchedulePage embedded />);
+      const surface = container.querySelector('.min-h-60');
+
+      expect(surface).not.toBeNull();
+      expect(surface).toHaveClass('relative');
+    });
+
+    it('still renders the week itself', () => {
+      renderWithProviders(<SchedulePage embedded />);
+
+      expect(screen.getByText('stub-drop')).toBeInTheDocument();
+    });
   });
 });

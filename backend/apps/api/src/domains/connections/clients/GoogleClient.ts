@@ -4,6 +4,7 @@ import { LoggerService } from '@ci/common/logging';
 
 import type { Connection } from '../entities/ConnectionEntity';
 
+import { firstAccountLabel } from './accountLabel';
 import { BaseOAuth2Client } from './BaseOAuth2Client';
 
 @Injectable()
@@ -68,6 +69,25 @@ export class GoogleClient extends BaseOAuth2Client {
         })
         .catch((err) => reject(err)),
     );
+  }
+
+  async getAccountLabel(connection: Connection): Promise<string | null> {
+    const profile = await this.fetchProfile(connection);
+    const fromProfile = firstAccountLabel(profile.email);
+    if (fromProfile) {
+      return fromProfile;
+    }
+
+    try {
+      const gmail = await this.request<{ emailAddress?: string }>(
+        connection,
+        'https://gmail.googleapis.com/gmail/v1/users/me/profile',
+      );
+
+      return firstAccountLabel(gmail.emailAddress);
+    } catch {
+      return null;
+    }
   }
 
   /**

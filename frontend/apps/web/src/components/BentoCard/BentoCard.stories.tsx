@@ -59,8 +59,8 @@ export const ExtensiveTagsNoImage: Story = {
   },
 };
 
-// A title long enough to wrap, with every corner affordance on at once — the case
-// where the dismiss and chat buttons used to sit on top of the second word.
+// A title long enough to wrap, with the corner affordances on at once — the
+// case where the dismiss button used to sit on top of the second word.
 export const WithActions: Story = {
   args: {
     title: 'Review notes from previous Engineering Strategy sessions',
@@ -68,12 +68,6 @@ export const WithActions: Story = {
     tags: ['Work'],
     onDismiss: fn(),
     showUnseenIndicator: true,
-    chatContext: {
-      title: 'Review notes from previous Engineering Strategy sessions',
-      body: 'Gather and review all meeting minutes related to the Engineering Strategy discussions.',
-      sourceKind: 'action',
-      sourceId: 'story-action',
-    },
   },
 };
 
@@ -82,11 +76,5 @@ export const WithActionsAndImage: Story = {
     title: 'Review notes from previous Engineering Strategy sessions',
     onDismiss: fn(),
     showUnseenIndicator: true,
-    chatContext: {
-      title: 'Review notes from previous Engineering Strategy sessions',
-      body: 'Gather and review all meeting minutes related to the Engineering Strategy discussions.',
-      sourceKind: 'action',
-      sourceId: 'story-action',
-    },
   },
 };

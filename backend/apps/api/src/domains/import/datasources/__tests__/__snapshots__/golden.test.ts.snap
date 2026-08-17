@@ -1,0 +1,161 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`golden corpus calendar: imports its fixture without dropping records 1`] = `
+{
+  "byClassification": {
+    "event": 2,
+  },
+  "entities": 0,
+  "items": 2,
+  "relationships": 0,
+  "withLocation": 0,
+  "withTimestamp": 2,
+}
+`;
+
+exports[`golden corpus chatgpt: imports its fixture without dropping records 1`] = `
+{
+  "byClassification": {
+    "message": 5,
+    "note": 3,
+  },
+  "entities": 0,
+  "items": 8,
+  "relationships": 0,
+  "withLocation": 0,
+  "withTimestamp": 7,
+}
+`;
+
+exports[`golden corpus claude: imports its fixture without dropping records 1`] = `
+{
+  "byClassification": {
+    "message": 4,
+    "note": 2,
+  },
+  "entities": 0,
+  "items": 6,
+  "relationships": 0,
+  "withLocation": 0,
+  "withTimestamp": 6,
+}
+`;
+
+exports[`golden corpus discord: imports its fixture without dropping records 1`] = `
+{
+  "byClassification": {
+    "message": 2,
+  },
+  "entities": 0,
+  "items": 2,
+  "relationships": 0,
+  "withLocation": 0,
+  "withTimestamp": 2,
+}
+`;
+
+exports[`golden corpus fitbit: imports its fixture without dropping records 1`] = `
+{
+  "byClassification": {
+    "sleep": 3,
+  },
+  "entities": 0,
+  "items": 3,
+  "relationships": 0,
+  "withLocation": 0,
+  "withTimestamp": 3,
+}
+`;
+
+exports[`golden corpus gemini: imports its fixture without dropping records 1`] = `
+{
+  "byClassification": {
+    "message": 1,
+    "note": 2,
+  },
+  "entities": 0,
+  "items": 3,
+  "relationships": 0,
+  "withLocation": 0,
+  "withTimestamp": 2,
+}
+`;
+
+exports[`golden corpus geojson: imports its fixture without dropping records 1`] = `
+{
+  "byClassification": {
+    "location": 4,
+  },
+  "entities": 0,
+  "items": 4,
+  "relationships": 0,
+  "withLocation": 4,
+  "withTimestamp": 4,
+}
+`;
+
+exports[`golden corpus google_keep: imports its fixture without dropping records 1`] = `
+{
+  "byClassification": {
+    "note": 2,
+  },
+  "entities": 0,
+  "items": 2,
+  "relationships": 0,
+  "withLocation": 0,
+  "withTimestamp": 2,
+}
+`;
+
+exports[`golden corpus mastodon: imports its fixture without dropping records 1`] = `
+{
+  "byClassification": {
+    "post": 2,
+  },
+  "entities": 0,
+  "items": 2,
+  "relationships": 0,
+  "withLocation": 0,
+  "withTimestamp": 2,
+}
+`;
+
+exports[`golden corpus reddit: imports its fixture without dropping records 1`] = `
+{
+  "byClassification": {
+    "social": 4,
+  },
+  "entities": 0,
+  "items": 4,
+  "relationships": 0,
+  "withLocation": 0,
+  "withTimestamp": 4,
+}
+`;
+
+exports[`golden corpus twitter: imports its fixture without dropping records 1`] = `
+{
+  "byClassification": {
+    "message": 5,
+    "social": 1,
+  },
+  "entities": 0,
+  "items": 6,
+  "relationships": 0,
+  "withLocation": 1,
+  "withTimestamp": 6,
+}
+`;
+
+exports[`golden corpus vcard: imports its fixture without dropping records 1`] = `
+{
+  "byClassification": {
+    "contact": 2,
+  },
+  "entities": 2,
+  "items": 2,
+  "relationships": 2,
+  "withLocation": 0,
+  "withTimestamp": 0,
+}
+`;

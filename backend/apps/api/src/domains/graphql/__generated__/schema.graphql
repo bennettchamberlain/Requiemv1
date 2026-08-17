@@ -126,6 +126,13 @@ enum AnswerForm {
   retrieval
 }
 
+type AnswerProvenanceType {
+  coveragePct: Int!
+  daysWithData: Int!
+  metric: String!
+  sources: [String!]!
+}
+
 enum AnswerSource {
   peer
   self
@@ -275,6 +282,17 @@ type BulkItemRelationshipResult {
   skipped: Int!
 }
 
+type CalibrationScoreType {
+  brier: Float
+  coverage: Float
+  driftFlag: Boolean!
+  ece: Float
+  l0Top1Acc: Float
+  l1Top3Acc: Float
+  nBuckets: Int
+  scoredAt: String!
+}
+
 type CommunicationConnection implements Connection {
   edges: [CommunicationEdge!]!
   pageInfo: PageInfo!
@@ -365,6 +383,7 @@ type ConnectionSyncJobType implements Node {
 }
 
 type ConnectionType implements Node {
+  accountLabel: String
   active: Boolean!
   activeEndpoints: [String!]!
   externalId: String
@@ -707,6 +726,25 @@ type CreateTaskPayload {
   task: TaskType
 }
 
+"""One local-day row from the daily feature store"""
+type DailyMetricsType {
+  avgSentiment: Float
+
+  """ISO-8601 when this row was last computed"""
+  computedAt: String!
+  date: String!
+  kmTraveled: Float
+  nConversations: Int
+  nDomains: Int
+  nMessages: Int
+  nPlaces: Int
+  nUniqueContacts: Int
+  outboundRatio: Float
+  screenMinutes: Float
+  spendTotal: Float
+  timezone: String!
+}
+
 """
 A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
 """
@@ -719,6 +757,27 @@ input DeleteByIdInput {
 type DeleteByIdPayload {
   deletedId: ID
   success: Boolean!
+}
+
+"""
+A grounded catalog answer. The number is computed; the sentence is phrasing only.
+"""
+type DescriptiveAnswerType {
+  category: String!
+  key: String!
+  provenance: AnswerProvenanceType!
+  question: String!
+  text: String!
+  timeframe: String!
+  unit: String
+  value: Float
+}
+
+"""A catalog question the compute-then-narrate engine can answer"""
+type DescriptiveQuestionType {
+  category: String!
+  key: String!
+  question: String!
 }
 
 type DisclosedItemType {
@@ -886,6 +945,23 @@ type ForecastBucketType {
 
   """ISO-8601 start time for this bucket"""
   startTime: String!
+}
+
+type ForecastHistoryBucketType {
+  actualL0: String
+  bucketIndex: Int!
+  predictedL0: [ForecastHistoryProbType!]!
+}
+
+"""One past local day of logged forecast buckets"""
+type ForecastHistoryDayType {
+  buckets: [ForecastHistoryBucketType!]!
+  date: String!
+}
+
+type ForecastHistoryProbType {
+  label: String!
+  probability: Float!
 }
 
 """48-bucket (30-min) HBPE day-ahead forecast"""
@@ -1098,6 +1174,27 @@ type MessageType implements Node {
   threadId: ID!
 }
 
+"""One forecast day with its q10/q50/q90 band"""
+type MetricForecastPointType {
+  """YYYY-MM-DD"""
+  date: String!
+  q10: Float!
+  q50: Float!
+  q90: Float!
+}
+
+"""Seasonal-naive + EWMA forecast of a daily-metrics scalar"""
+type MetricForecastType {
+  """Fraction of the 90-day history window that had a value"""
+  coverage: Float!
+  horizonDays: Int!
+  metric: String!
+  points: [MetricForecastPointType!]!
+
+  """OK, NOT_ENOUGH_SIGNAL, or UNKNOWN_METRIC"""
+  status: String!
+}
+
 type Mutation {
   """Accept a candidate at a chosen time, minting a real event"""
   acceptCandidate(endTime: DateTime, id: ID!, startTime: DateTime!): EventType!
@@ -1178,6 +1275,16 @@ type Mutation {
   """Mark a summary as seen"""
   markSummaryAsSeen(id: ID!): SummaryType
   mergePeople(input: MergePeopleInput!): MergePeoplePayload!
+
+  """
+  Rebuild stay-point clusters and recency-decayed transitions for the current user
+  """
+  rebuildPlaces: String!
+
+  """
+  Recompute and upsert a trailing window of daily metrics for the signed-in user.
+  """
+  refreshDailyMetrics(days: Int, timezone: String): [DailyMetricsType!]!
 
   """
   Mark a suggested duplicate group as distinct people, so it is never re-proposed
@@ -1351,6 +1458,21 @@ type PlaceEdge implements Edge {
   node: PlaceType!
 }
 
+"""
+A likely next place from the stay-point transition model (recency-decayed, hour/dow backoff)
+"""
+type PlaceForecastItemType {
+  backoffLevel: String
+  clusterId: String
+  label: String
+  lastSeen: String
+  lat: Float!
+  lng: Float!
+  probability: Float!
+  share: Float!
+  visits: Int!
+}
+
 type PlaceNearType {
   distanceMeters: Float!
   place: PlaceType!
@@ -1384,6 +1506,15 @@ type PlaceVisitStatsType {
   firstVisitAt: DateTime
   lastVisitAt: DateTime
   visitCount: Int!
+}
+
+"""
+Forecast self-consistency against Qwen-derived behavior labels — not ground-truth accuracy.
+"""
+type PredictionCalibrationType {
+  basis: String!
+  history: [CalibrationScoreType!]!
+  latest: CalibrationScoreType
 }
 
 """A single label→probability entry from the HBPE histogram"""
@@ -1480,6 +1611,25 @@ type Query {
   contents(after: String, before: String, first: Int, last: Int): ContentConnection!
 
   """
+  Precomputed daily feature-store rows for the signed-in user over an inclusive yyyy-MM-dd range.
+  """
+  dailyMetrics(
+    """Inclusive first day, yyyy-MM-dd"""
+    from: String!
+
+    """Inclusive last day, yyyy-MM-dd"""
+    to: String!
+  ): [DailyMetricsType!]!
+
+  """Answers every catalog question from stored daily_metrics."""
+  descriptiveAnswers(date: String): [DescriptiveAnswerType!]!
+
+  """
+  The descriptive question catalog the compute-then-narrate engine can answer.
+  """
+  descriptiveQuestions: [DescriptiveQuestionType!]!
+
+  """
   Fetch HBPE renewal predictions: periodic behaviors coming due or overdue
   """
   dueForecast: DueForecastType
@@ -1507,6 +1657,9 @@ type Query {
   """Fetch the HBPE day-ahead forecast histogram"""
   forecast(horizon: String = "24h"): ForecastType
 
+  """Past forecast-vs-actual buckets from hbpe.prediction_log"""
+  forecastHistory(days: Int = 5): [ForecastHistoryDayType!]!
+
   """
   User knowledge graph (entities + relationships). Preferred over REST /api/graph/*.
   """
@@ -1516,6 +1669,9 @@ type Query {
   knownPlaceCandidates: [KnownPlaceCandidateType!]!
   knownPlaces(kind: String): [KnownPlaceType!]!
   me: UserType
+
+  """1–7 day seasonal-naive + EWMA forecast of daily-metrics scalars"""
+  metricForecast(days: Int = 3): [MetricForecastType!]!
   myAskGrants: [AskGrantType!]!
   node(id: ID!): Node
   note(id: ID!): NoteType
@@ -1526,8 +1682,16 @@ type Query {
   person(id: ID!): PersonType
   personDuplicates(limit: Int): [PersonDuplicateGroupType!]!
   place(id: ID!): PlaceType
+
+  """
+  Likely next places from the stay-point transition model (recency-decayed, hour/dow backoff)
+  """
+  placeForecast(horizonHours: Int = 4, k: Int = 5): [PlaceForecastItemType!]!
   places(after: String, before: String, first: Int, last: Int, query: String): PlaceConnection!
   placesNear(latitude: Float!, limit: Int, longitude: Float!, radiusMeters: Float): [PlaceNearType!]!
+
+  """Forecast self-consistency scores (not ground-truth accuracy)"""
+  predictionCalibration(limit: Int = 14): PredictionCalibrationType
   provider(id: ID!): ProviderType
   providers(after: String, before: String, first: Int, last: Int): ProviderConnection!
   question(id: ID!): QuestionType

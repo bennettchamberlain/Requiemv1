@@ -34,7 +34,7 @@ export function OAuthCallbackPage() {
   const isCloudProxyCallback = !!accessToken;
 
   const returnPath =
-    localStorage.getItem(ONBOARDING_OAUTH_RESUME_KEY) != null ? '/onboarding' : '/connections';
+    localStorage.getItem(ONBOARDING_OAUTH_RESUME_KEY) != null ? '/onboarding' : '/sources/connect';
 
   // Handle OAuth errors and missing params
   useEffect(() => {

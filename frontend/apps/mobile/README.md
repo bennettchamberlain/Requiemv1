@@ -347,6 +347,72 @@ the Keychain rather than `localStorage`: `CompanionConfig` reads the API key
 server / signed in. (Execution is direct REST/GraphQL today; it can later target a
 deterministic Intent-Catalog execute endpoint when `feat/intent-catalog` lands.)
 
+**On-device chat completion (LocalLLM, early preview).** A `LocalLLM` Capacitor plugin
+(`android/.../localllm/`, `ios/App/App/LocalLLM/`) starts a loopback-only HTTP server
+(`127.0.0.1`, random port, per-launch bearer token) exposing an OpenAI-compatible
+`POST /v1/chat/completions` (SSE) backed by [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM)
+running fully on-device — no appliance connection needed. JS reaches it via
+`@ci/common`'s `startLocalLlm`/`loadLocalLlmModel`/etc. (`nativeBridge.ts`) plus a direct
+SSE client (`localLlm.ts`); try it from Settings → On-device model. This is a skeleton,
+not the full offline-mode design: no model download UI wired to a real source yet (push
+a `.litertlm` file onto the device and paste its path), no capability gating, no
+integration with the appliance-routed chat page.
+
+- **Android:** minSdk stays 23; the plugin itself gates on `Build.VERSION.SDK_INT >= 31`
+  (LiteRT-LM's AAR requires Android 12), so older devices keep the rest of the app.
+- **iOS:** the LiteRT-LM Swift package is vendored, not consumed via SPM — Apple blocks
+  an Xcode *target* from linking a *remote* SPM package that declares unsafe linker
+  flags (LiteRT-LM needs `-Xlinker -all_load`), so `ios/App/App/Vendor/LiteRTLM/` holds
+  the package's own Swift wrapper source directly, and `ios/App/Frameworks/` holds the
+  binary `CLiteRTLM.xcframework` it links against as a plain framework instead. **That
+  xcframework is 81MB and not committed** — run
+  `ios/App/Frameworks/fetch-clitertlm-xcframework.sh` once before building for iOS (also
+  needed in any CI job that builds this target).
+- Neither platform's Simulator/emulator reliably runs LiteRT-LM inference (confirmed via
+  an open upstream issue for iOS Simulator; untested on Android emulator) — test on a
+  real device.
+
+## On-device agent tooling (intent hooks, both platforms)
+
+The local model can call CI's **published intents** as tools, so it answers from your memory instead
+of its own weights. Enable it per platform with `LocalLLM.configureIntentTools({ baseUrl, apiKey })`;
+the plugin then fetches `GET /api/intents?tier=local` and binds what the appliance allows.
+
+**One security rule, not three.** The appliance computes the `execute` / `queue` / `deny` ruling
+(`dispatchPolicy.ts`) and publishes it per intent; the phone reads `dispatch.decision` and obeys it.
+Neither Kotlin nor Swift re-derives the policy — `dispatchPolicy.ts` says why ("two copies of a
+security rule are two rules"), and it means a policy change ships with the appliance instead of
+waiting on two app-store releases. Destructive and external intents always queue on-device.
+
+**The binding is per-platform, because the runtimes genuinely differ:**
+
+| | Android | iOS |
+|---|---|---|
+| Mechanism | `OpenApiTool` — runtime JSON-schema string + raw args | `Tool` protocol — `Mirror` over compile-time `@ToolParam` |
+| Coverage | **Every** published intent, automatically | Hand-written struct per intent |
+| New server-side intent | Picked up on next catalog fetch | Needs an app release |
+
+That asymmetry is structural, not an oversight: the LiteRT-LM Swift surface has no `OpenApiTool`
+equivalent (verified against the vendored source — 18 public types, one tool protocol, no
+schema-string entry point), so iOS cannot construct tools dynamically at all.
+
+Execution goes over MCP `tools/call` (`POST /mcp`) — there is no REST "execute this intent"
+endpoint — authenticated with the same `x-api-key` the App Intents already use.
+
+**iOS.** The iOS plugin implements the same JS contract as `@ci/capacitor-local-llm`
+(`isAvailable`/`getModelStatus`/`downloadModel`/`deleteModel`/`loadModel`/`generate`/`generateStream`/
+`cancel`, plus the `llmToken` and `modelDownloadProgress` events), so `@ci/common`'s
+`generateOffline()` picks it up with no web changes. Downloads are resumable: a partial lands in
+`<name>.part` and the next attempt continues with an HTTP `Range` request, so a force-quit or a lost
+connection costs nothing. It still lives in the app target rather than that package (which declares
+itself Android-only); moving it there needs a podspec + vendored xcframework + Podfile regeneration.
+
+> ⚠️ **Android's model catalog is currently broken and this is not an iOS problem.** Every
+> Gemma-derived repo under `litert-community` is now `gated: "auto"` on Hugging Face, so the `.task`
+> URL in `LocalLlmModels.kt` / `definitions.ts` answers `401 GatedRepo` to an anonymous download —
+> meaning no new Android user can fetch the only model offered. iOS ships the ungated Qwen3-0.6B
+> instead. Android needs the same swap (or a token); see `LocalLLMModels.swift` for the measurements.
+
 ## Not yet wired (later phases)
 
 - **Local-first sync (PowerSync client)** — the on-device SQLite layer. The server

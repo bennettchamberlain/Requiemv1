@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TrainingCenterDatabase
+    xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2">
+    <Activities>
+        <Activity Sport="Biking">
+            <Id>2018-04-06T00:16:46.293Z</Id>
+            <Lap StartTime="2018-04-06T00:16:46.293Z">
+                <TotalTimeSeconds>694.937</TotalTimeSeconds>
+            </Lap>
+        </Activity>
+    </Activities>
+</TrainingCenterDatabase>

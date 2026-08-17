@@ -1,28 +1,42 @@
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 
-import { Avatar, DropdownMenu, Tooltip } from '@ci/shadcn';
-import { ListTodo, LogOut, SunMoon, Settings2, Cable, Palette } from '@ci/shadcn/icons';
-import { useTranslation } from 'react-i18next';
+import { Avatar, Collapsible, Popover, Tooltip, cn } from '@ci/shadcn';
+import { ChevronRight, LogOut, Palette, Settings2 } from '@ci/shadcn/icons';
 import { Link, useLocation } from 'react-router-dom';
 
-import { useFeatures } from '@/common/feature';
-import { useTheme, ColorPicker } from '@/components/ThemePicker';
+import { ColorPicker, useTheme } from '@/components/ThemePicker';
 import { useAuth, useCurrentUser } from '@/hooks';
 
+import { usePowerRail } from '../PowerRailContext';
+
+const THEME_MODES = [
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+  { value: 'system', label: 'Auto' },
+] as const;
+
+/**
+ * You, and everything that belongs to you, under one entry.
+ *
+ * This was a dropdown behind an avatar, then briefly five flat rows at the
+ * bottom of the drawer — which traded a hidden menu for a permanent wall of
+ * settings sitting level with the places you actually work. It is one row that
+ * opens now: your name, and under it the things that are yours.
+ *
+ * Theme and colours live inside Settings rather than beside it, because that is
+ * what they are — settings — and the drawer should not spend three of its rows
+ * on appearance.
+ */
 export function NavUser() {
-  const { t } = useTranslation();
+  const { expanded } = usePowerRail();
   const [, { logout }] = useAuth();
   const { user } = useCurrentUser();
-  const { themeState, setTheme } = useTheme();
   const location = useLocation();
-
-  const { isFeatureEnabled } = useFeatures();
 
   const currentUser = useMemo(
     () => ({
       name: user?.name || user?.email || 'User',
       email: user?.email || '',
-      onboarded: user?.onboarded || false,
       avatar: '/avatars/shadcn.jpg',
     }),
     [user],
@@ -30,148 +44,153 @@ export function NavUser() {
 
   const initials = useMemo(() => {
     const parts = currentUser.name.trim().split(/\s+/);
-
-    const first = parts[0][0] ?? '';
-    const last = parts.length > 1 ? parts[parts.length - 1][0] : '';
+    const first = parts[0]?.[0] ?? '';
+    const last = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? '') : '';
 
     return (first + last).toUpperCase();
   }, [currentUser]);
 
-  return (
-    <DropdownMenu modal={false}>
+  const avatar = (
+    <Avatar className="h-8 w-8 shrink-0 rounded-full">
+      <Avatar.Image src={currentUser.avatar} alt="" />
+      <Avatar.Fallback className="text-xs">{initials}</Avatar.Fallback>
+    </Avatar>
+  );
+
+  // Collapsed, the account is the avatar and one destination: Settings. The
+  // rest is reachable the moment the drawer opens, and a 56px rail is no place
+  // for a nested accordion.
+  if (!expanded) {
+    return (
       <Tooltip delayDuration={600}>
-        <Tooltip.Content>{t('NAV_ACCOUNT')}</Tooltip.Content>
-        {/* Avatar renders a span, so as the bare trigger it took no role and no
-            tab stop — the account menu was unreachable by keyboard, and an
-            aria-label on it would have been ignored. The button supplies both.
-            Dropdown trigger outermost so its `data-state` is not overwritten by
-            the tooltip's. */}
-        <DropdownMenu.Trigger asChild>
-          <Tooltip.Trigger asChild>
-            <button type="button" aria-label={t('NAV_ACCOUNT')} className="rounded-full cursor-pointer">
-              <Avatar className="h-9 w-9 rounded-full select-none">
-                <Avatar.Image src={currentUser.avatar} alt={currentUser.name} />
-                <Avatar.Fallback>{initials}</Avatar.Fallback>
-              </Avatar>
-            </button>
-          </Tooltip.Trigger>
-        </DropdownMenu.Trigger>
+        <Tooltip.Trigger asChild>
+          <Link
+            to="/settings/appearance"
+            state={{ backgroundLocation: location }}
+            aria-label={currentUser.name}
+            className="flex items-center justify-center rounded-md p-1 transition hover:bg-accent"
+          >
+            {avatar}
+          </Link>
+        </Tooltip.Trigger>
+        <Tooltip.Content side="right">{currentUser.name}</Tooltip.Content>
       </Tooltip>
-      <DropdownMenu.Content className="min-w-56 rounded-lg" side="bottom" align="end" sideOffset={4}>
-        <DropdownMenu.Group>
-          <DropdownMenu.Label className="p-0 font-normal select-none">
-            <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-              <Avatar className="h-8 w-8 rounded-lg">
-                <Avatar.Image src={currentUser.avatar} alt={currentUser.name} />
-                <Avatar.Fallback className="rounded-lg">{initials}</Avatar.Fallback>
-              </Avatar>
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium">{currentUser.name}</span>
-                <span className="truncate text-xs">{currentUser.email}</span>
-              </div>
-            </div>
-          </DropdownMenu.Label>
-        </DropdownMenu.Group>
+    );
+  }
 
-        <DropdownMenu.Separator />
+  return (
+    <Collapsible>
+      <Collapsible.Trigger className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition hover:bg-accent hover:text-accent-foreground [&[data-state=open]>svg:last-child]:rotate-90">
+        {avatar}
+        <span className="grid min-w-0 flex-1 text-left text-sm leading-tight">
+          <span className="truncate font-medium">{currentUser.name}</span>
+          <span className="truncate text-xs text-muted-foreground">{currentUser.email}</span>
+        </span>
+        <ChevronRight className="h-4 w-4 shrink-0 transition-transform" />
+      </Collapsible.Trigger>
 
-        {/* The entries carry visible labels, so each tooltip says what the entry leads
-            to rather than repeating it. side="left" puts the bubble on the open side of
-            this right-aligned menu, and pointer-events-none stops it stealing hover. */}
-        <DropdownMenu.Group>
-          <Tooltip delayDuration={600}>
-            <Tooltip.Content side="left" className="pointer-events-none">
-              {t('NAV_ACCOUNT_SETTINGS')}
-            </Tooltip.Content>
-            <Tooltip.Trigger asChild>
-              <DropdownMenu.Item asChild>
-                <Link to="/settings/appearance" state={{ backgroundLocation: location }}>
-                  <Settings2 />
-                  Settings
-                </Link>
-              </DropdownMenu.Item>
-            </Tooltip.Trigger>
-          </Tooltip>
+      <Collapsible.Content className="flex flex-col gap-1 pl-6">
+        {/* `backgroundLocation` keeps Settings an overlay over the page you were
+            on, which is what it has always been. */}
+        <SubRow
+          icon={<Settings2 className="h-4 w-4 shrink-0" strokeWidth={1.25} />}
+          label="Settings"
+          to="/settings/appearance"
+          state={{ backgroundLocation: location }}
+        />
 
-          <Tooltip delayDuration={600}>
-            <Tooltip.Content side="left" className="pointer-events-none">
-              {t('NAV_ACCOUNT_CONNECTIONS')}
-            </Tooltip.Content>
-            <Tooltip.Trigger asChild>
-              <DropdownMenu.Item asChild>
-                <Link to="/connections">
-                  <Cable />
-                  Connections
-                </Link>
-              </DropdownMenu.Item>
-            </Tooltip.Trigger>
-          </Tooltip>
+        <ThemeSubmenu />
 
-          {isFeatureEnabled('jobs.page') && (
-            <Tooltip delayDuration={600}>
-              <Tooltip.Content side="left" className="pointer-events-none">
-                {t('NAV_ACCOUNT_JOBS')}
-              </Tooltip.Content>
-              <Tooltip.Trigger asChild>
-                <DropdownMenu.Item asChild>
-                  <Link to="/jobs">
-                    <ListTodo />
-                    Jobs
-                  </Link>
-                </DropdownMenu.Item>
-              </Tooltip.Trigger>
-            </Tooltip>
-          )}
-        </DropdownMenu.Group>
+        <SubRow
+          icon={<LogOut className="h-4 w-4 shrink-0" strokeWidth={1.25} />}
+          label="Log out"
+          onClick={logout}
+        />
+      </Collapsible.Content>
+    </Collapsible>
+  );
+}
 
-        <DropdownMenu.Separator />
+interface SubRowProps {
+  icon: ReactNode;
+  label: string;
+  to?: string;
+  state?: unknown;
+  onClick?: () => void;
+}
 
-        {/* No tooltips on the two sub-triggers: they style on data-[state=open], which
-            Tooltip.Trigger would overwrite, and hovering them already opens the submenu
-            that shows the choices — a bubble would only fight it. */}
-        <DropdownMenu.Group>
-          <DropdownMenu.Sub>
-            <DropdownMenu.SubTrigger>
-              <SunMoon />
-              Theme
-            </DropdownMenu.SubTrigger>
-            <DropdownMenu.SubContent>
-              <DropdownMenu.RadioGroup
-                value={themeState.mode}
-                onValueChange={(value: string) => setTheme(value as 'light' | 'dark' | 'system')}
-              >
-                <DropdownMenu.RadioItem value="light">Light</DropdownMenu.RadioItem>
-                <DropdownMenu.RadioItem value="dark">Dark</DropdownMenu.RadioItem>
-                <DropdownMenu.RadioItem value="system">System</DropdownMenu.RadioItem>
-              </DropdownMenu.RadioGroup>
-            </DropdownMenu.SubContent>
-          </DropdownMenu.Sub>
+/** A row inside an opened submenu — smaller than a top-level rail entry. */
+function SubRow({ icon, label, to, state, onClick }: SubRowProps) {
+  const className =
+    'flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-accent hover:text-accent-foreground';
 
-          <DropdownMenu.Sub>
-            <DropdownMenu.SubTrigger>
-              <Palette />
-              Colors
-            </DropdownMenu.SubTrigger>
-            <DropdownMenu.SubContent className="w-[400px] p-2 pb-0">
-              <ColorPicker />
-            </DropdownMenu.SubContent>
-          </DropdownMenu.Sub>
-        </DropdownMenu.Group>
+  if (to != null) {
+    return (
+      <Link to={to} state={state} aria-label={label} className={className}>
+        {icon}
+        <span className="truncate">{label}</span>
+      </Link>
+    );
+  }
 
-        <DropdownMenu.Separator />
+  return (
+    <button type="button" onClick={onClick} aria-label={label} className={className}>
+      {icon}
+      <span className="truncate">{label}</span>
+    </button>
+  );
+}
 
-        <Tooltip delayDuration={600}>
-          <Tooltip.Content side="left" className="pointer-events-none">
-            {t('NAV_ACCOUNT_LOGOUT')}
-          </Tooltip.Content>
-          <Tooltip.Trigger asChild>
-            <DropdownMenu.Item onClick={logout}>
-              <LogOut />
-              Log out
-            </DropdownMenu.Item>
-          </Tooltip.Trigger>
-        </Tooltip>
-      </DropdownMenu.Content>
-    </DropdownMenu>
+/**
+ * Appearance, nested one level deeper again.
+ *
+ * Light/Dark/Auto stays three visible choices — a submenu that hides which mode
+ * is active is worse than one that shows it — but it lives under Theme rather
+ * than occupying a drawer row of its own, and the colour grid opens from here
+ * instead of from the rail.
+ */
+function ThemeSubmenu() {
+  const { themeState, setTheme } = useTheme();
+
+  return (
+    <Collapsible>
+      <Collapsible.Trigger className="flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-accent hover:text-accent-foreground [&[data-state=open]>svg:last-child]:rotate-90">
+        <Palette className="h-4 w-4 shrink-0" strokeWidth={1.25} />
+        <span className="flex-1 truncate">Theme</span>
+        <ChevronRight className="h-4 w-4 shrink-0 transition-transform" />
+      </Collapsible.Trigger>
+
+      <Collapsible.Content className="flex flex-col gap-2 px-2 py-2">
+        <div role="radiogroup" aria-label="Theme" className="flex gap-1 rounded-md bg-muted p-1 text-xs">
+          {THEME_MODES.map((entry) => (
+            <button
+              key={entry.value}
+              type="button"
+              role="radio"
+              aria-checked={themeState.mode === entry.value}
+              onClick={() => setTheme(entry.value)}
+              className={cn(
+                'flex-1 cursor-pointer rounded-sm px-2 py-1 transition-colors',
+                themeState.mode === entry.value
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {entry.label}
+            </button>
+          ))}
+        </div>
+
+        <Popover>
+          <Popover.Trigger className="flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-accent hover:text-accent-foreground">
+            <Palette className="h-4 w-4 shrink-0" strokeWidth={1.25} />
+            <span className="truncate">Colours</span>
+          </Popover.Trigger>
+          <Popover.Content side="right" align="end" className="w-[400px] p-2 pb-0">
+            <ColorPicker />
+          </Popover.Content>
+        </Popover>
+      </Collapsible.Content>
+    </Collapsible>
   );
 }

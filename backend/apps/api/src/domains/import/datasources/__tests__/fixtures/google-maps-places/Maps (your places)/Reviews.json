@@ -1,0 +1,26 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "geometry": {
+        "coordinates": [
+          -117.7153020,
+          33.5256569
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "date": "2025-01-20T21:49:34.812983Z",
+        "five_star_rating_published": 5,
+        "google_maps_url": "https://www.google.com/maps/place//data=!4m2!3m1!1s0x0:0xc7a6fa0ca15362b3",
+        "location": {
+          "address": "30131 Town Center Dr #250, Laguna Niguel, CA 92677, United States",
+          "country_code": "US",
+          "name": "Laguna Niguel Smiles Dentistry"
+        },
+        "review_text_published": "Great staff and reasonably priced."
+      },
+      "type": "Feature"
+    }
+  ]
+}

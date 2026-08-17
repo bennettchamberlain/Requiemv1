@@ -18,6 +18,7 @@ import { v4 as uuidv4, v7 as uuidv7 } from 'uuid';
 
 import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import { serves } from '@ci/common/roles';
 import config from '@ci/configuration';
 import { EventService } from '@ci/domains/events';
 import { FileUpdatedEvent, FileUploadedEvent } from '@ci/domains/files/events';
@@ -75,6 +76,13 @@ export class FileService implements OnModuleInit {
   }
 
   async onModuleInit() {
+    // Web-role work: two processes racing HeadBucket→CreateBucket is a boot
+    // failure waiting on a timing; the web process (present in every
+    // topology) owns ensuring the bucket.
+    if (!serves('web')) {
+      return;
+    }
+
     try {
       await this.s3.send(
         new HeadBucketCommand({

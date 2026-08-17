@@ -15,6 +15,8 @@ import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
+import com.companionintelligence.localllm.intents.CompanionIntentClient
+import com.companionintelligence.localllm.intents.IntentToolProvider
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
@@ -44,6 +46,10 @@ class LocalLlmPlugin : Plugin() {
     private val pluginScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val observedDownloads = ConcurrentHashMap.newKeySet<String>()
     private lateinit var engine: LocalLlmEngine
+
+    /** Non-null once [configureIntentTools] has been given an appliance to call. */
+    @Volatile
+    private var intentClient: CompanionIntentClient? = null
 
     override fun load() {
         super.load()
@@ -210,12 +216,56 @@ class LocalLlmPlugin : Plugin() {
 
         pluginScope.launch {
             try {
-                engine.load(file.absolutePath, maxTokens, topK, topP, temperature)
-                call.resolve()
+                // Fetched here, not lazily: LiteRT-LM fixes the tool set when the conversation is
+                // created, so tools must exist before load(). No-ops (and logs) when the appliance
+                // is unreachable or intent tools were never configured, leaving a toolless — but
+                // working — local model.
+                val tools = intentClient?.let { IntentToolProvider.buildProviders(it) } ?: emptyList()
+
+                engine.load(file.absolutePath, maxTokens, topK, topP, temperature, tools)
+
+                val result = JSObject()
+                result.put("toolCount", tools.size)
+                call.resolve(result)
             } catch (e: Exception) {
                 call.reject("Failed to load model: ${e.message}", e)
             }
         }
+    }
+
+    /**
+     * Points the on-device model's tool calling at a CI-Server, or turns it off.
+     *
+     * Credentials are passed in from the web layer (which already holds the configured origin and
+     * the minted API key) rather than read natively, so this plugin stays self-contained — no
+     * dependency on the sibling Local Hub plugin's keystore, and no second place that has to know
+     * how the app stores its credentials.
+     *
+     * Takes effect on the next `loadModel()`, since the tool set is bound when the conversation is
+     * created; call this before loading, or reload afterwards.
+     */
+    @PluginMethod
+    fun configureIntentTools(call: PluginCall) {
+        val enabled = call.getBoolean("enabled", true) ?: true
+
+        if (!enabled) {
+            intentClient = null
+            call.resolve()
+
+            return
+        }
+
+        val baseUrl = call.getString("baseUrl")
+        val apiKey = call.getString("apiKey")
+
+        if (baseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) {
+            call.reject("baseUrl and apiKey are required to enable intent tools")
+
+            return
+        }
+
+        intentClient = CompanionIntentClient(baseUrl, apiKey)
+        call.resolve()
     }
 
     @PluginMethod

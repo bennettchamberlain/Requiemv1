@@ -1,0 +1,4 @@
+DateTime,EndDateTime,DeviceId,Aggregation,AppName,AppPublisher
+"01/15/2024 00:00:00 +00:00","01/15/2024 23:59:59 +00:00",,Daily,Microsoft Edge,Microsoft Corporation
+"01/15/2024 00:00:00 +00:00","01/15/2024 23:59:59 +00:00",,Daily,Bing,Microsoft Corporation
+"01/17/2024 00:00:00 +00:00","01/17/2024 23:59:59 +00:00",,Daily,Microsoft Store,Microsoft Corporation

@@ -4,7 +4,7 @@ import { DataSource, In, IsNull, Repository, type FindOptionsOrder, type FindOpt
 import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/context';
-import { bulkInsertIdempotent, INGEST_REFRESH_COLUMNS } from '@ci/common/persistence';
+import { type BulkInsertResult, bulkInsertIdempotent, INGEST_REFRESH_COLUMNS } from '@ci/common/persistence';
 import { EventService as SignallingEventService } from '@ci/domains/events';
 import { EventCreatedEvent, EventUpdatedEvent, EventRemovedEvent } from '@ci/domains/memory/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
@@ -337,6 +337,20 @@ export class EventService {
   }
 
   /**
+   * Same ingest as {@link create}, reporting which rows this call actually
+   * INSERTED rather than found already present.
+   *
+   * Batch-only: the single-record path inserts unconditionally, so there is no
+   * ambiguity to report there.
+   */
+  async createDetailed(
+    context: UserServiceContext,
+    data: CreateEventDto[],
+  ): Promise<Array<BulkInsertResult<Event>>> {
+    return this.createManyBatchedDetailed(context, data);
+  }
+
+  /**
    * Batch, idempotent event ingest for the importer. Dedupes on the provenance
    * triple (source_type, source_system, source_id), scoped to the user, via one
    * set-based INSERT ... ON CONFLICT DO NOTHING instead of a per-row findOne + save
@@ -348,6 +362,13 @@ export class EventService {
    * (POST /api/maintenance/search-index/backfill); single-row create() still emits.
    */
   private async createManyBatched(context: UserServiceContext, data: CreateEventDto[]): Promise<Event[]> {
+    return (await this.createManyBatchedDetailed(context, data)).map(({ entity }) => entity);
+  }
+
+  private async createManyBatchedDetailed(
+    context: UserServiceContext,
+    data: CreateEventDto[],
+  ): Promise<Array<BulkInsertResult<Event>>> {
     if (data.length === 0) {
       return [];
     }
@@ -455,7 +476,10 @@ export class EventService {
     // bulk-loaded rows is deferred to the post-load batch embed
     // (POST /api/maintenance/search-index/backfill). Single-row create() still
     // emits, so interactive creates index live.
-    return results.map(({ entity }) => EventEntity.toEgressType(entity, bases.get(entity.id)));
+    return results.map(({ entity, inserted }) => ({
+      entity: EventEntity.toEgressType(entity, bases.get(entity.id)),
+      inserted,
+    }));
   }
 
   /**

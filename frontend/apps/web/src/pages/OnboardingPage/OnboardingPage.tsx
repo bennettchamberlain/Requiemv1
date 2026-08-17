@@ -8,6 +8,7 @@ import logo from '@/assets/logo.png';
 import { useFeatures } from '@/common/feature';
 import { ThemeToggle } from '@/components/ThemePicker';
 import { useCurrentUser } from '@/hooks';
+import { appHomePath } from '@/lib/appHome';
 
 import { ActivityPreferences } from './ActivityPreferences';
 import { ConnectSourceStep } from './ConnectSourceStep';
@@ -20,6 +21,7 @@ import {
 import { FocusAreas } from './FocusAreas';
 import { FoodPreferences } from './FoodPreferences';
 import { IdentityStep } from './IdentityStep';
+import { ImportArchivesStep } from './ImportArchivesStep';
 import { Intro } from './Intro';
 import { MoviePreferences } from './MoviePreferences';
 import { OnboardingButton } from './OnboardingButton';
@@ -97,11 +99,14 @@ export function OnboardingPage() {
   const { fetchProgress, saveProgress, loading: progressLoading } = useOnboardingProgress();
 
   const preferenceStepsEnabled = isFeatureEnabled('onboarding.preference.steps');
+  // Same flag /import is routed behind, so the step never leads somewhere the
+  // appliance does not serve.
+  const importEnabled = isFeatureEnabled('import.page');
   const needsIdentity = user?.needsIdentityStep ?? user?.name === user?.email;
 
   const stepKeys = useMemo(
-    () => buildOnboardingStepKeys({ needsIdentity: !!needsIdentity, preferenceStepsEnabled }),
-    [needsIdentity, preferenceStepsEnabled],
+    () => buildOnboardingStepKeys({ needsIdentity: !!needsIdentity, preferenceStepsEnabled, importEnabled }),
+    [needsIdentity, preferenceStepsEnabled, importEnabled],
   );
 
   const form = useForm<OnboardingFormData>({
@@ -233,6 +238,8 @@ export function OnboardingPage() {
         return <ActivityPreferences />;
       case 'connect-source':
         return <ConnectSourceStep />;
+      case 'import-archives':
+        return <ImportArchivesStep />;
       case 'trust-dial':
         return <TrustDialStep value={trustMode} onChange={setTrustMode} />;
       case 'run-first-sync':
@@ -243,7 +250,7 @@ export function OnboardingPage() {
   }, [currentStepKey, setTrustMode, trustMode]);
 
   const contentMaxWidth =
-    currentStepKey === 'connect-source'
+    currentStepKey === 'connect-source' || currentStepKey === 'import-archives'
       ? 'max-w-5xl'
       : currentStepKey === 'people'
         ? 'max-w-2xl'
@@ -252,10 +259,13 @@ export function OnboardingPage() {
   // Typeform-style: keep the question centered in the viewport. Only denser
   // multi-card steps scroll from the top so content isn't clipped.
   const verticallyCenterStep =
-    currentStepKey !== 'connect-source' && currentStepKey !== 'focus-areas' && currentStepKey !== 'people';
+    currentStepKey !== 'connect-source' &&
+    currentStepKey !== 'import-archives' &&
+    currentStepKey !== 'focus-areas' &&
+    currentStepKey !== 'people';
 
   if (user?.onboarded) {
-    return <Navigate to="/feed" replace />;
+    return <Navigate to={appHomePath(isFeatureEnabled('planning.page'))} replace />;
   }
 
   if (userLoading || progressLoading || !hydrated) {

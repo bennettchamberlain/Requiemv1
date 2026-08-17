@@ -152,6 +152,14 @@ jobs:
         working-directory: frontend/apps/mobile
         run: yarn cap sync ios
 
+      # The on-device LLM links CLiteRTLM.xcframework (~81 MB), deliberately not
+      # committed. Must run before `xcodebuild archive` or the link step fails on a
+      # missing framework — and here that failure would burn a build number.
+      - name: Fetch CLiteRTLM.xcframework (on-device LLM)
+        if: steps.secrets.outputs.present == 'true'
+        working-directory: frontend/apps/mobile/ios/App
+        run: ./Frameworks/fetch-clitertlm-xcframework.sh
+
       # A dedicated keychain, unlocked and set as the default search list, is what lets
       # a non-interactive xcodebuild find the identity. `set-key-partition-list` is the
       # step people miss: without it codesign blocks on a UI prompt that never appears

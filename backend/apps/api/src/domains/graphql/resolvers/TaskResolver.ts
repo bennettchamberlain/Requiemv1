@@ -1,7 +1,8 @@
-import { UseGuards } from '@nestjs/common';
+import { ForbiddenException, UseGuards } from '@nestjs/common';
 import { Args, ID, Int, Mutation, Query, Resolver } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
+import { FeatureService } from '@ci/common/feature';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { TaskService, type TaskStatus } from '@ci/domains/planning';
 
@@ -21,13 +22,32 @@ import { Paginator } from '../utils/Paginator';
 @UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => TaskType)
 export class TaskResolver {
-  constructor(private readonly taskService: TaskService) {}
+  constructor(
+    private readonly taskService: TaskService,
+    private readonly featureService: FeatureService,
+  ) {}
+
+  /**
+   * `planning.enabled` is the backend gate for ci.tasks. `planning.page` only
+   * hides the Plan route; with this off the GraphQL surface must not read or
+   * write tasks either.
+   */
+  private async isPlanningEnabled(): Promise<boolean> {
+    return this.featureService.isFeatureEnabled('planning.enabled');
+  }
+
+  private async assertPlanningEnabled(): Promise<void> {
+    if (!(await this.isPlanningEnabled())) {
+      throw new ForbiddenException('The planning surface is disabled');
+    }
+  }
 
   @Mutation(() => CreateTaskPayload)
   async createTask(
     @Context() context: RequestContext,
     @Args('input') input: CreateTaskInput,
   ): Promise<CreateTaskPayload> {
+    await this.assertPlanningEnabled();
     const serviceContext = toServiceContext(context);
     const task = await this.taskService.create(serviceContext, {
       title: input.title,
@@ -55,6 +75,7 @@ export class TaskResolver {
     @Context() context: RequestContext,
     @Args('input') input: UpdateTaskInput,
   ): Promise<UpdateTaskPayload> {
+    await this.assertPlanningEnabled();
     const serviceContext = toServiceContext(context);
     const id = GlobalUID.parse('task', input.id);
     const task = await this.taskService.update(serviceContext, id, {
@@ -84,6 +105,7 @@ export class TaskResolver {
     @Context() context: RequestContext,
     @Args('input') input: DeleteByIdInput,
   ): Promise<DeleteByIdPayload> {
+    await this.assertPlanningEnabled();
     const serviceContext = toServiceContext(context);
     const id = GlobalUID.parse('task', input.id);
     const success = await this.taskService.remove(serviceContext, id);
@@ -104,6 +126,10 @@ export class TaskResolver {
     @Args('id', { type: () => ID }) gid: string,
     @Args('actualMinutes', { type: () => Int, nullable: true }) actualMinutes?: number,
   ): Promise<TaskType | null> {
+    if (!(await this.isPlanningEnabled())) {
+      return null;
+    }
+
     const serviceContext = toServiceContext(context);
     const task = await this.taskService.complete(serviceContext, GlobalUID.parse('task', gid), actualMinutes);
 
@@ -115,6 +141,10 @@ export class TaskResolver {
     @Context() context: RequestContext,
     @Args('id', { type: () => ID }) gid: string,
   ): Promise<TaskType | null> {
+    if (!(await this.isPlanningEnabled())) {
+      return null;
+    }
+
     const serviceContext = toServiceContext(context);
     const task = await this.taskService.reopen(serviceContext, GlobalUID.parse('task', gid));
 
@@ -130,6 +160,10 @@ export class TaskResolver {
     @Args('id', { type: () => ID }) gid: string,
     @Args('until') until: string,
   ): Promise<TaskType | null> {
+    if (!(await this.isPlanningEnabled())) {
+      return null;
+    }
+
     const serviceContext = toServiceContext(context);
     const task = await this.taskService.defer(serviceContext, GlobalUID.parse('task', gid), until);
 
@@ -147,6 +181,14 @@ export class TaskResolver {
     })
     scheduledFor?: string,
   ): Promise<TaskConnection> {
+    if (!(await this.isPlanningEnabled())) {
+      return {
+        edges: [],
+        pageInfo: { hasNextPage: false, hasPreviousPage: false, startCursor: null, endCursor: null },
+        totalCount: 0,
+      };
+    }
+
     const serviceContext = toServiceContext(context);
     const entities = await this.taskService.findAll(serviceContext, {
       status: status as TaskStatus[] | undefined,
@@ -172,6 +214,10 @@ export class TaskResolver {
     @Context() context: RequestContext,
     @Args('id', { type: () => ID }) gid: string,
   ): Promise<TaskType | null> {
+    if (!(await this.isPlanningEnabled())) {
+      return null;
+    }
+
     const serviceContext = toServiceContext(context);
     const task = await this.taskService.findById(serviceContext, GlobalUID.parse('task', gid));
 

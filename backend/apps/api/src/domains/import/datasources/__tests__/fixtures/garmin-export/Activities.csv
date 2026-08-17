@@ -1,0 +1,4 @@
+Activity Type,Date,Favorite,Title,Distance,Calories,Time,Avg HR,Max HR,Aerobic TE,Avg Run Cadence,Max Run Cadence,Avg Pace,Best Pace,Total Ascent,Total Descent,Avg Stride Length,Training Stress Score®,Grit,Flow
+Running,2023-01-15 10:30:00,false,"Morning Run, riverside",5.02,412,"00:28:43",148,172,3.4,168,182,5:43,4:58,42,40,1.18,0,0.0,0.0
+Cycling,2023-01-17 18:05:12,true,Evening Commute,12.34,388,"00:41:10",132,159,2.8,0,0,3:20,2:45,85,90,0.00,0,0.0,0.0
+Pool Swimming,2023-02-01 07:12:00,false,"Lap swim ""intervals""",1.50,310,"00:35:00",141,165,3.1,0,0,23:20,21:00,0,0,0.00,0,0.0,0.0

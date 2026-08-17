@@ -1,6 +1,7 @@
 import { Injectable, OnApplicationBootstrap } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/logging';
+import { serves } from '@ci/common/roles';
 import { Cron } from '@ci/common/schedule';
 
 import { ActivityRollupService } from '../services/ActivityRollupService';
@@ -23,6 +24,12 @@ export class ActivityRollupCron implements OnApplicationBootstrap {
    * first quarter-hour tick. Fire-and-forget; boot must not wait on it.
    */
   onApplicationBootstrap() {
+    // Web-role work: the boot refresh duplicated across a split topology is
+    // waste, and the in-process `running` guard cannot see the other process.
+    if (!serves('web')) {
+      return;
+    }
+
     void this.refreshRollup();
   }
 

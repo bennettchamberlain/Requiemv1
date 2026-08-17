@@ -102,6 +102,7 @@ const DEFAULTS = {
   objectStore: 9000,
   hbpe: 8002,
   summary: 8001,
+  parser: 8003,
 };
 
 // --- ports ------------------------------------------------------------------
@@ -337,13 +338,14 @@ async function up(key: string): Promise<void> {
   }
 
   const dockerPorts = dockerPublishedPorts();
-  const [apiPort, webPort, dbPort, objPort, hbpePort, summaryPort] = await Promise.all([
+  const [apiPort, webPort, dbPort, objPort, hbpePort, summaryPort, parserPort] = await Promise.all([
     allocPort(DEFAULTS.api, dockerPorts),
     allocPort(DEFAULTS.web, dockerPorts),
     allocPort(DEFAULTS.db, dockerPorts),
     allocPort(DEFAULTS.objectStore, dockerPorts),
     allocPort(DEFAULTS.hbpe, dockerPorts),
     allocPort(DEFAULTS.summary, dockerPorts),
+    allocPort(DEFAULTS.parser, dockerPorts),
   ]);
 
   const composeEnv: NodeJS.ProcessEnv = {
@@ -353,6 +355,7 @@ async function up(key: string): Promise<void> {
     OBJECT_STORE_HOST_PORT: String(objPort),
     HBPE_HOST_PORT: String(hbpePort),
     SUMMARY_HOST_PORT: String(summaryPort),
+    PARSER_HOST_PORT: String(parserPort),
     API_HOST_PORT: String(apiPort), // hbpe container calls the host api at this port
   };
 
@@ -426,7 +429,20 @@ async function up(key: string): Promise<void> {
       // inside the compose network — from here they are ENOTFOUND. Mapped to
       // services.{hbpe,summary}.host via config/custom-environment-variables.json.
       SUMMARY_HOST: `http://localhost:${summaryPort}`,
+      PARSER_HOST: `http://localhost:${parserPort}`,
       APP_PUBLIC_HOSTNAME: host, // this stack's own origin (<key>.localhost); OAuth host is separate
+      // Vite's own `/api` proxy, for anyone who opens the raw dev-server port
+      // instead of the Caddy route. Without this it falls back to the hardcoded
+      // `http://localhost:64669` in vite.config.ts — a port nothing listens on —
+      // so EVERY /api call from that origin fails with ECONNREFUSED: no feature
+      // flags (which silently unregisters flag-gated routes, so /import serves a
+      // 404 that reads like "not signed in"), no GraphQL, and an OAuth link that
+      // lands on a blank page.
+      //
+      // 127.0.0.1, not `localhost`: the API binds IPv4 (`0.0.0.0`), while
+      // `localhost` resolves to ::1 first on a dual-stack host. curl falls back
+      // to IPv4; Node's proxy agent reports the AggregateError instead.
+      API_PROXY_TARGET: `http://127.0.0.1:${apiPort}`,
       OVERMIND_SOCKET: overmindSocket,
       // Overmind reloads .env over the environment we hand it, which would
       // overwrite the dynamic per-worktree ports set above. This env already
@@ -447,6 +463,7 @@ async function up(key: string): Promise<void> {
         ['object store', String(objPort)],
         ['hbpe', String(hbpePort)],
         ['summary', String(summaryPort)],
+        ['parser', String(parserPort)],
       ],
       ['left', 'right'],
     );

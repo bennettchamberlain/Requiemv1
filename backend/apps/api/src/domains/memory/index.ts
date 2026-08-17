@@ -73,6 +73,7 @@ import { GraphReadService } from './services/GraphReadService';
 import { GraphUtilityService } from './services/GraphUtilityService';
 import { ItemService } from './services/ItemService';
 import { KnownPlacesService } from './services/KnownPlacesService';
+import { LifeStatsService } from './services/LifeStatsService';
 import { PersonActivityService } from './services/PersonActivityService';
 import { PersonDuplicateService } from './services/PersonDuplicateService';
 import { PersonMergeService } from './services/PersonMergeService';
@@ -136,6 +137,7 @@ import { UserContextService } from './services/UserContextService';
     FileService,
     PlaceService,
     KnownPlacesService,
+    LifeStatsService,
   ],
   controllers: [GraphController],
   exports: [
@@ -219,6 +221,10 @@ export type { PersonDuplicateGroup, DuplicateReason } from './services/PersonDup
 export type { PersonInteractionStats } from './services/PersonActivityService';
 export type { MergeCounts } from './services/PersonMergeService';
 export type { CreateEventDto, UpdateEventDto, CreateContentDto, UpdateContentDto } from './types';
+// The remaining ingest DTOs, exported for the same reason as the ones above:
+// they are the shapes other domains hand to this one's services, so they belong
+// on the public surface rather than behind a reach into ./types.
+export type { CreateItemDto, UpdateItemDto, CreatePersonDto, UpdatePersonDto } from './types';
 export type {
   KnownPlace,
   KnownPlaceKind,

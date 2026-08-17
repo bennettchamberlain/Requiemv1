@@ -24,6 +24,7 @@ import { GlobalExceptionsFilter } from '@ci/common/filters';
 import { IdFormatGuard } from '@ci/common/guards';
 import { LoggingModule, LoggerService, RequestLoggerMiddleware } from '@ci/common/logging';
 import { BodyParserMiddleware } from '@ci/common/middleware';
+import { serves } from '@ci/common/roles';
 import config from '@ci/configuration';
 import { ActivityModule } from '@ci/domains/activity';
 import { AgentModule } from '@ci/domains/agent';
@@ -33,6 +34,7 @@ import { AuthModule } from '@ci/domains/auth';
 import { PortalAuthModule } from '@ci/domains/auth/PortalAuthModule';
 import { BrowserActivityModule } from '@ci/domains/browser-activity';
 import { ConnectionsModule } from '@ci/domains/connections';
+import { DailyMetricsModule } from '@ci/domains/daily-metrics';
 import { DeviceModule } from '@ci/domains/devices';
 import { EtlModule } from '@ci/domains/etl';
 import { EventsModule } from '@ci/domains/events';
@@ -40,6 +42,7 @@ import { FilesModule } from '@ci/domains/files';
 import { GeocodeModule } from '@ci/domains/geocode';
 import { GraphModule } from '@ci/domains/graph';
 import { GraphQLModule } from '@ci/domains/graphql';
+import { ImportModule } from '@ci/domains/import';
 import { IngestModule } from '@ci/domains/ingest';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { LLMModule } from '@ci/domains/llm';
@@ -84,7 +87,14 @@ import { flushTelemetry, isTelemetryEnabled } from '@ci/instrument';
       // user-defined types (e.g. the enum `ci.communication_direction`) are
       // emitted UNqualified by TypeORM in casts, so `ci` must be on the
       // search_path for them to resolve. `public` stays for extensions/pgboss.
-      extra: { options: '-c search_path=ci,public' },
+      extra: {
+        options: '-c search_path=ci,public',
+        // node-postgres defaults to 10 connections, which import staging
+        // flushes can exhaust — leaving interactive requests (an onboarding
+        // progress save) queued behind bulk INSERTs. 25 keeps headroom while
+        // staying far under Postgres's default max_connections.
+        max: 25,
+      },
     }),
     FeatureModule,
     LoggingModule,
@@ -100,6 +110,7 @@ import { flushTelemetry, isTelemetryEnabled } from '@ci/instrument';
     PortalAuthModule,
     BrowserActivityModule,
     ConnectionsModule,
+    DailyMetricsModule,
     DeviceModule,
     ParsingModule,
     EtlModule,
@@ -111,6 +122,7 @@ import { flushTelemetry, isTelemetryEnabled } from '@ci/instrument';
     FilesModule,
     GraphModule,
     GraphQLModule,
+    ImportModule,
     IngestModule,
     IntelligenceModule,
     LLMModule,
@@ -192,6 +204,14 @@ export class App implements NestModule, OnApplicationBootstrap, OnApplicationShu
 
       exitAfterReporting();
     });
+
+    // The worker never binds; logging a port it does not serve is a lie in
+    // the logs.
+    if (!serves('web')) {
+      this.logger.log('Application started', { role: config.role });
+
+      return;
+    }
 
     let bindings: string[];
 

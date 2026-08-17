@@ -13,6 +13,8 @@ import { EventService } from '../services/EventService';
 import { GraphEventService } from '../services/GraphEventService';
 import { GraphQueryService } from '../services/GraphQueryService';
 import { GraphUtilityService } from '../services/GraphUtilityService';
+import { parseStatsBound } from '../services/lifeStats';
+import { LifeStatsService } from '../services/LifeStatsService';
 import { UserContextService } from '../services/UserContextService';
 
 /** Matches a canonical uuid; tag source ids that aren't uuids can never line up
@@ -146,6 +148,14 @@ interface FilterMatch {
 /** How many top tags the stats endpoint reports in its "by tag" breakdown. */
 const STATS_TAG_LIMIT = 15;
 
+/** Optional window for the life series (spend / time / conversations / social).
+ * Inventory totals stay all-time. Absent or unparseable bounds mean unbounded. */
+const memoryStatsSchema = z.object({
+  from: z.string().optional(),
+  to: z.string().optional(),
+});
+type MemoryStatsDto = z.infer<typeof memoryStatsSchema>;
+
 /** Upper bound on events scanned when resolving the event-scoped filters, so a
  * broad filter can't produce an unbounded match set / response. Matches the
  * id-resolution cap in {@link GraphUtilityService.getEntityIdsByLinkedOrEntityIds}. */
@@ -225,6 +235,7 @@ export class GraphController {
     private readonly userContext: UserContextService,
     private readonly tagService: TagService,
     private readonly eventService: EventService,
+    private readonly lifeStats: LifeStatsService,
   ) {}
 
   private ensureUserId(ctx: RequestContext): string {
@@ -400,21 +411,24 @@ export class GraphController {
   }
 
   /**
-   * Memory-wide totals for the stats page: timeline event count + date span,
-   * entity/relationship totals, entities per data source (each bucket tagged
-   * with the class of provenance that produced it — see
-   * {@link GraphUtilityService.getEntityCountsBySource}), and the user's
-   * {@link STATS_TAG_LIMIT} most-used tags.
+   * Memory-wide totals for the stats page plus the life series (spend, time,
+   * conversations, social). Inventory totals / tag / source breakdowns stay
+   * all-time; `from`/`to` filter only the life series.
    */
   @Get('stats')
-  async getMemoryStats(@Context() ctx: RequestContext) {
+  async getMemoryStats(
+    @Context() ctx: RequestContext,
+    @Query(new ValidationPipe(memoryStatsSchema)) query: MemoryStatsDto = {},
+  ) {
     const ownerId = this.ensureUserId(ctx);
+    const range = { from: parseStatsBound(query.from), to: parseStatsBound(query.to) };
 
-    const [relationshipStats, bySource, byTag, timeline] = await Promise.all([
+    const [relationshipStats, bySource, byTag, timeline, life] = await Promise.all([
       this.graphUtility.getRelationshipStats(ownerId),
       this.graphUtility.getEntityCountsBySource(ownerId),
       this.tagService.getTagUsageCounts(toServiceContext(ctx), STATS_TAG_LIMIT),
       this.eventService.getTimelineStats(toServiceContext(ctx)),
+      this.lifeStats.getLifeSeries(ownerId, range),
     ]);
 
     const totalEntities = relationshipStats.entitiesByType.reduce((sum, entry) => sum + entry.count, 0);
@@ -433,6 +447,14 @@ export class GraphController {
         },
         bySource,
         byTag,
+        byEntityType: relationshipStats.entitiesByType,
+        byRelationshipType: relationshipStats.relationshipsByType,
+        spend: life.spend,
+        time: life.time,
+        conversations: life.conversations,
+        social: life.social,
+        channels: life.channels,
+        insights: life.insights,
       },
     };
   }

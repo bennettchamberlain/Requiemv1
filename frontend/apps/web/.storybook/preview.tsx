@@ -3,7 +3,7 @@ import type { Preview, StoryContext, StoryFn } from '@storybook/react';
 import { MemoryRouter } from 'react-router-dom';
 
 import { FeaturesProvider } from '@/common/feature';
-import { AuthProvider } from '@/hooks';
+import { AuthProvider, ModelProvider } from '@/hooks';
 import { initI18n } from '@/lib/i18n';
 
 import '../src/styles/index.css';
@@ -36,7 +36,9 @@ export const decorators = [
             card built on it) throws "must be used within the associated Provider"
             without this, so the stories rendered as an error panel. */}
         <DeviceLayoutProvider args={[]}>
-          <FeaturesProvider args={[]}>{story(context.args, context)}</FeaturesProvider>
+          <FeaturesProvider args={[]}>
+            <ModelProvider args={[]}>{story(context.args, context)}</ModelProvider>
+          </FeaturesProvider>
         </DeviceLayoutProvider>
       </AuthProvider>
     </MemoryRouter>

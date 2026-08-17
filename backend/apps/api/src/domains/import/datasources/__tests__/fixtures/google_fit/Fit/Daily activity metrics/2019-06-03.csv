@@ -1,0 +1,4 @@
+Start time,End time,Move Minutes count,Calories (kcal),Distance (m),Heart Points,Heart Minutes,Average heart rate (bpm),Max heart rate (bpm),Min heart rate (bpm),Low latitude (deg),Low longitude (deg),High latitude (deg),High longitude (deg),Average speed (m/s),Max speed (m/s),Min speed (m/s),Step count,Average weight (kg),Max weight (kg),Min weight (kg),Inactive duration (ms),Walking duration (ms)
+00:00:00.000-07:00,00:15:00.000-07:00,,17.161996,,,,,,,,,,,,,,,,,,900000,
+04:00:00.000-07:00,04:15:00.000-07:00,6,29.988152,147.978206,2.0,2,72,88,60,,,,,0.999818,1.856090,0.063640,482,,,,455156,214013
+10:30:00.000-07:00,10:45:00.000-07:00,3,40.173848,173.119283,1.0,1,80,95,70,,,,,1.291518,1.292278,1.290758,752,,,,516032,383968

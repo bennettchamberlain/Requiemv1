@@ -4,6 +4,7 @@ import { LoggerService } from '@ci/common/logging';
 
 import type { Connection } from '../entities/ConnectionEntity';
 
+import { firstAccountLabel } from './accountLabel';
 import { BaseOAuth2Client } from './BaseOAuth2Client';
 
 @Injectable()
@@ -66,6 +67,12 @@ export class SpotifyClient extends BaseOAuth2Client {
         })
         .catch((err) => reject(err)),
     );
+  }
+
+  async getAccountLabel(connection: Connection): Promise<string | null> {
+    const profile = await this.fetchProfile(connection);
+
+    return firstAccountLabel(profile.email, profile.display_name);
   }
 
   /**

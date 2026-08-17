@@ -1,0 +1,300 @@
+/* Withings — body measurement CSV export (weight.csv and related CSVs).
+   A Withings export is a set of CSVs (weight.csv, height.csv, blood_pressure.csv,
+   activities.csv, ...). Every file has a leading "Date" column; we emit one
+   'observation' per row, carrying every non-empty column as metadata. The
+   signature is generic (*.csv) so recognition sniffs the header to avoid
+   false-matching other CSV importers. */
+import fs from 'node:fs';
+import path from 'node:path';
+
+import { parseCSV } from './csv';
+import type { FileImporter, Recognition, DirEntry } from './registry';
+import { registerDataSource } from './registry';
+import type { ImportParams } from './timeline';
+import { timeframeContains, timeframeIsEmpty } from './timeline';
+
+// Extract the header line from raw CSV text (BOM already stripped by caller).
+function headerLine(text: string): string {
+  const nl = text.indexOf('\n');
+
+  return (nl === -1 ? text : text.slice(0, nl)).replace(/\r$/, '');
+}
+
+// A Withings CSV header begins with "Date," and carries a body-measurement
+// column such as "(kg)" or "Weight". This is specific enough to avoid matching
+// other CSV importers (e.g. Netflix's "Start Time,...").
+function headerLooksLikeWithings(header: string): boolean {
+  if (!header.startsWith('Date,') && header.trim() !== 'Date') {
+    return false;
+  }
+
+  return header.includes('(kg)') || header.includes('Weight');
+}
+
+// Read the first ~4KB and inspect the CSV header row.
+function sniffHeader(fpath: string): string | undefined {
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(fpath, 'r');
+    const buf = Buffer.alloc(4096);
+    const n = fs.readSync(fd, buf, 0, 4096, 0);
+    let text = buf.toString('utf8', 0, n);
+    if (text.charCodeAt(0) === 0xfeff) {
+      text = text.slice(1);
+    }
+
+    return headerLine(text);
+  } catch {
+    return undefined;
+  } finally {
+    if (fd !== undefined) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+}
+
+function csvMatches(fpath: string): boolean {
+  const header = sniffHeader(fpath);
+
+  return header !== undefined && headerLooksLikeWithings(header);
+}
+
+// Parse a Withings "YYYY-MM-DD HH:MM:SS" date (treated as UTC). Returns
+// undefined for anything unparseable.
+function parseWithingsDate(raw: string): Date | undefined {
+  if (!raw) {
+    return undefined;
+  }
+
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  // "2024-01-15 08:30:00" -> ISO; also tolerate values already containing 'T'/'Z'.
+  let candidate = trimmed;
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(candidate)) {
+    candidate = candidate.replace(' ', 'T') + 'Z';
+  }
+
+  let d = new Date(candidate);
+  if (isNaN(d.getTime())) {
+    d = new Date(trimmed);
+  }
+
+  return isNaN(d.getTime()) ? undefined : d;
+}
+
+export class WithingsFileImporter implements FileImporter {
+  async recognize(_ctx: unknown, entry: DirEntry): Promise<Recognition> {
+    const root = entry.fullPath || entry.fsRoot || entry.filename;
+    if (!root) {
+      return { confidence: 0 };
+    }
+
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(root);
+    } catch {
+      return { confidence: 0 };
+    }
+
+    if (stat.isFile()) {
+      const base = path.basename(root).toLowerCase();
+      if (path.extname(base) !== '.csv') {
+        return { confidence: 0 };
+      }
+
+      if (base === 'weight.csv') {
+        return { confidence: 0.95 };
+      }
+
+      return csvMatches(root) ? { confidence: 0.85 } : { confidence: 0 };
+    }
+
+    if (stat.isDirectory()) {
+      try {
+        const names = fs.readdirSync(root);
+        if (names.some((n) => n.toLowerCase() === 'weight.csv')) {
+          return { confidence: 0.95 };
+        }
+
+        for (const name of names) {
+          if (path.extname(name).toLowerCase() !== '.csv') {
+            continue;
+          }
+
+          if (csvMatches(path.join(root, name))) {
+            return { confidence: 0.85 };
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+
+      return { confidence: 0, dir_threshold: 0.7 };
+    }
+
+    return { confidence: 0 };
+  }
+
+  async fileImport(_ctx: unknown, entry: DirEntry, params: ImportParams): Promise<void> {
+    const root = entry.fullPath || entry.fsRoot || entry.filename;
+    if (!root) {
+      return;
+    }
+
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(root);
+    } catch {
+      return;
+    }
+
+    if (stat.isFile()) {
+      await this.processFile(root, params);
+    } else if (stat.isDirectory()) {
+      let names: string[];
+      try {
+        names = fs.readdirSync(root);
+      } catch {
+        return;
+      }
+
+      // The directory is only handed to us once recognize() confirmed it is a
+      // Withings export (weight.csv present, or a strict header match). Within
+      // that confirmed export, import EVERY Date-bearing CSV per the documented
+      // rule — including related files like blood_pressure.csv that carry no
+      // "(kg)"/"Weight" column and so would fail the standalone header sniff.
+      // processFile() applies the Date-column guard, so non-Date CSVs are skipped.
+      for (const name of names) {
+        if (path.extname(name).toLowerCase() !== '.csv') {
+          continue;
+        }
+
+        await this.processFile(path.join(root, name), params);
+      }
+    }
+  }
+
+  private async processFile(fpath: string, params: ImportParams): Promise<void> {
+    const base = path.basename(fpath);
+    let raw: string;
+    try {
+      raw = await fs.promises.readFile(fpath, 'utf8');
+    } catch (e) {
+      params.log?.('error', `Failed to read ${base}`, { error: (e as Error).message });
+
+      return;
+    }
+
+    if (raw.charCodeAt(0) === 0xfeff) {
+      raw = raw.slice(1);
+    }
+
+    let rows: Record<string, string>[];
+    try {
+      rows = parseCSV(raw);
+    } catch (e) {
+      params.log?.('error', `Failed to parse ${base}`, { error: (e as Error).message });
+
+      return;
+    }
+
+    if (!rows.length) {
+      return;
+    }
+
+    // Only process files that carry a Date column (every Withings CSV does).
+    if (!('Date' in rows[0])) {
+      return;
+    }
+
+    rows.forEach((row, i) => {
+      try {
+        this.pushRow(row, base, i, params);
+      } catch (e) {
+        params.log?.('error', `Failed to import row in ${base}`, { error: (e as Error).message });
+      }
+    });
+  }
+
+  private pushRow(row: Record<string, string>, base: string, index: number, params: ImportParams): void {
+    const ts = parseWithingsDate(row['Date'] || '');
+    // An undated row has no timestamp to test; timeframeContains() returns true
+    // for an undefined ts (platform convention), which would leak malformed rows
+    // through an active since/until filter. Drop undated rows when a timeframe is
+    // actually set, but keep them when no filter is requested.
+    if (!ts && !timeframeIsEmpty(params.timeframe)) {
+      return;
+    }
+
+    if (!timeframeContains(params.timeframe, ts)) {
+      return;
+    }
+
+    // Carry every non-empty column as metadata; numeric columns become numbers.
+    const metadata: Record<string, string | number> = {};
+    for (const [key, value] of Object.entries(row)) {
+      if (key === 'Date') {
+        continue;
+      }
+
+      if (value === undefined || value === '') {
+        continue;
+      }
+
+      const num = Number(value);
+      // Coerce to a number only when the value round-trips losslessly. This keeps
+      // genuine floats numeric (e.g. "82.4") while preserving string-ID columns
+      // such as zero-padded "007" (which would otherwise become 7). Number('1,234')
+      // is already NaN, so thousands-separated values stay strings.
+      const numeric = value !== '' && !isNaN(num) && /^[-+]?[0-9.]+$/.test(value) && String(num) === value;
+      metadata[key] = numeric ? num : value;
+    }
+
+    metadata.File = base;
+    metadata.Source = 'Withings';
+    // Without a title key, titleFor() falls back to the constant 'observation.txt'
+    // filename. Derive a label from the file + row Date so each measurement reads
+    // e.g. "weight — 2024-01-15 08:30:00".
+    const measure = base.replace(/\.csv$/i, '').replace(/[_-]+/g, ' ');
+    metadata.Title = row['Date'] ? `${measure} — ${row['Date']}` : measure;
+
+    // Human-readable text body summarizing the measurement.
+    const summaryParts = Object.entries(row)
+      .filter(([k, v]) => k !== 'Date' && v !== '')
+      .map(([k, v]) => `${k}: ${v}`);
+    const text = [row['Date'] ? `Date: ${row['Date']}` : '', ...summaryParts].filter(Boolean).join('\n');
+
+    params.pipeline.push({
+      item: {
+        // Stable natural key: source file + raw Date + per-file row index. The
+        // file name and Date alone collide across CSVs synced at the same instant
+        // (weight.csv vs blood_pressure.csv) and undated rows share an empty Date,
+        // so the parse-order index disambiguates without depending on timestamp.
+        id: `withings:${base}:${(row['Date'] || '').trim()}:${index}`,
+        classification: 'observation',
+        timestamp: ts,
+        content: {
+          filename: 'observation.txt',
+          mediaType: 'text/plain',
+          data: async () => Buffer.from(text),
+        },
+        metadata,
+      },
+    });
+  }
+}
+
+registerDataSource({
+  name: 'withings',
+  title: 'Withings',
+  icon: '',
+  description: 'Body measurements from a Withings data export (weight.csv and related CSVs).',
+  newFileImporter: () => new WithingsFileImporter(),
+});

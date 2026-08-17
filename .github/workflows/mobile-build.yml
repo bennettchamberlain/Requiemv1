@@ -121,6 +121,13 @@ jobs:
         working-directory: frontend/apps/mobile
         run: yarn cap sync ios
 
+      # The on-device LLM links CLiteRTLM.xcframework (~81 MB), deliberately not
+      # committed. Same category as Pods/ and App/public: a cold clone has to fetch
+      # it or the link step fails on a missing framework.
+      - name: Fetch CLiteRTLM.xcframework (on-device LLM)
+        working-directory: frontend/apps/mobile/ios/App
+        run: ./Frameworks/fetch-clitertlm-xcframework.sh
+
       # Unsigned Simulator build — validates the project and produces a runnable .app
       # without any Apple Developer credentials. For a device-installable, signed .ipa,
       # swap this for `xcodebuild archive … -exportArchive` gated on the signing secrets

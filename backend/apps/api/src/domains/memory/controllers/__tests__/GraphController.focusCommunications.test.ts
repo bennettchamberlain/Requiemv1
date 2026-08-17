@@ -46,6 +46,7 @@ describe('GraphController — focus-mode communication ties', () => {
       {} as never, // userContext
       {} as never, // tagService
       {} as never, // eventService
+      {} as never, // lifeStats
     );
 
     return { controller, graphQuery };

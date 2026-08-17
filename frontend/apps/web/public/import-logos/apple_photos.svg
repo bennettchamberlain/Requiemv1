@@ -1,0 +1,13 @@
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" role="img">
+  <title>Apple Photos</title>
+  <g style="isolation:isolate">
+    <g style="mix-blend-mode:screen">
+      <ellipse cx="12" cy="6.9" rx="3.1" ry="5.2" fill="#ff3b30" transform="rotate(0 12 12)"/>
+      <ellipse cx="12" cy="6.9" rx="3.1" ry="5.2" fill="#ff9500" transform="rotate(60 12 12)"/>
+      <ellipse cx="12" cy="6.9" rx="3.1" ry="5.2" fill="#ffcc00" transform="rotate(120 12 12)"/>
+      <ellipse cx="12" cy="6.9" rx="3.1" ry="5.2" fill="#34c759" transform="rotate(180 12 12)"/>
+      <ellipse cx="12" cy="6.9" rx="3.1" ry="5.2" fill="#007aff" transform="rotate(240 12 12)"/>
+      <ellipse cx="12" cy="6.9" rx="3.1" ry="5.2" fill="#af52de" transform="rotate(300 12 12)"/>
+    </g>
+  </g>
+</svg>

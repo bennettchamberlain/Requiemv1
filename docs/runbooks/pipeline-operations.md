@@ -807,7 +807,7 @@ Verified against the tree; do not go looking for these.
 | Missing | Reality today |
 |---------|---------------|
 | `GET /api/pipeline/state`, `/dead-letters` | **No pipeline controller exists.** Source comments referring to them describe Phase 2. Use §1–§4 |
-| Operator UI / pipeline page | Phase 5. `"jobs.page"` is still `false` in `config/default.json` |
+| Operator UI / pipeline page | The Jobs page (`/jobs`). `"jobs.page"` is `true` in `config/default.json` |
 | Pause / resume / cancel | `ci.pipeline_runs.desired_state` is the intended channel and nothing reads or writes it. Today pausing is [§9](#9-emergency-stop) and reviving is [§6c](#6c-revive-quarantined-rows) — DB operations |
 | Runs and shards | `ci.pipeline_runs` / `ci.pipeline_shards` are migrated and permanently empty; no code writes them. Sweeps are ad-hoc (`runId: null, shardId: null`) |
 | Record rejections | `ci.record_rejections` is migrated and empty; no writer yet |

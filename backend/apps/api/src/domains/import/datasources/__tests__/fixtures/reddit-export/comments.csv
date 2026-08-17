@@ -1,0 +1,3 @@
+id,permalink,date,ip,subreddit,gildings,link,parent,body,score,url
+ghi789,/r/programming/comments/abc123/my_post/ghi789/,2021-01-01 13:00:00 UTC,,programming,0,https://www.reddit.com/r/programming/comments/abc123/,t3_abc123,This is a great point about programming!,42,https://www.reddit.com/r/programming/comments/abc123/ghi789/
+jkl012,/r/science/comments/xyz999/cool_study/jkl012/,2021-01-03 09:00:00 UTC,,science,0,https://www.reddit.com/r/science/comments/xyz999/,t3_xyz999,"Fascinating research, thanks for sharing.",15,https://www.reddit.com/r/science/comments/xyz999/jkl012/

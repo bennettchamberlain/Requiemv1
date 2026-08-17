@@ -2,6 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { Query, Resolver, Args, ID } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
+import { FeatureService } from '@ci/common/feature';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { BrowserActivityService } from '@ci/domains/browser-activity';
 import { ConnectionService } from '@ci/domains/connections';
@@ -67,6 +68,7 @@ export class NodeResolver {
     private readonly taskService: TaskService,
     private readonly threadService: ThreadService,
     private readonly userService: UserService,
+    private readonly featureService: FeatureService,
   ) {}
 
   @Query(() => Node, { nullable: true })
@@ -151,6 +153,10 @@ export class NodeResolver {
       }
 
       case 'task': {
+        if (!(await this.featureService.isFeatureEnabled('planning.enabled'))) {
+          return null;
+        }
+
         const task = await this.taskService.findById(serviceContext, id);
 
         return task ? TaskType.toType(task) : null;

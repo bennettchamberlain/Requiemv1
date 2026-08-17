@@ -1,13 +1,12 @@
-import { useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ComponentProps, type ElementType } from 'react';
 
-import { GlobalUID, ErrorPage, LoadingPage, Portal, useDeviceLayout, usePageTitle } from '@ci/common';
-import { Breadcrumb, useToast } from '@ci/shadcn';
+import { GlobalUID, ErrorPage, LoadingPage, useDeviceLayout, usePageTitle } from '@ci/common';
+import { useToast } from '@ci/shadcn';
 import { useTranslation } from 'react-i18next';
-import { useNavigate, useParams, Link } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 
-import { useActionListService, useForecastService } from '@/api';
+import { useActionListService } from '@/api';
 import { useFeatures } from '@/common/feature';
-import { ForecastStrip } from '@/components/ForecastStrip';
 import { PageContent } from '@/components/layout';
 import { Markdown } from '@/components/Markdown';
 import { type FragmentType } from '@/graphql';
@@ -16,10 +15,10 @@ import { useModalControls } from '@/hooks';
 import { BentoCard } from '../../components/BentoCard';
 import { Carousel } from '../../components/Carousel';
 
+import { ContextPromptCard } from './ContextPromptCard';
 import { FeedModal } from './FeedModal';
 import type { INSIGHT_CARD_FRAGMENT } from './InsightCard';
 import { InsightCard } from './InsightCard';
-import { PromotionReviewCard } from './PromotionReviewCard';
 import { QuestionCard } from './QuestionCard';
 import type { SUMMARY_CARD_FRAGMENT } from './SummaryCard';
 import { SummaryCard } from './SummaryCard';
@@ -29,8 +28,18 @@ import { useSummariesService } from './useSummariesService';
 type CarouselProps = Partial<ComponentProps<typeof Carousel>>;
 const MAX_INSIGHT_SUMMARY_CARDS = 20;
 
-export function FeedPage() {
-  usePageTitle('Feed - Companion Intelligence');
+export interface FeedPageProps {
+  /**
+   * Rendered inside a host page (Today) that already owns the document title
+   * and the page frame. PageContent is the page's scroll container
+   * (`w-full h-full overflow-auto`), so nesting a second one gives the screen
+   * two scrollbars and two sets of padding.
+   */
+  embedded?: boolean;
+}
+
+export function FeedPage({ embedded = false }: FeedPageProps = {}) {
+  usePageTitle(embedded ? null : 'Brief - Companion Intelligence');
 
   const { t } = useTranslation();
 
@@ -39,8 +48,40 @@ export function FeedPage() {
   const navigate = useNavigate();
 
   const { id: actionId } = useParams<{ id?: string }>();
+
+  /**
+   * Where this brief lives, so its own links stay inside it.
+   *
+   * The cards deep-link by action id and the modal writes that id into the URL.
+   * Embedded in Today those have to address /today, or opening a card would
+   * navigate you off the page you opened it from.
+   */
+  const basePath = embedded ? '/today' : '/brief';
+
+  // Embedded, the host owns the frame; this keeps the column gap PageContent
+  // would have supplied, and none of its padding, height or scrolling. No
+  // padding on purpose — the desktop carousel bleeds with `-mx-6` against
+  // PageContent's `p-6`, so padding here would double it.
+  //
+  // `relative` matters on all four exits: LoadingPage and ErrorPage are
+  // `absolute inset-0 z-10`, and without a positioned boundary they anchor to
+  // the HOST's PageContent, so a brief that is merely loading would black out
+  // the schedule above it. `min-h-60` gives those overlays height to fill.
+  //
+  // `shrink-0` is what makes `min-h-60` safe. Setting a min-height REPLACES a
+  // flex item's `min-height: auto` content-based automatic minimum, and that
+  // automatic minimum is the only reason a page overflows its host and scrolls
+  // rather than being squashed. Without this, schedule and brief — which
+  // together exceed any normal viewport — would both compress below their
+  // content, overlap each other, and push part of the page out of scroll range.
+  //
+  // `Frame` is a stable reference either way (a module-level component or the
+  // string 'div'), so this never remounts the subtree it wraps.
+  const Frame: ElementType = embedded ? 'div' : PageContent;
+  const frameClassName = embedded
+    ? `relative flex min-h-60 w-full min-w-0 shrink-0 flex-col ${isMobile ? 'gap-2' : 'gap-6'}`
+    : undefined;
   const { isFeatureEnabled } = useFeatures();
-  const hbpeEnabled = isFeatureEnabled('hbpe');
   const actionsEnabled = isFeatureEnabled('actions');
   const [{ data: actions, loading, error }, { markActionAsSeen, markActionAsDismissed }] =
     useActionListService(5, { skip: !actionsEnabled });
@@ -52,7 +93,6 @@ export function FeedPage() {
     { question, submitting: questionSubmitting, error: questionError },
     { submitAnswer: submitQuestionAnswer },
   ] = useFeedQuestionService();
-  const [{ data: forecast, stalled: forecastStalled }] = useForecastService();
   const [dismissedActionIds, setDismissedActionIds] = useState<Set<string>>(new Set());
   const [dismissedSummaryIds, setDismissedSummaryIds] = useState<Set<string>>(new Set());
   // Session-only hide for rare legacy nested insights (no dedicated summary row).
@@ -209,11 +249,11 @@ export function FeedPage() {
 
   const handleCardClick = useCallback(
     async (id: string) => {
-      navigate(`/feed/${id}`, { replace: true });
+      navigate(`${basePath}/${id}`, { replace: true });
       openModal();
       await markActionAsSeen(id);
     },
-    [markActionAsSeen, navigate, openModal],
+    [basePath, markActionAsSeen, navigate, openModal],
   );
 
   const handleActionDismiss = useCallback(
@@ -221,12 +261,12 @@ export function FeedPage() {
       setDismissedActionIds((prev) => new Set(prev).add(id));
 
       if (actionId === id) {
-        navigate('/feed', { replace: true });
+        navigate(basePath, { replace: true });
       }
 
       await markActionAsDismissed(id);
     },
-    [actionId, markActionAsDismissed, navigate],
+    [actionId, basePath, markActionAsDismissed, navigate],
   );
 
   const handleSummaryDismiss = useCallback(
@@ -252,14 +292,14 @@ export function FeedPage() {
   );
 
   const handleModalClose = useCallback(() => {
-    navigate('/feed', { replace: true });
+    navigate(basePath, { replace: true });
     closeModal();
-  }, [navigate, closeModal]);
+  }, [basePath, navigate, closeModal]);
 
   const handleSummaryClick = useCallback(
     async (encodedId: string) => {
       await markSummaryAsSeen(encodedId);
-      navigate(`/feed/summaries/${GlobalUID.parse('summary', encodedId)}`);
+      navigate(`/brief/summaries/${GlobalUID.parse('summary', encodedId)}`);
     },
     [markSummaryAsSeen, navigate],
   );
@@ -275,17 +315,17 @@ export function FeedPage() {
 
   if (actionsEnabled && loading) {
     return (
-      <PageContent>
+      <Frame className={frameClassName}>
         <LoadingPage />
-      </PageContent>
+      </Frame>
     );
   }
 
   if (actionsEnabled && error) {
     return (
-      <PageContent>
+      <Frame className={frameClassName}>
         <ErrorPage error={error} />
-      </PageContent>
+      </Frame>
     );
   }
 
@@ -298,89 +338,83 @@ export function FeedPage() {
     } satisfies CarouselProps;
 
     return (
-      <PageContent>
-        {showMobileEmptyState ? (
-          <div className="flex min-h-[40vh] items-center justify-center py-10">
-            <p className="text-center text-xl font-medium text-muted-foreground opacity-70">All Caught Up!</p>
-          </div>
-        ) : (
-          <Carousel {...carouselProps}>
-            {actionCards.map((card) =>
-              card.kind === 'question' ? (
-                <QuestionCard
-                  key={card.id}
-                  question={card.question as FeedQuestion}
-                  submitting={questionSubmitting}
-                  onSubmit={handleQuestionSubmit}
-                />
-              ) : (
-                <BentoCard
-                  key={card.id}
-                  title={card.action.title}
-                  description={
-                    <div className="prose dark:prose-invert">
-                      <Markdown>{card.action.text}</Markdown>
-                    </div>
-                  }
-                  tags={card.action.tags}
-                  imageUrl={card.action.imageUrl}
-                  onClick={() => void handleCardClick(card.action.id)}
-                  onDismiss={() => void handleActionDismiss(card.action.id)}
-                  dismissLabel={t('FEED_CARD_DISMISS_ACTION')}
-                  showUnseenIndicator={!card.action.seen}
-                  chatContext={{
-                    title: card.action.title,
-                    body: card.action.text,
-                    sourceKind: 'action',
-                    sourceId: card.action.id,
-                  }}
-                />
-              ),
-            )}
+      <>
+        <Frame className={frameClassName}>
+          {showMobileEmptyState ? (
+            <div className="flex min-h-[40vh] items-center justify-center py-10">
+              <p className="text-center text-xl font-medium text-muted-foreground opacity-70">
+                All Caught Up!
+              </p>
+            </div>
+          ) : (
+            <Carousel {...carouselProps}>
+              {actionCards.map((card) =>
+                card.kind === 'question' ? (
+                  <QuestionCard
+                    key={card.id}
+                    question={card.question as FeedQuestion}
+                    submitting={questionSubmitting}
+                    onSubmit={handleQuestionSubmit}
+                  />
+                ) : (
+                  <BentoCard
+                    key={card.id}
+                    title={card.action.title}
+                    description={
+                      <div className="prose dark:prose-invert">
+                        <Markdown>{card.action.text}</Markdown>
+                      </div>
+                    }
+                    tags={card.action.tags}
+                    imageUrl={card.action.imageUrl}
+                    onClick={() => void handleCardClick(card.action.id)}
+                    onDismiss={() => void handleActionDismiss(card.action.id)}
+                    dismissLabel={t('FEED_CARD_DISMISS_ACTION')}
+                    showUnseenIndicator={!card.action.seen}
+                  />
+                ),
+              )}
 
-            {mixedInsightSummaryCards.map((card) =>
-              card.kind === 'insight' ? (
-                <InsightCard
-                  key={card.id}
-                  insight={card.insight as FragmentType<typeof INSIGHT_CARD_FRAGMENT>}
-                  isSeen={card.isSeen}
-                  onClick={() => void handleSummaryClick(card.summaryId)}
-                  onDismiss={() =>
-                    void handleInsightDismiss(card.insightId, card.summaryId, card.dismissMode)
-                  }
-                />
-              ) : (
-                <SummaryCard
-                  key={card.id}
-                  summary={card.summary as FragmentType<typeof SUMMARY_CARD_FRAGMENT>}
-                  onClick={() => void handleSummaryClick(card.summary.id)}
-                  onDismiss={() => void handleSummaryDismiss(card.summary.id)}
-                />
-              ),
-            )}
-          </Carousel>
-        )}
+              {mixedInsightSummaryCards.map((card) =>
+                card.kind === 'insight' ? (
+                  <InsightCard
+                    key={card.id}
+                    insight={card.insight as FragmentType<typeof INSIGHT_CARD_FRAGMENT>}
+                    isSeen={card.isSeen}
+                    onClick={() => void handleSummaryClick(card.summaryId)}
+                    onDismiss={() =>
+                      void handleInsightDismiss(card.insightId, card.summaryId, card.dismissMode)
+                    }
+                  />
+                ) : (
+                  <SummaryCard
+                    key={card.id}
+                    summary={card.summary as FragmentType<typeof SUMMARY_CARD_FRAGMENT>}
+                    onClick={() => void handleSummaryClick(card.summary.id)}
+                    onDismiss={() => void handleSummaryDismiss(card.summary.id)}
+                  />
+                ),
+              )}
+            </Carousel>
+          )}
 
-        {summariesError && (
-          <div className="py-4 text-center text-sm text-muted-foreground">
-            We could not load live insights. Preview cards are shown until the service recovers.
-          </div>
-        )}
+          {summariesError && (
+            <div className="py-4 text-center text-sm text-muted-foreground">
+              We could not load live insights. Preview cards are shown until the service recovers.
+            </div>
+          )}
+        </Frame>
 
-        {hbpeEnabled && forecast && (
-          <div className="px-2 pb-4" data-testid="tomorrows-forecast">
-            <h3 className="text-sm font-semibold text-foreground mb-2">Tomorrow's Forecast</h3>
-            <ForecastStrip
-              buckets={forecast.buckets}
-              generatedAt={forecast.generatedAt}
-              systemStatus={forecast.systemStatus}
-              stalled={forecastStalled}
-            />
-          </div>
-        )}
-
+        {/* Outside the frame, as the desktop exit already does it.
+          On mobile FeedModal is an InlineModal — `absolute inset-0` — so it
+          fills its nearest positioned ancestor. Inside the frame that ancestor
+          is the frame, which is only as tall as the brief's own content, so an
+          action card would open into a box partway down the page instead of
+          over it. Outside, it resolves to the host: Today's PageContent when
+          embedded, or the layout's `relative` <main> when this page stands on
+          its own. */}
         {isModalOpen && <FeedModal onClose={handleModalClose} />}
-      </PageContent>
+      </>
     );
   }
 
@@ -392,40 +426,8 @@ export function FeedPage() {
 
   return (
     <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-            <Breadcrumb.Separator className="hidden md:block" />
-            <Breadcrumb.Item>
-              <Breadcrumb.Page>Feed</Breadcrumb.Page>
-            </Breadcrumb.Item>
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
-      <PageContent>
-        {hbpeEnabled && forecast && (
-          // `display: contents` so the heading and the strip stay direct flex items of
-          // PageContent (identical layout), while still being one addressable section —
-          // video/capture.config.mjs hides it at the shutter rather than masking it, which
-          // left a dead grey bar under a live heading in the committed shot.
-          <div className="contents" data-testid="tomorrows-forecast">
-            <h2 className="text-2xl font-bold text-foreground">Tomorrow's Forecast</h2>
-            <ForecastStrip
-              buckets={forecast.buckets}
-              generatedAt={forecast.generatedAt}
-              systemStatus={forecast.systemStatus}
-              stalled={forecastStalled}
-            />
-          </div>
-        )}
-
-        <PromotionReviewCard />
+      <Frame className={frameClassName}>
+        <ContextPromptCard />
 
         {(actionsEnabled || Boolean(question)) && (
           <>
@@ -463,12 +465,6 @@ export function FeedPage() {
                       onDismiss={() => void handleActionDismiss(card.action.id)}
                       dismissLabel={t('FEED_CARD_DISMISS_ACTION')}
                       showUnseenIndicator={!card.action.seen}
-                      chatContext={{
-                        title: card.action.title,
-                        body: card.action.text,
-                        sourceKind: 'action',
-                        sourceId: card.action.id,
-                      }}
                       className="hover:shadow-lg transition-shadow duration-200"
                     />
                   ),
@@ -520,7 +516,7 @@ export function FeedPage() {
             </Carousel>
           )}
         </div>
-      </PageContent>
+      </Frame>
 
       {isModalOpen && <FeedModal onClose={handleModalClose} />}
     </>

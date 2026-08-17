@@ -1,0 +1,9 @@
+{
+  "id": "608805195916509211",
+  "username": "kylebaran",
+  "global_name": "Kyle Baran",
+  "relationships": [
+    {"id": "139273934943158272", "type": "FRIEND", "nickname": null, "user": {"id": "139273934943158272", "username": "frienduser", "global_name": "Friend Guy"}},
+    {"id": "430110709632991233", "type": "FRIEND", "nickname": "Nicky", "user": {"id": "430110709632991233", "username": "nickname.haver", "global_name": null}}
+  ]
+}

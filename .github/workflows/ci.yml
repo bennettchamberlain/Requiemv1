@@ -53,6 +53,13 @@ jobs:
     name: Run backend tests
     needs: install
     runs-on: ubuntu-latest
+    # Headroom for checkout + install + the test step's own ceiling below. The
+    # meaningful limit is on the step, not here: a JOB timeout cancels the whole
+    # job, which is reported as `cancelled` (and rendered as "fail" by
+    # `gh pr checks`) with no indication of which step ran out of time, and it
+    # skips every remaining step, so nothing can report on the way out. A STEP
+    # timeout fails that step and lets the job finish normally.
+    timeout-minutes: 15
     container:
       image: node:22
     steps:
@@ -77,7 +84,20 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Several times the measured cost: ~400 files in about 2.5 minutes in a
+      # two-core container, so a few minutes on a runner whose cores are slower.
+      # Anything approaching ten means the suite has stopped making progress
+      # rather than merely got slower, and failing the step says so while
+      # leaving the job alive to finish and report.
+      #
+      # What used to sit here was a `--detectOpenHandles --runInBand` step meant
+      # to diagnose the hang on failure. It never once ran — the job timeout
+      # cancelled the job before any `if: failure()` step could start — and it
+      # could not have helped if it had: both of those flags force jest to run
+      # in the main process, which is precisely the configuration that hangs.
+      # See the note in backend/apps/api/jest.config.mjs.
       - name: Run backend API tests
+        timeout-minutes: 10
         run: yarn workspace @ci/be-api test
 
   test-frontend:

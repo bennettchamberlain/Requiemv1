@@ -1,21 +1,18 @@
 import { setApiKey } from '@ci/common/src/utils/apiAuth';
 import { setApiBaseUrl } from '@ci/common/src/utils/apiBase';
-import { CONNECTION_PROBE_TIMEOUT_MS, resolveConnectionMode } from '@ci/common/src/utils/connectionMode';
+import {
+  LOCAL_PROBE_TIMEOUT_MS,
+  REMOTE_PROBE_TIMEOUT_MS,
+  resolveConnectionMode,
+} from '@ci/common/src/utils/connectionMode';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { okResponse, slowServer, urlOf } from './fetchFakes';
 
 type GlobalWithWindow = { window?: unknown };
 
 function setWindow(value: unknown): void {
   (globalThis as GlobalWithWindow).window = value;
-}
-
-function urlOf(input: RequestInfo): string {
-  return typeof input === 'string' ? input : (input as Request).url;
-}
-
-/** A fetch response good enough for fetchJson's `res.ok` / `res.text()` reads. */
-function okResponse(body: unknown = { status: 'ok' }): Response {
-  return { ok: true, status: 200, text: async () => JSON.stringify(body) } as unknown as Response;
 }
 
 afterEach(() => {
@@ -200,7 +197,7 @@ describe('resolveConnectionMode — race respects the per-probe timeout', () => 
     });
 
     // Comfortably before the timeout: still pending.
-    await vi.advanceTimersByTimeAsync(CONNECTION_PROBE_TIMEOUT_MS - 100);
+    await vi.advanceTimersByTimeAsync(REMOTE_PROBE_TIMEOUT_MS - 100);
     expect(settled).toBe(false);
 
     // Crossing the timeout aborts the fetch, which the probe treats as a
@@ -214,5 +211,65 @@ describe('resolveConnectionMode — race respects the per-probe timeout', () => 
     // does not hang the race — is the resolved value above; the mock was
     // reached at all is enough signal that the real probe ran.
     expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it('resolves "connected" for a remote that answers slower than an on-device server would', async () => {
+    vi.useFakeTimers();
+    setWindow({});
+
+    // A remote appliance reached over a WAN/tunnel: healthy, but well past the
+    // budget that suits an on-device sidecar. Aborting here is what made the
+    // indicator read "Not synced yet" against a perfectly reachable server.
+    const remoteLatencyMs = LOCAL_PROBE_TIMEOUT_MS + 200;
+
+    // The stand-in honours the abort signal (see `slowServer`), which is what
+    // makes this assert anything at all under a changed budget.
+    vi.stubGlobal('fetch', slowServer(remoteLatencyMs));
+
+    const resultPromise = resolveConnectionMode();
+
+    await vi.advanceTimersByTimeAsync(remoteLatencyMs + 10);
+
+    expect(await resultPromise).toBe('connected');
+  });
+
+  it('bounds a server that answers its headers and then stalls the body, releasing the request', async () => {
+    vi.useFakeTimers();
+    setWindow({});
+
+    // The budget has to cover the whole exchange, not just the headers: an
+    // unbounded body read leaves one hung request per re-probe tick open
+    // against the origin. The stub only ends when the probe's own signal
+    // aborts, so nothing but that abort can resolve this race.
+    let bodyAborted = false;
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo, init?: RequestInit) => {
+        return {
+          ok: true,
+          status: 200,
+          text: () =>
+            new Promise<string>((_resolve, reject) => {
+              init?.signal?.addEventListener('abort', () => {
+                bodyAborted = true;
+                const err = new Error('The operation was aborted');
+                err.name = 'AbortError';
+                reject(err);
+              });
+            }),
+        } as unknown as Response;
+      }),
+    );
+
+    const resultPromise = resolveConnectionMode();
+
+    await vi.advanceTimersByTimeAsync(REMOTE_PROBE_TIMEOUT_MS - 100);
+    expect(bodyAborted).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(200);
+
+    expect(await resultPromise).toBe('fresh');
+    expect(bodyAborted).toBe(true);
   });
 });

@@ -1,22 +1,26 @@
 import { Suspense } from 'react';
 
 import { LoadingPage, Portal, useDeviceLayout } from '@ci/common';
-import { Toaster, Tooltip } from '@ci/shadcn';
-import { useTranslation } from 'react-i18next';
+import { Toaster } from '@ci/shadcn';
 import { Outlet } from 'react-router-dom';
 
-import logo from '@/assets/logo.png';
 import { ConnectionModeIndicator, OutboxQueueIndicator } from '@/components/ConnectionModeIndicator';
 import { useTheme } from '@/components/ThemePicker';
+import { useUnsyncedImportsNotice } from '@/components/UnsyncedImports/useUnsyncedImportsNotice';
 
 import { MobileNavigation } from './MobileNavigation/MobileNavigation';
+import { PowerRailProvider } from './PowerRailContext';
+import { PowerRailToggle } from './PowerRailToggle';
 import { PrimaryNavigation } from './PrimaryNavigation';
 import { SecondaryNavigation } from './SecondaryNavigation';
 
 export function Main() {
-  const { t } = useTranslation();
   const { isMobile } = useDeviceLayout();
   const { themeState } = useTheme();
+
+  // Every authenticated page passes through this layout, which makes it the
+  // one place a page-load check reaches "across all pages".
+  useUnsyncedImportsNotice();
 
   if (isMobile) {
     return (
@@ -39,49 +43,39 @@ export function Main() {
   }
 
   return (
-    <div className="grid h-lvh min-h-0 grid-cols-[auto_1fr] grid-rows-[auto_1fr]">
-      <div className="fixed top-2 right-2 z-40 flex items-center gap-1.5">
-        <ConnectionModeIndicator />
-        <OutboxQueueIndicator />
-      </div>
+    <PowerRailProvider>
+      <div className="grid h-lvh min-h-0 grid-cols-[auto_1fr] grid-rows-[auto_1fr]">
+        {/* Left-aligned so the mark stays put when the rail widens. Centering
+            it here walks the logo to the middle of the expanded column. */}
+        {/* No padding here: the toggle carries the drawer's own width and
+            inset, so the two line up as one edge. */}
+        <div className="bg-secondary">
+          <PowerRailToggle />
+        </div>
 
-      <div className="flex items-center justify-center py-2 px-3 bg-secondary">
-        <Tooltip delayDuration={600}>
-          <Tooltip.Content>{t('NAV_LOGO_EXTERNAL')}</Tooltip.Content>
-          <Tooltip.Trigger asChild>
-            <a
-              href="https://companionintelligence.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={t('NAV_LOGO_EXTERNAL')}
-            >
-              <img src={logo} alt="Logo" className="h-8 w-8" />
-            </a>
-          </Tooltip.Trigger>
-        </Tooltip>
-      </div>
+        <div className="bg-secondary/20 border-b border-b-secondary/90">
+          <PrimaryNavigation />
+        </div>
 
-      <div className="bg-secondary/20 border-b border-b-secondary/90">
-        <PrimaryNavigation />
-      </div>
-
-      <div className="bg-secondary/20 border-r border-r-secondary/90">
+        {/* No background or border here: the rail is a drawer that floats over
+            the content when hovered, so it owns its own surface. Painting the
+            lane too would double the tint wherever the two overlap. */}
         <SecondaryNavigation />
-      </div>
 
-      <div className="overflow-hidden min-w-0 min-h-0 flex flex-col">
-        <Suspense fallback={<LoadingPage />}>
-          <Toaster theme={themeState.mode} />
-          <div className="flex flex-row h-full min-h-0">
-            <Portal id="tertiary-navigation" className="h-full" />
-            <main className="flex-1 min-w-0 relative">
-              <Outlet />
-              <Portal id="content-modal" className="absolute inset-0 empty:hidden" />
-            </main>
-          </div>
-        </Suspense>
+        <div className="overflow-hidden min-w-0 min-h-0 flex flex-col">
+          <Suspense fallback={<LoadingPage />}>
+            <Toaster theme={themeState.mode} />
+            <div className="flex flex-row h-full min-h-0">
+              <Portal id="tertiary-navigation" className="h-full" />
+              <main className="flex-1 min-w-0 relative">
+                <Outlet />
+                <Portal id="content-modal" className="absolute inset-0 empty:hidden" />
+              </main>
+            </div>
+          </Suspense>
+        </div>
+        <Portal id="overlay-modal" className="fixed inset-0 z-50 empty:hidden" />
       </div>
-      <Portal id="overlay-modal" className="fixed inset-0 z-50 empty:hidden" />
-    </div>
+    </PowerRailProvider>
   );
 }

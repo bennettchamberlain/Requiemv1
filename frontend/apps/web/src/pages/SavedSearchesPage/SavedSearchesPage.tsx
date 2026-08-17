@@ -1,8 +1,8 @@
 import { type ReactNode, useState } from 'react';
 
 import { useQuery } from '@apollo/client';
-import { EmptyState, LoadingPage, Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb, Button } from '@ci/shadcn';
+import { EmptyState, LoadingPage, usePageTitle } from '@ci/common';
+import { Button } from '@ci/shadcn';
 import { Plus, Search } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
@@ -35,7 +35,7 @@ export function SavedSearchesPage() {
   usePageTitle('Saved Searches - Companion Intelligence');
 
   const { data, loading } = useQuery(GET_SAVED_SEARCHES, {
-    variables: { first: 50 },
+    variables: { first: 300 },
   });
 
   const [savedSearchToDelete, setSavedSearchToDelete] = useState<FragmentType<
@@ -138,24 +138,6 @@ export function SavedSearchesPage() {
 
   return (
     <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-
-            <Breadcrumb.Separator className="hidden md:block" />
-
-            <Breadcrumb.Item>
-              <Breadcrumb.Page>Saved Searches</Breadcrumb.Page>
-            </Breadcrumb.Item>
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
       {content}
 
       {savedSearchToDelete && (

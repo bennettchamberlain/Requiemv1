@@ -10,6 +10,12 @@ export const ONBOARDING_STEP_KEYS = [
   'preferences-movie',
   'preferences-activity',
   'connect-source',
+  // Importing an export the user already has. Optional and feature-flagged on
+  // the client, but the key must exist HERE regardless: `saveProgress` validates
+  // `stepKey` with `z.enum`, so a step the server has not heard of makes every
+  // progress write on it a 400 — the user reaches the step, and their place in
+  // onboarding silently stops being saved.
+  'import-archives',
   'trust-dial',
   'run-first-sync',
 ] as const;
