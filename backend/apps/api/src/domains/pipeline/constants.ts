@@ -231,6 +231,81 @@ export const STAGE_IDS = {
    * the rich object model has ever had.
    */
   PROMOTE_OBJECT: 'promote.object',
+
+  /**
+   * Project a communication's resolved participant columns (`from_entity_id`,
+   * `to_entity_ids` — `enrich.person_link`'s output) into `ci.relationships`
+   * SENT / RECEIVED edges, resolved through merge tombstones onto canonical
+   * people. The graph traversal walks ONLY `ci.relationships`, so without this
+   * stage a linked communication is invisible to the graph view. The pipeline
+   * face of the deterministic-edge matrix; the operator backfill endpoint
+   * (`POST /api/maintenance/materialize-edges`) sweeps history in time
+   * windows, this keeps up with new data in ledger slices.
+   */
+  PROMOTE_EDGE_COMMUNICATION: 'promote.edge_communication',
+
+  /**
+   * The same projection over `ci.events`: organizer / participants →
+   * PARTICIPATED_IN, resolved location → HAPPENED_AT. A second id rather than
+   * a second entity type, for the reason `enrich.event_person_link` is one —
+   * a `Stage` declares exactly one `source`, and the matrix reads two tables.
+   */
+  PROMOTE_EDGE_EVENT: 'promote.edge_event',
+
+  /**
+   * The same projection over `ci.content`: rows attached to an event
+   * (`content.event_id`, written at ingest) become Content −PART_OF→ Event
+   * edges — what makes a photo or document reachable from its event in the
+   * graph view.
+   */
+  PROMOTE_EDGE_CONTENT: 'promote.edge_content',
+
+  /**
+   * The same projection over `ci.inventory`: `last_seen_place_entity_id`
+   * (written by `promote.object` and importers) becomes Item −LOCATED_AT→
+   * Place.
+   */
+  PROMOTE_EDGE_INVENTORY: 'promote.edge_inventory',
+
+  /**
+   * The same projection over `ci.receipts`: extraction's resolved columns
+   * become Merchant −LOCATED_AT→ Place, document Content −PART_OF→ purchase
+   * Event, and Event −HAPPENED_AT→ Place — the receipt row is the evidence,
+   * the edge relates the entities it names.
+   */
+  PROMOTE_EDGE_RECEIPT: 'promote.edge_receipt',
+
+  /**
+   * The same projection over `ci.object_observations`: Content −PART_OF→
+   * Event, resolved Item −LOCATED_AT→ Place and Item −ASSOCIATED_WITH→
+   * Content (what the item was depicted in).
+   */
+  PROMOTE_EDGE_OBSERVATION: 'promote.edge_observation',
+
+  /**
+   * The same projection over `ci.position`: fixes snapped to a known place
+   * (`location_entity_id`) become owner Person −VISITED→ Place. Telemetry
+   * volume in, a handful of distinct edges out — the projection's DISTINCT
+   * and the directed-unique index do the collapsing.
+   */
+  PROMOTE_EDGE_POSITION: 'promote.edge_position',
+
+  /**
+   * The same projection over `ci.devices`: registered devices with an entity
+   * mirror become owner Person −OWNS→ Device.
+   */
+  PROMOTE_EDGE_DEVICE: 'promote.edge_device',
+
+  /**
+   * File hierarchy: `ci.files.parent_id` → File −DERIVED_FROM→ File via the
+   * linked File graph entity mirror.
+   */
+  PROMOTE_EDGE_FILE: 'promote.edge_file',
+
+  /**
+   * Place hierarchy: `ci.entities.parent_place_id` → Place −PART_OF→ Place.
+   */
+  PROMOTE_EDGE_PLACE: 'promote.edge_place',
 } as const;
 
 export type StageId = (typeof STAGE_IDS)[keyof typeof STAGE_IDS];

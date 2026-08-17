@@ -1,8 +1,9 @@
-import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, ConflictException, Controller, Post, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { DataSource } from 'typeorm';
 
 import { Context, type RequestContext, toServiceContext, type UserServiceContext } from '@ci/common/context';
+import { CAPTURE_SCOPE, RequireCapability, RequireScopes, WRITE_CAPABILITY } from '@ci/common/decorators';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import { BrowserActivityService } from '@ci/domains/browser-activity';
@@ -14,6 +15,7 @@ import {
   ItemService,
   type CreateCommunicationDto,
 } from '@ci/domains/memory';
+import { NoteService } from '@ci/domains/notes';
 import { PositionService } from '@ci/domains/position';
 
 import { ingestNdjsonStream, isNdjsonRequest, type NdjsonIngestResponse } from '../ndjson';
@@ -23,6 +25,7 @@ import {
   type BulkContentRecord,
   type BulkIngestResponse,
   type BulkInventoryRecord,
+  type BulkNoteRecord,
   type BulkPositionRecord,
   type IngestEventsRequest,
   bulkBrowserActivityRecordSchema,
@@ -35,6 +38,7 @@ import {
   ingestContentsSchema,
   ingestEventsSchema,
   ingestInventorySchema,
+  ingestNotesSchema,
   ingestPositionsSchema,
 } from '../types';
 
@@ -129,14 +133,16 @@ async function envelopeResponse(
  * (`{ events: [...] }`, max 1,000), a capture raw log ahead of materialization,
  * and per-record rejection — see {@link ingest}.
  *
- * Timeline preference (Wave D): for kinds that are **not** `position` or
- * `communications`, prefer materializing onto the `ci.events` timeline when the
- * record is an activity-in-time. Today that is already true for `/v1/events`
- * (primary path), and `/v1/browser-activity` dual-writes `view` events +
- * `web-page` content while keeping `ci.browser_activity` for dual-read.
- * `/v1/contents` and `/v1/inventory` remain their own tables (content may link
- * to an event via `event_id` / shared provenance). Positions stay sensor
- * hypertables; communications stay the dedicated plain table.
+ * Destination rule: each kind writes its own table and only its own table.
+ * `/v1/events` is the `ci.events` timeline; `/v1/browser-activity` is
+ * `ci.browser_activity`; `/v1/contents` and `/v1/inventory` are their own
+ * tables (content may link to an event via `event_id` / shared provenance);
+ * positions stay sensor hypertables; communications stay the dedicated plain
+ * table. Wave D's rule — fold anything "activity-in-time" onto `ci.events` —
+ * was reverted in 20260812144811: it put browser page views on the schedule
+ * calendar and into HBPE's training corpus, neither of which reads ci.events
+ * with an event-kind filter. A record belongs on the timeline when a caller
+ * posts it to `/v1/events`, not because another route decided it qualified.
  *
  * Every bulk route accepts TWO request encodings, switched on Content-Type:
  *
@@ -154,7 +160,10 @@ async function envelopeResponse(
  *     BodyParserMiddleware) — unchanged from the original contract.
  *
  * Every route — events and the five bulk kinds alike — runs the same
- * three-layer capture→materialize→link pipeline ({@link captureAndMaterialize}):
+ * three-layer capture→materialize→link pipeline ({@link captureAndMaterialize}),
+ * with ONE exception: `POST /v1/notes`, whose records carry no provenance
+ * triple and so dedupe on their client-minted primary key instead (see
+ * {@link ingestNotes}):
  * an append-only raw-log capture (`ci.capture_events`, idempotent on
  * (user_id, destination, triple)), ONE batched call into the kind's EXISTING
  * chunk-safe bulk service (CommunicationService.createMany,
@@ -167,7 +176,17 @@ async function envelopeResponse(
  * (see IngestLifecycleController) — then a set-based `materialized_id`
  * backfill onto the log.
  */
+// Class-level grant: every route here is a capture agent writing observations,
+// so `capture` opens the whole `/v1` plane rather than being repeated per route.
+// Both decorators resolve via reflector.getAllAndOverride([handler, class]), so
+// an individual route can still narrow this if one ever needs to.
+//
+// This only ever WIDENS access: empty-scope keys (the bulk importer, CI-Ingest)
+// and session/JWT callers were never subject to scope enforcement, and no scope
+// reached these routes before `capture` existed.
 @Controller('v1')
+@RequireScopes(CAPTURE_SCOPE)
+@RequireCapability(WRITE_CAPABILITY)
 export class BulkIngestController {
   constructor(
     private readonly communicationService: CommunicationService,
@@ -176,11 +195,12 @@ export class BulkIngestController {
     private readonly browserActivityService: BrowserActivityService,
     private readonly positionService: PositionService,
     private readonly eventService: EventService,
+    private readonly noteService: NoteService,
     private readonly dataSource: DataSource,
   ) {}
 
-  // G1 unified capture ingest — preferred `/v1` materialization for anything
-  // that is an activity-in-time (Wave D). Instance of the shared
+  // G1 unified capture ingest — the `/v1` route for timeline events, and the
+  // only route that writes ci.events. Instance of the shared
   // capture->materialize->link pipeline (see captureAndMaterialize;
   // event-ingest-spec). Re-POSTing the same (source_type, source_system,
   // source_id) returns `duplicate +1`, not an error.
@@ -499,6 +519,63 @@ export class BulkIngestController {
     return envelopeResponse(() => this.flushBrowserActivity(serviceContext, records));
   }
 
+  /**
+   * The durable capture outbox's replay target for notes.
+   *
+   * **The one route here that does not run {@link captureAndMaterialize}**, and
+   * deliberately: that pipeline's raw log is keyed on a provenance triple, and
+   * a note has none. Every note would take the triple-less lane and skip the
+   * log entirely, so the pipeline would contribute nothing but indirection. A
+   * note dedupes on its own primary key instead — a client-minted id, which is
+   * a stronger handle than a triple, not a weaker one. See
+   * `NoteService.captureMany` for the three guards that make the write safe.
+   *
+   * JSON envelope only, like `/v1/events` and unlike the five bulk kinds. Notes
+   * arrive from the outbox a few at a time; nothing streams them, and NDJSON's
+   * per-batch response has no way to carry the ownership conflict below.
+   *
+   * **409 on an ownership conflict.** A per-record `rejected` entry rides an
+   * HTTP 200, which the client flusher reads as success — it would report the
+   * flush as delivered and the sidecar would drop the row, losing a note the
+   * user wrote. A conflict is instead a hard status, which
+   * `isPermanentFlushFailure` classifies permanent, so the item is parked in
+   * `needs_attention` where the user can see it. Nothing is silently discarded.
+   */
+  @UseGuards(JwtOrApiKeyAuthGuard)
+  @Post('notes')
+  async ingestNotes(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(ingestNotesSchema)) body: { records: BulkNoteRecord[] },
+  ): Promise<BulkIngestResponse> {
+    const serviceContext = toServiceContext(context);
+
+    const outcome = await this.noteService.captureMany(
+      serviceContext,
+      body.records.map((record) => ({
+        id: record.id,
+        title: record.title,
+        content: record.content,
+        capturedAt: new Date(record.captured_at),
+      })),
+    );
+
+    if (outcome.conflicted.length > 0) {
+      throw new ConflictException(
+        `${outcome.conflicted.length} note id(s) belong to another user and were not written.`,
+      );
+    }
+
+    return {
+      // A capture that lands is `ingested` whether it created the row or
+      // advanced it; both mean the user's content is now on the appliance.
+      ingested: outcome.created.length + outcome.updated.length,
+      // Snapshots the appliance already had at or ahead of — the same "we have
+      // this already" the other kinds report from their dedup keys.
+      duplicate: outcome.stale.length,
+      rejected: [],
+    };
+  }
+
   @UseGuards(JwtOrApiKeyAuthGuard)
   @Post('positions')
   async ingestPositions(
@@ -620,9 +697,8 @@ export class BulkIngestController {
     serviceContext: UserServiceContext,
     records: BulkBrowserActivityRecord[],
   ): Promise<{ ingested: number; duplicate: number }> {
-    // Capture destination stays browser_activity for raw-log identity, but
-    // BrowserActivityService.createMany dual-writes ci.events (view) +
-    // ci.content (web-page) — the Wave D timeline fold.
+    // ci.browser_activity is the only destination. The Wave D fold into
+    // ci.events + ci.content was reverted (20260812144811).
     return this.captureAndMaterialize({
       serviceContext,
       records,

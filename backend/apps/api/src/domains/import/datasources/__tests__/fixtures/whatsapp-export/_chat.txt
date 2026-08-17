@@ -1,0 +1,7 @@
+[1/1/21, 12:00:00 AM] Alice: Happy New Year! 🎉
+[1/1/21, 12:00:30 AM] Bob: Happy New Year Alice! 🥂
+[1/1/21, 12:01:00 AM] Alice: What are your plans for this year?
+[1/1/21, 12:02:00 AM] Bob: Trying to read more books and exercise regularly.
+[1/1/21, 12:02:30 AM] Alice: Same! I joined a running club.
+[1/2/21, 8:00:00 AM] Bob: Good morning! How was your first run?
+[1/2/21, 8:15:00 AM] Alice: It was tough but great. Did 5km!

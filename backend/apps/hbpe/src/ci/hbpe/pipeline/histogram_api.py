@@ -1,13 +1,13 @@
 """
 Histogram API backing logic — formats InferenceEngine output for the endpoint.
 
-Accepts the 96-bucket list from InferenceEngine.predict() and applies any
+Accepts the 48-bucket list from InferenceEngine.predict() and applies any
 horizon-specific post-processing before returning to the HTTP layer.  Also
 writes every issued forecast to ci.prediction_log for retrospective accuracy
 measurement and LoRA fine-tuning signal (T5.1).
 
 Full spec: CI-HBPE-SPEC-001 §T4.4.
-Response schema: 96 buckets × {bucket_index, start_time, l0_probs, l1_probs,
+Response schema: 48 buckets × {bucket_index, start_time, l0_probs, l1_probs,
                                 l2_probs, q10, q50, q90}
 
 Implements T4.4 (CI-Server-k64).
@@ -32,7 +32,7 @@ from ci.hbpe.model.checkpoints import (
 
 log = logging.getLogger(__name__)
 
-# Only 24h horizon supported currently (96 × 15-min buckets)
+# Only 24h horizon supported currently (48 × 30-min buckets)
 SUPPORTED_HORIZONS = {"24h"}
 
 _INSERT_LOG_SQL = """
@@ -52,7 +52,7 @@ def build_histogram(
     """
     Generate the histogram response dict for GET /histogram.
 
-    Also writes all 96 forecast buckets to ci.prediction_log.  The write is
+    Also writes all 48 forecast buckets to ci.prediction_log.  The write is
     non-fatal: errors are logged but do not affect the API response.
 
     Args:
@@ -64,7 +64,7 @@ def build_histogram(
         {
           "horizon": "24h",
           "generated_at": "<ISO timestamp>",
-          "buckets": [<96 bucket dicts>]
+          "buckets": [<48 bucket dicts>]
         }
 
     Raises:
@@ -114,7 +114,7 @@ def _log_prediction(
     buckets: list[dict],
 ) -> None:
     """
-    Write all 96 forecast buckets to ci.prediction_log in a single batch.
+    Write all 48 forecast buckets to ci.prediction_log in a single batch.
 
     Non-fatal: any DB error is logged and swallowed so it never affects the
     API response.  actual_l0/l1/l2 are left NULL here; the nightly

@@ -104,6 +104,25 @@ export class GraphUtilityService {
     });
   }
 
+  /**
+   * Active-node counts per `entity_type`, largest first. Cheap (one GROUP BY
+   * over the user's entities) and the input the overview's per-type budget
+   * split needs: which data types exist in this account, and how many of each.
+   */
+  async getEntityTypeCounts(ownerUserId: string): Promise<Array<{ entityType: string; count: number }>> {
+    const rows: Array<{ entity_type: string; count: string }> = await this.entityRepo
+      .createQueryBuilder('entity')
+      .select('entity.entity_type', 'entity_type')
+      .addSelect('COUNT(*)', 'count')
+      .where('entity.owner_user_id = :ownerUserId', { ownerUserId })
+      .andWhere('entity.is_active = true')
+      .groupBy('entity.entity_type')
+      .orderBy('count', 'DESC')
+      .getRawMany();
+
+    return rows.map((row) => ({ entityType: row.entity_type, count: Number(row.count) }));
+  }
+
   async getNodesByIds(entityIds: string[], ownerUserId: string): Promise<GraphNodeEntity[]> {
     if (entityIds.length === 0) {
       return [];
@@ -162,6 +181,297 @@ export class GraphUtilityService {
       .getRawMany<{ entity_id: string }>();
 
     return rows.map((row) => row.entity_id);
+  }
+
+  /**
+   * Communications tied to a person through `ci.communications`'
+   * `from_entity_id`/`to_entity_ids` columns, as graph nodes.
+   *
+   * Participant linking (PersonLinkStage, CommunicationParticipantLinkListener,
+   * the backfill services) writes those columns and never inserts
+   * `ci.relationships` rows, so a relationship traversal alone can never reach
+   * a person's emails or messages. Communication CTI rows share their uuid with
+   * their `ci.entities` node, which is what the join rides on.
+   *
+   * Most recent first, capped by `limit` — a busy correspondent has thousands.
+   */
+  async getCommunicationTiesForPerson(
+    ownerUserId: string,
+    personEntityId: string,
+    limit: number,
+  ): Promise<Array<{ node: GraphNodeEntity; isSender: boolean }>> {
+    const rows: Array<GraphNodeEntity & { is_sender: boolean }> = await this.entityRepo.manager.query(
+      `SELECT e.*, (c.from_entity_id = $2) AS is_sender
+         FROM ci.communications c
+         JOIN ci.entities e
+           ON e.entity_id = c.id
+          AND e.owner_user_id = $1
+          AND e.is_active = true
+        WHERE c.user_id = $1
+          AND (c.from_entity_id = $2 OR c.to_entity_ids @> ARRAY[$2]::uuid[])
+        ORDER BY c.time DESC
+        LIMIT $3`,
+      [ownerUserId, personEntityId, limit],
+    );
+
+    return rows.map((row) => ({ node: row, isSender: row.is_sender === true }));
+  }
+
+  /**
+   * The persons a communication links through its participant columns, as
+   * graph nodes — the inverse of {@link getCommunicationTiesForPerson}, so
+   * focusing a Communication node shows who it connects.
+   */
+  async getPersonTiesForCommunication(
+    ownerUserId: string,
+    communicationId: string,
+  ): Promise<Array<{ node: GraphNodeEntity; isSender: boolean }>> {
+    const rows: Array<GraphNodeEntity & { is_sender: boolean }> = await this.entityRepo.manager.query(
+      `SELECT DISTINCT ON (e.entity_id) e.*, (c.from_entity_id = e.entity_id) AS is_sender
+         FROM ci.communications c
+         JOIN ci.entities e
+           ON e.entity_id = ANY (ARRAY[c.from_entity_id] || COALESCE(c.to_entity_ids, '{}'))
+          AND e.owner_user_id = $1
+          AND e.is_active = true
+        WHERE c.user_id = $1
+          AND c.id = $2
+        ORDER BY e.entity_id, is_sender DESC
+        LIMIT 100`,
+      [ownerUserId, communicationId],
+    );
+
+    return rows.map((row) => ({ node: row, isSender: row.is_sender === true }));
+  }
+
+  /**
+   * One recency-ordered page of a single entity type, in the MINIMAL shape the
+   * dots overview ships: id, type, name — no properties/description blobs,
+   * which at thousands of nodes dominate the payload without being rendered
+   * (a dot has no tooltip until it's focused, and focus does its own fetch).
+   *
+   * Event rows also carry `event_type` (joined off the same-id CTI mirror) so
+   * the client can color/filter events by kind; `eventTypes` narrows the page
+   * to those kinds. Both are meaningless for other entity types and ignored.
+   *
+   * `offset` exists for future tiling — a canvas layer paging one type at a
+   * time uses (offset, limit) per type without a new endpoint shape.
+   */
+  async getDotNodes(
+    ownerUserId: string,
+    options: { entityType: string; limit: number; offset?: number; eventTypes?: string[] },
+  ): Promise<
+    Array<{ entity_id: string; entity_type: string; name: string; event_type: string | null; degree: number }>
+  > {
+    // Single-type path delegates to the ranked multi-type helper (one degrees CTE).
+    return this.getRankedDotNodes(ownerUserId, {
+      entityTypes: [options.entityType],
+      perTypeLimit: options.limit,
+      offset: options.offset,
+      eventTypes: options.eventTypes,
+    });
+  }
+
+  /**
+   * Top hubs per entity type for the dots overview — one degrees CTE, then
+   * `ROW_NUMBER() PARTITION BY entity_type` so the waterfill can take
+   * highest-degree nodes of each kind without re-scanning relationships.
+   */
+  async getRankedDotNodes(
+    ownerUserId: string,
+    options: {
+      entityTypes: string[];
+      perTypeLimit: number;
+      offset?: number;
+      eventTypes?: string[];
+    },
+  ): Promise<
+    Array<{ entity_id: string; entity_type: string; name: string; event_type: string | null; degree: number }>
+  > {
+    if (options.entityTypes.length === 0 || options.perTypeLimit <= 0) {
+      return [];
+    }
+
+    const params: unknown[] = [ownerUserId, options.entityTypes];
+    const eventTypeFilter = options.eventTypes && options.eventTypes.length > 0;
+    const eventTypeSelect = `CASE WHEN e.entity_type = 'Event' THEN ev.event_type ELSE NULL END AS event_type`;
+    let eventJoin = `LEFT JOIN ci.events ev ON ev.event_id = e.entity_id`;
+
+    if (eventTypeFilter) {
+      params.push(options.eventTypes);
+      // Events not in the How filter are dropped; other types keep the left join.
+      eventJoin = `LEFT JOIN ci.events ev ON ev.event_id = e.entity_id`;
+    }
+
+    params.push(options.perTypeLimit, options.offset ?? 0);
+    const limitParam = params.length - 1;
+    const offsetParam = params.length;
+
+    const eventWhere = eventTypeFilter
+      ? `AND (e.entity_type <> 'Event' OR ev.event_type = ANY($3::text[]))`
+      : '';
+
+    const rows: Array<{
+      entity_id: string;
+      entity_type: string;
+      name: string;
+      event_type: string | null;
+      degree: string;
+    }> = await this.entityRepo.manager.query(
+      `WITH degrees AS (
+         SELECT entity_id, COUNT(*)::int AS degree
+           FROM (
+             SELECT from_entity_id AS entity_id
+               FROM ci.relationships
+              WHERE owner_user_id = $1 AND is_active = TRUE
+             UNION ALL
+             SELECT to_entity_id
+               FROM ci.relationships
+              WHERE owner_user_id = $1 AND is_active = TRUE
+           ) touching
+          GROUP BY entity_id
+       ),
+       ranked AS (
+         SELECT e.entity_id, e.entity_type, e.name, ${eventTypeSelect},
+                COALESCE(d.degree, 0) AS degree,
+                ROW_NUMBER() OVER (
+                  PARTITION BY e.entity_type
+                  ORDER BY COALESCE(d.degree, 0) DESC, e.created_at DESC
+                ) AS rn
+           FROM ci.entities e
+           ${eventJoin}
+           LEFT JOIN degrees d ON d.entity_id = e.entity_id
+          WHERE e.owner_user_id = $1
+            AND e.is_active = TRUE
+            AND e.entity_type = ANY($2::text[])
+            ${eventWhere}
+       )
+       SELECT entity_id, entity_type, name, event_type, degree
+         FROM ranked
+        WHERE rn > $${offsetParam}
+          AND rn <= $${offsetParam} + $${limitParam}
+        ORDER BY entity_type, degree DESC`,
+      params,
+    );
+
+    return rows.map((row) => ({
+      entity_id: row.entity_id,
+      entity_type: row.entity_type,
+      name: row.name,
+      event_type: row.event_type,
+      degree: Number(row.degree),
+    }));
+  }
+
+  /**
+   * Account-wide relatedness: how many active entities touch at least one
+   * relationship vs how many sit alone. The key overview metric —
+   * `relatedRatio = related / total` (0 when the graph is empty).
+   */
+  async getConnectivitySummary(
+    ownerUserId: string,
+    excludedEntityTypes: string[] = [],
+  ): Promise<{ total: number; related: number; isolated: number; relatedRatio: number }> {
+    const params: unknown[] = [ownerUserId];
+    let typeFilter = '';
+    if (excludedEntityTypes.length > 0) {
+      params.push(excludedEntityTypes);
+      typeFilter = `AND NOT (entity_type = ANY($${params.length}::text[]))`;
+    }
+
+    const rows: Array<{ total: string; related: string }> = await this.entityRepo.manager.query(
+      `WITH active AS (
+         SELECT entity_id
+           FROM ci.entities
+          WHERE owner_user_id = $1
+            AND is_active = TRUE
+            ${typeFilter}
+       ),
+       touched AS (
+         SELECT DISTINCT entity_id
+           FROM (
+             SELECT from_entity_id AS entity_id
+               FROM ci.relationships
+              WHERE owner_user_id = $1 AND is_active = TRUE
+             UNION
+             SELECT to_entity_id
+               FROM ci.relationships
+              WHERE owner_user_id = $1 AND is_active = TRUE
+           ) endpoints
+          WHERE entity_id IN (SELECT entity_id FROM active)
+       )
+       SELECT (SELECT COUNT(*)::int FROM active) AS total,
+              (SELECT COUNT(*)::int FROM touched) AS related`,
+      params,
+    );
+
+    const total = Number(rows[0]?.total ?? 0);
+    const related = Number(rows[0]?.related ?? 0);
+    const isolated = Math.max(0, total - related);
+
+    return {
+      total,
+      related,
+      isolated,
+      relatedRatio: total > 0 ? related / total : 0,
+    };
+  }
+
+  /**
+   * Edge count per entity over the given ids — one UNION ALL + GROUP BY over
+   * `ci.relationships`, both directions. Feeds the dots overview's node sizing
+   * and label priority. Ids absent from the result have degree 0.
+   */
+  async getDegreeCounts(ownerUserId: string, entityIds: string[]): Promise<Map<string, number>> {
+    if (entityIds.length === 0) {
+      return new Map();
+    }
+
+    const rows: Array<{ entity_id: string; degree: string }> = await this.relationshipRepo.manager.query(
+      `SELECT entity_id, COUNT(*) AS degree
+         FROM (
+           SELECT from_entity_id AS entity_id
+             FROM ci.relationships
+            WHERE owner_user_id = $1 AND is_active = true AND from_entity_id = ANY($2::uuid[])
+           UNION ALL
+           SELECT to_entity_id
+             FROM ci.relationships
+            WHERE owner_user_id = $1 AND is_active = true AND to_entity_id = ANY($2::uuid[])
+         ) touching
+        GROUP BY entity_id`,
+      [ownerUserId, entityIds],
+    );
+
+    return new Map(rows.map((row) => [row.entity_id, Number(row.degree)]));
+  }
+
+  /**
+   * Relationships whose BOTH endpoints are inside the given id set, capped —
+   * the zoomed-in "section" edge fetch. Unlike {@link getRelationships} with
+   * `entityIds` (which returns every edge TOUCHING the set, most of them
+   * dangling against nodes the client hasn't loaded), this constrains both
+   * sides in SQL so a hub node in the set can't pull in its thousands of
+   * off-screen edges.
+   */
+  async getRelationshipsAmong(
+    ownerUserId: string,
+    entityIds: string[],
+    limit: number,
+  ): Promise<RelationshipEntity[]> {
+    if (entityIds.length === 0) {
+      return [];
+    }
+
+    return this.relationshipRepo.manager.query(
+      `SELECT *
+         FROM ci.relationships
+        WHERE owner_user_id = $1
+          AND is_active = true
+          AND from_entity_id = ANY($2::uuid[])
+          AND to_entity_id = ANY($2::uuid[])
+        ORDER BY strength DESC NULLS LAST
+        LIMIT $3`,
+      [ownerUserId, entityIds, limit],
+    );
   }
 
   async queryNodes(
@@ -512,6 +822,11 @@ export class GraphUtilityService {
 
     const visitedNodes = new Map<string, GraphNodeEntity>();
     const collectedEdges: RelationshipEntity[] = [];
+    // Each BFS layer re-fetches the relationships touching its frontier, and an edge between two
+    // visited layers matches BOTH fetches — without this set the edge list contained every
+    // relationship once per layer it touched, and clients rendered the duplicates on top of each
+    // other (a second, never-updated line under each real one).
+    const collectedEdgeIds = new Set<string>();
 
     let currentLayer = new Set(seedEntityIds);
     let depth = 0;
@@ -546,7 +861,10 @@ export class GraphUtilityService {
           break;
         }
 
-        collectedEdges.push(rel);
+        if (!collectedEdgeIds.has(rel.relationship_id)) {
+          collectedEdgeIds.add(rel.relationship_id);
+          collectedEdges.push(rel);
+        }
 
         if (direction === 'outbound' || direction === 'both') {
           if (layerIds.includes(rel.from_entity_id) && !visitedNodes.has(rel.to_entity_id)) {

@@ -7,7 +7,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // Seals any credential written by a previous version (or a previous session) to
+        // this device, so it cannot ride along in an encrypted backup and restore onto
+        // different hardware. See KeychainHardening for why this is a sweep.
+        KeychainHardening.hardenStoredCredentials()
         return true
     }
 
@@ -16,9 +19,17 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Use this method to pause ongoing tasks, disable timers, and invalidate graphics rendering callbacks. Games should use this method to pause the game.
     }
 
+    // ⚠️ The four lifecycle methods below, and the two URL handlers at the end of this
+    // file, are NOT CALLED in this app. `Info.plist` declares
+    // `UIApplicationSceneManifest`, and once scenes are adopted UIKit routes all of it to
+    // the UIWindowSceneDelegate instead — see SceneDelegate, which is where the real
+    // background hook and the real `companion://` OIDC forwarding live. They are kept
+    // because they are the Capacitor template's shape and removing them invites someone to
+    // "restore" them later; treat them as documentation, and put nothing load-bearing here.
+
     func applicationDidEnterBackground(_ application: UIApplication) {
-        // Use this method to release shared resources, save user data, invalidate timers, and store enough application state information to restore your application to its current state in case it is terminated later.
-        // If your application supports background execution, this method is called instead of applicationWillTerminate: when the user quits.
+        // Superseded by SceneDelegate.sceneDidEnterBackground — see the note above.
+        // KeychainHardening's periodic sweep is called from there, not here.
     }
 
     func applicationWillEnterForeground(_ application: UIApplication) {

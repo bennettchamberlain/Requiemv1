@@ -5,7 +5,18 @@ import base from '../../../eslint.config.mjs';
 
 export default [
   {
-    ignores: ['.yarn', '**/dist/**', '**/docs/**', '**/node_modules/**', '.pnp.*'],
+    ignores: [
+      '.yarn',
+      '**/dist/**',
+      '**/docs/**',
+      '**/node_modules/**',
+      '.pnp.*',
+      // Importer test fixtures are verbatim copies of real vendor export
+      // archives — Twitter/X ships its data as `.js` files assigning to
+      // `window.YTD.*`. They are data under test, not source, and linting them
+      // only reports on the vendor's formatting.
+      '**/__tests__/fixtures/**',
+    ],
   },
 
   ...base,

@@ -1,4 +1,4 @@
-import { Controller, Get, NotFoundException, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, NotFoundException, Post, Query, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
@@ -7,6 +7,7 @@ import { ValidationPipe } from '@ci/common/pipes';
 import { TagService } from '@ci/domains/search-next';
 
 import { GraphNodeEntity } from '../entities/GraphNodeEntity';
+import { RelationshipEntity } from '../entities/RelationshipEntity';
 import { graphTypesToExclude } from '../graph.types';
 import { EventService } from '../services/EventService';
 import { GraphEventService } from '../services/GraphEventService';
@@ -100,8 +101,35 @@ const graphSearchSchema = z.object({
   to: z.string().optional(),
 });
 
+/** Upper bound (and default) for the dots overview payload — 10x the classic
+ * overview's {@link NODE_LIMIT}, cheap because each dot is four small fields. */
+const DOTS_LIMIT = 2000;
+
+/** Hard cap on ids accepted / edges returned by the section-edge fetch. */
+const SECTION_EDGE_ID_LIMIT = 300;
+const SECTION_EDGE_LIMIT = 400;
+
+// The dots overview's params: the explorer's type selection, the How
+// dimension's event types (narrows Event dots only — the full event-scoped
+// resolution stays on /data), and (limit, offset) structured per-type so a
+// future canvas layer can tile pages without a new endpoint shape.
+const graphDotsSchema = z.object({
+  includeTypes: explorerTypesParam,
+  eventTypes: csvListParam,
+  limit: z.coerce.number().int().min(1).max(DOTS_LIMIT).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+});
+
+// The section-edge fetch: edges among an explicit id set (the client's current
+// viewport), both endpoints constrained server-side.
+const graphEdgesSchema = z.object({
+  ids: z.array(z.string().regex(UUID_PATTERN)).min(1).max(SECTION_EDGE_ID_LIMIT),
+});
+
 type GetNodeDetailsDto = z.infer<typeof getNodeDetailsSchema>;
 type GraphDataDto = z.infer<typeof graphDataSchema>;
+type GraphDotsDto = z.infer<typeof graphDotsSchema>;
+type GraphEdgesDto = z.infer<typeof graphEdgesSchema>;
 type GraphSearchDto = z.infer<typeof graphSearchSchema>;
 
 /** Reports whether a restrictive id-filter (tags, or the event-scoped
@@ -128,6 +156,27 @@ const EVENT_MATCH_EVENT_LIMIT = 2000;
  * `getGraphData`); a full page signals the overview is truncated. */
 const NODE_LIMIT = 200;
 
+/** How many of a person's most recent communications the focus subgraph pulls
+ * in alongside the relationship traversal. Participant linking writes
+ * `ci.communications.from_entity_id`/`to_entity_ids` — not `ci.relationships`
+ * rows — so without this augmentation focusing a person never shows their
+ * emails or messages, however many they exchanged. Capped because a busy
+ * correspondent links thousands. */
+const FOCUS_COMMUNICATION_LIMIT = 25;
+
+/** The edge shape the focus response is built from: a real traversal edge or a
+ * synthesized person↔communication tie. */
+type FocusEdge = Pick<
+  RelationshipEntity,
+  | 'relationship_id'
+  | 'from_entity_id'
+  | 'to_entity_id'
+  | 'relationship_type'
+  | 'strength'
+  | 'properties'
+  | 'is_bidirectional'
+>;
+
 /** How many hops out from the owner's anchor entity the overview traversal
  * reaches when seeding the node budget. Matches the client's `maxDepth: 3`
  * subgraph, so everything the client would BFS to is in the payload. */
@@ -137,6 +186,20 @@ const ANCHOR_NEIGHBORHOOD_DEPTH = 3;
  * cap). Edges aren't returned from it — the overview ships all relationships
  * separately — this only bounds how far the traversal can expand. */
 const ANCHOR_NEIGHBORHOOD_EDGE_LIMIT = 500;
+
+/**
+ * How much of {@link NODE_LIMIT} the anchor neighborhood may consume before
+ * the per-type fill takes over.
+ *
+ * The neighborhood BFS is first-come-first-served over whatever edges the
+ * anchor happens to have, and on a real account those are overwhelmingly one
+ * type — measured on the appliance this was built against, the anchor's
+ * person↔person email edges filled all 200 slots and the overview rendered
+ * ZERO of the account's 183k Communications, 108k Events, 37k Content rows or
+ * 102 Locations. Half the budget keeps the anchor's social core; the other
+ * half is reserved for showing every data type the account actually has.
+ */
+const ANCHOR_NEIGHBORHOOD_NODE_BUDGET = Math.floor(NODE_LIMIT / 2);
 
 /** Intersect the active filter matches into a single allowed-id set, mirroring
  * the client's `combineMatches`: each active filter ANDs together, and an
@@ -478,13 +541,26 @@ export class GraphController {
   }
 
   /**
-   * Assemble the capped node payload for the graph overview. The frontend seeds
-   * its subgraph from the owner's anchor entity, so a purely recency-ordered
-   * page is the wrong shape: once the account outgrows NODE_LIMIT the anchor
-   * (usually among the oldest entities) and its neighborhood fall off the page
-   * and the client renders an empty graph. Fill the budget from the anchor's
-   * graph neighborhood first, then top up with the most recently created
-   * entities.
+   * Assemble the capped node payload for the graph overview: the anchor's
+   * neighborhood first, then EVERY entity type the account has.
+   *
+   * The frontend seeds its subgraph from the owner's anchor entity, so a
+   * purely recency-ordered page is the wrong shape: once the account outgrows
+   * NODE_LIMIT the anchor (usually among the oldest entities) and its
+   * neighborhood fall off the page and the client renders an empty graph.
+   *
+   * But the neighborhood alone is the wrong shape too, and measurably so: the
+   * BFS is first-come-first-served over whatever edges the anchor has, which
+   * on a real account is one dominant type — it filled all 200 slots with
+   * Persons while the account's 183k Communications, 108k Events, 37k Content
+   * rows and 102 Locations never appeared at all. So the neighborhood is
+   * capped at {@link ANCHOR_NEIGHBORHOOD_NODE_BUDGET} and the remaining budget
+   * is WATERFILLED across every (non-excluded) entity type the account
+   * actually has: types are visited scarcest-first, each takes at most an even
+   * share of what is left, and a type too small to use its share donates the
+   * remainder to the bigger ones. Every data type is represented; no type can
+   * crowd out the rest; the per-type pages themselves are recency-ordered and
+   * deterministic.
    *
    * The anchor itself is always kept, even when the explorer's entity-type
    * filter would exclude it (e.g. the user is a Person and Person is
@@ -509,7 +585,7 @@ export class GraphController {
       });
 
       for (const node of neighborhood.values()) {
-        if (nodeMap.size >= NODE_LIMIT) {
+        if (nodeMap.size >= ANCHOR_NEIGHBORHOOD_NODE_BUDGET) {
           break;
         }
 
@@ -521,6 +597,41 @@ export class GraphController {
       }
     }
 
+    // Per-type waterfill over the remaining budget. Scarcest type first, so a
+    // type with 13 nodes takes its 13 and donates the rest of its share to the
+    // 183k-row types recomputed at each step, instead of wasting budget on a
+    // share it cannot fill.
+    const typeCounts = (await this.graphQuery.getEntityTypeCounts(ownerId))
+      .filter((entry) => !excludedTypes.has(entry.entityType))
+      .sort((a, b) => a.count - b.count);
+
+    let remainingTypes = typeCounts.length;
+    for (const { entityType } of typeCounts) {
+      const remainingBudget = NODE_LIMIT - nodeMap.size;
+      if (remainingBudget <= 0) {
+        break;
+      }
+
+      const share = Math.max(1, Math.floor(remainingBudget / remainingTypes));
+      remainingTypes -= 1;
+
+      const nodes = await this.graphQuery.getNodes(ownerId, { entityType, limit: share });
+      let taken = 0;
+      for (const node of nodes) {
+        if (taken >= share || nodeMap.size >= NODE_LIMIT) {
+          break;
+        }
+
+        if (!nodeMap.has(node.entity_id)) {
+          nodeMap.set(node.entity_id, node);
+          taken += 1;
+        }
+      }
+    }
+
+    // Recency top-up for whatever budget the waterfill could not place (an
+    // account whose types are all tiny, or heavy dup overlap with the
+    // neighborhood).
     if (nodeMap.size < NODE_LIMIT) {
       const recentNodes = await this.graphQuery.getNodes(ownerId, {
         limit: NODE_LIMIT,
@@ -539,6 +650,196 @@ export class GraphController {
     }
 
     return nodeMap;
+  }
+
+  /**
+   * The DOTS overview: thousands of minimal nodes, zero edges — the payload
+   * behind the graph view's zoomed-out "every data type as a tiny dot"
+   * rendering. Edges arrive later, on interaction: focusing a dot fetches its
+   * subgraph (`GET /graph/node`), zooming into a region fetches the edges
+   * among the visible ids (`POST /graph/edges`).
+   *
+   * Same scarcest-first waterfill as the classic overview so every entity
+   * type the account has is represented, but each type's share is the
+   * highest-degree hubs first (not newest orphans). Payload is four fields
+   * per node ({ id, type, name, degree } + `event_type` for events) — 2000
+   * dots ship in roughly the bytes 200 full nodes did. Also returns
+   * `connectivity` (related / isolated / relatedRatio) as the account-wide
+   * relatedness metric.
+   */
+  @Get('dots')
+  async getGraphDots(
+    @Context() ctx: RequestContext,
+    @Query(new ValidationPipe(graphDotsSchema)) query: GraphDotsDto,
+  ) {
+    const ownerId = this.ensureUserId(ctx);
+
+    const excludeEntityTypes =
+      query.includeTypes === undefined ? [] : graphTypesToExclude(query.includeTypes);
+    const excludedTypes = new Set(excludeEntityTypes);
+    const budget = query.limit ?? DOTS_LIMIT;
+
+    type DotNode = {
+      entity_id: string;
+      entity_type: string;
+      name: string | null;
+      event_type: string | null;
+    };
+    type DotNodeWithDegree = DotNode & { degree: number };
+    const dots = new Map<string, DotNodeWithDegree>();
+
+    const typeCountsRaw = await this.graphQuery.getEntityTypeCounts(ownerId);
+    // Scarcest-first waterfill (see assembleOverviewNodes): a type too small
+    // to use its share donates the remainder to the plentiful ones. Within each
+    // type the pool is already highest-degree first (one degrees CTE).
+    const typeCounts = typeCountsRaw
+      .filter((entry) => !excludedTypes.has(entry.entityType))
+      .sort((a, b) => a.count - b.count);
+
+    const entityTypes = typeCounts.map((entry) => entry.entityType);
+
+    const [connectivity, rankedPool, userEntity] = await Promise.all([
+      this.graphQuery.getConnectivitySummary(ownerId, [...excludedTypes]),
+      this.graphQuery.getRankedDotNodes(ownerId, {
+        entityTypes,
+        // Enough headroom for waterfill to pull a full budget from one plentiful type.
+        perTypeLimit: budget,
+        offset: query.offset,
+        eventTypes: query.eventTypes,
+      }),
+      this.graphQuery.getUserEntity(ownerId),
+    ]);
+
+    // The anchor always ships (the client centers and seeds on it), even when
+    // its type is deselected — same contract as the classic overview.
+    if (userEntity) {
+      const fromPool = rankedPool.find((node) => node.entity_id === userEntity.entity_id);
+      const anchorDegrees =
+        fromPool != null
+          ? new Map([[userEntity.entity_id, fromPool.degree]])
+          : await this.graphQuery.getDegreeCounts(ownerId, [userEntity.entity_id]);
+      dots.set(userEntity.entity_id, {
+        entity_id: userEntity.entity_id,
+        entity_type: userEntity.entity_type,
+        name: userEntity.name,
+        event_type: null,
+        degree: anchorDegrees.get(userEntity.entity_id) ?? 0,
+      });
+    }
+
+    const poolByType = new Map<string, DotNodeWithDegree[]>();
+    for (const node of rankedPool) {
+      const list = poolByType.get(node.entity_type) ?? [];
+      list.push(node);
+      poolByType.set(node.entity_type, list);
+    }
+
+    const cursors = new Map<string, number>(entityTypes.map((type) => [type, 0]));
+    let remainingTypes = typeCounts.length;
+    for (const { entityType } of typeCounts) {
+      const remainingBudget = budget - dots.size;
+      if (remainingBudget <= 0) {
+        break;
+      }
+
+      const share = Math.max(1, Math.floor(remainingBudget / remainingTypes));
+      remainingTypes -= 1;
+
+      const pool = poolByType.get(entityType) ?? [];
+      let taken = 0;
+      let cursor = cursors.get(entityType) ?? 0;
+      while (taken < share && cursor < pool.length && dots.size < budget) {
+        const node = pool[cursor];
+        cursor += 1;
+        if (!dots.has(node.entity_id)) {
+          dots.set(node.entity_id, node);
+          taken += 1;
+        }
+      }
+
+      cursors.set(entityType, cursor);
+    }
+
+    // Donate leftover budget to still-plentiful types (degree order preserved).
+    if (dots.size < budget) {
+      for (const entityType of [...entityTypes].reverse()) {
+        const pool = poolByType.get(entityType) ?? [];
+        let cursor = cursors.get(entityType) ?? 0;
+        while (cursor < pool.length && dots.size < budget) {
+          const node = pool[cursor];
+          cursor += 1;
+          if (!dots.has(node.entity_id)) {
+            dots.set(node.entity_id, node);
+          }
+        }
+
+        cursors.set(entityType, cursor);
+        if (dots.size >= budget) {
+          break;
+        }
+      }
+    }
+
+    // Highest-degree first in the payload so progressive first-paint and the
+    // client legend both see hubs before sparse orphans.
+    const ranked = Array.from(dots.values()).sort((a, b) => b.degree - a.degree);
+
+    return {
+      success: true,
+      data: {
+        nodes: ranked.map((node) => ({
+          id: node.entity_id,
+          entity_id: node.entity_id,
+          entity_type: node.entity_type,
+          name: node.name,
+          degree: node.degree,
+          ...(node.event_type != null ? { event_type: node.event_type } : {}),
+        })),
+      },
+      // Totals per type so the client can show "1,204 of 183k Communications"
+      // and page later via (offset, limit).
+      counts: Object.fromEntries(typeCounts.map((entry) => [entry.entityType, entry.count])),
+      truncated: dots.size >= budget,
+      // Key graph health metric: share of entities that touch ≥1 relationship.
+      connectivity: {
+        total: connectivity.total,
+        related: connectivity.related,
+        isolated: connectivity.isolated,
+        relatedRatio: connectivity.relatedRatio,
+      },
+    };
+  }
+
+  /**
+   * Section-edge fetch: the relationships among an explicit node-id set — the
+   * client's current viewport once it zooms past the LOD threshold. Both
+   * endpoints are constrained to the set server-side and the result is capped,
+   * so a hub in view can't drag in its thousands of off-screen edges.
+   */
+  @Post('edges')
+  async getGraphEdges(
+    @Context() ctx: RequestContext,
+    @Body(new ValidationPipe(graphEdgesSchema)) body: GraphEdgesDto,
+  ) {
+    const ownerId = this.ensureUserId(ctx);
+
+    const relationships = await this.graphQuery.getRelationshipsAmong(ownerId, body.ids, SECTION_EDGE_LIMIT);
+
+    return {
+      success: true,
+      data: {
+        links: relationships.map((rel) => ({
+          id: rel.relationship_id,
+          relationship_id: rel.relationship_id,
+          source: rel.from_entity_id,
+          target: rel.to_entity_id,
+          relationship_type: rel.relationship_type,
+          strength: rel.strength || 0.5,
+          properties: rel.properties || {},
+        })),
+        truncated: relationships.length >= SECTION_EDGE_LIMIT,
+      },
+    };
   }
 
   @Get('search')
@@ -727,8 +1028,62 @@ export class GraphController {
       maxEdges,
     });
 
-    const traversalNodes = Array.from(traversal.nodes.values());
-    const relationships = traversal.edges;
+    const nodesById = new Map(Array.from(traversal.nodes.values()).map((n) => [n.entity_id, n]));
+    const relationships: FocusEdge[] = [...traversal.edges];
+
+    // Person↔communication ties live in ci.communications' participant columns,
+    // not in ci.relationships, so the traversal above can never surface a
+    // person's emails/messages (or a communication's people). Synthesize those
+    // edges here so the focus graph shows them.
+    const communicationTies =
+      node.entity_type === 'Person'
+        ? await this.graphQuery.getCommunicationTiesForPerson(
+            ownerId,
+            node.entity_id,
+            FOCUS_COMMUNICATION_LIMIT,
+          )
+        : node.entity_type === 'Communication'
+          ? await this.graphQuery.getPersonTiesForCommunication(ownerId, node.entity_id)
+          : [];
+
+    const edgeIds = new Set(relationships.map((rel) => rel.relationship_id));
+    // The materialize-edges job writes these same ties as REAL relationships;
+    // once the traversal returns one, synthesizing it again would draw a
+    // duplicate link — so dedupe on the directed (from, to, type) triple too.
+    const edgeTriples = new Set(
+      relationships.map((rel) => `${rel.from_entity_id}|${rel.to_entity_id}|${rel.relationship_type}`),
+    );
+    for (const tie of communicationTies) {
+      const other = tie.node;
+      const personId = node.entity_type === 'Person' ? node.entity_id : other.entity_id;
+      const communicationId = node.entity_type === 'Person' ? other.entity_id : node.entity_id;
+      const relationshipType = tie.isSender ? 'SENT' : 'RECEIVED';
+      const relationshipId = `comm-${communicationId}-${personId}-${relationshipType}`;
+      const triple = `${personId}|${communicationId}|${relationshipType}`;
+
+      if (edgeIds.has(relationshipId) || edgeTriples.has(triple)) {
+        continue;
+      }
+
+      edgeIds.add(relationshipId);
+      edgeTriples.add(triple);
+
+      if (!nodesById.has(other.entity_id)) {
+        nodesById.set(other.entity_id, other);
+      }
+
+      relationships.push({
+        relationship_id: relationshipId,
+        from_entity_id: personId,
+        to_entity_id: communicationId,
+        relationship_type: relationshipType,
+        strength: tie.isSender ? 0.6 : 0.45,
+        properties: { derived_from: 'communication_participants' },
+        is_bidirectional: false,
+      });
+    }
+
+    const traversalNodes = Array.from(nodesById.values());
 
     const neighborIds = new Set<string>();
     for (const rel of relationships) {

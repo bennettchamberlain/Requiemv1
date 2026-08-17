@@ -5,7 +5,7 @@ import { v7 as uuid7 } from 'uuid';
 
 import { SYSTEM_USER, type UserServiceContext, type ServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { bulkInsertIdempotent, INGEST_REFRESH_COLUMNS } from '@ci/common/persistence';
+import { type BulkInsertResult, bulkInsertIdempotent, INGEST_REFRESH_COLUMNS } from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
 import { ItemCreatedEvent, ItemUpdatedEvent, ItemRemovedEvent } from '@ci/domains/memory/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
@@ -15,6 +15,7 @@ import { type Item, ItemEntity } from '../entities/ItemEntity';
 import type { CreateItemDto, UpdateItemDto } from '../types';
 
 import { CtiAggregate } from './CtiAggregate';
+import { GraphDeltaWriter } from './GraphDeltaWriter';
 
 /**
  * Spanning-aggregate service for the inventory CTI split: an item is ONE
@@ -37,6 +38,7 @@ export class ItemService {
     private readonly itemBaseRepository: Repository<ItemBaseEntity>,
     private readonly logger: LoggerService,
     private readonly eventService: EventService,
+    private readonly graphDeltaWriter: GraphDeltaWriter,
   ) {
     this.logger.setContext(ItemService.name);
     this.aggregate = new CtiAggregate({
@@ -97,7 +99,19 @@ export class ItemService {
         }),
       );
 
-      return manager.getRepository(ItemEntity).save(detail);
+      const saved = await manager.getRepository(ItemEntity).save(detail);
+      await this.graphDeltaWriter.entityCreated({
+        entityId: id,
+        entityType: 'Item',
+        name: data.name,
+        description: data.description ?? null,
+        ownerUserId: context.userId,
+        changeSource: 'ItemService.create',
+        changedByUserId: typeof context.userId === 'string' ? context.userId : null,
+        manager,
+      });
+
+      return saved;
     });
 
     await this.eventService.send(ItemCreatedEvent, {
@@ -119,6 +133,24 @@ export class ItemService {
    * unique index, which also absorbs a lost insert race.
    */
   async createMany(context: UserServiceContext, data: CreateItemDto[]): Promise<Item[]> {
+    return (await this.createManyDetailed(context, data)).map(({ entity }) => entity);
+  }
+
+  /**
+   * Same ingest as {@link createMany}, reporting which rows this call actually
+   * INSERTED rather than found already present.
+   *
+   * The batch paths upsert, so a re-sent row resolves silently and is
+   * indistinguishable in the returned entities from one written for the first
+   * time. The importer needs the difference: without it a push of 7,339 content
+   * records that collapsed onto 2,354 rows reports 7,339 writes, and its
+   * "already saved" count reads zero on an import that was almost entirely
+   * repeats.
+   */
+  async createManyDetailed(
+    context: UserServiceContext,
+    data: CreateItemDto[],
+  ): Promise<Array<BulkInsertResult<Item>>> {
     if (data.length === 0) {
       return [];
     }
@@ -198,6 +230,31 @@ export class ItemService {
       // base row already present for this uuid.
       await this.aggregate.insertBaseRows(manager, baseRows, '(entity_id) DO NOTHING');
 
+      await this.graphDeltaWriter.recordMany(
+        results
+          .filter(({ inserted }) => inserted)
+          .map(({ entity }) => {
+            const ingress = ingressById.get(entity.id);
+
+            return {
+              nodeType: 'entity' as const,
+              changeType: 'created' as const,
+              entityId: entity.id,
+              entityType: 'Item',
+              ownerUserId: context.userId,
+              changeSource: 'ItemService.createMany',
+              changedByUserId: typeof context.userId === 'string' ? context.userId : null,
+              changedFields: {
+                name: { new: ingress?.name ?? null },
+                description: { new: ingress?.description ?? null },
+                entity_type: { new: 'Item' },
+                properties: { new: {} },
+              },
+            };
+          }),
+        manager,
+      );
+
       // One read covers egress composition for inserted AND pre-existing rows
       // (a deduped triple resolves to a row whose base values this batch never
       // carried).
@@ -213,7 +270,10 @@ export class ItemService {
     // fan-out was the dominant cost at import volume. Search indexing for
     // bulk-loaded rows is deferred to the post-load batch embed
     // (POST /api/maintenance/search-index/backfill).
-    return detailResults.map(({ entity }) => ItemEntity.toEgressType(entity, bases.get(entity.id)));
+    return detailResults.map(({ entity, inserted }) => ({
+      entity: ItemEntity.toEgressType(entity, bases.get(entity.id)),
+      inserted,
+    }));
   }
 
   async findAll(context: ServiceContext): Promise<Item[]> {
@@ -250,7 +310,14 @@ export class ItemService {
    */
   async getEntitiesForItems(
     context: ServiceContext,
-    options: { limit?: number; startTime?: Date; endTime?: Date; order?: 'ASC' | 'DESC' } = {},
+    options: {
+      limit?: number;
+      startTime?: Date;
+      endTime?: Date;
+      afterTime?: Date;
+      afterId?: string;
+      order?: 'ASC' | 'DESC';
+    } = {},
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
     let query = this.itemRepository
       .createQueryBuilder('item')
@@ -265,7 +332,17 @@ export class ItemService {
       query = query.andWhere('item.created_at <= :endTime', { endTime: options.endTime });
     }
 
-    query = query.orderBy('item.created_at', options.order ?? 'DESC');
+    // Composite keyset: page strictly past (afterTime, afterId) in
+    // (created_at DESC, object_id DESC) — see ContentService.getEntitiesForContents.
+    if (options.afterTime && options.afterId) {
+      query = query.andWhere(
+        '(item.created_at < :afterTime OR (item.created_at = :afterTime AND item.object_id < :afterId))',
+        { afterTime: options.afterTime, afterId: options.afterId },
+      );
+    }
+
+    // Deterministic tiebreak so same-timestamp rows page consistently.
+    query = query.orderBy('item.created_at', options.order ?? 'DESC').addOrderBy('item.object_id', 'DESC');
 
     if (options.limit) {
       query = query.limit(options.limit);
@@ -380,11 +457,34 @@ export class ItemService {
     }
 
     // One transaction across both halves of the aggregate (see CtiAggregate).
-    const after = await this.aggregate.applyUpdate(context, id, {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      detail: updateData as any, // TypeORM will handle JSON serialization
-      base: basePatch,
-    });
+    const after = await this.aggregate.applyUpdate(
+      context,
+      id,
+      {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        detail: updateData as any, // TypeORM will handle JSON serialization
+        base: basePatch,
+      },
+      {
+        withinTx: async ({ manager }) => {
+          const base = await manager.getRepository(ItemBaseEntity).findOne({ where: { id } });
+          await this.graphDeltaWriter.entityUpdated({
+            entityId: id,
+            entityType: 'Item',
+            name: base?.name ?? null,
+            changedFields: {
+              ...(basePatch.name !== undefined ? { name: { new: basePatch.name } } : {}),
+              ...(basePatch.description !== undefined ? { description: { new: basePatch.description } } : {}),
+              ...(Object.keys(updateData).length > 0 ? { detail_updated: { new: true } } : {}),
+            },
+            ownerUserId: typeof context.userId === 'string' ? context.userId : null,
+            changeSource: 'ItemService.update',
+            changedByUserId: typeof context.userId === 'string' ? context.userId : null,
+            manager,
+          });
+        },
+      },
+    );
 
     if (!after) {
       return null;
@@ -404,7 +504,20 @@ export class ItemService {
   async remove(context: ServiceContext, id: string): Promise<boolean> {
     // Authorized load + base-row delete (the FK cascade removes the detail);
     // see CtiAggregate.remove.
-    const removed = await this.aggregate.remove(context, id);
+    const removed = await this.aggregate.remove(context, id, {
+      withinTx: async ({ manager }) => {
+        const base = await manager.getRepository(ItemBaseEntity).findOne({ where: { id } });
+        await this.graphDeltaWriter.entityDeleted({
+          entityId: id,
+          entityType: 'Item',
+          name: base?.name ?? null,
+          ownerUserId: typeof context.userId === 'string' ? context.userId : null,
+          changeSource: 'ItemService.remove',
+          changedByUserId: typeof context.userId === 'string' ? context.userId : null,
+          manager,
+        });
+      },
+    });
 
     if (!removed) {
       return false;

@@ -7,7 +7,7 @@ Lifecycle:
 
 Endpoints:
   GET /health               — liveness probe
-  GET /histogram            — 96-bucket (15-min) 24h behavioral forecast
+  GET /histogram            — 48-bucket (30-min) 24h behavioral forecast
   GET /forecast             — week-horizon per-day occurrence forecast
   GET /forecast/due         — renewal ("due"/overdue) predictions for periodic clusters
   POST /invalidate/{date}   — manual cache invalidation (for testing / admin)
@@ -124,9 +124,9 @@ async def histogram(
     horizon: str = Query("24h", description="Forecast window (only '24h' supported)"),
 ) -> dict:
     """
-    Return a 96-bucket (15-minute) 24-hour behavioral forecast.
+    Return a 48-bucket (30-minute) 24-hour behavioral forecast.
 
-    Response: { horizon, generated_at, buckets: [...96 items...] }
+    Response: { horizon, generated_at, buckets: [...48 items...] }
     Each bucket: { bucket_index, start_time, l0_probs, l1_probs, l2_probs, q10, q50, q90 }
     """
     if not user_id:

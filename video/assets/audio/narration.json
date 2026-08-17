@@ -4,8 +4,8 @@
   "voice": "en-GB-SoniaNeural",
   "scenes": {
     "open": {
-      "text": "Other agents are double agents. Companion Memory works only for you.",
-      "seconds": 5.291,
+      "text": "The other agents are double agents. Companion Memory works only for you.",
+      "seconds": 5.405,
       "prosody": {
         "rate": "-6%",
         "pitch": "-2Hz",
@@ -97,8 +97,8 @@
       }
     },
     "close": {
-      "text": "Companion Memory, from Companion Intelligence. UnCloud your life, at ci dot computer slash memory.",
-      "seconds": 8.217,
+      "text": "One memory. Every agent you choose. Yours. At ci dot computer slash memory. UnCloud your life.",
+      "seconds": 8.753,
       "prosody": {
         "rate": "-8%",
         "pitch": "-2Hz",
@@ -115,8 +115,8 @@
       }
     },
     "the-catch": {
-      "text": "And all of that gets remembered on a machine you will never see. So most people quietly stop telling it the truth.",
-      "seconds": 7.267,
+      "text": "Which leaves one question. Where would all of that live? On hardware you will never see, under terms you did not write.",
+      "seconds": 7.922,
       "prosody": {
         "rate": "-5%",
         "pitch": "-1Hz",
@@ -124,8 +124,8 @@
       }
     },
     "bring-it-home": {
-      "text": "Point it at the accounts you already have, and it pulls your mail, your calendar and your photos into your own house.",
-      "seconds": 7.013,
+      "text": "Point it at the accounts you already have, and your mail, your calendar and your photos come home to a machine you own.",
+      "seconds": 7.088,
       "prosody": {
         "rate": "-3%",
         "pitch": "+0Hz",
@@ -133,8 +133,8 @@
       }
     },
     "one-memory": {
-      "text": "Everything you keep lands in one list, on one machine, newest first.",
-      "seconds": 4.918,
+      "text": "Everything lands in one list, on one machine, newest first. Nothing is uploaded, and nothing leaves the box.",
+      "seconds": 7.868,
       "prosody": {
         "rate": "-3%",
         "pitch": "+0Hz",
@@ -143,7 +143,7 @@
     },
     "the-record": {
       "text": "Open one, and the whole record is there. The place, the address, the exact coordinates.",
-      "seconds": 6.459,
+      "seconds": 6.461,
       "prosody": {
         "rate": "-3%",
         "pitch": "+0Hz",
@@ -151,8 +151,8 @@
       }
     },
     "ask-it": {
-      "text": "Search it, and the whole store narrows in place. Nothing is uploaded, and nothing leaves the box.",
-      "seconds": 6.755,
+      "text": "Ask it anything and the whole store narrows in place. Nothing is uploaded, and nothing leaves the box.",
+      "seconds": 6.939,
       "prosody": {
         "rate": "-3%",
         "pitch": "+0Hz",
@@ -160,8 +160,8 @@
       }
     },
     "it-connects": {
-      "text": "It works out how your people, places and ideas connect — on your box, not somebody else's cluster.",
-      "seconds": 6.888,
+      "text": "It works out how your people, places and ideas connect — the context anything acting for you actually needs.",
+      "seconds": 7.342,
       "prosody": {
         "rate": "-3%",
         "pitch": "+0Hz",
@@ -169,8 +169,8 @@
       }
     },
     "it-notices": {
-      "text": "Hourly, daily, weekly — it reads what happened and writes the summary itself, on a model you host.",
-      "seconds": 6.799,
+      "text": "It can turn the activity you store into useful summaries and patterns.",
+      "seconds": 4.689,
       "prosody": {
         "rate": "-3%",
         "pitch": "+0Hz",
@@ -187,8 +187,8 @@
       }
     },
     "your-traces": {
-      "text": "Your life already leaves a trail, across two dozen services that each keep a piece of it.",
-      "seconds": 5.694,
+      "text": "Two dozen services each hold a piece of it, and not one of them will hand you the whole.",
+      "seconds": 5.193,
       "prosody": {
         "rate": "-3%",
         "pitch": "+0Hz",
@@ -205,11 +205,128 @@
       }
     },
     "your-agents": {
-      "text": "Which is why the agents you already use plug straight into it, over one MCP server that answers only to you.",
-      "seconds": 7.037,
+      "text": "Then give every agent you choose the same memory. Claude Code, OpenCode, Hermes, OpenClaw.",
+      "seconds": 7.149,
       "prosody": {
         "rate": "-5%",
         "pitch": "-1Hz",
+        "volume": "+0%"
+      }
+    },
+    "ci-memory-30-ask-it": {
+      "text": "The other agents are double agents. Yours should not start from zero.",
+      "seconds": 4.803,
+      "prosody": {
+        "rate": "-3%",
+        "pitch": "+0Hz",
+        "volume": "+0%"
+      }
+    },
+    "ci-memory-30-bring-it-home": {
+      "text": "Bring the mail, calendars, photos and files you choose home to a machine you own.",
+      "seconds": 5.74,
+      "prosody": {
+        "rate": "-3%",
+        "pitch": "+0Hz",
+        "volume": "+0%"
+      }
+    },
+    "ci-memory-30-the-record": {
+      "text": "Open one, and the whole record is there.",
+      "seconds": 2.906,
+      "prosody": {
+        "rate": "-3%",
+        "pitch": "+0Hz",
+        "volume": "+0%"
+      }
+    },
+    "ci-memory-30-it-notices": {
+      "text": "Find useful summaries and patterns across the activity you keep.",
+      "seconds": 4.4,
+      "prosody": {
+        "rate": "-3%",
+        "pitch": "+0Hz",
+        "volume": "+0%"
+      }
+    },
+    "ci-memory-30-your-agents": {
+      "text": "Then give Claude Code, OpenCode, Hermes and OpenClaw the same memory.",
+      "seconds": 5.268,
+      "prosody": {
+        "rate": "-5%",
+        "pitch": "-1Hz",
+        "volume": "+0%"
+      }
+    },
+    "ci-memory-30-close": {
+      "text": "One memory. Every agent you choose. Yours. At ci dot computer slash memory.",
+      "seconds": 6.914,
+      "prosody": {
+        "rate": "-8%",
+        "pitch": "-2Hz",
+        "volume": "+0%"
+      }
+    },
+    "ci-memory-bumper-double-agents-ask-it": {
+      "text": "The other agents are double agents. One memory. Yours.",
+      "seconds": 4.531,
+      "prosody": {
+        "rate": "-3%",
+        "pitch": "+0Hz",
+        "volume": "+0%"
+      }
+    },
+    "perfect-recall": {
+      "text": "You already have a perfect memory. Every place, every person, every promise you made — all of it recorded. Just not by you.",
+      "seconds": 8.821,
+      "prosody": {
+        "rate": "-5%",
+        "pitch": "-1Hz",
+        "volume": "+0%"
+      }
+    },
+    "your-biography": {
+      "text": "Now imagine all of it written up for you. Not a diary you have to keep — one that keeps itself, hourly, daily and weekly.",
+      "seconds": 8.354,
+      "prosody": {
+        "rate": "-5%",
+        "pitch": "-1Hz",
+        "volume": "+0%"
+      }
+    },
+    "the-biography": {
+      "text": "And every day gets written up. What happened, and what was decided — by a model on your own hardware.",
+      "seconds": 6.746,
+      "prosody": {
+        "rate": "-3%",
+        "pitch": "+0Hz",
+        "volume": "+0%"
+      }
+    },
+    "ci-memory-30-perfect-recall": {
+      "text": "You already have a perfect memory. It is just scattered across services you do not own.",
+      "seconds": 5.763,
+      "prosody": {
+        "rate": "-5%",
+        "pitch": "-1Hz",
+        "volume": "+0%"
+      }
+    },
+    "ci-memory-30-the-biography": {
+      "text": "Every day gets written up for you, by a model you host.",
+      "seconds": 3.867,
+      "prosody": {
+        "rate": "-3%",
+        "pitch": "+0Hz",
+        "volume": "+0%"
+      }
+    },
+    "ci-memory-bumper-perfect-recall-the-record": {
+      "text": "Perfect recall. On hardware you own.",
+      "seconds": 3.285,
+      "prosody": {
+        "rate": "-3%",
+        "pitch": "+0Hz",
         "volume": "+0%"
       }
     }

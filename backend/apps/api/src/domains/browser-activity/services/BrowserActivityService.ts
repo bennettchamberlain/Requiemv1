@@ -6,9 +6,9 @@ import { v7 as uuidv7 } from 'uuid';
 import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import {
+  type BulkInsertResult,
   bulkInsertIdempotent,
   INGEST_REFRESH_COLUMNS,
-  buildEventAggregateFold,
   keysetPaginate,
   type KeysetPageArgs,
   type KeysetPage,
@@ -91,8 +91,6 @@ export class BrowserActivityService {
       }),
     );
 
-    await this.dualWriteTimeline(returned);
-
     return isSingle ? returned[0] : returned;
   }
 
@@ -107,15 +105,26 @@ export class BrowserActivityService {
    * — search indexing is deferred to the post-load batch embed
    * (POST /api/maintenance/search-index/backfill); single-row create() still emits.
    *
-   * Wave D dual-write: also materializes matching `ci.events` (event_type `view`)
-   * + `ci.content` (type `web-page`) rows via raw SQL so MemoryModule stays out of
-   * the import graph (BrowserActivityModule ← MemoryModule would cycle). The
-   * browser_activity table remains the dual-read source until a later drop.
+   * `ci.browser_activity` is the sole home for these rows. Wave D's dual-write
+   * into `ci.events` + `ci.content` was reverted (see the migration paired with
+   * this change): page views are not timeline events, and folding them there
+   * flooded the schedule calendar and the HBPE training corpus.
    */
   async createMany(
     context: UserServiceContext,
     data: CreateBrowserActivityDto[],
   ): Promise<BrowserActivity[]> {
+    return (await this.createManyDetailed(context, data)).map(({ entity }) => entity);
+  }
+
+  /**
+   * Same ingest as {@link createMany}, reporting which rows this call actually
+   * INSERTED rather than found already present.
+   */
+  async createManyDetailed(
+    context: UserServiceContext,
+    data: CreateBrowserActivityDto[],
+  ): Promise<Array<BulkInsertResult<BrowserActivity>>> {
     if (data.length === 0) {
       return [];
     }
@@ -160,117 +169,16 @@ export class BrowserActivityService {
       conflictUpdateColumns: INGEST_REFRESH_COLUMNS.browser_activity,
     });
 
-    const egress = results.map(({ entity }) => BrowserActivityEntity.toEgressType(entity));
-    await this.dualWriteTimeline(egress);
+    const egress = results.map(({ entity, inserted }) => ({
+      entity: BrowserActivityEntity.toEgressType(entity),
+      inserted,
+    }));
 
     // Bulk ingest does NOT emit a per-row BrowserActivityCreatedEvent: the per-row
     // pgboss fan-out was the dominant cost at import volume. Search indexing for
     // bulk-loaded rows is deferred to the post-load batch embed
     // (POST /api/maintenance/search-index/backfill). Single-row create() still emits.
     return egress;
-  }
-
-  /**
-   * Idempotent fold into ci.events + ci.content (same shape as the Wave D
-   * backfill migration). Synthetic provenance
-   * (`browser_activity` / `fold` / activity id) covers triple-less rows.
-   */
-  private async dualWriteTimeline(rows: BrowserActivity[]): Promise<void> {
-    if (rows.length === 0) {
-      return;
-    }
-
-    const CHUNK = 200;
-    for (let at = 0; at < rows.length; at += CHUNK) {
-      const chunk = rows.slice(at, at + CHUNK);
-
-      // An event is a CTI aggregate: the `ci.events` detail row plus an
-      // `Event`-discriminated base row in `ci.entities` sharing its uuid. The
-      // single-statement dual insert is owned by the memory domain
-      // (buildEventAggregateFold); this service only maps its rows in.
-      const { sql, params } = buildEventAggregateFold(
-        chunk.map((ba) => ({
-          userId: ba.user_id,
-          title: ba.title?.trim() || ba.url || 'Browser activity',
-          description: ba.page_summary ?? null,
-          eventType: 'view',
-          category: ba.category ?? null,
-          time: ba.time,
-          durationSeconds: ba.duration_seconds ?? null,
-          sourceType: ba.source_type ?? 'browser_activity',
-          sourceSystem: ba.source_system ?? 'fold',
-          sourceId: ba.source_id ?? ba.id,
-          metadata: {
-            browser_activity_id: ba.id,
-            url: ba.url,
-            action_type: ba.action_type ?? null,
-            duration_seconds: ba.duration_seconds ?? null,
-            scroll_depth_percent: ba.scroll_depth_percent ?? null,
-            category: ba.category ?? null,
-            productivity_score: ba.productivity_score ?? null,
-            is_incognito: ba.is_incognito,
-            contains_sensitive: ba.contains_sensitive,
-            device_id: ba.device_id ?? null,
-            properties: ba.properties ?? {},
-          },
-        })),
-      );
-
-      await this.dataSource.query(sql, params);
-
-      // Content rows: resolve event_id by the same provenance triple.
-      const contentParams: unknown[] = [];
-      const contentValues = chunk.map((ba, i) => {
-        const base = i * 8;
-        const sourceType = ba.source_type ?? 'browser_activity';
-        const sourceSystem = ba.source_system ?? 'fold';
-        const sourceId = ba.source_id ?? ba.id;
-        contentParams.push(
-          ba.title?.trim() || ba.url || null,
-          ba.page_summary ?? null,
-          ba.url,
-          ba.user_id,
-          sourceType,
-          sourceSystem,
-          sourceId,
-          JSON.stringify({ browser_activity_id: ba.id }),
-        );
-
-        return `(
-          ci.gen_uuid_v7(),
-          'web-page',
-          $${base + 1},
-          $${base + 2},
-          $${base + 3},
-          $${base + 3},
-          $${base + 8}::jsonb,
-          $${base + 4}::uuid,
-          (
-            SELECT e.event_id FROM ci.events e
-             WHERE e.user_id = $${base + 4}::uuid
-               AND e.source_type = $${base + 5}
-               AND e.source_system = $${base + 6}
-               AND e.source_id = $${base + 7}
-             LIMIT 1
-          ),
-          $${base + 5},
-          $${base + 6},
-          $${base + 7}
-        )`;
-      });
-
-      await this.dataSource.query(
-        `INSERT INTO ci.content (
-           id, type, title, text, url, source_url, source_data,
-           user_id, event_id, source_type, source_system, source_id
-         )
-         VALUES ${contentValues.join(', ')}
-         ON CONFLICT (user_id, source_type, source_system, source_id)
-           WHERE source_id IS NOT NULL
-           DO NOTHING`,
-        contentParams,
-      );
-    }
   }
 
   async findAll(context: ServiceContext): Promise<BrowserActivity[]> {

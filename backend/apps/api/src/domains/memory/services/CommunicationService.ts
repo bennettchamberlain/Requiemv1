@@ -7,6 +7,7 @@ import { type ServiceContext, type UserServiceContext, SYSTEM_USER } from '@ci/c
 import { LoggerService } from '@ci/common/logging';
 import {
   INGEST_REFRESH_COLUMNS,
+  type BulkInsertResult,
   bulkInsertIdempotent,
   keysetPaginate,
   type KeysetPageArgs,
@@ -21,6 +22,7 @@ import { CommunicationCreatedEvent, CommunicationUpdatedEvent, CommunicationRemo
 import { CreateCommunicationDto, UpdateCommunicationDto } from '../types';
 
 import { CtiAggregate, type RepositoryProvider } from './CtiAggregate';
+import { GraphDeltaWriter } from './GraphDeltaWriter';
 
 interface Options {
   limit?: number;
@@ -60,6 +62,7 @@ export class CommunicationService {
     private readonly eventService: EventService,
     private readonly logger: LoggerService,
     private readonly dataSource: DataSource,
+    private readonly graphDeltaWriter: GraphDeltaWriter,
   ) {
     this.logger.setContext(CommunicationService.name);
     this.aggregate = new CtiAggregate({
@@ -147,7 +150,19 @@ export class CommunicationService {
     const communicationResult = await this.communicationRepository.manager.transaction(async (manager) => {
       await manager.getRepository(CommunicationBaseEntity).save(this.baseRowFor(manager, communication));
 
-      return manager.getRepository(CommunicationEntity).save(communication);
+      const saved = await manager.getRepository(CommunicationEntity).save(communication);
+      await this.graphDeltaWriter.entityCreated({
+        entityId: id,
+        entityType: 'Communication',
+        name: this.labelFor(saved),
+        description: saved.summary ?? null,
+        ownerUserId: context.userId,
+        changeSource: 'CommunicationService.create',
+        changedByUserId: typeof context.userId === 'string' ? context.userId : null,
+        manager,
+      });
+
+      return saved;
     });
 
     await this.eventService.send(CommunicationCreatedEvent, {
@@ -185,6 +200,24 @@ export class CommunicationService {
    * Single-row create() still emits, so interactive creates index live.
    */
   async createMany(context: UserServiceContext, data: CreateCommunicationDto[]): Promise<Communication[]> {
+    return (await this.createManyDetailed(context, data)).map(({ entity }) => entity);
+  }
+
+  /**
+   * Same ingest as {@link createMany}, reporting which rows this call actually
+   * INSERTED rather than found already present.
+   *
+   * The batch paths upsert, so a re-sent row resolves silently and is
+   * indistinguishable in the returned entities from one written for the first
+   * time. The importer needs the difference: without it a push of 7,339 content
+   * records that collapsed onto 2,354 rows reports 7,339 writes, and its
+   * "already saved" count reads zero on an import that was almost entirely
+   * repeats.
+   */
+  async createManyDetailed(
+    context: UserServiceContext,
+    data: CreateCommunicationDto[],
+  ): Promise<Array<BulkInsertResult<Communication>>> {
     if (data.length === 0) {
       return [];
     }
@@ -260,10 +293,34 @@ export class CommunicationService {
           'WHERE (entities.name, entities.description) IS DISTINCT FROM (EXCLUDED.name, EXCLUDED.description)',
       );
 
+      await this.graphDeltaWriter.recordMany(
+        detailResults
+          .filter(({ inserted }) => inserted)
+          .map(({ entity }) => ({
+            nodeType: 'entity' as const,
+            changeType: 'created' as const,
+            entityId: entity.id,
+            entityType: 'Communication',
+            ownerUserId: context.userId,
+            changeSource: 'CommunicationService.createMany',
+            changedByUserId: typeof context.userId === 'string' ? context.userId : null,
+            changedFields: {
+              name: { new: this.labelFor(entity) },
+              description: { new: entity.summary ?? null },
+              entity_type: { new: 'Communication' },
+              properties: { new: {} },
+            },
+          })),
+        manager,
+      );
+
       return detailResults;
     });
 
-    return results.map(({ entity }) => CommunicationEntity.toEgressType(entity));
+    return results.map(({ entity, inserted }) => ({
+      entity: CommunicationEntity.toEgressType(entity),
+      inserted,
+    }));
   }
 
   async findAll(context: UserServiceContext): Promise<Communication[]> {
@@ -416,18 +473,43 @@ export class CommunicationService {
       data.content !== undefined ||
       data.summary !== undefined;
 
-    const updated = await this.aggregate.applyUpdate(context, id, {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      detail: updateData as any, // TypeORM will handle JSON serialization
-      // The base patch derives from the PATCHED detail values, so the label
-      // reflects what is actually being persisted.
-      base: labelSourcesTouched
-        ? (after) => ({
+    const updated = await this.aggregate.applyUpdate(
+      context,
+      id,
+      {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        detail: updateData as any, // TypeORM will handle JSON serialization
+        // The base patch derives from the PATCHED detail values, so the label
+        // reflects what is actually being persisted.
+        base: labelSourcesTouched
+          ? (after) => ({
+              name: this.labelFor(after),
+              description: after.summary ?? null,
+            })
+          : undefined,
+      },
+      {
+        withinTx: async ({ manager, after }) => {
+          if (!after) {
+            return;
+          }
+
+          await this.graphDeltaWriter.entityUpdated({
+            entityId: id,
+            entityType: 'Communication',
             name: this.labelFor(after),
-            description: after.summary ?? null,
-          })
-        : undefined,
-    });
+            changedFields: {
+              name: { new: this.labelFor(after) },
+              ...(Object.keys(updateData).length > 0 ? { detail_updated: { new: true } } : {}),
+            },
+            ownerUserId: typeof context.userId === 'string' ? context.userId : null,
+            changeSource: 'CommunicationService.update',
+            changedByUserId: typeof context.userId === 'string' ? context.userId : null,
+            manager,
+          });
+        },
+      },
+    );
 
     if (!updated) {
       return null;
@@ -445,7 +527,19 @@ export class CommunicationService {
   async remove(context: ServiceContext, id: string): Promise<boolean> {
     // Authorized load + base-row delete — the communications_id_entities_fk
     // ON DELETE CASCADE removes the detail in the same statement.
-    const removed = await this.aggregate.remove(context, id);
+    const removed = await this.aggregate.remove(context, id, {
+      withinTx: async ({ manager, before }) => {
+        await this.graphDeltaWriter.entityDeleted({
+          entityId: id,
+          entityType: 'Communication',
+          name: this.labelFor(before),
+          ownerUserId: context.userId !== SYSTEM_USER ? context.userId : before.userId,
+          changeSource: 'CommunicationService.remove',
+          changedByUserId: typeof context.userId === 'string' ? context.userId : null,
+          manager,
+        });
+      },
+    });
 
     if (!removed) {
       return false;

@@ -1767,6 +1767,50 @@ describeWithDatabase('PipelineControlService — shard leases (real Postgres)', 
   });
 
   describe('reaping expired leases', () => {
+    // ── Why this block drains before every test ────────────────────────────
+    //
+    // `reapExpiredShardLeases` is the ONE primitive here that is deliberately
+    // appliance-wide — no `run_id`, no `user_id`, asserted as such in the fake
+    // half — so unlike every other test in this file it cannot be isolated by
+    // the synthetic run. Any expired lease anywhere in `ci.pipeline_shards`
+    // is a row these tests reap by accident: it takes the `LIMIT 1` that
+    // "longest-stranded first" is about, and it makes "healthy appliance"
+    // report a number it did not seed.
+    //
+    // A dev machine produces exactly that. The appliance's own tick claims a
+    // shard with a lease, and anything that stops the sweep before it drains —
+    // a nodemon restart mid-import, a stage that throws — leaves the shard
+    // `running` with a lease that expires unrenewed. It stays stranded until
+    // the next tick reaps it, and while it is stranded these two tests fail,
+    // in a solo run as readily as a full one. That is not flakiness in the
+    // schedule sense; it is a spec reading shared state.
+    //
+    // So the block establishes the precondition its assertions name, using the
+    // production statement rather than an invented UPDATE: reap until there is
+    // nothing left to reap. It runs inside the suite's transaction and is
+    // rolled back with everything else, so no foreign row is durably touched —
+    // the cost is a row lock the live tick would wait on for the few
+    // milliseconds a test takes.
+    beforeEach(async () => {
+      // Bounded: `reapExpiredShardLeases` caps at MAX_LEASES_REAPED_PER_TICK
+      // per call, so a genuinely stranded appliance needs several passes. The
+      // ceiling is a runaway guard, not a real limit — reaching it means the
+      // table holds more stranded leases than this suite should be quietly
+      // absorbing, and saying so is better than looping.
+      for (let pass = 0; ; pass += 1) {
+        if (pass >= 20) {
+          throw new Error(
+            'ci.pipeline_shards still holds reapable leases after 20 drain passes — the appliance has ' +
+              'more stranded shards than this suite should absorb silently. Investigate before re-running.',
+          );
+        }
+
+        if ((await service.reapExpiredShardLeases()) === 0) {
+          break;
+        }
+      }
+    });
+
     it('hands an expired lease back as pending, keeping the shard’s identity', async () => {
       // A worker that is SIGKILLed never releases anything. Without this the
       // shard sits `running` with a dead owner and the claim refuses it forever.
@@ -1776,7 +1820,11 @@ describeWithDatabase('PipelineControlService — shard leases (real Postgres)', 
         leaseSeconds: -1,
       });
 
-      await expect(service.reapExpiredShardLeases()).resolves.toBeGreaterThanOrEqual(1);
+      // Exactly one, not "at least one": the drain above means the only
+      // reapable shard on this appliance is the one this test seeded. The
+      // loose form was written to tolerate foreign rows, which is the same
+      // tolerance that let the two tests below fail on them.
+      await expect(service.reapExpiredShardLeases()).resolves.toBe(1);
 
       const [row] = await shards();
       expect(row.id).toBe(id);

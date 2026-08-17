@@ -1,0 +1,37 @@
+[
+  {
+    "title": "Planning a road trip",
+    "messages": [
+      {
+        "role": "user",
+        "content": "What's a good 3-day road trip out of Austin?",
+        "create_time": 1718800000
+      },
+      {
+        "role": "assistant",
+        "content": { "parts": ["Day 1: head to Fredericksburg.", "Day 2: Enchanted Rock."] },
+        "create_time": 1718800060
+      },
+      {
+        "role": "assistant",
+        "content": "",
+        "create_time": 1718800120
+      }
+    ]
+  },
+  {
+    "name": "Debugging a Python script",
+    "responses": [
+      {
+        "sender": "HUMAN",
+        "text": "Why does my list keep mutating?",
+        "created_at": "2024-06-19T15:00:00Z"
+      },
+      {
+        "sender": "Grok",
+        "message": { "text": "You're likely sharing a default mutable argument." },
+        "timestamp": 1718809260000
+      }
+    ]
+  }
+]

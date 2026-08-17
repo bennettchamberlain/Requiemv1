@@ -1,0 +1,5 @@
+ride_id,requested_at,completed_at,pickup_lat,pickup_lng,pickup_address,dropoff_lat,dropoff_lng,dropoff_address,distance_miles,fare,currency
+ride_001,2023-08-14T09:15:32Z,2023-08-14T09:41:10Z,37.7749,-122.4194,"123 Market St, San Francisco, CA",37.8044,-122.2712,"456 Broadway, Oakland, CA",12.4,28.50,USD
+ride_002,2023-09-02T18:05:00Z,2023-09-02T18:22:45Z,40.7128,-74.0060,"200 Park Ave
+New York, NY",40.7580,-73.9855,"1 Times Sq, New York, NY",3.1,15.75,USD
+ride_003,1672531200,1672533000,34.0522,-118.2437,"Downtown LA, CA",34.0211,-118.4814,"Santa Monica Pier, CA",14.0,42.00,USD

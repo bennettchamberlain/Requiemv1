@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import { DataSource } from 'typeorm';
 
+import { createSyntheticTestUser } from '../../../__tests__/support/applianceUser';
+import { acquireSchemaWriteLock, type SchemaLock } from '../../../__tests__/support/schemaLock';
 import { databaseAvailability, resolveConnection } from '../../__tests__/harness/pipelineHarness';
 import {
   IDENTITY_CONFIDENCE_IDENTIFIED,
@@ -665,6 +667,7 @@ const describeIfDb = availability.available ? describe : describe.skip;
 describeIfDb(`ObjectPromoteStage — against real Postgres (${availability.reason})`, () => {
   let dataSource: DataSource;
   let runner: ReturnType<DataSource['createQueryRunner']>;
+  let schemaLock: SchemaLock | null = null;
   let realUserId: string;
 
   /** Fixture ids sort ABOVE every real (uuid v7, `019…`) id. */
@@ -673,6 +676,20 @@ describeIfDb(`ObjectPromoteStage — against real Postgres (${availability.reaso
 
   const transactionalDataSource = () => ({
     query: (sql: string, params?: unknown[]) => runner.query(sql, params),
+
+    // `writeObjects` wraps its INSERTs in `dataSource.transaction()` so the CTI
+    // base row in ci.entities and the ci.inventory detail row land together.
+    // Without this the double answered `transaction is not a function`, the
+    // stage caught it, and every row came back
+    // `failed: inventory_write_failed` — which read like a schema problem and
+    // was a missing method.
+    //
+    // Running the callback INLINE on the same runner is the faithful stand-in:
+    // this suite is already inside one transaction that is always rolled back,
+    // Postgres does not nest, and the stage's atomicity is therefore the
+    // suite's. The rollback still takes both rows.
+    transaction: async (callback: (manager: unknown) => Promise<unknown>) =>
+      callback({ query: (sql: string, params?: unknown[]) => runner.query(sql, params) }),
   });
 
   /** Seed one commerce event and return its id. */
@@ -721,12 +738,19 @@ describeIfDb(`ObjectPromoteStage — against real Postgres (${availability.reaso
     });
 
     await dataSource.initialize();
+
+    // SHARED: this suite holds row locks on shared `ci.*` tables for the length
+    // of its transaction. Shared holders never block each other, so this only
+    // ever waits on a suite applying a migration.
+    schemaLock = await acquireSchemaWriteLock(dataSource, 'ObjectPromoteStage');
     runner = dataSource.createQueryRunner();
     await runner.connect();
     await runner.startTransaction();
 
-    const users = await runner.query(`SELECT id FROM ci.users LIMIT 1`);
-    realUserId = users[0].id;
+    realUserId = await createSyntheticTestUser(
+      (sql, params) => runner.query(sql, params),
+      'ObjectPromoteStage',
+    );
   });
 
   afterAll(async () => {
@@ -735,6 +759,9 @@ describeIfDb(`ObjectPromoteStage — against real Postgres (${availability.reaso
       await runner.rollbackTransaction();
       await runner.release();
     }
+
+    // Before `destroy()`: the lock is held on a runner from this pool.
+    await schemaLock?.release();
 
     if (dataSource != null) {
       await dataSource.destroy();
@@ -750,14 +777,18 @@ describeIfDb(`ObjectPromoteStage — against real Postgres (${availability.reaso
     expect(results.get(eventA)).toMatchObject({ outcome: 'done' });
 
     const [row] = await runner.query(
-      `SELECT name, brand, purchase_price, currency, acquired_at, is_digital, condition,
+      // `name` is the CTI base row's, joined back: ci.inventory keeps the
+      // detail columns and ci.entities owns the label.
+      `SELECT e.name, brand, purchase_price, currency, acquired_at, is_digital, condition,
               quantity, lifecycle_state, identity_confidence, identity_method,
               identifier_codes, source_type, source_system, source_id,
               metadata->'promote'->>'stage'        AS promoted_by,
               (metadata->'promote'->>'version')::int AS promoted_version,
               metadata->'promote'->>'event_id'     AS promoted_from,
               product_id, acquisition_receipt_id, acquisition_line_item_id
-         FROM ci.inventory WHERE user_id = $1 AND source_id = $2`,
+         FROM ci.inventory
+         JOIN ci.entities e ON e.entity_id = ci.inventory.object_id
+        WHERE ci.inventory.user_id = $1 AND source_id = $2`,
       [realUserId, eventA],
     );
 
@@ -826,8 +857,18 @@ describeIfDb(`ObjectPromoteStage — against real Postgres (${availability.reaso
     await stage.run({ userId: realUserId }, [eventA]);
 
     await runner.query(
+      // An edit touches BOTH halves of the CTI aggregate: the label lives on
+      // the base row, and `inv.updated_at` — running ahead of the promote
+      // stamp in metadata — is what the stage's overwrite guard actually reads.
+      `UPDATE ci.entities e
+          SET name = 'Potatoes (renamed by the user)'
+         FROM ci.inventory inv
+        WHERE e.entity_id = inv.object_id AND inv.user_id = $1 AND inv.source_id = $2`,
+      [realUserId, eventA],
+    );
+    await runner.query(
       `UPDATE ci.inventory
-          SET name = 'Potatoes (renamed by the user)', updated_at = now() + interval '1 hour'
+          SET updated_at = now() + interval '1 hour'
         WHERE user_id = $1 AND source_id = $2`,
       [realUserId, eventA],
     );
@@ -839,10 +880,13 @@ describeIfDb(`ObjectPromoteStage — against real Postgres (${availability.reaso
       reason: 'inventory_row_user_modified',
     });
 
-    const [row] = await runner.query(`SELECT name FROM ci.inventory WHERE user_id = $1 AND source_id = $2`, [
-      realUserId,
-      eventA,
-    ]);
+    const [row] = await runner.query(
+      `SELECT e.name
+         FROM ci.inventory inv
+         JOIN ci.entities e ON e.entity_id = inv.object_id
+        WHERE inv.user_id = $1 AND inv.source_id = $2`,
+      [realUserId, eventA],
+    );
 
     expect(row.name).toBe('Potatoes (renamed by the user)');
   });
@@ -978,7 +1022,8 @@ describeIfDb(`ObjectPromoteStage — against real Postgres (${availability.reaso
     // The source event is untouched: promotion is a projection, so a full
     // re-promote after a bad version bump is always safe.
     const [event] = await runner.query(
-      `SELECT metadata, event_type, title FROM ci.events WHERE event_id = $1`,
+      // `title` moved to the CTI base row; nothing here asserts it.
+      `SELECT metadata, event_type FROM ci.events WHERE event_id = $1`,
       [eventA],
     );
 

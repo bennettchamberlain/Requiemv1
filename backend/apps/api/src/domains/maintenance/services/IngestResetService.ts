@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
+import type { UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { SEARCH_TABLES } from '@ci/domains/search-ingress';
 
@@ -15,6 +16,21 @@ const INGEST_TABLES = [
   { schema: 'ci', table: 'content' },
   { schema: 'ci', table: 'inventory' },
   { schema: 'ci', table: 'browser_activity' },
+] as const;
+
+/**
+ * Every table this reset TRUNCATES that carries a `user_id`, checked before it
+ * runs so the wipe can never take data belonging to someone other than the
+ * caller.
+ *
+ * `ci_search.index_skips` is deliberately absent: it has no `user_id` because
+ * it records only that an (entity_type, entity_id) pair was examined and not
+ * embedded. Losing it costs a re-examination, not data.
+ */
+const USER_SCOPED_TABLES = [
+  ...INGEST_TABLES,
+  { schema: 'ci_search', table: 'embeddings' },
+  { schema: 'ci_search', table: 'vectors' },
 ] as const;
 
 export interface IngestResetResult {
@@ -33,9 +49,18 @@ export interface IngestResetResult {
  * `search-index` queue jobs, all in ONE transaction. Leaves the database
  * ready for a clean re-import.
  *
- * DESTRUCTIVE and unscoped (all users' ingested data). The controller gates it
- * behind an exact confirm literal; there is deliberately no partial mode — a
- * partial reset desynchronizes tables that dedupe against each other.
+ * DESTRUCTIVE and TABLE-WIDE — it truncates, so it cannot take only one user's
+ * rows. There is deliberately no partial mode: a partial reset desynchronizes
+ * tables that dedupe against each other.
+ *
+ * Which is why {@link assertNobodyElsesData} runs first. The route is behind
+ * ordinary user auth (there is no admin role on this appliance) and an exact
+ * confirm literal, and neither of those says anything about WHOSE data is
+ * about to go: any signed-in account could wipe every other account's imported
+ * memory in one call. So the reset now refuses unless the caller is the only
+ * person with data in the tables it would clear — which is the normal state of
+ * a personal appliance, and a refusal with a clear reason on any box where it
+ * is not.
  *
  * The importer keeps its own push watermark (`ci_server.last_push` in its
  * SQLite settings table) — reset that too or the next sync pushes nothing.
@@ -50,7 +75,9 @@ export class IngestResetService {
     this.logger.setContext(IngestResetService.name);
   }
 
-  async reset(): Promise<IngestResetResult> {
+  async reset(ctx: UserServiceContext): Promise<IngestResetResult> {
+    await this.assertNobodyElsesData(ctx.userId);
+
     const targets = [
       ...INGEST_TABLES.map(({ schema, table }) => ({ schema, table })),
       ...SEARCH_TABLES.map(({ schema, table }) => ({ schema, table })),
@@ -83,19 +110,13 @@ export class IngestResetService {
       // real graph entities, not mirrors of the truncated tables, and must
       // survive the reset.
       //
-      // The graph-delta delete trigger is disabled around the DELETE, matching
-      // the CTI migrations' bulk rebuilds: a maintenance reset is not a graph
-      // change, and leaving it on would write one ci.graph_deltas row per
-      // deleted entity (communications scale: ~0.5M+) inside this transaction
-      // and then narrate the reset to the user in the next summary. A rollback
-      // restores the trigger state along with everything else.
-      await manager.query(`ALTER TABLE ci.entities DISABLE TRIGGER entities_graph_delta_delete`);
+      // Bulk CTI base delete — no GraphDeltaWriter call (maintenance reset is
+      // not a user-visible graph change; writers only fire on app domain paths).
       await manager.query(
         `DELETE FROM ci.entities
          WHERE entity_type IN ('Item', 'Event', 'Communication')
            AND linked_table IN ('inventory', 'events', 'communications')`,
       );
-      await manager.query(`ALTER TABLE ci.entities ENABLE TRIGGER entities_graph_delta_delete`);
 
       // The ci_search index tables carry no FK edges — plain truncates, same as
       // OrphanCleanupService.truncateSearchIndex but inside THIS transaction.
@@ -121,10 +142,45 @@ export class IngestResetService {
     });
 
     this.logger.warn('Ingest reset executed — all ingested data truncated', {
+      userId: ctx.userId,
       countsBefore: result.countsBefore,
       searchIndexJobsDeleted: result.searchIndexJobsDeleted,
     });
 
     return result;
+  }
+
+  /**
+   * Refuse the reset when it would destroy someone else's rows.
+   *
+   * One bounded probe per table — `EXISTS` over a `user_id <> $1` predicate, so
+   * it stops at the first foreign row rather than counting a hypertable. The
+   * message names the tables rather than the users: which accounts exist is not
+   * this caller's business, but "there is other data here" is exactly what they
+   * need to know to stop.
+   */
+  private async assertNobodyElsesData(userId: string): Promise<void> {
+    const occupied: string[] = [];
+
+    for (const { schema, table } of USER_SCOPED_TABLES) {
+      const rows = (await this.dataSource.query(
+        `SELECT EXISTS (SELECT 1 FROM "${schema}"."${table}" WHERE user_id <> $1::uuid) AS present`,
+        [userId],
+      )) as Array<{ present: boolean }>;
+
+      if (rows[0]?.present === true) {
+        occupied.push(`${schema}.${table}`);
+      }
+    }
+
+    if (occupied.length === 0) {
+      return;
+    }
+
+    throw new ForbiddenException(
+      `This reset truncates whole tables, and ${occupied.join(', ')} still hold another user's ` +
+        `rows — running it would delete their imported memory too. Remove the other accounts' data ` +
+        `first, or perform the reset directly against the database (db/postgres/INGEST_RESET_RUNBOOK.md).`,
+    );
   }
 }

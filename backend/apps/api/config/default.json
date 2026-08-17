@@ -142,6 +142,15 @@
     "fetchBatchSize": 10,
     "perQueueConcurrency": 6
   },
+  "import": {
+    "scratchDir": "/var/tmp/ci-import",
+    "roots": [],
+    "uploadsDir": "/var/lib/ci-import/uploads",
+    "inboxDir": "/var/lib/ci-import/inbox",
+    "maxArchiveEntries": 2000000,
+    "maxArchiveBytes": 107374182400,
+    "databaseDataDir": ""
+  },
   "enrichment": {
     "window": {
       "enabled": true,
@@ -169,6 +178,7 @@
     "insights.page": true,
     "chat.page": true,
     "jobs.page": true,
+    "import.page": true,
     "planning.enabled": false,
     "planning.page": false,
     "planning.emptyState": false,
@@ -180,7 +190,8 @@
     "shared.search": true,
     "onboarding.preference.steps": false,
     "actions": true,
-    "smart.rotation": false
+    "smart.rotation": false,
+    "ask": false
   },
   "environment": {
     "database.query.logging": false

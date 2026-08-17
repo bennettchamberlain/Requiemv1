@@ -40,7 +40,59 @@ dotenv.config({ path: path.join(ROOT, '.env'), quiet: true });
 
 const caddy = new CaddyClient();
 
-const COMPOSE_FILES = ['-f', 'docker-compose.yml', '-f', 'docker-compose.local.yml'];
+/**
+ * Whether this host can pass an AMD GPU into a container.
+ *
+ * Keyed on the device nodes rather than on `rocminfo` or the built image's
+ * flavour, because the nodes are exactly what `devices:` needs to bind — a
+ * host with the ROCm userspace installed but no card, or a card with no
+ * loaded amdkfd driver, must NOT get the overlay or compose refuses to start
+ * the service at all.
+ */
+function rocmDevicesPresent(): boolean {
+  return fs.existsSync('/dev/kfd') && fs.existsSync('/dev/dri');
+}
+
+/**
+ * The group IDs `docker-compose.rocm.yml` binds the container's user into,
+ * read off the host's own device nodes.
+ *
+ * Numeric and derived, never literal: the kernel checks the GID as seen from
+ * the host, and `render` is 109 on Ubuntu but 105 elsewhere. /dev/kfd carries
+ * the render group; the video group comes from a DRM card node, which a
+ * headless box may not have — it falls back to the render GID rather than
+ * being left empty, since compose would reject an empty group_add entry and a
+ * duplicated group is harmless.
+ */
+function amdGroupEnv(): NodeJS.ProcessEnv {
+  if (!rocmDevicesPresent()) {
+    return {};
+  }
+
+  const renderGid = fs.statSync('/dev/kfd').gid;
+
+  const card = fs
+    .readdirSync('/dev/dri')
+    .filter((entry) => entry.startsWith('card'))
+    .sort()[0];
+
+  const videoGid = card != null ? fs.statSync(path.join('/dev/dri', card)).gid : renderGid;
+
+  return { AMD_RENDER_GID: String(renderGid), AMD_VIDEO_GID: String(videoGid) };
+}
+
+const COMPOSE_FILES = [
+  '-f',
+  'docker-compose.yml',
+  '-f',
+  'docker-compose.local.yml',
+  // Appended, not substituted: the overlay only adds device passthrough to
+  // hbpe-service and must lose to nothing in the local file.
+  ...(rocmDevicesPresent() ? ['-f', 'docker-compose.rocm.yml'] : []),
+];
+
+/** Set once at startup; merged into the env of every compose invocation. */
+const AMD_GROUP_ENV = amdGroupEnv();
 
 // Conventional default host ports, preferred when free.
 const DEFAULTS = {
@@ -50,6 +102,7 @@ const DEFAULTS = {
   objectStore: 9000,
   hbpe: 8002,
   summary: 8001,
+  parser: 8003,
 };
 
 // --- ports ------------------------------------------------------------------
@@ -242,7 +295,7 @@ function composeUp(env: NodeJS.ProcessEnv): void {
   run(
     'docker',
     ['compose', ...COMPOSE_FILES, '--profile', 'local', 'up', '-d', '--wait', '--remove-orphans'],
-    env,
+    { ...env, ...AMD_GROUP_ENV },
   );
 
   console.log('');
@@ -253,7 +306,10 @@ function composeStop(key: string): void {
 
   spawnSync('docker', ['compose', ...COMPOSE_FILES, '--profile', 'local', 'stop'], {
     cwd: ROOT,
-    env: { ...process.env, COMPOSE_PROJECT_NAME: key },
+    // The group vars matter even on `stop`: compose interpolates every file it
+    // is handed before it does anything, so an unset AMD_RENDER_GID would warn
+    // (and resolve to an empty group) while tearing the stack down.
+    env: { ...process.env, ...AMD_GROUP_ENV, COMPOSE_PROJECT_NAME: key },
     stdio: 'inherit',
   });
 
@@ -282,13 +338,14 @@ async function up(key: string): Promise<void> {
   }
 
   const dockerPorts = dockerPublishedPorts();
-  const [apiPort, webPort, dbPort, objPort, hbpePort, summaryPort] = await Promise.all([
+  const [apiPort, webPort, dbPort, objPort, hbpePort, summaryPort, parserPort] = await Promise.all([
     allocPort(DEFAULTS.api, dockerPorts),
     allocPort(DEFAULTS.web, dockerPorts),
     allocPort(DEFAULTS.db, dockerPorts),
     allocPort(DEFAULTS.objectStore, dockerPorts),
     allocPort(DEFAULTS.hbpe, dockerPorts),
     allocPort(DEFAULTS.summary, dockerPorts),
+    allocPort(DEFAULTS.parser, dockerPorts),
   ]);
 
   const composeEnv: NodeJS.ProcessEnv = {
@@ -298,6 +355,7 @@ async function up(key: string): Promise<void> {
     OBJECT_STORE_HOST_PORT: String(objPort),
     HBPE_HOST_PORT: String(hbpePort),
     SUMMARY_HOST_PORT: String(summaryPort),
+    PARSER_HOST_PORT: String(parserPort),
     API_HOST_PORT: String(apiPort), // hbpe container calls the host api at this port
   };
 
@@ -365,7 +423,26 @@ async function up(key: string): Promise<void> {
       DATABASE_PORT: String(dbPort),
       OBJECT_STORE_URL: `http://localhost:${objPort}`,
       HBPE_HOST: `http://localhost:${hbpePort}`,
+      // Both sidecars need a host-side URL, not the compose service name. The
+      // API runs on the host under overmind, so config's defaults
+      // (http://hbpe-service:8002, http://summary-service:8001) resolve only
+      // inside the compose network — from here they are ENOTFOUND. Mapped to
+      // services.{hbpe,summary}.host via config/custom-environment-variables.json.
+      SUMMARY_HOST: `http://localhost:${summaryPort}`,
+      PARSER_HOST: `http://localhost:${parserPort}`,
       APP_PUBLIC_HOSTNAME: host, // this stack's own origin (<key>.localhost); OAuth host is separate
+      // Vite's own `/api` proxy, for anyone who opens the raw dev-server port
+      // instead of the Caddy route. Without this it falls back to the hardcoded
+      // `http://localhost:64669` in vite.config.ts — a port nothing listens on —
+      // so EVERY /api call from that origin fails with ECONNREFUSED: no feature
+      // flags (which silently unregisters flag-gated routes, so /import serves a
+      // 404 that reads like "not signed in"), no GraphQL, and an OAuth link that
+      // lands on a blank page.
+      //
+      // 127.0.0.1, not `localhost`: the API binds IPv4 (`0.0.0.0`), while
+      // `localhost` resolves to ::1 first on a dual-stack host. curl falls back
+      // to IPv4; Node's proxy agent reports the AggregateError instead.
+      API_PROXY_TARGET: `http://127.0.0.1:${apiPort}`,
       OVERMIND_SOCKET: overmindSocket,
       // Overmind reloads .env over the environment we hand it, which would
       // overwrite the dynamic per-worktree ports set above. This env already
@@ -386,6 +463,7 @@ async function up(key: string): Promise<void> {
         ['object store', String(objPort)],
         ['hbpe', String(hbpePort)],
         ['summary', String(summaryPort)],
+        ['parser', String(parserPort)],
       ],
       ['left', 'right'],
     );

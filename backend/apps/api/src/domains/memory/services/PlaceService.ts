@@ -13,6 +13,8 @@ import { PlaceEntity, type Place, type PlaceKind } from '../entities/PlaceEntity
 import { PlaceCreatedEvent, PlaceUpdatedEvent, PlaceRemovedEvent } from '../events';
 import type { CreatePlaceDto, UpdatePlaceDto } from '../types';
 
+import { GraphDeltaWriter } from './GraphDeltaWriter';
+
 /** One Google-style address component ({long_name, short_name, types[]}). */
 interface AddressComponent {
   long_name?: string;
@@ -44,6 +46,7 @@ export class PlaceService {
     @InjectRepository(PlaceEntity)
     private readonly placeRepository: Repository<PlaceEntity>,
     private readonly eventService: EventService,
+    private readonly graphDeltaWriter: GraphDeltaWriter,
   ) {}
 
   /**
@@ -188,6 +191,14 @@ export class PlaceService {
     await this.ensureHierarchy(context, entity_id, input.components ?? null);
 
     if (was_new) {
+      await this.graphDeltaWriter.entityCreated({
+        entityId: entity_id,
+        entityType: 'Location',
+        name: trimmedName,
+        ownerUserId: context.userId,
+        changeSource: 'PlaceService.findOrCreateForGeocode',
+        changedByUserId: typeof context.userId === 'string' ? context.userId : null,
+      });
       await this.eventService.send(PlaceCreatedEvent, { placeId: entity_id });
     }
 
@@ -665,7 +676,14 @@ export class PlaceService {
    */
   async getEntitiesForPlaces(
     context: ServiceContext,
-    options: { limit?: number; startTime?: Date; endTime?: Date; order?: 'ASC' | 'DESC' } = {},
+    options: {
+      limit?: number;
+      startTime?: Date;
+      endTime?: Date;
+      afterTime?: Date;
+      afterId?: string;
+      order?: 'ASC' | 'DESC';
+    } = {},
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
     let query = this.placeRepository
       .createQueryBuilder('place')
@@ -681,7 +699,17 @@ export class PlaceService {
       query = query.andWhere('place.created_at <= :endTime', { endTime: options.endTime });
     }
 
-    query = query.orderBy('place.created_at', options.order ?? 'DESC');
+    // Composite keyset: page strictly past (afterTime, afterId) in
+    // (created_at DESC, entity_id DESC) — see ContentService.getEntitiesForContents.
+    if (options.afterTime && options.afterId) {
+      query = query.andWhere(
+        '(place.created_at < :afterTime OR (place.created_at = :afterTime AND place.entity_id < :afterId))',
+        { afterTime: options.afterTime, afterId: options.afterId },
+      );
+    }
+
+    // Deterministic tiebreak so same-timestamp rows page consistently.
+    query = query.orderBy('place.created_at', options.order ?? 'DESC').addOrderBy('place.entity_id', 'DESC');
 
     if (options.limit) {
       query = query.limit(options.limit);

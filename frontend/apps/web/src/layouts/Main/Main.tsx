@@ -6,7 +6,9 @@ import { useTranslation } from 'react-i18next';
 import { Outlet } from 'react-router-dom';
 
 import logo from '@/assets/logo.png';
+import { ConnectionModeIndicator, OutboxQueueIndicator } from '@/components/ConnectionModeIndicator';
 import { useTheme } from '@/components/ThemePicker';
+import { useUnsyncedImportsNotice } from '@/components/UnsyncedImports/useUnsyncedImportsNotice';
 
 import { MobileNavigation } from './MobileNavigation/MobileNavigation';
 import { PrimaryNavigation } from './PrimaryNavigation';
@@ -17,10 +19,18 @@ export function Main() {
   const { isMobile } = useDeviceLayout();
   const { themeState } = useTheme();
 
+  // Every authenticated page passes through this layout, which makes it the
+  // one place a page-load check reaches "across all pages".
+  useUnsyncedImportsNotice();
+
   if (isMobile) {
     return (
       <div className="flex flex-col h-lvh">
         <Toaster position="top-right" theme={themeState.mode} />
+        <div className="fixed top-2 right-2 z-40 flex items-center gap-1.5">
+          <ConnectionModeIndicator />
+          <OutboxQueueIndicator />
+        </div>
         <main className="flex-1 min-w-0 overflow-hidden min-h-0 relative">
           <Suspense fallback={<LoadingPage />}>
             <Outlet />

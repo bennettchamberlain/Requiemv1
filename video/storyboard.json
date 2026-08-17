@@ -19,9 +19,76 @@
     "control": "Your call"
   },
   "media": {
-    "music": null,
-    "musicVolume": 0.14
+    "music": "assets/media/ci-campaign-bed-110.mp3",
+    "musicLufs": -22
   },
+  "master": [
+    {
+      "ref": "perfect-recall",
+      "caption": "It is just scattered across services you do not own.",
+      "narration": "You already have a perfect memory. Every place, every person, every promise you made — all of it recorded. Just not by you."
+    },
+    {
+      "ref": "your-traces",
+      "caption": "Two dozen services, each keeping a piece of you.",
+      "narration": "Two dozen services each hold a piece of it, and not one of them will hand you the whole."
+    },
+    {
+      "ref": "your-biography",
+      "caption": "Not a diary you have to keep. One that keeps itself.",
+      "narration": "Now imagine all of it written up for you. Not a diary you have to keep — one that keeps itself, hourly, daily and weekly."
+    },
+    {
+      "ref": "the-catch",
+      "title": "So where would all that live?",
+      "caption": "Most people quietly stop telling it the truth.",
+      "narration": "Which leaves one question. Where would all of that live? On hardware you will never see, under terms you did not write."
+    },
+    {
+      "ref": "open",
+      "caption": "The other agents are double agents.",
+      "narration": "The other agents are double agents. Companion Memory works only for you."
+    },
+    {
+      "ref": "bring-it-home",
+      "chapter": "bring",
+      "caption": "Point it at the accounts you already have.",
+      "narration": "Point it at the accounts you already have, and your mail, your calendar and your photos come home to a machine you own."
+    },
+    {
+      "ref": "one-memory",
+      "caption": "One list, on one machine. Nothing is uploaded.",
+      "narration": "Everything lands in one list, on one machine, newest first. Nothing is uploaded, and nothing leaves the box."
+    },
+    {
+      "ref": "the-record",
+      "caption": "Open one and the whole record is there.",
+      "narration": "Open one, and the whole record is there. The place, the address, the exact coordinates."
+    },
+    {
+      "ref": "the-biography",
+      "caption": "Every day, written up. The decisions behind it.",
+      "narration": "And every day gets written up. What happened, and what was decided — by a model on your own hardware."
+    },
+    {
+      "ref": "it-connects",
+      "caption": "It works out who and what belong together.",
+      "narration": "It works out how your people, places and ideas connect — the context anything acting for you actually needs."
+    },
+    {
+      "ref": "your-agents",
+      "caption": "Connected over MCP, on hardware you own.",
+      "narration": "Then give every agent you choose the same memory. Claude Code, OpenCode, Hermes, OpenClaw."
+    },
+    {
+      "ref": "close",
+      "caption": "ci.computer/memory",
+      "cta": "One memory. Every agent you choose. Yours.",
+      "tagline": "UnCloud your life.",
+      "url": "ci.computer/memory",
+      "narration": "One memory. Every agent you choose. Yours. At ci dot computer slash memory. UnCloud your life."
+    }
+  ],
   "scenes": [
     {
       "id": "the-deal",
@@ -44,6 +111,55 @@
         {
           "label": "Calendar",
           "value": "when the house is empty"
+        }
+      ]
+    },
+    {
+      "id": "perfect-recall",
+      "kind": "feature",
+      "reveal": "paced",
+      "seconds": 9,
+      "minSeconds": 7,
+      "title": "You already have a perfect memory.",
+      "caption": "It is just scattered across services you do not own.",
+      "narration": "You already have a perfect memory. Every place, every person, every promise you made — all of it recorded. Just not by you.",
+      "items": [
+        {
+          "label": "Every place",
+          "value": "your phone logged it"
+        },
+        {
+          "label": "Every person",
+          "value": "your mail knows them"
+        },
+        {
+          "label": "Every promise",
+          "value": "your calendar kept it"
+        }
+      ]
+    },
+    {
+      "id": "your-biography",
+      "kind": "feature",
+      "transition": "cut",
+      "reveal": "paced",
+      "seconds": 9,
+      "minSeconds": 7,
+      "title": "Now imagine it written up for you.",
+      "caption": "Not a diary you have to keep. One that keeps itself.",
+      "narration": "Now imagine all of it written up for you. Not a diary you have to keep — one that keeps itself, hourly, daily and weekly.",
+      "items": [
+        {
+          "label": "Hourly",
+          "value": "what just happened"
+        },
+        {
+          "label": "Daily",
+          "value": "what the day came to"
+        },
+        {
+          "label": "Weekly",
+          "value": "what it added up to"
         }
       ]
     },
@@ -79,8 +195,8 @@
       "seconds": 5,
       "minSeconds": 4.5,
       "title": "Companion Memory",
-      "caption": "A home for your digital memory.",
-      "narration": "Other agents are double agents. Companion Memory works only for you.",
+      "caption": "The other agents are double agents.",
+      "narration": "The other agents are double agents. Companion Memory works only for you.",
       "mark": "./assets/app-icon.jpg"
     },
     {
@@ -266,6 +382,32 @@
       ]
     },
     {
+      "id": "the-biography",
+      "kind": "screen",
+      "chapter": "keep",
+      "transition": "cut",
+      "seconds": 8,
+      "caption": "Every day, written up. The decisions behind it.",
+      "narration": "And every day gets written up. What happened, and what was decided — by a model on your own hardware.",
+      "shots": [
+        {
+          "id": "insight-detail-view",
+          "url": "ci-memory-living-room-server-acme.ci.computer/insights/01936cb0-0000-7000-8000-000000000003",
+          "alt": "A daily project summary with backend development activity, a completed milestone, and a team decision for the next sprint",
+          "motion": "drift-down",
+          "capture": {
+            "path": "/insights/01936cb0-0000-7000-8000-000000000003",
+            "waitFor": "h1:has-text(\"Daily Summary\")",
+            "mask": [
+              "time"
+            ],
+            "settle": 500
+          },
+          "_focusNote": "This shot used to be `the-record`'s, which put the day's SUMMARY under a caption promising a RECORD. They are different claims and they now have a beat each: the-record opens one event and shows its fields, this one opens the write-up of a whole day. Both are real pages; neither had to be invented.\n\nNo focus rectangle, deliberately, and it is the only shot in the film without one. The subject here is not a field or a row — it is the fact that a page of prose about the viewer's own day exists at all, and the argument is the page's length. A rectangle tight enough to make the body text readable would frame two paragraphs and lose that; at rest the Summary block, the Notable Events list and the Daily Rhythm section are all on the plate at once, which is the shape the line is describing. drift-down travels the column, which is how a page of prose is read.\n\nWHAT IT IS A PICTURE OF: summaries.ts:166, uuid …0003, title 'Daily Summary', periodType daily, 127 activities (82 browser, 24 files, 18 communications), tags backend_development / graphql / team_collaboration / code_review / productive_day. So 'what happened, what was decided' is on the plate, not asserted over it.\n\nRE-SHOOT HAZARD: the committed PNG predates commit dbe341da6 (2026-08-08), which deleted the standalone Insights page and routed summaries through the feed. The path still resolves — /insights/<uuid> redirects to /feed/summaries/<uuid> — but the plate may be a picture of the older page. Verify against a fresh capture before trusting the framing, and see `it-notices` in the library, whose `insights-list` plate films a page that no longer exists at all."
+        }
+      ]
+    },
+    {
       "id": "ask-it",
       "kind": "screen",
       "chapter": "ask",
@@ -414,19 +556,19 @@
           "id": "graphic-architecture",
           "alt": "Companion Intelligence's architecture diagram: INPUT SURFACES (devices, API plug-ins, native apps, browser) feeding DIGITAL MEMORY (raw data, normalized shapes, database, the user's RL model, insights), feeding AGENTS (Hermes, OpenClaw, OpenCode, NanoClaw, Claude, Codex) under UNIVERSAL MCP SUPPORT.",
           "motion": "drift-down",
-          "_focusNote": "NOT A CAPTURE — the same arrangement as `graphic-traces`, and the same reasons. This is the explainer from the 2026 Q3 Companion Intelligence short deck, the one ci.computer/memory publishes under 'How does Companion Memory work?'. It is composited on #041620 at 3840x2160 and 1080x1920 rather than scaled into the 16:9 shot slot, because the source is 2500x1236 (2.02:1) and the slot would have stretched it.\n\nWHAT EACH VIEWPORT CAN ACTUALLY READ, because the line has to be true of both: in landscape the whole diagram is legible down to the box labels — PERSON, PLACE, THING, CONTENT, EVENT, SPACE and FT SEARCH / RELATIONS / GRAPH / VECTOR, which is exactly what the narration names. In portrait the plate is 1060px wide and the three panel headings (INPUT SURFACES, DIGITAL MEMORY, AGENTS) plus the box labels still read, but the smallest type is texture. The caption names the three panels for that reason: it is the claim both cuts can carry.",
+          "_focusNote": "NOT A CAPTURE — the same arrangement as `graphic-traces`, and the same reasons. This is the explainer from the 2026 Q3 Companion Intelligence short deck, the one ci.computer/memory publishes under 'How does Companion Memory work?'. It is composited on #041620 at 3840x2160 and 1080x1920 rather than scaled into the 16:9 shot slot, because the source is 2500x1236 (2.02:1) and the slot would have stretched it.\n\nTHE CAPTION NAMES THE THREE PANELS, SO THE FRAME HAS TO END ON THEM. At 0.8 from (0, 0) the drift-down ended with its window top at plate y 0.107, and the three panel headings sit at 0.086-0.104 — so the last frame of a nine-second scene sliced INPUT SURFACES, DIGITAL MEMORY and AGENTS in half, horizontally, through the glyphs, under a caption reading 'Input surfaces. Digital memory. Your agents.' The same rectangle cut UNIVERSAL MCP SUPPORT to 'UNIV / MCP S' at the right edge in landscape, and AGENTS to 'AGENT' in portrait.\n\nMeasured with `ci-video focus-preview --at start` and `--at end` at both viewports. drift-down puts its window top at (requested y + a fixed inset) + half the drift, so on this plate the END is always LOWER than the start and there is no y that keeps the headings at a window of 0.8 — the fix has to be a wider window, which shortens the drift. 0.94 from (0.05, 0) lands the landscape end at 0.083, above the headings, and reaches plate x 0.99 so the AGENTS panel and UNIVERSAL MCP SUPPORT are whole. 0.92 from (0.04, 0) does the same in portrait with margin on both sides.\n\npull-back was tried and rejected on measurement, not taste: it ends at the plate's natural size, which is legible in landscape and reduces the portrait diagram to roughly a third of its current height, where the box labels stop reading. `motion` is one enum for both formats, so a move that only works in one is not available.\n\nWHAT EACH VIEWPORT CAN ACTUALLY READ, because the line has to be true of both: in landscape the whole diagram is legible down to the box labels — PERSON, PLACE, THING, CONTENT, EVENT, SPACE and FT SEARCH / RELATIONS / GRAPH / VECTOR, which is exactly what the narration names. In portrait the plate is 1060px wide and the three panel headings plus the box labels still read, but the smallest type is texture. The caption names the three panels for that reason: it is the claim both cuts can carry — and now both cuts carry it at the end of the shot as well as the start.\n\nEXPECTED BUILD LINE, so nobody 'fixes' it: at 0.94 the landscape window leaves less headroom than the drift needs, and the kit says so and pushes in instead — `! scene \"how-it-works\" shot \"graphic-architecture\" (landscape): drift-down had no room at this focus — pushed in instead`. That fallback is the point. It gives landscape a start at the plate's natural size and an end at 0.94 from (0.049, 0.052), both with the headings whole; portrait keeps a real drift-down, 0.055 to 0.082, also with the headings whole at both ends. Writing `motion: \"push-in\"` explicitly would silence the line and take portrait with it — `motion` is one enum for both formats — and a portrait push-in STARTS at 1.394x the plate, where the diagram is about a third of its readable height. `ci-video check` passes with 0 errors either way; the warning is the kit reporting a decision, not a defect.",
           "focus": {
             "landscape": {
-              "x": 0,
+              "x": 0.05,
               "y": 0,
-              "w": 0.8,
-              "h": 0.8
+              "w": 0.94,
+              "h": 0.94
             },
             "portrait": {
-              "x": 0,
+              "x": 0.04,
               "y": 0,
-              "w": 0.8,
-              "h": 0.8
+              "w": 0.92,
+              "h": 0.92
             }
           }
         }
@@ -439,23 +581,31 @@
       "transition": "cut",
       "reveal": "paced",
       "seconds": 8,
-      "title": "Universal MCP support",
-      "caption": "The agents you already use, on a memory that is yours.",
-      "narration": "Which is why the agents you already use plug straight into it, over one MCP server that answers only to you.",
+      "title": "One memory. Every agent you choose.",
+      "caption": "Connected over MCP, on hardware you own.",
+      "narration": "Hermes and OpenClaw connect through separate app backends over MCP. Your context stays on the machine you own.",
       "items": [
         {
-          "label": "MCP server",
-          "value": "companion-memory"
+          "image": "./assets/agents/01-claude-code.png",
+          "alt": "The Claude Code app icon."
         },
         {
-          "label": "Speaks to",
-          "value": "Claude, Codex, OpenCode"
+          "image": "./assets/agents/02-opencode.png",
+          "alt": "The OpenCode app icon."
         },
         {
-          "label": "And to",
-          "value": "Hermes, OpenClaw, NanoClaw"
+          "image": "./assets/agents/03-hermes.png",
+          "alt": "The Hermes Agent app icon."
+        },
+        {
+          "image": "./assets/agents/04-openclaw.png",
+          "alt": "The OpenClaw app icon."
         }
-      ]
+      ],
+      "columns": {
+        "landscape": 4,
+        "portrait": 2
+      }
     },
     {
       "id": "your-call",
@@ -471,19 +621,19 @@
           "url": "ci-memory-living-room-server-acme.ci.computer/onboarding",
           "alt": "The onboarding trust dial, offering cautious, balanced and hands-off",
           "motion": "push-in",
-          "_focusNote": "The rectangle DROPS THE 'How much trust?' heading on purpose, and that was decided off a rendered frame rather than a preview. A looser 1.754x framing that kept the heading pushed the third option down into the caption scrim, and the rendered result had 'Hands-off — auto-promote and auto-schedule estimate-bearing work' greyed out under the lower third: the one option the line names last was the least readable thing on screen. The scrim is 367px of a 1080 frame, so on a full-bleed shot roughly the bottom third is spoken for; there is no framing of this screen that clears it AND keeps the heading. The caption already carries the heading's meaning, so the heading is what goes.\n\nAt 1.914x the top edge lands in the gap above the first card rather than through the sub-heading — worth checking whenever this rectangle moves, because a frame edge through a line of type reads as a broken render.\n\nThis is also the only screen in the film where a genuine PORTRAIT punch-in is possible, and the reason is worth stating: the cards are inset from the phone's edges. A 9:16 window is square-ish too, so it can only be tightened by cropping the sides, and mobile layouts are full-width almost everywhere. Here 0.94 is enough to reach 1.488x without touching a glyph.\n\nPOINTER. 'You choose' is a click, and the three cards are the control. It lands on Balanced in both cuts — landscape (0.500, 0.545), portrait (0.450, 0.540), both verified inside the card and clear of its type — because Balanced is the option the plate shows SELECTED, teal border and all. Clicking Cautious or Hands-off would render a cursor pressing one card while a different one stays lit, which is the one way this pointer could contradict its own screenshot. Both hotspots are inside the end window of the push (landscape 0.538 of the plate from (0.13, 0.232); portrait 0.75 from (0.025, 0.072)) and inside the plate at rest, so the cursor tracks the control through the whole move. Timing is left at the 58% default: unlike the list row, nothing downstream depends on when this click lands.",
+          "_focusNote": "THE LINE NAMES THREE OPTIONS AND THE FRAME HAS TO HOLD THREE. The previous rectangle did not, and the note it replaces claimed the opposite, so this one carries the measurement.\n\nRead off the rendered landscape cut (video-kit 0.24.0, origin/main @ 208a6410): at t=79.0s, the shot at rest, all three cards are legible. By t=82.5s — the last 2.5s of the scene, over a caption reading 'Cautious, balanced, or hands off. You choose.' — the push has left Cautious and Balanced on screen and pushed Hands-off under the caption scrim, its title greyed to the edge of legibility and its subtitle gone entirely. The sub-heading it was supposed to have DROPPED was still in frame and clipped mid-sentence at the right edge ('...do on its own' with no question mark), because the window was off-centre: 0.538 from x 0.131 centres on plate x 0.400 while the cards centre on 0.500.\n\nThat is the exact failure the old note said a 1.754x framing had been rejected for. It was not fixed by moving to 0.538; it was reproduced.\n\nlandscape 0.58 from (0.21, 0.269) — scale 2.225 against the old 2.398, so barely less zoom. Almost all of the fix is POSITION. Verified on a focus-preview end frame: all three cards whole, top border of Cautious clear of the frame edge, Hands-off's subtitle clear of the caption band, nothing clipped at either side, and the Back/Skip/Next row out of frame.\n\nportrait 0.754 from (0.122, 0.246), scale 1.849. Portrait is the tighter constraint of the two and the geometry is worth writing down: the window can never start lower than 1-w, so clearing the sub-heading's second line (plate y 0.233) caps w at about 0.766, while the card text spans plate x 0.119-0.876 and wants about 0.80 to sit inside with margin. The two cannot both be satisfied. 0.754 takes the first: nothing is sliced, and the longest subtitle ('...auto-schedule estimate-bearing work') reaches the frame edge with its last glyph whole. Re-measure both when this rectangle moves.\n\nPOINTER. 'You choose' is a click, and the three cards are the control. It lands on Balanced in both cuts — landscape (0.500, 0.545), portrait (0.450, 0.540) — because Balanced is the option the plate shows SELECTED, teal border and all. Clicking Cautious or Hands-off would render a cursor pressing one card while a different one stays lit, which is the one way this pointer could contradict its own screenshot. Both hotspots are inside the NEW end windows (landscape 0.210-0.790 x 0.300-0.880; portrait 0.122-0.876 x 0.248-1.002) and inside the plate at rest, so the cursor tracks the control through the whole move; `ci-video check` resolves them and fails if it ever stops being true. Timing is left at the 58% default.",
           "focus": {
             "landscape": {
-              "x": 0.131,
-              "y": 0.203,
-              "w": 0.538,
-              "h": 0.538
+              "x": 0.21,
+              "y": 0.269,
+              "w": 0.58,
+              "h": 0.58
             },
             "portrait": {
-              "x": 0.024,
-              "y": 0,
-              "w": 0.752,
-              "h": 0.738
+              "x": 0.122,
+              "y": 0.246,
+              "w": 0.754,
+              "h": 0.754
             }
           },
           "pointer": {
@@ -544,7 +694,7 @@
       "seconds": 6,
       "title": "What stays yours",
       "caption": "We don't collect your context.",
-      "narration": "Local database. Local models. No account, and nothing to cancel.",
+      "narration": "Local database. Local models. No subscription, and nothing to cancel.",
       "items": [
         {
           "label": "Store",
@@ -562,7 +712,8 @@
           "label": "Monthly fee",
           "value": "$0"
         }
-      ]
+      ],
+      "_claimNote": "'No account' was in this line until 2026-08-12 and the product contradicts it. CI-Server origin/main ships frontend/apps/web/src/pages/LoginPage — 'Log In', 'Sign in to access your account', an OIDC button reading 'Sign in with Companion account' which LoginPage.tsx:22 calls the primary sign-in path, an email/password form behind 'Sign in with email instead', and a link to /signup — and SignupPage, 'Create an Account', name/email/password/signup_code plus 'Sign up with CI Portal'. The film's own capture creates one: capture.config.mjs:411 generates `video-<id>@example.com` and signs in with it, which is how every authenticated shot in this cut exists. An earlier edit of this film had a beat that said so — assets/audio/narration.json still holds the adopted read of 'Sign in through Companion Portal, or with email if you prefer.' — and the beat went while the recap kept the opposite claim.\n\nWhat survives verification is the rest of the line and the four cards: the store is Postgres+pgvector on the box, the models are Ollama on hardware you run, and there is no payment path in this repo at all — no Stripe, no billing surface, no subscription — so 'nothing to cancel' is exact. 'No subscription' says that and nothing more.\n\nTHE FIX IS THE CLAIM, NEVER THE SCREEN. Nothing about sign-in was hidden, restaged or reframed to make the old line true."
     },
     {
       "id": "close",
@@ -574,6 +725,101 @@
       "url": "ci.computer/memory",
       "narration": "Companion Memory, from Companion Intelligence. UnCloud your life, at ci dot computer slash memory.",
       "mark": "brand:logo.full"
+    }
+  ],
+  "deliverables": [
+    {
+      "id": "ci-memory-30",
+      "kind": "short",
+      "name": "Companion Memory 30",
+      "meta": {
+        "pacingTail": 0.16
+      },
+      "media": {
+        "music": "assets/media/ci-campaign-bed-110.mp3",
+        "musicLufs": -22
+      },
+      "scenes": [
+        {
+          "ref": "perfect-recall",
+          "caption": "Scattered across services you do not own.",
+          "narration": "You already have a perfect memory. It is just scattered across services you do not own.",
+          "seconds": 6
+        },
+        {
+          "ref": "bring-it-home",
+          "caption": "Bring it home to a machine you own.",
+          "narration": "Bring the mail, calendars, photos and files you choose home to a machine you own.",
+          "seconds": 6
+        },
+        {
+          "ref": "the-record",
+          "caption": "Open one and the whole record is there.",
+          "narration": "Open one, and the whole record is there.",
+          "seconds": 4.5
+        },
+        {
+          "ref": "the-biography",
+          "caption": "Every day, written up for you.",
+          "narration": "Every day gets written up for you, by a model you host.",
+          "seconds": 5
+        },
+        {
+          "ref": "your-agents",
+          "caption": "Claude Code, OpenCode, Hermes, OpenClaw.",
+          "narration": "Then give Claude Code, OpenCode, Hermes and OpenClaw the same memory.",
+          "seconds": 5.5
+        },
+        {
+          "ref": "close",
+          "caption": "ci.computer/memory",
+          "cta": "One memory. Every agent you choose. Yours.",
+          "tagline": "UnCloud your life.",
+          "url": "ci.computer/memory",
+          "narration": "One memory. Every agent you choose. Yours. At ci dot computer slash memory.",
+          "seconds": 5.5
+        }
+      ]
+    },
+    {
+      "id": "ci-memory-bumper-double-agents",
+      "kind": "bumper",
+      "name": "Companion Memory: Double agents",
+      "meta": {
+        "pacing": "fit",
+        "pacingTail": 0.12
+      },
+      "media": {
+        "music": "assets/media/ci-campaign-bed-110.mp3",
+        "musicLufs": -22
+      },
+      "scenes": [
+        {
+          "ref": "ask-it",
+          "caption": "One memory. Every agent you choose. Yours. · ci.computer/memory",
+          "narration": "The other agents are double agents. One memory. Yours."
+        }
+      ]
+    },
+    {
+      "id": "ci-memory-bumper-perfect-recall",
+      "kind": "bumper",
+      "name": "Companion Memory: Perfect recall",
+      "meta": {
+        "pacing": "fit",
+        "pacingTail": 0.12
+      },
+      "media": {
+        "music": "assets/media/ci-campaign-bed-110.mp3",
+        "musicLufs": -22
+      },
+      "scenes": [
+        {
+          "ref": "the-record",
+          "caption": "Perfect recall, on your own hardware · ci.computer/memory",
+          "narration": "Perfect recall. On hardware you own."
+        }
+      ]
     }
   ]
 }

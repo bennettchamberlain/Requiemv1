@@ -23,6 +23,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from ci.hbpe.buckets import MAX_BUCKET_INDEX
 from ci.hbpe.model.calibration import _build_full_batch
 from ci.hbpe.model.checkpoints import HMT_FP32_ONNX, HMT_INT8_ONNX, user_ckpt_dir
 from ci.hbpe.model.dataset import TokenStreamDataset
@@ -251,7 +252,7 @@ def export_and_quantize(
 
     # Non-padded prefix: SOD, WORK, WORK, EOD
     ex_tokens[0, :4] = torch.tensor([SOD_IDX, 4, 4, EOD_IDX], dtype=torch.long)
-    ex_buckets[0, :4] = torch.tensor([0, 4, 8, 95], dtype=torch.long)
+    ex_buckets[0, :4] = torch.tensor([0, 4, 8, MAX_BUCKET_INDEX], dtype=torch.long)
     ex_mask[0, :4] = False
 
     # ── 3. FP32 ONNX export ───────────────────────────────────────────────────

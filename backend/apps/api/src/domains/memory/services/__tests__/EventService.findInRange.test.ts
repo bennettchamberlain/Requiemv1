@@ -8,6 +8,9 @@ import { EventService as SignallingEventService } from '@ci/domains/events';
 import { EventBaseEntity } from '../../entities/EventBaseEntity';
 import { EventEntity } from '../../entities/EventEntity';
 import { EventService } from '../EventService';
+import { GraphDeltaWriter } from '../GraphDeltaWriter';
+
+import { noopGraphDeltaWriter } from './harness/noopGraphDeltaWriter';
 
 /** Chainable query-builder mock recording every clause, returning `many` from getMany. */
 function makeQueryBuilder(many: unknown[]) {
@@ -60,6 +63,7 @@ describe('EventService.findInRange — the calendar read path', () => {
         { provide: getRepositoryToken(EventBaseEntity), useValue: baseRepository },
         { provide: SignallingEventService, useValue: { send: jest.fn() } },
         { provide: DataSource, useValue: dataSource },
+        { provide: GraphDeltaWriter, useValue: noopGraphDeltaWriter() },
       ],
     })
       .compile()
@@ -153,12 +157,23 @@ describe('EventService.findInRange — the calendar read path', () => {
     expect((qb.calls.where ?? [])[0]?.[0]).toBe('event.is_deleted = false');
   });
 
-  it('excludes browser_activity dual-writes (stopgap until schedule event policy)', async () => {
+  it('allowlists calendar event types', async () => {
     await setup();
 
     await service.findInRange(ctx, from, to);
 
-    expect(clauseWith("event.source_type IS DISTINCT FROM 'browser_activity'")).toBeDefined();
+    expect(clauseWith('event.event_type IN (:...scheduleEventTypes)')).toBeDefined();
+
+    const params = (qb.calls.andWhere ?? []).map(([, bind]) => bind);
+    expect(params).toContainEqual({ scheduleEventTypes: ['calendar_event', 'meeting', 'appointment'] });
+  });
+
+  it('keeps events with no event_type — user-created and accepted schedule candidates', async () => {
+    await setup();
+
+    await service.findInRange(ctx, from, to);
+
+    expect(clauseWith('event.event_type IS NULL')).toBeDefined();
   });
 
   it('scopes to the viewer', async () => {

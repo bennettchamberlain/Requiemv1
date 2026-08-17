@@ -9,6 +9,7 @@ import {
   packLanes,
   daypartWeights,
   describes,
+  eventUrl,
   rhythmCells,
   dropInstant,
   movedStart,
@@ -17,6 +18,15 @@ import {
 } from './HorizonGrid';
 
 const MONDAY = startOfLocalDay(new Date(2026, 7, 3));
+
+/**
+ * The machine's own zone, read once before anything below can perturb it.
+ *
+ * It has to be captured at module load: once `withTimeZone` has run, Node's
+ * resolved zone reports the *pinned* zone, so reading it later would "restore"
+ * to whatever was last set.
+ */
+const SYSTEM_TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 /**
  * Run `fn` with the process timezone pinned, restoring it afterwards.
@@ -29,6 +39,14 @@ const MONDAY = startOfLocalDay(new Date(2026, 7, 3));
  *
  * Build every Date inside the callback: one created outside carries the offset
  * that was in force when it was constructed.
+ *
+ * Restoring cannot use `delete process.env.TZ`, even though that is what an
+ * originally-unset TZ looks like. Deleting the variable does NOT return Node to
+ * the system zone — the resolved zone stays on the last value that was set, so
+ * every later test in the file silently kept running in the pinned zone. That
+ * is invisible on CI (already UTC, so the "leak" is UTC→UTC) and shows up only
+ * on a developer machine in another zone, as absolute-epoch assertions failing
+ * by exactly the offset between the two. Restore by assignment instead.
  */
 function withTimeZone<T>(timeZone: string, fn: () => T): T {
   const previous = process.env.TZ;
@@ -37,11 +55,7 @@ function withTimeZone<T>(timeZone: string, fn: () => T): T {
   try {
     return fn();
   } finally {
-    if (previous === undefined) {
-      delete process.env.TZ;
-    } else {
-      process.env.TZ = previous;
-    }
+    process.env.TZ = previous ?? SYSTEM_TIME_ZONE;
   }
 }
 
@@ -218,6 +232,21 @@ describe('describes — whether the event text adds anything to the title', () =
     // twice in one tooltip reads as a bug, not as detail.
     expect(describes(event({ title: 'Standup', description: 'Standup' }))).toBe(false);
     expect(describes(event({ title: 'Standup', description: '  standup ' }))).toBe(false);
+  });
+});
+
+describe('eventUrl — page link for a captured visit', () => {
+  it('reads a http(s) URL from metadata', () => {
+    expect(eventUrl(event({ metadata: { url: 'https://github.com/companionintelligence/CI-Server' } }))).toBe(
+      'https://github.com/companionintelligence/CI-Server',
+    );
+  });
+
+  it('ignores missing or non-http values', () => {
+    expect(eventUrl(event())).toBeNull();
+    expect(eventUrl(event({ metadata: null }))).toBeNull();
+    expect(eventUrl(event({ metadata: { url: 'javascript:alert(1)' } }))).toBeNull();
+    expect(eventUrl(event({ metadata: { url: '  ' } }))).toBeNull();
   });
 });
 
@@ -561,7 +590,7 @@ describe('HorizonGrid', () => {
   it('renders a committed event on its day', () => {
     render(<HorizonGrid start={MONDAY} days={7} events={[event()]} rhythm={[]} />);
 
-    expect(screen.getByText('Standup')).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Standup,/)).toBeInTheDocument();
   });
 
   it('renders an overnight event on both days it touches', () => {
@@ -580,7 +609,7 @@ describe('HorizonGrid', () => {
   it('renders without a rhythm layer — committed time alone is still true', () => {
     render(<HorizonGrid start={MONDAY} days={7} events={[event()]} rhythm={[]} />);
 
-    expect(screen.getByText('Standup')).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Standup,/)).toBeInTheDocument();
   });
 
   it('stacks overlapping events so neither is buried under the other', () => {
@@ -647,9 +676,8 @@ describe('HorizonGrid — reachable without a pointer', () => {
   });
 
   it('titles a chip too narrow to show any text of its own', () => {
-    // 30 minutes is 2% of a 24-hour row, and the 10:00 block leaves no room to
-    // spill the label into — so without this the chip is a bare colour swatch,
-    // which is the one thing the palette's contrast budget forbids.
+    // Narrow ticks keep the day quiet — the name lives on the native title
+    // attribute and in the hover tooltip, so a bare colour swatch is never nameless.
     const triage = event({
       id: 'e2',
       title: 'Triage',
@@ -660,6 +688,24 @@ describe('HorizonGrid — reachable without a pointer', () => {
     render(<HorizonGrid start={MONDAY} days={7} events={[event(), triage]} rhythm={[]} />);
 
     expect(screen.getByTitle('Standup')).toBeInTheDocument();
+  });
+
+  it('opens a captured visit URL from the event tooltip', async () => {
+    const visit = event({
+      title: 'Pull requests',
+      metadata: { url: 'https://github.com/companionintelligence/CI-Engineering/pulls' },
+    });
+
+    render(<HorizonGrid start={MONDAY} days={7} events={[visit]} rhythm={[]} />);
+
+    screen.getByLabelText(/^Pull requests,/).focus();
+
+    const links = await screen.findAllByRole('link', { name: 'Pull requests' });
+    expect(links.length).toBeGreaterThan(0);
+    for (const link of links) {
+      expect(link).toHaveAttribute('href', 'https://github.com/companionintelligence/CI-Engineering/pulls');
+      expect(link).toHaveAttribute('target', '_blank');
+    }
   });
 
   it('gives the rhythm lane a text equivalent instead of colour alone', () => {
@@ -705,17 +751,19 @@ describe('HorizonGrid — reachable without a pointer', () => {
 });
 
 describe('HorizonGrid — long horizon virtualization', () => {
-  it('keeps week views fully mounted without a scroll pane', () => {
-    const { container } = render(<HorizonGrid start={MONDAY} days={7} events={[]} rhythm={[]} />);
+  it('keeps week views fully mounted without a virtualization scroll pane', () => {
+    render(<HorizonGrid start={MONDAY} days={7} events={[]} rhythm={[]} />);
 
-    expect(container.querySelector('.overflow-y-auto')).not.toBeInTheDocument();
+    // Day lanes scroll internally when dense; the week itself stays fully mounted.
+    expect(screen.queryByTestId('horizon-virtual-scroll')).not.toBeInTheDocument();
+    expect(screen.getByTestId('horizon-week')).toBeInTheDocument();
     expect(screen.getAllByRole('listitem', { name: /August/ })).toHaveLength(7);
   });
 
   it('virtualizes day rows once the horizon exceeds two weeks', () => {
-    const { container } = render(<HorizonGrid start={MONDAY} days={21} events={[]} rhythm={[]} />);
+    render(<HorizonGrid start={MONDAY} days={21} events={[]} rhythm={[]} />);
 
-    expect(container.querySelector('.overflow-y-auto')).toBeInTheDocument();
+    expect(screen.getByTestId('horizon-virtual-scroll')).toBeInTheDocument();
   });
 });
 

@@ -5,6 +5,7 @@ import { Module } from '@nestjs/common';
 import { GraphQLModule as NestGraphQLModule } from '@nestjs/graphql';
 
 import { ActivityModule } from '@ci/domains/activity';
+import { AsksModule } from '@ci/domains/asks';
 import { BrowserActivityModule } from '@ci/domains/browser-activity';
 import { ConnectionsModule } from '@ci/domains/connections';
 import { ConversationModule } from '@ci/domains/conversations';
@@ -50,6 +51,7 @@ import { ComplexityPlugin } from './plugins/ComplexityPlugin';
 import { ActionResolver } from './resolvers/ActionResolver';
 import { ActivityResolver } from './resolvers/ActivityResolver';
 import { AnswerResolver } from './resolvers/AnswerResolver';
+import { AskResolver } from './resolvers/AskResolver';
 import { BrowserActivityResolver } from './resolvers/BrowserActivityResolver';
 import { CommunicationResolver } from './resolvers/CommunicationResolver';
 import { ConceptResolver } from './resolvers/ConceptResolver';
@@ -60,6 +62,7 @@ import { EventResolver } from './resolvers/EventResolver';
 import { FileResolver } from './resolvers/FileResolver';
 import { ForecastResolver } from './resolvers/ForecastResolver';
 import { GraphIngestResolver } from './resolvers/GraphIngestResolver';
+import { GraphResolver } from './resolvers/GraphResolver';
 import { ItemRelationshipResolver } from './resolvers/ItemRelationshipResolver';
 import { ItemResolver } from './resolvers/ItemResolver';
 import { KnownPlacesResolver } from './resolvers/KnownPlacesResolver';
@@ -89,9 +92,18 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
       autoSchemaFile: path.join(__dirname, '__generated__/schema.graphql'),
       sortSchema: true,
       playground: false,
-      introspection: true,
+      // Introspection is a development affordance, and it was on unconditionally
+      // — so an UNAUTHENTICATED caller on the LAN could enumerate the entire
+      // schema (64 root fields, every type and argument) from an appliance
+      // holding one person's whole life. The resolvers themselves are guarded
+      // and refuse anonymous reads, so this is disclosure rather than access:
+      // it hands an attacker the map without the keys. Off in production, on
+      // everywhere else, matching how `configuration.ts` gates the other
+      // "fine in dev, never in a real deployment" behaviours.
+      introspection: process.env.NODE_ENV !== 'production',
       graphiql: false,
     }),
+    AsksModule,
     PairingModule,
     ActivityModule,
     BrowserActivityModule,
@@ -118,6 +130,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
   providers: [
     ActionResolver,
     ActivityResolver,
+    AskResolver,
     ForecastResolver,
     ScheduleCandidateResolver,
     PairingResolver,
@@ -140,6 +153,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     FileItemsLoader,
     FileResolver,
     GraphIngestResolver,
+    GraphResolver,
     ItemFileLoader,
     ItemRelationshipResolver,
     ItemResolver,

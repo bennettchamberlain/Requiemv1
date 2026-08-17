@@ -341,6 +341,19 @@ export const STAGE_DEPENDENCIES: Readonly<Partial<Record<StageId, readonly Stage
   [STAGE_IDS.ENRICH_PERSON_LINK]: [STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE],
   [STAGE_IDS.ENRICH_EVENT_PERSON_LINK]: [STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE],
   [STAGE_IDS.CLEAN_DUPLICATE_DETECT]: [STAGE_IDS.ENRICH_PERSON_LINK, STAGE_IDS.ENRICH_EVENT_PERSON_LINK],
+  // The edge projections are pure consumers of the linkage columns their
+  // producers fill: person-link writes communications' from/to columns; the
+  // event leg additionally reads `location_entity_id`, which `promote.place`
+  // writes. Projecting first would write a night of `done` rows over unlinked
+  // sources that only the producers' next version bump could re-open.
+  [STAGE_IDS.PROMOTE_EDGE_COMMUNICATION]: [STAGE_IDS.ENRICH_PERSON_LINK],
+  [STAGE_IDS.PROMOTE_EDGE_EVENT]: [STAGE_IDS.ENRICH_EVENT_PERSON_LINK, STAGE_IDS.PROMOTE_PLACE],
+  [STAGE_IDS.PROMOTE_EDGE_INVENTORY]: [STAGE_IDS.PROMOTE_OBJECT],
+  // The observation leg's `resolved_object_id` is `promote.object`'s output;
+  // its other columns (content/event/place) are set at capture time. The
+  // receipt, position and device legs read only ingest/capture-time columns —
+  // no producer stage, so no entry.
+  [STAGE_IDS.PROMOTE_EDGE_OBSERVATION]: [STAGE_IDS.PROMOTE_OBJECT],
 };
 
 /**

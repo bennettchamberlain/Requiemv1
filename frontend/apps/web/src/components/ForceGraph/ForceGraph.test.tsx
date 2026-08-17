@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { GraphLink, GraphNode } from '@/api/useGraphOverview';
 
@@ -233,7 +233,7 @@ describe('ForceGraph', () => {
     await waitFor(() => {
       // The hovered leaf and the centre it links to stay lit; a sibling leaf fades back.
       expect(leaf).toHaveAttribute('opacity', '1');
-      expect(unrelated).toHaveAttribute('opacity', '0.2');
+      expect(unrelated).toHaveAttribute('opacity', '0.35');
     });
   });
 
@@ -318,10 +318,12 @@ describe('ForceGraph', () => {
 
     const after = labelBoxes().map((box) => `${box.label}@${box.left.toFixed(2)},${box.top.toFixed(2)}`);
 
-    // Only the newly emphasised node may shift, and only because it is drawn a little larger.
+    // Only the nodes whose emphasis changed may shift — the newly emphasised one grows, the
+    // formerly emphasised one gives its extra radius back. Nobody else moves: that would be the
+    // relayout this test exists to forbid.
     const moved = before.filter((entry) => !after.includes(entry));
 
-    expect(moved.length).toBeLessThanOrEqual(1);
+    expect(moved.length).toBeLessThanOrEqual(2);
   });
 
   it('keeps a label gap the renderer and the layout agree on', () => {
@@ -335,6 +337,203 @@ describe('ForceGraph', () => {
     const textX = Number.parseFloat(group.querySelector('text')!.getAttribute('x')!);
 
     expect(textX).toBeCloseTo(radius + LABEL_GAP_PX, 5);
+  });
+
+  describe('connection threads and background clicks (webbed-feet spike)', () => {
+    const nodeOpacity = (label: string) => {
+      const group = screen
+        .getAllByTestId('force-node')
+        .find((candidate) => candidate.querySelector('title')?.textContent?.startsWith(label));
+
+      return group?.getAttribute('opacity');
+    };
+
+    it('draws a duplicated link id once and drops self-loops', async () => {
+      // Both shapes arrive from real payloads: /api/graph/node's traversal shipped each edge once
+      // per BFS layer it touched. A duplicate id leaves a second line nothing repositions (a frozen
+      // ghost arrow); a self-loop is a zero-length line rendering as a floating arrowhead.
+      const { nodes, links } = buildGraph(['Aqsa Anwar']);
+      const polluted: GraphLink[] = [
+        ...links,
+        { ...links[0] },
+        {
+          id: 'self-loop',
+          relationship_id: 'self-loop',
+          source: CENTER_ID,
+          target: CENTER_ID,
+          relationship_type: 'KNOWS',
+          strength: 0.5,
+          properties: {},
+        },
+      ];
+
+      render(<ForceGraph nodes={nodes} links={polluted} />);
+
+      await waitFor(() => {
+        expect(screen.getAllByTestId('force-node')).toHaveLength(nodes.length);
+      });
+
+      expect(screen.getAllByTestId('force-link')).toHaveLength(1);
+    });
+
+    it('reports a link click through onLinkSelect', async () => {
+      const { nodes, links } = buildGraph(NAMES);
+      const onLinkSelect = vi.fn();
+
+      // Links are only clickable while revealed, so the click rides on a live selection.
+      render(
+        <ForceGraph nodes={nodes} links={links} selectedNodeId={CENTER_ID} onLinkSelect={onLinkSelect} />,
+      );
+
+      await waitFor(() => {
+        expect(screen.getAllByTestId('force-link').length).toBeGreaterThan(0);
+      });
+
+      fireEvent.click(screen.getAllByTestId('force-link')[0]);
+
+      expect(onLinkSelect).toHaveBeenCalledTimes(1);
+      expect(onLinkSelect).toHaveBeenCalledWith(expect.stringMatching(/^link-/));
+    });
+
+    it('rests every link hidden until a node asks for its threads', async () => {
+      const { nodes, links } = buildGraph(NAMES);
+
+      const { rerender } = render(<ForceGraph nodes={nodes} links={links} />);
+
+      await waitFor(() => {
+        expect(screen.getAllByTestId('force-link').length).toBeGreaterThan(0);
+      });
+
+      // At rest the picture is dots only: every thread is hidden and unclickable.
+      for (const group of screen.getAllByTestId('force-link')) {
+        expect(group).toHaveAttribute('data-hidden', 'true');
+      }
+
+      // Selecting a node reveals exactly the threads that describe it.
+      rerender(<ForceGraph nodes={nodes} links={links} selectedNodeId="person-0" />);
+
+      const revealed = screen
+        .getAllByTestId('force-link')
+        .filter((group) => group.getAttribute('data-hidden') !== 'true');
+
+      // person-0 has exactly one link (to the centre).
+      expect(revealed).toHaveLength(1);
+    });
+
+    it('names the selected node with its neighbour count', async () => {
+      const { nodes, links } = buildGraph(NAMES);
+
+      render(<ForceGraph nodes={nodes} links={links} selectedNodeId={CENTER_ID} />);
+
+      await waitFor(() => {
+        expect(screen.getAllByTestId('force-node').length).toBeGreaterThan(0);
+      });
+
+      // The centre is linked to all 15 leaves.
+      expect(screen.getByTestId('force-node-degree')).toHaveTextContent('15 connections');
+    });
+
+    it('dims the nodes unrelated to the selected one', async () => {
+      const { nodes, links } = buildGraph(NAMES);
+
+      render(<ForceGraph nodes={nodes} links={links} selectedNodeId="person-0" />);
+
+      await waitFor(() => {
+        expect(screen.getAllByTestId('force-node').length).toBeGreaterThan(0);
+      });
+
+      // person-0's only neighbour is the centre; a sibling leaf recedes.
+      expect(nodeOpacity('Abdul Ameer')).toBe('1');
+      expect(nodeOpacity('Fiona Sewell')).toBe('0.35');
+    });
+
+    it('emphasises the selected thread and recedes everything else', async () => {
+      const { nodes, links } = buildGraph(NAMES);
+
+      // link-0 joins the centre to person-0 ("Aqsa Anwar"); everyone else is off the thread.
+      render(<ForceGraph nodes={nodes} links={links} selectedLinkId="link-0" />);
+
+      await waitFor(() => {
+        expect(screen.getAllByTestId('force-link').length).toBeGreaterThan(0);
+      });
+
+      const selected = screen
+        .getAllByTestId('force-link')
+        .filter((group) => group.getAttribute('data-selected') === 'true');
+
+      expect(selected).toHaveLength(1);
+
+      // The thread's endpoints stay lit; a node off the thread fades back.
+      expect(nodeOpacity('Abdul Ameer')).toBe('1');
+      expect(nodeOpacity('Aqsa Anwar')).toBe('1');
+      expect(nodeOpacity('Fiona Sewell')).toBe('0.35');
+    });
+
+    it('treats a still click on empty canvas as a reset', async () => {
+      const { nodes, links } = buildGraph(NAMES);
+      const onBackgroundClick = vi.fn();
+
+      render(<ForceGraph nodes={nodes} links={links} onBackgroundClick={onBackgroundClick} />);
+
+      const svg = screen.getByRole('img', { name: 'Knowledge graph overview' });
+      fireEvent.click(svg);
+
+      expect(onBackgroundClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('drags a node to a new position and does not treat the drop as a click', async () => {
+      const { nodes, links } = buildGraph(NAMES);
+      const onNodeSelect = vi.fn();
+
+      render(<ForceGraph nodes={nodes} links={links} onNodeSelect={onNodeSelect} />);
+
+      await waitFor(() => {
+        expect(screen.getAllByTestId('force-node').length).toBeGreaterThan(0);
+      });
+
+      const group = screen.getAllByTestId('force-node')[0];
+      const xOf = () =>
+        Number.parseFloat(/translate\(([-\d.]+),/.exec(group.getAttribute('transform') ?? '')?.[1] ?? '0');
+
+      fireEvent.pointerDown(group, { button: 0, clientX: 100, clientY: 100 });
+      const grabbedAt = xOf();
+      fireEvent.pointerMove(group, { clientX: 400, clientY: 100 });
+      fireEvent.pointerUp(group);
+
+      // The drag pins the node to the pointer (fx/fy) and reheats the simulation, so the node
+      // converges rightward onto the pin rather than staying where the layout had it.
+      await waitFor(() => {
+        expect(xOf()).toBeGreaterThan(grabbedAt + 10);
+      });
+
+      // The click browsers fire after a drag's pointer-up must not open the entity dialog.
+      fireEvent.click(group);
+      expect(onNodeSelect).not.toHaveBeenCalled();
+    });
+
+    it('does not treat a node click as a background click', async () => {
+      const { nodes, links } = buildGraph(NAMES);
+      const onBackgroundClick = vi.fn();
+      const onNodeSelect = vi.fn();
+
+      render(
+        <ForceGraph
+          nodes={nodes}
+          links={links}
+          onNodeSelect={onNodeSelect}
+          onBackgroundClick={onBackgroundClick}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(screen.getAllByTestId('force-node').length).toBeGreaterThan(0);
+      });
+
+      fireEvent.click(screen.getAllByTestId('force-node')[0]);
+
+      expect(onNodeSelect).toHaveBeenCalledTimes(1);
+      expect(onBackgroundClick).not.toHaveBeenCalled();
+    });
   });
 
   describe('expanded past the focused node', () => {

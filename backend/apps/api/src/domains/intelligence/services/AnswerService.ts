@@ -58,6 +58,9 @@ export class AnswerService {
       user: {
         id: context.userId,
       },
+      ...(data.answerMethod !== undefined ? { answerMethod: data.answerMethod } : {}),
+      ...(data.answerSource !== undefined ? { answerSource: data.answerSource } : {}),
+      ...(data.sessionContext !== undefined ? { sessionContext: data.sessionContext } : {}),
     });
 
     const entity = await this.answerRepository.save(instance);
@@ -311,7 +314,14 @@ export class AnswerService {
    */
   async getEntitiesForAnswers(
     context: ServiceContext,
-    options: { limit?: number; startTime?: Date; endTime?: Date; order?: 'ASC' | 'DESC' } = {},
+    options: {
+      limit?: number;
+      startTime?: Date;
+      endTime?: Date;
+      afterTime?: Date;
+      afterId?: string;
+      order?: 'ASC' | 'DESC';
+    } = {},
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
     let query = this.answerRepository
       .createQueryBuilder('answer')
@@ -326,7 +336,20 @@ export class AnswerService {
       query = query.andWhere('answer.answered_at <= :endTime', { endTime: options.endTime });
     }
 
-    query = query.orderBy('answer.answered_at', options.order ?? 'DESC');
+    // Composite keyset: page strictly past (afterTime, afterId) in
+    // (answered_at DESC, answer_id DESC) — see ContentService.getEntitiesForContents.
+    // Answers order by answered_at, which is also what getEntityTimestamp sorts them on.
+    if (options.afterTime && options.afterId) {
+      query = query.andWhere(
+        '(answer.answered_at < :afterTime OR (answer.answered_at = :afterTime AND answer.answer_id < :afterId))',
+        { afterTime: options.afterTime, afterId: options.afterId },
+      );
+    }
+
+    // Deterministic tiebreak so same-timestamp rows page consistently.
+    query = query
+      .orderBy('answer.answered_at', options.order ?? 'DESC')
+      .addOrderBy('answer.answer_id', 'DESC');
 
     if (options.limit) {
       query = query.limit(options.limit);

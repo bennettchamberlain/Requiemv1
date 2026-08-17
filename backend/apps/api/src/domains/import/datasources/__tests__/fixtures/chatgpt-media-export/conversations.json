@@ -1,0 +1,84 @@
+[
+  {
+    "id": "conv-m1",
+    "title": "Making a logo",
+    "create_time": 1720000000,
+    "update_time": 1720000300,
+    "current_node": "n3",
+    "mapping": {
+      "n0": {
+        "id": "n0",
+        "parent": null,
+        "children": ["n1"],
+        "message": {
+          "author": { "role": "user" },
+          "content": {
+            "content_type": "multimodal_text",
+            "parts": [
+              {
+                "content_type": "image_asset_pointer",
+                "asset_pointer": "file-service://file-UPLOAD42",
+                "size_bytes": 67,
+                "width": 1,
+                "height": 1
+              },
+              "Here is my sketch — turn it into a clean logo."
+            ]
+          },
+          "create_time": 1720000060
+        }
+      },
+      "n1": {
+        "id": "n1",
+        "parent": "n0",
+        "children": ["n2"],
+        "message": {
+          "author": { "role": "tool", "name": "dalle.text2im" },
+          "content": {
+            "content_type": "multimodal_text",
+            "parts": [
+              {
+                "content_type": "image_asset_pointer",
+                "asset_pointer": "sediment://file_GENABC123",
+                "size_bytes": 34,
+                "width": 1024,
+                "height": 1024,
+                "metadata": { "dalle": { "prompt": "A minimalist fox logo", "gen_id": "gen-1" } }
+              }
+            ]
+          },
+          "create_time": 1720000120
+        }
+      },
+      "n2": {
+        "id": "n2",
+        "parent": "n1",
+        "children": ["n3"],
+        "message": {
+          "author": { "role": "assistant" },
+          "content": { "content_type": "text", "parts": ["Here is a generated logo based on your sketch."] },
+          "create_time": 1720000180
+        }
+      },
+      "n3": {
+        "id": "n3",
+        "parent": "n2",
+        "children": [],
+        "message": {
+          "author": { "role": "user" },
+          "content": {
+            "content_type": "multimodal_text",
+            "parts": [
+              {
+                "content_type": "image_asset_pointer",
+                "asset_pointer": "file-service://file-MISSING99"
+              },
+              "What about this variant?"
+            ]
+          },
+          "create_time": 1720000240
+        }
+      }
+    }
+  }
+]

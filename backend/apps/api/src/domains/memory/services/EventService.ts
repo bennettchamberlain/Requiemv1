@@ -4,7 +4,7 @@ import { DataSource, In, IsNull, Repository, type FindOptionsOrder, type FindOpt
 import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/context';
-import { bulkInsertIdempotent, INGEST_REFRESH_COLUMNS } from '@ci/common/persistence';
+import { type BulkInsertResult, bulkInsertIdempotent, INGEST_REFRESH_COLUMNS } from '@ci/common/persistence';
 import { EventService as SignallingEventService } from '@ci/domains/events';
 import { EventCreatedEvent, EventUpdatedEvent, EventRemovedEvent } from '@ci/domains/memory/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
@@ -14,6 +14,7 @@ import { EventEntity, Event } from '../entities/EventEntity';
 import { CreateEventDto, UpdateEventDto, SearchEventDto } from '../types';
 
 import { CtiAggregate } from './CtiAggregate';
+import { GraphDeltaWriter } from './GraphDeltaWriter';
 
 interface Options {
   limit?: number;
@@ -85,6 +86,22 @@ const DAY_MS = 86_400_000;
 const MAX_RANGE_EVENTS = 2000;
 
 /**
+ * Event types the schedule calendar renders, as an allowlist.
+ *
+ * `ci.events` is the timeline for everything an ETL connector can flatten, not
+ * just calendar entries: Spotify writes `favorite` and `played_music`, Steam
+ * writes `friend_added` and `game_played`, GitHub writes a `github_*` type per
+ * repo action. None of those are occupied time on a calendar, and a denylist
+ * put the burden on whoever adds the next connector to remember the schedule
+ * surface exists. An allowlist fails closed instead: a new event type is
+ * invisible here until someone adds it deliberately.
+ *
+ * This replaces the `source_type <> 'browser_activity'` stopgap from 6078c06f6,
+ * which only covered the browser fold (itself reverted in 20260812144811).
+ */
+const SCHEDULE_EVENT_TYPES = ['calendar_event', 'meeting', 'appointment'] as const;
+
+/**
  * Spanning-aggregate service for the events CTI split: an event is ONE logical
  * entity persisted as a `ci.entities` base row (discriminated 'Event', the
  * SOLE owner of title/description — see {@link EventBaseEntity}) plus a
@@ -103,6 +120,7 @@ export class EventService {
     private readonly eventBaseRepository: Repository<EventBaseEntity>,
     private readonly signallingEventService: SignallingEventService,
     private readonly dataSource: DataSource,
+    private readonly graphDeltaWriter: GraphDeltaWriter,
   ) {
     this.aggregate = new CtiAggregate({
       detailRepository: this.eventRepository,
@@ -272,7 +290,19 @@ export class EventService {
           },
         });
 
-        return manager.getRepository(EventEntity).save(event);
+        const saved = await manager.getRepository(EventEntity).save(event);
+        await this.graphDeltaWriter.entityCreated({
+          entityId: id,
+          entityType: 'Event',
+          name: item.title,
+          description: item.description ?? null,
+          ownerUserId: context.userId,
+          changeSource: 'EventService.create',
+          changedByUserId: typeof context.userId === 'string' ? context.userId : null,
+          manager,
+        });
+
+        return saved;
       });
     } catch (err) {
       // Lost a race to a concurrent insert of the same triple (the partial-
@@ -307,6 +337,20 @@ export class EventService {
   }
 
   /**
+   * Same ingest as {@link create}, reporting which rows this call actually
+   * INSERTED rather than found already present.
+   *
+   * Batch-only: the single-record path inserts unconditionally, so there is no
+   * ambiguity to report there.
+   */
+  async createDetailed(
+    context: UserServiceContext,
+    data: CreateEventDto[],
+  ): Promise<Array<BulkInsertResult<Event>>> {
+    return this.createManyBatchedDetailed(context, data);
+  }
+
+  /**
    * Batch, idempotent event ingest for the importer. Dedupes on the provenance
    * triple (source_type, source_system, source_id), scoped to the user, via one
    * set-based INSERT ... ON CONFLICT DO NOTHING instead of a per-row findOne + save
@@ -318,6 +362,13 @@ export class EventService {
    * (POST /api/maintenance/search-index/backfill); single-row create() still emits.
    */
   private async createManyBatched(context: UserServiceContext, data: CreateEventDto[]): Promise<Event[]> {
+    return (await this.createManyBatchedDetailed(context, data)).map(({ entity }) => entity);
+  }
+
+  private async createManyBatchedDetailed(
+    context: UserServiceContext,
+    data: CreateEventDto[],
+  ): Promise<Array<BulkInsertResult<Event>>> {
     if (data.length === 0) {
       return [];
     }
@@ -384,6 +435,31 @@ export class EventService {
       // base row already present for this uuid.
       await this.aggregate.insertBaseRows(manager, baseRows, '(entity_id) DO NOTHING');
 
+      await this.graphDeltaWriter.recordMany(
+        detailResults
+          .filter(({ inserted }) => inserted)
+          .map(({ entity }) => {
+            const ingress = ingressById.get(entity.id);
+
+            return {
+              nodeType: 'entity' as const,
+              changeType: 'created' as const,
+              entityId: entity.id,
+              entityType: 'Event',
+              ownerUserId: context.userId,
+              changeSource: 'EventService.createMany',
+              changedByUserId: typeof context.userId === 'string' ? context.userId : null,
+              changedFields: {
+                name: { new: ingress?.title ?? null },
+                description: { new: ingress?.description ?? null },
+                entity_type: { new: 'Event' },
+                properties: { new: {} },
+              },
+            };
+          }),
+        manager,
+      );
+
       // One read covers egress composition for inserted AND pre-existing rows
       // (a deduped triple resolves to a row whose base values this batch never
       // carried).
@@ -400,7 +476,10 @@ export class EventService {
     // bulk-loaded rows is deferred to the post-load batch embed
     // (POST /api/maintenance/search-index/backfill). Single-row create() still
     // emits, so interactive creates index live.
-    return results.map(({ entity }) => EventEntity.toEgressType(entity, bases.get(entity.id)));
+    return results.map(({ entity, inserted }) => ({
+      entity: EventEntity.toEgressType(entity, bases.get(entity.id)),
+      inserted,
+    }));
   }
 
   /**
@@ -420,9 +499,11 @@ export class EventService {
    * overlap predicate alone cannot use an index, and MAX_RANGE_EVENTS for the
    * row cap.
    *
-   * STOPGAP: browser extension page views dual-write into ci.events with
-   * source_type='browser_activity'. Excluded here until we define which event
-   * kinds belong on the schedule calendar and wire pg-boss accordingly.
+   * Filtered to SCHEDULE_EVENT_TYPES, plus rows with a NULL `event_type`. The
+   * NULL arm is load-bearing, not a fallthrough: events the user creates through
+   * EventResolver and events materialized by CandidateService when a schedule
+   * suggestion is accepted both leave `event_type` unset, and dropping them
+   * would empty the calendar of exactly the entries the user put there.
    */
   async findInRange(context: ServiceContext, from: Date, to: Date): Promise<Event[]> {
     // Sargable floor for events_user_time_idx: the planner can now range-scan
@@ -437,7 +518,9 @@ export class EventService {
       .andWhere('event.start_time >= :lowerBound', { lowerBound })
       .andWhere('event.start_time < :to', { to })
       .andWhere('COALESCE(event.end_time, event.start_time) >= :from', { from })
-      .andWhere("event.source_type IS DISTINCT FROM 'browser_activity'")
+      .andWhere('(event.event_type IS NULL OR event.event_type IN (:...scheduleEventTypes))', {
+        scheduleEventTypes: [...SCHEDULE_EVENT_TYPES],
+      })
       .orderBy('event.start_time', 'ASC')
       .addOrderBy('event.event_id', 'ASC')
       .take(MAX_RANGE_EVENTS);
@@ -683,11 +766,34 @@ export class EventService {
     // One transaction across both halves of the aggregate (see CtiAggregate).
     // A title/description-only patch still bumps ci.events.updated_at so
     // detail-side incremental consumers see the change.
-    const updated = await this.aggregate.applyUpdate(context, id, {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      detail: updateData as any, // TypeORM will handle JSON serialization
-      base: basePatch,
-    });
+    const updated = await this.aggregate.applyUpdate(
+      context,
+      id,
+      {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        detail: updateData as any, // TypeORM will handle JSON serialization
+        base: basePatch,
+      },
+      {
+        withinTx: async ({ manager }) => {
+          const base = await manager.getRepository(EventBaseEntity).findOne({ where: { id } });
+          await this.graphDeltaWriter.entityUpdated({
+            entityId: id,
+            entityType: 'Event',
+            name: base?.name ?? null,
+            changedFields: {
+              ...(basePatch.name !== undefined ? { name: { new: basePatch.name } } : {}),
+              ...(basePatch.description !== undefined ? { description: { new: basePatch.description } } : {}),
+              ...(Object.keys(updateData).length > 0 ? { detail_updated: { new: true } } : {}),
+            },
+            ownerUserId: typeof context.userId === 'string' ? context.userId : null,
+            changeSource: 'EventService.update',
+            changedByUserId: typeof context.userId === 'string' ? context.userId : null,
+            manager,
+          });
+        },
+      },
+    );
 
     if (!updated) {
       return null;
@@ -709,7 +815,20 @@ export class EventService {
     // ON DELETE CASCADE removes the detail in the same statement. Downstream
     // FK semantics are unchanged (capture_events/observations/receipts SET
     // NULL; hbpe.l1_event_cluster still RESTRICTs a clustered event).
-    const removed = await this.aggregate.remove(context, id);
+    const removed = await this.aggregate.remove(context, id, {
+      withinTx: async ({ manager }) => {
+        const base = await manager.getRepository(EventBaseEntity).findOne({ where: { id } });
+        await this.graphDeltaWriter.entityDeleted({
+          entityId: id,
+          entityType: 'Event',
+          name: base?.name ?? null,
+          ownerUserId: typeof context.userId === 'string' ? context.userId : null,
+          changeSource: 'EventService.remove',
+          changedByUserId: typeof context.userId === 'string' ? context.userId : null,
+          manager,
+        });
+      },
+    });
 
     if (!removed) {
       return false;

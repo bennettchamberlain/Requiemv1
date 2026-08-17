@@ -6,7 +6,7 @@ HMTModel    — Full hierarchical model with L0 encoder + L1 embedding layer (T2
 
 Architecture:
   • Token embedding tables per level (L0 vocab, L1 vocab)
-  • Shared bucket position embedding (96 × d_model)
+  • Shared bucket position embedding (48 × d_model)
   • TransformerEncoder shared backbone (n_layers, n_heads, d_ff)
   • L0 + L1 flat linear output heads (nn.Linear)
 
@@ -38,7 +38,7 @@ class L0MAEModel(nn.Module):
 
     Input:
       token_ids   (B, T) int64  — L0 token indices (some replaced with MASK_IDX)
-      bucket_idxs (B, T) int64  — 15-min bucket position for each token (0..95)
+      bucket_idxs (B, T) int64  — 30-min bucket position for each token (0..47)
       padding_mask (B, T) bool  — True where tokens are PAD
 
     Output:

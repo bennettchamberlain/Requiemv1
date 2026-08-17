@@ -1,14 +1,9 @@
 import {
   addAppUrlOpenListener,
   addBackButtonListener,
-  addLocalLlmDownloadProgressListener,
-  downloadLocalLlmModel,
   exitApp,
-  getLocalLlmStatus,
   hasNotificationPermission,
   hideSplashScreen,
-  isLocalLlmAvailable,
-  loadLocalLlmModel,
   openExternalUrl,
   requestNotificationPermission,
   scheduleLocalNotification,
@@ -16,9 +11,6 @@ import {
   secureStorageRemove,
   secureStorageSet,
   setStatusBarStyle,
-  startLocalLlm,
-  stopLocalLlm,
-  unloadLocalLlmModel,
 } from '@ci/common/src/utils/nativeBridge';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -108,7 +100,9 @@ describe('nativeBridge — native uses the Capacitor plugins', () => {
     return { win, secureStore, browserOpen };
   }
 
-  it('set/get/remove go through the SecureStoragePlugin (Keychain/Keystore)', async () => {
+  it('falls back to the legacy SecureStoragePlugin on a shell without LocalHub', async () => {
+    // An older native shell that predates the Local Hub plugin. The credential such an
+    // install already holds must stay reachable rather than reading as "signed out".
     const { win, secureStore } = fakeNativeWindow();
     setWindow(win);
 
@@ -128,6 +122,156 @@ describe('nativeBridge — native uses the Capacitor plugins', () => {
     await openExternalUrl('https://idp.example.com/auth');
 
     expect(browserOpen).toHaveBeenCalledWith({ url: 'https://idp.example.com/auth' });
+  });
+});
+
+/**
+ * The appliance API key moved out of `capacitor-secure-storage-plugin` — which silently
+ * degrades to unencrypted Base64 on Android when Keystore init fails, and on iOS writes with
+ * a keychain class that rides along in encrypted device backups — into the Local Hub plugin's
+ * keystore-backed store.
+ *
+ * These cover the bridge half of that move. The native halves have their own on-device
+ * coverage in `frontend/packages/capacitor-local-hub/android/src/androidTest/`.
+ */
+describe('nativeBridge — LocalHub secure storage and the migration off the legacy plugin', () => {
+  function fakeHubWindow(options: { legacy?: Record<string, string>; hub?: Record<string, string> } = {}) {
+    const legacyStore = new Map(Object.entries(options.legacy ?? {}));
+    const hubStore = new Map(Object.entries(options.hub ?? {}));
+
+    const legacy = {
+      get: vi.fn(async ({ key }: { key: string }) => {
+        if (!legacyStore.has(key)) {
+          throw new Error('not found');
+        }
+
+        return { value: legacyStore.get(key)! };
+      }),
+      set: vi.fn(async ({ key, value }: { key: string; value: string }) => {
+        legacyStore.set(key, value);
+
+        return { value: true };
+      }),
+      remove: vi.fn(async ({ key }: { key: string }) => {
+        legacyStore.delete(key);
+
+        return { value: true };
+      }),
+    };
+
+    const hub = {
+      secureGet: vi.fn(async ({ key }: { key: string }) => ({ value: hubStore.get(key) ?? null })),
+      secureSet: vi.fn(async ({ key, value }: { key: string; value: string }) => {
+        hubStore.set(key, value);
+      }),
+      secureRemove: vi.fn(async ({ key }: { key: string }) => {
+        hubStore.delete(key);
+      }),
+    };
+
+    const win = {
+      Capacitor: {
+        isNativePlatform: () => true,
+        Plugins: { LocalHub: hub, SecureStoragePlugin: legacy },
+      },
+    };
+
+    return { win, hub, legacy, hubStore, legacyStore };
+  }
+
+  it('prefers LocalHub for reads and never consults the legacy plugin when it has a value', async () => {
+    const { win, legacy } = fakeHubWindow({ hub: { 'ci.apiKey': 'from-keystore' } });
+    setWindow(win);
+
+    expect(await secureStorageGet('ci.apiKey')).toBe('from-keystore');
+    expect(legacy.get).not.toHaveBeenCalled();
+  });
+
+  it('writes go to LocalHub and clear any stale legacy copy', async () => {
+    const { win, hub, legacy, hubStore, legacyStore } = fakeHubWindow({ legacy: { 'ci.apiKey': 'old' } });
+    setWindow(win);
+
+    await secureStorageSet('ci.apiKey', 'new');
+
+    expect(hub.secureSet).toHaveBeenCalledWith({ key: 'ci.apiKey', value: 'new' });
+    expect(hubStore.get('ci.apiKey')).toBe('new');
+    expect(legacy.set).not.toHaveBeenCalled();
+    expect(legacyStore.has('ci.apiKey')).toBe(false);
+  });
+
+  it('migrates an existing install: reads through, rewrites into the keystore, then drops the old copy', async () => {
+    const { win, hub, legacyStore, hubStore } = fakeHubWindow({
+      legacy: { 'ci.apiKey': 'pre-existing-key' },
+    });
+    setWindow(win);
+
+    expect(await secureStorageGet('ci.apiKey')).toBe('pre-existing-key');
+    expect(hub.secureSet).toHaveBeenCalledWith({ key: 'ci.apiKey', value: 'pre-existing-key' });
+    expect(hubStore.get('ci.apiKey')).toBe('pre-existing-key');
+    expect(legacyStore.has('ci.apiKey')).toBe(false);
+
+    // Second read is served from the keystore; nothing is migrated twice.
+    hub.secureSet.mockClear();
+    expect(await secureStorageGet('ci.apiKey')).toBe('pre-existing-key');
+    expect(hub.secureSet).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The load-bearing ordering property. If the keystore write fails, the old copy must stay
+   * exactly where it was so the next launch can retry — the value existing in two places is a
+   * cosmetic problem, the value existing in none forces a full re-login against an appliance
+   * URL the user may no longer remember.
+   */
+  it('keeps the legacy copy when the keystore write fails mid-migration', async () => {
+    const { win, hub, legacy, legacyStore } = fakeHubWindow({ legacy: { 'ci.apiKey': 'pre-existing-key' } });
+    hub.secureSet.mockRejectedValueOnce(new Error('keystore unavailable'));
+    setWindow(win);
+
+    expect(await secureStorageGet('ci.apiKey')).toBeNull();
+    expect(legacy.remove).not.toHaveBeenCalled();
+    expect(legacyStore.get('ci.apiKey')).toBe('pre-existing-key');
+  });
+
+  it('reports no value — rather than reading the weaker store — when the keystore is unusable', async () => {
+    const { win, hub, legacy } = fakeHubWindow({ legacy: { 'ci.apiKey': 'pre-existing-key' } });
+    hub.secureGet.mockRejectedValueOnce(new Error('keystore unavailable'));
+    setWindow(win);
+
+    // "Signed out" is recoverable and writes nothing weaker; silently falling back to the
+    // plugin whose storage guarantees we just rejected would not be.
+    expect(await secureStorageGet('ci.apiKey')).toBeNull();
+    expect(legacy.get).not.toHaveBeenCalled();
+  });
+
+  it('propagates a failed write instead of pretending the credential was stored', async () => {
+    const { win, hub } = fakeHubWindow();
+    hub.secureSet.mockRejectedValueOnce(new Error('keystore unavailable'));
+    setWindow(win);
+
+    await expect(secureStorageSet('ci.apiKey', 'secret')).rejects.toThrow('keystore unavailable');
+  });
+
+  it('removal clears both stores, so sign-out cannot leave a copy in the weaker one', async () => {
+    const { win, hub, legacy, hubStore, legacyStore } = fakeHubWindow({
+      hub: { 'ci.apiKey': 'a' },
+      legacy: { 'ci.apiKey': 'b' },
+    });
+    setWindow(win);
+
+    await secureStorageRemove('ci.apiKey');
+
+    expect(hub.secureRemove).toHaveBeenCalledWith({ key: 'ci.apiKey' });
+    expect(legacy.remove).toHaveBeenCalledWith({ key: 'ci.apiKey' });
+    expect(hubStore.has('ci.apiKey')).toBe(false);
+    expect(legacyStore.has('ci.apiKey')).toBe(false);
+  });
+
+  it('returns null for a key neither store has, without writing anything', async () => {
+    const { win, hub } = fakeHubWindow();
+    setWindow(win);
+
+    expect(await secureStorageGet('ci.apiKey')).toBeNull();
+    expect(hub.secureSet).not.toHaveBeenCalled();
   });
 });
 
@@ -361,103 +505,5 @@ describe('nativeBridge — local notifications', () => {
     expect(await hasNotificationPermission()).toBe(false);
     expect(await requestNotificationPermission()).toBe(false);
     expect(await scheduleLocalNotification('a', 'b')).toBe(false);
-  });
-});
-
-describe('nativeBridge — LocalLLM', () => {
-  function fakeLocalLlmWindow() {
-    const status = { supported: true, running: true, modelLoaded: false, baseUrl: 'http://127.0.0.1:54213' };
-    const getStatus = vi.fn(async () => status);
-    const start = vi.fn(async () => ({ baseUrl: 'http://127.0.0.1:54213', token: 'tok' }));
-    const stop = vi.fn(async () => {});
-    const loadModel = vi.fn(async () => {});
-    const unloadModel = vi.fn(async () => {});
-    const downloadModel = vi.fn(async () => ({ path: '/data/models/gemma.litertlm' }));
-    const remove = vi.fn();
-    let progressHandler: ((e: { fileName: string; downloaded: number; total: number }) => void) | undefined;
-    const addListener = vi.fn(async (_event: string, listener: typeof progressHandler) => {
-      progressHandler = listener;
-
-      return { remove };
-    });
-
-    const win = {
-      Capacitor: {
-        isNativePlatform: () => true,
-        Plugins: {
-          LocalLLM: { getStatus, start, stop, loadModel, unloadModel, downloadModel, addListener },
-        },
-      },
-    };
-
-    return { win, getStatus, start, stop, loadModel, unloadModel, downloadModel, remove, fireProgress: (e: { fileName: string; downloaded: number; total: number }) => progressHandler?.(e) };
-  }
-
-  it('isLocalLlmAvailable reflects plugin presence', () => {
-    setWindow({});
-    expect(isLocalLlmAvailable()).toBe(false);
-
-    const { win } = fakeLocalLlmWindow();
-    setWindow(win);
-    expect(isLocalLlmAvailable()).toBe(true);
-  });
-
-  it('getStatus, start, stop, loadModel, unloadModel go through the plugin', async () => {
-    const { win, getStatus, start, stop, loadModel, unloadModel } = fakeLocalLlmWindow();
-    setWindow(win);
-
-    expect(await getLocalLlmStatus()).toEqual({
-      supported: true,
-      running: true,
-      modelLoaded: false,
-      baseUrl: 'http://127.0.0.1:54213',
-    });
-    expect(getStatus).toHaveBeenCalledTimes(1);
-
-    expect(await startLocalLlm()).toEqual({ baseUrl: 'http://127.0.0.1:54213', token: 'tok' });
-    expect(start).toHaveBeenCalledTimes(1);
-
-    expect(await loadLocalLlmModel('/data/models/gemma.litertlm')).toBe(true);
-    expect(loadModel).toHaveBeenCalledWith({ path: '/data/models/gemma.litertlm' });
-
-    await unloadLocalLlmModel();
-    expect(unloadModel).toHaveBeenCalledTimes(1);
-
-    await stopLocalLlm();
-    expect(stop).toHaveBeenCalledTimes(1);
-  });
-
-  it('downloadModel resolves the on-device path and streams progress', async () => {
-    const { win, downloadModel, remove, fireProgress } = fakeLocalLlmWindow();
-    setWindow(win);
-
-    const seen: Array<{ fileName: string; downloaded: number; total: number }> = [];
-    const unsubscribe = await addLocalLlmDownloadProgressListener((progress) => seen.push(progress));
-
-    fireProgress({ fileName: 'gemma.litertlm', downloaded: 512, total: 1024 });
-    expect(seen).toEqual([{ fileName: 'gemma.litertlm', downloaded: 512, total: 1024 }]);
-
-    unsubscribe();
-    expect(remove).toHaveBeenCalledTimes(1);
-
-    const path = await downloadLocalLlmModel('https://example.com/gemma.litertlm', 'gemma.litertlm');
-    expect(path).toBe('/data/models/gemma.litertlm');
-    expect(downloadModel).toHaveBeenCalledWith({ url: 'https://example.com/gemma.litertlm', fileName: 'gemma.litertlm' });
-  });
-
-  it('is inert on web: returns null/false and never throws', async () => {
-    setWindow({});
-
-    expect(await getLocalLlmStatus()).toBeNull();
-    expect(await startLocalLlm()).toBeNull();
-    expect(await loadLocalLlmModel('/x')).toBe(false);
-    expect(await downloadLocalLlmModel('https://example.com/x', 'x')).toBeNull();
-    await expect(stopLocalLlm()).resolves.toBeUndefined();
-    await expect(unloadLocalLlmModel()).resolves.toBeUndefined();
-
-    const handler = vi.fn();
-    const unsubscribe = await addLocalLlmDownloadProgressListener(handler);
-    unsubscribe();
-    expect(handler).not.toHaveBeenCalled();
   });
 });

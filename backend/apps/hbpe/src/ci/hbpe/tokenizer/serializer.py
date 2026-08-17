@@ -7,7 +7,7 @@ Re-serializing a day deletes existing rows for that (user_id, date) first.
 Token stream layout for a calendar day:
   [SOD] bucket_idx=0,  seq_order=0
   (L0, L1, L2 token triples for each event in chronological order)
-  [EOD] bucket_idx=95, seq_order=N
+  [EOD] bucket_idx=47, seq_order=N
 
 soft_prob is a FLOAT4[] holding the assignment similarity score.  Currently
 1-element; the full distribution over all centroids is deferred to Phase 2
@@ -115,7 +115,7 @@ def _fetch_tokens_for_day(user_id: str, date_str: str) -> list[dict]:
     Fetch all L0/L1/L2 token records for a user on a given calendar date.
 
     Each event generates up to 3 token rows (one per level), ordered chronologically.
-    bucket_idx = floor((start_time - midnight) / 15min), clamped to [0, 95].
+    bucket_idx = floor((start_time - midnight) / 30min), clamped to [0, 47].
 
     Delegates app-table reads (ci.events, ci.content) to data_client.
     """

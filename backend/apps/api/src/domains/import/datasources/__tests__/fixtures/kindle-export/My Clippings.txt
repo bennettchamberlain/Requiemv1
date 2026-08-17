@@ -1,0 +1,15 @@
+Thinking, Fast and Slow (Kahneman, Daniel)
+- Your Highlight on page 42 | Location 512-516 | Added on Friday, January 1, 2021 9:00:00 AM
+
+Our comforting conviction that the world makes sense rests on a secure foundation: our almost unlimited ability to ignore our ignorance.
+==========
+Thinking, Fast and Slow (Kahneman, Daniel)
+- Your Note on page 43 | Location 517 | Added on Friday, January 1, 2021 9:05:00 AM
+
+This explains so much about confirmation bias.
+==========
+The Pragmatic Programmer (Hunt, Andrew)
+- Your Highlight on page 100 | Location 1234-1238 | Added on Saturday, January 2, 2021 10:00:00 AM
+
+Don't Live with Broken Windows. Bad designs, wrong decisions, and poor code. Fix each one as soon as it is discovered.
+==========

@@ -52,6 +52,8 @@ vi.mock('@/components/HorizonGrid', () => ({
       <p>{footer}</p>
     </div>
   ),
+  // SchedulePage mounts this above the week; keep it inert.
+  TodayStoryTimeline: () => null,
 }));
 
 vi.mock('@/components/TaskSlate', () => ({

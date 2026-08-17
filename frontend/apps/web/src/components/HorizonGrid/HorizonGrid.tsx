@@ -22,6 +22,20 @@ import {
   parseEventDrag,
 } from '@/lib/scheduleDrag';
 
+import {
+  DAY_LANES_EXPANDED_MAX_HEIGHT_PX,
+  DAY_LANES_MAX_HEIGHT_PX,
+  LANE_GAP_PX,
+  LANE_HEIGHT_PX,
+  NARROW_SPAN_PCT,
+  foldMicroClusters,
+  packItemLanes,
+  stackHeightPx,
+  unpackToSingles,
+  type EventSpan,
+  type PackedItem,
+} from './scheduleClusters';
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const MINUTES_PER_DAY = 24 * 60;
@@ -29,7 +43,7 @@ const HOURS_PER_DAY = 24;
 
 /**
  * HBPE bins behaviour into four 6-hour dayparts anchored at UTC midnight
- * (recurrence.py: BUCKETS_PER_PART = 24). Cells are resolved per local hour by
+ * (recurrence.py: BUCKETS_PER_PART = 12). Cells are resolved per local hour by
  * looking up the UTC instant that hour actually falls in, so a viewer far from
  * UTC sees their real rhythm rather than a label that assumes "morning" means
  * their morning.
@@ -55,13 +69,6 @@ function cellOpacity(intensity: number): number {
   return MIN_CELL_INK + (MAX_CELL_INK - MIN_CELL_INK) * Math.min(intensity, 1);
 }
 
-/**
- * Below this share of the row, a block is too narrow to hold its own title — a
- * 30-minute meeting is 2% of a 24-hour day. Such events render as a tick with
- * the label spilling to the right instead of being truncated to one letter.
- */
-const NARROW_SPAN_PCT = 7;
-
 /** Quarter-day guides, so the eye can find noon without counting. */
 const GUIDE_HOURS = [6, 12, 18];
 const AXIS_HOURS = [0, 4, 8, 12, 16, 20];
@@ -69,7 +76,7 @@ const AXIS_HOURS = [0, 4, 8, 12, 16, 20];
 /** Long horizons virtualize inside a scroll pane; week views stay fully mounted. */
 const VIRTUALIZE_DAYS_AFTER = 14;
 /** Conservative row height for windowing — lanes can grow, so bias high. */
-const ESTIMATED_DAY_ROW_PX = 120;
+const ESTIMATED_DAY_ROW_PX = 280;
 const VIRTUAL_OVERSCAN = 2;
 
 /**
@@ -165,6 +172,22 @@ function describes(event: ScheduleEvent): boolean {
   return description.toLowerCase() !== (event.title ?? '').trim().toLowerCase();
 }
 
+/**
+ * Page URL for a captured visit (or null when the event has nowhere to open).
+ * Browser-extension rows store it at `metadata.url`.
+ */
+function eventUrl(event: ScheduleEvent): string | null {
+  const raw = event.metadata?.url;
+
+  if (typeof raw !== 'string') {
+    return null;
+  }
+
+  const url = raw.trim();
+
+  return /^https?:\/\//i.test(url) ? url : null;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function localMinutes(date: Date): number {
@@ -201,16 +224,6 @@ function formatHour(hour: number): string {
 /** UTC calendar date of an instant — how forecast days are keyed. */
 function utcDateKey(date: Date): string {
   return date.toISOString().slice(0, 10);
-}
-
-/** A committed event's placement on one day row, clipped to that day. */
-interface EventSpan {
-  event: ScheduleEvent;
-  leftPct: number;
-  widthPct: number;
-  /** True when the event began before this day — it ran in from yesterday. */
-  continuesFrom: boolean;
-  continuesTo: boolean;
 }
 
 /**
@@ -252,48 +265,6 @@ function spanForDay(event: ScheduleEvent, dayStart: Date): EventSpan | null {
     continuesFrom: start < dayStart,
     continuesTo: end > dayEnd,
   };
-}
-
-/** Height of one chip lane, and the gap between two stacked lanes, in pixels. */
-const LANE_HEIGHT_PX = 28;
-const LANE_GAP_PX = 2;
-
-/** Percentage slack that counts as "touching" rather than overlapping. */
-const LANE_EPSILON_PCT = 1e-9;
-
-/**
- * Give every span the lowest lane that is free where it starts.
- *
- * Drawn into a single strip, two events at 09:00 land exactly on top of one
- * another and the one sorted first is buried: unreachable by pointer, its
- * tooltip can never open, and a drag that looks like it grabbed it grabbed the
- * other. Double-booked and back-to-back meetings are the normal case for a
- * calendar, and the page's headline gesture is "drag the chip you want", so the
- * row grows downward instead of letting chips occlude each other.
- *
- * Spans arrive sorted by left edge, so a greedy sweep is exact: a lane is free
- * when the last chip placed in it ends at or before this one starts. Touching
- * edges are not an overlap — a 10:00 meeting still follows a 09:00 one on one
- * line.
- */
-function packLanes(spans: EventSpan[]): number[] {
-  const laneEnds: number[] = [];
-
-  return spans.map((span) => {
-    const right = span.leftPct + span.widthPct;
-    const lane = laneEnds.findIndex((end) => end <= span.leftPct + LANE_EPSILON_PCT);
-
-    if (lane === -1) {
-      laneEnds.push(right);
-
-      return laneEnds.length - 1;
-    }
-
-    // Belt and braces against an unsorted caller: a lane's end never walks back.
-    laneEnds[lane] = Math.max(laneEnds[lane], right);
-
-    return lane;
-  });
 }
 
 /**
@@ -436,6 +407,110 @@ interface RhythmClaim {
   l0Class: ActivityClass;
 }
 
+/**
+ * Classic lane packer for span arrays (tests + stories). Production packing
+ * runs on folded clusters via `packItemLanes`.
+ */
+function packLanes(spans: EventSpan[]): number[] {
+  return packItemLanes(
+    spans.map((span) => ({
+      kind: 'single' as const,
+      span,
+      leftPct: span.leftPct,
+      widthPct: span.widthPct,
+    })),
+  );
+}
+
+/** Folded browser pile — one chip; titles live in the tooltip. */
+function ClusterChip({
+  item,
+  top,
+  colorMode,
+  onExpandDay,
+}: {
+  item: Extract<PackedItem, { kind: 'cluster' }>;
+  top: number;
+  colorMode: ColorMode;
+  /** Clicking the stack unpacks the day. */
+  onExpandDay?: () => void;
+}) {
+  const lead = item.spans[0]?.event;
+  const color = lead ? eventColor(lead, colorMode) : classColor('UNKNOWN');
+  const count = item.spans.length;
+  const label = `${count} overlapping activities`;
+
+  return (
+    <Tooltip>
+      <Tooltip.Trigger asChild>
+        <div
+          role="listitem"
+          data-schedule-chip
+          tabIndex={0}
+          aria-label={label}
+          title={label}
+          className={cn(
+            'group/chip absolute z-[5] cursor-pointer overflow-hidden whitespace-nowrap border text-[11px] leading-[26px]',
+            'rounded-md text-foreground shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            'transition-[filter,z-index] duration-150 hover:z-30 focus-within:z-30 hover:brightness-110',
+          )}
+          style={{
+            left: `${item.leftPct}%`,
+            width: `${Math.max(item.widthPct, 1.2)}%`,
+            top,
+            height: LANE_HEIGHT_PX,
+            backgroundColor: color,
+            borderColor: chipBorder(color),
+            borderLeftWidth: '3px',
+            borderLeftColor: color,
+            boxShadow: `2px 2px 0 ${chipFill(color)}, 4px 4px 0 ${chipBorder(color)}`,
+          }}
+          onClick={(clickEvent) => {
+            clickEvent.stopPropagation();
+            onExpandDay?.();
+          }}
+        >
+          <span className="px-1.5 font-semibold tabular-nums text-background mix-blend-difference">
+            {count}
+          </span>
+        </div>
+      </Tooltip.Trigger>
+      <Tooltip.Content side="top">
+        <div className="max-w-64 space-y-1 text-left">
+          <p className="text-xs font-medium">{label}</p>
+          <ul className="space-y-0.5">
+            {item.spans.map(({ event }) => {
+              const url = eventUrl(event);
+
+              return (
+                <li key={event.id} className="text-[11px] leading-snug">
+                  {url ? (
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium underline-offset-2 hover:underline"
+                      onClick={(clickEvent) => clickEvent.stopPropagation()}
+                    >
+                      {event.title}
+                    </a>
+                  ) : (
+                    <span className="font-medium">{event.title}</span>
+                  )}
+                  <span className="ml-1.5 text-[10px] opacity-75 tabular-nums">
+                    {formatClock(new Date(event.startTime))}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="text-[10px] opacity-75">Expand the day to unpack</p>
+        </div>
+      </Tooltip.Content>
+    </Tooltip>
+  );
+}
+
 // ── Row ───────────────────────────────────────────────────────────────────────
 
 interface DayRowProps {
@@ -443,8 +518,10 @@ interface DayRowProps {
   dayEvents: ScheduleEvent[];
   lookup: (utcDate: string) => RhythmDay | undefined;
   isToday: boolean;
+  isSelected: boolean;
   nowPct: number | null;
   colorMode: ColorMode;
+  onSelectDay?: (dayStart: Date) => void;
   onDropCandidate?: (candidateId: string, startTime: Date) => void;
   onMoveEvent?: (eventId: string, startTime: Date) => void;
 }
@@ -454,13 +531,17 @@ const DayRow = memo(function DayRow({
   dayEvents,
   lookup,
   isToday,
+  isSelected,
   nowPct,
   colorMode,
+  onSelectDay,
   onDropCandidate,
   onMoveEvent,
 }: DayRowProps) {
   /** Where a dragged candidate would land, as a percentage across the row. */
   const [dropPct, setDropPct] = useState<number | null>(null);
+  /** Dense days start capped; click the day chrome to reveal more lanes. */
+  const [expanded, setExpanded] = useState(false);
   const spans = useMemo(
     () =>
       dayEvents
@@ -470,8 +551,25 @@ const DayRow = memo(function DayRow({
     [dayEvents, dayStart],
   );
 
-  const lanes = useMemo(() => packLanes(spans), [spans]);
+  // Collapsed: bucket micros into compact stack chips. Expanded: unpack to
+  // capped singles so the day can actually show more.
+  const collapsedPacked = useMemo(() => foldMicroClusters(spans), [spans]);
+  const expandedPacked = useMemo(() => unpackToSingles(spans), [spans]);
+  const packed = expanded ? expandedPacked : collapsedPacked;
+  const lanes = useMemo(() => packItemLanes(packed), [packed]);
   const laneCount = Math.max(1, ...lanes.map((lane) => lane + 1));
+  const stackHeight = stackHeightPx(laneCount);
+  const expandedLaneCount = useMemo(() => {
+    const expandedLanes = packItemLanes(expandedPacked);
+
+    return Math.max(1, ...expandedLanes.map((lane) => lane + 1));
+  }, [expandedPacked]);
+  const canExpand =
+    collapsedPacked.some((item) => item.kind === 'cluster') ||
+    stackHeightPx(expandedLaneCount) > DAY_LANES_MAX_HEIGHT_PX + 1;
+  const lanesMaxHeight = expanded
+    ? Math.min(stackHeight, DAY_LANES_EXPANDED_MAX_HEIGHT_PX)
+    : Math.min(stackHeight, DAY_LANES_MAX_HEIGHT_PX);
 
   const claims = useMemo(() => rhythmClaims(dayStart, lookup), [dayStart, lookup]);
   const clusters = useMemo(() => topClusters(lookup(utcDateKey(dayStart))), [lookup, dayStart]);
@@ -479,24 +577,14 @@ const DayRow = memo(function DayRow({
 
   const dayLabel = dayStart.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
 
-  /**
-   * Room to the right of a narrow block before the next one starts. A tick with
-   * its label spilling into empty space is readable; one spilling under the next
-   * event is not, so the label is dropped and the tooltip carries it instead.
-   *
-   * Only spans sharing the lane can be spilled onto — a chip a lane below sits
-   * at a different height and never collides with the text.
-   */
-  const labelRoom = (index: number): number => {
-    const current = spans[index];
-    const next = spans.slice(index + 1).find((_, i) => lanes[index + 1 + i] === lanes[index]);
-    const until = next ? next.leftPct : 100;
-
-    return until - (current.leftPct + current.widthPct);
-  };
-
   const isDropTarget = dropPct !== null;
   const acceptsDrops = Boolean(onDropCandidate ?? onMoveEvent);
+
+  const openDayStory = () => {
+    if (dayEvents.length > 0) {
+      onSelectDay?.(dayStart);
+    }
+  };
 
   /** Ratio across the lane for a pointer event, from the lane's own box. */
   const ratioFor = (event: { clientX: number; currentTarget: HTMLElement }): number => {
@@ -526,18 +614,38 @@ const DayRow = memo(function DayRow({
         'flex items-stretch gap-3 rounded-lg px-2 py-2 transition-colors [contain-intrinsic-size:auto_120px] [content-visibility:auto]',
         // Today is marked with a rail rather than a wash — a filled row drowns
         // its own rhythm lane, which is the thing you most want to read there.
-        isToday ? 'bg-accent/15 ring-1 ring-inset ring-primary/25' : 'hover:bg-accent/15',
+        isSelected
+          ? 'bg-accent/20 ring-1 ring-inset ring-primary/40'
+          : isToday
+            ? 'bg-accent/15 ring-1 ring-inset ring-primary/25'
+            : 'hover:bg-accent/15',
         isDropTarget && 'bg-primary/10 ring-1 ring-inset ring-primary/60',
       )}
     >
-      <div className="w-10 shrink-0 pt-0.5 text-right">
-        <div className={cn('text-xs leading-tight', isToday ? 'font-medium' : 'text-muted-foreground')}>
+      <button
+        type="button"
+        className={cn(
+          'w-10 shrink-0 rounded-md pt-0.5 text-right outline-none',
+          'cursor-pointer hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring',
+        )}
+        aria-pressed={isSelected}
+        aria-label={`Show ${dayLabel} as a story`}
+        onClick={() => onSelectDay?.(dayStart)}
+      >
+        <div
+          className={cn(
+            'text-xs leading-tight',
+            isSelected || isToday ? 'font-medium' : 'text-muted-foreground',
+          )}
+        >
           {dayStart.toLocaleDateString([], { weekday: 'short' })}
         </div>
-        <div className={cn('text-[11px] leading-tight', isToday ? '' : 'text-muted-foreground/70')}>
+        <div
+          className={cn('text-[11px] leading-tight', isSelected || isToday ? '' : 'text-muted-foreground/70')}
+        >
           {dayStart.getDate()}
         </div>
-      </div>
+      </button>
 
       <div
         className="relative min-w-0 flex-1"
@@ -628,164 +736,223 @@ const DayRow = memo(function DayRow({
           />
         )}
 
-        {/* Committed lane — solid chips. Certainty reads as a filled surface.
-            One row of lanes per column of concurrent events, so nothing hides
-            behind anything else. */}
+        {/* Committed lane — solid chips. Overlapping browser ticks fold into
+            stack chips; the lane stack is capped (click day to expand) and
+            scrolls past the expanded ceiling so one day never owns the page. */}
         <div
           role="list"
           aria-label={`Committed time on ${dayLabel}`}
-          className="relative"
-          style={{ height: laneCount * LANE_HEIGHT_PX + (laneCount - 1) * LANE_GAP_PX }}
+          data-testid="day-lanes-scroll"
+          className={cn(
+            'relative overflow-x-visible overflow-y-auto overscroll-contain pr-0.5 [scrollbar-width:thin]',
+            canExpand && 'cursor-pointer',
+          )}
+          style={{ maxHeight: lanesMaxHeight }}
+          onClick={
+            canExpand
+              ? (clickEvent) => {
+                  // Empty day chrome expands; chips/links keep their own jobs.
+                  // Do NOT match role=listitem — the day row itself uses that.
+                  if (
+                    (clickEvent.target as HTMLElement | null)?.closest?.('[data-schedule-chip], a, button')
+                  ) {
+                    return;
+                  }
+
+                  setExpanded((value) => {
+                    if (!value) {
+                      openDayStory();
+                    }
+
+                    return !value;
+                  });
+                }
+              : undefined
+          }
         >
-          {spans.map(({ event, leftPct, widthPct, continuesFrom, continuesTo }, index) => {
-            const isNarrow = widthPct < NARROW_SPAN_PCT;
-            const showSpilledLabel = isNarrow && labelRoom(index) > NARROW_SPAN_PCT;
-
-            const movable = Boolean(onMoveEvent);
-            const color = eventColor(event, colorMode);
-
-            return (
-              <Tooltip key={`${event.id}-${dayStart.toDateString()}`}>
-                <Tooltip.Trigger asChild>
-                  <div
-                    role="listitem"
-                    // Focusable so the tooltip — the only place the time, place
-                    // and activity class are written down — can be opened
-                    // without a pointer.
-                    tabIndex={0}
-                    aria-label={chipLabel(event, colorMode)}
-                    // A chip with no room for text of its own is otherwise a
-                    // bare colour swatch, and hue alone is not allowed to carry
-                    // identity here. Wide chips already show their title, so
-                    // they skip it rather than stack a native tooltip on the
-                    // Radix one.
-                    title={isNarrow && !showSpilledLabel ? event.title : undefined}
-                    draggable={movable}
-                    onDragStart={
-                      movable
-                        ? (e) => {
-                            // Measure against the chip's own box rather than
-                            // walking up to the lane: currentTarget is
-                            // unambiguous, whereas the ancestor chain depends on
-                            // how the tooltip wrapper happens to nest.
-                            const box = e.currentTarget.getBoundingClientRect();
-                            const withinChip = box.width > 0 ? (e.clientX - box.left) / box.width : 0;
-
-                            // The chip covers [leftPct, leftPct + widthPct) of
-                            // the day, so the grab point in day-minutes follows
-                            // without needing the lane's width at all.
-                            const grabDayRatio =
-                              (leftPct + Math.max(0, Math.min(1, withinChip)) * widthPct) / 100;
-                            const grabbedAt = rawInstant(dayStart, grabDayRatio);
-
-                            // An all-day event has no time to preserve — moving
-                            // it is a change of date, so the offset is zero.
-                            const grabOffsetMs = event.isAllDay
-                              ? 0
-                              : grabbedAt.getTime() - new Date(event.startTime).getTime();
-
-                            const external = isExternallyOwned(event);
-
-                            e.dataTransfer.setData(
-                              EVENT_DRAG_TYPE,
-                              JSON.stringify({ id: event.id, grabOffsetMs, externallyOwned: external }),
-                            );
-
-                            // Also as a KEY, because `types` is the only part of
-                            // the payload readable during dragover: it lets the
-                            // Possibilities rail decline a mirrored calendar row
-                            // instead of promising a drop it will refuse.
-                            if (external) {
-                              e.dataTransfer.setData(EVENT_EXTERNAL_DRAG_TYPE, '1');
-                            }
-
-                            e.dataTransfer.setData('text/plain', event.title);
-                            e.dataTransfer.effectAllowed = 'move';
+          <div className="relative" style={{ height: Math.max(LANE_HEIGHT_PX, stackHeight) }}>
+            {packed.map((item, index) => {
+              if (item.kind === 'cluster') {
+                return (
+                  <ClusterChip
+                    key={`cluster-${item.leftPct}-${item.spans[0]?.event.id ?? index}`}
+                    item={item}
+                    top={lanes[index] * (LANE_HEIGHT_PX + LANE_GAP_PX)}
+                    colorMode={colorMode}
+                    onExpandDay={
+                      canExpand
+                        ? () => {
+                            setExpanded(true);
+                            openDayStory();
                           }
                         : undefined
                     }
-                    className={cn(
-                      'absolute z-[5] whitespace-nowrap border text-[11px] leading-[26px]',
-                      'text-foreground shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                      movable && 'cursor-grab active:cursor-grabbing hover:brightness-110',
-                      isNarrow ? 'overflow-visible' : 'overflow-hidden px-2',
-                      event.status === 'tentative' && 'border-dashed text-muted-foreground',
-                      continuesFrom ? 'rounded-l-none border-l-0' : 'rounded-l-md',
-                      continuesTo ? 'rounded-r-none border-r-0' : 'rounded-r-md',
-                    )}
-                    style={{
-                      left: `${leftPct}%`,
-                      width: `${widthPct}%`,
-                      top: lanes[index] * (LANE_HEIGHT_PX + LANE_GAP_PX),
-                      height: LANE_HEIGHT_PX,
-                      // A chip too narrow to hold text is nothing BUT its
-                      // colour, so it takes the hue at full strength; a wide one
-                      // is tinted glass with the hue held on its edges.
-                      backgroundColor: isNarrow ? color : chipFill(color),
-                      borderColor: chipBorder(color),
-                      // The leading edge is where the eye lands when scanning a
-                      // row, and it survives at any width.
-                      ...(continuesFrom ? {} : { borderLeftWidth: '3px', borderLeftColor: color }),
-                    }}
-                  >
-                    {isNarrow ? (
-                      showSpilledLabel && (
-                        <span className="pointer-events-none absolute left-[calc(100%+6px)] top-0 text-foreground/80">
+                  />
+                );
+              }
+
+              const { event, leftPct, widthPct, continuesFrom, continuesTo } = item.span;
+              const isNarrow = widthPct < NARROW_SPAN_PCT;
+              const movable = Boolean(onMoveEvent);
+              const color = eventColor(event, colorMode);
+              const url = eventUrl(event);
+
+              return (
+                <Tooltip key={`${event.id}-${dayStart.toDateString()}`}>
+                  <Tooltip.Trigger asChild>
+                    <div
+                      role="listitem"
+                      data-schedule-chip
+                      tabIndex={0}
+                      aria-label={chipLabel(event, colorMode)}
+                      title={isNarrow ? event.title : undefined}
+                      draggable={movable}
+                      onDragStart={
+                        movable
+                          ? (e) => {
+                              if ((e.target as Element | null)?.closest?.('a')) {
+                                e.preventDefault();
+
+                                return;
+                              }
+
+                              const box = e.currentTarget.getBoundingClientRect();
+                              const withinChip = box.width > 0 ? (e.clientX - box.left) / box.width : 0;
+                              const grabDayRatio =
+                                (leftPct + Math.max(0, Math.min(1, withinChip)) * widthPct) / 100;
+                              const grabbedAt = rawInstant(dayStart, grabDayRatio);
+                              const grabOffsetMs = event.isAllDay
+                                ? 0
+                                : grabbedAt.getTime() - new Date(event.startTime).getTime();
+                              const external = isExternallyOwned(event);
+
+                              e.dataTransfer.setData(
+                                EVENT_DRAG_TYPE,
+                                JSON.stringify({
+                                  id: event.id,
+                                  grabOffsetMs,
+                                  externallyOwned: external,
+                                }),
+                              );
+
+                              if (external) {
+                                e.dataTransfer.setData(EVENT_EXTERNAL_DRAG_TYPE, '1');
+                              }
+
+                              e.dataTransfer.setData('text/plain', event.title);
+                              e.dataTransfer.effectAllowed = 'move';
+                            }
+                          : undefined
+                      }
+                      className={cn(
+                        'group/chip absolute z-[5] whitespace-nowrap border text-[11px] leading-[26px]',
+                        'text-foreground shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                        'transition-[filter,box-shadow,z-index] duration-150',
+                        'hover:z-30 focus-within:z-30',
+                        movable && 'cursor-grab active:cursor-grabbing hover:brightness-110',
+                        isNarrow ? 'overflow-hidden' : 'overflow-hidden px-2',
+                        event.status === 'tentative' && 'border-dashed text-muted-foreground',
+                        continuesFrom ? 'rounded-l-none border-l-0' : 'rounded-l-md',
+                        continuesTo ? 'rounded-r-none border-r-0' : 'rounded-r-md',
+                      )}
+                      style={{
+                        left: `${leftPct}%`,
+                        width: `${widthPct}%`,
+                        top: lanes[index] * (LANE_HEIGHT_PX + LANE_GAP_PX),
+                        height: LANE_HEIGHT_PX,
+                        backgroundColor: isNarrow ? color : chipFill(color),
+                        borderColor: chipBorder(color),
+                        ...(continuesFrom ? {} : { borderLeftWidth: '3px', borderLeftColor: color }),
+                      }}
+                    >
+                      {!isNarrow &&
+                        (url ? (
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            draggable={false}
+                            className="block truncate select-text font-medium text-foreground underline-offset-2 hover:underline"
+                            onClick={(clickEvent) => clickEvent.stopPropagation()}
+                            onPointerDown={(pointerEvent) => pointerEvent.stopPropagation()}
+                          >
+                            {event.title}
+                          </a>
+                        ) : (
+                          <span className="block truncate select-text">{event.title}</span>
+                        ))}
+                    </div>
+                  </Tooltip.Trigger>
+                  <Tooltip.Content side="top">
+                    <div className="max-w-64 space-y-1 text-left">
+                      {url ? (
+                        <a
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block text-xs font-medium underline-offset-2 hover:underline"
+                          onClick={(clickEvent) => clickEvent.stopPropagation()}
+                        >
                           {event.title}
-                        </span>
-                      )
-                    ) : (
-                      <span>{event.title}</span>
-                    )}
-                  </div>
-                </Tooltip.Trigger>
-                <Tooltip.Content side="top">
-                  <div className="max-w-64 space-y-1 text-left">
-                    <p className="text-xs font-medium">{event.title}</p>
-                    <p className="text-[10px] opacity-75">
-                      {event.isAllDay
-                        ? 'All day'
-                        : `${formatClock(new Date(event.startTime))}${
-                            event.endTime ? ` – ${formatClock(new Date(event.endTime))}` : ''
-                          }`}
-                    </p>
-
-                    {/* What the thing actually is. Titles arrive from whatever
-                        produced the event and are often a bare category word
-                        ("Action", "Goal"); the description is where the real
-                        text lives, so it is worth the space. */}
-                    {describes(event) && (
-                      <p className="text-[11px] leading-snug opacity-90">{event.description}</p>
-                    )}
-
-                    {event.locationName && <p className="text-[10px] opacity-60">{event.locationName}</p>}
-                    {event.status === 'tentative' && <p className="text-[10px] opacity-60">Tentative</p>}
-
-                    {/* Name what the colour is saying, so hue never has to
-                        carry identity on its own. */}
-                    <p className="flex items-center gap-1.5 text-[10px] opacity-60">
-                      <span
-                        aria-hidden
-                        className="h-2 w-2 shrink-0 rounded-[2px]"
-                        style={{ backgroundColor: color }}
-                      />
-                      {colorMode === 'source' ? sourceOf(event) : CLASS_LABEL[classifyEvent(event)]}
-                    </p>
-
-                    {/* Say plainly where a move does and does not reach. */}
-                    {movable && isExternallyOwned(event) && (
-                      <p className="border-t border-current/20 pt-1 text-[10px] opacity-60">
-                        {event.externalSyncStatus === 'pending'
-                          ? `Moved here — not yet pushed back to ${event.sourceSystem}.`
-                          : `From ${event.sourceSystem}. Moving it here won't change the source.`}
+                        </a>
+                      ) : (
+                        <p className="text-xs font-medium">{event.title}</p>
+                      )}
+                      <p className="text-[10px] opacity-75">
+                        {event.isAllDay
+                          ? 'All day'
+                          : `${formatClock(new Date(event.startTime))}${
+                              event.endTime ? ` – ${formatClock(new Date(event.endTime))}` : ''
+                            }`}
                       </p>
-                    )}
-                  </div>
-                </Tooltip.Content>
-              </Tooltip>
-            );
-          })}
+                      {describes(event) && (
+                        <p className="text-[11px] leading-snug opacity-90">{event.description}</p>
+                      )}
+                      {event.locationName && <p className="text-[10px] opacity-60">{event.locationName}</p>}
+                      {event.status === 'tentative' && <p className="text-[10px] opacity-60">Tentative</p>}
+                      <p className="flex items-center gap-1.5 text-[10px] opacity-60">
+                        <span
+                          aria-hidden
+                          className="h-2 w-2 shrink-0 rounded-[2px]"
+                          style={{ backgroundColor: color }}
+                        />
+                        {colorMode === 'source' ? sourceOf(event) : CLASS_LABEL[classifyEvent(event)]}
+                      </p>
+                      {url && <p className="truncate text-[10px] opacity-60">{url}</p>}
+                      {movable && isExternallyOwned(event) && (
+                        <p className="border-t border-current/20 pt-1 text-[10px] opacity-60">
+                          {event.externalSyncStatus === 'pending'
+                            ? `Moved here — not yet pushed back to ${event.sourceSystem}.`
+                            : `From ${event.sourceSystem}. Moving it here won't change the source.`}
+                        </p>
+                      )}
+                    </div>
+                  </Tooltip.Content>
+                </Tooltip>
+              );
+            })}
+          </div>
         </div>
+
+        {canExpand && (
+          <button
+            type="button"
+            data-testid="day-expand-toggle"
+            className="mt-1 text-[10px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            aria-expanded={expanded}
+            onClick={() =>
+              setExpanded((value) => {
+                if (!value) {
+                  openDayStory();
+                }
+
+                return !value;
+              })
+            }
+          >
+            {expanded ? 'Show less' : `Expand day · ${expandedLaneCount} items`}
+          </button>
+        )}
 
         {/* Rhythm lane — what this day usually holds. Ambient, never a task. */}
         <Tooltip>
@@ -873,8 +1040,10 @@ interface VirtualDayListProps {
   eventsByDayKey: Map<string, ScheduleEvent[]>;
   lookup: (utcDate: string) => RhythmDay | undefined;
   today: Date;
+  selectedDay: Date;
   nowPct: number;
   colorMode: ColorMode;
+  onSelectDay?: (dayStart: Date) => void;
   onDropCandidate?: (candidateId: string, startTime: Date) => void;
   onMoveEvent?: (eventId: string, startTime: Date) => void;
 }
@@ -889,8 +1058,10 @@ function VirtualDayList({
   eventsByDayKey,
   lookup,
   today,
+  selectedDay,
   nowPct,
   colorMode,
+  onSelectDay,
   onDropCandidate,
   onMoveEvent,
 }: VirtualDayListProps) {
@@ -964,6 +1135,7 @@ function VirtualDayList({
       ref={scrollRef}
       role="list"
       aria-label="Days"
+      data-testid={virtualize ? 'horizon-virtual-scroll' : 'horizon-week'}
       className={cn(
         'flex flex-col gap-0.5',
         virtualize && 'max-h-[min(70vh,calc(100vh-12rem))] overflow-y-auto',
@@ -982,8 +1154,10 @@ function VirtualDayList({
             dayEvents={eventsByDayKey.get(key) ?? []}
             lookup={lookup}
             isToday={isToday}
+            isSelected={sameLocalDay(dayStart, selectedDay)}
             nowPct={isToday ? nowPct : null}
             colorMode={colorMode}
+            onSelectDay={onSelectDay}
             onDropCandidate={onDropCandidate}
             onMoveEvent={onMoveEvent}
           />
@@ -1012,6 +1186,10 @@ interface HorizonGridProps {
    * the chips stay put.
    */
   onMoveEvent?: (eventId: string, startTime: Date) => void;
+  /** Day whose story strip is open. Defaults to today. */
+  selectedDay?: Date;
+  /** Click a weekday label to open that day's story. */
+  onSelectDay?: (dayStart: Date) => void;
   /** What hue encodes: activity class, or the calendar it came from. */
   colorMode?: ColorMode;
   /**
@@ -1041,6 +1219,8 @@ export function HorizonGrid({
   rhythm,
   onDropCandidate,
   onMoveEvent,
+  selectedDay,
+  onSelectDay,
   colorMode = 'type',
   footer,
   className,
@@ -1112,8 +1292,10 @@ export function HorizonGrid({
         eventsByDayKey={eventsByDayKey}
         lookup={lookup}
         today={today}
+        selectedDay={selectedDay ?? today}
         nowPct={nowPct}
         colorMode={colorMode}
+        onSelectDay={onSelectDay}
         onDropCandidate={onDropCandidate ? handleDropCandidate : undefined}
         onMoveEvent={onMoveEvent ? handleMoveEvent : undefined}
       />
@@ -1128,6 +1310,7 @@ export {
   packLanes,
   daypartWeights,
   describes,
+  eventUrl,
   rhythmCells,
   dropInstant,
   movedStart,

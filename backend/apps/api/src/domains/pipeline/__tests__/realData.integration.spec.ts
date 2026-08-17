@@ -93,11 +93,42 @@ import { databaseAvailability, resolveConnection } from './harness/pipelineHarne
 
 const availability = databaseAvailability();
 
-const describeWithDatabase = availability.available ? describe : describe.skip;
+/**
+ * OPT-IN, and it is the only suite here that is.
+ *
+ * Everything else in this directory seeds what it needs — `pipeline.integration`
+ * proves this same SQL correct over rows it writes itself, and
+ * `enrichmentLoop.integration` builds a 30,000-row corpus through
+ * `harness/loopCorpus.ts` for the scale sections. This file is the one that
+ * cannot: what it MEASURES is what the plans do when the table underneath them
+ * is a real 22-year archive, and there is no way to seed that honestly.
+ *
+ * An automated run must never depend on data it did not create, so on a fresh
+ * appliance or in CI this suite would fail for the entirely correct reason that
+ * nobody has imported anything. It therefore stays skipped unless a developer
+ * says the database has an archive in it.
+ *
+ * The check cannot be made for them. Choosing `describe` vs `describe.skip`
+ * happens while the module is evaluated, and "does ci.events have rows?" needs
+ * a query — the synchronous probe behind `databaseAvailability` is a bare
+ * `net.connect` precisely because it must not resolve `pg` in a child process.
+ * An early `return` from all 22 tests would be the alternative, and a suite
+ * that passes by asserting nothing is worse than one honestly skipped.
+ */
+const REAL_CORPUS_ENV = 'PIPELINE_REAL_CORPUS';
+const corpusOptIn = process.env[REAL_CORPUS_ENV] === '1';
+
+const describeWithDatabase = availability.available && corpusOptIn ? describe : describe.skip;
 
 if (!availability.available) {
   // Printed once per run so a skipped suite is never mistaken for a passing one.
   console.warn(`[realData.integration] SKIPPED — ${availability.reason}`);
+} else if (!corpusOptIn) {
+  console.warn(
+    `[realData.integration] SKIPPED — measures the pipeline against an operator's REAL imported ` +
+      `archive, which an automated run must not assume. Set ${REAL_CORPUS_ENV}=1 on a database that ` +
+      'has one.',
+  );
 }
 
 // Two `EXPLAIN (ANALYZE)`s of a 324k-row join, a 50,000-row insert and an

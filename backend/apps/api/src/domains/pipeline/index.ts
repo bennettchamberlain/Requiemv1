@@ -41,6 +41,7 @@ import { EmbeddingModule } from '@ci/common/embeddings';
 import { EventsModule } from '@ci/domains/events';
 import { FileEntity, FilesModule } from '@ci/domains/files';
 import { GeocodeModule } from '@ci/domains/geocode';
+import { MaintenanceModule } from '@ci/domains/maintenance';
 import { MemoryModule } from '@ci/domains/memory';
 
 import { STAGE_IDS } from './constants';
@@ -71,6 +72,18 @@ import { MediaDimensionsStage } from './stages/enrich/MediaDimensionsStage';
 import { EventPersonLinkStage, PersonLinkStage } from './stages/enrich/PersonLinkStage';
 import { PositionReverseStage } from './stages/enrich/PositionReverseStage';
 import { EmbedStage } from './stages/index/EmbedStage';
+import {
+  CommunicationEdgePromoteStage,
+  ContentEdgePromoteStage,
+  DeviceEdgePromoteStage,
+  EventEdgePromoteStage,
+  FileEdgePromoteStage,
+  InventoryEdgePromoteStage,
+  ObservationEdgePromoteStage,
+  PlaceEdgePromoteStage,
+  PositionEdgePromoteStage,
+  ReceiptEdgePromoteStage,
+} from './stages/promote/EdgePromoteStage';
 import { ObjectPromoteStage } from './stages/promote/ObjectPromoteStage';
 import { PlacePromoteStage } from './stages/promote/PlacePromoteStage';
 
@@ -115,6 +128,19 @@ const stageProviders: Provider[] = [
   { provide: STAGE_REGISTRY[STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE], useClass: IdentifierNormalizeStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_PLACE], useClass: PlacePromoteStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_OBJECT], useClass: ObjectPromoteStage },
+  // Two ids, one implementation family — see `EdgePromoteStage.ts`. Both
+  // delegate the projection to DeterministicEdgeBackfillService, exported by
+  // MaintenanceModule (imported below).
+  { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_EDGE_COMMUNICATION], useClass: CommunicationEdgePromoteStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_EDGE_EVENT], useClass: EventEdgePromoteStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_EDGE_CONTENT], useClass: ContentEdgePromoteStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_EDGE_INVENTORY], useClass: InventoryEdgePromoteStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_EDGE_RECEIPT], useClass: ReceiptEdgePromoteStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_EDGE_OBSERVATION], useClass: ObservationEdgePromoteStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_EDGE_POSITION], useClass: PositionEdgePromoteStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_EDGE_DEVICE], useClass: DeviceEdgePromoteStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_EDGE_FILE], useClass: FileEdgePromoteStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_EDGE_PLACE], useClass: PlaceEdgePromoteStage },
 ];
 
 /**
@@ -164,6 +190,11 @@ const stageProviders: Provider[] = [
     //  - `MemoryModule`    -> PlaceService (find-or-create place identity + the
     //                        city/region/country hierarchy fold) for `promote.place`.
     MemoryModule,
+    //  - `MaintenanceModule` -> DeterministicEdgeBackfillService (the edge-matrix
+    //                        projection + graph deltas) for both `promote.edge_*`
+    //                        legs. The projection is shared with the operator
+    //                        backfill endpoint rather than re-implemented here.
+    MaintenanceModule,
   ],
   providers: [
     PipelineStateService,

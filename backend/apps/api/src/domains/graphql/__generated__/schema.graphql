@@ -118,6 +118,19 @@ type AnswerEdge implements Edge {
   node: AnswerType!
 }
 
+enum AnswerForm {
+  attribute
+  boolean
+  existence
+  identity
+  retrieval
+}
+
+enum AnswerSource {
+  peer
+  self
+}
+
 type AnswerType implements Node {
   answer: String!
   answerMethod: String!
@@ -125,6 +138,92 @@ type AnswerType implements Node {
   answeredAt: DateTime!
   id: ID!
   question: QuestionType!
+}
+
+type AskAnswerType {
+  answerSource: AnswerSource!
+  askId: ID!
+  consentBasis: String
+  createdAt: DateTime!
+  disclosedCount: Int!
+  form: AnswerForm!
+  id: ID!
+  items: [DisclosedItemType!]!
+  summary: String
+  withheldCount: Int!
+}
+
+enum AskAuditOutcome {
+  answered
+  auto_answered
+  declined
+  expired
+}
+
+type AskAuditType {
+  askId: ID
+  askerId: ID!
+  consentBasis: String
+  createdAt: DateTime!
+  id: ID!
+  outcome: AskAuditOutcome!
+  query: AskQueryType!
+  responderId: ID!
+}
+
+type AskGrantPayload {
+  grant: AskGrantType
+  success: Boolean!
+}
+
+type AskGrantType {
+  createdAt: DateTime!
+  dataClass: String
+  granteeId: ID!
+  id: ID!
+  mode: GrantMode!
+  purpose: String
+  queryType: String!
+  revokedAt: DateTime
+}
+
+type AskPayload {
+  ask: AskType
+  success: Boolean!
+}
+
+input AskQueryInput {
+  dataClass: String
+  prompt: String!
+  queryType: String!
+}
+
+type AskQueryType {
+  dataClass: String
+  prompt: String!
+  queryType: String!
+}
+
+enum AskStatus {
+  answered
+  answering
+  declined
+  delivered
+  expired
+  sent
+  under_review
+}
+
+type AskType {
+  askerId: ID!
+  consentBasis: String
+  createdAt: DateTime!
+  expiresAt: DateTime
+  id: ID!
+  query: AskQueryType!
+  responderId: ID!
+  status: AskStatus!
+  updatedAt: DateTime!
 }
 
 type BrowserActivityConnection implements Connection {
@@ -262,6 +361,7 @@ type ConnectionSyncJobType implements Node {
 }
 
 type ConnectionType implements Node {
+  accountLabel: String
   active: Boolean!
   activeEndpoints: [String!]!
   externalId: String
@@ -303,6 +403,26 @@ type ContentType implements Node & Taggable {
 input CreateAnswerInput {
   answer: String!
   questionId: String!
+}
+
+input CreateAskGrantInput {
+  dataClass: String
+  dataClasses: [String!]
+  granteeId: ID!
+  mode: GrantMode!
+  purpose: String
+  queryType: String!
+}
+
+input CreateAskInput {
+  query: AskQueryInput!
+  responderId: ID!
+}
+
+type CreateAskPayload {
+  ask: AskType
+  decision: String
+  success: Boolean!
 }
 
 input CreateBrowserActivityInput {
@@ -598,6 +718,11 @@ type DeleteByIdPayload {
   success: Boolean!
 }
 
+type DisclosedItemType {
+  id: String!
+  type: String!
+}
+
 """HBPE renewal predictions: periodic behaviors coming due or overdue"""
 type DueForecastType {
   due: [DueItemType!]!
@@ -760,7 +885,7 @@ type ForecastBucketType {
   startTime: String!
 }
 
-"""96-bucket (15-min) HBPE day-ahead forecast"""
+"""48-bucket (30-min) HBPE day-ahead forecast"""
 type ForecastType {
   buckets: [ForecastBucketType!]!
 
@@ -776,6 +901,23 @@ type ForecastType {
   systemStatus: String!
 }
 
+enum GrantMode {
+  auto
+  block
+  review
+}
+
+"""A directed typed edge (ci.relationships row)"""
+type GraphEdgeType {
+  fromEntityId: ID!
+  id: ID!
+  isActive: Boolean!
+  properties: JSON
+  strength: Float
+  toEntityId: ID!
+  type: String!
+}
+
 input GraphEntityInput {
   description: String
   entityType: String!
@@ -785,11 +927,28 @@ input GraphEntityInput {
   sourceSystem: String!
 }
 
+"""A graph node (ci.entities row, including CTI bases)"""
+type GraphNodeType {
+  description: String
+  entityType: String!
+  id: ID!
+  linkedId: String
+  linkedTable: String
+  name: String
+  properties: JSON
+}
+
 input GraphRelationshipInput {
   fromKey: String!
   properties: JSON
   toKey: String!
   type: String!
+}
+
+"""Knowledge graph projection over entities + relationships"""
+type GraphType {
+  edges: [GraphEdgeType!]!
+  nodes: [GraphNodeType!]!
 }
 
 input IngestUserSnapshotInput {
@@ -940,6 +1099,7 @@ type Mutation {
   """Accept a candidate at a chosen time, minting a real event"""
   acceptCandidate(endTime: DateTime, id: ID!, startTime: DateTime!): EventType!
   addPersonIdentifier(input: AddPersonIdentifierInput!): [PersonIdentifierType!]!
+  approveAsk(id: ID!): AskPayload!
 
   """
   Break free text into schedule candidates. Adds to the slate; schedules nothing.
@@ -954,6 +1114,8 @@ type Mutation {
   completeTask(actualMinutes: Int, id: ID!): TaskType
   createAnswer(input: CreateAnswerInput!): AnswerType!
   createAnswers(input: [CreateAnswerInput!]!): [AnswerType!]!
+  createAsk(input: CreateAskInput!): CreateAskPayload!
+  createAskGrant(input: CreateAskGrantInput!): AskGrantPayload!
   createBrowserActivities(input: [CreateBrowserActivityInput!]!): [BrowserActivityType!]!
   createCommunications(input: [CreateCommunicationInput!]!): [CommunicationType!]!
   createConcept(input: CreateConceptInput!): CreateConceptPayload!
@@ -978,6 +1140,7 @@ type Mutation {
   createRelationship(input: CreateRelationshipInput!): CreateRelationshipPayload!
   createSavedSearch(input: CreateSavedSearchInput!): CreateSavedSearchPayload!
   createTask(input: CreateTaskInput!): CreateTaskPayload!
+  declineAsk(id: ID!): AskPayload!
 
   """
   Reject a candidate. reason: not_now | wrong_time | not_like_this | never
@@ -1034,6 +1197,8 @@ type Mutation {
 
   """Return a placed event to the slate, deleting the event it minted"""
   returnEventToSlate(eventId: ID!): ScheduleCandidateType!
+  revokeAskGrant(id: ID!): AskGrantPayload!
+  runAsk(id: ID!, redactItemIds: [String!]): RunAskPayload!
   setSavedSearchSharing(input: SetSavedSearchSharingInput!): UpdateSavedSearchPayload!
 
   """Defer a candidate until a future instant"""
@@ -1157,11 +1322,13 @@ type PersonType implements Node & Taggable {
   gender: String
   id: ID!
   identifiers: [PersonIdentifierType!]!
+  incomingRelationships(limit: Int): [RelationshipType!]
   interactionStats: PersonInteractionStatsType!
   isSelf: Boolean!
   lastName: String
   middleName: String
   name: String
+  outgoingRelationships(limit: Int): [RelationshipType!]
   postalCode: String
   region: String
   streetAddress: String
@@ -1192,10 +1359,12 @@ type PlaceType implements Node & Taggable {
   geoFormat: String
   geolocation: JSON
   id: ID!
+  incomingRelationships(limit: Int): [RelationshipType!]
   latitude: Float
   locationBoundary: JSON
   longitude: Float
   name: String
+  outgoingRelationships(limit: Int): [RelationshipType!]
   parent: PlaceType
   parentId: ID
   placeKind: String
@@ -1288,6 +1457,11 @@ type Query {
   ): [ActivityBucketType!]!
   answer(id: ID!): AnswerType
   answers(after: String, before: String, first: Int, last: Int): AnswerConnection!
+  ask(id: ID!): AskType
+  askAnswer(id: ID!): AskAnswerType
+  askDisclosureHistory: [AskAuditType!]!
+  askInbox: [AskType!]!
+  askOutbox: [AskType!]!
   browserActivities(after: String, before: String, first: Int, last: Int): BrowserActivityConnection!
   browserActivity(id: ID!): BrowserActivityType
   communication(id: ID!): CommunicationType
@@ -1317,7 +1491,7 @@ type Query {
   events(after: String, before: String, first: Int, last: Int): EventConnection!
 
   """
-  Events overlapping [from, to) — calendar read path. Excludes cancelled/no-show; keeps tentative. STOPGAP: excludes browser_activity source rows until schedule event policy is defined.
+  Events overlapping [from, to) — calendar read path. Excludes cancelled/no-show; keeps tentative. Limited to calendar event types (see SCHEDULE_EVENT_TYPES) plus events with no event_type, which is how user-created and accepted-suggestion events arrive.
   """
   eventsInRange(from: DateTime!, to: DateTime!): [EventType!]!
 
@@ -1328,11 +1502,17 @@ type Query {
 
   """Fetch the HBPE day-ahead forecast histogram"""
   forecast(horizon: String = "24h"): ForecastType
+
+  """
+  User knowledge graph (entities + relationships). Preferred over REST /api/graph/*.
+  """
+  graph(entityType: String, limit: Int = 200): GraphType!
   item(id: ID!): ItemType
   items(after: String, before: String, first: Int, last: Int): ItemConnection!
   knownPlaceCandidates: [KnownPlaceCandidateType!]!
   knownPlaces(kind: String): [KnownPlaceType!]!
   me: UserType
+  myAskGrants: [AskGrantType!]!
   node(id: ID!): Node
   note(id: ID!): NoteType
   notes(after: String, before: String, first: Int, last: Int): NoteConnection!
@@ -1439,6 +1619,14 @@ input RemovePersonIdentifierInput {
   kind: String!
   personId: ID!
   value: String!
+}
+
+type RunAskPayload {
+  answer: AskAnswerType
+  ask: AskType
+  disclosedCount: Int
+  success: Boolean!
+  withheldCount: Int
 }
 
 type SavedSearchConnection implements Connection {
