@@ -206,14 +206,85 @@ timeout restarted the API.
 
 ---
 
+## 3b. The dashboard rebuild
+
+The fixes above made the dashboard *correct*. It was still five fixed card
+columns showing 25 server-chosen rows each, with no way to change them — so
+"why did that job fail?" was answerable only if the job happened to be one of
+the 125 on screen. Three things replaced it.
+
+### Job types are named
+
+`domains/events/taxonomy.ts` maps every event the codebase can emit to a label,
+a category and a one-line description. The queue is named after its mechanism
+and the event after its trigger, so a dashboard built from raw names could tell
+you `file.uploaded` was on `image-description` — two facts that together still
+do not say what the appliance is doing. Now a row reads **"Embed for semantic
+search"**, not `search.embed.entity`.
+
+Nine categories: `search`, `ingest`, `enrich`, `graph`, `pipeline`, `import`,
+`llm`, `personalization`, `maintenance`. `smart.rotation.work` — one event
+covering eleven unrelated activities — resolves through its `workType`, so it
+shows as "Enrich graph entities" rather than as itself eleven times.
+
+Served at `GET /api/jobs/types` so the labels and the category filter come from
+one source rather than a second copy in the frontend.
+
+### History exists at all
+
+pg-boss keeps no history: terminal jobs move to `pgboss.archive` after twelve
+hours and are deleted twelve hours after that, so the observable past was ~36
+hours of working set with nothing to compare against. "Is the backlog draining?"
+had no answer.
+
+`ci.job_metrics` (migration `20260817030000`) is sampled every five minutes by
+`JobMetricsCollector`: per-queue depth **gauges** (pending/active/retry/dead-lettered)
+and **deltas** over the interval (completed/failed, plus mean and p95 duration).
+Two grouped queries per tick. 30-day retention, purged daily.
+
+Deltas rather than cumulative counters because a running total cannot be
+reconstructed from pg-boss — the rows it would count are deleted out from under
+it.
+
+`db/postgres/scripts/backfill_job_metrics.sql` seeds the table from the history
+pg-boss still holds, so the charts are populated on first deploy rather than
+after a day of sampling. On the appliance this was written against that produced
+**1,012 real samples across 20 queues**. Depth is left at zero for backfilled
+buckets — a gauge leaves no trace once the rows drain, and inventing one would
+be a lie.
+
+### One table, with filters
+
+`GET /api/jobs` replaces the fixed dump: filters on state, queue, category and a
+search across event name, queue name and failure message, with pagination and
+per-state counts. All of it in SQL — `pgboss.job` routinely holds tens of
+thousands of rows during an import, so client-side filtering would be both wrong
+and slow.
+
+`GET /api/jobs/history` serves the charts, bucketed by window (5 min under 6h,
+30 min under 48h, 3 h beyond).
+
+The page is now: clickable summary tiles → three charts (backlog area,
+throughput bars, duration line with p95) → the filterable table → schedules.
+Rows expand to the description, timings, payload size and the full failure stack.
+
+**What this makes visible.** On the live appliance, the twelve most recent
+failures were four distinct causes that the old UI showed as an undifferentiated
+count of 1,191: `Cannot find ffmpeg`, `Invalid model specified:
+qwen/qwen3-vl-30b`, `column gd.user_id does not exist`, and a sidecar `fetch
+failed`. The duration chart also shows what no count could: `image-description`
+averages ~33.5 s a job against `search-index` at ~0.5 s, which is why a
+12,710-job backlog on that one queue is a day of work rather than an afternoon.
+
 ## 4. Tests
 
 | Suite | Before | After |
 |---|---|---|
-| `domains/events` (backend) | 46 | 57 |
+| `domains/events` (backend) | 46 | 64 |
 | `common/schedule` | 2 | 5 |
 | `JobMonitorService` | **0** | 8 |
-| `JobsPage` (frontend) | **0** | 12 |
+| Job taxonomy | **0** | 7 |
+| `JobsPage` (frontend) | **0** | 13 |
 
 Every new test was run against the **unfixed** code first to confirm it fails
 there: 4 of 4 backend worker/completion tests failed pre-fix, and 7 of 9 original
@@ -229,9 +300,19 @@ cd frontend/apps/web && yarn vitest run src/pages/JobsPage
 
 Both suites, plus `yarn typecheck` and `yarn lint` in each workspace, are clean.
 
-**Not verified in a browser.** The dashboard needs an authenticated session, and
-standing up a second API against the live database would have started a worker on
-a 12,710-job backlog. Rendering is covered by the 12 DOM tests instead.
+**Verified in a browser** against real data, via a scratch Vite entry that
+mounted the real `JobsPage` with the three data hooks aliased to fixtures
+captured from the live database. That avoided the two things a normal dev server
+would have needed: an authenticated session, and a second API process whose
+worker loop would have started draining the live 12,710-job backlog. The harness
+was removed after the screenshots; it is trivial to recreate (alias
+`./useJobsList`, `./useJobHistory` and `./useJobsDashboard` to stubs in a
+`vite.config` and mount the page under `DeviceLayoutProvider args={[]}`).
+
+Two bugs came out of looking at it that the DOM tests did not catch: the
+throughput axis clipped six-figure values (`100000` rendered as `00000`), and the
+"All" tab counted the *filtered* total, so it collapsed to the current selection
+the moment a state was picked.
 
 ---
 

@@ -1,19 +1,21 @@
-import { screen, within } from '@testing-library/react';
+import { fireEvent, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { renderWithProviders } from '@/test/renderWithProviders';
 
 import { JobsPage } from './JobsPage';
+import type { JobHistoryResponse } from './useJobHistory';
 import type { JobsDashboardResponse } from './useJobsDashboard';
+import type { JobListItem, JobListResponse } from './useJobsList';
 
 /**
- * The Jobs dashboard had no tests at all, and the things that were wrong with it
- * were all things a screenshot would not catch: the numbers counted the wrong
- * rows, a column showed the wrong jobs, and the single most useful field on the
- * wire was never rendered.
+ * The Jobs dashboard, rebuilt around one filterable table.
  *
- * These drive the page through the hook's return value rather than the network,
- * because what is under test is what the page DOES with a dashboard payload.
+ * These drive the page through its three hooks rather than the network, because
+ * what is under test is what the page DOES with a payload — the arithmetic, the
+ * filter wiring and the failure rendering. `useJobsList` is captured rather than
+ * stubbed blind so a test can assert the filters the page ASKED for, which is
+ * where the query-vs-client-filtering bug would hide.
  */
 
 const dashboardState = {
@@ -25,41 +27,103 @@ const dashboardState = {
   refresh: vi.fn(),
 };
 
+const listState = {
+  data: null as JobListResponse | null,
+  loading: false,
+  error: null as string | null,
+  refresh: vi.fn(),
+};
+
+const historyState = {
+  data: null as JobHistoryResponse | null,
+  loading: false,
+  error: null as string | null,
+  refresh: vi.fn(),
+};
+
+/** Filters the page handed the list hook on its most recent render. */
+let lastFilters: Record<string, unknown> = {};
+/** Window (hours) the page handed the history hook. */
+let lastWindowHours = 0;
+
 vi.mock('./useJobsDashboard', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./useJobsDashboard')>();
 
   return { ...actual, useJobsDashboard: () => dashboardState };
 });
 
-// Recharts measures its container, which jsdom reports as 0x0; the charts are
-// not what these tests are about.
+vi.mock('./useJobsList', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./useJobsList')>();
+
+  return {
+    ...actual,
+    useJobsList: (filters: Record<string, unknown>) => {
+      lastFilters = filters;
+
+      return listState;
+    },
+  };
+});
+
+vi.mock('./useJobHistory', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./useJobHistory')>();
+
+  return {
+    ...actual,
+    useJobHistory: (hours: number) => {
+      lastWindowHours = hours;
+
+      return historyState;
+    },
+  };
+});
+
+// Recharts measures its container, which jsdom reports as 0x0.
 vi.mock('recharts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('recharts')>();
 
-  return { ...actual, PieChart: () => null, Pie: () => null, Cell: () => null };
+  return {
+    ...actual,
+    AreaChart: () => null,
+    BarChart: () => null,
+    LineChart: () => null,
+  };
 });
 
-function job(overrides: Partial<JobsDashboardResponse['jobs'][number]> = {}) {
+function job(overrides: Partial<JobListItem> = {}): JobListItem {
   return {
     id: 'job-1',
     queue: 'search-index',
     state: 'created',
-    priority: 0,
-    retryLimit: 3,
-    retryCount: 0,
-    retryDelay: 10,
-    retryBackoff: true,
-    createdOn: '2026-08-17T00:00:00.000Z',
-    startAfter: '2026-08-17T00:00:00.000Z',
-    // The API projects the payload down to these — it does not ship `data` or
-    // `output`, because job payloads are user content and this endpoint has no
-    // owner predicate.
     event: 'note.created',
     workType: null,
-    payloadBytes: 42,
+    label: 'note created',
+    category: 'search',
+    description: 'Index a new note for search',
+    interactive: false,
+    createdOn: '2026-08-17T00:00:00.000Z',
+    startedOn: null,
+    completedOn: null,
+    durationMs: null,
+    retryCount: 0,
+    retryLimit: 3,
+    payloadBytes: 120,
     failure: null,
+    deadLettered: false,
     ...overrides,
-  } as JobsDashboardResponse['jobs'][number];
+  };
+}
+
+function list(overrides: Partial<JobListResponse> = {}): JobListResponse {
+  return {
+    items: [],
+    total: 0,
+    limit: 50,
+    offset: 0,
+    queues: ['search-index', 'image-description'],
+    stateCounts: { created: 12716, failed: 821, 'dead-letter': 1191 },
+    ...overrides,
+  };
 }
 
 function dashboard(overrides: Partial<JobsDashboardResponse> = {}): JobsDashboardResponse {
@@ -87,159 +151,172 @@ function dashboard(overrides: Partial<JobsDashboardResponse> = {}): JobsDashboar
   };
 }
 
-function render(response: JobsDashboardResponse, extra: Partial<typeof dashboardState> = {}) {
+function render(options: {
+  dashboard?: JobsDashboardResponse;
+  list?: JobListResponse;
+  history?: JobHistoryResponse;
+  staleSince?: Date | null;
+  error?: string | null;
+} = {}) {
   Object.assign(dashboardState, {
-    data: response,
+    data: options.dashboard ?? dashboard(),
     loading: false,
-    error: null,
-    staleSince: null,
+    error: options.error ?? null,
+    staleSince: options.staleSince ?? null,
     updatedAt: new Date('2026-08-17T00:05:00.000Z'),
-    ...extra,
   });
+
+  Object.assign(listState, { data: options.list ?? list(), loading: false, error: null });
+  Object.assign(historyState, { data: options.history ?? null, loading: false, error: null });
 
   return renderWithProviders(<JobsPage />);
 }
 
-/** The card that owns a named column, so assertions can scope to just that column. */
-function column(title: string): HTMLElement {
-  const heading = screen.getByText(title);
-  const card = heading.closest('div[data-slot="card"]') ?? heading.parentElement;
+describe('JobsPage summary', () => {
+  /**
+   * Several labels ("Failed", "Dead-lettered") appear both as a summary tile and
+   * as a state tab, so assertions here scope to the tile that carries the count.
+   */
+  function tile(label: string): HTMLElement {
+    const heading = screen
+      .getAllByText(label)
+      .find((node) => node.className.includes('uppercase') && node.tagName === 'P');
 
-  if (!(card instanceof HTMLElement)) {
-    throw new Error(`No column card found for "${title}"`);
+    const button = heading?.closest('button');
+
+    if (!button) {
+      throw new Error(`No summary tile for "${label}"`);
+    }
+
+    return button;
   }
 
-  return card;
-}
-
-describe('JobsPage summary', () => {
   it('reports pending and dead-lettered as separate figures', () => {
-    render(dashboard());
+    render();
 
     // The same 1,191 jobs used to be counted under BOTH Pending and Failed,
     // because pg-boss parks a dead-lettered job in state `created`.
-    expect(screen.getByText('Pending').parentElement).toHaveTextContent('12,716');
-    expect(screen.getByText('Dead-lettered').parentElement).toHaveTextContent('1,191');
-    expect(screen.getByText('Retrying').parentElement).toHaveTextContent('3');
+    expect(tile('Pending')).toHaveTextContent('12,716');
+    expect(tile('Dead-lettered')).toHaveTextContent('1,191');
+    expect(tile('Retrying')).toHaveTextContent('3');
   });
 
-  it('shows every job state, including the two that were previously unreported', () => {
-    render(dashboard());
+  it('makes each tile a shortcut into the table', () => {
+    render();
 
-    // `retry` and `cancelled` were absent from the tiles, so a queue that was
-    // entirely in retry read as idle.
-    for (const label of ['Pending', 'Running', 'Retrying', 'Completed', 'Failed', 'Dead-lettered']) {
-      expect(screen.getByText(label)).toBeInTheDocument();
-    }
-  });
+    fireEvent.click(tile('Failed'));
 
-  it('says when the displayed data was last fetched', () => {
-    render(dashboard());
-
-    expect(screen.getByText(/^Updated /)).toBeInTheDocument();
+    // A number an operator cannot click is a number they have to go hunting for.
+    expect(lastFilters).toMatchObject({ state: 'failed', offset: 0 });
   });
 });
 
-describe('JobsPage layout', () => {
-  it('lays the five columns out side by side', () => {
-    const { container } = render(dashboard());
+describe('JobsPage table', () => {
+  it('renders the taxonomy label and the raw event name for each job', () => {
+    render({
+      list: list({
+        items: [job({ label: 'Embed for semantic search', event: 'search.embed.entity' })],
+        total: 1,
+      }),
+    });
 
-    // Widened from four when Failures was split out of Active Jobs; asserted
-    // because a stale column count silently overflows the grid.
-    expect(container.querySelector('.xl\\:grid-cols-5')).not.toBeNull();
-
-    for (const title of ['Active Jobs', 'Failures', 'Completed Jobs', 'Schedules', 'Queues']) {
-      expect(screen.getByText(title)).toBeInTheDocument();
-    }
+    // "Embed for semantic search" is the point: `search.embed.entity` on
+    // `search-index` says nothing about what the appliance is doing.
+    expect(screen.getByText('Embed for semantic search')).toBeInTheDocument();
+    expect(screen.getByText('search.embed.entity')).toBeInTheDocument();
   });
-});
 
-describe('JobsPage failure reporting', () => {
-  /**
-   * The whole point of the page for an operator. `output` was fetched, typed and
-   * shipped to the browser, then discarded — so "Failed: 1,191" was the end of
-   * the story. On the appliance this was written against, 628 of those failures
-   * shared one cause.
-   */
-  it('renders the failure message a failed job carries in its output', () => {
-    render(
-      dashboard({
-        jobs: [
+  it('shows a failure message inline and its stack when the row is expanded', () => {
+    render({
+      list: list({
+        items: [
           job({
-            id: 'failed-1',
-            queue: 'file-preview-generation',
             state: 'failed',
-            retryCount: 3,
-            event: 'file.uploaded',
+            label: 'File uploaded',
             failure: {
               message: 'Cannot find ffmpeg',
-              stack: 'Error: Cannot find ffmpeg\n    at FfmpegCommand.proto._getFfmpegPath',
+              stack: 'Error: Cannot find ffmpeg\n    at FfmpegCommand',
               failedAt: '2026-08-17T09:21:10.289Z',
             },
           }),
         ],
+        total: 1,
       }),
-    );
+    });
 
     expect(screen.getByText('Cannot find ffmpeg')).toBeInTheDocument();
-    expect(screen.getByText(/at FfmpegCommand\.proto\._getFfmpegPath/)).toBeInTheDocument();
+    // Collapsed by default — stacks are long and most jobs never fail.
+    expect(screen.queryByText(/at FfmpegCommand/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Details for File uploaded/ }));
+
+    expect(screen.getByText(/at FfmpegCommand/)).toBeInTheDocument();
   });
 
-  it('shows no failure block for a job that did not fail', () => {
-    render(dashboard({ jobs: [job()] }));
+  it('asks the server for the filters rather than filtering in the browser', () => {
+    render();
 
-    expect(screen.queryByText('Cannot find ffmpeg')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Search jobs'), { target: { value: 'ffmpeg' } });
+    expect(lastFilters).toMatchObject({ search: 'ffmpeg', offset: 0 });
+
+    fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'llm' } });
+    expect(lastFilters).toMatchObject({ category: 'llm', offset: 0 });
+
+    fireEvent.change(screen.getByLabelText('Queue'), { target: { value: 'image-description' } });
+    expect(lastFilters).toMatchObject({ queue: 'image-description' });
   });
 
-  it('shows no failure block when the server projected no failure', () => {
-    // `output` also holds deliberate success payloads from deferred completions,
-    // so the server returns null rather than something that renders as
-    // "[object Object]" at an operator.
-    render(dashboard({ jobs: [job({ state: 'failed', failure: null })] }));
+  it('labels a dead-lettered row as such rather than as waiting work', () => {
+    render({
+      list: list({
+        items: [job({ queue: 'dead-letter', state: 'created', deadLettered: true })],
+        total: 1,
+      }),
+    });
 
-    expect(screen.queryByText(/object Object/)).not.toBeInTheDocument();
+    // Its state column says `created`; calling that "waiting" is the bug.
+    expect(screen.getByText('dead-lettered')).toBeInTheDocument();
+  });
+
+  it('carries per-state counts on the tabs', () => {
+    render();
+
+    const tab = screen.getByRole('tab', { name: /Dead-lettered/ });
+
+    expect(within(tab).getByText('1,191')).toBeInTheDocument();
+  });
+
+  it('pages through results without re-running the search', () => {
+    render({ list: list({ items: [job()], total: 500 }) });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+
+    expect(lastFilters).toMatchObject({ offset: 50 });
   });
 });
 
-describe('JobsPage job columns', () => {
-  it('keeps failed jobs out of Active Jobs and lists them under Failures', () => {
-    render(
-      dashboard({
-        jobs: [
-          job({ id: 'live-1', state: 'created', event: 'note.created' }),
-          job({ id: 'dead-1', state: 'failed', event: 'file.uploaded' }),
-        ],
-      }),
-    );
+describe('JobsPage history', () => {
+  it('defaults to a 24-hour window and lets it be changed', () => {
+    render();
 
-    // "Jobs waiting to run or currently executing" used to be `state !==
-    // 'completed'`, so a permanently failed job read as queued work.
-    const active = within(column('Active Jobs'));
+    expect(lastWindowHours).toBe(24);
 
-    expect(active.getByText('note.created')).toBeInTheDocument();
-    expect(active.queryByText('file.uploaded')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '7d' }));
 
-    expect(within(column('Failures')).getByText('file.uploaded')).toBeInTheDocument();
+    expect(lastWindowHours).toBe(24 * 7);
   });
 
-  it('treats dead-letter queue entries as failures even though their state is created', () => {
-    render(
-      dashboard({
-        jobs: [job({ id: 'dl-1', queue: 'dead-letter', state: 'created', event: 'file.uploaded' })],
-      }),
-    );
+  it('explains an empty chart instead of drawing nothing', () => {
+    render({ history: { points: [], queues: [], bucketMinutes: 5, windowHours: 24 } });
 
-    expect(within(column('Active Jobs')).queryByText('file.uploaded')).not.toBeInTheDocument();
-    expect(within(column('Failures')).getByText('file.uploaded')).toBeInTheDocument();
+    expect(screen.getByText(/No history recorded yet/)).toBeInTheDocument();
   });
+});
 
-  /**
-   * The Schedules column used to render `pgboss.schedule`, which nothing writes —
-   * so it was empty on every appliance while ~34 NestJS crons ran invisibly.
-   */
-  it('lists the recurring jobs registered with the scheduler', () => {
-    render(
-      dashboard({
+describe('JobsPage schedules', () => {
+  it('lists the recurring jobs from the live scheduler registry', () => {
+    render({
+      dashboard: dashboard({
         crons: [
           {
             name: 'PipelineTickCron.tick',
@@ -247,28 +324,23 @@ describe('JobsPage job columns', () => {
             timezone: null,
             running: true,
             nextRunAt: '2026-08-17T01:00:00.000Z',
-            lastRunAt: '2026-08-17T00:00:00.000Z',
+            lastRunAt: null,
           },
         ],
       }),
-    );
+    });
 
-    const schedules = within(column('Schedules'));
-
-    expect(schedules.getByText('PipelineTickCron.tick')).toBeInTheDocument();
-    expect(schedules.getByText('0 */2 * * * *')).toBeInTheDocument();
+    // `pgboss.schedule` is empty on every appliance — nothing calls
+    // boss.schedule(). These come from Nest's registry instead.
+    expect(screen.getByText('PipelineTickCron.tick')).toBeInTheDocument();
+    expect(screen.getByText('0 */2 * * * *')).toBeInTheDocument();
   });
 });
 
 describe('JobsPage staleness', () => {
   it('says so when refreshes are failing behind still-displayed data', () => {
-    render(dashboard(), {
-      staleSince: new Date('2026-08-17T00:05:00.000Z'),
-      error: 'Failed to fetch',
-    });
+    render({ staleSince: new Date('2026-08-17T00:05:00.000Z'), error: 'Failed to fetch' });
 
-    // Previously this failure was swallowed entirely: the page kept
-    // auto-refreshing and kept showing frozen numbers with no indication.
     const status = screen.getByRole('status');
 
     expect(status).toHaveTextContent(/refreshes have been failing/i);
@@ -277,6 +349,8 @@ describe('JobsPage staleness', () => {
 
   it('shows a plain error when the very first load fails', () => {
     Object.assign(dashboardState, { data: null, error: 'Network down', staleSince: null });
+    Object.assign(listState, { data: null, loading: false, error: null });
+    Object.assign(historyState, { data: null, loading: false, error: null });
 
     renderWithProviders(<JobsPage />);
 
