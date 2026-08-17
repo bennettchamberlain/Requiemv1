@@ -32,7 +32,17 @@ const FINISHED_RUN = {
   finishedAt: '2026-08-12T00:30:00Z',
 };
 
-const listRuns = vi.fn(async () => [LIVE_RUN, FINISHED_RUN]);
+const FAILED_RUN = {
+  ...LIVE_RUN,
+  id: 'run-failed',
+  label: 'Broken.zip',
+  status: 'failed',
+  percent: 0,
+  error: 'archive extraction failed',
+  finishedAt: '2026-08-12T00:05:00Z',
+};
+
+const listRuns = vi.fn(async () => [LIVE_RUN, FINISHED_RUN, FAILED_RUN]);
 
 // STABLE, like the real hook: the load effect depends on the whole api object,
 // so a fresh one per render re-runs it forever — see useImportApi.test.tsx.
@@ -63,6 +73,16 @@ vi.mock('./useImportApi', () => ({
 describe('HistoryTab', () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it('says whether each earlier import worked', async () => {
+    // The card carried a label, a date and its services — so a run that FAILED
+    // looked exactly like one that imported, on the surface whose whole job is
+    // telling you what happened to your archives.
+    render(<HistoryTab />);
+
+    expect(await screen.findByText('Failed')).toBeInTheDocument();
+    expect(screen.getAllByText('Imported').length).toBeGreaterThan(0);
+  });
+
   it('reattaches to the run that is still going, and closing it keeps it reachable', async () => {
     render(<HistoryTab />);
 
@@ -73,8 +93,8 @@ describe('HistoryTab', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /close/i }));
 
-    // Collapsed into the grid, not gone: both runs now offer View.
-    await waitFor(() => expect(screen.getAllByRole('button', { name: /view/i })).toHaveLength(2));
+    // Collapsed into the grid, not gone: every finished run now offers View.
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /view/i })).toHaveLength(3));
     expect(screen.getByText('Takeout.zip')).toBeInTheDocument();
   });
 });

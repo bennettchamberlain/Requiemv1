@@ -1,11 +1,13 @@
 import { usePageTitle } from '@ci/common';
-import { Tabs } from '@ci/shadcn';
+import { cn, Tabs } from '@ci/shadcn';
 
 import { PageContent } from '@/components/layout';
 
 import { HistoryTab } from './HistoryTab';
 import { InboxPanel } from './InboxPanel';
 import { ImportWizard } from './wizard/ImportWizard';
+
+export type ImportStage = 'pick' | 'export' | 'sync';
 
 export interface ImportSurfaceProps {
   /**
@@ -16,6 +18,8 @@ export interface ImportSurfaceProps {
    * be bounced from. Same machinery either way; only the host differs.
    */
   variant?: 'page' | 'onboarding';
+  /** Told the wizard's current phase, so an onboarding host can narrate it. */
+  onStageChange?: (stage: ImportStage) => void;
 }
 
 /**
@@ -36,27 +40,40 @@ export interface ImportSurfaceProps {
  * stepper and scrolls only what sits below it, which needs a real ceiling to
  * scroll against.
  */
-export function ImportSurface({ variant = 'page' }: ImportSurfaceProps) {
+export function ImportSurface({ variant = 'page', onStageChange }: ImportSurfaceProps) {
   return (
     <Tabs defaultValue="import" className="flex min-h-0 flex-1 flex-col">
-      <Tabs.List>
-        <Tabs.Trigger value="import">Import</Tabs.Trigger>
-        <Tabs.Trigger value="inbox">Inbox</Tabs.Trigger>
-        {/* Onboarding hides History: a first-run user has no runs to revisit,
-            and the dialog is a doorway, not the archive. */}
-        {variant === 'page' ? <Tabs.Trigger value="history">History</Tabs.Trigger> : null}
-      </Tabs.List>
+      {/* Onboarding shows NO tab bar. History is meaningless on a first run —
+          there are no runs to revisit — and the Inbox is the batch path for
+          someone who already knows the appliance owns a folder. Offering three
+          destinations before the user has imported anything is a choice asked
+          too early; /import carries all of it the moment setup is done. What is
+          left is a single linear flow. */}
+      {variant === 'page' ? (
+        <Tabs.List>
+          <Tabs.Trigger value="import">Import</Tabs.Trigger>
+          <Tabs.Trigger value="inbox">Inbox</Tabs.Trigger>
+          <Tabs.Trigger value="history">History</Tabs.Trigger>
+        </Tabs.List>
+      ) : null}
 
       {/* overflow-hidden, not auto: the wizard scrolls itself below its
           stepper. Inbox and History have no pinned part, so they scroll
           whole. */}
-      <Tabs.Content value="import" className="min-h-0 flex-1 overflow-hidden pt-4">
-        <ImportWizard />
+      {/* pt-4 clears the tab bar. With no tab bar (onboarding) it is a stray
+          gap above the first control. */}
+      <Tabs.Content
+        value="import"
+        className={cn('min-h-0 flex-1 overflow-hidden', variant === 'page' && 'pt-4')}
+      >
+        <ImportWizard variant={variant} onStepChange={onStageChange} />
       </Tabs.Content>
 
-      <Tabs.Content value="inbox" className="min-h-0 flex-1 overflow-y-auto pt-4">
-        <InboxPanel />
-      </Tabs.Content>
+      {variant === 'page' ? (
+        <Tabs.Content value="inbox" className="min-h-0 flex-1 overflow-y-auto pt-4">
+          <InboxPanel />
+        </Tabs.Content>
+      ) : null}
 
       {variant === 'page' ? (
         <Tabs.Content value="history" className="min-h-0 flex-1 overflow-y-auto pt-4">

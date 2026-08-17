@@ -23,9 +23,26 @@ type Step = 'pick' | 'export' | 'sync';
  * that: uploads became runs the moment they landed, the History tab holds
  * them, and Sync finds every unpushed run again regardless of who started it.
  */
-export function ImportWizard() {
+export interface ImportWizardProps {
+  /**
+   * `onboarding` drops the wizard's OWN stepper. Embedded in the first-run
+   * flow the page already has a step indicator and a Back/Skip/Next footer, and
+   * two steppers on one screen is two answers to "where am I". The phase is
+   * reported upward instead, so the host can narrate it in the one heading the
+   * screen has.
+   */
+  variant?: 'page' | 'onboarding';
+  /** Told the current phase whenever it changes, for hosts that narrate it. */
+  onStepChange?: (step: Step) => void;
+}
+
+export function ImportWizard({ variant = 'page', onStepChange }: ImportWizardProps = {}) {
   const api = useImportApi();
   const [step, setStep] = useState<Step>('pick');
+
+  useEffect(() => {
+    onStepChange?.(step);
+  }, [step, onStepChange]);
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const [exportIdx, setExportIdx] = useState(0);
   const [catalog, setCatalog] = useState<readonly CatalogSource[]>([]);
@@ -88,6 +105,7 @@ export function ImportWizard() {
       {/* Pinned: the stepper never scrolls away, and — because the scroll
           region is BELOW it — never resizes when that region's scrollbar
           comes and goes with the Pick facet filter. */}
+      {variant === 'page' && (
       <ol className="grid shrink-0 gap-2 sm:grid-cols-3">
         <StepHeading
           number={1}
@@ -116,6 +134,7 @@ export function ImportWizard() {
           onClick={() => setStep('sync')}
         />
       </ol>
+      )}
 
       {catalogError != null && <p className="shrink-0 text-sm text-destructive">{catalogError}</p>}
 
