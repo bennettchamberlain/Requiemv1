@@ -155,7 +155,27 @@ The live queue row carries `retention_minutes = NULL`. Traced through pg-boss
 
 The requested 30 days never reached the database.
 
-### 2.8 Smaller correctness bugs in the page
+### 2.8 The dashboard served other users' job payloads
+
+`getDashboard` checks only that *a* user context exists, then returns the 25
+newest job rows and 25 newest archive rows **with no owner predicate**,
+serialising `data` and `output` verbatim. Job payloads are user content:
+`graph.person.created` carries name, email, phone and bio;
+`search.embed.entity` carries the entity's searchable text. Any signed-in user
+opening `/jobs` saw the most recent jobs of whoever generated them — the one
+owner-scoping invariant the rest of the codebase enforces everywhere.
+
+### 2.9 An orphaned rejection in the ETL sweep, once a minute
+
+`SyncOrchestrator.orchestrateSyncJobs` (`@Cron(EVERY_MINUTE)`) ran async
+callbacks inside `Array.prototype.forEach`, at four sites. `forEach` discards
+the promise an async callback returns, so a rejection inside the body reaches
+neither the caller, nor the `@Cron` wrapper, nor Nest's own scheduler catch — it
+surfaces as a genuine unhandled rejection, and `application.ts` turns those into
+`process.exit(1)`. The body makes six awaited database calls, so one pool
+timeout restarted the API.
+
+### 2.10 Smaller correctness bugs in the page
 
 - **Active Jobs** filtered on `state !== 'completed'`, so `failed` and `cancelled` jobs appeared under "Jobs waiting to run or currently executing".
 - **A failing refresh after the first success was swallowed entirely.** The page kept auto-refreshing and kept showing frozen numbers, so a dead API looked exactly like a quiet queue.
@@ -171,17 +191,18 @@ The requested 30 days never reached the database.
 
 | File | Change |
 |---|---|
-| `domains/events/services/PGBossEventService.ts` | `boss.fetch()` guarded — logs, backs off, keeps polling. Per-job work moved into `runJob()`, launched as `void …catch(…)` so nothing can escape as an unhandled rejection. `boss.complete()` split out of the listener's `try`: a completion failure is logged and the job left `active` for pg-boss's expiration, never re-failed. New `failJobQuietly()` so a failing `fail()` cannot crash the worker. `userId` now read from `job.data`. DLQ retention expressed in `retentionMinutes`, plus an `updateQueue` so existing appliances get it. |
+| `domains/events/services/PGBossEventService.ts` | `boss.fetch()` guarded — logs, backs off, keeps polling. Per-job work moved into `runJob()`, launched as `void …catch(…)` so nothing can escape as an unhandled rejection, and each `work()` promise now carries a terminal `.catch` before it is parked in `stopTasks`. `boss.complete()` split out of the listener's `try`: a completion failure is logged and the job left `active` for pg-boss's expiration, never re-failed. New `failJobQuietly()` so a failing `fail()` cannot crash the worker. `userId` now read from `job.data`. DLQ retention expressed in `retentionMinutes`, plus an `updateQueue` so existing appliances get it. |
+| `domains/etl/listeners/SyncOrchestrator.ts` | Four async `forEach` callbacks converted to `for…of`, so a rejection reaches the scheduler's catch instead of the process. The two `return`s inside the converted loop became `continue` — under `forEach` they skipped one endpoint; under `for…of` they would have abandoned the rest of the sweep. |
 | `domains/events/constants.ts` | `DEAD_LETTER_QUEUE` exported, so the monitor's exclusions and the queue's creation cannot drift apart. |
-| `domains/events/services/JobMonitorService.ts` | `getSummary()` rewritten as two grouped scans. Dead letters excluded from `pending` and reported as `deadLettered`; `retry` and `cancelled` added. Dead-letter queue excluded from both live-work distributions. New `getCronSchedules()` reads Nest's live `SchedulerRegistry`. |
+| `domains/events/services/JobMonitorService.ts` | `getSummary()` rewritten as two grouped scans. Dead letters excluded from `pending` and reported as `deadLettered`; `retry` and `cancelled` added. Dead-letter queue excluded from both live-work distributions. New `getCronSchedules()` reads Nest's live `SchedulerRegistry`. **`toJobRecord` no longer returns `data` or `output`** — it projects to `event`, `workType`, `payloadBytes` and a parsed `failure`, which is exactly what the UI reads, so the redaction is lossless on screen. A deferred completion's success payload projects to `failure: null` rather than leaking through that path. |
 | `common/schedule/decorators/Cron.ts` | Catches and logs with the class, method and traceId. **Not** a crash fix — `@nestjs/schedule` v6 already contains rejecting ticks (`SchedulerRegistry.wrapFunctionInTryCatchBlocks`); it just logs them with no indication of which schedule failed. |
 
 ### Frontend
 
 | File | Change |
 |---|---|
-| `pages/JobsPage/JobsPage.tsx` | New `JobFailureDetail` renders the message, stack and time from `output`, collapsed in a `<details>`. New **Failures** column (failed jobs + dead letters). Active Jobs restricted to `created`/`active`/`retry` and excludes the dead-letter queue. Schedules column now renders real crons. Six summary tiles. Per-column empty messages. `StaleBanner`; `role="alert"`/`role="status"` on both banners. |
-| `pages/JobsPage/useJobsDashboard.ts` | Tracks `staleSince` and `updatedAt`; a failing refresh after first load now surfaces instead of being swallowed. Skips polling in hidden tabs. Types extended for `crons` and the new summary states. |
+| `pages/JobsPage/JobsPage.tsx` | New `JobFailureDetail` renders the message, stack and time of a failure, collapsed in a `<details>`. New **Failures** column (failed jobs + dead letters). Active Jobs restricted to `created`/`active`/`retry` and excludes the dead-letter queue. Schedules column now renders real crons. Six summary tiles. Per-column empty messages. `StaleBanner`; `role="alert"`/`role="status"` on both banners. `getJobDisplay` reads the projected `event`/`workType` and falls back to the queue name instead of "Unnamed job". |
+| `pages/JobsPage/useJobsDashboard.ts` | Tracks `staleSince` and `updatedAt`; a failing refresh after first load now surfaces instead of being swallowed. Skips polling in hidden tabs. Types extended for `crons`, the new summary states, and the projected job record. |
 
 ---
 
@@ -189,9 +210,9 @@ The requested 30 days never reached the database.
 
 | Suite | Before | After |
 |---|---|---|
-| `domains/events` (backend) | 46 | 55 |
+| `domains/events` (backend) | 46 | 57 |
 | `common/schedule` | 2 | 5 |
-| `JobMonitorService` | **0** | 6 |
+| `JobMonitorService` | **0** | 8 |
 | `JobsPage` (frontend) | **0** | 12 |
 
 Every new test was run against the **unfixed** code first to confirm it fails
@@ -199,7 +220,7 @@ there: 4 of 4 backend worker/completion tests failed pre-fix, and 7 of 9 origina
 frontend tests failed pre-fix.
 
 ```bash
-cd backend/apps/api && yarn test src/domains/events src/common/schedule
+cd backend/apps/api && yarn test src/domains/events src/common/schedule src/domains/etl
 ```
 
 ```bash
@@ -250,18 +271,27 @@ surface over the job tables.
 
 ## 6. Still open
 
-Ranked, not yet done:
+Ranked, not yet done. Severities and file references come from the multi-agent
+review (61 findings confirmed, 17 refuted); the full plan is in the workflow
+transcript.
 
-1. **`getDashboard` returns raw job payloads to any authenticated principal.** `job.data` carries user content; the guard checks only that *a* user context exists. Should be admin-scoped or redacted.
-2. **No pagination.** 25 recent jobs with full `jsonb` payloads inline, rebuilt every poll.
-3. **No job actions.** `retry` / `cancel` / `deleteJob` / `purgeQueue` exist in the installed pg-boss and are unwired; the dashboard is read-only for no technical reason.
-4. **No filtering or search** by state, queue, or date.
-5. **`monitorStateIntervalSeconds` is off** (`version.monitored_on` is NULL). Enabling it makes pg-boss emit per-queue state counts from one `GROUP BY rollup`, replacing the polled counts entirely.
-6. **21 declared events have no listener on any queue** — `send()` on them enqueues nothing. `position.created` is emitted once per GPS fix.
-7. **The `default` queue mixes multi-minute LLM inference with graph writes and new-user seeding** on one 6-slot semaphore at equal priority.
-8. **`ci.pipeline_dead_letters` only grows.** The reaper inserts; nothing purges.
-9. **No queue metrics over time** — depth, latency, failure rate, DLQ depth.
-10. **20 of 22 work queues declare no `queueOptions`**, inheriting one 12-hour expiry and 3-retry policy for very different workloads.
+1. **The ETL crons re-enqueue a row that is still running.** `executeTransformJobs` (`EVERY_MINUTE`) selects `status:'success', lastTransformed: null` and sends with no idempotency guard; `lastTransformed` is written only on completion and `updated_at` does not move, so any transform exceeding 60 s is re-enqueued every minute until it finishes. With the `etl` per-queue ceiling of 6, a 5-minute transform gets six concurrent copies of itself — a positive-feedback self-DoS. The handler at `SyncOrchestrator.ts:271` also sets `in_progress` with no status check, so a completed row can be resurrected and re-fetched from the provider. *Fix:* bail in the handlers unless `status === 'pending'` / `lastTransformed == null`. A `singletonKey` alone will not do it — every queue uses the default `standard` policy, under which pg-boss v10 stores but does not enforce one.
+2. **No ack timeout.** `executeJob`'s promise settles only via `done`/`fail`/`defer`. `ImageDescriptionListener` awaits `ollamaService.chat()` with no AbortSignal, so a black-holed Ollama host parks a concurrency slot forever; after six, the queue spins on its backoff and `flush()` makes SIGTERM hang until SIGKILL.
+3. **Leases are taken before global capacity is reserved**, so far more jobs are held `active` than the global cap allows (~108 against a cap of 32 on the shipped config).
+4. **No pagination** — 25 recent jobs rebuilt every poll.
+5. **No job actions.** `retry` / `cancel` / `deleteJob` / `purgeQueue` exist in the installed pg-boss and are unwired; the dashboard is read-only for no technical reason.
+6. **No filtering or search** by state, queue, or date.
+7. **`monitorStateIntervalSeconds` is off** (`version.monitored_on` is NULL). Enabling it makes pg-boss emit per-queue state counts from one `GROUP BY rollup`, replacing the polled counts entirely.
+8. **Handlers that swallow transient failures** report success and never retry — `FileDocumentParseListener`, `FileChunkSearchIndexListener`, and all 12 `GraphEventListener` handlers. Land this *after* the DLQ is visible in the UI, because it will raise dead-letter volume on a broken appliance. That is the point.
+9. **`MessageUpdatedEvent` and `MessageDeletedEvent` have no listener**, so an edited message keeps its stale indexed text and a deleted one stays searchable forever. 21 declared events are orphaned in total; `position.created` is emitted once per GPS fix.
+10. **pg-boss's scheduler is enabled with zero schedules**, creating a phantom `__pgboss__send-it` queue polled every 5 s in every process. Pass `schedule: false`.
+11. **"Completed (lifetime)" is really a ~36-hour window** — `deleteAfterHours: 24` on top of a 12-hour archive delay.
+12. **The `default` queue mixes multi-minute LLM inference with graph writes and new-user seeding** on one 6-slot semaphore at equal priority.
+13. **`ci.pipeline_dead_letters` only grows.** The reaper inserts; nothing purges.
+14. **`PythonFunctionCrons` and `McpController` import `Cron` from `@nestjs/schedule` directly**, bypassing the role gate and the traceId scope.
+15. **No queue metrics over time** — depth, latency, failure rate, DLQ depth.
+16. **20 of 22 work queues declare no `queueOptions`**, inheriting one 12-hour expiry and 3-retry policy for very different workloads.
+17. **`CI_QUEUE_SUPPRESS` is bypassed by any `send()` that names a queue**, while `sendMany` honours it.
 
 ---
 

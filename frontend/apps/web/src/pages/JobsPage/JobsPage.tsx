@@ -394,7 +394,7 @@ type JobCardProps = {
 };
 
 function JobCard({ job }: JobCardProps) {
-  const { title, subtitle } = getJobDisplay(job.data);
+  const { title, subtitle } = getJobDisplay(job);
 
   return (
     <div className="rounded-lg border border-border/60 bg-muted/30 p-3 text-sm">
@@ -429,21 +429,24 @@ function JobCard({ job }: JobCardProps) {
 /**
  * Why a job failed.
  *
- * The API has always sent this: `JobMonitorService` selects `pgboss.job.output`,
- * the worker writes `{ message, stack, failedAt }` into it on every failure, and
- * the DTO carries it all the way to the browser — where the page dropped it on
- * the floor. So the dashboard could tell an operator that 1,191 jobs had failed
- * and nothing whatsoever about why, while the answer sat in memory one property
- * away. On the appliance this was written against, 628 of those failures were a
- * single missing binary ("Cannot find ffmpeg") and the rest were two more
- * one-line causes.
+ * The API has always had this: the worker writes `{ message, stack, failedAt }`
+ * into `pgboss.job.output` on every failure and `JobMonitorService` selects it —
+ * but the page dropped it on the floor. So the dashboard could tell an operator
+ * that 1,191 jobs had failed and nothing whatsoever about why, while the answer
+ * sat in memory one property away. On the appliance this was written against,
+ * 628 of those failures were a single missing binary ("Cannot find ffmpeg").
+ *
+ * The parsing now happens server-side (`JobMonitorService.toFailure`), because
+ * `output` also holds deliberate success payloads from deferred completions and
+ * those can carry user data — so only the three known failure fields cross the
+ * wire at all.
  *
  * Collapsed by default — the stack traces are long and most jobs never fail —
  * and rendered with `<details>` so it costs no state and stays keyboard- and
  * screen-reader-navigable for free.
  */
 function JobFailureDetail({ job }: { job: JobRecord }) {
-  const failure = readFailure(job.output);
+  const { failure } = job;
 
   if (!failure) {
     return null;
@@ -475,45 +478,12 @@ function JobFailureDetail({ job }: { job: JobRecord }) {
   );
 }
 
-type JobFailure = {
-  message: string;
-  stack?: string;
-  failedAt?: string;
-};
-
-/**
- * Pull a readable failure out of a job's `output`.
- *
- * The worker writes `{ message, stack, failedAt }`, but `output` is an untyped
- * jsonb column that also holds deliberate success payloads from deferred
- * completions, and older rows predate the current shape. Anything without a
- * usable message is treated as "not a failure" rather than rendered as `[object
- * Object]`.
- */
-function readFailure(output: Record<string, unknown> | null): JobFailure | null {
-  if (!output || typeof output !== 'object') {
-    return null;
-  }
-
-  const message = typeof output['message'] === 'string' ? output['message'].trim() : '';
-
-  if (!message) {
-    return null;
-  }
-
-  return {
-    message,
-    stack: typeof output['stack'] === 'string' ? output['stack'] : undefined,
-    failedAt: typeof output['failedAt'] === 'string' ? output['failedAt'] : undefined,
-  };
-}
-
 type ArchivedJobCardProps = {
   job: ArchivedJobRecord;
 };
 
 function ArchivedJobCard({ job }: ArchivedJobCardProps) {
-  const { title, subtitle } = getJobDisplay(job.data);
+  const { title, subtitle } = getJobDisplay(job);
 
   return (
     <div className="rounded-lg border border-border/60 bg-muted/30 p-3 text-sm">
@@ -763,20 +733,25 @@ function formatTimestamp(value?: string) {
   }).format(date);
 }
 
-function getJobDisplay(data: Record<string, unknown> | null): { title: string; subtitle?: string } {
-  const rotationTitle = formatSmartRotationJobTitle(data);
+/**
+ * What to call a job on its card.
+ *
+ * Reads the projected `event`/`workType` rather than the raw payload — those are
+ * the only two fields this ever needed, which is what made redacting the payload
+ * server-side lossless. Falls back to the queue name: a job with no event name
+ * is still a job on a queue, and "Unnamed job" repeated down a column tells an
+ * operator less than the queue does.
+ */
+function getJobDisplay(job: JobRecord): { title: string; subtitle?: string } {
+  const rotationTitle = formatSmartRotationJobTitle({ name: job.event, workType: job.workType });
 
   if (rotationTitle) {
     return { title: rotationTitle, subtitle: 'smart.rotation.work' };
   }
 
-  if (!data || typeof data !== 'object') {
-    return { title: 'Unnamed job' };
+  if (job.event) {
+    return { title: job.event };
   }
 
-  const name = data['name'];
-
-  return {
-    title: typeof name === 'string' && name.length > 0 ? name : 'Unnamed job',
-  };
+  return { title: job.queue, subtitle: 'no event name' };
 }

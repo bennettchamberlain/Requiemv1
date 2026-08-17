@@ -51,8 +51,13 @@ function job(overrides: Partial<JobsDashboardResponse['jobs'][number]> = {}) {
     retryBackoff: true,
     createdOn: '2026-08-17T00:00:00.000Z',
     startAfter: '2026-08-17T00:00:00.000Z',
-    data: { name: 'note.created' },
-    output: null,
+    // The API projects the payload down to these — it does not ship `data` or
+    // `output`, because job payloads are user content and this endpoint has no
+    // owner predicate.
+    event: 'note.created',
+    workType: null,
+    payloadBytes: 42,
+    failure: null,
     ...overrides,
   } as JobsDashboardResponse['jobs'][number];
 }
@@ -165,8 +170,8 @@ describe('JobsPage failure reporting', () => {
             queue: 'file-preview-generation',
             state: 'failed',
             retryCount: 3,
-            data: { name: 'file.uploaded' },
-            output: {
+            event: 'file.uploaded',
+            failure: {
               message: 'Cannot find ffmpeg',
               stack: 'Error: Cannot find ffmpeg\n    at FfmpegCommand.proto._getFfmpegPath',
               failedAt: '2026-08-17T09:21:10.289Z',
@@ -180,16 +185,18 @@ describe('JobsPage failure reporting', () => {
     expect(screen.getByText(/at FfmpegCommand\.proto\._getFfmpegPath/)).toBeInTheDocument();
   });
 
-  it('shows no failure block for a job with no output', () => {
+  it('shows no failure block for a job that did not fail', () => {
     render(dashboard({ jobs: [job()] }));
 
     expect(screen.queryByText('Cannot find ffmpeg')).not.toBeInTheDocument();
   });
 
-  it('ignores an output that carries no readable message', () => {
-    render(dashboard({ jobs: [job({ state: 'failed', output: { rowsIndexed: 42 } })] }));
+  it('shows no failure block when the server projected no failure', () => {
+    // `output` also holds deliberate success payloads from deferred completions,
+    // so the server returns null rather than something that renders as
+    // "[object Object]" at an operator.
+    render(dashboard({ jobs: [job({ state: 'failed', failure: null })] }));
 
-    // Rendering this blindly would have printed "[object Object]" at an operator.
     expect(screen.queryByText(/object Object/)).not.toBeInTheDocument();
   });
 });
@@ -199,8 +206,8 @@ describe('JobsPage job columns', () => {
     render(
       dashboard({
         jobs: [
-          job({ id: 'live-1', state: 'created', data: { name: 'note.created' } }),
-          job({ id: 'dead-1', state: 'failed', data: { name: 'file.uploaded' } }),
+          job({ id: 'live-1', state: 'created', event: 'note.created' }),
+          job({ id: 'dead-1', state: 'failed', event: 'file.uploaded' }),
         ],
       }),
     );
@@ -218,7 +225,7 @@ describe('JobsPage job columns', () => {
   it('treats dead-letter queue entries as failures even though their state is created', () => {
     render(
       dashboard({
-        jobs: [job({ id: 'dl-1', queue: 'dead-letter', state: 'created', data: { name: 'file.uploaded' } })],
+        jobs: [job({ id: 'dl-1', queue: 'dead-letter', state: 'created', event: 'file.uploaded' })],
       }),
     );
 

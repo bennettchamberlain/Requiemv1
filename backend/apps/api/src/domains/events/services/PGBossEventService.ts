@@ -248,7 +248,21 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
           continue;
         }
 
-        this.stopTasks.push(this.work(queue));
+        // Terminal .catch, not decoration. This promise is parked in stopTasks
+        // and nothing awaits it until flush() at shutdown, so anything that
+        // escapes `work()` is an unhandled rejection for the entire uptime of
+        // the process — and application.ts turns those into process.exit(1).
+        // The loop guards its own known failure modes; this is the backstop for
+        // the ones it does not know about, and it resolves rather than rethrows
+        // so flush() still completes.
+        this.stopTasks.push(
+          this.work(queue).catch((err: unknown) => {
+            this.logger.error(
+              `Worker loop for queue ${queue} stopped unexpectedly; this queue will not be consumed until restart`,
+              err instanceof Error ? err : new Error(String(err)),
+            );
+          }),
+        );
         started += 1;
       }
 

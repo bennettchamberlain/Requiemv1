@@ -84,11 +84,15 @@ function makeService(options: {
   jobStateRows?: RawRow[];
   archiveStateRows?: RawRow[];
   cronJobs?: Map<string, unknown>;
+  jobEntities?: unknown[];
 }) {
   // getSummary asks the job repo for grouped state rows; the distribution
   // queries reuse the same repo, so the stub returns the same rows to all of
   // them. Only the summary's arithmetic is under test here.
-  const jobRepository = stubRepository({ rows: options.jobStateRows ?? [] });
+  const jobRepository = stubRepository({
+    rows: options.jobStateRows ?? [],
+    entities: options.jobEntities ?? [],
+  });
   const archiveRepository = stubRepository({ rows: options.archiveStateRows ?? [] });
   const scheduleRepository = stubRepository({ count: 0 });
   const queueRepository = stubRepository();
@@ -194,6 +198,98 @@ describe('JobMonitorService.getDashboard', () => {
 
     // Both the by-handler and the by-queue distribution must exclude it.
     expect(deadLetterExclusions).toHaveLength(2);
+  });
+
+  /**
+   * The endpoint is guarded by "some user is authenticated" and returns the 25
+   * newest rows with no owner predicate, so a job payload it serialises is
+   * handed to whoever opens /jobs — not to the user who generated it.
+   * `graph.person.created` carries name, email, phone and bio;
+   * `search.embed.entity` carries the entity's searchable text.
+   *
+   * Nothing that is not on this projection may cross the wire.
+   */
+  it('never returns a raw job payload or output', async () => {
+    const timestamp = new Date('2026-08-17T00:00:00.000Z');
+
+    const { service } = makeService({
+      jobEntities: [
+        {
+          id: 'job-1',
+          name: 'default',
+          state: 'failed',
+          priority: 0,
+          retryLimit: 3,
+          retryCount: 3,
+          retryDelay: 10,
+          retryBackoff: true,
+          createdOn: timestamp,
+          startAfter: timestamp,
+          deadLetter: 'dead-letter',
+          policy: 'standard',
+          data: {
+            name: 'graph.person.created',
+            workType: null,
+            email: 'someone.else@example.com',
+            bio: 'private biography text',
+          },
+          output: {
+            message: 'column fq.metadata does not exist',
+            stack: 'QueryFailedError: column fq.metadata does not exist',
+            failedAt: '2026-08-17T04:42:09.806Z',
+          },
+        },
+      ],
+    });
+
+    const { jobs } = await service.getDashboard(context);
+    const [record] = jobs;
+    const serialised = JSON.stringify(jobs);
+
+    expect(record).not.toHaveProperty('data');
+    expect(record).not.toHaveProperty('output');
+    expect(serialised).not.toContain('someone.else@example.com');
+    expect(serialised).not.toContain('private biography text');
+
+    // ...while everything the dashboard actually renders survives.
+    expect(record.event).toBe('graph.person.created');
+    expect(record.payloadBytes).toBeGreaterThan(0);
+    expect(record.failure).toEqual({
+      message: 'column fq.metadata does not exist',
+      stack: 'QueryFailedError: column fq.metadata does not exist',
+      failedAt: '2026-08-17T04:42:09.806Z',
+    });
+  });
+
+  it('projects a deferred success payload to no failure at all', async () => {
+    const timestamp = new Date('2026-08-17T00:00:00.000Z');
+
+    const { service } = makeService({
+      jobEntities: [
+        {
+          id: 'job-2',
+          name: 'py-fn-summary',
+          state: 'completed',
+          priority: 0,
+          retryLimit: 3,
+          retryCount: 0,
+          retryDelay: 10,
+          retryBackoff: true,
+          createdOn: timestamp,
+          startAfter: timestamp,
+          data: { name: 'python.function.run' },
+          // Deferred completions write real success payloads here, and those can
+          // carry user content. No `message` means no failure — and nothing else
+          // from this object is copied out.
+          output: { summary: 'a private summary of the user documents' },
+        },
+      ],
+    });
+
+    const { jobs } = await service.getDashboard(context);
+
+    expect(jobs[0].failure).toBeNull();
+    expect(JSON.stringify(jobs)).not.toContain('a private summary');
   });
 
   /**

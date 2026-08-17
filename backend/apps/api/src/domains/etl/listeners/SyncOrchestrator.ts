@@ -34,8 +34,16 @@ export class SyncOrchestrator {
   async orchestrateSyncJobs(): Promise<void> {
     const activeConnections = await this.connectionService.findActiveConnections();
 
-    activeConnections.forEach(({ connection }) => {
-      connection.activeEndpoints.forEach(async (endpoint) => {
+    // for...of, not forEach. `Array.prototype.forEach` discards the promise an
+    // async callback returns, so a rejection inside the body is orphaned: it
+    // reaches neither this method's caller, nor the @Cron wrapper, nor Nest's
+    // own scheduler catch — it surfaces as an unhandled rejection, which
+    // application.ts turns into process.exit(1). The body below makes six
+    // awaited database calls and runs every minute, so one pool timeout was
+    // enough to restart the API. Awaiting also bounds the concurrency, which was
+    // previously every connection × every endpoint at once.
+    for (const { connection } of activeConnections) {
+      for (const endpoint of connection.activeEndpoints) {
         const providerEndpoint = connection.provider!.endpoints.find((e) => e.name === endpoint);
         if (!providerEndpoint) {
           this.logger.error('Active endpoint not found on provider', {
@@ -43,7 +51,10 @@ export class SyncOrchestrator {
             endpoint,
           });
 
-          return;
+          // `continue`, not `return`: inside the old async forEach callback this
+          // skipped one endpoint, but in a for...of it would abandon every
+          // remaining endpoint AND every remaining connection in the sweep.
+          continue;
         }
 
         const iterationType = providerEndpoint.iterationType;
@@ -88,14 +99,16 @@ export class SyncOrchestrator {
             );
 
             if (stalledInProgress) {
-              stalledInProgress.forEach(async (sync) => {
+              // for...of: an async forEach callback orphans its rejection (see
+              // orchestrateSyncJobs above).
+              for (const sync of stalledInProgress) {
                 await this.connectionSyncJobService.markAsCompleted(
                   { userId: connection.userId },
                   sync.id,
                   'failed',
                   { error: 'Sync job stalled in progress' },
                 );
-              });
+              }
             }
 
             if (successes.length > 0 && (!pendingOrInProgress || stalledInProgress.length > 0)) {
@@ -153,18 +166,21 @@ export class SyncOrchestrator {
             );
 
             if (stalledInProgress.length > 0) {
-              stalledInProgress.forEach(async (sync) => {
+              // for...of: an async forEach callback orphans its rejection (see
+              // orchestrateSyncJobs above).
+              for (const sync of stalledInProgress) {
                 await this.connectionSyncJobService.markAsCompleted(
                   { userId: connection.userId },
                   sync.id,
                   'failed',
                   { error: 'Sync job stalled in progress' },
                 );
-              });
+              }
             }
 
             if (pendingOrInProgress) {
-              return;
+              // `continue`, not `return` — see the note at the top of the loop.
+              continue;
             }
 
             if (successes.length > 0) {
@@ -207,8 +223,8 @@ export class SyncOrchestrator {
             }
           }
         }
-      });
-    });
+      }
+    }
   }
 
   /**

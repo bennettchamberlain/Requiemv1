@@ -4,6 +4,22 @@ import { fetchJson } from '@ci/common';
 
 import { useAuth } from '@/hooks';
 
+/** Why a job failed, lifted server-side out of `pgboss.job.output`. */
+export interface JobFailure {
+  readonly message: string;
+  readonly stack?: string;
+  readonly failedAt?: string;
+}
+
+/**
+ * One job, as the API is willing to describe it.
+ *
+ * Job payloads are user content and this endpoint carries no owner predicate, so
+ * the server projects each job down to what the dashboard actually needs — the
+ * event name, the rotation work type, the payload's size, and a failure's
+ * message and stack — rather than shipping `data` and `output` verbatim to
+ * whoever happens to be signed in.
+ */
 export interface JobRecord {
   readonly id: string;
   readonly queue: string;
@@ -19,8 +35,10 @@ export interface JobRecord {
   readonly completedOn?: string;
   readonly deadLetter?: string | null;
   readonly policy?: string | null;
-  readonly data: Record<string, unknown> | null;
-  readonly output: Record<string, unknown> | null;
+  readonly event: string | null;
+  readonly workType: string | null;
+  readonly payloadBytes: number;
+  readonly failure: JobFailure | null;
 }
 
 export interface ArchivedJobRecord extends JobRecord {
