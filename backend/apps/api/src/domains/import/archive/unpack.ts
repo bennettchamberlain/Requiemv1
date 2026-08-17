@@ -281,6 +281,64 @@ function declaredBytesFor(archivePath: string, size: number): number {
   return size;
 }
 
+/**
+ * Delete every symlink under `root`, returning how many were removed.
+ *
+ * The backstop for the whole class of "the archive pointed somewhere else"
+ * bugs, and deliberately not a targeted fix for the two known ones. A staged
+ * tree is untrusted input that later stages walk, read, MOVE and finally delete
+ * wholesale — so a link inside it is a way to make any of those four verbs act
+ * on a path the user never offered. The containment checks upstream of this all
+ * validate NAMES (`assertInside` on entry names, `resolveWithinRoots` on the
+ * unit path); none of them can see where a link inside the extracted tree
+ * points, because the link does not exist until after extraction.
+ *
+ * Removing rather than resolving: nothing in an export needs a symlink to be
+ * imported. A Takeout, an Apple Photos library and a mail archive are all plain
+ * files, and a link that survived into the tree is either an accident or an
+ * attack. Walked with `lstat`, and a symlinked DIRECTORY is unlinked rather
+ * than descended — descending is exactly the escape being closed.
+ */
+export function stripSymlinks(root: string, log?: (msg: string) => void): number {
+  let removed = 0;
+
+  const walk = (dir: string): void => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+
+      if (entry.isSymbolicLink()) {
+        try {
+          fs.unlinkSync(full);
+          removed += 1;
+        } catch {
+          /* already gone, or a permission we do not have — nothing to undo */
+        }
+
+        continue;
+      }
+
+      if (entry.isDirectory()) {
+        walk(full);
+      }
+    }
+  };
+
+  walk(root);
+
+  if (removed > 0) {
+    log?.(`removed ${removed} symlink(s) from the extracted tree`);
+  }
+
+  return removed;
+}
+
 // Above this size, skip adm-zip (in-memory + no ZIP64) and stream via `unzip`.
 const LARGE_ZIP_BYTES = 1_000_000_000; // 1 GB
 
@@ -349,8 +407,22 @@ function flattenTakeoutWrapper(parent: string, log?: (msg: string) => void): voi
   const wrap = path.join(parent, 'Takeout');
   let st: fs.Stats;
   try {
-    st = fs.statSync(wrap);
+    // lstat, NOT stat. `stat` follows the link, so a unit containing
+    // `Takeout -> /somewhere/else` reported a directory, and the loop below
+    // then `renameSync`d that directory's CONTENTS into the run's scratch —
+    // after which the ordinary end-of-run reclaim deleted them. That is a
+    // reproduced path to emptying and destroying any directory the API process
+    // can reach, outside every configured import root, from a file a user was
+    // invited to drop in. A symlinked wrapper has no legitimate use here: the
+    // flatten exists to unwrap a directory Google put inside the archive.
+    st = fs.lstatSync(wrap);
   } catch {
+    return;
+  }
+
+  if (st.isSymbolicLink()) {
+    log?.(`refusing to flatten 'Takeout': it is a symlink, not a directory`);
+
     return;
   }
 

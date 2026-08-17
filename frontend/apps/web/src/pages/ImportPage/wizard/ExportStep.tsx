@@ -75,8 +75,14 @@ export function ExportStep({
 
       for (const drop of drops) {
         const run = await api.startRun(drop.dropId, {
+          // `media` belongs with `parse`, not with the deferred push: it reads
+          // the bytes out of the run's scratch tree, and that tree is reclaimed
+          // when the run's last stage finishes. Leaving it to the Sync step
+          // meant every wizard import — the default view of this page — parsed
+          // its photos and then deleted them, producing content rows pointing
+          // at files that were never stored.
           label: drop.originalFilename ?? shortTitle(guide.title),
-          stages: ['unpack', 'parse'],
+          stages: ['unpack', 'parse', 'media'],
         });
 
         runIds.push(run.id);

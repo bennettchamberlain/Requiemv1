@@ -6,7 +6,7 @@ import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 
 import { extractUploadedArchive, isExtractableArchive } from '../archive/extract';
-import { unpackArchives, type RejectedArchive } from '../archive/unpack';
+import { stripSymlinks, unpackArchives, type RejectedArchive } from '../archive/unpack';
 import { StagedSourceService } from '../services/StagedSourceService';
 import { acquireLocalUnit } from '../sources/localAcquire';
 import type { ImportStageRunner, StageOutcome, StageRunContext } from '../types';
@@ -95,6 +95,15 @@ export class UnpackStage implements ImportStageRunner {
 
     const nestedFiles = nested.reduce((sum, entry) => sum + entry.files, 0);
 
+    // Last thing before the tree is handed to the parsers, and after every
+    // extraction and flatten has finished creating entries. A symlink here is a
+    // way to make the later stages read, move or delete a path the user never
+    // offered — see stripSymlinks. Counted into the stage detail so a tree that
+    // contained them is visible rather than silently altered.
+    const symlinksRemoved = stripSymlinks(context.scratchDir, (message) =>
+      this.logger.warn(message, { runId: context.runId }),
+    );
+
     await context.progress({ processed: 1, total: 1, phase: 'expanded' });
 
     return {
@@ -110,6 +119,7 @@ export class UnpackStage implements ImportStageRunner {
         extractedFiles,
         nestedArchives: nested.length,
         nestedFiles,
+        symlinksRemoved,
         rejected: rejected.map((entry) => ({
           archive: path.basename(entry.archive),
           reason: entry.reason,

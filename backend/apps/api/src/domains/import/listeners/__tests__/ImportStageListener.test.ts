@@ -26,10 +26,12 @@ function makeListener(
     next?: Record<string, unknown> | null;
     run?: jest.Mock;
     pulled?: boolean;
+    unstoredMedia?: boolean;
   } = {},
 ) {
   const runs = {
     pulledRecords: jest.fn(async () => overrides.pulled ?? true),
+    hasUnstoredMedia: jest.fn(async () => overrides.unstoredMedia ?? false),
     getStage: jest.fn(async () =>
       overrides.stage === undefined
         ? { id: payload.stageId, runId: payload.runId, kind: 'unpack', seq: 0, status: 'queued' }
@@ -181,6 +183,20 @@ describe('ImportStageListener advancing', () => {
     // only copy. Reclaiming here destroyed it with no way back, because
     // retryStage only accepts failed/cancelled runs.
     const { listener, scratch } = makeListener({ next: null, pulled: false });
+
+    await listener.runStage(payload);
+
+    expect(scratch.reclaim).not.toHaveBeenCalled();
+  });
+
+  it('keeps the scratch tree while any media bytes are still unstored', async () => {
+    // The wizard requested [unpack, parse] and the deferred push appended a
+    // bare `push`, so `media` never ran and every photo was reclaimed with the
+    // tree — leaving content rows pointing at files that were never stored,
+    // with no recovery path. Checked against the ROWS rather than the run's
+    // stage list, because a run whose stages omit `media` is exactly the case
+    // that lost the bytes.
+    const { listener, scratch } = makeListener({ next: null, pulled: true, unstoredMedia: true });
 
     await listener.runStage(payload);
 
