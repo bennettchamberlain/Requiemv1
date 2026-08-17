@@ -155,4 +155,20 @@ if [ ! -f "$XCCONFIG" ]; then
   exit 1
 fi
 
-echo "▸ ci_post_clone: done — Pods and web assets are in place"
+# The on-device LLM links CLiteRTLM.xcframework, which is ~81 MB and deliberately
+# NOT committed (it would live in this repo's history forever). Same reasoning as
+# Pods/ and App/public above: generated-or-fetched content that a cold clone has
+# to materialise. Without this the build fails at link time with a missing
+# framework, which reads like a project misconfiguration rather than a missing
+# download step.
+echo "▸ fetching CLiteRTLM.xcframework (on-device LLM)"
+"$MOBILE_DIR/ios/App/Frameworks/fetch-clitertlm-xcframework.sh"
+
+XCFRAMEWORK="$MOBILE_DIR/ios/App/Frameworks/CLiteRTLM.xcframework"
+
+if [ ! -d "$XCFRAMEWORK" ]; then
+  echo "✗ fetch step finished but $XCFRAMEWORK is still missing — linking will fail." >&2
+  exit 1
+fi
+
+echo "▸ ci_post_clone: done — Pods, web assets and CLiteRTLM.xcframework are in place"
