@@ -159,22 +159,31 @@ export class ForecastResolver {
   }
 
   @Query(() => [PlaceForecastItemType], {
-    description: 'Likely next places from recent stay cells',
+    description:
+      'Likely next places from the stay-point transition model (recency-decayed, hour/dow backoff)',
   })
   async placeForecast(
     @Context() context: RequestContext,
     @Args('k', { type: () => Int, nullable: true, defaultValue: 5 }) k: number,
+    @Args('horizonHours', { type: () => Int, nullable: true, defaultValue: 4 }) horizonHours: number,
   ): Promise<PlaceForecastItemType[]> {
     if (!(await this.featureService.isFeatureEnabled('hbpe'))) {
       return [];
     }
 
     try {
-      const places = await this.placeForecastService.predictNext(toServiceContext(context), k);
+      const places = await this.placeForecastService.predictNext(
+        toServiceContext(context),
+        k,
+        horizonHours,
+      );
 
       return places.map(PlaceForecastItemType.toType);
     } catch (err) {
-      this.logger.error('Place forecast query failed', err instanceof Error ? err : new Error(String(err)));
+      this.logger.error(
+        'Place forecast query failed',
+        err instanceof Error ? err : new Error(String(err)),
+      );
 
       return [];
     }
@@ -200,6 +209,30 @@ export class ForecastResolver {
       this.logger.error('Calibration query failed', err instanceof Error ? err : new Error(String(err)));
 
       return null;
+    }
+  }
+
+  @Mutation(() => String, {
+    description: 'Rebuild stay-point clusters and recency-decayed transitions for the current user',
+  })
+  async rebuildPlaces(@Context() context: RequestContext): Promise<string> {
+    if (!(await this.featureService.isFeatureEnabled('hbpe'))) {
+      return 'disabled';
+    }
+
+    try {
+      const serviceContext = toServiceContext(context);
+      const user = await this.userService.findById(serviceContext, serviceContext.userId);
+      const result = await this.placeForecastService.rebuild(
+        serviceContext,
+        user?.timezone ?? 'UTC',
+      );
+
+      return `${result.clusters} clusters, ${result.transitions} transitions`;
+    } catch (err) {
+      this.logger.error('Place rebuild failed', err instanceof Error ? err : new Error(String(err)));
+
+      return 'error';
     }
   }
 
