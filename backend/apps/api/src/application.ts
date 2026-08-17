@@ -34,6 +34,7 @@ import { AuthModule } from '@ci/domains/auth';
 import { PortalAuthModule } from '@ci/domains/auth/PortalAuthModule';
 import { BrowserActivityModule } from '@ci/domains/browser-activity';
 import { ConnectionsModule } from '@ci/domains/connections';
+import { DailyMetricsModule } from '@ci/domains/daily-metrics';
 import { DeviceModule } from '@ci/domains/devices';
 import { EtlModule } from '@ci/domains/etl';
 import { EventsModule } from '@ci/domains/events';
@@ -107,6 +108,7 @@ import { flushTelemetry, isTelemetryEnabled } from '@ci/instrument';
     PortalAuthModule,
     BrowserActivityModule,
     ConnectionsModule,
+    DailyMetricsModule,
     DeviceModule,
     ParsingModule,
     EtlModule,

@@ -9,6 +9,7 @@ import { AsksModule } from '@ci/domains/asks';
 import { BrowserActivityModule } from '@ci/domains/browser-activity';
 import { ConnectionsModule } from '@ci/domains/connections';
 import { ConversationModule } from '@ci/domains/conversations';
+import { DailyMetricsModule } from '@ci/domains/daily-metrics';
 import { DeviceModule } from '@ci/domains/devices';
 import { EntityResolutionModule } from '@ci/domains/entity-resolution';
 import { EtlModule } from '@ci/domains/etl';
@@ -58,6 +59,7 @@ import { ConceptResolver } from './resolvers/ConceptResolver';
 import { ConnectionResolver } from './resolvers/ConnectionResolver';
 import { ConnectionSyncJobResolver } from './resolvers/ConnectionSyncJobResolver';
 import { ContentResolver } from './resolvers/ContentResolver';
+import { DailyMetricsResolver } from './resolvers/DailyMetricsResolver';
 import { EventResolver } from './resolvers/EventResolver';
 import { FileResolver } from './resolvers/FileResolver';
 import { ForecastResolver } from './resolvers/ForecastResolver';
@@ -112,6 +114,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     PredictionsModule,
     PythonFunctionsModule,
     ConversationModule,
+    DailyMetricsModule,
     EntityResolutionModule,
     EtlModule,
     FilesModule,
@@ -142,6 +145,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     ConnectionResolver,
     ConnectionSyncJobResolver,
     ContentResolver,
+    DailyMetricsResolver,
     NodeResolver,
     NoteResolver,
     TaskResolver,
