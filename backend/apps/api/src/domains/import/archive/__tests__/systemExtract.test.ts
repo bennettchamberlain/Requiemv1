@@ -137,6 +137,34 @@ describeIfZip('systemExtract', () => {
     fs.rmSync(work, { recursive: true, force: true });
   });
 
+  it('keeps a partly-extracted tree rather than discarding the whole archive', () => {
+    // Measured on a real 3.3GB Google Takeout: `unzip` exited 50 and `ditto`
+    // exited 1 on two entries no extractor will take — a name used as both a
+    // file and a directory (`Takeout/Drive/Unorganized/config: Not a
+    // directory`) and an `Unknown compression type` — having already written
+    // 2.8GB across 1,087 files. Failing the archive threw all of that away.
+    const work = scratch();
+    const dest = path.join(work, 'dest');
+    fs.mkdirSync(dest, { recursive: true });
+
+    // Stand in for the half-written tree an aborted extractor leaves behind.
+    fs.mkdirSync(path.join(dest, 'Takeout', 'Drive'), { recursive: true });
+    fs.writeFileSync(path.join(dest, 'Takeout', 'Drive', 'survived.txt'), 'real content');
+
+    const notAZip = path.join(work, 'broken.zip');
+    fs.writeFileSync(notAZip, 'neither extractor can read this');
+
+    const result = systemExtract(notAZip, dest);
+
+    expect(result.ok).toBe(true);
+    expect(result.partial).toBe(true);
+    // The reason survives so the run can say what was lost instead of
+    // reporting a clean success.
+    expect(result.detail).not.toHaveLength(0);
+
+    fs.rmSync(work, { recursive: true, force: true });
+  });
+
   it('reports a cause rather than succeeding on a file that is not an archive', () => {
     const work = scratch();
     const dest = path.join(work, 'dest');

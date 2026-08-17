@@ -71,6 +71,14 @@ export interface ExtractResult {
   method: 'adm-zip' | 'system-unzip';
   /** The staged archive was deleted after a fully-successful extraction. */
   archiveDeleted?: boolean;
+  /**
+   * An extractor errored but still produced a tree, so SOME entries are
+   * missing. The run imports what arrived and reports the shortfall rather
+   * than reporting a clean success over bytes that never landed.
+   */
+  partial?: boolean;
+  /** Why it was partial — the extractor errors, verbatim. */
+  partialReason?: string;
 }
 
 /**
@@ -280,7 +288,12 @@ function extractViaSystemUnzip(
 
   const files = names.filter((n) => !n.endsWith('/')).length;
 
-  return { destDir, files, method: 'system-unzip' };
+  return {
+    destDir,
+    files,
+    method: 'system-unzip',
+    ...(r.partial ? { partial: true, partialReason: r.detail } : {}),
+  };
 }
 
 /**

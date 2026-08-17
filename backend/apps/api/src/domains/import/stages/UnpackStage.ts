@@ -73,6 +73,7 @@ export class UnpackStage implements ImportStageRunner {
     const rejected: RejectedArchive[] = [];
     let extractedFiles = 0;
     let method: string | null = null;
+    let extractionLoss: string | null = null;
 
     if (isExtractableArchive(localPath)) {
       await context.progress({ processed: 0, total: 1, phase: 'extracting' });
@@ -93,6 +94,18 @@ export class UnpackStage implements ImportStageRunner {
 
       extractedFiles = result.files;
       method = result.method;
+
+      if (result.partial) {
+        // A real Takeout can carry entries no extractor will take — a name used
+        // as both a file and a directory, an unsupported compression method.
+        // The rest imported; the run says so rather than claiming a clean run.
+        extractionLoss = result.partialReason ?? 'some entries could not be extracted';
+        this.logger.warn('Archive extracted with losses', {
+          runId: context.runId,
+          filename,
+          reason: extractionLoss,
+        });
+      }
     } else {
       this.logger.debug('Source is not an archive; leaving it in place', {
         runId: context.runId,
@@ -135,7 +148,7 @@ export class UnpackStage implements ImportStageRunner {
       // A quarantined archive is the definition of half-worked: its siblings
       // imported, it did not, and the run must say so rather than reporting a
       // clean success over bytes nobody could read.
-      partial: rejected.length > 0,
+      partial: rejected.length > 0 || extractionLoss != null,
       detail: {
         filename,
         method,
@@ -143,6 +156,7 @@ export class UnpackStage implements ImportStageRunner {
         nestedArchives: nested.length,
         nestedFiles,
         symlinksRemoved,
+        extractionLoss,
         // Both volumes, named, so "did this import have room?" is answerable
         // from the run rather than from a shell on the appliance. The scratch
         // figure is what the archive preflight measured; the database figure is

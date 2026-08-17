@@ -1,4 +1,6 @@
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 
 /**
  * Extracting a zip through whichever system extractor can actually read it.
@@ -32,6 +34,14 @@ import { spawnSync } from 'node:child_process';
 
 export interface SystemExtractResult {
   ok: boolean;
+  /**
+   * True when an extractor errored but still produced a tree. A real Google
+   * Takeout can carry entries no extractor will take — a name used as both a
+   * file and a directory (a Drive-export quirk), an unsupported compression
+   * method — and failing the whole archive over them throws away everything
+   * else. Callers import what arrived and report the shortfall.
+   */
+  partial?: boolean;
   /** Which extractor produced the tree. `null` when none could run. */
   tool: 'unzip' | 'ditto' | null;
   /** Human-readable cause, for the error a caller raises. Empty when ok. */
@@ -83,7 +93,26 @@ export function systemExtractAvailable(): boolean {
  * exits 0 (ok) or 1 (ok, with warnings such as a skipped bad entry) and both
  * count as success. `ditto -x -k` unpacks a PKZip archive; it reports success
  * only on 0.
+ *
+ * When BOTH refuse, the destination is checked before giving up: an archive can
+ * carry a few entries nothing will take while the rest extracted fine.
  */
+/** Whether anything at all landed under `destDir`. */
+function extractedAnything(destDir: string): boolean {
+  const walk = (dir: string): boolean => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return false;
+    }
+
+    return entries.some((entry) => (entry.isDirectory() ? walk(path.join(dir, entry.name)) : entry.isFile()));
+  };
+
+  return walk(destDir);
+}
+
 export function systemExtract(archive: string, destDir: string): SystemExtractResult {
   let detail = '';
 
@@ -110,6 +139,14 @@ export function systemExtract(archive: string, destDir: string): SystemExtractRe
     }
 
     detail += `; ditto exit ${d.status}`;
+  }
+
+  // Both refused — but between them they may have written most of the archive.
+  // Measured on a real 3.3GB Takeout: unzip exited 50 and ditto exited 1 on two
+  // bad entries, having already extracted 2.8GB across 1,087 files. Discarding
+  // that is a worse answer than importing it and saying what was missed.
+  if (extractedAnything(destDir)) {
+    return { ok: true, tool: null, partial: true, detail };
   }
 
   return { ok: false, tool: null, detail };
