@@ -1,13 +1,15 @@
 import type { ReactNode } from 'react';
 
-import { Tooltip, cn } from '@ci/shadcn';
+import { Collapsible, Tooltip, cn } from '@ci/shadcn';
 import {
   BookOpen,
   Brain,
+  ChevronRight,
   Cable,
   CalendarRange,
   ChartColumn,
   CloudSun,
+  CircleHelp,
   LifeBuoy,
   Inbox,
   ListTodo,
@@ -58,17 +60,55 @@ function ExternalNavLink({ href, label, children }: ExternalNavLinkProps) {
   );
 }
 
-function RailGroupLabel({ children }: { children: ReactNode }) {
+/**
+ * Support and Docs, under one entry.
+ *
+ * Two separate rows for "where do I get help" is one more than the question
+ * has. Collapsed, it is a single icon whose tooltip says Help; the two
+ * destinations are one click in either state, rather than two permanent rows
+ * competing with the places you actually work.
+ */
+function HelpSubmenu() {
   const { expanded } = usePowerRail();
 
   if (!expanded) {
-    return null;
+    return (
+      <Tooltip>
+        <Tooltip.Trigger asChild>
+          <a
+            href="https://ci.computer/support"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Help"
+            className="relative flex items-center justify-center rounded-md p-2 transition hover:bg-accent hover:text-accent-foreground active:scale-95"
+          >
+            <CircleHelp className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+          </a>
+        </Tooltip.Trigger>
+        <Tooltip.Content side="right">Help</Tooltip.Content>
+      </Tooltip>
+    );
   }
 
   return (
-    <div className="px-2 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground first:pt-1">
-      {children}
-    </div>
+    <Collapsible>
+      <Collapsible.Trigger className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition hover:bg-accent hover:text-accent-foreground [&[data-state=open]>svg:last-child]:rotate-90">
+        <CircleHelp className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+        <span className="flex-1 truncate text-sm">Help</span>
+        <ChevronRight className="h-4 w-4 shrink-0 transition-transform" />
+      </Collapsible.Trigger>
+      <Collapsible.Content className="flex flex-col gap-1 pl-6">
+        <ExternalNavLink href="https://ci.computer/support" label="Support">
+          <LifeBuoy className="h-4 w-4 shrink-0" strokeWidth={1.25} />
+        </ExternalNavLink>
+        <ExternalNavLink
+          href="https://docs.ci.computer/docs/first-party-apps/digital-memory-server"
+          label="Docs"
+        >
+          <BookOpen className="h-4 w-4 shrink-0" strokeWidth={1.25} />
+        </ExternalNavLink>
+      </Collapsible.Content>
+    </Collapsible>
   );
 }
 
@@ -113,7 +153,6 @@ export function SecondaryNavigation() {
       >
         <Tooltip.Provider>
           <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
-            <RailGroupLabel>Main</RailGroupLabel>
             <div className="flex flex-col gap-1">
               {isFeatureEnabled('planning.page') && (
                 <NavLink to="/plan" label="Plan">
@@ -138,10 +177,7 @@ export function SecondaryNavigation() {
               <NavLink to="/memory" label="Memory">
                 <Brain className="h-6 w-6 shrink-0" strokeWidth={1.25} />
               </NavLink>
-            </div>
 
-            <RailGroupLabel>More</RailGroupLabel>
-            <div className="flex flex-col gap-1">
               <NavLink to="/saved-searches" label="Saved Searches">
                 <FolderSearch2 className="h-6 w-6 shrink-0" strokeWidth={1.25} />
               </NavLink>
@@ -174,16 +210,7 @@ export function SecondaryNavigation() {
           </div>
 
           <div className="mt-auto flex flex-col gap-1 pb-2">
-            <ExternalNavLink href="https://ci.computer/support" label="Support">
-              <LifeBuoy className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-            </ExternalNavLink>
-
-            <ExternalNavLink
-              href="https://docs.ci.computer/docs/first-party-apps/digital-memory-server"
-              label="Docs"
-            >
-              <BookOpen className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-            </ExternalNavLink>
+            <HelpSubmenu />
 
             <NavUser />
           </div>
