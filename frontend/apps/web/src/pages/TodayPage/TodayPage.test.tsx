@@ -1,27 +1,30 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { TodayPage } from './TodayPage';
+
+const features = vi.hoisted(() => ({ scheduleEnabled: true }));
 
 vi.mock('@ci/common', () => ({
   usePageTitle: () => undefined,
   Portal: { Slot: ({ children }: { children: React.ReactNode }) => <div>{children}</div> },
 }));
 vi.mock('@ci/shadcn', () => {
-  const Breadcrumb = Object.assign(
-    ({ children }: { children: React.ReactNode }) => <nav>{children}</nav>,
-    {
-      List: ({ children }: { children: React.ReactNode }) => <ol>{children}</ol>,
-      Item: ({ children }: { children: React.ReactNode }) => <li>{children}</li>,
-      Link: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
-      Separator: () => <span />,
-      Page: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
-    },
-  );
+  const Breadcrumb = Object.assign(({ children }: { children: React.ReactNode }) => <nav>{children}</nav>, {
+    List: ({ children }: { children: React.ReactNode }) => <ol>{children}</ol>,
+    Item: ({ children }: { children: React.ReactNode }) => <li>{children}</li>,
+    Link: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
+    Separator: () => <span />,
+    Page: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
+  });
 
   return { Breadcrumb };
 });
-vi.mock('react-router-dom', () => ({ Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a> }));
+vi.mock('@/common/feature', () => ({
+  useFeatures: () => ({
+    isFeatureEnabled: (flag: string) => (flag === 'schedule.page' ? features.scheduleEnabled : true),
+  }),
+}));
 vi.mock('@/components/layout', () => ({
   PageContent: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
@@ -38,13 +41,19 @@ vi.mock('@/pages/FeedPage', () => ({
 }));
 
 /**
- * Today is Schedule + Feed in one page. Two things have to hold: the order
- * (the part with a time on it leads; the commentary follows) and the fact that
+ * Today is the schedule plus the brief on one page. Three things have to hold:
+ * the order (the part with a time on it leads; the commentary follows), that
  * both are asked for in their embedded variant — a child rendering its own
- * breadcrumb, title and PageContent is what made two of each appear on one
- * screen, and nesting PageContent nests its padding and scroll container.
+ * breadcrumb, title and PageContent is what put two of each on one screen, and
+ * PageContent is the scroll container, so nesting it nests scrollbars — and
+ * that `schedule.page` still hides the schedule, which it used to do by
+ * removing a route that no longer exists.
  */
 describe('TodayPage', () => {
+  beforeEach(() => {
+    features.scheduleEnabled = true;
+  });
+
   it('puts the schedule above the feed', () => {
     render(<TodayPage />);
 
@@ -68,5 +77,16 @@ describe('TodayPage', () => {
     render(<TodayPage />);
 
     expect(screen.getByText('Today')).toBeInTheDocument();
+  });
+
+  it('drops the schedule, and its rule, when schedule.page is off', () => {
+    features.scheduleEnabled = false;
+
+    const { container } = render(<TodayPage />);
+
+    expect(screen.queryByTestId('schedule')).not.toBeInTheDocument();
+    // A rule above the only thing on the page separates it from nothing.
+    expect(container.querySelector('hr')).toBeNull();
+    expect(screen.getByTestId('feed')).toBeInTheDocument();
   });
 });

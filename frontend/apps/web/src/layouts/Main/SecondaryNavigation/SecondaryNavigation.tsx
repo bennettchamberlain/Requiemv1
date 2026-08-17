@@ -9,7 +9,6 @@ import {
   ChartColumn,
   CloudSun,
   LifeBuoy,
-  Inbox,
   ListTodo,
   MessagesSquare,
   FolderSearch2,
@@ -96,18 +95,20 @@ export function SecondaryNavigation() {
               </NavLink>
             )}
 
-            {isFeatureEnabled('schedule.page') && (
-              <NavLink to="/schedule" label="Schedule">
-                <CalendarRange className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-              </NavLink>
-            )}
+            {/* One destination for the day: the schedule leads and the brief
+                follows, because "what is happening" and "what it means" were
+                two halves of one question answered from two places. Ungated,
+                because the brief half is always there — `schedule.page` gates
+                only the schedule within the page. The calendar icon over the
+                inbox tray: a tray promises a queue to clear, which this never
+                was. Forecast keeps its own entry — it describes a horizon
+                rather than a day. */}
+            <NavLink to="/today" label="Today" badgeCount={feedBadgeCount}>
+              <CalendarRange className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+            </NavLink>
 
             <NavLink to="/forecast" label="Forecast">
               <CloudSun className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-            </NavLink>
-
-            <NavLink to="/brief" label="Brief" badgeCount={feedBadgeCount}>
-              <Inbox className="h-6 w-6 shrink-0" strokeWidth={1.25} />
             </NavLink>
 
             <NavLink to="/memory" label="Memory">
