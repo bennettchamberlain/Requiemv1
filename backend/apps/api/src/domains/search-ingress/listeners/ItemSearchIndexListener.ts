@@ -4,7 +4,7 @@ import { ServiceContext, SYSTEM_USER } from '@ci/common/context';
 import { EmbeddingGenerationService } from '@ci/common/embeddings';
 import { LoggerService } from '@ci/common/logging';
 import { OnEvent } from '@ci/domains/events';
-import { type Item, ItemService } from '@ci/domains/memory';
+import { type Item, ItemService, PlaceService } from '@ci/domains/memory';
 import {
   ItemCreatedEvent,
   ItemRemovedEvent,
@@ -21,6 +21,7 @@ import { type WeightedText } from '@ci/domains/search-ingress/types';
 export class ItemSearchIndexListener {
   constructor(
     private readonly itemService: ItemService,
+    private readonly placeService: PlaceService,
     private readonly embeddingGenerationService: EmbeddingGenerationService,
     private readonly embeddingService: EmbeddingService,
     private readonly vectorService: VectorService,
@@ -91,7 +92,8 @@ export class ItemSearchIndexListener {
       return;
     }
 
-    const searchDocument = this.getSearchDocument(item);
+    const placeName = await this.lastSeenPlaceName(item.lastSeenPlaceEntityId);
+    const searchDocument = this.getSearchDocument(item, placeName);
 
     if (searchDocument == null) {
       this.logger.log('Item has no search document, skipping embedding');
@@ -112,7 +114,7 @@ export class ItemSearchIndexListener {
       this.logger.log('Generated embedding for item');
     }
 
-    const searchItem = this.getSearchItem(item);
+    const searchItem = this.getSearchItem(item, placeName);
 
     if (searchItem.length === 0) {
       this.logger.log('Item has no search item, skipping vectorization');
@@ -132,7 +134,18 @@ export class ItemSearchIndexListener {
     }
   }
 
-  private getSearchItem(item: Item): WeightedText[] {
+  private async lastSeenPlaceName(placeId: string | null): Promise<string | null> {
+    if (!placeId) {
+      return null;
+    }
+
+    const place = await this.placeService.findById({ userId: SYSTEM_USER }, placeId);
+    const name = place?.name?.trim();
+
+    return name && name.length > 0 ? name : null;
+  }
+
+  private getSearchItem(item: Item, placeName: string | null): WeightedText[] {
     const parts: WeightedText[] = [];
 
     if (item.name) {
@@ -159,6 +172,10 @@ export class ItemSearchIndexListener {
       parts.push({ text: item.subcategory, weight: 3 });
     }
 
+    if (placeName) {
+      parts.push({ text: placeName, weight: 8 });
+    }
+
     if (item.maintenanceNotes) {
       const maintenanceNotes =
         typeof item.maintenanceNotes === 'string'
@@ -172,7 +189,7 @@ export class ItemSearchIndexListener {
     return parts;
   }
 
-  private getSearchDocument(item: Item): string | null {
+  private getSearchDocument(item: Item, placeName: string | null): string | null {
     const parts = new Set<string>();
 
     const push = (value: unknown) => {
@@ -196,6 +213,7 @@ export class ItemSearchIndexListener {
     push(item.brand ?? null);
     push(item.model ?? null);
     push(item.maintenanceNotes ?? null);
+    push(placeName);
 
     //We don't have any good examples of metadata fields to search on, but
     //putting this here as an example in case we ever do

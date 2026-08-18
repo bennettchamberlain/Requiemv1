@@ -101,6 +101,7 @@ export const JOB_TYPES: Readonly<Record<string, JobTypeDescriptor>> = {
   ...searchIndexTypes('message', 'message'),
   ...searchIndexTypes('communication', 'communication'),
   ...searchIndexTypes('browseractivity', 'browsing record'),
+  ...searchIndexTypes('position', 'GPS fix'),
   'agent-memory.created': {
     label: 'Agent memory saved',
     category: JOB_CATEGORIES.search,

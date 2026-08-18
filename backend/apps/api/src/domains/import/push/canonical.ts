@@ -273,7 +273,14 @@ export type Destination =
  * push. This is the CI-Import-Tools-side mirror of that closed set — keep the two
  * in sync when CI-Server adds a backfillable type.
  */
-export type BackfillEntityType = 'communication' | 'event' | 'content' | 'item' | 'browser-activity' | 'file';
+export type BackfillEntityType =
+  | 'communication'
+  | 'event'
+  | 'content'
+  | 'item'
+  | 'browser-activity'
+  | 'file'
+  | 'position';
 
 /**
  * Map an import `Destination` to the CI-Server backfill `entityType` its rows land
@@ -282,8 +289,8 @@ export type BackfillEntityType = 'communication' | 'event' | 'content' | 'item' 
  * 0% / event 6.5% embed coverage): the previous empty-body backfill relied on the
  * server default sweeping every type, but content/event rows sat unindexed.
  *
- * `position` maps to nothing — GPS fixes have no embeddable text and are not a
- * `BACKFILLABLE_ENTITIES` type, so a position-only push triggers no backfill.
+ * Positions are downsampled (hour × 3-decimal cell) by the search listener;
+ * unnamed fixes are skipped until reverse-geocode names them.
  */
 const DESTINATION_TO_BACKFILL_ENTITY: Record<Destination, BackfillEntityType | null> = {
   events: 'event',
@@ -291,14 +298,13 @@ const DESTINATION_TO_BACKFILL_ENTITY: Record<Destination, BackfillEntityType | n
   communications: 'communication',
   inventory: 'item',
   browser_activity: 'browser-activity',
-  position: null,
+  position: 'position',
 };
 
 /**
  * Reduce the set of destinations a push actually wrote to into the distinct,
- * ordered list of CI-Server backfill entity types to sweep. Destinations with no
- * backfillable counterpart (e.g. `position`) are dropped; the result is
- * deduplicated and stably ordered so requests are deterministic.
+ * ordered list of CI-Server backfill entity types to sweep. Deduplicated and
+ * stably ordered so requests are deterministic.
  */
 export function backfillEntityTypesFor(destinations: Iterable<Destination>): BackfillEntityType[] {
   const seen = new Set<BackfillEntityType>();
@@ -317,6 +323,7 @@ export function backfillEntityTypesFor(destinations: Iterable<Destination>): Bac
     'item',
     'browser-activity',
     'file',
+    'position',
   ];
 
   return ORDER.filter((e) => seen.has(e));
