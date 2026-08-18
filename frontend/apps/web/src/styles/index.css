@@ -171,8 +171,46 @@
  * fill and make it vanish exactly when the button is being used. Lifting the
  * real children to z-index 1 keeps the mark and the text above the bloom.
  */
+/*
+ * The warp core — the rail mark's permanent glow.
+ *
+ * A reactor is not lit because you hovered it; it is lit because it is running.
+ * So this is unconditional, and it breathes between a floor and a peak rather
+ * than fading in and out: the floor is what makes it read as "powered".
+ *
+ * ── Containment ──────────────────────────────────────────────────────────────
+ *
+ * The plasma is CLIPPED to a disc. This is not decoration, it is the fix for a
+ * real bug: the glow used to hang off the button, so its `inset` percentages
+ * were a share of the BUTTON's width — 40px collapsed but 224px pinned, which
+ * turned a compact bloom into a rotating ellipse that streaked diagonally out
+ * of the rail's top-left box. It now hangs off a wrapper the exact size of the
+ * mark, and `overflow: hidden` on a round wrapper means no amount of rotation
+ * can put light outside the disc. The only light that escapes is the outer
+ * halo below, which is a STATIC box-shadow and therefore cannot streak.
+ *
+ * ── Cost ─────────────────────────────────────────────────────────────────────
+ *
+ * Only `rotate`, `scale` and `opacity` animate. Those are compositor
+ * properties: the layer rasterizes once and the GPU transforms it per frame, so
+ * there is no layout, no paint, and no main-thread work while it runs.
+ *
+ * Nothing animates `filter`. An earlier version pulsed `filter: drop-shadow`,
+ * which re-runs a blur every frame on the CPU. Softness comes from wide, low
+ * alpha gradient stops instead of `filter: blur`, because a blurred element
+ * that rotates has to be re-blurred as it turns — which defeats compositing it.
+ *
+ * `rotate` and `scale` are used as INDEPENDENT properties rather than inside a
+ * `transform`, which is what lets one element carry a slow spin and a separate
+ * breathe at a different period without the two overwriting each other.
+ */
 .warp-core {
-  position: relative;
+  /* The containment field. Rotation cannot escape a clipped disc. */
+  overflow: hidden;
+  border-radius: 9999px;
+  /* The only light outside the disc: static, so it can never streak. */
+  box-shadow: 0 0 9px -1px color-mix(in srgb, var(--primary) 45%, transparent);
+  isolation: isolate;
 }
 
 .warp-core > * {
@@ -180,35 +218,15 @@
   z-index: 1;
 }
 
-/*
- * Two counter-rotating layers, and the whole cost model is in what they animate.
- *
- * Only `rotate`, `scale` and `opacity` move. Those are compositor properties —
- * the layer is rasterized once and the GPU transforms it per frame, so this
- * costs no layout, no paint, and no main-thread work while it runs. The earlier
- * version animated `filter: drop-shadow`, which re-runs a blur EVERY FRAME on
- * the CPU; that is the expensive thing and it is gone.
- *
- * Softness is baked into the gradient stops rather than applied with
- * `filter: blur`. A blurred element that rotates has to be re-blurred as it
- * turns, which defeats the point of compositing it. Wide, low-alpha colour stops
- * give the same diffuse look for free.
- *
- * `rotate` and `scale` are used as INDEPENDENT properties, not inside a
- * `transform`. That is what lets one element carry a slow spin and a separate
- * breathe at a different period without the two animations overwriting each
- * other's transform.
- *
- * Two small pseudo-elements, ~50x50px each. `will-change` promotes them once;
- * at this size the memory is negligible and it avoids re-promotion churn.
- */
 .warp-core::before,
 .warp-core::after {
   content: "";
   position: absolute;
   z-index: 0;
+  /* Oversized so the turning gradient always fills the disc corner to corner —
+     clipped back to the circle, so the overspill is never visible. */
+  inset: -55%;
   border-radius: 9999px;
-  /* Decoration must never eat the click. */
   pointer-events: none;
   will-change: transform;
 }
@@ -216,30 +234,29 @@
 /* The swirl: a conic sweep with deliberately wide, overlapping transparent
    stops, so it reads as plasma turning over rather than as a radar spoke. */
 .warp-core::before {
-  inset: -32% -12%;
   background: conic-gradient(
     from 0deg,
     transparent 0deg,
-    color-mix(in srgb, var(--primary) 24%, transparent) 55deg,
+    color-mix(in srgb, var(--primary) 42%, transparent) 55deg,
     transparent 130deg,
-    color-mix(in srgb, var(--phthalo-hover) 20%, transparent) 210deg,
+    color-mix(in srgb, var(--phthalo-hover) 38%, transparent) 210deg,
     transparent 290deg,
-    color-mix(in srgb, var(--primary) 14%, transparent) 330deg,
+    color-mix(in srgb, var(--primary) 26%, transparent) 330deg,
     transparent 360deg
   );
   animation: warp-core-swirl 13s linear infinite;
 }
 
 /* The core: a soft radial bloom breathing on its own period and drifting the
-   other way. Counter-rotation is what stops the pair reading as one rigid
-   object spinning — the interference between the two is the "flow". */
+   other way. Counter-rotation is the point — two different periods turning
+   opposite ways interfere, and the interference is what reads as flow. One
+   rotating element just reads as a spinning object. */
 .warp-core::after {
-  inset: -16% -4%;
   background: radial-gradient(
     closest-side,
-    color-mix(in srgb, var(--primary) 30%, transparent),
-    color-mix(in srgb, var(--phthalo-hover) 18%, transparent) 52%,
-    transparent 76%
+    color-mix(in srgb, var(--primary) 34%, transparent),
+    color-mix(in srgb, var(--phthalo-hover) 20%, transparent) 52%,
+    transparent 78%
   );
   animation:
     warp-core-breathe 3.6s ease-in-out infinite,
@@ -247,10 +264,9 @@
 }
 
 /* The mark is the emitter. Its halo is STATIC — a drop-shadow that changes
-   every frame is a per-frame blur, and the two moving layers behind it already
-   carry the motion. */
+   every frame is a per-frame blur, and the layers behind it carry the motion. */
 .warp-core-emitter {
-  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--primary) 55%, transparent));
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--primary) 50%, transparent));
 }
 
 @keyframes warp-core-swirl {
@@ -276,13 +292,13 @@
 @keyframes warp-core-breathe {
   0%,
   100% {
-    opacity: 0.62;
-    scale: 0.94;
+    opacity: 0.6;
+    scale: 0.92;
   }
 
   50% {
     opacity: 1;
-    scale: 1.06;
+    scale: 1.08;
   }
 }
 

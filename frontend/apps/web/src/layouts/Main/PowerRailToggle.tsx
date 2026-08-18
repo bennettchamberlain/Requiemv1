@@ -51,12 +51,21 @@ export function PowerRailToggle() {
                 : 'size-10 shrink-0 justify-center p-0',
             )}
           >
-            {/* `max-w-none` defeats the preflight cap directly, so the mark
-              keeps its aspect ratio even if this button is ever laid out
-              narrower again. `shrink-0` alone does not do this — it stops flex
-              from shrinking the item, but max-width is a separate constraint
-              and wins regardless. */}
-            <img src={logo} alt="" className="warp-core-emitter size-8 max-w-none shrink-0" />
+            {/* The glow hangs off THIS wrapper, not the button. On the button
+              its `inset` was a percentage of the button's width — 40px
+              collapsed, but 224px pinned, which turned a compact bloom into a
+              rotating ellipse that streaked diagonally across the header and
+              out of the rail. Anchored to the mark, both states are identical
+              and the light stays where the reactor is.
+
+              `max-w-none` defeats Tailwind's preflight `img { max-width: 100% }`
+              directly, so the mark keeps its aspect ratio even if this button is
+              ever laid out narrower again. `shrink-0` alone does not do this —
+              it stops flex from shrinking the item, but max-width is a separate
+              constraint and wins regardless. */}
+            <span className="warp-core relative grid size-8 shrink-0 place-items-center">
+              <img src={logo} alt="" className="warp-core-emitter size-8 max-w-none" />
+            </span>
             {/* PINNED, not merely expanded. This button sits in the same `auto`
               grid column as the rail, so a wordmark appearing here widens the
               column and shoves the header and page content sideways — which is
