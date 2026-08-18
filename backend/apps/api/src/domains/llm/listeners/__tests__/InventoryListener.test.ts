@@ -46,6 +46,10 @@ const ANALYSIS = JSON.stringify({
       model: null,
       condition: 'fair',
       estimated_value: 25,
+      colors: ['matte black'],
+      materials: ['steel', 'plastic'],
+      dimensions: '40 x 15 x 15 cm',
+      mass: '1.2 kg',
     },
   ],
 });
@@ -189,10 +193,42 @@ describe('InventoryListener — a vision guess is recorded as a sighting', () =>
 
     await listener.handleFileUploaded(upload());
 
+    // The migration's own example for this column is
+    // `{color: 'red', condition: 'scratched', count: 2}` — colour included.
     expect(observationService.create.mock.calls[1][1].attributes).toEqual({
       condition: 'fair',
       category: 'Lighting',
+      colors: ['matte black'],
+      materials: ['steel', 'plastic'],
     });
+  });
+
+  it('records the detector’s words verbatim, without normalizing them', async () => {
+    const { listener, observationService } = makeListener();
+
+    await listener.handleFileUploaded(upload());
+
+    const { attributes } = observationService.create.mock.calls[1][1];
+
+    // Dimensions and mass are unit-bearing strings that only mean anything
+    // once `normalizePhysicalProperties` has resolved them onto ci.inventory.
+    // A raw second copy on the sighting is a second thing to parse and
+    // disagree about, so it is left off rather than half-recorded.
+    expect(attributes).not.toHaveProperty('dimensions');
+    expect(attributes).not.toHaveProperty('mass');
+  });
+
+  it('omits colours and materials the model did not report', async () => {
+    const { listener, observationService } = makeListener();
+
+    await listener.handleFileUploaded(upload());
+
+    // The first fixture item has neither; absent beats an empty array, which
+    // would read as "looked, saw none".
+    const { attributes } = observationService.create.mock.calls[0][1];
+
+    expect(attributes).not.toHaveProperty('colors');
+    expect(attributes).not.toHaveProperty('materials');
   });
 
   it('dates the sighting from the capture time, not the time the job ran', async () => {

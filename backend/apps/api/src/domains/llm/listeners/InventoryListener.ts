@@ -252,9 +252,22 @@ export class InventoryListener {
         // No per-item score is available — the prompt does not ask for one, and
         // a number invented here would outrank a genuinely measured one later.
         detectionConfidence: null,
+        // OBSERVED STATE, which is what this column is for — the migration's
+        // own example is `{color: 'red', condition: 'scratched', count: 2}`.
+        //
+        // Recorded VERBATIM, exactly as `label` is, and deliberately NOT put
+        // through `normalizePhysicalProperties`: that normalizer turns
+        // unit-bearing strings into millimetres and grams for `ci.inventory`,
+        // and a sighting is the record of what the detector SAID, not of what
+        // its words resolve to. Dimensions and mass are left off entirely for
+        // the same reason — they need that normalizer to mean anything, and a
+        // second raw copy here is a second thing to parse and disagree about.
         attributes: {
           ...(itemData.condition != null && { condition: itemData.condition }),
           ...(itemData.category != null && { category: itemData.category }),
+          ...(itemData.colors != null && itemData.colors.length > 0 && { colors: itemData.colors }),
+          ...(itemData.materials != null &&
+            itemData.materials.length > 0 && { materials: itemData.materials }),
         },
         metadata: {
           inventory_capture: true,
