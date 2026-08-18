@@ -6,6 +6,7 @@ import { GlobalUID } from './GlobalUID';
 import { Node } from './Node';
 
 export enum TaskStatusEnum {
+  proposed = 'proposed',
   open = 'open',
   in_progress = 'in_progress',
   done = 'done',
@@ -44,6 +45,11 @@ export class TaskType implements Node {
 
   @Field(() => ID, { nullable: true, description: 'Parent task, for subtasks.' })
   parentId!: string | null;
+
+  @Field(() => [TaskType], {
+    description: 'Direct children. Nesting is parent_id only — walk this field for a tree.',
+  })
+  children!: TaskType[];
 
   @Field(() => GraphQLISODateTime, { nullable: true, description: 'Deadline, as an instant.' })
   dueAt!: Date | null;
@@ -98,6 +104,7 @@ export class TaskType implements Node {
       status: source.status as TaskStatusEnum,
       priority: source.priority,
       parentId: source.parentId ? GlobalUID.encode('task', source.parentId) : null,
+      children: [],
       dueAt: source.dueAt,
       taskTime: source.taskTime,
       scheduledFor: source.scheduledFor,

@@ -1,6 +1,6 @@
 # Planning — roadmap and object model
 
-> Status: **M0 landed** (flags + this document). M1 in progress.
+> Status: **M0 landed** (flags + this document). M1 in progress; planning automation jobs + `proposed` status landed as an M5 slice.
 > Feature flags: `planning.enabled` (backend GraphQL gate, `ENABLE_PLANNING`, default **on**), `planning.page` (Plan route + rail, `ENABLE_PLANNING_PAGE`, default **on**), `planning.emptyState` (Plan page empty state, `ENABLE_PLANNING_EMPTY_STATE`, default **off**).
 
 ## Why planning lives here
@@ -18,8 +18,9 @@ Everything that client asks for is already here, on the other side of a boundary
 
 | Concept | Home | Notes |
 |---|---|---|
-| Task | **`ci.tasks`** (new) | `ci.actions` is a feed card — missing 24 of 32 fields, and its `order:{priority:'asc'}` would return the backlog into the feed. `ci.actions.task_id` bridges the two. |
-| Scheduled block | **`ci.events`, `event_type='planned_block'`** | Extended, not duplicated. See the guardrails below. |
+| Task | **`ci.tasks`** | `ci.actions` is a feed card — missing 24 of 32 fields, and its `order:{priority:'asc'}` would return the backlog into the feed. `ci.actions.task_id` bridges the two. Status includes **`proposed`** (trust-dial review inbox). Nesting via **`parent_id` only** (children = `WHERE parent_id = ?`). |
+| Pending change | **`ci.task_pending_changes`** | Trust-dial confirmation for mutate / complete / event_revise on an existing task. New work uses `proposed`, not this table. |
+| Scheduled block | **`ci.events`, `event_type='planned_block'`** | Extended, not duplicated. See the guardrails below. Columns: `task_id`, `planned_minutes`; GraphQL exposes `parentEventId`. |
 | Task dependencies, timer sessions | **`ci.task_dependencies`, `ci.time_entries`** (new) | `ci.relationships` can't hold them — tasks aren't `ci.entities` rows, and its FKs to entities were removed by `20260127185821`. `time_entries` needs `UNIQUE (user_id) WHERE ended_at IS NULL`, which on `ci.events` would fail against every point-in-time capture row. |
 | Taxonomy (direction / intention / category) | **`ci_search.tags` + `ci_search.entity_tag`, extended** | `tags` gains `kind`, `muted`, `is_base`; `entity_tag` gains `level`. Positional categories live in a separate `ci_search.entity_categories` so `getTagsForEntity`'s contract is unchanged for existing readers. |
 | Objectives | **`ci.objectives`** (new) + a `ci.entities` projection | `entity_type='Objective'` passes `valid_entity_type`, but `progress_cache` updates on every task completion and `entities_search_vector_trigger` fires `BEFORE UPDATE OF … properties` → a GIN rebuild per recompute. Project via `linked_table`/`linked_id` instead — the pattern `ci.files`/`ci.inventory` already use. Graph-visible without being graph-resident. |
@@ -93,7 +94,26 @@ Carried over from CI-Planning's glossary; these nine nouns are the whole budget.
 - **M2 — Taxonomy.** Extend `ci_search.tags`/`entity_tag`; new join/pref tables; `'task'` in `TAGGABLE_ENTITIES`; `TaskType.tags` through the existing `TagLoader`. Watch: `TagService.validateLabel` lowercases every label, and adding `kind` changes what the explorer's tag picker returns.
 - **M3 — Scheduling.** The `ci.events` extension plus all six guards; a SQL-pushdown `plannedBlocks(from, to)`; `ci.planning_prefs`; a **simple deterministic placer** — a pure `computePlacement(input): PlacementPlan` answering one question: given the workday window, existing events and an estimate, where does this task go? No two-pass autoplan, no reflow, no LLM. Scheduling is by form and button; drag comes later.
 - **M4 — Search, recall, MCP.** `'task'` in `INDEXABLE_ENTITIES` + `ENTITY_SOURCE_MAP`; `TaskSearchIndexListener` cloned from `NoteSearchIndexListener`; task cases in `SerializerService` and `domains/entity-resolution`; a `planning` intent domain with `planning.findTasks` / `planning.createTask`.
-- **M5 — Jobs.** Queue `planning`; `ci.reminders` + pg-boss dispatch; the owner-local hourly enqueuer; web push.
+- **M5 — Jobs (partial).** Queue `planning` on pg-boss; Jobs page category `planning`. Landed handlers:
+  - `planning.todo_scan` — daily fan-out; search memory → LLM surface → dedupe → `decide(task_create)` → `open` or `proposed`
+  - `planning.todo_process` — every 6h; append / revise / reparent / complete under `task_mutate` / `task_complete`
+  - `planning.event_now` — hourly; revise planned blocks entering the present (`event_revise`)
+  - `planning.verify_done` — hourly; after block end, auto-complete or ask on Plan
+  Plan page remains the only user backlog (Proposed / Needs confirmation / date buckets). `/jobs` shows process jobs only — not a second to-do list.
+  Still TODO for full M5: `ci.reminders` + web push.
+
+### Parent convention (nestable CI objects)
+
+Store **one** `parent_id` (or type-specific synonym). Do **not** add a second `sub_*` / `child_ids` column — both directions are ordinary queries.
+
+| Nestable | Storage | Graph |
+|---|---|---|
+| Task | `ci.tasks.parent_id` | none (non-node) |
+| Event | `ci.events.parent_event_id` | L0 `PART_OF` |
+| Place | `ci.entities.parent_place_id` | Place `PART_OF` Place |
+| File | `ci.files.parent_id` | `DERIVED_FROM` |
+
+Types that should not nest simply omit the column.
 
 ### Later
 

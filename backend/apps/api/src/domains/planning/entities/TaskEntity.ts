@@ -1,6 +1,13 @@
 import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
 
-export const TASK_STATUSES = ['open', 'in_progress', 'done', 'skipped', 'archived'] as const;
+export const TASK_STATUSES = [
+  'proposed',
+  'open',
+  'in_progress',
+  'done',
+  'skipped',
+  'archived',
+] as const;
 
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 
@@ -13,6 +20,9 @@ export type TaskStatus = (typeof TASK_STATUSES)[number];
  * they are inputs to PlanningTimeService, never outputs of it. TypeORM hydrates
  * `date` and `time` columns as strings, which is deliberate: it keeps them
  * un-confusable with the `Date`-valued instant columns.
+ *
+ * `proposed` is the trust-dial review inbox: automation surfaced the item but
+ * did not auto-add it. Accept promotes to `open`; decline archives.
  */
 @Entity({ schema: 'ci', name: 'tasks' })
 @Index('idx_tasks_user_status', ['userId', 'status', 'dueAt'])

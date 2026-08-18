@@ -23,6 +23,8 @@ function task(overrides: Partial<SectionedTask> = {}): SectionedTask {
     scheduledFor: null,
     deferUntil: null,
     completedAt: null,
+    parentId: null,
+    hasPendingChange: false,
     ...overrides,
   };
 }
@@ -53,6 +55,18 @@ describe('sectionFor', () => {
     for (const status of ['done', 'skipped', 'archived']) {
       expect(sectionFor(task({ status, dueAt: '2020-01-01T00:00:00Z' }), TODAY, 'UTC')).toBe('done');
     }
+  });
+
+  it('files proposed tasks under proposed before date buckets', () => {
+    expect(sectionFor(task({ status: 'proposed', dueAt: '2026-01-14T12:00:00Z' }), TODAY, 'UTC')).toBe(
+      'proposed',
+    );
+  });
+
+  it('files tasks with pending confirmation ahead of date buckets', () => {
+    expect(
+      sectionFor(task({ dueAt: '2026-01-15T12:00:00Z', hasPendingChange: true }), TODAY, 'UTC'),
+    ).toBe('needs_confirmation');
   });
 
   it('files a past deadline as overdue', () => {
@@ -136,7 +150,7 @@ describe('compareTasks', () => {
 });
 
 describe('groupIntoSections', () => {
-  it('orders sections overdue → today → upcoming → someday → done', () => {
+  it('orders sections proposed → needs confirmation → overdue → today → upcoming → someday → done', () => {
     const sections = groupIntoSections(
       [
         task({ id: '1', status: 'done' }),
@@ -144,12 +158,37 @@ describe('groupIntoSections', () => {
         task({ id: '3', dueAt: '2026-01-16T12:00:00Z' }),
         task({ id: '4', dueAt: '2026-01-15T12:00:00Z' }),
         task({ id: '5', dueAt: '2026-01-14T12:00:00Z' }),
+        task({ id: '6', status: 'proposed' }),
+        task({ id: '7', dueAt: '2026-01-15T12:00:00Z', hasPendingChange: true }),
       ],
       TODAY,
       'UTC',
     );
 
-    expect(sections.map((s) => s.key)).toEqual(['overdue', 'today', 'upcoming', 'someday', 'done']);
+    expect(sections.map((s) => s.key)).toEqual([
+      'proposed',
+      'needs_confirmation',
+      'overdue',
+      'today',
+      'upcoming',
+      'someday',
+      'done',
+    ]);
+  });
+
+  it('nests children under roots rather than as their own section rows', () => {
+    const sections = groupIntoSections(
+      [
+        task({ id: 'root', dueAt: '2026-01-15T12:00:00Z' }),
+        task({ id: 'child', parentId: 'root', dueAt: '2026-01-14T12:00:00Z' }),
+      ],
+      TODAY,
+      'UTC',
+    );
+
+    expect(sections).toHaveLength(1);
+    expect(sections[0].key).toBe('today');
+    expect(sections[0].tasks.map((t) => t.id)).toEqual(['root']);
   });
 
   it('omits empty sections rather than rendering a bare heading', () => {
@@ -194,10 +233,12 @@ describe('openCount', () => {
       openCount([
         task({ status: 'open' }),
         task({ status: 'in_progress' }),
+        task({ status: 'proposed' }),
+        task({ status: 'open', hasPendingChange: true }),
         task({ status: 'done' }),
         task({ status: 'skipped' }),
         task({ status: 'archived' }),
       ]),
-    ).toBe(2);
+    ).toBe(4);
   });
 });

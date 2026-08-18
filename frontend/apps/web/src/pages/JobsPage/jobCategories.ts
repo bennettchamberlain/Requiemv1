@@ -21,6 +21,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
   import: 'Import / sync',
   llm: 'Model',
   personalization: 'Personalization',
+  planning: 'Planning',
   maintenance: 'Maintenance',
   unclassified: 'Unclassified',
 };
@@ -35,6 +36,7 @@ export const CATEGORY_STYLES: Record<string, string> = {
   import: 'text-orange-400 bg-orange-400/10 border-orange-400/30',
   llm: 'text-fuchsia-400 bg-fuchsia-400/10 border-fuchsia-400/30',
   personalization: 'text-rose-400 bg-rose-400/10 border-rose-400/30',
+  planning: 'text-teal-400 bg-teal-400/10 border-teal-400/30',
   maintenance: 'text-slate-400 bg-slate-400/10 border-slate-400/30',
   unclassified: 'text-muted-foreground bg-muted/40 border-border',
 };
@@ -49,6 +51,7 @@ export const CATEGORY_DOT: Record<string, string> = {
   import: 'bg-orange-400',
   llm: 'bg-fuchsia-400',
   personalization: 'bg-rose-400',
+  planning: 'bg-teal-400',
   maintenance: 'bg-slate-400',
   unclassified: 'bg-muted-foreground',
 };

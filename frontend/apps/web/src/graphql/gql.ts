@@ -152,10 +152,14 @@ type Documents = {
     "\n  mutation ConfirmKnownPlace($input: UpdateKnownPlaceInput!) {\n    updateKnownPlace(input: $input) {\n      id\n      label\n      kind\n    }\n  }\n": typeof types.ConfirmKnownPlaceDocument,
     "\n  mutation DeleteTask($input: DeleteByIdInput!) {\n    deleteTask(input: $input) {\n      success\n      deletedId\n    }\n  }\n": typeof types.DeleteTaskDocument,
     "\n  mutation CreateTask($input: CreateTaskInput!) {\n    createTask(input: $input) {\n      success\n      task {\n        id\n        ...TaskRowFragment\n      }\n    }\n  }\n": typeof types.CreateTaskDocument,
-    "\n  query GetTasks($first: Int, $after: String) {\n    tasks(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          status\n          priority\n          dueAt\n          scheduledFor\n          deferUntil\n          title\n          ...TaskRowFragment\n        }\n      }\n      totalCount\n    }\n  }\n": typeof types.GetTasksDocument,
+    "\n  query GetTasks($first: Int, $after: String) {\n    tasks(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          status\n          priority\n          parentId\n          dueAt\n          scheduledFor\n          deferUntil\n          title\n          ...TaskRowFragment\n        }\n      }\n      totalCount\n    }\n    taskPendingChanges {\n      id\n      taskId\n      kind\n      rationale\n      confidence\n      status\n    }\n  }\n": typeof types.GetTasksDocument,
     "\n  mutation CompleteTask($id: ID!) {\n    completeTask(id: $id) {\n      id\n      status\n      completedAt\n    }\n  }\n": typeof types.CompleteTaskDocument,
     "\n  mutation ReopenTask($id: ID!) {\n    reopenTask(id: $id) {\n      id\n      status\n      completedAt\n    }\n  }\n": typeof types.ReopenTaskDocument,
-    "\n  fragment TaskRowFragment on TaskType {\n    id\n    title\n    description\n    status\n    priority\n    dueAt\n    scheduledFor\n    deferUntil\n    estimatedMinutes\n    completedAt\n  }\n": typeof types.TaskRowFragmentFragmentDoc,
+    "\n  mutation AcceptProposedTask($id: ID!) {\n    acceptProposedTask(id: $id) {\n      id\n      status\n    }\n  }\n": typeof types.AcceptProposedTaskDocument,
+    "\n  mutation DeclineProposedTask($id: ID!) {\n    declineProposedTask(id: $id) {\n      id\n      status\n    }\n  }\n": typeof types.DeclineProposedTaskDocument,
+    "\n  mutation AcceptTaskPendingChange($id: ID!) {\n    acceptTaskPendingChange(id: $id) {\n      success\n      task {\n        id\n        status\n        title\n        notes\n        parentId\n      }\n    }\n  }\n": typeof types.AcceptTaskPendingChangeDocument,
+    "\n  mutation DeclineTaskPendingChange($id: ID!) {\n    declineTaskPendingChange(id: $id) {\n      success\n    }\n  }\n": typeof types.DeclineTaskPendingChangeDocument,
+    "\n  fragment TaskRowFragment on TaskType {\n    id\n    title\n    description\n    status\n    priority\n    parentId\n    dueAt\n    scheduledFor\n    deferUntil\n    estimatedMinutes\n    completedAt\n  }\n": typeof types.TaskRowFragmentFragmentDoc,
     "\n  fragment ProviderEndpointsFragment on ProviderType {\n    endpoints {\n      name\n      description\n    }\n  }\n": typeof types.ProviderEndpointsFragmentFragmentDoc,
     "\n  query GetProvider($id: ID!) {\n    provider(id: $id) {\n      id\n      name\n      description\n      logoUrl\n      authType\n      localOnly\n      appSetupUrl\n      openidKeyLink\n      theme {\n        backgroundColor\n        borderColor\n      }\n      ...ProviderEndpointsFragment\n    }\n  }\n": typeof types.GetProviderDocument,
     "\n  mutation CreateSavedSearch($input: CreateSavedSearchInput!) {\n    createSavedSearch(input: $input) {\n      success\n      savedSearch {\n        id\n        # Full grid fragment (incl. isPublic/shareToken/filters) so the created\n        # search can be handed straight to the share modal from \"Save & share\".\n        ...SavedSearchGridItemFragment\n      }\n    }\n  }\n": typeof types.CreateSavedSearchDocument,
@@ -309,10 +313,14 @@ const documents: Documents = {
     "\n  mutation ConfirmKnownPlace($input: UpdateKnownPlaceInput!) {\n    updateKnownPlace(input: $input) {\n      id\n      label\n      kind\n    }\n  }\n": types.ConfirmKnownPlaceDocument,
     "\n  mutation DeleteTask($input: DeleteByIdInput!) {\n    deleteTask(input: $input) {\n      success\n      deletedId\n    }\n  }\n": types.DeleteTaskDocument,
     "\n  mutation CreateTask($input: CreateTaskInput!) {\n    createTask(input: $input) {\n      success\n      task {\n        id\n        ...TaskRowFragment\n      }\n    }\n  }\n": types.CreateTaskDocument,
-    "\n  query GetTasks($first: Int, $after: String) {\n    tasks(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          status\n          priority\n          dueAt\n          scheduledFor\n          deferUntil\n          title\n          ...TaskRowFragment\n        }\n      }\n      totalCount\n    }\n  }\n": types.GetTasksDocument,
+    "\n  query GetTasks($first: Int, $after: String) {\n    tasks(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          status\n          priority\n          parentId\n          dueAt\n          scheduledFor\n          deferUntil\n          title\n          ...TaskRowFragment\n        }\n      }\n      totalCount\n    }\n    taskPendingChanges {\n      id\n      taskId\n      kind\n      rationale\n      confidence\n      status\n    }\n  }\n": types.GetTasksDocument,
     "\n  mutation CompleteTask($id: ID!) {\n    completeTask(id: $id) {\n      id\n      status\n      completedAt\n    }\n  }\n": types.CompleteTaskDocument,
     "\n  mutation ReopenTask($id: ID!) {\n    reopenTask(id: $id) {\n      id\n      status\n      completedAt\n    }\n  }\n": types.ReopenTaskDocument,
-    "\n  fragment TaskRowFragment on TaskType {\n    id\n    title\n    description\n    status\n    priority\n    dueAt\n    scheduledFor\n    deferUntil\n    estimatedMinutes\n    completedAt\n  }\n": types.TaskRowFragmentFragmentDoc,
+    "\n  mutation AcceptProposedTask($id: ID!) {\n    acceptProposedTask(id: $id) {\n      id\n      status\n    }\n  }\n": types.AcceptProposedTaskDocument,
+    "\n  mutation DeclineProposedTask($id: ID!) {\n    declineProposedTask(id: $id) {\n      id\n      status\n    }\n  }\n": types.DeclineProposedTaskDocument,
+    "\n  mutation AcceptTaskPendingChange($id: ID!) {\n    acceptTaskPendingChange(id: $id) {\n      success\n      task {\n        id\n        status\n        title\n        notes\n        parentId\n      }\n    }\n  }\n": types.AcceptTaskPendingChangeDocument,
+    "\n  mutation DeclineTaskPendingChange($id: ID!) {\n    declineTaskPendingChange(id: $id) {\n      success\n    }\n  }\n": types.DeclineTaskPendingChangeDocument,
+    "\n  fragment TaskRowFragment on TaskType {\n    id\n    title\n    description\n    status\n    priority\n    parentId\n    dueAt\n    scheduledFor\n    deferUntil\n    estimatedMinutes\n    completedAt\n  }\n": types.TaskRowFragmentFragmentDoc,
     "\n  fragment ProviderEndpointsFragment on ProviderType {\n    endpoints {\n      name\n      description\n    }\n  }\n": types.ProviderEndpointsFragmentFragmentDoc,
     "\n  query GetProvider($id: ID!) {\n    provider(id: $id) {\n      id\n      name\n      description\n      logoUrl\n      authType\n      localOnly\n      appSetupUrl\n      openidKeyLink\n      theme {\n        backgroundColor\n        borderColor\n      }\n      ...ProviderEndpointsFragment\n    }\n  }\n": types.GetProviderDocument,
     "\n  mutation CreateSavedSearch($input: CreateSavedSearchInput!) {\n    createSavedSearch(input: $input) {\n      success\n      savedSearch {\n        id\n        # Full grid fragment (incl. isPublic/shareToken/filters) so the created\n        # search can be handed straight to the share modal from \"Save & share\".\n        ...SavedSearchGridItemFragment\n      }\n    }\n  }\n": types.CreateSavedSearchDocument,
@@ -885,7 +893,7 @@ export function gql(source: "\n  mutation CreateTask($input: CreateTaskInput!) {
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "\n  query GetTasks($first: Int, $after: String) {\n    tasks(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          status\n          priority\n          dueAt\n          scheduledFor\n          deferUntil\n          title\n          ...TaskRowFragment\n        }\n      }\n      totalCount\n    }\n  }\n"): (typeof documents)["\n  query GetTasks($first: Int, $after: String) {\n    tasks(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          status\n          priority\n          dueAt\n          scheduledFor\n          deferUntil\n          title\n          ...TaskRowFragment\n        }\n      }\n      totalCount\n    }\n  }\n"];
+export function gql(source: "\n  query GetTasks($first: Int, $after: String) {\n    tasks(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          status\n          priority\n          parentId\n          dueAt\n          scheduledFor\n          deferUntil\n          title\n          ...TaskRowFragment\n        }\n      }\n      totalCount\n    }\n    taskPendingChanges {\n      id\n      taskId\n      kind\n      rationale\n      confidence\n      status\n    }\n  }\n"): (typeof documents)["\n  query GetTasks($first: Int, $after: String) {\n    tasks(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          status\n          priority\n          parentId\n          dueAt\n          scheduledFor\n          deferUntil\n          title\n          ...TaskRowFragment\n        }\n      }\n      totalCount\n    }\n    taskPendingChanges {\n      id\n      taskId\n      kind\n      rationale\n      confidence\n      status\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -897,7 +905,23 @@ export function gql(source: "\n  mutation ReopenTask($id: ID!) {\n    reopenTask
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "\n  fragment TaskRowFragment on TaskType {\n    id\n    title\n    description\n    status\n    priority\n    dueAt\n    scheduledFor\n    deferUntil\n    estimatedMinutes\n    completedAt\n  }\n"): (typeof documents)["\n  fragment TaskRowFragment on TaskType {\n    id\n    title\n    description\n    status\n    priority\n    dueAt\n    scheduledFor\n    deferUntil\n    estimatedMinutes\n    completedAt\n  }\n"];
+export function gql(source: "\n  mutation AcceptProposedTask($id: ID!) {\n    acceptProposedTask(id: $id) {\n      id\n      status\n    }\n  }\n"): (typeof documents)["\n  mutation AcceptProposedTask($id: ID!) {\n    acceptProposedTask(id: $id) {\n      id\n      status\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation DeclineProposedTask($id: ID!) {\n    declineProposedTask(id: $id) {\n      id\n      status\n    }\n  }\n"): (typeof documents)["\n  mutation DeclineProposedTask($id: ID!) {\n    declineProposedTask(id: $id) {\n      id\n      status\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation AcceptTaskPendingChange($id: ID!) {\n    acceptTaskPendingChange(id: $id) {\n      success\n      task {\n        id\n        status\n        title\n        notes\n        parentId\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation AcceptTaskPendingChange($id: ID!) {\n    acceptTaskPendingChange(id: $id) {\n      success\n      task {\n        id\n        status\n        title\n        notes\n        parentId\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation DeclineTaskPendingChange($id: ID!) {\n    declineTaskPendingChange(id: $id) {\n      success\n    }\n  }\n"): (typeof documents)["\n  mutation DeclineTaskPendingChange($id: ID!) {\n    declineTaskPendingChange(id: $id) {\n      success\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  fragment TaskRowFragment on TaskType {\n    id\n    title\n    description\n    status\n    priority\n    parentId\n    dueAt\n    scheduledFor\n    deferUntil\n    estimatedMinutes\n    completedAt\n  }\n"): (typeof documents)["\n  fragment TaskRowFragment on TaskType {\n    id\n    title\n    description\n    status\n    priority\n    parentId\n    dueAt\n    scheduledFor\n    deferUntil\n    estimatedMinutes\n    completedAt\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

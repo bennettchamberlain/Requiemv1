@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  TIMELINE_INITIAL_SCALE_FACTOR,
+  TIMELINE_INITIAL_ZOOM_INDEX,
   TIMELINE_MAX_SCALE_FACTOR,
   TIMELINE_MAX_ZOOM_INDEX,
   TIMELINE_ZOOM_SEQUENCE,
@@ -8,16 +10,18 @@ import {
 } from './timelineRuntime';
 
 describe('timelineStoryOptions', () => {
-  it('starts fully zoomed in on the TimeNav', () => {
+  it('caps TimeNav zoom so it does not paint tens of thousands of ticks', () => {
     const options = timelineStoryOptions({
       startAtSlide: 0,
       bg: { r: 250, g: 250, b: 248 },
       languageUrl: '/locale/en.json',
     });
 
-    expect(TIMELINE_ZOOM_SEQUENCE[TIMELINE_MAX_ZOOM_INDEX]).toBe(89);
-    expect(options.scale_factor).toBe(TIMELINE_MAX_SCALE_FACTOR);
-    expect(options.initial_zoom).toBe(TIMELINE_MAX_ZOOM_INDEX);
+    expect(TIMELINE_ZOOM_SEQUENCE[TIMELINE_MAX_ZOOM_INDEX]).toBe(13);
+    expect(TIMELINE_MAX_SCALE_FACTOR).toBe(13);
+    expect(options.scale_factor).toBe(TIMELINE_INITIAL_SCALE_FACTOR);
+    expect(options.scale_factor).toBe(8);
+    expect(options.initial_zoom).toBe(TIMELINE_INITIAL_ZOOM_INDEX);
   });
 
   it('does not pull Knight Lab fonts, theme, or locale from their CDN', () => {

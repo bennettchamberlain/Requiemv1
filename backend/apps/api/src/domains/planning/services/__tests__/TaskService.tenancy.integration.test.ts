@@ -7,6 +7,7 @@ import type { EventService } from '@ci/domains/events';
 
 import { acquireSchemaWriteLock, type SchemaLock } from '../../../__tests__/support/schemaLock';
 import { TaskEntity } from '../../entities/TaskEntity';
+import { TaskPendingChangeEntity } from '../../entities/TaskPendingChangeEntity';
 import { TaskService } from '../TaskService';
 
 /**
@@ -74,7 +75,12 @@ describeWithDb('TaskService — tenant isolation (integration)', () => {
       );
     }
 
-    service = new TaskService(dataSource.getRepository(TaskEntity), noopEvents, noopLogger);
+    service = new TaskService(
+      dataSource.getRepository(TaskEntity),
+      dataSource.getRepository(TaskPendingChangeEntity),
+      noopEvents,
+      noopLogger,
+    );
   });
 
   afterAll(async () => {

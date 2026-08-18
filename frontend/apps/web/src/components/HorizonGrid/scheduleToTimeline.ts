@@ -13,7 +13,7 @@ import { isBrowserCapture } from './scheduleClusters';
  * DOM. 48 slides over a 35-day range was a wide, expensive time-nav canvas.
  */
 
-const MAX_SLIDES = 24;
+const MAX_SLIDES = 12;
 
 export interface TimelineDateParts {
   year: string;
@@ -75,7 +75,6 @@ function toSlide(event: ScheduleEvent): TimelineSlide {
   const start = new Date(event.startTime);
   const end = event.endTime ? new Date(event.endTime) : null;
   const url = eventUrl(event);
-  const group = isBrowserCapture(event) ? 'Browsing' : (event.sourceSystem ?? event.category ?? 'Schedule');
   const when = start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const bodyBits = [
     when,
@@ -91,9 +90,8 @@ function toSlide(event: ScheduleEvent): TimelineSlide {
       headline: event.title || 'Untitled',
       text: bodyBits.join(' · '),
     },
-    group: String(group),
     unique_id: event.id,
-    autolink: true,
+    autolink: false,
   };
 
   if (end && !event.isAllDay) {
@@ -149,8 +147,8 @@ function sampleDay(eventsOnDay: ScheduleEvent[]): ScheduleEvent[] {
 }
 
 /**
- * Story slides around `focusDay`: that day's events stay complete, then
- * neighbours fill in so TimelineJS can walk forward and back.
+ * Story slides around `focusDay`: that day's events are kept first (capped),
+ * then neighbours fill remaining slots so TimelineJS can walk forward and back.
  */
 export function selectStoryEvents(
   events: readonly ScheduleEvent[],
@@ -173,7 +171,7 @@ export function selectStoryEvents(
     return { events: [], startAtSlide: 0 };
   }
 
-  const chosen: ScheduleEvent[] = [...sampled[focusIndex]];
+  const chosen: ScheduleEvent[] = [...sampled[focusIndex].slice(0, max)];
   let before = focusIndex - 1;
   let after = focusIndex + 1;
   while (chosen.length < max && (before >= 0 || after < sampled.length)) {

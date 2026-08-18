@@ -85,6 +85,7 @@ export interface PossibleTypesResultData {
       "SavedSearchType",
       "SummaryType",
       "TagType",
+      "TaskPendingChangeType",
       "TaskType",
       "ThreadType",
       "UserType"

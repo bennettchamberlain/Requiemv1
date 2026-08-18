@@ -64,6 +64,17 @@ describe('buildTimelineData', () => {
 
     expect(data.events).toHaveLength(1);
     expect(data.events[0].media).toBeUndefined();
+    expect(data.events[0].group).toBeUndefined();
+    expect(data.events[0].autolink).toBe(false);
     expect(data.events[0].text.text).toContain('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+  });
+
+  it('caps the deck so TimelineJS does not mount a novel of slides', () => {
+    const monday = new Date(2026, 7, 17);
+    const flood = Array.from({ length: 40 }, (_, index) =>
+      event(`e-${index}`, new Date(2026, 7, 17, 8, index), `Item ${index}`),
+    );
+
+    expect(buildTimelineData(flood, monday).data.events).toHaveLength(12);
   });
 });

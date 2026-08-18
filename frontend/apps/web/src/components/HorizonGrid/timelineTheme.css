@@ -314,7 +314,7 @@
   font-weight: 600;
 }
 
-/* Hour labels only — readable, not a solid tick wall. */
+/* Major ticks (hours when zoomed in, days when zoomed out). */
 .schedule-today-timeline .tl-timeaxis .tl-timeaxis-content-container .tl-timeaxis-major .tl-timeaxis-tick,
 .schedule-today-timeline
   .tl-timeaxis
@@ -338,9 +338,19 @@
   opacity: 1 !important;
 }
 
-/* Minor ticks: sparse hairlines; honour TL's hidden class (we had forced them all on). */
-.schedule-today-timeline .tl-timeaxis .tl-timeaxis-content-container .tl-timeaxis-minor .tl-timeaxis-tick {
-  color: var(--tl-line) !important;
+/*
+ * Minor ticks are hours on zoomed-out views (and minutes at max zoom). Show
+ * the ones TimelineJS kept; densified ones get .tl-timeaxis-tick-hidden.
+ */
+.schedule-today-timeline .tl-timeaxis .tl-timeaxis-content-container .tl-timeaxis-minor .tl-timeaxis-tick,
+.schedule-today-timeline
+  .tl-timeaxis
+  .tl-timeaxis-content-container
+  .tl-timeaxis-minor
+  .tl-timeaxis-tick
+  .tl-timeaxis-tick-text {
+  color: var(--tl-axis-fg) !important;
+  text-shadow: none !important;
 }
 
 .schedule-today-timeline
@@ -349,7 +359,7 @@
   .tl-timeaxis-minor
   .tl-timeaxis-tick
   .tl-timeaxis-tick-text {
-  opacity: 0 !important; /* labels only on major hours */
+  font-size: 10px !important;
 }
 
 .schedule-today-timeline
@@ -360,16 +370,81 @@
   border-left: 1px solid var(--tl-line) !important;
   border-color: var(--tl-line) !important;
   color: transparent !important;
-  opacity: 0.35 !important;
+  opacity: 0.55 !important;
+}
+
+.schedule-today-timeline
+  .tl-timeaxis
+  .tl-timeaxis-content-container
+  .tl-timeaxis-tick
+  .tl-timeaxis-tick-text
+  small,
+.schedule-today-timeline
+  .tl-timeaxis
+  .tl-timeaxis-content-container
+  .tl-timeaxis-major
+  .tl-timeaxis-tick
+  .tl-timeaxis-tick-text
+  span,
+.schedule-today-timeline
+  .tl-timeaxis
+  .tl-timeaxis-content-container
+  .tl-timeaxis-minor
+  .tl-timeaxis-tick
+  .tl-timeaxis-tick-text
+  span,
+.schedule-today-timeline
+  .tl-timeaxis
+  .tl-timeaxis-content-container
+  .tl-timeaxis-tick
+  .tl-timeaxis-tick-text
+  .tl-timeaxis-timesuffix {
+  /* Knight Lab puts AM/PM in .tl-timeaxis-timesuffix; on minor ticks it is #e6e6e6. */
+  color: var(--tl-axis-fg) !important;
+  opacity: 1 !important;
+  font-weight: 600;
+  display: inline !important;
+  font-size: inherit !important;
+  line-height: inherit !important;
+  margin-top: 0 !important;
+}
+
+/*
+ * Major and minor ticks CSS-transition `left` independently (1s). That is why
+ * the two axes appear to zoom at different paces. Instant, same transform.
+ */
+.schedule-today-timeline .tl-timeaxis-major,
+.schedule-today-timeline .tl-timeaxis-minor,
+.schedule-today-timeline .tl-timeaxis-tick {
+  transition: none !important;
+  animation: none !important;
 }
 
 .schedule-today-timeline
   .tl-timeaxis
   .tl-timeaxis-content-container
   .tl-timeaxis-minor
-  .tl-timeaxis-tick.tl-timeaxis-tick-hidden:before {
-  opacity: 0 !important;
+  .tl-timeaxis-tick
+  .tl-timeaxis-tick-text {
+  white-space: nowrap !important;
+}
+
+.schedule-today-timeline
+  .tl-timeaxis
+  .tl-timeaxis-content-container
+  .tl-timeaxis-tick.tl-timeaxis-tick-hidden,
+.schedule-today-timeline
+  .tl-timeaxis
+  .tl-timeaxis-content-container
+  .tl-timeaxis-tick.tl-timeaxis-tick-hidden:before,
+.schedule-today-timeline
+  .tl-timeaxis
+  .tl-timeaxis-content-container
+  .tl-timeaxis-tick.tl-timeaxis-tick-hidden
+  .tl-timeaxis-tick-text {
+  display: none !important;
   visibility: hidden !important;
+  opacity: 0 !important;
 }
 
 /* ── Markers ───────────────────────────────────────────────────────────────── */

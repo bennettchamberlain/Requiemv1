@@ -14,6 +14,7 @@ vi.mock('@/common/feature', () => ({
   }),
 }));
 
+// Must match PlanPage.tsx GetTasks document exactly (codegen uniqueness).
 const GET_TASKS = gql(`
   query GetTasks($first: Int, $after: String) {
     tasks(first: $first, after: $after) {
@@ -22,6 +23,7 @@ const GET_TASKS = gql(`
           id
           status
           priority
+          parentId
           dueAt
           scheduledFor
           deferUntil
@@ -30,6 +32,14 @@ const GET_TASKS = gql(`
         }
       }
       totalCount
+    }
+    taskPendingChanges {
+      id
+      taskId
+      kind
+      rationale
+      confidence
+      status
     }
   }
 `);
@@ -52,6 +62,7 @@ function node(overrides: Record<string, unknown> = {}) {
     description: null,
     status: 'open',
     priority: 3,
+    parentId: null,
     dueAt: null,
     scheduledFor: null,
     deferUntil: null,
@@ -71,6 +82,7 @@ function tasksMock(nodes: ReturnType<typeof node>[]) {
           edges: nodes.map((n) => ({ __typename: 'TaskEdge', node: n })),
           totalCount: nodes.length,
         },
+        taskPendingChanges: [],
       },
     },
     // `cache-and-network` issues the query again on mount in the test

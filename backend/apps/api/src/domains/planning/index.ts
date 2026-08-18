@@ -10,6 +10,9 @@
  * The surface is GraphQL only (`domains/graphql/resolvers/TaskResolver.ts`),
  * gated by `planning.enabled`. There are no planning REST controllers.
  *
+ * Automation jobs (`planning.todo_scan` etc.) fan out from PlanningJobsCron
+ * onto the `planning` pg-boss queue and appear on the operator Jobs page.
+ *
  * @module PlanningModule
  */
 
@@ -17,12 +20,31 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EventsModule } from '@ci/domains/events';
-import { UserEntity } from '@ci/domains/user';
+import { LlmCoreModule } from '@ci/domains/llm';
+import { EventEntity, MemoryModule } from '@ci/domains/memory';
+import { PersonalizationModule } from '@ci/domains/personalization';
+import { SearchNextModule } from '@ci/domains/search-next';
+import { UserEntity, UserModule } from '@ci/domains/user';
 
+import { PlanningJobsCron } from './cron/PlanningJobsCron';
 import { TaskDependencyEntity, type TaskDependency } from './entities/TaskDependencyEntity';
 import { TaskEntity, TASK_STATUSES, type Task, type TaskStatus } from './entities/TaskEntity';
+import {
+  TaskPendingChangeEntity,
+  type TaskPendingChange,
+  type TaskPendingChangeKind,
+  type TaskPendingChangeStatus,
+} from './entities/TaskPendingChangeEntity';
+import './events';
+import { PlanningJobsListener } from './listeners/PlanningJobsListener';
 import { PlanningTimeService } from './services/PlanningTimeService';
 import { TaskService } from './services/TaskService';
+import {
+  EventNowService,
+  TodoProcessService,
+  VerifyDoneService,
+} from './services/TodoProcessService';
+import { TodoScanService } from './services/TodoScanService';
 
 /**
  * @internal
@@ -30,13 +52,36 @@ import { TaskService } from './services/TaskService';
 @Module({
   // UserEntity is read-only here: PlanningTimeService resolves ci.users.timezone,
   // the single source of truth for "the user's day".
-  imports: [TypeOrmModule.forFeature([TaskEntity, TaskDependencyEntity, UserEntity]), EventsModule],
-  providers: [TaskService, PlanningTimeService],
+  imports: [
+    TypeOrmModule.forFeature([
+      TaskEntity,
+      TaskDependencyEntity,
+      TaskPendingChangeEntity,
+      UserEntity,
+      EventEntity,
+    ]),
+    EventsModule,
+    UserModule,
+    MemoryModule,
+    SearchNextModule,
+    LlmCoreModule,
+    PersonalizationModule,
+  ],
+  providers: [
+    TaskService,
+    PlanningTimeService,
+    TodoScanService,
+    TodoProcessService,
+    EventNowService,
+    VerifyDoneService,
+    PlanningJobsCron,
+    PlanningJobsListener,
+  ],
   exports: [TaskService, PlanningTimeService],
 })
 export class PlanningModule {}
 
-export { TaskEntity, TaskDependencyEntity };
+export { TaskEntity, TaskDependencyEntity, TaskPendingChangeEntity };
 
 export { TaskService, PlanningTimeService };
 
@@ -44,5 +89,5 @@ export { TASK_STATUSES };
 
 export { isValidTimezone, localDateInTZ, todayInTZ, zonedWallTimeToUTC } from './time/zoned';
 
-export type { Task, TaskStatus, TaskDependency };
-export type { CreateTaskDto, UpdateTaskDto, FindTasksOptions } from './types';
+export type { Task, TaskStatus, TaskDependency, TaskPendingChange, TaskPendingChangeKind, TaskPendingChangeStatus };
+export type { CreateTaskDto, UpdateTaskDto, FindTasksOptions, CreateTaskPendingChangeDto } from './types';

@@ -2,10 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { TimelineJsData } from './scheduleToTimeline';
 import {
+  TIMELINE_INITIAL_SCALE_FACTOR,
+  TIMELINE_INITIAL_ZOOM_INDEX,
   TIMELINE_MAX_SCALE_FACTOR,
   TIMELINE_MAX_ZOOM_INDEX,
   TIMELINE_ZOOM_SEQUENCE,
   inertTimeline,
+  minorLabelsToHide,
   timelineDeckKey,
   timelineJsOptions,
 } from './timelineRuntime';
@@ -50,19 +53,23 @@ describe('timelineJsOptions', () => {
     expect(options.trackResize).toBe(false);
     expect(options.hash_bookmark).toBe(false);
     expect(options.soundcite).toBe(false);
-    expect(options.optimal_tick_width).toBeGreaterThan(100);
+    expect(options.dragging).toBe(false);
+    expect(options.optimal_tick_width).toBe(100);
   });
 
-  it('starts fully zoomed in on the TimeNav', () => {
+  it('caps TimeNav zoom so it does not paint tens of thousands of ticks', () => {
     const options = timelineJsOptions({
       startAtSlide: 0,
       bg: { r: 250, g: 250, b: 248 },
       languageUrl: '/locale/en.json',
     });
 
-    expect(TIMELINE_ZOOM_SEQUENCE[TIMELINE_MAX_ZOOM_INDEX]).toBe(89);
-    expect(options.scale_factor).toBe(TIMELINE_MAX_SCALE_FACTOR);
-    expect(options.initial_zoom).toBe(TIMELINE_MAX_ZOOM_INDEX);
+    expect(TIMELINE_ZOOM_SEQUENCE[TIMELINE_MAX_ZOOM_INDEX]).toBe(13);
+    expect(TIMELINE_MAX_SCALE_FACTOR).toBe(13);
+    expect(options.scale_factor).toBe(TIMELINE_INITIAL_SCALE_FACTOR);
+    expect(options.scale_factor).toBe(8);
+    expect(options.initial_zoom).toBe(TIMELINE_INITIAL_ZOOM_INDEX);
+    expect(options.zoom_sequence).toEqual([0.5, 1, 2, 3, 5, 8, 13]);
   });
 
   it('does not pull Knight Lab fonts, theme, or locale from their CDN', () => {
@@ -77,6 +84,38 @@ describe('timelineJsOptions', () => {
     expect(options.soundcite).toBe(false);
     expect(options.language).toBe('/assets/en-local.json');
     expect(options.start_at_slide).toBe(3);
+  });
+});
+
+describe('minorLabelsToHide', () => {
+  it('keeps minors that sit in the gaps between majors', () => {
+    const hide = minorLabelsToHide(
+      [
+        { x: 0, halfWidth: 20 },
+        { x: 200, halfWidth: 20 },
+      ],
+      [
+        { x: 80, halfWidth: 16 },
+        { x: 120, halfWidth: 16 },
+      ],
+    );
+
+    expect(hide).toEqual([false, false]);
+  });
+
+  it('hides a minor that overlaps a major label and packed neighbours', () => {
+    const hide = minorLabelsToHide(
+      [{ x: 100, halfWidth: 30 }],
+      [
+        { x: 100, halfWidth: 20 },
+        { x: 160, halfWidth: 20 },
+        { x: 175, halfWidth: 20 },
+      ],
+    );
+
+    expect(hide[0]).toBe(true);
+    expect(hide[1]).toBe(false);
+    expect(hide[2]).toBe(true);
   });
 });
 

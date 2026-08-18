@@ -1,4 +1,5 @@
 import type { TaskStatus } from './entities/TaskEntity';
+import type { TaskPendingChangeKind } from './entities/TaskPendingChangeEntity';
 
 export interface CreateTaskDto {
   id?: string;
@@ -43,4 +44,12 @@ export interface FindTasksOptions {
   scheduledFor?: string;
   parentId?: string | null;
   limit?: number;
+}
+
+export interface CreateTaskPendingChangeDto {
+  taskId: string;
+  kind: TaskPendingChangeKind;
+  patch?: Record<string, unknown>;
+  rationale?: string | null;
+  confidence?: number | null;
 }
