@@ -16,11 +16,11 @@ export function PowerRailToggle() {
   const label = expanded ? t('NAV_RAIL_COLLAPSE') : t('NAV_RAIL_EXPAND');
 
   return (
-    // This sits directly above the drawer, in the same grid column, so it has
-    // to be exactly as wide and exactly as inset — otherwise the boundary
-    // between the two shows as a step. `p-2` and the width pair are copied
-    // from the rail deliberately: they are one edge, drawn twice.
-    <div className={cn('flex items-center p-2 transition-[width] duration-200', pinned ? 'w-56' : 'w-14')}>
+    // Width matches the drawer (`w-14` / `w-56`). Vertical inset is only `px-2`
+    // so this box does not grow the header; the parent cell centers it, which
+    // keeps padding above and below the mark the same. Pinning must not add
+    // extra padding — that used to shove the rail down.
+    <div className={cn('flex items-center px-2 transition-[width] duration-200', pinned ? 'w-56' : 'w-14')}>
       <Tooltip delayDuration={600}>
         <Tooltip.Content>{label}</Tooltip.Content>
         <Tooltip.Trigger asChild>
@@ -30,60 +30,31 @@ export function PowerRailToggle() {
             aria-expanded={expanded}
             aria-controls="power-rail"
             onClick={toggle}
-            // Collapsed, the mark is CENTRED in the rail rather than sharing
-            // NavLink's left inset. Matching that inset aligns the two left
-            // EDGES, which only centres things when the icons are the same
-            // width — the mark is 34px against the nav icons' 26px, so it sat
-            // 19px from the left against 7px on the right and read as a logo
-            // nudged out of its slot. Measured, not eyeballed. The transparent
-            // left border goes with it: it is NavLink's active-state gutter,
-            // and it only ever pushed this button 2px further off centre.
+            // Glass capsule: `p-1` + a 32px disc = 40px. Max-width is what
+            // opens and closes it — same property both ways, so closing is
+            // the reverse of opening instead of unmounting the wordmark.
             className={cn(
-              'flex items-center rounded-md transition hover:bg-accent hover:text-accent-foreground',
-              // Collapsed: a 40px square that exactly fills the rail's padded
-              // box, with the 32px mark centred inside it. NOT `w-full p-2` —
-              // that left a 24px content box, and Tailwind's preflight sets
-              // `img { max-width: 100% }`, so the mark was capped to 24px wide
-              // while `h-8` held it at 32px tall. It rendered as a vertical
-              // ellipse: centred, and squashed.
-              // `px-2`, NOT `p-2`: this button already sits inside the rail
-              // wrapper's own `p-2`, so vertical padding here is DOUBLED. It
-              // made the pinned rail cell 77px against the header's 60px —
-              // and both are cells of the same `auto` grid row, so the taller
-              // one set the row and the header sat in a box 17px deeper than
-              // its content, with the border-b hanging below it. Horizontal
-              // padding stays: the wordmark needs it, and the row's height
-              // does not depend on it.
-              pinned
-                ? 'w-full gap-2 border-l-2 border-transparent px-2'
-                : 'size-10 shrink-0 justify-center p-0',
+fix/misc-chat-thread-titles
+              'inline-flex h-10 items-center overflow-hidden rounded-full border border-white/55 bg-white/30 p-1 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.7),0_1px_2px_rgba(0,0,0,0.08)] backdrop-blur-md transition-[max-width,padding,gap] duration-200 ease-in-out hover:bg-white/45 dark:border-white/20 dark:bg-white/10 dark:hover:bg-white/20',
+              pinned ? 'max-w-52 gap-2 pr-3' : 'max-w-10 gap-0',
             )}
           >
-            {/* The glow hangs off THIS wrapper, not the button. On the button
-              its `inset` was a percentage of the button's width — 40px
-              collapsed, but 224px pinned, which turned a compact bloom into a
-              rotating ellipse that streaked diagonally across the header and
-              out of the rail. Anchored to the mark, both states are identical
-              and the light stays where the reactor is.
-
-              `max-w-none` defeats Tailwind's preflight `img { max-width: 100% }`
-              directly, so the mark keeps its aspect ratio even if this button is
-              ever laid out narrower again. `shrink-0` alone does not do this —
-              it stops flex from shrinking the item, but max-width is a separate
-              constraint and wins regardless. */}
-            {/* 40px box around a 32px mark. Collapsed, the button is 40px too,
-              so the mark sits exactly in the rail's padded box. */}
-            <span className="relative grid size-10 shrink-0 place-items-center">
-              <img src={logo} alt="" className="size-8 max-w-none" />
+            {/* Full-size mark on a white disc. `max-w-none` defeats Tailwind
+              preflight `img { max-width: 100% }` so it stays round. */}
+            <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-full bg-white -translate-x-[1px]">
+              <img src={logo} alt="" className="size-8 max-w-none rounded-full -translate-x-[0px]" />
             </span>
             {/* PINNED, not merely expanded. This button sits in the same `auto`
               grid column as the rail, so a wordmark appearing here widens the
               column and shoves the header and page content sideways — which is
               exactly what a hover-opened drawer must never do. Pinning is the
               one case where a reflow is intended, and permanent. */}
-            {pinned && (
-              <span className="truncate text-left text-sm font-semibold leading-tight">Companion Memory</span>
-            )}
+            <span
+              aria-hidden={!pinned}
+              className="overflow-hidden whitespace-nowrap text-left text-sm font-semibold leading-tight"
+            >
+              Companion Memory
+            </span>
           </button>
         </Tooltip.Trigger>
       </Tooltip>

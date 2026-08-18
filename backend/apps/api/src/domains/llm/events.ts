@@ -1,3 +1,4 @@
+import type { ApiKeyCapability } from '@ci/common/decorators';
 import { defineEvent } from '@ci/domains/events';
 
 /**
@@ -76,8 +77,28 @@ export type CvDetectionsCapturedPayload = {
 
 defineEvent<CvDetectionsCapturedPayload>(CvDetectionsCapturedEvent);
 
+/**
+ * One interactive chat turn. Enqueued by `POST /llm/generate`; the worker
+ * owns the model call so closing the browser does not abort generation.
+ */
+export const ChatGenerateEvent = 'chat.generate';
+
+export type ChatGeneratePayload = {
+  ownerId: string;
+  threadId: string;
+  promptMessageId: string;
+  assistantMessageId: string;
+  model: string;
+  enableTools: boolean;
+  enableThinking: boolean;
+  capability: ApiKeyCapability;
+};
+
+defineEvent<ChatGeneratePayload>(ChatGenerateEvent);
+
 declare module '@ci/domains/events/registry' {
   interface EventRegistry {
     [CvDetectionsCapturedEvent]: CvDetectionsCapturedPayload;
+    [ChatGenerateEvent]: ChatGeneratePayload;
   }
 }

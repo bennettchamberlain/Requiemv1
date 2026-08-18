@@ -54,7 +54,10 @@ export function Main() {
             it here walks the logo to the middle of the expanded column. */}
         {/* No padding here: the toggle carries the drawer's own width and
             inset, so the two line up as one edge. */}
-        <div className="bg-secondary">
+        {/* Stretch with the header row, then center the mark so leftover
+            space is equal above and below — otherwise the toggle sits at the
+            top of a taller PrimaryNavigation cell and looks bottom-heavy. */}
+        <div className="flex items-center bg-secondary">
           <PowerRailToggle />
         </div>
 

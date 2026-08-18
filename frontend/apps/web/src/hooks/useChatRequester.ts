@@ -23,9 +23,37 @@ type ReturnType = [
   },
   {
     submit: (data: FormData) => Promise<boolean>;
+    attach: (threadId: string) => Promise<boolean>;
+    detach: () => void;
     stop: () => void;
+    cancel: (id: string) => void;
   },
 ];
+
+function pipeMonitor(
+  body: ReadableStream<Uint8Array>,
+  onFirstChunk: () => void,
+  onFlush: () => void,
+): ReadableStream<Uint8Array> {
+  let hasSeenFirstChunk = false;
+
+  const monitor = new TransformStream({
+    transform(chunk, controller) {
+      if (!hasSeenFirstChunk) {
+        hasSeenFirstChunk = true;
+        onFirstChunk();
+      }
+
+      controller.enqueue(chunk);
+    },
+    flush(controller) {
+      onFlush();
+      controller.terminate();
+    },
+  });
+
+  return body.pipeThrough(monitor);
+}
 
 export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
   const [{ authToken }] = useAuth();
@@ -33,12 +61,93 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
   const { toast } = useToast();
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  const threadIdRef = useRef(threadId);
+  threadIdRef.current = threadId;
+  const activeThreadIdRef = useRef<string | null>(threadId);
+  if (threadId) {
+    activeThreadIdRef.current = threadId;
+  }
 
   const [stream, setStream] = useState<ReadableStream<Uint8Array> | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<unknown | null>(null);
   const [streaming, setStreaming] = useState<boolean>(false);
   const [hasStartedReceiving, setHasStartedReceiving] = useState<boolean | null>(null);
+
+  const detach = useCallback(() => {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    setStream(null);
+    setStreaming(false);
+    setHasStartedReceiving(null);
+    setLoading(false);
+  }, []);
+
+  const openStream = useCallback((res: Response) => {
+    if (!res.body) {
+      throw new Error('No response body');
+    }
+
+    const monitored = pipeMonitor(
+      res.body,
+      () => setHasStartedReceiving(true),
+      () => {
+        setStreaming(false);
+        setHasStartedReceiving(null);
+        abortControllerRef.current = null;
+      },
+    );
+
+    setStream(monitored);
+    setStreaming(true);
+  }, []);
+
+  const attach = useCallback(
+    async (id: string) => {
+      detach();
+
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+      activeThreadIdRef.current = id;
+      setError(null);
+      setLoading(true);
+      setHasStartedReceiving(false);
+
+      try {
+        const res = await fetch(buildApiUrl(`/api/llm/threads/${id}/stream`), {
+          headers: {
+            ...apiKeyHeaders(),
+            Authorization: `Bearer ${authToken}`,
+          },
+          signal: controller.signal,
+        });
+
+        if (res.status === 204) {
+          setLoading(false);
+          setHasStartedReceiving(null);
+
+          return false;
+        }
+
+        if (!res.ok) {
+          throw new Error('Request error');
+        }
+
+        openStream(res);
+
+        return true;
+      } catch (err) {
+        if ((err as Error).name !== 'AbortError') {
+          setError(err);
+        }
+
+        return false;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [authToken, detach, openStream],
+  );
 
   const submit = useCallback(
     async (data: FormData) => {
@@ -60,17 +169,15 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
         return false;
       }
 
-      abortControllerRef.current?.abort();
+      detach();
 
       const controller = new AbortController();
-
       abortControllerRef.current = controller;
 
-      setStream(null);
       setLoading(true);
       setError(null);
       setStreaming(false);
-      setHasStartedReceiving(false); // Reset on new submission
+      setHasStartedReceiving(false);
 
       let success = false;
 
@@ -85,7 +192,7 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
           body: JSON.stringify({
             prompt: data.message.trim(),
             model: selectedModel,
-            threadId: threadId,
+            threadId: threadIdRef.current,
             enableTools: toolsEnabled,
             enableThinking: thinkingEnabled,
             fileIds: data.fileIds,
@@ -97,41 +204,19 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
           throw new Error('Request error');
         }
 
-        if (!res.body) {
-          throw new Error('No response body');
-        }
-
         success = true;
 
-        const newThreadId = res.headers.get('X-Thread-Id') as string;
+        const newThreadId = res.headers.get('X-Thread-Id');
 
-        if (newThreadId && newThreadId !== threadId) {
+        if (newThreadId) {
+          activeThreadIdRef.current = newThreadId;
+        }
+
+        if (newThreadId && newThreadId !== threadIdRef.current) {
           onNewThread?.(newThreadId);
         }
 
-        let hasSeenFirstChunk = false;
-
-        const monitor = new TransformStream({
-          transform(chunk, controller) {
-            if (!hasSeenFirstChunk) {
-              hasSeenFirstChunk = true;
-              setHasStartedReceiving(true);
-            }
-
-            controller.enqueue(chunk);
-          },
-          flush(controller) {
-            setStreaming(false);
-            setHasStartedReceiving(null);
-            abortControllerRef.current = null;
-            controller.terminate();
-          },
-        });
-
-        const stream = res.body.pipeThrough(monitor);
-
-        setStream(stream);
-        setStreaming(true);
+        openStream(res);
       } catch (err) {
         if ((err as Error).name !== 'AbortError') {
           setError(err);
@@ -142,23 +227,39 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
 
       return success;
     },
-    [activeModels, authToken, selectedModel, threadId, onNewThread, toolsEnabled, thinkingEnabled, toast],
+    [activeModels, authToken, selectedModel, onNewThread, toolsEnabled, thinkingEnabled, toast, detach, openStream],
+  );
+
+  const cancel = useCallback(
+    (id: string) => {
+      void fetch(buildApiUrl(`/api/llm/threads/${id}/cancel`), {
+        method: 'POST',
+        headers: {
+          ...apiKeyHeaders(),
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+    },
+    [authToken],
   );
 
   const stop = useCallback(() => {
-    abortControllerRef.current?.abort();
-    abortControllerRef.current = null;
+    const id = activeThreadIdRef.current;
 
-    setStream(null);
-    setStreaming(false);
-    setHasStartedReceiving(null);
-  }, []);
+    detach();
+
+    if (!id) {
+      return;
+    }
+
+    cancel(id);
+  }, [cancel, detach]);
 
   useEffect(() => {
     return () => {
-      stop();
+      abortControllerRef.current?.abort();
     };
-  }, [stop]);
+  }, []);
 
   return [
     {
@@ -170,7 +271,10 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
     },
     {
       submit,
+      attach,
+      detach,
       stop,
+      cancel,
     },
   ];
 }

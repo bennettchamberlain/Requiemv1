@@ -66,7 +66,23 @@ export function useThreadListService(): ReturnType {
 
   useEffect(() => {
     fetchThreads();
-  }, []);
+  }, [fetchThreads]);
+
+  const busy = threads.some(
+    (thread) => thread.generationStatus === 'queued' || thread.generationStatus === 'running',
+  );
+
+  useEffect(() => {
+    if (!busy) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      void fetchThreads();
+    }, 2000);
+
+    return () => window.clearInterval(timer);
+  }, [busy, fetchThreads]);
 
   return [
     {

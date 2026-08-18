@@ -291,11 +291,16 @@ export const JOB_TYPES: Readonly<Record<string, JobTypeDescriptor>> = {
   },
 
   // ── LLM ─────────────────────────────────────────────────────────────────
+  'chat.generate': {
+    label: 'Generate chat reply',
+    category: JOB_CATEGORIES.llm,
+    description: 'Run one chat turn on the model. Survives leaving the page; Stop cancels it.',
+    interactive: true,
+  },
   'chat.summarization': {
     label: 'Summarize conversation',
     category: JOB_CATEGORIES.llm,
     description: 'Condense a chat thread so it fits future prompts.',
-    interactive: true,
   },
   'infer.question.answer': {
     label: 'Infer an answer',

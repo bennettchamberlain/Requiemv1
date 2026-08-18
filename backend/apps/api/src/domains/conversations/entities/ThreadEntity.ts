@@ -34,12 +34,16 @@ export class ThreadEntity {
   @Column({ type: 'boolean', default: false, name: 'is_archived' })
   isArchived!: boolean;
 
+  @Column({ type: 'text', default: 'idle', name: 'generation_status' })
+  generationStatus!: 'idle' | 'queued' | 'running' | 'failed';
+
   static toEgressType(entity: ThreadEntity): Thread {
     return {
       id: entity.id,
       name: entity.name ?? null,
       description: entity.description ?? null,
       isArchived: entity.isArchived,
+      generationStatus: entity.generationStatus ?? 'idle',
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
       user: entity.user ? UserEntity.toEgressType(entity.user) : undefined,

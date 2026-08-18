@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { gql, useQuery } from '@apollo/client';
+import timelineCssUrl from '@knight-lab/timelinejs/dist/css/timeline.css?url';
+import timelineLocaleUrl from '@knight-lab/timelinejs/dist/js/locale/en.json?url';
 import timelineJsUrl from '@knight-lab/timelinejs/dist/js/timeline.js?url';
-import '@knight-lab/timelinejs/dist/css/timeline.css';
 
 import type { ScheduleEvent } from '@/api/useScheduleService';
 
@@ -11,6 +12,11 @@ import './timelineTheme.css';
 
 const TIMELINE_LOOKBACK_DAYS = 14;
 const TIMELINE_LOOKAHEAD_DAYS = 21;
+
+/** Knight Lab's TimeNav zoom ladder. Last entry is fully zoomed in. */
+export const TIMELINE_ZOOM_SEQUENCE = [0.5, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89] as const;
+export const TIMELINE_MAX_ZOOM_INDEX = TIMELINE_ZOOM_SEQUENCE.length - 1;
+export const TIMELINE_MAX_SCALE_FACTOR = TIMELINE_ZOOM_SEQUENCE[TIMELINE_MAX_ZOOM_INDEX];
 
 const GET_TIMELINE_EVENTS = gql(`
   query GetTimelineEvents($from: DateTime!, $to: DateTime!) {
@@ -48,52 +54,81 @@ type Rgb = { r: number; g: number; b: number };
 
 let timelineLoad: Promise<TimelineCtor> | null = null;
 
+function ensureTimelineCss(): Promise<void> {
+  const existing = document.querySelector<HTMLLinkElement>('link[data-timelinejs-css]');
+  if (existing) {
+    return existing.sheet ? Promise.resolve() : new Promise((resolve) => {
+      existing.addEventListener('load', () => resolve(), { once: true });
+      existing.addEventListener('error', () => resolve(), { once: true });
+    });
+  }
+
+  return new Promise((resolve) => {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = timelineCssUrl;
+    link.dataset.timelinejsCss = '1';
+    link.onload = () => resolve();
+    link.onerror = () => resolve();
+    document.head.appendChild(link);
+  });
+}
+
 /**
  * Load TimelineJS as a classic script (not an ESM import).
  *
  * The dist file is a UMD IIFE that assigns `window.TL`. Vite's ESM transform of
  * that file keeps `TL` module-local, so `globalThis.TL` stays undefined and the
  * story strip mounts empty — which is exactly the blank panel we hit.
+ *
+ * CSS is injected here too, instead of a static import, so the rest of Today
+ * does not wait on Knight Lab's 96kb stylesheet.
  */
 function loadTimelineCtor(): Promise<TimelineCtor> {
   if (typeof window !== 'undefined' && window.TL?.Timeline) {
-    return Promise.resolve(window.TL.Timeline);
+    const Timeline = window.TL.Timeline;
+
+    return ensureTimelineCss().then(() => Timeline);
   }
 
   if (!timelineLoad) {
-    timelineLoad = new Promise<TimelineCtor>((resolve, reject) => {
-      const existing = document.querySelector<HTMLScriptElement>('script[data-timelinejs]');
-      if (existing && window.TL?.Timeline) {
-        resolve(window.TL.Timeline);
-
-        return;
-      }
-
-      const script = existing ?? document.createElement('script');
-      script.dataset.timelinejs = '1';
-      script.src = timelineJsUrl;
-      script.async = true;
-      script.onload = () => {
-        if (window.TL?.Timeline) {
-          resolve(window.TL.Timeline);
-        } else {
-          timelineLoad = null;
-          reject(new Error('TimelineJS loaded without window.TL.Timeline'));
-        }
-      };
-
-      script.onerror = () => {
-        timelineLoad = null;
-        reject(new Error('Failed to load TimelineJS script'));
-      };
-
-      if (!existing) {
-        document.head.appendChild(script);
-      }
-    });
+    timelineLoad = Promise.all([ensureTimelineCss(), loadTimelineScript()]).then(([, Timeline]) => Timeline);
   }
 
   return timelineLoad;
+}
+
+function loadTimelineScript(): Promise<TimelineCtor> {
+  return new Promise<TimelineCtor>((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>('script[data-timelinejs]');
+    if (existing && window.TL?.Timeline) {
+      resolve(window.TL.Timeline);
+
+      return;
+    }
+
+    const script = existing ?? document.createElement('script');
+    script.dataset.timelinejs = '1';
+    script.src = timelineJsUrl;
+    script.async = true;
+    script.onload = () => {
+      if (window.TL?.Timeline) {
+        resolve(window.TL.Timeline);
+      } else {
+        timelineLoad = null;
+        reject(new Error('TimelineJS loaded without window.TL.Timeline'));
+      }
+    };
+
+    script.onerror = () => {
+      timelineLoad = null;
+      reject(new Error('Failed to load TimelineJS script'));
+    };
+
+    if (!existing) {
+      document.head.appendChild(script);
+    }
+  });
 }
 
 /** Resolve a CSS color (incl. theme tokens) to RGB for TimelineJS options. */
@@ -137,6 +172,42 @@ function addDays(date: Date, days: number): Date {
   next.setDate(next.getDate() + days);
 
   return next;
+}
+
+/** Options that keep Today on our origin and fully zoomed on the selected day. */
+export function timelineStoryOptions({
+  width,
+  startAtSlide,
+  bg,
+  languageUrl,
+}: {
+  width?: number;
+  startAtSlide: number;
+  bg: Rgb;
+  languageUrl: string;
+}): Record<string, unknown> {
+  return {
+    height: 360,
+    width,
+    timenav_height: 120,
+    timenav_height_percentage: 35,
+    marker_height_min: 24,
+    marker_padding: 3,
+    // Title is slide 0; land on the first event of the focused day.
+    start_at_slide: startAtSlide + 1,
+    hash_bookmark: false,
+    default_bg_color: bg,
+    // Skip Knight Lab's Google Fonts CSS (PT Sans TTF from gstatic).
+    font: false,
+    theme: false,
+    soundcite: false,
+    // Local en.json — the default script_path fetches locale from cdn.knightlab.com.
+    language: languageUrl,
+    // Fully zoomed TimeNav (last Fibonacci step) centred on the selected day.
+    scale_factor: TIMELINE_MAX_SCALE_FACTOR,
+    initial_zoom: TIMELINE_MAX_ZOOM_INDEX,
+    zoom_sequence: [...TIMELINE_ZOOM_SEQUENCE],
+  };
 }
 
 /**
@@ -212,19 +283,12 @@ export function TodayStoryTimeline({ events, day }: TodayStoryTimelineProps) {
           }
 
           try {
-            new Timeline(mount, data, {
-              height: 360,
+            new Timeline(mount, data, timelineStoryOptions({
               width: mount.clientWidth || host.clientWidth || undefined,
-              timenav_height: 120,
-              timenav_height_percentage: 35,
-              marker_height_min: 24,
-              marker_padding: 3,
-              // Title is slide 0; land on the first event of the focused day.
-              start_at_slide: startAtSlide + 1,
-              hash_bookmark: false,
-              default_bg_color: timelineBgFromTheme(),
-              font: 'Default',
-            });
+              startAtSlide,
+              bg: timelineBgFromTheme(),
+              languageUrl: timelineLocaleUrl,
+            }));
             setReady(true);
           } catch (cause) {
             setError(cause instanceof Error ? cause.message : 'TimelineJS failed to start');
