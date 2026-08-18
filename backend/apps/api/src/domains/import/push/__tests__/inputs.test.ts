@@ -154,6 +154,47 @@ describe('toPositionInput', () => {
 
     expect(typeof fix?.time).toBe('string');
   });
+
+  it('refuses a coordinate pair as a place name', () => {
+    // google_fit titles a trackpoint with its own coordinates when it has no
+    // waypoint name. Stored as `name`, that makes the row look already-named to
+    // the reverse-geocode candidate filter ("coordinates present, name
+    // missing"), so it is never offered to the geocoder — 62,832 of 62,833
+    // positions on a real Takeout, and a Places view holding one entry.
+    const fix = toPositionInput(
+      recordFor({
+        classification: 'location',
+        latitude: 33.51469,
+        longitude: -117.72169,
+        // The shape google_fit emits: `Title` falls back to the fix's own
+        // coordinates when the trackpoint has no waypoint name.
+        metadata: { Title: '33.51469, -117.72169' },
+      }),
+    );
+
+    expect(fix?.name).toBeUndefined();
+    // The geometry is still stored — only the fake name is dropped.
+    expect(fix?.location).toEqual({ x: -117.72169, y: 33.51469 });
+  });
+
+  it('keeps a real place name, including one that contains numbers', () => {
+    const named = toPositionInput(
+      recordFor({
+        classification: 'location',
+        latitude: 1,
+        longitude: 2,
+        metadata: { Title: 'Cafe 40.7, 74.0' },
+      }),
+    );
+
+    expect(named?.name).toBe('Cafe 40.7, 74.0');
+
+    const waypoint = toPositionInput(
+      recordFor({ classification: 'location', latitude: 1, longitude: 2, metadata: { Name: 'Summit' } }),
+    );
+
+    expect(waypoint?.name).toBe('Summit');
+  });
 });
 
 describe('toBrowserActivityInput', () => {
