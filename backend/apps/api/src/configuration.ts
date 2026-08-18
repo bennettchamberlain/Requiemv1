@@ -5,6 +5,33 @@ import path from 'node:path';
 import config from 'config';
 import { z } from 'zod';
 
+/**
+ * The chat model an appliance uses when nothing overrides it.
+ *
+ * Every LLM-backed feature that is not handed an explicit model lands here:
+ * thread titling, task breakdown, the derivation narrators, the import
+ * enrichers. It is the floor those features are judged against, so a default
+ * too weak to hold a JSON schema does not degrade them — it silently disables
+ * them, because their fallback is deterministic ordering or no output at all.
+ *
+ * `gemma3:1b` was that floor and had aged into exactly this failure: 815MB and
+ * measurably unable to keep to a schema (see TaskBreakdownService), while
+ * CI-Planning had already moved its quality tier to an e4b-class model. Kept as
+ * the shipped default it made "the feature is on" and "the feature works"
+ * different claims.
+ *
+ * `gemma4:e4b` is the modern equivalent of that tier — and deliberately the
+ * EFFICIENT variant, not `gemma4:31b`: this ships to appliances that also hold
+ * an embedding model, HBPE and the summary sidecar in the same GPU, and a
+ * default is a floor everyone pays for, not a ceiling for the best-provisioned
+ * box. Override with `LLM_DEFAULT_CHAT_MODEL` (or Settings → Model); the Hub
+ * injects its own on managed deployments.
+ *
+ * Changing this means changing the model `make health` requires, since a
+ * default nobody has pulled fails at first use rather than at setup.
+ */
+export const DEFAULT_CHAT_MODEL = 'gemma4:e4b';
+
 const booleanStringSchema = z.preprocess((val) => {
   if (val === 'true') {
     return true;
@@ -185,7 +212,7 @@ export const ConfigSchema = z.object({
     .object({
       apiBase: z.string().optional(),
       apiKey: z.string().default('ollama'),
-      chatModel: z.string().default('gemma3:1b'),
+      chatModel: z.string().default(DEFAULT_CHAT_MODEL),
     })
     .default({}),
   // Local-first sync (PowerSync). The server issues short-lived client tokens via
@@ -571,7 +598,7 @@ if (!parsed.llm.apiKey) {
 }
 
 if (!parsed.llm.chatModel) {
-  parsed.llm.chatModel = 'gemma3:1b';
+  parsed.llm.chatModel = DEFAULT_CHAT_MODEL;
 }
 
 // GEOCODING_API_KEY takes precedence; fall back to the legacy GOOGLE_MAPS_KEY so

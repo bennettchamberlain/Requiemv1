@@ -1456,7 +1456,7 @@ see the same 0.02 % on every subsequent run, despite its docstring claiming it i
 Values outside the 17 `PREFERENCE_CONCEPT_TYPES` / 7 `FAMILY_RELATIONSHIP_TYPES` allowlists are
 dropped.
 
-**Dependencies.** Local Ollama, `config.llm.chatModel` (default `gemma3:1b`).
+**Dependencies.** Local Ollama, `config.llm.chatModel` (default `gemma4:e4b`).
 
 **Cost per record.** One chat call per 25 records. This is the most expensive stage per corpus and
 sits at priority −15.
