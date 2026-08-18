@@ -185,6 +185,7 @@ function DuplicateGroupCard({
     [group.people],
   );
   const hasSelf = orderedPeople.some((person) => person.isSelf);
+  const defaultTargetId = orderedPeople.find((person) => person.isSelf)?.id ?? orderedPeople[0]?.id ?? null;
 
   const merge = async (targetId: string) => {
     const sourceIds = group.people.map((person) => person.id).filter((id) => id !== targetId);
@@ -215,6 +216,10 @@ function DuplicateGroupCard({
   };
 
   const pendingTarget = orderedPeople.find((person) => person.id === pendingTargetId);
+  const openMerge = (targetId: string) => {
+    setMergeError(null);
+    setPendingTargetId(targetId);
+  };
 
   return (
     <div className="rounded-md border p-3">
@@ -254,14 +259,13 @@ function DuplicateGroupCard({
             {(!hasSelf || person.isSelf) && (
               <Button
                 size="sm"
-                variant="outline"
+                variant="ghost"
                 disabled={loading}
                 onClick={() => {
-                  setMergeError(null);
-                  setPendingTargetId(person.id);
+                  openMerge(person.id);
                 }}
               >
-                Keep this one
+                Use as the kept person
               </Button>
             )}
           </div>
@@ -271,10 +275,21 @@ function DuplicateGroupCard({
       {/* The other half of the decision. Without it the only way to clear a
           wrong suggestion is to merge people who are not the same, and the
           group returns on every load. */}
-      <div className="mt-3 flex items-center justify-end gap-3 border-t pt-2">
+      <div className="mt-3 flex flex-wrap items-center justify-end gap-3 border-t pt-2">
         {mergeError && !pendingTargetId && <span className="text-sm text-destructive">{mergeError}</span>}
         <Button size="sm" variant="ghost" disabled={loading || rejecting} onClick={() => void reject()}>
           {rejecting ? 'Saving…' : 'Not the same person'}
+        </Button>
+        <Button
+          size="sm"
+          disabled={loading || defaultTargetId == null}
+          onClick={() => {
+            if (defaultTargetId != null) {
+              openMerge(defaultTargetId);
+            }
+          }}
+        >
+          Merge into one person
         </Button>
       </div>
 
@@ -288,9 +303,9 @@ function DuplicateGroupCard({
       >
         <AlertDialog.Content>
           <AlertDialog.Header>
-            <AlertDialog.Title>Merge people?</AlertDialog.Title>
+            <AlertDialog.Title>Merge into one person?</AlertDialog.Title>
             <AlertDialog.Description>
-              {`The other ${group.people.length - 1 === 1 ? 'person' : `${group.people.length - 1} people`} in this group will be merged into "${pendingTarget?.name || 'Unnamed'}". Their events, messages and contact methods move over; this cannot be undone from the UI.`}
+              {`Events, messages, and contact methods from the other ${group.people.length - 1 === 1 ? 'person' : `${group.people.length - 1} people`} will move onto "${pendingTarget?.name || 'Unnamed'}"${pendingTarget?.isSelf ? ' (You)' : ''}. This folds multi-platform stubs into one Person and cannot be undone from the UI.`}
             </AlertDialog.Description>
           </AlertDialog.Header>
           {mergeError && <div className="text-sm text-destructive">{mergeError}</div>}
@@ -307,7 +322,7 @@ function DuplicateGroupCard({
                 }
               }}
             >
-              {loading ? 'Merging…' : 'Merge'}
+              {loading ? 'Merging…' : 'Merge into one person'}
             </AlertDialog.Action>
           </AlertDialog.Footer>
         </AlertDialog.Content>

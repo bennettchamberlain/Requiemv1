@@ -60,6 +60,10 @@ import {
   GraphEnrichmentService,
 } from '../services/GraphEnrichmentService';
 import {
+  type HealSelfCollationResult,
+  HealSelfCollationService,
+} from '../services/HealSelfCollationService';
+import {
   type DeferralResult,
   type DroppedIndex,
   IndexDeferralService,
@@ -319,6 +323,13 @@ const linkEventsSchema = z.object({
 
 type LinkEventsRequest = z.infer<typeof linkEventsSchema>;
 
+const healSelfCollationSchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+  dryRun: z.boolean().optional(),
+});
+
+type HealSelfCollationRequest = z.infer<typeof healSelfCollationSchema>;
+
 // Body for POST /api/maintenance/extract-graph. All optional: caps how much of
 // the user's own data the LLM extraction samples per run. Re-runnable.
 const extractGraphSchema = z.object({
@@ -344,6 +355,7 @@ const orchestrateSchema = z.object({
       extractPeople: extractPeopleFromCommunicationsSchema.optional(),
       linkCommunications: linkCommunicationsSchema.optional(),
       linkEvents: linkEventsSchema.optional(),
+      healSelfCollation: healSelfCollationSchema.optional(),
       materializeEdges: materializeEdgesSchema.optional(),
       extractGraph: extractGraphSchema.optional(),
       geocode: geocodeLocationsSchema.optional(),
@@ -409,6 +421,7 @@ export class MaintenanceController {
     private readonly communicationLinkBackfillService: CommunicationLinkBackfillService,
     private readonly personStubBackfillService: PersonStubBackfillService,
     private readonly eventParticipantBackfillService: EventParticipantBackfillService,
+    private readonly healSelfCollationService: HealSelfCollationService,
     private readonly deterministicEdgeBackfillService: DeterministicEdgeBackfillService,
     private readonly relationshipNormalizeService: RelationshipNormalizeService,
     private readonly derivedRelationshipService: DerivedRelationshipService,
@@ -797,6 +810,38 @@ export class MaintenanceController {
 
     return this.eventParticipantBackfillService.backfill(userId, {
       pageSize: body.pageSize,
+    });
+  }
+
+  /**
+   * Fold owner-representing Person stubs into the self Person when Autonomy
+   * trust allows (`person_self_merge` / hands_off auto). Otherwise counts
+   * candidates for Memory → People review. Idempotent; safe to re-run.
+   */
+  @Post('heal-self-collation')
+  async healSelfCollation(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(healSelfCollationSchema)) body: HealSelfCollationRequest,
+  ): Promise<HealSelfCollationResult> {
+    const serviceContext = toServiceContext(context);
+    const userId = serviceContext.userId;
+
+    if (typeof userId !== 'string') {
+      return {
+        selfEntityId: null,
+        trustMode: 'balanced',
+        examined: 0,
+        merged: 0,
+        reviewed: 0,
+        skipped: 0,
+        errors: [],
+        mergedSourceIds: [],
+      };
+    }
+
+    return this.healSelfCollationService.heal(userId, {
+      limit: body.limit,
+      dryRun: body.dryRun,
     });
   }
 

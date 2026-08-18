@@ -476,4 +476,46 @@ describe('PeoplePage', () => {
       observer.restore();
     }
   });
+
+  it('offers Merge into one person and Use as the kept person on duplicate groups', async () => {
+    renderWithProviders(<PeoplePage />, {
+      mocks: mocks({
+        duplicates: [
+          {
+            __typename: 'PersonDuplicateGroupType' as const,
+            reason: 'email',
+            value: 'ada@example.com',
+            people: [
+              {
+                __typename: 'PersonType' as const,
+                id: PERSON_GLOBAL_ID,
+                name: 'Ada Lovelace',
+                description: null,
+                avatarUrl: null,
+                isSelf: true,
+              },
+              {
+                __typename: 'PersonType' as const,
+                id: DUPLICATE_GLOBAL_ID,
+                name: 'A. Lovelace',
+                description: null,
+                avatarUrl: null,
+                isSelf: false,
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    expect(await screen.findByRole('button', { name: 'Merge into one person' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Use as the kept person' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Keep this one' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Merge into one person' }));
+
+    expect(await screen.findByText('Merge into one person?')).toBeInTheDocument();
+    expect(screen.getByText(/Events, messages, and contact methods/)).toBeInTheDocument();
+    expect(screen.getByText(/\(You\)/)).toBeInTheDocument();
+  });
 });

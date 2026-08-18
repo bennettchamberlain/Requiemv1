@@ -93,6 +93,14 @@ function makeStage(
         return [];
       }
 
+      if (sql.includes('SELECT entity_id FROM ci.users')) {
+        return [{ entity_id: null }];
+      }
+
+      if (sql.includes('trust_mode')) {
+        return [{ trust_mode: 'balanced' }];
+      }
+
       if (sql.includes('FROM ci.users u')) {
         return OWNER_ROWS;
       }

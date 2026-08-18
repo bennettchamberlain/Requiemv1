@@ -472,6 +472,88 @@ export class EntityIdentifierService {
 
     return (result.affected ?? 0) > 0;
   }
+
+  /**
+   * Force an identifier claim onto `entityId`, stealing it from any prior
+   * claimant. Used only for authoritative self collation (account email / self
+   * phones) when trust policy allows — first-writer-wins must not leave the
+   * owner's mailbox on a non-self stub forever.
+   *
+   * Returns the prior entity id when a claim was moved, null when this entity
+   * already owned it or the value does not normalize.
+   */
+  async repointToEntity(
+    ownerUserId: string,
+    entityId: string,
+    kind: IdentifierKind,
+    rawValue: string,
+    source = 'self_collation',
+  ): Promise<string | null> {
+    const valueNormalized = normalizeIdentifier(kind, rawValue);
+    if (valueNormalized == null) {
+      return null;
+    }
+
+    const existing = await this.repository.findOne({
+      where: { ownerUserId, kind, valueNormalized },
+    });
+
+    if (existing == null) {
+      await this.repository
+        .createQueryBuilder()
+        .insert()
+        .into(EntityIdentifierEntity)
+        .values({
+          ownerUserId,
+          entityId,
+          kind,
+          valueNormalized,
+          rawValue: rawValue === valueNormalized ? null : rawValue,
+          source,
+          verifiedAt: () => 'now()',
+        })
+        .orIgnore()
+        .execute();
+
+      return null;
+    }
+
+    if (existing.entityId === entityId) {
+      return null;
+    }
+
+    const prior = existing.entityId;
+    await this.repository.update(
+      { ownerUserId, kind, valueNormalized },
+      { entityId, source, verifiedAt: new Date() },
+    );
+
+    this.logger.log('Repointed identifier claim to entity', {
+      ownerUserId,
+      kind,
+      valueNormalized,
+      fromEntityId: prior,
+      toEntityId: entityId,
+      source,
+    });
+
+    return prior;
+  }
+
+  /**
+   * Register the owner's contact methods on the self Person (emails / names /
+   * phones). Uses first-writer-wins upsert first; callers that need to steal
+   * account email should follow with {@link repointToEntity}.
+   */
+  async claimForSelf(
+    ownerUserId: string,
+    selfEntityId: string,
+    raw: { emails?: unknown; phones?: unknown; names?: unknown },
+  ): Promise<number> {
+    return this.upsertForEntities(ownerUserId, [
+      { entityId: selfEntityId, raw, source: 'self' },
+    ]);
+  }
 }
 
 /**
