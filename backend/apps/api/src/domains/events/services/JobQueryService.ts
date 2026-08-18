@@ -284,7 +284,12 @@ export class JobQueryService {
   private async stateCounts(query: JobQuery): Promise<Record<string, number>> {
     const builder = this.jobRepository
       .createQueryBuilder('job')
-      .select(`CASE WHEN job.name = :deadLetter THEN 'dead-letter' ELSE job.state END`, 'bucket')
+      // `job.state::text` is load-bearing. Postgres unifies a CASE's branches to
+      // one type, and without the cast it picks the `pgboss.job_state` ENUM from
+      // the ELSE branch — then tries to coerce the literal `'dead-letter'` into
+      // it and fails with "invalid input value for enum". `dead-letter` is a
+      // QUEUE, never a state, so the bucket column has to be text.
+      .select(`CASE WHEN job.name = :deadLetter THEN 'dead-letter' ELSE job.state::text END`, 'bucket')
       .addSelect('COUNT(*)::int', 'count')
       .setParameter('deadLetter', DEAD_LETTER_QUEUE)
       .groupBy('1');
