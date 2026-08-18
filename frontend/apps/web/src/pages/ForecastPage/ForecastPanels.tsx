@@ -32,6 +32,7 @@ type Calibration = {
     l0Top1Acc: number | null;
     ece: number | null;
     driftFlag: boolean;
+    modelVersion?: string | null;
   } | null;
 };
 
@@ -216,6 +217,9 @@ export function CalibrationPanel({ calibration }: { calibration: Calibration | n
       <Card.Content className="flex flex-col gap-1 text-sm">
         <div>Top-1 match: {acc == null ? '—' : `${Math.round(acc * 100)}%`}</div>
         <div>Calibration error (ECE): {ece == null ? '—' : ece.toFixed(3)}</div>
+        {calibration.latest.modelVersion && calibration.latest.modelVersion !== 'hmt' && (
+          <div>Served from the {calibration.latest.modelVersion} baseline (not the transformer).</div>
+        )}
         {calibration.latest.driftFlag && (
           <div className="text-destructive">Self-consistency has drifted below its recent baseline.</div>
         )}

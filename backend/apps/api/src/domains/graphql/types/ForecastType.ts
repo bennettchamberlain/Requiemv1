@@ -18,6 +18,18 @@ export class ForecastType {
   })
   systemStatus!: string;
 
+  @Field(() => String, {
+    nullable: true,
+    description: 'Served histogram model: hmt, b1, or b2 (D3 gate).',
+  })
+  modelVersion?: string | null;
+
+  @Field(() => Boolean, {
+    defaultValue: false,
+    description: 'True when the histogram is a cold-start baseline, not a trained HMT.',
+  })
+  stillLearning!: boolean;
+
   @Field(() => [ForecastBucketType!]!)
   buckets!: ForecastBucketType[];
 
@@ -26,6 +38,8 @@ export class ForecastType {
       horizon: source.horizon,
       generatedAt: source.generated_at,
       systemStatus: source.system_status,
+      modelVersion: source.model_version ?? null,
+      stillLearning: Boolean(source.still_learning),
       buckets: source.buckets.map(ForecastBucketType.toType),
     };
   }

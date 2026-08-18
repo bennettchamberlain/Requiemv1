@@ -153,7 +153,9 @@ MCP already ran `ToolRegistry.executeTool`.
 **self-consistency vs Qwen labels**, not ground truth. The anomaly engine
 treats predicted-vs-actual L0 divergence as a **behavioral anomaly source**.
 It does not change the kernel, add an L2 head, or feed `daily_metrics` into
-HBPE. That is a later PR.
+HBPE as **training** signal. Inference-time kernel covariates, HMM smoothing,
+and the B0/B1/B2 serve gate live in
+[hbpe-landing.md](hbpe-landing.md).
 
 ---
 
@@ -594,7 +596,7 @@ without rewriting the engines.
 | **Thicker daily metrics** | Honed subset `time_at_home` / `meeting_minutes` / `sleep_minutes`. Plan: [thicker-daily-metrics.md](thicker-daily-metrics.md). Pair space grows via `METRIC_KEYS`. Body/Mind suggestion arms stay off until #63. |
 | **#59 Agent harness leftovers** | Tools were registered here. REST execute, `/api/agent/intents`, and `places.next` ship in [agent-harness-and-cold-start.md](agent-harness-and-cold-start.md). Hermes/OpenClaw are already catalog-driven. |
 | **#63 Cold-start / non-clinical / provenance / budget** | `source` column and coverage floors ship here because #55 cannot emit honestly without them. 14-day grounded copy, Brief producer cap of 3, and flags default-on ship in [agent-harness-and-cold-start.md](agent-harness-and-cold-start.md). Heartbeat mute/snooze/`drift_flag` stay later. |
-| **HBPE model upgrades** (calendar-weighted kernel, hierarchical loss, L2 topic head, daily_metrics as features) | Anomaly source `'hbpe.l0'` keeps working as the sidecar's `prediction_log` shape is stable. A future `'hbpe.l2'` detector is another `detector` enum value. Do not train HBPE from this domain. |
+| **HBPE landing** (calendar-weighted kernel, HMM, hierarchical loss, L2 gated on tokens, daily_metrics as *inference* lifts) | Anomaly source `'hbpe.l0'` keeps working as the sidecar's `prediction_log` shape is stable. A future `'hbpe.l2'` detector is another `detector` enum value. Do not train HBPE from this domain. Plan: [hbpe-landing.md](hbpe-landing.md). |
 | **#57 Predictions dashboard** | Panel D (metric strips) and "drivers" popovers consume `metric_correlations` when present. Empty = hide the drivers affordance, don't block the dashboard. |
 | **#58 Next-place** | Independent `ci_derived.place_*` tables. Not an input to pairwise metric correlation in v1 (a place-id series is not a scalar). A later "time-at-cluster-X" metric would join naturally via `METRIC_KEYS`. |
 | **Event-study / ITS** | `CorrelationEngine.scanAround(event)` is a reserved method. Persist only when we have a discrete event taxonomy we trust. |
@@ -668,7 +670,7 @@ enough overlapping days — not a fabricated r.
 - Hermes / OpenClaw source changes (REST execute is on CI-Server; see
   [agent-harness-and-cold-start.md](agent-harness-and-cold-start.md)).
 - `/predictions` UI (#57).
-- HBPE hierarchical loss, L2 head, calendar kernel, daily_metrics features.
+- Training HBPE from correlation/suggestion rows (inference-time metric lifts only — [hbpe-landing.md](hbpe-landing.md)).
 - Causal graphs, Granger-causality theatre, STL, new npm stats frameworks.
 - Normative health advice.
 - NL→catalog router.

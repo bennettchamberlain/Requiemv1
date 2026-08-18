@@ -312,6 +312,7 @@ export type CalibrationScoreType = {
   ece?: Maybe<Scalars['Float']['output']>;
   l0Top1Acc?: Maybe<Scalars['Float']['output']>;
   l1Top3Acc?: Maybe<Scalars['Float']['output']>;
+  modelVersion?: Maybe<Scalars['String']['output']>;
   nBuckets?: Maybe<Scalars['Int']['output']>;
   scoredAt: Scalars['String']['output'];
 };
@@ -1048,6 +1049,10 @@ export type ForecastType = {
   generatedAt: Scalars['String']['output'];
   /** Forecast horizon, e.g. "48h" */
   horizon: Scalars['String']['output'];
+  /** Served histogram model: hmt, b1, or b2 (D3 gate). */
+  modelVersion?: Maybe<Scalars['String']['output']>;
+  /** True when the histogram is a cold-start baseline, not a trained HMT. */
+  stillLearning: Scalars['Boolean']['output'];
   /** System status of the HBPE engine (COLD_START, TRAINING, READY) */
   systemStatus: Scalars['String']['output'];
 };

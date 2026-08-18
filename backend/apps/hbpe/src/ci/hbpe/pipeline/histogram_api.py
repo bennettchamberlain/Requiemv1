@@ -90,16 +90,32 @@ def build_histogram(
 
     buckets = engine.predict(horizon_start=horizon_start)
 
+    still_learning = bool(getattr(engine, "last_still_learning", False))
+    model_version = getattr(engine, "last_model_version", None) or _model_version(
+        user_id
+    )
+
     if system_status is None:
-        system_status = "READY" if (user_id and model_exists(user_id)) else "COLD_START"
+        served = (model_version or "").lower()
+        # A B1 histogram with occupancy is a real forecast — don't grey the strip.
+        if still_learning and served in {"b0", "b1"}:
+            system_status = "READY"
+        elif still_learning:
+            system_status = "COLD_START"
+        else:
+            system_status = (
+                "READY" if (user_id and model_exists(user_id)) else "COLD_START"
+            )
 
     if user_id:
-        _log_prediction(user_id, now, horizon_start, buckets)
+        _log_prediction(user_id, now, horizon_start, buckets, model_version)
 
     return {
         "horizon": horizon,
         "generated_at": now.isoformat() + "Z",
         "system_status": system_status,
+        "model_version": model_version,
+        "still_learning": still_learning,
         "buckets": buckets,
     }
 
@@ -112,6 +128,7 @@ def _log_prediction(
     predicted_at: datetime.datetime,
     horizon_start: datetime.datetime,
     buckets: list[dict],
+    model_version: str | None = None,
 ) -> None:
     """
     Write all 48 forecast buckets to ci.prediction_log in a single batch.
@@ -121,7 +138,7 @@ def _log_prediction(
     ``backfill_actuals`` step (ci.pipeline.actuals_backfill) fills them once the
     forecast window has elapsed and the day's token_stream labels exist.
     """
-    version = _model_version(user_id)
+    version = model_version or _model_version(user_id)
     rows = [
         (
             user_id,

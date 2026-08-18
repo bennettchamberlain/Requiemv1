@@ -8,7 +8,8 @@
 > · epic [#49](https://github.com/companionintelligence/CI-Engineering/issues/49)
 >
 > Sibling: [correlation-anomaly-suggestions.md](correlation-anomaly-suggestions.md)
-> (engines + registered tools). HBPE kernel upgrades stay out.
+> (engines + registered tools). HBPE kernel / HMM / baseline gate:
+> [hbpe-landing.md](hbpe-landing.md).
 
 Derivation tools were registered and Memory MCP already executed them. Hermes
 and OpenClaw advertise the catalog then 404 on REST execute. Grounded prompts

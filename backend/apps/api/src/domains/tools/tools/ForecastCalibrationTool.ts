@@ -23,6 +23,7 @@ export interface ForecastCalibrationOutput {
   driftFlag: boolean;
   basis: string;
   quality: string;
+  modelVersion: string | null;
 }
 
 const ACC_STRONG = 0.7;
@@ -62,6 +63,10 @@ export function calibrationQualityStatement(score: CalibrationScore | null): str
 
   if (score.driftFlag) {
     statement += ' Self-consistency has recently drifted below its trailing baseline.';
+  }
+
+  if (score.modelVersion && score.modelVersion !== 'hmt' && !score.modelVersion.startsWith('hmt')) {
+    statement += ` The live histogram is currently served from the ${score.modelVersion} baseline, not the transformer.`;
   }
 
   return statement;
@@ -116,6 +121,7 @@ export class ForecastCalibrationTool extends BaseTool<ForecastCalibrationInput, 
       driftFlag: latest?.driftFlag ?? false,
       basis: CALIBRATION_BASIS,
       quality: calibrationQualityStatement(latest),
+      modelVersion: latest?.modelVersion ?? null,
     };
   }
 }

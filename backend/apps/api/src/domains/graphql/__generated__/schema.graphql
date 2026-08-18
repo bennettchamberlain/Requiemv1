@@ -288,6 +288,9 @@ type CalibrationScoreType {
   ece: Float
   l0Top1Acc: Float
   l1Top3Acc: Float
+
+  """hmt / b0 / b1 / b2"""
+  modelVersion: String
   nBuckets: Int
   scoredAt: String!
 }
@@ -979,6 +982,12 @@ type ForecastType {
   Forecast horizon, e.g. "48h"
   """
   horizon: String!
+
+  """Served histogram model: hmt, b1, or b2 (D3 gate)."""
+  modelVersion: String
+
+  """True when the histogram is a cold-start baseline, not a trained HMT."""
+  stillLearning: Boolean!
 
   """System status of the HBPE engine (COLD_START, TRAINING, READY)"""
   systemStatus: String!

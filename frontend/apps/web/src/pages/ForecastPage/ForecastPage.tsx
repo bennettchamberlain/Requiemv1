@@ -46,6 +46,8 @@ export function ForecastPage() {
                 generatedAt={forecast.generatedAt}
                 systemStatus={forecast.systemStatus}
                 stalled={stalled}
+                stillLearning={forecast.stillLearning}
+                modelVersion={forecast.modelVersion}
               />
             </div>
             <WeekAhead week={week} due={due} />

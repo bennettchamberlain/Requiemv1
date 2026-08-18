@@ -11,10 +11,12 @@ describe('calibrationQualityStatement', () => {
       coverage: 0.9,
       nBuckets: 80,
       driftFlag: true,
+      modelVersion: 'b2',
     });
 
     expect(statement.toLowerCase()).not.toContain('accuracy');
     expect(statement).toContain('pipeline labels');
     expect(statement).toContain('Self-consistency has recently drifted');
+    expect(statement).toContain('b2 baseline');
   });
 });
