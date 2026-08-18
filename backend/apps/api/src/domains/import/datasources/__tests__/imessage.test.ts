@@ -282,4 +282,60 @@ describe('imessage importer', () => {
     expect(inb.item!.metadata!['Contact']).toBeUndefined();
     expect(inb.item!.metadata!['From Me']).toBe(false);
   });
+
+  // Regression: the participant edge's entity carried a bare `name` and no
+  // `attributes`, so `entityIdentityKey()` (import/staging/identity.ts) found
+  // no identity handle on it and `toGraphEntity` never populated
+  // `properties.phones`/`.emails` — GraphIngestService.indexIdentifiers then
+  // never wrote a ci.entity_identifiers row at all. The Person this became was
+  // not merely un-cross-referenced against a vCard contact for the same
+  // number; it was invisible to every phone/email lookup, forever. A live-DB
+  // audit found 1,799 iMessage-sourced Person rows named after a bare phone
+  // number with zero entity_identifiers rows between them, 331 of which had
+  // the real name on a separate vCard-imported Person for the exact same
+  // number. The participant entity must now carry an `identity: true`
+  // phone/email attribute, exactly like googlevoice.ts's contact entities do.
+  it('marks the participant entity with a phone/email identity attribute', async () => {
+    const importer = getImporter('imessage');
+    const dir = await fs.promises.mkdtemp(path.join(tmpdir(), 'imsg-'));
+    const db = new Database(path.join(dir, 'chat.db'));
+    db.exec(`
+      CREATE TABLE handle (ROWID INTEGER PRIMARY KEY, id TEXT);
+      CREATE TABLE message (ROWID INTEGER PRIMARY KEY, guid TEXT, date INTEGER, text TEXT, is_from_me INTEGER, service TEXT, handle_id INTEGER);
+      CREATE TABLE attachment (ROWID INTEGER PRIMARY KEY, guid TEXT, filename TEXT, mime_type TEXT);
+      CREATE TABLE message_attachment_join (message_id INTEGER, attachment_id INTEGER);
+    `);
+    db.prepare('INSERT INTO handle (ROWID, id) VALUES (?, ?)').run(1, '+15551234567');
+    db.prepare('INSERT INTO handle (ROWID, id) VALUES (?, ?)').run(2, 'someone@icloud.com');
+    // Inbound from the phone handle.
+    db.prepare(
+      'INSERT INTO message (ROWID, guid, date, text, is_from_me, service, handle_id) VALUES (?,?,?,?,?,?,?)',
+    ).run(10, 'phone-guid', 600000000, 'hi', 0, 'iMessage', 1);
+    // Inbound from the Apple-ID-email handle.
+    db.prepare(
+      'INSERT INTO message (ROWID, guid, date, text, is_from_me, service, handle_id) VALUES (?,?,?,?,?,?,?)',
+    ).run(11, 'email-guid', 600000001, 'hi from mac', 0, 'iMessage', 2);
+    db.close();
+
+    const pushed: Graph[] = [];
+    await importer.fileImport(
+      {},
+      { filename: dir, fullPath: dir } as DirEntry,
+      { pipeline: { push: (g: Graph) => pushed.push(g as EmittedGraph) } } as unknown as ImportParams,
+    );
+
+    const phoneMsg = pushed.find((g) => g.item?.id === 'phone-guid')!;
+    const participantEdge = phoneMsg.edges?.find((e: Relationship) => e.relation === 'participant');
+    expect(participantEdge?.to.entity?.name).toBe('+15551234567');
+    expect(participantEdge?.to.entity?.attributes).toEqual([
+      { name: 'phone', value: '+15551234567', identity: true },
+    ]);
+
+    const emailMsg = pushed.find((g) => g.item?.id === 'email-guid')!;
+    const emailEdge = emailMsg.edges?.find((e: Relationship) => e.relation === 'participant');
+    expect(emailEdge?.to.entity?.name).toBe('someone@icloud.com');
+    expect(emailEdge?.to.entity?.attributes).toEqual([
+      { name: 'email', value: 'someone@icloud.com', identity: true },
+    ]);
+  });
 });
