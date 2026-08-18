@@ -14,6 +14,7 @@ import {
   shiftIso,
   todayIsoInTimezone,
   AnomalyEngine,
+  COLD_START_MIN_DAYS,
 } from '@ci/domains/daily-metrics';
 import { OllamaService, PROMPT_MODEL } from '@ci/domains/llm';
 import { UserContextService } from '@ci/domains/memory';
@@ -162,6 +163,7 @@ export class ContextPromptGenerateService {
       'For radio_list, a_b, tag_cloud, and checklist you MUST supply 2–6 short options with stable ids.',
       'For "what did you do" questions, options may be WORK, EXERCISE, SOCIAL, ERRAND, LEISURE, TRANSIT, SLEEP, or use one_line.',
       'If a note is kind daily_metric, it already contains the true numbers. Copy those numbers into the spoken prompt. Do not invent or change a number.',
+      'Do not rewrite a daily_metric note into "usually" or "most days" hedging — those notes already passed the coverage floor, or they would not be listed.',
       'Name the source you are using (copy its kind and id from Useful gaps, or kind "category_gap").',
       'Set source.place: future_this_week for a plan this week, last_night for last night, further_back for an older evening.',
       'Reply with ONLY a JSON object, no prose. Shape:',
@@ -575,7 +577,7 @@ export class ContextPromptGenerateService {
 
     if (gap.kind === 'entity' && /what you do at/i.test(gap.label)) {
       return gap.label
-        .replace(/^I do not know what you do at\s+/i, 'What do you usually do at ')
+        .replace(/^I do not know what you do at\s+/i, 'What do you do at ')
         .replace(/\.$/, '?');
     }
 
@@ -832,7 +834,7 @@ export class ContextPromptGenerateService {
     try {
       const today = todayIsoInTimezone(timezone);
       const yesterday = shiftIso(today, -1);
-      const from = shiftIso(yesterday, -6);
+      const from = shiftIso(yesterday, -COLD_START_MIN_DAYS);
       if (this.anomalyEngine) {
         const anomalies = await this.anomalyEngine.list({ userId }, { since: yesterday });
         const fromStore = pickMetricSurpriseFromAnomalies(anomalies, yesterday);
