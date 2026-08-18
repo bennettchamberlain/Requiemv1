@@ -392,17 +392,38 @@ function parseDate(raw: string | undefined): Date | undefined {
 // the archive stores no separate record of the original.
 const RETWEET_PREFIX = /^RT @([A-Za-z0-9_]{1,15}):\s*/;
 
-/** One-line, length-capped snippet — the shape mapping.ts gives a title. */
+/**
+ * One-line, length-capped snippet — the shape mapping.ts gives a title.
+ *
+ * Iterates by Unicode CODE POINT, not UTF-16 code unit, so an astral character
+ * (almost every emoji — two UTF-16 units each) is never split. `String.prototype`
+ * indexing is code-unit based, and a single-character lookback ("is the unit
+ * right before the cut a high surrogate? back off by one more") only catches
+ * ONE surrogate pair sitting at the boundary — two consecutive astral characters
+ * there (e.g. 👽🪐) still stranded a lone high surrogate one position further in,
+ * which the lookback never re-checked. `Array.from` splits on code points
+ * correctly by construction, so there is no boundary math to get wrong.
+ *
+ * That stranded surrogate reached `ci_import.staged_items.metadata` as a bound
+ * query parameter (StagedWriter.writeItem does `JSON.stringify(item.metadata)`
+ * into a single ::jsonb column, not SQL-text interpolation) and Postgres's
+ * jsonb parser rejects it outright ("invalid input syntax for type json") where
+ * plain JS `JSON.stringify` does not — so this only ever surfaced at the
+ * database, not in a unit test that stops at the JS boundary. Confirmed via a
+ * real bound `pg` query against a live database, the same path StagedWriter
+ * uses. Every flush batch runs in one transaction (StagedWriter.writeBatch),
+ * so one such retweet silently rolled back the whole batch and every batch
+ * after it — on a real X archive, this was 100% data loss for the whole run.
+ */
 function clip(s: string, n: number): string {
   const one = s.replace(/\s+/g, ' ').trim();
-  if (one.length <= n) {
+  const codePoints = Array.from(one);
+
+  if (codePoints.length <= n) {
     return one;
   }
 
-  const cut = one.charCodeAt(n - 1);
-
-  // Don't strand half a surrogate pair (an emoji) at the cut.
-  return one.slice(0, cut >= 0xd800 && cut <= 0xdbff ? n - 2 : n - 1) + '…';
+  return codePoints.slice(0, n - 1).join('') + '…';
 }
 
 /** A geotagged tweet's coordinates, from either of the two shapes it carries. */

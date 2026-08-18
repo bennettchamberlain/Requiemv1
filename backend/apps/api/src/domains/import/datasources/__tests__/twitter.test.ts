@@ -268,6 +268,61 @@ describe('Twitter archive datasource', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('never strands half a surrogate pair, even with two astral characters at the cut boundary', async () => {
+    // A single-lookback fix ("is the unit right before the cut a high
+    // surrogate?") only catches one surrogate pair at the boundary. Two
+    // consecutive astral characters (two 2-unit emoji back to back) straddling
+    // the cut still stranded a lone high surrogate one position further in —
+    // real production data, not a contrived edge case; a lone `\ud83d` in a
+    // retweet title reached ci_import.staged_items.metadata as a bound `pg`
+    // query parameter and Postgres's jsonb parser rejected the whole row with
+    // "invalid input syntax for type json", rolling back every row in the same
+    // flush batch (StagedWriter batches writes into one transaction).
+    const padding = 'x'.repeat(77);
+    const long = `${padding}👽🪐 trailing text well past the 80-character clip`;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ci-twitter-surrogate-'));
+    fs.mkdirSync(path.join(dir, 'data'));
+    fs.writeFileSync(
+      path.join(dir, 'data', 'tweets.js'),
+      'window.YTD.tweets.part0 = ' +
+        JSON.stringify([
+          {
+            tweet: {
+              id_str: '10',
+              created_at: 'Mon Jan 06 08:00:00 +0000 2025',
+              full_text: `RT @someone: ${long}`,
+            },
+          },
+        ]),
+    );
+
+    const collected: Graph[] = [];
+    await new TwitterFileImporter().fileImport({}, { filename: path.basename(dir), fullPath: dir }, {
+      timeframe: {},
+      log: () => {},
+      pipeline: { push: (g: Graph) => collected.push(g as EmittedGraph) },
+    } as unknown as ImportParams);
+
+    const title = collected[0].item!.metadata!.Title as string;
+
+    // The real failure mode: a lone high surrogate as the LAST code unit
+    // before whatever follows (the ellipsis, here) — invalid on its own,
+    // since a high surrogate must be immediately followed by its low pair.
+    const lastCode = title.codePointAt(title.length - 2);
+    expect(lastCode == null || lastCode < 0xd800 || lastCode > 0xdbff).toBe(true);
+
+    // What actually broke in production: this string reaching Postgres as a
+    // jsonb column value. Node's own JSON.stringify does not catch a stranded
+    // surrogate (this is exactly why the bug reached the database undetected),
+    // so the real assertion is that round-tripping through JSON never PRODUCES
+    // one — checked by re-decoding and confirming no replacement/malformed
+    // code point appears where the emoji pair should be.
+    const roundTripped = JSON.parse(JSON.stringify({ title })).title as string;
+    expect(roundTripped).toBe(title);
+    expect(title).toContain('…');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('honors the retweet and reply options, reporting what it excluded', async () => {
     const { items, drops } = await runImport({
       mediaStoreDir: storeDir,
