@@ -106,4 +106,52 @@ describe('useModel', () => {
     await waitFor(() => expect(result.current[0].loading).toBe(false));
     expect(result.current[0].error).toBeTruthy();
   });
+
+  // Regression: an empty list is a normal recoverable backend state (Ollama
+  // unreachable, no models pulled, LLM endpoint misconfigured). Indexing
+  // `data[0].model` threw a TypeError that the surrounding try/catch turned into
+  // a bogus `error`, so the UI reported a failure for a request that succeeded.
+  it('handles an empty model list as an empty selection, not an error', async () => {
+    setFetch([]);
+
+    const { result } = renderHook(() => useModel(), { wrapper });
+
+    await waitFor(() => expect(result.current[0].loading).toBe(false));
+    expect(result.current[0].error).toBeNull();
+    expect(result.current[0].activeModels).toEqual([]);
+    expect(result.current[0].selectedModel).toBeNull();
+    expect(result.current[0].selectedVisionModel).toBeNull();
+    expect(result.current[0].thinkingSupported).toBe(false);
+    expect(result.current[0].toolsSupported).toBe(false);
+  });
+
+  // Regression: `fetchJson` casts the parsed body to `Model[]` without checking,
+  // so a non-array payload reached `setActiveModels` and every later
+  // `activeModels.find(...)` threw *during render* — outside the fetch try/catch.
+  // ModelProvider wraps the whole routed tree in App.tsx, so that unmounted the
+  // entire app: a blank page on every route, not just the model selector.
+  it('tolerates a non-array payload without throwing during render', async () => {
+    setFetch({ error: 'llm endpoint misconfigured' });
+
+    const { result } = renderHook(() => useModel(), { wrapper });
+
+    await waitFor(() => expect(result.current[0].loading).toBe(false));
+    expect(result.current[0].activeModels).toEqual([]);
+    expect(result.current[0].selectedModel).toBeNull();
+    expect(result.current[0].thinkingSupported).toBe(false);
+  });
+
+  // The empty list must not strand a stale selection from a previous session:
+  // a model that is no longer served cannot be used just because it is persisted.
+  it('drops a persisted model that the server no longer lists', async () => {
+    localStorage.setItem('activeModel', 'qwen-vl');
+    localStorage.setItem('activeVisionModel', 'qwen-vl');
+    setFetch([]);
+
+    const { result } = renderHook(() => useModel(), { wrapper });
+
+    await waitFor(() => expect(result.current[0].loading).toBe(false));
+    expect(result.current[0].selectedModel).toBeNull();
+    expect(result.current[0].selectedVisionModel).toBeNull();
+  });
 });
