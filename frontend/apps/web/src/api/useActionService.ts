@@ -52,5 +52,5 @@ export function useActionService(id: string | null) {
     {
       refetch: fetch,
     },
-  ];
+  ] as const;
 }
