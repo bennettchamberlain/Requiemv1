@@ -155,3 +155,213 @@ describe('AskService.complete', () => {
     expect(auditService.record).not.toHaveBeenCalled();
   });
 });
+
+function makeServiceForCreate() {
+  const repo = {
+    create: jest.fn().mockImplementation((data: Record<string, unknown>) => data),
+    save: jest.fn().mockImplementation((entity: Record<string, unknown>) => Promise.resolve(entity)),
+  };
+  const logger = { setContext: jest.fn() };
+  const service = new AskService(repo as never, {} as never, {} as never, logger as never);
+
+  return { service, repo };
+}
+
+describe('AskService.create — the self-ask guard', () => {
+  it('refuses an ask a user directs at themselves', async () => {
+    const { service, repo } = makeServiceForCreate();
+    const self: UserServiceContext = { userId: 'user-1' };
+
+    await expect(service.create(self, { ...DTO, responderUserId: 'user-1' })).rejects.toThrow(
+      'An ask must be directed at another user',
+    );
+    expect(repo.save).not.toHaveBeenCalled();
+  });
+
+  it('allows an ask directed at a different user', async () => {
+    const { service } = makeServiceForCreate();
+
+    await expect(service.create(CTX, DTO)).resolves.toMatchObject({
+      askerUserId: 'asker-1',
+      responderUserId: 'responder-1',
+      status: 'delivered',
+    });
+  });
+});
+
+/**
+ * A minimal, FAITHFUL in-memory stand-in for the TypeORM repository — not a
+ * hand-picked fixture per test. `findOne`/`find` implement the actual semantics
+ * of the `where` shape AskService passes (an array of clauses is OR'd, an
+ * object's keys are AND'd), the same way TypeORM itself interprets it. That
+ * makes this a real test of the tenancy predicate AskService builds — a swapped
+ * field, a missing OR branch, or an AND where an OR belongs would misbehave
+ * here exactly as it would against Postgres, rather than only against whatever
+ * a narrower mock was told to return.
+ */
+interface FakeRow {
+  id: string;
+  askerUserId: string;
+  responderUserId: string;
+  status: string;
+  createdAt: Date;
+  [key: string]: unknown;
+}
+
+function matchesClause(row: FakeRow, clause: Record<string, unknown>): boolean {
+  return Object.entries(clause).every(([key, value]) => row[key] === value);
+}
+
+function matchesWhere(row: FakeRow, where: Record<string, unknown> | Record<string, unknown>[]): boolean {
+  return Array.isArray(where)
+    ? where.some((clause) => matchesClause(row, clause))
+    : matchesClause(row, where);
+}
+
+function fakeAskRepository(rows: FakeRow[]) {
+  return {
+    findOne: jest.fn(
+      async ({ where }: { where: Record<string, unknown> | Record<string, unknown>[] }) =>
+        rows.find((row) => matchesWhere(row, where)) ?? null,
+    ),
+    find: jest.fn(
+      async ({
+        where,
+        order,
+      }: {
+        where: Record<string, unknown> | Record<string, unknown>[];
+        order?: Record<string, 'ASC' | 'DESC'>;
+      }) => {
+        const matched = rows.filter((row) => matchesWhere(row, where));
+
+        return order?.createdAt === 'DESC'
+          ? [...matched].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+          : matched;
+      },
+    ),
+  };
+}
+
+function fakeAskRow(overrides: Partial<FakeRow> = {}): FakeRow {
+  return {
+    id: 'ask-x',
+    askerUserId: 'asker',
+    responderUserId: 'responder',
+    query: DTO.query,
+    status: 'delivered',
+    consentBasis: null,
+    createdAt: new Date('2026-07-15T00:00:00Z'),
+    updatedAt: new Date('2026-07-15T00:00:00Z'),
+    expiresAt: null,
+    ...overrides,
+  };
+}
+
+// The tenancy/privacy boundary the audit flagged: "an ask is visible to its
+// asker and its responder only". A regression here lets an unrelated third
+// user read another pair's ask, so the case that matters is not "the right
+// user gets it" but "everyone else does NOT".
+describe('AskService.findById — participant-only visibility', () => {
+  it('is visible to the asker', async () => {
+    const ask = fakeAskRow({ id: 'ask-1', askerUserId: 'alice', responderUserId: 'bob' });
+    const repo = fakeAskRepository([ask]);
+    const service = new AskService(
+      repo as never,
+      {} as never,
+      {} as never,
+      { setContext: jest.fn() } as never,
+    );
+
+    await expect(service.findById({ userId: 'alice' }, 'ask-1')).resolves.toMatchObject({ id: 'ask-1' });
+  });
+
+  it('is visible to the responder', async () => {
+    const ask = fakeAskRow({ id: 'ask-1', askerUserId: 'alice', responderUserId: 'bob' });
+    const repo = fakeAskRepository([ask]);
+    const service = new AskService(
+      repo as never,
+      {} as never,
+      {} as never,
+      { setContext: jest.fn() } as never,
+    );
+
+    await expect(service.findById({ userId: 'bob' }, 'ask-1')).resolves.toMatchObject({ id: 'ask-1' });
+  });
+
+  it('is NOT visible to an unrelated third user, even one who is a participant on a DIFFERENT ask', async () => {
+    const ask = fakeAskRow({ id: 'ask-1', askerUserId: 'alice', responderUserId: 'bob' });
+    // 'carol' is a legitimate participant, just on an unrelated ask — proves the
+    // check is scoped to THIS ask's id, not merely "is carol a participant of
+    // anything".
+    const otherAsk = fakeAskRow({ id: 'ask-2', askerUserId: 'carol', responderUserId: 'dave' });
+    const repo = fakeAskRepository([ask, otherAsk]);
+    const service = new AskService(
+      repo as never,
+      {} as never,
+      {} as never,
+      { setContext: jest.fn() } as never,
+    );
+
+    await expect(service.findById({ userId: 'carol' }, 'ask-1')).resolves.toBeNull();
+    await expect(service.findById({ userId: 'dave' }, 'ask-1')).resolves.toBeNull();
+    await expect(service.findById({ userId: 'someone-else' }, 'ask-1')).resolves.toBeNull();
+  });
+});
+
+describe('AskService.listInbox — responder-scoped review queue', () => {
+  it("lists only the responder's own delivered / under_review asks, newest first", async () => {
+    const mine1 = fakeAskRow({
+      id: 'inbox-1',
+      responderUserId: 'bob',
+      status: 'delivered',
+      createdAt: new Date('2026-07-15T00:00:00Z'),
+    });
+    const mine2 = fakeAskRow({
+      id: 'inbox-2',
+      responderUserId: 'bob',
+      status: 'under_review',
+      createdAt: new Date('2026-07-16T00:00:00Z'),
+    });
+    // Terminal — must NOT appear in the review inbox even though bob responds.
+    const answered = fakeAskRow({ id: 'inbox-3', responderUserId: 'bob', status: 'answered' });
+    // A DIFFERENT responder's pending ask — the tenancy case: must not leak
+    // into bob's inbox.
+    const someoneElses = fakeAskRow({ id: 'inbox-4', responderUserId: 'carol', status: 'delivered' });
+
+    const repo = fakeAskRepository([mine1, mine2, answered, someoneElses]);
+    const service = new AskService(
+      repo as never,
+      {} as never,
+      {} as never,
+      { setContext: jest.fn() } as never,
+    );
+
+    const inbox = await service.listInbox({ userId: 'bob' });
+
+    expect(inbox.map((a) => a.id)).toEqual(['inbox-2', 'inbox-1']); // newest first
+  });
+});
+
+describe('AskService.listOutbox — asker-scoped sent history', () => {
+  it("lists only the asker's own asks, regardless of status", async () => {
+    const mine = fakeAskRow({ id: 'out-1', askerUserId: 'alice', status: 'answered' });
+    // Someone else's ask, even to the same responder — must not leak.
+    const someoneElses = fakeAskRow({
+      id: 'out-2',
+      askerUserId: 'eve',
+      responderUserId: mine.responderUserId,
+    });
+
+    const repo = fakeAskRepository([mine, someoneElses]);
+    const service = new AskService(
+      repo as never,
+      {} as never,
+      {} as never,
+      { setContext: jest.fn() } as never,
+    );
+
+    const outbox = await service.listOutbox({ userId: 'alice' });
+
+    expect(outbox.map((a) => a.id)).toEqual(['out-1']);
+  });
+});

@@ -1,3 +1,4 @@
+import { SYSTEM_USER } from '@ci/common/context';
 import { type Event } from '@ci/domains/memory';
 
 import { EventSearchIndexListener, eventDisplayTitle } from '../EventSearchIndexListener';
@@ -230,5 +231,141 @@ describe('eventDisplayTitle', () => {
     });
 
     expect(result).toBe('Photo · Jun 17, 2026');
+  });
+});
+
+/**
+ * The listener CLASS itself — `indexEvent` / `updateEvent` / `unindexEvent` —
+ * had no test at all before this: everything above exercises only the pure
+ * `getSearchDocument` / `eventDisplayTitle` helpers via a no-op instance.
+ */
+function makeFullListener(event: Record<string, unknown> | null = null) {
+  const eventService = { findById: jest.fn().mockResolvedValue(event) };
+  const embeddingGenerationService = { generateEmbedding: jest.fn().mockResolvedValue([0.1, 0.2]) };
+  const embeddingService = {
+    upsert: jest.fn().mockResolvedValue(null),
+    remove: jest.fn().mockResolvedValue(true),
+  };
+  const vectorService = {
+    upsert: jest.fn().mockResolvedValue(null),
+    remove: jest.fn().mockResolvedValue(true),
+  };
+  const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
+
+  const listener = new EventSearchIndexListener(
+    eventService as never,
+    embeddingGenerationService as never,
+    embeddingService as never,
+    vectorService as never,
+    logger as never,
+  );
+
+  return { listener, eventService, embeddingService, vectorService, logger };
+}
+
+describe('EventSearchIndexListener.unindexEvent', () => {
+  it('removes the embedding and the vector for (event, id), under the system context', async () => {
+    const { listener, embeddingService, vectorService } = makeFullListener();
+
+    await listener.unindexEvent({ eventId: 'event-1' } as never);
+
+    expect(embeddingService.remove).toHaveBeenCalledWith(
+      { userId: SYSTEM_USER },
+      { entityType: 'event', entityId: 'event-1' },
+    );
+    expect(vectorService.remove).toHaveBeenCalledWith(
+      { userId: SYSTEM_USER },
+      { entityType: 'event', entityId: 'event-1' },
+    );
+  });
+});
+
+describe('EventSearchIndexListener.indexEvent / updateEvent', () => {
+  it('is a no-op when the event cannot be found', async () => {
+    const { listener, embeddingService, logger } = makeFullListener(null);
+
+    await listener.indexEvent({ eventId: 'ghost' } as never);
+
+    expect(embeddingService.upsert).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it('is a no-op when the event has no associated user', async () => {
+    const { listener, embeddingService } = makeFullListener({
+      id: 'event-1',
+      userId: null,
+      title: 'Dinner',
+    });
+
+    await listener.indexEvent({ eventId: 'event-1' } as never);
+
+    expect(embeddingService.upsert).not.toHaveBeenCalled();
+  });
+
+  it('embeds and vectorizes a substantive event, scoped to its owner', async () => {
+    const { listener, embeddingService, vectorService } = makeFullListener({
+      id: 'event-1',
+      userId: 'user-1',
+      title: 'Dinner with Liam',
+      description: 'Catching up over ramen',
+      category: 'social',
+    });
+
+    await listener.updateEvent({ eventId: 'event-1' } as never);
+
+    expect(embeddingService.upsert).toHaveBeenCalledWith(
+      { userId: 'user-1' },
+      { entityType: 'event', entityId: 'event-1', embedding: [0.1, 0.2] },
+    );
+    expect(vectorService.upsert).toHaveBeenCalledWith(
+      { userId: 'user-1' },
+      expect.objectContaining({ entityType: 'event', entityId: 'event-1' }),
+    );
+  });
+
+  it('skips both embedding and vectorization for an event with no searchable content', async () => {
+    const { listener, embeddingService, vectorService } = makeFullListener({
+      id: 'event-2',
+      userId: 'user-1',
+      title: null,
+      description: null,
+      category: null,
+      eventType: null,
+      metadata: null,
+    });
+
+    await listener.indexEvent({ eventId: 'event-2' } as never);
+
+    expect(embeddingService.upsert).not.toHaveBeenCalled();
+    expect(vectorService.upsert).not.toHaveBeenCalled();
+  });
+
+  // Unlike its siblings (Communication, Person, Position), this listener has NO
+  // IndexSkipService dependency at all — it computes a low-value skip reason
+  // (via embedSkipReason) but never records a ci_search.index_skips marker for
+  // it. If a backfill sweep relies on that marker to avoid re-examining
+  // already-decided rows (the pattern every other embedding-gated listener
+  // follows), a low-value event is re-examined on every single sweep, forever —
+  // asserted here so that gap is a visible, deliberate fact about this listener
+  // rather than a silent assumption. If IndexSkipService is later wired in here,
+  // this test should be the one that changes.
+  it('skips embedding a trivial/low-value event WITHOUT recording any skip marker (no IndexSkipService exists here)', async () => {
+    const { listener, embeddingService, vectorService } = makeFullListener({
+      id: 'event-3',
+      userId: 'user-1',
+      title: 'ok',
+      description: null,
+      category: null,
+      eventType: null,
+      metadata: null,
+    });
+
+    await listener.indexEvent({ eventId: 'event-3' } as never);
+
+    expect(embeddingService.upsert).not.toHaveBeenCalled();
+    // Constructor takes exactly 5 args (no IndexSkipService slot) — this is the
+    // structural half of the same fact, kept next to the behavioral half above.
+    expect(EventSearchIndexListener).toHaveLength(5);
+    void vectorService; // vectorization is independent of the embed skip; not the point of this test
   });
 });
