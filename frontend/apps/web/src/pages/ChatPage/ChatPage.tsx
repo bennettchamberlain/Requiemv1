@@ -20,6 +20,7 @@ function ChatPageContent() {
   const resolvedThreadId = useRef<string | null>(null);
   const hasSetInitialMessages = useRef(false);
   const lastProcessedResponseRef = useRef<string>('');
+  const threadTitleRefreshTimeoutRef = useRef<number | null>(null);
 
   const navigate = useNavigate();
 
@@ -132,14 +133,31 @@ function ChatPageContent() {
     [submitChatRequest],
   );
 
-  const handleResponseFinished = useCallback((text: string) => {
-    if (text.trim()) {
-      // Only process new responses
-      if (text !== lastProcessedResponseRef.current) {
+  useEffect(() => {
+    return () => {
+      if (threadTitleRefreshTimeoutRef.current != null) {
+        window.clearTimeout(threadTitleRefreshTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleResponseFinished = useCallback(
+    (text: string) => {
+      if (text.trim() && text !== lastProcessedResponseRef.current) {
         lastProcessedResponseRef.current = text;
       }
-    }
-  }, []);
+
+      refetchThreads();
+      if (threadTitleRefreshTimeoutRef.current != null) {
+        window.clearTimeout(threadTitleRefreshTimeoutRef.current);
+      }
+
+      threadTitleRefreshTimeoutRef.current = window.setTimeout(() => {
+        refetchThreads();
+      }, 5000);
+    },
+    [refetchThreads],
+  );
 
   const handlePersonaCompose = useCallback(async () => {
     const trimmed = personaTask.trim();

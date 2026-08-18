@@ -33,6 +33,7 @@ import { HbpeService } from '@ci/domains/predictions';
 import { SummaryService } from '@ci/domains/summaries';
 
 import { OllamaService, type ChatRequestContext } from '../services/OllamaService';
+import { THREAD_TITLE_SYSTEM_PROMPT, sidebarTitleFromModel } from '../threadTitle';
 import type { PromptInput } from '../types';
 
 const promptSchema = z.object({
@@ -130,11 +131,6 @@ export class OllamaController {
     } else {
       thread = await this.threadService.create(serviceContext, {
         model: initialModel,
-      });
-
-      await this.eventService.send(Events.CHAT_SUMMARIZATION, {
-        ownerId: context.userId as string,
-        threadId: thread.id,
       });
     }
 
@@ -260,6 +256,13 @@ export class OllamaController {
         });
       }
 
+      if (!thread.name?.trim() && context.userId) {
+        await this.eventService.send(Events.CHAT_SUMMARIZATION, {
+          ownerId: context.userId,
+          threadId: thread.id,
+        });
+      }
+
       res.end();
     }
   }
@@ -328,37 +331,63 @@ export class OllamaController {
 
     const thread = await this.threadService.findById(context, payload.threadId);
 
-    if (thread) {
-      const messages = await this.messageService.findByThreadId(context, thread.id);
+    if (!thread || thread.name?.trim()) {
+      return;
+    }
 
-      const messagesInput = [
+    const messages = await this.messageService.findByThreadId(context, thread.id);
+    const excerpts: OllamaMessage[] = messages
+      .filter((message) => message.role !== 'tool' && message.content?.trim())
+      .slice(-12)
+      .map((message) => ({
+        role: message.role as OllamaMessage['role'],
+        content: message.content.slice(0, 400),
+      }));
+
+    if (excerpts.length === 0) {
+      return;
+    }
+
+    try {
+      const requestedModel = [...messages].reverse().find((message) => message.model)?.model ?? undefined;
+      let model: string;
+
+      try {
+        ({ model } = await this.ollamaService.resolveModel(context, {
+          requestedModel,
+          enableThinking: false,
+          enableTools: false,
+        }));
+      } catch {
+        ({ model } = await this.ollamaService.resolveModel(context, {
+          enableThinking: false,
+          enableTools: false,
+        }));
+      }
+
+      const result = await this.ollamaService.chat(
+        context,
+        [{ role: 'system', content: THREAD_TITLE_SYSTEM_PROMPT }, ...excerpts],
         {
-          role: 'system',
-          content:
-            'Please summarize all of the following messages I will send you in 10 words or less. Please ONLY give me your summary. Please do not use punctuation.',
+          model,
+          enableThinking: false,
+          enableTools: false,
         },
-        ...messages
-          .filter((message) => message.role !== 'tool' && message.content)
-          .map((message) => ({
-            role: message.role,
-            content: message.content,
-          })),
-      ];
+      );
 
-      const result = await this.ollamaService.chat(context, messagesInput, {
-        model: 'gemma3:1b',
-      });
+      const name = sidebarTitleFromModel(result.message.content);
+      if (!name) {
+        return;
+      }
 
-      const summary = result.message.content;
-
-      await this.threadService.update(context, thread.id, {
-        name: summary,
-      });
+      await this.threadService.update(context, thread.id, { name });
 
       this.logger.log('Processed chat summarization event', {
         payload,
-        summary: result.message.content,
+        name,
       });
+    } catch (error) {
+      this.logger.error(error as Error, 'Chat thread title failed');
     }
   }
 
