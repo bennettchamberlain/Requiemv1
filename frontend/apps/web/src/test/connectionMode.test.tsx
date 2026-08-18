@@ -1,10 +1,15 @@
+import { type ReactNode } from 'react';
+
 import { setApiKey } from '@ci/common/src/utils/apiAuth';
 import { setApiBaseUrl } from '@ci/common/src/utils/apiBase';
 import {
+  ConnectionModeProvider,
   LOCAL_PROBE_TIMEOUT_MS,
   REMOTE_PROBE_TIMEOUT_MS,
   resolveConnectionMode,
+  useConnectionMode,
 } from '@ci/common/src/utils/connectionMode';
+import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { okResponse, slowServer, urlOf } from './fetchFakes';
@@ -15,7 +20,17 @@ function setWindow(value: unknown): void {
   (globalThis as GlobalWithWindow).window = value;
 }
 
+// Captured at module load, before any test below replaces `globalThis.window` with a
+// bare fake for the pure-function tests. The `useConnectionMode` tests mount a real
+// component tree and need the genuine jsdom `window` (with a real `addEventListener`)
+// restored, regardless of what an earlier test in this file left `window` set to.
+const REAL_WINDOW = (globalThis as GlobalWithWindow).window;
+
 afterEach(() => {
+  // Unmount any real component tree (from the `useConnectionMode` tests below) BEFORE
+  // deleting `window`: its effect cleanup calls `window.removeEventListener`, and the
+  // shared setup.ts `afterEach(() => cleanup())` is not guaranteed to run before this one.
+  cleanup();
   delete (globalThis as GlobalWithWindow).window;
   vi.unstubAllGlobals();
   vi.useRealTimers();
@@ -35,6 +50,14 @@ describe('resolveConnectionMode — "connected"', () => {
   });
 
   it('is a genuine race: "connected" wins when remote answers faster than a slower-but-healthy LocalHub', async () => {
+    // Fake timers so the LOSING (local) leg's 20ms delay, below, never becomes a real
+    // pending timer that outlives this test: left real, it fires ~20ms of wall-clock
+    // time later — often while a *later* test has since become the one with a `fetch`
+    // stub installed — and silently calls that neighbor's mock, inflating its call
+    // count. `afterEach`'s `vi.useRealTimers()` discards a still-pending fake timer
+    // for free; there is nothing to advance since the winning leg needs no timer at all.
+    vi.useFakeTimers();
+
     const start = vi.fn(async () => {
       // Slower than the remote probe below, so remote should win the race
       // even though local would also have succeeded.
@@ -271,5 +294,98 @@ describe('resolveConnectionMode — race respects the per-probe timeout', () => 
 
     expect(await resultPromise).toBe('fresh');
     expect(bodyAborted).toBe(true);
+  });
+});
+
+function useConnectionModeWrapper({ children }: { children: ReactNode }) {
+  return <ConnectionModeProvider args={[]}>{children}</ConnectionModeProvider>;
+}
+
+/**
+ * `resolveConnectionMode` above is the probe race in isolation. This is the coalescing
+ * layer around it, inside `useConnectionMode` — the part that stops an `online` event
+ * landing mid-probe from either running a second concurrent fetch, or being silently
+ * dropped and leaving the mode pinned to a stale answer until the next re-probe tick.
+ */
+describe('useConnectionMode — refresh coalescing', () => {
+  it('does not start a second probe for a refresh requested while one is in flight, but does not drop it either', async () => {
+    // Fake timers make this deterministic: `setInterval`/`addEventListener` targets the
+    // real window (restored below, since the mount effect needs a genuine
+    // `window.addEventListener`), but nothing here depends on real wall-clock timing —
+    // every step is advanced explicitly.
+    vi.useFakeTimers();
+    setWindow(REAL_WINDOW);
+
+    let releaseFirstProbe: (() => void) | undefined;
+    const fetchMock = vi.fn(() => {
+      // First call: the probe already running when the caller's `online` event fires.
+      // Held open until the test releases it, then reports failure — modelling the
+      // still-offline read that was in flight the instant connectivity actually returned.
+      if (fetchMock.mock.calls.length === 1) {
+        return new Promise<Response>((_resolve, reject) => {
+          releaseFirstProbe = () => reject(new Error('still offline'));
+        });
+      }
+
+      // Second call: the trailing re-run's probe, made after the real reconnect.
+      return Promise.resolve(okResponse());
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result } = renderHook(() => useConnectionMode(), { wrapper: useConnectionModeWrapper });
+
+    // The provider's own mount effect calls refresh() immediately.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Three refresh() calls land while that first probe is still pending (e.g. `online`
+    // firing, then a render re-running an effect that also calls refresh()). All three
+    // must collapse into a single trailing re-run, not one each and not zero.
+    act(() => {
+      result.current.refresh();
+      result.current.refresh();
+      result.current.refresh();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // The in-flight (offline-era) probe finally settles...
+    await act(async () => {
+      releaseFirstProbe?.();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // ...which must trigger exactly the one coalesced re-run, not zero (the request that
+    // arrived mid-flight would be lost forever) and not three (one per requeued call).
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    // And that re-run is what actually answers the request that arrived mid-flight: the
+    // mode ends up "connected", not stuck on the stale failure the first probe reported.
+    expect(result.current.mode).toBe('connected');
+  });
+
+  it('runs a refresh requested after the in-flight one has already settled as its own probe', async () => {
+    vi.useFakeTimers();
+    setWindow(REAL_WINDOW);
+    const fetchMock = vi.fn(async () => okResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result } = renderHook(() => useConnectionMode(), { wrapper: useConnectionModeWrapper });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.isResolved).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Nothing in flight now — this is a genuinely new request, not a coalesced one, and
+    // must run its own probe rather than being mistaken for a stale requeue.
+    await act(async () => {
+      result.current.refresh();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
