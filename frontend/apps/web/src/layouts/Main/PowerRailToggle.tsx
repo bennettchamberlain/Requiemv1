@@ -39,11 +39,24 @@ export function PowerRailToggle() {
             // left border goes with it: it is NavLink's active-state gutter,
             // and it only ever pushed this button 2px further off centre.
             className={cn(
-              'warp-core flex items-center rounded-md p-2 transition hover:bg-accent hover:text-accent-foreground',
-              pinned ? 'w-full gap-2 border-l-2 border-transparent' : 'w-full justify-center',
+              'warp-core flex items-center rounded-md transition hover:bg-accent hover:text-accent-foreground',
+              // Collapsed: a 40px square that exactly fills the rail's padded
+              // box, with the 32px mark centred inside it. NOT `w-full p-2` —
+              // that left a 24px content box, and Tailwind's preflight sets
+              // `img { max-width: 100% }`, so the mark was capped to 24px wide
+              // while `h-8` held it at 32px tall. It rendered as a vertical
+              // ellipse: centred, and squashed.
+              pinned
+                ? 'w-full gap-2 border-l-2 border-transparent p-2'
+                : 'size-10 shrink-0 justify-center p-0',
             )}
           >
-            <img src={logo} alt="" className="warp-core-emitter h-8 w-8 shrink-0" />
+            {/* `max-w-none` defeats the preflight cap directly, so the mark
+              keeps its aspect ratio even if this button is ever laid out
+              narrower again. `shrink-0` alone does not do this — it stops flex
+              from shrinking the item, but max-width is a separate constraint
+              and wins regardless. */}
+            <img src={logo} alt="" className="warp-core-emitter size-8 max-w-none shrink-0" />
             {/* PINNED, not merely expanded. This button sits in the same `auto`
               grid column as the rail, so a wordmark appearing here widens the
               column and shoves the header and page content sideways — which is
