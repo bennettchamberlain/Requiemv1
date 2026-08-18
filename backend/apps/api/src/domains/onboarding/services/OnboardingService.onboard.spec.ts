@@ -54,6 +54,7 @@ describe('OnboardingService onboard', () => {
       { create: jest.fn() } as unknown as ConceptService,
       personService as unknown as PersonService,
       { create: jest.fn() } as unknown as RelationshipService,
+      { claimForSelf: jest.fn(), repointToEntity: jest.fn() } as never,
       featureService as unknown as FeatureService,
       logger,
     );

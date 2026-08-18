@@ -23,6 +23,7 @@ function createService(userService: jest.Mocked<Pick<UserService, 'findById' | '
     {} as ConceptService,
     {} as PersonService,
     {} as RelationshipService,
+    { claimForSelf: jest.fn(), repointToEntity: jest.fn() } as never,
     { isFeatureEnabled: jest.fn().mockResolvedValue(false) } as unknown as FeatureService,
     logger,
   );
