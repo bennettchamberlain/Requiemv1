@@ -9,7 +9,6 @@ import type { EmittedGraph } from './support/emitted';
 
 const FIXTURES_DIR = path.join(__dirname, 'fixtures');
 
-
 describe('call-log headings are not names', () => {
   // 2,025 of 6,673 Person entities on a real import were call-log headings —
   // 900 of them literally "Missed call from" with no name after the phrase.
@@ -48,7 +47,10 @@ describe('call-log headings are not names', () => {
   };
 
   it('records no contact when neither the markup nor the filename names anyone', async () => {
-    const meta = await callLogFile('<span class="fn">Missed call from \n</span>', 'Missed - 2025-01-15T09_30_00Z.html');
+    const meta = await callLogFile(
+      '<span class="fn">Missed call from \n</span>',
+      'Missed - 2025-01-15T09_30_00Z.html',
+    );
 
     expect(meta?.Contact).toBeUndefined();
   });
@@ -184,6 +186,87 @@ describe('Google Voice datasource', () => {
     expect(voicemail!.metadata.DurationUnit).toBe('seconds');
     expect(voicemail!.metadata.Transcript).toBe("Hey it's Alice, call me back when you get a chance.");
     expect(voicemail!.metadata.Source).toBe('GoogleVoice');
+  });
+
+  // Regression: metadata.Conversation (the per-file contact/number label —
+  // Google Voice exports one HTML file per conversation) was only ever used
+  // for display. The generic communications mapper (push/inputs.ts
+  // toCommunicationInput) reads metadata.ThreadId, not Conversation, to
+  // populate ci.communications.thread_id — so every Google Voice message and
+  // call/voicemail record landed with thread_id NULL despite the file itself
+  // being a perfectly good per-conversation grouping key. This asserts
+  // ThreadId now mirrors Conversation on both paths.
+  it('mirrors Conversation onto ThreadId for a properly-named message file', async () => {
+    // Use a realistic Google Voice filename ("<contact> - Text - <ts>.html")
+    // rather than the shared google-voice-export fixture's conversation-1.html
+    // — that name carries no contact prefix at all, so `conversation` is
+    // correctly `undefined` there (see the "call-log headings are not names"
+    // describe block above for why a filename that names nobody must not be
+    // used as one) and would not exercise the mirroring this test is after.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gv-thread-'));
+    fs.mkdirSync(path.join(dir, 'Calls'));
+    fs.writeFileSync(
+      path.join(dir, 'Calls', 'Jane Doe - Text - 2025-03-01T10_00_00Z.html'),
+      `<html><body><div class="message">
+         <abbr class="dt" title="2025-03-01T10:00:00.000Z">Mar 1</abbr>:
+         <cite class="sender vcard"><a class="tel" href="tel:+15551230099"><span class="fn">Jane Doe</span></a></cite>:
+         <q>hi there</q>
+       </div></body></html>`,
+    );
+
+    const pipeline: EmittedGraph[] = [];
+    await new GoogleVoiceFileImporter().fileImport({}, { filename: path.basename(dir), fullPath: dir }, {
+      pipeline,
+      timeframe: {},
+      log: () => {},
+    } as unknown as ImportParams);
+
+    const msg = pipeline.find((p) => p.item?.metadata?.Text === 'hi there')!;
+    expect(msg).toBeDefined();
+    expect(msg.item.metadata!.Conversation).toBe('Jane Doe');
+    expect(msg.item.metadata!.ThreadId).toBe('Jane Doe');
+  });
+
+  it('mirrors Conversation onto ThreadId for call/voicemail records', async () => {
+    const callsExportDir = path.join(FIXTURES_DIR, 'google-voice-export-calls');
+    const fiCalls = new GoogleVoiceFileImporter();
+    const callsPipeline: EmittedGraph[] = [];
+    await fiCalls.fileImport({}, { filename: 'google-voice-export-calls', fullPath: callsExportDir }, {
+      pipeline: callsPipeline,
+      timeframe: {},
+      log: () => {},
+    } as unknown as ImportParams);
+
+    const calls = callsPipeline.filter((p) => p.item?.classification === 'call').map((p) => p.item.metadata);
+    expect(calls.length).toBeGreaterThan(0);
+    for (const c of calls) {
+      expect(c.ThreadId).toBeDefined();
+      expect(c.ThreadId).toBe(c.Conversation);
+    }
+  });
+
+  // The shared fixture's conversation-1.html has no contact prefix in its
+  // filename, so `conversation` is honestly undefined for its messages (see
+  // above). ThreadId must still mirror that — undefined, not fabricated —
+  // rather than silently diverging from Conversation.
+  it('leaves ThreadId undefined, matching Conversation, when the filename names no contact', async () => {
+    const exportDir = path.join(FIXTURES_DIR, 'google-voice-export');
+    const fi = new GoogleVoiceFileImporter();
+    const pipeline: EmittedGraph[] = [];
+    await fi.fileImport({}, { filename: 'google-voice-export', fullPath: exportDir }, {
+      pipeline,
+      timeframe: {},
+      log: () => {},
+    } as unknown as ImportParams);
+
+    const msgs = pipeline
+      .filter((p) => p.item?.classification === 'message' && p.item.metadata?.Text !== undefined)
+      .map((p) => p.item.metadata);
+    expect(msgs.length).toBeGreaterThan(0);
+    for (const m of msgs) {
+      expect(m.Conversation).toBeUndefined();
+      expect(m.ThreadId).toBe(m.Conversation);
+    }
   });
 
   it('does not corrupt metadata.To to a stray "\\r" when Phones.vcf is CRLF-terminated with a blank FN line', async () => {

@@ -262,7 +262,13 @@ class iMessageFileImporter implements FileImporter {
                 : !chat && row.is_from_me === 1 && row.contact_id
                   ? { To: row.contact_id }
                   : {}),
-              ...(chat?.identifier && { ChatId: chat.identifier }),
+              // ChatId already carries chat.chat_identifier — Apple's own
+              // stable per-conversation key — for display; also surface it as
+              // ThreadId so the generic communications mapper (push/inputs.ts
+              // toCommunicationInput, which only reads ThreadId/Thread/
+              // MessageID) populates ci.communications.thread_id instead of
+              // silently dropping the conversation grouping.
+              ...(chat?.identifier && { ChatId: chat.identifier, ThreadId: chat.identifier }),
               ...(chat?.displayName && { GroupName: chat.displayName }),
               ...(row.date_read && { ReadAt: parseCocoaDate(row.date_read).toISOString() }),
               ...(row.date_delivered && { DeliveredAt: parseCocoaDate(row.date_delivered).toISOString() }),

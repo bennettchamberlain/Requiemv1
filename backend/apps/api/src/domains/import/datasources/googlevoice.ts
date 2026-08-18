@@ -230,6 +230,13 @@ export class GoogleVoiceFileImporter implements FileImporter {
             Source: 'GoogleVoice',
             Sender: sender.name || sender.phone || undefined,
             Conversation: conversation,
+            // ThreadId mirrors Conversation (the per-file contact/number
+            // label — Google Voice exports one HTML file per conversation)
+            // so the generic communications mapper (push/inputs.ts
+            // toCommunicationInput, which only reads ThreadId/Thread/
+            // MessageID) populates ci.communications.thread_id instead of
+            // silently dropping it.
+            ThreadId: conversation,
             Text: text || undefined,
             Direction: isOutbound ? 'outgoing' : 'incoming',
             To: to || undefined,
@@ -344,6 +351,8 @@ export class GoogleVoiceFileImporter implements FileImporter {
           Contact: contact || undefined,
           Number: sender.phone || undefined,
           Conversation: conversation,
+          // See the message path above for why ThreadId mirrors Conversation.
+          ThreadId: conversation,
           CallType: callType,
           Direction: direction,
           Duration: durationSeconds,
@@ -390,7 +399,8 @@ function decodeHtml(h: string): string {
  * entities called "Missed call from" (900 of them with no name after the
  * phrase at all), which is 30% of everyone in the address book.
  */
-const CALL_LOG_HEADING = /^\s*(?:missed|placed|received|recorded|voicemail)\b[^\n]*?\b(?:call\s+)?(?:from|to|with)\b\s*/i;
+const CALL_LOG_HEADING =
+  /^\s*(?:missed|placed|received|recorded|voicemail)\b[^\n]*?\b(?:call\s+)?(?:from|to|with)\b\s*/i;
 
 function extractSender(block: string): GVEntity {
   // Real Google Voice exports wrap the OUTBOUND sender ("Me") in
@@ -403,9 +413,8 @@ function extractSender(block: string): GVEntity {
   // nested inside the phone-number anchor is the contact and nothing else. The
   // bare `fn` match below is the fallback, and it is the one that can pick up a
   // heading.
-  const telName = /<a class="tel"[^>]*>[\s\S]*?<(?:span|abbr) class="fn"(?:\s[^>]*)?>([^<]*)<\/(?:span|abbr)>/i.exec(
-    block,
-  );
+  const telName =
+    /<a class="tel"[^>]*>[\s\S]*?<(?:span|abbr) class="fn"(?:\s[^>]*)?>([^<]*)<\/(?:span|abbr)>/i.exec(block);
   const nameMatch = telName ?? /<(?:span|abbr) class="fn"(?:\s[^>]*)?>([^<]*)<\/(?:span|abbr)>/i.exec(block);
   const telMatch = /<a class="tel" href="tel:([^"']+)"/i.exec(block);
 
