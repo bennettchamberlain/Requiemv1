@@ -56,6 +56,25 @@ describe('FileGridItem', () => {
     expect(screen.getByText('report.pdf')).toBeInTheDocument();
   });
 
+  // Photo/video events with no linked content row (fixed today) leave an image-typed file with
+  // both previewUrl and sourceUrl null. Before the fix this shape rendered a broken <img> tag; it
+  // must degrade to the same filename+icon placeholder used for non-image files.
+  it('falls back to the filename and icon for an image type with no preview or source URL', () => {
+    renderWithProviders(
+      <FileGridItem
+        file={makeFile({
+          filename: 'IMG_0001.heic',
+          contentType: 'image/heic',
+          previewUrl: null,
+          sourceUrl: null,
+        })}
+      />,
+    );
+
+    expect(screen.queryByRole('img')).toBeNull();
+    expect(screen.getByText('IMG_0001.heic')).toBeInTheDocument();
+  });
+
   it('fires onClick', () => {
     const onClick = vi.fn();
     renderWithProviders(<FileGridItem file={makeFile()} onClick={onClick} />);

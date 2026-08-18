@@ -261,4 +261,28 @@ describe('EntityEvolutionPanel', () => {
 
     expect(screen.getByText(/No changes recorded yet/)).toBeInTheDocument();
   });
+
+  it('shows a loading state instead of an empty-history message while the fetch is in flight', () => {
+    useEntityEvolutionService.mockReturnValue({ data: undefined, loading: true, error: null });
+
+    render(<EntityEvolutionPanel entityId={FOCUS_ID} />);
+
+    expect(screen.getByText('Loading change history...')).toBeInTheDocument();
+    // Loading is not the same as "we checked and there is nothing" — must not show both.
+    expect(screen.queryByText(/No changes recorded yet/)).not.toBeInTheDocument();
+  });
+
+  it('surfaces the fetch failure instead of silently rendering an empty history', () => {
+    useEntityEvolutionService.mockReturnValue({
+      data: undefined,
+      loading: false,
+      error: new Error('network unreachable'),
+    });
+
+    render(<EntityEvolutionPanel entityId={FOCUS_ID} />);
+
+    expect(screen.getByText('Unable to load change history: network unreachable')).toBeInTheDocument();
+    expect(screen.queryByText(/No changes recorded yet/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Loading change history...')).not.toBeInTheDocument();
+  });
 });
