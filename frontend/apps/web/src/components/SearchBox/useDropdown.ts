@@ -47,6 +47,27 @@ export const AVAILABLE_ENTITY_TYPES = [
   'Thing',
 ];
 
+/**
+ * Types that come back in search results but have no What picker of their own —
+ * Answers come from the Q&A flow and Concepts are derived, so nothing in the UI
+ * can select either. Without them here, narrowing to (say) People built an
+ * exclude-list out of AVAILABLE_ENTITY_TYPES only, which left answers and
+ * concepts in the results alongside the one type the user asked for. They ride
+ * along on every exclude-list write.
+ */
+export const HIDDEN_ENTITY_TYPES = ['Answer', 'Concept'];
+
+/**
+ * The `excludedEntityTypes` value for a selection: every available type the user
+ * dropped, plus the hidden types. Empty when nothing is narrowed, so callers
+ * delete the param and fall back to the unfiltered default.
+ */
+export function excludedEntityTypesFor(selected: string[]): string[] {
+  const excluded = AVAILABLE_ENTITY_TYPES.filter((type) => !selected.includes(type));
+
+  return excluded.length === 0 ? [] : [...excluded, ...HIDDEN_ENTITY_TYPES];
+}
+
 function sameEntityTypes(a: string[], b: string[]) {
   return a.length === b.length && a.every((type, index) => type === b[index]);
 }
@@ -102,7 +123,10 @@ function useDropdown({ changeSearchParams = true }: { changeSearchParams: boolea
 
     if (changeSearchParams) {
       setSearchParams((searchParams) => {
-        searchParams.set('excludedEntityTypes', AVAILABLE_ENTITY_TYPES.join(','));
+        searchParams.set(
+          'excludedEntityTypes',
+          [...AVAILABLE_ENTITY_TYPES, ...HIDDEN_ENTITY_TYPES].join(','),
+        );
 
         return searchParams;
       });
@@ -112,18 +136,11 @@ function useDropdown({ changeSearchParams = true }: { changeSearchParams: boolea
   const toggleEntityType = useCallback(
     (entityType: string) => {
       setSelectedEntityTypes((prev) => {
-        let next: string[] = [];
-        let excludedTypes: string[] = [];
-
-        if (prev.includes(entityType)) {
-          // Entity was included, now exclude it
-          next = prev.filter((type) => type !== entityType);
-          excludedTypes = AVAILABLE_ENTITY_TYPES.filter((type) => !next.includes(type));
-        } else {
-          // Entity was excluded, now include it
-          next = [...prev, entityType];
-          excludedTypes = AVAILABLE_ENTITY_TYPES.filter((type) => !next.includes(type));
-        }
+        // Included -> exclude it, excluded -> include it back.
+        const next = prev.includes(entityType)
+          ? prev.filter((type) => type !== entityType)
+          : [...prev, entityType];
+        const excludedTypes = excludedEntityTypesFor(next);
 
         if (changeSearchParams) {
           setSearchParams((searchParams) => {
@@ -162,7 +179,7 @@ function useDropdown({ changeSearchParams = true }: { changeSearchParams: boolea
         }
 
         const next = [entityType];
-        const excludedTypes = AVAILABLE_ENTITY_TYPES.filter((type) => type !== entityType);
+        const excludedTypes = excludedEntityTypesFor(next);
 
         if (changeSearchParams) {
           setSearchParams((searchParams) => {
