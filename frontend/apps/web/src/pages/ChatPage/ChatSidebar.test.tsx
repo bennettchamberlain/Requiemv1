@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ChatSidebar } from './ChatSidebar';
 import type { Thread } from './types';
@@ -64,5 +64,49 @@ describe('ChatSidebar', () => {
 
     expect(onDeleteThread).toHaveBeenCalledWith('t1');
     expect(onSelectThread).not.toHaveBeenCalled();
+  });
+
+  describe('auto-collapse on resize', () => {
+    function setInnerWidth(width: number) {
+      Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: width });
+    }
+
+    // jsdom's default width (1024) is wider than the md breakpoint; restore it
+    // so a later test file sharing this environment isn't left on a narrow one.
+    afterEach(() => setInnerWidth(1024));
+
+    it('starts collapsed on a narrow (mobile) viewport', () => {
+      setInnerWidth(500);
+
+      setup();
+
+      // Collapsed hides the thread list and header controls — "New Thread" is
+      // isExpanded-only content.
+      expect(screen.queryByText('New Thread')).not.toBeInTheDocument();
+    });
+
+    it('expands again when the window is resized past the md breakpoint', () => {
+      setInnerWidth(500);
+      setup();
+
+      expect(screen.queryByText('New Thread')).not.toBeInTheDocument();
+
+      setInnerWidth(1024);
+      fireEvent(window, new Event('resize'));
+
+      expect(screen.getByText('New Thread')).toBeInTheDocument();
+    });
+
+    it('re-collapses on a resize back down below the breakpoint', () => {
+      setInnerWidth(1024);
+      setup();
+
+      expect(screen.getByText('New Thread')).toBeInTheDocument();
+
+      setInnerWidth(400);
+      fireEvent(window, new Event('resize'));
+
+      expect(screen.queryByText('New Thread')).not.toBeInTheDocument();
+    });
   });
 });
