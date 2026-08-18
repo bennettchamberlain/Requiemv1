@@ -9,7 +9,6 @@ import type { EmittedGraph } from './support/emitted';
 
 const FIXTURES_DIR = path.join(__dirname, 'fixtures');
 
-
 describe('call-log headings are not names', () => {
   // 2,025 of 6,673 Person entities on a real import were call-log headings —
   // 900 of them literally "Missed call from" with no name after the phrase.
@@ -18,7 +17,7 @@ describe('call-log headings are not names', () => {
   const callLogFile = async (
     inner: string,
     filename = 'Steven Stone - Missed - 2025-01-15T09_30_00Z.html',
-  ): Promise<Record<string, unknown> | undefined> => {
+  ): Promise<EmittedGraph['item']> => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gv-call-'));
     // The importer only walks `Calls/`. Writing the fixture at the top level
     // emits nothing, and every assertion below would then pass on `undefined`
@@ -40,41 +39,60 @@ describe('call-log headings are not names', () => {
 
     const items = pipeline.filter((p) => p.item);
 
-    // Guard against the vacuous pass: no item means every Contact assertion
-    // below is checking `undefined` against `undefined`.
+    // Guard against the vacuous pass: no item means every assertion below is
+    // checking `undefined` against `undefined`.
     expect(items).toHaveLength(1);
 
-    return items[0].item.metadata as Record<string, unknown> | undefined;
+    return items[0].item;
   };
 
   it('records no contact when neither the markup nor the filename names anyone', async () => {
-    const meta = await callLogFile('<span class="fn">Missed call from \n</span>', 'Missed - 2025-01-15T09_30_00Z.html');
+    const item = await callLogFile(
+      '<span class="fn">Missed call from \n</span>',
+      'Missed - 2025-01-15T09_30_00Z.html',
+    );
 
-    expect(meta?.Contact).toBeUndefined();
+    expect(item?.metadata?.Contact).toBeUndefined();
   });
 
   it('still falls back to the filename label when the markup names nobody', async () => {
     // Google Voice names each call file "<contact> - <Type> - <timestamp>.html",
     // so the filename is a better answer than the heading — and far better than
     // filing "Missed call from" as a person.
-    const meta = await callLogFile('<span class="fn">Missed call from \n</span>');
+    const item = await callLogFile('<span class="fn">Missed call from \n</span>');
 
-    expect(meta?.Contact).toBe('Steven Stone');
+    expect(item?.metadata?.Contact).toBe('Steven Stone');
   });
 
   it('keeps the name when the heading and the name share one span', async () => {
-    const meta = await callLogFile('<span class="fn">Missed call from \nSteven Stone</span>');
+    const item = await callLogFile('<span class="fn">Missed call from \nSteven Stone</span>');
 
-    expect(meta?.Contact).toBe('Steven Stone');
+    expect(item?.metadata?.Contact).toBe('Steven Stone');
   });
 
   it('prefers the name nested inside the tel anchor', async () => {
-    const meta = await callLogFile(
+    const item = await callLogFile(
       '<span class="fn">Received call from <a class="tel" href="tel:+15551230000">' +
         '<span class="fn">Ada Lovelace</span></a></span>',
     );
 
-    expect(meta?.Contact).toBe('Ada Lovelace');
+    expect(item?.metadata?.Contact).toBe('Ada Lovelace');
+  });
+
+  it('does not duplicate the heading into the call content or metadata.Description', async () => {
+    // The exact real-world corruption: 35,162 live rows read e.g. "Missed
+    // call from Missed call from\nSteven Stone" because processCallLog()
+    // wraps `contact` (which used to be the whole uncleaned heading+name
+    // span) in a SECOND copy of the same "<CallType> call <preposition>"
+    // template. Post-fix, `contact` is just the clean name, so the template
+    // renders the heading exactly once.
+    const item = await callLogFile('<span class="fn">Missed call from \nSteven Stone</span>');
+
+    expect(item?.metadata?.Description).toBe('Missed call from Steven Stone');
+    expect(item?.metadata?.Description).not.toMatch(/Missed call from.*Missed call from/s);
+
+    const content = await item.content.data?.();
+    expect(content?.toString('utf8')).toBe('Missed call from Steven Stone');
   });
 });
 

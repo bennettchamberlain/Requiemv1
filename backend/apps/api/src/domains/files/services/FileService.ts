@@ -286,6 +286,31 @@ export class FileService implements OnModuleInit {
     return rows.map((row) => ({ id: row.id, type: 'file' as IndexableEntity }));
   }
 
+  /**
+   * True total of files matching the same filters {@link getEntitiesForFiles} applies (minus
+   * the pagination-only `limit`/`order`/`afterTime`/`afterId`) — a real `COUNT(*)`, not the
+   * length of one `limit`-bounded page of identifiers. See EventService.countEntitiesForEvents.
+   */
+  async countEntitiesForFiles(
+    context: ServiceContext,
+    options: { startTime?: Date; endTime?: Date },
+  ): Promise<number> {
+    let query = this.fileRepository
+      .createQueryBuilder('file')
+      .where('file.user_id = :userId', { userId: context.userId })
+      .andWhere('file.variant = :variant', { variant: FileVariant.ORIGINAL });
+
+    if (options.startTime) {
+      query = query.andWhere('file.created_at >= :startTime', { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere('file.created_at <= :endTime', { endTime: options.endTime });
+    }
+
+    return query.getCount();
+  }
+
   async findByHash(context: UserServiceContext, fileHash: string): Promise<SignedFile | null> {
     const result = await this.fileRepository.findOne({
       where: {

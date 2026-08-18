@@ -198,14 +198,53 @@ function extractHeading(fragment: string): string | undefined {
   return text || undefined;
 }
 
-// Visible text of an entry with its <h2> heading and <footer> (timestamp) removed —
-// both are captured separately, so excluding them keeps the body text clean.
+// A local (export-relative) href/src that resolves to an attached photo or
+// video — the same test htmlMediaUris applies when it decides a link is a real
+// attachment rather than page furniture. Kept separate from mimeForFile's
+// broader table because only these two classes get a thumbnail link in Meta's
+// markup; everything else (a shared URL, a mailto:, a footer permalink) is
+// either external or plain text and must stay in the body untouched.
+function isLocalMediaHref(raw: string): boolean {
+  if (/^(?:https?:|data:|mailto:|tel:|#)/i.test(raw)) {
+    return false;
+  }
+
+  const mediaType = mimeForFile(raw);
+
+  return !!mediaType && /^(image|video)\//.test(mediaType);
+}
+
+// Every attached photo/video in a DYI entry is rendered as an <a href="...local
+// path..."> whose visible text is Meta's OWN caption for the thumbnail — "Photos"
+// for a photo with nothing else to show, "Click for video: " for a video — never
+// what the person wrote. Real captions always live in a separate sibling text
+// node, so dropping the whole anchor (tag + contents) removes exactly the
+// boilerplate and nothing else. htmlMediaUris reads the same href off the
+// UNMODIFIED fragment, so the attachment itself is still discovered.
+function stripMediaLinks(fragment: string): string {
+  return fragment.replace(/<a\b[^>]*\bhref\s*=\s*"([^"]*)"[^>]*>[\s\S]*?<\/a>/gi, (whole, href) =>
+    isLocalMediaHref(decodeEntities(href).trim()) ? ' ' : whole,
+  );
+}
+
+// A person's own post/message text is never itself rendered as an HTML list in
+// Meta's export — composing a post doesn't support markdown, so any <ul> in an
+// entry is Meta's OWN chrome: a reaction summary ("❤️ Jane Doe and 11 others"),
+// a tagged-friends list, or similar. Dropping it keeps a reaction from reading
+// as if the sender/poster wrote it themselves.
+function stripReactionLists(fragment: string): string {
+  return fragment.replace(/<ul\b[^>]*>[\s\S]*?<\/ul>/gi, ' ');
+}
+
+// Visible text of an entry with its <h2> heading, <footer> (timestamp), media
+// thumbnail links, and reaction/list chrome removed — all captured or discarded
+// separately, so excluding them keeps the body text to what was actually typed.
 function extractEntryBodyText(fragment: string): string {
   const trimmed = fragment
-    .replace(/<h2\b[^>]*>[\s\S]*?<\/h2>/i, ' ')
+    .replace(/<h2\b[^>]*>[\s\S]*?<\/h2>/gi, ' ')
     .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, ' ');
 
-  return htmlToText(trimmed);
+  return htmlToText(stripReactionLists(stripMediaLinks(trimmed)));
 }
 
 // Item ids must stay stable across re-imports, so they key off each file's path

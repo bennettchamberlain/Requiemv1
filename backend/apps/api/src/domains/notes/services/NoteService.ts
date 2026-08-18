@@ -359,6 +359,30 @@ export class NoteService {
     return rows.map((row) => ({ id: row.id, type: 'note' as IndexableEntity }));
   }
 
+  /**
+   * True total of notes matching the same filters {@link getEntitiesForNotes} applies (minus
+   * the pagination-only `limit`/`order`/`afterTime`/`afterId`) — a real `COUNT(*)`, not the
+   * length of one `limit`-bounded page of identifiers. See EventService.countEntitiesForEvents.
+   */
+  async countEntitiesForNotes(
+    context: ServiceContext,
+    options: { startTime?: Date; endTime?: Date },
+  ): Promise<number> {
+    let query = this.noteRepository
+      .createQueryBuilder('note')
+      .where('note.user_id = :userId', { userId: context.userId });
+
+    if (options.startTime) {
+      query = query.andWhere('note.created_at >= :startTime', { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere('note.created_at <= :endTime', { endTime: options.endTime });
+    }
+
+    return query.getCount();
+  }
+
   async findAll(context: ServiceContext): Promise<Note[]> {
     const results = await this.noteRepository.find({
       where: {

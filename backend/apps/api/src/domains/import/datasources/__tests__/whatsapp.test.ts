@@ -311,4 +311,79 @@ describe('WhatsApp datasource', () => {
 
     fs.rmSync(dir, { recursive: true, force: true });
   });
+
+  describe('shared-location messages', () => {
+    async function importLines(lines: string[]): Promise<EmittedGraph[]> {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wa-location-'));
+      const chatPath = path.join(dir, '_chat.txt');
+      fs.writeFileSync(chatPath, lines.join('\n') + '\n');
+      const pushed: EmittedGraph[] = [];
+      try {
+        await new WhatsAppFileImporter().fileImport({}, { filename: '_chat.txt', fullPath: chatPath }, {
+          pipeline: pushed,
+          timeframe: {},
+          log: () => {},
+        } as unknown as ImportParams);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+
+      return pushed;
+    }
+
+    it('classifies a maps.google.com "?q=" link as location and extracts the coordinates', async () => {
+      const pushed = await importLines([
+        '[1/1/21, 12:00:00 AM] Alice: location: https://maps.google.com/?q=37.7749,-122.4194',
+      ]);
+
+      expect(pushed.length).toBe(1);
+      const [graph] = pushed;
+      expect(graph.item.classification).toBe('location');
+      expect(graph.item.location).toEqual({ latitude: 37.7749, longitude: -122.4194 });
+      expect(graph.item.metadata.Location).toBe('37.7749, -122.4194');
+      // The original transcript text is still preserved in content/metadata.
+      expect(graph.item.metadata.Text).toContain('maps.google.com');
+    });
+
+    it('extracts coordinates from a "maps/@lat,long" style link too', async () => {
+      const pushed = await importLines([
+        '[1/1/21, 12:00:00 AM] Bob: https://maps.google.com/maps/@37.77,-122.41,15z',
+      ]);
+
+      expect(pushed.length).toBe(1);
+      expect(pushed[0].item.classification).toBe('location');
+      expect(pushed[0].item.location).toEqual({ latitude: 37.77, longitude: -122.41 });
+    });
+
+    it('does not classify a plain-text mention of "location" with no coordinates as a location', async () => {
+      const pushed = await importLines([
+        '[1/1/21, 12:00:00 AM] Alice: Check out this location: my new place',
+      ]);
+
+      expect(pushed.length).toBe(1);
+      expect(pushed[0].item.classification).toBe('message');
+      expect(pushed[0].item.location).toBeUndefined();
+    });
+
+    it('rejects an out-of-range coordinate pair rather than pinning a bogus location', async () => {
+      // Latitude 190 fits the regex's digit count but is not a real latitude.
+      const pushed = await importLines([
+        '[1/1/21, 12:00:00 AM] Alice: location: https://maps.google.com/?q=190.0,45.0',
+      ]);
+
+      expect(pushed.length).toBe(1);
+      expect(pushed[0].item.classification).toBe('message');
+      expect(pushed[0].item.location).toBeUndefined();
+    });
+
+    it('links a located message to its sender the same way an ordinary message does', async () => {
+      const pushed = await importLines([
+        '[1/1/21, 12:00:00 AM] Alice: location: https://maps.google.com/?q=37.7749,-122.4194',
+      ]);
+
+      expect(pushed[0].edges).toEqual([
+        { relation: 'participant', to: { entity: { type: 'contact', name: 'Alice' } } },
+      ]);
+    });
+  });
 });

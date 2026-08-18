@@ -56,6 +56,15 @@ export default [
           disallowTypeAnnotations: false,
         },
       ],
+
+      // `ignoreRestSiblings` tolerates the standard "destructure to exclude a
+      // key" idiom — `const { thatKey: _unused, ...rest } = obj` — which is not
+      // a real unused variable, it's how you drop a field before using the
+      // rest. Off by default in @typescript-eslint's recommended preset; this
+      // codebase already uses the pattern (TaskService.ts, TodoProcessService.ts)
+      // and was one preset version bump away from every instance of it failing
+      // lint.
+      '@typescript-eslint/no-unused-vars': ['error', { ignoreRestSiblings: true }],
     },
   },
 ];

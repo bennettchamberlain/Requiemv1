@@ -204,16 +204,22 @@ export class OuraFileImporter implements FileImporter {
       return;
     }
 
-    for (const row of rows) {
+    rows.forEach((row, index) => {
       try {
-        this.pushRow(row, dateKey, params);
+        this.pushRow(row, dateKey, base, index, params);
       } catch (e) {
         params.log?.('error', `Failed to import row in ${base}`, { error: (e as Error).message });
       }
-    }
+    });
   }
 
-  private pushRow(row: Record<string, string>, dateKey: string, params: ImportParams): void {
+  private pushRow(
+    row: Record<string, string>,
+    dateKey: string,
+    base: string,
+    index: number,
+    params: ImportParams,
+  ): void {
     const ts = parseOuraDate(row[dateKey] || '');
     if (!timeframeContains(params.timeframe, ts)) {
       return;
@@ -245,6 +251,13 @@ export class OuraFileImporter implements FileImporter {
 
     params.pipeline.push({
       item: {
+        // Stable natural key: source file + raw date + per-file row index. One
+        // row per calendar day means the date alone is USUALLY unique, but a
+        // re-export with an overlapping date range or a malformed export with
+        // a repeated date would otherwise collapse into hashItem's fallback
+        // (classification + constant 'observation.txt' filename + timestamp)
+        // — the row index disambiguates regardless.
+        id: `oura:${base}:${(row[dateKey] || '').trim()}:${index}`,
         classification: 'observation',
         timestamp: ts,
         content: {

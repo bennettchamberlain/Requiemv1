@@ -165,6 +165,14 @@ export async function loadFileRows(
   userId: string,
   ids: string[],
 ): Promise<Array<LoadedRow<FileSearchFields>>> {
+  // Re-applies BOTH halves of `INDEX_EMBED_FILE_SOURCE.predicate`, not just
+  // `deleted_at IS NULL` — a slice can arrive from a dead letter replayed after
+  // the row changed, same reasoning as `loadEventRows` re-checking `is_deleted`
+  // and `loadPersonRows` re-checking the merge tombstone. Without the variant
+  // check here, a derived variant (a thumbnail/transcode, which repeats the
+  // original's filename with no text of its own) that somehow reached this
+  // loader would embed as a near-duplicate of its original instead of being
+  // treated as source-row-missing.
   return dataSource.query(
     `SELECT f.id,
             f.title,
@@ -174,6 +182,7 @@ export async function loadFileRows(
        FROM ci.files f
       WHERE f.id = ANY($1::uuid[])
         AND f.user_id = $2::uuid
+        AND f.variant = 'ORIGINAL'
         AND f.deleted_at IS NULL`,
     [ids, userId],
   );

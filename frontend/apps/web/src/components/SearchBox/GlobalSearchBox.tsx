@@ -86,7 +86,10 @@ export function GlobalSearchBox() {
   const [resetKey, setResetKey] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const engageSearchRef = useRef<(() => void) | null>(null);
-  const resetKeyFocusSkipRef = useRef(true);
+  // Only the clear-query row's in-place reset should refocus + re-engage the
+  // remounted input (see the resetKey effect below) — set right before that
+  // bump, and consumed (reset to false) the moment it's acted on.
+  const refocusOnResetRef = useRef(false);
 
   // Always expanded — the search bar stays visible in the header.
   const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -111,9 +114,11 @@ export function GlobalSearchBox() {
     excludeTypes,
   });
 
-  // Also collapses: it runs after a committed search / suggestion navigation,
-  // where the expanded box has done its job (the collapsed button echoes the
-  // committed query on /memory).
+  // Runs after a suggestion navigation (entity/tag jump, or the off-memory
+  // "jump to explorer" commit), where the box has done its job. Remounts
+  // unfocused (see the resetKey effect below) — the fresh instance picks the
+  // committed query back up from `?search` via `defaultQuery` once the URL
+  // update lands.
   const clearInput = useCallback(() => {
     setQuery(null);
     setResetKey((key) => key + 1);
@@ -133,27 +138,38 @@ export function GlobalSearchBox() {
       addRecentSearch(trimmed);
 
       if (onMemoryExplorer) {
+        // Already mirrored live by `handleSearch` as the user types — this
+        // just fast-forwards past its debounce. Do NOT remount here: react-router
+        // v7 applies `setSearchParams` as an async transition, never batched
+        // with a same-tick `setResetKey`, so a remount can land — and read
+        // `urlSearch` for the fresh instance's `defaultQuery` — before the
+        // `search` param above has actually committed. The stale-empty
+        // `defaultQuery` that results feeds `autoSubmitEmpty`'s debounce,
+        // which then deletes `search` right back out of the URL. Leaving the
+        // input alone means there's nothing to resync — it already shows
+        // exactly what was just committed.
         setSearchParams((params) => {
           params.set('search', trimmed);
 
           return params;
         });
-      } else {
-        const params = new URLSearchParams();
 
-        params.set('search', trimmed);
-
-        for (const param of FILTER_PARAMS) {
-          const value = searchParams.get(param);
-
-          if (value) {
-            params.set(param, value);
-          }
-        }
-
-        navigate(`/memory?${params.toString()}`);
+        return;
       }
 
+      const params = new URLSearchParams();
+
+      params.set('search', trimmed);
+
+      for (const param of FILTER_PARAMS) {
+        const value = searchParams.get(param);
+
+        if (value) {
+          params.set(param, value);
+        }
+      }
+
+      navigate(`/memory?${params.toString()}`);
       clearInput();
     },
     [addRecentSearch, clearInput, navigate, onMemoryExplorer, searchParams, setSearchParams],
@@ -193,19 +209,21 @@ export function GlobalSearchBox() {
     }
 
     setClearQueryPending(false);
+    refocusOnResetRef.current = true;
     setResetKey((key) => key + 1);
   }, [clearQueryPending, onMemoryExplorer, urlSearch]);
 
   // A remount replaces the input with a fresh, unfocused one. Refocus so an
-  // in-place reset (the clear-query row) keeps the user typing; when the bump
-  // came with a collapse (clearInput) the input is hidden, so this is a no-op.
+  // in-place reset (the clear-query row) keeps the user typing. `clearInput`'s
+  // remounts (committing a search, jumping to a result) must NOT refocus —
+  // that's what previously made the box grab focus (and, on /memory, race the
+  // just-committed `?search` back to empty) on every navigation away from it.
   useEffect(() => {
-    if (resetKeyFocusSkipRef.current) {
-      resetKeyFocusSkipRef.current = false;
-
+    if (!refocusOnResetRef.current) {
       return;
     }
 
+    refocusOnResetRef.current = false;
     engageSearchRef.current?.();
     inputRef.current?.focus();
   }, [resetKey]);

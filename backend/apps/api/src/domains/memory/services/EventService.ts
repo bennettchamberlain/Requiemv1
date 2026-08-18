@@ -42,6 +42,11 @@ interface Options {
   bbox?: number[];
 }
 
+/** Filter subset of {@link Options} that {@link EventService.countEntitiesForEvents} accepts —
+ * everything `getEntitiesForEvents` filters *by*, minus the pagination-only fields
+ * (`limit`, `order`, `afterTime`, `afterId`), which a total count must not depend on. */
+type CountOptions = Omit<Options, 'limit' | 'order' | 'afterTime' | 'afterId'>;
+
 /**
  * Hourly UTC per-user event count. Declared locally so this domain carries no
  * dependency on aggregating consumers; they enforce the shape structurally
@@ -1009,6 +1014,83 @@ export class EventService {
       id: row.event_id,
       type: 'event' as IndexableEntity,
     }));
+  }
+
+  /**
+   * True total of events matching the same filters {@link getEntitiesForEvents} applies —
+   * a real `COUNT(*)`, not the length of one `limit`-bounded page of identifiers. Used by
+   * the search/explorer `totalCount` field, which previously reported the size of the
+   * over-fetched candidate window (bounded by page size) instead of the actual match count.
+   */
+  async countEntitiesForEvents(context: ServiceContext, options: CountOptions): Promise<number> {
+    let query = this.dataSource
+      .getRepository(EventEntity)
+      .createQueryBuilder('event')
+      .where('event.user_id = :userId', { userId: context.userId });
+
+    if (options.startTime) {
+      query = query.andWhere('event.start_time >= :startTime', { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere('event.start_time <= :endTime', { endTime: options.endTime });
+    }
+
+    if (options.eventTypes && options.eventTypes.length > 0) {
+      query = query.andWhere('event.event_type IN (:...eventTypes)', {
+        eventTypes: options.eventTypes,
+      });
+    }
+
+    if (options.connectors && options.connectors.length > 0) {
+      query = query.andWhere('event.source_system IN (:...connectors)', {
+        connectors: options.connectors,
+      });
+    }
+
+    if (options.hasLocation) {
+      query = query.andWhere('event.location_coordinates IS NOT NULL');
+    }
+
+    if (options.bbox && options.bbox.length === 4 && options.bbox.every((value) => Number.isFinite(value))) {
+      const [minLon, minLat, maxLon, maxLat] = options.bbox;
+
+      query = query.andWhere(
+        'ST_Within(event.location_coordinates::geometry, ST_MakeEnvelope(:minLon, :minLat, :maxLon, :maxLat, 4326))',
+        { minLon, minLat, maxLon, maxLat },
+      );
+    }
+
+    if (options.people && options.people.length > 0) {
+      query = query.andWhere(
+        `(
+          event.participant_entity_ids && ARRAY(
+            SELECT entity_id FROM ci.entities
+            WHERE owner_user_id = :userId AND entity_type = 'Person' AND name ILIKE ANY(:peoplePatterns)
+          )::uuid[]
+          OR event.organizer_entity_id IN (
+            SELECT entity_id FROM ci.entities
+            WHERE owner_user_id = :userId AND entity_type = 'Person' AND name ILIKE ANY(:peoplePatterns)
+          )
+        )`,
+        { userId: context.userId, peoplePatterns: options.people.map((name) => `%${name}%`) },
+      );
+    }
+
+    if (options.places && options.places.length > 0) {
+      query = query.andWhere(
+        `(
+          event.location_entity_id IN (
+            SELECT entity_id FROM ci.entities
+            WHERE owner_user_id = :userId AND entity_type = 'Location' AND name ILIKE ANY(:placePatterns)
+          )
+          OR event.location_name ILIKE ANY(:placePatterns)
+        )`,
+        { userId: context.userId, placePatterns: options.places.map((name) => `%${name}%`) },
+      );
+    }
+
+    return query.getCount();
   }
 
   /**

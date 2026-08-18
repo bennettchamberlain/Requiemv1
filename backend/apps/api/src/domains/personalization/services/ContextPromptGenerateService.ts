@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { type RequestContext, type UserServiceContext } from '@ci/common/context';
 import { FeatureService } from '@ci/common/feature';
 import { LoggerService } from '@ci/common/logging';
+import { localDateInTZ, todayInTZ, zonedWallTimeToUTC } from '@ci/common/time/zoned';
 import {
   DailyMetricsService,
   HomeConfirmService,
@@ -18,7 +19,6 @@ import {
 } from '@ci/domains/daily-metrics';
 import { OllamaService, PROMPT_MODEL } from '@ci/domains/llm/services/OllamaService';
 import { UserContextService } from '@ci/domains/memory';
-import { localDateInTZ, todayInTZ, zonedWallTimeToUTC } from '@ci/domains/planning';
 
 import {
   calendarQuestion,

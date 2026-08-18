@@ -584,8 +584,8 @@ export class OllamaService {
       throw new Error('No chat model is currently loaded on vLLM or Ollama');
     }
 
-    const candidates = [requestedModel, PROMPT_MODEL].filter(
-      (model): model is string => Boolean(model && model.trim()),
+    const candidates = [requestedModel, PROMPT_MODEL].filter((model): model is string =>
+      Boolean(model && model.trim()),
     );
 
     return candidates.find((model) => served.includes(model)) ?? served[0];
@@ -779,9 +779,18 @@ export class OllamaService {
   }
 }
 
-function savedKnowledgeWrapUp(messages: OllamaMessage[]): string | null {
+/**
+ * Exported for direct unit testing — see `__tests__/OllamaService.savedKnowledgeWrapUp.test.ts`.
+ * A tool-only turn (the model called `memory.remember` or similar and produced
+ * no prose of its own) leaves the user looking at silence unless something
+ * says what happened; a turn that already has prose needs no synthetic
+ * addition.
+ */
+export function savedKnowledgeWrapUp(messages: OllamaMessage[]): string | null {
   const assistants = messages.filter((message) => message.role === 'assistant');
-  const hasProse = assistants.some((message) => message.content.replace(/<think>[\s\S]*?<\/think>/g, '').trim() !== '');
+  const hasProse = assistants.some(
+    (message) => message.content.replace(/<think>[\s\S]*?<\/think>/g, '').trim() !== '',
+  );
   const hasTools = assistants.some((message) => (message.tool_calls?.length ?? 0) > 0);
   if (!hasTools || hasProse) {
     return null;

@@ -253,3 +253,149 @@ describe('SuggestionSyncService — projecting actions and insights onto the sla
     expect(candidates.save).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * tryAutoAccept commits calendar time on the user's behalf without a review
+ * step for hands_off users above a confidence threshold — every projection
+ * test above forces autoSchedule:false specifically to stay out of this path.
+ * PersonalizationService.decide is exercised for REAL here (not mocked) so
+ * these tests prove the actual gate, not a stand-in for it.
+ */
+describe('SuggestionSyncService — tryAutoAccept', () => {
+  let service: SuggestionSyncService;
+  let candidates: { find: jest.Mock; save: jest.Mock };
+  let candidateService: { upsert: jest.Mock; accept: jest.Mock };
+  let personalization: { getProfile: jest.Mock };
+
+  function openCandidate(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'cand-1',
+      userId: 'user-1',
+      status: 'open',
+      confidence: 0.95,
+      durationMinutes: 30,
+      windowStart: new Date('2026-08-20T09:00:00Z'),
+      generator: 'adapter/action',
+      dedupeKey: 'action:act-1',
+      ...overrides,
+    } as EventCandidateEntity;
+  }
+
+  async function setup(openRows: EventCandidateEntity[], profile: Record<string, unknown>) {
+    // A "live" action so proposals.length > 0 (sync() short-circuits before
+    // retireStale/tryAutoAccept otherwise) and so retireStale — which also runs
+    // in sync() before tryAutoAccept — sees action:act-1 as still live and
+    // doesn't mutate the fixtures above out from under this describe block.
+    const actions = {
+      find: jest.fn(async () => [
+        {
+          id: 'act-1',
+          title: 'Something',
+          text: 'Do the thing',
+          priority: 3,
+          dismissed: false,
+        } as ActionEntity,
+      ]),
+    };
+    const summaries = { find: jest.fn(async () => []) };
+    candidates = { find: jest.fn(async () => openRows), save: jest.fn(async (e) => e) };
+    candidateService = { upsert: jest.fn(async () => []), accept: jest.fn(async () => ({})) };
+    personalization = { getProfile: jest.fn(async () => profile) };
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        SuggestionSyncService,
+        { provide: getRepositoryToken(ActionEntity), useValue: actions },
+        { provide: getRepositoryToken(SummaryEntity), useValue: summaries },
+        { provide: getRepositoryToken(EventCandidateEntity), useValue: candidates },
+        { provide: CandidateService, useValue: candidateService },
+        { provide: PersonalizationService, useValue: personalization },
+        {
+          provide: PlacementService,
+          useValue: {
+            timezoneFor: async () => 'UTC',
+            flexWindow,
+          },
+        },
+        { provide: LoggerService, useValue: { setContext: jest.fn(), log: jest.fn(), debug: jest.fn() } },
+      ],
+    }).compile();
+
+    service = moduleRef.get(SuggestionSyncService);
+  }
+
+  const HANDS_OFF_PROFILE = { trustMode: 'hands_off', autoSchedule: true, autoPromoteThreshold: 0.7 };
+  const BALANCED_PROFILE = { trustMode: 'balanced', autoSchedule: false, autoPromoteThreshold: 0.85 };
+
+  it('auto-accepts a high-confidence candidate for a hands_off, autoSchedule user', async () => {
+    const candidate = openCandidate({ confidence: 0.95 });
+    await setup([candidate], HANDS_OFF_PROFILE);
+
+    await service.sync(ctx);
+
+    expect(candidateService.accept).toHaveBeenCalledWith(ctx, 'cand-1', candidate.windowStart);
+  });
+
+  it('does nothing when the profile has autoSchedule off (the projection-test default)', async () => {
+    await setup([openCandidate()], BALANCED_PROFILE);
+
+    await service.sync(ctx);
+
+    expect(candidateService.accept).not.toHaveBeenCalled();
+  });
+
+  it('does not auto-accept a low-confidence candidate even for a hands_off user', async () => {
+    await setup([openCandidate({ confidence: 0.3 })], HANDS_OFF_PROFILE);
+
+    await service.sync(ctx);
+
+    expect(candidateService.accept).not.toHaveBeenCalled();
+  });
+
+  it('skips a candidate with no duration estimate without accepting it', async () => {
+    await setup([openCandidate({ durationMinutes: null })], HANDS_OFF_PROFILE);
+
+    await service.sync(ctx);
+
+    expect(candidateService.accept).not.toHaveBeenCalled();
+  });
+
+  it('falls back to "now" as the start time when the candidate has no windowStart', async () => {
+    await setup([openCandidate({ windowStart: null })], HANDS_OFF_PROFILE);
+
+    const before = Date.now();
+    await service.sync(ctx);
+    const after = Date.now();
+
+    const [, , startTime] = candidateService.accept.mock.calls[0] as [unknown, unknown, Date];
+    expect(startTime.getTime()).toBeGreaterThanOrEqual(before);
+    expect(startTime.getTime()).toBeLessThanOrEqual(after);
+  });
+
+  it('swallows a candidateService.accept failure and still processes the remaining candidates', async () => {
+    const first = openCandidate({ id: 'cand-1', confidence: 0.95 });
+    const second = openCandidate({ id: 'cand-2', confidence: 0.9 });
+    await setup([first, second], HANDS_OFF_PROFILE);
+    candidateService.accept.mockRejectedValueOnce(new Error('concurrent accept')).mockResolvedValueOnce({});
+
+    await expect(service.sync(ctx)).resolves.not.toThrow();
+
+    expect(candidateService.accept).toHaveBeenCalledTimes(2);
+    expect(candidateService.accept).toHaveBeenNthCalledWith(1, ctx, 'cand-1', first.windowStart);
+    expect(candidateService.accept).toHaveBeenNthCalledWith(2, ctx, 'cand-2', second.windowStart);
+  });
+
+  it('queries only open candidates, newest-confidence-first, capped at 3', async () => {
+    await setup([], HANDS_OFF_PROFILE);
+
+    await service.sync(ctx);
+
+    // First call is retireStale's `find`; the auto-accept query is the second.
+    const autoAcceptQuery = candidates.find.mock.calls[1]?.[0];
+    expect(autoAcceptQuery).toMatchObject({
+      where: { userId: 'user-1', status: 'open' },
+      order: { confidence: 'DESC' },
+      take: 3,
+    });
+  });
+});

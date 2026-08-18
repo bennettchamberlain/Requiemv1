@@ -83,6 +83,53 @@ describe('Oura datasource', () => {
     expect(pipeline[0].item.timestamp!.toISOString()).toBe('2024-01-16T00:00:00.000Z');
   });
 
+  // Regression: one row is emitted per calendar day with a constant
+  // 'observation.txt' filename, so hashItem's id-less fallback hashes only
+  // (data_source, classification, filename, timestamp) — two rows sharing a
+  // Date (an overlapping re-export date range, or a malformed export with a
+  // duplicate date) would otherwise silently collapse into one row on
+  // INSERT OR IGNORE.
+  it('assigns unique, stable ids to rows that would otherwise dedup-collapse on a shared date', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const tmp = path.join(os.tmpdir(), `oura-collapse-${Date.now()}.csv`);
+    await fs.promises.writeFile(
+      tmp,
+      'date,Sleep Score,Readiness Score,Activity Score\n' +
+        '2024-02-01,80,75,88\n' +
+        '2024-02-01,81,76,89\n' + // duplicate date within the same file
+        '2024-02-02,79,74,85\n',
+    );
+    const fi = new OuraFileImporter();
+    try {
+      const run = async () => {
+        const pipeline: EmittedGraph[] = [];
+        await fi.fileImport({}, { filename: 'oura-collapse.csv', fullPath: tmp }, {
+          pipeline,
+          timeframe: {},
+          log: () => {},
+        } as unknown as ImportParams);
+
+        return pipeline;
+      };
+
+      const items = await run();
+      expect(items.length).toBe(3);
+      const ids = items.map((p) => p.item.id!);
+      // (a) every row gets an id
+      expect(ids.every(Boolean)).toBe(true);
+      // (b) all ids are unique despite the first two rows sharing a date,
+      // classification, and the constant 'observation.txt' filename.
+      expect(new Set(ids).size).toBe(items.length);
+
+      // (c) re-import yields identical ids (idempotent).
+      const again = await run();
+      expect(again.map((p) => p.item.id!)).toEqual(ids);
+    } finally {
+      await fs.promises.unlink(tmp).catch(() => {});
+    }
+  });
+
   it('does not throw on an empty CSV file', async () => {
     const fi = new OuraFileImporter();
     const fs = await import('node:fs');

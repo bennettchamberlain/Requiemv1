@@ -362,4 +362,29 @@ export class BrowserActivityService {
       type: 'browser-activity' as IndexableEntity,
     }));
   }
+
+  /**
+   * True total of browser activities matching the same filters {@link getEntitiesForBrowserActivities}
+   * applies (minus the pagination-only `limit`/`order`/`afterTime`/`afterId`) — a real `COUNT(*)`,
+   * not the length of one `limit`-bounded page of identifiers. See EventService.countEntitiesForEvents.
+   */
+  async countEntitiesForBrowserActivities(
+    context: ServiceContext,
+    options: Pick<Options, 'startTime' | 'endTime'>,
+  ): Promise<number> {
+    let query = this.dataSource
+      .getRepository(BrowserActivityEntity)
+      .createQueryBuilder('browser-activity')
+      .where('browser-activity.user_id = :userId', { userId: context.userId });
+
+    if (options.startTime) {
+      query = query.andWhere('browser-activity.time >= :startTime', { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere('browser-activity.time <= :endTime', { endTime: options.endTime });
+    }
+
+    return query.getCount();
+  }
 }

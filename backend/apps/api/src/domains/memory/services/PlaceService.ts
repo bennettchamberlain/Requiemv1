@@ -721,6 +721,31 @@ export class PlaceService {
   }
 
   /**
+   * True total of places matching the same filters {@link getEntitiesForPlaces} applies (minus
+   * the pagination-only `limit`/`order`/`afterTime`/`afterId`) — a real `COUNT(*)`, not the
+   * length of one `limit`-bounded page of identifiers. See EventService.countEntitiesForEvents.
+   */
+  async countEntitiesForPlaces(
+    context: ServiceContext,
+    options: { startTime?: Date; endTime?: Date },
+  ): Promise<number> {
+    let query = this.placeRepository
+      .createQueryBuilder('place')
+      .where('place.entity_type = :entityType', { entityType: 'Location' })
+      .andWhere('place.owner_user_id = :userId', { userId: context.userId });
+
+    if (options.startTime) {
+      query = query.andWhere('place.created_at >= :startTime', { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere('place.created_at <= :endTime', { endTime: options.endTime });
+    }
+
+    return query.getCount();
+  }
+
+  /**
    * Validate a caller-supplied parent place id before it reaches the
    * parent_place_id FK. GlobalUIDs are unsigned base64, so the id is fully
    * client-controlled: an unchecked value can reference a nonexistent row (FK

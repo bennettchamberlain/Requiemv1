@@ -5,17 +5,23 @@ import { expect, test } from '@playwright/test';
 // stable signals (URL, view tabs, container) and each test saves a screenshot
 // artifact (uploaded by .github/workflows/e2e.yml).
 
-test('brief renders on mobile', async ({ page }) => {
+test('brief redirects to today on mobile', async ({ page }) => {
+  // The brief now lives inside Today (App.tsx's RedirectToToday) — /brief is a
+  // legacy address that lands on /today, not a page of its own.
   await page.goto('/brief');
 
-  await expect(page).toHaveURL(/\/brief/);
+  await expect(page).toHaveURL(/\/today/);
   await page.screenshot({ path: 'test-results/screenshots/brief-mobile.png', fullPage: true });
 });
 
 test('memory list view renders on mobile', async ({ page }) => {
   await page.goto('/memory');
 
-  await expect(page.getByLabel('List view')).toBeVisible();
+  // MobileMemoryPage uses a Radix Tabs list (role="tab"), not the desktop
+  // header's aria-labelled view buttons — "List view" is a desktop-only label.
+  const listTab = page.getByRole('tab', { name: 'List' });
+  await expect(listTab).toBeVisible();
+  await expect(listTab).toHaveAttribute('aria-selected', 'true');
   await page.screenshot({ path: 'test-results/screenshots/memory-list-mobile.png', fullPage: true });
 });
 

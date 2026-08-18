@@ -49,10 +49,37 @@ export interface FixtureEntry {
   utf8Flag?: boolean;
   /** Deflate the payload (method 8) instead of storing it (method 0). */
   deflate?: boolean;
+  /**
+   * Write this entry's CENTRAL directory record the way a 4GB+ split does:
+   * `compressedSize`/`uncompressedSize`/local-header-offset saturated at
+   * `0xffffffff`, with the true 64-bit values carried instead in a ZIP64 extra
+   * field (id `0x0001`). The actual payload stays small — nothing here needs a
+   * multi-gigabyte fixture, because the parser keys off the saturated 32-bit
+   * field, not the archive's real size. The LOCAL header is left alone
+   * (real sizes, no extra field): `zipDirectory.ts` never reads a local
+   * header's size fields, only the central directory's, so a fixture chasing
+   * exactly what the parser reads leaves it as an ordinary entry.
+   */
+  zip64?: boolean;
 }
 
-/** A zip containing exactly these entries, in this order. */
-export function buildZip(entries: FixtureEntry[]): Buffer {
+interface ZipChunks {
+  localChunk: Buffer;
+  centralChunk: Buffer;
+  entryCount: number;
+}
+
+/** Extra field record: 2-byte id, 2-byte size, then the data. */
+function extraField(id: number, data: Buffer): Buffer {
+  const header = Buffer.alloc(4);
+  header.writeUInt16LE(id, 0);
+  header.writeUInt16LE(data.length, 2);
+
+  return Buffer.concat([header, data]);
+}
+
+/** Local + central directory bytes for `entries`, shared by every EOCD flavour below. */
+function buildZipChunks(entries: FixtureEntry[]): ZipChunks {
   const locals: Buffer[] = [];
   const centrals: Buffer[] = [];
   let offset = 0;
@@ -65,6 +92,7 @@ export function buildZip(entries: FixtureEntry[]): Buffer {
     const method = deflate ? 8 : 0;
     const flags = entry.utf8Flag ? 0x0800 : 0;
     const crc = crc32(raw);
+    const localHeaderOffset = offset;
 
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0); // local file header signature
@@ -84,26 +112,102 @@ export function buildZip(entries: FixtureEntry[]): Buffer {
     central.writeUInt16LE(flags, 8);
     central.writeUInt16LE(method, 10);
     central.writeUInt32LE(crc, 16);
-    central.writeUInt32LE(payload.length, 20);
-    central.writeUInt32LE(raw.length, 24);
-    central.writeUInt16LE(name.length, 28);
-    central.writeUInt32LE(offset, 42); // relative offset of local header
-    centrals.push(Buffer.concat([central, name]));
+
+    let extra = Buffer.alloc(0);
+    if (entry.zip64) {
+      // Real values ride in the extra field, in this fixed order — the exact
+      // order `parseCentralDirectory` reads them back in.
+      const zip64Data = Buffer.alloc(24);
+      zip64Data.writeBigUInt64LE(BigInt(raw.length), 0); // uncompressed
+      zip64Data.writeBigUInt64LE(BigInt(payload.length), 8); // compressed
+      zip64Data.writeBigUInt64LE(BigInt(localHeaderOffset), 16);
+      extra = extraField(0x0001, zip64Data);
+
+      central.writeUInt32LE(0xffffffff, 20); // compressedSize sentinel
+      central.writeUInt32LE(0xffffffff, 24); // uncompressedSize sentinel
+      central.writeUInt16LE(name.length, 28);
+      central.writeUInt16LE(extra.length, 30);
+      central.writeUInt32LE(0xffffffff, 42); // localHeaderOffset sentinel
+    } else {
+      central.writeUInt32LE(payload.length, 20);
+      central.writeUInt32LE(raw.length, 24);
+      central.writeUInt16LE(name.length, 28);
+      central.writeUInt16LE(extra.length, 30);
+      central.writeUInt32LE(localHeaderOffset, 42);
+    }
+
+    centrals.push(Buffer.concat([central, name, extra]));
 
     offset += 30 + name.length + payload.length;
   }
 
-  const localChunk = Buffer.concat(locals);
-  const centralChunk = Buffer.concat(centrals);
+  return {
+    localChunk: Buffer.concat(locals),
+    centralChunk: Buffer.concat(centrals),
+    entryCount: entries.length,
+  };
+}
 
+/** The ordinary (non-ZIP64) end-of-central-directory record. */
+function plainEocd(chunks: ZipChunks): Buffer {
   const eocd = Buffer.alloc(22);
   eocd.writeUInt32LE(0x06054b50, 0); // end of central directory
-  eocd.writeUInt16LE(entries.length, 8);
-  eocd.writeUInt16LE(entries.length, 10);
-  eocd.writeUInt32LE(centralChunk.length, 12);
-  eocd.writeUInt32LE(localChunk.length, 16);
+  eocd.writeUInt16LE(chunks.entryCount, 8);
+  eocd.writeUInt16LE(chunks.entryCount, 10);
+  eocd.writeUInt32LE(chunks.centralChunk.length, 12);
+  eocd.writeUInt32LE(chunks.localChunk.length, 16);
 
-  return Buffer.concat([localChunk, centralChunk, eocd]);
+  return eocd;
+}
+
+/** A zip containing exactly these entries, in this order. */
+export function buildZip(entries: FixtureEntry[]): Buffer {
+  const chunks = buildZipChunks(entries);
+
+  return Buffer.concat([chunks.localChunk, chunks.centralChunk, plainEocd(chunks)]);
+}
+
+/**
+ * A zip whose regular EOCD is saturated (central directory size AND offset
+ * both `0xffffffff`) and immediately preceded by a real ZIP64 End Of Central
+ * Directory record and its locator — the fallback `locateCentralDirectory`
+ * reads when the plain 32-bit fields cannot hold the true position. As with
+ * per-entry ZIP64 above, nothing here needs to actually BE 4GB: the parser
+ * reacts to the saturated field, so a small archive can declare it honestly
+ * and exercise the exact branch a real 4GB+ split takes.
+ *
+ * `entries` may additionally set `zip64: true` to combine both branches in one
+ * archive, matching the real shape described in `zipDirectory.ts`'s comment —
+ * a large entry inside a large split.
+ */
+export function buildZip64Eocd(entries: FixtureEntry[]): Buffer {
+  const chunks = buildZipChunks(entries);
+  const centralOffset = chunks.localChunk.length;
+
+  const zip64Record = Buffer.alloc(56);
+  zip64Record.writeUInt32LE(0x06064b50, 0); // zip64 EOCD signature
+  zip64Record.writeBigUInt64LE(44n, 4); // size of this record, excluding the first 12 bytes
+  zip64Record.writeUInt16LE(45, 12); // version made by
+  zip64Record.writeUInt16LE(45, 14); // version needed to extract
+  zip64Record.writeBigUInt64LE(BigInt(chunks.entryCount), 24); // entries, this disk
+  zip64Record.writeBigUInt64LE(BigInt(chunks.entryCount), 32); // entries, total
+  zip64Record.writeBigUInt64LE(BigInt(chunks.centralChunk.length), 40); // size of central directory
+  zip64Record.writeBigUInt64LE(BigInt(centralOffset), 48); // offset of central directory
+
+  const zip64Locator = Buffer.alloc(20);
+  zip64Locator.writeUInt32LE(0x07064b50, 0); // zip64 EOCD locator signature
+  zip64Locator.writeUInt32LE(0, 4); // disk with the zip64 EOCD record
+  zip64Locator.writeBigUInt64LE(BigInt(centralOffset + chunks.centralChunk.length), 8);
+  zip64Locator.writeUInt32LE(1, 16); // total number of disks
+
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(0xffff, 8); // entries, this disk — saturated
+  eocd.writeUInt16LE(0xffff, 10); // entries, total — saturated
+  eocd.writeUInt32LE(0xffffffff, 12); // size of central directory — saturated
+  eocd.writeUInt32LE(0xffffffff, 16); // offset of central directory — saturated
+
+  return Buffer.concat([chunks.localChunk, chunks.centralChunk, zip64Record, zip64Locator, eocd]);
 }
 
 /**

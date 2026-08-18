@@ -271,6 +271,10 @@ export class SearchResolver {
     // remaining filter dimensions on as post-filters so all filters combine (LifeScope parity).
     let candidateSource: 'query' | 'tags' | 'timed';
     let identifiers: EntityIdentifier<IndexableEntity | TaggableEntity>[];
+    // Real total for the 'timed' candidate source, computed alongside `identifiers` below —
+    // see the branch's comment and `countTimedEntities` for why this can't just be
+    // `identifiers.length` (or the Paginator's derived totalCount from it).
+    let timedTotalCount: number | undefined;
 
     const first = Math.min(Math.max(input.first ?? DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
     const afterCursor = decodeSearchCursor(input.after);
@@ -298,25 +302,32 @@ export class SearchResolver {
       // the same top-N rows). Fall back to the legacy inclusive-endTime window when
       // the cursor lacks a decodable id (older cursors).
       const keyset = afterCursor?.time != null && afterCursor.id != null;
-      identifiers = await this.searchByTimedEntities(serviceContext, {
+      // With no filters at all, bound to "now" so we return recent items, not the entire
+      // history. This is the *filter's* upper bound — stable across pages — as opposed to
+      // the legacy `afterCursor?.time` window fallback below, which is a pagination artifact
+      // of a stale (id-less) cursor. `countTimedEntities` must use this one, not that one:
+      // the total a viewer sees must not shift depending on which page they're looking at.
+      const resolvedEndTime = endTime ?? (noInputs ? new Date() : undefined);
+      const timedOptions = {
         includeTypes: input.includeTypes,
         excludeTypes: input.excludeTypes,
         includeFiles: input.includeFiles === true,
         startTime,
-        // With no filters at all, bound to "now" so we return recent items, not the entire history.
-        endTime: keyset
-          ? (endTime ?? (noInputs ? new Date() : undefined))
-          : (afterCursor?.time ?? endTime ?? (noInputs ? new Date() : undefined)),
-        afterTime: keyset ? afterCursor!.time : undefined,
-        afterId: keyset ? afterCursor!.id! : undefined,
-        // "How" filter — pushed down to the event query for the timed path.
         eventTypes,
-        // who / where / connector — pushed down to the event query. When set, the
-        // timed path is restricted to events (the only type carrying these dims).
         eventFilter,
-        // Over-fetch per type so the merged page holds the globally newest `first` rows.
-        limit: first * FETCH_MULTIPLIER,
-      });
+      };
+
+      [identifiers, timedTotalCount] = await Promise.all([
+        this.searchByTimedEntities(serviceContext, {
+          ...timedOptions,
+          endTime: keyset ? resolvedEndTime : (afterCursor?.time ?? resolvedEndTime),
+          afterTime: keyset ? afterCursor!.time : undefined,
+          afterId: keyset ? afterCursor!.id! : undefined,
+          // Over-fetch per type so the merged page holds the globally newest `first` rows.
+          limit: first * FETCH_MULTIPLIER,
+        }),
+        this.countTimedEntities(serviceContext, { ...timedOptions, endTime: resolvedEndTime }),
+      ]);
     }
 
     // Entity-type filter: the query/timed paths apply it at their source; apply to the tags path.
@@ -403,7 +414,11 @@ export class SearchResolver {
       sortTime: SearchResolver.getEntityTimestamp(entry) ?? new Date(0),
     }));
 
-    const { slice, pageInfo, totalCount } = Paginator.paginate(ordered, {
+    const {
+      slice,
+      pageInfo,
+      totalCount: candidateCount,
+    } = Paginator.paginate(ordered, {
       getId: searchCursorOf,
       first,
       after: input.after ?? undefined,
@@ -423,7 +438,14 @@ export class SearchResolver {
     return {
       edges,
       pageInfo,
-      totalCount,
+      // For the 'timed' source, `timedTotalCount` is a real per-type `COUNT(*)`
+      // (see `countTimedEntities`) — not `candidateCount`, which is only the size
+      // of the `first * FETCH_MULTIPLIER`-bounded window fetched for this one page.
+      // Using the window size here previously made `totalCount` scale with page
+      // size instead of reflecting how many results actually exist (confirmed live:
+      // first=10/30/100 -> totalCount=293/853/2813 against a true total in the
+      // hundreds of thousands — see the SearchResolver.totalCount tests).
+      totalCount: timedTotalCount ?? candidateCount,
       matchingTags: matchingTags.map((tag) => TagType.toType(tag)),
     };
   }
@@ -689,6 +711,91 @@ export class SearchResolver {
       ...conceptResults,
       ...answerResults,
     ];
+  }
+
+  /**
+   * Real total for the 'timed' candidate source: sums a per-type `COUNT(*)` scoped by the
+   * SAME predicates {@link searchByTimedEntities} filters by (user, date range, "how"/"who"/
+   * "where"/connector), gated by the same `wants(type)` type-filter — but without that
+   * method's `limit`/keyset, which are page-windowing concerns a *total* must not depend on.
+   *
+   * This is the fix for `totalCount` reporting the size of the `first * FETCH_MULTIPLIER`
+   * over-fetched candidate window instead of how many results actually exist: that window is
+   * sized off the caller's page size, so the old `Paginator.paginate(candidates).totalCount`
+   * scaled with `first` (verified live: first=10/30/100 against one real "browse everything"
+   * saved search returned totalCount 293/853/2813 — an almost exact 28-29x multiple of `first`
+   * — against a true total in the hundreds of thousands). That search is exactly what a
+   * shared saved-search link with no query/filters runs (SearchResolver.runSharedSearch), so
+   * the fabricated count was shown directly to viewers on the public Shared-Search page.
+   */
+  private async countTimedEntities(
+    context: UserServiceContext,
+    {
+      includeTypes,
+      excludeTypes,
+      includeFiles,
+      startTime,
+      endTime,
+      eventTypes,
+      eventFilter,
+    }: {
+      includeTypes?: IndexableEntity[];
+      excludeTypes?: IndexableEntity[];
+      includeFiles?: boolean;
+      startTime?: Date;
+      endTime?: Date;
+      eventTypes?: string[];
+      eventFilter?: {
+        connectors?: string[];
+        people?: string[];
+        places?: string[];
+        hasLocation?: boolean;
+        bbox?: number[];
+      };
+    },
+  ): Promise<number> {
+    const eventsOnly = eventFilter != null;
+    const optIn = (type: IndexableEntity) => {
+      if (type === 'file-chunk') {
+        return includeTypes?.includes(type) ?? false;
+      }
+
+      return true;
+    };
+
+    const wants = (type: IndexableEntity) =>
+      this.matchesTypeFilter(type, includeTypes, excludeTypes) &&
+      (!eventsOnly || type === 'event') &&
+      optIn(type) &&
+      (type !== 'file' || includeFiles !== false);
+
+    const dateOptions = { startTime, endTime };
+    const eventOptions = {
+      ...dateOptions,
+      ...(eventTypes && eventTypes.length > 0 ? { eventTypes } : {}),
+      ...(eventFilter ?? {}),
+    };
+
+    const counts = await Promise.all([
+      wants('event') ? this.eventService.countEntitiesForEvents(context, eventOptions) : 0,
+      wants('browser-activity')
+        ? this.browserActivityService.countEntitiesForBrowserActivities(context, dateOptions)
+        : 0,
+      wants('communication')
+        ? this.communicationService.countEntitiesForCommunications(context, dateOptions)
+        : 0,
+      wants('file') ? this.fileService.countEntitiesForFiles(context, dateOptions) : 0,
+      wants('file-chunk') ? this.fileChunkService.countEntitiesForFileChunks(context, dateOptions) : 0,
+      wants('note') ? this.noteService.countEntitiesForNotes(context, dateOptions) : 0,
+      wants('content') ? this.contentService.countEntitiesForContents(context, dateOptions) : 0,
+      wants('person') ? this.personService.countEntitiesForPeople(context, dateOptions) : 0,
+      wants('place') ? this.placeService.countEntitiesForPlaces(context, dateOptions) : 0,
+      wants('item') ? this.itemService.countEntitiesForItems(context, dateOptions) : 0,
+      wants('concept') ? this.conceptService.countEntitiesForConcepts(context, dateOptions) : 0,
+      wants('answer') ? this.answerService.countEntitiesForAnswers(context, dateOptions) : 0,
+    ]);
+
+    return counts.reduce((sum, count) => sum + count, 0);
   }
 
   /** Resolves raw identifiers to full entities, preserving candidate order and dropping misses. */

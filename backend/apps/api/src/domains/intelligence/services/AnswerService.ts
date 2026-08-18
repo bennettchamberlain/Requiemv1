@@ -361,6 +361,30 @@ export class AnswerService {
   }
 
   /**
+   * True total of answers matching the same filters {@link getEntitiesForAnswers} applies
+   * (minus the pagination-only `limit`/`order`/`afterTime`/`afterId`) — a real `COUNT(*)`, not
+   * the length of one `limit`-bounded page of identifiers. See EventService.countEntitiesForEvents.
+   */
+  async countEntitiesForAnswers(
+    context: ServiceContext,
+    options: { startTime?: Date; endTime?: Date },
+  ): Promise<number> {
+    let query = this.answerRepository
+      .createQueryBuilder('answer')
+      .where('answer.user_id = :userId', { userId: context.userId });
+
+    if (options.startTime) {
+      query = query.andWhere('answer.answered_at >= :startTime', { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere('answer.answered_at <= :endTime', { endTime: options.endTime });
+    }
+
+    return query.getCount();
+  }
+
+  /**
    * Hourly UTC activity buckets for the activity rollup: answers counted by
    * `answeredAt`, per user. AnswerEntity models the user only as a relation,
    * so the FK column is referenced directly.

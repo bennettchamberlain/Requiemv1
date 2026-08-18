@@ -622,6 +622,31 @@ export class CommunicationService {
   }
 
   /**
+   * True total of communications matching the same filters {@link getEntitiesForCommunications}
+   * applies (minus the pagination-only `limit`/`order`/`afterTime`/`afterId`) — a real `COUNT(*)`,
+   * not the length of one `limit`-bounded page of identifiers. See EventService.countEntitiesForEvents.
+   */
+  async countEntitiesForCommunications(
+    context: ServiceContext,
+    options: Pick<Options, 'startTime' | 'endTime'>,
+  ): Promise<number> {
+    let query = this.dataSource
+      .getRepository(CommunicationEntity)
+      .createQueryBuilder('communications')
+      .where('communications.user_id = :userId', { userId: context.userId });
+
+    if (options.startTime) {
+      query = query.andWhere('communications.time >= :startTime', { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere('communications.time <= :endTime', { endTime: options.endTime });
+    }
+
+    return query.getCount();
+  }
+
+  /**
    * Hourly UTC activity buckets for the activity rollup: communications
    * counted by their event `time`, per user.
    */

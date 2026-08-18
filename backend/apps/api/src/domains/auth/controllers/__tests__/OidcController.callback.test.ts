@@ -1,0 +1,277 @@
+import config from '@ci/configuration';
+
+// `undici`'s fetch is the ONLY thing OidcController.callback uses to talk to the
+// OIDC provider (token exchange + userinfo). Nothing in the suite mocked it before
+// this file (confirmed by grep), so every branch of callback() that runs AFTER
+// PKCE/state validation — a failed token exchange, a failed userinfo call, a
+// userinfo payload missing an email, an existing user signing in (web + native),
+// and first-time web sign-in stashing the signup-intent cookie — was completely
+// unexercised. OidcController.callbackNative.test.ts explicitly says the
+// post-exchange branches are "covered separately"; this is that coverage.
+const mockFetch = jest.fn();
+
+jest.mock('undici', () => ({
+  fetch: (...args: unknown[]) => mockFetch(...args),
+  // fetchDispatcher is built at module load with `new Agent(...)` (issuerUrl is
+  // localhost in the test env) — only needs to be constructable, never inspected.
+  Agent: jest.fn().mockImplementation(() => ({})),
+}));
+
+// Import AFTER the mock so the controller module picks up the mocked `undici`.
+ 
+import { OidcController } from '../OidcController';
+
+const SESSION_COOKIE_NAME = config.auth.cookies.sessionTokenName;
+const CSRF_COOKIE_NAME = config.auth.cookies.csrfTokenName;
+const NATIVE_SCHEME = config.auth.oidc.nativeRedirectScheme;
+
+// `config` defaults `auth.oidc.issuerUrl` to '' (config/default.json) unless
+// OIDC_ISSUER_URL is set — every callback() call would otherwise short-circuit
+// at its own `if (!issuerUrl) return failRedirect('oidc_not_configured')` gate
+// before ever reaching the fetch calls this file exists to exercise. `config`
+// is a plain mutable object (configuration.ts's `export default parsed`), and
+// jest gives this test file its own isolated module registry, so mutating it
+// here cannot leak into any other suite.
+config.auth.oidc.issuerUrl = 'http://localhost:8506';
+
+function jsonResponse(ok: boolean, status: number, body: unknown) {
+  return {
+    ok,
+    status,
+    json: jest.fn().mockResolvedValue(body),
+    text: jest.fn().mockResolvedValue(typeof body === 'string' ? body : JSON.stringify(body)),
+  };
+}
+
+const TOKEN_OK = jsonResponse(true, 200, { access_token: 'portal-access-token', token_type: 'bearer' });
+
+function makeController() {
+  const userService = { findByEmail: jest.fn(), create: jest.fn() };
+  const authService = {
+    issueSessionToken: jest
+      .fn()
+      .mockResolvedValue({ sessionToken: 'new-session-token', sessionId: 'sess-1' }),
+    getSessionMetadata: jest.fn().mockReturnValue({ ip: '127.0.0.1', userAgent: 'jest' }),
+    issueSignupIntentToken: jest.fn().mockReturnValue('signup-intent-jwt'),
+    resolveCsrfScope: jest.fn().mockReturnValue(null),
+  };
+  const csrfService = { generateToken: jest.fn().mockReturnValue('new-csrf-token') };
+  const featureService = { isFeatureEnabled: jest.fn().mockResolvedValue(false) };
+  const oidcNativeCodeService = { issue: jest.fn().mockReturnValue('one-time-code'), redeem: jest.fn() };
+  const logger = { setContext: jest.fn(), warn: jest.fn(), error: jest.fn(), log: jest.fn() };
+
+  const controller = new OidcController(
+    userService as never,
+    authService as never,
+    csrfService as never,
+    featureService as never,
+    oidcNativeCodeService as never,
+    logger as never,
+  );
+
+  return { controller, userService, authService, csrfService, featureService, oidcNativeCodeService, logger };
+}
+
+function makeRes() {
+  return {
+    clearCookie: jest.fn(),
+    cookie: jest.fn(),
+    redirect: jest.fn(),
+  };
+}
+
+function webReq(cookies: Record<string, string> = {}) {
+  return {
+    cookies: { oidc_state: 'match', oidc_pkce: 'verifier', ...cookies },
+    secure: false,
+    headers: {},
+  } as never;
+}
+
+function nativeReq(cookies: Record<string, string> = {}) {
+  return webReq({ oidc_client: 'native', ...cookies });
+}
+
+describe('OidcController — OIDC callback (post-token-exchange path)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('redirects to /login?error=token_exchange_failed when the token endpoint 4xxs, without ever calling userinfo', async () => {
+    const { controller, logger } = makeController();
+    const res = makeRes();
+    mockFetch.mockResolvedValueOnce(jsonResponse(false, 400, { error: 'invalid_grant' }));
+
+    await controller.callback('code-x', 'match', undefined, webReq(), res as never);
+
+    expect(res.redirect).toHaveBeenCalledWith('/login?error=token_exchange_failed');
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(logger.error).toHaveBeenCalled();
+  });
+
+  it('redirects to /login?error=userinfo_failed when userinfo 4xxs after a successful token exchange', async () => {
+    const { controller, userService } = makeController();
+    const res = makeRes();
+    mockFetch
+      .mockResolvedValueOnce(TOKEN_OK)
+      .mockResolvedValueOnce(jsonResponse(false, 401, { error: 'invalid_token' }));
+
+    await controller.callback('code-x', 'match', undefined, webReq(), res as never);
+
+    expect(res.redirect).toHaveBeenCalledWith('/login?error=userinfo_failed');
+    expect(userService.findByEmail).not.toHaveBeenCalled();
+  });
+
+  it('redirects to /login?error=no_email when userinfo has no email, without looking up any user', async () => {
+    const { controller, userService } = makeController();
+    const res = makeRes();
+    mockFetch
+      .mockResolvedValueOnce(TOKEN_OK)
+      .mockResolvedValueOnce(jsonResponse(true, 200, { sub: 'portal-sub-1', name: 'No Email' }));
+
+    await controller.callback('code-x', 'match', undefined, webReq(), res as never);
+
+    expect(res.redirect).toHaveBeenCalledWith('/login?error=no_email');
+    expect(userService.findByEmail).not.toHaveBeenCalled();
+  });
+
+  describe('existing user (web)', () => {
+    it('signs the user in: issues session+CSRF cookies and returns to the stored redirect', async () => {
+      const { controller, userService, authService, csrfService } = makeController();
+      const res = makeRes();
+      mockFetch
+        .mockResolvedValueOnce(TOKEN_OK)
+        .mockResolvedValueOnce(jsonResponse(true, 200, { sub: 'portal-sub-1', email: 'user@example.com' }));
+      userService.findByEmail.mockResolvedValue({ id: 'user-1' });
+
+      await controller.callback(
+        'code-x',
+        'match',
+        undefined,
+        webReq({ oidc_redirect: '/shared/abc123' }),
+        res as never,
+      );
+
+      expect(userService.findByEmail).toHaveBeenCalledWith('user@example.com');
+      expect(authService.issueSessionToken).toHaveBeenCalledWith('user-1', expect.any(Object));
+      expect(res.cookie).toHaveBeenCalledWith(SESSION_COOKIE_NAME, 'new-session-token', expect.any(Object));
+      // Identity boundary: a fresh CSRF token bound to the NEW session, not the pre-auth one.
+      expect(csrfService.generateToken).toHaveBeenCalledWith('sess-1');
+      expect(res.cookie).toHaveBeenCalledWith(CSRF_COOKIE_NAME, 'new-csrf-token', expect.any(Object));
+      // Redirect-destination re-validation: the stored deep link is honoured.
+      expect(res.redirect).toHaveBeenCalledWith('/shared/abc123');
+    });
+
+    it('falls back to "/" when no redirect was stored', async () => {
+      const { controller, userService } = makeController();
+      const res = makeRes();
+      mockFetch
+        .mockResolvedValueOnce(TOKEN_OK)
+        .mockResolvedValueOnce(jsonResponse(true, 200, { sub: 'portal-sub-1', email: 'user@example.com' }));
+      userService.findByEmail.mockResolvedValue({ id: 'user-1' });
+
+      await controller.callback('code-x', 'match', undefined, webReq(), res as never);
+
+      expect(res.redirect).toHaveBeenCalledWith('/');
+    });
+
+    it('never trusts an unsafe stored redirect (open-redirect guard still applies here)', async () => {
+      const { controller, userService } = makeController();
+      const res = makeRes();
+      mockFetch
+        .mockResolvedValueOnce(TOKEN_OK)
+        .mockResolvedValueOnce(jsonResponse(true, 200, { sub: 'portal-sub-1', email: 'user@example.com' }));
+      userService.findByEmail.mockResolvedValue({ id: 'user-1' });
+
+      await controller.callback(
+        'code-x',
+        'match',
+        undefined,
+        webReq({ oidc_redirect: 'https://evil.example.com' }),
+        res as never,
+      );
+
+      expect(res.redirect).toHaveBeenCalledWith('/');
+    });
+  });
+
+  describe('existing user (native)', () => {
+    it('issues a single-use deep-link code instead of a browser session cookie', async () => {
+      const { controller, userService, authService, oidcNativeCodeService } = makeController();
+      const res = makeRes();
+      mockFetch
+        .mockResolvedValueOnce(TOKEN_OK)
+        .mockResolvedValueOnce(jsonResponse(true, 200, { sub: 'portal-sub-1', email: 'user@example.com' }));
+      userService.findByEmail.mockResolvedValue({ id: 'user-1' });
+
+      await controller.callback('code-x', 'match', undefined, nativeReq(), res as never);
+
+      expect(oidcNativeCodeService.issue).toHaveBeenCalledWith('user-1');
+      expect(res.redirect).toHaveBeenCalledWith(`${NATIVE_SCHEME}://oidc/callback?code=one-time-code`);
+      // No browser session was minted — the cross-origin native webview cannot
+      // read it anyway, and the deep-link code is the credential handoff.
+      expect(authService.issueSessionToken).not.toHaveBeenCalled();
+      expect(res.cookie).not.toHaveBeenCalledWith(SESSION_COOKIE_NAME, expect.anything(), expect.anything());
+    });
+  });
+
+  describe('first-time sign-in (no existing account)', () => {
+    it('web: stashes the signup-intent cookie and sends the user to confirm-account, without creating an account', async () => {
+      const { controller, userService, authService } = makeController();
+      const res = makeRes();
+      mockFetch
+        .mockResolvedValueOnce(TOKEN_OK)
+        .mockResolvedValueOnce(
+          jsonResponse(true, 200, { sub: 'portal-sub-1', email: 'new@example.com', name: 'New Person' }),
+        );
+      userService.findByEmail.mockResolvedValue(null);
+
+      await controller.callback('code-x', 'match', undefined, webReq(), res as never);
+
+      expect(userService.create).not.toHaveBeenCalled();
+      expect(authService.issueSignupIntentToken).toHaveBeenCalledWith('new@example.com', 'New Person');
+      expect(res.cookie).toHaveBeenCalledWith('oidc_signup_intent', 'signup-intent-jwt', expect.any(Object));
+      expect(res.redirect).toHaveBeenCalledWith('/api/authenticate/oidc/confirm-account');
+    });
+
+    it('native: cannot run the web confirmation, so it deep-links signup_required instead', async () => {
+      const { controller, userService, authService } = makeController();
+      const res = makeRes();
+      mockFetch
+        .mockResolvedValueOnce(TOKEN_OK)
+        .mockResolvedValueOnce(jsonResponse(true, 200, { sub: 'portal-sub-1', email: 'new@example.com' }));
+      userService.findByEmail.mockResolvedValue(null);
+
+      await controller.callback('code-x', 'match', undefined, nativeReq(), res as never);
+
+      expect(res.redirect).toHaveBeenCalledWith(`${NATIVE_SCHEME}://oidc/callback?error=signup_required`);
+      expect(authService.issueSignupIntentToken).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unknown user outright when signup codes are required, before minting any intent cookie', async () => {
+      const { controller, userService, authService, featureService } = makeController();
+      const res = makeRes();
+      mockFetch
+        .mockResolvedValueOnce(TOKEN_OK)
+        .mockResolvedValueOnce(jsonResponse(true, 200, { sub: 'portal-sub-1', email: 'new@example.com' }));
+      userService.findByEmail.mockResolvedValue(null);
+      featureService.isFeatureEnabled.mockResolvedValue(true);
+
+      await controller.callback('code-x', 'match', undefined, webReq(), res as never);
+
+      expect(res.redirect).toHaveBeenCalledWith('/login?error=signup_code_required');
+      expect(authService.issueSignupIntentToken).not.toHaveBeenCalled();
+    });
+  });
+
+  it('routes an unexpected exception (e.g. network failure) through failRedirect(oidc_failed), not a raw 500', async () => {
+    const { controller, logger } = makeController();
+    const res = makeRes();
+    mockFetch.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+
+    await controller.callback('code-x', 'match', undefined, webReq(), res as never);
+
+    expect(res.redirect).toHaveBeenCalledWith('/login?error=oidc_failed');
+    expect(logger.error).toHaveBeenCalled();
+  });
+});
