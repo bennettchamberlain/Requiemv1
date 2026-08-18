@@ -308,6 +308,57 @@ describe('every other communication', () => {
   });
 });
 
+describe('chat participants', () => {
+  it('makes an inbound chat message point at whoever sent it', async () => {
+    // imessage and whatsapp stage `participant`, not from/to — a 1:1 chat has
+    // one other party, and the direction says which way it went. Honouring only
+    // from/to left 432,173 real iMessages with no sender at all, staged WITH
+    // 290,043 resolved participant edges and connected to nobody.
+    const { stage, sent } = makeStage([whatsAppRow('Alice Example', 'hi')], {
+      participants: [{ relation: 'participant', server_entity_id: 'entity-alice' }],
+    });
+
+    await stage.run(context);
+
+    expect(sent[0].direction).toBe('inbound');
+    expect(sent[0].from_entity_id).toBe('entity-alice');
+    expect(sent[0].to_entity_ids ?? []).toEqual([]);
+  });
+
+  it('makes an outbound chat message point at the recipient, not the sender', async () => {
+    // The owner sent it, so the other party is who it went TO. Filing them as
+    // the sender would claim every message the owner wrote came from someone
+    // else.
+    const { stage, sent } = makeStage([whatsAppRow('Liam Broza', 'on my way')], {
+      participants: [{ relation: 'participant', server_entity_id: 'entity-alice' }],
+    });
+
+    await stage.run(context);
+
+    expect(sent[0].direction).toBe('outbound');
+    expect(sent[0].from_entity_id).toBeUndefined();
+    expect(sent[0].to_entity_ids).toEqual(['entity-alice']);
+  });
+
+  it('still prefers an explicit from/to edge over a participant', async () => {
+    // The mail vocabulary is unchanged: gmail stages from/to/cc and must keep
+    // winning, so a record carrying both is decided by the explicit edge.
+    const { stage, sent } = makeStage(
+      [stagedRow({ dataSource: 'gmail', classification: 'email', metadata: { Subject: 'Lunch' } })],
+      {
+        participants: [
+          { relation: 'from', server_entity_id: 'entity-from' },
+          { relation: 'participant', server_entity_id: 'entity-ignored' },
+        ],
+      },
+    );
+
+    await stage.run(context);
+
+    expect(sent[0].from_entity_id).toBe('entity-from');
+  });
+});
+
 describe('participant edges', () => {
   it('still ride on all three paths', async () => {
     // The staged edges are the whole point of resolving entities first, and the

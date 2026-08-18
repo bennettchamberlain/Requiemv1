@@ -107,12 +107,17 @@ list_sources() {
   done
 }
 
-# Stage a source into the inbox. Never moves, never touches the original.
+# Stage a source into the inbox and echo the unit path it created.
+#
+# The path matters: `ci-import inbox --start` with no `--units` starts EVERY
+# ready unit under one label, so a unit left behind by an interrupted run gets
+# swept into the next source's label. That is how 118,391 Spotify items were
+# once recorded as a Twitter import.
 stage() {
   local name="$1" kind="$2" path="$3"
   local dest="$INBOX/$name"
 
-  rm -rf "$dest"
+  rm -rf "$dest" "$dest.photoslibrary"
 
   case "$kind" in
     file)
@@ -139,8 +144,11 @@ stage() {
       mkdir -p "$dest.photoslibrary"
       cp -Rc "$path/originals" "$dest.photoslibrary/originals" 2>/dev/null \
         || cp -R "$path/originals" "$dest.photoslibrary/originals"
+      dest="$dest.photoslibrary"
       ;;
   esac
+
+  printf '%s' "$dest"
 }
 
 import_one() {
@@ -155,11 +163,14 @@ import_one() {
   started=$(date +%s)
 
   printf '  %-12s staging (%s)...\n' "$name" "$(human_size "$path" "$kind")"
-  stage "$name" "$kind" "$path"
+  local unit
+  unit="$(stage "$name" "$kind" "$path")"
 
+  # `--units` pins this run to the unit just staged. Without it the run would
+  # also claim anything else sitting in the inbox and label it as this source.
   printf '  %-12s importing...\n' "$name"
   (cd "$REPO_ROOT" && yarn workspace @ci/be-api ci-import inbox --start \
-      --label "local-$name" --wait --timeout 7200) 2>&1 | tail -3
+      --units "$unit" --label "local-$name" --wait --timeout 7200) 2>&1 | tail -3
 
   elapsed=$(( $(date +%s) - started ))
   printf '  %-12s done in %dm%02ds\n\n' "$name" $((elapsed / 60)) $((elapsed % 60))
