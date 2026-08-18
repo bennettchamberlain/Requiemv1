@@ -91,10 +91,19 @@ import { StageRegistry } from './StageRegistry';
  * restated here:
  *
  *  - **`minInterval`** (7 days), enforced by {@link stageDueness} against the
- *    per-leg `ci.pipeline_schedule.last_started_at` this tick stamps and reads;
+ *    per-leg `ci.pipeline_schedule.last_started_at` this tick stamps and reads —
+ *    EXCEPT for a leg with an overdue retry, which `hasOverdueRetry` (below)
+ *    lets jump the interval, on the reasoning that retrying rows already
+ *    counted against a past `perRunCap` is not the unbounded spend the
+ *    interval exists to prevent. A transient `provider_unavailable` mid-sweep
+ *    would otherwise strand those rows for up to `minInterval`, with their own
+ *    (minutes-to-hours) backoff never getting a chance to fire — see
+ *    `PipelineStateService.hasOverdueRetry`;
  *  - **`window: 'enrichment'`**, enforced by passing `EnrichmentWindowService`'s
  *    answer into the same call — one implementation of "is it 03:00 for this
- *    owner?", consulted here rather than re-derived;
+ *    owner?", consulted here rather than re-derived. Unlike `minInterval`, the
+ *    window still binds a retry: it is spend-timing, not spend-frequency, and
+ *    `hasOverdueRetry` does not touch it;
  *  - **`perRunCap`**, carried into `startSweep` as `maxIds` and enforced by the
  *    dispatcher at slice granularity, so the size of a bill is bounded and not
  *    merely its frequency.
@@ -853,6 +862,24 @@ export class PipelineControlService {
     // answer a question one `WHERE user_id = $1` covers.
     const lastStartedAt = await this.legScheduleFor(userId);
 
+    // A due retry can make a leg due before its `minInterval` elapses (see
+    // `stageDueness`'s "Why `hasOverdueRetry` is a THIRD input" note), so it
+    // has to be known before dueness is computed, not read out of the result.
+    //
+    // Skipped for a leg with no candidates at all: `hasCandidates` already
+    // proved THE ONE RULE finds nothing for it — including the retry arm — so
+    // a leg absent from `candidates` can hold no due retry that matters here,
+    // and the read is one fewer per leg on the common, converged tick.
+    const retryDue = new Map<string, boolean>();
+
+    for (const leg of legs) {
+      if (candidates.get(this.legKey(leg)) !== true) {
+        continue;
+      }
+
+      retryDue.set(this.legKey(leg), await this.hasOverdueRetry(leg, userId));
+    }
+
     const dueness = new Map<string, StageDueness>(
       legs.map((leg) => [
         this.legKey(leg),
@@ -861,6 +888,7 @@ export class PipelineControlService {
           lastStartedAt: lastStartedAt.get(this.legKey(leg)) ?? null,
           windowOpen: conditions.windowOpen,
           now: conditions.now,
+          hasOverdueRetry: retryDue.get(this.legKey(leg)) ?? false,
         }),
       ]),
     );
@@ -1324,6 +1352,20 @@ export class PipelineControlService {
     const ids = await this.stateService.selectStale(leg.stage, userId, null, 1, leg.entityType);
 
     return ids.length > 0;
+  }
+
+  /**
+   * Does this leg have a FAILED row whose own retry backoff is already due?
+   *
+   * Delegates to {@link PipelineStateService.hasOverdueRetry} — `LIMIT 1`
+   * against `pipeline_state_retry_idx`, the same shape as {@link
+   * hasCandidates} and for the same reason: the tick asks once a leg. Feeds
+   * `stageDueness`'s `hasOverdueRetry` input, which is what lets a stuck
+   * `provider_unavailable` retry outrank a metered stage's `minInterval`
+   * instead of waiting out its full weekly cadence for a transient blip.
+   */
+  private async hasOverdueRetry(leg: StageLeg, userId: string): Promise<boolean> {
+    return this.stateService.hasOverdueRetry(leg.stage, leg.entityType, userId);
   }
 
   // -------------------------------------------------------------------------
