@@ -105,6 +105,7 @@ export class ContentService {
       url: item.url ?? undefined,
       mimetype: item.mimetype ?? undefined,
       externalId: item.external_id ?? undefined,
+      externalIdKind: item.external_id_kind ?? undefined,
       sourceUrl: item.source_url ?? undefined,
       sourceData: item.source_data ?? undefined,
       sourceType: item.source_type ?? undefined,
@@ -639,6 +640,18 @@ export class ContentService {
    * oldest first, so a GraphQL loader can attach a thumbnail to an event
    * without a per-event query. See {@link EventMediaLoader}.
    *
+   * `external_id` is NOT reliably a file id — type='media' also covers a
+   * digital-purchase/play content row whose external_id is a source-native URI
+   * (e.g. Spotify's spotify:track:<id>, stamped by push/inputs.ts toContentInput
+   * when the record carries a URI). Those never carry an event_id today, so the
+   * event join above happens to keep them out — but that is scoping by
+   * accident, not by contract. `external_id_kind` is the actual contract (see
+   * migration 20260818215331_add_content_external_id_kind): excluding rows
+   * explicitly marked 'external_uri' means this query stays correct even if a
+   * future source starts linking a URI-keyed content row to an event.
+   * Unclassified rows (external_id_kind IS NULL — pre-migration or a write path
+   * not yet updated) are let through unchanged, matching prior behaviour.
+   *
    * Ownership is scoped through the joined event's `user_id` rather than
    * `content.user_id`. New inserts now populate `content.user_id` (see
    * ContentEntity.userId — it used to be mapped `insert: false`, which persisted
@@ -665,6 +678,7 @@ export class ContentService {
       .andWhere('content.event_id IN (:...eventIds)', { eventIds })
       .andWhere("content.type = 'media'")
       .andWhere('content.external_id IS NOT NULL')
+      .andWhere("content.external_id_kind IS DISTINCT FROM 'external_uri'")
       .orderBy('content.created_at', 'ASC')
       .getRawMany<{ eventId: string; fileId: string; mimetype: string | null }>();
   }
@@ -690,6 +704,10 @@ export class ContentService {
 
     if (data.external_id !== undefined) {
       updateData.externalId = data.external_id;
+    }
+
+    if (data.external_id_kind !== undefined) {
+      updateData.externalIdKind = data.external_id_kind;
     }
 
     if (data.source_url !== undefined) {

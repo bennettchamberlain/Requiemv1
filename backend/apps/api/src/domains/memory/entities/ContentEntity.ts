@@ -50,6 +50,17 @@ export class ContentEntity {
   @Column({ type: 'text', nullable: true, name: 'external_id' })
   externalId!: string | null;
 
+  /**
+   * What `externalId` actually references — 'file' (a ci.files.id, no FK) or
+   * 'external_uri' (an opaque source-native reference, e.g. Spotify's
+   * spotify:track:<id>, that never resolves against ci.files). NULL for rows
+   * not yet classified. See migration 20260818215331_add_content_external_id_kind
+   * and ContentService.findMediaFilesByEventIds, which reads this rather than
+   * assuming every external_id is a file id.
+   */
+  @Column({ type: 'text', nullable: true, name: 'external_id_kind' })
+  externalIdKind!: string | null;
+
   @Column({ type: 'text', nullable: true, name: 'source_url' })
   sourceUrl!: string | null;
 
@@ -94,6 +105,7 @@ export class ContentEntity {
       url: entity.url || null,
       mimetype: entity.mimetype || null,
       externalId: entity.externalId || null,
+      externalIdKind: entity.externalIdKind || null,
       sourceUrl: entity.sourceUrl || null,
       sourceData: entity.sourceData || null,
       sourceType: entity.sourceType || null,
