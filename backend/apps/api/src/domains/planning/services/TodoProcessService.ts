@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { OllamaService, PROMPT_MODEL } from '@ci/domains/llm';
+import { OllamaService, PROMPT_MODEL } from '@ci/domains/llm/services/OllamaService';
 import { EventEntity } from '@ci/domains/memory';
 import { PersonalizationService } from '@ci/domains/personalization';
 import { SearchService } from '@ci/domains/search-next';

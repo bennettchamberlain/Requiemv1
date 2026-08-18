@@ -6,6 +6,7 @@ import {
   TIMELINE_INITIAL_ZOOM_INDEX,
   TIMELINE_MAX_SCALE_FACTOR,
   TIMELINE_MAX_ZOOM_INDEX,
+  TIMELINE_OPTIMAL_TICK_WIDTH,
   TIMELINE_ZOOM_SEQUENCE,
   inertTimeline,
   minorLabelsToHide,
@@ -54,7 +55,8 @@ describe('timelineJsOptions', () => {
     expect(options.hash_bookmark).toBe(false);
     expect(options.soundcite).toBe(false);
     expect(options.dragging).toBe(false);
-    expect(options.optimal_tick_width).toBe(100);
+    expect(options.optimal_tick_width).toBe(TIMELINE_OPTIMAL_TICK_WIDTH);
+    expect(options.optimal_tick_width).toBe(48);
   });
 
   it('caps TimeNav zoom so it does not paint tens of thousands of ticks', () => {

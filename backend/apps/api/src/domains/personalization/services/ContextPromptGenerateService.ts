@@ -16,7 +16,7 @@ import {
   AnomalyEngine,
   COLD_START_MIN_DAYS,
 } from '@ci/domains/daily-metrics';
-import { OllamaService, PROMPT_MODEL } from '@ci/domains/llm';
+import { OllamaService, PROMPT_MODEL } from '@ci/domains/llm/services/OllamaService';
 import { UserContextService } from '@ci/domains/memory';
 import { localDateInTZ, todayInTZ, zonedWallTimeToUTC } from '@ci/domains/planning';
 

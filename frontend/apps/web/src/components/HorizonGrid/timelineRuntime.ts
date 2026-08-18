@@ -129,9 +129,13 @@ export function syncTimeaxisLabelCollision(root: ParentNode): void {
  * cdn.knightlab.com. `font`/`theme` false skips Google Fonts CSS.
  * Do not start at 89× — that TimeNav canvas is the remaining CPU cost.
  *
- * `optimal_tick_width` must stay near Knight Lab's 100px default. 280px was
- * wider than an hour at 8×, so TimeNav hid every hour label until max zoom.
+ * `optimal_tick_width` drives both the major/minor unit ladder and label
+ * densify. Smaller → more minor ticks (ruler marks); labels still cull when
+ * crowded. 280px was wider than an hour at 8× and wiped hour labels.
  */
+/** Target px between labeled ticks; densified ticks stay as short ruler marks. */
+export const TIMELINE_OPTIMAL_TICK_WIDTH = 48;
+
 export function timelineJsOptions({
   width,
   startAtSlide,
@@ -160,7 +164,7 @@ export function timelineJsOptions({
     font: false,
     theme: false,
     language: languageUrl,
-    optimal_tick_width: 100,
+    optimal_tick_width: TIMELINE_OPTIMAL_TICK_WIDTH,
     scale_factor: TIMELINE_INITIAL_SCALE_FACTOR,
     initial_zoom: TIMELINE_INITIAL_ZOOM_INDEX,
     zoom_sequence: [...TIMELINE_ZOOM_SEQUENCE],

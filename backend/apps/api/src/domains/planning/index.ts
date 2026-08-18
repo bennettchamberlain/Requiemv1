@@ -20,7 +20,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EventsModule } from '@ci/domains/events';
-import { LlmCoreModule } from '@ci/domains/llm';
+import { LlmCoreModule } from '@ci/domains/llm/core.module';
 import { EventEntity, MemoryModule } from '@ci/domains/memory';
 import { PersonalizationModule } from '@ci/domains/personalization';
 import { SearchNextModule } from '@ci/domains/search-next';

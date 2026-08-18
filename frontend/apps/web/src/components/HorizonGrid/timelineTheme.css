@@ -320,7 +320,7 @@
   .tl-timeaxis
   .tl-timeaxis-content-container
   .tl-timeaxis-major
-  .tl-timeaxis-tick
+  .tl-timeaxis-tick:not(.tl-timeaxis-tick-hidden)
   .tl-timeaxis-tick-text {
   color: var(--tl-axis-fg) !important;
   text-shadow: none !important;
@@ -336,21 +336,29 @@
   border-color: var(--tl-line-strong) !important;
   color: transparent !important;
   opacity: 1 !important;
+  /* Tall ruler edge */
+  font-size: 16px !important;
+  line-height: 16px !important;
 }
 
 /*
- * Minor ticks are hours on zoomed-out views (and minutes at max zoom). Show
- * the ones TimelineJS kept; densified ones get .tl-timeaxis-tick-hidden.
+ * Minor ticks are the fine ruler scale (hours zoomed out, minutes at max zoom).
+ * Densified ones keep short marks; only labels drop when crowded.
  */
-.schedule-today-timeline .tl-timeaxis .tl-timeaxis-content-container .tl-timeaxis-minor .tl-timeaxis-tick,
+.schedule-today-timeline .tl-timeaxis .tl-timeaxis-content-container .tl-timeaxis-minor .tl-timeaxis-tick {
+  color: var(--tl-axis-fg) !important;
+  text-shadow: none !important;
+}
+
 .schedule-today-timeline
   .tl-timeaxis
   .tl-timeaxis-content-container
   .tl-timeaxis-minor
-  .tl-timeaxis-tick
+  .tl-timeaxis-tick:not(.tl-timeaxis-tick-hidden)
   .tl-timeaxis-tick-text {
   color: var(--tl-axis-fg) !important;
   text-shadow: none !important;
+  opacity: 1 !important;
 }
 
 .schedule-today-timeline
@@ -370,33 +378,36 @@
   border-left: 1px solid var(--tl-line) !important;
   border-color: var(--tl-line) !important;
   color: transparent !important;
-  opacity: 0.55 !important;
+  opacity: 0.65 !important;
+  /* Medium ruler division */
+  font-size: 9px !important;
+  line-height: 9px !important;
 }
 
 .schedule-today-timeline
   .tl-timeaxis
   .tl-timeaxis-content-container
-  .tl-timeaxis-tick
+  .tl-timeaxis-tick:not(.tl-timeaxis-tick-hidden)
   .tl-timeaxis-tick-text
   small,
 .schedule-today-timeline
   .tl-timeaxis
   .tl-timeaxis-content-container
   .tl-timeaxis-major
-  .tl-timeaxis-tick
+  .tl-timeaxis-tick:not(.tl-timeaxis-tick-hidden)
   .tl-timeaxis-tick-text
   span,
 .schedule-today-timeline
   .tl-timeaxis
   .tl-timeaxis-content-container
   .tl-timeaxis-minor
-  .tl-timeaxis-tick
+  .tl-timeaxis-tick:not(.tl-timeaxis-tick-hidden)
   .tl-timeaxis-tick-text
   span,
 .schedule-today-timeline
   .tl-timeaxis
   .tl-timeaxis-content-container
-  .tl-timeaxis-tick
+  .tl-timeaxis-tick:not(.tl-timeaxis-tick-hidden)
   .tl-timeaxis-tick-text
   .tl-timeaxis-timesuffix {
   /* Knight Lab puts AM/PM in .tl-timeaxis-timesuffix; on minor ticks it is #e6e6e6. */
@@ -429,14 +440,11 @@
   white-space: nowrap !important;
 }
 
-.schedule-today-timeline
-  .tl-timeaxis
-  .tl-timeaxis-content-container
-  .tl-timeaxis-tick.tl-timeaxis-tick-hidden,
-.schedule-today-timeline
-  .tl-timeaxis
-  .tl-timeaxis-content-container
-  .tl-timeaxis-tick.tl-timeaxis-tick-hidden:before,
+/*
+ * Ruler densify: TimelineJS marks overflow ticks as .tl-timeaxis-tick-hidden.
+ * Keep the mark (short / faint); drop only the label. Zoomed-out crowding
+ * still removes label detail via densify + our collision pass.
+ */
 .schedule-today-timeline
   .tl-timeaxis
   .tl-timeaxis-content-container
@@ -445,6 +453,26 @@
   display: none !important;
   visibility: hidden !important;
   opacity: 0 !important;
+}
+
+.schedule-today-timeline
+  .tl-timeaxis
+  .tl-timeaxis-content-container
+  .tl-timeaxis-major
+  .tl-timeaxis-tick.tl-timeaxis-tick-hidden:before {
+  opacity: 0.55 !important;
+  font-size: 10px !important;
+  line-height: 10px !important;
+}
+
+.schedule-today-timeline
+  .tl-timeaxis
+  .tl-timeaxis-content-container
+  .tl-timeaxis-minor
+  .tl-timeaxis-tick.tl-timeaxis-tick-hidden:before {
+  opacity: 0.4 !important;
+  font-size: 5px !important;
+  line-height: 5px !important;
 }
 
 /* ── Markers ───────────────────────────────────────────────────────────────── */

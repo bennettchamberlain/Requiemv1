@@ -13,7 +13,7 @@ import {
 } from '@ci/domains/daily-metrics';
 import { GraphIngestService } from '@ci/domains/graph';
 import { AnswerService, QuestionService } from '@ci/domains/intelligence';
-import { OllamaService, PROMPT_MODEL } from '@ci/domains/llm';
+import { OllamaService, PROMPT_MODEL } from '@ci/domains/llm/services/OllamaService';
 import { EventService } from '@ci/domains/memory';
 import { todayInTZ } from '@ci/domains/planning';
 
