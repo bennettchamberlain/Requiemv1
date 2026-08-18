@@ -213,6 +213,39 @@ describe('SecondaryNavigation', () => {
     expect(screen.queryByRole('link', { name: 'Import' })).not.toBeInTheDocument();
   });
 
+  it('shows Memory hub sections when expanded, and keeps them open on a hub route', () => {
+    renderRail('/memory/people', { expanded: true });
+
+    expect(screen.getByRole('link', { name: 'Events' })).toHaveAttribute('href', '/memory/events');
+    expect(screen.getByRole('link', { name: 'People' })).toHaveAttribute('href', '/memory/people');
+    expect(screen.getByRole('link', { name: 'Places' })).toHaveAttribute('href', '/memory/places');
+    expect(screen.getByRole('link', { name: 'Things' })).toHaveAttribute('href', '/memory/things');
+    expect(screen.getByRole('link', { name: 'Content' })).toHaveAttribute('href', '/memory/content');
+    expect(screen.getByRole('link', { name: 'Tags' })).toHaveAttribute('href', '/memory/tags');
+    expect(screen.getByRole('link', { name: 'Questions' })).toHaveAttribute('href', '/memory/questions');
+    expect(screen.getByRole('link', { name: 'People' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('opens Memory sections on hover when expanded, and closes after leave when not sticky', () => {
+    renderRail('/plan', { expanded: true });
+
+    expect(screen.queryByRole('link', { name: 'People' })).not.toBeInTheDocument();
+
+    const memory = screen.getByRole('link', { name: 'Memory' });
+    fireEvent.mouseEnter(memory.parentElement!.parentElement!);
+    expect(screen.getByRole('link', { name: 'People' })).toBeInTheDocument();
+
+    fireEvent.mouseLeave(memory.parentElement!.parentElement!);
+    expect(screen.queryByRole('link', { name: 'People' })).not.toBeInTheDocument();
+  });
+
+  it('keeps Memory sections open after a sticky chevron open even off hub routes', () => {
+    renderRail('/plan', { expanded: true });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Memory sections' }));
+    expect(screen.getByRole('link', { name: 'People' })).toBeInTheDocument();
+  });
+
   it('lists the spine then More in time-and-tool order', () => {
     renderRail();
 
@@ -220,8 +253,8 @@ describe('SecondaryNavigation', () => {
 
     expect(hrefs.indexOf('/plan')).toBeLessThan(hrefs.indexOf('/today'));
     expect(hrefs.indexOf('/today')).toBeLessThan(hrefs.indexOf('/forecast'));
-    expect(hrefs.indexOf('/forecast')).toBeLessThan(hrefs.indexOf('/memory'));
-    expect(hrefs.indexOf('/memory')).toBeLessThan(hrefs.indexOf('/saved-searches'));
+    expect(hrefs.indexOf('/forecast')).toBeLessThan(hrefs.indexOf('/memory/events'));
+    expect(hrefs.indexOf('/memory/events')).toBeLessThan(hrefs.indexOf('/saved-searches'));
     expect(hrefs.indexOf('/saved-searches')).toBeLessThan(hrefs.indexOf('/chat'));
     expect(hrefs.indexOf('/chat')).toBeLessThan(hrefs.indexOf('/sources'));
     expect(hrefs.indexOf('/sources')).toBeLessThan(hrefs.indexOf('/jobs'));

@@ -81,18 +81,18 @@ beforeEach(() => {
   h.search = { data: [], tags: [], loading: false, error: undefined };
 });
 
-describe('GlobalSearchBox on /memory', () => {
+describe('GlobalSearchBox on /memory/events', () => {
   it('writes the typed query live into ?search= (debounced)', async () => {
-    renderAt('/memory');
+    renderAt('/memory/events');
 
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'latte' } });
 
     await waitFor(() => expect(params().get('search')).toBe('latte'));
-    expect(path()).toBe('/memory');
+    expect(path()).toBe('/memory/events');
   });
 
   it('removes ?search= once the input is cleared back to empty', async () => {
-    renderAt('/memory?search=latte');
+    renderAt('/memory/events?search=latte');
 
     fireEvent.change(screen.getByRole('textbox'), { target: { value: '' } });
 
@@ -100,20 +100,20 @@ describe('GlobalSearchBox on /memory', () => {
   });
 
   it('seeds the input from an existing ?search= param', () => {
-    renderAt('/memory?search=vacation');
+    renderAt('/memory/events?search=vacation');
 
     expect(screen.getByRole('textbox')).toHaveValue('vacation');
   });
 
   it('Enter commits the trimmed text, leaves the box as-is, and remembers the query', async () => {
-    renderAt('/memory');
+    renderAt('/memory/events');
 
     const input = screen.getByRole('textbox');
     fireEvent.change(input, { target: { value: 'latte  ' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
     await waitFor(() => expect(params().get('search')).toBe('latte'));
-    // On /memory, commit deliberately does NOT remount (see the "Do NOT
+    // On /memory/events, commit deliberately does NOT remount (see the "Do NOT
     // remount here" comment in commitSearch in GlobalSearchBox.tsx): a
     // same-tick resetKey bump would remount before the async `search` param
     // update lands, feeding the fresh instance a stale-empty `defaultQuery`
@@ -125,12 +125,12 @@ describe('GlobalSearchBox on /memory', () => {
     expect(JSON.parse(localStorage.getItem('memoryRecentSearches') ?? '[]')).toEqual(['latte']);
   });
 
-  it('X clears both the query and the pinned explorer filters, staying on /memory', () => {
-    renderAt('/memory?search=foo&tags=vacation&notAFilter=keep');
+  it('X clears both the query and the pinned explorer filters, staying on /memory/events', () => {
+    renderAt('/memory/events?search=foo&tags=vacation&notAFilter=keep');
 
     fireEvent.click(screen.getByRole('button', { name: /clear search and filters/i }));
 
-    expect(path()).toBe('/memory');
+    expect(path()).toBe('/memory/events');
     expect(params().has('search')).toBe(false);
     expect(params().has('tags')).toBe(false);
     // Only `search` + the known FILTER_PARAMS are swept — not every param on the URL.
@@ -138,7 +138,7 @@ describe('GlobalSearchBox on /memory', () => {
   });
 
   it('"Clear search filters" removes only the pinned filters, leaving the query box alone', () => {
-    renderAt('/memory?tags=vacation&notAFilter=keep');
+    renderAt('/memory/events?tags=vacation&notAFilter=keep');
 
     engage(screen.getByRole('textbox'));
     fireEvent.click(screen.getByText('Clear search filters'));
@@ -148,7 +148,7 @@ describe('GlobalSearchBox on /memory', () => {
   });
 
   it('clicking "Search Memory for …" commits the same as Enter', async () => {
-    renderAt('/memory');
+    renderAt('/memory/events');
 
     const input = screen.getByRole('textbox');
     engage(input);
@@ -160,7 +160,7 @@ describe('GlobalSearchBox on /memory', () => {
   });
 });
 
-describe('GlobalSearchBox off /memory (jump-to launcher)', () => {
+describe('GlobalSearchBox off /memory/events (jump-to launcher)', () => {
   it('does not write the current route while typing — only the "jump to" suggestions react', async () => {
     renderAt('/dashboard');
 
@@ -169,31 +169,31 @@ describe('GlobalSearchBox off /memory (jump-to launcher)', () => {
     fireEvent.change(input, { target: { value: 'latte' } });
 
     // The action row is driven by the same debounced state as the URL write
-    // on /memory; its appearance proves the debounce landed.
+    // on /memory/events; its appearance proves the debounce landed.
     await screen.findByText('Search all of Memory for');
 
     expect(path()).toBe('/dashboard');
     expect(params().toString()).toBe('');
   });
 
-  it('Enter navigates to /memory?search=…, carrying forward pinned filters already on the URL', () => {
+  it('Enter navigates to /memory/events?search=…, carrying forward pinned filters already on the URL', () => {
     renderAt('/dashboard?tags=vacation');
 
     const input = screen.getByRole('textbox');
     fireEvent.change(input, { target: { value: 'latte' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
-    expect(path()).toBe('/memory');
+    expect(path()).toBe('/memory/events');
     expect(params().get('search')).toBe('latte');
     expect(params().get('tags')).toBe('vacation');
   });
 
-  it('X on a /memory sub-route resets back to the bare hub, dropping its filters', () => {
+  it('X on a /memory sub-route resets back to the Events explorer, dropping its filters', () => {
     renderAt('/memory/people/42?tags=vacation');
 
     fireEvent.click(screen.getByRole('button', { name: /clear search and filters/i }));
 
-    expect(path()).toBe('/memory');
+    expect(path()).toBe('/memory/events');
     expect(params().toString()).toBe('');
   });
 });
@@ -201,7 +201,7 @@ describe('GlobalSearchBox off /memory (jump-to launcher)', () => {
 describe('GlobalSearchBox suggestions', () => {
   it('shows recent searches on focus and commits the one clicked', () => {
     localStorage.setItem('memoryRecentSearches', JSON.stringify(['latte']));
-    renderAt('/memory');
+    renderAt('/memory/events');
 
     engage(screen.getByRole('textbox'));
     fireEvent.click(screen.getByText('latte'));
@@ -211,7 +211,7 @@ describe('GlobalSearchBox suggestions', () => {
 
   it('removing a recent search does not commit it', () => {
     localStorage.setItem('memoryRecentSearches', JSON.stringify(['latte']));
-    renderAt('/memory');
+    renderAt('/memory/events');
 
     engage(screen.getByRole('textbox'));
     fireEvent.click(screen.getByRole('button', { name: /remove.*latte.*from recent searches/i }));
@@ -230,7 +230,7 @@ describe('GlobalSearchBox suggestions', () => {
 
     fireEvent.click(await screen.findByText('#vacation'));
 
-    expect(path()).toBe('/memory');
+    expect(path()).toBe('/memory/events');
     expect(params().get('tags')).toBe('vacation');
     expect(params().has('search')).toBe(false);
   });

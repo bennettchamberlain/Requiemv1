@@ -10,7 +10,7 @@ import { expect, test } from '@playwright/test';
 // The active view lives in the `?view=` param.
 
 test('defaults to the list view with seeded results', async ({ page }) => {
-  await page.goto('/memory');
+  await page.goto('/memory/events');
 
   // Default view is list; the header nav-views tab names the active view.
   const listTab = page.getByRole('button', { name: 'List view' });
@@ -26,7 +26,7 @@ const VIEWS = [
 
 for (const { label, view } of VIEWS) {
   test(`switches to the ${view} view`, async ({ page }) => {
-    await page.goto('/memory');
+    await page.goto('/memory/events');
 
     await page.getByRole('button', { name: `${label} view` }).click();
     await expect(page).toHaveURL(new RegExp(`view=${view}`));

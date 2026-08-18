@@ -15,7 +15,7 @@ test('brief redirects to today on mobile', async ({ page }) => {
 });
 
 test('memory list view renders on mobile', async ({ page }) => {
-  await page.goto('/memory');
+  await page.goto('/memory/events');
 
   // MobileMemoryPage uses a Radix Tabs list (role="tab"), not the desktop
   // header's aria-labelled view buttons — "List view" is a desktop-only label.

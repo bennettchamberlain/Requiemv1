@@ -27,7 +27,7 @@ function params(): URLSearchParams {
   return new URLSearchParams(screen.getByTestId('query').textContent ?? '');
 }
 
-function renderFilter(props: Partial<React.ComponentProps<typeof EntityTypeFilter>> = {}, route = '/memory') {
+function renderFilter(props: Partial<React.ComponentProps<typeof EntityTypeFilter>> = {}, route = '/memory/events') {
   return renderWithProviders(
     <DropdownProvider args={[{ changeSearchParams: true }]}>
       <EntityTypeFilter modal={false} {...props} />
@@ -55,27 +55,27 @@ describe('EntityTypeFilter — trigger label', () => {
   });
 
   it('reads "No Entity Types" when every type is excluded', () => {
-    renderFilter({}, `/memory?excludedEntityTypes=${AVAILABLE_ENTITY_TYPES.join(',')}`);
+    renderFilter({}, `/memory/events?excludedEntityTypes=${AVAILABLE_ENTITY_TYPES.join(',')}`);
 
     expect(screen.getByRole('button', { name: /no entity types/i })).toBeInTheDocument();
   });
 
   it('names the single remaining type rather than saying "1 Entity Types"', () => {
     const allButPerson = AVAILABLE_ENTITY_TYPES.filter((t) => t !== 'Person');
-    renderFilter({}, `/memory?excludedEntityTypes=${allButPerson.join(',')}`);
+    renderFilter({}, `/memory/events?excludedEntityTypes=${allButPerson.join(',')}`);
 
     expect(screen.getByRole('button', { name: 'Person' })).toBeInTheDocument();
   });
 
   it('shows a count once more than one, but fewer than all, types are selected', () => {
-    renderFilter({}, '/memory?excludedEntityTypes=Person,Place');
+    renderFilter({}, '/memory/events?excludedEntityTypes=Person,Place');
 
     const remaining = AVAILABLE_ENTITY_TYPES.length - 2;
     expect(screen.getByRole('button', { name: `${remaining} Entity Types` })).toBeInTheDocument();
   });
 
   it('uses the given label instead, with an icon, regardless of selection', () => {
-    renderFilter({ label: 'What' }, '/memory?excludedEntityTypes=Person,Place');
+    renderFilter({ label: 'What' }, '/memory/events?excludedEntityTypes=Person,Place');
 
     const button = screen.getByRole('button', { name: 'What' });
     expect(button).toBeInTheDocument();

@@ -3,7 +3,6 @@ import type { ReactNode } from 'react';
 import { Collapsible, Tooltip, cn } from '@ci/shadcn';
 import {
   BookOpen,
-  Brain,
   ChevronRight,
   Cable,
   CalendarRange,
@@ -22,6 +21,7 @@ import { useFeatures } from '@/common/feature';
 import { usePowerRail } from '../PowerRailContext';
 import { NavUser } from '../PrimaryNavigation/NavUser';
 
+import { MemorySubmenu } from './MemorySubmenu';
 import { NavLink } from './NavLink';
 import { useFeedBadgeCount } from './useFeedBadgeCount';
 
@@ -180,9 +180,7 @@ export function SecondaryNavigation() {
                 <CloudSun className="h-6 w-6 shrink-0" strokeWidth={1.25} />
               </NavLink>
 
-              <NavLink to="/memory" label="Memory">
-                <Brain className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-              </NavLink>
+              <MemorySubmenu />
 
               <NavLink to="/saved-searches" label="Saved Searches">
                 <FolderSearch2 className="h-6 w-6 shrink-0" strokeWidth={1.25} />

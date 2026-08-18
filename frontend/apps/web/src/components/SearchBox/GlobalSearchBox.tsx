@@ -6,6 +6,7 @@ import { Clock, FilterX, Search, SearchX, X } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
+import { isMemoryExplorerPath, isMemoryHubPath } from '@/components/MemoryHub/memoryHubSections';
 import { DropdownProvider } from '@/components/SearchBox/useDropdown';
 import { useRecentSearches } from '@/hooks';
 import { useKeyboardShortcut } from '@/hooks/useKeyboardShortcut';
@@ -30,14 +31,6 @@ import { TagResult } from './results/TagResult';
 import { ThreadResult } from './results/ThreadResult';
 import { SearchBox, type SearchResultItem } from './SearchBox';
 import { useSearchService } from './useSearchService';
-
-function isMemoryExplorerPath(pathname: string): boolean {
-  return pathname === '/memory';
-}
-
-function isMemoryHubPath(pathname: string): boolean {
-  return pathname === '/memory' || pathname.startsWith('/memory/');
-}
 
 const RECENT_PREFIX = 'recent:';
 // Tag suggestion ids carry the label, not a GlobalUID — selecting one applies
@@ -169,7 +162,7 @@ export function GlobalSearchBox() {
         }
       }
 
-      navigate(`/memory?${params.toString()}`);
+      navigate(`/memory/events?${params.toString()}`);
       clearInput();
     },
     [addRecentSearch, clearInput, navigate, onMemoryExplorer, searchParams, setSearchParams],
@@ -411,7 +404,7 @@ export function GlobalSearchBox() {
     setQuery(null);
 
     if (onMemoryHub && !onMemoryExplorer) {
-      navigate('/memory', { replace: true });
+      navigate('/memory/events', { replace: true });
 
       return;
     }
@@ -487,7 +480,7 @@ export function GlobalSearchBox() {
       // Tag suggestion → the explorer filtered to the tag (its de facto detail
       // page); fresh params, like any other detail navigation.
       if (id.startsWith(TAG_PREFIX)) {
-        navigate(`/memory?tags=${encodeURIComponent(id.slice(TAG_PREFIX.length))}`);
+        navigate(`/memory/events?tags=${encodeURIComponent(id.slice(TAG_PREFIX.length))}`);
 
         return;
       }
