@@ -3,9 +3,16 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
 import { type UserServiceContext } from '@ci/common/context';
+import { isValidTimezone, localDateInTZ, todayInTZ, zonedWallTimeToUTC } from '@ci/common/time/zoned';
 import { isHomeConfirmSourceId } from '@ci/domains/daily-metrics';
 import { EventService } from '@ci/domains/memory';
-import { isValidTimezone, localDateInTZ, todayInTZ, zonedWallTimeToUTC } from '@ci/domains/planning';
+// These pure timezone functions live in common/, not domains/planning/, on
+// purpose: importing them via the `@ci/domains/planning` barrel pulled in
+// PlanningModule, which imports PersonalizationModule, which imports this
+// file back — a real cycle (dependency-cruiser flagged it) that also broke at
+// runtime as a TDZ ReferenceError. They have no planning-specific logic, so
+// moving them out of the planning domain removes the cycle at its source
+// instead of routing around it.
 
 import {
   durationFromSpan,

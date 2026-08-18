@@ -105,17 +105,21 @@ describe('GlobalSearchBox on /memory', () => {
     expect(screen.getByRole('textbox')).toHaveValue('vacation');
   });
 
-  it('Enter commits the trimmed text, empties the box, and remembers the query', () => {
+  it('Enter commits the trimmed text, leaves the box as-is, and remembers the query', async () => {
     renderAt('/memory');
 
     const input = screen.getByRole('textbox');
     fireEvent.change(input, { target: { value: 'latte  ' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
-    expect(params().get('search')).toBe('latte');
-    // Commit remounts the box (a fresh, empty input, refocused for the next
-    // search), so re-query rather than reuse the detached pre-commit node.
-    expect(screen.getByRole('textbox')).toHaveValue('');
+    await waitFor(() => expect(params().get('search')).toBe('latte'));
+    // On /memory, commit deliberately does NOT remount (see the "Do NOT
+    // remount here" comment in commitSearch in GlobalSearchBox.tsx): a
+    // same-tick resetKey bump would remount before the async `search` param
+    // update lands, feeding the fresh instance a stale-empty `defaultQuery`
+    // that then deletes `search` right back out of the URL. The input keeps
+    // showing exactly what was just committed instead.
+    expect(screen.getByRole('textbox')).toHaveValue('latte');
 
     // The trimmed (not raw) query is what gets remembered for next time.
     expect(JSON.parse(localStorage.getItem('memoryRecentSearches') ?? '[]')).toEqual(['latte']);

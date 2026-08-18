@@ -4,6 +4,7 @@ import { v7 as uuidv7 } from 'uuid';
 import type { UserServiceContext } from '@ci/common/context';
 import type { LoggerService } from '@ci/common/logging';
 import { BaseEntity, EventBaseEntity, EventEntity, EventService, GraphDeltaWriter } from '@ci/domains/memory';
+import { UserEntity } from '@ci/domains/user';
 
 import { acquireSchemaWriteLock, type SchemaLock } from '../../../__tests__/support/schemaLock';
 import { EventCandidateEntity } from '../../entities/EventCandidateEntity';
@@ -44,8 +45,10 @@ describeWithDb('CandidateService — accept / returnToSlate lifecycle (integrati
       type: 'postgres',
       url: DATABASE_URL,
       // EventBaseEntity is a @ChildEntity of the ci.entities STI tree, so its
-      // root has to be mapped alongside it for metadata to build.
-      entities: [EventCandidateEntity, EventEntity, BaseEntity, EventBaseEntity],
+      // root has to be mapped alongside it for metadata to build. UserEntity is
+      // needed too: EventEntity.user is a @ManyToOne(() => UserEntity), and
+      // TypeORM must be able to resolve every relation target's metadata.
+      entities: [EventCandidateEntity, EventEntity, BaseEntity, EventBaseEntity, UserEntity],
       synchronize: false,
       extra: { options: '-c search_path=ci,public' },
     });

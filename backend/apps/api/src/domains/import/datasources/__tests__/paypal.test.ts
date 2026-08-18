@@ -201,19 +201,19 @@ describe('PayPal recognize()', () => {
     });
   });
 
-  it('falls back to a moderate 0.5 confidence for "download.csv" whose header does not match', async () => {
+  it('gives zero confidence to "download.csv" whose header does not match — filename alone is not enough', async () => {
     await withTempFile('download.csv', NON_MATCHING_CSV, async (fpath) => {
       const fi = new PayPalFileImporter();
       const rec = await fi.recognize({}, { filename: 'download.csv', fullPath: fpath });
-      expect(rec.confidence).toBe(0.5);
+      expect(rec.confidence).toBe(0);
     });
   });
 
-  it('falls back to a moderate 0.5 confidence for a "paypal*.csv" filename whose header does not match', async () => {
+  it('gives zero confidence to a "paypal*.csv" filename whose header does not match — filename alone is not enough', async () => {
     await withTempFile('paypal_export_2024.csv', NON_MATCHING_CSV, async (fpath) => {
       const fi = new PayPalFileImporter();
       const rec = await fi.recognize({}, { filename: 'paypal_export_2024.csv', fullPath: fpath });
-      expect(rec.confidence).toBe(0.5);
+      expect(rec.confidence).toBe(0);
     });
   });
 
