@@ -347,6 +347,8 @@ export class OllamaService {
               model,
               messages: inputMessages.concat(accumulatedMessages),
               stream: true,
+              // Native Ollama: `think` is a first-class flag. vLLM is the other
+              // branch above and uses chat_template_kwargs.enable_thinking.
               ...(enableThinking && { think: true }),
               ...(iterationWillCallTools && { tools: ollamaTools }),
             });

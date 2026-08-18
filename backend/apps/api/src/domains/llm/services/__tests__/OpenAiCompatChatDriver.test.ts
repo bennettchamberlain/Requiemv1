@@ -1,6 +1,6 @@
 import type { Message as OllamaMessage, Tool } from 'ollama';
 
-import { toOpenAiMessages, toOpenAiTools } from '../OpenAiCompatChatDriver';
+import { extractEmbeddedToolCalls, toOpenAiMessages, toOpenAiTools } from '../OpenAiCompatChatDriver';
 
 describe('toOpenAiMessages', () => {
   it('passes plain system/user/assistant messages through', () => {
@@ -108,5 +108,55 @@ describe('toOpenAiTools', () => {
         },
       },
     ]);
+  });
+});
+
+describe('extractEmbeddedToolCalls', () => {
+  it('salvages Qwen3.6 XML tool markup that vLLM left in content', () => {
+    const content = `Let me record this.
+
+Calling memory_remember...
+<toolcall>
+<function=knowledgecreateEntity>
+<parameter=entityType>
+place
+</parameter>
+<parameter=name>
+377 Example Ave
+</parameter>
+<parameter=properties>
+{"address": "377 Example Ave"}
+</parameter>
+</function>
+</toolcall`;
+
+    const { prose, toolCalls } = extractEmbeddedToolCalls(content);
+
+    expect(prose).toContain('Let me record this.');
+    expect(prose).not.toContain('<toolcall>');
+    expect(toolCalls).toHaveLength(1);
+    expect(toolCalls[0].function.name).toBe('memory_remember');
+    expect(toolCalls[0].function.arguments).toEqual({
+      operations: [
+        {
+          kind: 'entity.create',
+          entityType: 'place',
+          name: '377 Example Ave',
+          properties: { address: '377 Example Ave' },
+        },
+      ],
+    });
+  });
+
+  it('parses qwen3_coder <tool_call> name-then-json blocks', () => {
+    const { prose, toolCalls } = extractEmbeddedToolCalls(
+      'On it.\n<tool_call>\nmemory_remember\n{"operations":[{"kind":"entity.create","entityType":"place","name":"Home"}]}\n</tool_call>',
+    );
+
+    expect(prose).toBe('On it.');
+    expect(toolCalls[0].function.name).toBe('memory_remember');
+    expect(toolCalls[0].function.arguments).toMatchObject({
+      operations: [{ kind: 'entity.create', entityType: 'place', name: 'Home' }],
+    });
   });
 });
