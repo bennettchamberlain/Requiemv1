@@ -63,7 +63,12 @@ export function PowerRailToggle() {
               ever laid out narrower again. `shrink-0` alone does not do this —
               it stops flex from shrinking the item, but max-width is a separate
               constraint and wins regardless. */}
-            <span className="warp-core relative grid size-8 shrink-0 place-items-center">
+            {/* 40px disc around a 32px mark: a 4px ring of plasma hugging the
+              logo. At the mark's own size the swirl was entirely behind an
+              opaque emblem and invisible; any wider and it stops reading as
+              part of the mark. Collapsed, the button is 40px too, so the disc
+              exactly fills the rail's padded box. */}
+            <span className="warp-core relative grid size-10 shrink-0 place-items-center">
               <img src={logo} alt="" className="warp-core-emitter size-8 max-w-none" />
             </span>
             {/* PINNED, not merely expanded. This button sits in the same `auto`

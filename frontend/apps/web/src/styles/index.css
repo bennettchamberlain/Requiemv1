@@ -209,7 +209,7 @@
   overflow: hidden;
   border-radius: 9999px;
   /* The only light outside the disc: static, so it can never streak. */
-  box-shadow: 0 0 9px -1px color-mix(in srgb, var(--primary) 45%, transparent);
+  box-shadow: 0 0 6px -1px color-mix(in srgb, var(--primary) 38%, transparent);
   isolation: isolate;
 }
 
