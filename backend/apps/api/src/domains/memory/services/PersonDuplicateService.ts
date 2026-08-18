@@ -102,6 +102,16 @@ export class PersonDuplicateService {
                          THEN p.properties->'emails' ELSE '[]'::jsonb END) AS v
             WHERE btrim(v) <> ''
            UNION ALL
+           SELECT p.entity_id, 'email', lower(btrim(p.properties->>'email'))
+             FROM people p
+            WHERE COALESCE(btrim(p.properties->>'email'), '') <> ''
+              AND (jsonb_typeof(p.properties->'emails') IS DISTINCT FROM 'array'
+                   OR NOT EXISTS (
+                     SELECT 1
+                       FROM jsonb_array_elements_text(p.properties->'emails') AS e(v)
+                      WHERE lower(btrim(e.v)) = lower(btrim(p.properties->>'email'))
+                   ))
+           UNION ALL
            SELECT p.entity_id, 'phone', right(regexp_replace(v, '\\D', '', 'g'), 10)
              FROM people p,
                   LATERAL jsonb_array_elements_text(
@@ -171,6 +181,18 @@ export class PersonDuplicateService {
 
       groups.push({ reason: row.kind, value: row.val, people });
     }
+
+    // Self-containing groups first so multi-platform owner stubs are obvious
+    // on Memory → People before weaker name collisions.
+    groups.sort((a, b) => {
+      const aSelf = a.people.some((person) => person.isSelf) ? 0 : 1;
+      const bSelf = b.people.some((person) => person.isSelf) ? 0 : 1;
+      if (aSelf !== bSelf) {
+        return aSelf - bSelf;
+      }
+
+      return 0;
+    });
 
     return groups;
   }
