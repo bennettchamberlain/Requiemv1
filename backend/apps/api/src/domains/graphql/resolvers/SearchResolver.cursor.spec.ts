@@ -46,6 +46,9 @@ function makeResolver() {
 
       return rows.map((row) => ({ id: row.id, type: 'content' as IndexableEntity }));
     }),
+    // Real COUNT(*) counterpart (see SearchResolver.countTimedEntities) — this
+    // suite only exercises cursor/keyset behavior, so a fixed true count suffices.
+    countEntitiesForContents: jest.fn(async () => CONTENT_ROWS.length),
   };
 
   const eventService = {
@@ -58,6 +61,7 @@ function makeResolver() {
 
       return [{ id: EVENT_ROW.id, type: 'event' as IndexableEntity }];
     }),
+    countEntitiesForEvents: jest.fn(async () => 1),
   };
 
   const entityResolutionService = {
@@ -91,7 +95,13 @@ function makeResolver() {
   };
 
   const empty = async () => [];
-  const stub = (method: string) => ({ [method]: jest.fn(empty) });
+  // Every timed-source service exposes both a `getEntitiesForX` (fetch) and a
+  // `countEntitiesForX` (real COUNT(*) — see SearchResolver.countTimedEntities);
+  // stub both so `search()` doesn't throw summing the total alongside the fetch.
+  const stub = (method: string) => ({
+    [method]: jest.fn(empty),
+    [method.replace('getEntitiesFor', 'countEntitiesFor')]: jest.fn(async () => 0),
+  });
 
   const resolver = new SearchResolver(
     stub('getEntitiesForBrowserActivities') as never,

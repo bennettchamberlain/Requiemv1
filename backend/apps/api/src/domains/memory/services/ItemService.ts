@@ -491,6 +491,30 @@ export class ItemService {
     return rows.map((row) => ({ id: row.id, type: 'item' as IndexableEntity }));
   }
 
+  /**
+   * True total of items matching the same filters {@link getEntitiesForItems} applies (minus
+   * the pagination-only `limit`/`order`/`afterTime`/`afterId`) — a real `COUNT(*)`, not the
+   * length of one `limit`-bounded page of identifiers. See EventService.countEntitiesForEvents.
+   */
+  async countEntitiesForItems(
+    context: ServiceContext,
+    options: { startTime?: Date; endTime?: Date },
+  ): Promise<number> {
+    let query = this.itemRepository
+      .createQueryBuilder('item')
+      .where('item.user_id = :userId', { userId: context.userId });
+
+    if (options.startTime) {
+      query = query.andWhere('item.created_at >= :startTime', { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere('item.created_at <= :endTime', { endTime: options.endTime });
+    }
+
+    return query.getCount();
+  }
+
   async findById(context: ServiceContext, id: string): Promise<Item | null> {
     const entity = await this.itemRepository.findOne({
       where: {

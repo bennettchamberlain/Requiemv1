@@ -568,6 +568,30 @@ export class ContentService {
   }
 
   /**
+   * True total of content matching the same filters {@link getEntitiesForContents} applies
+   * (minus the pagination-only `limit`/`order`/`afterTime`/`afterId`) — a real `COUNT(*)`, not
+   * the length of one `limit`-bounded page of identifiers. See EventService.countEntitiesForEvents.
+   */
+  async countEntitiesForContents(
+    context: ServiceContext,
+    options: { startTime?: Date; endTime?: Date },
+  ): Promise<number> {
+    let query = this.contentRepository
+      .createQueryBuilder('content')
+      .where('content.user_id = :userId', { userId: context.userId });
+
+    if (options.startTime) {
+      query = query.andWhere('content.created_at >= :startTime', { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere('content.created_at <= :endTime', { endTime: options.endTime });
+    }
+
+    return query.getCount();
+  }
+
+  /**
    * Batch-load content rows linked to each of `eventIds`, oldest first.
    * Returns one `Content[]` per input id (same order), so a GraphQL DataLoader
    * can resolve `Event.contents` in a single query. Ownership is scoped through

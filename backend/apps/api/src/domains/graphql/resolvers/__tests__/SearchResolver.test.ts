@@ -14,25 +14,61 @@ function makeResolver() {
     getEntitiesForTags: jest.fn().mockResolvedValue([] as Identifier[]),
     searchByLabel: jest.fn().mockResolvedValue([]),
   };
-  const eventService = { getEntitiesForEvents: jest.fn().mockResolvedValue([] as Identifier[]) };
+  // Every timed-source service also exposes a real-COUNT(*) `countEntitiesForX`
+  // counterpart (see SearchResolver.countTimedEntities) alongside its
+  // `getEntitiesForX` fetch — stubbed to 0 here since these tests assert on the
+  // fetch calls' args/results, not on totalCount.
+  const eventService = {
+    getEntitiesForEvents: jest.fn().mockResolvedValue([] as Identifier[]),
+    countEntitiesForEvents: jest.fn().mockResolvedValue(0),
+  };
   const browserActivityService = {
     getEntitiesForBrowserActivities: jest.fn().mockResolvedValue([] as Identifier[]),
+    countEntitiesForBrowserActivities: jest.fn().mockResolvedValue(0),
   };
   const communicationService = {
     getEntitiesForCommunications: jest.fn().mockResolvedValue([] as Identifier[]),
+    countEntitiesForCommunications: jest.fn().mockResolvedValue(0),
   };
-  const conceptService = { getEntitiesForConcepts: jest.fn().mockResolvedValue([] as Identifier[]) };
-  const contentService = { getEntitiesForContents: jest.fn().mockResolvedValue([] as Identifier[]) };
-  const itemService = { getEntitiesForItems: jest.fn().mockResolvedValue([] as Identifier[]) };
-  const noteService = { getEntitiesForNotes: jest.fn().mockResolvedValue([] as Identifier[]) };
-  const personService = { getEntitiesForPeople: jest.fn().mockResolvedValue([] as Identifier[]) };
-  const placeService = { getEntitiesForPlaces: jest.fn().mockResolvedValue([] as Identifier[]) };
-  const answerService = { getEntitiesForAnswers: jest.fn().mockResolvedValue([] as Identifier[]) };
+  const conceptService = {
+    getEntitiesForConcepts: jest.fn().mockResolvedValue([] as Identifier[]),
+    countEntitiesForConcepts: jest.fn().mockResolvedValue(0),
+  };
+  const contentService = {
+    getEntitiesForContents: jest.fn().mockResolvedValue([] as Identifier[]),
+    countEntitiesForContents: jest.fn().mockResolvedValue(0),
+  };
+  const itemService = {
+    getEntitiesForItems: jest.fn().mockResolvedValue([] as Identifier[]),
+    countEntitiesForItems: jest.fn().mockResolvedValue(0),
+  };
+  const noteService = {
+    getEntitiesForNotes: jest.fn().mockResolvedValue([] as Identifier[]),
+    countEntitiesForNotes: jest.fn().mockResolvedValue(0),
+  };
+  const personService = {
+    getEntitiesForPeople: jest.fn().mockResolvedValue([] as Identifier[]),
+    countEntitiesForPeople: jest.fn().mockResolvedValue(0),
+  };
+  const placeService = {
+    getEntitiesForPlaces: jest.fn().mockResolvedValue([] as Identifier[]),
+    countEntitiesForPlaces: jest.fn().mockResolvedValue(0),
+  };
+  const answerService = {
+    getEntitiesForAnswers: jest.fn().mockResolvedValue([] as Identifier[]),
+    countEntitiesForAnswers: jest.fn().mockResolvedValue(0),
+  };
   const entityResolutionService = { resolve: jest.fn().mockResolvedValue(new Map<string, Entry>()) };
   const savedSearchService = { findByShareToken: jest.fn().mockResolvedValue(null) };
 
-  const fileService = { getEntitiesForFiles: jest.fn().mockResolvedValue([]) };
-  const fileChunkService = { getEntitiesForFileChunks: jest.fn().mockResolvedValue([]) };
+  const fileService = {
+    getEntitiesForFiles: jest.fn().mockResolvedValue([]),
+    countEntitiesForFiles: jest.fn().mockResolvedValue(0),
+  };
+  const fileChunkService = {
+    getEntitiesForFileChunks: jest.fn().mockResolvedValue([]),
+    countEntitiesForFileChunks: jest.fn().mockResolvedValue(0),
+  };
   const resolver = new SearchResolver(
     browserActivityService as never,
     communicationService as never,
