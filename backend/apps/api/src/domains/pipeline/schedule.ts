@@ -161,6 +161,113 @@ export const STAGE_SCHEDULES: Record<StageId, StageSchedule> = {
   },
 
   /**
+   * The other dense-embed types, at content's cadence (search freshness is
+   * user-visible for all of them) but `scheduled` rather than `onArrival`:
+   * their live creates are still indexed immediately by the search-index
+   * listeners, and `StageArrivalListener` subscribes to no event for them yet —
+   * declaring `onArrival` here would promise a fast path that does not exist.
+   * The post-import kick reaches them directly through `startSweep`, so bulk
+   * loads do not wait for the hourly backstop either.
+   */
+  [STAGE_IDS.INDEX_EMBED_COMMUNICATION]: {
+    trigger: 'scheduled',
+    cost: 'contended',
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
+  },
+  [STAGE_IDS.INDEX_EMBED_EVENT]: {
+    trigger: 'scheduled',
+    cost: 'contended',
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
+  },
+  [STAGE_IDS.INDEX_EMBED_ITEM]: {
+    trigger: 'scheduled',
+    cost: 'contended',
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
+  },
+  [STAGE_IDS.INDEX_EMBED_PERSON]: {
+    trigger: 'scheduled',
+    cost: 'contended',
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
+  },
+  [STAGE_IDS.INDEX_EMBED_FILE]: {
+    trigger: 'scheduled',
+    cost: 'contended',
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
+  },
+  [STAGE_IDS.INDEX_EMBED_BROWSER_ACTIVITY]: {
+    trigger: 'scheduled',
+    cost: 'contended',
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
+  },
+
+  /**
+   * The tsvector family: pure local Postgres work (the `setweight` expression
+   * is computed by the database), so `local`, unwindowed, at the same hourly
+   * cadence — keyword search should not lag semantic search.
+   */
+  [STAGE_IDS.INDEX_VECTOR]: {
+    trigger: 'scheduled',
+    cost: 'local',
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
+  },
+  [STAGE_IDS.INDEX_VECTOR_COMMUNICATION]: {
+    trigger: 'scheduled',
+    cost: 'local',
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
+  },
+  [STAGE_IDS.INDEX_VECTOR_EVENT]: {
+    trigger: 'scheduled',
+    cost: 'local',
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
+  },
+  [STAGE_IDS.INDEX_VECTOR_ITEM]: {
+    trigger: 'scheduled',
+    cost: 'local',
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
+  },
+  [STAGE_IDS.INDEX_VECTOR_PERSON]: {
+    trigger: 'scheduled',
+    cost: 'local',
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
+  },
+  [STAGE_IDS.INDEX_VECTOR_FILE]: {
+    trigger: 'scheduled',
+    cost: 'local',
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
+  },
+  [STAGE_IDS.INDEX_VECTOR_BROWSER_ACTIVITY]: {
+    trigger: 'scheduled',
+    cost: 'local',
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
+  },
+
+  /**
    * NIGHTLY. sharp / ffprobe over `ci.files` originals — local CPU and object
    * storage, no provider, no bill.
    *

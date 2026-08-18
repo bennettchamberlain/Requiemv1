@@ -55,6 +55,7 @@ import { RecordRejectionEntity } from './entities/RecordRejectionEntity';
 import { DeadLetterReaperListener } from './listeners/DeadLetterReaperListener';
 import { PipelineSliceListener } from './listeners/PipelineSliceListener';
 import { PIPELINE_TICK, PipelineTickCron } from './listeners/PipelineTickCron';
+import { SearchIndexSweepRequestListener } from './listeners/SearchIndexSweepRequestListener';
 import { StageArrivalListener } from './listeners/StageArrivalListener';
 import { BackpressureService } from './services/BackpressureService';
 import { EnrichmentWindowService } from './services/EnrichmentWindowService';
@@ -72,6 +73,23 @@ import { MediaDimensionsStage } from './stages/enrich/MediaDimensionsStage';
 import { EventPersonLinkStage, PersonLinkStage } from './stages/enrich/PersonLinkStage';
 import { PositionReverseStage } from './stages/enrich/PositionReverseStage';
 import { EmbedStage } from './stages/index/EmbedStage';
+import {
+  BrowserActivityEmbedStage,
+  CommunicationEmbedStage,
+  EventEmbedStage,
+  FileEmbedStage,
+  ItemEmbedStage,
+  PersonEmbedStage,
+} from './stages/index/entityEmbedStages';
+import {
+  BrowserActivityVectorStage,
+  CommunicationVectorStage,
+  ContentVectorStage,
+  EventVectorStage,
+  FileVectorStage,
+  ItemVectorStage,
+  PersonVectorStage,
+} from './stages/index/vectorStages';
 import {
   CommunicationEdgePromoteStage,
   ContentEdgePromoteStage,
@@ -115,6 +133,22 @@ import { PlacePromoteStage } from './stages/promote/PlacePromoteStage';
 const stageProviders: Provider[] = [
   { provide: STAGE_REGISTRY[STAGE_IDS.ENRICH_MEDIA_DIMENSIONS], useClass: MediaDimensionsStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_EMBED], useClass: EmbedStage },
+  // The rest of the dense-embed family — one id per source table, one shared
+  // implementation (DenseEmbedStageBase), all at the model-derived version.
+  { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_EMBED_COMMUNICATION], useClass: CommunicationEmbedStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_EMBED_EVENT], useClass: EventEmbedStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_EMBED_ITEM], useClass: ItemEmbedStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_EMBED_PERSON], useClass: PersonEmbedStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_EMBED_FILE], useClass: FileEmbedStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_EMBED_BROWSER_ACTIVITY], useClass: BrowserActivityEmbedStage },
+  // The keyword-search (tsvector) family — same sources, local Postgres work.
+  { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_VECTOR], useClass: ContentVectorStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_VECTOR_COMMUNICATION], useClass: CommunicationVectorStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_VECTOR_EVENT], useClass: EventVectorStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_VECTOR_ITEM], useClass: ItemVectorStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_VECTOR_PERSON], useClass: PersonVectorStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_VECTOR_FILE], useClass: FileVectorStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_VECTOR_BROWSER_ACTIVITY], useClass: BrowserActivityVectorStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.ENRICH_POSITION_REVERSE], useClass: PositionReverseStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.ENRICH_GEOCODE], useClass: GeocodeStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.ENRICH_ESTIMATE_LOCATION], useClass: EstimateLocationStage },
@@ -213,6 +247,7 @@ const stageProviders: Provider[] = [
     // the ledger is the source of truth — a shed row simply stays stale and the
     // next sweep re-derives it, so there is no deferral queue to leak.
     StageArrivalListener,
+    SearchIndexSweepRequestListener,
     PipelineTickCron,
     // The cron owns the schedule and the cluster-safe advisory lock; the control
     // service owns what a tick DOES. Binding by token rather than importing the

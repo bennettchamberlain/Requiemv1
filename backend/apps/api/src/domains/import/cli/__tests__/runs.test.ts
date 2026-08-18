@@ -8,6 +8,7 @@ const summary = (overrides = {}) => ({
   label: 'takeout.zip',
   source: 'cli',
   dataSources: ['google_photos'],
+      declaredSources: null,
   status: 'running',
   percent: 42,
   requestedStages: ['unpack', 'parse', 'media', 'push'],

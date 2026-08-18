@@ -216,6 +216,7 @@ export type { Content } from './entities/ContentEntity';
 export type { PlaceKind } from './entities/PlaceEntity';
 export type { PlaceVisitStats } from './services/PlaceService';
 export { EntityMergeBlockEntity, orderPair, pairKey } from './entities/EntityMergeBlockEntity';
+export { previewFromContent } from './entities/CommunicationEntity';
 export type { BlockReason } from './services/EntityMergeBlockService';
 export type { PersonDuplicateGroup, DuplicateReason } from './services/PersonDuplicateService';
 export type { PersonInteractionStats } from './services/PersonActivityService';

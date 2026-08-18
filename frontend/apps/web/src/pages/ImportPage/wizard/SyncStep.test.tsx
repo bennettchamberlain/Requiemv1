@@ -40,8 +40,14 @@ vi.mock('../useImportApi', () => ({
   useImportApi: () => API,
 }));
 
-vi.mock('./LiveRun', () => ({
-  LiveRun: ({ runId }: { runId: string }) => <div>pipeline for {runId}</div>,
+vi.mock('./LiveRunList', () => ({
+  LiveRunList: ({ runIds }: { runIds: readonly string[] }) => (
+    <>
+      {runIds.map((id) => (
+        <div key={id}>pipeline for {id}</div>
+      ))}
+    </>
+  ),
 }));
 
 describe('SyncStep', () => {

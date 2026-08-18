@@ -93,4 +93,7 @@ export type {
   TruncateSearchIndexResult,
 } from './services/OrphanCleanupService';
 export { ENTITY_SOURCE_MAP } from './entitySourceMap';
+export * from './searchTexts';
+export { buildWeightedVectorSql } from './services/VectorService';
+export type { WeightedText } from './types';
 export type { EntitySource } from './entitySourceMap';

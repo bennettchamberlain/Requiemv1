@@ -56,6 +56,12 @@ export interface StartRunInput {
   source?: ImportRunSource;
 
   /**
+   * The importer(s) the user's service card stood for — validated by the
+   * controller against the registry. Stored verbatim; NULL means undeclared.
+   */
+  declaredSources?: readonly string[];
+
+  /**
    * Stage kinds to execute, in order. Defaults to {@link DEFAULT_STAGES}.
    * Naming them explicitly is how a re-run of a failed push will skip
    * re-reading a 40GB tree.
@@ -236,10 +242,10 @@ export class ImportRunService {
       }
 
       const runRows = await manager.query<Array<{ id: string }>>(
-        `INSERT INTO ci_import.import_runs (user_id, label, source, status, requested_stages)
-              VALUES ($1::uuid, $2, $3, 'queued', $4::text[])
+        `INSERT INTO ci_import.import_runs (user_id, label, source, status, requested_stages, declared_sources)
+              VALUES ($1::uuid, $2, $3, 'queued', $4::text[], $5::text[])
            RETURNING id`,
-        [ctx.userId, input.label ?? defaultLabel, input.source ?? 'wizard', kinds],
+        [ctx.userId, input.label ?? defaultLabel, input.source ?? 'wizard', kinds, input.declaredSources ?? null],
       );
 
       const runId = runRows[0].id;
@@ -512,13 +518,37 @@ export class ImportRunService {
    */
   async listRuns(
     ctx: UserServiceContext,
-    options: { limit?: number } = {},
+    options: {
+      limit?: number;
+      /**
+       * Keyset cursor: return runs strictly OLDER than this `(createdAt, id)`
+       * — the last row of the previous page. Keyset rather than offset because
+       * this list is paged while imports are still being created: an offset
+       * page shifts under a new row and either repeats or skips one, where a
+       * "strictly older than what I've seen" cursor cannot.
+       */
+      before?: { createdAt: Date; id: string };
+    } = {},
   ): Promise<(ImportRun & { records: number })[]> {
-    const runs = await this.dataSource.getRepository(ImportRunEntity).find({
-      where: { userId: ctx.userId },
-      order: { createdAt: 'DESC' },
-      take: Math.min(options.limit ?? 50, 200),
-    });
+    const query = this.dataSource
+      .getRepository(ImportRunEntity)
+      .createQueryBuilder('run')
+      .where('run.user_id = :userId', { userId: ctx.userId })
+      // `id DESC` tiebreak makes the order total, which keyset paging requires:
+      // two runs sharing a createdAt would otherwise straddle a page boundary
+      // in an order the cursor cannot express.
+      .orderBy('run.created_at', 'DESC')
+      .addOrderBy('run.id', 'DESC')
+      .take(Math.min(options.limit ?? 50, 200));
+
+    if (options.before != null) {
+      query.andWhere('(run.created_at, run.id) < (:beforeCreatedAt, :beforeId::uuid)', {
+        beforeCreatedAt: options.before.createdAt,
+        beforeId: options.before.id,
+      });
+    }
+
+    const runs = await query.getMany();
 
     if (runs.length === 0) {
       return [];

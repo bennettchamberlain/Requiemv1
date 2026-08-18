@@ -5,6 +5,10 @@ import {
   NodeEntity,
   RelationshipEntity,
 } from '@ci/domains/graph';
+import {
+  SEARCH_INDEX_BACKFILL_QUEUE,
+  SearchIndexBackfillRequestEvent,
+} from '@ci/domains/maintenance/events';
 import { GraphDeltaWriter } from '@ci/domains/memory';
 
 import { PushStage } from '../stages/PushStage';
@@ -107,6 +111,10 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
     const communications = { createManyDetailed: overrides.communicationCreate ?? record('communications') };
     const positions = { create: record('position') };
 
+    // The post-push kick rides pg-boss to the maintenance domain's sweep,
+    // tested in its own spec; here it only needs to record what was requested.
+    const signals = { send: jest.fn(async () => ['job-1']) };
+
     const stage = new PushStage(
       harness.dataSource,
       communications as never,
@@ -117,10 +125,11 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
       positions as never,
       { createManyDetailed: record('browser_activity') } as never,
       graph as never,
+      signals as never,
       logger as never,
     );
 
-    return { stage, sent, graph, communications, positions };
+    return { stage, sent, graph, communications, positions, signals };
   }
 
   function contextFor(runId: string): StageRunContext {
@@ -212,6 +221,44 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
     // the destination breakdown.
     expect(sent.filter((entry) => entry.destination === 'communications')).toHaveLength(1);
     expect(outcome.detail.destinations).not.toHaveProperty('communications');
+  });
+
+  it('requests a search-index backfill scoped to what it wrote, plus person for the entity lane', async () => {
+    const runId = await stageEmailWithParticipants();
+    const { stage, signals } = makeStage();
+
+    const outcome = await stage.run(contextFor(runId));
+
+    // One email pushed to communications + three contacts resolved: the kick
+    // asks for exactly those types, never the server's full default sweep.
+    expect(signals.send).toHaveBeenCalledTimes(1);
+    const [event, payload, options] = signals.send.mock.calls[0] as unknown[];
+    expect(event).toBe(SearchIndexBackfillRequestEvent);
+    expect(options).toEqual({ queue: SEARCH_INDEX_BACKFILL_QUEUE });
+    const { userId, entityTypes, requestedBy } = payload as {
+      userId: string;
+      entityTypes: string[];
+      requestedBy: string;
+    };
+    expect(new Set(entityTypes)).toEqual(new Set(['communication', 'person']));
+    expect(requestedBy).toBe(`import-run:${runId}`);
+    // The pipeline sweeps the listener starts are user-scoped; the request
+    // carries the import's owner.
+    expect(userId).toBe(harness.userId);
+    expect(outcome.detail.searchIndex).toMatchObject({
+      requested: expect.arrayContaining(['communication', 'person']),
+    });
+  });
+
+  it('reports a search-index request failure in detail without failing the push — the rows are already in ci.*', async () => {
+    const runId = await stageEmailWithParticipants();
+    const { stage, signals } = makeStage();
+    signals.send.mockRejectedValueOnce(new Error('pgboss down'));
+
+    const outcome = await stage.run(contextFor(runId));
+
+    expect(outcome.partial).toBe(false);
+    expect(outcome.detail.searchIndex).toMatchObject({ error: 'pgboss down' });
   });
 
   it('counts entities in its own total, so Read and Save agree on one import', async () => {

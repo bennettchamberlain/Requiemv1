@@ -5,6 +5,7 @@ import path from 'node:path';
 import { parseCSV } from './csv';
 import type { FileImporter, Recognition, DirEntry } from './registry';
 import { registerDataSource } from './registry';
+import { readHead } from './sniff';
 import type { ImportParams } from './timeline';
 import { timeframeContains } from './timeline';
 
@@ -202,8 +203,27 @@ export class LinkedInFileImporter implements FileImporter {
 
     if (stat.isDirectory()) {
       try {
+        // Verify the HEAD of whichever signature file is present — both names
+        // are generic enough to appear in other services' exports, and the
+        // directory branch used to claim on the name alone. Connections.csv
+        // carries a "Notes:" preamble before its header, so the check scans
+        // lines rather than trusting line one.
         const names = fs.readdirSync(root);
-        if (findFile(names, 'Connections.csv') || findFile(names, 'messages.csv')) {
+        const connections = findFile(names, 'Connections.csv');
+        const messages = findFile(names, 'messages.csv');
+        const connectionsOk =
+          connections != null &&
+          (readHead(path.join(root, connections)) ?? '')
+            .split(/\r?\n/)
+            .some((line) => line.trim().toLowerCase().startsWith('first name,last name,url'));
+        const messagesOk =
+          messages != null &&
+          ((readHead(path.join(root, messages)) ?? '').split(/\r?\n/)[0] ?? '')
+            .trim()
+            .toUpperCase()
+            .startsWith('CONVERSATION ID');
+
+        if (connectionsOk || messagesOk) {
           return { confidence: 0.9 };
         }
       } catch {

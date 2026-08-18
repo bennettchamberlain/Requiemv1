@@ -99,6 +99,12 @@ export interface ImportRun {
    * until the run has parsed.
    */
   readonly dataSources: readonly string[];
+  /**
+   * The importer(s) the user's service card stood for when the run started —
+   * null when nothing was declared (inbox, CLI, older runs). What makes the
+   * picker's "imported ✓" a claim about intent, not stray recognition.
+   */
+  readonly declaredSources?: readonly string[] | null;
   readonly status: string;
   readonly percent: number;
   readonly requestedStages: readonly string[];
@@ -182,7 +188,25 @@ export function isRunFinished(run: Pick<ImportRun, 'status'> | null | undefined)
 export function useImportApi() {
   const [{ authToken }] = useAuth();
 
-  const authHeaders = useCallback(() => ({ Authorization: `Bearer ${authToken ?? ''}` }), [authToken]);
+  /**
+   * The CURRENT token, readable from long-lived closures.
+   *
+   * `useAutoRefreshToken` rotates the session JWT on a schedule, and the
+   * upload loop in ExportStep runs for hours inside one closure — with the
+   * token captured directly, every file after a rotation was sent with the
+   * dead token and failed "Unauthorized" for the rest of the batch. Routing
+   * every request's header through this ref means even a stale closure signs
+   * with whatever token is live at SEND time. It also makes `authHeaders` —
+   * and therefore the whole returned api object — referentially stable across
+   * rotations, so consumers keyed on it stop refetching for no reason.
+   */
+  const tokenRef = useRef(authToken);
+
+  useEffect(() => {
+    tokenRef.current = authToken;
+  }, [authToken]);
+
+  const authHeaders = useCallback(() => ({ Authorization: `Bearer ${tokenRef.current ?? ''}` }), []);
 
   const listSources = useCallback(
     async (): Promise<ImportSource[]> =>
@@ -197,10 +221,29 @@ export function useImportApi() {
   );
 
   const listRuns = useCallback(
-    async (limit?: number): Promise<ImportRun[]> =>
-      (await fetchJson<ImportRun[]>(limit == null ? '/api/import/runs' : `/api/import/runs?limit=${limit}`, {
-        headers: authHeaders(),
-      })) ?? [],
+    async (limit?: number, before?: { createdAt: string; id: string }): Promise<ImportRun[]> => {
+      // Keyset cursor — the last run of the page already shown. See the
+      // endpoint: pages chain by (createdAt, id), immune to runs created
+      // while history is being read.
+      const params = new URLSearchParams();
+
+      if (limit != null) {
+        params.set('limit', String(limit));
+      }
+
+      if (before != null) {
+        params.set('beforeCreatedAt', before.createdAt);
+        params.set('beforeId', before.id);
+      }
+
+      const query = params.toString();
+
+      return (
+        (await fetchJson<ImportRun[]>(`/api/import/runs${query.length > 0 ? `?${query}` : ''}`, {
+          headers: authHeaders(),
+        })) ?? []
+      );
+    },
     [authHeaders],
   );
 
@@ -217,24 +260,83 @@ export function useImportApi() {
   );
 
   /**
-   * Upload one or more archives.
+   * Upload ONE archive, reporting byte progress as it goes.
    *
-   * Left as a bare `fetch` so the browser sets the multipart boundary. The
-   * response is one staged drop per file — a multi-part export produces several,
-   * because a drop is one uploaded archive.
+   * `XMLHttpRequest` rather than `fetch`, because fetch has no upload-progress
+   * events — and for a multi-hundred-GB Takeout part, the difference between a
+   * static "Uploading…" and a moving byte count is whether the person believes
+   * anything is happening. No explicit Content-Type either way: the browser
+   * must generate the multipart boundary itself.
+   *
+   * One file per request on purpose (this replaced a single POST carrying every
+   * file): a failure costs one archive instead of the whole batch, progress is
+   * attributable to a file, and the caller can start the finished drop's
+   * unpack+parse run while the next file is still uploading.
    */
-  const uploadFiles = useCallback(
-    async (files: readonly File[]): Promise<StagedDrop[]> => {
-      const form = new FormData();
+  const uploadFile = useCallback(
+    (file: File, onProgress?: (loadedBytes: number, totalBytes: number) => void): Promise<StagedDrop> =>
+      new Promise<StagedDrop>((resolve, reject) => {
+        const form = new FormData();
 
-      for (const file of files) {
         form.append('files', file);
-      }
 
-      const response = await postUpload(form, authHeaders());
+        const xhr = new XMLHttpRequest();
 
-      return (await response.json()) as StagedDrop[];
-    },
+        xhr.open('POST', '/api/import/uploads');
+
+        for (const [name, value] of Object.entries(authHeaders())) {
+          xhr.setRequestHeader(name, value);
+        }
+
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            onProgress?.(event.loaded, event.total);
+          }
+        };
+
+        xhr.onerror = () => reject(new Error('Upload failed: network error'));
+        xhr.ontimeout = () => reject(new Error('Upload failed: timed out'));
+
+        xhr.onload = () => {
+          if (xhr.status < 200 || xhr.status >= 300) {
+            // The same message extraction as describeFailure, over the XHR shape.
+            let message = `Upload failed (${xhr.status})`;
+
+            try {
+              const body = JSON.parse(xhr.responseText) as { message?: string | string[] };
+              const detail = Array.isArray(body.message) ? body.message.join(', ') : body.message;
+
+              if (detail) {
+                message = detail;
+              }
+            } catch {
+              // Not JSON — keep the status-code fallback.
+            }
+
+            reject(new Error(message));
+
+            return;
+          }
+
+          try {
+            // The endpoint answers one staged drop per file; this request
+            // carried exactly one.
+            const [drop] = JSON.parse(xhr.responseText) as StagedDrop[];
+
+            if (drop == null) {
+              reject(new Error('Nothing was uploaded'));
+
+              return;
+            }
+
+            resolve(drop);
+          } catch (err: unknown) {
+            reject(err instanceof Error ? err : new Error(String(err)));
+          }
+        };
+
+        xhr.send(form);
+      }),
     [authHeaders],
   );
 
@@ -243,6 +345,8 @@ export function useImportApi() {
    *
    * Each file is sent with its `webkitRelativePath` so the API can rebuild the
    * tree. One drop, one run — the same unit the inbox uses for a directory.
+   * (The wizard prefers packing a folder into one zip client-side; this is the
+   * no-zip fallback path and stays a single request.)
    */
   const uploadFolder = useCallback(
     async (files: readonly File[]): Promise<StagedDrop[]> => {
@@ -261,11 +365,15 @@ export function useImportApi() {
   );
 
   const startRun = useCallback(
-    async (dropId: string, options: { label?: string; stages?: readonly string[] } = {}) =>
+    async (
+      dropId: string,
+      options: { label?: string; stages?: readonly string[]; declaredSources?: readonly string[] } = {},
+    ) =>
       post<ImportRunDetail>('/api/import/runs', authHeaders(), {
         dropId,
         label: options.label,
         stages: options.stages,
+        declaredSources: options.declaredSources,
       }),
     [authHeaders],
   );
@@ -345,7 +453,7 @@ export function useImportApi() {
       listRuns,
       listUnpushed,
       getRun,
-      uploadFiles,
+      uploadFile,
       uploadFolder,
       startRun,
       startPush,
@@ -362,7 +470,7 @@ export function useImportApi() {
       listRuns,
       listUnpushed,
       getRun,
-      uploadFiles,
+      uploadFile,
       uploadFolder,
       startRun,
       startPush,
@@ -439,26 +547,79 @@ export function useRunProgress(runId: string | null, intervalMs = 2_000) {
   return { run, error, refresh: load } as const;
 }
 
-async function postUpload(form: FormData, headers: Record<string, string>): Promise<Response> {
-  let response: Response;
+/**
+ * Shared progress for MANY runs: one runs-list poll feeds every card.
+ *
+ * The wizard used to mount one {@link useRunProgress} per run — reasonable at
+ * three uploads, a self-inflicted flood at a Takeout's 140: each card polled
+ * the detail endpoint every two seconds and re-rendered on its own clock,
+ * which pegged the tab's renderer (and, Chrome sharing renderer processes
+ * same-site, every other tab of the app with it). This hook makes it ONE
+ * request per tick regardless of run count, and it stops itself once every
+ * watched run is finished.
+ *
+ * Returns summaries (no stages) — enough to say finished/failed/percent per
+ * run. The handful of runs still ACTIVE keep their detailed per-run poll via
+ * `LiveRun`; with parsing single-file that is one or two, not a hundred.
+ *
+ * `GET /import/runs` caps at 200, newest first; a watched id beyond that page
+ * simply stays unknown and its card falls back to the detailed poll.
+ */
+export function useRunsProgress(
+  runIds: readonly string[],
+  intervalMs = 2_000,
+): ReadonlyMap<string, ImportRun> {
+  const { listRuns, ready } = useImportApi();
+  const [runs, setRuns] = useState<ReadonlyMap<string, ImportRun>>(new Map());
+  // The ids as a value, so a parent re-render with a fresh (but equal) array
+  // does not restart the poll.
+  const idsKey = runIds.join(',');
 
-  try {
-    response = await fetch('/api/import/uploads', {
-      method: 'POST',
-      headers,
-      body: form,
-    });
-  } catch {
-    throw new Error(
-      'Could not reach the appliance. If you dropped a folder, use Choose folder — or upload the .zip.',
-    );
-  }
+  useEffect(() => {
+    const ids = idsKey.length === 0 ? [] : idsKey.split(',');
 
-  if (!response.ok) {
-    throw new Error(await describeFailure(response, 'Upload failed'));
-  }
+    if (!ready || ids.length === 0) {
+      return;
+    }
 
-  return response;
+    let cancelled = false;
+    let timer: number | undefined;
+
+    const tick = async () => {
+      try {
+        const page = await listRuns(200);
+
+        if (cancelled) {
+          return;
+        }
+
+        const wanted = new Set(ids);
+        const next = new Map(page.filter((run) => wanted.has(run.id)).map((run) => [run.id, run]));
+
+        setRuns(next);
+
+        const allFinished = ids.every((id) => isRunFinished(next.get(id)));
+
+        if (!allFinished) {
+          timer = window.setTimeout(() => void tick(), intervalMs);
+        }
+      } catch {
+        // A blip mid-import must not kill the poll; try again next tick.
+        if (!cancelled) {
+          timer = window.setTimeout(() => void tick(), intervalMs);
+        }
+      }
+    };
+
+    void tick();
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [idsKey, intervalMs, listRuns, ready]);
+
+  return runs;
 }
 
 async function post<T>(url: string, headers: Record<string, string>, body: unknown): Promise<T> {
@@ -482,6 +643,28 @@ async function post<T>(url: string, headers: Record<string, string>, body: unkno
  * upload has already been claimed" — and replacing them with a status code
  * throws away the only actionable part.
  */
+async function postUpload(form: FormData, headers: Record<string, string>): Promise<Response> {
+  let response: Response;
+
+  try {
+    response = await fetch('/api/import/uploads', {
+      method: 'POST',
+      headers,
+      body: form,
+    });
+  } catch {
+    throw new Error(
+      'Could not reach the appliance. If you dropped a folder, use Choose folder — or upload the .zip.',
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error(await describeFailure(response, 'Upload failed'));
+  }
+
+  return response;
+}
+
 async function describeFailure(response: Response, fallback: string): Promise<string> {
   try {
     const body = (await response.json()) as { message?: string | string[] };

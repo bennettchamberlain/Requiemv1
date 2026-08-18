@@ -15,6 +15,7 @@ import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 
 import { IMPORT_STAGE_KINDS, type ImportStageKindName } from '../constants';
 import { recognizePathWithinRoots, type PathRecognition } from '../datasources/recognizePath';
+import { allDataSources } from '../datasources/registry';
 import type { ImportRun } from '../entities/ImportRunEntity';
 import type { ImportStage } from '../entities/ImportStageEntity';
 import {
@@ -35,6 +36,12 @@ export interface RunSummary {
    * Empty until the parse stage has run.
    */
   dataSources: string[];
+  /**
+   * The importer(s) the user's service card stood for when this run was
+   * started from the wizard — see ImportRunEntity.declaredSources. Null when
+   * nothing was declared.
+   */
+  declaredSources: string[] | null;
   status: string;
   percent: number;
   /** Stage kinds this run intends to execute, so the bar can be drawn on the first poll. */
@@ -87,6 +94,12 @@ export interface StartRunBody {
    * committing to an import, so a caller can ask what is inside before deciding.
    */
   stages?: string[];
+  /**
+   * The importer name(s) the user's chosen service card covers — what makes
+   * the picker's "imported" mark trustworthy. Validated against the importer
+   * registry; omit when the upload carries no such intent (generic drops).
+   */
+  declaredSources?: string[];
 }
 
 /** A run whose parsed rows are waiting for a push, with what is waiting. */
@@ -191,21 +204,38 @@ export class ImportRunsController {
         label: body.label,
         source: 'api',
         stages: parseStages(body.stages),
+        declaredSources: parseDeclaredSources(body.declaredSources),
       },
     );
 
     return { ...toRunSummary(run), stages: stages.map(toStageSummary) };
   }
 
-  /** This user's runs, newest first. */
+  /**
+   * This user's runs, newest first, keyset-paged.
+   *
+   * `beforeCreatedAt` + `beforeId` (both or neither) are the last row of the
+   * page already shown; the response is runs strictly older than it. Cursor
+   * rather than offset because a Takeout session creates runs WHILE history is
+   * being read — an offset page shifts under new rows, a cursor cannot. The
+   * response stays a bare array: a page shorter than `limit` is the last one.
+   */
   @UseGuards(JwtOrApiKeyAuthGuard)
   @Get('runs')
-  async list(@Context() context: RequestContext, @Query('limit') limit?: string): Promise<RunSummary[]> {
+  async list(
+    @Context() context: RequestContext,
+    @Query('limit') limit?: string,
+    @Query('beforeCreatedAt') beforeCreatedAt?: string,
+    @Query('beforeId') beforeId?: string,
+  ): Promise<RunSummary[]> {
     const userId = requireUserId(context);
     const parsed = limit == null ? undefined : Number(limit);
     const runs = await this.runs.listRuns(
       { userId },
-      { limit: Number.isFinite(parsed) ? parsed : undefined },
+      {
+        limit: Number.isFinite(parsed) ? parsed : undefined,
+        before: parseBeforeCursor(beforeCreatedAt, beforeId),
+      },
     );
 
     return runs.map((run) => ({ ...toRunSummary(run), records: run.records }));
@@ -425,12 +455,79 @@ function parseStages(stages: string[] | undefined): ImportStageKindName[] | unde
   return stages as ImportStageKindName[];
 }
 
+/**
+ * Validate a declared-source list against the importer registry.
+ *
+ * Strict, because these strings become the picker's "you imported this"
+ * evidence: an unknown name would sit in the column forever, crediting
+ * nothing (harmless) or — worse — colliding with an importer added later
+ * (a claim nobody made). Deduplicated and capped so a buggy caller cannot
+ * grow the column without bound.
+ */
+function parseDeclaredSources(declared: string[] | undefined): string[] | undefined {
+  if (declared == null) {
+    return undefined;
+  }
+
+  if (!Array.isArray(declared) || declared.some((name) => typeof name !== 'string')) {
+    throw new BadRequestException('declaredSources must be an array of importer names');
+  }
+
+  const known = new Set(allDataSources().map((source) => source.name));
+  const unique = [...new Set(declared)];
+  const invalid = unique.filter((name) => !known.has(name));
+
+  if (invalid.length > 0) {
+    throw new BadRequestException(`Unknown declared source(s): ${invalid.join(', ')}`);
+  }
+
+  if (unique.length > 64) {
+    throw new BadRequestException('declaredSources: too many entries');
+  }
+
+  return unique.length > 0 ? unique : undefined;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The pagination cursor, validated strictly: both halves or neither, a real
+ * timestamp, a real uuid. Query params bypass `IdFormatGuard` (it reads route
+ * params), and `beforeId` reaches a `::uuid` cast — a malformed value must be
+ * a 400 here, not a 500 there.
+ */
+function parseBeforeCursor(
+  beforeCreatedAt: string | undefined,
+  beforeId: string | undefined,
+): { createdAt: Date; id: string } | undefined {
+  if (beforeCreatedAt == null && beforeId == null) {
+    return undefined;
+  }
+
+  if (beforeCreatedAt == null || beforeId == null) {
+    throw new BadRequestException('beforeCreatedAt and beforeId must be provided together');
+  }
+
+  const createdAt = new Date(beforeCreatedAt);
+
+  if (Number.isNaN(createdAt.getTime())) {
+    throw new BadRequestException('beforeCreatedAt must be a valid timestamp');
+  }
+
+  if (!UUID_RE.test(beforeId)) {
+    throw new BadRequestException('beforeId must be a uuid');
+  }
+
+  return { createdAt, id: beforeId };
+}
+
 function toRunSummary(run: ImportRun): RunSummary {
   return {
     id: run.id,
     label: run.label,
     source: run.source,
     dataSources: run.dataSources,
+    declaredSources: run.declaredSources,
     status: run.status,
     percent: run.percent,
     requestedStages: run.requestedStages,
