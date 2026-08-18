@@ -156,7 +156,7 @@ export function SecondaryNavigation() {
         )}
       >
         <Tooltip.Provider>
-          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto [scrollbar-gutter:stable]">
             <div className="flex flex-col gap-1">
               {isFeatureEnabled('planning.page') && (
                 <NavLink to="/plan" label="Plan">

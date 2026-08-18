@@ -231,11 +231,11 @@ describe('SecondaryNavigation', () => {
 
     expect(screen.queryByRole('link', { name: 'People' })).not.toBeInTheDocument();
 
-    const memory = screen.getByRole('link', { name: 'Memory' });
-    fireEvent.mouseEnter(memory.parentElement!.parentElement!);
+    const submenu = screen.getByTestId('memory-submenu');
+    fireEvent.mouseEnter(submenu);
     expect(screen.getByRole('link', { name: 'People' })).toBeInTheDocument();
 
-    fireEvent.mouseLeave(memory.parentElement!.parentElement!);
+    fireEvent.mouseLeave(submenu);
     expect(screen.queryByRole('link', { name: 'People' })).not.toBeInTheDocument();
   });
 
@@ -244,6 +244,17 @@ describe('SecondaryNavigation', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Expand Memory sections' }));
     expect(screen.getByRole('link', { name: 'People' })).toBeInTheDocument();
+  });
+
+  it('closes Memory sections when the chevron is clicked, even while hovered', () => {
+    renderRail('/plan', { expanded: true });
+
+    const submenu = screen.getByTestId('memory-submenu');
+    fireEvent.mouseEnter(submenu);
+    expect(screen.getByRole('link', { name: 'People' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse Memory sections' }));
+    expect(screen.queryByRole('link', { name: 'People' })).not.toBeInTheDocument();
   });
 
   it('lists the spine then More in time-and-tool order', () => {
