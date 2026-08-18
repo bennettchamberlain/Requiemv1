@@ -44,7 +44,7 @@ export function CaptureModal({ open = false, onClose }: Props) {
 
   const [
     { stream, loading, streaming, hasStartedReceiving },
-    { submit: submitChatRequest, stop: stopChatRequest },
+    { submit: submitChatRequest, stop: stopChatRequest, detach: detachChatStream },
   ] = useChatRequester({
     threadId,
   });
@@ -53,10 +53,10 @@ export function CaptureModal({ open = false, onClose }: Props) {
     setFiles([]);
     setThreadId(null);
     resetUploader();
-    stopChatRequest();
+    detachChatStream();
 
     onClose?.();
-  }, [onClose, resetUploader, stopChatRequest]);
+  }, [onClose, resetUploader, detachChatStream]);
 
   useEffect(() => {
     if (!open) {

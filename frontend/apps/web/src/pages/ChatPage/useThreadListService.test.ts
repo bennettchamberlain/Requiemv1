@@ -69,6 +69,20 @@ describe('useThreadListService', () => {
     await expect(result.current[1].delete('t1')).rejects.toThrow(/Failed to delete/);
   });
 
+  it('polls the thread list while any thread is queued or running', async () => {
+    const setIntervalSpy = vi.spyOn(window, 'setInterval');
+    setFetch(() => ok([{ ...thread('t1'), generationStatus: 'running' }]));
+
+    try {
+      const { result } = renderHook(() => useThreadListService());
+
+      await waitFor(() => expect(result.current[0].threads).toHaveLength(1));
+      expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 2000);
+    } finally {
+      setIntervalSpy.mockRestore();
+    }
+  });
+
   it('captures an error when the list request fails', async () => {
     setFetch(() => ({ ok: false, status: 500, text: async () => '' }) as Response);
 
