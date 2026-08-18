@@ -243,6 +243,14 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
   [STAGE_IDS.PROMOTE_OBJECT]: 1,
 
   /**
+   * v1 — scan-sighting promotion. A literal: this stage reads `capture.scan`
+   * metadata, which arrives whole from `/v1/events` and is rewritten by
+   * nothing. Bump when `extractScanObjects` changes what it pulls out of a
+   * scan — most likely when CI-Spatial widens its push past `{label, position}`.
+   */
+  [STAGE_IDS.PROMOTE_OBSERVATION]: 1,
+
+  /**
    * v3 — deterministic edge projection, all legs. Literals mirroring
    * derivations in `EdgePromoteStage.ts`, which throw at module load if any
    * line disagrees. The communication leg derives from the edge-matrix

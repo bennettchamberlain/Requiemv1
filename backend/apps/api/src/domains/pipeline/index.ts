@@ -103,6 +103,7 @@ import {
   ReceiptEdgePromoteStage,
 } from './stages/promote/EdgePromoteStage';
 import { ObjectPromoteStage } from './stages/promote/ObjectPromoteStage';
+import { ObservationPromoteStage } from './stages/promote/ObservationPromoteStage';
 import { PlacePromoteStage } from './stages/promote/PlacePromoteStage';
 
 /**
@@ -162,6 +163,7 @@ const stageProviders: Provider[] = [
   { provide: STAGE_REGISTRY[STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE], useClass: IdentifierNormalizeStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_PLACE], useClass: PlacePromoteStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_OBJECT], useClass: ObjectPromoteStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_OBSERVATION], useClass: ObservationPromoteStage },
   // Two ids, one implementation family — see `EdgePromoteStage.ts`. Both
   // delegate the projection to DeterministicEdgeBackfillService, exported by
   // MaintenanceModule (imported below).

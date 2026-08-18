@@ -5,7 +5,7 @@ import { toServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { OnEvent } from '@ci/domains/events';
 import { FileService, FileUploadedEvent, type FileUploadedPayload } from '@ci/domains/files';
-import { ItemService, type InventoryCondition } from '@ci/domains/memory';
+import { ItemService, ObjectObservationService, type InventoryCondition } from '@ci/domains/memory';
 
 import { OllamaService } from '../services/OllamaService';
 
@@ -52,12 +52,66 @@ const PROMPT = `
 
 const DEFAULT_MODEL = 'llama3.2-vision:11b';
 
+/**
+ * `source_kind` for a photo the user deliberately shot to catalogue their
+ * things. Distinguishes it from a passive frame in the observation timeline.
+ */
+const INVENTORY_SOURCE_KIND = 'photo';
+
+/**
+ * Records what the vision pass SAW as well as what it MINTED.
+ *
+ * ── Why this listener changed ──────────────────────────────────────────────
+ *
+ * `ci.object_observations`' migration header names this class as the thing it
+ * was written to fix: it "writes speculative ci.inventory rows straight from a
+ * vision guess", conflating "a coffee mug is visible in this photo" with "I own
+ * this specific coffee mug".
+ *
+ * What is NOT true is that every write here is speculative. This listener only
+ * runs when the upload carried `inventoryCapture: true` — an explicit,
+ * per-upload assertion by the user that they are cataloguing their own
+ * belongings (`FilesController` / `BulkFilesController` read it off the form).
+ * The user's intent to own is real; it is the model's item-by-item reading of
+ * the photo that is a guess.
+ *
+ * So the minting is kept — silently disabling a shipped, opted-into feature is
+ * not this change's business — and the guess is now RECORDED. Every item the
+ * model reads becomes a sighting first, and the minted `ci.inventory` row is
+ * attached to it as a resolution (`method: 'label'`), which leaves an auditable
+ * trail from pixels to owned unit where previously there was none: an inventory
+ * row simply appeared, with `metadata.original_analysis` as the only evidence
+ * and nothing queryable linking it to the frame it came from.
+ *
+ * FULLY severing this path — minting only above a configured auto-mint
+ * confidence and queueing the rest for review — is what the migration header
+ * describes as `ObjectResolutionService`'s job. That service does not exist
+ * yet, and the threshold it needs is a product decision, not a refactor.
+ */
+/** See the note on the identical helper in `CvDetectionsListener`. */
+function parseExternalDate(value: Date | string | null | undefined): Date | null {
+  if (value == null) {
+    return null;
+  }
+
+  // Typed `Date | null` on FileEntity and genuinely a Date at runtime — the
+  // column is `timestamptz` (`20260212130000_rebuild_files_table`) and the pg
+  // driver parses it off the wire OID, whatever the entity's stale
+  // `type: 'text'` decorator says. The string branch is kept because that
+  // decorator means a raw query or a future writer could hand back text, and
+  // the failure mode is `Invalid Date` in a NOT NULL column.
+  const parsed = value instanceof Date ? value : new Date(value);
+
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 @Injectable()
 export class InventoryListener {
   constructor(
     private readonly fileService: FileService,
     private readonly ollamaService: OllamaService,
     private readonly itemService: ItemService,
+    private readonly observationService: ObjectObservationService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(InventoryListener.name);
@@ -142,8 +196,41 @@ export class InventoryListener {
       });
     }
 
+    // The capture time of the pixels. `external_created_at` is TEXT and may be
+    // anything an importer wrote, so it is parsed defensively and falls back to
+    // the upload time.
+    const observedAt = parseExternalDate(file.externalCreatedAt) ?? file.createdAt;
+
     for (const itemData of items) {
       const condition = itemData.condition?.toLowerCase() ?? 'good';
+      const label = itemData.name?.trim() || 'Unknown Item';
+
+      // THE SIGHTING, recorded before anything is minted.
+      //
+      // This pass returns a list of items with NO bounding boxes, which is
+      // precisely the case `detectionKeyFor` picks its `label` scheme for: keyed
+      // on (file, detector, label), so re-running the model over the same photo
+      // updates each item in place, and two different objects in one frame stay
+      // two rows instead of collapsing into one.
+      const observation = await this.observationService.create(serviceContext, {
+        observedAt,
+        sourceKind: INVENTORY_SOURCE_KIND,
+        fileId: payload.fileId,
+        label,
+        labelSource: 'ollama_vision',
+        detector: model,
+        // No per-item score is available — the prompt does not ask for one, and
+        // a number invented here would outrank a genuinely measured one later.
+        detectionConfidence: null,
+        attributes: {
+          ...(itemData.condition != null && { condition: itemData.condition }),
+          ...(itemData.category != null && { category: itemData.category }),
+        },
+        metadata: {
+          inventory_capture: true,
+          original_analysis: itemData,
+        },
+      });
 
       const item = await this.itemService.create(serviceContext, {
         name: itemData.name || 'Unknown Item',
@@ -166,6 +253,21 @@ export class InventoryListener {
         itemId: item.id,
         name: item.name,
       });
+
+      // Attach the minted unit to the sighting it came from. `label` is the
+      // honest method: nothing matched an identifier or an embedding, the model
+      // read a name off a photo. Confidence is left unset rather than guessed.
+      //
+      // `create` returns null when the sighting matched a row a human has
+      // already confirmed; that row's resolution is theirs, so there is nothing
+      // to attach and nothing to log as a failure.
+      if (observation != null) {
+        await this.observationService.resolve(serviceContext, observation.id, {
+          resolvedObjectId: item.id,
+          resolutionMethod: 'label',
+          resolutionConfidence: null,
+        });
+      }
     }
 
     this.logger.log('Inventory processing completed');

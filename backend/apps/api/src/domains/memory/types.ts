@@ -1,6 +1,12 @@
 import type { Point } from 'typeorm';
 import { z } from 'zod';
 
+import type {
+  ObservationBoundingBox,
+  ObservationLabelSource,
+  ObservationResolutionMethod,
+  ObservationSourceKind,
+} from './entities/ObjectObservationEntity';
 import type { PlaceKind } from './entities/PlaceEntity';
 import { type NormalizedFieldMap, type PropertiesBag } from './normalizedProperties';
 
@@ -285,6 +291,111 @@ export interface UpdateItemDto {
   condition?: 'new' | 'like_new' | 'good' | 'fair' | 'poor' | 'broken' | 'n/a' | null;
   images?: string[];
   metadata?: Record<string, unknown> | undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Object observations — the SIGHTING half of object identity
+// ---------------------------------------------------------------------------
+
+/**
+ * A geographic point for an observation, named the way humans say it.
+ *
+ * Deliberately NOT TypeORM's `Point` (which is `{x, y}` and therefore silent
+ * about which one is which): every caller here is copying a `lat`/`lon` pair
+ * out of a capture payload, and the one bug that matters in this area is
+ * transposing them. `ObjectObservationService` does the swap to PostGIS'
+ * `ST_MakePoint(lon, lat)` in exactly one place.
+ */
+export interface ObservationCoordinates {
+  lat: number;
+  lon: number;
+}
+
+/**
+ * A sighting, as handed to {@link ObjectObservationService.create}.
+ *
+ * Carries DETECTION only. There is deliberately no way to set
+ * `resolvedObjectId`, `resolutionMethod` or `confirmedByUser` here — resolution
+ * is a separate, revisable decision reached through `resolve()` / `confirm()`,
+ * and a detector that could write it on the way in is the conflation
+ * `ci.object_observations` exists to prevent.
+ *
+ * `detectionKey` is absent for the same reason it is absent from the entity's
+ * public constructor surface: it is DERIVED by the service (see
+ * `detectionKeyFor`), never supplied. A caller-chosen key is a caller-chosen
+ * idempotency contract, which is how the same detector run lands twice.
+ */
+export interface CreateObjectObservationDto {
+  id?: string;
+  /** When the pixels were captured — NOT when the detector ran. */
+  observedAt: Date;
+  sourceKind?: ObservationSourceKind;
+
+  /** What the detector said, verbatim. Required: a label-less sighting carries no information. */
+  label: string;
+  labelSource?: ObservationLabelSource | null;
+  detector?: string | null;
+  detectorVersion?: string | null;
+  /** Detector confidence in [0, 1]. Clamped, never fabricated. */
+  detectionConfidence?: number | null;
+  bbox?: ObservationBoundingBox | null;
+
+  /** Where the pixels live. No FKs — content and files are purgeable. */
+  contentId?: string | null;
+  fileId?: string | null;
+  eventId?: string | null;
+  cropContentId?: string | null;
+
+  /** The resolution prior. See the note on `place_entity_id` in the migration. */
+  placeEntityId?: string | null;
+  coordinates?: ObservationCoordinates | null;
+
+  attributes?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+
+  /**
+   * Provenance triple — the idempotency arbiter for IMPORTED observations and
+   * for any source that carries a stable per-detection id of its own. When
+   * `sourceId` is set the row is keyed on the triple and `detection_key` stays
+   * NULL; when it is absent the service derives a `detection_key`. A row has
+   * one arbiter or the other, never both.
+   */
+  sourceType?: string | null;
+  sourceSystem?: string | null;
+  sourceId?: string | null;
+}
+
+/**
+ * A resolution decision, applied by {@link ObjectObservationService.resolve}.
+ *
+ * Never sets `confirmedByUser` — that flag has exactly one writer
+ * (`confirm()`), because HBPE and RAG are entitled to read it as "a human said
+ * so" rather than "something was fairly sure".
+ */
+export interface ResolveObjectObservationDto {
+  resolvedObjectId?: string | null;
+  resolvedProductId?: string | null;
+  /** How the link was reached. `'user'` is rejected here; use `confirm()`. */
+  resolutionMethod: Exclude<ObservationResolutionMethod, 'user'>;
+  /** Confidence in [0, 1]. Omit rather than invent one. */
+  resolutionConfidence?: number | null;
+}
+
+/** Scoped read filter for {@link ObjectObservationService.find}. */
+export interface FindObjectObservationsFilter {
+  placeEntityId?: string;
+  contentId?: string;
+  fileId?: string;
+  eventId?: string;
+  /** Exact label match, case-insensitive. */
+  label?: string;
+  /** `true` = only rows linked to an owned unit; `false` = only unlinked. */
+  resolved?: boolean;
+  confirmedByUser?: boolean;
+  observedFrom?: Date;
+  observedTo?: Date;
+  limit?: number;
+  offset?: number;
 }
 
 export interface CreatePersonDto {
