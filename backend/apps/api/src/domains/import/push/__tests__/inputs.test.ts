@@ -4,8 +4,10 @@ import type { StagedItem } from '../../entities/StagedItemEntity';
 import { toCanonical, type CanonicalRecord } from '../canonical';
 import {
   communicationTypeFor,
+  discordAttachmentContentInputs,
   toBrowserActivityInput,
   toCommunicationInput,
+  toContentInput,
   toEventInput,
   toInventoryInput,
   toPositionInput,
@@ -65,6 +67,142 @@ describe('the provenance triple', () => {
   });
 });
 
+describe('toContentInput', () => {
+  it('takes the content bucket from contentTypeFor, not the kind string directly', () => {
+    // classification 'play' -> kind 'media.play' -> bucket 'media'.
+    const play = recordFor({ classification: 'play', dataSource: 'spotify' });
+
+    expect(toContentInput(play).type).toBe('media');
+  });
+
+  it('replaces the per-item sourceId with a source URI, so every play of one track dedups to one row', () => {
+    // The exact bug in the file's own comment: without this, keying content on
+    // the per-play item id produced 7,339 rows for an archive that should have
+    // produced 2,354 — one per track/episode, not one per play.
+    const play = recordFor({
+      classification: 'play',
+      dataSource: 'spotify',
+      contentHash: 'play-event-1',
+      metadata: { URI: 'spotify:track:123', Track: 'Song Name' },
+    });
+
+    const input = toContentInput(play);
+
+    expect(input.external_id).toBe('spotify:track:123');
+    expect(input.source_id).toBe('spotify:track:123');
+    expect(input.source_id).not.toBe('play-event-1');
+  });
+
+  it('keeps the per-item sourceId when the record carries no URI', () => {
+    const purchase = recordFor({ classification: 'purchase', contentHash: 'order-line-9' });
+
+    expect(toContentInput(purchase).source_id).toBe('order-line-9');
+  });
+
+  it('points external_id at the uploaded file when the record reached content with no URI', () => {
+    // An undated photo, or any drive-walk document with no source URI — the
+    // upload leg (withContentMedia) stamps FileId just before the send.
+    const orphanPhoto = recordFor({
+      classification: 'photo',
+      occurredAt: null,
+      mediaType: 'image/jpeg',
+      metadata: { FileId: 'file-uuid-1', FileUrl: 'https://files.example/file-uuid-1' },
+    });
+
+    const input = toContentInput(orphanPhoto);
+
+    expect(input.external_id).toBe('file-uuid-1');
+    expect(input.url).toBe('https://files.example/file-uuid-1');
+    expect(input.mimetype).toBe('image/jpeg');
+  });
+
+  it('lets the file id win over a source URI when a record somehow carries both', () => {
+    // "The file id wins over a source URI: it identifies these bytes in
+    // CI-Server, which is what a consumer of this row needs." — the URI still
+    // wins on source_id (the dedup key stays keyed on the track), only
+    // external_id (what a consumer follows to the bytes) is overridden.
+    const play = recordFor({
+      classification: 'play',
+      dataSource: 'spotify',
+      metadata: { URI: 'spotify:track:123', FileId: 'file-uuid-2' },
+    });
+
+    const input = toContentInput(play);
+
+    expect(input.external_id).toBe('file-uuid-2');
+    expect(input.source_id).toBe('spotify:track:123');
+  });
+
+  it('does not let a stored file’s url clobber a url the source already gave', () => {
+    const bookmark = recordFor({
+      classification: 'saved_media',
+      metadata: { URL: 'https://example.com/article', FileUrl: 'https://files.example/should-not-win' },
+    });
+
+    expect(toContentInput(bookmark).url).toBe('https://example.com/article');
+  });
+});
+
+describe('toContentInput — Reddit media', () => {
+  // Reddit posts/comments reach the content lane ONLY for their media (see
+  // canonical.test.ts's destinationsFor coverage); this is the row's shape.
+
+  it('gives a link post’s image the post’s own title as both title and text', () => {
+    // A link post carries no self-text (Body), so `postText` (rec.description
+    // || rec.title) falls back to the post's own title — which is why the
+    // row's title and text end up identical here. A self-post's Body would
+    // take priority over the title instead (see the next test).
+    const post = recordFor({
+      classification: 'social',
+      dataSource: 'reddit',
+      metadata: {
+        Title: 'Check out this sunset',
+        URL: 'https://i.redd.it/abc123.jpg',
+        Subreddit: 'pics',
+        Kind: 'post',
+      },
+    });
+
+    const input = toContentInput(post);
+
+    expect(input.type).toBe('image');
+    expect(input.url).toBe('https://i.redd.it/abc123.jpg');
+    expect(input.title).toBe('Check out this sunset');
+    expect(input.text).toBe('Check out this sunset');
+    expect(input.mimetype).toBe('image/jpeg');
+    expect(input.source_system).toBe('reddit');
+  });
+
+  it('gives a comment’s inline media text but no title — the body already carries it', () => {
+    const comment = recordFor({
+      classification: 'social',
+      dataSource: 'reddit',
+      metadata: {
+        Body: 'Same spot, here is mine: https://i.redd.it/xyz789.png',
+        Subreddit: 'pics',
+        Kind: 'comment',
+      },
+    });
+
+    const input = toContentInput(comment);
+
+    expect(input.type).toBe('image');
+    expect(input.url).toBe('https://i.redd.it/xyz789.png');
+    expect(input.title).toBeUndefined();
+    expect(input.text).toContain('Same spot');
+  });
+
+  it('routes a v.redd.it link as video, not image', () => {
+    const post = recordFor({
+      classification: 'social',
+      dataSource: 'reddit',
+      metadata: { Title: 'Clip', URL: 'https://v.redd.it/abcde12345', Kind: 'post' },
+    });
+
+    expect(toContentInput(post).type).toBe('video');
+  });
+});
+
 describe('toCommunicationInput', () => {
   it('passes time as a Date, which the DTO requires', () => {
     // Upstream left this an ISO string for its HTTP sender to normalise.
@@ -83,6 +221,114 @@ describe('toCommunicationInput', () => {
     const outbound = recordFor({ classification: 'message', metadata: { Direction: 'sent' } });
 
     expect(toCommunicationInput(outbound).direction).toBe('outbound');
+  });
+
+  describe('Reddit posts and comments', () => {
+    it('files an authored post as outbound, subject = title, thread = subreddit', () => {
+      const post = recordFor({
+        classification: 'social',
+        dataSource: 'reddit',
+        metadata: { Title: 'My post', Body: 'body text', Subreddit: 'aww', Kind: 'post' },
+      });
+
+      const input = toCommunicationInput(post);
+
+      expect(input.communication_type).toBe(CommunicationType.POST);
+      expect(input.direction).toBe('outbound');
+      expect(input.subject).toBe('My post');
+      expect(input.thread_id).toBe('r/aww');
+    });
+
+    it('files a SAVED post as inbound — it was written by someone else', () => {
+      const saved = recordFor({
+        classification: 'social',
+        dataSource: 'reddit',
+        metadata: { Title: 'Someone else’s post', Subreddit: 'aww', Kind: 'saved_post' },
+      });
+
+      expect(toCommunicationInput(saved).direction).toBe('inbound');
+    });
+
+    it('leaves a comment’s subject blank — its body already carries the text in full', () => {
+      const comment = recordFor({
+        classification: 'social',
+        dataSource: 'reddit',
+        metadata: { Body: 'a reply', Subreddit: 'aww', Kind: 'comment' },
+      });
+
+      const input = toCommunicationInput(comment);
+
+      expect(input.subject).toBeUndefined();
+      expect(input.content).toBe('a reply');
+    });
+  });
+
+  describe('Discord attachment-only messages', () => {
+    it('leaves content blank rather than synthesizing a "Message — sender" label', () => {
+      const attachmentOnly = recordFor({
+        classification: 'message',
+        dataSource: 'discord',
+        metadata: { Attachments: 'https://cdn.discordapp.com/a/1/pic.png?ex=1', Sender: 'alice' },
+      });
+
+      expect(toCommunicationInput(attachmentOnly).content).toBe('');
+    });
+
+    it('keeps real caption text for a message that has both text and an attachment', () => {
+      const captioned = recordFor({
+        classification: 'message',
+        dataSource: 'discord',
+        metadata: {
+          Text: 'look at this',
+          Attachments: 'https://cdn.discordapp.com/a/1/pic.png?ex=1',
+        },
+      });
+
+      expect(toCommunicationInput(captioned).content).toBe('look at this');
+    });
+  });
+});
+
+describe('discordAttachmentContentInputs', () => {
+  it('builds one content row per attachment, decoding the filename out of the signed URL', () => {
+    const message = recordFor({
+      classification: 'message',
+      dataSource: 'discord',
+      contentHash: 'msg-1',
+      metadata: {
+        Attachments:
+          'https://cdn.discordapp.com/attachments/1/2/Screenshot%20from%202020.png?ex=1&is=2&hm=3 ' +
+          'https://cdn.discordapp.com/attachments/1/2/config?ex=1',
+      },
+    });
+
+    const inputs = discordAttachmentContentInputs(message);
+
+    expect(inputs).toHaveLength(2);
+    expect(inputs[0]).toMatchObject({
+      type: 'media',
+      title: 'Screenshot from 2020.png',
+      mimetype: 'image/png',
+      source_system: 'discord',
+      source_id: 'msg-1:attachment:0',
+    });
+    // A bare extension-less file (Discord uploads include env/config files) —
+    // mime-db can't type it at all, so it stays 'file' with no mimetype
+    // guess. No type beats a wrong one.
+    expect(inputs[1]).toMatchObject({ type: 'file', title: 'config', source_id: 'msg-1:attachment:1' });
+    expect(inputs[1].mimetype).toBeUndefined();
+  });
+
+  it('is empty for a message with no attachments, and for a non-Discord source', () => {
+    expect(discordAttachmentContentInputs(recordFor({ classification: 'message' }))).toEqual([]);
+
+    const twitterDm = recordFor({
+      classification: 'message',
+      dataSource: 'twitter',
+      metadata: { Attachments: 'https://cdn.discordapp.com/attachments/1/2/x.png' },
+    });
+
+    expect(discordAttachmentContentInputs(twitterDm)).toEqual([]);
   });
 });
 

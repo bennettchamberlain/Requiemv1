@@ -679,4 +679,178 @@ describeWithDatabase(`the import spine (${importDatabase.target})`, () => {
       }
     });
   });
+
+  // -------------------------------------------------------------------------
+  // The data-loss guard and its neighbours
+  // -------------------------------------------------------------------------
+
+  describe('hasUnstoredMedia', () => {
+    /**
+     * Stages one raw `ci_import.staged_items` row with exactly the columns
+     * `hasUnstoredMedia`'s predicate reads, so each case controls precisely one
+     * of them. Bypasses `StagedWriter` on purpose — this is a test of the SQL
+     * predicate itself, hand-duplicated from `MediaStage.mediaPredicate()`
+     * (see ImportRunService.ts, `hasUnstoredMedia`'s doc comment: "Mirrors
+     * MediaStage.mediaPredicate()"). A drift between the two — a classification
+     * added to `FILE_CLASSIFICATIONS` that this copy forgets, a metadata key
+     * renamed on one side only — is exactly what this proves does not exist,
+     * against the real column types and the real `~` regex operator.
+     */
+    async function stageRow(
+      runId: string,
+      overrides: {
+        mediaType?: string | null;
+        classification?: string | null;
+        intermediateLocation?: string | null;
+        originalLocation?: string | null;
+        metadata?: Record<string, unknown>;
+      } = {},
+    ): Promise<void> {
+      await dataSource.query(
+        `INSERT INTO ci_import.staged_items
+           (run_id, user_id, data_source, classification, content_hash, media_type,
+            intermediate_location, original_location, metadata)
+         VALUES ($1::uuid, $2::uuid, 'apple_photos', $3, $4, $5, $6, $7, $8::jsonb)`,
+        [
+          runId,
+          userId,
+          overrides.classification ?? null,
+          randomUUID(),
+          overrides.mediaType ?? null,
+          'intermediateLocation' in overrides ? overrides.intermediateLocation : '/scratch/IMG_0001.jpg',
+          overrides.originalLocation ?? null,
+          JSON.stringify(overrides.metadata ?? {}),
+        ],
+      );
+    }
+
+    it('is false for a run that has staged nothing yet', async () => {
+      const { run } = await startRun(await stageDrop());
+
+      expect(await service.hasUnstoredMedia(run.id)).toBe(false);
+    });
+
+    it('is true for an image on disk with no FileId yet', async () => {
+      const { run } = await startRun(await stageDrop());
+
+      await stageRow(run.id, { mediaType: 'image/jpeg' });
+
+      expect(await service.hasUnstoredMedia(run.id)).toBe(true);
+    });
+
+    it('is true for a file-backed classification even with no media MIME', async () => {
+      // FILE_CLASSIFICATIONS carries 'file' for exactly this case: a
+      // drive-walk document MediaStage still has to upload, whose MIME the
+      // parser never determined.
+      const { run } = await startRun(await stageDrop());
+
+      await stageRow(run.id, { mediaType: null, classification: 'file' });
+
+      expect(await service.hasUnstoredMedia(run.id)).toBe(true);
+    });
+
+    it('turns false once MediaStage stamps FileId', async () => {
+      const { run } = await startRun(await stageDrop());
+
+      await stageRow(run.id, { mediaType: 'image/jpeg', metadata: { FileId: randomUUID() } });
+
+      expect(await service.hasUnstoredMedia(run.id)).toBe(false);
+    });
+
+    it('turns false once MediaStage stamps FileMediaError instead', async () => {
+      // A row MediaStage tried and gave up on is SETTLED, not pending — the
+      // stage's own skip query reads the same way (see MediaStage's row
+      // selection), so a permanently-broken file must not wedge the reclaim
+      // guard forever.
+      const { run } = await startRun(await stageDrop());
+
+      await stageRow(run.id, { mediaType: 'image/jpeg', metadata: { FileMediaError: 'ENOENT' } });
+
+      expect(await service.hasUnstoredMedia(run.id)).toBe(false);
+    });
+
+    it('is false for a media row with no path on disk to lose', async () => {
+      // Neither intermediate_location nor original_location: there are no
+      // bytes on disk for the reclaim to destroy, so nothing is at risk.
+      const { run } = await startRun(await stageDrop());
+
+      await stageRow(run.id, {
+        mediaType: 'image/jpeg',
+        intermediateLocation: null,
+        originalLocation: null,
+      });
+
+      expect(await service.hasUnstoredMedia(run.id)).toBe(false);
+    });
+
+    it('is false for a plain text row that is neither media MIME nor a file classification', async () => {
+      const { run } = await startRun(await stageDrop());
+
+      await stageRow(run.id, { mediaType: 'text/plain', classification: 'email' });
+
+      expect(await service.hasUnstoredMedia(run.id)).toBe(false);
+    });
+
+    it('does not see another run’s unstored media', async () => {
+      const { run: runA } = await startRun(await stageDrop());
+      const { run: runB } = await startRun(await stageDrop());
+
+      await stageRow(runB.id, { mediaType: 'image/jpeg' });
+
+      expect(await service.hasUnstoredMedia(runA.id)).toBe(false);
+      expect(await service.hasUnstoredMedia(runB.id)).toBe(true);
+    });
+  });
+
+  describe('pulledRecords', () => {
+    it('is false for a run that has staged neither an item nor an entity', async () => {
+      const { run } = await startRun(await stageDrop());
+
+      expect(await service.pulledRecords(run.id)).toBe(false);
+    });
+
+    it('is true once the run has staged an item', async () => {
+      const { writer, runId } = await harness.writerFor('gmail');
+
+      writer.push({ item: { id: 'msg-1', classification: 'email' } });
+      await writer.settled();
+
+      expect(await service.pulledRecords(runId)).toBe(true);
+    });
+
+    it('is true for an entity-only run, e.g. a contact list with no items', async () => {
+      // The same asymmetry rankDataSources guards against on the naming side:
+      // a source that produced only entities is still something the run
+      // pulled, not an empty run.
+      const { writer, runId } = await harness.writerFor('contact_list');
+
+      writer.push({ entity: { name: 'Alice', attributes: [{ name: 'email', value: 'alice@example.com' }] } });
+      await writer.settled();
+
+      expect(await service.pulledRecords(runId)).toBe(true);
+    });
+  });
+
+  describe('runBelongsTo', () => {
+    it('is true for the run’s own owner', async () => {
+      const { run } = await startRun(await stageDrop());
+
+      expect(await service.runBelongsTo(run.id, userId)).toBe(true);
+    });
+
+    it('rejects a different user’s id — the check a worker makes before executing a stage', async () => {
+      // The tenancy guard itself: ImportStageListener trusts this before
+      // running a stage against payload.userId, precisely so a payload that
+      // disagreed with the run row could not file one account's data under
+      // another's. A test that only proves the true case cannot catch that.
+      const { run } = await startRun(await stageDrop());
+      const stranger = randomUUID();
+
+      expect(await service.runBelongsTo(run.id, stranger)).toBe(false);
+    });
+
+    it('is false for a run id that does not exist at all', async () => {
+      expect(await service.runBelongsTo(randomUUID(), userId)).toBe(false);
+    });
+  });
 });
