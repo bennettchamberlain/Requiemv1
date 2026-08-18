@@ -74,14 +74,13 @@ export class OpenAiCompatChatDriver {
         },
       }));
     const rawContent = choice?.message?.content ?? '';
-    const salvaged =
-      structured.length === 0 && request.tools && request.tools.length > 0
-        ? extractEmbeddedToolCalls(rawContent)
-        : { prose: rawContent, toolCalls: [] };
+    const salvaged = extractEmbeddedToolCalls(rawContent);
+    const toolCalls = structured.length > 0 ? structured : salvaged.toolCalls;
+    const content = toolCalls.length > 0 || salvaged.toolCalls.length > 0 ? stripToolMarkup(rawContent) : rawContent;
 
     return toChatResponse(request.model, {
-      content: salvaged.toolCalls.length > 0 ? salvaged.prose : rawContent,
-      toolCalls: structured.length > 0 ? structured : salvaged.toolCalls,
+      content,
+      toolCalls,
       done: true,
     });
   }
@@ -99,6 +98,7 @@ export class OpenAiCompatChatDriver {
     tools?: Tool[];
     signal?: AbortSignal;
     enableThinking?: boolean;
+    salvageTools?: boolean;
   }): AsyncGenerator<ChatResponse> {
     const stream = await this.client.chat.completions.create(
       {
@@ -115,7 +115,10 @@ export class OpenAiCompatChatDriver {
     // index, then argument string fragments for that index. Accumulate by index.
     const pendingToolCalls = new Map<number, { name: string; argumentChunks: string[] }>();
     const contentChunks: string[] = [];
-    const bufferContent = Boolean(request.tools && request.tools.length > 0);
+    // Buffer text whenever this chat may emit tool markup — including follow-up
+    // turns that no longer advertise tools. Streaming `<toolcall>` as TEXT is
+    // what made Confirm-home look like a successful call.
+    const bufferContent = Boolean(request.tools && request.tools.length > 0) || request.salvageTools === true;
 
     try {
       for await (const part of stream) {
@@ -174,12 +177,12 @@ export class OpenAiCompatChatDriver {
       }));
 
     const rawContent = contentChunks.join('');
-    const salvaged =
-      structured.length === 0 && bufferContent
-        ? extractEmbeddedToolCalls(rawContent)
-        : { prose: rawContent, toolCalls: [] };
+    const salvaged = extractEmbeddedToolCalls(rawContent);
     const toolCalls = structured.length > 0 ? structured : salvaged.toolCalls;
-    const prose = salvaged.toolCalls.length > 0 ? salvaged.prose : rawContent;
+    const prose =
+      toolCalls.length > 0 || salvaged.toolCalls.length > 0 || /<tool_?call\b|<function=/i.test(rawContent)
+        ? stripToolMarkup(rawContent)
+        : rawContent;
 
     if (bufferContent && prose.trim() !== '') {
       yield toChatResponse(request.model, { content: prose, done: false });
@@ -379,13 +382,16 @@ export function extractEmbeddedToolCalls(content: string): { prose: string; tool
     return { prose: content, toolCalls: [] };
   }
 
-  const prose = content
+  return { prose: stripToolMarkup(content), toolCalls };
+}
+
+/** Drop Qwen/vLLM tool XML (and the "Calling foo..." line) from assistant text. */
+export function stripToolMarkup(content: string): string {
+  return content
     .replace(/<tool_?call\b[^>]*>[\s\S]*?(?:<\/tool_?call>|$)/gi, '')
     .replace(/<function\s*=\s*[^>\s]+>[\s\S]*?(?:<\/function>|$)/gi, '')
     .replace(/Calling\s+\S+\.{0,3}\s*$/i, '')
     .trim();
-
-  return { prose, toolCalls };
 }
 
 function consumeQwenCoderBlock(block: string, toolCalls: ToolCall[]): void {
@@ -420,8 +426,19 @@ function coerceParamValue(raw: string): unknown {
  * GraphQL-ish mash (`knowledgecreateEntity`) with the same payload; wrap that
  * as the native write so the tool loop can actually run.
  */
-function normalizeSalvagedToolCall(name: string, args: Record<string, unknown>): ToolCall {
+function canonicalizeToolName(name: string): string {
   const intentName = name.replace(/\./g, '_');
+  const mashed = name.replace(/[_.-]/g, '').toLowerCase();
+
+  if (mashed === 'memoryremember') {
+    return 'memory_remember';
+  }
+
+  return intentName;
+}
+
+function normalizeSalvagedToolCall(name: string, args: Record<string, unknown>): ToolCall {
+  const intentName = canonicalizeToolName(name);
   const mashed = name.replace(/[_.-]/g, '').toLowerCase();
 
   if (mashed.endsWith('createentity') && (args.entityType != null || args.name != null)) {

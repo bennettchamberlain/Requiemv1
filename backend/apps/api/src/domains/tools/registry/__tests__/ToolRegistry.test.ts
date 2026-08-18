@@ -230,6 +230,30 @@ describe('ToolRegistry', () => {
 
       expect(result.error?.code).toBe('TOOL_NOT_FOUND');
     });
+
+    it('resolves mashed Qwen names like memoryremember onto memory_remember', async () => {
+      const { registry } = makeRegistry();
+      const write: IntentPrivacy = { ...READ_PRIVACY, access: 'write' };
+      await registry.registerProvider(
+        fakeProvider({ 'memory.remember': fakeTool('memory.remember', { ok: 1 }, write) }),
+      );
+
+      const result = await registry.executeTool('memoryremember', asCapability('write'), {});
+
+      expect(result.success).toBe(true);
+    });
+
+    it('routes invented memory_create_relationships onto memory_remember', async () => {
+      const { registry } = makeRegistry();
+      const write: IntentPrivacy = { ...READ_PRIVACY, access: 'write' };
+      await registry.registerProvider(
+        fakeProvider({ 'memory.remember': fakeTool('memory.remember', { ok: 1 }, write) }),
+      );
+
+      const result = await registry.executeTool('memory_create_relationships', asCapability('write'), {});
+
+      expect(result.success).toBe(true);
+    });
   });
 
   it('logs an egress warning when an external intent runs, and none when it does not', async () => {

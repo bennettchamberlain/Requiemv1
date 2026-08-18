@@ -159,4 +159,20 @@ place
       operations: [{ kind: 'entity.create', entityType: 'place', name: 'Home' }],
     });
   });
+
+  it('maps mashed memoryremember XML onto memory_remember and strips the markup', () => {
+    const content = `Calling memory_remember...
+<toolcall>
+<function=memoryremember>
+<parameter=operations>
+{"kind": "entity.create", "entity": {"entityType": "place", "name": "Example Home"}}
+</parameter>
+</function>
+</toolcall`;
+
+    const { prose, toolCalls } = extractEmbeddedToolCalls(content);
+
+    expect(prose).not.toContain('<toolcall>');
+    expect(toolCalls[0].function.name).toBe('memory_remember');
+  });
 });

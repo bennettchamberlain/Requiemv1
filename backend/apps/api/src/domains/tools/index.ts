@@ -152,6 +152,7 @@ export type { ToolInvokedPayload } from './events';
 export type { ToolProvider, ProviderHealthStatus } from './providers/ToolProvider';
 export {
   intentToolName,
+  canonicalizeExecutableToolName,
   type JSONSchema,
   type ToolSchema,
   type ToolResult,
