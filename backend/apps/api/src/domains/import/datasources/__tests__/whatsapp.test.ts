@@ -38,6 +38,43 @@ describe('WhatsApp datasource', () => {
     expect(pipeline.every((p) => p.item.classification === 'message')).toBe(true);
   });
 
+  it('gives the same message the same id however the archive arrived', async () => {
+    // The identity bug: uploading sanitises spaces to underscores while the
+    // inbox keeps them, so the SAME export produced two different ids per
+    // message and a re-import duplicated the whole chat instead of deduping it.
+    const fixture = path.join(FIXTURES_DIR, 'whatsapp-export');
+    const staging = fs.mkdtempSync(path.join(os.tmpdir(), 'whatsapp-arrival-'));
+
+    const idsFrom = async (directoryName: string): Promise<string[]> => {
+      const root = path.join(staging, directoryName);
+      fs.mkdirSync(root, { recursive: true });
+      fs.copyFileSync(path.join(fixture, '_chat.txt'), path.join(root, '_chat.txt'));
+
+      const pipeline: EmittedGraph[] = [];
+      await new WhatsAppFileImporter().fileImport({}, { filename: directoryName, fullPath: root }, {
+        pipeline,
+        timeframe: {},
+        log: () => {},
+      } as unknown as ImportParams);
+
+      return pipeline.map((entry) => entry.item.id as string);
+    };
+
+    try {
+      // Left: how the inbox presents it. Right: how an upload sanitises it.
+      const viaInbox = await idsFrom('WhatsApp Chat - LITA _ Companion Tech Team');
+      const viaUpload = await idsFrom('WhatsApp_Chat_-_LITA___Companion_Tech_Team');
+
+      expect(viaInbox).toEqual(viaUpload);
+      // And the chat is named after the chat, not after the container: the
+      // `WhatsApp Chat -` prefix is not part of anybody's conversation name.
+      expect(viaInbox[0]).toContain('LITA Companion Tech Team');
+      expect(viaInbox[0]).not.toContain('WhatsApp');
+    } finally {
+      fs.rmSync(staging, { recursive: true, force: true });
+    }
+  });
+
   it('captures sender and message content', async () => {
     const root = path.join(FIXTURES_DIR, 'whatsapp-export');
     const fi = new WhatsAppFileImporter();
