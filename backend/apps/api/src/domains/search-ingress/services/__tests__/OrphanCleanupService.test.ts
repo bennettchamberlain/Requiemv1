@@ -133,7 +133,7 @@ describe('OrphanCleanupService.cleanOrphans', () => {
     expect(query).not.toHaveBeenCalled();
   });
 
-  it('defaults to sweeping every indexable type across both index tables', async () => {
+  it('defaults to sweeping every indexable type across every index table', async () => {
     const query = jest.fn().mockResolvedValue([[], 0]);
     const service = new OrphanCleanupService({ query } as unknown as DataSource, makeLogger() as never);
 
