@@ -96,7 +96,7 @@ function makeStage(
   const warnings: Array<[string, unknown]> = [];
 
   const dataSource = {
-    query: jest.fn(async (sql: string) => {
+    query: jest.fn(async (sql: string, params?: unknown[]) => {
       if (sql.includes('pg_database_size')) {
         return [{ bytes: '1000' }];
       }
@@ -111,7 +111,15 @@ function makeStage(
       }
 
       if (sql.includes('staged_relationships')) {
-        return options.participants ?? [];
+        // The edge lookup is asked for a whole batch at once, so the stub
+        // answers per requested id — the fixture means "these edges belong to
+        // each row", which is what it meant when the query was one row at a
+        // time.
+        const ids = (params?.[0] as string[] | undefined) ?? [];
+
+        return ids.flatMap((itemId) =>
+          (options.participants ?? []).map((edge) => ({ ...edge, item_id: itemId })),
+        );
       }
 
       if (sql.includes('FROM ci.users u')) {
