@@ -479,9 +479,13 @@ export class PositionService {
   }
 
   private deduplicateByTime(positions: CreatePositionDto[]): CreatePositionDto[] {
-    const seenTimes = new Map<string, CreatePositionDto>();
+    // Key on the parsed instant, not the raw string: two rows for the same
+    // moment written with different timestamp formatting (with/without
+    // milliseconds, `Z` vs `+00:00`, ...) must collapse to one row here, or
+    // both survive into findExistingByTimes and get inserted as duplicates.
+    const seenTimes = new Map<number, CreatePositionDto>();
     for (const position of positions) {
-      seenTimes.set(position.time, position);
+      seenTimes.set(new Date(position.time).getTime(), position);
     }
 
     return Array.from(seenTimes.values());

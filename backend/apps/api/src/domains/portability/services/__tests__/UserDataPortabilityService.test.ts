@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import type { Request } from 'express';
 import type { DataSource, QueryRunner } from 'typeorm';
 
 import type { LoggerService } from '@ci/common/logging';
@@ -83,5 +84,205 @@ describe('UserDataPortabilityService', () => {
         fileBlobs: [],
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  describe('importArchive — transaction boundary', () => {
+    /**
+     * The transactional commit/rollback semantics themselves (does a real
+     * Postgres actually undo the delete on a failed insert) are checked
+     * against a live database in UserDataPortabilityService.integration.spec.ts.
+     * These tests pin the SERVICE's half of the contract: it must call
+     * commit/rollback in the right circumstance and in the right order
+     * relative to delete/insert, which a real-DB test alone would not
+     * localize a regression to.
+     */
+    it('deletes discovered tables in reverse order, inserts in forward order, then commits once', async () => {
+      dataSource.query = jest.fn().mockResolvedValue([
+        { schema: 'ci', table: 'notes', user_column: 'user_id' },
+        { schema: 'ci', table: 'events', user_column: 'user_id' },
+      ]);
+
+      const calls: string[] = [];
+      queryRunner.query = jest.fn(async (sql: string) => {
+        calls.push(sql);
+
+        return undefined;
+      }) as unknown as QueryRunner['query'];
+
+      await service.importArchive({ userId: 'user-1' } as never, {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        userId: 'user-1',
+        profile: null,
+        tables: {
+          'ci.notes': [{ id: 'n1', user_id: 'user-1' }],
+          'ci.events': [{ id: 'e1', user_id: 'user-1' }],
+        },
+        fileBlobs: [],
+      });
+
+      const indexOf = (predicate: (sql: string) => boolean) => calls.findIndex(predicate);
+      const deleteEvents = indexOf((sql) => sql.startsWith('DELETE') && sql.includes('"events"'));
+      const deleteNotes = indexOf((sql) => sql.startsWith('DELETE') && sql.includes('"notes"'));
+      const insertNotes = indexOf((sql) => sql.startsWith('INSERT') && sql.includes('"notes"'));
+      const insertEvents = indexOf((sql) => sql.startsWith('INSERT') && sql.includes('"events"'));
+
+      expect([deleteEvents, deleteNotes, insertNotes, insertEvents]).not.toContain(-1);
+      // Discovery order is [notes, events]. Deletes run in the REVERSE of
+      // discovery order (events, then notes) so a table with an FK into an
+      // earlier-discovered one is cleared first; inserts restore in
+      // discovery order, and both deletes finish before any insert starts.
+      expect(deleteEvents).toBeLessThan(deleteNotes);
+      expect(deleteNotes).toBeLessThan(insertNotes);
+      expect(insertNotes).toBeLessThan(insertEvents);
+
+      expect(queryRunner.commitTransaction).toHaveBeenCalledTimes(1);
+      expect(queryRunner.rollbackTransaction).not.toHaveBeenCalled();
+      expect(queryRunner.release).toHaveBeenCalledTimes(1);
+    });
+
+    it('rolls back and rethrows when an insert fails mid-import, and never commits', async () => {
+      dataSource.query = jest
+        .fn()
+        .mockResolvedValue([{ schema: 'ci', table: 'notes', user_column: 'user_id' }]);
+
+      queryRunner.query = jest.fn((sql: string) => {
+        if (sql.startsWith('INSERT')) {
+          return Promise.reject(new Error('constraint violation'));
+        }
+
+        return Promise.resolve(undefined);
+      }) as unknown as QueryRunner['query'];
+
+      await expect(
+        service.importArchive({ userId: 'user-1' } as never, {
+          version: 1,
+          exportedAt: new Date().toISOString(),
+          userId: 'user-1',
+          profile: null,
+          tables: { 'ci.notes': [{ id: 'n1', user_id: 'user-1' }] },
+          fileBlobs: [],
+        }),
+      ).rejects.toThrow('constraint violation');
+
+      // The delete already ran (it's earlier in the sequence than the
+      // failing insert) — commit must NOT happen, or the delete half of
+      // "delete-then-restore" would be a permanent, uncommitted-restore
+      // data loss instead of an all-or-nothing operation.
+      expect(queryRunner.commitTransaction).not.toHaveBeenCalled();
+      expect(queryRunner.rollbackTransaction).toHaveBeenCalledTimes(1);
+      expect(queryRunner.release).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('importNdjsonStream', () => {
+    // The manifest record is zod-validated end to end (portabilityManifestSchema
+    // requires `userId` to be a real UUID) — unlike the legacy importArchive
+    // path above, which takes a plain TS-typed archive with no runtime schema.
+    const USER_ID = '11111111-1111-4111-8111-111111111111';
+
+    function fakeRequest(lines: unknown[]): Request {
+      const text = `${lines.map((line) => JSON.stringify(line)).join('\n')}\n`;
+
+      return {
+        setEncoding: () => undefined,
+         
+        [Symbol.asyncIterator]: async function* () {
+          yield text;
+        },
+      } as unknown as Request;
+    }
+
+    const manifest = (over: Record<string, unknown> = {}) => ({
+      type: 'manifest',
+      version: 1,
+      format: 'ndjson',
+      exportedAt: new Date().toISOString(),
+      userId: USER_ID,
+      profile: null,
+      ...over,
+    });
+
+    beforeEach(() => {
+      userService.findById = jest.fn().mockResolvedValue({ email: 'jane@example.com' });
+      queryRunner.query = jest.fn().mockResolvedValue(undefined);
+    });
+
+    it('rejects a row record that arrives before the manifest', async () => {
+      dataSource.query = jest.fn().mockResolvedValue([]);
+
+      const req = fakeRequest([{ type: 'row', table: 'ci.notes', row: { id: 'n1' } }]);
+
+      await expect(
+        service.importNdjsonStream({ userId: USER_ID } as never, req, 'jane@example.com'),
+      ).rejects.toThrow('Archive manifest must be the first record');
+    });
+
+    it('rejects a second manifest record appearing mid-stream', async () => {
+      dataSource.query = jest.fn().mockResolvedValue([]);
+
+      const req = fakeRequest([manifest(), manifest()]);
+
+      await expect(
+        service.importNdjsonStream({ userId: USER_ID } as never, req, 'jane@example.com'),
+      ).rejects.toThrow('Archive manifest must be the first record');
+    });
+
+    it('reassembles a chunked file upload by index, regardless of arrival order', async () => {
+      dataSource.query = jest.fn().mockResolvedValue([]);
+      fileService.putObject = jest.fn().mockResolvedValue(undefined);
+
+      const chunk0 = Buffer.from('hello ').toString('base64');
+      const chunk1 = Buffer.from('world').toString('base64');
+
+      const req = fakeRequest([
+        manifest(),
+        { type: 'file-chunk', id: 'f1', bucket: 'ci-files', key: 'user-1/f1', index: 1, total: 2, data: chunk1 },
+        { type: 'file-chunk', id: 'f1', bucket: 'ci-files', key: 'user-1/f1', index: 0, total: 2, data: chunk0 },
+      ]);
+
+      const result = await service.importNdjsonStream({ userId: USER_ID } as never, req, 'jane@example.com');
+
+      expect(fileService.putObject).toHaveBeenCalledTimes(1);
+      const [, bucket, key, buffer] = (fileService.putObject as jest.Mock).mock.calls[0] as [
+        unknown,
+        string,
+        string,
+        Buffer,
+      ];
+      expect(bucket).toBe('ci-files');
+      expect(key).toBe('user-1/f1');
+      // Chunks arrived 1-then-0 but must reassemble in INDEX order, not
+      // arrival order — a network-level reorder must not corrupt the file.
+      expect(buffer.toString('utf8')).toBe('hello world');
+      expect(result.filesRestored).toBe(1);
+    });
+
+    it('rejects an archive whose file upload never completes (a chunk index never arrives)', async () => {
+      dataSource.query = jest.fn().mockResolvedValue([]);
+
+      const req = fakeRequest([
+        manifest(),
+        {
+          type: 'file-chunk',
+          id: 'f1',
+          bucket: 'ci-files',
+          key: 'user-1/f1',
+          index: 0,
+          total: 2,
+          data: Buffer.from('x').toString('base64'),
+        },
+      ]);
+
+      await expect(
+        service.importNdjsonStream({ userId: USER_ID } as never, req, 'jane@example.com'),
+      ).rejects.toThrow('Archive is missing one or more file chunks');
+
+      // The delete-then-restore for row tables already ran inside the
+      // transaction before this file-completeness check fails at the end —
+      // it must not be left committed.
+      expect(queryRunner.rollbackTransaction).toHaveBeenCalledTimes(1);
+      expect(queryRunner.commitTransaction).not.toHaveBeenCalled();
+    });
   });
 });
