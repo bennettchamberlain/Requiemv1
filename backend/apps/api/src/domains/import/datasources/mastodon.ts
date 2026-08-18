@@ -28,7 +28,14 @@ interface Activity {
 
 interface Outbox {
   '@context'?: unknown;
+  id?: unknown;
   orderedItems?: unknown;
+}
+
+interface Actor {
+  type?: unknown;
+  preferredUsername?: unknown;
+  outbox?: unknown;
 }
 
 function readJson(fpath: string): unknown {
@@ -50,14 +57,61 @@ function readJson(fpath: string): unknown {
   }
 }
 
-// A parsed value is a Mastodon outbox when it is an object carrying an
-// `orderedItems` array (the ActivityPub OrderedCollection contract).
+// An `orderedItems` array is the literal W3C ActivityPub OrderedCollection
+// contract, not a Mastodon-specific signal — Pleroma, Akkoma, GoToSocial,
+// PeerTube, and Pixelfed all export an outbox.json in this exact shape, so
+// this alone only proves "some ActivityPub server produced this file."
 function isOutbox(parsed: unknown): boolean {
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     return false;
   }
 
   return Array.isArray((parsed as Outbox).orderedItems);
+}
+
+// What only Mastodon's own serializer writes: the collection's `@context`
+// carries Mastodon's OStatus-heritage namespace extension (`"ostatus":
+// "http://ostatus.org#"`, `"atomUri": "ostatus:atomUri"`), inherited from its
+// GNU-social/OStatus interop layer. The other ActivityPub projects here are
+// independent implementations with their own namespace extensions (Pleroma's
+// "litepub", GoToSocial's own vocabulary, …) and don't reproduce this
+// specific pair.
+function hasMastodonNamespace(parsed: unknown): boolean {
+  if (!parsed || typeof parsed !== 'object') {
+    return false;
+  }
+
+  const ctx = (parsed as Outbox)['@context'];
+  if (!Array.isArray(ctx)) {
+    return false;
+  }
+
+  return ctx.some((entry) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      return false;
+    }
+
+    const o = entry as Record<string, unknown>;
+
+    return o.ostatus === 'http://ostatus.org#' || o.atomUri === 'ostatus:atomUri';
+  });
+}
+
+// actor.json sitting beside outbox.json is only real corroboration when it's
+// actually a Mastodon actor — a Person/Service whose own `outbox` field
+// points back at this exact file — not merely a file with that name (any
+// exporter could drop one).
+function isMastodonActor(parsed: unknown, outboxId: unknown): boolean {
+  if (!parsed || typeof parsed !== 'object') {
+    return false;
+  }
+
+  const a = parsed as Actor;
+  if ((a.type !== 'Person' && a.type !== 'Service') || typeof a.preferredUsername !== 'string') {
+    return false;
+  }
+
+  return typeof outboxId !== 'string' || a.outbox === outboxId;
 }
 
 function stripTags(h: string): string {
@@ -106,7 +160,18 @@ export class MastodonFileImporter implements FileImporter {
         return { confidence: 0 };
       }
 
-      return isOutbox(readJson(root)) ? { confidence: 0.95 } : { confidence: 0 };
+      const parsed = readJson(root);
+      if (!isOutbox(parsed)) {
+        return { confidence: 0 };
+      }
+
+      // The generic OrderedCollection shape alone is shared by every
+      // ActivityPub exporter, so it isn't enough to confidently label this
+      // Mastodon. Only the namespace extension Mastodon's own serializer
+      // writes earns the top tier; a generic-but-unconfirmed outbox.json
+      // still gets picked up (nothing else in this codebase claims it), just
+      // not confidently enough to beat a real competing importer.
+      return hasMastodonNamespace(parsed) ? { confidence: 0.95 } : { confidence: 0.5 };
     }
 
     if (stat.isDirectory()) {
@@ -117,15 +182,29 @@ export class MastodonFileImporter implements FileImporter {
           return [];
         }
       })();
-      const outbox = names.find((n) => n.toLowerCase() === 'outbox.json');
-      if (outbox && isOutbox(readJson(path.join(root, outbox)))) {
-        // actor.json sitting beside outbox.json is a strong corroborating signal.
-        const hasActor = names.some((n) => n.toLowerCase() === 'actor.json');
-
-        return { confidence: hasActor ? 0.97 : 0.9 };
+      const outboxName = names.find((n) => n.toLowerCase() === 'outbox.json');
+      if (!outboxName) {
+        return { confidence: 0, dir_threshold: 0.7 };
       }
 
-      return { confidence: 0, dir_threshold: 0.7 };
+      const outbox = readJson(path.join(root, outboxName));
+      if (!isOutbox(outbox)) {
+        return { confidence: 0, dir_threshold: 0.7 };
+      }
+
+      // actor.json alongside outbox.json is only real corroboration once its
+      // own content is verified as a Mastodon actor pointing back at this
+      // outbox — not merely a file with that name.
+      const actorName = names.find((n) => n.toLowerCase() === 'actor.json');
+      if (actorName && isMastodonActor(readJson(path.join(root, actorName)), (outbox as Outbox).id)) {
+        return { confidence: 0.97 };
+      }
+
+      if (hasMastodonNamespace(outbox)) {
+        return { confidence: 0.95 };
+      }
+
+      return { confidence: 0.5 };
     }
 
     return { confidence: 0 };

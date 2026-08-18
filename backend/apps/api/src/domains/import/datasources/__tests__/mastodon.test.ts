@@ -24,6 +24,51 @@ describe('Mastodon datasource', () => {
     expect(rec.confidence).toBeGreaterThan(0.8);
   });
 
+  it('does not confidently claim a same-shaped ActivityPub export from another platform', async () => {
+    // Pleroma, Akkoma, GoToSocial, PeerTube, and Pixelfed all export an
+    // outbox.json with the exact same OrderedCollection/orderedItems shape —
+    // the generic ActivityPub spec every one of them implements identically.
+    // Before requiring Mastodon's own namespace extension, any of these would
+    // have been mislabeled Mastodon at 0.95 confidence. This fixture uses
+    // Pleroma's own "litepub" namespace instead of Mastodon's ostatus/atomUri
+    // pair, and has no actor.json alongside it.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ci-pleroma-lookalike-'));
+    const fpath = path.join(dir, 'outbox.json');
+    fs.writeFileSync(
+      fpath,
+      JSON.stringify({
+        '@context': [
+          'https://www.w3.org/ns/activitystreams',
+          { litepub: 'http://litepub.social/ns#', sensitive: 'as:sensitive' },
+        ],
+        id: 'https://pleroma.example/users/bob/outbox',
+        type: 'OrderedCollection',
+        totalItems: 1,
+        orderedItems: [
+          {
+            id: 'https://pleroma.example/users/bob/statuses/1/activity',
+            type: 'Create',
+            actor: 'https://pleroma.example/users/bob',
+            published: '2024-01-01T00:00:00Z',
+            object: {
+              id: 'https://pleroma.example/users/bob/statuses/1',
+              type: 'Note',
+              content: '<p>Hello from Pleroma</p>',
+            },
+          },
+        ],
+      }),
+    );
+
+    try {
+      const fi = new MastodonFileImporter();
+      const rec = await fi.recognize({}, { filename: 'outbox.json', fullPath: fpath });
+      expect(rec.confidence).toBeLessThan(0.9);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('does not match an unrelated directory', async () => {
     const root = path.join(FIXTURES_DIR, 'netflix-export');
     const fi = new MastodonFileImporter();
