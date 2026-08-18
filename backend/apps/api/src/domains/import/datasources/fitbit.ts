@@ -249,16 +249,16 @@ export class FitbitFileImporter implements FileImporter {
       return;
     }
 
-    for (const rec of parsed) {
+    parsed.forEach((rec, index) => {
       try {
-        this.pushRecord(rec as SleepRecord, params);
+        this.pushRecord(rec as SleepRecord, base, index, params);
       } catch (e) {
         params.log?.('error', `Failed to import sleep record in ${base}`, { error: (e as Error).message });
       }
-    }
+    });
   }
 
-  private pushRecord(rec: SleepRecord, params: ImportParams): void {
+  private pushRecord(rec: SleepRecord, base: string, index: number, params: ImportParams): void {
     if (!rec || typeof rec !== 'object') {
       return;
     }
@@ -283,6 +283,15 @@ export class FitbitFileImporter implements FileImporter {
 
     params.pipeline.push({
       item: {
+        // Prefer Fitbit's own logId — a genuinely unique per-record id — and
+        // fall back to a source-file + per-file row index only when it's
+        // missing. Without either, hashItem's fallback hash is
+        // dataSource+classification+ISO(timestamp) alone (content.filename is
+        // the constant 'sleep.txt'), so two sleep entries sharing a recorded
+        // start second (multi-source exports, e.g. a paired Fitbit + phone
+        // app both logging sleep) would collide under the staging table's ON
+        // CONFLICT and one would be silently dropped.
+        id: `fitbit:sleep:${rec.logId ?? `${base}:${index}`}`,
         classification: 'sleep',
         timestamp: ts,
         content: { filename: 'sleep.txt', mediaType: 'text/plain', data: async () => Buffer.from(summary) },
