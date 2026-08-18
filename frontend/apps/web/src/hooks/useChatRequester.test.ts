@@ -120,10 +120,16 @@ describe('useChatRequester', () => {
   });
 
   it('stop() tears down the active stream', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve(streamResponse())),
-    );
+    const fetchMock = vi.fn((input: RequestInfo) => {
+      const url = String(input);
+
+      if (url.includes('/cancel')) {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+
+      return Promise.resolve(streamResponse('thread-9'));
+    });
+    vi.stubGlobal('fetch', fetchMock);
 
     const { result } = renderHook(() => useChatRequester({ threadId: null }));
     await act(async () => {
@@ -133,6 +139,83 @@ describe('useChatRequester', () => {
     act(() => result.current[1].stop());
 
     expect(result.current[0].streaming).toBe(false);
+    expect(result.current[0].stream).toBeNull();
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/llm/threads/thread-9/cancel'))).toBe(
+      true,
+    );
+  });
+
+  it('detach() closes the viewer without posting cancel', async () => {
+    const fetchMock = vi.fn((input: RequestInfo) => {
+      void input;
+
+      return Promise.resolve(streamResponse('thread-9'));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result } = renderHook(() => useChatRequester({ threadId: 'thread-9' }));
+    await act(async () => {
+      await result.current[1].submit({ message: 'hello', fileIds: [] });
+    });
+
+    act(() => result.current[1].detach());
+
+    expect(result.current[0].streaming).toBe(false);
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/cancel'))).toBe(false);
+  });
+
+  it('unmount detaches the viewer without cancelling the job', async () => {
+    const fetchMock = vi.fn((input: RequestInfo) => {
+      void input;
+
+      return Promise.resolve(streamResponse('thread-9'));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result, unmount } = renderHook(() => useChatRequester({ threadId: 'thread-9' }));
+    await act(async () => {
+      await result.current[1].submit({ message: 'hello', fileIds: [] });
+    });
+
+    unmount();
+
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/cancel'))).toBe(false);
+  });
+
+  it('attach() opens GET /llm/threads/:id/stream', async () => {
+    const fetchMock = vi.fn((input: RequestInfo) => {
+      void input;
+
+      return Promise.resolve(streamResponse('thread-7'));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result } = renderHook(() => useChatRequester({ threadId: 'thread-7' }));
+    await act(async () => {
+      await result.current[1].attach('thread-7');
+    });
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/api/llm/threads/thread-7/stream');
+    await waitFor(() => expect(result.current[0].streaming).toBe(true));
+  });
+
+  it('attach() returns false on 204 so the page can load the finished messages', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo) => {
+        void input;
+
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }),
+    );
+
+    const { result } = renderHook(() => useChatRequester({ threadId: 'thread-7' }));
+    let attached: boolean | undefined;
+    await act(async () => {
+      attached = await result.current[1].attach('thread-7');
+    });
+
+    expect(attached).toBe(false);
     expect(result.current[0].stream).toBeNull();
   });
 

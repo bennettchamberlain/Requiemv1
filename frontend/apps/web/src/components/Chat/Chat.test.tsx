@@ -39,6 +39,17 @@ describe('Chat', () => {
     expect(queryByText('Start the conversation')).not.toBeInTheDocument();
   });
 
+  it('shows the user bubble immediately, even if onSubmit has not resolved', async () => {
+    const onSubmit = vi.fn(() => new Promise<boolean>(() => undefined));
+    const { getByText, getByRole } = renderWithProviders(<Chat onSubmit={onSubmit} />);
+
+    const textarea = getByRole('textbox');
+    fireEvent.change(textarea, { target: { value: 'what is up' } });
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+
+    await waitFor(() => expect(getByText('what is up')).toBeInTheDocument());
+  });
+
   it('submits a typed message through ChatInput', async () => {
     const onSubmit = vi.fn().mockReturnValue(true);
     const { getByRole } = renderWithProviders(<Chat onSubmit={onSubmit} />);

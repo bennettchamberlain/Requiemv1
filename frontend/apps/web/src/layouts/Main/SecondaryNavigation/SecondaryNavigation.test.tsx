@@ -179,14 +179,14 @@ describe('SecondaryNavigation', () => {
   // The toggle shares the rail's `auto` grid column, so a wordmark appearing
   // there on hover widens the column and shoves the page — the exact reflow
   // the absolute drawer above exists to avoid.
-  it('keeps the wordmark out of the toggle until the rail is pinned', () => {
+  it('keeps the wordmark collapsed until the rail is pinned', () => {
     renderToggleAndRail();
 
-    expect(screen.queryByText('Companion Memory')).not.toBeInTheDocument();
+    expect(screen.getByText('Companion Memory')).toHaveAttribute('aria-hidden', 'true');
 
     fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
 
-    expect(screen.getByText('Companion Memory')).toBeInTheDocument();
+    expect(screen.getByText('Companion Memory')).toHaveAttribute('aria-hidden', 'false');
   });
 
   // `end={false}`: both halves are Sources, and the rail should say so on
@@ -250,7 +250,7 @@ describe('PowerRailToggle', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close menu' }));
 
     expect(screen.getByRole('button', { name: 'Open menu' })).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByText('Companion Memory')).not.toBeInTheDocument();
+    expect(screen.getByText('Companion Memory')).toHaveAttribute('aria-hidden', 'true');
     expect(screen.queryByText('Main')).not.toBeInTheDocument();
     expect(localStorage.getItem(STORAGE_KEY)).toBe('false');
   });

@@ -79,7 +79,7 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
   // string 'div'), so this never remounts the subtree it wraps.
   const Frame: ElementType = embedded ? 'div' : PageContent;
   const frameClassName = embedded
-    ? `relative flex min-h-60 w-full min-w-0 shrink-0 flex-col ${isMobile ? 'gap-2' : 'gap-6'}`
+    ? `relative flex min-h-60 w-full min-w-0 shrink-0 flex-col ${isMobile ? 'gap-2' : 'gap-4'}`
     : undefined;
   const { isFeatureEnabled } = useFeatures();
   const actionsEnabled = isFeatureEnabled('actions');
@@ -420,7 +420,7 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
 
   const carouselProps = {
     className: '-mx-6',
-    containerClassName: 'px-6 pb-6 pt-1',
+    containerClassName: 'px-6 py-1',
     slideClassName: 'flex-none min-w-[550px] basis-[550px] mr-6',
   } satisfies CarouselProps;
 
@@ -476,7 +476,7 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
 
         <h2 className="text-2xl font-bold text-foreground">Insights & Summaries</h2>
 
-        <div className="space-y-3">
+        <div className="space-y-2">
           {summariesError && (
             <div className="text-sm text-destructive">
               We could not load live insights. Preview cards are shown until the service recovers.

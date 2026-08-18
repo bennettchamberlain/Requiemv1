@@ -2383,6 +2383,7 @@ type ThreadEdge implements Edge {
 
 type ThreadType implements Node & Taggable {
   description: String
+  generationStatus: String!
   id: ID!
   messages(after: String, before: String, first: Int, last: Int): MessageConnection!
   name: String

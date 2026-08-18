@@ -44,6 +44,15 @@ describe('job taxonomy', () => {
     expect(describeJob(null).label).toBe('Unclassified job');
   });
 
+  it('classifies chat generate as interactive LLM work', () => {
+    const descriptor = describeJob('chat.generate');
+
+    expect(descriptor.category).toBe(JOB_CATEGORIES.llm);
+    expect(descriptor.interactive).toBe(true);
+    expect(describeJob('chat.summarization').interactive).toBeFalsy();
+    expect(describeJob('infer.question.answer').category).toBe(JOB_CATEGORIES.llm);
+  });
+
   it('assigns every type to a real category', () => {
     const categories = new Set<string>(Object.values(JOB_CATEGORIES));
 

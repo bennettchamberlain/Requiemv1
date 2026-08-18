@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ScheduleEvent } from '@/api/useScheduleService';
 
-import { eventFallsOnDay, selectStoryEvents } from './scheduleToTimeline';
+import { buildTimelineData, eventFallsOnDay, selectStoryEvents } from './scheduleToTimeline';
 
 function event(id: string, start: Date, title = id): ScheduleEvent {
   return {
@@ -51,5 +51,19 @@ describe('selectStoryEvents', () => {
     const { events: slides, startAtSlide } = selectStoryEvents(events, friday);
 
     expect(slides[startAtSlide].id).toBe('fri');
+  });
+});
+
+describe('buildTimelineData', () => {
+  it('does not attach TimelineJS media embeds', () => {
+    const monday = new Date(2026, 7, 17);
+    const visit = event('yt', new Date(2026, 7, 17, 10), 'A video');
+    visit.metadata = { url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' };
+
+    const { data } = buildTimelineData([visit], monday);
+
+    expect(data.events).toHaveLength(1);
+    expect(data.events[0].media).toBeUndefined();
+    expect(data.events[0].text.text).toContain('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
   });
 });
