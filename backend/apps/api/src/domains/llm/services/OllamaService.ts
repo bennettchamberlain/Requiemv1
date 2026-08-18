@@ -214,6 +214,7 @@ export class OllamaService {
           model,
           messages: [{ role: 'user', content: prompt }],
           signal,
+          enableThinking: false,
         });
 
         for await (const chunk of iterator) {
@@ -321,6 +322,7 @@ export class OllamaService {
               messages: inputMessages.concat(accumulatedMessages),
               tools: iterationWillCallTools ? ollamaTools : undefined,
               signal,
+              enableThinking,
             });
 
             for await (const chunk of iterator) {
@@ -446,7 +448,7 @@ export class OllamaService {
   private async runChat(
     context: ChatRequestContext,
     messages: OllamaMessage[],
-    { model, enableTools = false, format }: PromptOptions,
+    { model, enableTools = false, format, enableThinking = false }: PromptOptions,
   ): Promise<ChatResponse> {
     await this.validateModel(context, model);
 
@@ -467,6 +469,7 @@ export class OllamaService {
           messages: inputMessages,
           tools: enableTools && ollamaTools.length > 0 ? ollamaTools : undefined,
           format: openAiFormat,
+          enableThinking,
         })
       : await this.ollama.chat({
           model: model,
@@ -498,6 +501,7 @@ export class OllamaService {
         messages: inputMessages.concat(accumulatedMessages),
         tools: enableTools && ollamaTools.length > 0 ? ollamaTools : undefined,
         format: openAiFormat,
+        enableThinking,
       });
     }
 

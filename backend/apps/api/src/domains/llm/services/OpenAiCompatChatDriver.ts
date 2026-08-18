@@ -45,6 +45,7 @@ export class OpenAiCompatChatDriver {
     messages: OllamaMessage[];
     tools?: Tool[];
     format?: string;
+    enableThinking?: boolean;
   }): Promise<ChatResponse> {
     const response = await this.client.chat.completions.create({
       model: request.model,
@@ -52,6 +53,7 @@ export class OpenAiCompatChatDriver {
       ...(request.tools && request.tools.length > 0 && { tools: toOpenAiTools(request.tools) }),
       // Ollama's `format: 'json'` maps onto the OpenAI json_object response format.
       ...(request.format === 'json' && { response_format: { type: 'json_object' as const } }),
+      ...thinkingTemplateKwargs(request.enableThinking),
     });
 
     const choice = response.choices[0];
@@ -84,6 +86,7 @@ export class OpenAiCompatChatDriver {
     messages: OllamaMessage[];
     tools?: Tool[];
     signal?: AbortSignal;
+    enableThinking?: boolean;
   }): AsyncGenerator<ChatResponse> {
     const stream = await this.client.chat.completions.create(
       {
@@ -91,6 +94,7 @@ export class OpenAiCompatChatDriver {
         messages: toOpenAiMessages(request.messages),
         stream: true,
         ...(request.tools && request.tools.length > 0 && { tools: toOpenAiTools(request.tools) }),
+        ...thinkingTemplateKwargs(request.enableThinking),
       },
       { signal: request.signal },
     );
@@ -253,7 +257,44 @@ export function toOpenAiMessages(messages: OllamaMessage[]): ChatCompletionMessa
     });
   }
 
-  return converted;
+  return hoistSystemMessages(converted);
+}
+
+/**
+ * Qwen (and vLLM's Qwen chat template) rejects any system message that is not
+ * the first message. Inference and chat both accumulate several system blocks;
+ * hoist and join them so the template sees one leading system turn.
+ */
+function hoistSystemMessages(messages: ChatCompletionMessageParam[]): ChatCompletionMessageParam[] {
+  const systemParts: string[] = [];
+  const rest: ChatCompletionMessageParam[] = [];
+
+  for (const message of messages) {
+    if (message.role !== 'system') {
+      rest.push(message);
+      continue;
+    }
+
+    if (typeof message.content === 'string' && message.content.trim() !== '') {
+      systemParts.push(message.content);
+    }
+  }
+
+  if (systemParts.length === 0) {
+    return messages;
+  }
+
+  return [{ role: 'system', content: systemParts.join('\n\n') }, ...rest];
+}
+
+/**
+ * Qwen3.6 thinks by default. The OpenAI-compat path must pass this explicitly
+ * or a "thinking off" UI still waits minutes for a reasoning trace.
+ */
+function thinkingTemplateKwargs(enableThinking?: boolean): Record<string, unknown> {
+  return {
+    chat_template_kwargs: { enable_thinking: enableThinking === true },
+  };
 }
 
 /** Ollama tools and OpenAI tools share the function-call JSON-schema shape. */

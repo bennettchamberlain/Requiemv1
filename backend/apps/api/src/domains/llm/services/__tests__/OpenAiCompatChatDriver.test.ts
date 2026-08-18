@@ -17,6 +17,19 @@ describe('toOpenAiMessages', () => {
     ]);
   });
 
+  it('hoists later system messages into a single leading system turn', () => {
+    const messages: OllamaMessage[] = [
+      { role: 'system', content: 'You are helpful.' },
+      { role: 'system', content: 'Dossier: lives in NJ.' },
+      { role: 'user', content: 'Hi' },
+    ];
+
+    expect(toOpenAiMessages(messages)).toEqual([
+      { role: 'system', content: 'You are helpful.\n\nDossier: lives in NJ.' },
+      { role: 'user', content: 'Hi' },
+    ]);
+  });
+
   it('pairs positional Ollama tool results with synthesized tool_call ids', () => {
     const messages: OllamaMessage[] = [
       { role: 'user', content: 'What is the weather in two cities?' },
