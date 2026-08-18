@@ -200,7 +200,7 @@ describe('TaskSlate — the header hint', () => {
   it('tells you what to do with the cards that are there', () => {
     render(<TaskSlate candidates={[candidate()]} {...NOOP} />);
 
-    expect(screen.getByText('drag one onto a day below')).toBeInTheDocument();
+    expect(screen.getByText('drag one onto a day above')).toBeInTheDocument();
   });
 
   it('says nothing at all when the rail is empty', () => {
