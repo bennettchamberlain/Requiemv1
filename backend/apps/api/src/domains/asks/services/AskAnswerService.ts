@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
@@ -28,8 +28,18 @@ export class AskAnswerService {
   async create(data: CreateAskAnswerDto): Promise<AskAnswer> {
     const existing = await this.answerRepository.findOne({ where: { askId: data.askId } });
 
+    // An answer is a TERMINAL disclosure record, so this is insert-only. It used
+    // to reuse `existing.id` and save, which made the row mutable after the fact:
+    // a second run with no redaction rewrote a fully-redacted answer to fully
+    // disclosed, and because the audit is written by `complete` — which by then
+    // refuses the terminal ask — the audit kept the ORIGINAL count. The owner's
+    // redaction was reversible and the audit log said otherwise.
+    if (existing != null) {
+      throw new ConflictException(`Ask ${data.askId} already has an answer`);
+    }
+
     const record = this.answerRepository.create({
-      id: existing?.id ?? data.id ?? uuidv7(),
+      id: data.id ?? uuidv7(),
       askId: data.askId,
       form: data.answer.form,
       answerSource: data.answerSource ?? 'peer',

@@ -1,6 +1,7 @@
 import { Field, GraphQLISODateTime, ID, Int, ObjectType, registerEnumType } from '@nestjs/graphql';
 
 import type { AskAnswer, DisclosedItem } from '@ci/domains/asks';
+import { formDisclosesItems } from '@ci/domains/asks';
 
 import { GlobalUID } from './GlobalUID';
 
@@ -71,7 +72,26 @@ export class AskAnswerType {
   @Field(() => GraphQLISODateTime)
   createdAt!: Date;
 
-  static toType(answer: AskAnswer): AskAnswerType {
+  /**
+   * `isResponder` decides whether the exact magnitudes and the consent basis are
+   * included.
+   *
+   * A form that does not itemize must not ship a count to the ASKER. A `boolean`
+   * answer returning `disclosedCount: 9` beside "They confirmed a match" hands
+   * over a precise magnitude — and by varying the prompt, a count ORACLE over the
+   * responder's corpus — while every ask stays labelled a mere yes/no. The
+   * withheld count goes with it: how much the owner chose to hide is as much of a
+   * signal as how much they shared.
+   *
+   * The owner sees the true numbers, because "you shared 4 of 6" is their
+   * receipt, and the stored record keeps them because the audit is written from
+   * it. Only the projection to the asker is narrowed — and an omitted argument
+   * gets the narrow one, so a caller that forgets cannot leak.
+   */
+  static toType(answer: AskAnswer, isResponder = false): AskAnswerType {
+    const itemizes = formDisclosesItems(answer.form);
+    const showCounts = isResponder || itemizes;
+
     return {
       id: GlobalUID.encode('ask-answer', answer.id),
       askId: GlobalUID.encode('ask', answer.askId),
@@ -79,9 +99,9 @@ export class AskAnswerType {
       answerSource: answer.answerSource as AnswerSourceEnum,
       summary: answer.summary,
       items: answer.disclosedEntities.map(DisclosedItemType.toType),
-      disclosedCount: answer.disclosedCount,
-      withheldCount: answer.withheldCount,
-      consentBasis: answer.consentBasis,
+      disclosedCount: showCounts ? answer.disclosedCount : 0,
+      withheldCount: showCounts ? answer.withheldCount : 0,
+      consentBasis: isResponder ? answer.consentBasis : null,
       createdAt: answer.createdAt,
     };
   }
