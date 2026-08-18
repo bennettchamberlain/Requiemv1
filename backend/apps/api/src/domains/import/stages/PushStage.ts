@@ -48,6 +48,34 @@ import type { ImportStageRunner, StageOutcome, StageRunContext } from '../types'
 const PUSH_BATCH = 500;
 
 /**
+ * The order a batch's destinations are written in.
+ *
+ * The per-row loop this replaced wrote each row's destinations in
+ * `destinationsFor` order; keeping a fixed order here preserves that for every
+ * row at once — an Audible listen still reaches `content` before `events`.
+ */
+const DESTINATION_ORDER: readonly Destination[] = [
+  'communications',
+  'content',
+  'events',
+  'inventory',
+  'browser_activity',
+  'position',
+];
+
+/** One staged row's journey through a batch: what it is, where it goes, what happened. */
+interface RowPlan {
+  row: StagedItem;
+  record: CanonicalRecord;
+  destinations: Destination[];
+  participants: Map<string, string[]>;
+  /** True once ANY destination reported a write for this row. */
+  wrote: boolean;
+  /** Set only by the per-row retry, and only for a genuine failure. */
+  failure: string | null;
+}
+
+/**
  * How often the push re-measures the database volume mid-run.
  *
  * `pg_database_size` stats every file the database owns, so this cannot be
@@ -541,18 +569,45 @@ export class PushStage implements ImportStageRunner {
    * participants that did resolve.
    */
   private async participantsFor(stagedItemId: string): Promise<Map<string, string[]>> {
-    const rows = await this.dataSource.query<Array<{ relation: string | null; server_entity_id: string }>>(
-      `SELECT r.relation, m.server_entity_id
+    return (await this.participantsForMany([stagedItemId])).get(stagedItemId) ?? new Map();
+  }
+
+  /**
+   * The same lookup for a whole batch, in ONE query.
+   *
+   * Asked per row, this was the first of the three round trips every staged row
+   * cost — 704,226 of them on the import that prompted the change. Rows with no
+   * edges are simply absent from the result map, which callers read as an empty
+   * Map, so the query returns only what exists rather than one row per id.
+   */
+  private async participantsForMany(
+    stagedItemIds: readonly string[],
+  ): Promise<Map<string, Map<string, string[]>>> {
+    const byItem = new Map<string, Map<string, string[]>>();
+
+    if (stagedItemIds.length === 0) {
+      return byItem;
+    }
+
+    const rows = await this.dataSource.query<
+      Array<{ item_id: string; relation: string | null; server_entity_id: string }>
+    >(
+      `SELECT r.item_id, r.relation, m.server_entity_id
          FROM ci_import.staged_relationships r
          JOIN ci_import.entity_mappings m ON m.staged_entity_id = r.entity_id
-        WHERE r.item_id = $1::uuid`,
-      [stagedItemId],
+        WHERE r.item_id = ANY($1::uuid[])`,
+      [stagedItemIds],
     );
-
-    const byRelation = new Map<string, string[]>();
 
     for (const row of rows) {
       const relation = row.relation ?? 'participant';
+      let byRelation = byItem.get(row.item_id);
+
+      if (!byRelation) {
+        byRelation = new Map<string, string[]>();
+        byItem.set(row.item_id, byRelation);
+      }
+
       const existing = byRelation.get(relation);
 
       if (existing) {
@@ -562,7 +617,7 @@ export class PushStage implements ImportStageRunner {
       }
     }
 
-    return byRelation;
+    return byItem;
   }
 
   private async pendingCount(runId: string): Promise<number> {
@@ -703,82 +758,297 @@ export class PushStage implements ImportStageRunner {
     isSelf: IsSelf,
   ): Promise<{ pushed: number; failed: number; deduped: number }> {
     const ctx = { userId: context.userId };
-    let pushed = 0;
-    let failed = 0;
-    let deduped = 0;
 
-    for (const row of batch) {
+    // ONE query for the batch's edges, not one per row.
+    const participantsByItem = await this.participantsForMany(batch.map((row) => row.id));
+
+    const plans: RowPlan[] = batch.map((row) => {
       const record = toCanonical(row);
-      const destinations = destinationsFor(record);
 
-      try {
-        const participants = await this.participantsFor(row.id);
+      return {
+        row,
+        record,
+        destinations: destinationsFor(record),
+        participants: participantsByItem.get(row.id) ?? new Map<string, string[]>(),
+        wrote: false,
+        failure: null,
+      };
+    });
 
-        // `wrote` is per DESTINATION, and a row can reach several. It counts as
-        // a write if ANY destination wrote it: an Audible listen whose audiobook
-        // already exists still produces a new event, so calling the whole row a
-        // duplicate would lose the event it did create.
-        let wrote = false;
+    // One call per DESTINATION for the whole batch, rather than one call per
+    // row per destination. Ordering across destinations is preserved from the
+    // per-row loop: a row reaching several still reaches them in this order.
+    for (const destination of DESTINATION_ORDER) {
+      const group = plans.filter((plan) => plan.failure == null && plan.destinations.includes(destination));
 
-        for (const destination of destinations) {
-          if (await this.send(ctx, destination, record, participants, isSelf)) {
-            counts[destination] = (counts[destination] ?? 0) + 1;
-            wrote = true;
-          }
+      if (group.length === 0) {
+        continue;
+      }
+
+      await this.sendGroup(ctx, destination, group, counts, isSelf, context);
+    }
+
+    return this.recordOutcomes(context, plans);
+  }
+
+  /**
+   * Send one destination's share of a batch, degrading to per-row on failure.
+   *
+   * The batch call is ONE transaction, so a single unacceptable row would roll
+   * back every other row with it — and the per-row quarantine this stage is
+   * built on (a bad record is marked `failed` and the import continues) would
+   * become "one bad record fails 500 good ones". So a failed group is retried
+   * row by row through the original {@link send}, which reaches exactly the
+   * outcomes it always did: a duplicate key is `skipped`, anything else is that
+   * ONE row `failed`.
+   *
+   * Out of disk is rethrown without the retry: nothing about the next row
+   * avoids it, and 500 more attempts only delay the stage failing with a cause.
+   */
+  private async sendGroup(
+    ctx: { userId: string },
+    destination: Destination,
+    group: RowPlan[],
+    counts: DestinationCounts,
+    isSelf: IsSelf,
+    context: StageRunContext,
+  ): Promise<void> {
+    try {
+      const wrote = await this.sendMany(ctx, destination, group, isSelf);
+
+      for (const [index, plan] of group.entries()) {
+        if (wrote[index]) {
+          counts[destination] = (counts[destination] ?? 0) + 1;
+          plan.wrote = true;
         }
+      }
 
-        if (wrote) {
-          await this.markPushed(row.id, destinations);
-          pushed += 1;
-        } else {
-          // Marked the same way as a row whose duplicate surfaced as a 23505,
-          // because it is the same outcome reached by a quieter route: every
-          // destination already held this record. `skipped` is terminal, so a
-          // resumed push does not reconsider it.
-          await this.markSkipped(row.id);
-          deduped += 1;
+      return;
+    } catch (err) {
+      if (isOutOfDiskError(err)) {
+        throw new DatabaseVolumeFullError(
+          await readDatabaseSpace(this.dataSource),
+          `the database refused a write while saving ${group.length} ${destination} record(s)`,
+        );
+      }
+
+      this.logger.warn('Batched push failed; retrying the group row by row', {
+        runId: context.runId,
+        destination,
+        rows: group.length,
+        error: (err as Error).message,
+      });
+    }
+
+    for (const plan of group) {
+      try {
+        if (await this.send(ctx, destination, plan.record, plan.participants, isSelf)) {
+          counts[destination] = (counts[destination] ?? 0) + 1;
+          plan.wrote = true;
         }
       } catch (err) {
-        // A unique violation on a provenance triple is the dedup working, not a
-        // failure: something already in ci.* carries this identity. The batch
-        // paths absorb it, so reaching here means a destination without an
-        // upsert — record it as `skipped`, which the schema defines as "was
-        // considered and deliberately not pushed", so a resumed push does not
-        // reconsider it forever.
         if (isDuplicateKey(err)) {
-          await this.markSkipped(row.id);
-          deduped += 1;
+          // The dedup working, not a failure: something already in ci.* carries
+          // this identity. Leaving `wrote` false lands the row in `skipped`,
+          // which is terminal, so a resumed push does not reconsider it.
           continue;
         }
 
-        // Out of disk is the one error the per-row quarantine gets wrong.
-        // Nothing about this record caused it and nothing about the next one
-        // will avoid it, so marking it `failed` and carrying on writes the same
-        // failure into every remaining row — 460k of them in the run that found
-        // this — and strands them all in a state with no route back. Rethrown
-        // so the stage fails with a cause: the rows it never reached are still
-        // `pending`, which is what the push resumes from.
         if (isOutOfDiskError(err)) {
           throw new DatabaseVolumeFullError(
             await readDatabaseSpace(this.dataSource),
-            `the database refused a write while saving ${record.sourceSystem} record ${row.id}`,
+            `the database refused a write while saving ${plan.record.sourceSystem} record ${plan.row.id}`,
           );
         }
 
-        await this.markFailed(row.id, (err as Error).message);
-        failed += 1;
+        plan.failure = (err as Error).message;
 
         this.logger.warn('Staged row failed to push; continuing', {
           runId: context.runId,
-          stagedItemId: row.id,
-          dataSource: record.sourceSystem,
-          kind: record.kind,
-          error: (err as Error).message,
+          stagedItemId: plan.row.id,
+          dataSource: plan.record.sourceSystem,
+          kind: plan.record.kind,
+          error: plan.failure,
         });
       }
     }
+  }
 
-    return { pushed, failed, deduped };
+  /**
+   * Write the batch's outcomes to the ledger in three statements, not 500.
+   *
+   * Rows are grouped by the destination set they reached, because `pushed_ref`
+   * carries it — typically one or two distinct sets in a batch, since a batch
+   * of Google Voice messages all take the same lane.
+   */
+  private async recordOutcomes(
+    context: StageRunContext,
+    plans: RowPlan[],
+  ): Promise<{ pushed: number; failed: number; deduped: number }> {
+    const pushedByDestinations = new Map<string, string[]>();
+    const skipped: string[] = [];
+    const failures: Array<{ id: string; error: string }> = [];
+
+    for (const plan of plans) {
+      if (plan.failure != null) {
+        failures.push({ id: plan.row.id, error: plan.failure });
+        continue;
+      }
+
+      // `wrote` is per DESTINATION, and a row can reach several. It counts as a
+      // write if ANY destination wrote it: an Audible listen whose audiobook
+      // already exists still produces a new event, so calling the whole row a
+      // duplicate would lose the event it did create.
+      if (plan.wrote) {
+        const key = JSON.stringify(plan.destinations);
+        const existing = pushedByDestinations.get(key);
+
+        if (existing) {
+          existing.push(plan.row.id);
+        } else {
+          pushedByDestinations.set(key, [plan.row.id]);
+        }
+
+        continue;
+      }
+
+      // Marked the same way as a row whose duplicate surfaced as a 23505,
+      // because it is the same outcome reached by a quieter route: every
+      // destination already held this record.
+      skipped.push(plan.row.id);
+    }
+
+    let pushed = 0;
+
+    for (const [key, ids] of pushedByDestinations) {
+      await this.markPushedMany(ids, JSON.parse(key) as Destination[]);
+      pushed += ids.length;
+    }
+
+    await this.markSkippedMany(skipped);
+
+    for (const failure of failures) {
+      await this.markFailed(failure.id, failure.error);
+    }
+
+    if (failures.length > 0) {
+      this.logger.warn('Batch finished with failed rows', {
+        runId: context.runId,
+        failed: failures.length,
+      });
+    }
+
+    return { pushed, failed: failures.length, deduped: skipped.length };
+  }
+
+  /**
+   * Hand a whole batch's share of ONE destination to the service that owns it,
+   * and report per row whether that destination actually wrote.
+   *
+   * The services have always taken arrays — `createManyDetailed` returns one
+   * {@link BulkInsertResult} per input, in input order, and chunks internally
+   * against the bind-param limit. The per-row path called them with
+   * single-element arrays, so a 704,226-row import made 704,226 round trips
+   * where it could have made ~1,400. Nothing about the mapping changes here;
+   * only how many rows travel per call.
+   *
+   * The returned array is aligned with `group`, index for index. A service that
+   * returns fewer results than inputs would silently mark the tail as
+   * not-written, so the length is checked rather than trusted.
+   */
+  private async sendMany(
+    ctx: { userId: string },
+    destination: Destination,
+    group: RowPlan[],
+    isSelf: IsSelf,
+  ): Promise<boolean[]> {
+    switch (destination) {
+      case 'communications': {
+        const inputs = group.map((plan) => {
+          // WhatsApp and Messenger get their own mappers — see `send`.
+          const input = isWhatsAppRecord(plan.record)
+            ? toWhatsAppCommunicationInput(plan.record, isSelf)
+            : isFacebookMessengerRecord(plan.record)
+              ? toFacebookMessengerCommunicationInput(plan.record, isSelf)
+              : toCommunicationInput(plan.record);
+
+          const [from] = plan.participants.get('from') ?? [];
+          const to = [...(plan.participants.get('to') ?? []), ...(plan.participants.get('cc') ?? [])];
+
+          if (from) {
+            input.from_entity_id = from;
+          }
+
+          if (to.length) {
+            input.to_entity_ids = to;
+          }
+
+          return input;
+        });
+
+        return aligned(await this.communications.createManyDetailed(ctx, inputs), group, destination);
+      }
+
+      case 'content':
+        return aligned(
+          await this.contents.createManyDetailed(
+            ctx,
+            group.map((plan) => toContentInput(plan.record)),
+          ),
+          group,
+          destination,
+        );
+
+      case 'events':
+        return aligned(
+          await this.events.createDetailed(
+            ctx,
+            group.map((plan) => toEventInput(plan.record)),
+          ),
+          group,
+          destination,
+        );
+
+      case 'inventory':
+        return aligned(
+          await this.items.createManyDetailed(
+            ctx,
+            group.map((plan) => toInventoryInput(plan.record)),
+          ),
+          group,
+          destination,
+        );
+
+      case 'browser_activity':
+        return aligned(
+          await this.browserActivity.createManyDetailed(
+            ctx,
+            group.map((plan) => toBrowserActivityInput(plan.record)),
+          ),
+          group,
+          destination,
+        );
+
+      case 'position': {
+        // `destinationsFor` routes on `rec.coordinates`, and so does this
+        // builder — but it returns null rather than throwing, so a disagreement
+        // between the two skips the row instead of failing the import.
+        const built = group.map((plan) => toPositionInput(plan.record));
+        const positions = built.filter((position): position is NonNullable<typeof position> => position != null);
+
+        if (positions.length > 0) {
+          // PositionService has no upsert-reporting variant: positions carry no
+          // provenance triple, so every call writes.
+          //
+          // emitCreated:false, like every other destination on this path: bulk
+          // ingest defers indexing to the post-load batch machinery, and the
+          // default would emit one position.created per GPS point.
+          await this.positions.create(ctx, positions, { emitCreated: false });
+        }
+
+        return built.map((position) => position != null);
+      }
+    }
   }
 
   /**
@@ -879,22 +1149,30 @@ export class PushStage implements ImportStageRunner {
    * reach several, the services return differently-shaped rows, and what the
    * relationship wiring needs to know is which lane a record took.
    */
-  private async markPushed(stagedItemId: string, destinations: Destination[]): Promise<void> {
+  private async markPushedMany(stagedItemIds: string[], destinations: Destination[]): Promise<void> {
+    if (stagedItemIds.length === 0) {
+      return;
+    }
+
     await this.dataSource.query(
       `UPDATE ci_import.staged_items
           SET push_status = 'pushed', pushed_at = now(), push_error = NULL, pushed_ref = $2::jsonb
-        WHERE id = $1::uuid`,
-      [stagedItemId, JSON.stringify({ destinations })],
+        WHERE id = ANY($1::uuid[])`,
+      [stagedItemIds, JSON.stringify({ destinations })],
     );
   }
 
   /** Considered and deliberately not written, because it is already there. */
-  private async markSkipped(stagedItemId: string): Promise<void> {
+  private async markSkippedMany(stagedItemIds: string[]): Promise<void> {
+    if (stagedItemIds.length === 0) {
+      return;
+    }
+
     await this.dataSource.query(
       `UPDATE ci_import.staged_items
           SET push_status = 'skipped', pushed_at = now(), push_error = NULL
-        WHERE id = $1::uuid`,
-      [stagedItemId],
+        WHERE id = ANY($1::uuid[])`,
+      [stagedItemIds],
     );
   }
 
@@ -915,6 +1193,29 @@ export class PushStage implements ImportStageRunner {
  * code in different places depending on which query path raised it.
  */
 /** Whether a batch ingest call wrote at least one row, rather than finding them all. */
+/**
+ * Read a batched service's results back onto the rows that produced them.
+ *
+ * The contract is one result per input in input order; a shorter array would
+ * quietly report the tail as "already there" and mark real writes as skipped,
+ * so a mismatch fails the group instead — the caller's row-by-row retry then
+ * gets the honest per-row answer.
+ */
+function aligned<Entity>(
+  results: Array<{ inserted: boolean; entity: Entity }>,
+  group: RowPlan[],
+  destination: Destination,
+): boolean[] {
+  if (results.length !== group.length) {
+    throw new Error(
+      `${destination} returned ${results.length} result(s) for ${group.length} input(s); ` +
+        `the batched write cannot be attributed to rows`,
+    );
+  }
+
+  return results.map((result) => result.inserted);
+}
+
 function wroteAnything(results: ReadonlyArray<{ inserted: boolean }>): boolean {
   return results.some((result) => result.inserted);
 }

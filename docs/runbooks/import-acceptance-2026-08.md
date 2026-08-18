@@ -24,6 +24,7 @@ came back, not what should have come back.
 | Import wizard (web) | `/sources/import` | Pick/Export/Sync + Inbox/History, live per-stage progress |
 | Post-ingest enrichment | automatic, after push | embeddings, vectors, person links, places |
 | Domain test suites | jest, incl. integration vs live DB | 2,641 unit + 97 import integration pass |
+| WhatsApp mappers (#2037) | 601MB export through the inbox | 681 outbound correctly identified, 100% thread-grouped |
 
 ## The 2.7GB archive
 
@@ -32,10 +33,10 @@ came back, not what should have come back.
 Calendar, Timeline.
 
 ```
-unpack  completed      1 / 1
-parse   completed  704,226 / 704,226
-media   completed      0 / 0
-push    running    (see throughput below)
+unpack  completed        1 / 1          36.5s
+parse   completed  704,226 / 704,226   793.1s
+media   completed        0 / 0           0.2s
+push    completed  704,226 / 704,226   357.4s   (after the batching fix below)
 ```
 
 Parse recognized twelve sources and staged from ten:
@@ -151,13 +152,32 @@ retryable** on purpose rather than writing the rows off as empty, so they come
 back on the provider's schedule. Expected on a dev box; worth watching on an
 appliance.
 
-### 6. Push throughput here was environmental
+### 6. Push throughput — the push was per-row — FIXED
 
-1,000 rows/minute, measured over 60s. Postgres was **idle** (`ClientRead` on
-every connection) while the host sat at 79% user CPU and a load average of 57 on
-12 cores, with a second worktree's full stack running alongside. The push was
-starved of CPU, not blocked on the database. Re-measure on an idle box before
-reading anything into the number.
+First read of this was wrong and is corrected here. The observation was right:
+1,000 rows/minute with Postgres **idle** (`ClientRead` on every connection)
+while the host sat at 79% user CPU. The conclusion — "starved of CPU, re-measure
+on an idle box" — was not. Postgres was idle because the client was giving it
+one tiny statement at a time.
+
+`PushStage.pushBatch` read 500 staged rows and then walked them one at a time,
+spending at least three sequential round trips on each: `participantsFor(row.id)`
+for its edges, one `createManyDetailed(ctx, [record])` per destination — a batch
+API called with a single-element array — and one `UPDATE` to record the outcome.
+704,226 rows meant roughly two million sequential round trips.
+
+Batched (one edge query per batch, one service call per destination per batch,
+one `UPDATE` per outcome group), measured on the same run, same box, same data:
+
+```
+before   1,000 – 3,500 rows/min
+after           73,000 rows/min
+```
+
+Position writes went from `"count": 1` per call to 36–47, with no fallbacks.
+The whole 704,226-row push then finished in **357 seconds**. Load average was
+*higher* during the fast measurement (301) than the slow one (57), which is the
+clearest evidence that CPU was never the ceiling.
 
 ## Gotchas for the next person
 
