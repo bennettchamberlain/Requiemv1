@@ -614,24 +614,32 @@ type CreateNotePayload {
 }
 
 input CreatePersonInput {
+  addresses: [PersonAddressInput!]
   avatarUrl: String
   birthDate: String
   city: String
+  contacts: [PersonContactInput!]
   country: String
+  department: String
   description: String
   emails: [String!]
   firstName: String
   gender: String
+  jobTitle: String
   lastName: String
   linkedId: String
   linkedTable: String
   middleName: String
   name: String!
+  nickname: String
+  organization: String
   phones: [String!]
   postalCode: String
+  pronouns: String
   region: String
   streetAddress: String
   streetAddress2: String
+  website: String
 }
 
 type CreatePersonPayload {
@@ -1440,10 +1448,40 @@ type PairingStatusPayload {
   userName: String
 }
 
+input PersonAddressInput {
+  city: String
+  country: String
+  isPrimary: Boolean
+  label: String
+  postalCode: String
+  region: String
+  streetAddress: String
+  streetAddress2: String
+}
+
+type PersonAddressType {
+  city: String
+  country: String
+  formatted: String
+  isPrimary: Boolean!
+  label: String
+  postalCode: String
+  region: String
+  streetAddress: String
+  streetAddress2: String
+}
+
 type PersonConnection implements Connection {
   edges: [PersonEdge!]!
   pageInfo: PageInfo!
   totalCount: Int!
+}
+
+input PersonContactInput {
+  isPrimary: Boolean
+  kind: String!
+  label: String
+  value: String!
 }
 
 type PersonDuplicateGroupType {
@@ -1475,10 +1513,12 @@ type PersonInteractionStatsType {
 
 type PersonType implements Node & Taggable {
   address: String
+  addresses: [PersonAddressType!]!
   avatarUrl: String
   birthDate: String
   city: String
   country: String
+  department: String
   description: String
   firstName: String
   gender: String
@@ -1487,15 +1527,20 @@ type PersonType implements Node & Taggable {
   incomingRelationships(limit: Int): [RelationshipType!]
   interactionStats: PersonInteractionStatsType!
   isSelf: Boolean!
+  jobTitle: String
   lastName: String
   middleName: String
   name: String
+  nickname: String
+  organization: String
   outgoingRelationships(limit: Int): [RelationshipType!]
   postalCode: String
+  pronouns: String
   region: String
   streetAddress: String
   streetAddress2: String
   tags: [EntityTagType!]!
+  website: String
 }
 
 type PlaceConnection implements Connection {
@@ -2307,21 +2352,29 @@ type UpdateNotePayload {
 }
 
 input UpdatePersonInput {
+  addresses: [PersonAddressInput!]
   avatarUrl: String
   birthDate: String
   city: String
+  contacts: [PersonContactInput!]
   country: String
+  department: String
   description: String
   firstName: String
   gender: String
   id: String!
+  jobTitle: String
   lastName: String
   middleName: String
   name: String
+  nickname: String
+  organization: String
   postalCode: String
+  pronouns: String
   region: String
   streetAddress: String
   streetAddress2: String
+  website: String
 }
 
 type UpdatePersonPayload {

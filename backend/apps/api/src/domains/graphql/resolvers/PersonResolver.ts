@@ -9,11 +9,16 @@ import { CreatePersonPayload } from '@ci/domains/graphql/types/CreatePersonPaylo
 import { DeleteByIdInput } from '@ci/domains/graphql/types/DeleteByIdInput';
 import { DeleteByIdPayload } from '@ci/domains/graphql/types/DeleteByIdPayload';
 import {
+  type PersonAddress,
   EntityMergeBlockService,
   GraphQueryService,
   PersonDuplicateService,
   PersonMergeService,
   PersonService,
+  ensureSinglePrimary,
+  formatPersonAddress,
+  isPersonAddressEmpty,
+  serializePersonAddress,
 } from '@ci/domains/memory';
 
 import { PersonIdentifiersLoader } from '../loaders/PersonIdentifiersLoader';
@@ -25,7 +30,9 @@ import { GlobalUID } from '../types/GlobalUID';
 import { MergePeopleInput } from '../types/MergePeopleInput';
 import { MergePeoplePayload } from '../types/MergePeoplePayload';
 import { PaginationArgs } from '../types/PaginationArgs';
+import { PersonAddressInput } from '../types/PersonAddressType';
 import { PersonConnection } from '../types/PersonConnection';
+import { PersonContactInput } from '../types/PersonContactInput';
 import { PersonDuplicateGroupType } from '../types/PersonDuplicateGroupType';
 import { PersonEdge } from '../types/PersonEdge';
 import { AddPersonIdentifierInput, RemovePersonIdentifierInput } from '../types/PersonIdentifierInput';
@@ -46,8 +53,14 @@ function structuredPropertiesPatch(
     ['firstName', 'first_name'],
     ['middleName', 'middle_name'],
     ['lastName', 'last_name'],
+    ['nickname', 'nickname'],
+    ['pronouns', 'pronouns'],
     ['gender', 'gender'],
     ['birthDate', 'birth_date'],
+    ['jobTitle', 'job_title'],
+    ['organization', 'organization'],
+    ['department', 'department'],
+    ['website', 'website'],
     ['streetAddress', 'street_address'],
     ['streetAddress2', 'street_address_2'],
     ['city', 'city'],
@@ -67,6 +80,97 @@ function structuredPropertiesPatch(
   }
 
   return patch;
+}
+
+function trimmedOrNull(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+
+  return trimmed ? trimmed : null;
+}
+
+function toPersonAddress(input: PersonAddressInput): PersonAddress {
+  return {
+    label: trimmedOrNull(input.label),
+    streetAddress: trimmedOrNull(input.streetAddress),
+    streetAddress2: trimmedOrNull(input.streetAddress2),
+    city: trimmedOrNull(input.city),
+    region: trimmedOrNull(input.region),
+    postalCode: trimmedOrNull(input.postalCode),
+    country: trimmedOrNull(input.country),
+    isPrimary: input.isPrimary === true,
+  };
+}
+
+/**
+ * Turn the address list into its properties patch.
+ *
+ * The list is canonical, but the flat `street_address`/`city`/... keys are the
+ * only address a pre-list reader (the search projection, older importers)
+ * understands — so the primary address is mirrored onto them, and blank rows
+ * are dropped rather than persisted as an empty address.
+ */
+function addressPropertiesPatch(addresses: PersonAddressInput[]): Record<string, unknown> {
+  const parsed = ensureSinglePrimary(addresses.map(toPersonAddress).filter((a) => !isPersonAddressEmpty(a)));
+  const primary = parsed[0] ?? null;
+
+  return {
+    addresses: parsed.map((address) => serializePersonAddress(address)),
+    address: primary ? formatPersonAddress(primary) : null,
+    street_address: primary?.streetAddress ?? null,
+    street_address_2: primary?.streetAddress2 ?? null,
+    city: primary?.city ?? null,
+    region: primary?.region ?? null,
+    postal_code: primary?.postalCode ?? null,
+    country: primary?.country ?? null,
+  };
+}
+
+/** Contact-method kinds a person form can edit ('name' is machine-asserted). */
+type ContactKind = Extract<IdentifierKind, 'email' | 'phone'>;
+
+function parseContactKind(raw: string): ContactKind {
+  if (raw !== 'email' && raw !== 'phone') {
+    throw new BadRequestException(`Unknown contact kind "${raw}" — expected email or phone`);
+  }
+
+  return raw;
+}
+
+/**
+ * Fold the labelled `contacts` list and the flat `emails`/`phones` arrays into
+ * one list. Both shapes are accepted (capture sources send the flat arrays, the
+ * person form sends labelled contacts); `contacts` is applied first so its
+ * labels survive when the same value arrives twice.
+ */
+function mergeContactInputs(input: {
+  contacts?: PersonContactInput[];
+  emails?: string[];
+  phones?: string[];
+}): Array<{ kind: ContactKind; value: string; label?: string; isPrimary?: boolean }> {
+  const merged: Array<{ kind: ContactKind; value: string; label?: string; isPrimary?: boolean }> = [];
+
+  for (const contact of input.contacts ?? []) {
+    if (contact.value.trim() === '') {
+      continue;
+    }
+
+    merged.push({
+      kind: parseContactKind(contact.kind),
+      value: contact.value,
+      label: contact.label,
+      isPrimary: contact.isPrimary,
+    });
+  }
+
+  for (const email of input.emails ?? []) {
+    merged.push({ kind: 'email', value: email });
+  }
+
+  for (const phone of input.phones ?? []) {
+    merged.push({ kind: 'phone', value: phone });
+  }
+
+  return merged;
 }
 
 const IDENTIFIER_KINDS: IdentifierKind[] = ['email', 'phone', 'name'];
@@ -97,13 +201,24 @@ export class PersonResolver {
   ): Promise<CreatePersonPayload> {
     const serviceContext = toServiceContext(context);
 
-    const properties = structuredPropertiesPatch(input);
-    if (input.emails?.length) {
-      properties.emails = input.emails;
+    const contacts = mergeContactInputs(input);
+
+    const properties = {
+      ...structuredPropertiesPatch(input),
+      // The list wins when both shapes arrive: it carries the flat keys' values
+      // as its primary address anyway.
+      ...(input.addresses ? addressPropertiesPatch(input.addresses) : {}),
+    };
+
+    const emails = contacts.filter((contact) => contact.kind === 'email').map((contact) => contact.value);
+    const phones = contacts.filter((contact) => contact.kind === 'phone').map((contact) => contact.value);
+
+    if (emails.length > 0) {
+      properties.emails = emails;
     }
 
-    if (input.phones?.length) {
-      properties.phones = input.phones;
+    if (phones.length > 0) {
+      properties.phones = phones;
     }
 
     const entity = await this.personService.create(serviceContext, {
@@ -122,12 +237,9 @@ export class PersonResolver {
 
     // Register the initial contact methods so the new person resolves in
     // people-linking immediately (non-fatal, same as ingest).
-    if (input.emails?.length || input.phones?.length) {
+    if (contacts.length > 0) {
       await this.entityIdentifierService
-        .upsertForEntity(serviceContext.userId, entity.id, {
-          emails: input.emails,
-          phones: input.phones,
-        })
+        .replaceForEntity(serviceContext.userId, entity.id, ['email', 'phone'], contacts)
         .catch(() => undefined);
     }
 
@@ -160,6 +272,7 @@ export class PersonResolver {
         linkedId: item.linkedId,
         properties: {
           ...structuredPropertiesPatch(item),
+          ...(item.addresses ? addressPropertiesPatch(item.addresses) : {}),
           ...(item.emails?.length ? { emails: item.emails } : {}),
           ...(item.phones?.length ? { phones: item.phones } : {}),
         },
@@ -178,10 +291,50 @@ export class PersonResolver {
 
     const id = GlobalUID.parse('person', input.id);
 
+    // Contact methods live in ci.entity_identifiers, which is owner-scoped but
+    // NOT person-scoped — writing them for a person this user does not own would
+    // leave dangling rows behind the `patch` below rejecting the whole update.
+    // Establish ownership first.
+    if (input.contacts !== undefined) {
+      const owned = await this.personService.findById(serviceContext, id);
+      if (owned == null) {
+        return { success: false };
+      }
+
+      const { conflicts } = await this.entityIdentifierService.replaceForEntity(
+        serviceContext.userId,
+        id,
+        ['email', 'phone'],
+        input.contacts.map((contact) => ({
+          kind: parseContactKind(contact.kind),
+          value: contact.value,
+          label: contact.label,
+          isPrimary: contact.isPrimary,
+        })),
+      );
+
+      this.personIdentifiersLoader.clear(serviceContext, id);
+
+      if (conflicts.length > 0) {
+        // The non-conflicting contact methods were still applied — only the
+        // claimed values were left with their existing owner (first-writer-wins,
+        // same as ingest). Surfacing that beats silently dropping them: the
+        // right fix is a merge, not a re-point.
+        throw new ConflictException(
+          `${conflicts.map((conflict) => conflict.value).join(', ')} already ${
+            conflicts.length === 1 ? 'belongs' : 'belong'
+          } to another person. Merge the two people instead of re-assigning it.`,
+        );
+      }
+    }
+
     const entity = await this.personService.patch(serviceContext, id, {
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(input.description !== undefined ? { description: input.description } : {}),
-      propertiesPatch: structuredPropertiesPatch(input),
+      propertiesPatch: {
+        ...structuredPropertiesPatch(input),
+        ...(input.addresses ? addressPropertiesPatch(input.addresses) : {}),
+      },
     });
 
     if (entity == null) {

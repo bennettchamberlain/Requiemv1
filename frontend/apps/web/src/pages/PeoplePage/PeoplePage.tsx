@@ -38,6 +38,7 @@ const GET_PEOPLE = gql(`
           identifiers {
             kind
             value
+            rawValue
             label
           }
           interactionStats {
@@ -126,6 +127,10 @@ function formatLastInteraction(value: string | Date | null | undefined): string 
 function PersonRow({ person, onOpen }: { person: PersonNode; onOpen: () => void }) {
   const email = person.identifiers.find((identifier) => identifier.kind === 'email');
   const phone = person.identifiers.find((identifier) => identifier.kind === 'phone');
+  // Prefer the raw form: `value` is the matching key (a phone normalizes to bare
+  // digits), which reads as a mangled number in a contact list.
+  const emailText = email?.rawValue?.trim() || email?.value;
+  const phoneText = phone?.rawValue?.trim() || phone?.value;
   const lastSeen = formatLastInteraction(person.interactionStats.lastInteractionAt);
 
   return (
@@ -146,7 +151,7 @@ function PersonRow({ person, onOpen }: { person: PersonNode; onOpen: () => void 
         </div>
 
         <div className="truncate text-sm text-muted-foreground">
-          {[email?.value, phone?.value, person.description].filter(Boolean).join(' · ') || '—'}
+          {[emailText, phoneText, person.description].filter(Boolean).join(' · ') || '—'}
         </div>
       </div>
 

@@ -313,6 +313,144 @@ export class EntityIdentifierService {
   }
 
   /**
+   * Reconcile ONE entity's contact methods of the given kinds against `desired`
+   * — the set-shaped counterpart to {@link addForEntity}, for a form that edits
+   * the whole contact list at once.
+   *
+   * Adds what is new, applies labels / the primary flag, and deletes the rows
+   * of those kinds that are no longer listed. Kinds absent from `kinds` are left
+   * alone, so reconciling emails never touches phones (or the 'name' rows the
+   * duplicate detector relies on).
+   *
+   * A value already claimed by ANOTHER entity is NOT stolen (first-writer-wins,
+   * same as ingest and {@link addForEntity}); it is returned in `conflicts` so
+   * the caller can surface "already belongs to X" instead of silently dropping
+   * the user's input.
+   */
+  async replaceForEntity(
+    ownerUserId: string,
+    entityId: string,
+    kinds: IdentifierKind[],
+    desired: Array<{ kind: IdentifierKind; value: string; label?: string | null; isPrimary?: boolean }>,
+  ): Promise<{ conflicts: Array<{ kind: IdentifierKind; value: string }> }> {
+    const conflicts: Array<{ kind: IdentifierKind; value: string }> = [];
+    const kindSet = new Set(kinds);
+
+    // Normalize + de-dupe first: the form can legitimately submit the same
+    // address twice (e.g. "Bo@x.com" and "bo@x.com"), and only the first wins.
+    const seen = new Set<string>();
+    const wanted: Array<{
+      kind: IdentifierKind;
+      valueNormalized: string;
+      rawValue: string;
+      label: string | null;
+      isPrimary: boolean;
+    }> = [];
+
+    for (const entry of desired) {
+      if (!kindSet.has(entry.kind)) {
+        continue;
+      }
+
+      const valueNormalized = normalizeIdentifier(entry.kind, entry.value);
+      if (valueNormalized == null) {
+        continue;
+      }
+
+      const dedupeKey = `${entry.kind}:${valueNormalized}`;
+      if (seen.has(dedupeKey)) {
+        continue;
+      }
+
+      seen.add(dedupeKey);
+      wanted.push({
+        kind: entry.kind,
+        valueNormalized,
+        rawValue: entry.value,
+        label: entry.label?.trim() || null,
+        // First of its kind wins the primary flag when nothing is marked.
+        isPrimary: entry.isPrimary === true,
+      });
+    }
+
+    // Exactly one primary per kind.
+    for (const kind of kindSet) {
+      const ofKind = wanted.filter((entry) => entry.kind === kind);
+      if (ofKind.length === 0) {
+        continue;
+      }
+
+      const primary = ofKind.find((entry) => entry.isPrimary) ?? ofKind[0]!;
+      for (const entry of ofKind) {
+        entry.isPrimary = entry === primary;
+      }
+    }
+
+    const existing = await this.repository.find({ where: { ownerUserId, entityId } });
+
+    // Drop the rows of the reconciled kinds that are no longer wanted.
+    const stale = existing.filter(
+      (row) => kindSet.has(row.kind) && !seen.has(`${row.kind}:${row.valueNormalized}`),
+    );
+
+    if (stale.length > 0) {
+      await this.repository.delete(
+        stale.map((row) => ({ ownerUserId, kind: row.kind, valueNormalized: row.valueNormalized })),
+      );
+    }
+
+    for (const entry of wanted) {
+      await this.repository
+        .createQueryBuilder()
+        .insert()
+        .into(EntityIdentifierEntity)
+        .values({
+          ownerUserId,
+          entityId,
+          kind: entry.kind,
+          valueNormalized: entry.valueNormalized,
+          rawValue: entry.rawValue === entry.valueNormalized ? null : entry.rawValue,
+          label: entry.label,
+          isPrimary: entry.isPrimary,
+          source: 'user',
+          verifiedAt: () => 'now()',
+        })
+        .orIgnore()
+        .execute();
+
+      const row = await this.repository.findOne({
+        where: { ownerUserId, kind: entry.kind, valueNormalized: entry.valueNormalized },
+      });
+
+      if (row == null) {
+        continue;
+      }
+
+      if (row.entityId !== entityId) {
+        conflicts.push({ kind: entry.kind, value: entry.rawValue });
+
+        continue;
+      }
+
+      // The tuple already existed for this entity (machine-asserted, or an
+      // edited label): promote it to user-verified and apply the form's values.
+      if (row.label !== entry.label || row.isPrimary !== entry.isPrimary || row.verifiedAt == null) {
+        await this.repository.update(
+          { ownerUserId, kind: entry.kind, valueNormalized: entry.valueNormalized },
+          {
+            label: entry.label,
+            isPrimary: entry.isPrimary,
+            source: 'user',
+            verifiedAt: row.verifiedAt ?? new Date(),
+          },
+        );
+      }
+    }
+
+    return { conflicts };
+  }
+
+  /**
    * Remove an identifier claim from an entity. Scoped to the entity so a stale
    * UI can never delete another entity's claim. Returns true when a row was
    * deleted.
