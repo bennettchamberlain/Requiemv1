@@ -1,3 +1,5 @@
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 import { GoogleVoiceFileImporter } from '../googlevoice';
@@ -6,6 +8,75 @@ import type { ImportParams } from '../timeline';
 import type { EmittedGraph } from './support/emitted';
 
 const FIXTURES_DIR = path.join(__dirname, 'fixtures');
+
+
+describe('call-log headings are not names', () => {
+  // 2,025 of 6,673 Person entities on a real import were call-log headings —
+  // 900 of them literally "Missed call from" with no name after the phrase.
+  // The heading and the contact can share one `fn` span, so taking that span
+  // verbatim files the whole heading as somebody's name.
+  const callLogFile = async (
+    inner: string,
+    filename = 'Steven Stone - Missed - 2025-01-15T09_30_00Z.html',
+  ): Promise<Record<string, unknown> | undefined> => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gv-call-'));
+    // The importer only walks `Calls/`. Writing the fixture at the top level
+    // emits nothing, and every assertion below would then pass on `undefined`
+    // without exercising a single line of the parser.
+    fs.mkdirSync(path.join(dir, 'Calls'));
+    fs.writeFileSync(
+      path.join(dir, 'Calls', filename),
+      `<html><body><div class="haudio">${inner}
+         <abbr class="published" title="2025-01-15T09:30:00.000Z">Jan 15</abbr>
+       </div></body></html>`,
+    );
+
+    const pipeline: EmittedGraph[] = [];
+    await new GoogleVoiceFileImporter().fileImport({}, { filename: path.basename(dir), fullPath: dir }, {
+      pipeline,
+      timeframe: {},
+      log: () => {},
+    } as unknown as ImportParams);
+
+    const items = pipeline.filter((p) => p.item);
+
+    // Guard against the vacuous pass: no item means every Contact assertion
+    // below is checking `undefined` against `undefined`.
+    expect(items).toHaveLength(1);
+
+    return items[0].item.metadata as Record<string, unknown> | undefined;
+  };
+
+  it('records no contact when neither the markup nor the filename names anyone', async () => {
+    const meta = await callLogFile('<span class="fn">Missed call from \n</span>', 'Missed - 2025-01-15T09_30_00Z.html');
+
+    expect(meta?.Contact).toBeUndefined();
+  });
+
+  it('still falls back to the filename label when the markup names nobody', async () => {
+    // Google Voice names each call file "<contact> - <Type> - <timestamp>.html",
+    // so the filename is a better answer than the heading — and far better than
+    // filing "Missed call from" as a person.
+    const meta = await callLogFile('<span class="fn">Missed call from \n</span>');
+
+    expect(meta?.Contact).toBe('Steven Stone');
+  });
+
+  it('keeps the name when the heading and the name share one span', async () => {
+    const meta = await callLogFile('<span class="fn">Missed call from \nSteven Stone</span>');
+
+    expect(meta?.Contact).toBe('Steven Stone');
+  });
+
+  it('prefers the name nested inside the tel anchor', async () => {
+    const meta = await callLogFile(
+      '<span class="fn">Received call from <a class="tel" href="tel:+15551230000">' +
+        '<span class="fn">Ada Lovelace</span></a></span>',
+    );
+
+    expect(meta?.Contact).toBe('Ada Lovelace');
+  });
+});
 
 describe('Google Voice datasource', () => {
   it('recognizes Google Voice export directory', async () => {

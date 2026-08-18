@@ -148,7 +148,11 @@ stage() {
       ;;
   esac
 
-  printf '%s' "$dest"
+  # The BASENAME, not the absolute path: `ci-import inbox --units` matches
+  # against the unit paths the scan reports, and the scan reports them relative
+  # to the inbox root. Passing an absolute path fails with "Not in the inbox
+  # scan" and imports nothing.
+  printf '%s' "$(basename "$dest")"
 }
 
 import_one() {
