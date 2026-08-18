@@ -33,7 +33,7 @@ export class ActivityRollupCron implements OnApplicationBootstrap {
     void this.refreshRollup();
   }
 
-  @Cron(ACTIVITY_ROLLUP_CRON)
+  @Cron(ACTIVITY_ROLLUP_CRON, { name: 'ActivityRollupCron.refreshRollup' })
   async refreshRollup() {
     if (this.running) {
       this.logger.warn('Skipping activity rollup refresh; previous run still in progress');

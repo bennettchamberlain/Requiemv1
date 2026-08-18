@@ -281,7 +281,7 @@ export class PipelineTickCron {
    * unhandled rejection here would exit the process, which is a strictly worse
    * outcome than one missed planning pass.
    */
-  @Cron(PIPELINE_TICK_CRON)
+  @Cron(PIPELINE_TICK_CRON, { name: 'PipelineTickCron.runOnSchedule' })
   async runOnSchedule(): Promise<void> {
     try {
       await this.tickOnce();

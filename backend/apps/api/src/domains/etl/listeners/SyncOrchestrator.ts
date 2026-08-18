@@ -30,7 +30,7 @@ export class SyncOrchestrator {
    * For historical syncs, this is where there are no prior ones, or the last one was successful and has a nextCursor,
    * or the last one was successful and has no nextCursor but was completed more than TTL ago.
    */
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Cron(CronExpression.EVERY_MINUTE, { name: 'SyncOrchestrator.orchestrateSyncJobs' })
   async orchestrateSyncJobs(): Promise<void> {
     const activeConnections = await this.connectionService.findActiveConnections();
 
@@ -232,7 +232,7 @@ export class SyncOrchestrator {
    * It will only execute one endpoint job per connection to avoid rate limits.
    * It will also limit itself to 5 total jobs in progress to avoid overwhelming the system.
    */
-  @Cron(CronExpression.EVERY_30_SECONDS)
+  @Cron(CronExpression.EVERY_30_SECONDS, { name: 'SyncOrchestrator.executeSyncJobs' })
   async executeSyncJobs(): Promise<void> {
     const pendingSyncJobs = await this.connectionSyncJobService.search(
       { userId: SYSTEM_USER },
@@ -431,7 +431,7 @@ export class SyncOrchestrator {
    * This method finds sync jobs that need to be transformed, retrieves their data, then
    * calls the appropriate transformation function based on the connection and endpoint.
    */
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Cron(CronExpression.EVERY_MINUTE, { name: 'SyncOrchestrator.executeTransformJobs' })
   async executeTransformJobs(): Promise<void> {
     const syncJobsToTransform = (
       await this.connectionSyncJobService.search(

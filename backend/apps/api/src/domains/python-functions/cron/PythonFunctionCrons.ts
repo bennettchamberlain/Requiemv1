@@ -87,7 +87,7 @@ export class PythonFunctionCrons implements OnApplicationBootstrap {
     }, 30_000);
   }
 
-  @Cron('0 5 * * * *')
+  @Cron('0 5 * * * *', { name: 'PythonFunctionCrons.hourlySummaries' })
   async hourlySummaries(): Promise<void> {
     if (await this.cededToSmartRotation('hourly_summary')) {
       return;
@@ -96,22 +96,22 @@ export class PythonFunctionCrons implements OnApplicationBootstrap {
     await this.fanOut('summary', 'hourly_summary', hourKey());
   }
 
-  @Cron('0 10 0 * * *')
+  @Cron('0 10 0 * * *', { name: 'PythonFunctionCrons.dailySummaries' })
   async dailySummaries(): Promise<void> {
     await this.fanOut('summary', 'daily_summary', dayKey(), { reference_time: new Date().toISOString() });
   }
 
-  @Cron('0 15 0 * * 1')
+  @Cron('0 15 0 * * 1', { name: 'PythonFunctionCrons.weeklySummaries' })
   async weeklySummaries(): Promise<void> {
     await this.fanOut('summary', 'weekly_summary', dayKey(), { reference_time: new Date().toISOString() });
   }
 
-  @Cron('0 20 0 1 * *')
+  @Cron('0 20 0 1 * *', { name: 'PythonFunctionCrons.monthlySummaries' })
   async monthlySummaries(): Promise<void> {
     await this.fanOut('summary', 'monthly_summary', dayKey(), { reference_time: new Date().toISOString() });
   }
 
-  @Cron('0 12 * * * *')
+  @Cron('0 12 * * * *', { name: 'PythonFunctionCrons.dossierRefresh' })
   async dossierRefresh(): Promise<void> {
     if (await this.cededToSmartRotation('dossier_refresh')) {
       return;
@@ -120,7 +120,7 @@ export class PythonFunctionCrons implements OnApplicationBootstrap {
     await this.fanOut('summary', 'dossier_refresh', hourKey(), { lookback_days: 30 });
   }
 
-  @Cron('0 30 */3 * * *')
+  @Cron('0 30 */3 * * *', { name: 'PythonFunctionCrons.insights' })
   async insights(): Promise<void> {
     if (await this.cededToSmartRotation('insights_generation')) {
       return;
@@ -129,17 +129,17 @@ export class PythonFunctionCrons implements OnApplicationBootstrap {
     await this.fanOut('summary', 'insights_generation', hourKey(), { lookback_hours: 72 });
   }
 
-  @Cron('0 45 * * * *')
+  @Cron('0 45 * * * *', { name: 'PythonFunctionCrons.actions' })
   async actions(): Promise<void> {
     await this.fanOut('summary', 'actions_generation', hourKey(), { lookback_days: 7 });
   }
 
-  @Cron('0 30 2 * * *')
+  @Cron('0 30 2 * * *', { name: 'PythonFunctionCrons.hbpeNightly' })
   async hbpeNightly(): Promise<void> {
     await this.fanOut('hbpe', 'nightly', dayKey());
   }
 
-  @Cron('0 0 3 * * *')
+  @Cron('0 0 3 * * *', { name: 'PythonFunctionCrons.hbpeBootstrapSweep' })
   async hbpeBootstrapSweep(): Promise<void> {
     await this.ensureHbpeBootstrap();
   }

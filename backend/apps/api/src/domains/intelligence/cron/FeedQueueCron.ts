@@ -19,7 +19,7 @@ export class FeedQueueCron {
     this.logger.setContext(FeedQueueCron.name);
   }
 
-  @Cron(FEED_QUEUE_CRON)
+  @Cron(FEED_QUEUE_CRON, { name: 'FeedQueueCron.topUpFeedQueue' })
   async topUpFeedQueue() {
     if (await this.featureService.isFeatureEnabled('smart.rotation')) {
       return;

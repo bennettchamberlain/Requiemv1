@@ -39,7 +39,7 @@ export class DailyMetricsCron implements OnApplicationBootstrap {
     void this.refresh({ windowDays: DEFAULT_REFRESH_WINDOW_DAYS });
   }
 
-  @Cron(DAILY_METRICS_CRON)
+  @Cron(DAILY_METRICS_CRON, { name: 'DailyMetricsCron.refreshRecent' })
   async refreshRecent() {
     await this.refresh({ windowDays: CRON_WINDOW_DAYS });
   }

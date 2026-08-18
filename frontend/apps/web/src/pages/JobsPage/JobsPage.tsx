@@ -6,12 +6,16 @@ import { AlertTriangle, RefreshCcw } from '@ci/shadcn/icons';
 
 import { PageContent } from '@/components/layout';
 
+import { describeCron } from './cronDescriptor';
+import { describeCronExpression } from './cronSchedule';
+import { categoryDot } from './jobCategories';
 import { JobHistoryCharts } from './JobHistoryCharts';
 import { JobsTable } from './JobsTable';
 import { COMPACT_CARD } from './layout';
 import { useJobHistory } from './useJobHistory';
 import { useJobsDashboard, type JobsDashboardResponse } from './useJobsDashboard';
 import { DEFAULT_JOB_FILTERS, useJobsList, type JobFilters } from './useJobsList';
+import { useJobTypes, type JobTypesResponse } from './useJobTypes';
 
 /** Category keys the API's taxonomy exposes, in the order the filter lists them. */
 const CATEGORIES = [
@@ -34,6 +38,7 @@ export function JobsPage() {
 
   const dashboard = useJobsDashboard();
   const list = useJobsList(filters);
+  const { types: jobTypes } = useJobTypes();
   const history = useJobHistory(windowHours, filters.queue);
 
   const onFilterChange = useCallback((next: Partial<JobFilters>) => {
@@ -73,12 +78,17 @@ export function JobsPage() {
             data={list.data}
             loading={list.loading}
             error={list.error}
+            jobTypes={jobTypes}
             filters={filters}
             categories={CATEGORIES}
             onChange={onFilterChange}
           />
 
-          <SchedulesCard crons={dashboard.data?.crons ?? []} loading={dashboard.loading} />
+          <SchedulesCard
+            crons={dashboard.data?.crons ?? []}
+            loading={dashboard.loading}
+            jobTypes={jobTypes}
+          />
         </div>
       </PageContent>
     </>
@@ -188,7 +198,15 @@ function SummaryCard({
  * codebase writes — so it was empty on every appliance ever shipped while ~34
  * `@Cron` methods ran beside it, invisible.
  */
-function SchedulesCard({ crons, loading }: { crons: JobsDashboardResponse['crons']; loading: boolean }) {
+function SchedulesCard({
+  crons,
+  loading,
+  jobTypes,
+}: {
+  crons: JobsDashboardResponse['crons'];
+  loading: boolean;
+  jobTypes: JobTypesResponse | null;
+}) {
   return (
     <Card className={COMPACT_CARD}>
       <Card.Header>
@@ -201,28 +219,92 @@ function SchedulesCard({ crons, loading }: { crons: JobsDashboardResponse['crons
         ) : !crons.length ? (
           <p className="text-sm text-muted-foreground">No recurring jobs are registered here.</p>
         ) : (
-          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-            {crons.map((cron) => (
-              <div
-                key={cron.name}
-                className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-1.5 text-sm"
-              >
-                <div className="min-w-0">
-                  <p className="truncate font-medium" title={cron.name}>
-                    {cron.name}
-                  </p>
-                  <p className="font-mono text-xs text-muted-foreground">{cron.cron || '—'}</p>
-                </div>
-                <div className="shrink-0 text-right">
-                  <Badge variant={cron.running ? 'outline' : 'secondary'} className="text-[10px] uppercase">
-                    {cron.running ? 'scheduled' : 'stopped'}
-                  </Badge>
-                  <p className="mt-1 text-[11px] text-muted-foreground">
-                    {cron.nextRunAt ? `next ${new Date(cron.nextRunAt).toLocaleTimeString()}` : 'no next run'}
-                  </p>
-                </div>
-              </div>
-            ))}
+          // A table, like the Jobs list — same columns-and-rows shape, so the two
+          // cards read as one system rather than two unrelated widgets. The grid
+          // of cards it replaced could not be scanned down a column (every
+          // schedule's cron sat at a different x-position).
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-border/60 text-left text-xs uppercase text-muted-foreground">
+                  <th scope="col" className="py-1.5 pr-3 font-medium">
+                    Schedule
+                  </th>
+                  <th scope="col" className="py-1.5 pr-3 font-medium">
+                    Category
+                  </th>
+                  <th scope="col" className="py-1.5 pr-3 font-medium">
+                    Every
+                  </th>
+                  <th scope="col" className="py-1.5 pr-3 font-medium">
+                    When
+                  </th>
+                  <th scope="col" className="py-1.5 pr-3 font-medium">
+                    Status
+                  </th>
+                  <th scope="col" className="py-1.5 pr-3 text-right font-medium">
+                    Next run
+                  </th>
+                  <th scope="col" className="py-1.5 text-right font-medium">
+                    Last run
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {crons.map((cron) => {
+                  // Crons register as `ClassName.methodName`; the taxonomy is
+                  // keyed by EVENT name, so a cron that emits a known event gets
+                  // the same label and colour the Jobs table gives it. The rest
+                  // fall back to their registration key, which is at least
+                  // greppable — the old UI showed a bare UUID.
+                  const descriptor = describeCron(cron.name, jobTypes);
+                  // `0 */15 * * * *` is six positional fields you have to count
+                  // before you know what it does. Split into how-often and
+                  // where-in-the-period, both columns become scannable — and the
+                  // raw expression stays on the cells' title, since that is the
+                  // form you paste back into a decorator.
+                  const schedule = describeCronExpression(cron.cron);
+
+                  return (
+                    <tr key={cron.name} className="border-b border-border/40 last:border-0">
+                      <td className="py-1.5 pr-3">
+                        <span className="flex items-center gap-1.5 font-medium" title={cron.name}>
+                          <span
+                            aria-hidden
+                            className={`h-2 w-2 shrink-0 rounded-full ${categoryDot(descriptor.category)}`}
+                          />
+                          <span className="truncate">{descriptor.label}</span>
+                        </span>
+                      </td>
+                      <td className="py-1.5 pr-3 text-muted-foreground">{descriptor.categoryLabel}</td>
+                      <td className="py-1.5 pr-3 whitespace-nowrap" title={schedule.raw}>
+                        {schedule.frequency}
+                      </td>
+                      <td
+                        className="py-1.5 pr-3 whitespace-nowrap text-muted-foreground"
+                        title={schedule.raw}
+                      >
+                        {schedule.when || '—'}
+                      </td>
+                      <td className="py-1.5 pr-3">
+                        <Badge
+                          variant={cron.running ? 'outline' : 'secondary'}
+                          className="text-[10px] uppercase"
+                        >
+                          {cron.running ? 'scheduled' : 'stopped'}
+                        </Badge>
+                      </td>
+                      <td className="py-1.5 pr-3 text-right tabular-nums text-muted-foreground">
+                        {cron.nextRunAt ? new Date(cron.nextRunAt).toLocaleTimeString() : '—'}
+                      </td>
+                      <td className="py-1.5 text-right tabular-nums text-muted-foreground">
+                        {cron.lastRunAt ? new Date(cron.lastRunAt).toLocaleTimeString() : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </Card.Content>

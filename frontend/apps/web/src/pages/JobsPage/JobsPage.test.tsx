@@ -65,6 +65,30 @@ vi.mock('./useJobsList', async (importOriginal) => {
   };
 });
 
+// The taxonomy hook talks to /api/jobs/types behind the auth provider; the page
+// tests care about filter wiring, not the fetch, so it serves a fixed taxonomy.
+vi.mock('./useJobTypes', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./useJobTypes')>();
+
+  return {
+    ...actual,
+    useJobTypes: () => ({
+      types: {
+        categories: ['ingest', 'search'],
+        types: {
+          'file.uploaded': {
+            label: 'File uploaded',
+            category: 'ingest',
+            description: '',
+            interactive: false,
+          },
+        },
+      },
+      loading: false,
+    }),
+  };
+});
+
 vi.mock('./useJobHistory', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./useJobHistory')>();
 
@@ -334,8 +358,42 @@ describe('JobsPage schedules', () => {
 
     // `pgboss.schedule` is empty on every appliance — nothing calls
     // boss.schedule(). These come from Nest's registry instead.
-    expect(screen.getByText('PipelineTickCron.tick')).toBeInTheDocument();
-    expect(screen.getByText('0 */2 * * * *')).toBeInTheDocument();
+    //
+    // Shown the way the Jobs table shows a job: the readable name, not the raw
+    // registration key. Crons register as `ClassName.methodName` (and used to
+    // register as a bare UUID), which told an operator nothing.
+    // The CLASS names the job when the method is generic — `tick` alone told an
+    // operator nothing, and eight crons registered as `.run`.
+    expect(screen.getByText('Pipeline tick')).toBeInTheDocument();
+    // The schedule reads as words, not as six positional fields — and the raw
+    // expression stays on the cell's title, because that is the form you paste
+    // back into an @Cron decorator.
+    expect(screen.getByText('Every 2 min')).toBeInTheDocument();
+    expect(screen.getAllByTitle('0 */2 * * * *').length).toBeGreaterThan(0);
+    // The registration key stays reachable for anyone grepping the codebase.
+    expect(screen.getByTitle('PipelineTickCron.tick')).toBeInTheDocument();
+  });
+
+  it('prefers the taxonomy label when a cron maps to a known event', () => {
+    render({
+      dashboard: dashboard({
+        crons: [
+          {
+            name: 'file.uploaded',
+            cron: '0 * * * * *',
+            timezone: null,
+            running: true,
+            nextRunAt: null,
+            lastRunAt: null,
+          },
+        ],
+      }),
+    });
+
+    // Same label the Jobs table gives that event — one vocabulary across both.
+    // Scoped to the schedule entry: the label also appears as an <option> in the
+    // job-type filter, which is the point — both read from one taxonomy.
+    expect(screen.getByTitle('file.uploaded')).toHaveTextContent('File uploaded');
   });
 });
 

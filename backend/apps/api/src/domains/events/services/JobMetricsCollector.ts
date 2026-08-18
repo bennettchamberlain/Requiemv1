@@ -58,12 +58,12 @@ export class JobMetricsCollector {
     this.logger.setContext(JobMetricsCollector.name);
   }
 
-  @Cron(SAMPLE_CRON)
+  @Cron(SAMPLE_CRON, { name: 'JobMetricsCollector.sampleOnSchedule' })
   async sampleOnSchedule(): Promise<void> {
     await this.sample();
   }
 
-  @Cron(PURGE_CRON)
+  @Cron(PURGE_CRON, { name: 'JobMetricsCollector.purgeOnSchedule' })
   async purgeOnSchedule(): Promise<void> {
     await this.purge();
   }
