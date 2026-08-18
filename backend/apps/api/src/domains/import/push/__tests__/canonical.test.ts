@@ -130,6 +130,33 @@ describe('destinationsFor', () => {
     expect(destinationsFor(orphan)).toEqual(['content']);
   });
 
+  it('gives a dated photo a content row so its thumbnail can resolve', () => {
+    // EventMediaLoader resolves an event's photo/video by INNER-JOINing
+    // ci.content on ci.events through the shared source triple
+    // (ContentService.findMediaFilesByEventIds). ['events'] alone never
+    // creates that content row, so the join finds nothing and the tile is
+    // blank — verified on a real import: 2,098 photo/video events, 0 linked.
+    const photo = recordFor({
+      classification: 'photo',
+      mediaType: 'image/jpeg',
+      intermediateLocation: '/scratch/IMG_0001.jpg',
+    });
+
+    expect(destinationsFor(photo)).toEqual(['events', 'content']);
+  });
+
+  it('gives a geotagged photo events, content, AND a position donation', () => {
+    const photo = recordFor({
+      classification: 'photo',
+      mediaType: 'image/jpeg',
+      intermediateLocation: '/scratch/IMG_0001.jpg',
+      latitude: 1,
+      longitude: 2,
+    });
+
+    expect(destinationsFor(photo)).toEqual(['events', 'content', 'position']);
+  });
+
   it('donates a geotagged message to the position table as well', () => {
     const tweet = recordFor({ classification: 'message', latitude: 1, longitude: 2 });
 

@@ -144,11 +144,19 @@ export class GoogleVoiceFileImporter implements FileImporter {
 
     // Conversation label = the contact name/number before " - <Type> - " in the filename
     // (e.g. "+1206… - Text - 2025-11-26T…Z.html").
-    const conversation =
-      path
-        .basename(fpath)
-        .replace(/\s*-\s*(Text|Received|Placed|Missed|Voicemail|Recorded|Group Conversation)\b[\s\S]*$/i, '')
-        .trim() || undefined;
+    //
+    // ONLY when that split actually happened. `replace` returns the string
+    // untouched when the pattern does not match, so a file whose name carries
+    // no contact prefix — "Missed - 2025-01-15T09_30_00Z.html" — yielded the
+    // whole basename, and this value is used as the CONTACT NAME further down.
+    // That is where 241 Person entities named after .html files came from: a
+    // filename is not a person, and the honest answer is that this file does
+    // not say who the contact was.
+    const basename = path.basename(fpath);
+    const label = basename
+      .replace(/\s*-\s*(Text|Received|Placed|Missed|Voicemail|Recorded|Group Conversation)\b[\s\S]*$/i, '')
+      .trim();
+    const conversation = label && label !== basename ? label : undefined;
 
     // Call / voicemail records ("Missed"/"Placed"/"Received"/"Recorded"/"Voicemail"
     // HTML files) use a completely different markup shape: a single
@@ -372,16 +380,41 @@ function decodeHtml(h: string): string {
     .replace(/&quot;/g, '"');
 }
 
+/**
+ * A call-log heading, which is NOT a person's name.
+ *
+ * Call records wrap the contact in a heading — "Missed call from", "Received
+ * call from", "Placed call to" — and in some exports the phrase and the name
+ * share one `fn` span, separated by a newline. Taking that span verbatim made
+ * the CONTACT NAME the whole heading: a real import produced 2,025 Person
+ * entities called "Missed call from" (900 of them with no name after the
+ * phrase at all), which is 30% of everyone in the address book.
+ */
+const CALL_LOG_HEADING = /^\s*(?:missed|placed|received|recorded|voicemail)\b[^\n]*?\b(?:call\s+)?(?:from|to|with)\b\s*/i;
+
 function extractSender(block: string): GVEntity {
   // Real Google Voice exports wrap the OUTBOUND sender ("Me") in
   // <abbr class="fn" title="">Me</abbr> and the INBOUND contact in
   // <span class="fn">Name</span>. The original regex only matched <span>, so
   // every outbound message landed with sender=undefined and was misclassified
   // as inbound — accept both tags.
-  const nameMatch = /<(?:span|abbr) class="fn"(?:\s[^>]*)?>([^<]*)<\/(?:span|abbr)>/i.exec(block);
+  //
+  // The <a class="tel"> form is tried FIRST because it is unambiguous: the name
+  // nested inside the phone-number anchor is the contact and nothing else. The
+  // bare `fn` match below is the fallback, and it is the one that can pick up a
+  // heading.
+  const telName = /<a class="tel"[^>]*>[\s\S]*?<(?:span|abbr) class="fn"(?:\s[^>]*)?>([^<]*)<\/(?:span|abbr)>/i.exec(
+    block,
+  );
+  const nameMatch = telName ?? /<(?:span|abbr) class="fn"(?:\s[^>]*)?>([^<]*)<\/(?:span|abbr)>/i.exec(block);
   const telMatch = /<a class="tel" href="tel:([^"']+)"/i.exec(block);
 
-  return { name: nameMatch ? decodeHtml(nameMatch[1]) : undefined, phone: telMatch?.[1] };
+  // Strip the heading and collapse the whitespace it leaves behind. What
+  // remains is either the real name or nothing — and nothing is the honest
+  // answer, since a caller the export does not name has no name to record.
+  const raw = nameMatch ? decodeHtml(nameMatch[1]).replace(CALL_LOG_HEADING, '').trim() : undefined;
+
+  return { name: raw ? raw : undefined, phone: telMatch?.[1] };
 }
 
 // Google Voice call-log <abbr class="duration"> values have been observed in

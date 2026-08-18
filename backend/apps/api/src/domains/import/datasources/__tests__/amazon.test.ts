@@ -55,6 +55,15 @@ describe('Amazon datasource', () => {
     expect(first.timestamp).toBeInstanceOf(Date);
     expect(first.timestamp!.toISOString()).toBe('2023-01-15T10:30:00.000Z');
 
+    // The order-level event carries the same total under BOTH `Total` and
+    // `Amount`. `Amount` is what LifeStatsService's spend chart reads
+    // (amountToMinorSql is `metadata->>'Amount'`, the key coinbase.ts and
+    // venmo.ts already write) — without it, a real import with $45.8k across
+    // 619 orders showed an empty Spending panel telling the user to go import
+    // purchase history that was already sitting there, unread.
+    const orderEvent = pipeline.find((g) => g.item.classification === 'order')!.item;
+    expect(orderEvent.metadata.Amount).toBe(orderEvent.metadata.Total);
+
     // Date-only "Order Date" parses to a valid timestamp.
     expect(purchases[1].item.metadata.Product).toBe('The Pragmatic Programmer, 20th Anniversary Edition');
     expect(purchases[1].item.timestamp).toBeInstanceOf(Date);

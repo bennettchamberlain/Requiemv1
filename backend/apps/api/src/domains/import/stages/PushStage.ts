@@ -942,6 +942,56 @@ export class PushStage implements ImportStageRunner {
   }
 
   /**
+   * Decide a communication's sender and recipients from its staged edges.
+   *
+   * Importers stage edges under three vocabularies, and this used to honour
+   * only one. `from`/`to`/`cc` is the mail-shaped vocabulary the email
+   * importers emit. A CHAT importer has no such split — a 1:1 conversation has
+   * one other party — so imessage and whatsapp stage `participant` instead, and
+   * record which way the message went in the edge's own metadata.
+   *
+   * Reading only from/to left every chat message with no sender at all. On a
+   * real import that was 432,173 iMessages — every message the owner has ever
+   * exchanged, staged WITH 290,043 resolved participant edges, and connected to
+   * nobody. The Person entities existed; the messages simply never pointed at
+   * them.
+   *
+   * The direction is what disambiguates a `participant`: on an inbound message
+   * the other party is the SENDER, on an outbound one they are the RECIPIENT.
+   * An explicit from/to edge always wins, so nothing about the mail path
+   * changes.
+   */
+  private resolveCorrespondents(
+    participants: Map<string, string[]>,
+    direction: string | undefined,
+  ): { from?: string; to: string[] } {
+    const [explicitFrom] = participants.get('from') ?? [];
+    const explicitTo = [...(participants.get('to') ?? []), ...(participants.get('cc') ?? [])];
+
+    if (explicitFrom != null || explicitTo.length > 0) {
+      return { from: explicitFrom, to: explicitTo };
+    }
+
+    const others = participants.get('participant') ?? [];
+
+    if (others.length === 0) {
+      return { to: [] };
+    }
+
+    // Outbound: the owner sent it, so every participant is a recipient. Inbound
+    // (and unknown, which `toCommunicationInput` defaults to inbound): the
+    // first participant is who it came from, and any others share the thread.
+    if (direction === 'outbound') {
+      return { to: others };
+    }
+
+    const [first, ...rest] = others;
+
+    return { from: first, to: rest };
+  }
+
+  /**
+   * Hand a whole batch's share of ONE destination to the service that owns it,  /**
    * Hand a whole batch's share of ONE destination to the service that owns it,
    * and report per row whether that destination actually wrote.
    *
@@ -972,8 +1022,7 @@ export class PushStage implements ImportStageRunner {
               ? toFacebookMessengerCommunicationInput(plan.record, isSelf)
               : toCommunicationInput(plan.record);
 
-          const [from] = plan.participants.get('from') ?? [];
-          const to = [...(plan.participants.get('to') ?? []), ...(plan.participants.get('cc') ?? [])];
+          const { from, to } = this.resolveCorrespondents(plan.participants, input.direction);
 
           if (from) {
             input.from_entity_id = from;
@@ -1090,8 +1139,7 @@ export class PushStage implements ImportStageRunner {
         // The whole point of staging edges: a message reaches ci.* with a sender
         // and recipients rather than as text from nobody. `from` is single by
         // definition; everything else addressed is a recipient.
-        const [from] = participants.get('from') ?? [];
-        const to = [...(participants.get('to') ?? []), ...(participants.get('cc') ?? [])];
+        const { from, to } = this.resolveCorrespondents(participants, input.direction);
 
         if (from) {
           input.from_entity_id = from;
