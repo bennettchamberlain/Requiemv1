@@ -4,6 +4,7 @@ import { v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/logging';
 import { type Connection, ConnectionService } from '@ci/domains/connections';
+import { isUriLocation } from '@ci/domains/geocode';
 import { EventService as MemoryEventService, type CreateEventDto } from '@ci/domains/memory';
 
 import { ConnectionSyncJob } from '../../../types';
@@ -269,8 +270,11 @@ export class OutlookCalendarTransformService {
     const start_time = event.start?.dateTime ? new Date(event.start.dateTime) : new Date();
     const end_time = event.end?.dateTime ? new Date(event.end.dateTime) : null;
 
-    // Extract location
-    const location_name = event.location?.displayName || null;
+    // Extract location. A meeting-join link is not a place name — see
+    // isUriLocation — so a pasted Teams/Zoom URL in displayName is dropped
+    // rather than stored as the event's location_name.
+    const rawLocationName = event.location?.displayName || null;
+    const location_name = rawLocationName && !isUriLocation(rawLocationName) ? rawLocationName : null;
     let location_coordinates: Point | null = null;
 
     if (event.location?.coordinates?.latitude && event.location?.coordinates?.longitude) {

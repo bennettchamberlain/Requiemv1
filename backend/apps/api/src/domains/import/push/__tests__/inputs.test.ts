@@ -488,4 +488,34 @@ describe('toEventInput', () => {
     expect(input.start_time).toBeInstanceOf(Date);
     expect(input.location_coordinates).toEqual({ type: 'Point', coordinates: [-122.3965, 37.7936] });
   });
+
+  it('refuses a meeting-join URL as a location name', () => {
+    // A .ics VLOCATION of a pasted Zoom link is not a place name, the same
+    // defect class as a coordinate pair in toPositionInput's `name` (above) —
+    // see isUriLocation.
+    const zoomMeeting = recordFor({
+      classification: 'event',
+      metadata: { Location: 'https://khronosgroup.zoom.us/w/99353948195?tk=oBjpnuWTonC0SQZ_XX0y' },
+    });
+
+    expect(toEventInput(zoomMeeting).location_name).toBeUndefined();
+  });
+
+  it('refuses a custom-scheme URI (e.g. AltspaceVR) as a location name', () => {
+    const altspaceEvent = recordFor({
+      classification: 'event',
+      metadata: { Location: 'altspace://account.altvr.com/api/events/1629227784846967373' },
+    });
+
+    expect(toEventInput(altspaceEvent).location_name).toBeUndefined();
+  });
+
+  it('keeps a real venue name in the calendar Location field', () => {
+    const inPerson = recordFor({
+      classification: 'event',
+      metadata: { Location: 'Golden Gate Park, San Francisco, CA' },
+    });
+
+    expect(toEventInput(inPerson).location_name).toBe('Golden Gate Park, San Francisco, CA');
+  });
 });

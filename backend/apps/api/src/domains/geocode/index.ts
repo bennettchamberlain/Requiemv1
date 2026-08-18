@@ -78,4 +78,4 @@ export { GeocodeCacheEntity } from './entities/GeocodeCacheEntity';
 export { GEOCODE_PROVIDER } from './services/GeocodeProvider';
 export type { GeocodePoint, GeocodeProvider, GeocodeProviderResult } from './services/GeocodeProvider';
 export { PortalGeocodeProvider } from './services/PortalGeocodeProvider';
-export { isVirtualLocation } from './util/virtualLocations';
+export { isVirtualLocation, isUriLocation } from './util/virtualLocations';
