@@ -1,25 +1,21 @@
-import { useMutation } from '@apollo/client';
+import { useState } from 'react';
+
+import { useQuery } from '@apollo/client';
 
 import { PERSON_FRAGMENT } from '@/components/entities/grid/PersonGridItem';
+import { EditPersonModal, PERSON_EDITOR_FIELDS } from '@/components/modals/AddItemModal/EditPersonModal';
+import { PersonProfileCard } from '@/components/PersonForm';
 import { gql, useFragment } from '@/graphql';
 
 import type { MemoryEntityOf } from '../../useEntityService';
 
 import { EntityDetailScaffold } from './EntityDetailScaffold';
+import { useReadOnly } from './readOnly';
 
-const UPDATE_PERSON = gql(`
-  mutation UpdatePersonDetail($input: UpdatePersonInput!) {
-    updatePerson(input: $input) {
-      success
-      person {
-        id
-        name
-        description
-        firstName
-        lastName
-        birthDate
-        avatarUrl
-      }
+const GET_PERSON_PROFILE = gql(`
+  query GetPersonProfileForDrawer($id: ID!) {
+    person(id: $id) {
+      ...PersonEditorFields
     }
   }
 `);
@@ -30,38 +26,36 @@ interface Props {
 
 export function PersonDetails({ entity }: Props) {
   const data = useFragment(PERSON_FRAGMENT, entity);
-  const [updatePerson] = useMutation(UPDATE_PERSON);
+  const [editOpen, setEditOpen] = useState(false);
+  // Shared-search viewers see the same card, minus the edit affordance — the
+  // update is owner-scoped and would fail silently.
+  const readOnly = useReadOnly();
+
+  // The list/gallery row that opened this drawer carries only the grid fields,
+  // so the full profile is fetched here rather than threaded through every
+  // caller. Cached after the first open.
+  const { data: profileData } = useQuery(GET_PERSON_PROFILE, { variables: { id: entity.id } });
+  const profile = useFragment(PERSON_EDITOR_FIELDS, profileData?.person);
 
   return (
-    <EntityDetailScaffold
-      entity={entity}
-      title={data.name || 'Person'}
-      subtitle="Person"
-      taggable
-      editFields={[
-        { key: 'name', label: 'Name', value: data.name ?? '' },
-        { key: 'firstName', label: 'First name', value: data.firstName ?? '' },
-        { key: 'lastName', label: 'Last name', value: data.lastName ?? '' },
-        { key: 'birthDate', label: 'Birthday (YYYY-MM-DD)', value: data.birthDate ?? '' },
-        { key: 'avatarUrl', label: 'Avatar URL', value: data.avatarUrl ?? '' },
-        { key: 'description', label: 'Description', value: data.description ?? '', multiline: true },
-      ]}
-      onSave={async (values) => {
-        await updatePerson({
-          variables: {
-            input: {
-              id: entity.id,
-              name: values.name,
-              description: values.description,
-              firstName: values.firstName,
-              lastName: values.lastName,
-              birthDate: values.birthDate,
-              avatarUrl: values.avatarUrl,
-            },
-          },
-        });
-      }}
-      rawData={data}
-    />
+    <>
+      <EntityDetailScaffold
+        entity={entity}
+        title={data.name || 'Person'}
+        subtitle="Person"
+        taggable
+        tagsEditable
+        detailSections={
+          profile && (
+            <PersonProfileCard person={profile} onEdit={readOnly ? undefined : () => setEditOpen(true)} />
+          )
+        }
+        rawData={profile ?? data}
+      />
+
+      {!readOnly && (
+        <EditPersonModal personId={entity.id} open={editOpen} onClose={() => setEditOpen(false)} />
+      )}
+    </>
   );
 }
