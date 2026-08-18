@@ -81,4 +81,133 @@ describe('Goodreads datasource', () => {
       await fs.promises.unlink(fpath).catch(() => {});
     }
   });
+
+  describe('directory-based recognition (non-exact filename, header sniff)', () => {
+    // recognize()/fileImport() both fall back to scanning a directory's *.csv
+    // files for Goodreads-shaped headers when no exact
+    // 'goodreads_library_export.csv' is present — e.g. a user renamed the
+    // export, or it sits alongside other CSVs. That path (headerHasGoodreadsCols
+    // via headerMatches) is never exercised by writeExport() above, which
+    // always uses the exact filename.
+
+    function makeDir(): string {
+      return fs.mkdtempSync(path.join(os.tmpdir(), 'goodreads-dir-'));
+    }
+
+    it('recognizes a differently-named CSV in a directory by its header row', async () => {
+      const dir = makeDir();
+      try {
+        const fpath = path.join(dir, 'my_library.csv');
+        fs.writeFileSync(fpath, `${HEADER}\n${ROWS[0]}\n`);
+
+        const fi = new GoodreadsFileImporter();
+        const rec = await fi.recognize({}, { filename: path.basename(dir), fullPath: dir });
+        expect(rec.confidence).toBeCloseTo(0.7);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('imports via the differently-named CSV once recognized', async () => {
+      const dir = makeDir();
+      try {
+        const fpath = path.join(dir, 'my_library.csv');
+        fs.writeFileSync(fpath, `${HEADER}\n${ROWS[0]}\n`);
+
+        const pipeline = await importRows(dir);
+        expect(pipeline.length).toBe(1);
+        expect(pipeline[0].item.id).toBe('goodreads:1001');
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('rejects a header carrying both "Book Id" and "Letterboxd URI" (not a Goodreads export)', async () => {
+      // headerHasGoodreadsCols() requires "Book Id" AND absence of
+      // "Letterboxd URI" — this is the guard that must reject a Letterboxd-ish
+      // export even if a "Book Id"-shaped column were ever present in one.
+      const dir = makeDir();
+      try {
+        const fpath = path.join(dir, 'export.csv');
+        fs.writeFileSync(fpath, 'Book Id,Name,Letterboxd URI,Rating\n1,A Movie,https://letterboxd.com/x,4\n');
+
+        const fi = new GoodreadsFileImporter();
+        const rec = await fi.recognize({}, { filename: path.basename(dir), fullPath: dir });
+        expect(rec.confidence).toBe(0);
+
+        const pipeline = await importRows(dir);
+        expect(pipeline.length).toBe(0);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('rejects a real Letterboxd diary.csv header (no "Book Id" at all)', async () => {
+      const dir = makeDir();
+      try {
+        const fpath = path.join(dir, 'diary.csv');
+        fs.writeFileSync(
+          fpath,
+          'Date,Name,Year,Letterboxd URI,Rating,Rewatch,Tags,Watched Date\n2024-01-01,Dune,2021,https://letterboxd.com/x,4.5,,,2024-01-01\n',
+        );
+
+        const fi = new GoodreadsFileImporter();
+        const rec = await fi.recognize({}, { filename: path.basename(dir), fullPath: dir });
+        expect(rec.confidence).toBe(0);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('pushRow id fallback chain (Book Id -> ISBN13 -> ISBN -> title|author)', () => {
+    // Every row in the top-level fixture carries a 'Book Id', so the
+    // ISBN13/ISBN/title-fallback branches of
+    // `row['Book Id'] || row['ISBN13'] || row['ISBN'] || \`${title}|${author}\``
+    // are otherwise never hit — exactly the rows a real export produces when
+    // a manually-added book has no Book Id.
+
+    function writeRow(headerCols: string[], row: string[]): string {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'goodreads-idfallback-'));
+      const fpath = path.join(dir, 'goodreads_library_export.csv');
+      fs.writeFileSync(fpath, `${headerCols.join(',')}\n${row.join(',')}\n`);
+
+      return fpath;
+    }
+
+    const BASE_HEADER = ['Book Id', 'Title', 'Author', 'ISBN', 'ISBN13', 'My Review', 'Exclusive Shelf'];
+
+    it('falls back to ISBN13 when Book Id is blank', async () => {
+      const fpath = writeRow(BASE_HEADER, ['', 'Dune', 'Frank Herbert', '', '9780441013593', '', 'read']);
+      try {
+        const pipeline = await importRows(fpath);
+        expect(pipeline.length).toBe(1);
+        expect(pipeline[0].item.id).toBe('goodreads:9780441013593');
+      } finally {
+        await fs.promises.unlink(fpath).catch(() => {});
+      }
+    });
+
+    it('falls back to ISBN when Book Id and ISBN13 are both blank', async () => {
+      const fpath = writeRow(BASE_HEADER, ['', 'Dune', 'Frank Herbert', '0441013597', '', '', 'read']);
+      try {
+        const pipeline = await importRows(fpath);
+        expect(pipeline.length).toBe(1);
+        expect(pipeline[0].item.id).toBe('goodreads:0441013597');
+      } finally {
+        await fs.promises.unlink(fpath).catch(() => {});
+      }
+    });
+
+    it('falls back to title|author when Book Id, ISBN13, and ISBN are all blank', async () => {
+      const fpath = writeRow(BASE_HEADER, ['', 'Dune', 'Frank Herbert', '', '', '', 'read']);
+      try {
+        const pipeline = await importRows(fpath);
+        expect(pipeline.length).toBe(1);
+        expect(pipeline[0].item.id).toBe('goodreads:Dune|Frank Herbert');
+      } finally {
+        await fs.promises.unlink(fpath).catch(() => {});
+      }
+    });
+  });
 });
