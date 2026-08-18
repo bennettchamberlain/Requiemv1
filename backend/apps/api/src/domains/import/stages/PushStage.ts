@@ -23,13 +23,18 @@ import {
 } from '../push/canonical';
 import { isGraphExcluded, toGraphEntity } from '../push/entities';
 import {
+  isFacebookMessengerRecord,
+  isWhatsAppRecord,
   toBrowserActivityInput,
   toCommunicationInput,
   toContentInput,
   toEventInput,
+  toFacebookMessengerCommunicationInput,
   toInventoryInput,
   toPositionInput,
+  toWhatsAppCommunicationInput,
 } from '../push/inputs';
+import { type IsSelf, makeIsSelf, NOBODY_IS_SELF, readSelfIdentity } from '../push/self';
 import {
   DATABASE_FREE_FLOOR_BYTES,
   DatabaseVolumeFullError,
@@ -174,6 +179,14 @@ export class PushStage implements ImportStageRunner {
 
     let latestSpace = space;
 
+    // Who "me" is, resolved ONCE for the whole run. WhatsApp and Messenger
+    // decide each message's direction by matching its sender against the owner
+    // (see push/self), and a run is hundreds of thousands of records — this
+    // cannot be a per-record, or even a per-batch, lookup. Unconditional
+    // rather than deferred until the first chat record: it is one owner-scoped
+    // query per run, which is cheaper than the state needed to defer it.
+    const isSelf = await this.resolveIsSelf(context);
+
     for (;;) {
       const batch = await this.nextBatch(context.runId);
 
@@ -181,7 +194,7 @@ export class PushStage implements ImportStageRunner {
         break;
       }
 
-      const outcome = await this.pushBatch(context, batch, counts);
+      const outcome = await this.pushBatch(context, batch, counts, isSelf);
 
       pushed += outcome.pushed;
       failed += outcome.failed;
@@ -639,6 +652,42 @@ export class PushStage implements ImportStageRunner {
   }
 
   /**
+   * The owner's own display names, as a predicate — one query for the run.
+   *
+   * FAIL SAFE, deliberately: a lookup that finds nothing, or one that throws,
+   * yields {@link NOBODY_IS_SELF}, so every WhatsApp/Messenger message keeps
+   * the `inbound` default this repo shipped before the mappers were wired in.
+   * The alternatives are both worse than a blank — failing the push over a
+   * missing display name strands an import that is otherwise fine, and
+   * guessing writes a false authorship claim into somebody's memory. Logged at
+   * warn either way, because a corpus that silently classifies every message
+   * inbound is the bug this change exists to fix.
+   */
+  private async resolveIsSelf(context: StageRunContext): Promise<IsSelf> {
+    try {
+      const identity = await readSelfIdentity(this.dataSource, context.userId);
+      const isSelf = makeIsSelf(identity);
+
+      if (isSelf === NOBODY_IS_SELF) {
+        this.logger.warn('No owner name resolved; chat messages stay inbound', {
+          runId: context.runId,
+          userId: context.userId,
+        });
+      }
+
+      return isSelf;
+    } catch (err) {
+      this.logger.warn('Owner lookup failed; chat messages stay inbound', {
+        runId: context.runId,
+        userId: context.userId,
+        error: (err as Error).message,
+      });
+
+      return NOBODY_IS_SELF;
+    }
+  }
+
+  /**
    * Push one batch, row by row.
    *
    * Per-row rather than per-destination-bulk deliberately: a single malformed
@@ -651,6 +700,7 @@ export class PushStage implements ImportStageRunner {
     context: StageRunContext,
     batch: StagedItem[],
     counts: DestinationCounts,
+    isSelf: IsSelf,
   ): Promise<{ pushed: number; failed: number; deduped: number }> {
     const ctx = { userId: context.userId };
     let pushed = 0;
@@ -671,7 +721,7 @@ export class PushStage implements ImportStageRunner {
         let wrote = false;
 
         for (const destination of destinations) {
-          if (await this.send(ctx, destination, record, participants)) {
+          if (await this.send(ctx, destination, record, participants, isSelf)) {
             counts[destination] = (counts[destination] ?? 0) + 1;
             wrote = true;
           }
@@ -747,10 +797,25 @@ export class PushStage implements ImportStageRunner {
     destination: Destination,
     record: CanonicalRecord,
     participants: Map<string, string[]>,
+    isSelf: IsSelf,
   ): Promise<boolean> {
     switch (destination) {
       case 'communications': {
-        const input = toCommunicationInput(record);
+        // WhatsApp and Messenger get their own mappers, because their exports
+        // carry no "this one is me" signal for the generic path to read: a
+        // `_chat.txt` line is a display name and a body, so `directionFor`
+        // returns null and every message — the owner's own included — takes
+        // toCommunicationInput's `inbound` default. Both mappers decide
+        // direction by matching the sender against the owner instead, and the
+        // WhatsApp one also reads thread_id off `Conversation`, which the
+        // generic path never looks at (it reads ThreadId/Thread/MessageID), so
+        // without this branch every WhatsApp message also loses its chat
+        // grouping. Everything else is unchanged.
+        const input = isWhatsAppRecord(record)
+          ? toWhatsAppCommunicationInput(record, isSelf)
+          : isFacebookMessengerRecord(record)
+            ? toFacebookMessengerCommunicationInput(record, isSelf)
+            : toCommunicationInput(record);
 
         // The whole point of staging edges: a message reaches ci.* with a sender
         // and recipients rather than as text from nobody. `from` is single by
