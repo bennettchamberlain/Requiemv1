@@ -156,166 +156,56 @@
   box-shadow: var(--ci-button-shadow);
 }
 
-/*
- * The warp core — the home control's permanent glow.
- *
- * A reactor does not light up on hover; it is lit because it is running. So
- * this is unconditional: a radial bloom behind the mark and the wordmark that
- * never fully dims, breathing between a floor and a peak rather than fading
- * in and out. The floor is what makes it read as "powered" rather than as an
- * animation that happens to be playing.
- *
- * Painted with ::before at z-index 0 rather than a negative z-index: an
- * element's own background paints beneath ALL its children, negative ones
- * included, so `z-index: -1` would put the bloom behind the button's own hover
- * fill and make it vanish exactly when the button is being used. Lifting the
- * real children to z-index 1 keeps the mark and the text above the bloom.
- */
-/*
- * The warp core — the rail mark's permanent glow.
- *
- * A reactor is not lit because you hovered it; it is lit because it is running.
- * So this is unconditional, and it breathes between a floor and a peak rather
- * than fading in and out: the floor is what makes it read as "powered".
- *
- * ── Containment ──────────────────────────────────────────────────────────────
- *
- * The plasma is CLIPPED to a disc. This is not decoration, it is the fix for a
- * real bug: the glow used to hang off the button, so its `inset` percentages
- * were a share of the BUTTON's width — 40px collapsed but 224px pinned, which
- * turned a compact bloom into a rotating ellipse that streaked diagonally out
- * of the rail's top-left box. It now hangs off a wrapper the exact size of the
- * mark, and `overflow: hidden` on a round wrapper means no amount of rotation
- * can put light outside the disc. The only light that escapes is the outer
- * halo below, which is a STATIC box-shadow and therefore cannot streak.
- *
- * ── Cost ─────────────────────────────────────────────────────────────────────
- *
- * Only `rotate`, `scale` and `opacity` animate. Those are compositor
- * properties: the layer rasterizes once and the GPU transforms it per frame, so
- * there is no layout, no paint, and no main-thread work while it runs.
- *
- * Nothing animates `filter`. An earlier version pulsed `filter: drop-shadow`,
- * which re-runs a blur every frame on the CPU. Softness comes from wide, low
- * alpha gradient stops instead of `filter: blur`, because a blurred element
- * that rotates has to be re-blurred as it turns — which defeats compositing it.
- *
- * `rotate` and `scale` are used as INDEPENDENT properties rather than inside a
- * `transform`, which is what lets one element carry a slow spin and a separate
- * breathe at a different period without the two overwriting each other.
- */
-.warp-core {
-  /* The containment field. Rotation cannot escape a clipped disc. */
-  overflow: hidden;
-  border-radius: 9999px;
-  /* The only light outside the disc: static, so it can never streak. */
-  box-shadow: 0 0 6px -1px color-mix(in srgb, var(--primary) 38%, transparent);
-  isolation: isolate;
-}
 
-.warp-core > * {
-  position: relative;
-  z-index: 1;
-}
-
-.warp-core::before,
-.warp-core::after {
-  content: "";
-  position: absolute;
+/*
+ * The animated background — CI-Portal's, so the platform reads as one product.
+ *
+ * A fixed layer BEHIND everything (`z-index: 0`, and the app shell sits above
+ * it), painting the same base gradient the body already carried plus one glow
+ * that tracks the pointer. `AnimatedBackground` writes `--glow-x`/`--glow-y`;
+ * the gradient below is what turns two numbers into light, so a settled spring
+ * costs nothing — no animation is running, the custom properties simply stop
+ * changing.
+ *
+ * `pointer-events: none` throughout: this is scenery, and it covers the whole
+ * viewport. Anything else would swallow every click in the app.
+ */
+.animated-bg {
+  position: fixed;
+  inset: 0;
   z-index: 0;
-  /* Oversized so the turning gradient always fills the disc corner to corner —
-     clipped back to the circle, so the overspill is never visible. */
-  inset: -55%;
-  border-radius: 9999px;
   pointer-events: none;
-  will-change: transform;
+  overflow: hidden;
 }
 
-/* The swirl: a conic sweep with deliberately wide, overlapping transparent
-   stops, so it reads as plasma turning over rather than as a radar spoke. */
-.warp-core::before {
-  background: conic-gradient(
-    from 0deg,
-    transparent 0deg,
-    color-mix(in srgb, var(--primary) 42%, transparent) 55deg,
-    transparent 130deg,
-    color-mix(in srgb, var(--phthalo-hover) 38%, transparent) 210deg,
-    transparent 290deg,
-    color-mix(in srgb, var(--primary) 26%, transparent) 330deg,
-    transparent 360deg
-  );
-  animation: warp-core-swirl 13s linear infinite;
-}
-
-/* The core: a soft radial bloom breathing on its own period and drifting the
-   other way. Counter-rotation is the point — two different periods turning
-   opposite ways interfere, and the interference is what reads as flow. One
-   rotating element just reads as a spinning object. */
-.warp-core::after {
+.animated-bg__glow {
+  position: absolute;
+  inset: 0;
+  /* Wide, overlapping stops so the falloff reads as light in a room rather than
+     as a disc with an edge. The colour is the app's own primary, not a literal,
+     so a theme change moves the glow with it. */
+  /* `color-mix`, not `hsl(var(--primary) / …)`: these tokens are hex literals
+     (`--primary: #c5e8dc`), so the hsl() form parses as invalid and drops the
+     whole gradient to `none` — silently, since an invalid background-image is
+     simply not painted. */
   background: radial-gradient(
-    closest-side,
-    color-mix(in srgb, var(--primary) 34%, transparent),
-    color-mix(in srgb, var(--phthalo-hover) 20%, transparent) 52%,
-    transparent 78%
+    900px circle at var(--glow-x, -9999px) var(--glow-y, -9999px),
+    color-mix(in srgb, var(--primary) 16%, transparent) 0%,
+    color-mix(in srgb, var(--primary) 11%, transparent) 18%,
+    color-mix(in srgb, var(--primary) 6%, transparent) 38%,
+    color-mix(in srgb, var(--primary) 2.5%, transparent) 60%,
+    transparent 80%
   );
-  animation:
-    warp-core-breathe 3.6s ease-in-out infinite,
-    warp-core-drift 21s linear infinite;
-}
-
-/* The mark is the emitter. Its halo is STATIC — a drop-shadow that changes
-   every frame is a per-frame blur, and the layers behind it carry the motion. */
-.warp-core-emitter {
-  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--primary) 50%, transparent));
-}
-
-@keyframes warp-core-swirl {
-  from {
-    rotate: 0deg;
-  }
-
-  to {
-    rotate: 360deg;
-  }
-}
-
-@keyframes warp-core-drift {
-  from {
-    rotate: 360deg;
-  }
-
-  to {
-    rotate: 0deg;
-  }
-}
-
-@keyframes warp-core-breathe {
-  0%,
-  100% {
-    opacity: 0.6;
-    scale: 0.92;
-  }
-
-  50% {
-    opacity: 1;
-    scale: 1.08;
-  }
 }
 
 /*
- * Reduced motion stops the movement, not the light. The reactor still reads as
- * powered — it holds at the midpoint. Removing the glow entirely would give
- * those users a different design rather than the same one, calmer.
+ * Reduced motion keeps the surface, drops the tracking. The component stops
+ * writing coordinates, so the glow parks off-screen and this layer is simply
+ * the base gradient — the same design, holding still.
  */
 @media (prefers-reduced-motion: reduce) {
-  .warp-core::before,
-  .warp-core::after {
-    animation: none;
-    opacity: 0.8;
-    rotate: 0deg;
-    scale: 1;
-    /* Nothing moves, so nothing needs a promoted layer. */
-    will-change: auto;
+  .animated-bg__glow {
+    display: none;
   }
 }
 

@@ -39,15 +39,23 @@ export function PowerRailToggle() {
             // left border goes with it: it is NavLink's active-state gutter,
             // and it only ever pushed this button 2px further off centre.
             className={cn(
-              'warp-core flex items-center rounded-md transition hover:bg-accent hover:text-accent-foreground',
+              'flex items-center rounded-md transition hover:bg-accent hover:text-accent-foreground',
               // Collapsed: a 40px square that exactly fills the rail's padded
               // box, with the 32px mark centred inside it. NOT `w-full p-2` —
               // that left a 24px content box, and Tailwind's preflight sets
               // `img { max-width: 100% }`, so the mark was capped to 24px wide
               // while `h-8` held it at 32px tall. It rendered as a vertical
               // ellipse: centred, and squashed.
+              // `px-2`, NOT `p-2`: this button already sits inside the rail
+              // wrapper's own `p-2`, so vertical padding here is DOUBLED. It
+              // made the pinned rail cell 77px against the header's 60px —
+              // and both are cells of the same `auto` grid row, so the taller
+              // one set the row and the header sat in a box 17px deeper than
+              // its content, with the border-b hanging below it. Horizontal
+              // padding stays: the wordmark needs it, and the row's height
+              // does not depend on it.
               pinned
-                ? 'w-full gap-2 border-l-2 border-transparent p-2'
+                ? 'w-full gap-2 border-l-2 border-transparent px-2'
                 : 'size-10 shrink-0 justify-center p-0',
             )}
           >
@@ -63,13 +71,10 @@ export function PowerRailToggle() {
               ever laid out narrower again. `shrink-0` alone does not do this —
               it stops flex from shrinking the item, but max-width is a separate
               constraint and wins regardless. */}
-            {/* 40px disc around a 32px mark: a 4px ring of plasma hugging the
-              logo. At the mark's own size the swirl was entirely behind an
-              opaque emblem and invisible; any wider and it stops reading as
-              part of the mark. Collapsed, the button is 40px too, so the disc
-              exactly fills the rail's padded box. */}
-            <span className="warp-core relative grid size-10 shrink-0 place-items-center">
-              <img src={logo} alt="" className="warp-core-emitter size-8 max-w-none" />
+            {/* 40px box around a 32px mark. Collapsed, the button is 40px too,
+              so the mark sits exactly in the rail's padded box. */}
+            <span className="relative grid size-10 shrink-0 place-items-center">
+              <img src={logo} alt="" className="size-8 max-w-none" />
             </span>
             {/* PINNED, not merely expanded. This button sits in the same `auto`
               grid column as the rail, so a wordmark appearing here widens the
