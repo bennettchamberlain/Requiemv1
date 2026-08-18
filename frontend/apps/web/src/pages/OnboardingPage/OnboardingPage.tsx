@@ -277,7 +277,12 @@ export function OnboardingPage() {
 
   return (
     <Form {...form}>
-      <form className="relative h-lvh flex flex-col">
+      <form
+        className="relative h-lvh flex flex-col"
+        // Steps use type="button" CTAs; still block native submit so a mis-typed
+        // control (or label→control activation) cannot navigate off the wizard.
+        onSubmit={(event) => event.preventDefault()}
+      >
         <div className="absolute top-0 left-0 h-[max(0.25rem,env(safe-area-inset-top))] w-full">
           <div className="absolute top-full right-3 z-10 text-foreground">
             <ThemeToggle />
