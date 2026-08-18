@@ -5,10 +5,7 @@ import {
   NodeEntity,
   RelationshipEntity,
 } from '@ci/domains/graph';
-import {
-  SEARCH_INDEX_BACKFILL_QUEUE,
-  SearchIndexBackfillRequestEvent,
-} from '@ci/domains/maintenance/events';
+import { SEARCH_INDEX_BACKFILL_QUEUE, SearchIndexBackfillRequestEvent } from '@ci/domains/maintenance/events';
 import { GraphDeltaWriter } from '@ci/domains/memory';
 
 import { PushStage } from '../stages/PushStage';
@@ -436,6 +433,78 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
 
     expect(row.push_status).toBe('skipped');
     expect(outcome.partial).toBe(true);
+  });
+
+  it('does not report partial for a bookkeeping-type entity, even though it is skipped', async () => {
+    // `email_thread` is deliberately excluded from the graph (isGraphExcluded)
+    // — gmail stages one per thread, so if this counted toward `partial` the
+    // same way an unresolvable entity does, an ordinary Gmail import would
+    // report `partial` on every single run. The regression this guards: the
+    // two skip reasons used to be indistinguishable, and wiring `partial`
+    // straight off `entities.skipped > 0` would have made that true.
+    const runId = await harness.startRun();
+
+    await harness.dataSource.query(
+      `INSERT INTO ci_import.staged_entities (run_id, user_id, type, name, metadata, identity_key)
+            VALUES ($1::uuid, $2::uuid, 'email_thread', NULL, '{}'::jsonb, NULL)`,
+      [runId, harness.userId],
+    );
+
+    const { stage } = makeStage();
+    const outcome = await stage.run(contextFor(runId));
+
+    expect(outcome.detail.entities).toMatchObject({ resolved: 0, skipped: 1, unresolved: 0, failed: 0 });
+
+    const [row] = await harness.dataSource.query<Array<{ push_status: string }>>(
+      `SELECT push_status FROM ci_import.staged_entities WHERE run_id = $1::uuid`,
+      [runId],
+    );
+
+    expect(row.push_status).toBe('skipped');
+    expect(outcome.partial).toBe(false);
+  });
+
+  it('keeps an unresolvable entity partial across a resume', async () => {
+    // A resumed push re-derives its counters from the ledger (`settledCounts`)
+    // rather than the in-memory attempt, so the "genuinely unresolvable" signal
+    // has to survive that round trip too — not just the first attempt.
+    const runId = await harness.startRun();
+
+    await harness.dataSource.query(
+      `INSERT INTO ci_import.staged_entities (run_id, user_id, type, name, metadata, identity_key)
+            VALUES ($1::uuid, $2::uuid, 'album', NULL, '{}'::jsonb, NULL)`,
+      [runId, harness.userId],
+    );
+
+    const first = await makeStage().stage.run(contextFor(runId));
+
+    expect(first.partial).toBe(true);
+
+    const second = await makeStage().stage.run(contextFor(runId));
+
+    expect(second.detail.entities).toMatchObject({ resolved: 0, skipped: 1, unresolved: 1, failed: 0 });
+    expect(second.partial).toBe(true);
+  });
+
+  it('keeps a bookkeeping exclusion non-partial across a resume', async () => {
+    // The other half of the resume regression: settledCounts must not mistake
+    // an already-skipped bookkeeping row for an unresolved one either.
+    const runId = await harness.startRun();
+
+    await harness.dataSource.query(
+      `INSERT INTO ci_import.staged_entities (run_id, user_id, type, name, metadata, identity_key)
+            VALUES ($1::uuid, $2::uuid, 'email_thread', NULL, '{}'::jsonb, NULL)`,
+      [runId, harness.userId],
+    );
+
+    const first = await makeStage().stage.run(contextFor(runId));
+
+    expect(first.partial).toBe(false);
+
+    const second = await makeStage().stage.run(contextFor(runId));
+
+    expect(second.detail.entities).toMatchObject({ resolved: 0, skipped: 1, unresolved: 0, failed: 0 });
+    expect(second.partial).toBe(false);
   });
 
   it('fails one poisoned row without stranding the rest', async () => {
