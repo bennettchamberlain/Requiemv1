@@ -123,7 +123,10 @@ describe('SuggestionEngine.propose', () => {
         ),
       } as unknown as DailyMetricsService,
       { list: jest.fn().mockResolvedValue([]) } as unknown as CorrelationEngine,
-      { create: jest.fn() } as unknown as ActionService,
+      {
+        create: jest.fn(),
+        countDerivedOnLocalDay: jest.fn().mockResolvedValue(0),
+      } as unknown as ActionService,
       { isFeatureEnabled: jest.fn().mockResolvedValue(true) } as unknown as FeatureService,
       logger(),
     );
@@ -152,7 +155,7 @@ describe('SuggestionEngine.propose', () => {
             { id: 'corr-1', metricA: 'n_conversations', metricB: 'avg_sentiment', robust: true },
           ]),
       } as unknown as CorrelationEngine,
-      { create } as unknown as ActionService,
+      { create, countDerivedOnLocalDay: jest.fn().mockResolvedValue(0) } as unknown as ActionService,
       { isFeatureEnabled: jest.fn().mockResolvedValue(false) } as unknown as FeatureService,
       logger(),
     );
@@ -200,7 +203,7 @@ describe('SuggestionEngine.propose', () => {
             { id: 'corr-1', metricA: 'n_conversations', metricB: 'avg_sentiment', robust: true },
           ]),
       } as unknown as CorrelationEngine,
-      { create } as unknown as ActionService,
+      { create, countDerivedOnLocalDay: jest.fn().mockResolvedValue(0) } as unknown as ActionService,
       { isFeatureEnabled: jest.fn().mockResolvedValue(true) } as unknown as FeatureService,
       logger(),
     );

@@ -173,7 +173,9 @@ export class PositionSearchIndexListener {
       return cached;
     }
 
-    const rows = (await this.dataSource.query(`SELECT timezone FROM ci.users WHERE id = $1`, [userId])) as Array<{
+    const rows = (await this.dataSource.query(`SELECT timezone FROM ci.users WHERE id = $1`, [
+      userId,
+    ])) as Array<{
       timezone: string | null;
     }>;
     const timezone = resolveTimeZone(rows[0]?.timezone);

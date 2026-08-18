@@ -23,8 +23,14 @@ import type {
  *   Ollama-shaped chunk.
  * - Vision input: Ollama's `images: [bytes|base64]` becomes `image_url` content
  *   parts with data URLs.
- * - Reasoning: vLLM-style `reasoning_content` deltas map onto Ollama's
- *   `message.thinking` so the THINK channel keeps streaming.
+ * - Reasoning: Ollama uses `think: true`. vLLM/Qwen uses
+ *   `chat_template_kwargs.enable_thinking` plus `reasoning_content` deltas,
+ *   which we map onto Ollama's `message.thinking`.
+ * - Tools: Ollama returns structured `message.tool_calls`. vLLM only does that
+ *   when `--tool-call-parser` matches the model's markup; Qwen3.6 often dumps
+ *   `<toolcall><function=…>` into `content` instead (same finding as
+ *   tool_choice=auto on Qwen2.5-Coder). We salvage that markup into the same
+ *   Ollama tool_calls the rest of the stack already executes.
  */
 export class OpenAiCompatChatDriver {
   private readonly client: OpenAI;
@@ -45,6 +51,7 @@ export class OpenAiCompatChatDriver {
     messages: OllamaMessage[];
     tools?: Tool[];
     format?: string;
+    enableThinking?: boolean;
   }): Promise<ChatResponse> {
     const response = await this.client.chat.completions.create({
       model: request.model,
@@ -52,22 +59,28 @@ export class OpenAiCompatChatDriver {
       ...(request.tools && request.tools.length > 0 && { tools: toOpenAiTools(request.tools) }),
       // Ollama's `format: 'json'` maps onto the OpenAI json_object response format.
       ...(request.format === 'json' && { response_format: { type: 'json_object' as const } }),
+      ...thinkingTemplateKwargs(request.enableThinking),
     });
 
     const choice = response.choices[0];
+    const structured = (choice?.message?.tool_calls ?? [])
+      .filter(
+        (call): call is ChatCompletionMessageToolCall & { type: 'function' } => call.type === 'function',
+      )
+      .map((call) => ({
+        function: {
+          name: call.function.name,
+          arguments: safeParseArguments(call.function.arguments),
+        },
+      }));
+    const rawContent = choice?.message?.content ?? '';
+    const salvaged = extractEmbeddedToolCalls(rawContent);
+    const toolCalls = structured.length > 0 ? structured : salvaged.toolCalls;
+    const content = toolCalls.length > 0 || salvaged.toolCalls.length > 0 ? stripToolMarkup(rawContent) : rawContent;
 
     return toChatResponse(request.model, {
-      content: choice?.message?.content ?? '',
-      toolCalls: (choice?.message?.tool_calls ?? [])
-        .filter(
-          (call): call is ChatCompletionMessageToolCall & { type: 'function' } => call.type === 'function',
-        )
-        .map((call) => ({
-          function: {
-            name: call.function.name,
-            arguments: safeParseArguments(call.function.arguments),
-          },
-        })),
+      content,
+      toolCalls,
       done: true,
     });
   }
@@ -84,6 +97,8 @@ export class OpenAiCompatChatDriver {
     messages: OllamaMessage[];
     tools?: Tool[];
     signal?: AbortSignal;
+    enableThinking?: boolean;
+    salvageTools?: boolean;
   }): AsyncGenerator<ChatResponse> {
     const stream = await this.client.chat.completions.create(
       {
@@ -91,6 +106,7 @@ export class OpenAiCompatChatDriver {
         messages: toOpenAiMessages(request.messages),
         stream: true,
         ...(request.tools && request.tools.length > 0 && { tools: toOpenAiTools(request.tools) }),
+        ...thinkingTemplateKwargs(request.enableThinking),
       },
       { signal: request.signal },
     );
@@ -98,6 +114,11 @@ export class OpenAiCompatChatDriver {
     // Streamed tool calls arrive fragmented: an entry with id+name at some
     // index, then argument string fragments for that index. Accumulate by index.
     const pendingToolCalls = new Map<number, { name: string; argumentChunks: string[] }>();
+    const contentChunks: string[] = [];
+    // Buffer text whenever this chat may emit tool markup — including follow-up
+    // turns that no longer advertise tools. Streaming `<toolcall>` as TEXT is
+    // what made Confirm-home look like a successful call.
+    const bufferContent = Boolean(request.tools && request.tools.length > 0) || request.salvageTools === true;
 
     try {
       for await (const part of stream) {
@@ -122,7 +143,11 @@ export class OpenAiCompatChatDriver {
         }
 
         if (delta.content) {
-          yield toChatResponse(request.model, { content: delta.content, done: false });
+          if (bufferContent) {
+            contentChunks.push(delta.content);
+          } else {
+            yield toChatResponse(request.model, { content: delta.content, done: false });
+          }
         }
 
         // vLLM (and other reasoning-capable OpenAI-compatible servers) stream
@@ -141,20 +166,30 @@ export class OpenAiCompatChatDriver {
       throw err;
     }
 
-    if (pendingToolCalls.size > 0) {
-      const toolCalls: ToolCall[] = [...pendingToolCalls.entries()]
-        .sort(([a], [b]) => a - b)
-        .filter(([, entry]) => entry.name.length > 0)
-        .map(([, entry]) => ({
-          function: {
-            name: entry.name,
-            arguments: safeParseArguments(entry.argumentChunks.join('')),
-          },
-        }));
+    const structured: ToolCall[] = [...pendingToolCalls.entries()]
+      .sort(([a], [b]) => a - b)
+      .filter(([, entry]) => entry.name.length > 0)
+      .map(([, entry]) => ({
+        function: {
+          name: entry.name,
+          arguments: safeParseArguments(entry.argumentChunks.join('')),
+        },
+      }));
 
-      if (toolCalls.length > 0) {
-        yield toChatResponse(request.model, { toolCalls, done: false });
-      }
+    const rawContent = contentChunks.join('');
+    const salvaged = extractEmbeddedToolCalls(rawContent);
+    const toolCalls = structured.length > 0 ? structured : salvaged.toolCalls;
+    const prose =
+      toolCalls.length > 0 || salvaged.toolCalls.length > 0 || /<tool_?call\b|<function=/i.test(rawContent)
+        ? stripToolMarkup(rawContent)
+        : rawContent;
+
+    if (bufferContent && prose.trim() !== '') {
+      yield toChatResponse(request.model, { content: prose, done: false });
+    }
+
+    if (toolCalls.length > 0) {
+      yield toChatResponse(request.model, { toolCalls, done: false });
     }
 
     yield toChatResponse(request.model, { done: true });
@@ -253,7 +288,183 @@ export function toOpenAiMessages(messages: OllamaMessage[]): ChatCompletionMessa
     });
   }
 
-  return converted;
+  return hoistSystemMessages(converted);
+}
+
+/**
+ * Qwen (and vLLM's Qwen chat template) rejects any system message that is not
+ * the first message. Inference and chat both accumulate several system blocks;
+ * hoist and join them so the template sees one leading system turn.
+ */
+function hoistSystemMessages(messages: ChatCompletionMessageParam[]): ChatCompletionMessageParam[] {
+  const systemParts: string[] = [];
+  const rest: ChatCompletionMessageParam[] = [];
+
+  for (const message of messages) {
+    if (message.role !== 'system') {
+      rest.push(message);
+      continue;
+    }
+
+    if (typeof message.content === 'string' && message.content.trim() !== '') {
+      systemParts.push(message.content);
+    }
+  }
+
+  if (systemParts.length === 0) {
+    return messages;
+  }
+
+  return [{ role: 'system', content: systemParts.join('\n\n') }, ...rest];
+}
+
+/**
+ * Qwen3.6 thinks by default. The OpenAI-compat path must pass this explicitly
+ * or a "thinking off" UI still waits minutes for a reasoning trace.
+ */
+function thinkingTemplateKwargs(enableThinking?: boolean): Record<string, unknown> {
+  return {
+    chat_template_kwargs: { enable_thinking: enableThinking === true },
+  };
+}
+
+/**
+ * Lift Qwen/vLLM tool markup out of assistant text. Ollama already returns
+ * structured `tool_calls`; vLLM with `--tool-call-parser qwen3_coder` often
+ * does not, and the model writes `<toolcall><function=name>…` into content
+ * instead. Same loop in OllamaService executes either shape.
+ */
+export function extractEmbeddedToolCalls(content: string): { prose: string; toolCalls: ToolCall[] } {
+  if (!content || !/<tool_?call\b|<function=/i.test(content)) {
+    return { prose: content, toolCalls: [] };
+  }
+
+  const toolCalls: ToolCall[] = [];
+
+  const consumeFunctions = (block: string) => {
+    const closed = [...block.matchAll(/<function\s*=\s*([^>\s]+)>([\s\S]*?)(?:<\/function>|$)/gi)];
+    for (const match of closed) {
+      const name = match[1]?.trim();
+      if (!name) {
+        continue;
+      }
+
+      const args: Record<string, unknown> = {};
+      for (const param of match[2].matchAll(/<parameter\s*=\s*([^>\s]+)>([\s\S]*?)<\/parameter>/gi)) {
+        args[param[1]] = coerceParamValue(param[2].trim());
+      }
+
+      if (Object.keys(args).length === 0) {
+        const jsonMatch = match[2].trim().match(/^\{[\s\S]*\}$/);
+        if (jsonMatch) {
+          Object.assign(args, safeParseArguments(jsonMatch[0]));
+        }
+      }
+
+      toolCalls.push(normalizeSalvagedToolCall(name, args));
+    }
+  };
+
+  const blockRe = /<tool_?call\b[^>]*>([\s\S]*?)(?:<\/tool_?call>|$)/gi;
+  const blocks = [...content.matchAll(blockRe)];
+  if (blocks.length > 0) {
+    for (const block of blocks) {
+      consumeFunctions(block[1]);
+      if (toolCalls.length === 0) {
+        consumeQwenCoderBlock(block[1], toolCalls);
+      }
+    }
+  } else {
+    consumeFunctions(content);
+  }
+
+  if (toolCalls.length === 0) {
+    return { prose: content, toolCalls: [] };
+  }
+
+  return { prose: stripToolMarkup(content), toolCalls };
+}
+
+/** Drop Qwen/vLLM tool XML (and the "Calling foo..." line) from assistant text. */
+export function stripToolMarkup(content: string): string {
+  return content
+    .replace(/<tool_?call\b[^>]*>[\s\S]*?(?:<\/tool_?call>|$)/gi, '')
+    .replace(/<function\s*=\s*[^>\s]+>[\s\S]*?(?:<\/function>|$)/gi, '')
+    .replace(/Calling\s+\S+\.{0,3}\s*$/i, '')
+    .trim();
+}
+
+function consumeQwenCoderBlock(block: string, toolCalls: ToolCall[]): void {
+  const trimmed = block.trim();
+  const lines = trimmed.split('\n').map((line) => line.trim()).filter(Boolean);
+  if (lines.length === 0) {
+    return;
+  }
+
+  const name = lines[0];
+  if (!/^[A-Za-z_][A-Za-z0-9_.]*$/.test(name)) {
+    return;
+  }
+
+  const rest = lines.slice(1).join('\n');
+  toolCalls.push(normalizeSalvagedToolCall(name, safeParseArguments(rest)));
+}
+
+function coerceParamValue(raw: string): unknown {
+  if (raw.startsWith('{') || raw.startsWith('[')) {
+    const parsed = safeParseArguments(raw);
+    if (Object.keys(parsed).length > 0 || raw === '{}') {
+      return parsed;
+    }
+  }
+
+  return raw;
+}
+
+/**
+ * Chat advertises dotted intents as `memory_remember`. Qwen3.6 often emits a
+ * GraphQL-ish mash (`knowledgecreateEntity`) with the same payload; wrap that
+ * as the native write so the tool loop can actually run.
+ */
+function canonicalizeToolName(name: string): string {
+  const intentName = name.replace(/\./g, '_');
+  const mashed = name.replace(/[_.-]/g, '').toLowerCase();
+
+  if (mashed === 'memoryremember') {
+    return 'memory_remember';
+  }
+
+  return intentName;
+}
+
+function normalizeSalvagedToolCall(name: string, args: Record<string, unknown>): ToolCall {
+  const intentName = canonicalizeToolName(name);
+  const mashed = name.replace(/[_.-]/g, '').toLowerCase();
+
+  if (mashed.endsWith('createentity') && (args.entityType != null || args.name != null)) {
+    const properties =
+      typeof args.properties === 'string' ? coerceParamValue(args.properties) : args.properties;
+
+    return {
+      function: {
+        name: 'memory_remember',
+        arguments: {
+          operations: [
+            {
+              kind: 'entity.create',
+              entityType: String(args.entityType ?? 'place'),
+              name: String(args.name ?? ''),
+              ...(properties != null && typeof properties === 'object'
+                ? { properties: properties as Record<string, unknown> }
+                : {}),
+            },
+          ],
+        },
+      },
+    };
+  }
+
+  return { function: { name: intentName, arguments: args } };
 }
 
 /** Ollama tools and OpenAI tools share the function-call JSON-schema shape. */

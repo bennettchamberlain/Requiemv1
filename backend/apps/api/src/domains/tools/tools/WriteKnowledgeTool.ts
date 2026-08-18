@@ -7,6 +7,8 @@ import { GraphEventService, GraphQueryService } from '@ci/domains/memory';
 import { BaseTool } from '../core/BaseTool';
 import type { IntentDefinition, ToolExecutionContext } from '../core/types';
 
+import { coerceWriteKnowledgeInput } from './writeKnowledgeCoerce';
+
 const EntityCreateSchema = z.object({
   kind: z.literal('entity.create'),
   entityId: z.string().uuid().optional(),
@@ -44,11 +46,18 @@ const EntityUpdateSchema = z.object({
   linkedId: z.string().uuid().optional(),
 });
 
+const NamedRefSchema = z.object({
+  entityType: z.string().min(1).optional(),
+  name: z.string().min(1),
+});
+
 const RelationshipCreateSchema = z.object({
   kind: z.literal('relationship.create'),
   relationshipId: z.string().uuid().optional(),
-  fromEntityId: z.string().uuid(),
-  toEntityId: z.string().uuid(),
+  fromEntityId: z.string().uuid().optional(),
+  toEntityId: z.string().uuid().optional(),
+  from: NamedRefSchema.optional(),
+  to: NamedRefSchema.optional(),
   relationshipType: z.string().min(1),
   properties: z.record(z.unknown()).optional(),
   strength: z.number().min(0).max(1).optional(),
@@ -110,18 +119,39 @@ export class WriteKnowledgeTool extends BaseTool<WriteKnowledgeInput, WriteKnowl
     localCapable: true,
     produces: ['concept', 'person'],
     phrases: ['Remember that $fact', 'Note that $fact'],
-    description: 'Create or update entities and relationships in the personal knowledge graph.',
+    description:
+      'Create or update entities and relationships in the personal knowledge graph. Prefer one call. kind must be entity.create, entity.update, relationship.create, or relationship.update. For new facts, entity.create with entityType + name; link with relationship.create using from/to {name} of entities in the same call. Do not retry a successful create.',
     category: 'database',
     parameters: {
       type: 'object',
       properties: {
         operations: {
           type: 'array',
+          minItems: 1,
           items: {
             type: 'object',
-            description: 'Operation describing how to mutate entities or relationships.',
+            required: ['kind'],
+            properties: {
+              kind: {
+                type: 'string',
+                enum: ['entity.create', 'entity.update', 'relationship.create', 'relationship.update'],
+              },
+              entityType: { type: 'string' },
+              name: { type: 'string' },
+              properties: { type: 'object' },
+              relationshipType: { type: 'string' },
+              from: {
+                type: 'object',
+                properties: { name: { type: 'string' }, entityType: { type: 'string' } },
+              },
+              to: {
+                type: 'object',
+                properties: { name: { type: 'string' }, entityType: { type: 'string' } },
+              },
+              fromEntityId: { type: 'string' },
+              toEntityId: { type: 'string' },
+            },
           },
-          minItems: 1,
         },
         dryRun: {
           type: 'boolean',
@@ -173,7 +203,7 @@ export class WriteKnowledgeTool extends BaseTool<WriteKnowledgeInput, WriteKnowl
   }
 
   protected validateInput(input: unknown): WriteKnowledgeInput {
-    return WriteKnowledgeInputSchema.parse(input);
+    return WriteKnowledgeInputSchema.parse(coerceWriteKnowledgeInput(input));
   }
 
   protected async executeInternal(
@@ -193,12 +223,31 @@ export class WriteKnowledgeTool extends BaseTool<WriteKnowledgeInput, WriteKnowl
     let createdRelationships = 0;
     let updatedRelationships = 0;
     let failures = 0;
+    const createdByName = new Map<string, string>();
 
-    for (const operation of input.operations) {
+    const rememberName = (entityType: string, name: string | undefined, entityId: string) => {
+      if (!name || name.trim() === '') {
+        return;
+      }
+
+      const trimmed = name.trim().toLowerCase();
+      createdByName.set(trimmed, entityId);
+      createdByName.set(`${entityType.trim().toLowerCase()}::${trimmed}`, entityId);
+    };
+
+    // Entity ops first so later relationship.create can resolve from/to by name
+    // against ids minted in this same batch (Qwen rarely has UUIDs).
+    const ordered = [
+      ...input.operations.filter((operation) => operation.kind.startsWith('entity.')),
+      ...input.operations.filter((operation) => operation.kind.startsWith('relationship.')),
+    ];
+
+    for (const operation of ordered) {
       try {
         switch (operation.kind) {
           case 'entity.create': {
             if (dryRun) {
+              rememberName(operation.entityType, operation.name, operation.entityId ?? 'dry-run');
               results.push({
                 kind: operation.kind,
                 status: 'created',
@@ -225,6 +274,7 @@ export class WriteKnowledgeTool extends BaseTool<WriteKnowledgeInput, WriteKnowl
               createdRelationships += operation.relationships.length;
             }
 
+            rememberName(operation.entityType, operation.name, entityId);
             createdNodes += 1;
             results.push({
               kind: operation.kind,
@@ -289,6 +339,29 @@ export class WriteKnowledgeTool extends BaseTool<WriteKnowledgeInput, WriteKnowl
           }
 
           case 'relationship.create': {
+            const fromEntityId = await this.resolveEndpoint(
+              ownerId,
+              operation.fromEntityId,
+              operation.from,
+              createdByName,
+            );
+            const toEntityId = await this.resolveEndpoint(
+              ownerId,
+              operation.toEntityId,
+              operation.to,
+              createdByName,
+            );
+
+            if (!fromEntityId || !toEntityId) {
+              results.push({
+                kind: operation.kind,
+                status: 'failed',
+                message: 'Could not resolve relationship endpoints by id or name',
+              });
+              failures += 1;
+              break;
+            }
+
             if (dryRun) {
               results.push({
                 kind: operation.kind,
@@ -299,10 +372,7 @@ export class WriteKnowledgeTool extends BaseTool<WriteKnowledgeInput, WriteKnowl
               break;
             }
 
-            const endpoints = await this.graphQuery.getNodesByIds(ownerId, [
-              operation.fromEntityId,
-              operation.toEntityId,
-            ]);
+            const endpoints = await this.graphQuery.getNodesByIds(ownerId, [fromEntityId, toEntityId]);
             if (endpoints.length !== 2) {
               results.push({
                 kind: operation.kind,
@@ -315,8 +385,8 @@ export class WriteKnowledgeTool extends BaseTool<WriteKnowledgeInput, WriteKnowl
 
             const { relationshipId } = await this.graphEvents.upsertRelationship(ownerId, {
               relationshipId: operation.relationshipId,
-              fromEntityId: operation.fromEntityId,
-              toEntityId: operation.toEntityId,
+              fromEntityId,
+              toEntityId,
               relationshipType: operation.relationshipType,
               properties: operation.properties ?? {},
               strength: operation.strength ?? 1,
@@ -409,6 +479,61 @@ export class WriteKnowledgeTool extends BaseTool<WriteKnowledgeInput, WriteKnowl
       updatedRelationships,
       failures,
     };
+  }
+
+  private async resolveEndpoint(
+    ownerId: string,
+    entityId: string | undefined,
+    ref: { entityType?: string; name: string } | undefined,
+    createdByName: Map<string, string>,
+  ): Promise<string | undefined> {
+    if (entityId) {
+      const existing = await this.graphQuery.getNode(ownerId, entityId);
+      if (existing) {
+        return entityId;
+      }
+    }
+
+    return this.resolveNamedRef(ownerId, ref, createdByName);
+  }
+
+  private async resolveNamedRef(
+    ownerId: string,
+    ref: { entityType?: string; name: string } | undefined,
+    createdByName: Map<string, string>,
+  ): Promise<string | undefined> {
+    if (!ref?.name) {
+      return undefined;
+    }
+
+    const trimmed = ref.name.trim().toLowerCase();
+    const typed = ref.entityType?.trim().toLowerCase();
+    const fromBatch = (typed ? createdByName.get(`${typed}::${trimmed}`) : undefined) ?? createdByName.get(trimmed);
+    if (fromBatch) {
+      return fromBatch;
+    }
+
+    const containsHits = await this.graphQuery.getNodes(ownerId, {
+      ...(typed ? { entityType: ref.entityType } : {}),
+      nameContains: ref.name.trim(),
+      limit: 8,
+    });
+    const exactContains = containsHits.find((node) => node.name?.trim().toLowerCase() === trimmed);
+    if (exactContains) {
+      return exactContains.entity_id;
+    }
+
+    if (containsHits.length === 1) {
+      return containsHits[0].entity_id;
+    }
+
+    const prefixHits = await this.graphQuery.searchNodesByPrefix(ownerId, ref.name.trim(), { limit: 8 });
+    const typedHits = typed
+      ? prefixHits.filter((node) => node.entity_type.trim().toLowerCase() === typed)
+      : prefixHits;
+    const exact = typedHits.find((node) => node.name?.trim().toLowerCase() === trimmed);
+
+    return exact?.entity_id ?? typedHits[0]?.entity_id ?? containsHits[0]?.entity_id;
   }
 
   private mergeProperties(

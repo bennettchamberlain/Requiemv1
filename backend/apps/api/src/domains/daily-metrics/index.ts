@@ -114,6 +114,13 @@ export { QUESTION_CATALOG } from './narrate/questionCatalog';
 export type { QuestionSpec, Category, AnalyticType } from './narrate/questionCatalog';
 export { pickMetricSurprise, pickMetricSurpriseFromAnomalies } from './grounded/metricSurprises';
 export type { MetricSurprise } from './grounded/metricSurprises';
+export {
+  COLD_START_MIN_DAYS,
+  COLD_START_MIN_COVERAGE,
+  MAX_DERIVED_ACTIONS_PER_DAY,
+  stillLearning,
+  isCoverageGated,
+} from './coldStart';
 export { shiftIso, todayIsoInTimezone } from './dateUtil';
 export { METRIC_KEYS, METRIC_SOURCES } from './types';
 export type { DailyMetrics, MetricKey, MetricValues, MetricCoverage } from './types';
