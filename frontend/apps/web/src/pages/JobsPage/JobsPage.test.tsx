@@ -365,7 +365,11 @@ describe('JobsPage schedules', () => {
     // The CLASS names the job when the method is generic — `tick` alone told an
     // operator nothing, and eight crons registered as `.run`.
     expect(screen.getByText('Pipeline tick')).toBeInTheDocument();
-    expect(screen.getByText('0 */2 * * * *')).toBeInTheDocument();
+    // The schedule reads as words, not as six positional fields — and the raw
+    // expression stays on the cell's title, because that is the form you paste
+    // back into an @Cron decorator.
+    expect(screen.getByText('Every 2 min')).toBeInTheDocument();
+    expect(screen.getAllByTitle('0 */2 * * * *').length).toBeGreaterThan(0);
     // The registration key stays reachable for anyone grepping the codebase.
     expect(screen.getByTitle('PipelineTickCron.tick')).toBeInTheDocument();
   });

@@ -6,14 +6,15 @@ import { AlertTriangle, RefreshCcw } from '@ci/shadcn/icons';
 
 import { PageContent } from '@/components/layout';
 
+import { describeCron } from './cronDescriptor';
+import { describeCronExpression } from './cronSchedule';
+import { categoryDot } from './jobCategories';
 import { JobHistoryCharts } from './JobHistoryCharts';
 import { JobsTable } from './JobsTable';
 import { COMPACT_CARD } from './layout';
 import { useJobHistory } from './useJobHistory';
 import { useJobsDashboard, type JobsDashboardResponse } from './useJobsDashboard';
 import { DEFAULT_JOB_FILTERS, useJobsList, type JobFilters } from './useJobsList';
-import { categoryDot } from './jobCategories';
-import { describeCron } from './cronDescriptor';
 import { useJobTypes, type JobTypesResponse } from './useJobTypes';
 
 /** Category keys the API's taxonomy exposes, in the order the filter lists them. */
@@ -233,7 +234,10 @@ function SchedulesCard({
                     Category
                   </th>
                   <th scope="col" className="py-1.5 pr-3 font-medium">
-                    Cron
+                    Every
+                  </th>
+                  <th scope="col" className="py-1.5 pr-3 font-medium">
+                    When
                   </th>
                   <th scope="col" className="py-1.5 pr-3 font-medium">
                     Status
@@ -254,6 +258,12 @@ function SchedulesCard({
                   // fall back to their registration key, which is at least
                   // greppable — the old UI showed a bare UUID.
                   const descriptor = describeCron(cron.name, jobTypes);
+                  // `0 */15 * * * *` is six positional fields you have to count
+                  // before you know what it does. Split into how-often and
+                  // where-in-the-period, both columns become scannable — and the
+                  // raw expression stays on the cells' title, since that is the
+                  // form you paste back into a decorator.
+                  const schedule = describeCronExpression(cron.cron);
 
                   return (
                     <tr key={cron.name} className="border-b border-border/40 last:border-0">
@@ -267,8 +277,14 @@ function SchedulesCard({
                         </span>
                       </td>
                       <td className="py-1.5 pr-3 text-muted-foreground">{descriptor.categoryLabel}</td>
-                      <td className="py-1.5 pr-3 font-mono text-xs text-muted-foreground">
-                        {cron.cron || '—'}
+                      <td className="py-1.5 pr-3 whitespace-nowrap" title={schedule.raw}>
+                        {schedule.frequency}
+                      </td>
+                      <td
+                        className="py-1.5 pr-3 whitespace-nowrap text-muted-foreground"
+                        title={schedule.raw}
+                      >
+                        {schedule.when || '—'}
                       </td>
                       <td className="py-1.5 pr-3">
                         <Badge

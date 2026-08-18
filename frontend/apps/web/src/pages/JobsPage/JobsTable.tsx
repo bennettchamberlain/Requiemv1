@@ -3,9 +3,9 @@ import { useState, type ReactNode } from 'react';
 import { Badge, Button, Card, Input, Skeleton } from '@ci/shadcn';
 import { AlertTriangle, ChevronDown, ChevronRight } from '@ci/shadcn/icons';
 
+import { categoryDot, categoryLabel, categoryStyle } from './jobCategories';
 import { COMPACT_CARD } from './layout';
 import type { JobFilters, JobListItem, JobListResponse } from './useJobsList';
-import { categoryDot, categoryLabel, categoryStyle } from './jobCategories';
 import type { JobTypesResponse } from './useJobTypes';
 
 type Props = {
