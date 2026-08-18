@@ -79,11 +79,23 @@ export class NetflixFileImporter implements FileImporter {
 
     if (stat.isFile()) {
       const base = path.basename(root).toLowerCase();
-      if (base === 'viewingactivity.csv' || base === 'netflixviewinghistory.csv') {
+      const isKnownFilename = base === 'viewingactivity.csv' || base === 'netflixviewinghistory.csv';
+
+      // The canonical filenames used to be worth 0.9 on their own, no header
+      // read at all. Require the same header check the renamed-file fallback
+      // below already does, so a same-named file with unrelated content is no
+      // longer claimed outright.
+      if (isKnownFilename && this.headerMatches(root)) {
         return { confidence: 0.9 };
       }
 
-      if (path.extname(base) === '.csv' && this.headerMatches(root)) {
+      // The full "Get my info" export's header (Start Time + Title + Profile
+      // Name together) is distinctive enough to stand alone under any
+      // filename. The quick export's header is just "Title,Date" — that's
+      // indistinguishable from any other minimal watchlist/to-do CSV, so on
+      // its own it must not grant recognition; it only counts when paired
+      // with one of the known filenames above.
+      if (path.extname(base) === '.csv' && this.headerMatchesFullExport(root)) {
         return { confidence: 0.85 };
       }
 
@@ -93,9 +105,10 @@ export class NetflixFileImporter implements FileImporter {
     if (stat.isDirectory()) {
       try {
         const names = fs.readdirSync(root);
-        if (
-          names.some((n) => ['viewingactivity.csv', 'netflixviewinghistory.csv'].includes(n.toLowerCase()))
-        ) {
+        const known = names.find((n) =>
+          ['viewingactivity.csv', 'netflixviewinghistory.csv'].includes(n.toLowerCase()),
+        );
+        if (known && this.headerMatches(path.join(root, known))) {
           return { confidence: 0.9 };
         }
 
@@ -104,7 +117,7 @@ export class NetflixFileImporter implements FileImporter {
             continue;
           }
 
-          if (this.headerMatches(path.join(root, name))) {
+          if (this.headerMatchesFullExport(path.join(root, name))) {
             return { confidence: 0.85 };
           }
         }
@@ -118,19 +131,17 @@ export class NetflixFileImporter implements FileImporter {
     return { confidence: 0 };
   }
 
-  // Read only the first ~4KB to inspect the CSV header row. Matches either the
-  // full "Get my info" export or the quick "Download all" history.
-  private headerMatches(fpath: string): boolean {
+  // Read only the first ~4KB to inspect the CSV header row.
+  private readHead(fpath: string): string | undefined {
     let fd: number | undefined;
     try {
       fd = fs.openSync(fpath, 'r');
       const buf = Buffer.alloc(4096);
       const n = fs.readSync(fd, buf, 0, 4096, 0);
-      const head = buf.toString('utf8', 0, n);
 
-      return headerHasViewingCols(head) || headerHasSimpleCols(head);
+      return buf.toString('utf8', 0, n);
     } catch {
-      return false;
+      return undefined;
     } finally {
       if (fd !== undefined) {
         try {
@@ -140,6 +151,22 @@ export class NetflixFileImporter implements FileImporter {
         }
       }
     }
+  }
+
+  // Matches either the full "Get my info" export or the quick "Download all"
+  // history — used only once a known filename has already corroborated it.
+  private headerMatches(fpath: string): boolean {
+    const head = this.readHead(fpath);
+
+    return head !== undefined && (headerHasViewingCols(head) || headerHasSimpleCols(head));
+  }
+
+  // The full export's header alone, Netflix-specific enough to stand in for a
+  // missing/renamed filename.
+  private headerMatchesFullExport(fpath: string): boolean {
+    const head = this.readHead(fpath);
+
+    return head !== undefined && headerHasViewingCols(head);
   }
 
   async fileImport(_ctx: unknown, entry: DirEntry, params: ImportParams): Promise<void> {

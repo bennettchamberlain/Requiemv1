@@ -130,13 +130,35 @@ describe('Netflix datasource', () => {
     expect(rec.confidence).toBeGreaterThan(0.85);
   });
 
-  it('recognizes a renamed quick export by its Title,Date header', async () => {
+  it('does not recognize a renamed quick export from its Title,Date header alone', async () => {
+    // The quick export's header is just "Title,Date" — no Netflix-specific
+    // marker anywhere in it, so a generic watchlist or to-do app's minimal
+    // CSV export in that exact shape would previously have been claimed at
+    // 0.85 confidence under any filename. Content alone can no longer stand
+    // in for the missing/renamed canonical filename; only the richer full-export
+    // header is distinctive enough to survive a rename on its own.
     const tmp = path.join(os.tmpdir(), `netflix-simple-renamed-${Date.now()}.csv`);
     fs.copyFileSync(SIMPLE_CSV, tmp);
     try {
       const fi = new NetflixFileImporter();
       const rec = await fi.recognize({}, { filename: 'renamed.csv', fullPath: tmp });
-      expect(rec.confidence).toBeGreaterThan(0.8);
+      expect(rec.confidence).toBe(0);
+    } finally {
+      fs.unlinkSync(tmp);
+    }
+  });
+
+  it('does not recognize a same-named CSV with unrelated content', async () => {
+    // "ViewingActivity.csv" and "NetflixViewingHistory.csv" used to be worth
+    // 0.9 confidence the moment the name matched — no header read at all. A
+    // same-named CSV from an unrelated app (or a stale/corrupted download)
+    // must not be claimed as Netflix on the filename alone.
+    const tmp = path.join(os.tmpdir(), `netflix-lookalike-${Date.now()}.csv`);
+    fs.writeFileSync(tmp, 'Item,Category,Store,Total\nWidget,Home,Target,19.99\n');
+    try {
+      const fi = new NetflixFileImporter();
+      const rec = await fi.recognize({}, { filename: 'ViewingActivity.csv', fullPath: tmp });
+      expect(rec.confidence).toBe(0);
     } finally {
       fs.unlinkSync(tmp);
     }
