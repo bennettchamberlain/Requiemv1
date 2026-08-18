@@ -66,6 +66,26 @@ async function recognizeConfidence(content: string, ext = '.csv'): Promise<numbe
   });
 }
 
+describe('Coinbase CSV recognition', () => {
+  it('does not recognize a same-named CSV with unrelated content', async () => {
+    // "transactions.csv" and "coinbase*" used to get a moderate confidence
+    // bump on the filename alone, no column check at all — a same-named CSV
+    // from an unrelated exchange or bank export must not be claimed as
+    // Coinbase on the filename.
+    return withTmpFile('Item,Category,Store,Total\nWidget,Home,Target,19.99\n', '.csv', async (tmp) => {
+      const renamed = path.join(path.dirname(tmp), 'coinbase-transactions.csv');
+      await fs.promises.rename(tmp, renamed);
+      try {
+        const fi = new CoinbaseFileImporter();
+        const rec = await fi.recognize({}, { filename: path.basename(renamed), fullPath: renamed });
+        expect(rec.confidence).toBe(0);
+      } finally {
+        await fs.promises.unlink(renamed).catch(() => {});
+      }
+    });
+  });
+});
+
 describe('Coinbase dedup', () => {
   it('assigns a unique, stable id to every transaction that would otherwise collapse', async () => {
     const pipeline = await runImport(COLLAPSING_CSV);

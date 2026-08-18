@@ -180,13 +180,14 @@ export class CoinbaseFileImporter implements FileImporter {
         return { confidence: 0 };
       }
 
+      // "transactions.csv"/"coinbase*" used to get a moderate confidence bump
+      // on the filename alone, no column check at all — but "transactions.csv"
+      // is a generic name any exchange or bank's own CSV download tool could
+      // produce, unrelated data included. Require the same header check that
+      // already gates the tier above; a same-named file that fails it now
+      // correctly returns 0.
       if (this.headerMatches(root)) {
         return { confidence: 0.95 };
-      }
-
-      // Common Coinbase filenames get a moderate bump without header check
-      if (base.startsWith('coinbase') || base === 'transactions.csv') {
-        return { confidence: 0.5 };
       }
 
       return { confidence: 0 };
