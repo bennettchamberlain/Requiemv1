@@ -393,8 +393,8 @@ export function eventSearchDocument(event: EventSearchFields): string | null {
     pushPart(parts, token);
   }
 
-  // High-signal structured fields that capture sources (notably CI-Import-Tools)
-  // record in event metadata. A curated allowlist of keys observed across
+  // High-signal structured fields that capture sources (notably the archive
+  // importer) record in event metadata. A curated allowlist of keys observed across
   // importers — extend as new sources land.
   const metadata = (event.metadata ?? {}) as Record<string, unknown>;
   const candidateKeys = [

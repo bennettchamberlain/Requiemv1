@@ -18,9 +18,11 @@ So "opt-out" describes what a user of the appliance experiences. It does not
 mean a DSN-less build quietly reports — it cannot.
 
 This is the reference implementation for the rest of the first-party fleet. The
-same env contract is implemented in CI-Planning, CI-Import-Tools, CI-Hermes,
+same env contract is implemented in CI-Planning, CI-Hermes,
 CI-OpenClaw, CI-Spellbook, CI-WebXR-Time-Machine and
-CI-Spatial-Companion-WebXR.
+CI-Spatial-Companion-WebXR. (The now-retired CI-Import-Tools also carried this
+contract; its import functionality lives on natively in CI-Server, which — as
+this document already describes — is the reference implementation.)
 
 ## Privacy posture
 

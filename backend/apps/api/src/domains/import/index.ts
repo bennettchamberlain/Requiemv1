@@ -242,3 +242,15 @@ export { StagedRelationshipEntity } from './entities/StagedRelationshipEntity';
 export type { StagedRelationship } from './entities/StagedRelationshipEntity';
 
 export type { StagedPushStatus } from './entities/pushState';
+
+export {
+  makeIsSelf,
+  matchOwner,
+  isExactOwnerIdentifier,
+  shouldMapContactToSelf,
+  decideSelfCollation,
+  readSelfIdentity,
+  NOBODY_IS_SELF,
+  OWNER_MATCH_CONFIDENCE,
+} from './push/self';
+export type { IsSelf, OwnerMatch, OwnerMatchKind, SelfIdentity, SelfIdentityReader } from './push/self';

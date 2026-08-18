@@ -134,4 +134,25 @@ describe('PersonDuplicateService', () => {
 
     expect(groups).toEqual([]);
   });
+
+  it('surfaces self-containing groups before other duplicate groups', async () => {
+    const self = Object.assign(entity(PERSON_A, 'Me'), { isSelf: true });
+    self.loadPropertiesFromJsonb();
+    const other = entity(PERSON_B, 'Me Stub');
+    const unrelatedA = entity(PERSON_C, 'Sam');
+    const unrelatedB = Object.assign(entity('00000000-0000-0000-0000-0000000000b4', 'Sam Q'), {});
+
+    const { service } = makeService(
+      [
+        { kind: 'name', val: 'sam', entity_ids: [PERSON_C, unrelatedB.id] },
+        { kind: 'email', val: 'me@x.com', entity_ids: [PERSON_A, PERSON_B] },
+      ],
+      [self, other, unrelatedA, unrelatedB],
+    );
+
+    const groups = await service.findDuplicateGroups(CONTEXT);
+
+    expect(groups[0].people.some((person) => person.isSelf)).toBe(true);
+    expect(groups[0].reason).toBe('email');
+  });
 });

@@ -25,7 +25,7 @@ export function PrimaryNavigation() {
   // misleading (and navigate the viewer away). Hide it there; the page's own view
   // tabs (nav-views) still render.
   const isSharedView = location.pathname.startsWith('/shared/');
-  const isMemoryExplorer = location.pathname === '/memory';
+  const isMemoryExplorer = location.pathname === '/memory/events' || location.pathname === '/memory';
   const { toast } = useToast();
   const [, { trigger }] = useTriggerHbpe();
 

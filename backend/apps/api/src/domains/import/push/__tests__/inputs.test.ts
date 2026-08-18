@@ -141,6 +141,69 @@ describe('toContentInput', () => {
 
     expect(toContentInput(bookmark).url).toBe('https://example.com/article');
   });
+
+  it('types an Android app-store package as app, not media — even though it is a digital purchase', () => {
+    // The exact live-DB bug: Amazon Appstore entitlements (mimetype
+    // application/vnd.android.package-archive, stamped by amazon.ts
+    // RESOURCE_TYPE_MIME/appAsins) are digital purchases and so reach the same
+    // commerce.purchase content lane as an ebook or a movie, but they are
+    // software, not media.
+    const app = recordFor({
+      classification: 'purchase',
+      dataSource: 'amazon',
+      mediaType: 'application/vnd.android.package-archive',
+      metadata: { Product: 'SHADOWGUN', Digital: true },
+    });
+
+    expect(toContentInput(app).type).toBe('app');
+  });
+
+  it('still types a non-app digital purchase (an ebook, a movie) as media', () => {
+    const ebook = recordFor({
+      classification: 'purchase',
+      dataSource: 'amazon',
+      mediaType: 'application/vnd.amazon.ebook',
+      metadata: { Product: 'Some Novel', Digital: true },
+    });
+
+    expect(toContentInput(ebook).type).toBe('media');
+  });
+
+  it('stamps external_id_kind file for an uploaded file, external_uri for a source URI', () => {
+    const orphanPhoto = recordFor({
+      classification: 'photo',
+      occurredAt: null,
+      mediaType: 'image/jpeg',
+      metadata: { FileId: 'file-uuid-1' },
+    });
+    expect(toContentInput(orphanPhoto).external_id_kind).toBe('file');
+
+    const play = recordFor({
+      classification: 'play',
+      dataSource: 'spotify',
+      metadata: { URI: 'spotify:track:123' },
+    });
+    expect(toContentInput(play).external_id_kind).toBe('external_uri');
+  });
+
+  it('flips external_id_kind to file alongside external_id when a record carries both a URI and a FileId', () => {
+    const play = recordFor({
+      classification: 'play',
+      dataSource: 'spotify',
+      metadata: { URI: 'spotify:track:123', FileId: 'file-uuid-2' },
+    });
+
+    const input = toContentInput(play);
+
+    expect(input.external_id).toBe('file-uuid-2');
+    expect(input.external_id_kind).toBe('file');
+  });
+
+  it('leaves external_id_kind unset when the record carries neither a URI nor a FileId', () => {
+    const purchase = recordFor({ classification: 'purchase', contentHash: 'order-line-9' });
+
+    expect(toContentInput(purchase).external_id_kind).toBeUndefined();
+  });
 });
 
 describe('toContentInput — Reddit media', () => {
@@ -487,5 +550,35 @@ describe('toEventInput', () => {
 
     expect(input.start_time).toBeInstanceOf(Date);
     expect(input.location_coordinates).toEqual({ type: 'Point', coordinates: [-122.3965, 37.7936] });
+  });
+
+  it('refuses a meeting-join URL as a location name', () => {
+    // A .ics VLOCATION of a pasted Zoom link is not a place name, the same
+    // defect class as a coordinate pair in toPositionInput's `name` (above) —
+    // see isUriLocation.
+    const zoomMeeting = recordFor({
+      classification: 'event',
+      metadata: { Location: 'https://khronosgroup.zoom.us/w/99353948195?tk=oBjpnuWTonC0SQZ_XX0y' },
+    });
+
+    expect(toEventInput(zoomMeeting).location_name).toBeUndefined();
+  });
+
+  it('refuses a custom-scheme URI (e.g. AltspaceVR) as a location name', () => {
+    const altspaceEvent = recordFor({
+      classification: 'event',
+      metadata: { Location: 'altspace://account.altvr.com/api/events/1629227784846967373' },
+    });
+
+    expect(toEventInput(altspaceEvent).location_name).toBeUndefined();
+  });
+
+  it('keeps a real venue name in the calendar Location field', () => {
+    const inPerson = recordFor({
+      classification: 'event',
+      metadata: { Location: 'Golden Gate Park, San Francisco, CA' },
+    });
+
+    expect(toEventInput(inPerson).location_name).toBe('Golden Gate Park, San Francisco, CA');
   });
 });

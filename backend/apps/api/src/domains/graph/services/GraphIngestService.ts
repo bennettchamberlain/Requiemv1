@@ -122,8 +122,11 @@ function isStale(current: NodeEntity, incoming: NodeEntity): boolean {
 }
 
 /**
- * Idempotent bulk ingest of an external knowledge graph (the CI-Import-Tools
- * timeline) into `ci.entities` / `ci.relationships`.
+ * Idempotent bulk ingest of an archive importer's knowledge graph (the
+ * timeline built while parsing a source export) into `ci.entities` /
+ * `ci.relationships`. Called in-process by the native import domain's
+ * `PushStage` (`backend/apps/api/src/domains/import/`); the `bulkIngestGraph`
+ * GraphQL mutation exposes the same path for any external caller.
  *
  * - Entities upsert on (owner_user_id, entity_type, linked_table, linked_id),
  *   where linked_table = `import:<sourceSystem>` and linked_id = uuidv5(key).
@@ -685,6 +688,18 @@ export class GraphIngestService {
   private async ensureSelfEntity(ownerId: string): Promise<{ id: string; type: string } | null> {
     const existing = await this.resolveSelfEntity(ownerId);
     if (existing) {
+      const users: Array<{ name: string | null; email: string | null }> =
+        await this.nodeRepository.manager.query(`SELECT name, email FROM ci.users WHERE id = $1`, [ownerId]);
+      const displayName = users[0]?.name?.trim() || users[0]?.email?.trim() || 'Me';
+      const email = users[0]?.email?.trim() || null;
+      await this.entityIdentifierService.claimForSelf(ownerId, existing.id, {
+        emails: email ? [email] : [],
+        names: [displayName],
+      });
+      if (email) {
+        await this.entityIdentifierService.repointToEntity(ownerId, existing.id, 'email', email, 'self');
+      }
+
       return existing;
     }
 
@@ -697,6 +712,7 @@ export class GraphIngestService {
     }
 
     const displayName = users[0].name?.trim() || users[0].email?.trim() || 'Me';
+    const email = users[0].email?.trim() || null;
 
     // Provision the self Person through the same set-based upsert (a batch of
     // one), so its idempotency/race handling matches every other ingested entity.
@@ -705,7 +721,11 @@ export class GraphIngestService {
       entityType: SELF_ENTITY_TYPE,
       name: displayName,
       sourceSystem: SELF_SOURCE_SYSTEM,
-      properties: { is_self: true },
+      properties: {
+        is_self: true,
+        ...(email ? { email, emails: [email] } : {}),
+        names: [displayName],
+      },
     };
     const selfErrors: string[] = [];
     const selfResolved = await this.upsertEntities(ownerId, [selfDto], selfErrors);
@@ -719,6 +739,14 @@ export class GraphIngestService {
       `UPDATE ci.users SET entity_id = $2 WHERE id = $1 AND entity_id IS NULL`,
       [ownerId, selfEntityId],
     );
+
+    await this.entityIdentifierService.claimForSelf(ownerId, selfEntityId, {
+      emails: email ? [email] : [],
+      names: [displayName],
+    });
+    if (email) {
+      await this.entityIdentifierService.repointToEntity(ownerId, selfEntityId, 'email', email, 'self');
+    }
 
     this.logger.log('Provisioned self entity for owner', { ownerId, selfEntityId, displayName });
 

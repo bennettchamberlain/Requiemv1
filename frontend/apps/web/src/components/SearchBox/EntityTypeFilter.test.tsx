@@ -10,7 +10,12 @@ import { describe, expect, it } from 'vitest';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
 import { EntityTypeFilter } from './EntityTypeFilter';
-import { AVAILABLE_ENTITY_TYPES, DropdownProvider } from './useDropdown';
+import {
+  AVAILABLE_ENTITY_TYPES,
+  DropdownProvider,
+  excludedEntityTypesFor,
+  HIDDEN_ENTITY_TYPES,
+} from './useDropdown';
 
 function LocationProbe() {
   const location = useLocation();
@@ -22,7 +27,7 @@ function params(): URLSearchParams {
   return new URLSearchParams(screen.getByTestId('query').textContent ?? '');
 }
 
-function renderFilter(props: Partial<React.ComponentProps<typeof EntityTypeFilter>> = {}, route = '/memory') {
+function renderFilter(props: Partial<React.ComponentProps<typeof EntityTypeFilter>> = {}, route = '/memory/events') {
   return renderWithProviders(
     <DropdownProvider args={[{ changeSearchParams: true }]}>
       <EntityTypeFilter modal={false} {...props} />
@@ -50,27 +55,27 @@ describe('EntityTypeFilter — trigger label', () => {
   });
 
   it('reads "No Entity Types" when every type is excluded', () => {
-    renderFilter({}, `/memory?excludedEntityTypes=${AVAILABLE_ENTITY_TYPES.join(',')}`);
+    renderFilter({}, `/memory/events?excludedEntityTypes=${AVAILABLE_ENTITY_TYPES.join(',')}`);
 
     expect(screen.getByRole('button', { name: /no entity types/i })).toBeInTheDocument();
   });
 
   it('names the single remaining type rather than saying "1 Entity Types"', () => {
     const allButPerson = AVAILABLE_ENTITY_TYPES.filter((t) => t !== 'Person');
-    renderFilter({}, `/memory?excludedEntityTypes=${allButPerson.join(',')}`);
+    renderFilter({}, `/memory/events?excludedEntityTypes=${allButPerson.join(',')}`);
 
     expect(screen.getByRole('button', { name: 'Person' })).toBeInTheDocument();
   });
 
   it('shows a count once more than one, but fewer than all, types are selected', () => {
-    renderFilter({}, '/memory?excludedEntityTypes=Person,Place');
+    renderFilter({}, '/memory/events?excludedEntityTypes=Person,Place');
 
     const remaining = AVAILABLE_ENTITY_TYPES.length - 2;
     expect(screen.getByRole('button', { name: `${remaining} Entity Types` })).toBeInTheDocument();
   });
 
   it('uses the given label instead, with an icon, regardless of selection', () => {
-    renderFilter({ label: 'What' }, '/memory?excludedEntityTypes=Person,Place');
+    renderFilter({ label: 'What' }, '/memory/events?excludedEntityTypes=Person,Place');
 
     const button = screen.getByRole('button', { name: 'What' });
     expect(button).toBeInTheDocument();
@@ -88,7 +93,13 @@ describe('EntityTypeFilter — toggling from the menu', () => {
 
     fireEvent.click(person);
 
-    await waitFor(() => expect(params().get('excludedEntityTypes')).toBe('Person'));
+    // Narrowing any visible type also excludes Answer/Concept so they don't
+    // leak into a "People only" (etc.) result set.
+    await waitFor(() =>
+      expect(params().get('excludedEntityTypes')?.split(',').sort()).toEqual(
+        excludedEntityTypesFor(AVAILABLE_ENTITY_TYPES.filter((t) => t !== 'Person')).sort(),
+      ),
+    );
   });
 
   it('"Clear all" excludes every type; "Select all" brings them all back', async () => {
@@ -99,7 +110,7 @@ describe('EntityTypeFilter — toggling from the menu', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Clear all' }));
     await waitFor(() =>
       expect(params().get('excludedEntityTypes')?.split(',').sort()).toEqual(
-        [...AVAILABLE_ENTITY_TYPES].sort(),
+        [...AVAILABLE_ENTITY_TYPES, ...HIDDEN_ENTITY_TYPES].sort(),
       ),
     );
     // The trigger's own accessible name reflects the new state live, without

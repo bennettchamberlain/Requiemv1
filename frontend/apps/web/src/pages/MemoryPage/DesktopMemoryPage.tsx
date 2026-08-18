@@ -11,7 +11,7 @@ import { useSearchParams } from 'react-router-dom';
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
 import { FileChunkModal } from '@/components/modals/FileChunkModal/FileChunkModal';
-import { AVAILABLE_ENTITY_TYPES } from '@/components/SearchBox/useDropdown';
+import { excludedEntityTypesFor } from '@/components/SearchBox/useDropdown';
 import { gql } from '@/graphql';
 
 import { useEntityService } from '../MemoryPage/useEntityService';
@@ -150,11 +150,13 @@ export default function DesktopMemoryPage() {
         const reverseMapped = entityTypes.map(
           (type) => ENTITY_TYPE_REVERSE_MAP[type as keyof typeof ENTITY_TYPE_REVERSE_MAP],
         );
-        const inverseEntityTypes = AVAILABLE_ENTITY_TYPES.filter(
-          (entity) => reverseMapped.indexOf(entity) === -1,
-        );
-        const mappedEntityTypes = inverseEntityTypes.join(',');
-        currentParams.set('excludedEntityTypes', mappedEntityTypes);
+        // Same exclude-list the What pickers write, so a restored search hides
+        // answers too rather than mixing them in with the saved types.
+        const inverseEntityTypes = excludedEntityTypesFor(reverseMapped);
+
+        if (inverseEntityTypes.length > 0) {
+          currentParams.set('excludedEntityTypes', inverseEntityTypes.join(','));
+        }
       }
 
       //Updating included entities is handled in SearchBox.tsx

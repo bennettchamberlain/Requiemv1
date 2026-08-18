@@ -77,8 +77,10 @@ export class IdentifierClaimEntity {
   /**
    * The SHARED join key — byte-identical to
    * `ci.entity_identifiers.value_normalized` and to what `classifyParticipant`
-   * computes at every lookup, here and in CI-Import-Tools. Redefining it would
-   * break people-linking in both repos with no error anywhere.
+   * computes at every lookup. Redefining it would break people-linking with no
+   * error anywhere. (Until CI-Import-Tools' retirement this key also had to
+   * match that repo's own copy of the rule; its import functionality is now
+   * native here.)
    */
   @Column({ name: 'value_normalized', type: 'text' })
   valueNormalized!: string;

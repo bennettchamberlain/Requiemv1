@@ -111,6 +111,15 @@ interface ControlOptions {
   stale?: string[];
 
   /**
+   * Stage legs with a FAILED row past its own retry gate, as `stageId` or
+   * `stageId|entityType`. Answers `PipelineStateService.hasOverdueRetry`, the
+   * read that lets a leg jump `minInterval` — see `stageDueness`'s
+   * `hasOverdueRetry` input. A leg absent here has none, which is the
+   * pre-existing behaviour.
+   */
+  retryDue?: string[];
+
+  /**
    * `ci.pipeline_schedule` rows, as `stageId` or `stageId|entityType` → when
    * that leg last had a sweep started.
    *
@@ -298,6 +307,7 @@ function makeControl(options: ControlOptions = {}) {
   };
 
   const stale = new Set(options.stale ?? []);
+  const retryDue = new Set(options.retryDue ?? []);
 
   const stateService = {
     selectStale: jest.fn(
@@ -315,6 +325,9 @@ function makeControl(options: ControlOptions = {}) {
         return hit ? [randomUUID()] : [];
       },
     ),
+    hasOverdueRetry: jest.fn(async (stage: { id: string }, entityType: string) => {
+      return retryDue.has(stage.id) || retryDue.has(`${stage.id}|${entityType}`);
+    }),
   };
 
   const runService = {
@@ -953,6 +966,62 @@ describe('PipelineControlService', () => {
 
       expect(h.swept()).toEqual([]);
       expect(report.legsNotDue).toBe(METERED_STAGES.size);
+    });
+
+    it('DOES re-sweep a metered stage inside its weekly interval when a retry is overdue', async () => {
+      // The bug: a leg swept 19 hours ago (well inside the 7-day minInterval)
+      // has rows that failed `provider_unavailable` and are past their own
+      // backoff. Before `hasOverdueRetry` wired into the tick, those rows sat
+      // with `attempts` frozen until the leg's `minInterval` elapsed — up to a
+      // week later. Same fixture as the test above, one line added.
+      const nineteenHoursAgo = new Date(Date.now() - 19 * 60 * 60 * 1000);
+
+      const h = makeControl({
+        users: [runningRun()],
+        stale: [STAGE_IDS.ENRICH_GEOCODE],
+        lastStartedAt: { [STAGE_IDS.ENRICH_GEOCODE]: nineteenHoursAgo },
+        retryDue: [STAGE_IDS.ENRICH_GEOCODE],
+      });
+
+      const report = await h.service.tick();
+
+      expect(h.swept()).toEqual([STAGE_IDS.ENRICH_GEOCODE]);
+      expect(report.legsNotDue).toBe(0);
+    });
+
+    it('still holds an overdue retry back while the enrichment window is shut', async () => {
+      // The window is spend-TIMING, not spend-FREQUENCY, and `hasOverdueRetry`
+      // only overrides the latter — see the `overdue` field's doc in
+      // schedule.ts for why the two are not folded together.
+      const nineteenHoursAgo = new Date(Date.now() - 19 * 60 * 60 * 1000);
+
+      const h = makeControl({
+        users: [runningRun()],
+        stale: [STAGE_IDS.ENRICH_GEOCODE],
+        lastStartedAt: { [STAGE_IDS.ENRICH_GEOCODE]: nineteenHoursAgo },
+        retryDue: [STAGE_IDS.ENRICH_GEOCODE],
+        windowOpen: false,
+      });
+
+      const report = await h.service.tick();
+
+      expect(h.swept()).toEqual([]);
+      expect(report.legsNotDue).toBe(1);
+    });
+
+    it('does not probe hasOverdueRetry for a leg with no candidates at all', async () => {
+      // `hasCandidates` already proves THE ONE RULE finds nothing — including
+      // its retry arm — so a second read here would be pure waste on the
+      // converged, common-case tick.
+      const h = makeControl({
+        users: [runningRun()],
+        stale: [],
+        lastStartedAt: { [STAGE_IDS.ENRICH_GEOCODE]: new Date(Date.now() - 60 * 60 * 1000) },
+      });
+
+      await h.service.tick();
+
+      expect(h.stateService.hasOverdueRetry).not.toHaveBeenCalled();
     });
 
     it('sweeps a metered stage again once its minInterval has elapsed', async () => {

@@ -9,7 +9,7 @@ import Database from 'better-sqlite3';
 import { attachmentMediaKind } from './attachment_extract';
 import type { FileImporter, Recognition, DirEntry } from './registry';
 import { registerDataSource } from './registry';
-import type { ImportParams, Graph, Item } from './timeline';
+import type { Entity, Graph, ImportParams, Item } from './timeline';
 import { timeframeContains } from './timeline';
 
 interface iMessageOptions {
@@ -284,7 +284,7 @@ class iMessageFileImporter implements FileImporter {
           if (row.contact_id) {
             graph.edges!.push({
               relation: 'participant',
-              to: { entity: { type: 'contact', name: row.contact_id } },
+              to: { entity: contactEntity(row.contact_id) },
               metadata: { direction: row.is_from_me === 1 ? 'outgoing' : 'incoming' },
             });
           }
@@ -372,6 +372,39 @@ class iMessageFileImporter implements FileImporter {
 
     return mapping[code];
   }
+}
+
+/**
+ * The conversation-partner entity for one iMessage `handle.id` — a phone
+ * number or an Apple ID email, never anything else (chat.db has no other
+ * handle shape).
+ *
+ * `attributes` with `identity: true` is what makes this a CONTACT rather than
+ * a bare name. Without it, `entityIdentityKey()` (import/staging/identity.ts)
+ * finds no identity handle on the entity, `naturalKeyFor` falls back to
+ * keying it by NAME instead, and `toGraphEntity` never populates
+ * `properties.phones`/`.emails` — so `GraphIngestService.indexIdentifiers`
+ * never writes a `ci.entity_identifiers` row for it at all. That is a
+ * different (and worse) failure than the usual "first writer wins" race: the
+ * entity isn't merely un-cross-referenced against a vCard contact for the
+ * same number, it is INVISIBLE to every lookup that resolves people by phone
+ * or email, forever — a live-DB audit found 1,799 iMessage-sourced Person
+ * rows named after a bare phone number, EVERY ONE of them with zero
+ * `entity_identifiers` rows, and of those, 330 had the real name sitting on a
+ * DIFFERENT Person entity (predominantly from a `vcard` import) for the exact
+ * same number — unreachable because there was no identifier to join on.
+ *
+ * Mirrors the identical pattern `googlevoice.ts` already uses correctly
+ * (`attributes: [{ name: 'phone', value: p.phone, identity: true }]`).
+ */
+function contactEntity(handle: string): Entity {
+  const isEmail = handle.includes('@');
+
+  return {
+    type: 'contact',
+    name: handle,
+    attributes: [{ name: isEmail ? 'email' : 'phone', value: handle, identity: true }],
+  };
 }
 
 registerDataSource({

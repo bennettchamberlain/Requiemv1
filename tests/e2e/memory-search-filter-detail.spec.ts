@@ -6,7 +6,7 @@ import { expect, test } from '@playwright/test';
 // current ExplorerToolbar.tsx source (`MemorySearchField`).
 
 test('typing in search drives the ?search URL param', async ({ page }) => {
-  await page.goto('/memory');
+  await page.goto('/memory/events');
 
   await page.getByPlaceholder('Search your memory…').fill('coffee');
 
@@ -40,7 +40,7 @@ test('an entity-type filter is reflected in the URL', async ({ page }) => {
 // an explicit role), so the first list result is a reliable, content-agnostic
 // target regardless of which entity types the seed data happens to contain.
 test('opens the entity detail drawer from a result tile and can close it', async ({ page }) => {
-  await page.goto('/memory');
+  await page.goto('/memory/events');
 
   const firstRow = page.locator('[role="button"]').first();
   await expect(firstRow).toBeVisible();

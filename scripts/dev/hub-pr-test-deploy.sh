@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-off: run locally built CI-Server api/gateway/hbpe against Hub-managed ci-memory prod data.
+# One-off: run locally built CI-Server api/gateway/hbpe/summary against Hub-managed ci-memory prod data.
 # See docs/runbooks/one-off-prod-data-testing.md
 set -euo pipefail
 
@@ -23,6 +23,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 API_IMAGE="ghcr.io/companionintelligence/companion/api:${PR_TAG}"
 GATEWAY_IMAGE="ghcr.io/companionintelligence/companion/gateway:${PR_TAG}"
 HBPE_IMAGE="ghcr.io/companionintelligence/companion/hbpe-service:${PR_TAG}"
+SUMMARY_IMAGE="ghcr.io/companionintelligence/companion/summary-service:${PR_TAG}"
 
 HUB_APP_ENV="/app-data/${APP_STORE_ID}/${APP_NAME}/app.env"
 HUB_USER_ENV="/data/user-config/${APP_STORE_ID}/${APP_NAME}/app.env"
@@ -33,8 +34,8 @@ usage() {
 Usage: $(basename "$0") [--skip-build] [--skip-migrate]
 
   Builds (unless --skip-build) and swaps ci-memory api + gateway + hbpe-service
-  to local images tagged ${PR_TAG}. Passes the same compose env files Hub uses:
-  app.env plus optional user-config/app.env.
+  + summary-service to local images tagged ${PR_TAG}. Passes the same compose
+  env files Hub uses: app.env plus optional user-config/app.env.
 
 Environment:
   PR_TAG            Image tag for local test images (default: pr-onboarding-test)
@@ -71,6 +72,7 @@ echo "==> Tagging local images as ${PR_TAG}..."
 docker tag ci/api:latest "$API_IMAGE"
 docker tag ci/gateway:latest "$GATEWAY_IMAGE"
 docker tag ci/hbpe-service:latest "$HBPE_IMAGE"
+docker tag ci/summary-service:latest "$SUMMARY_IMAGE"
 
 # env_file must be declared on the services for the user-config overlay
 # (NODE_OPTIONS, LLM endpoints, …) to reach the container environment —
@@ -93,6 +95,9 @@ ${ENV_FILE_YAML}
 ${ENV_FILE_YAML}
   hbpe-service:
     image: ${HBPE_IMAGE}
+${ENV_FILE_YAML}
+  summary-service:
+    image: ${SUMMARY_IMAGE}
 ${ENV_FILE_YAML}
   migrate-database:
     image: ${API_IMAGE}
@@ -123,8 +128,8 @@ if [[ "$SKIP_MIGRATE" -eq 0 ]]; then
   run_compose "run --rm migrate-database"
 fi
 
-echo "==> Recreating api + gateway + hbpe-service with PR images..."
-run_compose "up -d --force-recreate --no-deps api gateway hbpe-service"
+echo "==> Recreating api + gateway + hbpe-service + summary-service with PR images..."
+run_compose "up -d --force-recreate --no-deps api gateway hbpe-service summary-service"
 
 # Gateway gets a new Docker IP on recreate; Hub's Traefik file provider still points at the old one → 502.
 echo "==> Refreshing Traefik upstream for ci-memory gateway..."

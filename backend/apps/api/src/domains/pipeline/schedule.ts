@@ -670,7 +670,14 @@ export type DuenessReason =
   | 'max_staleness_exceeded'
   /** Past `minInterval`, inside the window. The ordinary due. */
   | 'interval_elapsed'
-  /** Swept more recently than `minInterval`. */
+  /**
+   * At least one row of this leg is a FAILED retry whose own backoff has
+   * already elapsed, so it is due even though the LEG's `minInterval` has not.
+   * The window still applies — see {@link StageDueness.overdue} for why this is
+   * not folded into it.
+   */
+  | 'retry_due'
+  /** Swept more recently than `minInterval`, and nothing of it is a due retry. */
   | 'too_soon'
   /** Due by interval, but the window is shut and it is not yet overdue. */
   | 'outside_window'
@@ -691,6 +698,15 @@ export interface StageDueness {
    * definition). Two consequences for the tick: the leg ignores its window, and
    * it should be preferred when `MAX_SWEEPS_PER_TICK` binds — an overdue leg has
    * already waited longer than it was ever meant to.
+   *
+   * `retry_due` is deliberately NOT this. It bypasses `minInterval` the way
+   * `overdue` bypasses the window, but it must not bypass the window too: a
+   * failed retry on a metered stage still spends against the same paid
+   * provider as a fresh sweep, and the window is what bounds WHEN this
+   * appliance is willing to spend anything, not just how often. Folding
+   * `retry_due` into `overdue` would let a provider outage outside the window
+   * turn into a metered call the moment it recovers, which is exactly the
+   * unbounded spend `window: 'enrichment'` exists to prevent.
    */
   overdue: boolean;
 
@@ -752,13 +768,32 @@ export interface StageDueness {
  *
  * ── The order of the checks is the policy ──────────────────────────────────
  *
- * `manual` → `maxStaleness` → `minInterval` → `window`. Staleness is tested
- * BEFORE the window because it is the window's override; testing it after would
- * make an appliance that is asleep every night permanently un-enriched, which is
- * the failure this whole rebuild exists to delete. `minInterval` is tested
- * before the window because a leg swept an hour ago is not due at any hour, and
- * reporting `outside_window` for it would send a reader looking at the clock
- * instead of at the interval.
+ * `manual` → `maxStaleness` → `minInterval` → `retryDue` → `window`. Staleness
+ * is tested BEFORE the window because it is the window's override; testing it
+ * after would make an appliance that is asleep every night permanently
+ * un-enriched, which is the failure this whole rebuild exists to delete.
+ * `minInterval` is tested before the window because a leg swept an hour ago is
+ * not due at any hour, and reporting `outside_window` for it would send a
+ * reader looking at the clock instead of at the interval.
+ *
+ * ── Why `hasOverdueRetry` is a THIRD input, next to the clock and the window ─
+ *
+ * `ci.pipeline_state.next_attempt_at` already answers "is this ONE failed row
+ * due for retry?" (`RETRY_BACKOFF_BASE_SECONDS`, doubling, capped at
+ * `RETRY_BACKOFF_MAX_SECONDS` — minutes to a few hours). Before this input
+ * existed, that answer was advisory only: a row past its own backoff still sat
+ * untouched until the LEG's `minInterval` elapsed, because a sweep can only be
+ * dispatched by a fresh keyset cursor and the keyset only resets when a new
+ * sweep starts. For a 1-hour or 1-day stage that is a rounding error. For the
+ * two metered stages — `minInterval: 7 * DAYS` — it meant a transient
+ * `provider_unavailable` blip stranded every row it touched for up to a week,
+ * with `attempts` frozen at 1 the entire time: the backoff a stage's own
+ * failure declared had no way to be honoured. `hasOverdueRetry` closes that —
+ * a leg with a due retry is due NOW regardless of `minInterval`, on the
+ * reasoning that retrying a handful of already-budgeted-for rows is not the
+ * unbounded spend `minInterval` exists to prevent (see {@link
+ * StageDueness.overdue} for why it still respects the window, unlike
+ * `maxStaleness`).
  */
 export function stageDueness(input: {
   stageId: string;
@@ -766,10 +801,18 @@ export function stageDueness(input: {
   lastStartedAt: Date | null;
   /** `WindowStatus.open` from `EnrichmentWindowService`. */
   windowOpen: boolean;
+  /**
+   * At least one `ci.pipeline_state` row for this leg is `status = 'failed'`
+   * with `next_attempt_at <= now()` — `PipelineStateService.hasOverdueRetry`'s
+   * answer, read off `pipeline_state_retry_idx`. Defaults to `false` so a
+   * caller that has not wired the extra read gets the pre-existing behaviour
+   * rather than a silent, permanent bypass of `minInterval`.
+   */
+  hasOverdueRetry?: boolean;
   /** Defaults to now. Injected by tests, and by anything asking "what happens at 03:00?". */
   now?: Date;
 }): StageDueness {
-  const { stageId, lastStartedAt, windowOpen } = input;
+  const { stageId, lastStartedAt, windowOpen, hasOverdueRetry = false } = input;
   const now = input.now ?? new Date();
 
   const schedule = stageSchedule(stageId);
@@ -806,7 +849,18 @@ export function stageDueness(input: {
   const eligibleAt = new Date(lastStartedAt.getTime() + schedule.minInterval * 1000);
 
   if (staleness < schedule.minInterval) {
-    return decide(false, 'too_soon', false, eligibleAt);
+    if (!hasOverdueRetry) {
+      return decide(false, 'too_soon', false, eligibleAt);
+    }
+
+    // A due retry outranks `minInterval` but not the window — a metered stage
+    // still may not spend outside it, so a retry recovering while the window
+    // is shut waits for the window exactly as a fresh sweep would.
+    if (schedule.window === 'enrichment' && !windowOpen) {
+      return decide(false, 'outside_window', false, eligibleAt);
+    }
+
+    return decide(true, 'retry_due', false, null);
   }
 
   if (schedule.window === 'enrichment' && !windowOpen) {

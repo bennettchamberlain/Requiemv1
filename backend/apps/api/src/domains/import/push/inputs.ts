@@ -16,6 +16,7 @@
  * `*_source_triple_uniq` index over it.
  */
 import type { CreateBrowserActivityDto } from '@ci/domains/browser-activity';
+import { isUriLocation } from '@ci/domains/geocode';
 import { CommunicationType } from '@ci/domains/memory';
 import type {
   CreateCommunicationDto,
@@ -65,8 +66,27 @@ function sourceTripleCamel(
   return { sourceType: rec.sourceType, sourceSystem: rec.sourceSystem, sourceId: rec.sourceId };
 }
 
+/**
+ * An installable app package's mimetype — Amazon Appstore entitlements land
+ * here as `application/vnd.android.package-archive` (see amazon.ts
+ * RESOURCE_TYPE_MIME / appAsins), and an iOS equivalent would use Apple's
+ * installer-manifest type. Distinct from the ebook/audio/video mimetypes the
+ * same digital-purchase lane also carries — a *.apk is software, not media.
+ */
+const APP_PACKAGE_MIME_RE = /^application\/(vnd\.android\.package-archive|vnd\.apple\.installer\+xml)$/i;
+
 /** The content `type` bucket for a kind (bookmark/media/purchase/note/…). */
-function contentTypeFor(kind: string): string {
+function contentTypeFor(kind: string, mediaType: string | null): string {
+  // An app package is software, not media, regardless of which kind carried it
+  // here (overwhelmingly commerce.purchase — an Amazon Appstore/Play Store
+  // entitlement). The mimetype is Amazon's own per-item statement of what the
+  // thing IS, so it is authoritative and checked before the kind-based rules
+  // below, which would otherwise fold it into 'media' alongside ebooks, songs,
+  // and movies bought through the same digital-purchase lane.
+  if (mediaType && APP_PACKAGE_MIME_RE.test(mediaType)) {
+    return 'app';
+  }
+
   if (kind === 'web.bookmark') {
     return 'bookmark';
   }
@@ -97,9 +117,11 @@ function contentTypeFor(kind: string): string {
     return 'file';
   }
 
-  // A digital purchase's content row is the bought thing (an ebook, an app, a
+  // A digital purchase's content row is the bought thing (an ebook, a song, a
   // movie) — the same 'media' bucket its play/read/watch rows land in, so the
   // purchase and its sessions describe one artifact, not two type families.
+  // An app package purchased the same way is caught by the mimetype check
+  // above and never reaches this branch.
   if (kind === 'commerce.purchase') {
     return 'media';
   }
@@ -177,7 +199,7 @@ export function toContentInput(rec: CanonicalRecord): CreateContentDto {
   }
 
   const input: CreateContentDto = {
-    type: contentTypeFor(rec.kind),
+    type: contentTypeFor(rec.kind, rec.mediaType),
     source_data: m,
     ...sourceTriple(rec),
   };
@@ -209,6 +231,7 @@ export function toContentInput(rec: CanonicalRecord): CreateContentDto {
   const uri = str(m.URI);
   if (uri) {
     input.external_id = uri;
+    input.external_id_kind = 'external_uri';
     input.source_id = uri;
   }
 
@@ -221,6 +244,7 @@ export function toContentInput(rec: CanonicalRecord): CreateContentDto {
   const file = contentFileRef(rec);
   if (file.id) {
     input.external_id = file.id;
+    input.external_id_kind = 'file';
   }
 
   if (file.url && !input.url) {
@@ -1040,7 +1064,11 @@ export function toEventInput(rec: CanonicalRecord): CreateEventDto {
     input.description = rec.description;
   }
 
-  if (rec.locationName) {
+  // A meeting-join link ("https://khronosgroup.zoom.us/w/99353948195?tk=…") or
+  // a custom-scheme URI ("altspace://account.altvr.com/api/events/…") is not a
+  // place name — see isUriLocation for why this is a structural check rather
+  // than a per-app denylist, matching isCoordinateText above.
+  if (rec.locationName && !isUriLocation(rec.locationName)) {
     input.location_name = rec.locationName;
   }
 

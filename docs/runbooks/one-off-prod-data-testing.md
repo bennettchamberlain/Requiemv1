@@ -19,16 +19,18 @@ This is **not** the normal release process. It is a deliberate, one-off shortcut
 |-------|-----------------|-------------------|
 | **Data** (`APP_DATA_DIR/data/*`) | Unchanged — same bind mounts | Unchanged |
 | **Secrets** | Unchanged (setup-secrets is idempotent) | Unchanged |
-| **Images swapped** | `api` + `gateway` + `hbpe-service` | All `companion/*` services from GHCR |
+| **Images swapped** | `api` + `gateway` + `hbpe-service` + `summary-service` | All `companion/*` services from GHCR |
 | **Migrations** | `migrate-database` runs pending SQL | Same |
 | **Hub catalog version** | Still shows old pin (e.g. `2026.7.27.1`) | Updates to new catalog version |
 | **Compose digest pins** | Bypassed via local override file | Honored from marketplace manifest |
 
-The deploy script rebuilds and swaps **`api`**, **`gateway`**, and **`hbpe-service`**.
-Database, object-store, and summary keep the Hub-pinned images. HBPE is in the
-swap set because forecast / kernel / HMM / D3 live in that Python service — a
-stale `hbpe-service` with a new API will look like the landing never shipped.
-Build with `GPU=cpu` (the script default): Hub compose does not pass GPU devices.
+The deploy script rebuilds and swaps **`api`**, **`gateway`**, **`hbpe-service`**,
+and **`summary-service`**. Database and object-store keep the Hub-pinned images.
+HBPE is in the swap set because forecast / kernel / HMM / D3 live in that Python
+service — a stale `hbpe-service` with a new API will look like the landing never
+shipped. Summary is in the swap set so a Temporal-era Hub pin cannot keep running
+alongside a pg-boss API. Build with `GPU=cpu` (the script default): Hub compose
+does not pass GPU devices.
 
 ## Prerequisites
 
@@ -75,7 +77,7 @@ tags; all runtime config continues to flow from Hub's env files.
 
 | Script | Purpose |
 |--------|---------|
-| [`scripts/dev/hub-pr-test-deploy.sh`](../scripts/dev/hub-pr-test-deploy.sh) | Build (optional), tag, migrate, swap `api` + `gateway` + `hbpe-service` |
+| [`scripts/dev/hub-pr-test-deploy.sh`](../scripts/dev/hub-pr-test-deploy.sh) | Build (optional), tag, migrate, swap `api` + `gateway` + `hbpe-service` + `summary-service` |
 | [`scripts/dev/hub-pr-test-rollback.sh`](../scripts/dev/hub-pr-test-rollback.sh) | Remove override, restore Hub-pinned images |
 
 ### Deploy
@@ -101,10 +103,10 @@ PR_TAG=my-feature-test ROOT_FOLDER_HOST=~/.local/share/companion-hub ./scripts/d
 
 The deploy script:
 
-1. Tags `ci/{api,gateway,hbpe-service}:latest` as `ghcr.io/companionintelligence/companion/*:pr-onboarding-test` (or `PR_TAG`)
+1. Tags `ci/{api,gateway,hbpe-service,summary-service}:latest` as `ghcr.io/companionintelligence/companion/*:pr-onboarding-test` (or `PR_TAG`)
 2. Writes `docker-compose.pr-test.yml` next to Hub's installed compose (image override only)
 3. Runs `migrate-database` via `docker exec ci-os-hub sh -c 'docker compose …'`
-4. Recreates **`api`**, **`gateway`**, and **`hbpe-service`** (`--no-deps`)
+4. Recreates **`api`**, **`gateway`**, **`hbpe-service`**, and **`summary-service`** (`--no-deps`)
 
 ### Rollback
 
@@ -113,7 +115,7 @@ The deploy script:
 ```
 
 Removes `docker-compose.pr-test.yml` and recreates `api` + `gateway` + `hbpe-service`
-from the digest-pinned images in Hub's canonical `docker-compose.yml`.
++ `summary-service` from the digest-pinned images in Hub's canonical `docker-compose.yml`.
 
 ### Verify
 
@@ -122,7 +124,7 @@ docker ps --filter name=ci-memory_ci-marketplace --format 'table {{.Names}}\t{{.
 docker logs ci-memory_ci-marketplace-api-1 --tail 40
 ```
 
-After deploy you should see `pr-onboarding-test` (or your `PR_TAG`) on api, gateway, and hbpe-service.
+After deploy you should see `pr-onboarding-test` (or your `PR_TAG`) on api, gateway, hbpe-service, and summary-service.
 
 ## Backup first
 
@@ -307,7 +309,7 @@ Rollback when finished:
 
 ### What works today
 
-1. **One-off swap (this runbook)** — same data volume, new api/gateway/hbpe images.
+1. **One-off swap (this runbook)** — same data volume, new api/gateway/hbpe/summary images.
 2. **Restic/tar backup restore to a second Hub app** — install a second `ci-memory`
    instance (different app slot) and restore backup into its `APP_DATA_DIR` (heavy).
 3. **`make production` in CI-Server** — isolated named volumes; use `make seed-production`

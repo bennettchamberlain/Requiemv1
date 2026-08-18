@@ -26,6 +26,7 @@ import { DeterministicEdgeBackfillService } from './services/DeterministicEdgeBa
 import { EmbedCoverageTelemetryService } from './services/EmbedCoverageTelemetryService';
 import { EventParticipantBackfillService } from './services/EventParticipantBackfillService';
 import { GraphEnrichmentService } from './services/GraphEnrichmentService';
+import { HealSelfCollationService } from './services/HealSelfCollationService';
 import { IndexDeferralService } from './services/IndexDeferralService';
 import { IngestResetService } from './services/IngestResetService';
 import { InventoryReverseService } from './services/InventoryReverseService';
@@ -64,6 +65,7 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
     DerivedRelationshipService,
     NoteContentFoldService,
     GraphEnrichmentService,
+    HealSelfCollationService,
     SearchIndexBackfillService,
     EmbedCoverageTelemetryService,
     LocationEstimateService,
@@ -82,6 +84,7 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
     DerivedRelationshipService,
     NoteContentFoldService,
     GraphEnrichmentService,
+    HealSelfCollationService,
     SearchIndexBackfillService,
     EmbedCoverageTelemetryService,
     LocationEstimateService,

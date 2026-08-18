@@ -55,6 +55,8 @@ interface HarnessOptions {
   pages?: Array<Array<{ id: string }>>;
   /** Bucket counts the coverage query answers with. */
   counts?: Partial<Record<Bucket, number | string>>;
+  /** Whether the `hasOverdueRetry` probe answers with a hit. */
+  overdueRetry?: boolean;
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -62,6 +64,7 @@ function makeHarness(options: HarnessOptions = {}) {
   const sweeps: Array<{ sql: string; params: unknown[] }> = [];
   const writes: Array<{ sql: string; params: unknown[] }> = [];
   const coverageQueries: Array<{ sql: string; params: unknown[] }> = [];
+  const retryProbes: Array<{ sql: string; params: unknown[] }> = [];
 
   const query = jest.fn(async (raw: string, params?: unknown[]) => {
     const sql = raw.replace(/\s+/g, ' ').trim();
@@ -71,6 +74,16 @@ function makeHarness(options: HarnessOptions = {}) {
       sweeps.push({ sql, params: bound });
 
       return pages.shift() ?? [];
+    }
+
+    // The retry probe: `SELECT entity_id FROM ci.pipeline_state WHERE ...
+    // status = 'failed' ...`. Checked before the generic `count` branch below
+    // (it is a plain SELECT, not an aggregate) and before the catch-all
+    // `writes` bucket, which would otherwise silently swallow it.
+    if (/select\s+entity_id\s+from\s+ci\.pipeline_state/i.test(sql) && /status\s*=\s*'failed'/i.test(sql)) {
+      retryProbes.push({ sql, params: bound });
+
+      return options.overdueRetry === true ? [{ entity_id: srcId(1) }] : [];
     }
 
     if (/^select/i.test(sql) && /count/i.test(sql)) {
@@ -150,7 +163,7 @@ function makeHarness(options: HarnessOptions = {}) {
       .toLowerCase();
   }
 
-  return { service, query, sweeps, writes, coverageQueries, writtenParams, writtenSql, logger };
+  return { service, query, sweeps, writes, coverageQueries, retryProbes, writtenParams, writtenSql, logger };
 }
 
 describe('PipelineStateService.selectStale', () => {
@@ -193,6 +206,49 @@ describe('PipelineStateService.selectStale', () => {
     await h.service.selectStale(makeStage() as never, USER, null, 10);
 
     expect(h.sweeps[0].params[4]).toBeNull();
+  });
+});
+
+describe('PipelineStateService.hasOverdueRetry', () => {
+  it('binds stage, entity type and user in that order, and issues exactly one statement', async () => {
+    const h = makeHarness({ overdueRetry: false });
+
+    await h.service.hasOverdueRetry(makeStage() as never, ENTITY_TYPE, USER);
+
+    expect(h.retryProbes).toHaveLength(1);
+    expect(h.retryProbes[0].params).toEqual([STAGE_ID, ENTITY_TYPE, USER]);
+    expect(h.query).toHaveBeenCalledTimes(1);
+  });
+
+  it('is true when a failed row past its retry gate exists', async () => {
+    const h = makeHarness({ overdueRetry: true });
+
+    await expect(h.service.hasOverdueRetry(makeStage() as never, ENTITY_TYPE, USER)).resolves.toBe(true);
+  });
+
+  it('is false when there is nothing to retry', async () => {
+    const h = makeHarness({ overdueRetry: false });
+
+    await expect(h.service.hasOverdueRetry(makeStage() as never, ENTITY_TYPE, USER)).resolves.toBe(false);
+  });
+
+  it('probes with LIMIT 1 rather than counting', async () => {
+    const h = makeHarness({ overdueRetry: true });
+
+    await h.service.hasOverdueRetry(makeStage() as never, ENTITY_TYPE, USER);
+
+    expect(h.retryProbes[0].sql.toLowerCase()).toContain('limit 1');
+  });
+
+  it("filters on status = 'failed' and next_attempt_at <= now(), the exact pipeline_state_retry_idx shape", async () => {
+    const h = makeHarness({ overdueRetry: true });
+
+    await h.service.hasOverdueRetry(makeStage() as never, ENTITY_TYPE, USER);
+
+    const sql = h.retryProbes[0].sql.toLowerCase();
+
+    expect(sql).toContain("status = 'failed'");
+    expect(sql).toContain('next_attempt_at <= now()');
   });
 });
 
