@@ -281,4 +281,10 @@ export {
   CreateCommunicationDto,
   NORMALIZED_PERSON_FIELDS,
   UpdateCommunicationDto,
+  ensureSinglePrimary,
+  formatPersonAddress,
+  isPersonAddressEmpty,
+  readPersonAddresses,
+  serializePersonAddress,
 } from './types';
+export type { PersonAddress } from './types';

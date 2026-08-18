@@ -232,7 +232,71 @@ function participantsFor(
   return resolved;
 }
 
-// True when this directory directly contains channel-id subfolders each with a messages file.
+/**
+ * Is this actually a Discord message file, or just a file with the same name?
+ *
+ * Google Chat ships `Google Chat/Groups/<Space|DM …>/messages.json` — the exact
+ * layout `hasChannelSubdirs` was looking for, and the reason a Google Takeout
+ * reported Discord among its data sources. The FILE branch of `recognize` has
+ * always checked content; the directory branch trusted the name, so the two
+ * disagreed about the same bytes.
+ *
+ * Google Chat's file is an object (`{"messages": [...]}`) whose rows carry
+ * `creator`/`created_date`/`text`; Discord's is an array of rows carrying
+ * `ID`/`Timestamp`/`Contents`. A 4KB prefix separates them before anything
+ * parses a large export in full.
+ */
+function messageFileIsDiscord(fpath: string): boolean {
+  try {
+    const base = path.basename(fpath).toLowerCase();
+
+    if (base === 'messages.csv') {
+      const prefix = readPrefix(fpath);
+
+      return (prefix.split(/\r?\n/)[0]?.trim() ?? '') === DISCORD_HEADER;
+    }
+
+    if (base === 'messages.json') {
+      // Cheap reject first: Discord's rows are keyed "Timestamp", and no
+      // Google Chat export contains that token.
+      if (!readPrefix(fpath).includes('"Timestamp"')) {
+        return false;
+      }
+
+      return looksLikeMessagesJSON(fs.readFileSync(fpath, 'utf8'));
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return false;
+}
+
+/** The first 4KB of a file as text, or '' when it cannot be read. */
+function readPrefix(fpath: string): string {
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(fpath, 'r');
+    const buf = Buffer.alloc(4096);
+    const n = fs.readSync(fd, buf, 0, 4096, 0);
+
+    return buf.toString('utf8', 0, n);
+  } catch {
+    return '';
+  } finally {
+    if (fd !== undefined) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+}
+
+// True when this directory directly contains channel-id subfolders each with a
+// messages file THIS importer can read — the name alone is not enough, see
+// messageFileIsDiscord.
 function hasChannelSubdirs(dir: string): boolean {
   let names: string[];
   try {
@@ -251,7 +315,9 @@ function hasChannelSubdirs(dir: string): boolean {
       continue;
     }
 
-    if (findMessageFile(sub)) {
+    const messageFile = findMessageFile(sub);
+
+    if (messageFile && messageFileIsDiscord(messageFile)) {
       return true;
     }
   }

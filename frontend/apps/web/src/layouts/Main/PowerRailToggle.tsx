@@ -30,16 +30,20 @@ export function PowerRailToggle() {
             aria-expanded={expanded}
             aria-controls="power-rail"
             onClick={toggle}
-            // `p-2` and the transparent left border are copied from `NavLink`,
-            // so the logo lands on the same vertical as every icon beneath it.
-            // With `p-1` and no border it sat 6px to their left, which reads as
-            // a wonky logo rather than as a padding bug.
+            // Collapsed, the mark is CENTRED in the rail rather than sharing
+            // NavLink's left inset. Matching that inset aligns the two left
+            // EDGES, which only centres things when the icons are the same
+            // width — the mark is 34px against the nav icons' 26px, so it sat
+            // 19px from the left against 7px on the right and read as a logo
+            // nudged out of its slot. Measured, not eyeballed. The transparent
+            // left border goes with it: it is NavLink's active-state gutter,
+            // and it only ever pushed this button 2px further off centre.
             className={cn(
-              'flex items-center rounded-md border-l-2 border-transparent p-2 transition hover:bg-accent hover:text-accent-foreground',
-              pinned && 'w-full gap-2',
+              'warp-core flex items-center rounded-md p-2 transition hover:bg-accent hover:text-accent-foreground',
+              pinned ? 'w-full gap-2 border-l-2 border-transparent' : 'w-full justify-center',
             )}
           >
-            <img src={logo} alt="" className="h-8 w-8 shrink-0" />
+            <img src={logo} alt="" className="warp-core-emitter h-8 w-8 shrink-0" />
             {/* PINNED, not merely expanded. This button sits in the same `auto`
               grid column as the rail, so a wordmark appearing here widens the
               column and shoves the header and page content sideways — which is

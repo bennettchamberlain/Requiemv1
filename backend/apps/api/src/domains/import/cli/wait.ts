@@ -1,5 +1,6 @@
 import type { RunDetail } from '../controllers/ImportRunsController';
 
+import { ApiError } from './client';
 import type { ImportApiClient } from './client';
 import type { Term } from './output';
 
@@ -39,6 +40,35 @@ export class WaitTimeoutError extends Error {
 }
 
 /**
+ * How many polls in a row may fail before the wait gives up on a run.
+ *
+ * An appliance that restarts mid-import — a deploy, a worker recycling, a
+ * `nodemon` reload during development — refuses connections for a few seconds.
+ * Retrying across that is the difference between a wait that survives a restart
+ * and one that ends at it.
+ */
+export const MAX_CONSECUTIVE_POLL_FAILURES = 5;
+
+/** Raised when the appliance stopped answering about a run that had not finished. */
+export class WaitUnreachableError extends Error {
+  constructor(
+    readonly runId: string,
+    readonly cause: unknown,
+  ) {
+    super(
+      `Lost contact with the appliance while waiting for run ${runId} ` +
+        `(${MAX_CONSECUTIVE_POLL_FAILURES} consecutive polls failed: ${describeError(cause)}). ` +
+        `The import itself is unaffected and is probably still going — follow it with \`ci-import runs ${runId}\`.`,
+    );
+    this.name = 'WaitUnreachableError';
+  }
+}
+
+function describeError(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/**
  * Follow runs to their terminal state.
  *
  * Prints a line when something CHANGES — a stage begins, the percentage moves,
@@ -51,6 +81,13 @@ export class WaitTimeoutError extends Error {
  * than retried forever; a run that is already terminal returns on the first
  * poll without sleeping, which is what makes `--wait` free when the work is
  * already done.
+ *
+ * "Vanished" means a 404 and nothing else. Every other poll failure — a
+ * restarting appliance refusing connections, a 502, a socket reset — is
+ * transient and is retried up to {@link MAX_CONSECUTIVE_POLL_FAILURES} times,
+ * then raised. Dropping those quietly is what let `import --wait` return 0 on a
+ * run that was still pushing: the caller's script read a success exit code and
+ * went on to verify a database the import had not finished writing.
  */
 export async function waitForRuns(
   client: ImportApiClient,
@@ -67,6 +104,7 @@ export async function waitForRuns(
   const pending = new Map<string, RunDetail | null>(runIds.map((id) => [id, null]));
   const finished: RunDetail[] = [];
   const lastLine = new Map<string, string>();
+  const failures = new Map<string, number>();
 
   while (pending.size > 0) {
     for (const runId of [...pending.keys()]) {
@@ -74,12 +112,25 @@ export async function waitForRuns(
 
       try {
         detail = await client.getRun(runId);
-      } catch {
-        // Gone, or momentarily unreachable. Either way this wait has nothing
-        // left to say about it.
-        pending.delete(runId);
+      } catch (err: unknown) {
+        if (err instanceof ApiError && err.status === 404) {
+          // Gone — deleted from another session. This wait has nothing left to
+          // say about it.
+          pending.delete(runId);
+          continue;
+        }
+
+        const consecutive = (failures.get(runId) ?? 0) + 1;
+
+        if (consecutive >= MAX_CONSECUTIVE_POLL_FAILURES) {
+          throw new WaitUnreachableError(runId, err);
+        }
+
+        failures.set(runId, consecutive);
         continue;
       }
+
+      failures.delete(runId);
 
       if (!options.quiet) {
         const line = describe(detail, runIds.length > 1);
