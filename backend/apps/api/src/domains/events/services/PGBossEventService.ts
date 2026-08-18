@@ -392,6 +392,7 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
     const sendOptions: PgBoss.SendOptions = {
       priority: options?.priority ?? DEFAULT_JOB_PRIORITY,
       ...(options?.singletonKey ? { singletonKey: options.singletonKey } : {}),
+      ...(options?.startAfter !== undefined ? { startAfter: options.startAfter } : {}),
     };
 
     // If a specific queue is provided and that queue exists, send only to that queue.

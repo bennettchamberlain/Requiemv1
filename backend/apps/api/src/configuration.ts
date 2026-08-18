@@ -509,6 +509,12 @@ export const ConfigSchema = z.object({
      * off. Default off until coverage is real.
      */
     'derivation.engines': booleanStringSchema,
+    /**
+     * After bulk `/v1` materialize, enqueue a delayed singleton that runs the
+     * owed enrichment legs even if the client never calls finish. Default on —
+     * the previous default (hope the client remembers) was the #51 hole.
+     */
+    'ingest.selfHeal': booleanStringSchema,
   }),
   environment: z.object({
     'database.query.logging': booleanStringSchema,

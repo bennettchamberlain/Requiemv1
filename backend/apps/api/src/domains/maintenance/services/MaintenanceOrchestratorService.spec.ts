@@ -131,6 +131,13 @@ function makeService() {
       return { notesFolded: 0 };
     }),
   };
+  const inventoryReverse = {
+    reverse: jest.fn(async () => {
+      callOrder.push('reverse_inventory');
+
+      return { examined: 0, placed: 0, skipped: 0, status: 'noop' };
+    }),
+  };
 
   const service = new MaintenanceOrchestratorService(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -159,6 +166,8 @@ function makeService() {
     locationEstimate as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     searchIndex as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    inventoryReverse as any,
   );
 
   // Kill the progress throttle by default so forwarding tests see every line;

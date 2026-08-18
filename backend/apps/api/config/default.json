@@ -192,7 +192,8 @@
     "smart.rotation": false,
     "ask": false,
     "grounded.prompts": false,
-    "derivation.engines": false
+    "derivation.engines": false,
+    "ingest.selfHeal": true
   },
   "environment": {
     "database.query.logging": false

@@ -188,7 +188,8 @@
     "smart.rotation": "ENABLE_SMART_ROTATION",
     "ask": "ENABLE_ASK",
     "grounded.prompts": "ENABLE_GROUNDED_PROMPTS",
-    "derivation.engines": "ENABLE_DERIVATION_ENGINES"
+    "derivation.engines": "ENABLE_DERIVATION_ENGINES",
+    "ingest.selfHeal": "ENABLE_INGEST_SELF_HEAL"
   },
   "environment": {
     "database.query.logging": "DATABASE_QUERY_LOGGING"

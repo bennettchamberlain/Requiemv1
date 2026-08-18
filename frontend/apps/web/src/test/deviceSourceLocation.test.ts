@@ -566,7 +566,7 @@ describe('captureLocationFix — web: no sidecar, so say so and write through', 
 
     const finish = calls.find((call) => call.url === INGEST_FINISH_PATH);
     expect(finish?.method).toBe('POST');
-    expect(finish?.body).toEqual({ stages: ['reverse_geocode', 'estimate_locations'] });
+    expect(finish?.body).toEqual({ stages: ['reverse_position', 'estimate_locations'] });
   });
 
   it('reports a transient failure without advancing the gate', async () => {
@@ -631,7 +631,7 @@ describe('flushing positions — routing and the ingest-finish loop', () => {
     const finish = calls.find((call) => call.url === INGEST_FINISH_PATH);
     expect(finish?.method).toBe('POST');
     // Positions are not a backfillable search entity; what they need is the geo legs.
-    expect(finish?.body).toEqual({ stages: ['reverse_geocode', 'estimate_locations'] });
+    expect(finish?.body).toEqual({ stages: ['reverse_position', 'estimate_locations'] });
 
     // Ordering matters: the rows must exist before the enrichment sweep runs.
     const positionsAt = calls.findIndex((call) => call.url === '/api/v1/positions');
@@ -663,7 +663,7 @@ describe('flushing positions — routing and the ingest-finish loop', () => {
 
     const retried = calls.filter((call) => call.url === INGEST_FINISH_PATH);
     expect(retried).toHaveLength(1);
-    expect(retried[0].body).toEqual({ stages: ['reverse_geocode', 'estimate_locations'] });
+    expect(retried[0].body).toEqual({ stages: ['reverse_position', 'estimate_locations'] });
   });
 
   it('owes nothing for the legacy /api/position kind, which still emits its own events', async () => {
@@ -672,7 +672,7 @@ describe('flushing positions — routing and the ingest-finish loop', () => {
     const calls = installFetch(route(handler, applianceAccepts));
 
     expect(finishStagesFor('position')).toEqual([]);
-    expect(finishStagesFor(POSITION_OUTBOX_KIND)).toEqual(['reverse_geocode', 'estimate_locations']);
+    expect(finishStagesFor(POSITION_OUTBOX_KIND)).toEqual(['reverse_position', 'estimate_locations']);
     // Unknown kinds are unroutable, so they owe nothing either.
     expect(finishStagesFor('no-such-kind')).toEqual([]);
 

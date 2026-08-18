@@ -14,6 +14,7 @@ import { NoteService } from '@ci/domains/notes';
 import { PositionService } from '@ci/domains/position';
 
 import { BulkIngestController } from '../controllers/BulkIngestController';
+import { IngestCoalesceService } from '../services/IngestCoalesceService';
 
 const mockCanActivate = jest.fn();
 
@@ -97,6 +98,7 @@ describe('Bulk ingest routes (/v1/*)', () => {
         { provide: EventService, useValue: eventService },
         { provide: NoteService, useValue: noteService },
         { provide: DataSource, useValue: { query: dataSourceQuery } },
+        { provide: IngestCoalesceService, useValue: { schedule: jest.fn(async () => undefined) } },
       ],
     })
       .overrideGuard(JwtOrApiKeyAuthGuard)
