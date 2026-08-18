@@ -1,6 +1,8 @@
 import type { DataSource } from 'typeorm';
 
-import { OrphanCleanupService } from '../OrphanCleanupService';
+import { INDEXABLE_ENTITIES } from '@ci/domains/search-next';
+
+import { OrphanCleanupService, SEARCH_TABLES } from '../OrphanCleanupService';
 
 function makeLogger() {
   return { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
@@ -137,9 +139,10 @@ describe('OrphanCleanupService.cleanOrphans', () => {
 
     const result = await service.cleanOrphans();
 
-    // 14 indexable types x 3 tables.
-    expect(result.results).toHaveLength(42);
-    expect(query).toHaveBeenCalledTimes(42);
+    // Every INDEXABLE_ENTITIES type × embeddings/vectors/index_skips.
+    const expected = INDEXABLE_ENTITIES.length * SEARCH_TABLES.length;
+    expect(result.results).toHaveLength(expected);
+    expect(query).toHaveBeenCalledTimes(expected);
   });
 });
 

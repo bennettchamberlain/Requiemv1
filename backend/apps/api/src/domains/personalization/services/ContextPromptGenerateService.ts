@@ -263,7 +263,10 @@ export class ContextPromptGenerateService {
       }
     }
 
-    if (parsed.source.kind === 'daily_metric' && (parsed.source.id === 'confirm_home' || parsed.source.id === 'one_place')) {
+    if (
+      parsed.source.kind === 'daily_metric' &&
+      (parsed.source.id === 'confirm_home' || parsed.source.id === 'one_place')
+    ) {
       const { candidates } = await this.homeConfirmService.snapshot({ userId });
       const placeOptions = this.homeConfirmService.candidateOptions(candidates);
       if (placeOptions.length >= 2) {
@@ -576,9 +579,7 @@ export class ContextPromptGenerateService {
     }
 
     if (gap.kind === 'entity' && /what you do at/i.test(gap.label)) {
-      return gap.label
-        .replace(/^I do not know what you do at\s+/i, 'What do you do at ')
-        .replace(/\.$/, '?');
+      return gap.label.replace(/^I do not know what you do at\s+/i, 'What do you do at ').replace(/\.$/, '?');
     }
 
     if (gap.kind === 'daily_metric' && (gap.id === 'confirm_home' || gap.id === 'one_place')) {
