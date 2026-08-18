@@ -138,4 +138,89 @@ describe('TikTok datasource', () => {
     } as unknown as ImportParams);
     expect(pipeline.length).toBe(0);
   });
+
+  // Regression: every push site (watch/like/favorite/search/comment/dm) uses a
+  // constant content.filename ('watch.txt', 'like.txt', …), and TikTok's own
+  // Date is second-precision. Without an explicit item.id, hashItem's fallback
+  // hashes only (data_source, classification, filename, timestamp) — so two
+  // videos watched or liked in the same rapid-fire second silently collapse
+  // into one row on INSERT OR IGNORE, with no test failure to reveal it.
+  it('assigns unique, stable ids to rows that would otherwise dedup-collapse on a shared timestamp', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tiktok-collapse-'));
+    const fpath = path.join(dir, 'user_data_tiktok.json');
+    const sameInstant = '2024-06-01 12:00:00';
+    const exportJson = {
+      Activity: {
+        'Video Browsing History': {
+          VideoList: [
+            { Date: sameInstant, Link: 'https://www.tiktokv.com/share/video/1111/' },
+            { Date: sameInstant, Link: 'https://www.tiktokv.com/share/video/2222/' },
+          ],
+        },
+        'Like List': {
+          ItemFavoriteList: [
+            { Date: sameInstant, Link: 'https://www.tiktokv.com/share/video/3333/' },
+            { Date: sameInstant, Link: 'https://www.tiktokv.com/share/video/4444/' },
+          ],
+        },
+        'Favorite Videos': {
+          FavoriteVideoList: [
+            { Date: sameInstant, Link: 'https://www.tiktokv.com/share/video/5555/' },
+            { Date: sameInstant, Link: 'https://www.tiktokv.com/share/video/6666/' },
+          ],
+        },
+        'Search History': {
+          SearchList: [
+            { Date: sameInstant, SearchTerm: 'cats' },
+            { Date: sameInstant, SearchTerm: 'dogs' },
+          ],
+        },
+      },
+      Comment: {
+        Comments: {
+          CommentsList: [
+            { Date: sameInstant, Comment: 'first!' },
+            { Date: sameInstant, Comment: 'second!' },
+          ],
+        },
+      },
+      'Direct Messages': {
+        'Chat History': {
+          ChatHistory: {
+            'Chat History with alice:': [
+              { Date: sameInstant, From: 'alice', Content: 'hi' },
+              { Date: sameInstant, From: 'bob', Content: 'hey' },
+            ],
+          },
+        },
+      },
+    };
+    fs.writeFileSync(fpath, JSON.stringify(exportJson));
+
+    const run = async () => {
+      const fi = new TikTokFileImporter();
+      const pipeline: EmittedGraph[] = [];
+      await fi.fileImport({}, { filename: 'user_data_tiktok.json', fullPath: fpath }, {
+        pipeline,
+        timeframe: {},
+        log: () => {},
+      } as unknown as ImportParams);
+
+      return pipeline;
+    };
+
+    const items = await run();
+    // 2 watch + 2 like + 2 favorite + 2 search + 2 comment + 2 dm = 12
+    expect(items.length).toBe(12);
+    const ids = items.map((p) => p.item.id);
+    // (a) every push site sets an id
+    expect(ids.every(Boolean)).toBe(true);
+    // (b) all ids are unique despite every row in a given kind sharing the
+    // same classification, constant filename, and identical timestamp.
+    expect(new Set(ids).size).toBe(items.length);
+
+    // (c) re-importing the same export yields identical ids (idempotent).
+    const again = await run();
+    expect(again.map((p) => p.item.id)).toEqual(ids);
+  });
 });
