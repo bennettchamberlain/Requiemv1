@@ -826,6 +826,17 @@ const POSITION_SOURCE_BY_LOCATION_SOURCE: Record<
  * photos). Skips records without coordinates by returning null — those have
  * nothing useful to donate to the location estimator.
  */
+/**
+ * Is this string just a coordinate pair — "33.51469, -117.72169"?
+ *
+ * Deliberately narrow: two signed decimals separated by a comma, and nothing
+ * else. "Cafe 40.7, 74.0" keeps its name, because a place whose name happens to
+ * contain numbers is still a name.
+ */
+function isCoordinateText(value: string): boolean {
+  return /^\s*[-+]?\d{1,3}(?:\.\d+)?\s*,\s*[-+]?\d{1,3}(?:\.\d+)?\s*$/.test(value);
+}
+
 export function toPositionInput(rec: CanonicalRecord): CreatePositionDto | null {
   if (!rec.coordinates) {
     return null;
@@ -878,8 +889,28 @@ export function toPositionInput(rec: CanonicalRecord): CreatePositionDto | null 
   }
 
   // Prefer a human title (place name, photo filename) over the empty default so
-  // a position row keeps a readable label when viewed in isolation.
-  const name = rec.title ?? str(m.Name) ?? str(m.Title);
+  // a position row keeps a readable label when viewed in isolation — but a
+  // COORDINATE PAIR RENDERED AS TEXT IS NOT A NAME.
+  //
+  // It is the geometry this row already stores, and writing it into `name`
+  // makes the row look already-named to everything downstream. The
+  // reverse-geocode candidate filter is "coordinates present, name missing", so
+  // a coordinate-named row is never a candidate: on a real Google Takeout,
+  // 62,832 of 62,833 positions arrived named `"33.51469, -117.72169"` from
+  // google_fit's trackpoints, none was ever offered to the geocoder, and the
+  // Places view held exactly one entry — the single row that came from Maps
+  // saved places with a real name ("Gym").
+  //
+  // google_fit is careful about this in `Name` (undefined for trackpoints, set
+  // for waypoints) and then loses it in `Title`, which falls back to the
+  // coordinates for the item's DISPLAY label. That fallback is right for a
+  // title and wrong for a place name, so the filtering belongs here, where the
+  // two meanings separate — and it holds for any importer that titles a fix
+  // with its own coordinates.
+  const name = [rec.title, str(m.Name), str(m.Title)].find(
+    (candidate): candidate is string => candidate != null && candidate !== '' && !isCoordinateText(candidate),
+  );
+
   if (name) {
     input.name = name;
   }
