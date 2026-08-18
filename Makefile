@@ -517,7 +517,7 @@ dev: ## Run the development environment locally
 		exit 1; \
 	fi
 
-	@MODEL=gemma3:1b; \
+	@MODEL=gemma4:e4b; \
 	ollama list | grep -Fq "$$MODEL"; \
 	STATUS=$$?; \
 	if [ "$$STATUS" -eq 0 ]; then \
