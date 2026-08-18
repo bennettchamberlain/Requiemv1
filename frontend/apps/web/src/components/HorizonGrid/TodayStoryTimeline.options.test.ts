@@ -5,7 +5,7 @@ import {
   TIMELINE_MAX_ZOOM_INDEX,
   TIMELINE_ZOOM_SEQUENCE,
   timelineStoryOptions,
-} from './TodayStoryTimeline';
+} from './timelineRuntime';
 
 describe('timelineStoryOptions', () => {
   it('starts fully zoomed in on the TimeNav', () => {

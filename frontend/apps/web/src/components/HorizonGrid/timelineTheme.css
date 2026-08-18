@@ -34,6 +34,10 @@
 
   --tl-menubar: color-mix(in oklab, var(--foreground) 10%, var(--card));
   --tl-nav-bg: color-mix(in oklab, var(--card) 92%, var(--foreground));
+
+  content-visibility: auto;
+  contain-intrinsic-size: auto 410px;
+  contain: layout paint;
 }
 
 .dark .schedule-today-timeline {
@@ -135,10 +139,6 @@
   border-radius: 10px !important;
   box-shadow: 0 1px 2px color-mix(in oklab, var(--tl-fg) 12%, transparent) !important;
   color: var(--tl-fg) !important;
-  transition:
-    border-color 150ms ease,
-    box-shadow 150ms ease,
-    background-color 150ms ease;
 }
 
 .schedule-today-timeline .tl-slidenav-previous .tl-slidenav-content-container {
@@ -512,4 +512,11 @@
   width: 0 !important;
   height: 0 !important;
   overflow: hidden !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .schedule-today-timeline * {
+    animation: none !important;
+    transition: none !important;
+  }
 }

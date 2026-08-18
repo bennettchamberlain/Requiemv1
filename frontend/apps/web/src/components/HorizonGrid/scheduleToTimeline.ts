@@ -8,9 +8,12 @@ import { isBrowserCapture } from './scheduleClusters';
  * TimelineJS is a storytelling slideshow, not a dense calendar: feeding it every
  * capture tick makes an unreadable novel. We keep calendar blocks, then sample
  * the best browser visits (longer / unique titles), capped at MAX_SLIDES.
+ *
+ * Keep the cap modest: TimelineJS mounts every slide and every axis tick in the
+ * DOM. 48 slides over a 35-day range was a wide, expensive time-nav canvas.
  */
 
-const MAX_SLIDES = 48;
+const MAX_SLIDES = 24;
 
 export interface TimelineDateParts {
   year: string;
@@ -97,31 +100,11 @@ function toSlide(event: ScheduleEvent): TimelineSlide {
     slide.end_date = partsOf(end);
   }
 
-  // Only hand TimelineJS media it can embed. Arbitrary page URLs make it try
-  // (and often fail) to iframe random sites, which blanks the story panel.
-  if (url && isEmbeddableMedia(url)) {
-    slide.media = { url, link: url, caption: event.title };
-  }
+  // Do not attach media. TimelineJS iframes YouTube/Vimeo/Twitter and those
+  // embeds keep a compositor thread busy on a page that already has a week grid.
+  // The URL still appears in the slide text when present.
 
   return slide;
-}
-
-function isEmbeddableMedia(url: string): boolean {
-  try {
-    const host = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
-
-    return (
-      host === 'youtube.com' ||
-      host === 'youtu.be' ||
-      host === 'vimeo.com' ||
-      host === 'twitter.com' ||
-      host === 'x.com' ||
-      host === 'wikipedia.org' ||
-      /\.(jpe?g|png|gif|webp|svg)(\?|$)/i.test(url)
-    );
-  } catch {
-    return false;
-  }
 }
 
 export function localDayKey(date: Date): string {
