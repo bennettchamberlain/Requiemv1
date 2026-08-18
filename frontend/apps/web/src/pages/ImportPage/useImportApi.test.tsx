@@ -111,3 +111,191 @@ describe('useRunProgress', () => {
     await waitFor(() => expect(screen.getByTestId('run')).toHaveTextContent('none'));
   });
 });
+
+/**
+ * `uploadFile` is the one call in this file that does NOT go through
+ * `fetchJson`/`fetch` — it needs upload-progress events, which `fetch` has no
+ * hook for, so it drives a raw `XMLHttpRequest` by hand. That hand-rolled
+ * event wiring (`onerror`, `ontimeout`, the status-code branch, the JSON
+ * body-parsing fallback) is exactly the kind of code that looks right and
+ * silently isn't, so it gets its own fake XHR rather than trusting fetch mocks
+ * to stand in for it.
+ */
+describe('useImportApi uploadFile', () => {
+  class FakeXHR {
+    static instances: FakeXHR[] = [];
+
+    method = '';
+
+    url = '';
+
+    headers: Record<string, string> = {};
+
+    upload: { onprogress: ((event: { lengthComputable: boolean; loaded: number; total: number }) => void) | null } =
+      { onprogress: null };
+
+    onerror: (() => void) | null = null;
+
+    ontimeout: (() => void) | null = null;
+
+    onload: (() => void) | null = null;
+
+    status = 0;
+
+    responseText = '';
+
+    sentBody: FormData | null = null;
+
+    constructor() {
+      FakeXHR.instances.push(this);
+    }
+
+    open(method: string, url: string) {
+      this.method = method;
+      this.url = url;
+    }
+
+    setRequestHeader(name: string, value: string) {
+      this.headers[name] = value;
+    }
+
+    send(body: FormData) {
+      this.sentBody = body;
+    }
+  }
+
+  function useProbeApi() {
+    let captured: ReturnType<typeof useImportApi> | null = null;
+
+    function Probe() {
+      captured = useImportApi();
+
+      return null;
+    }
+
+    render(<Probe />);
+
+    // The hook is memoized and authToken is fixed for this file, so the
+    // effect-free render above already produced the stable object.
+    return captured as unknown as ReturnType<typeof useImportApi>;
+  }
+
+  beforeEach(() => {
+    FakeXHR.instances = [];
+    vi.stubGlobal('XMLHttpRequest', FakeXHR as unknown as typeof XMLHttpRequest);
+  });
+
+  it('POSTs the file with the current auth header', () => {
+    const api = useProbeApi();
+    const file = new File(['bytes'], 'export.zip');
+
+    void api.uploadFile(file);
+
+    const [xhr] = FakeXHR.instances;
+
+    expect(xhr.method).toBe('POST');
+    expect(xhr.url).toBe('/api/import/uploads');
+    expect(xhr.headers.Authorization).toBe('Bearer test-token');
+    expect(xhr.sentBody?.get('files')).toBe(file);
+  });
+
+  it('rejects with a network-error message when the request errors out', async () => {
+    const api = useProbeApi();
+    const promise = api.uploadFile(new File(['x'], 'a.zip'));
+
+    FakeXHR.instances[0].onerror?.();
+
+    await expect(promise).rejects.toThrow('Upload failed: network error');
+  });
+
+  it('rejects with a timeout message on ontimeout', async () => {
+    const api = useProbeApi();
+    const promise = api.uploadFile(new File(['x'], 'a.zip'));
+
+    FakeXHR.instances[0].ontimeout?.();
+
+    await expect(promise).rejects.toThrow('Upload failed: timed out');
+  });
+
+  it('surfaces the server-provided message on a non-2xx JSON response', async () => {
+    const api = useProbeApi();
+    const promise = api.uploadFile(new File(['x'], 'a.zip'));
+    const xhr = FakeXHR.instances[0];
+
+    xhr.status = 422;
+    xhr.responseText = JSON.stringify({ message: 'Not enough disk space to unpack' });
+    xhr.onload?.();
+
+    await expect(promise).rejects.toThrow('Not enough disk space to unpack');
+  });
+
+  it('joins an array message body into one line', async () => {
+    const api = useProbeApi();
+    const promise = api.uploadFile(new File(['x'], 'a.zip'));
+    const xhr = FakeXHR.instances[0];
+
+    xhr.status = 400;
+    xhr.responseText = JSON.stringify({ message: ['name is required', 'file is required'] });
+    xhr.onload?.();
+
+    await expect(promise).rejects.toThrow('name is required, file is required');
+  });
+
+  it('falls back to a status-code message when the failure body is not JSON', async () => {
+    const api = useProbeApi();
+    const promise = api.uploadFile(new File(['x'], 'a.zip'));
+    const xhr = FakeXHR.instances[0];
+
+    xhr.status = 500;
+    xhr.responseText = 'Internal Server Error';
+    xhr.onload?.();
+
+    await expect(promise).rejects.toThrow('Upload failed (500)');
+  });
+
+  it('resolves with the staged drop on a 2xx response', async () => {
+    const api = useProbeApi();
+    const promise = api.uploadFile(new File(['x'], 'a.zip'));
+    const xhr = FakeXHR.instances[0];
+
+    xhr.status = 201;
+    xhr.responseText = JSON.stringify([{ dropId: 'drop-1', originalFilename: 'a.zip' }]);
+    xhr.onload?.();
+
+    await expect(promise).resolves.toEqual({ dropId: 'drop-1', originalFilename: 'a.zip' });
+  });
+
+  it('rejects when a 2xx response carries no drop at all', async () => {
+    const api = useProbeApi();
+    const promise = api.uploadFile(new File(['x'], 'a.zip'));
+    const xhr = FakeXHR.instances[0];
+
+    xhr.status = 200;
+    xhr.responseText = '[]';
+    xhr.onload?.();
+
+    await expect(promise).rejects.toThrow('Nothing was uploaded');
+  });
+
+  it('reports byte progress as the upload streams', () => {
+    const api = useProbeApi();
+    const onProgress = vi.fn();
+
+    void api.uploadFile(new File(['x'], 'a.zip'), onProgress);
+
+    FakeXHR.instances[0].upload.onprogress?.({ lengthComputable: true, loaded: 512, total: 2048 });
+
+    expect(onProgress).toHaveBeenCalledWith(512, 2048);
+  });
+
+  it('does not report progress when the event has no computable length', () => {
+    const api = useProbeApi();
+    const onProgress = vi.fn();
+
+    void api.uploadFile(new File(['x'], 'a.zip'), onProgress);
+
+    FakeXHR.instances[0].upload.onprogress?.({ lengthComputable: false, loaded: 0, total: 0 });
+
+    expect(onProgress).not.toHaveBeenCalled();
+  });
+});
