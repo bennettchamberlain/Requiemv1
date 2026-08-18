@@ -10,6 +10,7 @@ import { buildTimelineData, eventFallsOnDay } from './scheduleToTimeline';
 import {
   TIMELINE_HEIGHT_PX,
   inertTimeline,
+  syncTimeaxisLabelCollision,
   timelineDeckKey,
   timelineJsOptions,
 } from './timelineRuntime';
@@ -30,6 +31,7 @@ type TimelineCtor = new (
   animator_storyslider?: { stop?: () => void };
   animator_menubar?: { stop?: () => void };
   destroy?: () => void;
+  on?: (event: string, callback: () => void) => void;
 };
 
 type Rgb = { r: number; g: number; b: number };
@@ -153,6 +155,7 @@ function timelineBgFromTheme(): Rgb {
  */
 export function TodayStoryTimeline({ events, day }: TodayStoryTimelineProps) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
   const instanceRef = useRef<InstanceType<TimelineCtor> | null>(null);
   const dayHasEvents = useMemo(() => events.some((event) => eventFallsOnDay(event, day)), [events, day]);
   const { data, startAtSlide } = useMemo(() => buildTimelineData(events, day), [events, day]);
@@ -161,11 +164,44 @@ export function TodayStoryTimeline({ events, day }: TodayStoryTimelineProps) {
   payloadRef.current = { data, startAtSlide };
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const [shouldMount, setShouldMount] = useState(false);
+  const [inView, setInView] = useState(false);
+  const inViewRef = useRef(false);
+  inViewRef.current = inView;
+
+  useEffect(() => {
+    const section = sectionRef.current;
+    if (!section) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setInView(entry.isIntersecting);
+        if (entry.isIntersecting) {
+          setShouldMount(true);
+        }
+      },
+      { rootMargin: '80px', threshold: 0 },
+    );
+    observer.observe(section);
+
+    return () => observer.disconnect();
+  }, [dayHasEvents, data.events.length]);
+
+  useEffect(() => {
+    const instance = instanceRef.current;
+    if (!instance) {
+      return;
+    }
+
+    instance.ready = inView && !document.hidden;
+  }, [inView]);
 
   useEffect(() => {
     const host = hostRef.current;
     const { data: deck, startAtSlide: landing } = payloadRef.current;
-    if (!host || deck.events.length === 0) {
+    if (!shouldMount || !host || deck.events.length === 0) {
       return;
     }
 
@@ -179,6 +215,16 @@ export function TodayStoryTimeline({ events, day }: TodayStoryTimelineProps) {
     mount.style.width = '100%';
     mount.style.height = `${TIMELINE_HEIGHT_PX}px`;
     host.appendChild(mount);
+
+    const onVisibility = () => {
+      const instance = instanceRef.current;
+      if (!instance) {
+        return;
+      }
+
+      instance.ready = inViewRef.current && !document.hidden;
+    };
+    document.addEventListener('visibilitychange', onVisibility);
 
     void loadTimelineCtor()
       .then((Timeline) => {
@@ -205,6 +251,16 @@ export function TodayStoryTimeline({ events, day }: TodayStoryTimelineProps) {
               }),
             );
             instanceRef.current = instance;
+            instance.ready = inViewRef.current && !document.hidden;
+            const syncAxis = () => syncTimeaxisLabelCollision(mount);
+            instance.on?.('zoom_in', syncAxis);
+            instance.on?.('zoom_out', syncAxis);
+            mount.addEventListener('click', (event) => {
+              if (event.target instanceof Element && event.target.closest('.tl-menubar-button')) {
+                requestAnimationFrame(syncAxis);
+              }
+            });
+            requestAnimationFrame(syncAxis);
             setReady(true);
           } catch (cause) {
             setError(cause instanceof Error ? cause.message : 'TimelineJS failed to start');
@@ -219,11 +275,14 @@ export function TodayStoryTimeline({ events, day }: TodayStoryTimelineProps) {
 
     return () => {
       cancelled = true;
+      document.removeEventListener('visibilitychange', onVisibility);
       inertTimeline(instanceRef.current);
       instanceRef.current = null;
       host.replaceChildren();
     };
-  }, [deckKey]);
+    // inView is read at construct and via visibilitychange; remounting on scroll would be worse.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- shouldMount + deckKey
+  }, [deckKey, shouldMount]);
 
   if (!dayHasEvents || data.events.length === 0) {
     return null;
@@ -233,6 +292,7 @@ export function TodayStoryTimeline({ events, day }: TodayStoryTimelineProps) {
 
   return (
     <section
+      ref={sectionRef}
       aria-label={`${heading} as a story`}
       className="schedule-today-timeline overflow-hidden rounded-lg border border-border/80 bg-card/40 shadow-sm"
     >

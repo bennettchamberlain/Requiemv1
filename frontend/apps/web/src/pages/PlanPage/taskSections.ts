@@ -7,7 +7,14 @@
  * a DOM and what lets the DST cases below be asserted at all.
  */
 
-export type SectionKey = 'overdue' | 'today' | 'upcoming' | 'someday' | 'done';
+export type SectionKey =
+  | 'proposed'
+  | 'needs_confirmation'
+  | 'overdue'
+  | 'today'
+  | 'upcoming'
+  | 'someday'
+  | 'done';
 
 export interface SectionedTask {
   id: string;
@@ -18,6 +25,9 @@ export interface SectionedTask {
   scheduledFor?: string | null;
   deferUntil?: string | null;
   completedAt?: string | Date | null;
+  parentId?: string | null;
+  /** True when there is at least one pending automation change for this task. */
+  hasPendingChange?: boolean;
 }
 
 export interface Section<T> {
@@ -27,6 +37,8 @@ export interface Section<T> {
 }
 
 const SECTION_LABELS: Record<SectionKey, string> = {
+  proposed: 'Proposed',
+  needs_confirmation: 'Needs confirmation',
   overdue: 'Overdue',
   today: 'Today',
   upcoming: 'Upcoming',
@@ -34,7 +46,15 @@ const SECTION_LABELS: Record<SectionKey, string> = {
   done: 'Done',
 };
 
-const SECTION_ORDER: SectionKey[] = ['overdue', 'today', 'upcoming', 'someday', 'done'];
+const SECTION_ORDER: SectionKey[] = [
+  'proposed',
+  'needs_confirmation',
+  'overdue',
+  'today',
+  'upcoming',
+  'someday',
+  'done',
+];
 
 /**
  * The user-local calendar date (`YYYY-MM-DD`) of an instant.
@@ -68,6 +88,14 @@ export function localDateOf(instant: Date, timeZone?: string): string {
  * lexicographically, which is correct for a zero-padded ISO date.
  */
 export function sectionFor(task: SectionedTask, today: string, timeZone?: string): SectionKey {
+  if (task.status === 'proposed') {
+    return 'proposed';
+  }
+
+  if (task.hasPendingChange) {
+    return 'needs_confirmation';
+  }
+
   if (task.status === 'done' || task.status === 'skipped' || task.status === 'archived') {
     return 'done';
   }
@@ -116,15 +144,19 @@ export function compareTasks(a: SectionedTask, b: SectionedTask): number {
 /**
  * Groups tasks into display sections, dropping empty ones so the UI never
  * renders a bare heading.
+ *
+ * Only roots are sectioned; children stay nested under their parent via
+ * `parentId` (rendered by the Plan page tree).
  */
 export function groupIntoSections<T extends SectionedTask>(
   tasks: readonly T[],
   today: string,
   timeZone?: string,
 ): Section<T>[] {
+  const roots = tasks.filter((task) => !task.parentId);
   const buckets = new Map<SectionKey, T[]>();
 
-  for (const task of tasks) {
+  for (const task of roots) {
     const key = sectionFor(task, today, timeZone);
     const bucket = buckets.get(key);
 
@@ -146,7 +178,18 @@ export function groupIntoSections<T extends SectionedTask>(
   });
 }
 
+/** Direct children of `parentId`, sorted like section rows. */
+export function childrenOf<T extends SectionedTask>(tasks: readonly T[], parentId: string): T[] {
+  return tasks.filter((task) => task.parentId === parentId).sort(compareTasks);
+}
+
 /** How many tasks still want doing. Drives the nav badge. */
 export function openCount(tasks: readonly SectionedTask[]): number {
-  return tasks.filter((task) => task.status === 'open' || task.status === 'in_progress').length;
+  return tasks.filter(
+    (task) =>
+      task.status === 'open' ||
+      task.status === 'in_progress' ||
+      task.status === 'proposed' ||
+      task.hasPendingChange,
+  ).length;
 }

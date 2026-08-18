@@ -1,5 +1,5 @@
 import { ForbiddenException, UseGuards } from '@nestjs/common';
-import { Args, ID, Int, Mutation, Query, Resolver } from '@nestjs/graphql';
+import { Args, ID, Int, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { FeatureService } from '@ci/common/feature';
@@ -12,8 +12,10 @@ import { DeleteByIdInput } from '../types/DeleteByIdInput';
 import { DeleteByIdPayload } from '../types/DeleteByIdPayload';
 import { GlobalUID } from '../types/GlobalUID';
 import { PaginationArgs } from '../types/PaginationArgs';
+import { ResolveTaskPendingChangePayload } from '../types/ResolveTaskPendingChangePayload';
 import { TaskConnection } from '../types/TaskConnection';
 import { TaskEdge } from '../types/TaskEdge';
+import { TaskPendingChangeType } from '../types/TaskPendingChangeType';
 import { TaskStatusEnum, TaskType } from '../types/TaskType';
 import { UpdateTaskInput } from '../types/UpdateTaskInput';
 import { UpdateTaskPayload } from '../types/UpdateTaskPayload';
@@ -40,6 +42,22 @@ export class TaskResolver {
     if (!(await this.isPlanningEnabled())) {
       throw new ForbiddenException('The planning surface is disabled');
     }
+  }
+
+  @ResolveField(() => [TaskType])
+  async children(
+    @Context() context: RequestContext,
+    @Parent() parent: TaskType,
+  ): Promise<TaskType[]> {
+    if (!(await this.isPlanningEnabled())) {
+      return [];
+    }
+
+    const serviceContext = toServiceContext(context);
+    const parentId = GlobalUID.parse('task', parent.id);
+    const children = await this.taskService.findChildren(serviceContext, parentId);
+
+    return children.map((task) => TaskType.toType(task));
   }
 
   @Mutation(() => CreateTaskPayload)
@@ -153,6 +171,84 @@ export class TaskResolver {
 
   @Mutation(() => TaskType, {
     nullable: true,
+    description: 'Accept a trust-dial proposed task into the open backlog.',
+  })
+  async acceptProposedTask(
+    @Context() context: RequestContext,
+    @Args('id', { type: () => ID }) gid: string,
+  ): Promise<TaskType | null> {
+    if (!(await this.isPlanningEnabled())) {
+      return null;
+    }
+
+    const serviceContext = toServiceContext(context);
+    const task = await this.taskService.acceptProposed(serviceContext, GlobalUID.parse('task', gid));
+
+    return task ? TaskType.toType(task) : null;
+  }
+
+  @Mutation(() => TaskType, {
+    nullable: true,
+    description: 'Decline a proposed task (archives it).',
+  })
+  async declineProposedTask(
+    @Context() context: RequestContext,
+    @Args('id', { type: () => ID }) gid: string,
+  ): Promise<TaskType | null> {
+    if (!(await this.isPlanningEnabled())) {
+      return null;
+    }
+
+    const serviceContext = toServiceContext(context);
+    const task = await this.taskService.declineProposed(serviceContext, GlobalUID.parse('task', gid));
+
+    return task ? TaskType.toType(task) : null;
+  }
+
+  @Mutation(() => ResolveTaskPendingChangePayload, {
+    description: 'Apply a pending automation change (mutate / complete / event revise).',
+  })
+  async acceptTaskPendingChange(
+    @Context() context: RequestContext,
+    @Args('id', { type: () => ID }) gid: string,
+  ): Promise<ResolveTaskPendingChangePayload> {
+    await this.assertPlanningEnabled();
+    const serviceContext = toServiceContext(context);
+    const { task, change } = await this.taskService.acceptPendingChange(
+      serviceContext,
+      GlobalUID.parse('taskPendingChange', gid),
+    );
+
+    return {
+      success: change != null,
+      task: task ? TaskType.toType(task) : null,
+      change: change ? TaskPendingChangeType.toType(change) : null,
+    };
+  }
+
+  @Mutation(() => ResolveTaskPendingChangePayload, {
+    description: 'Dismiss a pending automation change without applying it.',
+  })
+  async declineTaskPendingChange(
+    @Context() context: RequestContext,
+    @Args('id', { type: () => ID }) gid: string,
+  ): Promise<ResolveTaskPendingChangePayload> {
+    await this.assertPlanningEnabled();
+    const serviceContext = toServiceContext(context);
+    const change = await this.taskService.declinePendingChange(
+      serviceContext,
+      GlobalUID.parse('taskPendingChange', gid),
+    );
+
+    return {
+      success: change != null,
+      task: null,
+      change: change ? TaskPendingChangeType.toType(change) : null,
+    };
+  }
+
+  @Mutation(() => TaskType, {
+    nullable: true,
     description: 'Push a task to a later user-local date (`YYYY-MM-DD`) and count the push.',
   })
   async deferTask(
@@ -180,6 +276,12 @@ export class TaskResolver {
       description: 'User-local calendar date, `YYYY-MM-DD`.',
     })
     scheduledFor?: string,
+    @Args('parentId', {
+      type: () => ID,
+      nullable: true,
+      description: 'Only direct children of this task. Pass null (omit) for no parent filter.',
+    })
+    parentId?: string | null,
   ): Promise<TaskConnection> {
     if (!(await this.isPlanningEnabled())) {
       return {
@@ -193,6 +295,7 @@ export class TaskResolver {
     const entities = await this.taskService.findAll(serviceContext, {
       status: status as TaskStatus[] | undefined,
       scheduledFor,
+      parentId: parentId === undefined ? undefined : parentId ? GlobalUID.parse('task', parentId) : null,
     });
 
     const { slice, pageInfo, totalCount } = Paginator.paginate(entities, {
@@ -207,6 +310,25 @@ export class TaskResolver {
     });
 
     return { edges, pageInfo, totalCount };
+  }
+
+  @Query(() => [TaskPendingChangeType], {
+    description: 'Pending trust-dial confirmations for mutate/complete/revise.',
+  })
+  async taskPendingChanges(
+    @Context() context: RequestContext,
+    @Args('taskId', { type: () => ID, nullable: true }) taskId?: string,
+  ): Promise<TaskPendingChangeType[]> {
+    if (!(await this.isPlanningEnabled())) {
+      return [];
+    }
+
+    const serviceContext = toServiceContext(context);
+    const changes = await this.taskService.findPendingChanges(serviceContext, {
+      taskId: taskId ? GlobalUID.parse('task', taskId) : undefined,
+    });
+
+    return changes.map((change) => TaskPendingChangeType.toType(change));
   }
 
   @Query(() => TaskType, { nullable: true })

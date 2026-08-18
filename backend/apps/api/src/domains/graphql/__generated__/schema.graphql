@@ -1003,8 +1003,16 @@ type EventType implements Node & Taggable {
   metadata: JSON
   organizer: PersonType
   organizerEntityId: ID
+
+  """Parent event for sub-events / follow-ups. Children: filter by this id."""
+  parentEventId: ID
   participantEntityIds: [ID!]
   participants(after: String, before: String, first: Int, last: Int): PersonConnection!
+
+  """
+  Intended minutes for a planned block. Distinct from generated durationMinutes.
+  """
+  plannedMinutes: Int
   previewUrl: String
   sourceId: ID
   sourceSystem: String
@@ -1012,6 +1020,9 @@ type EventType implements Node & Taggable {
   startTime: DateTime!
   status: String
   tags: [EntityTagType!]!
+
+  """Task this planned block schedules (`event_type = planned_block`)."""
+  taskId: ID
   title: String
 }
 
@@ -1446,6 +1457,12 @@ type MetricSuggestionType {
 type Mutation {
   """Accept a candidate at a chosen time, minting a real event"""
   acceptCandidate(endTime: DateTime, id: ID!, startTime: DateTime!): EventType!
+
+  """Accept a trust-dial proposed task into the open backlog."""
+  acceptProposedTask(id: ID!): TaskType
+
+  """Apply a pending automation change (mutate / complete / event revise)."""
+  acceptTaskPendingChange(id: ID!): ResolveTaskPendingChangePayload!
   addPersonIdentifier(input: AddPersonIdentifierInput!): [PersonIdentifierType!]!
   approveAsk(id: ID!): AskPayload!
 
@@ -1494,6 +1511,12 @@ type Mutation {
   Reject a candidate. reason: not_now | wrong_time | not_like_this | never
   """
   declineCandidate(id: ID!, reason: String = "not_now"): ScheduleCandidateType!
+
+  """Decline a proposed task (archives it)."""
+  declineProposedTask(id: ID!): TaskType
+
+  """Dismiss a pending automation change without applying it."""
+  declineTaskPendingChange(id: ID!): ResolveTaskPendingChangePayload!
 
   """
   Push a task to a later user-local date (`YYYY-MM-DD`) and count the push.
@@ -2012,11 +2035,19 @@ type Query {
   tag(id: ID!): TagType
   tags(after: String, before: String, first: Int, last: Int): TagConnection!
   task(id: ID!): TaskType
+
+  """Pending trust-dial confirmations for mutate/complete/revise."""
+  taskPendingChanges(taskId: ID): [TaskPendingChangeType!]!
   tasks(
     after: String
     before: String
     first: Int
     last: Int
+
+    """
+    Only direct children of this task. Pass null (omit) for no parent filter.
+    """
+    parentId: ID
 
     """User-local calendar date, `YYYY-MM-DD`."""
     scheduledFor: String
@@ -2089,6 +2120,12 @@ input RemovePersonIdentifierInput {
   kind: String!
   personId: ID!
   value: String!
+}
+
+type ResolveTaskPendingChangePayload {
+  change: TaskPendingChangeType
+  success: Boolean!
+  task: TaskType
 }
 
 type RunAskPayload {
@@ -2320,17 +2357,48 @@ type TaskEdge implements Edge {
   node: TaskType!
 }
 
+"""What automation wants to do to a task (or its planned event)."""
+enum TaskPendingChangeKind {
+  complete
+  event_revise
+  mutate
+}
+
+enum TaskPendingChangeStatus {
+  accepted
+  declined
+  pending
+}
+
+type TaskPendingChangeType implements Node {
+  confidence: Float
+  createdAt: DateTime!
+  id: ID!
+  kind: TaskPendingChangeKind!
+  patch: JSON!
+  rationale: String
+  resolvedAt: DateTime
+  status: TaskPendingChangeStatus!
+  taskId: ID!
+}
+
 """Lifecycle state of a planning task."""
 enum TaskStatus {
   archived
   done
   in_progress
   open
+  proposed
   skipped
 }
 
 type TaskType implements Node {
   actualMinutes: Int!
+
+  """
+  Direct children. Nesting is parent_id only — walk this field for a tree.
+  """
+  children: [TaskType!]!
   completedAt: DateTime
   createdAt: DateTime!
 

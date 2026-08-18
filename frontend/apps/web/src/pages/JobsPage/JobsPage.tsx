@@ -27,6 +27,7 @@ const CATEGORIES = [
   'import',
   'llm',
   'personalization',
+  'planning',
   'maintenance',
 ] as const;
 

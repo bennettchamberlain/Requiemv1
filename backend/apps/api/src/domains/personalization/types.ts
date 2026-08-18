@@ -14,6 +14,10 @@ export const PERSONALIZATION_ACTION_KINDS = [
   'feed_action',
   'memory_compaction',
   'insights_generation',
+  'task_create',
+  'task_mutate',
+  'task_complete',
+  'event_revise',
 ] as const;
 
 export type PersonalizationActionKind = (typeof PERSONALIZATION_ACTION_KINDS)[number];

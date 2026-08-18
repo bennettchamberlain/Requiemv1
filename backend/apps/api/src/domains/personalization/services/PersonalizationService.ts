@@ -18,6 +18,13 @@ export const ALWAYS_REVIEW_BELOW_CONFIDENCE = 0.7;
 
 const GRAPH_CONNECTION_KINDS = new Set<PersonalizationActionKind>(['graph_edge', 'graph_entity']);
 
+const PLANNING_ACTION_KINDS = new Set<PersonalizationActionKind>([
+  'task_create',
+  'task_mutate',
+  'task_complete',
+  'event_revise',
+]);
+
 @Injectable()
 export class PersonalizationService {
   private readonly profileCache = new Map<string, { profile: PersonalizationProfile; expiresAt: number }>();
@@ -140,6 +147,11 @@ export class PersonalizationService {
         return confidence >= profile.autoPromoteThreshold ? 'auto' : 'skip';
       }
 
+      // Planning kinds always surface for review in cautious — never silent skip.
+      if (PLANNING_ACTION_KINDS.has(kind)) {
+        return 'review';
+      }
+
       return hasUserInput ? 'review' : 'skip';
     }
 
@@ -160,7 +172,7 @@ export class PersonalizationService {
       return profile.autoSchedule && confidence >= 0.9 ? 'auto' : 'review';
     }
 
-    if (kind === 'inferred_fact') {
+    if (kind === 'inferred_fact' || PLANNING_ACTION_KINDS.has(kind)) {
       return confidence >= profile.autoPromoteThreshold ? 'auto' : 'review';
     }
 
