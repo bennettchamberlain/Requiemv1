@@ -42,7 +42,7 @@ scaffolding:
 |---|---|---|
 | `brief.list` anomalies | `ci.summaries.content.anomalies` (free-text list) | Python `backend/apps/summary` LLM, inventing the list |
 | `brief.list` actions | `ci.actions` with no `source`/`kind` | Onboarding stubs + the same LLM action aggregator |
-| Brief surprise picker | `pickMetricSurprise` — four hardcoded yesterday-vs-week rules | Called from `ContextPromptGenerateService` behind `grounded.prompts` (**off**) |
+| Brief surprise picker | `pickMetricSurprise` — four hardcoded yesterday-vs-week rules | Called from `ContextPromptGenerateService` behind `grounded.prompts` (default **on** after [agent-harness-and-cold-start.md](agent-harness-and-cold-start.md)) |
 | Descriptive catalog | One metric, one aggregate, one timeframe | `DescriptiveQuestionService` — real, but descriptive-only |
 | Metric forecast | Seasonal-naive + EWMA on one series | `MetricForecastService` — predictive, not correlational |
 
@@ -107,8 +107,9 @@ extension. Do not invent a second registry.
 `pickMetricSurprise`
 (`backend/apps/api/src/domains/daily-metrics/grounded/metricSurprises.ts`) is
 four if-statements: conversations ≤ 40% of week mean, one place, sentiment
-dip of 0.25, screen ≥ 1.6× week mean. Coverage floor 0.5, ≥ 3 week days. At
-most one surprise. Flag `grounded.prompts` is off.
+dip of 0.25, screen ≥ 1.6× week mean. Coverage floor 0.5, ≥ 14 coverage-gated
+days (same as the engines — see [agent-harness-and-cold-start.md](agent-harness-and-cold-start.md)).
+At most one surprise. Flag `grounded.prompts` defaults on.
 
 This is a preview of the anomaly engine, not the engine. Implementation keeps
 the function as a **thin adapter** over the latest anomaly row so the selector
@@ -130,23 +131,19 @@ cannot be honest. Pull that thin slice forward (see §6.4). The rest of #63
 (proactivity budget, non-clinical copy audit, "still learning" empty states)
 stays on its own PR.
 
-### 2.5 Agent surface (register tools now, don't wire harnesses)
+### 2.5 Agent surface (tools registered; REST execute is #59)
 
-Live today (`IntentDomainKey` in `backend/apps/api/src/domains/tools/core/types.ts`):
+Live domains include `insights`, `anomalies`, `suggestions` plus the original
+set. Live tools include `insights.explain`, `anomalies.recent`,
+`suggestions.list`, `suggestions.feedback`, `forecast.read`,
+`forecast.calibration`, `brief.list`. Ticket name `predictions.nextPlaces`
+is `places.next` (domain `places`) — see
+[agent-harness-and-cold-start.md](agent-harness-and-cold-start.md).
 
-```
-memory, knowledge, people, places, calendar, media, import, forecast, brief
-```
-
-Live tools: `forecast.read`, `forecast.calibration`, `brief.list`. Missing, and
-named by [#59](https://github.com/companionintelligence/CI-Engineering/issues/59):
-`predictions.nextPlaces`, `insights.explain`, `anomalies.recent`,
-`suggestions.list`, `suggestions.feedback`.
-
-This plan adds the **insights / anomalies / suggestions** tools and their
-domains. It does not implement Hermes `get_tool_schemas()` or OpenClaw's
-execute handler. Those stay #59. Registering the tools here means #59 is
-"connect the harness", not "invent the API".
+Hermes `get_tool_schemas()` and OpenClaw intent tools are already
+catalog-driven. The remaining #59 hole on CI-Server was REST
+`POST …/:name/execute` (and the canonical `/api/agent/intents` GET). Memory
+MCP already ran `ToolRegistry.executeTool`.
 
 ### 2.6 HBPE scoring (consume, don't upgrade)
 
@@ -245,7 +242,7 @@ sequenceDiagram
 | D6 | **TemplateNarrator default** for Body/Mind. Ollama narrator allowed for Relationships/Places/Attention/Money only, and it still cannot change numbers. | #63's non-clinical rule, pulled forward for the categories this engine will actually emit. |
 | D7 | **Suggestions cite an evidence row or they do not emit.** No evidence FK → no `ci.actions` row. | "Never fabricate the evidence link" (#55). |
 | D8 | **No normative goals in v1.** Personal baseline gap + surviving driver correlation only. Skip "people should sleep 8h". Skip Body/Mind health suggestions until thicker metrics + #63 copy review. | Conservative posture. Explicit `ci.objectives` wait for planning. |
-| D9 | **Flag `derivation.engines`**, default **off**. Compute+persist may run in staging; feed enqueue and Brief seeding stay behind the flag. | Same pattern as `grounded.prompts`. |
+| D9 | **Flag `derivation.engines`**, default **on** after the #63 floors land ([agent-harness-and-cold-start.md](agent-harness-and-cold-start.md)). Compute+persist always runs; the flag gates feed enqueue and Brief seeding. | Same pattern as `grounded.prompts`. |
 | D10 | **Pure math modules, Nest shells.** `correlationMath.ts` / `anomalyMath.ts` / `suggestionMath.ts` take arrays, return structs, have no DB. Services persist. | Matches `forecastMath.ts`, `answerMath.ts`, `transitionMath.ts`. |
 
 ---
@@ -553,13 +550,14 @@ fails if they drift — #59's warning).
 when any such rows exist, and still append legacy items so we don't empty Brief
 on flag-on with a cold store.
 
-Do **not** add `predictions.nextPlaces` here — that is the place-transition
-engine's tool, already in flight on `feat/place-transition-engine`.
+`places.next` (ticket: `predictions.nextPlaces`) is the place-transition
+engine's tool — shipped with [agent-harness-and-cold-start.md](agent-harness-and-cold-start.md),
+not a new `predictions` catalog domain.
 
 ### 8.3 Feature flag
 
 `derivation.engines` in `configuration.ts`, env `ENABLE_DERIVATION_ENGINES`,
-default false. Cron: always persist findings (cheap, local); flag gates
+default **true**. Cron: always persist findings (cheap, local); flag gates
 `ActionService.create` + feed enqueue. GraphQL reads are live (empty arrays
 when no rows) — same as `dailyMetrics` today.
 
@@ -594,8 +592,8 @@ without rewriting the engines.
 | **#50 Ground the summary pipeline** | `backend/apps/summary` should **read** `metric_anomalies` / `metric_correlations` into `content.anomalies` / `keyInsights` instead of asking the model to invent them. The tables are the facts; the LLM narrates. Do not write summaries from this cron. |
 | **#51 Enrichment after import** | Coverage already encodes thin history. Engines skip low coverage; they do not need positions to be search-indexed. After #51, named places and linked contacts raise coverage so pairs involving them start surviving FDR on their own. Plan: [post-ingest-enrichment.md](post-ingest-enrichment.md). |
 | **Thicker daily metrics** | Honed subset `time_at_home` / `meeting_minutes` / `sleep_minutes`. Plan: [thicker-daily-metrics.md](thicker-daily-metrics.md). Pair space grows via `METRIC_KEYS`. Body/Mind suggestion arms stay off until #63. |
-| **#59 Agent harness leftovers** | Tools and domains exist. Remaining work is OpenClaw execute + Hermes `get_tool_schemas()` + `predictions.nextPlaces`. |
-| **#63 Cold-start / non-clinical / provenance / budget** | `source` column and coverage floors ship here because #55 cannot emit honestly without them. Heartbeat budget, mute switches, and the full non-clinical audit stay #63. |
+| **#59 Agent harness leftovers** | Tools were registered here. REST execute, `/api/agent/intents`, and `places.next` ship in [agent-harness-and-cold-start.md](agent-harness-and-cold-start.md). Hermes/OpenClaw are already catalog-driven. |
+| **#63 Cold-start / non-clinical / provenance / budget** | `source` column and coverage floors ship here because #55 cannot emit honestly without them. 14-day grounded copy, Brief producer cap of 3, and flags default-on ship in [agent-harness-and-cold-start.md](agent-harness-and-cold-start.md). Heartbeat mute/snooze/`drift_flag` stay later. |
 | **HBPE model upgrades** (calendar-weighted kernel, hierarchical loss, L2 topic head, daily_metrics as features) | Anomaly source `'hbpe.l0'` keeps working as the sidecar's `prediction_log` shape is stable. A future `'hbpe.l2'` detector is another `detector` enum value. Do not train HBPE from this domain. |
 | **#57 Predictions dashboard** | Panel D (metric strips) and "drivers" popovers consume `metric_correlations` when present. Empty = hide the drivers affordance, don't block the dashboard. |
 | **#58 Next-place** | Independent `ci_derived.place_*` tables. Not an input to pairwise metric correlation in v1 (a place-id series is not a scalar). A later "time-at-cluster-X" metric would join naturally via `METRIC_KEYS`. |
@@ -650,6 +648,8 @@ translated onto this tree:
 - [x] `insights.explain`, `anomalies.recent`, `suggestions.list` /
       `suggestions.feedback` are registered intents.
 - [x] Flag-off: no Brief/feed cards. Cold series: no "you usually".
+  (Flags now default **on**; cold series still refuses "you usually" — see
+  [agent-harness-and-cold-start.md](agent-harness-and-cold-start.md).)
 - [x] Body/Mind suggestion arms absent until thicker metrics + #63.
 
 The original "how much did exercise change my mood this quarter" is answerable
@@ -665,7 +665,8 @@ enough overlapping days — not a fabricated r.
 - Rewriting `backend/apps/summary` (#50).
 - Default-on enrichment, position search index, inventory reverse-geocode (#51).
 - Adding sleep / deep work / meetings / time-at-home / mood / topic columns.
-- Hermes / OpenClaw execute wiring (#59).
+- Hermes / OpenClaw source changes (REST execute is on CI-Server; see
+  [agent-harness-and-cold-start.md](agent-harness-and-cold-start.md)).
 - `/predictions` UI (#57).
 - HBPE hierarchical loss, L2 head, calendar kernel, daily_metrics features.
 - Causal graphs, Granger-causality theatre, STL, new npm stats frameworks.
