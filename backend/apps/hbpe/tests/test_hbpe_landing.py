@@ -242,3 +242,7 @@ def test_histogram_keeps_b1_ready_while_still_learning():
     assert out["model_version"] == "b1"
     assert out["system_status"] == "READY"
     assert out["buckets"][0]["l2_probs"] == {}
+
+    # The API used to pass COLD_START from checkpoint absence and skip this override.
+    overridden = build_histogram(_Engine(), user_id=None, system_status="COLD_START")
+    assert overridden["system_status"] == "READY"

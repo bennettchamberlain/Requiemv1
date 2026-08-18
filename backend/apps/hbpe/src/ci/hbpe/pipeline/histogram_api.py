@@ -95,12 +95,15 @@ def build_histogram(
         user_id
     )
 
-    if system_status is None:
-        served = (model_version or "").lower()
-        # A B1 histogram with occupancy is a real forecast — don't grey the strip.
-        if still_learning and served in {"b0", "b1"}:
-            system_status = "READY"
-        elif still_learning:
+    served = (model_version or "").lower()
+    # Occupancy baselines are a real forecast. The HTTP layer used to pass
+    # COLD_START whenever no HMT checkpoint existed, which greyed a working B1
+    # strip. Keep pipeline-step strings (BOOTSTRAP:…) only when we are not
+    # already serving b0/b1.
+    if still_learning and served in {"b0", "b1"}:
+        system_status = "READY"
+    elif system_status is None:
+        if still_learning:
             system_status = "COLD_START"
         else:
             system_status = (
