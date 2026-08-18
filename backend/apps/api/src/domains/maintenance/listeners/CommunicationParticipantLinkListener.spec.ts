@@ -51,6 +51,8 @@ function makeIdentifierService(initial: Record<string, string>) {
         return out;
       },
     ),
+    repointToEntity: jest.fn(async () => null),
+    claimForSelf: jest.fn(async () => 0),
   };
 }
 
@@ -123,12 +125,18 @@ function makeListener(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     graphIngestService as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { getTrustMode: jest.fn(async () => 'balanced') } as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ds.dataSource as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     logger as any,
   );
 
   return { listener, communicationService, identifierService, graphIngestService, ds };
+}
+
+function updateCalls(ds: ReturnType<typeof makeDataSource>) {
+  return ds.calls.filter((call) => call.sql.includes('UPDATE ci.communications'));
 }
 
 describe('CommunicationParticipantLinkListener.handleCreated', () => {
@@ -162,8 +170,9 @@ describe('CommunicationParticipantLinkListener.handleCreated', () => {
     expect(ingestPayload.entities[0].key).toBe('communications:participant:email:unknown@example.com');
 
     // UPDATE binds the full hypertable PK + chunk-pruning `time` partition col.
-    expect(ds.calls).toHaveLength(1);
-    const { sql, params } = ds.calls[0];
+    const updates = updateCalls(ds);
+    expect(updates).toHaveLength(1);
+    const { sql, params } = updates[0];
     expect(sql).toContain('UPDATE ci.communications');
     expect(sql).toContain('user_id = $1');
     expect(sql).toContain('id = $2');
@@ -189,8 +198,9 @@ describe('CommunicationParticipantLinkListener.handleCreated', () => {
     await listener.handleCreated({ communicationId: COMM_ID });
 
     expect(graphIngestService.ingest).not.toHaveBeenCalled();
-    expect(ds.calls).toHaveLength(1);
-    expect(ds.calls[0].params).toEqual([USER, COMM_ID, EXISTING_FROM, [NEW_TO_1], COMM_TIME]);
+    const updates = updateCalls(ds);
+    expect(updates).toHaveLength(1);
+    expect(updates[0].params).toEqual([USER, COMM_ID, EXISTING_FROM, [NEW_TO_1], COMM_TIME]);
   });
 
   it('is a no-op when both link sides are already populated', async () => {
@@ -209,7 +219,7 @@ describe('CommunicationParticipantLinkListener.handleCreated', () => {
 
     expect(identifierService.findEntityIdsByIdentifiers).not.toHaveBeenCalled();
     expect(graphIngestService.ingest).not.toHaveBeenCalled();
-    expect(ds.calls).toHaveLength(0);
+    expect(updateCalls(ds)).toHaveLength(0);
   });
 
   it('seeds stub Person entities for cc/bcc but does not write them back to any link column', async () => {
@@ -240,7 +250,7 @@ describe('CommunicationParticipantLinkListener.handleCreated', () => {
     ]);
 
     // Nothing resolved for from/to so the listener short-circuits before UPDATE.
-    expect(ds.calls).toHaveLength(0);
+    expect(updateCalls(ds)).toHaveLength(0);
   });
 
   it('writes nothing when participants_metadata yields no resolvable identifiers', async () => {
@@ -258,7 +268,7 @@ describe('CommunicationParticipantLinkListener.handleCreated', () => {
     await listener.handleCreated({ communicationId: COMM_ID });
 
     expect(graphIngestService.ingest).not.toHaveBeenCalled();
-    expect(ds.calls).toHaveLength(0);
+    expect(updateCalls(ds)).toHaveLength(0);
   });
 
   it('only fills the missing side (from already set -> resolves to only)', async () => {
@@ -287,9 +297,10 @@ describe('CommunicationParticipantLinkListener.handleCreated', () => {
     const keys = ingestPayload.entities.map((e: { key: string }) => e.key);
     expect(keys).toEqual(['communications:participant:email:unknown@example.com']);
 
-    expect(ds.calls).toHaveLength(1);
+    const updates = updateCalls(ds);
+    expect(updates).toHaveLength(1);
     // fromId is null (already set, listener won't overwrite); toIds is [NEW_TO_1].
-    expect(ds.calls[0].params).toEqual([USER, COMM_ID, null, [NEW_TO_1], COMM_TIME]);
+    expect(updates[0].params).toEqual([USER, COMM_ID, null, [NEW_TO_1], COMM_TIME]);
   });
 
   it('skips when the communication row is missing', async () => {
@@ -297,7 +308,7 @@ describe('CommunicationParticipantLinkListener.handleCreated', () => {
 
     await listener.handleCreated({ communicationId: COMM_ID });
 
-    expect(ds.calls).toHaveLength(0);
+    expect(updateCalls(ds)).toHaveLength(0);
     expect(graphIngestService.ingest).not.toHaveBeenCalled();
   });
 
@@ -315,7 +326,7 @@ describe('CommunicationParticipantLinkListener.handleCreated', () => {
 
     await listener.handleCreated({ communicationId: COMM_ID });
 
-    expect(ds.calls).toHaveLength(0);
+    expect(updateCalls(ds)).toHaveLength(0);
     expect(graphIngestService.ingest).not.toHaveBeenCalled();
   });
 });

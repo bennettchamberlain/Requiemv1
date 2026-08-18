@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
@@ -13,8 +13,15 @@ import {
   type IdentifierKey,
   splitPersonName,
 } from '@ci/domains/graph';
+import {
+  matchOwner,
+  readSelfIdentity,
+  shouldMapContactToSelf,
+  type SelfIdentity,
+} from '@ci/domains/import';
 import { CommunicationService } from '@ci/domains/memory';
 import { CommunicationCreatedEvent, type CommunicationCreatedPayload } from '@ci/domains/memory/events';
+import { PersonalizationService } from '@ci/domains/personalization';
 
 /**
  * sourceSystem the on-ingest stub Person entities are stamped with — matches
@@ -57,6 +64,8 @@ export class CommunicationParticipantLinkListener {
     private readonly communicationService: CommunicationService,
     private readonly entityIdentifierService: EntityIdentifierService,
     private readonly graphIngestService: GraphIngestService,
+    @Inject(PersonalizationService)
+    private readonly personalization: Pick<PersonalizationService, 'getTrustMode'>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly logger: LoggerService,
   ) {
@@ -137,12 +146,39 @@ export class CommunicationParticipantLinkListener {
     }
 
     const ownerId = communication.userId;
+    const identity = await readSelfIdentity(this.dataSource, ownerId).catch(
+      (): SelfIdentity => ({ names: [], email: null, phones: [] }),
+    );
+    const trustMode = await this.personalization.getTrustMode(ownerId);
+    const selfEntityId = await this.resolveSelfEntityId(ownerId);
+
     const allKeys = [...seenByComposite.values()].map((s) => s.key);
     const existing = await this.entityIdentifierService.findEntityIdsByIdentifiers(ownerId, allKeys);
 
     const newEntities: GraphEntityInputDto[] = [];
     for (const [composite, seen] of seenByComposite) {
       if (existing.has(composite)) {
+        continue;
+      }
+
+      const matchRaw = seen.rawName.length > 0 ? seen.rawName : seen.key.valueNormalized;
+      const ownerMatch = matchOwner(identity, matchRaw);
+      if (selfEntityId != null && shouldMapContactToSelf(ownerMatch, trustMode)) {
+        if (seen.key.kind === 'email' || seen.key.kind === 'phone') {
+          await this.entityIdentifierService.repointToEntity(
+            ownerId,
+            selfEntityId,
+            seen.key.kind,
+            matchRaw,
+            'self_collation',
+          );
+        } else {
+          await this.entityIdentifierService.claimForSelf(ownerId, selfEntityId, {
+            names: [matchRaw],
+          });
+        }
+
+        existing.set(composite, selfEntityId);
         continue;
       }
 
@@ -179,6 +215,13 @@ export class CommunicationParticipantLinkListener {
       newEntities.length > 0
         ? await this.entityIdentifierService.findEntityIdsByIdentifiers(ownerId, allKeys)
         : existing;
+
+    // Owner claims may have been written without a re-query when we skipped ingest.
+    for (const [composite, entityId] of existing) {
+      if (!resolved.has(composite)) {
+        resolved.set(composite, entityId);
+      }
+    }
 
     const lookup = (raw: string | null): string | null => {
       const key = classifyParticipant(raw);
@@ -235,6 +278,15 @@ export class CommunicationParticipantLinkListener {
           AND time = $5::timestamptz`,
       [ownerId, communication.id, fromId, toIds, communication.time],
     );
+  }
+
+  private async resolveSelfEntityId(userId: string): Promise<string | null> {
+    const rows: Array<{ entity_id: string | null }> = await this.dataSource.query(
+      `SELECT entity_id FROM ci.users WHERE id = $1::uuid`,
+      [userId],
+    );
+
+    return rows[0]?.entity_id ?? null;
   }
 }
 

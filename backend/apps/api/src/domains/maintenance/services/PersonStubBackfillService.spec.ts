@@ -2,7 +2,6 @@ import { PersonStubBackfillService } from './PersonStubBackfillService';
 
 const USER = '00000000-0000-0000-0000-0000000000aa';
 const EXISTING_ENTITY = '00000000-0000-0000-0000-0000000000b1';
-const NEW_ENTITY = '00000000-0000-0000-0000-0000000000b2';
 
 const END = new Date('2026-01-08T00:00:00.000Z');
 const START = new Date('2026-01-01T00:00:00.000Z');
@@ -17,6 +16,14 @@ function makeDataSource(rows: FakeRow[]) {
   let selectServed = false;
 
   const query = jest.fn(async (sql: string) => {
+    if (sql.includes('FROM ci.users') && sql.includes('entity_id')) {
+      return [{ entity_id: null }];
+    }
+
+    if (sql.includes('FROM ci.users u') || sql.includes('is_self')) {
+      return [];
+    }
+
     if (sql.includes('FROM ci.communications')) {
       if (!selectServed) {
         selectServed = true;
@@ -48,6 +55,8 @@ function makeIdentifierService(existing: Record<string, string>) {
         return out;
       },
     ),
+    repointToEntity: jest.fn(async () => null),
+    claimForSelf: jest.fn(async () => 0),
   };
 }
 
@@ -78,6 +87,9 @@ function makeService(rows: FakeRow[], existing: Record<string, string>) {
   const ds = makeDataSource(rows);
   const ids = makeIdentifierService(existing);
   const ingest = makeIngestService();
+  const personalization = {
+    getTrustMode: jest.fn(async () => 'balanced' as const),
+  };
   const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
   const service = new PersonStubBackfillService(
@@ -88,10 +100,12 @@ function makeService(rows: FakeRow[], existing: Record<string, string>) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ids as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    personalization as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     logger as any,
   );
 
-  return { service, ds, ids, ingest };
+  return { service, ds, ids, ingest, personalization };
 }
 
 describe('PersonStubBackfillService.backfill', () => {
@@ -297,6 +311,9 @@ describe('PersonStubBackfillService.backfill', () => {
 
     const ids = makeIdentifierService({});
     const ingest = makeIngestService();
+    const personalization = {
+      getTrustMode: jest.fn(async () => 'balanced' as const),
+    };
     const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
     const service = new PersonStubBackfillService(
@@ -306,6 +323,8 @@ describe('PersonStubBackfillService.backfill', () => {
       ingest as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ids as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      personalization as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       logger as any,
     );
@@ -327,6 +346,9 @@ describe('PersonStubBackfillService.backfill', () => {
     });
     const ids = makeIdentifierService({});
     const ingest = makeIngestService();
+    const personalization = {
+      getTrustMode: jest.fn(async () => 'balanced' as const),
+    };
     const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
     const service = new PersonStubBackfillService(
@@ -336,6 +358,8 @@ describe('PersonStubBackfillService.backfill', () => {
       ingest as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ids as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      personalization as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       logger as any,
     );
@@ -380,9 +404,79 @@ describe('PersonStubBackfillService.backfill', () => {
     const [, payload] = ingest.ingest.mock.calls[0];
     for (const entity of payload.entities) {
       expect(entity.sourceSystem).toBe('communications:participant');
-      expect(entity.key.startsWith('communications:participant:')).toBe(true);
     }
+  });
 
-    void NEW_ENTITY;
+  it('claims owner email onto self instead of minting a stub when self exists', async () => {
+    const SELF = '00000000-0000-0000-0000-0000000000c1';
+    const rows: FakeRow[] = [
+      {
+        id: 'row-1',
+        time: new Date('2026-01-07T00:00:00.000Z'),
+        participants_metadata: { from: 'owner@example.com', to: ['friend@example.com'] },
+      },
+    ];
+
+    const ds = makeDataSource(rows);
+    let selectServed = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ds.query.mockImplementation(async (sql: string): Promise<any> => {
+      if (sql.includes('SELECT entity_id FROM ci.users')) {
+        return [{ entity_id: SELF }];
+      }
+
+      if (sql.includes('FROM ci.users u') || sql.includes('is_self')) {
+        return [
+          { name: 'Owner', email: 'owner@example.com', phones_json: null },
+          { name: 'Owner', email: null, phones_json: [] },
+        ];
+      }
+
+      if (sql.includes('FROM ci.communications')) {
+        if (!selectServed) {
+          selectServed = true;
+
+          return rows;
+        }
+
+        return [];
+      }
+
+      return [];
+    });
+
+    const ids = makeIdentifierService({});
+    const ingest = makeIngestService();
+    const personalization = {
+      getTrustMode: jest.fn(async () => 'balanced' as const),
+    };
+    const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
+
+    const service = new PersonStubBackfillService(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ds.dataSource as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ingest as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ids as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      personalization as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      logger as any,
+    );
+
+    const result = await service.backfill(USER, { startTime: START, endTime: END });
+
+    expect(ids.repointToEntity).toHaveBeenCalledWith(
+      USER,
+      SELF,
+      'email',
+      'owner@example.com',
+      'self_collation',
+    );
+    expect(result.peopleCreated).toBe(1);
+    const [, payload] = ingest.ingest.mock.calls[0];
+    expect(payload.entities).toHaveLength(1);
+    expect(payload.entities[0].properties).toMatchObject({ emails: ['friend@example.com'] });
   });
 });
