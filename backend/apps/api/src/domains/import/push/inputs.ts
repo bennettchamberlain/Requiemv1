@@ -16,6 +16,7 @@
  * `*_source_triple_uniq` index over it.
  */
 import type { CreateBrowserActivityDto } from '@ci/domains/browser-activity';
+import { isUriLocation } from '@ci/domains/geocode';
 import { CommunicationType } from '@ci/domains/memory';
 import type {
   CreateCommunicationDto,
@@ -1063,7 +1064,11 @@ export function toEventInput(rec: CanonicalRecord): CreateEventDto {
     input.description = rec.description;
   }
 
-  if (rec.locationName) {
+  // A meeting-join link ("https://khronosgroup.zoom.us/w/99353948195?tk=…") or
+  // a custom-scheme URI ("altspace://account.altvr.com/api/events/…") is not a
+  // place name — see isUriLocation for why this is a structural check rather
+  // than a per-app denylist, matching isCoordinateText above.
+  if (rec.locationName && !isUriLocation(rec.locationName)) {
     input.location_name = rec.locationName;
   }
 
