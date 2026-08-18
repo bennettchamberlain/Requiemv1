@@ -139,8 +139,7 @@ describe('OrphanCleanupService.cleanOrphans', () => {
 
     const result = await service.cleanOrphans();
 
-    // Every indexable type x every ci_search index table. Derived from the
-    // constants so adding a type (or a table) does not stale this expectation.
+    // Every INDEXABLE_ENTITIES type × embeddings/vectors/index_skips.
     const expected = INDEXABLE_ENTITIES.length * SEARCH_TABLES.length;
     expect(result.results).toHaveLength(expected);
     expect(query).toHaveBeenCalledTimes(expected);

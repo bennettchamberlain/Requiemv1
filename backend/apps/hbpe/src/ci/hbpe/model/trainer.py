@@ -7,8 +7,8 @@ train_l0_mae:
 
 train_hmt_joint:
   Fine-tunes HMTModel (L0+L1) from the L0 checkpoint.  Joint loss:
-    L_total = CE(L0) + Σ_c P(L0=c) · CE(L1|L0=c)
-  L2 is skipped until Phase 3 (content data required).
+    L_total = CE(L0) + Σ_i P̂(L0=c_i) · CE(L1_i | L0=c_i)
+  L2 is skipped until a user clears L2_MIN_TOKENS (see pipeline/l2_gate.py).
   Saves hmt_checkpoint.pt.
 
 Implements T2.2 (CI-Server-apo) and T2.3 (CI-Server-8ms).
@@ -250,8 +250,8 @@ def train_hmt_joint(
     """
     Fine-tune HMTModel (L0+L1) from the L0 MAE checkpoint.
 
-    Joint loss: L_total = CE(L0) + mean_c[ P(L0=c) * CE(L1|L0=c) ]
-    L2 deferred until Phase 3.
+    Joint loss: L_total = CE(L0) + mean_i[ P̂(L0=c_i) · CE(L1_i|L0=c_i) ]
+    L2 deferred until l2_gate.L2_MIN_TOKENS.
 
     Returns path to saved hmt_checkpoint.pt.
     """
@@ -383,7 +383,14 @@ def _run_joint_epoch(
                 token_ids, bucket_idxs, level_ids, padding_mask
             )
 
-            loss = _joint_loss(l0_logits, l1_logits, l0_targets, l1_targets, level_ids)
+            loss = _joint_loss(
+                l0_logits,
+                l1_logits,
+                l0_targets,
+                l1_targets,
+                level_ids,
+                bucket_idxs,
+            )
 
             if training and optimiser is not None:
                 optimiser.zero_grad()
@@ -453,20 +460,18 @@ def _joint_loss(
     l0_targets: torch.Tensor,  # (1, T)
     l1_targets: torch.Tensor,  # (1, T)
     level_ids: torch.Tensor,  # (1, T)
+    bucket_idxs: torch.Tensor,  # (1, T)
 ) -> torch.Tensor:
     """
-    L_total = CE(L0 positions) + P(L0) * CE(L1 positions)
+    L_total = CE(L0) + mean_i[ P̂(L0=c_i) · CE(L1_i | L0=c_i) ]
 
-    P(L0) is the softmax probability of the actual L0 class at positions
-    immediately preceding each L1 token — approximated here as a uniform
-    weight of 1.0 for simplicity (full probability weighting deferred to
-    calibration phase T2.4).
+    P̂ is the softmax mass on the actual L0 class at the same-bucket L0
+    token (else the nearest preceding L0). No more hard-coded weight of 1.0.
     """
     l0_pos = (level_ids[0] == 0).nonzero(as_tuple=True)[0]
     l1_pos = (level_ids[0] == 1).nonzero(as_tuple=True)[0]
 
     l0_loss = torch.tensor(0.0, device=l0_logits.device)
-    l1_loss = torch.tensor(0.0, device=l1_logits.device)
 
     if l0_pos.numel() > 0:
         tgt = l0_targets[0, l0_pos]
@@ -476,12 +481,38 @@ def _joint_loss(
                 l0_logits[0, l0_pos[valid]], tgt[valid]
             )
 
-    if l1_pos.numel() > 0:
-        tgt = l1_targets[0, l1_pos]
-        valid = tgt != PAD_IDX
-        if valid.any():
-            l1_loss = nn.functional.cross_entropy(
-                l1_logits[0, l1_pos[valid]], tgt[valid]
-            )
+    if l1_pos.numel() == 0:
+        return l0_loss
 
+    l0_by_bucket: dict[int, int] = {}
+    for p in l0_pos.tolist():
+        if int(l0_targets[0, p]) != PAD_IDX:
+            l0_by_bucket[int(bucket_idxs[0, p])] = p
+
+    weighted = []
+    for p in l1_pos.tolist():
+        tgt = l1_targets[0, p]
+        if int(tgt) == PAD_IDX:
+            continue
+        ce = nn.functional.cross_entropy(
+            l1_logits[0, p].unsqueeze(0), tgt.unsqueeze(0), reduction="mean"
+        )
+        pair = l0_by_bucket.get(int(bucket_idxs[0, p]))
+        if pair is None:
+            earlier = [
+                q for q in l0_pos.tolist() if q < p and int(l0_targets[0, q]) != PAD_IDX
+            ]
+            pair = earlier[-1] if earlier else None
+        if pair is None:
+            weight = torch.tensor(1.0, device=l0_logits.device)
+        else:
+            actual = l0_targets[0, pair]
+            weight = torch.softmax(l0_logits[0, pair], dim=-1)[actual]
+        weighted.append(ce * weight)
+
+    l1_loss = (
+        torch.stack(weighted).mean()
+        if weighted
+        else torch.tensor(0.0, device=l0_logits.device)
+    )
     return l0_loss + l1_loss

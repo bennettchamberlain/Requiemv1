@@ -13,7 +13,7 @@ Grounded in source; every route cites `file:line`.
   - **Dev (`make dev`)** — Caddy strips `/api` and forwards to the API.
   - **Vite standalone** (`frontend/apps/web/vite.config.ts:139-148`) — `proxy['/api']` rewrites `^/api` → `''`, target `API_PROXY_TARGET`, `xfwd: true`.
   - So browser `/api/graph/stats` → server `/graph/stats`. A raw API client (or the importer, which targets the API host directly) calls `/graph/stats` with **no** `/api`.
-- **Two controllers bake `api/` into the path**: `MaintenanceController` (`@Controller('api/maintenance')`, `MaintenanceController.ts:374`) and `IntentsController` (`@Controller('api/intents')`, `IntentsController.ts:18`). These mount at server paths `/api/maintenance/*` and `/api/intents/*`. Reached through the proxy the browser path is `/api/api/maintenance/*`; reached **directly** on the API host it is `/api/maintenance/*` (which is exactly how the importer's `maintenance-runner.ts` builds them from the GraphQL base URL). Everywhere below, **Path = the literal server-mounted path**.
+- **Two controllers bake `api/` into the path**: `MaintenanceController` (`@Controller('api/maintenance')`, `MaintenanceController.ts:374`) and `IntentsController` (`@Controller(['api/intents', 'api/agent/intents'])`, `IntentsController.ts`). These mount at server paths `/api/maintenance/*`, `/api/intents/*`, and `/api/agent/intents/*`. Reached through the proxy the browser path is `/api/api/maintenance/*`; reached **directly** on the API host it is `/api/maintenance/*` (which is exactly how the importer's `maintenance-runner.ts` builds them from the GraphQL base URL). Everywhere below, **Path = the literal server-mounted path**.
 - **Object-store media is NOT served by a Nest controller.** File downloads/thumbnails are presigned MinIO URLs the frontend fetches via a separate same-origin `/static/*` proxy (Vite `proxy['/static']`, target `:9000`, rewrites `^/static`→`''`, forces the signing `Host`; `vite.config.ts:160-170`). `FilesController` has **no** `download`/`thumbnail` route — only `upload` and `PATCH :id`.
 
 ### Body-size limits (`common/middleware/BodyParserMiddleware.ts`)
@@ -292,16 +292,17 @@ Per-method `JwtOrApiKeyAuthGuard`. Token secrets stripped from all read response
 
 ---
 
-## Agent / intents — `api/intents` · `domains/agent/controllers/IntentsController.ts:18`
+## Agent / intents — `api/intents` + `api/agent/intents` · `domains/agent/controllers/IntentsController.ts`
 
-Class-level `JwtOrApiKeyAuthGuard`. Publishes the CI Intent catalog (typed capability declaration) so any agent (Hermes, OpenClaw, external MCP client) reads one manifest. Server-mounted at `/api/intents/*`.
+Class-level `JwtOrApiKeyAuthGuard` + `intents` scope. Publishes the CI Intent catalog and executes those intents through `ToolRegistry`. Same handlers mount on `/api/intents/*` (legacy) and `/api/agent/intents/*` (canonical for Hermes / OpenClaw). GET requires capability `read`. POST uses `read` as the HTTP floor; `ToolRegistry.executeTool` is the verb gate (a write intent such as `suggestions.feedback` still needs a write key).
 
 | Verb | Path | Handler | Purpose |
 |------|------|---------|---------|
-| GET | `/api/intents` | `getManifest` (`:23`) | Full `IntentManifest` (domains + entities + intents). |
-| GET | `/api/intents/domains` | `getDomains` (`:29`) | `{ domains: IntentDomain[] }`. |
-| GET | `/api/intents/entities` | `getEntities` (`:35`) | `{ entities: CiEntityDescriptor[] }`. |
-| GET | `/api/intents/:name` | `getIntent` (`:41`) | One intent by dotted name (e.g. `memory.recall`); 404 if unknown. |
+| GET | `/api/intents` | `getManifest` | Full `IntentManifest` (domains + entities + intents). Same at `/api/agent/intents`. |
+| GET | `/api/intents/domains` | `getDomains` | `{ domains: IntentDomain[] }`. |
+| GET | `/api/intents/entities` | `getEntities` | `{ entities: CiEntityDescriptor[] }`. |
+| GET | `/api/intents/:name` | `getIntent` | One intent by dotted name (e.g. `memory.recall`); 404 if unknown. |
+| POST | `/api/intents/:name/execute` | `execute` | Raw JSON body = tool input. Name may be dotted or underscored. Unknown → **404**. Known → **200 `ToolResult`**. |
 
 ---
 

@@ -75,6 +75,7 @@ export {
   TERMINAL_ASK_STATUSES,
   assertAskTransition,
   canTransitionAsk,
+  isAnswerable,
   isTerminalAskStatus,
   IllegalAskTransitionError,
 } from './askStatus';

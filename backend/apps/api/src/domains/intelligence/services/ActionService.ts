@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, MoreThanOrEqual, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/common/context';
@@ -45,6 +45,27 @@ export class ActionService {
     });
 
     return ActionEntity.toEgressType(entity);
+  }
+
+  /**
+   * Anomaly + suggestion actions created on the caller's local calendar day.
+   * Shared Brief producer cap — engines refuse enqueue at 3.
+   */
+  async countDerivedOnLocalDay(
+    context: UserServiceContext,
+    localDayIso: string,
+    timezone: string,
+  ): Promise<number> {
+    const since = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    const entities = await this.actionRepository.find({
+      where: {
+        user: { id: context.userId },
+        source: In(['anomaly', 'suggestion']),
+        createdAt: MoreThanOrEqual(since),
+      },
+    });
+
+    return entities.filter((row) => localCalendarDay(row.createdAt, timezone) === localDayIso).length;
   }
 
   async findAll(context: ServiceContext, options: { source?: string | string[] } = {}): Promise<Action[]> {
@@ -226,5 +247,18 @@ export class ActionService {
     const updated = await this.actionRepository.save(entity);
 
     return ActionEntity.toEgressType(updated);
+  }
+}
+
+function localCalendarDay(date: Date, timezone: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(date);
+  } catch {
+    return date.toISOString().slice(0, 10);
   }
 }

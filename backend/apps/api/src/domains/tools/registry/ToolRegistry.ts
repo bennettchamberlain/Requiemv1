@@ -5,7 +5,7 @@ import { LoggerService } from '@ci/common/logging';
 import { EventService } from '@ci/domains/events';
 
 import type { BaseTool } from '../core/BaseTool';
-import { intentToolName, type ToolInvocationContext, type ToolSchema, type ToolResult } from '../core/types';
+import { intentToolName, canonicalizeExecutableToolName, type ToolInvocationContext, type ToolSchema, type ToolResult } from '../core/types';
 import { ToolInvokedEvent } from '../events';
 import { capabilityAllows, capabilityRequiredFor } from '../policy';
 import type { ToolProvider, ProviderHealthStatus } from '../providers/ToolProvider';
@@ -162,7 +162,35 @@ export class ToolRegistry implements OnModuleInit, OnModuleDestroy {
    * Check if a tool exists (by executable name).
    */
   hasTool(name: string): boolean {
-    return this.tools.has(name);
+    return this.resolveRegisteredTool(name) != null;
+  }
+
+  /**
+   * Resolve an LLM-emitted name onto a registered tool. Qwen often drops
+   * underscores (`memoryremember`) or keeps the dotted intent id.
+   */
+  private resolveRegisteredTool(name: string): { name: string; tool: BaseTool } | undefined {
+    const canonical = canonicalizeExecutableToolName(name);
+
+    for (const candidate of [canonical, name, intentToolName(name)]) {
+      const tool = this.tools.get(candidate);
+      if (tool) {
+        return { name: candidate, tool };
+      }
+    }
+
+    const mashed = name.replace(/[_.-]/g, '').toLowerCase();
+    if (!mashed) {
+      return undefined;
+    }
+
+    for (const [key, tool] of this.tools) {
+      if (key.replace(/_/g, '').toLowerCase() === mashed) {
+        return { name: key, tool };
+      }
+    }
+
+    return undefined;
   }
 
   /**
@@ -181,9 +209,9 @@ export class ToolRegistry implements OnModuleInit, OnModuleDestroy {
    * pre-check and throw there; this is the backstop underneath it.
    */
   async executeTool(name: string, context: ToolInvocationContext, input: unknown): Promise<ToolResult> {
-    const tool = this.tools.get(name);
+    const resolved = this.resolveRegisteredTool(name);
 
-    if (!tool) {
+    if (!resolved) {
       this.logger.warn(`Attempted to execute unknown tool: ${name}`, {
         toolName: name,
         userId: context.userId,
@@ -199,6 +227,8 @@ export class ToolRegistry implements OnModuleInit, OnModuleDestroy {
         },
       };
     }
+
+    const { name: toolName, tool } = resolved;
 
     const { privacy } = tool.schema;
 
@@ -241,15 +271,15 @@ export class ToolRegistry implements OnModuleInit, OnModuleDestroy {
       });
     }
 
-    this.logger.log(`Executing tool: ${name}`, {
-      toolName: name,
+    this.logger.log(`Executing tool: ${toolName}`, {
+      toolName,
       userId: context.userId,
-      provider: this.toolToProvider.get(name),
+      provider: this.toolToProvider.get(toolName),
     });
 
     const result = await tool.execute(context, input);
 
-    await this.emitInvoked(name, tool, context, result);
+    await this.emitInvoked(toolName, tool, context, result);
 
     return result;
   }

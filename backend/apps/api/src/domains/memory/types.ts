@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import type { PlaceKind } from './entities/PlaceEntity';
 import { type NormalizedFieldMap, type PropertiesBag } from './normalizedProperties';
+import type { AcquisitionMethod, UnitSystem } from './physicalProperties';
 
 export const createContentSchema = z.object({
   type: z.string().optional(),
@@ -251,7 +252,47 @@ export interface CreateFileDto {
   };
 }
 
-export interface CreateItemDto {
+/**
+ * The physical half of an item as CALLERS may supply it — deliberately looser
+ * than the columns it lands in.
+ *
+ * Measurements accept a canonical number (`lengthMm: 304.8`) or any unit-
+ * bearing string (`'12 in'`, `'5 ft 11 in'`), because the writers are a web
+ * form, a vision model and an importer and only one of them thinks in
+ * millimetres. Every value passes through `normalizePhysicalProperties` in
+ * {@link ../physicalProperties} before it reaches the database, so the tolerance
+ * stops here — nothing downstream sees a unit.
+ */
+export interface PhysicalItemPropertiesDto {
+  /** MILLIMETRES, or any length string. */
+  lengthMm?: number | string | null;
+  /** MILLIMETRES, or any length string. */
+  widthMm?: number | string | null;
+  /** MILLIMETRES, or any length string. */
+  heightMm?: number | string | null;
+  /** GRAMS, or any mass string. */
+  massG?: number | string | null;
+  /** MILLILITRES (capacity), or any volume string. */
+  volumeMl?: number | string | null;
+  /** `'12 x 8 x 2 in'` — fills only the axes not given individually. */
+  dimensions?: string | null;
+  /** Display preference; never changes what the stored numbers mean. */
+  unitSystem?: UnitSystem | string | null;
+  colors?: string[] | string | null;
+  colorHex?: string | null;
+  materials?: string[] | string | null;
+  /** `{material: fraction}`; percentages are accepted and converted. */
+  composition?: Record<string, number | string> | null;
+  acquisitionMethod?: AcquisitionMethod | string | null;
+  acquiredFrom?: string | null;
+  acquiredFromEntityId?: string | null;
+  manufacturedAt?: Date | null;
+  expiresAt?: Date | null;
+  /** A digital item is refused a mass, a size and a volume. */
+  isDigital?: boolean;
+}
+
+export interface CreateItemDto extends PhysicalItemPropertiesDto {
   id?: string;
   name: string;
   description?: string;
@@ -262,9 +303,19 @@ export interface CreateItemDto {
   purchasePrice?: number;
   currentValue?: number;
   currency?: string;
+  /** When it was bought/received — the ownership clock, not the manufacture date. */
   acquiredAt?: Date;
   identifierCodes?: Record<string, unknown>;
   condition?: 'new' | 'like_new' | 'good' | 'fair' | 'poor' | 'broken' | 'n/a' | null;
+  /** How many identical units this row stands for. Whole and positive. */
+  quantity?: number;
+  /**
+   * How this unit's identity was established, and how much to trust it.
+   * Defaults to 1.0 in the schema, which reads as ground truth to HBPE and RAG
+   * — so anything INFERRED (a vision guess, a receipt line) must say so here.
+   */
+  identityMethod?: 'user' | 'barcode' | 'receipt' | 'vision' | 'import' | 'inferred';
+  identityConfidence?: number;
   images?: string[];
   metadata?: Record<string, unknown>;
   // Provenance triple for idempotent re-ingest (see inventory_source_triple_uniq).
@@ -273,16 +324,19 @@ export interface CreateItemDto {
   sourceId?: string;
 }
 
-export interface UpdateItemDto {
+export interface UpdateItemDto extends PhysicalItemPropertiesDto {
   name?: string;
   description?: string;
   category?: string;
   subcategory?: string;
   brand?: string;
   model?: string;
+  purchasePrice?: number;
   currentValue?: number;
   currency?: string;
+  acquiredAt?: Date | null;
   condition?: 'new' | 'like_new' | 'good' | 'fair' | 'poor' | 'broken' | 'n/a' | null;
+  quantity?: number;
   images?: string[];
   metadata?: Record<string, unknown> | undefined;
 }
