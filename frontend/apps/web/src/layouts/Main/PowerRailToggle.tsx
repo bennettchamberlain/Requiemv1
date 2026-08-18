@@ -39,11 +39,38 @@ export function PowerRailToggle() {
             // left border goes with it: it is NavLink's active-state gutter,
             // and it only ever pushed this button 2px further off centre.
             className={cn(
-              'warp-core flex items-center rounded-md p-2 transition hover:bg-accent hover:text-accent-foreground',
-              pinned ? 'w-full gap-2 border-l-2 border-transparent' : 'w-full justify-center',
+              'warp-core flex items-center rounded-md transition hover:bg-accent hover:text-accent-foreground',
+              // Collapsed: a 40px square that exactly fills the rail's padded
+              // box, with the 32px mark centred inside it. NOT `w-full p-2` —
+              // that left a 24px content box, and Tailwind's preflight sets
+              // `img { max-width: 100% }`, so the mark was capped to 24px wide
+              // while `h-8` held it at 32px tall. It rendered as a vertical
+              // ellipse: centred, and squashed.
+              pinned
+                ? 'w-full gap-2 border-l-2 border-transparent p-2'
+                : 'size-10 shrink-0 justify-center p-0',
             )}
           >
-            <img src={logo} alt="" className="warp-core-emitter h-8 w-8 shrink-0" />
+            {/* The glow hangs off THIS wrapper, not the button. On the button
+              its `inset` was a percentage of the button's width — 40px
+              collapsed, but 224px pinned, which turned a compact bloom into a
+              rotating ellipse that streaked diagonally across the header and
+              out of the rail. Anchored to the mark, both states are identical
+              and the light stays where the reactor is.
+
+              `max-w-none` defeats Tailwind's preflight `img { max-width: 100% }`
+              directly, so the mark keeps its aspect ratio even if this button is
+              ever laid out narrower again. `shrink-0` alone does not do this —
+              it stops flex from shrinking the item, but max-width is a separate
+              constraint and wins regardless. */}
+            {/* 40px disc around a 32px mark: a 4px ring of plasma hugging the
+              logo. At the mark's own size the swirl was entirely behind an
+              opaque emblem and invisible; any wider and it stops reading as
+              part of the mark. Collapsed, the button is 40px too, so the disc
+              exactly fills the rail's padded box. */}
+            <span className="warp-core relative grid size-10 shrink-0 place-items-center">
+              <img src={logo} alt="" className="warp-core-emitter size-8 max-w-none" />
+            </span>
             {/* PINNED, not merely expanded. This button sits in the same `auto`
               grid column as the rail, so a wordmark appearing here widens the
               column and shoves the header and page content sideways — which is
