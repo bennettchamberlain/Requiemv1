@@ -93,16 +93,11 @@ function makeService(rows: FakeRow[], existing: Record<string, string>) {
   const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
   const service = new PersonStubBackfillService(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ds.dataSource as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ingest as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ids as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    personalization as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    logger as any,
+    ds.dataSource as never,
+    ingest as never,
+    ids as never,
+    personalization as never,
+    logger as never,
   );
 
   return { service, ds, ids, ingest, personalization };
@@ -317,16 +312,11 @@ describe('PersonStubBackfillService.backfill', () => {
     const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
     const service = new PersonStubBackfillService(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      { query } as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ingest as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ids as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      personalization as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      logger as any,
+      { query } as never,
+      ingest as never,
+      ids as never,
+      personalization as never,
+      logger as never,
     );
 
     const result = await service.backfill(USER);
@@ -352,16 +342,11 @@ describe('PersonStubBackfillService.backfill', () => {
     const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
     const service = new PersonStubBackfillService(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      { query } as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ingest as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ids as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      personalization as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      logger as any,
+      { query } as never,
+      ingest as never,
+      ids as never,
+      personalization as never,
+      logger as never,
     );
 
     const result = await service.backfill(USER);
@@ -419,8 +404,7 @@ describe('PersonStubBackfillService.backfill', () => {
 
     const ds = makeDataSource(rows);
     let selectServed = false;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ds.query.mockImplementation(async (sql: string): Promise<any> => {
+    ds.query.mockImplementation((async (sql: string) => {
       if (sql.includes('SELECT entity_id FROM ci.users')) {
         return [{ entity_id: SELF }];
       }
@@ -443,7 +427,7 @@ describe('PersonStubBackfillService.backfill', () => {
       }
 
       return [];
-    });
+    }) as typeof ds.query);
 
     const ids = makeIdentifierService({});
     const ingest = makeIngestService();
@@ -453,16 +437,11 @@ describe('PersonStubBackfillService.backfill', () => {
     const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
     const service = new PersonStubBackfillService(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ds.dataSource as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ingest as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ids as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      personalization as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      logger as any,
+      ds.dataSource as never,
+      ingest as never,
+      ids as never,
+      personalization as never,
+      logger as never,
     );
 
     const result = await service.backfill(USER, { startTime: START, endTime: END });

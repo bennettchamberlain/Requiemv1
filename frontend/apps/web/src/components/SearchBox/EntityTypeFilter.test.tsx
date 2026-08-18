@@ -10,7 +10,12 @@ import { describe, expect, it } from 'vitest';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
 import { EntityTypeFilter } from './EntityTypeFilter';
-import { AVAILABLE_ENTITY_TYPES, DropdownProvider } from './useDropdown';
+import {
+  AVAILABLE_ENTITY_TYPES,
+  DropdownProvider,
+  excludedEntityTypesFor,
+  HIDDEN_ENTITY_TYPES,
+} from './useDropdown';
 
 function LocationProbe() {
   const location = useLocation();
@@ -88,7 +93,13 @@ describe('EntityTypeFilter — toggling from the menu', () => {
 
     fireEvent.click(person);
 
-    await waitFor(() => expect(params().get('excludedEntityTypes')).toBe('Person'));
+    // Narrowing any visible type also excludes Answer/Concept so they don't
+    // leak into a "People only" (etc.) result set.
+    await waitFor(() =>
+      expect(params().get('excludedEntityTypes')?.split(',').sort()).toEqual(
+        excludedEntityTypesFor(AVAILABLE_ENTITY_TYPES.filter((t) => t !== 'Person')).sort(),
+      ),
+    );
   });
 
   it('"Clear all" excludes every type; "Select all" brings them all back', async () => {
@@ -99,7 +110,7 @@ describe('EntityTypeFilter — toggling from the menu', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Clear all' }));
     await waitFor(() =>
       expect(params().get('excludedEntityTypes')?.split(',').sort()).toEqual(
-        [...AVAILABLE_ENTITY_TYPES].sort(),
+        [...AVAILABLE_ENTITY_TYPES, ...HIDDEN_ENTITY_TYPES].sort(),
       ),
     );
     // The trigger's own accessible name reflects the new state live, without

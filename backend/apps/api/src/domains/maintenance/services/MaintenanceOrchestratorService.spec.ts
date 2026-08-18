@@ -160,36 +160,21 @@ function makeService() {
   };
 
   const service = new MaintenanceOrchestratorService(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    dataSource as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    events as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    logger as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    personStub as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    commLink as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    eventPart as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    healSelf as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    edgeMaterialize as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    relationshipNormalize as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    derivedRelationships as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    noteFold as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    graphEnrich as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    locationEstimate as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    searchIndex as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    inventoryReverse as any,
+    dataSource as never,
+    events as never,
+    logger as never,
+    personStub as never,
+    commLink as never,
+    eventPart as never,
+    healSelf as never,
+    edgeMaterialize as never,
+    relationshipNormalize as never,
+    derivedRelationships as never,
+    noteFold as never,
+    graphEnrich as never,
+    locationEstimate as never,
+    searchIndex as never,
+    inventoryReverse as never,
   );
 
   // Kill the progress throttle by default so forwarding tests see every line;

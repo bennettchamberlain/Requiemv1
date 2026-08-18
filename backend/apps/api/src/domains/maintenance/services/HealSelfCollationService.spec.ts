@@ -44,16 +44,11 @@ function makeService(opts: {
 
   return {
     service: new HealSelfCollationService(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      { query } as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      personMerge as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      mergeBlocks as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      personalization as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      logger as any,
+      { query } as never,
+      personMerge as never,
+      mergeBlocks as never,
+      personalization as never,
+      logger as never,
     ),
     personMerge,
     query,

@@ -118,18 +118,12 @@ function makeListener(
   const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
   const listener = new CommunicationParticipantLinkListener(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    communicationService as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    identifierService as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    graphIngestService as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { getTrustMode: jest.fn(async () => 'balanced') } as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ds.dataSource as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    logger as any,
+    communicationService as never,
+    identifierService as never,
+    graphIngestService as never,
+    { getTrustMode: jest.fn(async () => 'balanced') } as never,
+    ds.dataSource as never,
+    logger as never,
   );
 
   return { listener, communicationService, identifierService, graphIngestService, ds };
