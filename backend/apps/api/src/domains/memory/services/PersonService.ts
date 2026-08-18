@@ -56,6 +56,41 @@ function typedColumnsFromProperties(properties: Record<string, unknown> = {}): {
   return cols;
 }
 
+/**
+ * Ranks a name that is unlikely to be a plausible human name (0 = plausible,
+ * 1 = not) — used as the PRIMARY key of the default people-list ordering, so
+ * bare digit-strings/phone-numbers and call-log-heading leftovers sink below
+ * actually-named contacts instead of alphabetizing ahead of them ('1', '2', …
+ * sort before 'A' in plain ASC order, which is exactly the bug: a live import
+ * had 5,420 of 7,976 Person rows named things like "1003" or "+12013836559",
+ * and every one of them beat a real name onto page 1).
+ *
+ * Deliberately narrow and DB-side only: it changes ranking, not membership —
+ * a bad-named row still appears, still matches search, just isn't first.
+ * It does not touch the data itself; existing garbage names are a separate,
+ * out-of-scope backfill.
+ *
+ * The three shapes ranked down:
+ *   - no name at all (NULL, or all-whitespace) — ranked here rather than left
+ *     to fall through to ELSE, because Postgres' three-valued logic means a
+ *     NULL name matches neither regex below (`NULL ~ x` is NULL, not false)
+ *     and would otherwise land in the *plausible* tier ahead of the very
+ *     digit-strings this exists to demote.
+ *   - digit-only / phone-formatted names ("1003", "11112000", "+12013836559")
+ *   - call-log headings a parser bug once wrote as the literal contact name
+ *     ("Missed call from\n") — see 3e5956cb0, "a call-log heading is not a
+ *     person"; that commit stops FUTURE imports from producing these, but
+ *     does not rewrite rows that already exist.
+ *
+ * These come straight from a live-import audit.
+ */
+const PERSON_NAME_LOOKS_IMPLAUSIBLE_SQL = `CASE
+  WHEN person.name IS NULL OR btrim(person.name) = '' THEN 1
+  WHEN person.name ~ '^\\s*[+(]?[0-9][0-9()\\-.\\s]*$' THEN 1
+  WHEN person.name ~* '^\\s*(missed|placed|received|recorded|voicemail)\\y' THEN 1
+  ELSE 0
+END`;
+
 @Injectable()
 export class PersonService extends EntityService<PersonEntity, Person> {
   constructor(
@@ -333,7 +368,8 @@ export class PersonService extends EntityService<PersonEntity, Person> {
     }
 
     const entities = await qb
-      .orderBy(`NULLIF(btrim(COALESCE(person.name, '')), '')`, 'ASC', 'NULLS LAST')
+      .orderBy(PERSON_NAME_LOOKS_IMPLAUSIBLE_SQL, 'ASC')
+      .addOrderBy(`NULLIF(btrim(COALESCE(person.name, '')), '')`, 'ASC', 'NULLS LAST')
       .addOrderBy('person.created_at', 'DESC')
       .getMany();
 
