@@ -225,6 +225,38 @@ describe('Chromium bookmarks', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('falls back to the URL when a bookmark has no title', async () => {
+    // Chrome lets a saved bookmark's name be edited down to empty. Before
+    // this fix, a title-less bookmark's `Title` metadata was `undefined`,
+    // which push/canonical.ts's titleFor() falls through all the way to the
+    // content's own filename — a constant, 'bookmark.txt', shared by every
+    // bookmark this importer has ever written. A real page URL is a strictly
+    // more useful label than a filename repeated across every untitled save.
+    const dir = tmpdir();
+    const p = path.join(dir, 'Bookmarks');
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        checksum: 'abc123',
+        version: 1,
+        roots: {
+          bookmark_bar: {
+            type: 'folder',
+            name: 'Bookmarks bar',
+            date_added: String(ADDED),
+            children: [
+              { type: 'url', name: '', url: 'https://untitled.example.com', date_added: String(ADDED) },
+            ],
+          },
+        },
+      }),
+    );
+
+    const items = await importBookmarks(p);
+    expect(items[0].metadata.Title).toBe('https://untitled.example.com');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('gives bookmarks stable ids that survive re-import', async () => {
     const dir = tmpdir();
     const p = makeBookmarksFile(dir);
