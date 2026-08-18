@@ -99,18 +99,20 @@ function HelpSubmenu() {
           <CircleHelp className="h-6 w-6" strokeWidth={1.25} />
         </span>
         <span className="flex-1 truncate text-sm">Help</span>
-        <ChevronRight className="h-4 w-4 shrink-0 transition-transform" />
+        <ChevronRight className="h-4 w-4 shrink-0 transition-transform duration-200" />
       </Collapsible.Trigger>
-      <Collapsible.Content className="flex flex-col gap-1 pl-6">
-        <ExternalNavLink href="https://ci.computer/support" label="Support">
-          <LifeBuoy className="h-4 w-4 shrink-0" strokeWidth={1.25} />
-        </ExternalNavLink>
-        <ExternalNavLink
-          href="https://docs.ci.computer/docs/first-party-apps/digital-memory-server"
-          label="Docs"
-        >
-          <BookOpen className="h-4 w-4 shrink-0" strokeWidth={1.25} />
-        </ExternalNavLink>
+      <Collapsible.Content className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
+        <div className="flex flex-col gap-1 pl-6 pt-1">
+          <ExternalNavLink href="https://ci.computer/support" label="Support">
+            <LifeBuoy className="h-4 w-4 shrink-0" strokeWidth={1.25} />
+          </ExternalNavLink>
+          <ExternalNavLink
+            href="https://docs.ci.computer/docs/first-party-apps/digital-memory-server"
+            label="Docs"
+          >
+            <BookOpen className="h-4 w-4 shrink-0" strokeWidth={1.25} />
+          </ExternalNavLink>
+        </div>
       </Collapsible.Content>
     </Collapsible>
   );
