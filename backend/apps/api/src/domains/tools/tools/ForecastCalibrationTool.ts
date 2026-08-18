@@ -40,27 +40,28 @@ export function calibrationQualityStatement(score: CalibrationScore | null): str
   let statement: string;
 
   if (score.l0Top1Acc >= ACC_STRONG) {
-    statement = `Forecast quality is strong: the top prediction matched observed behavior ${pct}% of the time`;
+    statement = `Forecast self-consistency is strong: the top prediction matched pipeline labels ${pct}% of the time`;
   } else if (score.l0Top1Acc >= ACC_FAIR) {
-    statement = `Forecast quality is fair: the top prediction matched observed behavior ${pct}% of the time`;
+    statement = `Forecast self-consistency is fair: the top prediction matched pipeline labels ${pct}% of the time`;
   } else {
-    statement = `Forecast quality is weak: the top prediction matched observed behavior only ${pct}% of the time`;
+    statement = `Forecast self-consistency is weak: the top prediction matched pipeline labels only ${pct}% of the time`;
   }
 
   if (score.ece !== null) {
     if (score.ece <= ECE_WELL_CALIBRATED) {
-      statement += ' and its confidence is well calibrated.';
+      statement += ' and its confidence is well calibrated against those labels.';
     } else if (score.ece <= ECE_ROUGHLY_CALIBRATED) {
-      statement += ' and its confidence is roughly calibrated.';
+      statement += ' and its confidence is roughly calibrated against those labels.';
     } else {
-      statement += ' but its stated confidence is poorly calibrated (probabilities overstate accuracy).';
+      statement +=
+        ' but its stated confidence is poorly calibrated (probabilities overstate agreement with pipeline labels).';
     }
   } else {
     statement += '.';
   }
 
   if (score.driftFlag) {
-    statement += ' Accuracy has recently drifted below its trailing baseline.';
+    statement += ' Self-consistency has recently drifted below its trailing baseline.';
   }
 
   return statement;

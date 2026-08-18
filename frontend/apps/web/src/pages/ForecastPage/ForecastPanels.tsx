@@ -217,7 +217,7 @@ export function CalibrationPanel({ calibration }: { calibration: Calibration | n
         <div>Top-1 match: {acc == null ? '—' : `${Math.round(acc * 100)}%`}</div>
         <div>Calibration error (ECE): {ece == null ? '—' : ece.toFixed(3)}</div>
         {calibration.latest.driftFlag && (
-          <div className="text-destructive">Accuracy has drifted below its recent baseline.</div>
+          <div className="text-destructive">Self-consistency has drifted below its recent baseline.</div>
         )}
       </Card.Content>
     </Card>
