@@ -3,10 +3,12 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { AppleHealthFileImporter } from '../apple_health';
+import { DiscordFileImporter } from '../discord';
 import { LinkedInFileImporter } from '../linkedin';
 import { NotionFileImporter } from '../notion';
 import { RedditFileImporter } from '../reddit';
 import { StravaFileImporter } from '../strava';
+import { WithingsFileImporter } from '../withings';
 
 /**
  * Recognizers must verify CONTENT, not just names — each case here is the
@@ -121,7 +123,10 @@ describe('Apple Health recognizer verifies the HealthKit root element', () => {
   it('rejects an unrelated export.xml', async () => {
     const fpath = write('export.xml', '<?xml version="1.0"?>\n<catalog><item/></catalog>\n');
 
-    const rec = await new AppleHealthFileImporter().recognize({}, { filename: 'export.xml', fullPath: fpath });
+    const rec = await new AppleHealthFileImporter().recognize(
+      {},
+      { filename: 'export.xml', fullPath: fpath },
+    );
 
     expect(rec.confidence).toBe(0);
   });
@@ -129,7 +134,10 @@ describe('Apple Health recognizer verifies the HealthKit root element', () => {
   it('accepts a HealthKit export', async () => {
     const fpath = write('export.xml', '<?xml version="1.0"?>\n<HealthData locale="en_US">\n');
 
-    const rec = await new AppleHealthFileImporter().recognize({}, { filename: 'export.xml', fullPath: fpath });
+    const rec = await new AppleHealthFileImporter().recognize(
+      {},
+      { filename: 'export.xml', fullPath: fpath },
+    );
 
     expect(rec.confidence).toBeGreaterThan(0);
   });
@@ -171,5 +179,128 @@ describe('Notion recognizer requires the export id suffix', () => {
     );
 
     expect(rec.confidence).toBe(0);
+  });
+});
+
+/**
+ * The Google Takeout pair, both found by importing one real 2.7GB archive and
+ * reading what the run said it had recognized.
+ *
+ * Neither is hypothetical: `withings` staged 1,661 rows of Google Fit daily
+ * metrics as Withings observations (metadata and all), and `discord` claimed
+ * the Google Chat folder outright. Both then appeared in the run's data sources,
+ * telling the user two services had given the appliance data when neither had.
+ */
+const GOOGLE_FIT_DAILY_METRICS_HEADER =
+  'Date,Move Minutes count,Calories (kcal),Distance (m),Heart Points,Heart Minutes,' +
+  'Average heart rate (bpm),Max heart rate (bpm),Min heart rate (bpm),Low latitude (deg),' +
+  'Low longitude (deg),High latitude (deg),High longitude (deg),Average speed (m/s),' +
+  'Max speed (m/s),Min speed (m/s),Step count,Average weight (kg),Max weight (kg),' +
+  'Min weight (kg),Inactive duration (ms),Walking duration (ms)';
+
+describe('Withings recognizer reads columns, not substrings', () => {
+  it("rejects Google Fit's daily activity metrics — THE incident", async () => {
+    const fpath = write(
+      'Daily activity metrics.csv',
+      `${GOOGLE_FIT_DAILY_METRICS_HEADER}\n2015-05-31,,1647.55,,,,,,,,,,,,,,,,,,,\n`,
+    );
+
+    const rec = await new WithingsFileImporter().recognize(
+      {},
+      { filename: 'Daily activity metrics.csv', fullPath: fpath },
+    );
+
+    expect(rec.confidence).toBe(0);
+  });
+
+  it('rejects a directory holding it, which is how the Takeout was claimed', async () => {
+    write('Daily activity metrics/Daily activity metrics.csv', `${GOOGLE_FIT_DAILY_METRICS_HEADER}\n`);
+
+    const rec = await new WithingsFileImporter().recognize(
+      {},
+      { filename: 'Daily activity metrics', fullPath: path.join(dir, 'Daily activity metrics') },
+    );
+
+    expect(rec.confidence).toBe(0);
+  });
+
+  it('still accepts a real Withings export, whose columns ARE the measurements', async () => {
+    const fpath = write(
+      'withings/weight.csv',
+      'Date,Weight (kg),Fat mass (kg),Bone mass (kg),Muscle mass (kg),Hydration (kg)\n' +
+        '2024-01-15 08:30:00,82.5,15.1,3.2,60.0,45.3\n',
+    );
+
+    const single = await new WithingsFileImporter().recognize(
+      {},
+      { filename: 'weight.csv', fullPath: fpath },
+    );
+
+    expect(single.confidence).toBeGreaterThan(0.9);
+
+    const asDir = await new WithingsFileImporter().recognize(
+      {},
+      { filename: 'withings', fullPath: path.join(dir, 'withings') },
+    );
+
+    expect(asDir.confidence).toBeGreaterThan(0.9);
+  });
+});
+
+describe('Discord recognizer checks a directory the way it checks a file', () => {
+  it('rejects Google Chat, which ships the same messages.json layout — THE incident', async () => {
+    write(
+      'Groups/DM 3jCTIYAAAAE/messages.json',
+      JSON.stringify({
+        messages: [
+          {
+            creator: { name: 'Steven Stone', email: 'smstone@example.com', user_type: 'Human' },
+            created_date: 'Tuesday, June 4, 2013 at 1:45:49 AM UTC',
+            text: 'hey',
+            topic_id: 'U0SlEfc4N6U',
+          },
+        ],
+      }),
+    );
+    write(
+      'Groups/Space AAAA6GR04_s/messages.json',
+      JSON.stringify({ messages: [{ creator: { name: 'Liam' }, created_date: 'x', text: 'hi' }] }),
+    );
+
+    const rec = await new DiscordFileImporter().recognize(
+      {},
+      { filename: 'Groups', fullPath: path.join(dir, 'Groups') },
+    );
+
+    expect(rec.confidence).toBe(0);
+  });
+
+  it('still accepts a real Discord package, JSON and CSV alike', async () => {
+    // Written as text, not JSON.stringify: Discord's IDs are snowflakes above
+    // Number.MAX_SAFE_INTEGER and ship unquoted, which is the shape the
+    // recognizer has to cope with.
+    write(
+      'discord-json/messages/c1234567890/messages.json',
+      '[{"ID": 1234567890123456789, "Timestamp": "2022-08-03 17:55:02", "Contents": "gg", "Attachments": ""}]',
+    );
+
+    const asJson = await new DiscordFileImporter().recognize(
+      {},
+      { filename: 'discord-json', fullPath: path.join(dir, 'discord-json') },
+    );
+
+    expect(asJson.confidence).toBeGreaterThan(0.8);
+
+    write(
+      'discord-csv/messages/c1234567890/messages.csv',
+      'ID,Timestamp,Contents,Attachments\n1234567890123456789,2022-08-03 17:55:02,gg,\n',
+    );
+
+    const asCsv = await new DiscordFileImporter().recognize(
+      {},
+      { filename: 'discord-csv', fullPath: path.join(dir, 'discord-csv') },
+    );
+
+    expect(asCsv.confidence).toBeGreaterThan(0.8);
   });
 });

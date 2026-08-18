@@ -1,0 +1,179 @@
+# Import acceptance — CI-Server, August 2026
+
+> **Purpose:** does CI-Server's own import domain do what CI-Import-Tools did,
+> well enough to retire that repo? This is the record of one acceptance pass
+> against a live stack, with the real archives and the real output.
+>
+> Companion docs: the CLI in [`docs/cli/ci-import.md`](../cli/ci-import.md), the
+> enrichment half in [`pipeline-operations.md`](pipeline-operations.md).
+
+Everything below was run on `main` at `d7cc6e102`, against a per-worktree dev
+stack (`make dev`), fresh database, all migrations applied. Numbers are what
+came back, not what should have come back.
+
+---
+
+## What was exercised
+
+| Surface | How | Result |
+|---|---|---|
+| `ci-import datasources` | CLI → live API | 80 importers listed |
+| `ci-import recognize <path>` | CLI → `POST /import/recognize` | works; needs `CI_IMPORT_ROOTS` |
+| `ci-import import <file> --wait` | 425KB zip, then 2.7GB Takeout | upload → unpack → parse → media → push |
+| `ci-import inbox` / `--start` | two units (601MB + 425KB) | scanned, started, consumed by rename |
+| Import wizard (web) | `/sources/import` | Pick/Export/Sync + Inbox/History, live per-stage progress |
+| Post-ingest enrichment | automatic, after push | embeddings, vectors, person links, places |
+| Domain test suites | jest, incl. integration vs live DB | 2,641 unit + 97 import integration pass |
+
+## The 2.7GB archive
+
+`takeout-20260619T044111Z-13-001.zip` — Google Voice (73,123 files), Fit
+(5,982), Contacts (1,292), Google Chat, Maps, My Activity, Keep, Chrome,
+Calendar, Timeline.
+
+```
+unpack  completed      1 / 1
+parse   completed  704,226 / 704,226
+media   completed      0 / 0
+push    running    (see throughput below)
+```
+
+Parse recognized twelve sources and staged from ten:
+
+```
+ data_source        | staged
+--------------------+--------
+ google_my_activity | 322897
+ google_voice       | 309689
+ google_fit         |  66579
+ withings           |   1661   ← wrong; see finding 1
+ google_purchases   |     42
+ generic            |     30
+ google_maps_places |      5
+ calendar           |      3
+ google_keep        |      2
+ vcard              |      1
+```
+
+Kind-based routing holds: Google Voice lands in `ci.communications`
+(35,260 rows at the snapshot), not flattened into `ci.events`. Positions land in
+`ci.position` (7,248). This was the flattening bug the consolidation was
+supposed to fix, and it is fixed.
+
+## Post-ingest enrichment now runs by itself
+
+The gap that blocked retiring CI-Import-Tools — bulk loads that wrote rows and
+never enriched them — is closed. No operator step, no backfill invocation:
+
+```
+ stage                         | status  | count
+-------------------------------+---------+-------
+ index.embed_browser_activity  | done    | 50010
+ index.embed_communication     | done    | 50726
+ index.embed_person            | done    |  2801
+ index.vector_browser_activity | done    | 18693
+ index.vector_communication    | done    | 16776
+ enrich.person_link            | done    |  2279
+ promote.edge_communication    | done    |  2279
+```
+
+103,824 rows in `ci_search.embeddings` while the push was still running.
+
+The media leg works too: the 425KB smoke archive produced 31 `ci.files` rows
+with `user_id` populated — the two specific things that were missing after the
+consolidation.
+
+## Findings
+
+### 1. Withings claimed Google Fit's data — FIXED
+
+`Takeout/Fit/Daily activity metrics/Daily activity metrics.csv` has the header
+
+```
+Date,Move Minutes count,Calories (kcal),…,Average weight (kg),Max weight (kg),Min weight (kg),…
+```
+
+The Withings recognizer asked only whether the header started with `Date,` and
+contained `(kg)` **anywhere**. Both true. Withings won the file at 0.85 and
+staged 1,661 rows of Google Fit daily metrics as `data_source='withings'`,
+carrying `metadata.Source = "Withings"` — and `withings` then appeared in the
+run's `data_sources`, telling the user a service they have never used had given
+the appliance data.
+
+Fixed by reading columns instead of substrings: an aggregate
+(`Average…`/`Max…`/`Min…`) is a statistic about a measurement, not a
+measurement. A real Withings export names its columns outright
+(`Weight (kg)`, `Fat mass (kg)`) and still matches.
+
+### 2. Discord claimed Google Chat — FIXED
+
+`Google Chat/Groups/<Space|DM …>/messages.json` is the exact layout Discord's
+directory recognizer looked for, and it checked the **filename only** while the
+file-level branch checked content. Discord matched the folder at 0.85. It staged
+nothing (the parser correctly read nothing it understood), but the service was
+still reported as recognized.
+
+Fixed by giving the directory branch the same content check the file branch
+already had, behind a cheap 4KB prefix sniff so a large export is not parsed in
+full to be rejected.
+
+### 3. `import --wait` exited 0 on an unfinished run — FIXED
+
+The most consequential of the three, because a script reads the exit code.
+
+`waitForRuns` caught **every** `getRun` failure and dropped the run from the
+wait set — the comment said "gone, or momentarily unreachable", and treated the
+two identically. When the appliance restarted mid-import (a deploy, a worker
+recycling, `nodemon` reloading in development), the poll failed once, the only
+pending run was dropped, the loop found nothing pending and returned
+successfully. Observed for real: `ci-import import … --wait` printed
+`87% running push/pushing 99847/704226` and exited **0** with the push at 14%.
+
+Fixed: a 404 still means gone; everything else is retried up to five consecutive
+failures and then raised as `WaitUnreachableError` (exit 2), naming the run and
+how to follow it.
+
+### 4. Fitbit claims a Google-Fit-only export — by design, worth revisiting
+
+`FitbitFileImporter.recognize` deliberately claims a Takeout `Fit/` folder below
+Google Fit's own confidence, "so the import resolves a root instead of importing
+nothing". It contributes no rows, and the run's `data_sources` correctly
+excludes it — but `recognize` and the parse-stage banner both list it, which
+reads as a false positive to anyone looking. Left alone: the intent is
+documented and the run record is honest.
+
+### 5. Geocoding failures are the external provider, not the pipeline
+
+`enrich.geocode` (2) and `enrich.position_reverse` (322) recorded
+`provider_unavailable` — `OVER_QUERY_LIMIT` or transport failure from the
+metered provider behind CI-Portal. The stages mark these **failed and
+retryable** on purpose rather than writing the rows off as empty, so they come
+back on the provider's schedule. Expected on a dev box; worth watching on an
+appliance.
+
+### 6. Push throughput here was environmental
+
+1,000 rows/minute, measured over 60s. Postgres was **idle** (`ClientRead` on
+every connection) while the host sat at 79% user CPU and a load average of 57 on
+12 cores, with a second worktree's full stack running alongside. The push was
+starved of CPU, not blocked on the database. Re-measure on an idle box before
+reading anything into the number.
+
+## Gotchas for the next person
+
+- **Environment changes need a full stack restart.** overmind exports `.env` to
+  its children and dotenv will not override an already-set variable, so editing
+  `.env` and letting nodemon reload silently keeps the old value. `CI_IMPORT_ROOTS`
+  looked broken for ten minutes because of this.
+- **The dev-stack reallocates ports on every `up`.** `IMPORT_TEST_DATABASE_URL`
+  pinned to yesterday's port fails as "nothing accepting connections", which
+  reads like an absent database. Always take it from `make dburl`.
+- **`*_TEST_PROBE_TIMEOUT_MS` matters on a loaded box.** The synchronous probe
+  spawns a node process; 2,000 ms is not always enough to spawn it.
+- **The inbox consumes what it imports** (unpack acquires by rename). Copy into
+  it; never point it at the only copy of a corpus. The upload path (`ci-import
+  import <file>`) leaves the original alone.
+- **`backpressureRelief.integration.spec.ts` refuses to run while a queue has
+  work** — by design. Run the pipeline suite on an idle appliance.
+- **Known flake:** `gmail_relationships.test.ts` asserts wall-clock < 2,000 ms;
+  it took 156 ms alone and 2,223 ms under this load. Re-run before believing it.

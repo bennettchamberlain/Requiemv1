@@ -20,6 +20,28 @@ function headerLine(text: string): string {
   return (nl === -1 ? text : text.slice(0, nl)).replace(/\r$/, '');
 }
 
+// A statistic ABOUT a measurement is not a measurement.
+//
+// Google Fit's aggregate `Daily activity metrics.csv` begins with "Date," and
+// carries "Average weight (kg)", "Max weight (kg)" and "Min weight (kg)" — which
+// is all the old `header.includes('(kg)')` needed. A Google Takeout's Fit data
+// therefore staged as 1,661 rows of `data_source='withings'` carrying
+// `Source: "Withings"`, and Withings appeared in the run's services as though
+// the user had exported from it. Withings names its columns outright
+// ("Weight (kg)", "Fat mass (kg)"); no Withings export prefixes one with an
+// aggregate.
+const AGGREGATE_COLUMN = /^(average|max|min|total|mean|median)\b/i;
+
+function isMeasurementColumn(column: string): boolean {
+  const name = column.trim();
+
+  if (AGGREGATE_COLUMN.test(name)) {
+    return false;
+  }
+
+  return name.includes('(kg)') || name.includes('Weight');
+}
+
 // A Withings CSV header begins with "Date," and carries a body-measurement
 // column such as "(kg)" or "Weight". This is specific enough to avoid matching
 // other CSV importers (e.g. Netflix's "Start Time,...").
@@ -28,7 +50,7 @@ function headerLooksLikeWithings(header: string): boolean {
     return false;
   }
 
-  return header.includes('(kg)') || header.includes('Weight');
+  return header.split(',').some(isMeasurementColumn);
 }
 
 // Read the first ~4KB and inspect the CSV header row.
