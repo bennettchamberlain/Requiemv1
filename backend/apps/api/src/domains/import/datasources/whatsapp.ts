@@ -19,6 +19,50 @@ import { timeframeContains } from './timeline';
 // starting its own — the source of the cross-sender content merging.
 const IOS_RE =
   /^\[(\d{1,2}\/\d{1,2}\/\d{2,4}), (\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AP]M)?)\] ([^:]+):[ ]?([\s\S]*)$/;
+/**
+ * The chat's name, from the only place an export records it: the directory.
+ *
+ * This is IDENTITY, not decoration — every message id is
+ * `whatsapp:<conversationName>:<timestamp>:<seq>`, and `Conversation` becomes
+ * the thread id. So it has to be the same name however the archive arrived, and
+ * it was not: uploading sanitises spaces to underscores, while the inbox keeps
+ * the name verbatim. The same export therefore produced
+ *
+ *   whatsapp:LITA _ Companion Tech Team:2025-12-21T17:58:57.000Z:267          (inbox)
+ *   whatsapp:WhatsApp_Chat_-_LITA___Companion_Tech_Team:2026-02-04T…:2683     (upload)
+ *
+ * — different provenance triples for the same message, so re-importing one
+ * export through the other route duplicated all 5,329 messages instead of
+ * deduping them, and the two runs disagreed about the thread as well. The old
+ * prefix strip contributed: `/^WhatsApp Chat( with| -)?/i` only matches the
+ * space-separated form, so the sanitised name kept `WhatsApp_Chat_-_` as part
+ * of the chat's own name.
+ *
+ * Separators are normalised BEFORE the prefix is stripped, so both spellings
+ * converge on `LITA Companion Tech Team`.
+ */
+function conversationNameFrom(chatPath: string): string {
+  const normalise = (value: string): string =>
+    value
+      // Underscores stand in for characters the exporter or the upload path
+      // could not keep — including the `|` in this corpus's own chat name.
+      .replace(/[_+]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const fromDirectory = normalise(path.basename(path.dirname(chatPath)))
+    .replace(/^WhatsApp Chat(\s+(?:with|-))?\s*/i, '')
+    .trim();
+
+  if (fromDirectory) {
+    return fromDirectory;
+  }
+
+  const fromFile = normalise(path.basename(chatPath, '.txt').replace(/_chat/i, ''));
+
+  return fromFile || 'Chat';
+}
+
 // Android: DD/MM/YYYY, HH:MM - Sender: message
 const ANDROID_RE = /^(\d{2}\/\d{2}\/\d{4}), (\d{2}:\d{2}) - ([^:]+):[ ]?([\s\S]*)$/;
 
@@ -190,13 +234,7 @@ export class WhatsAppFileImporter implements FileImporter {
       return;
     }
 
-    const conversationName =
-      path
-        .basename(path.dirname(chatPath))
-        .replace(/^WhatsApp Chat( with| -)?/i, '')
-        .trim() ||
-      path.basename(chatPath, '.txt').replace(/_chat/i, '').trim() ||
-      'Chat';
+    const conversationName = conversationNameFrom(chatPath);
 
     // Attached media sits next to _chat.txt in the same export directory.
     const mediaDir = path.dirname(chatPath);
