@@ -535,13 +535,24 @@ export class KnownPlacesService {
    * 9–5 events. The two are distinct clusters where possible.
    */
   private assignPrimaryKinds(candidates: KnownPlaceCandidate[], clusters: Map<string, Cluster>): void {
-    const clusterFor = (candidate: KnownPlaceCandidate): Cluster | undefined =>
-      [...clusters.values()].find(
+    // An id-anchored candidate resolves ONLY by locationId (the cluster map is
+    // keyed by location_entity_id when present, so this is an exact O(1)
+    // lookup, not a heuristic match). The coordinate-centroid fallback is
+    // scoped to clusters WITHOUT a locationId, so it only ever matches
+    // grid-only candidates — two Location-anchored clusters that happen to
+    // share a centroid can never be confused with each other.
+    const clusterFor = (candidate: KnownPlaceCandidate): Cluster | undefined => {
+      if (candidate.locationId) {
+        return clusters.get(candidate.locationId);
+      }
+
+      return [...clusters.values()].find(
         (cluster) =>
-          (cluster.locationId && cluster.locationId === candidate.locationId) ||
-          (Math.abs(cluster.latSum / cluster.eventCount - candidate.lat) < 1e-6 &&
-            Math.abs(cluster.lngSum / cluster.eventCount - candidate.lng) < 1e-6),
+          !cluster.locationId &&
+          Math.abs(cluster.latSum / cluster.eventCount - candidate.lat) < 1e-6 &&
+          Math.abs(cluster.lngSum / cluster.eventCount - candidate.lng) < 1e-6,
       );
+    };
 
     let homeIdx = -1;
     let workIdx = -1;
