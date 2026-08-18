@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import Database from 'better-sqlite3';
 
-import { allDataSources } from '../registry';
+import { allDataSources, dataSourcesRecognize } from '../registry';
 import type { ImportParams, Timeframe } from '../timeline';
 
 import type { EmittedGraph } from './support/emitted';
@@ -275,3 +275,74 @@ describe('Chromium bookmarks', () => {
 // into this directory instead would let the two copies drift, which is precisely
 // what that test exists to catch. Every other case in this file builds its own
 // SQLite database and is unaffected.
+
+/*
+ * A real Chrome profile has `History` and `Bookmarks` side by side, and
+ * chromium.ts correctly recognizes each independently (its own recognize()
+ * unit tests above prove this in isolation). But recognizing each file is not
+ * the same as IMPORTING each file: `dataSourcesRecognize` (registry.ts) used
+ * to keep only ONE match per data-source NAME across a whole directory —
+ * "best match per data source" — which conflated two different situations:
+ * the same unit seen at two nesting levels (correctly collapsed) and two
+ * unrelated sibling files the same importer happens to also recognize
+ * (incorrectly collapsed onto whichever `readdir()` returned first). Because
+ * `ParseStage.run()` calls the file importer exactly once per surviving
+ * match, the dropped sibling was never imported at all — silently, with the
+ * run reporting `completed`, zero failures. Confirmed live: importing a real
+ * ~44MB Chrome profile landed 3,197 bookmarks and ZERO history rows,
+ * deterministically, twice in a row.
+ *
+ * These tests exercise the registry function directly rather than
+ * `importer.recognize()` in isolation, because the bug lived in how the
+ * registry COMBINES multiple per-file recognitions, not in any single call.
+ */
+describe('recognizing a directory with two sibling Chromium files', () => {
+  function makeMinimalBookmarksFile(dir: string): string {
+    const p = path.join(dir, 'Bookmarks');
+    fs.writeFileSync(p, JSON.stringify({ roots: {} }));
+
+    return p;
+  }
+
+  it('keeps both the History and Bookmarks matches, not just whichever sorts first', async () => {
+    const dir = tmpdir();
+    makeHistoryDb(dir);
+    makeMinimalBookmarksFile(dir);
+
+    const matches = await dataSourcesRecognize(
+      undefined,
+      { filename: path.basename(dir), fullPath: dir, fsRoot: dir },
+      {},
+      { descend: true },
+    );
+
+    const chromiumMatches = matches.filter((m) => m.data_source.name === 'chromium');
+
+    expect(chromiumMatches).toHaveLength(2);
+    expect(new Set(chromiumMatches.map((m) => path.basename(m.matchedPath ?? '')))).toEqual(
+      new Set(['History', 'Bookmarks']),
+    );
+    expect(chromiumMatches.every((m) => m.recognition.confidence > 0.9)).toBe(true);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('still collapses the same match found at two nesting levels', async () => {
+    // A file matched both when handed directly AND when found by descending
+    // into its own parent (the top-level `recognizeLevel` call and the
+    // descent both walk into the same tree here) must not double-count —
+    // this is the case the original dedup existed to handle, and the fix
+    // must not regress it.
+    const dir = tmpdir();
+    const historyPath = makeHistoryDb(dir);
+
+    const matches = await dataSourcesRecognize(
+      undefined,
+      { filename: path.basename(historyPath), fullPath: historyPath, fsRoot: dir },
+      {},
+      { descend: true },
+    );
+
+    expect(matches.filter((m) => m.data_source.name === 'chromium')).toHaveLength(1);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
