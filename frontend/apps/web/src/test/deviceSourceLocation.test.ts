@@ -6,6 +6,7 @@ import {
   buildPositionRecord,
   captureLocationFix,
   createLocationSampler,
+  fixFromGeolocationPosition,
   haversineMeters,
   positionSourceId,
   type DeviceLocationFix,
@@ -693,5 +694,77 @@ describe('flushing positions — routing and the ingest-finish loop', () => {
     // The fix is still queued, not lost.
     expect(store.size).toBe(1);
     expect(calls.some((call) => call.url === INGEST_FINISH_PATH)).toBe(false);
+  });
+});
+
+/**
+ * `useLocationTracking` is the only caller, and it mocks this adapter away entirely
+ * (correctly — it isn't the hook's own logic to test). That leaves the adapter itself
+ * with no direct coverage anywhere, despite owning a real invariant: `time` must be the
+ * OS's fix instant, never the moment the app got around to reading it.
+ */
+describe('fixFromGeolocationPosition', () => {
+  function geolocationPosition(overrides: Partial<GeolocationCoordinates> = {}): GeolocationPosition {
+    return {
+      coords: {
+        latitude: SF_LAT,
+        longitude: SF_LNG,
+        accuracy: 12,
+        altitude: 15,
+        altitudeAccuracy: 5,
+        heading: 270,
+        speed: 3.5,
+        ...overrides,
+      },
+      timestamp: CAPTURED_AT,
+    } as unknown as GeolocationPosition;
+  }
+
+  it('carries every coordinate field straight across, unrenamed', () => {
+    const fix = fixFromGeolocationPosition(geolocationPosition());
+
+    expect(fix).toEqual({
+      latitude: SF_LAT,
+      longitude: SF_LNG,
+      accuracyMeters: 12,
+      altitudeMeters: 15,
+      headingDegrees: 270,
+      speedMetersPerSecond: 3.5,
+      capturedAtMs: CAPTURED_AT,
+    });
+  });
+
+  it('uses the fix instant the OS reports, not the moment the app read it', () => {
+    // Distinct from "now" on purpose — a fix pulled off `getCurrentPosition` after sitting
+    // in the queue overnight still belongs to the night it was actually taken.
+    const takenLastNight = CAPTURED_AT - 8 * 60 * 60 * 1000;
+
+    const fix = fixFromGeolocationPosition(geolocationPosition());
+    expect(fix.capturedAtMs).toBe(CAPTURED_AT);
+
+    const fixFromLastNight = fixFromGeolocationPosition({
+      ...geolocationPosition(),
+      timestamp: takenLastNight,
+    } as GeolocationPosition);
+    expect(fixFromLastNight.capturedAtMs).toBe(takenLastNight);
+  });
+
+  it('falls back to the current time only when the platform reports no timestamp at all', () => {
+    const before = Date.now();
+    const fix = fixFromGeolocationPosition({ ...geolocationPosition(), timestamp: 0 } as GeolocationPosition);
+    const after = Date.now();
+
+    expect(fix.capturedAtMs).toBeGreaterThanOrEqual(before);
+    expect(fix.capturedAtMs).toBeLessThanOrEqual(after);
+  });
+
+  it('passes through null optional fields rather than coercing them to 0', () => {
+    const fix = fixFromGeolocationPosition(
+      geolocationPosition({ altitude: null, heading: null, speed: null }),
+    );
+
+    expect(fix.altitudeMeters).toBeNull();
+    expect(fix.headingDegrees).toBeNull();
+    expect(fix.speedMetersPerSecond).toBeNull();
   });
 });
