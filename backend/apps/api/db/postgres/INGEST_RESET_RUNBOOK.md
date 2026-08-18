@@ -36,20 +36,27 @@ In a single transaction it:
 Response: `countsBefore` (rows per table at the moment of the reset),
 `truncated` (table list), `searchIndexJobsDeleted`.
 
-## 2. Importer-side watermark reset (CI-Import-Tools)
+## 2. Importer-side watermark reset (legacy CI-Import-Tools only)
 
-The importer only pushes timeline items newer than its stored cursor — key
+CI-Server's own native import domain (`backend/apps/api/src/domains/import/`) is
+run-scoped — each import run stages into `ci_import.*` and dies with that run
+(`ON DELETE CASCADE`) — so there is no cross-run watermark to reset here; a
+fresh import run just starts clean. This step only applies if you are still
+reconciling data pushed by an old, retired **CI-Import-Tools** checkout
+(`ZARCHIVED-CI-Import-Tools`), which tracked its own progress out-of-band:
+
+The old importer only pushed timeline items newer than its stored cursor — key
 `ci_server.last_push` in its SQLite `settings` table (`WATERMARK_KEY` in
 `backend/src/ci-server/push.ts`). After a server reset that cursor still points
 at the end of the previous push, so the next sync would push **nothing**.
 
 ```sql
--- against the importer's SQLite database
+-- against the old importer's SQLite database
 DELETE FROM settings WHERE key = 'ci_server.last_push';
 ```
 
-(Or use whatever "full re-sync" affordance the importer UI exposes; that is
-what it does under the hood.)
+(Or use whatever "full re-sync" affordance the old importer UI exposed; that is
+what it did under the hood.)
 
 ## 3. Verify, re-import, re-enrich
 

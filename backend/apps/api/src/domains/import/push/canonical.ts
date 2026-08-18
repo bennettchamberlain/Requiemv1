@@ -270,8 +270,9 @@ export type Destination =
  * (`BACKFILLABLE_ENTITIES` in CI-Server maintenance/SearchIndexBackfillService).
  * These are the bulk-ingest tables whose `createMany()` no longer emits a per-row
  * `*CreatedEvent`, so their rows must be swept into `ci_search.embeddings` after a
- * push. This is the CI-Import-Tools-side mirror of that closed set — keep the two
- * in sync when CI-Server adds a backfillable type.
+ * push. Until CI-Import-Tools' retirement this was that repo's own mirror of the
+ * closed set, kept in sync by hand; now that the importer is native, keep this
+ * list in sync with `BACKFILLABLE_ENTITIES` directly instead.
  */
 export type BackfillEntityType =
   | 'communication'

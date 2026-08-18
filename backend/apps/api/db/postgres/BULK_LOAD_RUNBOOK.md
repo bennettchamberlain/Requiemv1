@@ -1,7 +1,8 @@
 # Bulk ingest runbook
 
-High-throughput load path for the importer (CI-Import-Tools) and any other very large
-(~1M-row) historical load. Companion to the
+High-throughput load path for the importer (CI-Server's native import domain,
+`backend/apps/api/src/domains/import/` — ported from the now-retired CI-Import-Tools) and
+any other very large (~1M-row) historical load. Companion to the
 [ingest reset runbook](INGEST_RESET_RUNBOOK.md); schema background in
 [docs/architecture/Database.md](../../../../../docs/architecture/Database.md).
 

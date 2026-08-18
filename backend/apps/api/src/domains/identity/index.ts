@@ -5,9 +5,11 @@
  * Nothing consumes it yet; wiring it into the ingest write paths is design P2.
  *
  * The module has no dependencies beyond Node builtins so it can be lifted into
- * `backend/packages/object-identity` and vendored into CI-Import-Tools verbatim
- * (design P3), with `fixtures/identity-fixtures.json` executed by both repos'
- * test runners as the cross-repo contract.
+ * `backend/packages/object-identity` if it needs to stand alone. Design P3
+ * originally planned to vendor it verbatim into CI-Import-Tools, with
+ * `fixtures/identity-fixtures.json` executed by both repos' test runners as
+ * the cross-repo contract — moot now that CI-Import-Tools is retired and its
+ * import functionality is native here.
  */
 export { canonicalizeUrl } from './canonicalizeUrl';
 export { buildNaturalKey, sha256Hex } from './naturalKey';

@@ -88,7 +88,7 @@ Every path that mints an entity, and how it dedupes today:
 | # | Path | Entry point | Provenance stamp |
 |---|------|-------------|------------------|
 | 1 | Connector ETL (Google, Microsoft, Facebook, Signal, Spotify) | `PromoteService.upsertPeopleFromParticipants` | `properties.email` lookup, then create |
-| 2 | Bulk graph import (CI-Import-Tools) | `GraphIngestService.ingest` | `import:<sourceSystem>` / `uuidv5(key)` |
+| 2 | Bulk graph import (native import domain; ported from the retired CI-Import-Tools) | `GraphIngestService.ingest` | `import:<sourceSystem>` / `uuidv5(key)` |
 | 3 | Reverse geocode | `PlaceService.findOrCreateForGeocode` | `properties.source = 'reverse_geocode'` |
 | 4 | Communications participant sweep | `PersonStubBackfillService` | `import:communications:participant` |
 | 5 | LLM / CV inference | `GraphEnrichmentService`, `WriteKnowledgeTool`, `CvDetectionsListener` | varies; often none |

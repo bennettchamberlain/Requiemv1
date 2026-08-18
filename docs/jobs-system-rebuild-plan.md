@@ -6,6 +6,14 @@ Working document. Every claim about the current system below was read out of thi
 (`claude/ci-jobs-system-rebuild-0b9904`) at the time of writing and carries a `path:line` reference.
 Where a prior survey or design asserted something the code does not support, the claim was dropped.
 
+> **2026-08-18 update:** CI-Import-Tools has since been retired (renamed
+> `ZARCHIVED-CI-Import-Tools`); its import functionality was consolidated into
+> CI-Server's own native import domain (`backend/apps/api/src/domains/import/`).
+> References to CI-Import-Tools below describe the system as it existed when
+> this plan was written; §10 ("Changes needed in CI-Import-Tools") in particular
+> is now moot as a set of external-repo action items — any equivalent work
+> belongs in the native import domain instead.
+
 ---
 
 ## 1. Summary

@@ -13,7 +13,7 @@
 
 ## 1. Problem Statement
 
-HBPE was built against a seed corpus of ~10 calendar events/day. The platform now ingests far more, and the flood is **already wired to hit the current pipeline**: browser views dual-write into `ci.events` as `event_type='view'` (`BrowserActivityService.ts:109-113`), and CI-Import-Tools routes media plays, social activity, workouts, sleep, trips, and place-visits into `ci.events` with `event_type` set to the importer kind verbatim (CI-Import-Tools `mapping.ts:511-612`). Nothing shields HBPE from this volume today.
+HBPE was built against a seed corpus of ~10 calendar events/day. The platform now ingests far more, and the flood is **already wired to hit the current pipeline**: browser views dual-write into `ci.events` as `event_type='view'` (`BrowserActivityService.ts:109-113`), and the import domain's `destinationsFor` routes media plays, social activity, workouts, sleep, trips, and place-visits into `ci.events` with `event_type` set to the importer kind verbatim (`backend/apps/api/src/domains/import/push/canonical.ts`, ported from the now-retired CI-Import-Tools' `mapping.ts`). Nothing shields HBPE from this volume today.
 
 | # | Failure | Evidence |
 |---|---|---|
@@ -145,7 +145,7 @@ v1's flat 180-day window bounded retrain cost but weighted a stale Tuesday from 
 
 **Archetype construction.** For each week and day-class, every bucket takes the argmax L0/L1 across that week's constituent days as its token, and the `soft_prob` distribution carries the *frequency* across those days. This is a genuine rolled-up weekly summary expressed in the token vocabulary — and it reuses the occupancy-distribution machinery from §2.3 rather than inventing a second representation.
 
-**Why this shape.** ~52 training sequences replace 90, so retrain cost falls while the recent past keeps full fidelity and the older past keeps its structure. Tier C is the payoff: it puts *last year's version of this week* directly into the training set, so the transformer gets a seasonal echo **without** adding a month or day-of-year embedding — complementing, not duplicating, the statistical seasonal pass in §5.3. When no prior-year data exists, Tier C is simply empty and the corpus degrades gracefully; a user who bulk-imports years of history via CI-Import-Tools gets Tier C from day one.
+**Why this shape.** ~52 training sequences replace 90, so retrain cost falls while the recent past keeps full fidelity and the older past keeps its structure. Tier C is the payoff: it puts *last year's version of this week* directly into the training set, so the transformer gets a seasonal echo **without** adding a month or day-of-year embedding — complementing, not duplicating, the statistical seasonal pass in §5.3. When no prior-year data exists, Tier C is simply empty and the corpus degrades gracefully; a user who bulk-imports years of history via the archive importer gets Tier C from day one.
 
 **Storage — a separate table, deliberately.** Archetype sequences are synthetic. `hbpe.token_stream` is read directly by the recurrence profiler (occurrence counting and inter-arrival gaps) and the occurrence-actuals backfill; synthetic days would double-count occurrences and corrupt gap statistics. Rather than adding a `kind` column and filtering it correctly in four readers, rollups live in **`hbpe.token_stream_rollup`** (same shape plus `tier`, `period_start`, `weight`). Existing readers are untouched by construction; only `dataset.py` opts in.
 

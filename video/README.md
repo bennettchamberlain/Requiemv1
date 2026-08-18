@@ -233,7 +233,11 @@ yarn workspace @ci/be-api exec scripts/bulk-load-indexes.ts drop   # run from ba
 #   Start both under tmux, not a plain background job: `yarn dev` traps SIGINT and
 #   dies with its process group when the shell that launched it is reaped.
 
-# 5. CI-Import-Tools, pointed at a COPY of the corpus (the push writes a watermark
+# 5. CI-Import-Tools has been retired (renamed ZARCHIVED-CI-Import-Tools); its
+#    import functionality is now native in CI-Server (backend/apps/api/src/domains/import/,
+#    see docs/cli/ci-import.md). Porting this step to the native importer is a known
+#    follow-up, not yet done — for now it still requires a standalone CI-Import-Tools
+#    checkout. Pointed at a COPY of the corpus (the push writes a watermark
 #    back into the SQLite file — never run it against the original archive).
 #    The GraphQL lane is mandatory: the default /v1 lane drops event geo, so the
 #    map would be empty. ~45 min for 826,478 items.

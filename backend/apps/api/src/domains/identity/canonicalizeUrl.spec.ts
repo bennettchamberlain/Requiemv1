@@ -11,9 +11,10 @@ interface FixtureCase {
   providerRef?: string;
 }
 
-// Read rather than import: be-api's tsconfig does not enable resolveJsonModule,
-// and this file is the cross-repo contract — it must stay plain JSON that
-// CI-Import-Tools can read with its own loader.
+// Read rather than import: be-api's tsconfig does not enable resolveJsonModule.
+// Kept as plain JSON rather than a .ts module for the same reason design P3
+// wanted it that way — so a second (now-retired) repo's loader could read it
+// too; see the file's own $comment.
 const fixtures = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'identity-fixtures.json'), 'utf8')) as {
   specVersion: number;
   cases: FixtureCase[];

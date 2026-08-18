@@ -498,7 +498,7 @@ describe('classifyEventTime', () => {
     it('never parses a timestamp out of a contentHash', () => {
       // `uber|2026-01-25T09:02:52.000Z|40 Berkeley St…` embeds a perfectly good
       // instant. Reading it would work today and silently re-date the corpus the
-      // day CI-Import-Tools changes its idempotency key format.
+      // day the importer changes its idempotency key format.
       const decision = classifyEventTime(
         row({
           source_system: 'uber',

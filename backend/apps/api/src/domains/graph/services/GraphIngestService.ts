@@ -122,8 +122,11 @@ function isStale(current: NodeEntity, incoming: NodeEntity): boolean {
 }
 
 /**
- * Idempotent bulk ingest of an external knowledge graph (the CI-Import-Tools
- * timeline) into `ci.entities` / `ci.relationships`.
+ * Idempotent bulk ingest of an archive importer's knowledge graph (the
+ * timeline built while parsing a source export) into `ci.entities` /
+ * `ci.relationships`. Called in-process by the native import domain's
+ * `PushStage` (`backend/apps/api/src/domains/import/`); the `bulkIngestGraph`
+ * GraphQL mutation exposes the same path for any external caller.
  *
  * - Entities upsert on (owner_user_id, entity_type, linked_table, linked_id),
  *   where linked_table = `import:<sourceSystem>` and linked_id = uuidv5(key).
