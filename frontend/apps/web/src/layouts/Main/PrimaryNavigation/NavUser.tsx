@@ -165,6 +165,7 @@ function SubRow({ icon, label, to, state, onClick }: SubRowProps) {
  */
 function ThemeSubmenu() {
   const { themeState, setTheme } = useTheme();
+  const { setHoldOpen } = usePowerRail();
 
   return (
     <Collapsible>
@@ -201,7 +202,7 @@ function ThemeSubmenu() {
             </div>
           </div>
 
-          <Popover>
+          <Popover onOpenChange={setHoldOpen}>
             <Popover.Trigger className="flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-accent hover:text-accent-foreground">
               <span className="grid size-8 shrink-0 place-items-center" aria-hidden>
                 <Palette className="h-4 w-4 shrink-0" strokeWidth={1.25} />

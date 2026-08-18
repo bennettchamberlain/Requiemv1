@@ -28,7 +28,7 @@ function params(): URLSearchParams {
   return new URLSearchParams(screen.getByTestId('query').textContent ?? '');
 }
 
-function renderContent(props: Partial<React.ComponentProps<typeof DropdownContent>> = {}, route = '/memory') {
+function renderContent(props: Partial<React.ComponentProps<typeof DropdownContent>> = {}, route = '/memory/events') {
   return renderWithProviders(
     <DropdownProvider args={[{ changeSearchParams: true }]}>
       <DropdownContent {...props} />
@@ -40,7 +40,7 @@ function renderContent(props: Partial<React.ComponentProps<typeof DropdownConten
 
 describe('DropdownContent — date range label', () => {
   it('reads "Any time" when neither end of the range is set', () => {
-    renderContent({}, '/memory');
+    renderContent({}, '/memory/events');
 
     expect(screen.getByRole('button', { name: /any time/i })).toBeInTheDocument();
   });
@@ -73,7 +73,7 @@ describe('DropdownContent — date range label', () => {
 
 describe('DropdownContent — tags', () => {
   it('adds a typed tag to the URL and renders it as a chip', async () => {
-    renderContent({}, '/memory');
+    renderContent({}, '/memory/events');
 
     const input = screen.getByRole('textbox');
     fireEvent.change(input, { target: { value: 'vacation' } });
