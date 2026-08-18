@@ -33,6 +33,23 @@ async function runImport(csv: string): Promise<EmittedGraph[]> {
   }
 }
 
+describe('PayPal recognition', () => {
+  it('does not recognize a same-named CSV with unrelated content', async () => {
+    // "download.csv" is a very common browser default filename for ANY CSV a
+    // user's browser saved via its download button — the filename tier used
+    // to grant 0.5 confidence with no column check at all, regardless of what
+    // the file actually contained.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ci-paypal-lookalike-'));
+    const fpath = path.join(dir, 'download.csv');
+    fs.writeFileSync(fpath, 'Item,Category,Store,Total\nWidget,Home,Target,19.99\n');
+
+    const fi = new PayPalFileImporter();
+    const rec = await fi.recognize({}, { filename: 'download.csv', fullPath: fpath });
+    expect(rec.confidence).toBe(0);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
 describe('PayPal dedup', () => {
   it('assigns a unique, stable id to every transaction that would otherwise collapse', async () => {
     const pipeline = await runImport(COLLAPSING_CSV);
