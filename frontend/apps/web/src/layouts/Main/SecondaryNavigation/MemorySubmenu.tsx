@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Collapsible, Tooltip, cn } from '@ci/shadcn';
 import { Brain, ChevronRight } from '@ci/shadcn/icons';
@@ -15,9 +15,8 @@ import { usePowerRail } from '../PowerRailContext';
 /**
  * Power Rail Memory entry with hub section children.
  *
- * Open state is sticky after an explicit click, otherwise transient from hover
- * or being on a Memory hub route (closes when leaving those routes if it was
- * never click-stuck open).
+ * Open = sticky click, hub route, or hover — unless the user explicitly closed
+ * it (chevron), which suppresses hover/route until they leave or reopen.
  */
 export function MemorySubmenu() {
   const { expanded } = usePowerRail();
@@ -25,12 +24,18 @@ export function MemorySubmenu() {
   const { isFeatureEnabled } = useFeatures();
   const [stickyOpen, setStickyOpen] = useState(false);
   const [hoverOpen, setHoverOpen] = useState(false);
+  /** User closed via chevron — ignore hover/route until mouse leave or reopen. */
+  const [dismissed, setDismissed] = useState(false);
 
   const routeOpen = isMemoryHubPath(pathname);
-  const open = stickyOpen || routeOpen || hoverOpen;
-  const parentActive = routeOpen;
+  const open = dismissed ? false : stickyOpen || routeOpen || hoverOpen;
 
   const visible = MEMORY_HUB_SECTIONS.filter((section) => !section.flag || isFeatureEnabled(section.flag));
+
+  // New hub page → allow auto-open again.
+  useEffect(() => {
+    setDismissed(false);
+  }, [pathname]);
 
   if (!expanded) {
     const collapsed = (
@@ -38,8 +43,8 @@ export function MemorySubmenu() {
         to="/memory/events"
         aria-label="Memory"
         className={cn(
-          'relative rounded-md border-l-2 border-transparent p-2 transition will-change-transform hover:bg-accent hover:text-accent-foreground active:scale-95',
-          parentActive && 'border-l-primary text-primary hover:text-primary dark:shadow-glow-ci',
+          'relative rounded-md border-l-2 border-transparent p-2 transition hover:bg-accent hover:text-accent-foreground',
+          routeOpen && 'border-l-primary text-primary hover:text-primary',
         )}
       >
         <Brain className="h-6 w-6 shrink-0" strokeWidth={1.25} />
@@ -55,45 +60,52 @@ export function MemorySubmenu() {
   }
 
   return (
-    <div onMouseEnter={() => setHoverOpen(true)} onMouseLeave={() => setHoverOpen(false)}>
+    <div
+      data-testid="memory-submenu"
+      className="min-w-0 w-full overflow-hidden"
+      onMouseEnter={() => setHoverOpen(true)}
+      onMouseLeave={() => {
+        setHoverOpen(false);
+        setDismissed(false);
+      }}
+    >
       <Collapsible
         open={open}
         onOpenChange={(next) => {
-          // Chevron / trigger: pin open on open; unpin sticky on close (route
-          // or hover may still keep the panel visible).
-          setStickyOpen(next);
+          if (next) {
+            setStickyOpen(true);
+            setDismissed(false);
+          } else {
+            setStickyOpen(false);
+            setDismissed(true);
+          }
         }}
+        className="min-w-0 w-full"
       >
-        <div
-          className={cn(
-            'flex w-full items-center gap-1 rounded-md border-l-2 border-transparent transition',
-            parentActive && 'border-l-primary text-primary dark:shadow-glow-ci',
-          )}
-        >
+        {/* One row: Memory + chevron share the same box (same geometry as NavLink). */}
+        <div className="flex min-w-0 w-full items-center rounded-md border-l-2 border-transparent">
           <Link
             to="/memory/events"
             aria-label="Memory"
-            onClick={() => setStickyOpen(true)}
-            className={cn(
-              'flex min-w-0 flex-1 items-center gap-3 rounded-md px-2 py-2 transition hover:bg-accent hover:text-accent-foreground',
-              parentActive && 'hover:text-primary',
-            )}
+            onClick={() => {
+              setStickyOpen(true);
+              setDismissed(false);
+            }}
+            className="flex min-w-0 flex-1 items-center gap-3 rounded-l-md px-2 py-2 transition hover:bg-accent hover:text-accent-foreground"
           >
-            <span className="grid size-8 shrink-0 place-items-center">
-              <Brain className="h-6 w-6" strokeWidth={1.25} />
-            </span>
+            <Brain className="h-6 w-6 shrink-0" strokeWidth={1.25} />
             <span className="truncate text-sm">Memory</span>
           </Link>
           <Collapsible.Trigger
-            className="rounded-md p-2 transition hover:bg-accent hover:text-accent-foreground [&[data-state=open]>svg]:rotate-90"
+            className="flex shrink-0 items-center self-stretch rounded-r-md px-2 transition hover:bg-accent hover:text-accent-foreground [&[data-state=open]>svg]:rotate-90"
             aria-label={open ? 'Collapse Memory sections' : 'Expand Memory sections'}
           >
             <ChevronRight className="h-4 w-4 shrink-0 transition-transform" />
           </Collapsible.Trigger>
         </div>
 
-        <Collapsible.Content className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
-          <div className="flex flex-col gap-0.5 py-0.5">
+        <Collapsible.Content className="min-w-0 overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
+          <div className="flex min-w-0 flex-col">
             {visible.map((section) => {
               const Icon = section.icon;
               const active = section.match(pathname);
@@ -105,12 +117,15 @@ export function MemorySubmenu() {
                   aria-label={section.label}
                   aria-current={active ? 'page' : undefined}
                   className={cn(
-                    'flex items-center gap-3 rounded-md border-l-2 border-transparent px-2 py-0.5 text-sm transition hover:bg-accent hover:text-accent-foreground',
-                    active && 'border-l-primary text-primary hover:text-primary dark:shadow-glow-ci',
+                    'flex min-w-0 items-center gap-2 rounded-md border-l-2 border-transparent px-2 py-0 text-sm leading-tight transition hover:bg-accent hover:text-accent-foreground',
+                    active && 'border-l-primary text-primary hover:text-primary',
                   )}
                 >
-                  <span className="grid size-8 shrink-0 place-items-center" aria-hidden>
-                    <Icon className="h-4 w-4" colorized={false} />
+                  <span
+                    className="grid size-6 shrink-0 place-items-center [&>svg]:!h-4 [&>svg]:!w-4"
+                    aria-hidden
+                  >
+                    <Icon colorized={false} />
                   </span>
                   <span className="truncate">{section.label}</span>
                 </Link>
