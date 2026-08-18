@@ -12,6 +12,7 @@ import {
 
 import { shouldSkipHydrationCandidate } from '../utils/hydrationCandidateFilter';
 
+import { ConceptExtractionService } from './ConceptExtractionService';
 import { PersonalizationService } from './PersonalizationService';
 
 export interface HydrationResult {
@@ -32,6 +33,7 @@ export class CrossTableHydrationService {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly graphIngestService: GraphIngestService,
     private readonly personalizationService: PersonalizationService,
+    private readonly conceptExtractionService: ConceptExtractionService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(CrossTableHydrationService.name);
@@ -124,32 +126,50 @@ export class CrossTableHydrationService {
         continue;
       }
 
-      // No slicing here any more. shouldSkipHydrationCandidate now rejects any
-      // text longer than the 64-char key window, so by this point the label is
-      // short enough that both the name and the key are the text verbatim —
-      // which is what makes the dedupe key meaningful. Slicing was what let a
-      // paragraph become a concept named by an arbitrary cut of itself.
+      // The concept is NAMED by a model that reads both the question and the
+      // answer, never taken from the answer text. An answer is evidence about a
+      // concept, not its name — "Tacos" only looks like a label because that
+      // question happened to be phrased so its answer was already a noun.
       //
-      // `type` is not asserted. It used to be hardcoded 'activity', which was
-      // already wrong for the answers this path actually sees ("Documentaries"
-      // is not an activity); guessing a category from a one-word answer is not
-      // something this extractor can do, so it records provenance and nothing more.
+      // Null means "no promotable preference here", which is the common and
+      // correct outcome for traits, schedules and facts. It is also what an LLM
+      // failure returns; there is deliberately no fall back to the raw text,
+      // since that fallback is precisely what wrote sentence fragments into the
+      // graph as concepts.
+      const concept = await this.conceptExtractionService.extract(context, {
+        questionText: row.questionText,
+        answerText: text,
+      });
+
+      if (!concept) {
+        result.skipped += 1;
+        continue;
+      }
+
+      // Keyed on the concept NAME, not the answer, so two phrasings of the same
+      // preference converge on one node — and on the same node onboarding
+      // already wrote, rather than minting a second "Tacos".
+      const conceptKey = `concept:${concept.name.toLowerCase()}`;
+
       const entities: GraphEntityInputDto[] = [
         {
-          key: `${sourceJob}:concept:${text.toLowerCase()}`,
+          key: conceptKey,
           entityType: 'Concept',
-          name: text,
+          name: concept.name,
           sourceSystem: sourceJob,
-          properties: { source: sourceJob },
+          properties: { source: sourceJob, category: concept.category },
         },
       ];
 
+      // PREFERS/DISLIKES, matching onboarding and the pair ReadKnowledgeTool
+      // queries for "What do I like?". The previous INTERESTED_IN was read by
+      // nothing, so everything this path promoted was invisible to the agent.
       const relationships: GraphRelationshipInputDto[] = [
         {
           fromKey: 'self',
-          toKey: entities[0]!.key,
-          type: 'INTERESTED_IN',
-          properties: { strength: 0.6 },
+          toKey: conceptKey,
+          type: concept.relationshipType,
+          properties: { strength: concept.strength, source: sourceJob, category: concept.category },
         },
       ];
 
