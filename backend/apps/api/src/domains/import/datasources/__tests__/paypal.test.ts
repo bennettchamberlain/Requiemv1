@@ -152,3 +152,93 @@ describe('PayPal dedup', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 });
+
+describe('PayPal recognize()', () => {
+  const HEADER_CSV =
+    '"Date","Time","Name","Type","Status","Currency","Gross","Fee","Net","Transaction ID"\n' +
+    '"01/15/2023","10:00:00","Jane Doe","Payment","Completed","USD","-24.50","0.00","-24.50","TXN1"\n';
+  // Same shape of data, but without the '"Date"'/'"Transaction ID"' quoted
+  // header cells the sniffer looks for (e.g. an already-reformatted export).
+  const NON_MATCHING_CSV = 'Date,Time,Name,Amount\n01/15/2023,10:00:00,Jane Doe,-24.50\n';
+
+  async function withTempFile(
+    name: string,
+    content: string,
+    fn: (fpath: string) => Promise<void>,
+  ): Promise<void> {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'paypal-recognize-'));
+    const fpath = path.join(dir, name);
+    await fs.promises.writeFile(fpath, content);
+    try {
+      await fn(fpath);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it('gives high confidence when the CSV header carries the PayPal signature ("Date" + "Transaction ID")', async () => {
+    await withTempFile('statement.csv', HEADER_CSV, async (fpath) => {
+      const fi = new PayPalFileImporter();
+      const rec = await fi.recognize({}, { filename: 'statement.csv', fullPath: fpath });
+      expect(rec.confidence).toBe(0.9);
+    });
+  });
+
+  it('falls back to a moderate 0.5 confidence for "download.csv" whose header does not match', async () => {
+    await withTempFile('download.csv', NON_MATCHING_CSV, async (fpath) => {
+      const fi = new PayPalFileImporter();
+      const rec = await fi.recognize({}, { filename: 'download.csv', fullPath: fpath });
+      expect(rec.confidence).toBe(0.5);
+    });
+  });
+
+  it('falls back to a moderate 0.5 confidence for a "paypal*.csv" filename whose header does not match', async () => {
+    await withTempFile('paypal_export_2024.csv', NON_MATCHING_CSV, async (fpath) => {
+      const fi = new PayPalFileImporter();
+      const rec = await fi.recognize({}, { filename: 'paypal_export_2024.csv', fullPath: fpath });
+      expect(rec.confidence).toBe(0.5);
+    });
+  });
+
+  it('gives zero confidence to an unrelated CSV whose name and header both miss', async () => {
+    await withTempFile('transactions.csv', NON_MATCHING_CSV, async (fpath) => {
+      const fi = new PayPalFileImporter();
+      const rec = await fi.recognize({}, { filename: 'transactions.csv', fullPath: fpath });
+      expect(rec.confidence).toBe(0);
+    });
+  });
+
+  it('gives zero confidence to a non-.csv file even if it is named like a PayPal export', async () => {
+    await withTempFile('paypal_export.txt', HEADER_CSV, async (fpath) => {
+      const fi = new PayPalFileImporter();
+      const rec = await fi.recognize({}, { filename: 'paypal_export.txt', fullPath: fpath });
+      expect(rec.confidence).toBe(0);
+    });
+  });
+
+  it('recognizes a directory by scanning its CSVs for a matching header', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'paypal-recognize-dir-'));
+    try {
+      await fs.promises.writeFile(path.join(dir, 'unrelated.csv'), NON_MATCHING_CSV);
+      await fs.promises.writeFile(path.join(dir, 'statement.csv'), HEADER_CSV);
+      const fi = new PayPalFileImporter();
+      const rec = await fi.recognize({}, { filename: path.basename(dir), fullPath: dir });
+      expect(rec.confidence).toBe(0.9);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('gives a directory with no matching CSV a low dir_threshold instead of a false match', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'paypal-recognize-dir-'));
+    try {
+      await fs.promises.writeFile(path.join(dir, 'unrelated.csv'), NON_MATCHING_CSV);
+      const fi = new PayPalFileImporter();
+      const rec = await fi.recognize({}, { filename: path.basename(dir), fullPath: dir });
+      expect(rec.confidence).toBe(0);
+      expect(rec.dir_threshold).toBe(0.7);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
