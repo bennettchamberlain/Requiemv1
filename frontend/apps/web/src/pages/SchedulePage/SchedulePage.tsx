@@ -356,25 +356,15 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
 
         {showScheduleSurface && (
           <>
-            {/* Story strip when the selected day has events, then Possibilities,
-                then the week. Possibilities stays a full-width rail so a drag
-                still runs downward onto a day. */}
+            {/* Story strip, then the week, then Possibilities. The slate sits
+                under the grid so the week stays the primary surface; drag still
+                works onto a day above. */}
             <div className="flex flex-col gap-4">
               {weekOffset !== 0 && !hasAnything && !fetching && (
                 <p className="text-sm text-muted-foreground">Nothing on the calendar this week.</p>
               )}
 
               <TodayStoryTimeline events={events} day={selectedDay} />
-
-              <TaskSlate
-                candidates={candidates}
-                loading={candidatesLoading}
-                error={candidatesError}
-                onDecline={handleDecline}
-                onSnooze={handleSnooze}
-                onBreakDown={breakDown}
-                onReturnEvent={handleReturnEvent}
-              />
 
               <HorizonGrid
                 start={start}
@@ -387,6 +377,16 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
                 onDropCandidate={handleDrop}
                 onMoveEvent={handleMove}
                 footer={rhythmFooter(generatedAt, rhythmCoversWindow)}
+              />
+
+              <TaskSlate
+                candidates={candidates}
+                loading={candidatesLoading}
+                error={candidatesError}
+                onDecline={handleDecline}
+                onSnooze={handleSnooze}
+                onBreakDown={breakDown}
+                onReturnEvent={handleReturnEvent}
               />
             </div>
           </>

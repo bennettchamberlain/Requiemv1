@@ -592,7 +592,7 @@ export function TaskSlate({
             describing the zero cards that are not there — and the paragraph
             below already explains an empty rail properly. */}
         <span className="text-[11px] text-muted-foreground">
-          {returnable ? 'drop to take it off the week' : hasCards ? 'drag one onto a day below' : null}
+          {returnable ? 'drop to take it off the week' : hasCards ? 'drag one onto a day above' : null}
         </span>
       </div>
 
