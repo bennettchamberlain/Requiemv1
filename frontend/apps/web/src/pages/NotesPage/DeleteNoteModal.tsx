@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 import { useMutation, type Reference, isReference } from '@apollo/client';
 import { Button, Dialog } from '@ci/shadcn';
 
@@ -8,7 +10,7 @@ interface Props {
   onClose: () => void;
 }
 
-const DELETE_NOTE = gql(`
+export const DELETE_NOTE = gql(`
   mutation DeleteNote($input: DeleteByIdInput!) {
     deleteNote(input: $input) {
       success
@@ -18,6 +20,7 @@ const DELETE_NOTE = gql(`
 `);
 
 export function DeleteNoteModal({ noteId, onClose }: Props) {
+  const [error, setError] = useState<string | null>(null);
   const [deleteNote, { loading: deleting }] = useMutation(DELETE_NOTE, {
     update(cache, { data }) {
       const deletedNoteId = data?.deleteNote?.deletedId;
@@ -63,15 +66,21 @@ export function DeleteNoteModal({ noteId, onClose }: Props) {
   });
 
   const handleDelete = async () => {
-    await deleteNote({
-      variables: {
-        input: {
-          id: noteId,
-        },
-      },
-    });
+    setError(null);
 
-    onClose();
+    try {
+      await deleteNote({
+        variables: {
+          input: {
+            id: noteId,
+          },
+        },
+      });
+
+      onClose();
+    } catch {
+      setError('Could not delete this note. Please try again.');
+    }
   };
 
   return (
@@ -83,6 +92,7 @@ export function DeleteNoteModal({ noteId, onClose }: Props) {
             Are you sure you want to delete this note? This action cannot be undone.
           </Dialog.Description>
         </Dialog.Header>
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <Dialog.Footer>
           <Button variant="outline" onClick={onClose} disabled={deleting}>
             Cancel
