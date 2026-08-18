@@ -92,7 +92,12 @@ function HelpSubmenu() {
   return (
     <Collapsible>
       <Collapsible.Trigger className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition hover:bg-accent hover:text-accent-foreground [&[data-state=open]>svg:last-child]:rotate-90">
-        <CircleHelp className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+        {/* Same 32px leading cell as the account avatar so "Help" and the
+            name share one left edge, instead of each label padding off its
+            own icon width. */}
+        <span className="grid size-8 shrink-0 place-items-center">
+          <CircleHelp className="h-6 w-6" strokeWidth={1.25} />
+        </span>
         <span className="flex-1 truncate text-sm">Help</span>
         <ChevronRight className="h-4 w-4 shrink-0 transition-transform" />
       </Collapsible.Trigger>
