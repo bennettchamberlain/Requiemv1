@@ -48,6 +48,18 @@ import type { ImportStageRunner, StageOutcome, StageRunContext } from '../types'
 const PUSH_BATCH = 500;
 
 /**
+ * `staged_entities.push_error` for an entity `skipped` because it had neither
+ * a handle nor a name to resolve by — see {@link toGraphEntity}.
+ *
+ * The one entity-skip reason that counts toward `partial` (see the `partial`
+ * computation in {@link PushStage.run}). Recorded rather than left `NULL` so a
+ * RESUMED push can still tell this apart from a bookkeeping-type exclusion
+ * (`isGraphExcluded`) when it re-derives `entities.unresolved` from what a
+ * dead attempt already settled — see {@link PushStage.settledCounts}.
+ */
+const UNRESOLVED_ENTITY_REASON = 'no stable name or handle to resolve by';
+
+/**
  * The order a batch's destinations are written in.
  *
  * The per-row loop this replaced wrote each row's destinations in
@@ -174,6 +186,7 @@ export class PushStage implements ImportStageRunner {
     const entities = {
       resolved: prior.entities.resolved + attempt.resolved,
       skipped: prior.entities.skipped + attempt.skipped,
+      unresolved: prior.entities.unresolved + attempt.unresolved,
       failed: prior.entities.failed + attempt.failed,
     };
 
@@ -258,7 +271,14 @@ export class PushStage implements ImportStageRunner {
       total,
       // Rows that could not be sent are not a failed import — the ones that went
       // are in ci.* and useful. The run says `partial` and the ledger says which.
-      partial: failed > 0 || entities.skipped > 0,
+      //
+      // `entities.skipped` deliberately does NOT factor in here: it also counts
+      // bookkeeping-type exclusions (`isGraphExcluded`) — an `email_thread` per
+      // thread on every ordinary gmail import — which is the stage working as
+      // designed, not a gap. `entities.unresolved` is the subset that IS a gap:
+      // a row with no handle and no name, which will never resolve on a retry
+      // either.
+      partial: failed > 0 || entities.unresolved > 0,
       // `deduped` is reported separately from `pushed`: it is a real outcome
       // (the record is in ci.*, it just arrived earlier) and reads as neither a
       // write nor a loss.
@@ -423,7 +443,7 @@ export class PushStage implements ImportStageRunner {
    */
   private async pushEntities(
     context: StageRunContext,
-  ): Promise<{ resolved: number; skipped: number; failed: number }> {
+  ): Promise<{ resolved: number; skipped: number; unresolved: number; failed: number }> {
     await context.progress({ processed: 0, total: null, phase: 'resolving people' });
 
     const staged = await this.dataSource.query<StagedEntity[]>(
@@ -441,9 +461,13 @@ export class PushStage implements ImportStageRunner {
     const byKey = new Map<string, StagedEntity[]>();
     const inputs: GraphEntityInputDto[] = [];
     let skipped = 0;
+    let unresolved = 0;
 
     for (const row of staged) {
-      // Bookkeeping types never reach the graph — see isGraphExcluded. Marked
+      // Bookkeeping types never reach the graph — see isGraphExcluded. This is
+      // a DELIBERATE exclusion, not a gap: gmail stages an `email_thread` entity
+      // per thread, so a plain email import would report `skipped` on every
+      // single run if this counted the same as `unresolved` below. Marked
       // `skipped` rather than left pending so the row reaches a terminal state
       // and a resumed push does not reconsider it.
       if (isGraphExcluded(row)) {
@@ -455,8 +479,13 @@ export class PushStage implements ImportStageRunner {
       const input = toGraphEntity(row);
 
       if (input == null) {
+        // No handle AND no name — nothing about this row will ever have a
+        // stable key, so it can never resolve on a later attempt either. This
+        // one IS a gap: something the run was handed never made it into the
+        // graph, and `unresolved` is what rolls the run up to `partial` for it.
         skipped += 1;
-        await this.markEntity(row.id, 'skipped', null);
+        unresolved += 1;
+        await this.markEntity(row.id, 'skipped', UNRESOLVED_ENTITY_REASON);
         continue;
       }
 
@@ -472,9 +501,15 @@ export class PushStage implements ImportStageRunner {
     }
 
     if (inputs.length === 0) {
-      this.logger.log('Resolved staged entities', { runId: context.runId, resolved: 0, skipped, failed: 0 });
+      this.logger.log('Resolved staged entities', {
+        runId: context.runId,
+        resolved: 0,
+        skipped,
+        unresolved,
+        failed: 0,
+      });
 
-      return { resolved: 0, skipped, failed: 0 };
+      return { resolved: 0, skipped, unresolved, failed: 0 };
     }
 
     const result = await this.graph.ingest(
@@ -522,10 +557,11 @@ export class PushStage implements ImportStageRunner {
       runId: context.runId,
       resolved,
       skipped,
+      unresolved,
       failed,
     });
 
-    return { resolved, skipped, failed };
+    return { resolved, skipped, unresolved, failed };
   }
 
   private async recordEntityMapping(
@@ -640,42 +676,52 @@ export class PushStage implements ImportStageRunner {
    */
   private async settledCounts(runId: string): Promise<{
     items: { pushed: number; deduped: number; failed: number };
-    entities: { resolved: number; skipped: number; failed: number };
+    entities: { resolved: number; skipped: number; unresolved: number; failed: number };
   }> {
-    const rows = await this.dataSource.query<Array<{ kind: string; status: string; count: string }>>(
-      `SELECT 'item' AS kind, push_status AS status, count(*) AS count
+    const rows = await this.dataSource.query<
+      Array<{ kind: string; status: string; reason: string | null; count: string }>
+    >(
+      `SELECT 'item' AS kind, push_status AS status, NULL::text AS reason, count(*) AS count
          FROM ci_import.staged_items
         WHERE run_id = $1::uuid AND push_status <> 'pending'
         GROUP BY push_status
        UNION ALL
-       SELECT 'entity' AS kind, push_status AS status, count(*) AS count
+       -- push_error joins the group so a resumed push can still tell a
+       -- bookkeeping-type exclusion apart from a genuinely unresolved entity,
+       -- among rows an EARLIER attempt already settled (see
+       -- UNRESOLVED_ENTITY_REASON). skipped sums across every reason either way.
+       SELECT 'entity' AS kind, push_status AS status, push_error AS reason, count(*) AS count
          FROM ci_import.staged_entities
         WHERE run_id = $1::uuid AND push_status <> 'pending'
-        GROUP BY push_status`,
+        GROUP BY push_status, push_error`,
       [runId],
     );
 
     const items = { pushed: 0, deduped: 0, failed: 0 };
-    const entities = { resolved: 0, skipped: 0, failed: 0 };
+    const entities = { resolved: 0, skipped: 0, unresolved: 0, failed: 0 };
 
     for (const row of rows) {
       const count = Number(row.count);
 
       if (row.kind === 'item') {
         if (row.status === 'pushed') {
-          items.pushed = count;
+          items.pushed += count;
         } else if (row.status === 'skipped') {
-          items.deduped = count;
+          items.deduped += count;
         } else if (row.status === 'failed') {
-          items.failed = count;
+          items.failed += count;
         }
       } else {
         if (row.status === 'pushed') {
-          entities.resolved = count;
+          entities.resolved += count;
         } else if (row.status === 'skipped') {
-          entities.skipped = count;
+          entities.skipped += count;
+
+          if (row.reason === UNRESOLVED_ENTITY_REASON) {
+            entities.unresolved += count;
+          }
         } else if (row.status === 'failed') {
-          entities.failed = count;
+          entities.failed += count;
         }
       }
     }
@@ -1083,7 +1129,9 @@ export class PushStage implements ImportStageRunner {
         // builder — but it returns null rather than throwing, so a disagreement
         // between the two skips the row instead of failing the import.
         const built = group.map((plan) => toPositionInput(plan.record));
-        const positions = built.filter((position): position is NonNullable<typeof position> => position != null);
+        const positions = built.filter(
+          (position): position is NonNullable<typeof position> => position != null,
+        );
 
         if (positions.length > 0) {
           // PositionService has no upsert-reporting variant: positions carry no
