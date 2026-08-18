@@ -260,16 +260,28 @@ export class GrokFileImporter implements FileImporter {
         return { confidence: 0 };
       }
 
-      // Strong filename signal (grok*.json) beats a generic shape match.
-      return base.startsWith('grok') ? { confidence: 0.97 } : { confidence: 0.85 };
+      // The filename is REQUIRED, not merely a bonus.
+      //
+      // `isGrokExport` matches any array whose first object has a title/name and
+      // a messages/responses/conversation array — and as the header says, no
+      // xAI export is known to produce this shape at all. So a JSON file that
+      // merely fits it is not evidence of Grok; it is evidence of JSON. Scoring
+      // it 0.85 let this importer outrank real ones on their own archives.
+      return base.startsWith('grok') ? { confidence: 0.97 } : { confidence: 0 };
     }
 
     if (stat.isDirectory()) {
+      // Same rule as the file branch, and this is the one that actually bit.
+      //
+      // A real X archive of 6,997 files was claimed by THIS importer at 0.85,
+      // because `findExport` reached some unrelated JSON of the tolerant shape
+      // within two levels and the non-grok-named branch scored it above
+      // twitter's 0.9. The import produced 17 messages out of 1.1GB — precisely
+      // the outcome the comment below warns about. Requiring the filename keeps
+      // the deliberate 0.3 X-archive ranking underneath in charge.
       const found = this.findExport(root, 2);
-      if (found) {
-        const base = path.basename(found).toLowerCase();
-
-        return base.startsWith('grok') ? { confidence: 0.95 } : { confidence: 0.85 };
+      if (found && path.basename(found).toLowerCase().startsWith('grok')) {
+        return { confidence: 0.95 };
       }
 
       // An X archive. Deliberately LOW, and deliberately not zero.

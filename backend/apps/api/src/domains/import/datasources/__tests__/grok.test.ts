@@ -39,6 +39,43 @@ describe('Grok datasource', () => {
     expect(rec.confidence).toBe(0);
   });
 
+  it('does NOT claim a directory because some unrelated JSON fits the tolerant shape', async () => {
+    // The bug this guards: a real 1.1GB X archive of 6,997 files was recognized
+    // as Grok at 0.85, because `findExport` reached a JSON file of the tolerant
+    // shape (an array whose first object has a title and a messages array) two
+    // levels down, and the not-named-grok branch scored it above twitter's 0.9.
+    // The import produced 17 messages out of the whole archive.
+    //
+    // No xAI export is known to produce that standalone shape at all, so a file
+    // that merely fits it is evidence of JSON, not of Grok.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'not-grok-'));
+    fs.mkdirSync(path.join(root, 'data'));
+    fs.writeFileSync(
+      path.join(root, 'data', 'saved-searches.json'),
+      JSON.stringify([{ title: 'a saved search', messages: [{ role: 'user', text: 'hello' }] }]),
+    );
+
+    const rec = await new GrokFileImporter().recognize({}, { filename: path.basename(root), fullPath: root });
+
+    expect(rec.confidence).toBe(0);
+  });
+
+  it('leaves an X archive to the twitter importer, which imports the chats too', async () => {
+    // Grok scores an X archive 0.3 ON PURPOSE — low enough that twitter (0.9+)
+    // wins a bare drop and imports the WHOLE archive including these chats,
+    // non-zero so the Grok card can still be chosen explicitly.
+    const root = path.join(FIXTURES_DIR, 'twitter-export');
+
+    if (!fs.existsSync(root)) {
+      return;
+    }
+
+    const grok = await new GrokFileImporter().recognize({}, { filename: 'twitter-export', fullPath: root });
+    const twitter = await new TwitterFileImporter().recognize({}, { filename: 'twitter-export', fullPath: root });
+
+    expect(twitter.confidence).toBeGreaterThan(grok.confidence);
+  });
+
   it('imports user/assistant messages with role, conversation, and source metadata', async () => {
     const root = path.join(FIXTURES_DIR, 'grok-export');
     const fi = new GrokFileImporter();
