@@ -230,6 +230,13 @@ function CandidateCard({
         <span className={cn('flex-1', expanded ? '' : 'line-clamp-2')}>{rationale}</span>
       </button>
 
+      {/* Covers both notes this state carries: a personalize failure (set
+          before `personalized` ever exists for this card) and the apply-steps
+          result (set after). Sitting outside the approach block below means
+          neither reading is stranded behind a condition it predates — a failed
+          personalize used to leave the spinner just stop with nothing said. */}
+      {applyNote && <p className="mt-1 text-[10px] text-muted-foreground">{applyNote}</p>}
+
       {personalized && expanded && personalized.approach.length > 0 && (
         <ol className="mt-2 space-y-1 border-t border-border pt-2">
           {personalized.approach.slice(0, 4).map((step, index) => (
@@ -250,7 +257,6 @@ function CandidateCard({
               >
                 Add steps to Possibilities
               </Button>
-              {applyNote && <p className="mt-1 text-[10px] text-muted-foreground">{applyNote}</p>}
             </li>
           )}
         </ol>
