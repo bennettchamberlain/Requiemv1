@@ -4,9 +4,31 @@ name: Migrations
 # workflow no longer runs on push, pull_request or a schedule — CI silence here
 # means "nobody dispatched it", NOT "everything passed". Run it deliberately:
 #   gh workflow run <file> --ref <branch>
+#   gh workflow run <file> --ref <branch> -f base_ref=dev -f mode=fix
 # Restore a trigger by re-adding it to the `on:` block below.
+#
+# The integrity job reads PR-only context (PR title, base ref) that does not
+# exist under workflow_dispatch, so both are backed by dispatch inputs. Without
+# them `BASE_REF` is empty: `git fetch origin ""` quietly succeeds (it fetches
+# HEAD), then `git diff origin/ HEAD` dies with `fatal: bad revision 'origin/'`
+# and exit 128 — reported as a migration failure on branches that touch no
+# migrations at all. See run 32099099891.
 on:
   workflow_dispatch:
+    inputs:
+      base_ref:
+        description: Branch to diff migrations against
+        required: false
+        default: main
+      mode:
+        description: Which migration changes to allow (PR-title tags win on a PR)
+        required: false
+        default: normal
+        type: choice
+        options:
+          - normal
+          - fix
+          - squash
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -51,24 +73,37 @@ jobs:
           fetch-depth: 0
 
       - name: Check for modified migrations
-        # The PR title and base ref reach the script as environment variables,
-        # never as ${{ }} interpolation. Interpolation is substituted into the
-        # script *before* bash parses it, so a PR titled `"; curl …|sh; #` would
-        # execute as code — and `types: [edited]` means retitling re-triggers the
-        # job. Harmless while this workflow was dispatch-only (the context was
-        # always empty); restoring the pull_request trigger arms it.
+        # The PR title, base ref and dispatch inputs reach the script as
+        # environment variables, never as ${{ }} interpolation. Interpolation is
+        # substituted into the script *before* bash parses it, so a PR titled
+        # `"; curl …|sh; #` would execute as code — and `types: [edited]` means
+        # retitling re-triggers the job. Harmless while this workflow is
+        # dispatch-only (the PR context is always empty); restoring the
+        # pull_request trigger arms it.
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
-          BASE_REF: ${{ github.base_ref }}
+          BASE_REF: ${{ inputs.base_ref || github.base_ref }}
+          MODE_INPUT: ${{ inputs.mode }}
         run: |
+          # `inputs` is empty on pull_request and `github.base_ref` is empty on
+          # workflow_dispatch, so whichever trigger fired, one of them fills
+          # BASE_REF. The literal default covers a future push/schedule trigger,
+          # where neither context exists.
+          BASE_REF="${BASE_REF:-main}"
+
           # Fetch the base branch to ensure we can compare against it
           git fetch origin "$BASE_REF"
 
-          # Check for changes in the migrations directory
-          ALL_CHANGES=$(git diff --name-status "origin/$BASE_REF" HEAD -- backend/apps/api/db/postgres/migrations)
+          # Check for changes in the migrations directory. Three-dot: diff from
+          # the merge base, so migrations added to the base branch after this
+          # branch forked are not misread as deletions. On a pull_request the
+          # checked-out ref is already a merge commit, so this matches the
+          # two-dot result it replaces.
+          ALL_CHANGES=$(git diff --name-status "origin/$BASE_REF...HEAD" -- backend/apps/api/db/postgres/migrations)
 
           # Committed migrations are immutable: normally only additions (A)
-          # are allowed. Two exceptions, declared in the PR title:
+          # are allowed. Two exceptions, declared in the PR title (or, on a
+          # manual dispatch, in the `mode` input):
           #   [squash-migrations]  consolidate history: deletions + additions,
           #                        never renames or in-place modifications
           #   [fix-migrations]     repair broken migrations (e.g. a version
@@ -82,6 +117,9 @@ jobs:
           elif [[ "$PR_TITLE" == *"[squash-migrations]"* ]]; then
             MODE=squash
             echo "Migration squashing mode detected."
+          elif [[ -n "$MODE_INPUT" ]]; then
+            MODE="$MODE_INPUT"
+            echo "Migration mode from dispatch input: $MODE"
           fi
 
           case "$MODE" in
@@ -99,6 +137,8 @@ jobs:
             echo "To declare an exception, tag the PR title:"
             echo "  [squash-migrations]  consolidate migrations (delete + add)"
             echo "  [fix-migrations]     rename/reissue broken migrations"
+            echo ""
+            echo "…or dispatch this workflow with -f mode=squash / -f mode=fix."
             echo ""
             echo "Detected forbidden changes:"
             echo "$FORBIDDEN_CHANGES"
