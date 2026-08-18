@@ -733,6 +733,7 @@ type DailyMetricsType {
   computedAt: String!
   date: String!
   kmTraveled: Float
+  meetingMinutes: Float
   nConversations: Int
   nDomains: Int
   nMessages: Int
@@ -740,7 +741,9 @@ type DailyMetricsType {
   nUniqueContacts: Int
   outboundRatio: Float
   screenMinutes: Float
+  sleepMinutes: Float
   spendTotal: Float
+  timeAtHome: Float
   timezone: String!
 }
 

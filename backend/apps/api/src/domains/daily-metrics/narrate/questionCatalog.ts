@@ -198,6 +198,17 @@ export const QUESTION_CATALOG: readonly QuestionSpec[] = [
     format: 'int',
     template: 'You were on the move on {value} of the last {days} days.',
   },
+  {
+    key: 'body.sleep_week',
+    category: 'Body',
+    question: 'How much did I sleep this week?',
+    metric: 'sleep_minutes',
+    aggregate: 'sum',
+    timeframe: WEEK,
+    format: 'float1',
+    unit: 'min',
+    template: 'You slept about {value} minutes over {timeframe}.',
+  },
 
   // ── Attention ────────────────────────────────────────────────────
   {
@@ -245,6 +256,41 @@ export const QUESTION_CATALOG: readonly QuestionSpec[] = [
     scale: 1 / 60,
     unit: 'hours',
     template: 'Over {timeframe} you spent about {value} hours on the web.',
+  },
+  {
+    key: 'time.meetings_week',
+    category: 'Time',
+    question: 'How much time did I spend in meetings this week?',
+    metric: 'meeting_minutes',
+    aggregate: 'sum',
+    timeframe: WEEK,
+    format: 'float1',
+    unit: 'min',
+    template: 'You spent about {value} minutes in meetings over {timeframe}.',
+  },
+
+  // ── Home ─────────────────────────────────────────────────────────
+  {
+    key: 'home.time_week',
+    category: 'Home',
+    question: 'How much time did I spend at home this week?',
+    metric: 'time_at_home',
+    aggregate: 'sum',
+    timeframe: WEEK,
+    format: 'float1',
+    unit: 'min',
+    template: 'You spent about {value} minutes at home over {timeframe}.',
+  },
+  {
+    key: 'home.time_month',
+    category: 'Home',
+    question: 'How much time did I spend at home this month?',
+    metric: 'time_at_home',
+    aggregate: 'sum',
+    timeframe: MONTH,
+    format: 'float1',
+    unit: 'min',
+    template: 'You spent about {value} minutes at home over {timeframe}.',
   },
 
   // ── Money ────────────────────────────────────────────────────────

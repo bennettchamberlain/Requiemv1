@@ -63,6 +63,15 @@ export class DailyMetricEntity {
   })
   spendTotal!: number | null;
 
+  @Column({ type: 'double precision', nullable: true, name: 'meeting_minutes' })
+  meetingMinutes!: number | null;
+
+  @Column({ type: 'double precision', nullable: true, name: 'sleep_minutes' })
+  sleepMinutes!: number | null;
+
+  @Column({ type: 'double precision', nullable: true, name: 'time_at_home' })
+  timeAtHome!: number | null;
+
   @Column({ type: 'jsonb', default: '{}' })
   coverage!: MetricCoverage;
 
@@ -85,6 +94,9 @@ export class DailyMetricEntity {
         screen_minutes: entity.screenMinutes,
         n_domains: entity.nDomains,
         spend_total: entity.spendTotal,
+        meeting_minutes: entity.meetingMinutes,
+        sleep_minutes: entity.sleepMinutes,
+        time_at_home: entity.timeAtHome,
       },
       coverage: entity.coverage ?? {},
       computedAt: entity.computedAt,
@@ -106,6 +118,9 @@ export class DailyMetricEntity {
     entity.screenMinutes = dm.metrics.screen_minutes;
     entity.nDomains = dm.metrics.n_domains;
     entity.spendTotal = dm.metrics.spend_total;
+    entity.meetingMinutes = dm.metrics.meeting_minutes;
+    entity.sleepMinutes = dm.metrics.sleep_minutes;
+    entity.timeAtHome = dm.metrics.time_at_home;
     entity.coverage = dm.coverage;
     entity.computedAt = dm.computedAt;
 

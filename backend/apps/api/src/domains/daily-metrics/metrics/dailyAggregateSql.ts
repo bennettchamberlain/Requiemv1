@@ -95,7 +95,43 @@ SELECT
      AS inv_rows_with_price,
   (SELECT sum(i.purchase_price) FROM ci.inventory i, params p
      WHERE i.user_id::uuid = p.user_id AND (i.acquired_at AT TIME ZONE p.tz)::date = p.d)
-     AS inv_price_sum
+     AS inv_price_sum,
+
+  (SELECT count(*) FROM ci.events e, params p
+     WHERE e.user_id = p.user_id
+       AND (e.start_time AT TIME ZONE p.tz)::date = p.d
+       AND e.event_type IN ('calendar_event', 'meeting', 'appointment', 'event')
+       AND COALESCE(e.is_all_day, FALSE) = FALSE
+       AND COALESCE(e.status, '') NOT IN ('cancelled', 'canceled')
+       AND COALESCE(e.is_deleted, FALSE) = FALSE)
+     AS meeting_rows,
+  (SELECT COALESCE(sum(e.duration_minutes), 0) FROM ci.events e, params p
+     WHERE e.user_id = p.user_id
+       AND (e.start_time AT TIME ZONE p.tz)::date = p.d
+       AND e.event_type IN ('calendar_event', 'meeting', 'appointment', 'event')
+       AND COALESCE(e.is_all_day, FALSE) = FALSE
+       AND COALESCE(e.status, '') NOT IN ('cancelled', 'canceled')
+       AND COALESCE(e.is_deleted, FALSE) = FALSE)
+     AS meeting_minutes_sum,
+
+  (SELECT count(*) FROM ci.events e, params p
+     WHERE e.user_id = p.user_id
+       AND (e.start_time AT TIME ZONE p.tz)::date = p.d
+       AND e.event_type = 'sleep'
+       AND COALESCE(e.is_deleted, FALSE) = FALSE)
+     AS sleep_rows,
+  (SELECT COALESCE(sum(
+            CASE
+              WHEN e.metadata->>'Minutes Asleep' ~ '^[0-9]+(\\.[0-9]+)?$'
+                THEN (e.metadata->>'Minutes Asleep')::double precision
+              ELSE e.duration_minutes
+            END
+          ), 0) FROM ci.events e, params p
+     WHERE e.user_id = p.user_id
+       AND (e.start_time AT TIME ZONE p.tz)::date = p.d
+       AND e.event_type = 'sleep'
+       AND COALESCE(e.is_deleted, FALSE) = FALSE)
+     AS sleep_minutes_sum
 `;
 
 /** One row of primitive per-day counts/sums returned by {@link DAILY_AGGREGATE_SQL}. */
@@ -118,6 +154,10 @@ export interface RawDailyAggregates {
   inv_rows: number;
   inv_rows_with_price: number;
   inv_price_sum: number | null;
+  meeting_rows: number;
+  meeting_minutes_sum: number | null;
+  sleep_rows: number;
+  sleep_minutes_sum: number | null;
 }
 
 function num(value: unknown): number {
@@ -164,5 +204,9 @@ export function parseAggregateRow(row: Record<string, unknown>): RawDailyAggrega
     inv_rows: num(row.inv_rows),
     inv_rows_with_price: num(row.inv_rows_with_price),
     inv_price_sum: numOrNull(row.inv_price_sum),
+    meeting_rows: num(row.meeting_rows),
+    meeting_minutes_sum: numOrNull(row.meeting_minutes_sum),
+    sleep_rows: num(row.sleep_rows),
+    sleep_minutes_sum: numOrNull(row.sleep_minutes_sum),
   };
 }
