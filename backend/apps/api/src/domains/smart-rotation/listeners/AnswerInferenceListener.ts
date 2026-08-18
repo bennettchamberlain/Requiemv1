@@ -65,36 +65,29 @@ export class AnswerInferenceListener {
       });
     }
 
-    const ragThread = [
-      {
-        role: 'system',
-        content: `You impersonate the user and infer a first-person answer to a question they have not answered yet.
+    const systemParts = [
+      `You impersonate the user and infer a first-person answer to a question they have not answered yet.
 
 Rules:
 - 2-3 sentences max.
 - Return ONLY the answer text — no preamble, no "honestly", no complimenting the question.
 - Ground the answer in the dossier and related Q&A below. Never invent facts absent from context.
 - If context is thin, give a plausible short answer that fits what is known.`,
-      },
-      ...(dossierBlock
-        ? [
-            {
-              role: 'system',
-              content: `User dossier and graph context:\n${dossierBlock}`,
-            },
-          ]
-        : []),
+      dossierBlock ? `User dossier and graph context:\n${dossierBlock}` : null,
+      resolvedAnswers.length > 0
+        ? `Related questions the user already answered:\n\n${resolvedAnswers
+            .map(
+              (answer) =>
+                `Question: ${answer.question?.text ?? '(unspecified)'}\nAnswer: ${answer.answer}`,
+            )
+            .join('\n\n')}`
+        : 'No related prior answers were found — rely on the dossier only.',
+    ].filter((part): part is string => part != null);
+
+    const ragThread = [
       {
         role: 'system',
-        content:
-          resolvedAnswers.length > 0
-            ? `Related questions the user already answered:\n\n${resolvedAnswers
-                .map(
-                  (answer) =>
-                    `Question: ${answer.question?.text ?? '(unspecified)'}\nAnswer: ${answer.answer}`,
-                )
-                .join('\n\n')}`
-            : 'No related prior answers were found — rely on the dossier only.',
+        content: systemParts.join('\n\n'),
       },
       {
         role: 'user',

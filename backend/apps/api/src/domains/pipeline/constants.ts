@@ -233,6 +233,18 @@ export const STAGE_IDS = {
   PROMOTE_OBJECT: 'promote.object',
 
   /**
+   * Promote Companion Scan room captures into `ci.object_observations` — the
+   * first writer the SIGHTING half of object identity has ever had.
+   *
+   * CI-Spatial has been pushing one `capture.scan` event per scan, carrying
+   * `payload.objects`, since the scan pipeline shipped; nothing read them, and
+   * the sightings table sat empty behind a downstream edge projection that was
+   * already built. Reads event metadata only, writes no `ci.inventory` row and
+   * sets no resolution column: a sighting is the weak claim.
+   */
+  PROMOTE_OBSERVATION: 'promote.observation',
+
+  /**
    * Project a communication's resolved participant columns (`from_entity_id`,
    * `to_entity_ids` — `enrich.person_link`'s output) into `ci.relationships`
    * SENT / RECEIVED edges, resolved through merge tombstones onto canonical

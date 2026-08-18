@@ -71,7 +71,16 @@ export class AskType {
   @Field(() => AskStatusEnum)
   status!: AskStatusEnum;
 
-  /** The grant (or review) that authorized an answer, once decided. */
+  /**
+   * The grant (or review) that authorized an answer, once decided.
+   *
+   * RESPONDER-ONLY. This is the id of one of the responder's own grant rows, and
+   * handing it to the asker made `createAsk` a grant-matrix oracle: combined with
+   * the returned decision it distinguishes auto from review from deny, at the
+   * rate limit's 20 probes a minute, and on a block-grant auto-deny it separates
+   * a standing block from a human refusal. The asker needs to know their ask was
+   * accepted; they do not need the identifier of the rule that accepted it.
+   */
   @Field(() => String, { nullable: true })
   consentBasis!: string | null;
 
@@ -84,14 +93,21 @@ export class AskType {
   @Field(() => GraphQLISODateTime, { nullable: true })
   expiresAt!: Date | null;
 
-  static toType(ask: Ask): AskType {
+  /**
+   * `viewerUserId` decides whether the responder's private reasoning is
+   * included. Callers that omit it get the safe projection — an omitted argument
+   * must never be the disclosing case.
+   */
+  static toType(ask: Ask, viewerUserId?: string): AskType {
+    const isResponder = viewerUserId != null && viewerUserId === ask.responderUserId;
+
     return {
       id: GlobalUID.encode('ask', ask.id),
       askerId: GlobalUID.encode('user', ask.askerUserId),
       responderId: GlobalUID.encode('user', ask.responderUserId),
       query: AskQueryType.toType(ask.query),
       status: ask.status as AskStatusEnum,
-      consentBasis: ask.consentBasis,
+      consentBasis: isResponder ? ask.consentBasis : null,
       createdAt: ask.createdAt,
       updatedAt: ask.updatedAt,
       expiresAt: ask.expiresAt,

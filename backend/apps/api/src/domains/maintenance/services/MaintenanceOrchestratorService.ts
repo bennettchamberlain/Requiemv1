@@ -453,10 +453,7 @@ export class MaintenanceOrchestratorService {
    * Reuses PositionReverseStage (ledger + cache) rather than cloning GPS
    * reverse into the event-centric geocode leg.
    */
-  private async runPositionReverseLeg(
-    userId: string,
-    opts: { limit?: number },
-  ): Promise<EnqueueLegResult> {
+  private async runPositionReverseLeg(userId: string, opts: { limit?: number }): Promise<EnqueueLegResult> {
     const maxIds = opts.limit ?? config.geocoding.batchSize;
     const jobIds = await this.signallingEventService.send(
       PipelineSweepEvent,

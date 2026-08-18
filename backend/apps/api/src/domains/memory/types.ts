@@ -1,8 +1,15 @@
 import type { Point } from 'typeorm';
 import { z } from 'zod';
 
+import type {
+  ObservationBoundingBox,
+  ObservationLabelSource,
+  ObservationResolutionMethod,
+  ObservationSourceKind,
+} from './entities/ObjectObservationEntity';
 import type { PlaceKind } from './entities/PlaceEntity';
 import { type NormalizedFieldMap, type PropertiesBag } from './normalizedProperties';
+import type { AcquisitionMethod, UnitSystem } from './physicalProperties';
 
 export const createContentSchema = z.object({
   type: z.string().optional(),
@@ -251,7 +258,47 @@ export interface CreateFileDto {
   };
 }
 
-export interface CreateItemDto {
+/**
+ * The physical half of an item as CALLERS may supply it — deliberately looser
+ * than the columns it lands in.
+ *
+ * Measurements accept a canonical number (`lengthMm: 304.8`) or any unit-
+ * bearing string (`'12 in'`, `'5 ft 11 in'`), because the writers are a web
+ * form, a vision model and an importer and only one of them thinks in
+ * millimetres. Every value passes through `normalizePhysicalProperties` in
+ * {@link ../physicalProperties} before it reaches the database, so the tolerance
+ * stops here — nothing downstream sees a unit.
+ */
+export interface PhysicalItemPropertiesDto {
+  /** MILLIMETRES, or any length string. */
+  lengthMm?: number | string | null;
+  /** MILLIMETRES, or any length string. */
+  widthMm?: number | string | null;
+  /** MILLIMETRES, or any length string. */
+  heightMm?: number | string | null;
+  /** GRAMS, or any mass string. */
+  massG?: number | string | null;
+  /** MILLILITRES (capacity), or any volume string. */
+  volumeMl?: number | string | null;
+  /** `'12 x 8 x 2 in'` — fills only the axes not given individually. */
+  dimensions?: string | null;
+  /** Display preference; never changes what the stored numbers mean. */
+  unitSystem?: UnitSystem | string | null;
+  colors?: string[] | string | null;
+  colorHex?: string | null;
+  materials?: string[] | string | null;
+  /** `{material: fraction}`; percentages are accepted and converted. */
+  composition?: Record<string, number | string> | null;
+  acquisitionMethod?: AcquisitionMethod | string | null;
+  acquiredFrom?: string | null;
+  acquiredFromEntityId?: string | null;
+  manufacturedAt?: Date | null;
+  expiresAt?: Date | null;
+  /** A digital item is refused a mass, a size and a volume. */
+  isDigital?: boolean;
+}
+
+export interface CreateItemDto extends PhysicalItemPropertiesDto {
   id?: string;
   name: string;
   description?: string;
@@ -262,9 +309,19 @@ export interface CreateItemDto {
   purchasePrice?: number;
   currentValue?: number;
   currency?: string;
+  /** When it was bought/received — the ownership clock, not the manufacture date. */
   acquiredAt?: Date;
   identifierCodes?: Record<string, unknown>;
   condition?: 'new' | 'like_new' | 'good' | 'fair' | 'poor' | 'broken' | 'n/a' | null;
+  /** How many identical units this row stands for. Whole and positive. */
+  quantity?: number;
+  /**
+   * How this unit's identity was established, and how much to trust it.
+   * Defaults to 1.0 in the schema, which reads as ground truth to HBPE and RAG
+   * — so anything INFERRED (a vision guess, a receipt line) must say so here.
+   */
+  identityMethod?: 'user' | 'barcode' | 'receipt' | 'vision' | 'import' | 'inferred';
+  identityConfidence?: number;
   images?: string[];
   metadata?: Record<string, unknown>;
   // Provenance triple for idempotent re-ingest (see inventory_source_triple_uniq).
@@ -273,18 +330,126 @@ export interface CreateItemDto {
   sourceId?: string;
 }
 
-export interface UpdateItemDto {
+export interface UpdateItemDto extends PhysicalItemPropertiesDto {
   name?: string;
   description?: string;
   category?: string;
   subcategory?: string;
   brand?: string;
   model?: string;
+  purchasePrice?: number;
   currentValue?: number;
   currency?: string;
+  acquiredAt?: Date | null;
   condition?: 'new' | 'like_new' | 'good' | 'fair' | 'poor' | 'broken' | 'n/a' | null;
+  quantity?: number;
   images?: string[];
   metadata?: Record<string, unknown> | undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Object observations — the SIGHTING half of object identity
+// ---------------------------------------------------------------------------
+
+/**
+ * A geographic point for an observation, named the way humans say it.
+ *
+ * Deliberately NOT TypeORM's `Point` (which is `{x, y}` and therefore silent
+ * about which one is which): every caller here is copying a `lat`/`lon` pair
+ * out of a capture payload, and the one bug that matters in this area is
+ * transposing them. `ObjectObservationService` does the swap to PostGIS'
+ * `ST_MakePoint(lon, lat)` in exactly one place.
+ */
+export interface ObservationCoordinates {
+  lat: number;
+  lon: number;
+}
+
+/**
+ * A sighting, as handed to {@link ObjectObservationService.create}.
+ *
+ * Carries DETECTION only. There is deliberately no way to set
+ * `resolvedObjectId`, `resolutionMethod` or `confirmedByUser` here — resolution
+ * is a separate, revisable decision reached through `resolve()` / `confirm()`,
+ * and a detector that could write it on the way in is the conflation
+ * `ci.object_observations` exists to prevent.
+ *
+ * `detectionKey` is absent for the same reason it is absent from the entity's
+ * public constructor surface: it is DERIVED by the service (see
+ * `detectionKeyFor`), never supplied. A caller-chosen key is a caller-chosen
+ * idempotency contract, which is how the same detector run lands twice.
+ */
+export interface CreateObjectObservationDto {
+  id?: string;
+  /** When the pixels were captured — NOT when the detector ran. */
+  observedAt: Date;
+  sourceKind?: ObservationSourceKind;
+
+  /** What the detector said, verbatim. Required: a label-less sighting carries no information. */
+  label: string;
+  labelSource?: ObservationLabelSource | null;
+  detector?: string | null;
+  detectorVersion?: string | null;
+  /** Detector confidence in [0, 1]. Clamped, never fabricated. */
+  detectionConfidence?: number | null;
+  bbox?: ObservationBoundingBox | null;
+
+  /** Where the pixels live. No FKs — content and files are purgeable. */
+  contentId?: string | null;
+  fileId?: string | null;
+  eventId?: string | null;
+  cropContentId?: string | null;
+
+  /** The resolution prior. See the note on `place_entity_id` in the migration. */
+  placeEntityId?: string | null;
+  coordinates?: ObservationCoordinates | null;
+
+  attributes?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+
+  /**
+   * Provenance triple — the idempotency arbiter for IMPORTED observations and
+   * for any source that carries a stable per-detection id of its own. When
+   * `sourceId` is set the row is keyed on the triple and `detection_key` stays
+   * NULL; when it is absent the service derives a `detection_key`. A row has
+   * one arbiter or the other, never both.
+   */
+  sourceType?: string | null;
+  sourceSystem?: string | null;
+  sourceId?: string | null;
+}
+
+/**
+ * A resolution decision, applied by {@link ObjectObservationService.resolve}.
+ *
+ * Never sets `confirmedByUser` — that flag has exactly one writer
+ * (`confirm()`), because HBPE and RAG are entitled to read it as "a human said
+ * so" rather than "something was fairly sure".
+ */
+export interface ResolveObjectObservationDto {
+  resolvedObjectId?: string | null;
+  resolvedProductId?: string | null;
+  /** How the link was reached. `'user'` is rejected here; use `confirm()`. */
+  resolutionMethod: Exclude<ObservationResolutionMethod, 'user'>;
+  /** Confidence in [0, 1]. Omit rather than invent one. */
+  resolutionConfidence?: number | null;
+}
+
+/** Scoped read filter for {@link ObjectObservationService.find}. */
+export interface FindObjectObservationsFilter {
+  placeEntityId?: string;
+  contentId?: string;
+  fileId?: string;
+  eventId?: string;
+  /** Exact label match, case-insensitive. */
+  label?: string;
+  /** `true` = only rows linked to an owned unit; `false` = only unlinked. */
+  resolved?: boolean;
+  confirmedByUser?: boolean;
+  observedFrom?: Date;
+  observedTo?: Date;
+  limit?: number;
+  offset?: number;
 }
 
 export interface CreatePersonDto {
@@ -337,9 +502,20 @@ export const NORMALIZED_PERSON_FIELDS = [
   ['first_name', 'firstName'],
   ['middle_name', 'middleName'],
   ['last_name', 'lastName'],
+  ['nickname', 'nickname'],
+  ['pronouns', 'pronouns'],
   ['birth_date', 'birthDate'],
   ['is_self', 'isSelf'],
   ['gender', 'gender'],
+  ['job_title', 'jobTitle'],
+  ['organization', 'organization'],
+  ['department', 'department'],
+  ['website', 'website'],
+  // The labelled multi-address list (home / work / ...). The flat `address`,
+  // `street_address`, ... keys below predate it and are kept as a mirror of the
+  // PRIMARY address so existing readers (search projection, importers) still
+  // resolve one address without understanding the list.
+  ['addresses', 'addresses'],
   ['address', 'address'],
   ['street_address', 'streetAddress'],
   ['street_address_2', 'streetAddress2'],
@@ -348,6 +524,157 @@ export const NORMALIZED_PERSON_FIELDS = [
   ['country', 'country'],
   ['postal_code', 'postalCode'],
 ] as const satisfies NormalizedFieldMap;
+
+/**
+ * One labelled postal address on a person, stored inside the `addresses` jsonb
+ * array. The field names deliberately match the flat `street_address`, `city`,
+ * ... property keys so mirroring the primary address to the top level is a
+ * plain key copy.
+ */
+export interface PersonAddress {
+  /** 'home', 'work', or any user-supplied label. Null for un-labelled legacy rows. */
+  label: string | null;
+  streetAddress: string | null;
+  streetAddress2: string | null;
+  city: string | null;
+  region: string | null;
+  postalCode: string | null;
+  country: string | null;
+  isPrimary: boolean;
+}
+
+/** The jsonb storage shape of a {@link PersonAddress} (snake_case, as stored). */
+interface StoredPersonAddress {
+  label?: unknown;
+  street_address?: unknown;
+  street_address_2?: unknown;
+  city?: unknown;
+  region?: unknown;
+  postal_code?: unknown;
+  country?: unknown;
+  is_primary?: unknown;
+}
+
+function asTrimmedText(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+
+  return trimmed === '' ? null : trimmed;
+}
+
+/** True when an address carries at least one line worth persisting/showing. */
+export function isPersonAddressEmpty(address: PersonAddress): boolean {
+  return (
+    address.streetAddress == null &&
+    address.streetAddress2 == null &&
+    address.city == null &&
+    address.region == null &&
+    address.postalCode == null &&
+    address.country == null
+  );
+}
+
+/** Render an address as a single comma-joined line (the `address` mirror key). */
+export function formatPersonAddress(address: PersonAddress): string | null {
+  const line = [
+    address.streetAddress,
+    address.streetAddress2,
+    address.city,
+    address.region,
+    address.postalCode,
+    address.country,
+  ]
+    .filter((part): part is string => part != null && part.length > 0)
+    .join(', ');
+
+  return line === '' ? null : line;
+}
+
+/** Read one stored address object into its named-field form. */
+function toPersonAddress(stored: StoredPersonAddress): PersonAddress {
+  return {
+    label: asTrimmedText(stored.label),
+    streetAddress: asTrimmedText(stored.street_address),
+    streetAddress2: asTrimmedText(stored.street_address_2),
+    city: asTrimmedText(stored.city),
+    region: asTrimmedText(stored.region),
+    postalCode: asTrimmedText(stored.postal_code),
+    country: asTrimmedText(stored.country),
+    isPrimary: stored.is_primary === true,
+  };
+}
+
+/** Serialize an address back to its jsonb storage shape. */
+export function serializePersonAddress(address: PersonAddress): Record<string, unknown> {
+  return {
+    label: address.label,
+    street_address: address.streetAddress,
+    street_address_2: address.streetAddress2,
+    city: address.city,
+    region: address.region,
+    postal_code: address.postalCode,
+    country: address.country,
+    is_primary: address.isPrimary,
+  };
+}
+
+/**
+ * Read a person's address list out of the raw properties bag.
+ *
+ * Rows written before the list existed carry only the flat `street_address`,
+ * `city`, ... keys; those are surfaced as a single un-labelled primary address
+ * so every reader sees one shape regardless of when the row was written.
+ */
+export function readPersonAddresses(properties: Record<string, unknown> | null | undefined): PersonAddress[] {
+  const raw = properties?.addresses;
+
+  if (Array.isArray(raw)) {
+    const addresses = raw
+      .filter((entry): entry is StoredPersonAddress => typeof entry === 'object' && entry !== null)
+      .map(toPersonAddress)
+      .filter((address) => !isPersonAddressEmpty(address));
+
+    if (addresses.length > 0) {
+      return ensureSinglePrimary(addresses);
+    }
+  }
+
+  const legacy: PersonAddress = {
+    label: null,
+    streetAddress: asTrimmedText(properties?.street_address),
+    streetAddress2: asTrimmedText(properties?.street_address_2),
+    city: asTrimmedText(properties?.city),
+    region: asTrimmedText(properties?.region),
+    postalCode: asTrimmedText(properties?.postal_code),
+    country: asTrimmedText(properties?.country),
+    isPrimary: true,
+  };
+
+  return isPersonAddressEmpty(legacy) ? [] : [legacy];
+}
+
+/**
+ * Exactly one address is primary: the first one flagged, else the first entry.
+ * Callers (and the flat mirror) rely on `addresses[0]` NOT being the primary by
+ * accident, so the primary is also hoisted to the front.
+ */
+export function ensureSinglePrimary(addresses: PersonAddress[]): PersonAddress[] {
+  if (addresses.length === 0) {
+    return addresses;
+  }
+
+  const primaryIndex = Math.max(
+    addresses.findIndex((address) => address.isPrimary),
+    0,
+  );
+
+  const ordered = [addresses[primaryIndex]!, ...addresses.filter((_, index) => index !== primaryIndex)];
+
+  return ordered.map((address, index) => ({ ...address, isPrimary: index === 0 }));
+}
 
 /** Union of the jsonb storage keys promoted to named fields on a person. */
 export type NormalizedPersonPropertyKey = (typeof NORMALIZED_PERSON_FIELDS)[number][0];

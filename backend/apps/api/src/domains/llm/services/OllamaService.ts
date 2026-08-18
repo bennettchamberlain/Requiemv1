@@ -17,6 +17,7 @@ import {
   ToolRegistry,
   capabilityAllows,
   intentToolName,
+  canonicalizeExecutableToolName,
   type ToolInvocationContext,
   type ToolSchema,
 } from '@ci/domains/tools';
@@ -214,6 +215,7 @@ export class OllamaService {
           model,
           messages: [{ role: 'user', content: prompt }],
           signal,
+          enableThinking: false,
         });
 
         for await (const chunk of iterator) {
@@ -294,6 +296,12 @@ export class OllamaService {
     const thinkChunks: string[] = [];
     const toolCalls: ToolCall[] = [];
     const accumulatedMessages: OllamaMessage[] = [];
+    // One tool round, then a prose follow-up. Re-advertising tools after a
+    // failed/partial remember made Qwen retry for minutes on a 2-slot vLLM.
+    // XML dumped into content is still salvaged (salvageTools) without another
+    // advertised-tool generate.
+    const maxToolRounds = 2;
+    let generateRounds = 0;
 
     const stream = (async function* (self) {
       do {
@@ -312,7 +320,12 @@ export class OllamaService {
 
         accumulatedMessages.push(...toolEvaluations);
 
-        const iterationWillCallTools = enableTools && ollamaTools.length > 0 && toolEvaluations.length === 0;
+        if (generateRounds >= maxToolRounds) {
+          break;
+        }
+
+        generateRounds += 1;
+        const iterationWillCallTools = enableTools && ollamaTools.length > 0 && generateRounds === 1;
 
         try {
           if (openAiDriver) {
@@ -321,6 +334,8 @@ export class OllamaService {
               messages: inputMessages.concat(accumulatedMessages),
               tools: iterationWillCallTools ? ollamaTools : undefined,
               signal,
+              enableThinking,
+              salvageTools: enableTools,
             });
 
             for await (const chunk of iterator) {
@@ -345,6 +360,8 @@ export class OllamaService {
               model,
               messages: inputMessages.concat(accumulatedMessages),
               stream: true,
+              // Native Ollama: `think` is a first-class flag. vLLM is the other
+              // branch above and uses chat_template_kwargs.enable_thinking.
               ...(enableThinking && { think: true }),
               ...(iterationWillCallTools && { tools: ollamaTools }),
             });
@@ -420,6 +437,24 @@ export class OllamaService {
           }
         }
       } while (toolCalls.length > 0);
+
+      const wrapUp = savedKnowledgeWrapUp(accumulatedMessages);
+      if (wrapUp && !signal?.aborted) {
+        accumulatedMessages.push({ role: 'assistant', content: wrapUp });
+        yield {
+          model,
+          created_at: new Date(),
+          message: { role: 'assistant', content: wrapUp },
+          done: false,
+          done_reason: '',
+          total_duration: 0,
+          load_duration: 0,
+          prompt_eval_count: 0,
+          prompt_eval_duration: 0,
+          eval_count: 0,
+          eval_duration: 0,
+        };
+      }
     })(this);
 
     Object.defineProperty(stream, 'messages', {
@@ -446,7 +481,7 @@ export class OllamaService {
   private async runChat(
     context: ChatRequestContext,
     messages: OllamaMessage[],
-    { model, enableTools = false, format }: PromptOptions,
+    { model, enableTools = false, format, enableThinking = false }: PromptOptions,
   ): Promise<ChatResponse> {
     await this.validateModel(context, model);
 
@@ -467,6 +502,7 @@ export class OllamaService {
           messages: inputMessages,
           tools: enableTools && ollamaTools.length > 0 ? ollamaTools : undefined,
           format: openAiFormat,
+          enableThinking,
         })
       : await this.ollama.chat({
           model: model,
@@ -498,6 +534,7 @@ export class OllamaService {
         messages: inputMessages.concat(accumulatedMessages),
         tools: enableTools && ollamaTools.length > 0 ? ollamaTools : undefined,
         format: openAiFormat,
+        enableThinking,
       });
     }
 
@@ -601,9 +638,10 @@ export class OllamaService {
     const toolResults = await Promise.all(
       toolCalls.map(async (toolCall) => {
         const { name, arguments: args } = toolCall.function;
+        const toolName = canonicalizeExecutableToolName(name);
 
         try {
-          const result = await this.toolRegistry.executeTool(name, invocationContext, args);
+          const result = await this.toolRegistry.executeTool(toolName, invocationContext, args);
 
           return {
             call: toolCall,
@@ -612,7 +650,7 @@ export class OllamaService {
           };
         } catch (error) {
           this.logger.error('Tool execution failed', {
-            toolName: name,
+            toolName,
             error: error instanceof Error ? error.message : String(error),
             userId: context.userId,
           });
@@ -702,4 +740,37 @@ export class OllamaService {
       return [];
     }
   }
+}
+
+function savedKnowledgeWrapUp(messages: OllamaMessage[]): string | null {
+  const assistants = messages.filter((message) => message.role === 'assistant');
+  const hasProse = assistants.some((message) => message.content.replace(/<think>[\s\S]*?<\/think>/g, '').trim() !== '');
+  const hasTools = assistants.some((message) => (message.tool_calls?.length ?? 0) > 0);
+  if (!hasTools || hasProse) {
+    return null;
+  }
+
+  let created = 0;
+  for (const message of messages) {
+    if (message.role !== 'tool' || !message.content) {
+      continue;
+    }
+
+    try {
+      const parsed = JSON.parse(message.content) as {
+        error?: unknown;
+        createdNodes?: number;
+        createdRelationships?: number;
+      };
+      if (parsed.error) {
+        continue;
+      }
+
+      created += (parsed.createdNodes ?? 0) + (parsed.createdRelationships ?? 0);
+    } catch {
+      // Tool payloads that are not JSON are not a save summary.
+    }
+  }
+
+  return created > 0 ? 'Saved.' : null;
 }

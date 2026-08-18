@@ -106,6 +106,8 @@ export async function loadItemRows(
             i.brand,
             i.model,
             i.maintenance_notes AS "maintenanceNotes",
+            i.colors,
+            i.materials,
             pl.name AS "lastSeenPlaceName"
        FROM ci.inventory i
        LEFT JOIN ci.entities n ON n.entity_id = i.object_id
@@ -135,7 +137,13 @@ export async function loadPersonRows(
             COALESCE(s.last_name, s.properties->>'last_name') AS "lastName",
             COALESCE(s.birth_date::text, s.properties->>'birth_date') AS "birthDate",
             s.properties->>'email' AS email,
+            s.properties->>'nickname' AS nickname,
+            s.properties->>'pronouns' AS pronouns,
             s.properties->>'gender' AS gender,
+            s.properties->>'job_title' AS "jobTitle",
+            s.properties->>'organization' AS organization,
+            s.properties->>'department' AS department,
+            s.properties->>'website' AS website,
             s.properties->>'address' AS address,
             s.properties->>'street_address' AS "streetAddress",
             s.properties->>'street_address_2' AS "streetAddress2",

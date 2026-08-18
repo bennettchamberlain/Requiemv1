@@ -23,7 +23,8 @@ Per-day output:
 Aggregate for histogram
   For each future bucket b:
     l0_probs[b] = Σ_d  w_d * softmax(l0_logits_d[b] / T)
-  where  w_d = exp(-i/λ) × (2 if same DoW else 1),  λ=7 days
+  where  w_d = recency(λ=7) × DoW×2 × month boost × metric coverage weight,
+  then a daypart HMM smoother, then the D3 serve gate (hmt vs b1 vs b2).
 
 Implements T4.2 (CI-Server-04d).
 """
@@ -55,12 +56,41 @@ from ci.hbpe.model.vocab import (
     build_l0_vocab,
     build_l1_vocab,
 )
+from ci.hbpe.pipeline.baselines import (
+    _as_date,
+    b1_probs,
+    b2_day_emissions,
+    count_history_days,
+    occupancy_counts,
+)
+from ci.hbpe.pipeline.hmm import (
+    apply_class_priors,
+    forward_backward,
+    laplace_transitions,
+)
+from ci.hbpe.pipeline.kernel import kernel_weight
+from ci.hbpe.pipeline.metric_lifts import (
+    COLD_START_MIN_DAYS,
+    HOME_MEDIAN_FALLBACK,
+    SLEEP_MEDIAN_FALLBACK,
+    coverage_ok,
+    day_coverage_weight,
+    fetch_metric_rows,
+    median,
+    priors_matrix,
+)
+from ci.hbpe.pipeline.serve import (
+    MODEL_B1,
+    MODEL_B2,
+    MODEL_HMT,
+    pick_served_model,
+)
 
 log = logging.getLogger(__name__)
 
 WINDOW_DAYS = 30
-DECAY_LAMBDA = 7.0  # recency half-life in days
-DOW_BOOST = 2.0  # weight multiplier for same-day-of-week as forecast
+MIN_TRAIN_DAYS = 16  # TEST_DAYS + 2; below this, serve B1 instead of a uniform prior
+N_SPECIAL = 4
 
 _SPECIAL_IDX = {PAD_IDX, SOD_IDX, EOD_IDX}
 
@@ -151,6 +181,10 @@ class InferenceEngine:
         self._temp = self._load_temperature()
         # Memoised per-day model outputs
         self._output_cache: dict[datetime.date, dict | None] = {}
+        self._occupancy: list[dict] | None = None
+        self._l1_l0: dict[str, str] = self._load_l1_l0()
+        self.last_model_version = MODEL_HMT
+        self.last_still_learning = False
 
     def _load_l1_display_names(self) -> dict[str, str]:
         """Load cluster_id → human-readable label mapping for L1 labels."""
@@ -171,6 +205,31 @@ class InferenceEngine:
             log.warning("Could not load L1 display names: %s", exc)
             return {}
 
+    def _load_l1_l0(self) -> dict[str, str]:
+        """cluster UUID and display name → L0 class, for conditional L1 decode."""
+        from ci.hbpe.database import get_conn
+
+        try:
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT cluster_id::text, label, l0_class
+                        FROM hbpe.l1_clusters WHERE user_id = %s
+                        """,
+                        (self.user_id,),
+                    )
+                    mapping: dict[str, str] = {}
+                    for cid, label, l0 in cur.fetchall():
+                        mapping[cid] = l0
+                        mapping[cid[:8]] = l0
+                        if label:
+                            mapping[label.replace("_", " ").title()] = l0
+                    return mapping
+        except Exception as exc:
+            log.warning("Could not load L1→L0 map: %s", exc)
+            return {}
+
     def _refresh_vocab(self) -> None:
         """Rebuild the L1 vocab + display names to match a freshly (re)loaded
         model.
@@ -185,6 +244,7 @@ class InferenceEngine:
         """
         self._l1_vocab = build_l1_vocab(self.user_id)
         self._l1_display_names = self._load_l1_display_names()
+        self._l1_l0 = self._load_l1_l0()
 
     # ── Session loading ────────────────────────────────────────────────────────
 
@@ -435,13 +495,21 @@ class InferenceEngine:
                 self._temp = self._load_temperature()
                 self.invalidate_all()
 
-    def predict(self, horizon_start: datetime.datetime | None = None) -> list[dict]:
+    def predict(
+        self,
+        horizon_start: datetime.datetime | None = None,
+        as_of: datetime.date | None = None,
+        force_model: str | None = None,
+    ) -> list[dict]:
         """
         Return a 48-bucket histogram for the 24h window starting at *horizon_start*
         (default: midnight tonight).
 
         Each element: {bucket_index, start_time, l0_probs, l1_probs, l2_probs,
                        q10, q50, q90}
+
+        ``as_of`` walks the history window from that date (nightly HMT scoring).
+        ``force_model`` skips D3 (``hmt`` / ``b1`` / ``b2``).
         """
         if self._session is None:
             self._try_reload_session()
@@ -455,102 +523,221 @@ class InferenceEngine:
             ) + datetime.timedelta(days=1)
 
         forecast_date = horizon_start.date()
-        today = datetime.date.today()
+        as_of = as_of or datetime.date.today()
 
-        # ── Aggregate per-bucket logits from recent days ──────────────────────
-        # Size the L1 aggregation to the model's actual output width (falling
-        # back to the vocab length), so a vocab that has drifted from the loaded
-        # model can never cause a numpy broadcast error. Out-of-range indices
-        # decode to the PAD token, so a slightly stale vocab degrades gracefully.
+        occupancy = self._get_occupancy()
+        n_hist_days = count_history_days(occupancy)
+        distinct_years = (
+            len({_as_date(r["date"]).year for r in occupancy}) if occupancy else 0
+        )
+        has_ckpt = self._session is not None
+        still_learning = (not has_ckpt) or n_hist_days < MIN_TRAIN_DAYS
+
+        metric_start = as_of - datetime.timedelta(
+            days=WINDOW_DAYS + COLD_START_MIN_DAYS
+        )
+        metric_rows = fetch_metric_rows(self.user_id, metric_start, as_of)
+        metrics_by_date = {}
+        for row in metric_rows:
+            d = row["date"]
+            metrics_by_date[d] = row
+        floor_cleared = coverage_ok(metric_rows)
+        sleep_med = median(
+            [
+                float(r["sleep_minutes"])
+                for r in metric_rows
+                if r.get("sleep_minutes") is not None
+            ],
+            SLEEP_MEDIAN_FALLBACK,
+        )
+        home_med = median(
+            [
+                float(r["time_at_home"])
+                for r in metric_rows
+                if r.get("time_at_home") is not None
+            ],
+            HOME_MEDIAN_FALLBACK,
+        )
+
         V_l0 = len(self._l0_vocab)
         V_l1 = self._l1_dim or len(self._l1_vocab)
-
         bucket_l0_sum = np.zeros((N_BUCKETS, V_l0), dtype=np.float64)
         bucket_l1_sum = np.zeros((N_BUCKETS, V_l1), dtype=np.float64)
         bucket_weight = np.zeros(N_BUCKETS, dtype=np.float64)
-        # Track per-day max-confidence for quantile computation
         bucket_conf_samples: list[list[float]] = [[] for _ in range(N_BUCKETS)]
 
-        forecast_dow = forecast_date.weekday()
-
-        for i in range(WINDOW_DAYS):
-            hist_date = today - datetime.timedelta(days=i + 1)
-            day_out = self._get_day_output(hist_date)
-            if day_out is None:
-                continue
-
-            w_recency = np.exp(-i / DECAY_LAMBDA)
-            w_dow = DOW_BOOST if hist_date.weekday() == forecast_dow else 1.0
-            w = w_recency * w_dow
+        hmt_days = 0
+        if has_ckpt:
+            for i in range(WINDOW_DAYS):
+                hist_date = as_of - datetime.timedelta(days=i + 1)
+                day_out = self._get_day_output(hist_date)
+                if day_out is None:
+                    continue
+                hmt_days += 1
+                w = kernel_weight(
+                    i,
+                    hist_date,
+                    forecast_date,
+                    distinct_years,
+                    day_coverage_weight(metrics_by_date.get(hist_date), floor_cleared),
+                )
+                for b in range(N_BUCKETS):
+                    if b in day_out["l0"]:
+                        probs = _softmax(day_out["l0"][b] / self._temp)
+                        bucket_l0_sum[b] += w * probs
+                        bucket_weight[b] += w
+                        bucket_conf_samples[b].append(float(probs.max()))
+                    if b in day_out["l1"]:
+                        bucket_l1_sum[b] += w * _softmax(day_out["l1"][b] / self._temp)
 
             for b in range(N_BUCKETS):
-                if b in day_out["l0"]:
-                    probs = _softmax(day_out["l0"][b] / self._temp)
-                    bucket_l0_sum[b] += w * probs
-                    bucket_weight[b] += w
-                    bucket_conf_samples[b].append(float(probs.max()))
-                if b in day_out["l1"]:
-                    bucket_l1_sum[b] += w * _softmax(day_out["l1"][b] / self._temp)
+                if bucket_weight[b] > 0:
+                    bucket_l0_sum[b] /= bucket_weight[b]
+                    bucket_l1_sum[b] /= bucket_weight[b]
+                else:
+                    bucket_l0_sum[b] = np.ones(V_l0) / V_l0
 
-        # Normalise
+        # 8-class slice + metric class priors + HMM
+        l0_classes = list(L0_CLASSES)
+        hmt_emissions = np.zeros((N_BUCKETS, 8), dtype=np.float64)
         for b in range(N_BUCKETS):
-            if bucket_weight[b] > 0:
-                bucket_l0_sum[b] /= bucket_weight[b]
-                bucket_l1_sum[b] /= bucket_weight[b]
-            else:
-                bucket_l0_sum[b] = np.ones(V_l0) / V_l0  # uniform prior
+            class_arr = (
+                bucket_l0_sum[b, N_SPECIAL:].copy()
+                if V_l0 > N_SPECIAL
+                else np.ones(8) / 8
+            )
+            if class_arr.shape[0] < 8:
+                padded = np.ones(8) / 8
+                padded[: class_arr.shape[0]] = class_arr
+                class_arr = padded
+            tot = class_arr[:8].sum()
+            hmt_emissions[b] = class_arr[:8] / tot if tot > 0 else np.ones(8) / 8
 
-        # ── Format response ────────────────────────────────────────────────────
-        # L0 vocab layout: [PAD(0), MASK(1), SOD(2), EOD(3), class_0..class_7]
-        # Zero special-token probability mass and renormalise so the 8
-        # behavioral classes always sum to 1.0 in the histogram.
-        N_SPECIAL = 4
-        l0_classes = L0_CLASSES  # 8 behavioral class names
+        until = forecast_date
+        _b0_counts, b1_counts, trans_counts = occupancy_counts(occupancy, until=until)
+        transitions = laplace_transitions(trans_counts)
+        dow = forecast_date.weekday()
+        b1_em = np.stack(
+            [_probs_to_arr(b1_probs(b1_counts, b, dow)) for b in range(N_BUCKETS)]
+        )
+        b2_em = b2_day_emissions(b1_counts, trans_counts, dow)
+
+        forecast_metrics = metrics_by_date.get(as_of - datetime.timedelta(days=1))
+        sleep_v = (
+            float(forecast_metrics["sleep_minutes"])
+            if forecast_metrics and forecast_metrics.get("sleep_minutes") is not None
+            else None
+        )
+        home_v = (
+            float(forecast_metrics["time_at_home"])
+            if forecast_metrics and forecast_metrics.get("time_at_home") is not None
+            else None
+        )
+        priors = np.asarray(
+            priors_matrix(
+                N_BUCKETS, sleep_v, home_v, sleep_med, home_med, floor_cleared
+            ),
+            dtype=np.float64,
+        )
+        hmt_emissions = apply_class_priors(hmt_emissions, priors)
+        b1_em = apply_class_priors(b1_em, priors)
+        b2_em = apply_class_priors(b2_em, priors)
+
+        hmt_smooth = forward_backward(hmt_emissions, transitions, n_buckets=N_BUCKETS)
+        b1_smooth = forward_backward(b1_em, transitions, n_buckets=N_BUCKETS)
+        b2_smooth = forward_backward(b2_em, transitions, n_buckets=N_BUCKETS)
+
+        if force_model:
+            served = force_model
+        elif still_learning:
+            served = MODEL_B1 if n_hist_days > 0 else MODEL_B2
+        else:
+            from ci.hbpe.pipeline.scoring import fetch_latest_by_version
+
+            scores = fetch_latest_by_version(self.user_id)
+            served = pick_served_model(
+                scores.get(MODEL_HMT),
+                scores.get(MODEL_B1),
+                scores.get(MODEL_B2),
+                has_checkpoint=has_ckpt and hmt_days > 0,
+            )
+
+        if served == MODEL_HMT and hmt_days == 0:
+            served = MODEL_B1 if n_hist_days > 0 else MODEL_B2
+
+        emissions = {
+            MODEL_HMT: hmt_smooth,
+            MODEL_B1: b1_smooth,
+            MODEL_B2: b2_smooth,
+        }.get(served, b1_smooth)
+        self.last_model_version = served
+        self.last_still_learning = still_learning and served != MODEL_HMT
 
         results: list[dict] = []
         for b in range(N_BUCKETS):
             start_time = horizon_start + datetime.timedelta(minutes=BUCKET_MINUTES * b)
-            class_arr = bucket_l0_sum[b, N_SPECIAL:].copy()  # shape (8,)
-            total = class_arr.sum()
-            if total > 0:
-                class_arr /= total
+            class_arr = emissions[b]
             l0_probs = {cls: float(class_arr[i]) for i, cls in enumerate(l0_classes)}
-            # Top-10 L1 clusters by probability (keyed by human-readable label)
-            l1_arr = bucket_l1_sum[b]
-            top_l1_idx = np.argsort(l1_arr)[::-1][:10]
-            l1_probs: dict[str, float] = {}
-            for idx in top_l1_idx:
-                if l1_arr[idx] > 1e-6:
-                    uuid = self._l1_vocab.decode(int(idx))
-                    name = self._l1_display_names.get(uuid, uuid[:8])
-                    l1_probs[name] = float(l1_arr[idx])
-
+            predicted_l0 = l0_classes[int(np.argmax(class_arr))]
+            l1_probs = self._decode_l1(bucket_l1_sum[b], predicted_l0)
             samples = bucket_conf_samples[b]
             q10, q50, q90 = _quantiles(samples) if samples else (0.0, 0.0, 0.0)
-
             results.append(
                 {
                     "bucket_index": b,
                     "start_time": start_time.isoformat() + "Z",
                     "l0_probs": l0_probs,
                     "l1_probs": l1_probs,
-                    "l2_probs": {},  # L2 deferred — no ci.content data
+                    "l2_probs": {},
                     "q10": q10,
                     "q50": q50,
                     "q90": q90,
                 }
             )
-
         return results
+
+    def _get_occupancy(self) -> list[dict]:
+        if self._occupancy is None:
+            try:
+                from ci.hbpe.pipeline.baselines import fetch_occupancy_rows
+
+                self._occupancy = fetch_occupancy_rows(self.user_id)
+            except Exception as exc:
+                log.info("occupancy fetch skipped: %s", exc)
+                self._occupancy = []
+        return self._occupancy
+
+    def _decode_l1(self, l1_arr: np.ndarray, predicted_l0: str) -> dict[str, float]:
+        if l1_arr.size == 0:
+            return {}
+        top_idx = np.argsort(l1_arr)[::-1]
+        raw: dict[str, float] = {}
+        for idx in top_idx:
+            if l1_arr[idx] <= 1e-6:
+                continue
+            uuid = self._l1_vocab.decode(int(idx))
+            name = self._l1_display_names.get(uuid, uuid[:8])
+            l0 = self._l1_l0.get(uuid) or self._l1_l0.get(name)
+            if l0 and l0 != predicted_l0:
+                continue
+            raw[name] = float(l1_arr[idx])
+            if len(raw) >= 10:
+                break
+        total = sum(raw.values())
+        if total <= 0:
+            return {}
+        return {k: v / total for k, v in raw.items()}
 
     def invalidate(self, date: datetime.date) -> None:
         """Evict one day from the output cache (call on new event arrival)."""
         self._output_cache.pop(date, None)
+        self._occupancy = None
         log.debug("Cache invalidated for %s", date)
 
     def invalidate_all(self) -> None:
         """Clear the entire cache (call after LoRA adapter update)."""
         self._output_cache.clear()
+        self._occupancy = None
         log.info("Inference cache cleared (full invalidation)")
 
 
@@ -560,6 +747,10 @@ class InferenceEngine:
 def _softmax(x: np.ndarray) -> np.ndarray:
     e = np.exp(x - x.max())
     return e / e.sum()
+
+
+def _probs_to_arr(probs: dict[str, float]) -> np.ndarray:
+    return np.array([float(probs.get(c, 0.0)) for c in L0_CLASSES], dtype=np.float64)
 
 
 def _quantiles(values: list[float]) -> tuple[float, float, float]:

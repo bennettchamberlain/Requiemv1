@@ -40,6 +40,7 @@ const GET_PEOPLE = gql(`
           identifiers {
             kind
             value
+            rawValue
             label
           }
           interactionStats {

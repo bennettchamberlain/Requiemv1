@@ -1,5 +1,9 @@
 import { COALESCE_STAGES } from '../owedStages';
-import { IngestCoalesceService, INGEST_COALESCE_DELAY_SECONDS, INGEST_COALESCE_QUEUE } from '../services/IngestCoalesceService';
+import {
+  IngestCoalesceService,
+  INGEST_COALESCE_DELAY_SECONDS,
+  INGEST_COALESCE_QUEUE,
+} from '../services/IngestCoalesceService';
 
 function makeService(opts: { selfHeal?: boolean; running?: boolean } = {}) {
   const eventService = { send: jest.fn(async () => ['job-1']) };

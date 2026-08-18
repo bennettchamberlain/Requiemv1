@@ -16,6 +16,7 @@ import { InsightsExplainTool } from '../../tools/InsightsExplainTool';
 import { MediaFindPhotosTool } from '../../tools/MediaFindPhotosTool';
 import { PeopleFindTool } from '../../tools/PeopleFindTool';
 import { PlacesFindTool } from '../../tools/PlacesFindTool';
+import { PlacesNextTool } from '../../tools/PlacesNextTool';
 import { ReadKnowledgeTool } from '../../tools/ReadKnowledgeTool';
 import { SuggestionsFeedbackTool } from '../../tools/SuggestionsFeedbackTool';
 import { SuggestionsListTool } from '../../tools/SuggestionsListTool';
@@ -41,6 +42,7 @@ const TOOL_CLASSES = [
   GetStreamingAvailabilityTool,
   PeopleFindTool,
   PlacesFindTool,
+  PlacesNextTool,
   CalendarFindEventsTool,
   MediaFindPhotosTool,
   ForecastCalibrationTool,
@@ -70,6 +72,7 @@ const EXPECTED_INTENTS = [
   'people.find',
   'people.relationships',
   'places.find',
+  'places.next',
   'suggestions.feedback',
   'suggestions.list',
 ];

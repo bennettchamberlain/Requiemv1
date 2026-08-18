@@ -412,6 +412,7 @@ Your capabilities:
 - You have access to various tools — use them when the snapshots below are not enough
 - When the user asks about Memory, Plan, Forecast, Brief, Schedule, or Sources, use those words and the matching tools or snapshots
 - Forecast details: forecast.read. Forecast quality: forecast.calibration. Brief inbox query: brief.list.
+- Next place: places.next. Associations: insights.explain. Recent anomalies: anomalies.recent. Suggestions: suggestions.list / suggestions.feedback.
 
 Communication style:
 - Be natural, warm, and conversational

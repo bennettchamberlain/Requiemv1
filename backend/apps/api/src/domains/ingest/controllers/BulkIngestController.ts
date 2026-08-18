@@ -693,7 +693,12 @@ export class BulkIngestController {
           serviceContext,
           recs.map((record) => ({
             ...record,
+            // The three item timestamps arrive as ISO strings and the DTO takes
+            // Dates. Units are NOT converted here — ItemService owns that, once.
             acquiredAt: record.acquiredAt !== undefined ? new Date(record.acquiredAt) : undefined,
+            manufacturedAt:
+              record.manufacturedAt != null ? new Date(record.manufacturedAt) : record.manufacturedAt,
+            expiresAt: record.expiresAt != null ? new Date(record.expiresAt) : record.expiresAt,
           })),
         ),
     });
