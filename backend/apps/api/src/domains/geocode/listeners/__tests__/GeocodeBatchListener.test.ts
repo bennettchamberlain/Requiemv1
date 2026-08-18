@@ -99,6 +99,8 @@ function makeListener(
     ),
   };
 
+  const logger = makeLogger();
+
   const listener = new GeocodeBatchListener(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     dataSource as any,
@@ -109,7 +111,7 @@ function makeListener(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     placeService as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    makeLogger() as any,
+    logger as any,
   );
 
   return {
@@ -122,6 +124,7 @@ function makeListener(
     reverseCalls,
     updates,
     placeCalls,
+    logger,
   };
 }
 
@@ -421,5 +424,135 @@ describe('GeocodeBatchListener Place linking', () => {
 
     expect(updates[0].data.location_name).toBe('Mountain View, CA');
     expect(updates[0].data.location_entity_id).toBeUndefined();
+  });
+});
+
+function retryableOutcome(): GeocodeOutcome {
+  return { status: 'OVER_QUERY_LIMIT', point: null, confidence: null, cached: false, retryable: true };
+}
+
+function retryableReverse(): ReverseGeocodeOutcome {
+  return { status: 'OVER_QUERY_LIMIT', placeName: null, cached: false, retryable: true };
+}
+
+/**
+ * Every test elsewhere in this file supplies a single-shot outcome function,
+ * so geocodeWithRetry/reverseGeocodeWithRetry's backoff loop never actually
+ * loops. These tests script a call-counting outcome so the retry body runs
+ * for real, and use fake timers so the real BACKOFF_MS delays (500/1500/4000ms
+ * — up to 6s across 3 retries) don't make the suite slow.
+ */
+describe('GeocodeBatchListener retry loop (geocodeWithRetry)', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  it('retries a transient failure and succeeds once the provider recovers, busting the cache on every retry', async () => {
+    const rows = [{ event_id: 'e1', location_name: 'Cafe X' }];
+    let calls = 0;
+    const { listener, geocodeCalls, updates } = makeListener(rows, () => {
+      calls += 1;
+
+      return calls <= 2 ? retryableOutcome() : okOutcome();
+    });
+
+    const run = listener.handleBatch({ userId: USER });
+    await jest.runAllTimersAsync();
+    await run;
+
+    // First call honors the caller's bustCache; both retries force bustCache:true.
+    expect(geocodeCalls.map((c) => c.bustCache)).toEqual([false, true, true]);
+    expect(geocodeCalls).toHaveLength(3);
+    expect(updates[0]?.data.location_coordinates).toBeDefined();
+  });
+
+  it('exhausts the full backoff schedule and gives up (leaves the event unresolved) when the provider never recovers', async () => {
+    const rows = [{ event_id: 'e1', location_name: 'Cafe X' }];
+    const { listener, geocodeCalls, updates, logger } = makeListener(rows, () => retryableOutcome());
+
+    const run = listener.handleBatch({ userId: USER });
+    await jest.runAllTimersAsync();
+    await run;
+
+    // 1 initial attempt + 3 backoff retries (BACKOFF_MS has 3 entries) = 4 total calls.
+    expect(geocodeCalls).toHaveLength(4);
+    expect(updates).toHaveLength(0);
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Geocode exhausted retries for location',
+      expect.objectContaining({ location: 'Cafe X' }),
+    );
+  });
+
+  it('waits the documented backoff schedule (500ms, 1500ms, 4000ms) between attempts', async () => {
+    const rows = [{ event_id: 'e1', location_name: 'Cafe X' }];
+    let calls = 0;
+    const { listener, geocodeCalls } = makeListener(rows, () => {
+      calls += 1;
+
+      return calls <= 3 ? retryableOutcome() : okOutcome();
+    });
+
+    const run = listener.handleBatch({ userId: USER });
+
+    await jest.advanceTimersByTimeAsync(0);
+    expect(geocodeCalls).toHaveLength(1); // initial attempt, no wait yet
+
+    await jest.advanceTimersByTimeAsync(500);
+    expect(geocodeCalls).toHaveLength(2); // after the first backoff step
+
+    await jest.advanceTimersByTimeAsync(1500);
+    expect(geocodeCalls).toHaveLength(3); // after the second backoff step
+
+    await jest.advanceTimersByTimeAsync(4000);
+    expect(geocodeCalls).toHaveLength(4); // after the third backoff step — now succeeds
+
+    await run;
+  });
+});
+
+describe('GeocodeBatchListener retry loop (reverseGeocodeWithRetry)', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  it('retries a transient reverse-geocode failure and succeeds once the provider recovers', async () => {
+    const rows = [{ event_id: 'e1', lat: 37.4, lng: -122.1 }];
+    let calls = 0;
+    const { listener, reverseCalls, updates } = makeListener(
+      rows,
+      () => okOutcome(),
+      () => {
+        calls += 1;
+
+        return calls <= 2
+          ? retryableReverse()
+          : { status: 'OK', placeName: 'Mountain View, CA', cached: false, retryable: false };
+      },
+    );
+
+    const run = listener.handleBatch({ userId: USER, direction: 'reverse' });
+    await jest.runAllTimersAsync();
+    await run;
+
+    expect(reverseCalls.map((c) => c.bustCache)).toEqual([false, true, true]);
+    expect(updates[0]?.data.location_name).toBe('Mountain View, CA');
+  });
+
+  it('exhausts retries and leaves the event unresolved when reverse-geocoding never recovers', async () => {
+    const rows = [{ event_id: 'e1', lat: 37.4, lng: -122.1 }];
+    const { listener, reverseCalls, updates, logger } = makeListener(
+      rows,
+      () => okOutcome(),
+      () => retryableReverse(),
+    );
+
+    const run = listener.handleBatch({ userId: USER, direction: 'reverse' });
+    await jest.runAllTimersAsync();
+    await run;
+
+    expect(reverseCalls).toHaveLength(4);
+    expect(updates).toHaveLength(0);
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Reverse-geocode exhausted retries',
+      expect.objectContaining({ lat: 37.4, lng: -122.1 }),
+    );
   });
 });

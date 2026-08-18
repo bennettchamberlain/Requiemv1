@@ -609,14 +609,22 @@ if (!parsed.geocoding.apiKey && process.env.GOOGLE_MAPS_KEY) {
   parsed.geocoding.apiKey = process.env.GOOGLE_MAPS_KEY;
 }
 
-// The geocoding proxy follows the Portal URL the box already uses unless an
-// explicit base URL is configured (GEOCODING_PORTAL_BASE_URL), so routing
-// geocoding via the hub host instead of Portal directly is a one-variable
-// change. Same shape as the embedding-host fallback above: the OR lives here so
-// the provider reads exactly one config value.
-if (!parsed.geocoding.portalBaseUrl) {
-  parsed.geocoding.portalBaseUrl = parsed.ciPortal.url ?? '';
+/**
+ * The geocoding proxy follows the Portal URL the box already uses unless an
+ * explicit base URL is configured (GEOCODING_PORTAL_BASE_URL), so routing
+ * geocoding via the hub host instead of Portal directly is a one-variable
+ * change. Exported as a pure function (rather than inlined as an `if`) so the
+ * fallback is unit-testable without re-parsing the whole config module under
+ * different env vars.
+ */
+export function resolveGeocodingPortalBaseUrl(configured: string, ciPortalUrl: string | undefined): string {
+  return configured || ciPortalUrl || '';
 }
+
+parsed.geocoding.portalBaseUrl = resolveGeocodingPortalBaseUrl(
+  parsed.geocoding.portalBaseUrl,
+  parsed.ciPortal.url,
+);
 
 // Warn (don't throw) on a geocoding misconfiguration: the server must still
 // boot, and the backfill simply reports a transient/denied status until it is
