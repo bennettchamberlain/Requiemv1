@@ -34,7 +34,7 @@ interface Answer {
 }
 
 export function PromptsPage() {
-  usePageTitle('Questions - Companion Intelligence');
+  usePageTitle('Reflections - Companion Intelligence');
 
   const { t } = useTranslation();
   const [{ authToken }] = useAuth();
@@ -251,7 +251,7 @@ export function PromptsPage() {
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
               {/* Mobile: Title and refresh button in same row */}
               <div className="flex items-center justify-between lg:justify-start">
-                <h1 className="text-2xl font-bold">Questions</h1>
+                <h1 className="text-2xl font-bold">Reflections</h1>
                 <IconButton
                   variant="outline"
                   onClick={fetchAnswers}
@@ -314,13 +314,13 @@ export function PromptsPage() {
             {loading ? (
               <div className="text-center py-8">
                 <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4" />
-                <p>Loading answers...</p>
+                <p>Loading reflections...</p>
               </div>
             ) : error ? (
               <div className="bg-destructive/10 text-destructive rounded-md p-4 flex items-start gap-3">
                 <AlertCircle className="h-5 w-5 mt-0.5 flex-shrink-0" />
                 <div>
-                  <h3 className="font-medium">Error loading answers</h3>
+                  <h3 className="font-medium">Error loading reflections</h3>
                   <p className="text-sm">{error}</p>
                   <Button variant="outline" size="sm" className="mt-2" onClick={fetchAnswers}>
                     Try Again
@@ -330,7 +330,7 @@ export function PromptsPage() {
             ) : (
               <>
                 {answers.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">No answers found in the system</div>
+                  <div className="text-center py-8 text-muted-foreground">No reflections yet</div>
                 ) : (
                   <>
                     {/* Card View - Always shown on mobile, toggleable on desktop */}
@@ -434,7 +434,7 @@ export function PromptsPage() {
                               <Table.Header>
                                 <Table.Row>
                                   <Table.Head className="w-1/4 min-w-[200px] bg-background">
-                                    Question
+                                    Reflection
                                   </Table.Head>
                                   <Table.Head className="w-1/4 min-w-[200px] bg-background">
                                     Answer
@@ -534,7 +534,7 @@ export function PromptsPage() {
                   </>
                 )}
                 <div className="text-xs text-muted-foreground text-right mt-4">
-                  Total answers: {answers.length}
+                  Total reflections: {answers.length}
                 </div>
               </>
             )}

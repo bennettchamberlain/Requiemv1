@@ -462,9 +462,10 @@ export const ConfigSchema = z.object({
     /** The archive-import surface (/import): upload, run progress, the source catalogue and the guide. */
     'import.page': booleanStringSchema,
     /**
-     * Wholesale gate for the Prompts browse page (`/memory/questions`) and the
-     * Forecast tooltip link into Brief. `/insights` itself always redirects to
-     * `/brief`; this flag does not hide Brief.
+     * Wholesale gate for the Reflections browse page (`/memory/reflections`,
+     * formerly `/memory/questions`) and the Forecast tooltip link into Brief.
+     * `/insights` itself always redirects to `/brief`; this flag does not hide
+     * Brief.
      */
     'insights.page': booleanStringSchema,
     /** Wholesale gate for the Chat page (/chat + nav entry points). */

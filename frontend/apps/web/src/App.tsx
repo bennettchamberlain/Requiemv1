@@ -326,9 +326,15 @@ function AppRoutes() {
 
           {isFeatureEnabled('insights.page') && (
             <>
-              <Route path="/prompts" element={<Navigate to="/memory/questions" replace />} />
+              {/*
+                "Questions" is what this page used to be called; it is
+                "Reflections" in the UI now. Both old paths stay as redirects so
+                bookmarks, docs and any link still in the wild keep working.
+              */}
+              <Route path="/prompts" element={<Navigate to="/memory/reflections" replace />} />
+              <Route path="/memory/questions" element={<Navigate to="/memory/reflections" replace />} />
               <Route
-                path="/memory/questions"
+                path="/memory/reflections"
                 element={
                   <ProtectedRoute>
                     <PromptsPage />

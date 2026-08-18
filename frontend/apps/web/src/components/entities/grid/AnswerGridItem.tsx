@@ -29,7 +29,7 @@ export function AnswerGridItem({ answer, onClick }: Props) {
       <EntityGridItem.Header>
         <AnswerIcon className="shrink-0" />
 
-        <div className="text-md font-semibold truncate">Question</div>
+        <div className="text-md font-semibold truncate">Reflection</div>
       </EntityGridItem.Header>
 
       <EntityGridItem.Content className="overflow-hidden">
@@ -44,7 +44,7 @@ export function AnswerGridItem({ answer, onClick }: Props) {
       </EntityGridItem.Content>
 
       <EntityGridItem.Footer className="self-end">
-        <div className="text-sm text-muted-foreground">Question</div>
+        <div className="text-sm text-muted-foreground">Reflection</div>
       </EntityGridItem.Footer>
     </EntityGridItem>
   );
