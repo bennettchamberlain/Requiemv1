@@ -394,6 +394,32 @@ export class PersonService extends EntityService<PersonEntity, Person> {
     return rows.map((row) => ({ id: row.id, type: 'person' as IndexableEntity }));
   }
 
+  /**
+   * True total of people matching the same filters {@link getEntitiesForPeople} applies (minus
+   * the pagination-only `limit`/`order`/`afterTime`/`afterId`) — a real `COUNT(*)`, not the
+   * length of one `limit`-bounded page of identifiers. See EventService.countEntitiesForEvents.
+   */
+  async countEntitiesForPeople(
+    context: ServiceContext,
+    options: { startTime?: Date; endTime?: Date },
+  ): Promise<number> {
+    let query = this.repository
+      .createQueryBuilder('person')
+      .where('person.owner_user_id = :userId', { userId: context.userId })
+      .andWhere('person.is_active IS DISTINCT FROM FALSE')
+      .andWhere('person.merged_into_entity_id IS NULL');
+
+    if (options.startTime) {
+      query = query.andWhere('person.created_at >= :startTime', { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere('person.created_at <= :endTime', { endTime: options.endTime });
+    }
+
+    return query.getCount();
+  }
+
   async update(context: ServiceContext, id: string, data: UpdatePersonDto): Promise<Person | null> {
     const { properties, ...rest } = data;
 
