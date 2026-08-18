@@ -185,4 +185,66 @@ describe('Fitbit datasource', () => {
       await fs.promises.unlink(badFile).catch(() => {});
     }
   });
+
+  // Regression: pushRecord used a constant content.filename ('sleep.txt') and
+  // set no item.id, so hashItem's fallback hash reduced to
+  // dataSource+classification+ISO(timestamp) alone — two sleep entries sharing
+  // a recorded start second (a paired Fitbit + phone app both logging sleep,
+  // or a record genuinely missing logId) collapsed under the staging table's
+  // ON CONFLICT (run_id, data_source, content_hash) DO NOTHING and one was
+  // silently dropped. Real Fitbit exports carry a logId, so this exercises
+  // both: the (missing-logId) index fallback, and — via the re-import — that
+  // a real logId alone is enough to stay stable and idempotent.
+  it('assigns unique, stable ids to same-second sleep records that would otherwise dedup-collapse', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const fi = new FitbitFileImporter();
+    const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'fitbit-collapse-'));
+    const sleepFile = path.join(tmpDir, 'sleep-2023-06-01.json');
+    // Two records, same startTime second, neither carrying a logId.
+    await fs.promises.writeFile(
+      sleepFile,
+      JSON.stringify([
+        {
+          dateOfSleep: '2023-06-01',
+          startTime: '2023-06-01T23:00:00.000',
+          endTime: '2023-06-02T02:00:00.000',
+          minutesAsleep: 180,
+          minutesAwake: 10,
+          efficiency: 90,
+        },
+        {
+          dateOfSleep: '2023-06-01',
+          startTime: '2023-06-01T23:00:00.000',
+          endTime: '2023-06-02T03:00:00.000',
+          minutesAsleep: 235,
+          minutesAwake: 15,
+          efficiency: 91,
+        },
+      ]),
+    );
+    try {
+      const run = async () => {
+        const pipeline: EmittedGraph[] = [];
+        await fi.fileImport({}, { filename: 'sleep-2023-06-01.json', fullPath: sleepFile }, {
+          pipeline,
+          timeframe: {},
+          log: () => {},
+        } as unknown as ImportParams);
+
+        return pipeline;
+      };
+
+      const items = await run();
+      expect(items.length).toBe(2);
+      const ids = items.map((p) => p.item.id!);
+      expect(ids.every(Boolean)).toBe(true);
+      expect(new Set(ids).size).toBe(2);
+
+      const again = await run();
+      expect(again.map((p) => p.item.id!)).toEqual(ids);
+    } finally {
+      await fs.promises.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
 });

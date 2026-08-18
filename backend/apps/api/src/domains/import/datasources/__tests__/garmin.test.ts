@@ -127,4 +127,48 @@ describe('Garmin Connect datasource', () => {
       await fs.promises.rm(tmpDir, { recursive: true, force: true });
     }
   });
+
+  // Regression: pushRow used a constant content.filename ('workout.txt') and set
+  // no item.id, so hashItem's fallback hash reduced to
+  // dataSource+classification+ISO(timestamp) alone — two activities recorded in
+  // the same second (plausible for back-to-back Garmin activities) collapsed
+  // under the staging table's ON CONFLICT (run_id, data_source, content_hash)
+  // DO NOTHING and one was silently dropped.
+  it('assigns unique, stable ids to same-second activities that would otherwise dedup-collapse', async () => {
+    const fi = new GarminFileImporter();
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'garmin-collapse-'));
+    const csv = path.join(tmpDir, 'Activities.csv');
+    await fs.promises.writeFile(
+      csv,
+      'Activity Type,Date,Favorite,Title,Distance,Calories,Avg HR\n' +
+        'Running,2023-06-01 07:00:00,false,Interval 1,3.00,300,150\n' +
+        'Running,2023-06-01 07:00:00,false,Interval 2,3.10,310,152\n',
+    );
+    try {
+      const run = async () => {
+        const pipeline: EmittedGraph[] = [];
+        await fi.fileImport({}, { filename: 'Activities.csv', fullPath: csv }, {
+          pipeline,
+          timeframe: {},
+          log: () => {},
+        } as unknown as ImportParams);
+
+        return pipeline;
+      };
+
+      const items = await run();
+      expect(items.length).toBe(2);
+      const ids = items.map((p) => p.item.id!);
+      expect(ids.every(Boolean)).toBe(true);
+      expect(new Set(ids).size).toBe(2);
+
+      // Re-import of the same file yields the same ids (idempotent).
+      const again = await run();
+      expect(again.map((p) => p.item.id!)).toEqual(ids);
+    } finally {
+      await fs.promises.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
 });

@@ -97,4 +97,45 @@ describe('Apple Music datasource', () => {
       await fs.promises.unlink(emptyFile).catch(() => {});
     }
   });
+
+  // Regression: pushRow used a constant content.filename ('play.txt') and set
+  // no item.id, so hashItem's fallback hash reduced to
+  // dataSource+classification+ISO(timestamp) alone — two tracks logged in the
+  // same second (repeated or skip-replayed plays are common in a real
+  // listening history) collapsed under the staging table's ON CONFLICT (run_id,
+  // data_source, content_hash) DO NOTHING and one was silently dropped.
+  it('assigns unique, stable ids to same-second plays that would otherwise dedup-collapse', async () => {
+    const fs = await import('node:fs');
+    const fi = new AppleMusicFileImporter();
+    const csv = path.join(FIXTURES_DIR, 'apple_music-export', 'collapse.csv');
+    await fs.promises.writeFile(
+      csv,
+      'Song Name,Artist Name,Album Name,Event Start Timestamp,Play Duration Milliseconds,End Reason Type\n' +
+        'Song A,Artist A,Album A,2023-06-01T07:00:00Z,180000,NATURAL_END_OF_TRACK\n' +
+        'Song B,Artist B,Album B,2023-06-01T07:00:00Z,190000,NATURAL_END_OF_TRACK\n',
+    );
+    try {
+      const run = async () => {
+        const pipeline: EmittedGraph[] = [];
+        await fi.fileImport({}, { filename: 'collapse.csv', fullPath: csv }, {
+          pipeline,
+          timeframe: {},
+          log: () => {},
+        } as unknown as ImportParams);
+
+        return pipeline;
+      };
+
+      const items = await run();
+      expect(items.length).toBe(2);
+      const ids = items.map((p) => p.item.id!);
+      expect(ids.every(Boolean)).toBe(true);
+      expect(new Set(ids).size).toBe(2);
+
+      const again = await run();
+      expect(again.map((p) => p.item.id!)).toEqual(ids);
+    } finally {
+      await fs.promises.unlink(csv).catch(() => {});
+    }
+  });
 });

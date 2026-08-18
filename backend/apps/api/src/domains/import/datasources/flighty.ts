@@ -5,6 +5,7 @@ import path from 'path';
 import { parseCSVRows } from './csv';
 import type { FileImporter, Recognition, DirEntry } from './registry';
 import { registerDataSource } from './registry';
+import { timeframeContains } from './timeline';
 import type { ImportParams, Metadata } from './timeline';
 
 interface FlightyOptions {
@@ -77,6 +78,13 @@ class FlightyImporter implements FileImporter {
       };
       const takeoffTs = rec.takeOffActual ? parseLocalDate(rec.takeOffActual) : undefined;
       const landingTs = rec.landingActual ? parseLocalDate(rec.landingActual) : undefined;
+      // A user-scoped or date-bounded re-import (e.g. "only flights since last
+      // sync") must exclude flights outside the requested window, the same as
+      // every sibling importer in this directory gates on params.timeframe.
+      if (!timeframeContains(params.timeframe, takeoffTs)) {
+        continue;
+      }
+
       const metadata: Metadata = {
         'Flight airline': rec.airline,
         'Flight number': rec.flightNumber,
