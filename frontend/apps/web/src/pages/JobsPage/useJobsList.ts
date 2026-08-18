@@ -39,6 +39,8 @@ export interface JobFilters {
   state: string;
   queue: string;
   category: string;
+  /** Exact event name (e.g. `smart.rotation.work`); narrower than category. */
+  type: string;
   search: string;
   offset: number;
   limit: number;
@@ -48,6 +50,7 @@ export const DEFAULT_JOB_FILTERS: JobFilters = {
   state: '',
   queue: '',
   category: '',
+  type: '',
   search: '',
   offset: 0,
   limit: 50,
@@ -55,6 +58,10 @@ export const DEFAULT_JOB_FILTERS: JobFilters = {
 
 function toQueryString(filters: JobFilters): string {
   const params = new URLSearchParams();
+
+  if (filters.type) {
+    params.set('type', filters.type);
+  }
 
   if (filters.state) {
     params.set('state', filters.state);

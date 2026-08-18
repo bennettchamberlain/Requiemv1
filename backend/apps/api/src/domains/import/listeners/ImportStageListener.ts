@@ -100,7 +100,7 @@ export class ImportStageListener implements OnApplicationBootstrap {
   }
 
   /** The same sweep, on a clock, so recovery does not depend on a reboot. */
-  @Cron(RESUME_SWEEP_CRON, { role: 'worker' })
+  @Cron(RESUME_SWEEP_CRON, { name: 'ImportStageListener.sweepOnSchedule', role: 'worker' })
   async sweepOnSchedule(): Promise<void> {
     await this.sweep();
   }

@@ -18,7 +18,7 @@ export class AnswerInferenceCron {
     this.logger.setContext(AnswerInferenceCron.name);
   }
 
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Cron(CronExpression.EVERY_MINUTE, { name: 'AnswerInferenceCron.cronInferAnswers' })
   async cronInferAnswers() {
     if (await this.featureService.isFeatureEnabled('smart.rotation')) {
       return;

@@ -68,6 +68,8 @@ export interface JobQuery {
   readonly state?: string;
   readonly queue?: string;
   readonly category?: string;
+  /** Exact event name, e.g. `smart.rotation.work`. Narrower than `category`. */
+  readonly type?: string;
   readonly search?: string;
   readonly limit?: number;
   readonly offset?: number;
@@ -245,6 +247,12 @@ export class JobQueryService {
 
     if (query.queue) {
       builder.andWhere('job.name = :queue', { queue: query.queue });
+    }
+
+    // Exact event name. `category` groups many events; this picks one, which is
+    // what an operator wants once they know WHICH job is misbehaving.
+    if (query.type) {
+      builder.andWhere(`job.data->>'name' = :type`, { type: query.type });
     }
 
     if (query.category) {

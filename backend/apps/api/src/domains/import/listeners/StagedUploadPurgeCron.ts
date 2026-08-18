@@ -48,7 +48,7 @@ export class StagedUploadPurgeCron {
    */
   // Runs where the stages run: the purge deletes staged bytes, and that is
   // the worker's filesystem duty in a split deployment.
-  @Cron(STAGED_UPLOAD_PURGE_CRON, { role: 'worker' })
+  @Cron(STAGED_UPLOAD_PURGE_CRON, { name: 'StagedUploadPurgeCron.runOnSchedule', role: 'worker' })
   async runOnSchedule(): Promise<void> {
     try {
       await this.purgeOnce();

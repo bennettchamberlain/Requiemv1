@@ -684,7 +684,7 @@ export class PipelineControlService {
    * because one tick failed. The next tick retries in two minutes and nothing is
    * lost, because every fact the tick relies on is a row rather than a variable.
    */
-  @Cron(PIPELINE_CONTROL_TICK_CRON)
+  @Cron(PIPELINE_CONTROL_TICK_CRON, { name: 'PipelineControlService.tickOnSchedule' })
   async tickOnSchedule(): Promise<void> {
     try {
       await this.tick();
