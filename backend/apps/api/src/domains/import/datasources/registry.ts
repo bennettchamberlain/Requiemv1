@@ -186,14 +186,51 @@ export async function dataSourcesRecognize(
   opts: RecognizeParams,
   runOpts: RecognizeRunOptions = {},
 ): Promise<DataSourceRecognition[]> {
-  // Best match per data source, keyed by name, so descent can't list the same
-  // importer twice — we keep whichever level matched it with most confidence.
-  const best = new Map<string, DataSourceRecognition>();
+  // Best match per data source AT A GIVEN LOCATION, keyed by name — so descent
+  // can't list the same importer twice for the same unit, but CAN list it twice
+  // for two different files it independently recognizes.
+  //
+  // "Twice for the same unit" happens when a match is found at two NESTING
+  // levels: a Takeout root matches google_voice by directory shape, and a file
+  // three levels down independently matches google_voice too — those are the
+  // same underlying unit seen at different granularities, and importing both
+  // would duplicate everything. "Twice for two different files" happens when a
+  // browser profile directory has both `Bookmarks` and `History`, siblings, and
+  // chromium.ts's recognizer legitimately and correctly claims each on its own
+  // — those are NOT the same unit, and collapsing them onto whichever file
+  // `readdir()` happened to enumerate first silently dropped the other file
+  // from ever being imported (confirmed live: a real Chrome profile landed
+  // 3,197 bookmarks and ZERO history rows, deterministically, across repeated
+  // runs — chromium.ts's own History parser is correct and never got a chance
+  // to run, because `Bookmarks`, sorting first, was the only match this
+  // dedup kept for the name 'chromium').
+  //
+  // The two cases are told apart by path containment: nesting means one
+  // match's path is an ancestor of (or equal to) the other's. Siblings are
+  // neither ancestor of the other — those are kept side by side.
+  const best = new Map<string, DataSourceRecognition[]>();
   const consider = (r: DataSourceRecognition) => {
     const existing = best.get(r.data_source.name);
-    if (!existing || r.recognition.confidence > existing.recognition.confidence) {
-      best.set(r.data_source.name, r);
+
+    if (!existing) {
+      best.set(r.data_source.name, [r]);
+
+      return;
     }
+
+    const nestedWith = existing.find((e) => isAncestorPath(e.matchedPath, r.matchedPath));
+
+    if (!nestedWith) {
+      existing.push(r);
+
+      return;
+    }
+
+    if (r.recognition.confidence > nestedWith.recognition.confidence) {
+      existing[existing.indexOf(nestedWith)] = r;
+    }
+    // Otherwise the existing, equally-or-more-confident match at the ancestor
+    // (or same) level stands, and `r` is redundant with it — dropped.
   };
 
   for (const r of await recognizeLevel(ctx, entry, opts)) {
@@ -206,7 +243,7 @@ export async function dataSourcesRecognize(
     await descendRecognize(ctx, entry.fullPath, opts, consider, maxDepth, maxEntries, 1);
   }
 
-  const results = [...best.values()];
+  const results = [...best.values()].flat();
   // Clamp confidence to [0, 1] — importers occasionally return values outside
   // this range (e.g. google_voice @ 1.3) which would mislead callers.
   for (const r of results) {
@@ -234,6 +271,33 @@ function isDirectorySafe(p: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Is `a` an ancestor of `b`, `b` an ancestor of `a`, or the same path — i.e.
+ * are the two "nested" relative to each other, in either direction? Two
+ * SIBLINGS (`.../Bookmarks` and `.../History`, both direct children of the
+ * same profile directory) are never nested, and that is exactly the
+ * distinction {@link dataSourcesRecognize}'s dedup needs: collapse the same
+ * unit seen at two levels of descent, but never collapse two different files
+ * a single data source happens to recognize side by side.
+ *
+ * Either path missing means there is no information to prove them disjoint —
+ * treated as nested (collapsed), the same conservative choice the dedup made
+ * before this distinction existed.
+ */
+function isAncestorPath(a: string | undefined, b: string | undefined): boolean {
+  if (a == null || b == null || a === b) {
+    return true;
+  }
+
+  const isInside = (parent: string, child: string): boolean => {
+    const rel = path.relative(parent, child);
+
+    return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+  };
+
+  return isInside(a, b) || isInside(b, a);
 }
 
 /**

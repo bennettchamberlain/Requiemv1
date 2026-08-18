@@ -509,8 +509,15 @@ export class AmazonFileImporter implements FileImporter {
 
     if (stat.isFile()) {
       const base = path.basename(root);
+
+      // Filename alone used to be enough for the top confidence tier — but
+      // "Order History.csv" is boilerplate phrasing several other retailers'
+      // own "download your data" exports use verbatim (eBay, Target,
+      // Walmart-style tools), with completely different columns. Require the
+      // same header verification the unnamed fallback below already does, so
+      // a same-named CSV from elsewhere is never claimed on filename alone.
       if (filenameMatches(base)) {
-        return { confidence: 0.95 };
+        return sniffHeader(root) ? { confidence: 0.95 } : { confidence: 0 };
       }
 
       if (path.extname(base).toLowerCase() === '.csv' && sniffHeader(root)) {

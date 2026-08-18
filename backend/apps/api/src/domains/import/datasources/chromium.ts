@@ -237,7 +237,15 @@ class ChromiumFileImporter implements FileImporter {
             data: async () => Buffer.from(`${b.title}\n${b.url}`),
           },
           metadata: {
-            Title: b.title || undefined,
+            // A title-less save (Chrome allows editing a bookmark's name down
+            // to empty) left `Title` undefined, which push/canonical.ts's
+            // titleFor() falls through all the way to the row's own filename
+            // — this content's is the constant 'bookmark.txt', so every
+            // untitled bookmark showed that instead of the page it saved. The
+            // URL is always present for a real bookmark and is at least the
+            // saved page, not a meaningless constant shared by every one of
+            // them.
+            Title: b.title || b.url || undefined,
             URL: b.url,
             Folder: b.folder || undefined,
             'Added Date': ts?.toISOString(),
