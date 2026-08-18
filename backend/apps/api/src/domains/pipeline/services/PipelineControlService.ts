@@ -1100,8 +1100,15 @@ export class PipelineControlService {
    * abandoning a claim. The wait is bounded by {@link SHARD_LEASE_SECONDS} and
    * cannot be unbounded, because a lease that is never renewed always expires —
    * which is what makes "eventually finalised" a guarantee rather than a hope.
+   *
+   * Public for the same reason as {@link reapExpiredShardLeases} and
+   * {@link claimStageShard}: the property that matters — a shard this run's OWN
+   * tick claimed a live lease on moments before cancellation lands is left
+   * untouched while every other idle shard of the same run IS torn down in the
+   * same pass — is a fact about this UPDATE's `WHERE` clause interacting with a
+   * lease `claimStageShard` actually stamped, not a fact a mock can attest to.
    */
-  private async tearDownCancelledRun(runId: string, report: ControlTickReport): Promise<void> {
+  async tearDownCancelledRun(runId: string, report: ControlTickReport): Promise<void> {
     await this.dataSource.query(
       `UPDATE ci.pipeline_shards
           SET status           = $2,
