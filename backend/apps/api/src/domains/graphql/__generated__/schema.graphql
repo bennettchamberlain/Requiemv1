@@ -288,6 +288,9 @@ type CalibrationScoreType {
   ece: Float
   l0Top1Acc: Float
   l1Top3Acc: Float
+
+  """hmt / b0 / b1 / b2"""
+  modelVersion: String
   nBuckets: Int
   scoredAt: String!
 }
@@ -573,29 +576,141 @@ input CreateEventInput {
 
 input CreateInventoryInput {
   acquiredAt: DateTime
+
+  """Seller, giver or source, as free text."""
+  acquiredFrom: String
+  acquisitionMethod: ItemAcquisitionMethod
   brand: String
   category: String
+
+  """Dominant colour as #rrggbb."""
+  colorHex: String
+
+  """Colour names, dominant first."""
+  colors: [String!]
+
+  """
+  {material: fraction} summing to at most 1. Percentages are accepted and converted.
+  """
+  composition: JSON
   condition: ItemCondition
   currency: String
   currentValue: Float
   description: String
+
+  """
+  Shorthand such as "12 x 8 x 2 in". Fills only the axes not given individually.
+  """
+  dimensions: String
+
+  """
+  When it stops being usable. Distinct from a warranty, which is a contract.
+  """
+  expiresAt: DateTime
+
+  """Height, in millimetres."""
+  heightMm: Float
   identifierCodes: JSON
+
+  """A digital item is refused a mass, a size and a volume."""
+  isDigital: Boolean
+
+  """Longest dimension, in millimetres."""
+  lengthMm: Float
+
+  """When the object was made, not when it was acquired."""
+  manufacturedAt: DateTime
+
+  """As-owned mass, in grams."""
+  massG: Float
+
+  """What the object is made of."""
+  materials: [String!]
   metadata: JSON
+  model: String
   name: String!
   purchasePrice: Float
   sourceId: String
   sourceSystem: String
   sourceType: String
   subcategory: String
+  unitSystem: ItemUnitSystem
+
+  """Capacity — what it holds — in millilitres."""
+  volumeMl: Float
+
+  """Width, in millimetres."""
+  widthMm: Float
 }
 
 input CreateItemInput {
+  """When it was bought or received."""
+  acquiredAt: DateTime
+
+  """Seller, giver or source, as free text."""
+  acquiredFrom: String
+  acquisitionMethod: ItemAcquisitionMethod
   brand: String
   category: String
+
+  """Dominant colour as #rrggbb."""
+  colorHex: String
+
+  """Colour names, dominant first."""
+  colors: [String!]
+
+  """
+  {material: fraction} summing to at most 1. Percentages are accepted and converted.
+  """
+  composition: JSON
+  condition: ItemCondition
+  currency: String
   currentValue: Float
   description: String
+
+  """
+  Shorthand such as "12 x 8 x 2 in". Fills only the axes not given individually.
+  """
+  dimensions: String
+
+  """
+  When it stops being usable. Distinct from a warranty, which is a contract.
+  """
+  expiresAt: DateTime
+
+  """Height, in millimetres."""
+  heightMm: Float
+
+  """Serial number, UPC, ISBN, order id, …"""
+  identifierCodes: JSON
+
+  """A digital item is refused a mass, a size and a volume."""
+  isDigital: Boolean
+
+  """Longest dimension, in millimetres."""
+  lengthMm: Float
+
+  """When the object was made, not when it was acquired."""
+  manufacturedAt: DateTime
+
+  """As-owned mass, in grams."""
+  massG: Float
+
+  """What the object is made of."""
+  materials: [String!]
+  metadata: JSON
   model: String
   name: String!
+  purchasePrice: Float
+  quantity: Int
+  subcategory: String
+  unitSystem: ItemUnitSystem
+
+  """Capacity — what it holds — in millilitres."""
+  volumeMl: Float
+
+  """Width, in millimetres."""
+  widthMm: Float
 }
 
 type CreateItemPayload {
@@ -614,24 +729,32 @@ type CreateNotePayload {
 }
 
 input CreatePersonInput {
+  addresses: [PersonAddressInput!]
   avatarUrl: String
   birthDate: String
   city: String
+  contacts: [PersonContactInput!]
   country: String
+  department: String
   description: String
   emails: [String!]
   firstName: String
   gender: String
+  jobTitle: String
   lastName: String
   linkedId: String
   linkedTable: String
   middleName: String
   name: String!
+  nickname: String
+  organization: String
   phones: [String!]
   postalCode: String
+  pronouns: String
   region: String
   streetAddress: String
   streetAddress2: String
+  website: String
 }
 
 type CreatePersonPayload {
@@ -980,6 +1103,12 @@ type ForecastType {
   """
   horizon: String!
 
+  """Served histogram model: hmt, b1, or b2 (D3 gate)."""
+  modelVersion: String
+
+  """True when the histogram is a cold-start baseline, not a trained HMT."""
+  stillLearning: Boolean!
+
   """System status of the HBPE engine (COLD_START, TRAINING, READY)"""
   systemStatus: String!
 }
@@ -1061,6 +1190,21 @@ type InsightItemType {
   title: String!
 }
 
+"""
+How an item came to be owned. A purchase and a gift mean different things by acquiredAt.
+"""
+enum ItemAcquisitionMethod {
+  BORROWED
+  FOUND
+  GIFT
+  INHERITED
+  MADE
+  PURCHASED
+  SAMPLE
+  TRADED
+  UNKNOWN
+}
+
 enum ItemCondition {
   BROKEN
   FAIR
@@ -1094,22 +1238,74 @@ input ItemRelationshipInput {
 }
 
 type ItemType implements Node & Taggable {
+  """When it was bought or received."""
   acquiredAt: DateTime
+
+  """Seller, giver or source."""
+  acquiredFrom: String
+  acquisitionMethod: ItemAcquisitionMethod
   brand: String
   category: String
+
+  """Dominant colour as #rrggbb."""
+  colorHex: String
+
+  """Colour names, dominant first."""
+  colors: [String!]
+
+  """{material: fraction}; {} when the proportions are unknown."""
+  composition: JSON!
   condition: ItemCondition
   createdAt: DateTime!
   currency: String!
   currentValue: Float
   description: String
+
+  """When it stops being usable."""
+  expiresAt: DateTime
   file: FileType
+
+  """Height, in millimetres."""
+  heightMm: Float
   id: ID!
+  isDigital: Boolean!
+
+  """Longest dimension, in millimetres."""
+  lengthMm: Float
+
+  """When the object was made."""
+  manufacturedAt: DateTime
+
+  """As-owned mass, in grams."""
+  massG: Float
+
+  """What the object is made of."""
+  materials: [String!]
   metadata: JSON
   model: String
   name: String
+  purchasePrice: Float
+  quantity: Int!
   subcategory: String
   tags: [EntityTagType!]!
+
+  """The unit system these measurements were entered in. Presentation only."""
+  unitSystem: ItemUnitSystem
   updatedAt: DateTime!
+
+  """Capacity — what it holds — in millilitres."""
+  volumeMl: Float
+
+  """Width, in millimetres."""
+  widthMm: Float
+}
+
+"""
+Display preference for measurements. Stored values are always SI (millimetres, grams, millilitres) whichever this is.
+"""
+enum ItemUnitSystem {
+  IMPERIAL
+  METRIC
 }
 
 """
@@ -1440,10 +1636,40 @@ type PairingStatusPayload {
   userName: String
 }
 
+input PersonAddressInput {
+  city: String
+  country: String
+  isPrimary: Boolean
+  label: String
+  postalCode: String
+  region: String
+  streetAddress: String
+  streetAddress2: String
+}
+
+type PersonAddressType {
+  city: String
+  country: String
+  formatted: String
+  isPrimary: Boolean!
+  label: String
+  postalCode: String
+  region: String
+  streetAddress: String
+  streetAddress2: String
+}
+
 type PersonConnection implements Connection {
   edges: [PersonEdge!]!
   pageInfo: PageInfo!
   totalCount: Int!
+}
+
+input PersonContactInput {
+  isPrimary: Boolean
+  kind: String!
+  label: String
+  value: String!
 }
 
 type PersonDuplicateGroupType {
@@ -1475,10 +1701,12 @@ type PersonInteractionStatsType {
 
 type PersonType implements Node & Taggable {
   address: String
+  addresses: [PersonAddressType!]!
   avatarUrl: String
   birthDate: String
   city: String
   country: String
+  department: String
   description: String
   firstName: String
   gender: String
@@ -1487,15 +1715,20 @@ type PersonType implements Node & Taggable {
   incomingRelationships(limit: Int): [RelationshipType!]
   interactionStats: PersonInteractionStatsType!
   isSelf: Boolean!
+  jobTitle: String
   lastName: String
   middleName: String
   name: String
+  nickname: String
+  organization: String
   outgoingRelationships(limit: Int): [RelationshipType!]
   postalCode: String
+  pronouns: String
   region: String
   streetAddress: String
   streetAddress2: String
   tags: [EntityTagType!]!
+  website: String
 }
 
 type PlaceConnection implements Connection {
@@ -2269,13 +2502,70 @@ input UpdateFileInput {
 }
 
 input UpdateItemInput {
+  """When it was bought or received."""
+  acquiredAt: DateTime
+
+  """Seller, giver or source, as free text."""
+  acquiredFrom: String
+  acquisitionMethod: ItemAcquisitionMethod
   brand: String
   category: String
+
+  """Dominant colour as #rrggbb."""
+  colorHex: String
+
+  """Colour names, dominant first."""
+  colors: [String!]
+
+  """
+  {material: fraction} summing to at most 1. Percentages are accepted and converted.
+  """
+  composition: JSON
+  condition: ItemCondition
+  currency: String
   currentValue: Float
   description: String
+
+  """
+  Shorthand such as "12 x 8 x 2 in". Fills only the axes not given individually.
+  """
+  dimensions: String
+
+  """
+  When it stops being usable. Distinct from a warranty, which is a contract.
+  """
+  expiresAt: DateTime
+
+  """Height, in millimetres."""
+  heightMm: Float
   id: ID!
+
+  """A digital item is refused a mass, a size and a volume."""
+  isDigital: Boolean
+
+  """Longest dimension, in millimetres."""
+  lengthMm: Float
+
+  """When the object was made, not when it was acquired."""
+  manufacturedAt: DateTime
+
+  """As-owned mass, in grams."""
+  massG: Float
+
+  """What the object is made of."""
+  materials: [String!]
+  metadata: JSON
   model: String
   name: String!
+  purchasePrice: Float
+  subcategory: String
+  unitSystem: ItemUnitSystem
+
+  """Capacity — what it holds — in millilitres."""
+  volumeMl: Float
+
+  """Width, in millimetres."""
+  widthMm: Float
 }
 
 type UpdateItemPayload {
@@ -2307,21 +2597,29 @@ type UpdateNotePayload {
 }
 
 input UpdatePersonInput {
+  addresses: [PersonAddressInput!]
   avatarUrl: String
   birthDate: String
   city: String
+  contacts: [PersonContactInput!]
   country: String
+  department: String
   description: String
   firstName: String
   gender: String
   id: String!
+  jobTitle: String
   lastName: String
   middleName: String
   name: String
+  nickname: String
+  organization: String
   postalCode: String
+  pronouns: String
   region: String
   streetAddress: String
   streetAddress2: String
+  website: String
 }
 
 type UpdatePersonPayload {

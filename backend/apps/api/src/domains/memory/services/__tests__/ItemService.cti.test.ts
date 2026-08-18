@@ -1,11 +1,9 @@
-import type { UserServiceContext } from '@ci/common/context';
 import { bulkInsertIdempotent } from '@ci/common/persistence';
 
 import { ItemBaseEntity } from '../../entities/ItemBaseEntity';
 import { ItemEntity } from '../../entities/ItemEntity';
-import { ItemService } from '../ItemService';
 
-import { makeInsertBuilder } from './harness/insertBuilder';
+import { ITEM_HARNESS_CONTEXT, ITEM_HARNESS_USER, makeItemHarness } from './harness/itemServiceHarness';
 
 // createMany's detail phase is bulkInsertIdempotent's own (separately tested)
 // concern; here it is mocked so the tests can steer which rows count as
@@ -17,69 +15,9 @@ jest.mock('@ci/common/persistence', () => ({
 
 const bulkInsertMock = bulkInsertIdempotent as jest.Mock;
 
-const USER = '00000000-0000-0000-0000-0000000000aa';
+const USER = ITEM_HARNESS_USER;
 
-const CONTEXT: UserServiceContext = { userId: USER } as UserServiceContext;
-
-function makeHarness() {
-  const baseInsert = {} as { values?: unknown[]; conflict?: string };
-
-  const detailRepo = {
-    create: jest.fn((partial: Partial<ItemEntity>) => Object.assign(new ItemEntity(), partial)),
-    save: jest.fn(async (entity: ItemEntity) => entity),
-    findOne: jest.fn(),
-    update: jest.fn(async () => ({ affected: 1 })),
-    metadata: { target: ItemEntity, columns: { length: 43 } },
-    manager: {} as Record<string, unknown>,
-  };
-
-  // Base rows are the owners of name/description; reads compose from here.
-  const baseRepo = {
-    create: jest.fn((partial: Partial<ItemBaseEntity>) => Object.assign(new ItemBaseEntity(), partial)),
-    save: jest.fn(async (entity: ItemBaseEntity) => entity),
-    update: jest.fn(async () => ({ affected: 1 })),
-    delete: jest.fn(async () => ({ affected: 1 })),
-    find: jest.fn(async () => [] as ItemBaseEntity[]),
-    // update/remove trail reads the base name inside the aggregate transaction.
-    findOne: jest.fn(async ({ where: { id } }: { where: { id: string } }) =>
-      Object.assign(new ItemBaseEntity(), { id, name: 'Camera' }),
-    ),
-    metadata: { target: ItemBaseEntity, columns: { length: 10 } },
-    createQueryBuilder: jest.fn(() => makeInsertBuilder(baseInsert)),
-  };
-
-  // The transactional manager dispatches by entity class, so both halves of the
-  // aggregate resolve to their mocks inside one "transaction".
-  const manager = {
-    getRepository: (cls: unknown) => (cls === ItemBaseEntity ? baseRepo : detailRepo),
-    withRepository: () => detailRepo,
-  };
-  detailRepo.manager = {
-    transaction: jest.fn(async (cb: (m: typeof manager) => unknown) => cb(manager)),
-  };
-
-  const send = jest.fn(async () => []);
-  const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
-
-  const service = new ItemService(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    detailRepo as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    baseRepo as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    logger as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { send } as any,
-    {
-      entityCreated: jest.fn(async () => undefined),
-      entityUpdated: jest.fn(async () => undefined),
-      entityDeleted: jest.fn(async () => undefined),
-      recordMany: jest.fn(async () => undefined),
-    } as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-  );
-
-  return { service, detailRepo, baseRepo, baseInsert, send };
-}
+const CONTEXT = ITEM_HARNESS_CONTEXT;
 
 beforeEach(() => {
   bulkInsertMock.mockReset();
@@ -87,7 +25,7 @@ beforeEach(() => {
 
 describe('ItemService CTI create', () => {
   it('writes the base row (owner of name/description) and the detail row with the SAME uuid', async () => {
-    const { service, detailRepo, baseRepo, send } = makeHarness();
+    const { service, detailRepo, baseRepo, send } = makeItemHarness();
 
     const item = await service.create(CONTEXT, { id: 'i1', name: 'Camera', description: 'DSLR' });
 
@@ -117,7 +55,7 @@ describe('ItemService CTI create', () => {
 
 describe('ItemService CTI reads', () => {
   it('composes name/description from the base rows in one batched fetch', async () => {
-    const { service, detailRepo, baseRepo } = makeHarness();
+    const { service, detailRepo, baseRepo } = makeItemHarness();
 
     const detail = Object.assign(new ItemEntity(), { id: 'i1', userId: USER });
     detailRepo.findOne.mockResolvedValue(detail);
@@ -135,7 +73,7 @@ describe('ItemService CTI reads', () => {
 
 describe('ItemService CTI update', () => {
   it('routes name/description to the base row and detail fields to the detail row', async () => {
-    const { service, detailRepo, baseRepo } = makeHarness();
+    const { service, detailRepo, baseRepo } = makeItemHarness();
 
     const row = Object.assign(new ItemEntity(), { id: 'i1', userId: USER });
     detailRepo.findOne.mockResolvedValue(row);
@@ -152,7 +90,7 @@ describe('ItemService CTI update', () => {
   });
 
   it('patches only the provided base half (name without clobbering description)', async () => {
-    const { service, detailRepo, baseRepo } = makeHarness();
+    const { service, detailRepo, baseRepo } = makeItemHarness();
 
     const row = Object.assign(new ItemEntity(), { id: 'i1', userId: USER });
     detailRepo.findOne.mockResolvedValue(row);
@@ -163,7 +101,7 @@ describe('ItemService CTI update', () => {
   });
 
   it('does not touch the base row when the patch has no name/description', async () => {
-    const { service, detailRepo, baseRepo } = makeHarness();
+    const { service, detailRepo, baseRepo } = makeItemHarness();
 
     const row = Object.assign(new ItemEntity(), { id: 'i1', userId: USER });
     detailRepo.findOne.mockResolvedValue(row);
@@ -176,7 +114,7 @@ describe('ItemService CTI update', () => {
 
 describe('ItemService CTI remove', () => {
   it('deletes via the BASE row (FK cascades the detail)', async () => {
-    const { service, detailRepo, baseRepo } = makeHarness();
+    const { service, detailRepo, baseRepo } = makeItemHarness();
 
     const row = Object.assign(new ItemEntity(), { id: 'i1', userId: USER });
     detailRepo.findOne.mockResolvedValueOnce(row);
@@ -188,7 +126,7 @@ describe('ItemService CTI remove', () => {
   });
 
   it('returns false (no base delete) when the scoped item does not exist', async () => {
-    const { service, detailRepo, baseRepo } = makeHarness();
+    const { service, detailRepo, baseRepo } = makeItemHarness();
     detailRepo.findOne.mockResolvedValueOnce(null);
 
     const removed = await service.remove(CONTEXT, 'missing');
@@ -200,7 +138,7 @@ describe('ItemService CTI remove', () => {
 
 describe('ItemService CTI createMany', () => {
   it('writes base rows (from DTO values) for INSERTED detail rows only, composing egress from the base fetch', async () => {
-    const { service, baseInsert, baseRepo, send } = makeHarness();
+    const { service, baseInsert, baseRepo, send } = makeItemHarness();
 
     const insertedRow = Object.assign(new ItemEntity(), { id: 'i1', userId: USER, ownerUserId: USER });
     const existingRow = Object.assign(new ItemEntity(), { id: 'i2', userId: USER, ownerUserId: USER });

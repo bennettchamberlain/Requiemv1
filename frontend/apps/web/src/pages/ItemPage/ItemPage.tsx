@@ -12,12 +12,36 @@ import { ItemIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import { gql } from '@/graphql';
 
+import { ItemProperties } from './ItemProperties';
+
 export const GET_ITEM = gql(`
   query GetItem($id: ID!) {
     item(id: $id) {
       id
       name
       description
+      category
+      brand
+      model
+      currentValue
+      purchasePrice
+      condition
+      quantity
+      acquiredAt
+      acquisitionMethod
+      acquiredFrom
+      manufacturedAt
+      expiresAt
+      lengthMm
+      widthMm
+      heightMm
+      massG
+      volumeMl
+      unitSystem
+      colors
+      colorHex
+      materials
+      composition
       tags {
         id
         label
@@ -99,7 +123,9 @@ export function ItemPage() {
                 throw new Error('Update was rejected');
               }
             }}
-          />
+          >
+            <ItemProperties item={item} />
+          </EntityTagsDescriptionCard>
         </div>
 
         <EntityRelationshipCards entityId={id!} />

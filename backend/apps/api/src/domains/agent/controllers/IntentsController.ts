@@ -1,40 +1,52 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Get,
+  HttpCode,
   Param,
   NotFoundException,
+  Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 
+import { Context, type RequestContext } from '@ci/common/context';
 import { INTENTS_SCOPE, READ_CAPABILITY, RequireCapability, RequireScopes } from '@ci/common/decorators';
-import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard, type ApiKeyScopedRequest, apiKeyCapabilityOf } from '@ci/common/guards';
 import {
   DISPATCH_TIERS,
   IntentCatalogService,
+  ToolRegistry,
+  intentToolName,
   type CiEntityDescriptor,
   type DispatchTier,
   type IntentDomain,
   type IntentManifest,
   type ManifestIntent,
+  type ToolResult,
 } from '@ci/domains/tools';
 
 /**
- * Publishes the CI Intent catalog — the discoverable, typed capability declaration. Any agent
- * (CI-Hermes, CI-OpenClaw, an external MCP client) can read one catalog here instead of
- * re-implementing bespoke integration glue.
+ * Publishes the CI Intent catalog and runs those intents through ToolRegistry.
  *
- * Scope-limited connect keys need the `intents` scope to read it (CI-OpenClaw's
- * key carries it); session/JWT and empty-scope keys are unaffected.
+ * Catalog GETs and execute POSTs mount on both `/api/intents` (legacy) and
+ * `/api/agent/intents` (canonical for Hermes / OpenClaw). Scope-limited connect
+ * keys need the `intents` scope. Session/JWT and empty-scope keys are unaffected.
+ *
+ * GET is read-only. POST uses `@RequireCapability(READ_CAPABILITY)` as the HTTP
+ * floor so a read-only key can still run read intents; ToolRegistry.executeTool
+ * is the verb gate (`suggestions.feedback` needs write).
  */
 @UseGuards(JwtOrApiKeyAuthGuard)
 @RequireScopes(INTENTS_SCOPE)
-// The whole controller is reads — it publishes a catalog and changes nothing.
-@RequireCapability(READ_CAPABILITY)
-@Controller('api/intents')
+@Controller(['api/intents', 'api/agent/intents'])
 export class IntentsController {
-  constructor(private readonly catalog: IntentCatalogService) {}
+  constructor(
+    private readonly catalog: IntentCatalogService,
+    private readonly registry: ToolRegistry,
+  ) {}
 
   /**
    * The full manifest: domains + entities + intents.
@@ -44,24 +56,28 @@ export class IntentsController {
    * Kotlin and a Swift copy of the policy. Omitting `tier` returns the manifest unchanged.
    */
   @Get()
+  @RequireCapability(READ_CAPABILITY)
   getManifest(@Query('tier') tier?: string): IntentManifest {
     return this.catalog.getManifest({ tier: parseTier(tier) });
   }
 
   /** The standardized schema-domain vocabulary. */
   @Get('domains')
+  @RequireCapability(READ_CAPABILITY)
   getDomains(): { domains: IntentDomain[] } {
     return { domains: this.catalog.getDomains() };
   }
 
   /** The entity registry. */
   @Get('entities')
+  @RequireCapability(READ_CAPABILITY)
   getEntities(): { entities: CiEntityDescriptor[] } {
     return { entities: this.catalog.getEntities() };
   }
 
   /** A single intent by its dotted name, e.g. `memory.recall`. Honours `?tier=` as above. */
   @Get(':name')
+  @RequireCapability(READ_CAPABILITY)
   getIntent(@Param('name') name: string, @Query('tier') tier?: string): ManifestIntent {
     const manifest = this.catalog.getManifest({ tier: parseTier(tier) });
     const intent = manifest.intents.find((i) => i.name === name);
@@ -71,6 +87,34 @@ export class IntentsController {
     }
 
     return intent;
+  }
+
+  /**
+   * Execute a catalog intent. Body is the raw tool input JSON (Hermes `_post(path, arguments)`).
+   * Path name may be dotted (`insights.explain`) or underscored (`insights_explain`).
+   * Unknown intent → HTTP 404 so harnesses fall through to the other prefix.
+   * Known intent → HTTP 200 ToolResult, including `success: false`.
+   */
+  @Post(':name/execute')
+  @HttpCode(200)
+  @RequireCapability(READ_CAPABILITY)
+  async execute(
+    @Param('name') name: string,
+    @Body() body: unknown,
+    @Context() context: RequestContext,
+    @Req() req: ApiKeyScopedRequest,
+  ): Promise<ToolResult> {
+    const toolName = resolveExecuteName(name);
+
+    if (!toolName || !this.registry.hasTool(toolName)) {
+      throw new NotFoundException(`Unknown intent: ${name}`);
+    }
+
+    return this.registry.executeTool(
+      toolName,
+      { ...context, capability: apiKeyCapabilityOf(req) },
+      body ?? {},
+    );
   }
 }
 
@@ -91,4 +135,21 @@ function parseTier(tier: string | undefined): DispatchTier | undefined {
   }
 
   return tier as DispatchTier;
+}
+
+/** Decode a path segment and map dotted intent ids onto the registry's underscored keys. */
+function resolveExecuteName(raw: string): string | null {
+  let name = raw;
+  try {
+    name = decodeURIComponent(raw);
+  } catch {
+    name = raw;
+  }
+
+  name = name.trim();
+  if (!name) {
+    return null;
+  }
+
+  return intentToolName(name);
 }

@@ -79,9 +79,7 @@ export class HomeConfirmService {
 
     const top = this.topHomeCandidate(candidates);
     const options = this.candidateOptions(candidates);
-    const prompt = top
-      ? `Is ${top.label} home?`
-      : 'Which of these places is home?';
+    const prompt = top ? `Is ${top.label} home?` : 'Which of these places is home?';
 
     await this.actionService.create(context, {
       title: 'Confirm home',

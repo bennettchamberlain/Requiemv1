@@ -1,4 +1,10 @@
-import { NORMALIZED_PERSON_FIELDS, previewFromContent } from '@ci/domains/memory';
+import {
+  type PersonAddress,
+  NORMALIZED_PERSON_FIELDS,
+  formatPersonAddress,
+  previewFromContent,
+  readPersonAddresses,
+} from '@ci/domains/memory';
 
 import type { WeightedText } from './types';
 
@@ -486,6 +492,13 @@ export interface ItemSearchFields {
    * the pipeline loader joins it straight off `ci.entities`.
    */
   lastSeenPlaceName?: string | null;
+  /**
+   * Appearance and composition. "my blue mug" and "what do I own made of
+   * leather" are the questions these answer, and neither is reachable from
+   * name/brand/category alone — a mug is rarely named after its colour.
+   */
+  colors?: string[] | null;
+  materials?: string[] | null;
 }
 
 export function itemSearchDocument(item: ItemSearchFields): string | null {
@@ -499,6 +512,8 @@ export function itemSearchDocument(item: ItemSearchFields): string | null {
   pushPart(parts, item.model ?? null);
   pushPart(parts, item.maintenanceNotes ?? null);
   pushPart(parts, item.lastSeenPlaceName ?? null);
+  pushPart(parts, item.colors?.join(' ') ?? null);
+  pushPart(parts, item.materials?.join(' ') ?? null);
 
   return joinParts(parts);
 }
@@ -534,9 +549,22 @@ export function itemWeightedTexts(item: ItemSearchFields): WeightedText[] {
     parts.push({ text: item.lastSeenPlaceName, weight: 8 });
   }
 
+  // Weighted below brand/model: colour and material NARROW a search ("the blue
+  // one") far more often than they start it, so they should not outrank the
+  // words that name the thing.
+  if (item.colors?.length) {
+    parts.push({ text: item.colors.join(' '), weight: 3 });
+  }
+
+  if (item.materials?.length) {
+    parts.push({ text: item.materials.join(' '), weight: 3 });
+  }
+
   if (item.maintenanceNotes) {
     const maintenanceNotes =
-      typeof item.maintenanceNotes === 'string' ? item.maintenanceNotes : JSON.stringify(item.maintenanceNotes);
+      typeof item.maintenanceNotes === 'string'
+        ? item.maintenanceNotes
+        : JSON.stringify(item.maintenanceNotes);
     if (maintenanceNotes.length > 0) {
       parts.push({ text: maintenanceNotes, weight: 1 });
     }
@@ -556,9 +584,21 @@ export interface PersonSearchFields {
   firstName?: string | null;
   middleName?: string | null;
   lastName?: string | null;
+  nickname?: string | null;
+  pronouns?: string | null;
   birthDate?: string | null;
   isSelf?: boolean | null;
   gender?: string | null;
+  jobTitle?: string | null;
+  organization?: string | null;
+  department?: string | null;
+  website?: string | null;
+  /**
+   * Labelled addresses; flattened into the indexed text one line per address.
+   * Absent on the bulk-index path, which loads the RAW jsonb bag — the list is
+   * then read back out of `properties` instead.
+   */
+  addresses?: PersonAddress[] | null;
   address?: string | null;
   streetAddress?: string | null;
   streetAddress2?: string | null;
@@ -600,12 +640,17 @@ export function personSearchDocument(person: PersonSearchFields): string | null 
   // reachable through their named fields.
   pushPart(parts, person.firstName);
   pushPart(parts, person.lastName);
+  pushPart(parts, person.nickname);
   pushPart(parts, person.email);
+  pushPart(parts, person.jobTitle);
+  pushPart(parts, person.organization);
 
   const properties = strippedPersonProperties(person.properties);
   // We don't have a schema on properties yet. These values are an accumulated
   // superset of values we've indexed in various places. Normalized keys are
-  // not listed here: the egress bag no longer carries them.
+  // not listed here: the egress bag no longer carries them (`organization` and
+  // `job_title` were normalized later and are pushed from their named fields
+  // above; they stay listed for rows written before that).
   const candidateKeys = ['occupation', 'bio', 'phone', 'organization', 'job_title'];
 
   for (const key of candidateKeys) {
@@ -635,11 +680,17 @@ export function personWeightedTexts(person: PersonSearchFields): WeightedText[] 
   }
 
   // Normalized attributes (email, structured name, address, ...) indexed from
-  // the named fields explicitly.
+  // the named fields explicitly. `addresses` is the one non-string field in the
+  // map, so it is flattened separately rather than dropped by the string filter.
   const normalized = NORMALIZED_PERSON_FIELDS.map(
     ([, fieldName]) => (person as Record<string, unknown>)[fieldName],
   )
     .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .concat(
+      (person.addresses ?? readPersonAddresses(person.properties))
+        .map((address) => [address.label, formatPersonAddress(address)].filter(Boolean).join(' '))
+        .filter((line) => line.length > 0),
+    )
     .join(' ');
 
   if (normalized.length > 0) {

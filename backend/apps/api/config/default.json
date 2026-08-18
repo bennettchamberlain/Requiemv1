@@ -191,8 +191,8 @@
     "actions": true,
     "smart.rotation": false,
     "ask": false,
-    "grounded.prompts": false,
-    "derivation.engines": false,
+    "grounded.prompts": true,
+    "derivation.engines": true,
     "ingest.selfHeal": true
   },
   "environment": {

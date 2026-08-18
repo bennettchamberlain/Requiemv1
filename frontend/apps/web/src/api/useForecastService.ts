@@ -15,6 +15,8 @@ const GET_FORECAST = gql(`
       horizon
       generatedAt
       systemStatus
+      modelVersion
+      stillLearning
       buckets {
         bucketIndex
         startTime
@@ -49,6 +51,8 @@ export interface ForecastResponse {
   horizon: string;
   generatedAt: string;
   systemStatus: string;
+  modelVersion?: string | null;
+  stillLearning?: boolean;
   buckets: ForecastBucket[];
 }
 

@@ -32,13 +32,13 @@ if [[ -f "$OVERRIDE_FILE" ]]; then
   echo "==> Removed override: $OVERRIDE_FILE"
 fi
 
-echo "==> Recreating api + gateway from Hub-pinned compose..."
+echo "==> Recreating api + gateway + hbpe-service from Hub-pinned compose..."
 docker exec "$HUB_CONTAINER" sh -c "
   set -eu
   cd '${HUB_APP_DIR}'
   docker compose ${ENV_FILE_ARGS} --project-name '${COMPOSE_PROJECT}' \
     -f docker-compose.yml \
-    up -d --force-recreate --no-deps api gateway
+    up -d --force-recreate --no-deps api gateway hbpe-service
 "
 
 echo "==> Rollback complete."

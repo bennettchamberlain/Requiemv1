@@ -231,7 +231,38 @@ export type { CreateEventDto, UpdateEventDto, CreateContentDto, UpdateContentDto
 // The remaining ingest DTOs, exported for the same reason as the ones above:
 // they are the shapes other domains hand to this one's services, so they belong
 // on the public surface rather than behind a reach into ./types.
-export type { CreateItemDto, UpdateItemDto, CreatePersonDto, UpdatePersonDto } from './types';
+export type {
+  CreateItemDto,
+  UpdateItemDto,
+  PhysicalItemPropertiesDto,
+  CreatePersonDto,
+  UpdatePersonDto,
+} from './types';
+// The physical vocabulary of an item. Exported because the API layer needs the
+// same enums the CHECK constraints hold, and importers/listeners need the same
+// unit parsing the services use — a second implementation of either is a second
+// definition of what a millimetre is.
+export {
+  ACQUISITION_METHODS,
+  MAX_ARRAY_TERMS,
+  MAX_DIMENSION_MM,
+  MAX_MASS_G,
+  MAX_VOLUME_ML,
+  PhysicalPropertyError,
+  UNIT_SYSTEMS,
+  normalizeAcquisitionMethod,
+  normalizeColorHex,
+  normalizeColors,
+  normalizeComposition,
+  normalizeMaterials,
+  normalizePhysicalProperties,
+  normalizeUnitSystem,
+  parseDimensions,
+  parseLengthMm,
+  parseMassG,
+  parseVolumeMl,
+} from './physicalProperties';
+export type { AcquisitionMethod, NormalizedPhysicalProperties, UnitSystem } from './physicalProperties';
 // The observation ingest shapes. Both the CV listener (llm domain) and the
 // `capture.scan` promoter (pipeline domain) hand these to
 // ObjectObservationService, so they belong on the public surface for exactly
@@ -270,4 +301,10 @@ export {
   CreateCommunicationDto,
   NORMALIZED_PERSON_FIELDS,
   UpdateCommunicationDto,
+  ensureSinglePrimary,
+  formatPersonAddress,
+  isPersonAddressEmpty,
+  readPersonAddresses,
+  serializePersonAddress,
 } from './types';
+export type { PersonAddress } from './types';

@@ -24,6 +24,9 @@ been backfilled (``actual_l0 IS NOT NULL``) it computes:
     equal-width confidence bins, using the L0 top-1 probability as the
     confidence and L0 top-1 correctness as the outcome.  The per-bin table is a
     reliability-diagram data structure persisted as JSON.
+  * **Per-class recall** — support + recall for each of the 8 L0 classes, stored
+    inside ``reliability_json`` next to the ECE bins so SLEEP/WORK cannot hide
+    in the average top-1. No extra column (this table has no ``properties`` JSONB).
   * **Coverage** — fraction of buckets in the window that carry an actual (i.e.
     have been backfilled), the same signal the §6 success metric tracks.
   * **Drift** — a rolling-window signal: L0 top-1 accuracy over the scored window
@@ -147,6 +150,30 @@ def argmax_class(
     return best
 
 
+def per_class_recall(
+    rows: Iterable[dict],
+    classes: Sequence[str] = L0_CLASSES,
+) -> dict[str, dict[str, float | int | None]]:
+    """Recall (and support) per actual L0 class so SLEEP/WORK cannot hide."""
+    correct: dict[str, int] = {c: 0 for c in classes}
+    support: dict[str, int] = {c: 0 for c in classes}
+    for row in rows:
+        actual = row.get("actual_l0")
+        if actual not in support:
+            continue
+        support[actual] += 1
+        pred = argmax_class(_as_prob_dict(row.get("l0_probs")), classes)
+        if pred == actual:
+            correct[actual] += 1
+    return {
+        c: {
+            "support": support[c],
+            "recall": (correct[c] / support[c]) if support[c] else None,
+        }
+        for c in classes
+    }
+
+
 def top1_confidence(
     l0_probs: dict[str, float],
     classes: Sequence[str] = L0_CLASSES,
@@ -249,6 +276,7 @@ class ScoreResult:
     l1_top3_acc: float | None = None
     ece: float | None = None
     reliability: list[dict] = field(default_factory=list)
+    per_class: dict[str, dict[str, float | int | None]] = field(default_factory=dict)
 
     def as_dict(self) -> dict:
         return {
@@ -259,6 +287,7 @@ class ScoreResult:
             "l1_top3_acc": self.l1_top3_acc,
             "ece": self.ece,
             "reliability": self.reliability,
+            "per_class": self.per_class,
         }
 
 
@@ -285,6 +314,8 @@ def score_predictions(
 
     l1_total = 0
     l1_correct = 0
+    class_support: dict[str, int] = {c: 0 for c in classes}
+    class_correct: dict[str, int] = {c: 0 for c in classes}
 
     for row in rows:
         actual_l0 = row.get("actual_l0")
@@ -301,6 +332,10 @@ def score_predictions(
 
         confidences.append(top1_confidence(l0_probs, classes))
         correct_flags.append(is_correct)
+        if actual_l0 in class_support:
+            class_support[actual_l0] += 1
+            if is_correct:
+                class_correct[actual_l0] += 1
 
         actual_l1 = row.get("actual_l1")
         if actual_l1:
@@ -311,6 +346,15 @@ def score_predictions(
                 l1_correct += 1
 
     ece, bins = reliability_bins(confidences, correct_flags, n_bins)
+    per_class = {
+        c: {
+            "support": class_support[c],
+            "recall": (class_correct[c] / class_support[c])
+            if class_support[c]
+            else None,
+        }
+        for c in classes
+    }
 
     return ScoreResult(
         n_l0=n_l0,
@@ -320,6 +364,7 @@ def score_predictions(
         l1_top3_acc=(l1_correct / l1_total) if l1_total else None,
         ece=ece,
         reliability=bins,
+        per_class=per_class,
     )
 
 
@@ -366,11 +411,18 @@ _ENSURE_TABLE_SQL = """
         coverage         DOUBLE PRECISION,
         reliability_json JSONB,
         drift_flag       BOOLEAN NOT NULL DEFAULT FALSE,
-        n_buckets        INTEGER NOT NULL DEFAULT 0
+        n_buckets        INTEGER NOT NULL DEFAULT 0,
+        model_version    TEXT NOT NULL DEFAULT 'hmt'
     );
 
     CREATE INDEX IF NOT EXISTS prediction_score_user_scored_idx
         ON hbpe.prediction_score (user_id, scored_at DESC);
+
+    ALTER TABLE hbpe.prediction_score
+        ADD COLUMN IF NOT EXISTS model_version TEXT NOT NULL DEFAULT 'hmt';
+
+    CREATE INDEX IF NOT EXISTS prediction_score_user_model_scored_idx
+        ON hbpe.prediction_score (user_id, model_version, scored_at DESC);
 """
 
 # actual_l1 is a cluster UUID while l1_probs is keyed by display name, so carry
@@ -387,6 +439,20 @@ _FETCH_ROWS_SQL = """
       AND p.predicted_at >= %(start)s
       AND p.predicted_at <  %(end)s
       AND p.actual_l0 IS NOT NULL
+      AND (
+            (
+                %(model_version)s = 'hmt'
+                AND (
+                    p.model_version IS NULL
+                    OR p.model_version = 'hmt'
+                    OR p.model_version LIKE 'hmt%%'
+                    OR p.model_version LIKE '%%.onnx%%'
+                    OR p.model_version LIKE '%%.pt%%'
+                    OR p.model_version = 'unknown'
+                )
+            )
+            OR p.model_version = %(model_version)s
+          )
 """
 
 _COVERAGE_SQL = """
@@ -402,11 +468,11 @@ _COVERAGE_SQL = """
 _INSERT_SCORE_SQL = """
     INSERT INTO hbpe.prediction_score
         (user_id, window_start, window_end, brier, l0_top1_acc, l1_top3_acc,
-         ece, coverage, reliability_json, drift_flag, n_buckets)
+         ece, coverage, reliability_json, drift_flag, n_buckets, model_version)
     VALUES
         (%(user_id)s, %(window_start)s, %(window_end)s, %(brier)s, %(l0_top1_acc)s,
          %(l1_top3_acc)s, %(ece)s, %(coverage)s, %(reliability_json)s::jsonb,
-         %(drift_flag)s, %(n_buckets)s)
+         %(drift_flag)s, %(n_buckets)s, %(model_version)s)
     RETURNING id, scored_at
 """
 
@@ -421,9 +487,19 @@ def ensure_score_table(conn) -> None:
         cur.execute(_ENSURE_TABLE_SQL)
 
 
-def _fetch_scored_rows(conn, user_id: str, start, end) -> list[dict]:
+def _fetch_scored_rows(
+    conn, user_id: str, start, end, model_version: str = "hmt"
+) -> list[dict]:
     with conn.cursor() as cur:
-        cur.execute(_FETCH_ROWS_SQL, {"user_id": user_id, "start": start, "end": end})
+        cur.execute(
+            _FETCH_ROWS_SQL,
+            {
+                "user_id": user_id,
+                "start": start,
+                "end": end,
+                "model_version": model_version,
+            },
+        )
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, r, strict=True)) for r in cur.fetchall()]
 
@@ -435,12 +511,48 @@ def _fetch_coverage(conn, user_id: str, start, end) -> tuple[int, int]:
     return int(total or 0), int(filled or 0)
 
 
+def insert_score_row(
+    conn,
+    *,
+    user_id: str,
+    window_start: datetime.datetime,
+    window_end: datetime.datetime,
+    result: ScoreResult,
+    coverage: float,
+    drift_flag: bool,
+    model_version: str,
+) -> tuple:
+    reliability_json = json.dumps(
+        {"bins": result.reliability, "per_class": result.per_class}
+    )
+    with conn.cursor() as cur:
+        cur.execute(
+            _INSERT_SCORE_SQL,
+            {
+                "user_id": user_id,
+                "window_start": window_start,
+                "window_end": window_end,
+                "brier": result.brier,
+                "l0_top1_acc": result.l0_top1_acc,
+                "l1_top3_acc": result.l1_top3_acc,
+                "ece": result.ece,
+                "coverage": coverage,
+                "reliability_json": reliability_json,
+                "drift_flag": drift_flag,
+                "n_buckets": result.n_l0,
+                "model_version": model_version,
+            },
+        )
+        return cur.fetchone()
+
+
 def score_and_store(
     user_id: str,
     window_start: datetime.datetime | None = None,
     window_end: datetime.datetime | None = None,
     window_days: int = DEFAULT_WINDOW_DAYS,
     n_bins: int = DEFAULT_N_BINS,
+    model_version: str = "hmt",
 ) -> dict:
     """Score the user's elapsed forecasts, detect drift, and persist one row.
 
@@ -466,7 +578,7 @@ def score_and_store(
     with get_conn() as conn:
         ensure_score_table(conn)
 
-        rows = _fetch_scored_rows(conn, user_id, start, end)
+        rows = _fetch_scored_rows(conn, user_id, start, end, model_version)
         total, filled = _fetch_coverage(conn, user_id, start, end)
 
         result = score_predictions(rows, n_bins=n_bins)
@@ -488,7 +600,9 @@ def score_and_store(
             }
 
         # Trailing-baseline accuracy for the drift comparison.
-        base_rows = _fetch_scored_rows(conn, user_id, base_start, base_end)
+        base_rows = _fetch_scored_rows(
+            conn, user_id, base_start, base_end, model_version
+        )
         base_result = score_predictions(base_rows, n_bins=n_bins)
         drift_flag = detect_drift(
             recent_acc=result.l0_top1_acc,
@@ -498,26 +612,16 @@ def score_and_store(
         )
 
         coverage = (filled / total) if total else 0.0
-        reliability_json = json.dumps(result.reliability)
-
-        with conn.cursor() as cur:
-            cur.execute(
-                _INSERT_SCORE_SQL,
-                {
-                    "user_id": user_id,
-                    "window_start": start,
-                    "window_end": end,
-                    "brier": result.brier,
-                    "l0_top1_acc": result.l0_top1_acc,
-                    "l1_top3_acc": result.l1_top3_acc,
-                    "ece": result.ece,
-                    "coverage": coverage,
-                    "reliability_json": reliability_json,
-                    "drift_flag": drift_flag,
-                    "n_buckets": result.n_l0,
-                },
-            )
-            score_id, scored_at = cur.fetchone()
+        score_id, scored_at = insert_score_row(
+            conn,
+            user_id=user_id,
+            window_start=start,
+            window_end=end,
+            result=result,
+            coverage=coverage,
+            drift_flag=drift_flag,
+            model_version=model_version,
+        )
 
     out = {
         "user_id": user_id,
@@ -538,6 +642,8 @@ def score_and_store(
         "ece": round(result.ece, 6) if result.ece is not None else None,
         "coverage": round(coverage, 4),
         "drift_flag": drift_flag,
+        "model_version": model_version,
+        "per_class": result.per_class,
         "baseline_top1_acc": (
             round(base_result.l0_top1_acc, 6)
             if base_result.l0_top1_acc is not None
@@ -568,3 +674,31 @@ def score_and_store(
         )
 
     return out
+
+
+def fetch_latest_by_version(user_id: str) -> dict[str, dict]:
+    """Latest ``prediction_score`` row per short ``model_version`` for the D3 gate."""
+    from ci.hbpe.pipeline.serve import normalize_logged_version
+
+    sql = """
+        SELECT model_version, brier, l0_top1_acc, l1_top3_acc, ece, n_buckets, scored_at
+        FROM hbpe.prediction_score
+        WHERE user_id = %s
+        ORDER BY scored_at DESC
+        LIMIT 40
+    """
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (user_id,))
+                cols = [d[0] for d in cur.description]
+                rows = [dict(zip(cols, r, strict=True)) for r in cur.fetchall()]
+        out: dict[str, dict] = {}
+        for row in rows:
+            key = normalize_logged_version(str(row["model_version"]))
+            if key not in out:
+                out[key] = {**row, "model_version": key}
+        return out
+    except Exception as exc:
+        log.info("latest scores unavailable: %s", exc)
+        return {}

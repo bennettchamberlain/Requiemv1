@@ -23,6 +23,7 @@ export interface ForecastCalibrationOutput {
   driftFlag: boolean;
   basis: string;
   quality: string;
+  modelVersion: string | null;
 }
 
 const ACC_STRONG = 0.7;
@@ -40,27 +41,32 @@ export function calibrationQualityStatement(score: CalibrationScore | null): str
   let statement: string;
 
   if (score.l0Top1Acc >= ACC_STRONG) {
-    statement = `Forecast quality is strong: the top prediction matched observed behavior ${pct}% of the time`;
+    statement = `Forecast self-consistency is strong: the top prediction matched pipeline labels ${pct}% of the time`;
   } else if (score.l0Top1Acc >= ACC_FAIR) {
-    statement = `Forecast quality is fair: the top prediction matched observed behavior ${pct}% of the time`;
+    statement = `Forecast self-consistency is fair: the top prediction matched pipeline labels ${pct}% of the time`;
   } else {
-    statement = `Forecast quality is weak: the top prediction matched observed behavior only ${pct}% of the time`;
+    statement = `Forecast self-consistency is weak: the top prediction matched pipeline labels only ${pct}% of the time`;
   }
 
   if (score.ece !== null) {
     if (score.ece <= ECE_WELL_CALIBRATED) {
-      statement += ' and its confidence is well calibrated.';
+      statement += ' and its confidence is well calibrated against those labels.';
     } else if (score.ece <= ECE_ROUGHLY_CALIBRATED) {
-      statement += ' and its confidence is roughly calibrated.';
+      statement += ' and its confidence is roughly calibrated against those labels.';
     } else {
-      statement += ' but its stated confidence is poorly calibrated (probabilities overstate accuracy).';
+      statement +=
+        ' but its stated confidence is poorly calibrated (probabilities overstate agreement with pipeline labels).';
     }
   } else {
     statement += '.';
   }
 
   if (score.driftFlag) {
-    statement += ' Accuracy has recently drifted below its trailing baseline.';
+    statement += ' Self-consistency has recently drifted below its trailing baseline.';
+  }
+
+  if (score.modelVersion && score.modelVersion !== 'hmt' && !score.modelVersion.startsWith('hmt')) {
+    statement += ` The live histogram is currently served from the ${score.modelVersion} baseline, not the transformer.`;
   }
 
   return statement;
@@ -115,6 +121,7 @@ export class ForecastCalibrationTool extends BaseTool<ForecastCalibrationInput, 
       driftFlag: latest?.driftFlag ?? false,
       basis: CALIBRATION_BASIS,
       quality: calibrationQualityStatement(latest),
+      modelVersion: latest?.modelVersion ?? null,
     };
   }
 }

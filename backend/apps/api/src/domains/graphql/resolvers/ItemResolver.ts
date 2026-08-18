@@ -4,7 +4,7 @@ import { Parent, Query, Mutation, ResolveField, Resolver, Args, ID } from '@nest
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { MaxArraySizePipe } from '@ci/common/pipes';
-import { ItemService } from '@ci/domains/memory';
+import { ItemService, type PhysicalItemPropertiesDto } from '@ci/domains/memory';
 
 import { ItemFileLoader } from '../loaders/ItemFileLoader';
 import { TagLoader } from '../loaders/TagLoader';
@@ -20,9 +20,40 @@ import { ItemConnection } from '../types/ItemConnection';
 import { ItemEdge } from '../types/ItemEdge';
 import { ItemType } from '../types/ItemType';
 import { PaginationArgs } from '../types/PaginationArgs';
+import { PhysicalItemPropertiesInput } from '../types/PhysicalItemProperties';
 import { UpdateItemInput } from '../types/UpdateItemInput';
 import { UpdateItemPayload } from '../types/UpdateItemPayload';
 import { Paginator } from '../utils/Paginator';
+
+/**
+ * The physical half of an item input, forwarded verbatim to the service.
+ *
+ * Verbatim is the point: {@link ItemService} canonicalizes units and validates
+ * bounds in ONE place (`normalizePhysicalProperties`), so the resolver must not
+ * coerce, default or drop anything on the way past — a `null` here means the
+ * caller cleared the field and an absent key means they never mentioned it, and
+ * both readings have to survive the trip.
+ */
+function physicalProperties(input: PhysicalItemPropertiesInput): PhysicalItemPropertiesDto {
+  return {
+    lengthMm: input.lengthMm,
+    widthMm: input.widthMm,
+    heightMm: input.heightMm,
+    massG: input.massG,
+    volumeMl: input.volumeMl,
+    dimensions: input.dimensions,
+    unitSystem: input.unitSystem,
+    colors: input.colors,
+    colorHex: input.colorHex,
+    materials: input.materials,
+    composition: input.composition,
+    acquisitionMethod: input.acquisitionMethod,
+    acquiredFrom: input.acquiredFrom,
+    manufacturedAt: input.manufacturedAt,
+    expiresAt: input.expiresAt,
+    isDigital: input.isDigital,
+  };
+}
 
 @UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => ItemType)
@@ -88,9 +119,17 @@ export class ItemResolver {
       name: input.name,
       description: input.description,
       category: input.category,
+      subcategory: input.subcategory,
       brand: input.brand,
       model: input.model,
       currentValue: input.currentValue,
+      purchasePrice: input.purchasePrice,
+      currency: input.currency,
+      acquiredAt: input.acquiredAt,
+      condition: input.condition,
+      identifierCodes: input.identifierCodes,
+      metadata: input.metadata,
+      ...physicalProperties(input),
     });
 
     if (entity == null) {
@@ -128,6 +167,7 @@ export class ItemResolver {
         category: item.category,
         subcategory: item.subcategory,
         brand: item.brand,
+        model: item.model,
         purchasePrice: item.purchasePrice,
         currentValue: item.currentValue,
         currency: item.currency,
@@ -138,6 +178,7 @@ export class ItemResolver {
         sourceType: item.sourceType,
         sourceSystem: item.sourceSystem,
         sourceId: item.sourceId,
+        ...physicalProperties(item),
       })),
     );
 
@@ -157,9 +198,16 @@ export class ItemResolver {
       name: input.name,
       description: input.description,
       category: input.category,
+      subcategory: input.subcategory,
       brand: input.brand,
       model: input.model,
       currentValue: input.currentValue,
+      purchasePrice: input.purchasePrice,
+      currency: input.currency,
+      acquiredAt: input.acquiredAt,
+      condition: input.condition,
+      metadata: input.metadata,
+      ...physicalProperties(input),
     });
 
     if (entity == null) {

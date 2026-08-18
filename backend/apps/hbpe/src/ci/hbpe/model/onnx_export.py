@@ -29,7 +29,7 @@ from ci.hbpe.model.checkpoints import HMT_FP32_ONNX, HMT_INT8_ONNX, user_ckpt_di
 from ci.hbpe.model.dataset import TokenStreamDataset
 from ci.hbpe.model.evaluator import _load_calibrated
 from ci.hbpe.model.lora import load_adapter, merge_adapter
-from ci.hbpe.model.transformer import HMTModel
+from ci.hbpe.model.transformer import HMTModel, hierarchical_src_mask
 from ci.hbpe.model.vocab import (
     EOD_IDX,
     PAD_IDX,
@@ -90,7 +90,8 @@ class _HMTONNXWrapper(nn.Module):
         tok_emb = l0_emb * (1.0 - w) + l1_emb * w  # (B, T, D)
 
         x = tok_emb + self.pos_emb(bucket_idxs) + self.level_emb(level_ids)
-        x = self.encoder(x, src_key_padding_mask=padding_mask)
+        src_mask = hierarchical_src_mask(level_ids)
+        x = self.encoder(x, mask=src_mask, src_key_padding_mask=padding_mask)
         return self.l0_head(x), self.l1_head(x)
 
 

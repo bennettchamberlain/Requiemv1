@@ -200,7 +200,41 @@ export const bulkInventoryRecordSchema = z.object({
   acquiredAt: z.string().datetime().optional(),
   identifierCodes: z.record(z.unknown()).optional(),
   condition: z.enum(['new', 'like_new', 'good', 'fair', 'poor', 'broken', 'n/a']).optional(),
+  quantity: z.number().int().positive().optional(),
   metadata: z.record(z.unknown()).optional(),
+  // Physical properties. Measurements accept a canonical SI number OR a
+  // unit-bearing string ('12 in', '2.5 lb'), because a product feed rarely
+  // publishes millimetres — ItemService resolves them through the one
+  // normalizer before the write, and rejects the batch with a 400 naming the
+  // field if it cannot. Everything the schema does NOT check here (bounds,
+  // colour hygiene, composition sums) is checked there, so this stays a shape
+  // guard and does not become a second, drifting copy of those rules.
+  lengthMm: z.union([z.number(), z.string()]).nullable().optional(),
+  widthMm: z.union([z.number(), z.string()]).nullable().optional(),
+  heightMm: z.union([z.number(), z.string()]).nullable().optional(),
+  massG: z.union([z.number(), z.string()]).nullable().optional(),
+  volumeMl: z.union([z.number(), z.string()]).nullable().optional(),
+  /** '12 x 8 x 2 in' — fills only the axes not sent individually. */
+  dimensions: z.string().nullable().optional(),
+  unitSystem: z.enum(['metric', 'imperial']).nullable().optional(),
+  colors: z
+    .union([z.array(z.string()), z.string()])
+    .nullable()
+    .optional(),
+  colorHex: z.string().nullable().optional(),
+  materials: z
+    .union([z.array(z.string()), z.string()])
+    .nullable()
+    .optional(),
+  composition: z
+    .record(z.union([z.number(), z.string()]))
+    .nullable()
+    .optional(),
+  acquisitionMethod: z.string().nullable().optional(),
+  acquiredFrom: z.string().nullable().optional(),
+  manufacturedAt: z.string().datetime().nullable().optional(),
+  expiresAt: z.string().datetime().nullable().optional(),
+  isDigital: z.boolean().optional(),
   // Provenance triple for idempotent re-ingest (inventory_source_triple_uniq).
   sourceType: z.string().optional(),
   sourceSystem: z.string().optional(),

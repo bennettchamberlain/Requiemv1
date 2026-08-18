@@ -60,6 +60,7 @@ import { InsightsExplainTool } from './tools/InsightsExplainTool';
 import { MediaFindPhotosTool } from './tools/MediaFindPhotosTool';
 import { PeopleFindTool } from './tools/PeopleFindTool';
 import { PlacesFindTool } from './tools/PlacesFindTool';
+import { PlacesNextTool } from './tools/PlacesNextTool';
 import { ReadKnowledgeTool } from './tools/ReadKnowledgeTool';
 import { SuggestionsFeedbackTool } from './tools/SuggestionsFeedbackTool';
 import { SuggestionsListTool } from './tools/SuggestionsListTool';
@@ -78,6 +79,7 @@ const nativeToolInstances = [
   DatabaseSearchTool,
   PeopleFindTool,
   PlacesFindTool,
+  PlacesNextTool,
   CalendarFindEventsTool,
   MediaFindPhotosTool,
   ForecastCalibrationTool,
@@ -150,6 +152,7 @@ export type { ToolInvokedPayload } from './events';
 export type { ToolProvider, ProviderHealthStatus } from './providers/ToolProvider';
 export {
   intentToolName,
+  canonicalizeExecutableToolName,
   type JSONSchema,
   type ToolSchema,
   type ToolResult,
