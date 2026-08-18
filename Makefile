@@ -49,6 +49,13 @@ JOHN_SMITH_USER_ID := b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b
 
 export TAG ?= $(shell git describe --tags --exact-match 2>/dev/null)
 
+# Ollama models the stack cannot run without: the embedding model
+# (`embedding.model` in backend/apps/api/config/default.json) and the chat model
+# every LLM-backed feature falls back to (`DEFAULT_CHAT_MODEL` in
+# backend/apps/api/src/configuration.ts). `dev` pulls any that are missing
+# rather than refusing to boot — a first run on a fresh machine is a download,
+# not an error. Keep this list in step with those two sources of truth.
+REQUIRED_OLLAMA_MODELS := nomic-embed-text gemma4:e4b
 
 # Subdirectory build contexts that need a copy of LICENSE. Images built
 # from the repo root (api, gateway, and the Python services) read LICENSE.md
@@ -507,25 +514,26 @@ dev: ## Run the development environment locally
 		exit 1; \
 	fi
 
-	@MODEL=nomic-embed-text; \
-	ollama list | grep -Fq "$$MODEL"; \
-	STATUS=$$?; \
-	if [ "$$STATUS" -eq 0 ]; then \
-		printf "  $(GREEN)✓$(RESET) ollama model '$$MODEL' is available\n\n"; \
-	else \
-		printf "  $(RED)✗$(RESET) ollama model '$$MODEL' is not yet pulled\n\n"; \
-		exit 1; \
-	fi
-
-	@MODEL=gemma4:e4b; \
-	ollama list | grep -Fq "$$MODEL"; \
-	STATUS=$$?; \
-	if [ "$$STATUS" -eq 0 ]; then \
-		printf "  $(GREEN)✓$(RESET) ollama model '$$MODEL' is available\n\n"; \
-	else \
-		printf "  $(RED)✗$(RESET) ollama model '$$MODEL' is not yet pulled\n\n"; \
-		exit 1; \
-	fi
+	@# Every required model, pulled if absent. `ollama pull` streams its own
+	@# progress and blocks until the blobs are on disk, so boot simply waits here
+	@# on a cold machine instead of failing and leaving the operator to run the
+	@# pull by hand. A tag-less name lands as `<name>:latest`, which is what the
+	@# presence test accepts alongside the literal name; matching on the tag
+	@# column (not the whole line) keeps `nomic-embed-text` from being satisfied
+	@# by an unrelated `nomic-embed-text-v2-moe`.
+	@for MODEL in $(REQUIRED_OLLAMA_MODELS); do \
+		if ollama list | awk 'NR>1 {print $$1}' | grep -qxF -e "$$MODEL" -e "$$MODEL:latest"; then \
+			printf "  $(GREEN)✓$(RESET) ollama model '$$MODEL' is available\n\n"; \
+		else \
+			printf "  $(YELLOW)•$(RESET) ollama model '$$MODEL' is not pulled yet — downloading now (this can take several minutes)...\n\n"; \
+			if ollama pull "$$MODEL"; then \
+				printf "\n  $(GREEN)✓$(RESET) ollama model '$$MODEL' pulled\n\n"; \
+			else \
+				printf "\n  $(RED)✗$(RESET) Failed to pull ollama model '$$MODEL'. Fix the error above (or run $(YELLOW)ollama pull $$MODEL$(RESET) manually) and retry.\n\n"; \
+				exit 1; \
+			fi; \
+		fi; \
+	done
 
 	@$(MAKE) init
 

@@ -190,10 +190,10 @@
      simply not painted. */
   background: radial-gradient(
     900px circle at var(--glow-x, -9999px) var(--glow-y, -9999px),
-    color-mix(in srgb, var(--primary) 16%, transparent) 0%,
-    color-mix(in srgb, var(--primary) 11%, transparent) 18%,
-    color-mix(in srgb, var(--primary) 6%, transparent) 38%,
-    color-mix(in srgb, var(--primary) 2.5%, transparent) 60%,
+    color-mix(in srgb, var(--primary) 8%, transparent) 0%,
+    color-mix(in srgb, var(--primary) 5.5%, transparent) 18%,
+    color-mix(in srgb, var(--primary) 3%, transparent) 38%,
+    color-mix(in srgb, var(--primary) 1.25%, transparent) 60%,
     transparent 80%
   );
 }

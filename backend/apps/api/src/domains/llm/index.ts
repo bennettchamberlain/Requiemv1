@@ -19,9 +19,12 @@ import { ToolsModule } from '@ci/domains/tools';
 import { LlmEndpointController } from './controllers/LlmEndpointController';
 import { OllamaController } from './controllers/OllamaController';
 import { LlmCoreModule } from './core.module';
+import { ChatGenerateListener } from './listeners/ChatGenerateListener';
 import { CvDetectionsListener } from './listeners/CvDetectionsListener';
 import { ImageDescriptionListener } from './listeners/ImageDescriptionListener';
 import { InventoryListener } from './listeners/InventoryListener';
+import { ChatGenerationBroker } from './services/ChatGenerationBroker';
+import { ChatTurnService } from './services/ChatTurnService';
 
 /**
  * @internal
@@ -41,7 +44,14 @@ import { InventoryListener } from './listeners/InventoryListener';
     SummariesModule,
     ToolsModule,
   ],
-  providers: [CvDetectionsListener, ImageDescriptionListener, InventoryListener],
+  providers: [
+    ChatGenerationBroker,
+    ChatTurnService,
+    ChatGenerateListener,
+    CvDetectionsListener,
+    ImageDescriptionListener,
+    InventoryListener,
+  ],
   controllers: [OllamaController, LlmEndpointController],
   exports: [LlmCoreModule],
 })
@@ -50,6 +60,7 @@ export class LLMModule {}
 export { LlmCoreModule } from './core.module';
 export { OllamaService } from './services/OllamaService';
 export { PROMPT_MODEL, type ChatRequestContext } from './services/OllamaService';
+export { LLM_QUEUE, LLM_QUEUE_OPTIONS } from './constants';
 export { estimateInferredAnswerConfidence } from './inferredAnswerConfidence';
 export { CV_DETECTION_LINKED_TABLE } from './listeners/CvDetectionsListener';
 export {

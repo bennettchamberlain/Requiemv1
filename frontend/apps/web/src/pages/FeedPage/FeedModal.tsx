@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, type ReactNode } from 'react';
 
 import { ErrorPage, LoadingPage, useDeviceLayout } from '@ci/common';
 import { Dialog, IconButton, cn } from '@ci/shadcn';
@@ -29,16 +29,26 @@ export function FeedModal({ onClose }: Props) {
   const [{ thread }] = useThreadService(action?.threadId ?? null);
   const [
     { stream, loading: chatRequestLoading, streaming: chatRequestStreaming, hasStartedReceiving },
-    { submit: submitChatRequest, stop: stopChatRequest },
+    { submit: submitChatRequest, stop: stopChatRequest, attach: attachChatStream, detach: detachChatStream },
   ] = useChatRequester({
     threadId: thread?.id ?? null,
   });
 
-  const handleOpenChange = useCallback((open: boolean) => {
-    if (!open) {
-      onClose?.();
+  useEffect(() => {
+    if (thread?.id && (thread.generationStatus === 'queued' || thread.generationStatus === 'running')) {
+      void attachChatStream(thread.id);
     }
-  }, []);
+  }, [thread?.id, thread?.generationStatus, attachChatStream]);
+
+  const handleOpenChange = useCallback(
+    (open: boolean) => {
+      if (!open) {
+        detachChatStream();
+        onClose?.();
+      }
+    },
+    [detachChatStream, onClose],
+  );
 
   const actionContext = useMemo(() => {
     if (!action?.metadata || typeof action.metadata !== 'object') {
@@ -77,17 +87,24 @@ export function FeedModal({ onClose }: Props) {
           ]
         : [];
 
+    const generating =
+      thread?.generationStatus === 'queued' || thread?.generationStatus === 'running';
+    const withoutInFlight =
+      generating && baseMessages[baseMessages.length - 1]?.role === 'assistant'
+        ? baseMessages.slice(0, -1)
+        : baseMessages;
+
     if (isMobile) {
-      return [...actionMessage, ...baseMessages];
+      return [...actionMessage, ...withoutInFlight];
     }
 
-    const hasAssistantMessage = baseMessages.some((message) => message.role === 'assistant');
+    const hasAssistantMessage = withoutInFlight.some((message) => message.role === 'assistant');
 
     if (!hasAssistantMessage) {
-      return [...actionMessage, ...baseMessages];
+      return [...actionMessage, ...withoutInFlight];
     }
 
-    return baseMessages;
+    return withoutInFlight;
   }, [thread, isMobile, action?.text]);
 
   const renderTitle = !(actionLoading || actionError);

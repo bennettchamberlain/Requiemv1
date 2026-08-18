@@ -1,39 +1,30 @@
 import {
   Body,
+  ConflictException,
   Controller,
   Get,
   HttpCode,
-  Inject,
   NotFoundException,
+  Param,
   Post,
   Query,
   Req,
   Res,
   UseGuards,
-  forwardRef,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { ToolCall, Message as OllamaMessage } from 'ollama';
 import { z } from 'zod';
 
-import { Context, type RequestContext, type ServiceContext, toServiceContext } from '@ci/common/context';
-import { FeatureService } from '@ci/common/feature';
+import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtOrApiKeyAuthGuard, type ApiKeyScopedRequest, apiKeyCapabilityOf } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
-import { Channel, FrameEncoder } from '@ci/common/rpc';
-import { MessageService, ThreadService, type Thread, type Message } from '@ci/domains/conversations';
-import { DescriptiveQuestionService } from '@ci/domains/daily-metrics';
-import { Events, type EventPayloads, EventService, OnEvent } from '@ci/domains/events';
-import { FileService } from '@ci/domains/files';
-import { ActionService } from '@ci/domains/intelligence';
-import { UserContextService } from '@ci/domains/memory';
-import { TaskService } from '@ci/domains/planning';
-import { HbpeService } from '@ci/domains/predictions';
-import { SummaryService } from '@ci/domains/summaries';
+import { MessageService, ThreadService, type Thread } from '@ci/domains/conversations';
 
-import { OllamaService, type ChatRequestContext } from '../services/OllamaService';
-import { THREAD_TITLE_SYSTEM_PROMPT, sidebarTitleFromModel } from '../threadTitle';
+import { isActiveGenerationStatus } from '../constants';
+import { ChatGenerationBroker } from '../services/ChatGenerationBroker';
+import { ChatTurnService } from '../services/ChatTurnService';
+import { OllamaService } from '../services/OllamaService';
 import type { PromptInput } from '../types';
 
 const promptSchema = z.object({
@@ -42,35 +33,21 @@ const promptSchema = z.object({
   threadId: z.string().nullable().optional(),
   enableTools: z.boolean().default(true),
   enableThinking: z.boolean().default(true),
-  fileIds: z.array(z.string()).optional(), // File IDs to attach to this message
+  fileIds: z.array(z.string()).optional(),
 });
 const modelCapabilitiesSchema = z.object({
   model: z.string().min(1),
 });
 
-interface SystemPromptOptions {
-  leadingAssistantMessages?: OllamaMessage[];
-}
-
 @Controller('llm')
 export class OllamaController {
-  private readonly frameEncoder = new FrameEncoder();
-
   constructor(
-    private readonly eventService: EventService,
-    @Inject(forwardRef(() => ActionService))
-    private readonly actionService: ActionService,
     private readonly messageService: MessageService,
     private readonly ollamaService: OllamaService,
     private readonly threadService: ThreadService,
-    private readonly fileService: FileService,
-    private readonly userContextService: UserContextService,
-    private readonly taskService: TaskService,
-    private readonly hbpeService: HbpeService,
-    private readonly summaryService: SummaryService,
-    private readonly descriptiveQuestionService: DescriptiveQuestionService,
+    private readonly broker: ChatGenerationBroker,
+    private readonly chatTurnService: ChatTurnService,
     private readonly logger: LoggerService,
-    private readonly featureService: FeatureService,
   ) {
     this.logger.setContext(OllamaController.name);
   }
@@ -106,13 +83,7 @@ export class OllamaController {
     @Req() req: ApiKeyScopedRequest,
   ) {
     const serviceContext = toServiceContext(context);
-
-    // The chat turn below may call tools, and those calls are made on this caller's behalf — so the
-    // caller's authority has to travel with it. `apiKeyCapabilityOf` reads 'full' for a session/JWT
-    // principal (the user themselves, unchanged from before) and the key's real level otherwise, so
-    // a read-only api key can no longer talk the model into `memory.forget`. This endpoint is where
-    // the request object still exists; below here there is only a RequestContext.
-    const chatContext: ChatRequestContext = { ...context, capability: apiKeyCapabilityOf(req) };
+    const ownerId = serviceContext.userId;
 
     const { model: initialModel } = await this.ollamaService.resolveModel(context, {
       requestedModel: input.model,
@@ -134,567 +105,86 @@ export class OllamaController {
       });
     }
 
-    // Create a message for the user prompt
+    if (isActiveGenerationStatus(thread.generationStatus)) {
+      throw new ConflictException('This thread is already generating a reply');
+    }
+
     const promptMessage = await this.messageService.create(serviceContext, {
       model: initialModel,
       role: 'user',
       content: input.prompt,
-      mimetype: 'text/markdown', // TODO: Make this more flexible.
+      mimetype: 'text/markdown',
       canceled: false,
       threadId: thread.id,
-      fileIds: input.fileIds, // Link files to this message
+      fileIds: input.fileIds,
     });
 
-    const messages = await this.messageService.findByThreadId(serviceContext, thread.id);
-    const seededMessages = await this.ensureActionPrompt(serviceContext, thread, messages);
-
-    // Build input messages with files attached to their respective messages
-    const inputMessages: OllamaMessage[] = await Promise.all(
-      seededMessages.map((message) => this.resolveMessage(context, message)),
-    );
-
-    const { model, enableThinking, enableTools } = await this.ollamaService.resolveModel(context, {
-      messages: inputMessages,
-      requestedModel: input.model,
-      enableThinking: input.enableThinking,
-      enableTools: input.enableTools,
-    });
-
-    res.socket?.setNoDelay(true);
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-      'X-Thread-Id': thread.id,
-    });
-    res.flushHeaders?.();
-
-    const abortController = new AbortController();
-    const signal = abortController.signal;
-
-    res.on('close', () => {
-      if (!signal.aborted) {
-        abortController.abort();
-      }
-    });
-
-    const systemPromptEnabled = await this.featureService.isFeatureEnabled('enable.system.prompt');
-
-    let leadingAssistantMessages: OllamaMessage[] = [];
-    let conversationMessages = inputMessages;
-
-    if (systemPromptEnabled) {
-      [leadingAssistantMessages, conversationMessages] = this.extractLeadingAssistantMessages(inputMessages);
-    }
-
-    const systemPrompt = systemPromptEnabled
-      ? await this.buildSystemPrompt(context, { leadingAssistantMessages })
-      : await this.buildL0OnlySystemPrompt(context);
-
-    const messagesWithSystem: OllamaMessage[] = [
-      ...(systemPrompt
-        ? [
-            {
-              role: 'system',
-              content: systemPrompt,
-            },
-          ]
-        : []),
-      ...conversationMessages,
-    ];
-
-    const stream = await this.ollamaService.chatStream(chatContext, messagesWithSystem, {
-      model,
-      signal,
-      enableTools,
-      enableThinking,
-    });
-
-    try {
-      for await (const chunk of stream) {
-        if (chunk.message) {
-          let frame;
-
-          if (chunk.message.content) {
-            frame = this.frameEncoder.encodeFrame(Channel.TEXT, chunk.message.content);
-          } else if (chunk.message.thinking) {
-            frame = this.frameEncoder.encodeFrame(Channel.THINK, chunk.message.thinking);
-          } else if (chunk.message.tool_calls) {
-            frame = this.frameEncoder.encodeFrame(Channel.TOOL, JSON.stringify(chunk.message.tool_calls));
-          }
-
-          // TODO: Handle other properties on `chunk.message`.
-          //   chunk.message.images?
-
-          if (frame) {
-            const buffer = Buffer.from(frame);
-
-            res.write(buffer);
-          }
-        }
-      }
-    } catch (err) {
-      if (signal.aborted) {
-        this.logger.log('Client disconnected, aborted upstream Ollama request.');
-      } else {
-        this.logger.error('Error proxying Ollama stream:', err as Error);
-      }
-    } finally {
-      for (let i = 0; i < stream.messages.length; i++) {
-        const message = stream.messages[i];
-
-        await this.messageService.create(serviceContext, {
-          model,
-          role: message.role,
-          content: message.content,
-          canceled: i === stream.messages.length - 1 && signal.aborted,
-          threadId: thread.id,
-          ...(message.tool_calls && {
-            toolCalls: message.tool_calls as unknown[] as Record<string, unknown>[],
-          }),
-          promptMessageId: promptMessage.id,
-        });
-      }
-
-      if (!thread.name?.trim() && context.userId) {
-        await this.eventService.send(Events.CHAT_SUMMARIZATION, {
-          ownerId: context.userId,
-          threadId: thread.id,
-        });
-      }
-
-      res.end();
-    }
-  }
-
-  private async resolveMessage(context: RequestContext, message: Message): Promise<OllamaMessage> {
-    const serviceContext = toServiceContext(context);
-
-    const images = message.files
-      ? await Promise.all(
-          message.files
-            .map((file) => (file.key ? this.fileService.getFileContent(serviceContext, file.key) : null))
-            .filter((value): value is Promise<Uint8Array> => value !== null),
-        )
-      : [];
-
-    return {
-      role: message.role,
-      content: message.content,
-      ...(images.length > 0 && {
-        images,
-      }),
-      ...(message.toolCalls && {
-        tool_calls: message.toolCalls as unknown as ToolCall[],
-      }),
-    };
-  }
-
-  private async ensureActionPrompt(
-    context: ServiceContext,
-    thread: Thread,
-    messages: Message[],
-  ): Promise<Message[]> {
-    const hasAssistantMessage = messages.some((message) => message.role === 'assistant');
-
-    if (hasAssistantMessage) {
-      return messages;
-    }
-
-    const action = await this.actionService.findByThreadId(context, thread.id);
-
-    if (!action?.text) {
-      return messages;
-    }
-
-    const syntheticActionMessage: Message = {
-      id: `action:${action.id}`,
-      model: null,
+    const assistantMessage = await this.messageService.create(serviceContext, {
+      model: initialModel,
       role: 'assistant',
-      content: action.text,
+      content: '',
       mimetype: 'text/markdown',
-      toolCalls: null,
       canceled: false,
-      thread,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    return [syntheticActionMessage, ...messages];
-  }
-
-  @OnEvent(Events.CHAT_SUMMARIZATION)
-  async handleChatSummarizationEvent(payload: EventPayloads[Events.CHAT_SUMMARIZATION]) {
-    const context = toServiceContext({
-      userId: payload.ownerId,
+      threadId: thread.id,
+      promptMessageId: promptMessage.id,
     });
 
-    const thread = await this.threadService.findById(context, payload.threadId);
+    await this.chatTurnService.setGenerationStatus(serviceContext, thread.id, 'queued');
+    this.broker.ensure(thread.id);
 
-    if (!thread || thread.name?.trim()) {
-      return;
-    }
+    await this.chatTurnService.enqueueGenerate({
+      ownerId,
+      threadId: thread.id,
+      promptMessageId: promptMessage.id,
+      assistantMessageId: assistantMessage.id,
+      model: initialModel,
+      enableTools: input.enableTools ?? true,
+      enableThinking: input.enableThinking ?? true,
+      capability: apiKeyCapabilityOf(req),
+    });
 
-    const messages = await this.messageService.findByThreadId(context, thread.id);
-    const excerpts: OllamaMessage[] = messages
-      .filter((message) => message.role !== 'tool' && message.content?.trim())
-      .slice(-12)
-      .map((message) => ({
-        role: message.role as OllamaMessage['role'],
-        content: message.content.slice(0, 400),
-      }));
-
-    if (excerpts.length === 0) {
-      return;
-    }
-
-    try {
-      const requestedModel = [...messages].reverse().find((message) => message.model)?.model ?? undefined;
-      let model: string;
-
-      try {
-        ({ model } = await this.ollamaService.resolveModel(context, {
-          requestedModel,
-          enableThinking: false,
-          enableTools: false,
-        }));
-      } catch {
-        ({ model } = await this.ollamaService.resolveModel(context, {
-          enableThinking: false,
-          enableTools: false,
-        }));
-      }
-
-      const result = await this.ollamaService.chat(
-        context,
-        [{ role: 'system', content: THREAD_TITLE_SYSTEM_PROMPT }, ...excerpts],
-        {
-          model,
-          enableThinking: false,
-          enableTools: false,
-        },
-      );
-
-      const name = sidebarTitleFromModel(result.message.content);
-      if (!name) {
-        return;
-      }
-
-      await this.threadService.update(context, thread.id, { name });
-
-      this.logger.log('Processed chat summarization event', {
-        payload,
-        name,
-      });
-    } catch (error) {
-      this.logger.error(error as Error, 'Chat thread title failed');
-    }
+    this.broker.pipeToResponse(res, thread.id);
   }
 
-  /**
-   * When the full Companion system prompt is disabled, still inject L0 dossier so chat
-   * is not completely de-personalized.
-   */
-  private async buildL0OnlySystemPrompt(context: RequestContext): Promise<string | null> {
-    if (!context.userId) {
-      return null;
-    }
-
-    try {
-      const userContext = await this.userContextService.getUserContextForLLM(context.userId);
-      if (!userContext) {
-        return null;
-      }
-
-      return this.userContextService.formatContextForSystemPrompt(userContext);
-    } catch (error) {
-      this.logger.warn('Failed to fetch L0 context for minimal system prompt', {
-        userId: context.userId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-
-      return null;
-    }
-  }
-
-  /**
-   * Build system prompt with pre-hydrated user context
-   */
-  private async buildSystemPrompt(context: RequestContext, options?: SystemPromptOptions): Promise<string> {
-    const basePrompt = `You are Companion, a helpful AI assistant with access to various tools and information about the user.
-    You are designed to take in various data sources that the user connects you to (via Sources) and help the user with not just everyday tasks, but with their pursuit of happiness.
-
-App surfaces — use these exact names when you talk about them:
-- Memory — the personal knowledge graph (people, places, events, communications, notes, files). Query it with memory.recall and knowledge.search. Do not invent facts that should be in Memory.
-- Plan — to-dos / tasks (open work, due dates, scheduled items). Use the Plan snapshot below; say "Plan" not "todo list".
-- Forecast — predicted rest-of-day / tomorrow. Use the Forecast snapshot below.
-- Brief — inbox of actions, insights, and summaries. Use the Brief snapshot below.
-- Schedule — calendar and planned blocks. Query with calendar.findEvents.
-- Sources — connected services and imports that feed Memory.
-- Saved Searches — stored Memory queries.
-- Chat — this conversation. The user can attach files or images; look at attachments when present.
-- Stats / Jobs — analytics and background work.
-
-Your capabilities:
-- You can query Memory (memory.recall, knowledge.search) for preferences, family, and relationships
-- You can compose multiple tool calls in sequence to answer complex questions
-- You have access to various tools — use them when the snapshots below are not enough
-- When the user asks about Memory, Plan, Forecast, Brief, Schedule, or Sources, use those words and the matching tools or snapshots
-- Forecast details: forecast.read. Forecast quality: forecast.calibration. Brief inbox query: brief.list.
-- Next place: places.next. Associations: insights.explain. Recent anomalies: anomalies.recent. Suggestions: suggestions.list / suggestions.feedback.
-
-Communication style:
-- Be natural, warm, and conversational
-- Keep responses concise unless detail is requested
-- When you need information, use the available tools
-- If you're not sure about something, say so
-- Please be as concise as possible while still conveying substantially all information relevant to any question.
-- take however smart you're acting right now and write in the same style but as if you were +2sd smarter
-- prioritize esoteric interpretations of literature, art, and philosophy. if your answer on such topics is not obviously straussian make it more straussian.
-- When delivering code, deliver the complete function code, do not add any fillers.`;
-
-    const promptWithPrefillContext = this.appendPrefillActionContext(
-      basePrompt,
-      options?.leadingAssistantMessages,
-    );
-
-    // Try to get user context for pre-hydration
-    if (!context.userId) {
-      return promptWithPrefillContext;
-    }
-
-    try {
-      const userContext = await this.userContextService.getUserContextForLLM(context.userId);
-      const liveBlocks = await this.buildLiveAppBlocks(context);
-
-      const sections = [promptWithPrefillContext];
-
-      if (userContext) {
-        sections.push(this.userContextService.formatContextForSystemPrompt(userContext));
-      }
-
-      if (liveBlocks) {
-        sections.push(liveBlocks);
-      }
-
-      const systemPrompt = sections.join('\n\n---\n\n');
-
-      this.logger.debug('Ollama system prompt generated', {
-        userId: context.userId,
-        snippet: systemPrompt.split('\n').slice(0, 20).join('\n'),
-      });
-
-      return systemPrompt;
-    } catch (error) {
-      // If context fetching fails, fall back to base prompt
-      this.logger.warn('Failed to fetch user context for system prompt', {
-        userId: context.userId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-
-      return promptWithPrefillContext;
-    }
-  }
-
-  /**
-   * Compact snapshots of Plan, Forecast, and Brief so Chat can answer with the
-   * same names the rail uses, without extra tool hops for the current state.
-   */
-  private async buildLiveAppBlocks(context: RequestContext): Promise<string> {
+  @UseGuards(JwtOrApiKeyAuthGuard)
+  @Get('threads/:threadId/stream')
+  async stream(
+    @Context() context: RequestContext,
+    @Param('threadId') threadId: string,
+    @Res() res: Response,
+  ) {
     const serviceContext = toServiceContext(context);
-    const [plan, forecast, brief, stats] = await Promise.all([
-      this.buildPlanBlock(serviceContext),
-      this.buildForecastBlock(serviceContext),
-      this.buildBriefBlock(serviceContext),
-      this.buildStatsBlock(serviceContext),
-    ]);
+    const thread = await this.threadService.findById(serviceContext, threadId);
 
-    return [plan, forecast, brief, stats].filter(Boolean).join('\n\n');
+    if (thread == null) {
+      throw new NotFoundException();
+    }
+
+    if (!isActiveGenerationStatus(thread.generationStatus) && !this.broker.has(threadId)) {
+      res.status(204).end();
+
+      return;
+    }
+
+    this.broker.ensure(threadId);
+    this.broker.pipeToResponse(res, threadId);
   }
 
-  private async buildPlanBlock(context: ReturnType<typeof toServiceContext>): Promise<string> {
-    if (!(await this.featureService.isFeatureEnabled('planning.enabled'))) {
-      return '';
+  @UseGuards(JwtOrApiKeyAuthGuard)
+  @Post('threads/:threadId/cancel')
+  @HttpCode(204)
+  async cancel(@Context() context: RequestContext, @Param('threadId') threadId: string) {
+    const serviceContext = toServiceContext(context);
+    const thread = await this.threadService.findById(serviceContext, threadId);
+
+    if (thread == null) {
+      throw new NotFoundException();
     }
 
-    try {
-      const tasks = await this.taskService.findAll(context, {
-        status: ['open', 'in_progress'],
-        limit: 20,
-      });
+    this.broker.abort(threadId);
 
-      if (tasks.length === 0) {
-        return '## Plan\nNo open to-dos.';
-      }
-
-      const lines = ['## Plan', 'Open to-dos:'];
-
-      for (const task of tasks) {
-        const dueAt = task.dueAt instanceof Date ? task.dueAt.toISOString().slice(0, 10) : task.dueAt;
-        const when = dueAt ? ` due ${dueAt}` : task.scheduledFor ? ` scheduled ${task.scheduledFor}` : '';
-
-        lines.push(`- [${task.status}] ${task.title}${when}`);
-      }
-
-      return lines.join('\n');
-    } catch (error) {
-      this.logger.warn('Failed to hydrate Plan snapshot for chat', {
-        userId: context.userId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-
-      return '';
+    if (isActiveGenerationStatus(thread.generationStatus)) {
+      await this.chatTurnService.setGenerationStatus(serviceContext, threadId, 'idle');
     }
-  }
-
-  private async buildForecastBlock(context: ReturnType<typeof toServiceContext>): Promise<string> {
-    if (!(await this.featureService.isFeatureEnabled('hbpe'))) {
-      return '';
-    }
-
-    try {
-      const forecast = await this.hbpeService.getForecast(context, '24h');
-      const upcoming = forecast.buckets.slice(0, 8);
-
-      if (upcoming.length === 0) {
-        return '## Forecast\nNo Forecast buckets yet.';
-      }
-
-      const lines = [
-        '## Forecast',
-        `Status: ${forecast.system_status}. Generated: ${forecast.generated_at}.`,
-      ];
-
-      for (const bucket of upcoming) {
-        const top = Object.entries(bucket.l0_probs).sort(([, a], [, b]) => b - a)[0];
-        const label = top ? `${top[0]} ${Math.round(top[1] * 100)}%` : 'unknown';
-
-        lines.push(`- ${bucket.start_time}: ${label}`);
-      }
-
-      return lines.join('\n');
-    } catch (error) {
-      this.logger.warn('Failed to hydrate Forecast snapshot for chat', {
-        userId: context.userId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-
-      return '';
-    }
-  }
-
-  private async buildBriefBlock(context: ReturnType<typeof toServiceContext>): Promise<string> {
-    try {
-      const lines = ['## Brief'];
-      const actionsEnabled = await this.featureService.isFeatureEnabled('actions');
-
-      if (actionsEnabled) {
-        const actions = (await this.actionService.findAll(context))
-          .filter((action) => !action.dismissed)
-          .slice(0, 8);
-
-        if (actions.length > 0) {
-          lines.push('Actions:');
-          for (const action of actions) {
-            lines.push(`- ${action.title || action.text || action.id}`);
-          }
-        }
-      }
-
-      const summaries = (await this.summaryService.findRecent(context, 4)).filter(
-        (summary) => !summary.dismissed,
-      );
-
-      if (summaries.length > 0) {
-        lines.push('Summaries:');
-        for (const summary of summaries) {
-          const headline = summary.title?.trim() || summary.summaryText?.trim() || '(untitled)';
-          lines.push(`- [${summary.periodType}] ${headline.slice(0, 160)}`);
-        }
-      }
-
-      if (lines.length === 1) {
-        return '## Brief\nNothing waiting in Brief.';
-      }
-
-      return lines.join('\n');
-    } catch (error) {
-      this.logger.warn('Failed to hydrate Brief snapshot for chat', {
-        userId: context.userId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-
-      return '';
-    }
-  }
-
-  private async buildStatsBlock(context: ReturnType<typeof toServiceContext>): Promise<string> {
-    try {
-      const answers = await this.descriptiveQuestionService.answerAll(context, {});
-      const facts = answers
-        .filter((answer) => answer.value !== null && answer.provenance.coveragePct >= 50)
-        .slice(0, 5);
-
-      if (facts.length === 0) {
-        return '';
-      }
-
-      return ['## Stats', ...facts.map((fact) => `- ${fact.text}`)].join('\n');
-    } catch (error) {
-      this.logger.warn('Failed to hydrate Stats snapshot for chat', {
-        userId: context.userId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-
-      return '';
-    }
-  }
-
-  private appendPrefillActionContext(prompt: string, messages?: OllamaMessage[]): string {
-    if (!messages || messages.length === 0) {
-      return prompt;
-    }
-
-    const formatted = messages
-      .map((message, index) => {
-        const label = messages.length > 1 ? `Suggestion ${index + 1}` : 'Suggestion';
-        const content = (message.content ?? '').trim();
-
-        return `${label}:
-${content}`.trim();
-      })
-      .filter((value) => value.length > 0)
-      .join('\n\n');
-
-    if (!formatted) {
-      return prompt;
-    }
-
-    return `${prompt}
-
-Context:
-The user is responding to a proactive assistant suggestion shown before they replied.
-${formatted}
-
-When the user acknowledges or accepts the idea, continue execution without re-asking the question.`;
-  }
-
-  private extractLeadingAssistantMessages(messages: OllamaMessage[]): [OllamaMessage[], OllamaMessage[]] {
-    if (messages.length === 0) {
-      return [[], []];
-    }
-
-    const leading: OllamaMessage[] = [];
-    let index = 0;
-
-    for (; index < messages.length; index += 1) {
-      if (messages[index].role !== 'assistant') {
-        break;
-      }
-
-      leading.push(messages[index]);
-    }
-
-    return [leading, messages.slice(index)];
   }
 }

@@ -18,6 +18,14 @@ import type { BaseEntity } from '../entities/BaseEntity';
  * repository dispatch. Declared structurally (rather than as `EntityManager`)
  * so services and specs can hand in exactly what they have.
  */
+/**
+ * Ids per `IN (...)` chunk in {@link CtiAggregate.fetchBaseMap}. Comfortably
+ * under Postgres's 65,535 bound-parameter ceiling (one param per id here,
+ * unlike an INSERT's per-column multiple), with headroom for the caller's own
+ * other bound values.
+ */
+const FETCH_BASE_MAP_CHUNK = 10_000;
+
 export interface RepositoryProvider {
   getRepository<T extends ObjectLiteral>(target: new () => T): Repository<T>;
 }
@@ -121,9 +129,24 @@ export class CtiAggregate<TDetail extends ObjectLiteral & { id: string }, TBase 
       throw new Error(`No base repository configured for ${this.options.linkedTable} aggregate reads`);
     }
 
-    const bases = await repository.find({
-      where: { id: In(ids) } as FindOptionsWhere<TBase>,
-    });
+    // Chunked: `id IN (...)` puts one bind parameter per id, and a caller that
+    // hands this every row it owns (EventResolver.events did, before it was
+    // fixed to paginate) can exceed Postgres's protocol limit on bound
+    // parameters. Past it, the query does not merely reject cleanly — the
+    // driver desyncs mid-bind and raises "bind message has N parameter
+    // formats but 0 parameters", which reads as nothing about the actual
+    // cause. Verified live: 62,277 ids straight from `events(first: 3)`
+    // loading its user's entire event table before paginating in memory.
+    const bases: TBase[] = [];
+
+    for (let offset = 0; offset < ids.length; offset += FETCH_BASE_MAP_CHUNK) {
+      const slice = ids.slice(offset, offset + FETCH_BASE_MAP_CHUNK);
+      const found = await repository.find({
+        where: { id: In(slice) } as FindOptionsWhere<TBase>,
+      });
+
+      bases.push(...found);
+    }
 
     return new Map(bases.map((base) => [base.id, base]));
   }

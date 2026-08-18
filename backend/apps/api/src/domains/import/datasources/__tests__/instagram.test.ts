@@ -130,6 +130,22 @@ describe('Instagram datasource — Meta HTML format', () => {
     expect(text).toContain('A great post about AI & privacy');
   });
 
+  it('titles every activity entry with its human label, not the raw export filename', () => {
+    // Every entry from processHtmlActivity used to have no Title at all, so the
+    // canonical mapper fell back to content.filename — "liked_posts.html",
+    // "stories_viewed.html" — verbatim, on the timeline, repeated once per
+    // entry. Verified on a real import: all 39 Instagram events, every one.
+    return runImport().then((pipeline) => {
+      const likes = pipeline.filter((p) => p.item.classification === 'like');
+
+      expect(likes[0].item.metadata.Title).toBe('Instagram like');
+      expect(likes[0].item.metadata.Title).not.toMatch(/\.html$/);
+      // The entry's own detail (caption/URL) still rides along, now as
+      // Description rather than being the only place it appeared.
+      expect(likes[0].item.metadata.Description).toContain('A great post about AI & privacy');
+    });
+  });
+
   it('imports saved items as classification "interaction"', async () => {
     const pipeline = await runImport();
     const saved = pipeline.filter(

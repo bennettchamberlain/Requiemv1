@@ -845,6 +845,13 @@ export class AmazonFileImporter implements FileImporter {
             'Order ID': oid,
             'Item Count': count,
             Total: money(agg.total),
+            // Also under `Amount` — the key LifeStatsService's spend chart
+            // reads (`amountToMinorSql` is `metadata->>'Amount'`, the
+            // convention coinbase.ts and venmo.ts already follow). `Total` was
+            // the only key written here, so a real import with $45.8k across
+            // 619 orders showed a Spending panel that said to go import
+            // purchase history — which was already sitting there, unread.
+            Amount: money(agg.total),
             Currency: agg.currency,
             Source: 'Amazon',
           },

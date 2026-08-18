@@ -80,7 +80,9 @@ export function NavUser() {
 
   return (
     <Collapsible>
-      <Collapsible.Trigger className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition hover:bg-accent hover:text-accent-foreground [&[data-state=open]>svg:last-child]:rotate-90">
+      <Collapsible.Trigger className="flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left transition hover:bg-accent hover:text-accent-foreground [&[data-state=open]>svg:last-child]:rotate-90">
+        {/* size-8 matches Help's leading cell, so this name and "Help" share
+            one left edge rather than padding off different icon widths. */}
         {avatar}
         <span className="grid min-w-0 flex-1 text-left text-sm leading-tight">
           <span className="truncate font-medium">{currentUser.name}</span>

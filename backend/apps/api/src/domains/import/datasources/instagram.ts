@@ -632,7 +632,16 @@ export class InstagramFileImporter implements FileImporter {
             mediaType: 'text/plain',
             data: async () => Buffer.from(text),
           },
-          metadata: { Type: label, Source: 'Instagram' },
+          // `Title: label` — every call site (processHtmlActivity's callers,
+          // just above) already passes a real human label ("Instagram like",
+          // "Instagram story viewed", "Instagram checkout"). Without a Title
+          // key here, the canonical mapper's fallback is the raw filename
+          // (canonical.ts titleFor), so every one of these landed on the
+          // timeline titled "liked_posts.html" or "stories_viewed.html" —
+          // verified on a real import: all 39 Instagram events, all of them.
+          // `Description: text` keeps the entry's own detail (a caption, a
+          // URL) instead of discarding it now that Title carries the type.
+          metadata: { Title: label, Description: text, Type: label, Source: 'Instagram' },
         },
       });
     }

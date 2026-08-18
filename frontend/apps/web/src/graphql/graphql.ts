@@ -3263,6 +3263,7 @@ export type ThreadEdge = Edge & {
 export type ThreadType = Node & Taggable & {
   __typename?: 'ThreadType';
   description?: Maybe<Scalars['String']['output']>;
+  generationStatus: Scalars['String']['output'];
   id: Scalars['ID']['output'];
   messages: MessageConnection;
   name?: Maybe<Scalars['String']['output']>;

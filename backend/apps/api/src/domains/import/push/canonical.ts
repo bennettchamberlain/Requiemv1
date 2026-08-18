@@ -668,12 +668,21 @@ export function destinationsFor(rec: CanonicalRecord): Destination[] {
     return ['content'];
   }
 
-  if (kind.startsWith('capture.') && rec.coordinates) {
-    // Any geotagged capture — photo, video, or audio — keeps its home in events
-    // (where its media file is linked) and also donates a position row so the
-    // estimator can interpolate nearby coordinate-less events. A geotagged phone
-    // video is as good a GPS donor as a photo.
-    return ['events', 'position'];
+  if (kind.startsWith('capture.')) {
+    // A dated photo/video/audio ALWAYS takes a content row alongside its event
+    // — same pattern as media.play/watch/listen/read above, and for the same
+    // reason: EventMediaLoader resolves an event's thumbnail/attachment by
+    // INNER-JOINing ci.content on ci.events through the shared (source_type,
+    // source_system, source_id) triple (see ContentService.findMediaFilesByEventIds).
+    // A destination list of just ['events'] never creates that content row, so
+    // the join finds nothing — every dated capture rendered as a blank tile,
+    // gallery-wide, regardless of how many files MediaStage actually uploaded.
+    // Verified on a real import: 2,098 photo/video events (Apple Photos,
+    // WhatsApp, Instagram, Facebook), 0 with a linked content row.
+    //
+    // Geotagged captures keep donating a position row too, same as before —
+    // this only adds 'content' to what was already being returned.
+    return rec.coordinates ? ['events', 'content', 'position'] : ['events', 'content'];
   }
 
   return ['events'];
