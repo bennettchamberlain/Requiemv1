@@ -8,6 +8,8 @@ export const TrustModeSchema = z.enum(TRUST_MODES);
 export const PERSONALIZATION_ACTION_KINDS = [
   'graph_edge',
   'graph_entity',
+  /** Fold an owner-representing Person stub into the self Person (heal / ingest). */
+  'person_self_merge',
   'schedule_accept',
   'inferred_fact',
   'agent_write',

@@ -16,7 +16,12 @@ const DEFAULT_TRUST_MODE: TrustMode = 'balanced';
 /** Below this confidence, always ask the user before applying (all trust modes). */
 export const ALWAYS_REVIEW_BELOW_CONFIDENCE = 0.7;
 
-const GRAPH_CONNECTION_KINDS = new Set<PersonalizationActionKind>(['graph_edge', 'graph_entity']);
+const GRAPH_CONNECTION_KINDS = new Set<PersonalizationActionKind>([
+  'graph_edge',
+  'graph_entity',
+  // Same trust family as graph identity work: cautious/balanced → review; hands_off may auto.
+  'person_self_merge',
+]);
 
 const PLANNING_ACTION_KINDS = new Set<PersonalizationActionKind>([
   'task_create',
