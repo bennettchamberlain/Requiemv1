@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { IntelligenceModule } from '@ci/domains/intelligence';
+import { MemoryModule } from '@ci/domains/memory';
 import { UserModule } from '@ci/domains/user';
 
 import { AnomalyEngine } from './anomaly/AnomalyEngine';
@@ -16,6 +17,8 @@ import { PlaceForecastLogEntity } from './entities/PlaceForecastLogEntity';
 import { PlaceTransitionEntity } from './entities/PlaceTransitionEntity';
 import { SuggestionArmEntity } from './entities/SuggestionArmEntity';
 import { MetricForecastService } from './forecast/MetricForecastService';
+import { HomeConfirmListener } from './home/HomeConfirmListener';
+import { HomeConfirmService } from './home/HomeConfirmService';
 import { DescriptiveQuestionService } from './narrate/DescriptiveQuestionService';
 import { NARRATOR, TemplateNarrator } from './narrate/Narrator';
 import { PlaceClusterService } from './places/PlaceClusterService';
@@ -49,11 +52,14 @@ import { SuggestionEngine } from './suggest/SuggestionEngine';
     ]),
     UserModule,
     IntelligenceModule,
+    MemoryModule,
   ],
   providers: [
     DailyMetricsService,
     DailyMetricsCron,
     DescriptiveQuestionService,
+    HomeConfirmService,
+    HomeConfirmListener,
     MetricForecastService,
     PlaceClusterService,
     PlaceTransitionService,
@@ -66,6 +72,7 @@ import { SuggestionEngine } from './suggest/SuggestionEngine';
   exports: [
     DailyMetricsService,
     DescriptiveQuestionService,
+    HomeConfirmService,
     MetricForecastService,
     PlaceTransitionService,
     CorrelationEngine,
@@ -77,6 +84,8 @@ import { SuggestionEngine } from './suggest/SuggestionEngine';
 export class DailyMetricsModule {}
 
 export { DailyMetricsService, DEFAULT_REFRESH_WINDOW_DAYS } from './services/DailyMetricsService';
+export { HomeConfirmService } from './home/HomeConfirmService';
+export { HOME_QUESTION_ID, CONFIRM_HOME_ACTION_KEY, isHomeConfirmSourceId } from './home/homeConfirm';
 export { DerivationScanService } from './services/DerivationScanService';
 export { MetricForecastService } from './forecast/MetricForecastService';
 export type { MetricForecast, MetricForecastStatus } from './forecast/MetricForecastService';

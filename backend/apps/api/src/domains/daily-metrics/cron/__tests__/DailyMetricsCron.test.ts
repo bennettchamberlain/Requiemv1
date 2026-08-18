@@ -1,6 +1,7 @@
 import type { LoggerService } from '@ci/common/logging';
 import type { UserService } from '@ci/domains/user';
 
+import type { HomeConfirmService } from '../../home/HomeConfirmService';
 import type { PlaceTransitionService } from '../../places/PlaceTransitionService';
 import type { DailyMetricsService } from '../../services/DailyMetricsService';
 import type { DerivationScanService } from '../../services/DerivationScanService';
@@ -35,6 +36,7 @@ function makeCron() {
     placeTransitionService,
     userService,
     { scanAll } as unknown as DerivationScanService,
+    { ensureAction: jest.fn().mockResolvedValue(undefined) } as unknown as HomeConfirmService,
     logger as unknown as LoggerService,
   );
 
@@ -71,6 +73,7 @@ describe('DailyMetricsCron.refreshRecent', () => {
       placeTransitionService,
       userService,
       { scanAll } as unknown as DerivationScanService,
+      { ensureAction: jest.fn().mockResolvedValue(undefined) } as unknown as HomeConfirmService,
       logger as unknown as LoggerService,
     );
 
@@ -107,6 +110,7 @@ describe('DailyMetricsCron.refreshRecent', () => {
         findAll: jest.fn().mockResolvedValue([{ id: 'user-1', timezone: 'America/New_York' }]),
       } as unknown as UserService,
       { scanAll } as unknown as DerivationScanService,
+      { ensureAction: jest.fn().mockResolvedValue(undefined) } as unknown as HomeConfirmService,
       logger as unknown as LoggerService,
     );
 

@@ -195,6 +195,7 @@ export const CONTEXT_PROMPT_WRITERS = [
   'write_graph_relationship',
   'write_person_properties',
   'write_place_properties',
+  'write_known_place',
   'write_inferred_fact',
   'write_event_actual',
   'write_schedule_accept',

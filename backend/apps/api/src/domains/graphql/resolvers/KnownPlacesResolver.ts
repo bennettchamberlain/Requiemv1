@@ -3,6 +3,7 @@ import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
+import { DailyMetricsService } from '@ci/domains/daily-metrics';
 import { type KnownPlaceKind, KnownPlacesService, type KnownPlaceSource } from '@ci/domains/memory';
 
 import { KnownPlaceCandidateType } from '../types/KnownPlaceCandidateType';
@@ -21,7 +22,10 @@ function parseKind(value: string | undefined, fallback: KnownPlaceKind): KnownPl
 @UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => KnownPlaceType)
 export class KnownPlacesResolver {
-  constructor(private readonly knownPlacesService: KnownPlacesService) {}
+  constructor(
+    private readonly knownPlacesService: KnownPlacesService,
+    private readonly dailyMetricsService: DailyMetricsService,
+  ) {}
 
   /** The user's confirmed known places (LIVES_IN/WORKS_AT/VISITED), optionally filtered by kind. */
   @Query(() => [KnownPlaceType])
@@ -65,9 +69,10 @@ export class KnownPlacesResolver {
         ? (input.source as KnownPlaceSource)
         : 'manual';
 
+    const kind = parseKind(input.kind, 'other');
     const label = await this.knownPlacesService.updateKnownPlace(serviceContext, {
       label: input.label,
-      kind: parseKind(input.kind, 'other'),
+      kind,
       locationId: input.locationId ?? null,
       coordinates: input.coordinates ?? null,
       confidence: input.confidence,
@@ -76,6 +81,10 @@ export class KnownPlacesResolver {
       aliases: input.aliases,
       source,
     });
+
+    if (kind === 'home') {
+      void this.dailyMetricsService.refreshForUser(serviceContext).catch(() => undefined);
+    }
 
     return KnownPlaceType.toType(label);
   }
