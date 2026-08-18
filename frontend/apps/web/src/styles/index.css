@@ -156,6 +156,99 @@
   box-shadow: var(--ci-button-shadow);
 }
 
+/*
+ * The warp core — the home control's permanent glow.
+ *
+ * A reactor does not light up on hover; it is lit because it is running. So
+ * this is unconditional: a radial bloom behind the mark and the wordmark that
+ * never fully dims, breathing between a floor and a peak rather than fading
+ * in and out. The floor is what makes it read as "powered" rather than as an
+ * animation that happens to be playing.
+ *
+ * Painted with ::before at z-index 0 rather than a negative z-index: an
+ * element's own background paints beneath ALL its children, negative ones
+ * included, so `z-index: -1` would put the bloom behind the button's own hover
+ * fill and make it vanish exactly when the button is being used. Lifting the
+ * real children to z-index 1 keeps the mark and the text above the bloom.
+ */
+.warp-core {
+  position: relative;
+}
+
+.warp-core > * {
+  position: relative;
+  z-index: 1;
+}
+
+.warp-core::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  /* Bleeds past the button so the falloff is not clipped into a hard edge. */
+  inset: -30% -10%;
+  border-radius: 9999px;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in srgb, var(--primary) 30%, transparent),
+    color-mix(in srgb, var(--phthalo-hover) 20%, transparent) 52%,
+    transparent 76%
+  );
+  filter: blur(5px);
+  animation: warp-core-pulse 3.6s ease-in-out infinite;
+  /* The bloom is decoration; it must never eat the click. */
+  pointer-events: none;
+}
+
+/* The mark itself is the emitter: a tighter, brighter halo in phase with the
+   bloom, so the light reads as coming FROM the logo rather than sitting behind
+   it as a rectangle. */
+.warp-core-emitter {
+  animation: warp-core-emit 3.6s ease-in-out infinite;
+}
+
+@keyframes warp-core-pulse {
+  0%,
+  100% {
+    opacity: 0.6;
+    transform: scale(0.95);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes warp-core-emit {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 3px color-mix(in srgb, var(--primary) 45%, transparent));
+  }
+
+  50% {
+    filter: drop-shadow(0 0 7px color-mix(in srgb, var(--primary) 75%, transparent));
+  }
+}
+
+/*
+ * Reduced motion takes away the PULSE, not the glow. The reactor still reads as
+ * powered — it simply stops breathing, holding at the midpoint. Removing the
+ * light entirely would make this a different design for those users rather than
+ * the same one, calmer.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .warp-core::before {
+    animation: none;
+    opacity: 0.8;
+    transform: none;
+  }
+
+  .warp-core-emitter {
+    animation: none;
+    filter: drop-shadow(0 0 5px color-mix(in srgb, var(--primary) 60%, transparent));
+  }
+}
+
 .texture-surface {
   background-image: var(--texture-image, none);
   background-size: var(--texture-size, auto);
