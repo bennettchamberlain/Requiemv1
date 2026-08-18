@@ -38,6 +38,22 @@ async function importRows(fpath: string): Promise<EmittedGraph[]> {
 }
 
 describe('Letterboxd datasource', () => {
+  it('does not recognize a same-named CSV from a different app', async () => {
+    // "diary.csv" and "ratings.csv" are generic names other apps' own exports
+    // use verbatim (a mood-tracking app's diary, a beer-rating app's ratings)
+    // — the filename tier used to skip the header check entirely and return
+    // 0.8 the moment the name matched, outranking other importers' own
+    // content-verified tiers.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ci-letterboxd-lookalike-'));
+    const fpath = path.join(dir, 'diary.csv');
+    fs.writeFileSync(fpath, 'Date,Mood,Notes\n2024-03-01,Good,Slept well\n');
+
+    const fi = new LetterboxdFileImporter();
+    const rec = await fi.recognize({}, { filename: 'diary.csv', fullPath: fpath });
+    expect(rec.confidence).toBe(0);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('assigns a unique stable id to every film even when Watched Date collides', async () => {
     const fpath = writeExport();
     try {
