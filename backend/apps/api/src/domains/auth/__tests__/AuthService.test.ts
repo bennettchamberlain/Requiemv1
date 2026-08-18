@@ -1,3 +1,6 @@
+import { createHmac } from 'crypto';
+
+import { UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
 import type { Repository } from 'typeorm';
@@ -151,6 +154,120 @@ describe('AuthService — session id binding', () => {
       ]) {
         expect(service.resolveCsrfScope(reqWithCookies(cookies))).toBeNull();
       }
+    });
+  });
+
+  /**
+   * findSession (private, reached only via rotateSessionToken/invalidateSession)
+   * builds its `where` clause with `user: { id: userId }` alongside the
+   * token/ip/user-agent hash match. Every test above uses a `findOne` mock
+   * that ignores its `where` argument entirely (`findOneResults.shift()`),
+   * so none of them can tell whether that user-scoping clause is actually
+   * applied — a token-hash collision, or a bug that dropped the `user`
+   * clause, could let one user's refresh/logout call match and
+   * mutate/delete a DIFFERENT user's session row.
+   *
+   * This block uses a small in-memory repo that genuinely filters by the
+   * `where` criteria it receives (replicating AuthService's own HMAC digest
+   * so the token/ip/user-agent hashes line up), so a regression that dropped
+   * or inverted the user-id scoping would make the "wrong owner" tests below
+   * fail by matching/mutating the other user's row.
+   */
+  describe('findSession user-id scoping (via rotateSessionToken / invalidateSession)', () => {
+    function digest(value: string): string {
+      return createHmac('sha256', config.auth.session.fieldPepper).update(value).digest('hex');
+    }
+
+    function makeScopedSessionRepository(rows: SessionEntity[]) {
+      const table = [...rows];
+
+      const matchesWhere = (row: SessionEntity, where: Record<string, unknown>): boolean =>
+        Object.entries(where).every(([key, value]) => {
+          if (key === 'user') {
+            return (row as unknown as { user: { id: string } }).user?.id === (value as { id: string }).id;
+          }
+
+          // MoreThan(now) FindOperator — compare against its wrapped value.
+          if (value && typeof value === 'object' && 'value' in (value as Record<string, unknown>)) {
+            return (row as unknown as Record<string, Date>)[key] > (value as { value: Date }).value;
+          }
+
+          return (row as unknown as Record<string, unknown>)[key] === value;
+        });
+
+      return {
+        create: jest.fn((entity: Partial<SessionEntity>) => entity as SessionEntity),
+        save: jest.fn(async (entity: SessionEntity) => entity),
+        findOne: jest.fn(async ({ where }: { where: Record<string, unknown> }) => {
+          return table.find((row) => matchesWhere(row, where)) ?? null;
+        }),
+        delete: jest.fn(async ({ id }: { id: string }) => {
+          const before = table.length;
+
+          for (let i = table.length - 1; i >= 0; i--) {
+            if (table[i].id === id) {
+              table.splice(i, 1);
+            }
+          }
+
+          return { affected: before - table.length };
+        }),
+      };
+    }
+
+    const rawToken = 'incoming-token';
+
+    function sessionRowForUser(id: string, userId: string): SessionEntity {
+      return {
+        id,
+        token: digest(rawToken),
+        previous_token: null,
+        rotated_at: null,
+        expires_at: new Date(Date.now() + 60_000),
+        ip: digest(meta.ip),
+        user_agent: digest(meta.userAgent!),
+        user: { id: userId },
+      } as unknown as SessionEntity;
+    }
+
+    it("rotateSessionToken: a token bound to another user does not match this user's session", async () => {
+      const repo = makeScopedSessionRepository([sessionRowForUser('sess-1', 'user-1')]);
+      const scopedService = new AuthService(jwtService, repo as unknown as Repository<SessionEntity>);
+
+      // Right token, right ip/user-agent, WRONG user — must not match user-1's row.
+      await expect(scopedService.rotateSessionToken('user-2', rawToken, meta)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+    });
+
+    it("rotateSessionToken: the owning user's matching token rotates successfully", async () => {
+      const repo = makeScopedSessionRepository([sessionRowForUser('sess-1', 'user-1')]);
+      const scopedService = new AuthService(jwtService, repo as unknown as Repository<SessionEntity>);
+
+      const result = await scopedService.rotateSessionToken('user-1', rawToken, meta);
+
+      expect(result.sessionId).toBe('sess-1');
+      expect(result.sessionToken).not.toBeNull();
+    });
+
+    it("invalidateSession: a different user cannot delete another user's session by guessing/replaying the token", async () => {
+      const repo = makeScopedSessionRepository([sessionRowForUser('sess-1', 'user-1')]);
+      const scopedService = new AuthService(jwtService, repo as unknown as Repository<SessionEntity>);
+
+      await expect(scopedService.invalidateSession('user-2', rawToken, meta)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      // The session survives — the delete branch was never reached.
+      expect(repo.delete).not.toHaveBeenCalled();
+    });
+
+    it('invalidateSession: the owning user can log themselves out (session row is removed)', async () => {
+      const repo = makeScopedSessionRepository([sessionRowForUser('sess-1', 'user-1')]);
+      const scopedService = new AuthService(jwtService, repo as unknown as Repository<SessionEntity>);
+
+      await scopedService.invalidateSession('user-1', rawToken, meta);
+
+      expect(repo.delete).toHaveBeenCalledWith({ id: 'sess-1' });
     });
   });
 });
