@@ -361,3 +361,131 @@ describe('ApiKeysSection capability changes', () => {
     expect(await screen.findByText('Read & write')).toBeInTheDocument();
   });
 });
+
+describe('ApiKeysSection delete confirmation', () => {
+  const key = {
+    id: 'k1',
+    name: 'laptop',
+    prefix: 'ab12c',
+    scopes: ['memory'],
+    capability: 'write',
+    expires_at: null,
+    last_used_at: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    managed_by: null,
+  };
+
+  /**
+   * Unlike `mockKeys` (which hands back the same array for every GET), this
+   * tracks a mutable list so a successful DELETE is reflected the next time
+   * `fetchKeys()` refetches — the only way to prove the row actually left the
+   * list rather than merely that a DELETE was sent.
+   */
+  function mockKeysWithDelete(initial: Array<Record<string, unknown>>) {
+    let current = initial;
+    h.fetchJson.mockReset();
+    h.fetchJson.mockImplementation((url: string, init?: { method?: string }) => {
+      if (init?.method === 'DELETE') {
+        const id = url.split('/').pop();
+        current = current.filter((k) => k.id !== id);
+
+        return Promise.resolve({});
+      }
+
+      return Promise.resolve(init?.method ? {} : current);
+    });
+  }
+
+  const openDeleteFor = async (name: string) =>
+    fireEvent.click(await screen.findByRole('button', { name: new RegExp(`delete ${name}`, 'i') }));
+
+  it('opens a confirmation naming the key before sending anything', async () => {
+    mockKeysWithDelete([key]);
+    render(<ApiKeysSection />);
+    await openDeleteFor('laptop');
+
+    expect(screen.getByText('Delete API Key')).toBeInTheDocument();
+    // The key's name is bolded inline (`<strong>{name}</strong>`), so it lands in its
+    // own text node — one occurrence in the row behind the dialog, one in the prompt.
+    expect(screen.getAllByText('laptop').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText(/any integrations using this key will stop working/i)).toBeInTheDocument();
+    expect(
+      h.fetchJson.mock.calls.some(
+        ([, init]) => (init as { method?: string } | undefined)?.method === 'DELETE',
+      ),
+    ).toBe(false);
+  });
+
+  it('cancel leaves the key in place and sends no DELETE', async () => {
+    mockKeysWithDelete([key]);
+    render(<ApiKeysSection />);
+    await openDeleteFor('laptop');
+
+    fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }));
+
+    expect(
+      h.fetchJson.mock.calls.some(
+        ([, init]) => (init as { method?: string } | undefined)?.method === 'DELETE',
+      ),
+    ).toBe(false);
+    expect(screen.getByText('laptop')).toBeInTheDocument();
+  });
+
+  it('sends a DELETE for the key and drops it from the list on success', async () => {
+    mockKeysWithDelete([key, { ...key, id: 'k2', name: 'phone' }]);
+    render(<ApiKeysSection />);
+    await screen.findByText('laptop');
+
+    await openDeleteFor('laptop');
+    fireEvent.click(screen.getByRole('button', { name: /^delete$/i }));
+
+    await waitFor(() =>
+      expect(h.fetchJson).toHaveBeenCalledWith('/api/keys/k1', expect.objectContaining({ method: 'DELETE' })),
+    );
+    // The list is re-fetched after a successful delete, and the row is gone —
+    // proving the deletion actually took, not just that the request fired.
+    await waitFor(() => expect(screen.queryByText('laptop')).not.toBeInTheDocument());
+    expect(screen.getByText('phone')).toBeInTheDocument();
+  });
+
+  it('shows "Failed to delete API key" and keeps the key listed when the request fails', async () => {
+    h.fetchJson.mockReset();
+    h.fetchJson.mockImplementation((_url: string, init?: { method?: string }) => {
+      if (init?.method === 'DELETE') {
+        return Promise.reject(new Error('network down'));
+      }
+
+      return Promise.resolve(init?.method ? {} : [key]);
+    });
+
+    render(<ApiKeysSection />);
+    await openDeleteFor('laptop');
+    fireEvent.click(screen.getByRole('button', { name: /^delete$/i }));
+
+    expect(await screen.findByText('Failed to delete API key')).toBeInTheDocument();
+    // Nothing was actually removed — the row (and the dialog's own mention of
+    // its name) both stay put, ready to retry, rather than closing as if the
+    // delete had gone through.
+    expect(screen.getAllByText('laptop').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText('Delete API Key')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^delete$/i })).toBeEnabled();
+  });
+
+  it('warns before deleting a Hub-managed key, pointing at Disconnect Memory instead', async () => {
+    mockKeysWithDelete([{ ...key, managed_by: 'connect', name: 'app:ci-hermes:ci-marketplace' }]);
+    render(<ApiKeysSection />);
+    await openDeleteFor('app:ci-hermes:ci-marketplace');
+
+    expect(screen.getByText(/managed by Companion Hub for a connected app/i)).toBeInTheDocument();
+    expect(screen.getByText(/Disconnect Memory/)).toBeInTheDocument();
+  });
+
+  it('does not warn about Hub management for a key the user owns', async () => {
+    mockKeysWithDelete([key]);
+    render(<ApiKeysSection />);
+    await openDeleteFor('laptop');
+
+    expect(screen.queryByText(/managed by Companion Hub/i)).not.toBeInTheDocument();
+  });
+});

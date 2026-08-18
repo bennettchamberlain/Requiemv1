@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 import { isReference, useMutation, type Reference } from '@apollo/client';
 import { Button, Dialog } from '@ci/shadcn';
 
@@ -52,10 +54,19 @@ export function DeleteTaskModal({ taskId, onClose }: Props) {
     },
   });
 
-  const handleDelete = async () => {
-    await deleteTask({ variables: { input: { id: taskId } } });
+  const [error, setError] = useState<string | null>(null);
 
-    onClose();
+  const handleDelete = async () => {
+    setError(null);
+
+    try {
+      await deleteTask({ variables: { input: { id: taskId } } });
+      onClose();
+    } catch {
+      // Leave the dialog open on failure — closing it here would read as a
+      // successful delete even though the task is still there.
+      setError('Could not delete this task. Please try again.');
+    }
   };
 
   return (
@@ -67,6 +78,7 @@ export function DeleteTaskModal({ taskId, onClose }: Props) {
             Are you sure you want to delete this task? This action cannot be undone.
           </Dialog.Description>
         </Dialog.Header>
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <Dialog.Footer>
           <Button variant="outline" onClick={onClose} disabled={deleting}>
             Cancel

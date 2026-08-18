@@ -23,6 +23,31 @@ vi.mock('@/lib/accountDataPortability', () => ({
   uploadLegacyAccountImport,
 }));
 
+/** The hidden `<input type="file">` — its `<Label>` targets a nonexistent id, so it
+ *  cannot be reached via getByLabelText and is queried directly instead. */
+function fileInput(): HTMLInputElement {
+  const input = document.querySelector('input[type="file"]');
+
+  if (!input) {
+    throw new Error('file input not found');
+  }
+
+  return input as HTMLInputElement;
+}
+
+function chooseFile(name: string, contents = '{}') {
+  const file = new File([contents], name);
+  fireEvent.change(fileInput(), { target: { files: [file] } });
+}
+
+function openImportDialog() {
+  fireEvent.click(screen.getByRole('button', { name: /import from file/i }));
+}
+
+function replaceButton() {
+  return screen.getByRole('button', { name: /replace my data/i });
+}
+
 describe('DataPortabilitySection', () => {
   beforeEach(() => {
     h.authToken = 'jwt-abc';
@@ -34,6 +59,12 @@ describe('DataPortabilitySection', () => {
       filesRestored: 0,
       format: 'ndjson',
     });
+    uploadLegacyAccountImport.mockResolvedValue({
+      tablesImported: 1,
+      rowsImported: 2,
+      filesRestored: 0,
+      format: 'json',
+    });
   });
 
   it('starts a streaming export when export is clicked', async () => {
@@ -43,5 +74,157 @@ describe('DataPortabilitySection', () => {
     await waitFor(() => {
       expect(downloadAccountExport).toHaveBeenCalledWith('jwt-abc');
     });
+  });
+
+  it('keeps the destructive replace button disabled until a file is chosen and the email confirmation matches', async () => {
+    render(<DataPortabilitySection />);
+    openImportDialog();
+
+    expect(replaceButton()).toBeDisabled();
+
+    chooseFile('export.ndjson');
+    expect(replaceButton()).toBeDisabled();
+
+    // Wrong email still blocks it — a matching filename alone must not be enough
+    // to arm an irreversible, whole-account overwrite.
+    fireEvent.change(screen.getByLabelText(/to confirm/i), { target: { value: 'someone-else@example.com' } });
+    expect(replaceButton()).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/to confirm/i), { target: { value: h.email } });
+    expect(replaceButton()).toBeEnabled();
+  });
+
+  it('accepts the confirmation email case- and whitespace-insensitively', async () => {
+    render(<DataPortabilitySection />);
+    openImportDialog();
+    chooseFile('export.ndjson');
+
+    fireEvent.change(screen.getByLabelText(/to confirm/i), { target: { value: '  JSmith@Example.com  ' } });
+
+    expect(replaceButton()).toBeEnabled();
+  });
+
+  it('routes a .ndjson export through the streaming importer', async () => {
+    render(<DataPortabilitySection />);
+    openImportDialog();
+    chooseFile('ci-memory-export.ndjson');
+    fireEvent.change(screen.getByLabelText(/to confirm/i), { target: { value: h.email } });
+
+    fireEvent.click(replaceButton());
+
+    await waitFor(() => expect(uploadAccountImport).toHaveBeenCalledTimes(1));
+    const [token, file, confirmEmail] = uploadAccountImport.mock.calls[0] as [string, File, string];
+    expect(token).toBe('jwt-abc');
+    expect(file.name).toBe('ci-memory-export.ndjson');
+    expect(confirmEmail).toBe(h.email);
+    expect(uploadLegacyAccountImport).not.toHaveBeenCalled();
+  });
+
+  it('routes a legacy .json export through the legacy importer, not the streaming one', async () => {
+    render(<DataPortabilitySection />);
+    openImportDialog();
+    chooseFile('old-export.json');
+    fireEvent.change(screen.getByLabelText(/to confirm/i), { target: { value: h.email } });
+
+    fireEvent.click(replaceButton());
+
+    await waitFor(() => expect(uploadLegacyAccountImport).toHaveBeenCalledTimes(1));
+    const [, file] = uploadLegacyAccountImport.mock.calls[0] as [string, File, string];
+    expect(file.name).toBe('old-export.json');
+    expect(uploadAccountImport).not.toHaveBeenCalled();
+  });
+
+  it('does not mistake a legacy-looking name that actually ends in .ndjson for legacy JSON', async () => {
+    // isLegacyJsonExport only trips on a bare `.json` suffix; `.ndjson` must win
+    // even though it also contains the substring "json".
+    render(<DataPortabilitySection />);
+    openImportDialog();
+    chooseFile('export-2026.ndjson');
+    fireEvent.change(screen.getByLabelText(/to confirm/i), { target: { value: h.email } });
+
+    fireEvent.click(replaceButton());
+
+    await waitFor(() => expect(uploadAccountImport).toHaveBeenCalledTimes(1));
+    expect(uploadLegacyAccountImport).not.toHaveBeenCalled();
+  });
+
+  it('reports the rows/tables/files restored and closes the dialog on success', async () => {
+    uploadAccountImport.mockResolvedValue({
+      tablesImported: 7,
+      rowsImported: 12345,
+      filesRestored: 42,
+      format: 'ndjson',
+    });
+
+    render(<DataPortabilitySection />);
+    openImportDialog();
+    chooseFile('export.ndjson');
+    fireEvent.change(screen.getByLabelText(/to confirm/i), { target: { value: h.email } });
+
+    fireEvent.click(replaceButton());
+
+    expect(await screen.findByText(/12,345 rows across 7 tables, 42 files restored/)).toBeInTheDocument();
+    // The confirmation dialog is gone, not just satisfied — a re-open must not
+    // carry the previous file/email selection forward.
+    expect(screen.queryByText('Import your data?')).not.toBeInTheDocument();
+  });
+
+  it('shows an error and leaves the dialog open, re-enabled, when the import fails', async () => {
+    uploadAccountImport.mockRejectedValue(new Error('Import failed (500)'));
+
+    render(<DataPortabilitySection />);
+    openImportDialog();
+    chooseFile('export.ndjson');
+    fireEvent.change(screen.getByLabelText(/to confirm/i), { target: { value: h.email } });
+
+    fireEvent.click(replaceButton());
+
+    expect(
+      await screen.findByText(/Could not import that archive\. Check the file and confirmation email/i),
+    ).toBeInTheDocument();
+
+    // The dialog stays open on failure — a silent close would look like success.
+    expect(screen.getByText('Import your data?')).toBeInTheDocument();
+    expect(replaceButton()).toBeEnabled();
+    expect(screen.getByRole('button', { name: /^cancel$/i })).toBeEnabled();
+  });
+
+  it('clears the file, confirmation, and any error when the dialog is dismissed', async () => {
+    uploadAccountImport.mockRejectedValue(new Error('Import failed (500)'));
+
+    render(<DataPortabilitySection />);
+    openImportDialog();
+    chooseFile('export.ndjson');
+    fireEvent.change(screen.getByLabelText(/to confirm/i), { target: { value: h.email } });
+    fireEvent.click(replaceButton());
+    await screen.findByText(/Could not import that archive/i);
+
+    // The reset lives in `onOpenChange`, which only Radix's own dismiss paths invoke
+    // (Escape, overlay click, its Close control) — not a plain state-setting onClick.
+    // The dialog's built-in close (X) button goes through that real path.
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+    openImportDialog();
+    expect(screen.getByRole('button', { name: /choose export file/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/to confirm/i)).toHaveValue('');
+    expect(screen.queryByText(/Could not import that archive/i)).not.toBeInTheDocument();
+  });
+
+  it('leaves stale file/email/error in place when Cancel is clicked, since only re-opening resets them', async () => {
+    // Real current behavior: the footer's Cancel button only flips `importOpen`
+    // to false directly — it does not run the `onOpenChange` reset. Reopening
+    // via the "Import from file" trigger goes through the same controlled
+    // `open` prop, so the stale draft is still there. Documented here so a
+    // future change to either path has to touch this test on purpose.
+    render(<DataPortabilitySection />);
+    openImportDialog();
+    chooseFile('export.ndjson');
+    fireEvent.change(screen.getByLabelText(/to confirm/i), { target: { value: h.email } });
+
+    fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }));
+    openImportDialog();
+
+    expect(screen.getByRole('button', { name: 'export.ndjson' })).toBeInTheDocument();
+    expect(screen.getByLabelText(/to confirm/i)).toHaveValue(h.email);
   });
 });
