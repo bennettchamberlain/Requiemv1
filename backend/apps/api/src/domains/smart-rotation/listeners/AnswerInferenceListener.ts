@@ -2,9 +2,15 @@ import { Injectable } from '@nestjs/common';
 
 import { type ServiceContext, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { Events, EventPayloads, OnEvent } from '@ci/domains/events';
+import { Events, type EventPayloads, OnEvent } from '@ci/domains/events';
 import { Answer, AnswerService, QuestionService } from '@ci/domains/intelligence';
-import { estimateInferredAnswerConfidence, OllamaService, PROMPT_MODEL } from '@ci/domains/llm';
+import {
+  estimateInferredAnswerConfidence,
+  LLM_QUEUE,
+  LLM_QUEUE_OPTIONS,
+  OllamaService,
+  PROMPT_MODEL,
+} from '@ci/domains/llm';
 import { UserContextService } from '@ci/domains/memory';
 import { PersonalizationService } from '@ci/domains/personalization';
 import { SearchService } from '@ci/domains/search-next';
@@ -26,7 +32,7 @@ export class AnswerInferenceListener {
     this.logger.setContext(AnswerInferenceListener.name);
   }
 
-  @OnEvent(Events.INFER_QUESTION_ANSWER)
+  @OnEvent(Events.INFER_QUESTION_ANSWER, { queue: LLM_QUEUE, queueOptions: LLM_QUEUE_OPTIONS })
   async inferQuestionAnswer(payload: EventPayloads[Events.INFER_QUESTION_ANSWER]) {
     const ownerId = payload.ownerId;
     if (!ownerId) {

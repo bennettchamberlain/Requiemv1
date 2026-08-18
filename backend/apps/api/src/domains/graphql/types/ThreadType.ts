@@ -22,6 +22,9 @@ export class ThreadType implements Node, Taggable {
   @Field(() => String, { nullable: true })
   description!: string | null;
 
+  @Field(() => String)
+  generationStatus!: string;
+
   @Field(() => [EntityTagType])
   tags!: EntityTagType[];
 
@@ -32,6 +35,7 @@ export class ThreadType implements Node, Taggable {
       id: GlobalUID.encode('thread', thread.id),
       name: thread.name,
       description: thread.description,
+      generationStatus: thread.generationStatus ?? 'idle',
       tags: [], // Resolved by ThreadResolver
     };
   }

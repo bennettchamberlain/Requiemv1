@@ -559,15 +559,52 @@ export class OllamaService {
       resolvedModel = hasVisualContent ? DEMO_VISION_MODEL : DEMO_TEXT_MODEL;
       resolvedThinking = hasVisualContent ? false : true;
       resolvedTools = hasVisualContent ? false : true;
+      await this.validateModel(context, resolvedModel);
+    } else {
+      resolvedModel = await this.resolveServedChatModel(requestedModel);
     }
-
-    await this.validateModel(context, resolvedModel);
 
     return {
       model: resolvedModel,
       enableThinking: resolvedThinking,
       enableTools: resolvedTools,
     };
+  }
+
+  /**
+   * Pick a chat model that is actually loaded on the active backend (vLLM via
+   * OpenAI-compat, or Ollama). Config defaults like `gemma3:1b` are only used
+   * when that id is in the served list — title jobs and background inference
+   * must not fail because the compile-time default is not loaded.
+   */
+  private async resolveServedChatModel(requestedModel?: string | null): Promise<string> {
+    const served = await this.listServedChatModelIds();
+
+    if (served.length === 0) {
+      throw new Error('No chat model is currently loaded on vLLM or Ollama');
+    }
+
+    const candidates = [requestedModel, PROMPT_MODEL].filter(
+      (model): model is string => Boolean(model && model.trim()),
+    );
+
+    return candidates.find((model) => served.includes(model)) ?? served[0];
+  }
+
+  private async listServedChatModelIds(): Promise<string[]> {
+    const openAiDriver = this.llmEndpointService.getOpenAiDriver();
+
+    if (openAiDriver) {
+      const modelIds = await openAiDriver.listModels();
+
+      return modelIds.filter((id) => !INTERNAL_MODELS.has(this.parseOllamaModel(id).name));
+    }
+
+    const result = await this.ollama.list();
+
+    return result.models
+      .map((model: { name: string }) => model.name)
+      .filter((name: string) => !INTERNAL_MODELS.has(this.parseOllamaModel(name).name));
   }
 
   private parseOllamaModel(model: string): OllamaModel {

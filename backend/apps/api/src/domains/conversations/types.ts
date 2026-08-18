@@ -14,6 +14,7 @@ export interface CreateMessageDto {
 export interface UpdateMessageDto {
   content?: string;
   canceled?: boolean;
+  toolCalls?: Record<string, unknown>[] | null;
 }
 
 export interface CreateThreadDto {
@@ -26,4 +27,5 @@ export interface CreateThreadDto {
 export interface UpdateThreadDto {
   name?: string;
   description?: string;
+  generationStatus?: 'idle' | 'queued' | 'running' | 'failed';
 }
