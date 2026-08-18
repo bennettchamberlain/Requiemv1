@@ -352,6 +352,97 @@ describe('stageDueness', () => {
     });
   });
 
+  describe('an overdue retry', () => {
+    // The bug this closes: a leg swept 19 hours ago (well inside a metered
+    // stage's 7-day minInterval) has a handful of rows that failed
+    // `provider_unavailable` and are past their OWN backoff. Before
+    // `hasOverdueRetry` existed, `too_soon` won regardless, so those rows sat
+    // with `attempts` frozen at 1 until the leg's minInterval elapsed a week
+    // later — the retry backoff `RETRY_BACKOFF_BASE_SECONDS` declares never
+    // got a chance to fire.
+    it('jumps the interval for a metered stage with a due retry', () => {
+      const now = at(3);
+
+      const decision = stageDueness({
+        stageId: STAGE_IDS.ENRICH_POSITION_REVERSE,
+        lastStartedAt: ago(now, 19 * HOURS),
+        windowOpen: OPEN,
+        hasOverdueRetry: true,
+        now,
+      });
+
+      expect(decision.due).toBe(true);
+      expect(decision.reason).toBe('retry_due');
+      // Not `overdue`: a retry must still respect the window (see below), and
+      // `overdue` is documented as bypassing it.
+      expect(decision.overdue).toBe(false);
+      expect(decision.eligibleAt).toBeNull();
+    });
+
+    it('still waits for a shut window, even with a due retry', () => {
+      // The spend-timing control still applies — only the FREQUENCY control
+      // (`minInterval`) yields to a due retry.
+      const now = at(13);
+
+      const decision = stageDueness({
+        stageId: STAGE_IDS.ENRICH_GEOCODE,
+        lastStartedAt: ago(now, 19 * HOURS),
+        windowOpen: SHUT,
+        hasOverdueRetry: true,
+        now,
+      });
+
+      expect(decision.due).toBe(false);
+      expect(decision.reason).toBe('outside_window');
+    });
+
+    it('changes nothing when there is no due retry — the pre-existing gate holds', () => {
+      const now = at(3);
+
+      const decision = stageDueness({
+        stageId: STAGE_IDS.ENRICH_POSITION_REVERSE,
+        lastStartedAt: ago(now, 19 * HOURS),
+        windowOpen: OPEN,
+        hasOverdueRetry: false,
+        now,
+      });
+
+      expect(decision.due).toBe(false);
+      expect(decision.reason).toBe('too_soon');
+    });
+
+    it('defaults to false when the caller omits it, so the pre-existing gate is the default behaviour', () => {
+      const now = at(3);
+
+      const decision = stageDueness({
+        stageId: STAGE_IDS.ENRICH_POSITION_REVERSE,
+        lastStartedAt: ago(now, 19 * HOURS),
+        windowOpen: OPEN,
+        now,
+      });
+
+      expect(decision.due).toBe(false);
+      expect(decision.reason).toBe('too_soon');
+    });
+
+    it('is irrelevant once the interval has already elapsed — interval_elapsed wins either way', () => {
+      const now = at(3);
+
+      for (const hasOverdueRetry of [true, false]) {
+        const decision = stageDueness({
+          stageId: STAGE_IDS.ENRICH_GEOCODE,
+          lastStartedAt: ago(now, 8 * DAYS),
+          windowOpen: OPEN,
+          hasOverdueRetry,
+          now,
+        });
+
+        expect(decision.due).toBe(true);
+        expect(decision.reason).toBe('interval_elapsed');
+      }
+    });
+  });
+
   describe('the window', () => {
     it('refuses a windowed stage while the window is shut, even when the interval has elapsed', () => {
       const now = at(13);
