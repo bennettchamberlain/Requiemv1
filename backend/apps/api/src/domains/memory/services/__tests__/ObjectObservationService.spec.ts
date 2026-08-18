@@ -31,9 +31,15 @@ import { ObjectObservationService, detectionKeyFor } from '../ObjectObservationS
  *     carrying both arbiters that issued one statement would silently key half
  *     its rows on the wrong index.
  *
- * The SQL-shaped guarantees are asserted here against the emitted statement and
- * proved against real Postgres in the gated block at the end — which SKIPS,
- * never silently passes, when no database is reachable.
+ * The SQL-shaped guarantees are asserted here against the emitted statement
+ * text, and proved for real against a live Postgres in the sibling
+ * `ObjectObservationService.integration.spec.ts` (ON CONFLICT arbiter
+ * correctness for both schemes, the DO UPDATE SET exclusion list, the jsonb
+ * merge behavior, and `ST_MakePoint`'s argument order) — gated on
+ * `MEMORY_TEST_DATABASE_URL`, which SKIPS, never silently passes, when no
+ * database is reachable. A string match here catches a dropped branch at
+ * review time; the integration suite catches a predicate that is present but
+ * wrong, which grepping the SQL text cannot.
  */
 
 const USER = '00000000-0000-4000-8000-0000000000aa';
