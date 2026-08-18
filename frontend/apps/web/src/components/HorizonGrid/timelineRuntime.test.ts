@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { inertTimeline, timelineDeckKey, timelineJsOptions } from './timelineRuntime';
 import type { TimelineJsData } from './scheduleToTimeline';
+import {
+  TIMELINE_MAX_SCALE_FACTOR,
+  TIMELINE_MAX_ZOOM_INDEX,
+  TIMELINE_ZOOM_SEQUENCE,
+  inertTimeline,
+  timelineDeckKey,
+  timelineJsOptions,
+} from './timelineRuntime';
 
 function deck(ids: string[]): TimelineJsData {
   return {
@@ -32,13 +39,44 @@ describe('timelineDeckKey', () => {
 
 describe('timelineJsOptions', () => {
   it('turns off the 1s Knight Lab easing and analytics-adjacent extras', () => {
-    const options = timelineJsOptions(800, { r: 1, g: 2, b: 3 }, 0);
+    const options = timelineJsOptions({
+      width: 800,
+      startAtSlide: 0,
+      bg: { r: 1, g: 2, b: 3 },
+      languageUrl: '/locale/en.json',
+    });
 
     expect(options.duration).toBe(0);
     expect(options.trackResize).toBe(false);
     expect(options.hash_bookmark).toBe(false);
     expect(options.soundcite).toBe(false);
     expect(options.optimal_tick_width).toBeGreaterThan(100);
+  });
+
+  it('starts fully zoomed in on the TimeNav', () => {
+    const options = timelineJsOptions({
+      startAtSlide: 0,
+      bg: { r: 250, g: 250, b: 248 },
+      languageUrl: '/locale/en.json',
+    });
+
+    expect(TIMELINE_ZOOM_SEQUENCE[TIMELINE_MAX_ZOOM_INDEX]).toBe(89);
+    expect(options.scale_factor).toBe(TIMELINE_MAX_SCALE_FACTOR);
+    expect(options.initial_zoom).toBe(TIMELINE_MAX_ZOOM_INDEX);
+  });
+
+  it('does not pull Knight Lab fonts, theme, or locale from their CDN', () => {
+    const options = timelineJsOptions({
+      startAtSlide: 2,
+      bg: { r: 20, g: 28, b: 32 },
+      languageUrl: '/assets/en-local.json',
+    });
+
+    expect(options.font).toBe(false);
+    expect(options.theme).toBe(false);
+    expect(options.soundcite).toBe(false);
+    expect(options.language).toBe('/assets/en-local.json');
+    expect(options.start_at_slide).toBe(3);
   });
 });
 

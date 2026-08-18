@@ -2,6 +2,13 @@ import type { TimelineJsData } from './scheduleToTimeline';
 
 export const TIMELINE_HEIGHT_PX = 360;
 
+/** Knight Lab's TimeNav zoom ladder. Last entry is fully zoomed in. */
+export const TIMELINE_ZOOM_SEQUENCE = [0.5, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89] as const;
+export const TIMELINE_MAX_ZOOM_INDEX = TIMELINE_ZOOM_SEQUENCE.length - 1;
+export const TIMELINE_MAX_SCALE_FACTOR = TIMELINE_ZOOM_SEQUENCE[TIMELINE_MAX_ZOOM_INDEX];
+
+type Rgb = { r: number; g: number; b: number };
+
 type TimelineAnimators = {
   ready?: boolean;
   config?: unknown | null;
@@ -30,23 +37,45 @@ export function timelineDeckKey(data: TimelineJsData, startAtSlide: number): str
   return `${startAtSlide}:${data.events.map((event) => event.unique_id).join(',')}`;
 }
 
-export function timelineJsOptions(width: number, bg: { r: number; g: number; b: number }, startAtSlide: number) {
+/**
+ * Construct options: keep Today on our origin, fully zoomed, and cheap.
+ *
+ * `duration: 0` skips Knight Lab's 1s RAF easing. Local `language` avoids
+ * cdn.knightlab.com. `font`/`theme` false skips Google Fonts CSS.
+ */
+export function timelineJsOptions({
+  width,
+  startAtSlide,
+  bg,
+  languageUrl,
+}: {
+  width?: number;
+  startAtSlide: number;
+  bg: Rgb;
+  languageUrl: string;
+}): Record<string, unknown> {
   return {
     height: TIMELINE_HEIGHT_PX,
-    width: width || undefined,
+    width,
     timenav_height: 96,
     timenav_height_percentage: 28,
     marker_height_min: 24,
     marker_padding: 3,
     start_at_slide: startAtSlide + 1,
     hash_bookmark: false,
-    // Knight Lab defaults this to 1000ms of RAF easing on every nav/layout.
+    default_bg_color: bg,
     duration: 0,
     trackResize: false,
     soundcite: false,
-    // Fewer axis ticks — the time-nav canvas is the hot path (Knight Lab #458).
+    font: false,
+    theme: false,
+    language: languageUrl,
     optimal_tick_width: 180,
-    default_bg_color: bg,
-    font: 'Default',
+    scale_factor: TIMELINE_MAX_SCALE_FACTOR,
+    initial_zoom: TIMELINE_MAX_ZOOM_INDEX,
+    zoom_sequence: [...TIMELINE_ZOOM_SEQUENCE],
   };
 }
+
+/** @deprecated Use timelineJsOptions — kept so main's option tests keep compiling. */
+export const timelineStoryOptions = timelineJsOptions;

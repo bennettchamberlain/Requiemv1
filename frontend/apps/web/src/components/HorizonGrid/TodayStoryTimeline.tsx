@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import timelineCssUrl from '@knight-lab/timelinejs/dist/css/timeline.css?url';
+import timelineLocaleUrl from '@knight-lab/timelinejs/dist/js/locale/en.json?url';
 import timelineJsUrl from '@knight-lab/timelinejs/dist/js/timeline.js?url';
-import '@knight-lab/timelinejs/dist/css/timeline.css';
 
 import type { ScheduleEvent } from '@/api/useScheduleService';
 
@@ -35,52 +36,83 @@ type Rgb = { r: number; g: number; b: number };
 
 let timelineLoad: Promise<TimelineCtor> | null = null;
 
+function ensureTimelineCss(): Promise<void> {
+  const existing = document.querySelector<HTMLLinkElement>('link[data-timelinejs-css]');
+  if (existing) {
+    return existing.sheet
+      ? Promise.resolve()
+      : new Promise((resolve) => {
+          existing.addEventListener('load', () => resolve(), { once: true });
+          existing.addEventListener('error', () => resolve(), { once: true });
+        });
+  }
+
+  return new Promise((resolve) => {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = timelineCssUrl;
+    link.dataset.timelinejsCss = '1';
+    link.onload = () => resolve();
+    link.onerror = () => resolve();
+    document.head.appendChild(link);
+  });
+}
+
 /**
  * Load TimelineJS as a classic script (not an ESM import).
  *
  * The dist file is a UMD IIFE that assigns `window.TL`. Vite's ESM transform of
  * that file keeps `TL` module-local, so `globalThis.TL` stays undefined and the
  * story strip mounts empty — which is exactly the blank panel we hit.
+ *
+ * CSS is injected here too, instead of a static import, so the rest of Today
+ * does not wait on Knight Lab's 96kb stylesheet.
  */
 function loadTimelineCtor(): Promise<TimelineCtor> {
   if (typeof window !== 'undefined' && window.TL?.Timeline) {
-    return Promise.resolve(window.TL.Timeline);
+    const Timeline = window.TL.Timeline;
+
+    return ensureTimelineCss().then(() => Timeline);
   }
 
   if (!timelineLoad) {
-    timelineLoad = new Promise<TimelineCtor>((resolve, reject) => {
-      const existing = document.querySelector<HTMLScriptElement>('script[data-timelinejs]');
-      if (existing && window.TL?.Timeline) {
-        resolve(window.TL.Timeline);
-
-        return;
-      }
-
-      const script = existing ?? document.createElement('script');
-      script.dataset.timelinejs = '1';
-      script.src = timelineJsUrl;
-      script.async = true;
-      script.onload = () => {
-        if (window.TL?.Timeline) {
-          resolve(window.TL.Timeline);
-        } else {
-          timelineLoad = null;
-          reject(new Error('TimelineJS loaded without window.TL.Timeline'));
-        }
-      };
-
-      script.onerror = () => {
-        timelineLoad = null;
-        reject(new Error('Failed to load TimelineJS script'));
-      };
-
-      if (!existing) {
-        document.head.appendChild(script);
-      }
-    });
+    timelineLoad = Promise.all([ensureTimelineCss(), loadTimelineScript()]).then(([, Timeline]) => Timeline);
   }
 
   return timelineLoad;
+}
+
+function loadTimelineScript(): Promise<TimelineCtor> {
+  return new Promise<TimelineCtor>((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>('script[data-timelinejs]');
+    if (existing && window.TL?.Timeline) {
+      resolve(window.TL.Timeline);
+
+      return;
+    }
+
+    const script = existing ?? document.createElement('script');
+    script.dataset.timelinejs = '1';
+    script.src = timelineJsUrl;
+    script.async = true;
+    script.onload = () => {
+      if (window.TL?.Timeline) {
+        resolve(window.TL.Timeline);
+      } else {
+        timelineLoad = null;
+        reject(new Error('TimelineJS loaded without window.TL.Timeline'));
+      }
+    };
+
+    script.onerror = () => {
+      timelineLoad = null;
+      reject(new Error('Failed to load TimelineJS script'));
+    };
+
+    if (!existing) {
+      document.head.appendChild(script);
+    }
+  });
 }
 
 /** Resolve a CSS color (incl. theme tokens) to RGB for TimelineJS options. */
@@ -165,7 +197,12 @@ export function TodayStoryTimeline({ events, day }: TodayStoryTimelineProps) {
             const instance = new Timeline(
               mount,
               deck,
-              timelineJsOptions(mount.clientWidth || host.clientWidth, timelineBgFromTheme(), landing),
+              timelineJsOptions({
+                width: mount.clientWidth || host.clientWidth || undefined,
+                startAtSlide: landing,
+                bg: timelineBgFromTheme(),
+                languageUrl: timelineLocaleUrl,
+              }),
             );
             instanceRef.current = instance;
             setReady(true);
