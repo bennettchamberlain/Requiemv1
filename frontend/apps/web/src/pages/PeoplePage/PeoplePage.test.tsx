@@ -316,6 +316,98 @@ describe('PeoplePage', () => {
   });
 
   /**
+   * PersonService.findAll ranks a name that looks implausible — a bare digit
+   * string, a phone number, a call-log heading like "Missed call from" — behind
+   * real names, as its PRIMARY sort key (see commit 451f13e13). That fix exists
+   * because these garbage-named rows are exactly the ones most likely to carry
+   * fresh interactionStats: they are typically call-log stubs, so they have
+   * recent communications while a freshly-imported real contact may have none
+   * at all. A client-side re-sort keyed on interaction recency would put the
+   * garbage name right back on top — reintroducing the bug the backend fix
+   * corrected. The page must trust the server's order, not fight it.
+   */
+  it('keeps the server-provided order instead of re-sorting by interaction recency', async () => {
+    const DIGIT_UUID = '019fd7c0-641c-76dd-8ed7-a5053faff700';
+    const DIGIT_GLOBAL_ID = btoa(`person:${DIGIT_UUID}`);
+    const BEATRICE_UUID = '019fd7c0-641c-76dd-8ed7-a5053faff701';
+    const BEATRICE_GLOBAL_ID = btoa(`person:${BEATRICE_UUID}`);
+
+    renderWithProviders(<PeoplePage />, {
+      mocks: [
+        {
+          request: { query: GET_PEOPLE, variables: { query: null, first: PAGE_SIZE } },
+          result: {
+            data: {
+              people: {
+                __typename: 'PersonConnection' as const,
+                totalCount: 3,
+                pageInfo: pageInfo(),
+                edges: [
+                  // Server order after the name-plausibility fix: real names
+                  // first, regardless of interaction recency.
+                  {
+                    __typename: 'PersonEdge' as const,
+                    cursor: PERSON_GLOBAL_ID,
+                    node: personNode(), // Ada Lovelace, no interaction at all
+                  },
+                  {
+                    __typename: 'PersonEdge' as const,
+                    cursor: BEATRICE_GLOBAL_ID,
+                    node: personNode({
+                      id: BEATRICE_GLOBAL_ID,
+                      name: 'Beatrice Clarke',
+                      firstName: 'Beatrice',
+                      lastName: 'Clarke',
+                      interactionStats: {
+                        __typename: 'PersonInteractionStatsType' as const,
+                        eventCount: 0,
+                        communicationCount: 2,
+                        lastInteractionAt: '2026-01-01T00:00:00Z',
+                      },
+                    }),
+                  },
+                  // Garbage name ranked LAST by the server despite having the
+                  // most recent interaction of the three — the call-log-stub
+                  // shape the backend fix specifically demotes.
+                  {
+                    __typename: 'PersonEdge' as const,
+                    cursor: DIGIT_GLOBAL_ID,
+                    node: personNode({
+                      id: DIGIT_GLOBAL_ID,
+                      name: '1003',
+                      firstName: null,
+                      lastName: null,
+                      interactionStats: {
+                        __typename: 'PersonInteractionStatsType' as const,
+                        eventCount: 0,
+                        communicationCount: 9,
+                        lastInteractionAt: '2026-08-18T00:00:00Z',
+                      },
+                    }),
+                  },
+                ],
+              },
+            },
+          },
+        },
+        {
+          request: { query: GET_PERSON_DUPLICATES },
+          result: { data: { personDuplicates: [] } },
+        },
+      ],
+    });
+
+    await screen.findByText('Ada Lovelace');
+
+    const names = ['Ada Lovelace', 'Beatrice Clarke', '1003'];
+    const rows = screen
+      .getAllByRole('button')
+      .filter((button) => names.some((name) => button.textContent?.includes(name)));
+
+    expect(rows.map((row) => names.find((name) => row.textContent?.includes(name)))).toEqual(names);
+  });
+
+  /**
    * A failed next-page fetch must not retry on its own. The sentinel is still on
    * screen when the request fails, so simply clearing the in-flight flag rebuilds
    * the observer, which re-fires on observe() and spins a request loop — measured

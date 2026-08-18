@@ -1,12 +1,16 @@
-import type { UserServiceContext } from '@ci/common/context';
+import type { ServiceContext, UserServiceContext } from '@ci/common/context';
+import { SYSTEM_USER } from '@ci/common/context';
 
 import { AnswerEntity } from '../entities/AnswerEntity';
 
 import { AnswerService } from './AnswerService';
 
 const USER = '00000000-0000-0000-0000-0000000000aa';
+const OTHER_USER = '00000000-0000-0000-0000-0000000000bb';
 
 const CONTEXT: UserServiceContext = { userId: USER } as UserServiceContext;
+const OTHER_CONTEXT: ServiceContext = { userId: OTHER_USER } as ServiceContext;
+const SYSTEM_CONTEXT: ServiceContext = { userId: SYSTEM_USER } as ServiceContext;
 
 function makeInsertBuilder(record: { values?: unknown[]; inserted: boolean }) {
   const qb: Record<string, unknown> = {};
@@ -133,5 +137,205 @@ describe('AnswerService single create still emits', () => {
 
     expect(send).not.toHaveBeenCalled();
     expect(removeFromFeedQueue).toHaveBeenCalledWith(USER, 'q1');
+  });
+});
+
+/**
+ * A minimal in-memory fake that actually HONORS the `where` clause it is given
+ * (id / user.id / question.id equality), the way Postgres row filtering would.
+ * This lets the tenancy tests below prove the service's SYSTEM_USER-conditional
+ * scoping idiom by observing the resulting rows, not by inspecting mock call
+ * args — a dropped or inverted `context.userId !== SYSTEM_USER` predicate would
+ * make these tests fail, not just an assertion on how the mock was called.
+ */
+function makeStoreRepository(rows: AnswerEntity[]) {
+  const matches = (row: AnswerEntity, where: Record<string, unknown>): boolean => {
+    if (where.id !== undefined && row.id !== where.id) {return false;}
+
+    if (where.user !== undefined) {
+      const userWhere = where.user as { id?: string };
+      if (userWhere.id !== undefined && row.user?.id !== userWhere.id) {return false;}
+    }
+
+    if (where.question !== undefined) {
+      const questionWhere = where.question as { id?: string };
+      if (questionWhere.id !== undefined && row.question?.id !== questionWhere.id) {return false;}
+    }
+
+    return true;
+  };
+
+  const findOne = jest.fn(async (options: { where: Record<string, unknown> }) => {
+    return rows.find((row) => matches(row, options.where)) ?? null;
+  });
+
+  const find = jest.fn(async (options: { where: Record<string, unknown> }) => {
+    const where = options.where;
+    const idFilter = where.id as { _value?: string[] } | string[] | undefined;
+
+    // Support both a plain equality id and the In([...]) used by findByIds.
+    const idList = Array.isArray(idFilter)
+      ? idFilter
+      : (idFilter as unknown as { _value?: string[] })?._value;
+
+    return rows.filter((row) => {
+      if (idList && !idList.includes(row.id)) {return false;}
+
+      const { id: _id, ...rest } = where;
+      void _id;
+
+      return matches(row, rest);
+    });
+  });
+
+  const deleteFn = jest.fn(async () => ({ affected: 1 }));
+  const save = jest.fn(async (entity: AnswerEntity) => entity);
+
+  const repository = { findOne, find, delete: deleteFn, save };
+
+  return { repository, findOne, find, delete: deleteFn, save };
+}
+
+function makeServiceWithStore(rows: AnswerEntity[]) {
+  const { repository, findOne, find, delete: deleteFn, save } = makeStoreRepository(rows);
+  const send = jest.fn(async () => []);
+  const questionService = { removeFromFeedQueue: jest.fn(), removeManyFromFeedQueue: jest.fn() };
+
+  const service = new AnswerService(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    repository as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { send } as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    questionService as any,
+  );
+
+  return { service, findOne, find, delete: deleteFn, save, send };
+}
+
+function makeAnswer(id: string, userId: string, questionId = 'q1'): AnswerEntity {
+  return Object.assign(new AnswerEntity(), {
+    id,
+    answer: `answer-${id}`,
+    user: { id: userId },
+    question: { id: questionId },
+  });
+}
+
+describe('AnswerService tenancy scoping (SYSTEM_USER-conditional idiom)', () => {
+  describe('findById', () => {
+    it('returns the answer for its owner', async () => {
+      const { service } = makeServiceWithStore([makeAnswer('a1', USER)]);
+
+      const result = await service.findById(CONTEXT, 'a1');
+
+      expect(result?.id).toBe('a1');
+    });
+
+    it('rejects (returns null for) a caller who is not the owner', async () => {
+      const { service } = makeServiceWithStore([makeAnswer('a1', USER)]);
+
+      const result = await service.findById(OTHER_CONTEXT, 'a1');
+
+      expect(result).toBeNull();
+    });
+
+    it('SYSTEM_USER bypasses the owner scope and can read any answer', async () => {
+      const { service } = makeServiceWithStore([makeAnswer('a1', USER)]);
+
+      const result = await service.findById(SYSTEM_CONTEXT, 'a1');
+
+      expect(result?.id).toBe('a1');
+    });
+  });
+
+  describe('findByIds', () => {
+    it('returns null placeholders for ids owned by another user, preserving input order', async () => {
+      const { service } = makeServiceWithStore([makeAnswer('a1', USER), makeAnswer('a2', OTHER_USER)]);
+
+      const result = await service.findByIds(CONTEXT, ['a1', 'a2']);
+
+      expect(result[0]?.id).toBe('a1');
+      expect(result[1]).toBeNull();
+    });
+
+    it('returns [] immediately for an empty id list without querying', async () => {
+      const { service, find } = makeServiceWithStore([]);
+
+      const result = await service.findByIds(CONTEXT, []);
+
+      expect(result).toEqual([]);
+      expect(find).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('findByQuestionId', () => {
+    it('finds the caller-owned answer to a question', async () => {
+      const { service } = makeServiceWithStore([makeAnswer('a1', USER, 'q1')]);
+
+      const result = await service.findByQuestionId(CONTEXT, 'q1');
+
+      expect(result?.id).toBe('a1');
+    });
+
+    it("does not leak another user's answer to the same question", async () => {
+      const { service } = makeServiceWithStore([makeAnswer('a1', OTHER_USER, 'q1')]);
+
+      const result = await service.findByQuestionId(CONTEXT, 'q1');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('findAll', () => {
+    it("scopes to the caller — never mixes in another user's answers", async () => {
+      const { service, find } = makeServiceWithStore([makeAnswer('a1', USER)]);
+
+      await service.findAll(CONTEXT);
+
+      const [options] = find.mock.calls[0] as [{ where: { user: { id: string } } }];
+      expect(options.where.user.id).toBe(USER);
+    });
+  });
+
+  describe('update', () => {
+    it('updates and returns the answer when the caller owns it', async () => {
+      const { service } = makeServiceWithStore([makeAnswer('a1', USER)]);
+
+      const result = await service.update(CONTEXT, 'a1', { text: 'updated' });
+
+      expect(result?.id).toBe('a1');
+    });
+
+    it('returns null without saving when a non-owner attempts the update', async () => {
+      const { service, findOne } = makeServiceWithStore([makeAnswer('a1', USER)]);
+
+      const result = await service.update(OTHER_CONTEXT, 'a1', { text: 'hijacked' });
+
+      expect(result).toBeNull();
+      // findOne was called scoped to the wrong owner and found nothing — no save happened.
+      expect(findOne).toHaveBeenCalled();
+    });
+  });
+
+  describe('remove', () => {
+    it('deletes and returns true when the caller owns the answer', async () => {
+      const { service, delete: deleteFn, send } = makeServiceWithStore([makeAnswer('a1', USER)]);
+
+      const result = await service.remove(CONTEXT, 'a1');
+
+      expect(result).toBe(true);
+      expect(deleteFn).toHaveBeenCalled();
+      expect(send).toHaveBeenCalledWith(expect.anything(), { answerId: 'a1' });
+    });
+
+    it('returns false and does NOT delete when a non-owner attempts the removal', async () => {
+      const { service, delete: deleteFn } = makeServiceWithStore([makeAnswer('a1', USER)]);
+
+      const result = await service.remove(OTHER_CONTEXT, 'a1');
+
+      expect(result).toBe(false);
+      expect(deleteFn).not.toHaveBeenCalled();
+    });
   });
 });

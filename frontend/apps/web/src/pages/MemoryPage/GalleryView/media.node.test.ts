@@ -170,6 +170,114 @@ describe('getEntityMedia', () => {
     });
   });
 
+  describe('EventType', () => {
+    it('resolves a photo event from the gallery* media aliases, deriving a title from place + date', () => {
+      const startTime = '2026-05-01T18:00:00Z';
+      const media = getEntityMedia(
+        entity({
+          __typename: 'EventType',
+          id: 'e1',
+          galleryMediaContentType: 'image/jpeg',
+          gallerySourceUrl: '/events/photo.jpg',
+          galleryPreviewUrl: '/events/photo-thumb.jpg',
+          galleryTitle: null,
+          galleryLocationName: 'Golden Gate Park',
+          bucketStartTime: startTime,
+        }),
+      );
+
+      const expectedDate = new Date(startTime).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      });
+
+      expect(media).toEqual({
+        entityId: 'e1',
+        kind: 'image',
+        contentType: 'image/jpeg',
+        thumbUrl: '/static/events/photo-thumb.jpg',
+        fullUrl: '/static/events/photo.jpg',
+        title: `Photo · Golden Gate Park · ${expectedDate}`,
+      });
+    });
+
+    it('resolves a video event and keeps an authored title as-is', () => {
+      const media = getEntityMedia(
+        entity({
+          __typename: 'EventType',
+          id: 'e2',
+          galleryMediaContentType: 'video/mp4',
+          gallerySourceUrl: '/events/clip.mp4',
+          galleryTitle: 'Birthday party clip',
+        }),
+      );
+
+      expect(media?.kind).toBe('video');
+      expect(media?.title).toBe('Birthday party clip');
+    });
+
+    // No previewUrl (no derived thumbnail variant yet) — the tile must still
+    // render something rather than an empty thumbUrl.
+    it('falls back the thumbnail to the full-resolution source when there is no preview', () => {
+      const media = getEntityMedia(
+        entity({
+          __typename: 'EventType',
+          id: 'e3',
+          galleryMediaContentType: 'image/png',
+          gallerySourceUrl: '/events/no-preview.png',
+          galleryPreviewUrl: null,
+        }),
+      );
+
+      expect(media?.thumbUrl).toBe('/static/events/no-preview.png');
+      expect(media?.thumbUrl).toBe(media?.fullUrl);
+    });
+
+    // The exact shape a photo/video event has when it has no linked content
+    // row: mediaContentType resolves to null server-side, so the tile must stay
+    // a plain text tile instead of an <img>/<video> pointed at nothing.
+    it('returns null for a non-media event with no linked content row', () => {
+      expect(
+        getEntityMedia(
+          entity({
+            __typename: 'EventType',
+            id: 'e4',
+            galleryMediaContentType: null,
+            galleryTitle: 'Visited the office',
+          }),
+        ),
+      ).toBeNull();
+    });
+
+    it('returns null when a media content type is present but neither URL resolves', () => {
+      expect(
+        getEntityMedia(
+          entity({
+            __typename: 'EventType',
+            id: 'e5',
+            galleryMediaContentType: 'image/png',
+            gallerySourceUrl: null,
+            galleryPreviewUrl: null,
+          }),
+        ),
+      ).toBeNull();
+    });
+
+    it('returns null for the provider pseudo-mimetype case, same as the other branches', () => {
+      expect(
+        getEntityMedia(
+          entity({
+            __typename: 'EventType',
+            id: 'e6',
+            galleryMediaContentType: 'video/youtube',
+            gallerySourceUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+          }),
+        ),
+      ).toBeNull();
+    });
+  });
+
   it('returns null for entity types without media', () => {
     expect(getEntityMedia(entity({ __typename: 'PersonType', id: 'p1' }))).toBeNull();
   });

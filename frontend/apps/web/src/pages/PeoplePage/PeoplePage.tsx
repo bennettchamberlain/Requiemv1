@@ -336,20 +336,15 @@ export function PeoplePage() {
   // flight — swapping to a full-page loader would unmount the search input and
   // drop focus on the first keystroke of every new query.
   const view = data ?? previousData;
-  const people = useMemo(() => {
-    const nodes = (view?.people.edges ?? []).map((edge) => edge.node);
-
-    return [...nodes].sort((a, b) => {
-      const aTime = a.interactionStats?.lastInteractionAt
-        ? new Date(a.interactionStats.lastInteractionAt).getTime()
-        : 0;
-      const bTime = b.interactionStats?.lastInteractionAt
-        ? new Date(b.interactionStats.lastInteractionAt).getTime()
-        : 0;
-
-      return bTime - aTime;
-    });
-  }, [view]);
+  // Trust PersonService.findAll's order (plausible-name first, then name, then
+  // recency — see PERSON_NAME_LOOKS_IMPLAUSIBLE_SQL) rather than re-sorting here.
+  // A client-side sort keyed on interaction recency would fight that: the exact
+  // rows the server demotes (bare digit-strings, call-log-heading leftovers) are
+  // typically call-log stubs, so they carry a *recent*
+  // interactionStats.lastInteractionAt, while a freshly-imported real contact
+  // may have none at all — a recency sort would put the garbage name right back
+  // on top of the list, reintroducing the bug the backend ordering fixed.
+  const people = useMemo(() => (view?.people.edges ?? []).map((edge) => edge.node), [view]);
   const duplicateGroups = duplicatesData?.personDuplicates ?? [];
 
   const [loadingMore, setLoadingMore] = useState(false);

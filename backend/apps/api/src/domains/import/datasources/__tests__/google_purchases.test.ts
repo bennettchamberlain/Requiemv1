@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import { GooglePurchasesFileImporter } from '../google_purchases';
@@ -18,6 +20,32 @@ async function run() {
   } as unknown as ImportParams);
 
   return pipeline.filter((p) => p.item).map((p) => p.item);
+}
+
+/**
+ * Runs a single synthetic action_*.json (an `order` record) through the
+ * importer's private pushPurchase() path and returns the resulting item's
+ * metadata. Used to exercise the Total/Currency money-shape fallback chain
+ * (pushPurchase, google_purchases.ts ~L264-271) branch by branch, since the
+ * checked-in fixture only ever hits one of its four shapes.
+ */
+async function runOrder(order: Record<string, unknown>) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gpurchases-money-'));
+  try {
+    const file = path.join(dir, 'action_synthetic.json');
+    fs.writeFileSync(file, JSON.stringify({ order, uniqueId: 'synthetic' }), 'utf8');
+    const fi = new GooglePurchasesFileImporter();
+    const pipeline: EmittedGraph[] = [];
+    await fi.fileImport({}, { filename: 'action_synthetic.json', fullPath: file }, {
+      pipeline,
+      timeframe: {},
+      log: () => {},
+    } as unknown as ImportParams);
+
+    return pipeline.filter((p) => p.item).map((p) => p.item)[0];
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 describe('Google Purchases & Reservations datasource', () => {
@@ -74,5 +102,38 @@ describe('Google Purchases & Reservations datasource', () => {
     const a = (await run()).map((i) => i.id!).sort();
     const b = (await run()).map((i) => i.id!).sort();
     expect(b).toEqual(a);
+  });
+
+  describe('Total/Currency money-shape fallback chain', () => {
+    // The checked-in fixture's `order.total` is already a nested
+    // { amount, currency } object, so it only ever exercises the
+    // priceObj.amount branch below. These cover the sibling branches: a bare
+    // scalar Total (no nested object at all), the .value sibling key inside
+    // the nested object, and the price/amount top-level scalar fallbacks used
+    // when a record has no `total` field. A regression in any one of them
+    // would silently turn a real purchase's price into `undefined`.
+
+    it('reads a plain scalar total with no nested money object', async () => {
+      const item = await runOrder({ name: 'Widget', total: 49.5 });
+      expect(item.metadata?.Total).toBe(49.5);
+      expect(item.metadata?.Currency).toBeUndefined();
+    });
+
+    it('falls back to the nested `value` key when `amount` is absent', async () => {
+      const item = await runOrder({ name: 'Gadget', total: { value: 25.5, currency: 'EUR' } });
+      expect(item.metadata?.Total).toBe(25.5);
+      expect(item.metadata?.Currency).toBe('EUR');
+    });
+
+    it('falls back to a top-level `price` field and top-level `currency` when `total` is absent', async () => {
+      const item = await runOrder({ name: 'Thingamajig', price: 12.34, currency: 'GBP' });
+      expect(item.metadata?.Total).toBe(12.34);
+      expect(item.metadata?.Currency).toBe('GBP');
+    });
+
+    it('falls back to a top-level `amount` field when neither `total` nor `price` is present', async () => {
+      const item = await runOrder({ name: 'Doohickey', amount: 7.25 });
+      expect(item.metadata?.Total).toBe(7.25);
+    });
   });
 });

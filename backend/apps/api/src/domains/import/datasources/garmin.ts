@@ -183,16 +183,16 @@ export class GarminFileImporter implements FileImporter {
       return;
     }
 
-    for (const row of rows) {
+    rows.forEach((row, index) => {
       try {
-        this.pushRow(row, params);
+        this.pushRow(row, base, index, params);
       } catch (e) {
         params.log?.('error', `Failed to import row in ${base}`, { error: (e as Error).message });
       }
-    }
+    });
   }
 
-  private pushRow(row: Record<string, string>, params: ImportParams): void {
+  private pushRow(row: Record<string, string>, base: string, index: number, params: ImportParams): void {
     const dateStr = row['Date'] || '';
     // Garmin Date is local "2023-01-15 10:30:00" — parse as a date (no timezone marker).
     let ts: Date | undefined = dateStr ? new Date(dateStr.replace(' ', 'T')) : undefined;
@@ -210,6 +210,13 @@ export class GarminFileImporter implements FileImporter {
 
     params.pipeline.push({
       item: {
+        // Stable natural key: source file + raw Date + per-file row index. The
+        // constant content.filename ('workout.txt') means hashItem's fallback
+        // hash would otherwise be dataSource+classification+ISO(timestamp)
+        // alone, so two activities recorded in the same second (plausible for
+        // back-to-back Garmin activities) would collide under the staging
+        // table's ON CONFLICT and one would be silently dropped.
+        id: `garmin:${base}:${(row['Date'] || '').trim()}:${index}`,
         classification: 'workout',
         timestamp: ts,
         content: { filename: 'workout.txt', mediaType: 'text/plain', data: async () => Buffer.from(text) },

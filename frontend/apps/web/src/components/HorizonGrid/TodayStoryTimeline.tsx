@@ -224,6 +224,7 @@ export function TodayStoryTimeline({ events, day }: TodayStoryTimelineProps) {
 
       instance.ready = inViewRef.current && !document.hidden;
     };
+
     document.addEventListener('visibilitychange', onVisibility);
 
     void loadTimelineCtor()
@@ -281,7 +282,10 @@ export function TodayStoryTimeline({ events, day }: TodayStoryTimelineProps) {
       host.replaceChildren();
     };
     // inView is read at construct and via visibilitychange; remounting on scroll would be worse.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- shouldMount + deckKey
+    // (react-hooks/exhaustive-deps isn't registered in this repo's eslint config, so the disable
+    // comment that used to sit here was dead weight — flat-config eslint errors on a disable
+    // directive for an unknown rule. The intent it documented still holds: shouldMount + deckKey
+    // are deliberately the only two dependencies.)
   }, [deckKey, shouldMount]);
 
   if (!dayHasEvents || data.events.length === 0) {

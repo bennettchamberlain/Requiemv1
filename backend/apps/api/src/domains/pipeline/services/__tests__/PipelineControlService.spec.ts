@@ -20,6 +20,7 @@ import {
   defaultStageSet,
   isMeteredStage,
   orderStages,
+  type ControlTickReport,
   type StageLeg,
 } from '../PipelineControlService';
 import type { PipelineDispatchService } from '../PipelineDispatchService';
@@ -1763,6 +1764,123 @@ describeWithDatabase('PipelineControlService — shard leases (real Postgres)', 
       expect(await service.claimStageShard(runId, leg(STAGE_IDS.ENRICH_PERSON_LINK, 'event'))).not.toBeNull();
 
       expect((await shards()).map((row) => row.shard_key)).toEqual(['communication', 'event']);
+    });
+  });
+
+  describe('tearing down a cancelled run', () => {
+    // ═══════════════════════════════════════════════════════════════════════
+    // THE RACE: a tick claims a shard lease and starts a sweep for a run in
+    // the SAME WINDOW an operator cancels it.
+    // ═══════════════════════════════════════════════════════════════════════
+    //
+    // `tearDownCancelledRun`'s fake-DB coverage (above, in the first half of
+    // this file) proves each half in isolation: "waits one tick before
+    // finalising a cancelled run a worker is still inside" hands the mock a
+    // canned `liveLease: true`, and "finalises the same cancelled run once the
+    // lease has gone" hands it `liveLease: false`. Neither proves the two
+    // compose — that a lease `claimStageShard` ACTUALLY JUST STAMPED, with a
+    // real `now() + make_interval(...)` expiry, is the same lease this method's
+    // own `WHERE (lease_expires_at IS NULL OR lease_expires_at < now())`
+    // recognises as live a moment later. A mock's `liveLease` flag is asserted
+    // by fiat; here it has to actually still be in the future.
+    //
+    // `runService` is a local stub rather than the outer block's `null` — this
+    // is the one describe in this suite whose subject calls `finishRun`.
+    function makeReport(): ControlTickReport {
+      return {
+        skipped: false,
+        skipReason: null,
+        leasesReaped: 0,
+        usersServiced: 0,
+        runsStarted: 0,
+        runsFinalized: 0,
+        runsPaused: 0,
+        sweepsStarted: 0,
+        legsBlocked: 0,
+        legsDrained: 0,
+        legsNotDue: 0,
+      };
+    }
+
+    function makeTeardownService(finishRun: jest.Mock) {
+      const silent = {
+        setContext: () => undefined,
+        log: () => undefined,
+        debug: () => undefined,
+        warn: () => undefined,
+        error: () => undefined,
+        verbose: () => undefined,
+      } as unknown as LoggerService;
+
+      return new PipelineControlService(
+        { query: (sql: string, params?: unknown[]) => runner.query(sql, params) } as unknown as DataSource,
+        null as unknown as PipelineStateService,
+        { finishRun } as unknown as PipelineRunService,
+        null as unknown as PipelineDispatchService,
+        null as unknown as StageRegistry,
+        null as unknown as EnrichmentWindowService,
+        silent,
+      );
+    }
+
+    it('leaves a shard THIS RUN JUST CLAIMED alone, while tearing down the run’s other idle shard in the same pass — and does not finalise yet', async () => {
+      // The idle half of the run: already reaped back to pending by an earlier
+      // tick (or never claimed at all), holding no lease.
+      await seedShard({ stage: STAGE_IDS.PROMOTE_PLACE, status: SHARD_STATUS.PENDING, leaseSeconds: null });
+
+      // The in-flight half: claimed through the REAL claim path, moments
+      // before "cancel" — a genuine RUNNING shard with a genuine future
+      // lease_expires_at, not a fixture asserting one exists.
+      const finishRun = jest.fn(async () => null);
+      const svc = makeTeardownService(finishRun);
+      const claimed = await svc.claimStageShard(runId, leg(STAGE_IDS.ENRICH_MEDIA_DIMENSIONS));
+      expect(claimed).not.toBeNull();
+
+      await svc.tearDownCancelledRun(runId, makeReport());
+
+      const rows = await shards();
+      const idle = rows.find((row) => row.stage === STAGE_IDS.PROMOTE_PLACE)!;
+      const inFlight = rows.find((row) => row.stage === STAGE_IDS.ENRICH_MEDIA_DIMENSIONS)!;
+
+      // The idle shard is torn down immediately — cancellation does not wait on
+      // a leg nobody is inside.
+      expect(idle.status).toBe(SHARD_STATUS.CANCELLED);
+
+      // The in-flight shard is untouched: still RUNNING, still leased, still
+      // owned by the worker that is inside it. The UPDATE's own WHERE clause
+      // excluded it because its lease has not expired — this is that guarantee
+      // exercised against a lease Postgres itself just stamped, not a fixture.
+      expect(inFlight.status).toBe(SHARD_STATUS.RUNNING);
+      expect(inFlight.lease_expires_at).not.toBeNull();
+      expect(new Date(inFlight.lease_expires_at as Date).getTime()).toBeGreaterThan(Date.now());
+
+      // And because that lease is still live, the run is NOT finalised this
+      // pass — an operator's cancel does not discard the in-flight sweep's
+      // eventual ledger outcome by racing ahead of it.
+      expect(finishRun).not.toHaveBeenCalled();
+    });
+
+    it('finalises the run on the pass AFTER that lease is gone', async () => {
+      // Same shape, but the "worker" shard's lease has already lapsed — the
+      // bounded wait `tearDownCancelledRun`'s own doc comment promises
+      // (SHARD_LEASE_SECONDS, "cannot be unbounded").
+      await seedShard({
+        stage: STAGE_IDS.ENRICH_MEDIA_DIMENSIONS,
+        status: SHARD_STATUS.RUNNING,
+        leaseSeconds: -1,
+      });
+
+      const finishRun = jest.fn(async () => null);
+      const svc = makeTeardownService(finishRun);
+
+      await svc.tearDownCancelledRun(runId, makeReport());
+
+      const [row] = await shards();
+      expect(row.status).toBe(SHARD_STATUS.CANCELLED);
+      expect(row.lease_owner).toBeNull();
+
+      // No live lease anywhere under the run: this IS the pass that finalises.
+      expect(finishRun).toHaveBeenCalledWith(runId, 'cancelled', expect.any(Object));
     });
   });
 

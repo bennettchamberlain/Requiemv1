@@ -87,7 +87,7 @@ export { TaskService, PlanningTimeService };
 
 export { TASK_STATUSES };
 
-export { isValidTimezone, localDateInTZ, todayInTZ, zonedWallTimeToUTC } from './time/zoned';
+export { isValidTimezone, localDateInTZ, todayInTZ, zonedWallTimeToUTC } from '@ci/common/time/zoned';
 
 export type { Task, TaskStatus, TaskDependency, TaskPendingChange, TaskPendingChangeKind, TaskPendingChangeStatus };
 export type { CreateTaskDto, UpdateTaskDto, FindTasksOptions, CreateTaskPendingChangeDto } from './types';

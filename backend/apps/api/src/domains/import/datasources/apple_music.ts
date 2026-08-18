@@ -161,16 +161,16 @@ export class AppleMusicFileImporter implements FileImporter {
       return;
     }
 
-    for (const row of rows) {
+    rows.forEach((row, index) => {
       try {
-        this.pushRow(row, params);
+        this.pushRow(row, base, index, params);
       } catch (e) {
         params.log?.('error', `Failed to import row in ${base}`, { error: (e as Error).message });
       }
-    }
+    });
   }
 
-  private pushRow(row: Record<string, string>, params: ImportParams): void {
+  private pushRow(row: Record<string, string>, base: string, index: number, params: ImportParams): void {
     const start = row['Event Start Timestamp'];
     let ts: Date | undefined = start ? new Date(start) : undefined;
     if (ts && isNaN(ts.getTime())) {
@@ -195,6 +195,14 @@ export class AppleMusicFileImporter implements FileImporter {
 
     params.pipeline.push({
       item: {
+        // Stable natural key: source file + raw start timestamp + per-file row
+        // index. The constant content.filename ('play.txt') means hashItem's
+        // fallback hash would otherwise be dataSource+classification+
+        // ISO(timestamp) alone, so two tracks logged in the same second
+        // (repeated/skip-replayed plays are common in a real listening
+        // history) would collide under the staging table's ON CONFLICT and
+        // one would be silently dropped.
+        id: `apple_music:${base}:${(start || '').trim()}:${index}`,
         classification: 'listen',
         timestamp: ts,
         content: {

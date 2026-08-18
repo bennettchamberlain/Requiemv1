@@ -1,0 +1,155 @@
+import config from '@ci/configuration';
+
+import { OidcController } from '../OidcController';
+
+// `config` defaults `auth.oidc.issuerUrl` to '' (config/default.json) unless
+// OIDC_ISSUER_URL is set. `config` is a plain mutable object (configuration.ts's
+// `export default parsed`), and jest gives this test file its own isolated
+// module registry, so mutating it here cannot leak into any other suite.
+config.auth.oidc.issuerUrl = 'http://localhost:8506';
+config.auth.oidc.publicBaseUrl = '';
+
+/**
+ * `GET /authenticate/oidc` (initiate) had no test constructing the controller and
+ * calling it directly or over HTTP — only the pure-function pieces it calls
+ * (safeRelativePath, resolveOidcCallbackUrl/resolveOidcOriginBounce as isolated
+ * units) were covered, never this handler's own wiring: whether the redirect
+ * query param is actually run through safeRelativePath BEFORE being stored in a
+ * cookie, whether issuerUrl-not-configured redirects to /login instead of
+ * throwing, and the state/PKCE/native-client cookies it mints.
+ */
+function makeController() {
+  const logger = { setContext: jest.fn(), warn: jest.fn(), error: jest.fn(), log: jest.fn() };
+  const controller = new OidcController(
+    {} as never, // userService — unused by initiate()
+    {} as never, // authService
+    {} as never, // csrfService
+    {} as never, // featureService
+    {} as never, // oidcNativeCodeService
+    logger as never,
+  );
+
+  return { controller, logger };
+}
+
+function makeRes() {
+  return {
+    cookie: jest.fn(),
+    clearCookie: jest.fn(),
+    redirect: jest.fn(),
+  };
+}
+
+function makeReq(query: Record<string, unknown> = {}) {
+  return { headers: {}, secure: false, query } as never;
+}
+
+function cookieCall(res: ReturnType<typeof makeRes>, name: string) {
+  return res.cookie.mock.calls.find((call) => call[0] === name);
+}
+
+describe('OidcController.initiate (GET /authenticate/oidc)', () => {
+  it('redirects to /login?error=oidc_not_configured and mints no cookies when OIDC_ISSUER_URL is unset', () => {
+    const { controller, logger } = makeController();
+    const res = makeRes();
+    const savedIssuerUrl = config.auth.oidc.issuerUrl;
+    config.auth.oidc.issuerUrl = '';
+
+    try {
+      controller.initiate(undefined, undefined, makeReq(), res as never);
+    } finally {
+      config.auth.oidc.issuerUrl = savedIssuerUrl;
+    }
+
+    expect(res.redirect).toHaveBeenCalledWith('/login?error=oidc_not_configured');
+    expect(res.cookie).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalled();
+  });
+
+  it('mints state + PKCE cookies and redirects to the Portal authorize endpoint with the matching params', () => {
+    const { controller } = makeController();
+    const res = makeRes();
+
+    controller.initiate(undefined, undefined, makeReq(), res as never);
+
+    const stateCall = cookieCall(res, 'oidc_state');
+    const pkceCall = cookieCall(res, 'oidc_pkce');
+
+    expect(stateCall).toBeDefined();
+    expect(pkceCall).toBeDefined();
+    // Both are httpOnly, lax, path-scoped — never readable by page JS.
+    expect(stateCall![2]).toMatchObject({ httpOnly: true, sameSite: 'lax', path: '/' });
+    expect(pkceCall![2]).toMatchObject({ httpOnly: true, sameSite: 'lax', path: '/' });
+
+    expect(res.redirect).toHaveBeenCalledTimes(1);
+    const [redirectUrl] = res.redirect.mock.calls[0] as [string];
+    const url = new URL(redirectUrl);
+
+    expect(url.origin + url.pathname).toBe('http://localhost:8506/api/auth/oauth2/authorize');
+    expect(url.searchParams.get('client_id')).toBe('ci-server');
+    expect(url.searchParams.get('response_type')).toBe('code');
+    expect(url.searchParams.get('scope')).toBe('openid email profile');
+    // The state cookie value and the state query param must be the SAME value —
+    // that's the whole point of the state check on callback.
+    expect(url.searchParams.get('state')).toBe(stateCall![1]);
+    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+    expect(url.searchParams.get('code_challenge')).toBeTruthy();
+    // PKCE: the challenge sent to the IdP is the SHA-256/base64url of the verifier
+    // cookie, never the verifier itself.
+    expect(url.searchParams.get('code_challenge')).not.toBe(pkceCall![1]);
+  });
+
+  it('does NOT set the native-client cookie for an ordinary (web) sign-in', () => {
+    const { controller } = makeController();
+    const res = makeRes();
+
+    controller.initiate(undefined, undefined, makeReq(), res as never);
+
+    expect(cookieCall(res, 'oidc_client')).toBeUndefined();
+  });
+
+  it('sets the native-client cookie when client=native, so the callback returns via deep link', () => {
+    const { controller } = makeController();
+    const res = makeRes();
+
+    controller.initiate('native', undefined, makeReq(), res as never);
+
+    const clientCall = cookieCall(res, 'oidc_client');
+
+    expect(clientCall?.[1]).toBe('native');
+  });
+
+  it('stores a safe relative redirect target in the redirect cookie', () => {
+    const { controller } = makeController();
+    const res = makeRes();
+
+    controller.initiate(undefined, '/shared/abc123', makeReq(), res as never);
+
+    const redirectCall = cookieCall(res, 'oidc_redirect');
+
+    expect(redirectCall?.[1]).toBe('/shared/abc123');
+    expect(res.clearCookie).not.toHaveBeenCalledWith('oidc_redirect', expect.anything());
+  });
+
+  it('runs the redirect param through safeRelativePath BEFORE storing it — an unsafe target is never persisted', () => {
+    const { controller } = makeController();
+    const res = makeRes();
+
+    // Absolute cross-origin URL: exactly what safeRelativePath exists to reject.
+    controller.initiate(undefined, 'https://evil.example.com/steal', makeReq(), res as never);
+
+    expect(cookieCall(res, 'oidc_redirect')).toBeUndefined();
+    // A plain sign-in with no (valid) destination must not inherit a stale one —
+    // the cookie is actively cleared, not merely left unset.
+    expect(res.clearCookie).toHaveBeenCalledWith('oidc_redirect', { path: '/' });
+  });
+
+  it('clears any stale redirect cookie when no redirect param is given at all', () => {
+    const { controller } = makeController();
+    const res = makeRes();
+
+    controller.initiate(undefined, undefined, makeReq(), res as never);
+
+    expect(res.clearCookie).toHaveBeenCalledWith('oidc_redirect', { path: '/' });
+  });
+});
