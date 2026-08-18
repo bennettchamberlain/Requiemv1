@@ -67,13 +67,14 @@ export class PayPalFileImporter implements FileImporter {
         return { confidence: 0 };
       }
 
+      // "download.csv" used to get a moderate confidence bump on the filename
+      // alone, no header read at all — but it's a very common browser default
+      // filename for ANY CSV saved via a download button, completely
+      // unrelated to PayPal. Require the same header check (a "Date" and
+      // "Transaction ID" column) every recognized file needs; a same-named
+      // file that fails it now correctly returns 0.
       if (this.headerMatches(root)) {
         return { confidence: 0.9 };
-      }
-
-      // Common PayPal filenames get a moderate bump without header check
-      if (base === 'download.csv' || base.startsWith('paypal')) {
-        return { confidence: 0.5 };
       }
 
       return { confidence: 0 };

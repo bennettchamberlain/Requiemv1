@@ -239,10 +239,14 @@ describeWithDatabase(`the import spine (${importDatabase.target})`, () => {
       const { run, stages } = await startRun(await stageDrop());
 
       await service.beginStage(stages[0].id);
+      // `partial` is a SIBLING of `detail` on `StageOutcome` — the shape every
+      // real stage runner returns (UnpackStage, ParseStage, MediaStage,
+      // PushStage all set the top-level field, never a nested `detail.partial`).
       await service.completeStage(stages[0].id, {
         processed: 1,
         total: 1,
-        detail: { partial: true, rejected: [{ archive: 'part-2.zip', reason: 'truncated' }] },
+        partial: true,
+        detail: { rejected: [{ archive: 'part-2.zip', reason: 'truncated' }] },
       });
       await service.beginStage(stages[1].id);
       await service.completeStage(stages[1].id, { processed: 3, total: 3, detail: {} });
@@ -255,6 +259,28 @@ describeWithDatabase(`the import spine (${importDatabase.target})`, () => {
 
       expect(finished.status).toBe('partial');
       expect(finished.percent).toBe(100);
+    });
+
+    it('leaves a run completed when no stage reported partial', async () => {
+      // The other half of the wiring: a stage's own `detail` fields must not be
+      // mistaken for the sibling `partial` flag `finishRun` actually rolls up
+      // on. Regression guard for the bug where `completeStage` never persisted
+      // `outcome.partial` anywhere `finishRun` read it, so this always passed
+      // for the wrong reason — nothing ever reported partial at all.
+      const { run, stages } = await startRun(await stageDrop());
+
+      await service.beginStage(stages[0].id);
+      await service.completeStage(stages[0].id, { processed: 1, total: 1, detail: { rejected: [] } });
+      await service.beginStage(stages[1].id);
+      await service.completeStage(stages[1].id, { processed: 3, total: 3, detail: {} });
+      await service.finishRun(run.id);
+
+      const [finished] = await dataSource.query<Array<{ status: string }>>(
+        `SELECT status FROM ci_import.import_runs WHERE id = $1::uuid`,
+        [run.id],
+      );
+
+      expect(finished.status).toBe('completed');
     });
 
     it('fails the run when a stage fails', async () => {

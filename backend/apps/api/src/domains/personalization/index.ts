@@ -5,7 +5,7 @@ import { DailyMetricsModule } from '@ci/domains/daily-metrics';
 import { EventsModule } from '@ci/domains/events';
 import { GraphModule } from '@ci/domains/graph';
 import { IntelligenceModule } from '@ci/domains/intelligence';
-import { LlmCoreModule } from '@ci/domains/llm';
+import { LlmCoreModule } from '@ci/domains/llm/core.module';
 import { MemoryModule } from '@ci/domains/memory';
 
 import './events';

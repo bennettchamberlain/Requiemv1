@@ -54,10 +54,14 @@ describeWithDatabase(`deferred push (${importDatabase.target})`, () => {
     await teardown();
   });
 
-  /** Begin + complete one stage, optionally with a detail payload. */
-  async function driveStage(stageId: string, detail: Record<string, unknown> = {}): Promise<void> {
+  /** Begin + complete one stage, optionally with a detail payload and/or `partial`. */
+  async function driveStage(
+    stageId: string,
+    detail: Record<string, unknown> = {},
+    partial = false,
+  ): Promise<void> {
     expect(await service.beginStage(stageId)).toBe(true);
-    await service.completeStage(stageId, { processed: 1, total: 1, detail });
+    await service.completeStage(stageId, { processed: 1, total: 1, partial, detail });
   }
 
   /** Stage one pending item into a run, the way a parser would. */
@@ -81,7 +85,7 @@ describeWithDatabase(`deferred push (${importDatabase.target})`, () => {
    * state the wizard leaves a service in before Sync.
    */
   async function parsedRun(
-    options: { stageRow?: boolean; parseDetail?: Record<string, unknown> } = {},
+    options: { stageRow?: boolean; parseDetail?: Record<string, unknown>; partial?: boolean } = {},
   ): Promise<{ runId: string; unpackId: string; parseId: string }> {
     const dropId = await harness.stageDrop('export.zip');
     const { run, stages } = await harness.startRunForDrop(dropId, ['unpack', 'parse']);
@@ -92,7 +96,7 @@ describeWithDatabase(`deferred push (${importDatabase.target})`, () => {
       await stageItem(run.id, `IMG-${run.id.slice(0, 8)}.jpg`);
     }
 
-    await driveStage(stages[1].id, options.parseDetail ?? {});
+    await driveStage(stages[1].id, options.parseDetail ?? {}, options.partial ?? false);
     await service.advance(userId, run.id, stages[1].seq);
 
     return { runId: run.id, unpackId: stages[0].id, parseId: stages[1].id };
@@ -276,7 +280,7 @@ describeWithDatabase(`deferred push (${importDatabase.target})`, () => {
     });
 
     it('a partial parse stays partial after its deferred push completes', async () => {
-      const { runId } = await parsedRun({ parseDetail: { partial: true } });
+      const { runId } = await parsedRun({ partial: true });
 
       expect((await runRow(runId)).status).toBe('partial');
 

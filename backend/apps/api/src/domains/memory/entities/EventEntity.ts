@@ -144,6 +144,14 @@ export class EventEntity {
   @Column({ type: 'uuid', nullable: true, name: 'parent_event_id' })
   parentEventId!: string | null;
 
+  /** Task this planned block schedules (`event_type = 'planned_block'`). */
+  @Column({ type: 'uuid', nullable: true, name: 'task_id' })
+  taskId!: string | null;
+
+  /** Intended duration for a planned block; `duration_minutes` stays generated actual. */
+  @Column({ type: 'integer', nullable: true, name: 'planned_minutes' })
+  plannedMinutes!: number | null;
+
   @Column({ type: 'text', nullable: true, name: 'created_by' })
   createdBy!: string | null;
 
@@ -202,6 +210,8 @@ export class EventEntity {
       isDeleted: entity.isDeleted,
       externalSyncStatus: entity.externalSyncStatus,
       parentEventId: entity.parentEventId,
+      taskId: entity.taskId,
+      plannedMinutes: entity.plannedMinutes,
       lastAccessed: entity.lastAccessed,
       sharingLevel: entity.sharingLevel,
       createdBy: entity.createdBy,

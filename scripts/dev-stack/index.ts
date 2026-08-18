@@ -140,33 +140,70 @@ function ephemeralPort(): Promise<number> {
   });
 }
 
-/** Host ports Docker has already published across all running containers. This
- * is the authoritative check for container port conflicts: Docker Desktop on
- * macOS publishes via its VM and the host port frequently isn't reachable on
- * IPv4 loopback (it listens on IPv6 `*`), so a bind- or connect-test misses it
- * — yet `docker compose up` still fails with "port is already allocated". */
-function dockerPublishedPorts(): Set<number> {
-  const res = spawnSync('docker', ['ps', '--format', '{{.Ports}}'], { encoding: 'utf8' });
-  const ports = new Set<number>();
-  for (const match of (res.stdout ?? '').matchAll(/:(\d+)->/g)) {
-    ports.add(Number(match[1]));
+/** Host ports Docker has already published, split by whether they belong to
+ * THIS compose project. Reading them is the authoritative check for container
+ * port conflicts: Docker Desktop on macOS publishes via its VM and the host
+ * port frequently isn't reachable on IPv4 loopback (it listens on IPv6 `*`), so
+ * a bind- or connect-test misses it — yet `docker compose up` still fails with
+ * "port is already allocated".
+ *
+ * The split matters because this stack's own containers are not a conflict:
+ * `compose up` recreates them on whatever ports we pass it. Counting them as
+ * taken is how a stack displaced itself onto ephemeral ports — the services
+ * carry `restart: unless-stopped`, so a reboot without a clean `composeStop`
+ * has the daemon bring them back on the defaults, and the next `make dev`
+ * (which allocates before it ever calls compose) then read its own containers
+ * as foreign squatters and fell back to ephemeral for every service.
+ * `make dev-down` did not help: it only tears down the Caddy route. */
+function dockerPublishedPorts(key: string): { own: Set<number>; foreign: Set<number> } {
+  const res = spawnSync('docker', ['ps', '--format', '{{.Label "com.docker.compose.project"}}\t{{.Ports}}'], {
+    encoding: 'utf8',
+  });
+  const own = new Set<number>();
+  const foreign = new Set<number>();
+
+  for (const line of (res.stdout ?? '').split('\n')) {
+    if (!line.trim()) {
+      continue;
+    }
+
+    const tab = line.indexOf('\t');
+    const project = tab === -1 ? '' : line.slice(0, tab);
+    const target = project === key ? own : foreign;
+
+    for (const match of line.slice(tab + 1).matchAll(/:(\d+)->/g)) {
+      target.add(Number(match[1]));
+    }
   }
 
-  return ports;
+  return { own, foreign };
 }
 
-/** Preferred port if free, else an ephemeral one. "Free" means neither already
- * published by Docker (covers other worktrees' containers) nor answering a
- * connection (covers host processes like another stack's api/web). The
- * ephemeral fallback also skips Docker-published ports. (Small TOCTOU window
- * before the consumer binds — acceptable for local dev.) */
-async function allocPort(preferred: number, dockerPorts: Set<number>): Promise<number> {
-  if (!dockerPorts.has(preferred) && !(await portTaken(preferred))) {
+/** Preferred port if free, else an ephemeral one. "Free" means not published by
+ * another project's containers (covers other worktrees' stacks) and not
+ * answering a connection (covers host processes like another stack's api/web).
+ *
+ * A port this project already publishes stays preferred: it is ours to reuse,
+ * and the live connection it answers is our own container — the very thing the
+ * connect-test must not read as a conflict, since `compose up` will rebind it
+ * anyway. The ephemeral fallback still avoids every Docker-published port,
+ * ours included, so a service that genuinely has to move can't land on a
+ * sibling's. (Small TOCTOU window before the consumer binds — acceptable for
+ * local dev.) */
+async function allocPort(
+  preferred: number,
+  dockerPorts: { own: Set<number>; foreign: Set<number> },
+): Promise<number> {
+  if (dockerPorts.own.has(preferred)) {
+    return preferred;
+  }
+
+  if (!dockerPorts.foreign.has(preferred) && !(await portTaken(preferred))) {
     return preferred;
   }
 
   let port = await ephemeralPort();
-  while (dockerPorts.has(port)) {
+  while (dockerPorts.own.has(port) || dockerPorts.foreign.has(port)) {
     port = await ephemeralPort();
   }
 
@@ -337,7 +374,7 @@ async function up(key: string): Promise<void> {
     process.exit(1);
   }
 
-  const dockerPorts = dockerPublishedPorts();
+  const dockerPorts = dockerPublishedPorts(key);
   const [apiPort, webPort, dbPort, objPort, hbpePort, summaryPort, parserPort] = await Promise.all([
     allocPort(DEFAULTS.api, dockerPorts),
     allocPort(DEFAULTS.web, dockerPorts),

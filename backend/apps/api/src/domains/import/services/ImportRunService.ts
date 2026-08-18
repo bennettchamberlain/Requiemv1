@@ -245,7 +245,13 @@ export class ImportRunService {
         `INSERT INTO ci_import.import_runs (user_id, label, source, status, requested_stages, declared_sources)
               VALUES ($1::uuid, $2, $3, 'queued', $4::text[], $5::text[])
            RETURNING id`,
-        [ctx.userId, input.label ?? defaultLabel, input.source ?? 'wizard', kinds, input.declaredSources ?? null],
+        [
+          ctx.userId,
+          input.label ?? defaultLabel,
+          input.source ?? 'wizard',
+          kinds,
+          input.declaredSources ?? null,
+        ],
       );
 
       const runId = runRows[0].id;
@@ -977,6 +983,16 @@ export class ImportRunService {
 
   /** Finish a stage that did its work, wholly or partly. */
   async completeStage(stageId: string, outcome: StageOutcome): Promise<void> {
+    // `outcome.partial` is a SIBLING of `detail` on `StageOutcome` (see
+    // types.ts) — but `detail` is the only part of the outcome that survives
+    // past this call, and `finishRun` rolls a run up to `partial` by reading
+    // `detail.partial` off the persisted stage row. Folded in here, once,
+    // rather than asking every stage runner to nest it inside its own
+    // `detail` object — which is what let this drift silently: nothing wired
+    // the sibling field to the nested key `finishRun` actually reads, so no
+    // stage's `partial: true` ever reached it.
+    const detail = { ...(outcome.detail ?? {}), partial: outcome.partial === true };
+
     await this.dataSource.query(
       // Every parameter cast explicitly: `$2` feeds both `processed` and the
       // COALESCE for `total`, and Postgres refuses to deduce one type for a
@@ -993,7 +1009,7 @@ export class ImportRunService {
                 ELSE (EXTRACT(EPOCH FROM (now() - started_at)) * 1000)::bigint
               END
         WHERE id = $1::uuid`,
-      [stageId, outcome.processed, outcome.total, JSON.stringify(outcome.detail ?? {})],
+      [stageId, outcome.processed, outcome.total, JSON.stringify(detail)],
     );
 
     await this.refreshRunRollup(stageId);

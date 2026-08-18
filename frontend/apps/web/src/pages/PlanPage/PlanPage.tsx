@@ -11,7 +11,12 @@ import { gql } from '@/graphql';
 import { DeleteTaskModal } from './DeleteTaskModal';
 import { NewTaskForm } from './NewTaskForm';
 import { Task } from './Task';
-import { groupIntoSections, localDateOf, type SectionedTask } from './taskSections';
+import {
+  childrenOf,
+  groupIntoSections,
+  localDateOf,
+  type SectionedTask,
+} from './taskSections';
 
 const GET_TASKS = gql(`
   query GetTasks($first: Int, $after: String) {
@@ -21,6 +26,7 @@ const GET_TASKS = gql(`
           id
           status
           priority
+          parentId
           dueAt
           scheduledFor
           deferUntil
@@ -29,6 +35,14 @@ const GET_TASKS = gql(`
         }
       }
       totalCount
+    }
+    taskPendingChanges {
+      id
+      taskId
+      kind
+      rationale
+      confidence
+      status
     }
   }
 `);
@@ -53,6 +67,47 @@ const REOPEN_TASK = gql(`
   }
 `);
 
+const ACCEPT_PROPOSED = gql(`
+  mutation AcceptProposedTask($id: ID!) {
+    acceptProposedTask(id: $id) {
+      id
+      status
+    }
+  }
+`);
+
+const DECLINE_PROPOSED = gql(`
+  mutation DeclineProposedTask($id: ID!) {
+    declineProposedTask(id: $id) {
+      id
+      status
+    }
+  }
+`);
+
+const ACCEPT_PENDING = gql(`
+  mutation AcceptTaskPendingChange($id: ID!) {
+    acceptTaskPendingChange(id: $id) {
+      success
+      task {
+        id
+        status
+        title
+        notes
+        parentId
+      }
+    }
+  }
+`);
+
+const DECLINE_PENDING = gql(`
+  mutation DeclineTaskPendingChange($id: ID!) {
+    declineTaskPendingChange(id: $id) {
+      success
+    }
+  }
+`);
+
 export function PlanPage() {
   usePageTitle('Plan - Companion Intelligence');
   const { isFeatureEnabled } = useFeatures();
@@ -67,9 +122,32 @@ export function PlanPage() {
 
   const [completeTask] = useMutation(COMPLETE_TASK);
   const [reopenTask] = useMutation(REOPEN_TASK);
+  const [acceptProposed] = useMutation(ACCEPT_PROPOSED);
+  const [declineProposed] = useMutation(DECLINE_PROPOSED);
+  const [acceptPending] = useMutation(ACCEPT_PENDING);
+  const [declinePending] = useMutation(DECLINE_PENDING);
   const [focusedTask, setFocusedTask] = useState<string | null>(null);
 
-  const nodes = useMemo(() => data?.tasks.edges.map((edge) => edge.node) ?? [], [data]);
+  const pendingByTask = useMemo(() => {
+    const map = new Map<string, { id: string; rationale: string | null }>();
+
+    for (const change of data?.taskPendingChanges ?? []) {
+      if (!map.has(change.taskId)) {
+        map.set(change.taskId, { id: change.id, rationale: change.rationale ?? null });
+      }
+    }
+
+    return map;
+  }, [data]);
+
+  const nodes = useMemo(() => {
+    const edges = data?.tasks.edges.map((edge) => edge.node) ?? [];
+
+    return edges.map((node) => ({
+      ...node,
+      hasPendingChange: pendingByTask.has(node.id),
+    }));
+  }, [data, pendingByTask]);
 
   // "Today" is the viewer's local day, not the server's. Recomputed per render
   // rather than memoised on [] so an open tab rolls over at local midnight.
@@ -87,6 +165,31 @@ export function PlanPage() {
     e.stopPropagation();
 
     setFocusedTask(id);
+  };
+
+  const refresh = () => void refetch();
+
+  const renderTree = (task: SectionedTask, depth: number): ReactNode => {
+    const pending = pendingByTask.get(task.id);
+    const kids = childrenOf(nodes as unknown as SectionedTask[], task.id);
+
+    return (
+      <Task
+        key={task.id}
+        task={task as never}
+        depth={depth}
+        onToggle={handleToggle}
+        onDelete={handleDelete}
+        onAcceptProposed={(id) => void acceptProposed({ variables: { id } }).then(refresh)}
+        onDeclineProposed={(id) => void declineProposed({ variables: { id } }).then(refresh)}
+        pendingChangeId={pending?.id}
+        pendingRationale={pending?.rationale}
+        onAcceptPending={(changeId) => void acceptPending({ variables: { id: changeId } }).then(refresh)}
+        onDeclinePending={(changeId) => void declinePending({ variables: { id: changeId } }).then(refresh)}
+      >
+        {kids.map((child) => renderTree(child, depth + 1))}
+      </Task>
+    );
   };
 
   let content: ReactNode;
@@ -112,11 +215,7 @@ export function PlanPage() {
               <span className="ml-2 font-normal">{section.tasks.length}</span>
             </h2>
 
-            <ul className="flex flex-col gap-2">
-              {section.tasks.map((task) => (
-                <Task key={task.id} task={task as never} onToggle={handleToggle} onDelete={handleDelete} />
-              ))}
-            </ul>
+            <ul className="flex flex-col gap-2">{section.tasks.map((task) => renderTree(task, 0))}</ul>
           </section>
         ))}
       </div>

@@ -48,7 +48,7 @@ function row(overrides: Partial<RawRow> = {}): RawRow {
 }
 
 function makeService(rows: RawRow[]) {
-  const query = jest.fn(async () => rows);
+  const query = jest.fn<Promise<RawRow[]>, [string, unknown[]?]>().mockResolvedValue(rows);
   const dataSource = { query } as unknown as DataSource;
   const logger = {
     setContext: jest.fn(),
@@ -169,10 +169,9 @@ describe('KnownPlacesService.buildKnownPlaces', () => {
   it('tags the cluster with the highest night-time share as home', async () => {
     const { service } = makeService([
       // Cluster A: entirely night-time events → strong home signal. Distinct
-      // coordinates from cluster B — assignPrimaryKinds' cluster lookup falls
-      // back to a centroid match for candidates with no Location id, and two
-      // id-anchored clusters sharing a centroid is its own (separate) edge
-      // case, not what this test is about.
+      // coordinates from cluster B — id-anchored candidates resolve by
+      // locationId regardless of centroid, but keeping these distinct avoids
+      // conflating this test with the colliding-centroid case covered below.
       row({ location_entity_id: 'loc-home', lat: 40.7128, lng: -74.006, start_time: WEEKDAY_NIGHT_HOUR }),
       row({ location_entity_id: 'loc-home', lat: 40.7128, lng: -74.006, start_time: WEEKDAY_NIGHT_HOUR }),
       // Cluster B: entirely weekday work-hours events → strong work signal.
@@ -222,12 +221,60 @@ describe('KnownPlacesService.buildKnownPlaces', () => {
     expect(byId.get('loc-other')).toBe('other');
   });
 
+  it('keeps home/work signals separate for two id-anchored clusters that share a centroid', async () => {
+    // Regression test: assignPrimaryKinds' cluster lookup used to fall back to
+    // a coordinate-centroid match even for id-anchored candidates, so two
+    // DISTINCT Location entities recorded at the exact same lat/lng (or whose
+    // averaged centroids collapsed within the 1e-6 tolerance) would resolve to
+    // whichever cluster happened to be first in Map insertion order — silently
+    // attributing both clusters' signals to one physical place. Id-anchored
+    // candidates must resolve by locationId alone, never by centroid.
+    const SHARED_LAT = 40.7128;
+    const SHARED_LNG = -74.006;
+
+    const { service } = makeService([
+      // loc-home: entirely night-time events, but shares its centroid with loc-work.
+      row({
+        location_entity_id: 'loc-home',
+        lat: SHARED_LAT,
+        lng: SHARED_LNG,
+        start_time: WEEKDAY_NIGHT_HOUR,
+      }),
+      row({
+        location_entity_id: 'loc-home',
+        lat: SHARED_LAT,
+        lng: SHARED_LNG,
+        start_time: WEEKDAY_NIGHT_HOUR,
+      }),
+      // loc-work: entirely weekday work-hours events, identical centroid to loc-home.
+      row({
+        location_entity_id: 'loc-work',
+        lat: SHARED_LAT,
+        lng: SHARED_LNG,
+        start_time: WEEKDAY_WORK_HOUR,
+      }),
+      row({
+        location_entity_id: 'loc-work',
+        lat: SHARED_LAT,
+        lng: SHARED_LNG,
+        start_time: WEEKDAY_WORK_HOUR,
+      }),
+    ]);
+
+    const candidates = await service.buildKnownPlaces(CONTEXT);
+    const byId = new Map(candidates.map((c) => [c.locationId, c.kind]));
+
+    expect(candidates).toHaveLength(2);
+    expect(byId.get('loc-home')).toBe('home');
+    expect(byId.get('loc-work')).toBe('work');
+  });
+
   it('queries only this user’s geolocated events, scoped by user_id in the WHERE clause', async () => {
     const { service, query } = makeService([]);
 
     await service.buildKnownPlaces(CONTEXT);
 
-    const [sql, params] = query.mock.calls[0] as unknown as [string, unknown[]];
+    const [sql, params] = query.mock.calls[0] as [string, unknown[]];
 
     expect(sql).toContain('event.user_id = $1');
     expect(sql).toContain('event.location_coordinates IS NOT NULL');

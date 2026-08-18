@@ -88,26 +88,32 @@ export function NavUser() {
           <span className="truncate font-medium">{currentUser.name}</span>
           <span className="truncate text-xs text-muted-foreground">{currentUser.email}</span>
         </span>
-        <ChevronRight className="h-4 w-4 shrink-0 transition-transform" />
+        <ChevronRight className="h-4 w-4 shrink-0 transition-transform duration-200" />
       </Collapsible.Trigger>
 
-      <Collapsible.Content className="flex flex-col gap-1 pl-6">
-        {/* `backgroundLocation` keeps Settings an overlay over the page you were
-            on, which is what it has always been. */}
-        <SubRow
-          icon={<Settings2 className="h-4 w-4 shrink-0" strokeWidth={1.25} />}
-          label="Settings"
-          to="/settings/appearance"
-          state={{ backgroundLocation: location }}
-        />
+      {/*
+        No pl-6 — submenu icons share the avatar's size-8 column. Height
+        animates with Radix's --radix-collapsible-content-height.
+      */}
+      <Collapsible.Content className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
+        <div className="flex flex-col gap-1 pt-1">
+          {/* `backgroundLocation` keeps Settings an overlay over the page you were
+              on, which is what it has always been. */}
+          <SubRow
+            icon={<Settings2 className="h-4 w-4 shrink-0" strokeWidth={1.25} />}
+            label="Settings"
+            to="/settings/appearance"
+            state={{ backgroundLocation: location }}
+          />
 
-        <ThemeSubmenu />
+          <ThemeSubmenu />
 
-        <SubRow
-          icon={<LogOut className="h-4 w-4 shrink-0" strokeWidth={1.25} />}
-          label="Log out"
-          onClick={logout}
-        />
+          <SubRow
+            icon={<LogOut className="h-4 w-4 shrink-0" strokeWidth={1.25} />}
+            label="Log out"
+            onClick={logout}
+          />
+        </div>
       </Collapsible.Content>
     </Collapsible>
   );
@@ -126,10 +132,16 @@ function SubRow({ icon, label, to, state, onClick }: SubRowProps) {
   const className =
     'flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-accent hover:text-accent-foreground';
 
+  const leading = (
+    <span className="grid size-8 shrink-0 place-items-center" aria-hidden>
+      {icon}
+    </span>
+  );
+
   if (to != null) {
     return (
       <Link to={to} state={state} aria-label={label} className={className}>
-        {icon}
+        {leading}
         <span className="truncate">{label}</span>
       </Link>
     );
@@ -137,7 +149,7 @@ function SubRow({ icon, label, to, state, onClick }: SubRowProps) {
 
   return (
     <button type="button" onClick={onClick} aria-label={label} className={className}>
-      {icon}
+      {leading}
       <span className="truncate">{label}</span>
     </button>
   );
@@ -157,41 +169,50 @@ function ThemeSubmenu() {
   return (
     <Collapsible>
       <Collapsible.Trigger className="flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-accent hover:text-accent-foreground [&[data-state=open]>svg:last-child]:rotate-90">
-        <Palette className="h-4 w-4 shrink-0" strokeWidth={1.25} />
+        <span className="grid size-8 shrink-0 place-items-center" aria-hidden>
+          <Palette className="h-4 w-4 shrink-0" strokeWidth={1.25} />
+        </span>
         <span className="flex-1 truncate">Theme</span>
-        <ChevronRight className="h-4 w-4 shrink-0 transition-transform" />
+        <ChevronRight className="h-4 w-4 shrink-0 transition-transform duration-200" />
       </Collapsible.Trigger>
 
-      <Collapsible.Content className="flex flex-col gap-2 px-2 py-2">
-        <div role="radiogroup" aria-label="Theme" className="flex gap-1 rounded-md bg-muted p-1 text-xs">
-          {THEME_MODES.map((entry) => (
-            <button
-              key={entry.value}
-              type="button"
-              role="radio"
-              aria-checked={themeState.mode === entry.value}
-              onClick={() => setTheme(entry.value)}
-              className={cn(
-                'flex-1 cursor-pointer rounded-sm px-2 py-1 transition-colors',
-                themeState.mode === entry.value
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {entry.label}
-            </button>
-          ))}
-        </div>
+      <Collapsible.Content className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
+        <div className="flex flex-col gap-2 py-1">
+          {/* Under the Theme label (px-2 + size-8 + gap-3), not a second icon column. */}
+          <div className="pl-11 pr-2">
+            <div role="radiogroup" aria-label="Theme" className="flex gap-1 rounded-md bg-muted p-1 text-xs">
+              {THEME_MODES.map((entry) => (
+                <button
+                  key={entry.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={themeState.mode === entry.value}
+                  onClick={() => setTheme(entry.value)}
+                  className={cn(
+                    'flex-1 cursor-pointer rounded-sm px-2 py-1 transition-colors',
+                    themeState.mode === entry.value
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {entry.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-        <Popover>
-          <Popover.Trigger className="flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-accent hover:text-accent-foreground">
-            <Palette className="h-4 w-4 shrink-0" strokeWidth={1.25} />
-            <span className="truncate">Colours</span>
-          </Popover.Trigger>
-          <Popover.Content side="right" align="end" className="w-[400px] p-2 pb-0">
-            <ColorPicker />
-          </Popover.Content>
-        </Popover>
+          <Popover>
+            <Popover.Trigger className="flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-accent hover:text-accent-foreground">
+              <span className="grid size-8 shrink-0 place-items-center" aria-hidden>
+                <Palette className="h-4 w-4 shrink-0" strokeWidth={1.25} />
+              </span>
+              <span className="truncate">Colours</span>
+            </Popover.Trigger>
+            <Popover.Content side="right" align="end" className="w-[400px] p-2 pb-0">
+              <ColorPicker />
+            </Popover.Content>
+          </Popover>
+        </div>
       </Collapsible.Content>
     </Collapsible>
   );

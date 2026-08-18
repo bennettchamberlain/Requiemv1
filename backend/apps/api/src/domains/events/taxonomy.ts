@@ -44,6 +44,8 @@ export const JOB_CATEGORIES = {
   llm: 'llm',
   /** Feed, questions, dossier — what the companion shows the user. */
   personalization: 'personalization',
+  /** Plan automation: memory todo scan, process, event revise, verify-done. */
+  planning: 'planning',
   /** Housekeeping: rotation, dead letters, telemetry, backfills. */
   maintenance: 'maintenance',
 } as const;
@@ -335,6 +337,47 @@ export const JOB_TYPES: Readonly<Record<string, JobTypeDescriptor>> = {
     label: 'Question raised',
     category: JOB_CATEGORIES.personalization,
     description: 'A new question about the user was raised for the feed.',
+  },
+
+  // ── Planning ────────────────────────────────────────────────────────────
+  'planning.todo_scan': {
+    label: 'Scan memory for to-dos',
+    category: JOB_CATEGORIES.planning,
+    description:
+      'Recall the last stretch of memory, surface possible to-dos, dedupe against the backlog, and auto-add or propose based on the trust dial.',
+  },
+  'planning.todo_process': {
+    label: 'Process open to-dos',
+    category: JOB_CATEGORIES.planning,
+    description:
+      'Append knowledge, revise, reparent, or close open tasks from stream evidence — or ask on Plan when confidence is low.',
+  },
+  'planning.event_now': {
+    label: 'Revise planned events now',
+    category: JOB_CATEGORIES.planning,
+    description:
+      'As planned blocks enter the present, revise or cancel them when memory shows plans changed.',
+  },
+  'planning.verify_done': {
+    label: 'Verify scheduled work done',
+    category: JOB_CATEGORIES.planning,
+    description:
+      'After a scheduled block ends, look for completion evidence and auto-complete or ask the user on Plan.',
+  },
+  'task.created': {
+    label: 'Task created',
+    category: JOB_CATEGORIES.planning,
+    description: 'A planning task was created (manual or automation).',
+  },
+  'task.updated': {
+    label: 'Task updated',
+    category: JOB_CATEGORIES.planning,
+    description: 'A planning task was updated.',
+  },
+  'task.deleted': {
+    label: 'Task deleted',
+    category: JOB_CATEGORIES.planning,
+    description: 'A planning task was deleted.',
   },
 
   // ── Maintenance ─────────────────────────────────────────────────────────

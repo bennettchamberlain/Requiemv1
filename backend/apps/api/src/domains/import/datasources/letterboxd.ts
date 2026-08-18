@@ -44,12 +44,16 @@ export class LetterboxdFileImporter implements FileImporter {
 
     if (stat.isFile()) {
       const base = path.basename(root).toLowerCase();
-      if (LETTERBOXD_FILES.includes(base) && this.headerMatches(root)) {
-        return { confidence: 0.95 };
-      }
 
+      // A filename match alone used to be worth 0.8 — higher than most other
+      // importers' own *verified* fallback tiers — with no read of the file at
+      // all. "diary.csv" and "ratings.csv" are generic enough names (a mood
+      // tracker's diary, a beer-rating app's ratings) that a same-named file
+      // from an unrelated app must not be claimed as Letterboxd. Require the
+      // same header check the top tier already does; a same-named file that
+      // fails it now correctly returns 0.
       if (LETTERBOXD_FILES.includes(base)) {
-        return { confidence: 0.8 };
+        return this.headerMatches(root) ? { confidence: 0.95 } : { confidence: 0 };
       }
 
       return { confidence: 0 };
@@ -57,19 +61,11 @@ export class LetterboxdFileImporter implements FileImporter {
 
     if (stat.isDirectory()) {
       try {
-        const names = fs.readdirSync(root).map((n) => n.toLowerCase());
-        const hits = LETTERBOXD_FILES.filter((f) => names.includes(f)).length;
-        if (hits >= 1) {
-          // Verify header in one of the matching files
-          for (const name of fs.readdirSync(root)) {
-            if (LETTERBOXD_FILES.includes(name.toLowerCase())) {
-              if (this.headerMatches(path.join(root, name))) {
-                return { confidence: 0.95 };
-              }
-            }
+        const names = fs.readdirSync(root);
+        for (const name of names) {
+          if (LETTERBOXD_FILES.includes(name.toLowerCase()) && this.headerMatches(path.join(root, name))) {
+            return { confidence: 0.95 };
           }
-
-          return { confidence: 0.8 };
         }
       } catch {
         /* ignore */
