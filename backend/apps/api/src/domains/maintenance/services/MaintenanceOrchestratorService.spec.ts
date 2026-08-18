@@ -4,6 +4,10 @@ import { EventEntity } from '@ci/domains/memory';
 import { GeocodeBatchRequestEvent } from '@ci/domains/memory/events';
 import { IndexSkipEntity } from '@ci/domains/search-ingress';
 
+jest.mock('./HealSelfCollationService', () => ({
+  HealSelfCollationService: class HealSelfCollationService {},
+}));
+
 import { MaintenanceOrchestratorService, ORCHESTRATE_STAGES } from './MaintenanceOrchestratorService';
 
 const USER_ID = 'user-1';
@@ -80,6 +84,22 @@ function makeService() {
       return { examined: 0, organizersLinked: 0, participantsLinked: 0, pages: 0 };
     }),
   };
+  const healSelf = {
+    heal: jest.fn(async () => {
+      callOrder.push('heal_self_collation');
+
+      return {
+        selfEntityId: null,
+        trustMode: 'balanced',
+        examined: 0,
+        merged: 0,
+        reviewed: 0,
+        skipped: 0,
+        errors: [],
+        mergedSourceIds: [],
+      };
+    }),
+  };
   const graphEnrich = {
     // Params kept so the mockImplementationOnce override below can type its (userId, options) impl.
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -152,6 +172,8 @@ function makeService() {
     commLink as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     eventPart as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    healSelf as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     edgeMaterialize as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
