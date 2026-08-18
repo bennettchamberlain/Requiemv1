@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'path';
 
 import { AmazonFileImporter } from '../amazon';
@@ -27,6 +29,22 @@ describe('Amazon datasource', () => {
     const fi = new AmazonFileImporter();
     const rec = await fi.recognize({}, { filename: 'spotify-export', fullPath: root });
     expect(rec.confidence).toBe(0);
+  });
+
+  it('does not recognize a same-named CSV from a different retailer', async () => {
+    // "Order History.csv" is boilerplate phrasing several other retailers'
+    // own "download your data" exports use verbatim — a Walmart/eBay/Target
+    // export with completely different columns must not be claimed on the
+    // filename alone. The filename tier used to skip the header check
+    // entirely and return 0.95 the moment the name matched.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ci-amazon-lookalike-'));
+    const fpath = path.join(dir, 'Order History.csv');
+    fs.writeFileSync(fpath, 'Item,Category,Store,Total\nWidget,Home,Target,19.99\n');
+
+    const fi = new AmazonFileImporter();
+    const rec = await fi.recognize({}, { filename: 'Order History.csv', fullPath: fpath });
+    expect(rec.confidence).toBe(0);
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 
   it('imports order rows into purchase items', async () => {
