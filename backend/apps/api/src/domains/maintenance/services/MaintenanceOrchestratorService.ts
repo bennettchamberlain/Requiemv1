@@ -4,10 +4,11 @@ import { DataSource } from 'typeorm';
 
 import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
-import { EventService as SignallingEventService } from '@ci/domains/events';
+import { BACKFILL_JOB_PRIORITY, EventService as SignallingEventService } from '@ci/domains/events';
 import { MediaDimensionsBackfillRequestEvent, MEDIA_DIMENSIONS_QUEUE } from '@ci/domains/files';
 import { EventEntity } from '@ci/domains/memory';
 import { EstimateLocationBatchRequestEvent, GeocodeBatchRequestEvent } from '@ci/domains/memory/events';
+import { PipelineSweepEvent } from '@ci/domains/pipeline/events';
 import { EmbeddingEntity, IndexSkipEntity } from '@ci/domains/search-ingress';
 
 import { ESTIMATE_LOCATION_QUEUE } from '../listeners/EstimateLocationBatchListener';
@@ -26,6 +27,7 @@ import {
   EventParticipantBackfillService,
 } from './EventParticipantBackfillService';
 import { type GraphEnrichmentOptions, GraphEnrichmentService } from './GraphEnrichmentService';
+import { InventoryReverseService } from './InventoryReverseService';
 import {
   DEFAULT_ESTIMATE_SOURCE_SYSTEMS,
   DEFAULT_MAX_GAP_HOURS,
@@ -56,6 +58,8 @@ export const ORCHESTRATE_STAGES = [
   'extract_graph',
   'geocode',
   'reverse_geocode',
+  'reverse_position',
+  'reverse_inventory',
   'estimate_locations',
   'media_dimensions',
   'search_index',
@@ -188,6 +192,7 @@ export class MaintenanceOrchestratorService {
     private readonly graphEnrichmentService: GraphEnrichmentService,
     private readonly locationEstimateService: LocationEstimateService,
     private readonly searchIndexBackfillService: SearchIndexBackfillService,
+    private readonly inventoryReverseService: InventoryReverseService,
   ) {
     this.logger.setContext(MaintenanceOrchestratorService.name);
   }
@@ -364,6 +369,12 @@ export class MaintenanceOrchestratorService {
       case 'reverse_geocode':
         return this.runGeocodeLeg(userId, options.reverseGeocode ?? {}, 'reverse');
 
+      case 'reverse_position':
+        return this.runPositionReverseLeg(userId, options.reverseGeocode ?? {});
+
+      case 'reverse_inventory':
+        return this.inventoryReverseService.reverse(userId);
+
       case 'estimate_locations':
         return this.runEstimateLocationsLeg(userId, options.estimateLocations ?? {});
 
@@ -433,6 +444,38 @@ export class MaintenanceOrchestratorService {
     return {
       jobId: jobIds[0] ?? null,
       estimatedEventCount,
+      status: jobIds.length > 0 ? 'enqueued' : 'noop',
+    };
+  }
+
+  /**
+   * Enqueue a pipeline sweep of `enrich.position_reverse` for this user.
+   * Reuses PositionReverseStage (ledger + cache) rather than cloning GPS
+   * reverse into the event-centric geocode leg.
+   */
+  private async runPositionReverseLeg(
+    userId: string,
+    opts: { limit?: number },
+  ): Promise<EnqueueLegResult> {
+    const maxIds = opts.limit ?? config.geocoding.batchSize;
+    const jobIds = await this.signallingEventService.send(
+      PipelineSweepEvent,
+      {
+        stage: 'enrich.position_reverse',
+        userId,
+        entityType: 'position',
+        cursor: null,
+        sliceSize: 200,
+        hop: 0,
+        dispatched: 0,
+        maxIds,
+      },
+      { queue: 'pipeline-enrich', priority: BACKFILL_JOB_PRIORITY },
+    );
+
+    return {
+      jobId: jobIds[0] ?? null,
+      estimatedEventCount: maxIds,
       status: jobIds.length > 0 ? 'enqueued' : 'noop',
     };
   }

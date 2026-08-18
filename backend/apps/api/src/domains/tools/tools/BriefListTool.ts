@@ -42,7 +42,8 @@ export class BriefListTool extends BaseTool<BriefListInput, BriefListOutput> {
     title: 'List Brief',
     description:
       'List recent derived insights and anomalies from the summary engine plus active (non-dismissed) ' +
-      'suggested actions, newest first.',
+      'suggested actions, newest first. Prefers computed anomaly/suggestion cards when present; ' +
+      'legacy onboarding stubs remain visible.',
     privacy: { access: 'read', sensitivity: 'personal', destructive: false, external: false },
     localCapable: true,
     phrases: [
@@ -93,7 +94,8 @@ export class BriefListTool extends BaseTool<BriefListInput, BriefListOutput> {
       this.actionService.findAll(serviceContext),
     ]);
 
-    const items: BriefListItem[] = [];
+    const derived: BriefListItem[] = [];
+    const other: BriefListItem[] = [];
 
     for (const summary of summaries) {
       const occurredAt = toIsoOrNull(summary.periodEnd);
@@ -102,11 +104,11 @@ export class BriefListTool extends BaseTool<BriefListInput, BriefListOutput> {
       }
 
       for (const text of summary.keyInsights ?? []) {
-        pushItem(items, { id: summary.summaryId, type: 'insight', text, occurredAt });
+        pushItem(other, { id: summary.summaryId, type: 'insight', text, occurredAt });
       }
 
       for (const text of summary.anomalies ?? []) {
-        pushItem(items, { id: summary.summaryId, type: 'anomaly', text, occurredAt });
+        pushItem(other, { id: summary.summaryId, type: 'anomaly', text, occurredAt });
       }
     }
 
@@ -119,29 +121,39 @@ export class BriefListTool extends BaseTool<BriefListInput, BriefListOutput> {
         continue;
       }
 
-      pushItem(items, {
+      const item: BriefListItem = {
         id: action.id,
         type: 'action',
         text: action.text ?? action.title ?? '',
         occurredAt: toIsoOrNull(action.createdAt),
-      });
+      };
+      if (action.source === 'anomaly' || action.source === 'suggestion') {
+        pushItem(derived, item);
+      } else {
+        pushItem(other, item);
+      }
     }
 
-    items.sort((a, b) => {
-      if (a.occurredAt === b.occurredAt) {
-        return a.id.localeCompare(b.id);
+    const byRecency = (left: BriefListItem, right: BriefListItem) => {
+      if (left.occurredAt === right.occurredAt) {
+        return left.id.localeCompare(right.id);
       }
 
-      if (a.occurredAt === null) {
+      if (left.occurredAt === null) {
         return 1;
       }
 
-      if (b.occurredAt === null) {
+      if (right.occurredAt === null) {
         return -1;
       }
 
-      return b.occurredAt.localeCompare(a.occurredAt);
-    });
+      return right.occurredAt.localeCompare(left.occurredAt);
+    };
+
+    derived.sort(byRecency);
+    other.sort(byRecency);
+
+    const items = derived.length > 0 ? [...derived, ...other] : other;
 
     return { items: items.slice(0, input.limit) };
   }

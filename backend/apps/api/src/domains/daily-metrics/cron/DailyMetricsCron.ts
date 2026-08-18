@@ -5,8 +5,10 @@ import { LoggerService } from '@ci/common/logging';
 import { Cron } from '@ci/common/schedule';
 import { UserService } from '@ci/domains/user';
 
+import { HomeConfirmService } from '../home/HomeConfirmService';
 import { PlaceTransitionService } from '../places/PlaceTransitionService';
 import { DailyMetricsService, DEFAULT_REFRESH_WINDOW_DAYS } from '../services/DailyMetricsService';
+import { DerivationScanService } from '../services/DerivationScanService';
 
 /** Hourly at minute 10 — staggered from the activity rollup's :00/:15/:30/:45 ticks. */
 const DAILY_METRICS_CRON = '0 10 * * * *';
@@ -22,6 +24,8 @@ export class DailyMetricsCron implements OnApplicationBootstrap {
     private readonly dailyMetricsService: DailyMetricsService,
     private readonly placeTransitionService: PlaceTransitionService,
     private readonly userService: UserService,
+    private readonly derivationScanService: DerivationScanService,
+    private readonly homeConfirmService: HomeConfirmService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(DailyMetricsCron.name);
@@ -35,7 +39,7 @@ export class DailyMetricsCron implements OnApplicationBootstrap {
     void this.refresh({ windowDays: DEFAULT_REFRESH_WINDOW_DAYS });
   }
 
-  @Cron(DAILY_METRICS_CRON)
+  @Cron(DAILY_METRICS_CRON, { name: 'DailyMetricsCron.refreshRecent' })
   async refreshRecent() {
     await this.refresh({ windowDays: CRON_WINDOW_DAYS });
   }
@@ -50,15 +54,32 @@ export class DailyMetricsCron implements OnApplicationBootstrap {
     this.running = true;
 
     try {
-      await this.dailyMetricsService.refreshAll(options.windowDays);
-    } catch (err) {
-      this.logger.error('Daily metrics refresh failed', err instanceof Error ? err : new Error(String(err)));
-    }
+      try {
+        await this.dailyMetricsService.refreshAll(options.windowDays);
+      } catch (err) {
+        this.logger.error(
+          'Daily metrics refresh failed',
+          err instanceof Error ? err : new Error(String(err)),
+        );
+      }
 
-    try {
-      await this.refreshPlaces();
-    } catch (err) {
-      this.logger.error('Place engine refresh failed', err instanceof Error ? err : new Error(String(err)));
+      try {
+        await this.refreshPlaces();
+      } catch (err) {
+        this.logger.error('Place engine refresh failed', err instanceof Error ? err : new Error(String(err)));
+      }
+
+      try {
+        await this.ensureHomeAsks();
+      } catch (err) {
+        this.logger.error('Home confirm enqueue failed', err instanceof Error ? err : new Error(String(err)));
+      }
+
+      try {
+        await this.derivationScanService.scanAll();
+      } catch (err) {
+        this.logger.error('Derivation scan failed', err instanceof Error ? err : new Error(String(err)));
+      }
     } finally {
       this.running = false;
     }
@@ -83,6 +104,21 @@ export class DailyMetricsCron implements OnApplicationBootstrap {
       } catch (err) {
         this.logger.error(
           `Place engine refresh failed for user ${user.id} (${timezone})`,
+          err instanceof Error ? err : new Error(String(err)),
+        );
+      }
+    }
+  }
+
+  private async ensureHomeAsks(): Promise<void> {
+    const users = await this.userService.findAll();
+
+    for (const user of users) {
+      try {
+        await this.homeConfirmService.ensureAction({ userId: user.id });
+      } catch (err) {
+        this.logger.error(
+          `Home confirm enqueue failed for user ${user.id}`,
           err instanceof Error ? err : new Error(String(err)),
         );
       }

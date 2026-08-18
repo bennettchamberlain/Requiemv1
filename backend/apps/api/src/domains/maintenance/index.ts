@@ -10,6 +10,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EventsModule } from '@ci/domains/events';
+import { GeocodeModule } from '@ci/domains/geocode';
 import { GraphModule } from '@ci/domains/graph';
 import { LLMModule } from '@ci/domains/llm';
 import { EventEntity, MemoryModule } from '@ci/domains/memory';
@@ -27,6 +28,7 @@ import { EventParticipantBackfillService } from './services/EventParticipantBack
 import { GraphEnrichmentService } from './services/GraphEnrichmentService';
 import { IndexDeferralService } from './services/IndexDeferralService';
 import { IngestResetService } from './services/IngestResetService';
+import { InventoryReverseService } from './services/InventoryReverseService';
 import { LocationEstimateService } from './services/LocationEstimateService';
 import { MaintenanceOrchestratorService } from './services/MaintenanceOrchestratorService';
 import { NoteContentFoldService } from './services/NoteContentFoldService';
@@ -43,6 +45,7 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
     EventsModule,
     SearchIngressModule,
     GraphModule,
+    GeocodeModule,
     // GraphEnrichmentService needs the local Ollama client (LLMModule) and the
     // Person-resolution read path (GraphQueryService, exported by MemoryModule).
     LLMModule,
@@ -65,6 +68,7 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
     EmbedCoverageTelemetryService,
     LocationEstimateService,
     MaintenanceOrchestratorService,
+    InventoryReverseService,
     EstimateLocationBatchListener,
     CommunicationParticipantLinkListener,
   ],
@@ -82,6 +86,7 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
     EmbedCoverageTelemetryService,
     LocationEstimateService,
     MaintenanceOrchestratorService,
+    InventoryReverseService,
   ],
 })
 export class MaintenanceModule {}
@@ -112,7 +117,13 @@ export {
 export {
   SearchIndexBackfillService,
   BACKFILLABLE_ENTITIES,
+  PIPELINE_COVERED_STAGES,
   expandBackfillEntityTypes,
   type BackfillableEntity,
   type SearchIndexBackfillResult,
 } from './services/SearchIndexBackfillService';
+export {
+  SearchIndexBackfillRequestEvent,
+  SEARCH_INDEX_BACKFILL_QUEUE,
+  type SearchIndexBackfillRequestPayload,
+} from './events';

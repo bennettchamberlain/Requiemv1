@@ -19,6 +19,7 @@ import { NoteService } from '@ci/domains/notes';
 import { PositionService } from '@ci/domains/position';
 
 import { ingestNdjsonStream, isNdjsonRequest, type NdjsonIngestResponse } from '../ndjson';
+import { IngestCoalesceService } from '../services/IngestCoalesceService';
 import {
   type BulkBrowserActivityRecord,
   type BulkCommunicationRecord,
@@ -197,6 +198,7 @@ export class BulkIngestController {
     private readonly eventService: EventService,
     private readonly noteService: NoteService,
     private readonly dataSource: DataSource,
+    private readonly ingestCoalesceService: IngestCoalesceService,
   ) {}
 
   // G1 unified capture ingest — the `/v1` route for timeline events, and the
@@ -417,6 +419,10 @@ export class BulkIngestController {
          WHERE c.capture_event_id = v.capture_event_id`,
         linkParams,
       );
+    }
+
+    if (toMaterialize.length > 0) {
+      void this.ingestCoalesceService.schedule(userId).catch(() => undefined);
     }
 
     return { ingested: toMaterialize.length, duplicate };

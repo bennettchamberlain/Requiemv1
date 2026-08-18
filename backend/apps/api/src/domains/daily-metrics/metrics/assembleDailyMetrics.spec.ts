@@ -20,6 +20,10 @@ const EMPTY: RawDailyAggregates = {
   inv_rows: 0,
   inv_rows_with_price: 0,
   inv_price_sum: null,
+  meeting_rows: 0,
+  meeting_minutes_sum: null,
+  sleep_rows: 0,
+  sleep_minutes_sum: null,
 };
 
 function raw(overrides: Partial<RawDailyAggregates>): RawDailyAggregates {
@@ -121,5 +125,29 @@ describe('assembleDailyMetrics — browser & money', () => {
     const unpriced = assembleDailyMetrics(raw({ inv_rows: 2, inv_rows_with_price: 0 }));
     expect(unpriced.metrics.spend_total).toBeNull();
     expect(unpriced.coverage.spend_total).toBe(0);
+  });
+});
+
+describe('assembleDailyMetrics — meetings and sleep', () => {
+  it('sums meeting and sleep minutes when qualifying rows exist', () => {
+    const { metrics, coverage } = assembleDailyMetrics(
+      raw({ meeting_rows: 2, meeting_minutes_sum: 75, sleep_rows: 1, sleep_minutes_sum: 420 }),
+    );
+
+    expect(metrics.meeting_minutes).toBe(75);
+    expect(metrics.sleep_minutes).toBe(420);
+    expect(coverage.meeting_minutes).toBe(1);
+    expect(coverage.sleep_minutes).toBe(1);
+    expect(metrics.time_at_home).toBeNull();
+    expect(coverage.time_at_home).toBe(0);
+  });
+
+  it('NULLs meetings and sleep when the local day has no qualifying events', () => {
+    const { metrics, coverage } = assembleDailyMetrics(EMPTY);
+
+    expect(metrics.meeting_minutes).toBeNull();
+    expect(metrics.sleep_minutes).toBeNull();
+    expect(coverage.meeting_minutes).toBe(0);
+    expect(coverage.sleep_minutes).toBe(0);
   });
 });

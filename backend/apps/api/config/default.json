@@ -191,7 +191,9 @@
     "actions": true,
     "smart.rotation": false,
     "ask": true,
-    "grounded.prompts": false
+    "grounded.prompts": false,
+    "derivation.engines": false,
+    "ingest.selfHeal": true
   },
   "environment": {
     "database.query.logging": false
@@ -206,7 +208,7 @@
     "batchSize": 200,
     "rateLimitPerSecond": 10,
     "provider": "portal",
-    "portalBaseUrl": ""
+    "portalBaseUrl": "https://hub.ci.computer"
   },
   "peers": {
     "directoryUrl": "",

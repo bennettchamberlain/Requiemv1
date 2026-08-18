@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { z } from 'zod';
@@ -8,9 +8,12 @@ import { FeatureService } from '@ci/common/feature';
 import { LoggerService } from '@ci/common/logging';
 import {
   DailyMetricsService,
+  HomeConfirmService,
   pickMetricSurprise,
+  pickMetricSurpriseFromAnomalies,
   shiftIso,
   todayIsoInTimezone,
+  AnomalyEngine,
 } from '@ci/domains/daily-metrics';
 import { OllamaService, PROMPT_MODEL } from '@ci/domains/llm';
 import { UserContextService } from '@ci/domains/memory';
@@ -100,8 +103,10 @@ export class ContextPromptGenerateService {
     private readonly placement: PlacementService,
     private readonly ollamaService: OllamaService,
     private readonly dailyMetricsService: DailyMetricsService,
+    private readonly homeConfirmService: HomeConfirmService,
     private readonly featureService: FeatureService,
     private readonly logger: LoggerService,
+    @Optional() private readonly anomalyEngine?: AnomalyEngine,
   ) {
     this.logger.setContext(ContextPromptGenerateService.name);
   }
@@ -244,6 +249,7 @@ export class ContextPromptGenerateService {
   ): Promise<SelectorSpec | null> {
     let type: SelectorType = parsed.selectorType;
     let options = parsed.options;
+    let prompt = parsed.prompt;
 
     if (type === 'person_picker') {
       const people = await this.loadEntities(userId, 'Person');
@@ -255,8 +261,26 @@ export class ContextPromptGenerateService {
       }
     }
 
-    if (type === 'home_work_other' || type === 'what_did_you_do_here') {
-      const places = await this.loadEntities(userId, 'Place');
+    if (parsed.source.kind === 'daily_metric' && (parsed.source.id === 'confirm_home' || parsed.source.id === 'one_place')) {
+      const { candidates } = await this.homeConfirmService.snapshot({ userId });
+      const placeOptions = this.homeConfirmService.candidateOptions(candidates);
+      if (placeOptions.length >= 2) {
+        type = 'home_work_other';
+        options = placeOptions;
+      } else if (placeOptions.length === 1) {
+        type = 'yes_no';
+        options = DEFAULT_SELECTOR_OPTIONS.yes_no;
+        prompt = `Is ${placeOptions[0].label} home?`;
+      } else {
+        const top = this.homeConfirmService.topHomeCandidate(candidates);
+        if (top) {
+          type = 'yes_no';
+          options = DEFAULT_SELECTOR_OPTIONS.yes_no;
+          prompt = `Is ${top.label} home?`;
+        }
+      }
+    } else if (type === 'home_work_other' || type === 'what_did_you_do_here') {
+      const places = await this.loadEntities(userId, 'Location');
       if (type === 'home_work_other' && places.length > 0) {
         options = places;
       }
@@ -291,7 +315,7 @@ export class ContextPromptGenerateService {
 
     return SelectorSpecSchema.parse({
       type,
-      prompt: parsed.prompt,
+      prompt,
       hint: parsed.hint,
       options,
     });
@@ -447,7 +471,12 @@ export class ContextPromptGenerateService {
 
     return {
       prompt: this.questionFromGap(gap, timezone),
-      selectorType: gap.kind === 'candidate' ? 'yes_no' : 'one_line',
+      selectorType:
+        gap.kind === 'candidate'
+          ? 'yes_no'
+          : gap.id === 'confirm_home' || gap.id === 'one_place'
+            ? 'home_work_other'
+            : 'one_line',
       source: {
         kind: kind.data,
         id: gap.id,
@@ -550,6 +579,10 @@ export class ContextPromptGenerateService {
         .replace(/\.$/, '?');
     }
 
+    if (gap.kind === 'daily_metric' && (gap.id === 'confirm_home' || gap.id === 'one_place')) {
+      return gap.label.replace(/\.$/, '?');
+    }
+
     return gap.label.replace(/\.$/, '?');
   }
 
@@ -583,7 +616,7 @@ export class ContextPromptGenerateService {
       FROM ci.entities e
       WHERE e.owner_user_id = $1
         AND e.merged_into_entity_id IS NULL
-        AND e.entity_type = 'Place'
+        AND e.entity_type = 'Location'
         AND COALESCE(e.properties->>'whatIDoHere', e.properties->>'role') IS NULL
       ORDER BY e.updated_at DESC
       LIMIT 6
@@ -724,12 +757,14 @@ export class ContextPromptGenerateService {
     )) as GapRow[];
 
     const metricGaps = await this.collectMetricGaps(userId, timezone);
+    const homeGaps = await this.collectHomeGaps(userId);
 
     return [
       ...eveningGaps,
       ...hbpeGaps,
       ...candidates,
       ...upcoming,
+      ...homeGaps,
       ...thinPeople,
       ...thinPlaces,
       ...questions,
@@ -737,6 +772,37 @@ export class ContextPromptGenerateService {
       ...followUps,
       ...metricGaps,
     ];
+  }
+
+  /**
+   * Ask once: unlabeled home + overnight candidates. Options are Location ids
+   * after hydrate; persist writes LIVES_IN.
+   */
+  private async collectHomeGaps(userId: string): Promise<GapRow[]> {
+    try {
+      const { labeled, candidates } = await this.homeConfirmService.snapshot({ userId });
+      if (labeled || candidates.length === 0) {
+        return [];
+      }
+
+      const top = this.homeConfirmService.topHomeCandidate(candidates);
+      const options = this.homeConfirmService.candidateOptions(candidates);
+      const label =
+        options.length >= 2
+          ? 'Which of these places is home? Prefer home_work_other. Options are the listed places, not role chips.'
+          : top
+            ? `Is ${top.label} home? Prefer yes_no.`
+            : 'Which of these places is home?';
+
+      return [{ kind: 'daily_metric', id: 'confirm_home', label }];
+    } catch (error) {
+      this.logger.warn('Home gap collection skipped', {
+        userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      return [];
+    }
   }
 
   /**
@@ -767,6 +833,14 @@ export class ContextPromptGenerateService {
       const today = todayIsoInTimezone(timezone);
       const yesterday = shiftIso(today, -1);
       const from = shiftIso(yesterday, -6);
+      if (this.anomalyEngine) {
+        const anomalies = await this.anomalyEngine.list({ userId }, { since: yesterday });
+        const fromStore = pickMetricSurpriseFromAnomalies(anomalies, yesterday);
+        if (fromStore) {
+          return [{ kind: 'daily_metric', id: fromStore.id, label: fromStore.label }];
+        }
+      }
+
       const rows = await this.dailyMetricsService.getRange({ userId }, from, yesterday);
       const surprise = pickMetricSurprise(
         rows.find((row) => row.date === yesterday) ?? null,

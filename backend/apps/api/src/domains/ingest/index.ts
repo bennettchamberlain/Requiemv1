@@ -27,22 +27,33 @@
 import { Module } from '@nestjs/common';
 
 import { BrowserActivityModule } from '@ci/domains/browser-activity';
+import { EventsModule } from '@ci/domains/events';
 import { MaintenanceModule } from '@ci/domains/maintenance';
 import { MemoryModule } from '@ci/domains/memory';
 import { NotesModule } from '@ci/domains/notes';
 import { PositionModule } from '@ci/domains/position';
 
+import './events';
+
 import { BulkIngestController } from './controllers/BulkIngestController';
 import { IngestLifecycleController } from './controllers/IngestLifecycleController';
+import { IngestCoalesceService } from './services/IngestCoalesceService';
 import { IngestStatusService } from './services/IngestStatusService';
 
 /**
  * @internal
  */
 @Module({
-  imports: [MemoryModule, BrowserActivityModule, PositionModule, MaintenanceModule, NotesModule],
+  imports: [
+    MemoryModule,
+    BrowserActivityModule,
+    PositionModule,
+    MaintenanceModule,
+    NotesModule,
+    EventsModule,
+  ],
   controllers: [BulkIngestController, IngestLifecycleController],
-  providers: [IngestStatusService],
+  providers: [IngestStatusService, IngestCoalesceService],
 })
 export class IngestModule {}
 

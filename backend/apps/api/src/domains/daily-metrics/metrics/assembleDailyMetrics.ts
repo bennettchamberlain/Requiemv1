@@ -61,6 +61,9 @@ export function assembleDailyMetrics(raw: RawDailyAggregates): AssembledMetrics 
     screen_minutes: brDur > 0 ? round((raw.br_duration_seconds_sum ?? 0) / 60, 1) : null,
     n_domains: hasBrowser ? raw.br_distinct_domains : null,
     spend_total: raw.inv_rows_with_price > 0 ? round(raw.inv_price_sum ?? 0, 2) : null,
+    meeting_minutes: raw.meeting_rows > 0 ? round(raw.meeting_minutes_sum ?? 0, 1) : null,
+    sleep_minutes: raw.sleep_rows > 0 ? round(raw.sleep_minutes_sum ?? 0, 1) : null,
+    time_at_home: null,
   };
 
   const coverage: MetricCoverage = {
@@ -74,6 +77,9 @@ export function assembleDailyMetrics(raw: RawDailyAggregates): AssembledMetrics 
     screen_minutes: fraction(brDur, raw.br_rows),
     n_domains: hasBrowser ? 1 : 0,
     spend_total: fraction(raw.inv_rows_with_price, raw.inv_rows),
+    meeting_minutes: raw.meeting_rows > 0 ? 1 : 0,
+    sleep_minutes: raw.sleep_rows > 0 ? 1 : 0,
+    time_at_home: 0,
   };
 
   return { metrics, coverage };

@@ -2,6 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
+export interface CoverageCount {
+  rows: number;
+  matched: number;
+  pct: number;
+}
+
 export interface IngestStatusSnapshot {
   /**
    * Static contract capabilities of this server's `/v1` plane, so a client can
@@ -30,30 +36,46 @@ export interface IngestStatusSnapshot {
     /** Pending/in-flight/failed jobs on the search-index pgboss queue. */
     queue: { created: number; active: number; failed: number };
   };
+  /**
+   * Per-user (default) or appliance-wide enrichment coverage. Zeros are present
+   * so under-enrichment is a percentage, not an absent field.
+   */
+  coverage: {
+    embedded: Record<string, { rows: number; embedded: number; skipped: number; pctDecided: number }>;
+    linked: {
+      communicationsWithFrom: CoverageCount;
+      eventsWithOrganizer: CoverageCount;
+    };
+    geocoded: {
+      eventsNamedOrSited: CoverageCount;
+      positionsAddressed: CoverageCount;
+      inventoryPlaced: CoverageCount;
+    };
+  };
   /** ISO timestamp the snapshot was taken. */
   at: string;
 }
 
+function pct(matched: number, rows: number): number {
+  return rows > 0 ? matched / rows : 0;
+}
+
+function count(rows: number, matched: number): CoverageCount {
+  return { rows, matched, pct: pct(matched, rows) };
+}
+
 /**
- * Ingest observability snapshot for the `/v1` bulk plane: row counts of the
- * bulk-ingest destination tables plus the search-index side (embeddings + skip
- * markers per type, and the search-index queue depth from pgboss). One call
- * answers "did the bulk load land, and how far along is the index?".
- *
- * Same snapshot GET /api/maintenance/ingest-status serves (that handler
- * currently inlines these queries in MaintenanceController — converging it onto
- * this service is a follow-up kept out of this change to avoid touching the
- * maintenance controller), plus a `position` table count since positions are
- * part of the /v1 bulk plane. The plain count(*) on the communications
- * hypertable is ~1-2s at 1M rows — acceptable for an ops endpoint hit by hand
- * or a post-load poller.
+ * Ingest observability snapshot for the `/v1` bulk plane.
  */
 @Injectable()
 export class IngestStatusService {
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
 
-  async snapshot(): Promise<IngestStatusSnapshot> {
-    const [tableRows, embeddingRows, skipRows, queueRows] = await Promise.all([
+  async snapshot(options: { userId?: string; scope?: 'user' | 'appliance' } = {}): Promise<IngestStatusSnapshot> {
+    const appliance = options.scope === 'appliance' || !options.userId;
+    const userId = appliance ? null : options.userId;
+
+    const [tableRows, embeddingRows, skipRows, queueRows, coverageRows] = await Promise.all([
       this.dataSource.query<
         Array<{
           communications: string;
@@ -64,16 +86,28 @@ export class IngestStatusService {
           position: string;
         }>
       >(
-        `SELECT
-           (SELECT count(*) FROM ci.communications)   AS communications,
-           (SELECT count(*) FROM ci.events)           AS events,
-           (SELECT count(*) FROM ci.content)          AS content,
-           (SELECT count(*) FROM ci.inventory)        AS inventory,
-           (SELECT count(*) FROM ci.browser_activity) AS browser_activity,
-           (SELECT count(*) FROM ci.position)         AS position`,
+        userId
+          ? `SELECT
+               (SELECT count(*) FROM ci.communications WHERE user_id = $1)   AS communications,
+               (SELECT count(*) FROM ci.events WHERE user_id = $1)           AS events,
+               (SELECT count(*) FROM ci.content WHERE user_id = $1)          AS content,
+               (SELECT count(*) FROM ci.inventory WHERE user_id::uuid = $1)  AS inventory,
+               (SELECT count(*) FROM ci.browser_activity WHERE user_id = $1) AS browser_activity,
+               (SELECT count(*) FROM ci.position WHERE user_id = $1)         AS position`
+          : `SELECT
+               (SELECT count(*) FROM ci.communications)   AS communications,
+               (SELECT count(*) FROM ci.events)           AS events,
+               (SELECT count(*) FROM ci.content)          AS content,
+               (SELECT count(*) FROM ci.inventory)        AS inventory,
+               (SELECT count(*) FROM ci.browser_activity) AS browser_activity,
+               (SELECT count(*) FROM ci.position)         AS position`,
+        userId ? [userId] : [],
       ),
       this.dataSource.query<Array<{ entity_type: string; count: string }>>(
-        `SELECT entity_type, count(*) AS count FROM ci_search.embeddings GROUP BY entity_type`,
+        userId
+          ? `SELECT entity_type, count(*) AS count FROM ci_search.embeddings WHERE user_id = $1 GROUP BY entity_type`
+          : `SELECT entity_type, count(*) AS count FROM ci_search.embeddings GROUP BY entity_type`,
+        userId ? [userId] : [],
       ),
       this.dataSource.query<Array<{ entity_type: string; count: string }>>(
         `SELECT entity_type, count(*) AS count FROM ci_search.index_skips GROUP BY entity_type`,
@@ -83,6 +117,41 @@ export class IngestStatusService {
            FROM pgboss.job
           WHERE name = 'search-index' AND state IN ('created', 'active', 'failed')
           GROUP BY state`,
+      ),
+      this.dataSource.query<
+        Array<{
+          comms_linked: string;
+          events_linked: string;
+          events_geocoded: string;
+          positions_named: string;
+          inv_coords: string;
+          inv_placed: string;
+        }>
+      >(
+        userId
+          ? `SELECT
+               (SELECT count(*) FROM ci.communications WHERE user_id = $1 AND from_entity_id IS NOT NULL) AS comms_linked,
+               (SELECT count(*) FROM ci.events WHERE user_id = $1 AND organizer_entity_id IS NOT NULL) AS events_linked,
+               (SELECT count(*) FROM ci.events WHERE user_id = $1 AND (
+                  location_entity_id IS NOT NULL
+                  OR (location_name IS NOT NULL AND btrim(location_name) <> '')
+                  OR location_coordinates IS NOT NULL
+               )) AS events_geocoded,
+               (SELECT count(*) FROM ci.position WHERE user_id = $1 AND COALESCE(btrim(address), '') <> '') AS positions_named,
+               (SELECT count(*) FROM ci.inventory WHERE user_id::uuid = $1 AND current_location_coordinates IS NOT NULL) AS inv_coords,
+               (SELECT count(*) FROM ci.inventory WHERE user_id::uuid = $1 AND last_seen_place_entity_id IS NOT NULL) AS inv_placed`
+          : `SELECT
+               (SELECT count(*) FROM ci.communications WHERE from_entity_id IS NOT NULL) AS comms_linked,
+               (SELECT count(*) FROM ci.events WHERE organizer_entity_id IS NOT NULL) AS events_linked,
+               (SELECT count(*) FROM ci.events WHERE (
+                  location_entity_id IS NOT NULL
+                  OR (location_name IS NOT NULL AND btrim(location_name) <> '')
+                  OR location_coordinates IS NOT NULL
+               )) AS events_geocoded,
+               (SELECT count(*) FROM ci.position WHERE COALESCE(btrim(address), '') <> '') AS positions_named,
+               (SELECT count(*) FROM ci.inventory WHERE current_location_coordinates IS NOT NULL) AS inv_coords,
+               (SELECT count(*) FROM ci.inventory WHERE last_seen_place_entity_id IS NOT NULL) AS inv_placed`,
+        userId ? [userId] : [],
       ),
     ]);
 
@@ -94,24 +163,61 @@ export class IngestStatusService {
       queue[row.state as keyof typeof queue] = Number(row.count);
     }
 
-    const tables = tableRows[0];
+    const tablesRaw = tableRows[0];
+    const tables = {
+      communications: Number(tablesRaw?.communications ?? 0),
+      events: Number(tablesRaw?.events ?? 0),
+      content: Number(tablesRaw?.content ?? 0),
+      inventory: Number(tablesRaw?.inventory ?? 0),
+      browser_activity: Number(tablesRaw?.browser_activity ?? 0),
+      position: Number(tablesRaw?.position ?? 0),
+    };
+    const embeddingsByType = toByType(embeddingRows);
+    const skipsByType = toByType(skipRows);
+    const cover = coverageRows[0];
+
+    const entityRows: Record<string, number> = {
+      communication: tables.communications,
+      event: tables.events,
+      content: tables.content,
+      item: tables.inventory,
+      'browser-activity': tables.browser_activity,
+      position: tables.position,
+    };
+
+    const embedded: IngestStatusSnapshot['coverage']['embedded'] = {};
+    for (const [entityType, rows] of Object.entries(entityRows)) {
+      const embeddedCount = embeddingsByType[entityType] ?? 0;
+      const skipped = skipsByType[entityType] ?? 0;
+      embedded[entityType] = {
+        rows,
+        embedded: embeddedCount,
+        skipped,
+        pctDecided: pct(embeddedCount + skipped, rows),
+      };
+    }
 
     return {
       capabilities: {
         eventsSourceType: true,
       },
-      tables: {
-        communications: Number(tables?.communications ?? 0),
-        events: Number(tables?.events ?? 0),
-        content: Number(tables?.content ?? 0),
-        inventory: Number(tables?.inventory ?? 0),
-        browser_activity: Number(tables?.browser_activity ?? 0),
-        position: Number(tables?.position ?? 0),
-      },
+      tables,
       searchIndex: {
-        embeddingsByType: toByType(embeddingRows),
-        skipsByType: toByType(skipRows),
+        embeddingsByType,
+        skipsByType,
         queue,
+      },
+      coverage: {
+        embedded,
+        linked: {
+          communicationsWithFrom: count(tables.communications, Number(cover?.comms_linked ?? 0)),
+          eventsWithOrganizer: count(tables.events, Number(cover?.events_linked ?? 0)),
+        },
+        geocoded: {
+          eventsNamedOrSited: count(tables.events, Number(cover?.events_geocoded ?? 0)),
+          positionsAddressed: count(tables.position, Number(cover?.positions_named ?? 0)),
+          inventoryPlaced: count(Number(cover?.inv_coords ?? 0), Number(cover?.inv_placed ?? 0)),
+        },
       },
       at: new Date().toISOString(),
     };

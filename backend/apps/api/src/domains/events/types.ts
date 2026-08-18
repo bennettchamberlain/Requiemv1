@@ -72,4 +72,11 @@ export type EventSendOptions = {
 
   /** pg-boss singleton key — suppresses duplicate pending jobs with the same key. */
   singletonKey?: string;
+
+  /**
+   * Delay before the job becomes visible. pg-boss accepts a Date, an ISO
+   * string, or an integer number of seconds from now. Ignored by LocalEventService
+   * (jobs run inline).
+   */
+  startAfter?: Date | string | number;
 };

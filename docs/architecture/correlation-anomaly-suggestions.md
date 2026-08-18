@@ -2,7 +2,7 @@
 
 > **Private & Confidential — Property of Lifescope Inc. Do not distribute.**
 >
-> Status: **plan** (this document). Implementation is the next PR on this track.
+> Status: **implemented** on `feat/derivation-engines` (PR #2029). Later workstreams in §10 stay out of scope.
 > Tracker: [CI-Engineering #55](https://github.com/companionintelligence/CI-Engineering/issues/55)
 > · epic [#49](https://github.com/companionintelligence/CI-Engineering/issues/49)
 > · ADRs [0006–0008](https://github.com/companionintelligence/CI-Engineering/pull/56).
@@ -592,8 +592,8 @@ without rewriting the engines.
 | Later work | How this plan absorbs it |
 |---|---|
 | **#50 Ground the summary pipeline** | `backend/apps/summary` should **read** `metric_anomalies` / `metric_correlations` into `content.anomalies` / `keyInsights` instead of asking the model to invent them. The tables are the facts; the LLM narrates. Do not write summaries from this cron. |
-| **#51 Enrichment after import** | Coverage already encodes thin history. Engines skip low coverage; they do not need positions to be search-indexed. After #51, `n_places` / `km_traveled` coverage rises and pairs involving them start surviving FDR on their own. |
-| **Thicker daily metrics** (#53 leftovers: sleep, deep work, meetings, time-at-home, mood/stress, top topic) | Add columns + `METRIC_KEYS` + `METRIC_SOURCES`. Correlation pair space grows automatically. Catalog N/A cells in Body/Mind/Time become specs. Suggestion arms for those categories stay disabled until #63 reviews copy. **Do not hardcode pair lists.** |
+| **#51 Enrichment after import** | Coverage already encodes thin history. Engines skip low coverage; they do not need positions to be search-indexed. After #51, named places and linked contacts raise coverage so pairs involving them start surviving FDR on their own. Plan: [post-ingest-enrichment.md](post-ingest-enrichment.md). |
+| **Thicker daily metrics** | Honed subset `time_at_home` / `meeting_minutes` / `sleep_minutes`. Plan: [thicker-daily-metrics.md](thicker-daily-metrics.md). Pair space grows via `METRIC_KEYS`. Body/Mind suggestion arms stay off until #63. |
 | **#59 Agent harness leftovers** | Tools and domains exist. Remaining work is OpenClaw execute + Hermes `get_tool_schemas()` + `predictions.nextPlaces`. |
 | **#63 Cold-start / non-clinical / provenance / budget** | `source` column and coverage floors ship here because #55 cannot emit honestly without them. Heartbeat budget, mute switches, and the full non-clinical audit stay #63. |
 | **HBPE model upgrades** (calendar-weighted kernel, hierarchical loss, L2 topic head, daily_metrics as features) | Anomaly source `'hbpe.l0'` keeps working as the sidecar's `prediction_log` shape is stable. A future `'hbpe.l2'` detector is another `detector` enum value. Do not train HBPE from this domain. |
@@ -615,9 +615,10 @@ flowchart LR
 
 ---
 
-## 11. Implementation slices (after this plan merges)
+## 11. Implementation slices
 
-Do not land engines in one PR. Suggested cut, each mergeable alone:
+Landed together on this PR (the plan originally split them; the math + schema
+were already designed so they compose):
 
 | Slice | Ships | Acceptance of the slice |
 |---|---|---|
@@ -636,20 +637,20 @@ exist. Estimate: A is the largest (math + FDR + migration).
 From [#55](https://github.com/companionintelligence/CI-Engineering/issues/55),
 translated onto this tree:
 
-- [ ] Pairwise + lagged (0/1/2/7) Pearson/Spearman across `METRIC_KEYS`, coverage-gated.
-- [ ] BH-FDR; rank by effect × robustness × novelty; copy is hypothesis language.
-- [ ] Robust survivors persist in `ci_derived.metric_correlations`.
-- [ ] Per-metric robust z + CUSUM; HBPE L0 divergence as a third detector.
-- [ ] Anomalies persist in `ci_derived.metric_anomalies` and optionally
+- [x] Pairwise + lagged (0/1/2/7) Pearson/Spearman across `METRIC_KEYS`, coverage-gated.
+- [x] BH-FDR; rank by effect × robustness × novelty; copy is hypothesis language.
+- [x] Robust survivors persist in `ci_derived.metric_correlations`.
+- [x] Per-metric robust z + CUSUM; HBPE L0 divergence as a third detector.
+- [x] Anomalies persist in `ci_derived.metric_anomalies` and optionally
       `ci.actions` with `source='anomaly'`.
-- [ ] Suggestions require an evidence FK, emit `source='suggestion'`, and
+- [x] Suggestions require an evidence FK, emit `source='suggestion'`, and
       learn from `suggestions.feedback`.
-- [ ] Catalog answers correlational / anomaly / optimization questions from
+- [x] Catalog answers correlational / anomaly / optimization questions from
       those tables (compute-then-narrate; TemplateNarrator default).
-- [ ] `insights.explain`, `anomalies.recent`, `suggestions.list` /
+- [x] `insights.explain`, `anomalies.recent`, `suggestions.list` /
       `suggestions.feedback` are registered intents.
-- [ ] Flag-off: no Brief/feed cards. Cold series: no "you usually".
-- [ ] Body/Mind suggestion arms absent until thicker metrics + #63.
+- [x] Flag-off: no Brief/feed cards. Cold series: no "you usually".
+- [x] Body/Mind suggestion arms absent until thicker metrics + #63.
 
 The original "how much did exercise change my mood this quarter" is answerable
 **as a catalog question** the day `km_traveled` (or a future `active_minutes`)

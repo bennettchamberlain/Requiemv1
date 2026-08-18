@@ -7,8 +7,14 @@ import {
   ItemCreatedEvent,
   PersonCreatedEvent,
 } from '@ci/domains/memory/events';
+import { STAGE_ID_LIST } from '@ci/domains/pipeline';
 
-import { SearchIndexBackfillService, expandBackfillEntityTypes } from './SearchIndexBackfillService';
+import {
+  BACKFILLABLE_ENTITIES,
+  PIPELINE_COVERED_STAGES,
+  SearchIndexBackfillService,
+  expandBackfillEntityTypes,
+} from './SearchIndexBackfillService';
 
 const SEARCH_INDEX_QUEUE = 'search-index';
 
@@ -92,6 +98,35 @@ function makeService(pagesByType: Record<string, string[][]>, embeddedByType: Re
   return { service, sendMany, ds };
 }
 
+describe('PIPELINE_COVERED_STAGES', () => {
+  // The map's stage ids are string literals (importing the pipeline domain from
+  // the service would be a module cycle — pipeline already imports maintenance).
+  // This spec is the sync pin the map's doc comment promises: an entry naming a
+  // stage that no longer exists, or an entity type the sweep doesn't know,
+  // fails here instead of silently changing what the sweep selects.
+  it('maps known backfillable entity types to declared pipeline stage ids', () => {
+    for (const [entityType, stage] of Object.entries(PIPELINE_COVERED_STAGES)) {
+      expect(BACKFILLABLE_ENTITIES).toContain(entityType);
+      expect(STAGE_ID_LIST).toContain(stage);
+    }
+  });
+
+  it('covers content via index.embed (the pipeline stage that embeds ci.content)', () => {
+    expect(PIPELINE_COVERED_STAGES.content).toBe('index.embed');
+  });
+
+  it('covers every backfillable type except the declared exceptions', () => {
+    // `position` arrived with the GPS→places indexing and has no pipeline
+    // stage yet — the old backfill path still owns it. Anything ELSE missing
+    // from the map is a regression: the pipeline is the indexing path.
+    const uncovered = ['position'];
+
+    expect(Object.keys(PIPELINE_COVERED_STAGES).sort()).toEqual(
+      BACKFILLABLE_ENTITIES.filter((type) => !uncovered.includes(type)).sort(),
+    );
+  });
+});
+
 describe('SearchIndexBackfillService', () => {
   it('bulk re-emits each type’s create events onto the search-index queue ONLY, with correct counts', async () => {
     const { service, sendMany } = makeService({
@@ -116,6 +151,7 @@ describe('SearchIndexBackfillService', () => {
         'browser-activity': 1,
         file: 2,
         person: 1,
+        position: 0,
       },
       // No embeddings configured for this DS → drain count is 0 for every type.
       embedded: 0,
@@ -127,6 +163,7 @@ describe('SearchIndexBackfillService', () => {
         'browser-activity': 0,
         file: 0,
         person: 0,
+        position: 0,
       },
     });
 
@@ -309,6 +346,31 @@ describe('SearchIndexBackfillService', () => {
     }
 
     expect(pageQueriesSeen).toBeGreaterThan(0);
+  });
+
+  it('anti-joins ci.pipeline_state with each type’s covering stage, so the sweep never redoes pipeline work', async () => {
+    const { service, ds } = makeService({
+      content: [['c1'], []], // plain uuid-keyset branch
+      communication: [['m1'], []], // time-paged (hypertable) branch
+    });
+
+    await service.backfill({ entityTypes: ['content', 'communication'], batchSize: 10 });
+
+    let pageQueries = 0;
+    for (const [sql, params] of ds.query.mock.calls) {
+      const flat = (sql as string).replace(/\s+/g, ' ');
+      if (!params || /FROM ci_search\.embeddings/i.test(flat)) {
+        continue; // depth / drain-count probes, not page queries
+      }
+
+      pageQueries += 1;
+      const stage = params[0] === 'content' ? 'index.embed' : 'index.embed_communication';
+      expect(flat).toContain('LEFT JOIN ci.pipeline_state ps');
+      expect(flat).toContain(`ps.stage = '${stage}'`);
+      expect(flat).toContain('ps.entity_id IS NULL');
+    }
+
+    expect(pageQueries).toBeGreaterThan(0);
   });
 
   it('only sweeps the requested entity types', async () => {

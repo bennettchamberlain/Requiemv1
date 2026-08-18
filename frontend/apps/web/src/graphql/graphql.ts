@@ -61,6 +61,8 @@ export type ActionType = Node & Taggable & {
   /** Priority/relevance level 1-10 */
   priority?: Maybe<Scalars['Int']['output']>;
   seen: Scalars['Boolean']['output'];
+  /** Provenance: legacy | correlation | anomaly | suggestion */
+  source?: Maybe<Scalars['String']['output']>;
   tags: Array<EntityTagType>;
   text: Scalars['String']['output'];
   thread?: Maybe<ThreadType>;
@@ -826,6 +828,8 @@ export type DescriptiveAnswerType = {
 /** A catalog question the compute-then-narrate engine can answer */
 export type DescriptiveQuestionType = {
   __typename?: 'DescriptiveQuestionType';
+  /** descriptive | predictive | correlational | anomaly | optimization */
+  analyticType?: Maybe<Scalars['String']['output']>;
   category: Scalars['String']['output'];
   key: Scalars['String']['output'];
   question: Scalars['String']['output'];
@@ -1254,6 +1258,40 @@ export type MessageType = Node & {
   threadId: Scalars['ID']['output'];
 };
 
+/** A dated metric or behavioral anomaly. Computed, not LLM-invented. */
+export type MetricAnomalyType = {
+  __typename?: 'MetricAnomalyType';
+  baseline?: Maybe<Scalars['Float']['output']>;
+  coverage: Scalars['Float']['output'];
+  date: Scalars['String']['output'];
+  detector: Scalars['String']['output'];
+  direction: Scalars['String']['output'];
+  id: Scalars['String']['output'];
+  metadata: Scalars['JSON']['output'];
+  metric: Scalars['String']['output'];
+  score: Scalars['Float']['output'];
+  value?: Maybe<Scalars['Float']['output']>;
+};
+
+/** A pairwise / lagged association over daily_metrics. Language is hypothesis ("associated with"), never cause. */
+export type MetricCorrelationType = {
+  __typename?: 'MetricCorrelationType';
+  coverageMean?: Maybe<Scalars['Float']['output']>;
+  effect?: Maybe<Scalars['Float']['output']>;
+  id: Scalars['String']['output'];
+  lagDays: Scalars['Int']['output'];
+  metricA: Scalars['String']['output'];
+  metricB: Scalars['String']['output'];
+  n: Scalars['Int']['output'];
+  novelty: Scalars['Float']['output'];
+  pValue?: Maybe<Scalars['Float']['output']>;
+  pearson?: Maybe<Scalars['Float']['output']>;
+  qValue?: Maybe<Scalars['Float']['output']>;
+  robust: Scalars['Boolean']['output'];
+  spearman?: Maybe<Scalars['Float']['output']>;
+  windowDays: Scalars['Int']['output'];
+};
+
 /** One forecast day with its q10/q50/q90 band */
 export type MetricForecastPointType = {
   __typename?: 'MetricForecastPointType';
@@ -1274,6 +1312,19 @@ export type MetricForecastType = {
   points: Array<MetricForecastPointType>;
   /** OK, NOT_ENOUGH_SIGNAL, or UNKNOWN_METRIC */
   status: Scalars['String']['output'];
+};
+
+/** An evidence-linked suggestion. Never emitted without a correlation or anomaly FK. */
+export type MetricSuggestionType = {
+  __typename?: 'MetricSuggestionType';
+  acceptedAt?: Maybe<Scalars['String']['output']>;
+  dismissedAt?: Maybe<Scalars['String']['output']>;
+  evidence: Scalars['JSON']['output'];
+  id: Scalars['String']['output'];
+  key: Scalars['String']['output'];
+  priority?: Maybe<Scalars['Int']['output']>;
+  text: Scalars['String']['output'];
+  title: Scalars['String']['output'];
 };
 
 export type Mutation = {
@@ -2145,6 +2196,8 @@ export type Query = {
   askOutbox: Array<AskType>;
   browserActivities: BrowserActivityConnection;
   browserActivity?: Maybe<BrowserActivityType>;
+  /** Answers catalog questions of one analytic type (descriptive, correlational, anomaly, optimization, predictive). */
+  catalogAnswers: Array<DescriptiveAnswerType>;
   communication?: Maybe<CommunicationType>;
   communications: CommunicationConnection;
   concept?: Maybe<ConceptType>;
@@ -2159,7 +2212,7 @@ export type Query = {
   dailyMetrics: Array<DailyMetricsType>;
   /** Answers every catalog question from stored daily_metrics. */
   descriptiveAnswers: Array<DescriptiveAnswerType>;
-  /** The descriptive question catalog the compute-then-narrate engine can answer. */
+  /** The question catalog the compute-then-narrate engine can answer. */
   descriptiveQuestions: Array<DescriptiveQuestionType>;
   /** Fetch HBPE renewal predictions: periodic behaviors coming due or overdue */
   dueForecast?: Maybe<DueForecastType>;
@@ -2186,8 +2239,14 @@ export type Query = {
   knownPlaceCandidates: Array<KnownPlaceCandidateType>;
   knownPlaces: Array<KnownPlaceType>;
   me?: Maybe<UserType>;
+  /** Computed metric and behavioral anomalies. Not the free-text list inside summaries. */
+  metricAnomalies: Array<MetricAnomalyType>;
+  /** Pairwise / lagged associations. Hypotheses ("associated with"), never causes. */
+  metricCorrelations: Array<MetricCorrelationType>;
   /** 1–7 day seasonal-naive + EWMA forecast of daily-metrics scalars */
   metricForecast: Array<MetricForecastType>;
+  /** Evidence-linked suggestions. Findings persist even when derivation.engines is off. */
+  metricSuggestions: Array<MetricSuggestionType>;
   myAskGrants: Array<AskGrantType>;
   node?: Maybe<Node>;
   note?: Maybe<NoteType>;
@@ -2285,6 +2344,12 @@ export type QueryBrowserActivityArgs = {
 };
 
 
+export type QueryCatalogAnswersArgs = {
+  analyticType: Scalars['String']['input'];
+  date?: InputMaybe<Scalars['String']['input']>;
+};
+
+
 export type QueryCommunicationArgs = {
   id: Scalars['ID']['input'];
 };
@@ -2364,6 +2429,11 @@ export type QueryDescriptiveAnswersArgs = {
 };
 
 
+export type QueryDescriptiveQuestionsArgs = {
+  analyticType?: InputMaybe<Scalars['String']['input']>;
+};
+
+
 export type QueryEventArgs = {
   id: Scalars['ID']['input'];
 };
@@ -2435,8 +2505,25 @@ export type QueryKnownPlacesArgs = {
 };
 
 
+export type QueryMetricAnomaliesArgs = {
+  metric?: InputMaybe<Scalars['String']['input']>;
+  since?: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type QueryMetricCorrelationsArgs = {
+  robustOnly?: InputMaybe<Scalars['Boolean']['input']>;
+  windowDays?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
 export type QueryMetricForecastArgs = {
   days?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryMetricSuggestionsArgs = {
+  includeDismissed?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 

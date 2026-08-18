@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import { Badge, Button, Card, Input, Skeleton } from '@ci/shadcn';
 import { AlertTriangle, ChevronDown, ChevronRight } from '@ci/shadcn/icons';
 
+import { categoryDot, categoryLabel, categoryStyle } from './jobCategories';
 import { COMPACT_CARD } from './layout';
 import type { JobFilters, JobListItem, JobListResponse } from './useJobsList';
+import type { JobTypesResponse } from './useJobTypes';
 
 type Props = {
   data: JobListResponse | null;
@@ -12,6 +14,8 @@ type Props = {
   error: string | null;
   filters: JobFilters;
   categories: readonly string[];
+  /** The job taxonomy, for the type filter. Null while it loads. */
+  jobTypes: JobTypesResponse | null;
   onChange: (next: Partial<JobFilters>) => void;
 };
 
@@ -33,18 +37,6 @@ const STATE_TABS = [
   { key: 'dead-letter', label: 'Dead-lettered' },
 ] as const;
 
-const CATEGORY_LABELS: Record<string, string> = {
-  search: 'Search index',
-  ingest: 'Ingest',
-  enrich: 'Enrichment',
-  graph: 'Life graph',
-  pipeline: 'Pipeline',
-  import: 'Import / sync',
-  llm: 'Model',
-  personalization: 'Personalization',
-  maintenance: 'Maintenance',
-};
-
 /**
  * One table for every job, with the filters that make it navigable.
  *
@@ -54,13 +46,20 @@ const CATEGORY_LABELS: Record<string, string> = {
  * query: filtering and paging over `pgboss.job` cannot be done in the browser
  * when the table routinely holds tens of thousands of rows.
  */
-export function JobsTable({ data, loading, error, filters, categories, onChange }: Props) {
+export function JobsTable({ data, loading, error, filters, categories, jobTypes, onChange }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
   const from = total === 0 ? 0 : filters.offset + 1;
   const to = Math.min(filters.offset + filters.limit, total);
+
+  // Type options, narrowed to the selected category. 76 events in one flat list
+  // is a wall; scoped to a category it is a short, useful menu.
+  const visibleTypes = Object.entries(jobTypes?.types ?? {})
+    .filter(([, descriptor]) => !filters.category || descriptor.category === filters.category)
+    .map(([event, descriptor]) => ({ value: event, label: descriptor.label }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 
   // Every state bucket added up — what "All" means under the non-state filters.
   const allStatesTotal = Object.values(data?.stateCounts ?? {}).reduce((sum, count) => sum + count, 0);
@@ -88,19 +87,32 @@ export function JobsTable({ data, loading, error, filters, categories, onChange 
             // the active filter — so using it for "All" made the All tab count
             // collapse to the current selection the moment one was made.
             const count = tab.key ? data?.stateCounts?.[tab.key] : allStatesTotal;
+            // A ghost button on a dark card reads as text, so the selected tab
+            // was easy to lose. Selection now carries a filled surface AND a
+            // ring; unselected tabs keep a border so they read as controls.
+            const selected = filters.state === tab.key;
 
             return (
               <Button
                 key={tab.key || 'all'}
                 role="tab"
-                aria-selected={filters.state === tab.key}
+                aria-selected={selected}
                 size="sm"
-                variant={filters.state === tab.key ? 'secondary' : 'ghost'}
+                variant="ghost"
                 onClick={() => onChange({ state: tab.key, offset: 0 })}
+                className={
+                  selected
+                    ? 'border border-primary/60 bg-primary/15 text-foreground ring-1 ring-primary/40'
+                    : 'border border-border/70 text-muted-foreground hover:text-foreground'
+                }
               >
                 {tab.label}
                 {count != null ? (
-                  <span className="ml-1.5 tabular-nums text-xs text-muted-foreground">
+                  <span
+                    className={`ml-1.5 rounded px-1 tabular-nums text-xs ${
+                      selected ? 'bg-primary/20 text-foreground' : 'text-muted-foreground'
+                    }`}
+                  >
                     {count.toLocaleString()}
                   </span>
                 ) : null}
@@ -109,7 +121,10 @@ export function JobsTable({ data, loading, error, filters, categories, onChange 
           })}
         </div>
 
-        <div className="flex flex-col gap-2 md:flex-row md:items-center">
+        {/* Filters sit on their own tinted rail so they read as controls rather
+            than as part of the table chrome — the old row blended into the
+            header and was easy to miss entirely. */}
+        <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-muted/30 p-2 md:flex-row md:flex-wrap md:items-center">
           <Input
             value={filters.search}
             onChange={(event) => onChange({ search: event.target.value, offset: 0 })}
@@ -122,9 +137,19 @@ export function JobsTable({ data, loading, error, filters, categories, onChange 
             value={filters.category}
             options={categories.map((category) => ({
               value: category,
-              label: CATEGORY_LABELS[category] ?? category,
+              label: categoryLabel(category),
             }))}
-            onChange={(category) => onChange({ category, offset: 0 })}
+            onChange={(category) =>
+              // Changing category invalidates a type from a different category,
+              // so clear it rather than leaving a filter pair that matches nothing.
+              onChange({ category, type: '', offset: 0 })
+            }
+          />
+          <FilterSelect
+            label="Job type"
+            value={filters.type}
+            options={visibleTypes}
+            onChange={(type) => onChange({ type, offset: 0 })}
           />
           <FilterSelect
             label="Queue"
@@ -132,11 +157,13 @@ export function JobsTable({ data, loading, error, filters, categories, onChange 
             options={(data?.queues ?? []).map((queue) => ({ value: queue, label: queue }))}
             onChange={(queue) => onChange({ queue, offset: 0 })}
           />
-          {(filters.state || filters.queue || filters.category || filters.search) && (
+          {(filters.state || filters.queue || filters.category || filters.type || filters.search) && (
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => onChange({ state: '', queue: '', category: '', search: '', offset: 0 })}
+              onClick={() =>
+                onChange({ state: '', queue: '', category: '', type: '', search: '', offset: 0 })
+              }
             >
               Clear
             </Button>
@@ -244,7 +271,14 @@ function JobRow({ job, expanded, onToggle }: { job: JobListItem; expanded: boole
         </td>
         <td className="py-1.5 pr-3">
           <div className="flex flex-col">
-            <span className="font-medium">{job.label}</span>
+            <span className="flex items-center gap-1.5 font-medium">
+              {/* Category as a colour cue on every row, so a subsystem's work is
+                  scannable in a wall of thousands. The written category is in the
+                  expanded detail and the filter — colour is never the only
+                  channel (WCAG 1.4.1). */}
+              <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${categoryDot(job.category)}`} />
+              {job.label}
+            </span>
             <span className="text-xs text-muted-foreground">
               {job.event ?? 'no event name'}
               {job.interactive ? ' · interactive' : ''}
@@ -278,7 +312,16 @@ function JobRow({ job, expanded, onToggle }: { job: JobListItem; expanded: boole
             <p className="mb-2 max-w-3xl text-xs text-muted-foreground">{job.description}</p>
             <dl className="grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2 lg:grid-cols-3">
               <Detail label="Job id" value={job.id} mono />
-              <Detail label="Category" value={CATEGORY_LABELS[job.category] ?? job.category} />
+              <Detail
+                label="Category"
+                value={
+                  <span
+                    className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${categoryStyle(job.category)}`}
+                  >
+                    {categoryLabel(job.category)}
+                  </span>
+                }
+              />
               <Detail label="Payload" value={`${job.payloadBytes.toLocaleString()} bytes`} />
               <Detail label="Started" value={formatTimestamp(job.startedOn)} />
               <Detail label="Completed" value={formatTimestamp(job.completedOn)} />
@@ -325,11 +368,14 @@ function StateBadge({ job }: { job: JobListItem }) {
   );
 }
 
-function Detail({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function Detail({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
   return (
     <div className="flex gap-2">
       <dt className="shrink-0 text-muted-foreground">{label}</dt>
-      <dd className={`min-w-0 truncate ${mono ? 'font-mono text-[11px]' : ''}`} title={value}>
+      <dd
+        className={`min-w-0 truncate ${mono ? 'font-mono text-[11px]' : ''}`}
+        title={typeof value === 'string' ? value : undefined}
+      >
         {value}
       </dd>
     </div>
@@ -348,13 +394,15 @@ function FilterSelect({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-      <span className="sr-only md:not-sr-only">{label}</span>
+    <label className="flex items-center gap-1.5 text-xs">
+      <span className="whitespace-nowrap font-medium text-muted-foreground">{label}</span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
         aria-label={label}
-        className="h-9 rounded-md border border-input bg-transparent px-2 text-sm text-foreground"
+        className={`h-9 rounded-md border px-2 text-sm text-foreground ${
+          value ? 'border-primary/60 bg-primary/10' : 'border-input bg-background'
+        }`}
       >
         <option value="">All</option>
         {options.map((option) => (

@@ -118,6 +118,7 @@ function makeController(opts: { captureInserted?: boolean[]; noteConflicts?: str
     eventService,
     noteService,
     dataSource,
+    { schedule: jest.fn(async () => undefined) } as never,
   );
 
   return {

@@ -15,6 +15,7 @@ import {
   type FileUpdatedPayload,
   type FileUploadedPayload,
 } from '@ci/domains/files/events';
+import { fileSearchDocument, fileWeightedTexts } from '@ci/domains/search-ingress/searchTexts';
 import { EmbeddingService } from '@ci/domains/search-ingress/services/EmbeddingService';
 import { VectorService } from '@ci/domains/search-ingress/services/VectorService';
 import { type WeightedText } from '@ci/domains/search-ingress/types';
@@ -144,51 +145,10 @@ export class FileSearchIndexListener {
   }
 
   private getSearchFile(file: File): WeightedText[] {
-    const parts: WeightedText[] = [];
-
-    if (file.title) {
-      parts.push({ text: file.title, weight: 10 });
-    }
-
-    if (file.description) {
-      parts.push({ text: file.description, weight: 5 });
-    }
-
-    if (file.filename) {
-      parts.push({ text: file.filename, weight: 3 });
-    }
-
-    if (file.contentType) {
-      parts.push({ text: file.contentType, weight: 1 });
-    }
-
-    return parts;
+    return fileWeightedTexts(file);
   }
 
   private getSearchDocument(file: File): string | null {
-    const parts = new Set<string>();
-
-    const push = (value: unknown) => {
-      if (typeof value !== 'string') {
-        return;
-      }
-
-      const normalized = value.trim();
-
-      if (normalized.length === 0) {
-        return;
-      }
-
-      parts.add(normalized);
-    };
-
-    push(file.title ?? null);
-    push(file.description ?? null);
-    push(file.filename ?? null);
-    push(file.contentType ?? null);
-
-    const result = Array.from(parts).join(' ');
-
-    return result.length > 0 ? result : null;
+    return fileSearchDocument(file);
   }
 }

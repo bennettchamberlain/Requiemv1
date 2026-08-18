@@ -12,7 +12,7 @@ import {
 
 import { DescriptiveQuestionService } from './DescriptiveQuestionService';
 import { TemplateNarrator, type Narrator } from './Narrator';
-import { MONTH, QUESTION_CATALOG, type QuestionSpec } from './questionCatalog';
+import { QUESTION_CATALOG, type QuestionSpec } from './questionCatalog';
 
 const USER = '00000000-0000-0000-0000-0000000000aa';
 const CONTEXT: UserServiceContext = { userId: USER };
@@ -36,9 +36,18 @@ function makeMetricsService(rows: DailyMetrics[]) {
   };
 }
 
-function makeService(rows: DailyMetrics[], narrator: Narrator = new TemplateNarrator()) {
+function makeService(
+  rows: DailyMetrics[],
+  narrator: Narrator = new TemplateNarrator(),
+  correlationEngine?: { findPair: jest.Mock },
+) {
   const metricsService = makeMetricsService(rows);
-  const service = new DescriptiveQuestionService(metricsService as unknown as DailyMetricsService, narrator);
+  const service = new DescriptiveQuestionService(
+    metricsService as unknown as DailyMetricsService,
+    narrator,
+    undefined,
+    correlationEngine as never,
+  );
 
   return { service, metricsService };
 }
@@ -164,11 +173,17 @@ describe('DescriptiveQuestionService.answerAll', () => {
     await service.answerAll(CONTEXT, { date: anchor });
 
     expect(metricsService.getRange).toHaveBeenCalledTimes(1);
-    expect(metricsService.getRange).toHaveBeenCalledWith(
-      CONTEXT,
-      shiftIso(anchor, -(MONTH.days - 1)),
-      anchor,
+    const maxDays = Math.max(
+      ...QUESTION_CATALOG.map((spec) => {
+        const type = spec.analyticType ?? 'descriptive';
+        if (type === 'anomaly' || type === 'optimization') {
+          return Math.max(spec.timeframe.days, 28);
+        }
+
+        return spec.timeframe.days;
+      }),
     );
+    expect(metricsService.getRange).toHaveBeenCalledWith(CONTEXT, shiftIso(anchor, -(maxDays - 1)), anchor);
   });
 });
 
@@ -184,8 +199,52 @@ describe('question catalog integrity', () => {
   it('every question references a real metric and a non-empty template', () => {
     for (const spec of QUESTION_CATALOG) {
       expect(METRIC_KEYS).toContain(spec.metric);
+      if (spec.pairMetric) {
+        expect(METRIC_KEYS).toContain(spec.pairMetric);
+      }
+
       expect(spec.template.length).toBeGreaterThan(0);
       expect(spec.timeframe.days).toBeGreaterThan(0);
     }
+  });
+
+  it('correlational templates never claim causation', () => {
+    for (const spec of QUESTION_CATALOG.filter((item) => item.analyticType === 'correlational')) {
+      expect(spec.template.toLowerCase()).not.toMatch(/\bcauses\b/);
+      expect(spec.pairMetric).toBeDefined();
+    }
+  });
+});
+
+describe('DescriptiveQuestionService correlational answers', () => {
+  it('narrates an association without causal language', async () => {
+    const rows = Array.from({ length: 30 }, (_, index) => {
+      const date = shiftIso('2026-07-07', -29 + index);
+      const conversations = 4 + index * 0.2;
+
+      return day(date, 'n_conversations', conversations);
+    }).map((row, index) => {
+      row.metrics.avg_sentiment = 0.1 + index * 0.01;
+      row.coverage.avg_sentiment = 1;
+
+      return row;
+    });
+
+    const spec = QUESTION_CATALOG.find((item) => item.key === 'corr.conversations_sentiment_90')!;
+    const { service } = makeService(rows, new TemplateNarrator(), {
+      findPair: jest.fn().mockResolvedValue({
+        effect: 0.62,
+        n: 30,
+        qValue: 0.02,
+        coverageMean: 1,
+      }),
+    });
+    const answer = await service.answer(CONTEXT, spec, { date: '2026-07-07' });
+
+    expect(answer.value).toBe(0.62);
+    expect(answer.text).toContain('0.62');
+    expect(answer.text).toContain('q=2.00e-2');
+    expect(answer.text.toLowerCase()).toContain('associated');
+    expect(answer.text.toLowerCase()).not.toMatch(/\bcauses\b/);
   });
 });

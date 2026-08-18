@@ -23,6 +23,7 @@ import { Module } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/logging';
 import { ConversationModule } from '@ci/domains/conversations';
+import { DailyMetricsModule } from '@ci/domains/daily-metrics';
 import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
 import { ImportModule } from '@ci/domains/import';
@@ -38,6 +39,7 @@ import { ToolInvokedListener } from './listeners/ToolInvokedListener';
 import { NativeToolProvider } from './providers/NativeToolProvider';
 import { ToolRegistry } from './registry/ToolRegistry';
 import { ToolsRegistrationService } from './services/ToolsRegistrationService';
+import { AnomaliesRecentTool } from './tools/AnomaliesRecentTool';
 import { BriefListTool } from './tools/BriefListTool';
 import { CalendarFindEventsTool } from './tools/CalendarFindEventsTool';
 import { DatabaseSearchTool } from './tools/DatabaseSearchTool';
@@ -54,10 +56,13 @@ import { ImportPathTool } from './tools/ImportPathTool';
 import { ImportRecognizePathTool } from './tools/ImportRecognizePathTool';
 import { ImportRunStatusTool } from './tools/ImportRunStatusTool';
 import { ImportScanInboxTool } from './tools/ImportScanInboxTool';
+import { InsightsExplainTool } from './tools/InsightsExplainTool';
 import { MediaFindPhotosTool } from './tools/MediaFindPhotosTool';
 import { PeopleFindTool } from './tools/PeopleFindTool';
 import { PlacesFindTool } from './tools/PlacesFindTool';
 import { ReadKnowledgeTool } from './tools/ReadKnowledgeTool';
+import { SuggestionsFeedbackTool } from './tools/SuggestionsFeedbackTool';
+import { SuggestionsListTool } from './tools/SuggestionsListTool';
 import { WriteKnowledgeTool } from './tools/WriteKnowledgeTool';
 
 // Instantiate native tools. Each is a curated intent (its schema is an IntentDefinition);
@@ -78,6 +83,10 @@ const nativeToolInstances = [
   ForecastCalibrationTool,
   ForecastReadTool,
   BriefListTool,
+  InsightsExplainTool,
+  AnomaliesRecentTool,
+  SuggestionsListTool,
+  SuggestionsFeedbackTool,
   // The import domain's intents. They live in that domain because they are
   // thin wrappers over its services; they are REGISTERED here because this is
   // where the native provider is assembled.
@@ -104,6 +113,7 @@ const nativeToolInstances = [
     ImportModule,
     PredictionsModule,
     SummariesModule,
+    DailyMetricsModule,
   ],
   providers: [
     ToolRegistry,

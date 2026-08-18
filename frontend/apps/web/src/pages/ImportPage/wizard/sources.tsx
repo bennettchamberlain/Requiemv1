@@ -415,6 +415,8 @@ export interface Bundle {
   steps: string[];
   /** Catalog source ids this single download covers. */
   members: string[];
+  /** Loose addenda rendered under the steps, like a catalog source's notes. */
+  notes?: string[];
   logo: string;
 }
 
@@ -432,6 +434,9 @@ export const BUNDLES: readonly Bundle[] = [
       '“Next step” → “Export once” → “.zip” → “50 GB” → “Create export”.',
       'You’ll get an email in 1–48 hours. Download the zip.',
       'Upload the zip here — every product inside it gets imported.',
+    ],
+    notes: [
+      'Takeout exports any single file larger than your chosen part size — a long video, typically — as a loose file NEXT TO the zip parts, not inside them. A handful of loose files upload fine; for a large Photos library with many of them, prefer the appliance\u2019s import inbox: move the whole Takeout folder into the inbox directory and import it from the Inbox panel as one unit.',
     ],
     members: [
       'gmail',
@@ -731,8 +736,8 @@ export function pickableSections(catalog: readonly CatalogSource[]): PickSection
 
 /** One export card: a bundle, or a single picked service. */
 export type ExportEntry =
-  | { kind: 'bundle'; key: string; bundle: Bundle }
-  | { kind: 'service'; key: string; source: CatalogSource };
+  | { kind: 'bundle'; key: string; bundle: Bundle; importers: readonly string[] }
+  | { kind: 'service'; key: string; source: CatalogSource; importers: readonly string[] };
 
 /**
  * The ordered export sequence for a selection — a bundle is one card, every
@@ -755,12 +760,24 @@ export function exportEntries(catalog: readonly CatalogSource[], picked: Readonl
     const bundle = BUNDLE_BY_ECO[eco];
 
     if (bundle && picked.has(`b:${bundle.id}`)) {
-      entries.push({ kind: 'bundle', key: `b:${bundle.id}`, bundle });
+      // Every member importer, deduplicated — what a drop on this card DECLARES
+      // it is for. The run records it, and the picker's "imported ✓" credits
+      // only declared ∩ detected, so a stray file inside the archive that some
+      // other service's recognizer claims never lights that service's tile.
+      const importers = [
+        ...new Set(
+          (byEcosystem.get(eco) ?? [])
+            .filter((source) => bundle.members.includes(source.id))
+            .map((source) => source.importer),
+        ),
+      ];
+
+      entries.push({ kind: 'bundle', key: `b:${bundle.id}`, bundle, importers });
     }
 
     for (const source of byEcosystem.get(eco) ?? []) {
       if (!bundle?.members.includes(source.id) && picked.has(source.id)) {
-        entries.push({ kind: 'service', key: source.id, source });
+        entries.push({ kind: 'service', key: source.id, source, importers: [source.importer] });
       }
     }
   }
@@ -789,5 +806,6 @@ export function bundleToGuide(bundle: Bundle): ImportSourceGuide {
     acquisition: 'one-download',
     url: bundle.url,
     steps: bundle.steps,
+    notes: bundle.notes,
   };
 }

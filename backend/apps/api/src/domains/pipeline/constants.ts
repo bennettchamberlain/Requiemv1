@@ -306,6 +306,41 @@ export const STAGE_IDS = {
    * Place hierarchy: `ci.entities.parent_place_id` → Place −PART_OF→ Place.
    */
   PROMOTE_EDGE_PLACE: 'promote.edge_place',
+
+  /**
+   * The dense-embed conversion extended over the rest of the old search-index
+   * queue's entity types (`BACKFILLABLE_ENTITIES`). One id per source table — a
+   * `Stage` declares exactly one `source` — sharing one implementation
+   * (`DenseEmbedStageBase`) and the SAME model-derived version as
+   * `index.embed`, so one `CI_EMBED_MODEL` switch re-embeds every type.
+   *
+   * DECLARED LAST ON PURPOSE, together with the vector family below:
+   * declaration order is the tick's dispatch order (`orderStages` breaks graph
+   * ties by it) and a tick starts at most `MAX_SWEEPS_PER_TICK` sweeps.
+   * Enrichment — above all the weekly, windowed, metered legs, which miss a
+   * whole week if their tick slot is taken — must outrank hourly index stages
+   * whose post-import fast path is a direct `startSweep` anyway.
+   */
+  INDEX_EMBED_COMMUNICATION: 'index.embed_communication',
+  INDEX_EMBED_EVENT: 'index.embed_event',
+  INDEX_EMBED_ITEM: 'index.embed_item',
+  INDEX_EMBED_PERSON: 'index.embed_person',
+  INDEX_EMBED_FILE: 'index.embed_file',
+  INDEX_EMBED_BROWSER_ACTIVITY: 'index.embed_browser_activity',
+
+  /**
+   * The sibling tsvector family `index.embed`'s note promised: weighted
+   * keyword-search entries in `ci_search.vectors`, one stage per type so a
+   * re-weighting bump never re-bills GPU time and a model switch never
+   * re-writes unchanged tsvectors. Local Postgres work; rides `pipeline-index`.
+   */
+  INDEX_VECTOR: 'index.vector',
+  INDEX_VECTOR_COMMUNICATION: 'index.vector_communication',
+  INDEX_VECTOR_EVENT: 'index.vector_event',
+  INDEX_VECTOR_ITEM: 'index.vector_item',
+  INDEX_VECTOR_PERSON: 'index.vector_person',
+  INDEX_VECTOR_FILE: 'index.vector_file',
+  INDEX_VECTOR_BROWSER_ACTIVITY: 'index.vector_browser_activity',
 } as const;
 
 export type StageId = (typeof STAGE_IDS)[keyof typeof STAGE_IDS];

@@ -68,6 +68,8 @@ export interface JobQuery {
   readonly state?: string;
   readonly queue?: string;
   readonly category?: string;
+  /** Exact event name, e.g. `smart.rotation.work`. Narrower than `category`. */
+  readonly type?: string;
   readonly search?: string;
   readonly limit?: number;
   readonly offset?: number;
@@ -247,6 +249,12 @@ export class JobQueryService {
       builder.andWhere('job.name = :queue', { queue: query.queue });
     }
 
+    // Exact event name. `category` groups many events; this picks one, which is
+    // what an operator wants once they know WHICH job is misbehaving.
+    if (query.type) {
+      builder.andWhere(`job.data->>'name' = :type`, { type: query.type });
+    }
+
     if (query.category) {
       const events = Object.entries(JOB_TYPES)
         .filter(([, descriptor]) => descriptor.category === (query.category as JobCategory))
@@ -284,7 +292,12 @@ export class JobQueryService {
   private async stateCounts(query: JobQuery): Promise<Record<string, number>> {
     const builder = this.jobRepository
       .createQueryBuilder('job')
-      .select(`CASE WHEN job.name = :deadLetter THEN 'dead-letter' ELSE job.state END`, 'bucket')
+      // `job.state::text` is load-bearing. Postgres unifies a CASE's branches to
+      // one type, and without the cast it picks the `pgboss.job_state` ENUM from
+      // the ELSE branch — then tries to coerce the literal `'dead-letter'` into
+      // it and fails with "invalid input value for enum". `dead-letter` is a
+      // QUEUE, never a state, so the bucket column has to be text.
+      .select(`CASE WHEN job.name = :deadLetter THEN 'dead-letter' ELSE job.state::text END`, 'bucket')
       .addSelect('COUNT(*)::int', 'count')
       .setParameter('deadLetter', DEAD_LETTER_QUEUE)
       .groupBy('1');

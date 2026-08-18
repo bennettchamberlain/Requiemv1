@@ -1,15 +1,11 @@
 name: CI
 
+# GATED TO MANUAL. Every trigger except workflow_dispatch was removed so this
+# workflow no longer runs on push, pull_request or a schedule — CI silence here
+# means "nobody dispatched it", NOT "everything passed". Run it deliberately:
+#   gh workflow run <file> --ref <branch>
+# Restore a trigger by re-adding it to the `on:` block below.
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
-  # Retained from the gating period. push/pull_request are both main-scoped, so
-  # a branch with no open PR gets no CI otherwise; dispatch is the manual escape
-  # hatch and costs nothing until someone clicks it.
   workflow_dispatch:
 
 concurrency:

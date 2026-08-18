@@ -73,6 +73,64 @@ vi.mock('./useImportApi', () => ({
 describe('HistoryTab', () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it('caps the grid at ten with a Show-all expander — a 150-run Takeout must not silently vanish', async () => {
+    // 1 live (auto-opened as the active detail) + 14 finished.
+    listRuns.mockResolvedValueOnce([
+      LIVE_RUN,
+      ...Array.from({ length: 14 }, (_, i) => ({
+        ...FINISHED_RUN,
+        id: `run-${i}`,
+        label: `part-${i}.zip`,
+      })),
+    ]);
+
+    render(<HistoryTab />);
+
+    await screen.findByText('part-0.zip');
+
+    // Ten cards, and the button says how many exist in total.
+    expect(screen.queryByText('part-9.zip')).toBeInTheDocument();
+    expect(screen.queryByText('part-10.zip')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /show all 14 loaded imports/i }));
+
+    expect(screen.getByText('part-13.zip')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /show all/i })).not.toBeInTheDocument();
+  });
+
+  it('pages by cursor: Load-more fetches runs older than the last one shown', async () => {
+    // A full first page (100) means more may exist; the second page is short,
+    // which is the "no more" signal.
+    const firstPage = Array.from({ length: 100 }, (_, i) => ({
+      ...FINISHED_RUN,
+      id: `run-a-${i}`,
+      label: `part-${i}.zip`,
+      createdAt: `2026-08-17T12:${String(59 - Math.floor(i / 10))}:0${i % 10}Z`,
+    }));
+    const secondPage = Array.from({ length: 3 }, (_, i) => ({
+      ...FINISHED_RUN,
+      id: `run-b-${i}`,
+      label: `older-${i}.zip`,
+    }));
+
+    listRuns.mockResolvedValueOnce(firstPage).mockResolvedValueOnce(secondPage);
+
+    render(<HistoryTab />);
+
+    await screen.findByText('part-0.zip');
+    fireEvent.click(screen.getByRole('button', { name: /show all 100 loaded imports/i }));
+    fireEvent.click(screen.getByRole('button', { name: /load 100 more/i }));
+
+    await screen.findByText('older-2.zip');
+
+    // The cursor is the LAST run of the loaded list — pages chain, never overlap.
+    const last = firstPage[firstPage.length - 1];
+
+    expect(listRuns).toHaveBeenLastCalledWith(100, { createdAt: last.createdAt, id: last.id });
+    // A short page is the end: the button leaves.
+    expect(screen.queryByRole('button', { name: /load 100 more/i })).not.toBeInTheDocument();
+  });
+
   it('says whether each earlier import worked', async () => {
     // The card carried a label, a date and its services — so a run that FAILED
     // looked exactly like one that imported, on the surface whose whole job is

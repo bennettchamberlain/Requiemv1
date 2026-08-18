@@ -4,22 +4,37 @@ import { DataSource } from 'typeorm';
 
 import { LoggerService } from '@ci/common/logging';
 import { BrowserActivityService } from '@ci/domains/browser-activity';
+import { EventService as SignallingEventService } from '@ci/domains/events';
 import { type GraphEntityInputDto, GraphIngestService } from '@ci/domains/graph';
+// The events leaf, NOT the maintenance barrel: the barrel would close the
+// module cycle maintenance → llm → tools → import.
+import { SEARCH_INDEX_BACKFILL_QUEUE, SearchIndexBackfillRequestEvent } from '@ci/domains/maintenance/events';
 import { CommunicationService, ContentService, EventService, ItemService } from '@ci/domains/memory';
 import { PositionService } from '@ci/domains/position';
 
 import type { StagedEntity } from '../entities/StagedEntityEntity';
 import type { StagedItem } from '../entities/StagedItemEntity';
-import { destinationsFor, toCanonical, type CanonicalRecord, type Destination } from '../push/canonical';
+import {
+  backfillEntityTypesFor,
+  destinationsFor,
+  toCanonical,
+  type CanonicalRecord,
+  type Destination,
+} from '../push/canonical';
 import { isGraphExcluded, toGraphEntity } from '../push/entities';
 import {
+  isFacebookMessengerRecord,
+  isWhatsAppRecord,
   toBrowserActivityInput,
   toCommunicationInput,
   toContentInput,
   toEventInput,
+  toFacebookMessengerCommunicationInput,
   toInventoryInput,
   toPositionInput,
+  toWhatsAppCommunicationInput,
 } from '../push/inputs';
+import { type IsSelf, makeIsSelf, NOBODY_IS_SELF, readSelfIdentity } from '../push/self';
 import {
   DATABASE_FREE_FLOOR_BYTES,
   DatabaseVolumeFullError,
@@ -107,6 +122,7 @@ export class PushStage implements ImportStageRunner {
     private readonly positions: PositionService,
     private readonly browserActivity: BrowserActivityService,
     private readonly graph: GraphIngestService,
+    private readonly signals: SignallingEventService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(PushStage.name);
@@ -163,6 +179,14 @@ export class PushStage implements ImportStageRunner {
 
     let latestSpace = space;
 
+    // Who "me" is, resolved ONCE for the whole run. WhatsApp and Messenger
+    // decide each message's direction by matching its sender against the owner
+    // (see push/self), and a run is hundreds of thousands of records — this
+    // cannot be a per-record, or even a per-batch, lookup. Unconditional
+    // rather than deferred until the first chat record: it is one owner-scoped
+    // query per run, which is cheaper than the state needed to defer it.
+    const isSelf = await this.resolveIsSelf(context);
+
     for (;;) {
       const batch = await this.nextBatch(context.runId);
 
@@ -170,7 +194,7 @@ export class PushStage implements ImportStageRunner {
         break;
       }
 
-      const outcome = await this.pushBatch(context, batch, counts);
+      const outcome = await this.pushBatch(context, batch, counts, isSelf);
 
       pushed += outcome.pushed;
       failed += outcome.failed;
@@ -188,6 +212,11 @@ export class PushStage implements ImportStageRunner {
       // inside fifteen seconds of pushing.
       latestSpace = await this.assertDatabaseHasRoom(context, latestSpace);
     }
+
+    // Everything is in ci.* now; make it searchable. Bulk-pushed rows emit no
+    // per-row *CreatedEvent, so without this kick they wait for the pipeline's
+    // hourly index sweeps.
+    const searchIndex = await this.kickSearchIndexBackfill(context, counts, entities.resolved);
 
     return {
       // Every staged row is RESOLVED one way or another, and this stage's work
@@ -220,8 +249,85 @@ export class PushStage implements ImportStageRunner {
           databaseFreeBytes: latestSpace.freeBytes,
           databaseDataDir: latestSpace.dataDir,
         },
+        // What the post-push search-index kick did (absent when nothing was
+        // written, so there was nothing to index).
+        ...(searchIndex ? { searchIndex } : {}),
       },
     };
+  }
+
+  /**
+   * Post-push search-index kick: request pipeline sweeps of the `index.embed_*`
+   * and `index.vector*` stages for exactly the entity types this push wrote, so
+   * imported rows become searchable (embeddings + keyword tsvectors) with every
+   * row's outcome recorded in `ci.pipeline_state`. Requested over pg-boss
+   * ({@link SearchIndexBackfillRequestEvent}, consumed by the pipeline domain's
+   * `SearchIndexSweepRequestListener`) rather than by injecting a service: the
+   * module dependency would close the cycle maintenance → llm → tools → import,
+   * and the queued job survives a process killed between the push completing
+   * and the sweeps starting.
+   *
+   * `person` rides along whenever the entity lane resolved anything: pushed
+   * people are raw `GraphIngestService` upserts that emit no `PersonCreatedEvent`,
+   * so without the sweep they are never searchable. `entities.resolved` is the
+   * CUMULATIVE count (prior attempts included) because a resumed push may be
+   * re-running precisely because the attempt that resolved them died before
+   * this kick.
+   *
+   * Fail-soft by design: the rows are safely in `ci.*` and the sweep is
+   * idempotent, so a failure to enqueue the request must not fail — or retry —
+   * the push stage. It is reported in the stage detail instead, and the missing
+   * rows remain exactly what the next sweep (or a manual orchestrate) picks up.
+   *
+   * Scope caveat, deliberate: destination counts exist for THIS attempt only
+   * (the ledger records that a row settled, not where it landed), so a resumed
+   * push whose earlier attempt wrote rows and died before kicking requests only
+   * what the resume itself wrote. Widening that would mean sweeping every type
+   * on every resume; the un-swept remainder is what `/v1/ingest/finish` and the
+   * CLI `backfill` command exist for.
+   */
+  private async kickSearchIndexBackfill(
+    context: StageRunContext,
+    counts: DestinationCounts,
+    entitiesResolved: number,
+  ): Promise<Record<string, unknown> | null> {
+    const wrote = (Object.entries(counts) as Array<[Destination, number]>)
+      .filter(([, count]) => count > 0)
+      .map(([destination]) => destination);
+
+    const entityTypes: string[] = [...backfillEntityTypesFor(wrote)];
+    if (entitiesResolved > 0) {
+      entityTypes.push('person');
+    }
+
+    if (entityTypes.length === 0) {
+      return null;
+    }
+
+    try {
+      await this.signals.send(
+        SearchIndexBackfillRequestEvent,
+        // userId scopes the pipeline sweeps the listener starts — they are
+        // per-user by design, like everything on the ledger.
+        { userId: context.userId, entityTypes, requestedBy: `import-run:${context.runId}` },
+        { queue: SEARCH_INDEX_BACKFILL_QUEUE },
+      );
+      this.logger.log('Post-push search-index backfill requested', {
+        runId: context.runId,
+        entityTypes,
+      });
+
+      return { requested: entityTypes };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn('Post-push search-index request failed; rows remain for the next sweep', {
+        runId: context.runId,
+        entityTypes,
+        error: message,
+      });
+
+      return { requested: entityTypes, error: message };
+    }
   }
 
   /**
@@ -546,6 +652,42 @@ export class PushStage implements ImportStageRunner {
   }
 
   /**
+   * The owner's own display names, as a predicate — one query for the run.
+   *
+   * FAIL SAFE, deliberately: a lookup that finds nothing, or one that throws,
+   * yields {@link NOBODY_IS_SELF}, so every WhatsApp/Messenger message keeps
+   * the `inbound` default this repo shipped before the mappers were wired in.
+   * The alternatives are both worse than a blank — failing the push over a
+   * missing display name strands an import that is otherwise fine, and
+   * guessing writes a false authorship claim into somebody's memory. Logged at
+   * warn either way, because a corpus that silently classifies every message
+   * inbound is the bug this change exists to fix.
+   */
+  private async resolveIsSelf(context: StageRunContext): Promise<IsSelf> {
+    try {
+      const identity = await readSelfIdentity(this.dataSource, context.userId);
+      const isSelf = makeIsSelf(identity);
+
+      if (isSelf === NOBODY_IS_SELF) {
+        this.logger.warn('No owner name resolved; chat messages stay inbound', {
+          runId: context.runId,
+          userId: context.userId,
+        });
+      }
+
+      return isSelf;
+    } catch (err) {
+      this.logger.warn('Owner lookup failed; chat messages stay inbound', {
+        runId: context.runId,
+        userId: context.userId,
+        error: (err as Error).message,
+      });
+
+      return NOBODY_IS_SELF;
+    }
+  }
+
+  /**
    * Push one batch, row by row.
    *
    * Per-row rather than per-destination-bulk deliberately: a single malformed
@@ -558,6 +700,7 @@ export class PushStage implements ImportStageRunner {
     context: StageRunContext,
     batch: StagedItem[],
     counts: DestinationCounts,
+    isSelf: IsSelf,
   ): Promise<{ pushed: number; failed: number; deduped: number }> {
     const ctx = { userId: context.userId };
     let pushed = 0;
@@ -578,7 +721,7 @@ export class PushStage implements ImportStageRunner {
         let wrote = false;
 
         for (const destination of destinations) {
-          if (await this.send(ctx, destination, record, participants)) {
+          if (await this.send(ctx, destination, record, participants, isSelf)) {
             counts[destination] = (counts[destination] ?? 0) + 1;
             wrote = true;
           }
@@ -654,10 +797,25 @@ export class PushStage implements ImportStageRunner {
     destination: Destination,
     record: CanonicalRecord,
     participants: Map<string, string[]>,
+    isSelf: IsSelf,
   ): Promise<boolean> {
     switch (destination) {
       case 'communications': {
-        const input = toCommunicationInput(record);
+        // WhatsApp and Messenger get their own mappers, because their exports
+        // carry no "this one is me" signal for the generic path to read: a
+        // `_chat.txt` line is a display name and a body, so `directionFor`
+        // returns null and every message — the owner's own included — takes
+        // toCommunicationInput's `inbound` default. Both mappers decide
+        // direction by matching the sender against the owner instead, and the
+        // WhatsApp one also reads thread_id off `Conversation`, which the
+        // generic path never looks at (it reads ThreadId/Thread/MessageID), so
+        // without this branch every WhatsApp message also loses its chat
+        // grouping. Everything else is unchanged.
+        const input = isWhatsAppRecord(record)
+          ? toWhatsAppCommunicationInput(record, isSelf)
+          : isFacebookMessengerRecord(record)
+            ? toFacebookMessengerCommunicationInput(record, isSelf)
+            : toCommunicationInput(record);
 
         // The whole point of staging edges: a message reaches ci.* with a sender
         // and recipients rather than as text from nobody. `from` is single by

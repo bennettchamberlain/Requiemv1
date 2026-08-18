@@ -10,7 +10,7 @@ import { SMART_ROTATION_CRONS } from '../types';
 export class SmartRotationQuestionFeedCron {
   constructor(private readonly rotationService: SmartRotationService) {}
 
-  @Cron(SMART_ROTATION_CRONS.question_feed)
+  @Cron(SMART_ROTATION_CRONS.question_feed, { name: 'SmartRotationQuestionFeedCron.run' })
   async run(): Promise<void> {
     await this.rotationService.runScheduledWork('question_feed');
   }
@@ -21,7 +21,7 @@ export class SmartRotationQuestionFeedCron {
 export class SmartRotationAnswerInferCron {
   constructor(private readonly rotationService: SmartRotationService) {}
 
-  @Cron(SMART_ROTATION_CRONS.answer_infer)
+  @Cron(SMART_ROTATION_CRONS.answer_infer, { name: 'SmartRotationAnswerInferCron.run' })
   async run(): Promise<void> {
     await this.rotationService.runScheduledWork('answer_infer');
   }
@@ -32,7 +32,7 @@ export class SmartRotationAnswerInferCron {
 export class SmartRotationScheduleSyncCron {
   constructor(private readonly rotationService: SmartRotationService) {}
 
-  @Cron(SMART_ROTATION_CRONS.schedule_sync)
+  @Cron(SMART_ROTATION_CRONS.schedule_sync, { name: 'SmartRotationScheduleSyncCron.run' })
   async run(): Promise<void> {
     await this.rotationService.runScheduledWork('schedule_sync');
   }
@@ -43,7 +43,7 @@ export class SmartRotationScheduleSyncCron {
 export class SmartRotationInsightsCron {
   constructor(private readonly rotationService: SmartRotationService) {}
 
-  @Cron(SMART_ROTATION_CRONS.insights)
+  @Cron(SMART_ROTATION_CRONS.insights, { name: 'SmartRotationInsightsCron.run' })
   async run(): Promise<void> {
     await this.rotationService.runScheduledWork('insights');
   }
@@ -54,7 +54,7 @@ export class SmartRotationInsightsCron {
 export class SmartRotationSummariesCron {
   constructor(private readonly rotationService: SmartRotationService) {}
 
-  @Cron(SMART_ROTATION_CRONS.summaries)
+  @Cron(SMART_ROTATION_CRONS.summaries, { name: 'SmartRotationSummariesCron.run' })
   async run(): Promise<void> {
     await this.rotationService.runScheduledWork('summaries');
   }
@@ -65,7 +65,7 @@ export class SmartRotationSummariesCron {
 export class SmartRotationGraphLinkCron {
   constructor(private readonly rotationService: SmartRotationService) {}
 
-  @Cron(SMART_ROTATION_CRONS.graph_link)
+  @Cron(SMART_ROTATION_CRONS.graph_link, { name: 'SmartRotationGraphLinkCron.run' })
   async run(): Promise<void> {
     await this.rotationService.runScheduledWork('graph_link');
   }
@@ -76,7 +76,7 @@ export class SmartRotationGraphLinkCron {
 export class SmartRotationGraphEnrichCron {
   constructor(private readonly rotationService: SmartRotationService) {}
 
-  @Cron(SMART_ROTATION_CRONS.graph_enrich)
+  @Cron(SMART_ROTATION_CRONS.graph_enrich, { name: 'SmartRotationGraphEnrichCron.run' })
   async run(): Promise<void> {
     await this.rotationService.runScheduledWork('graph_enrich');
   }
@@ -87,7 +87,7 @@ export class SmartRotationGraphEnrichCron {
 export class SmartRotationContextPromptCron {
   constructor(private readonly rotationService: SmartRotationService) {}
 
-  @Cron(SMART_ROTATION_CRONS.context_prompt)
+  @Cron(SMART_ROTATION_CRONS.context_prompt, { name: 'SmartRotationContextPromptCron.run' })
   async run(): Promise<void> {
     await this.rotationService.runScheduledWork('context_prompt');
   }
@@ -98,7 +98,7 @@ export class SmartRotationContextPromptCron {
 export class SmartRotationHydrateAnswersCron {
   constructor(private readonly rotationService: SmartRotationService) {}
 
-  @Cron(SMART_ROTATION_CRONS.hydrate_answers)
+  @Cron(SMART_ROTATION_CRONS.hydrate_answers, { name: 'SmartRotationHydrateAnswersCron.run' })
   async run(): Promise<void> {
     await this.rotationService.runScheduledWork('hydrate_answers');
   }
@@ -109,7 +109,7 @@ export class SmartRotationHydrateAnswersCron {
 export class SmartRotationHydrateInventoryCron {
   constructor(private readonly rotationService: SmartRotationService) {}
 
-  @Cron(SMART_ROTATION_CRONS.hydrate_inventory)
+  @Cron(SMART_ROTATION_CRONS.hydrate_inventory, { name: 'SmartRotationHydrateInventoryCron.run' })
   async run(): Promise<void> {
     await this.rotationService.runScheduledWork('hydrate_inventory');
   }

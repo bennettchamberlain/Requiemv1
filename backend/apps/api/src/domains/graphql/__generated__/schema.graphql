@@ -40,6 +40,9 @@ type ActionType implements Node & Taggable {
   """Priority/relevance level 1-10"""
   priority: Int
   seen: Boolean!
+
+  """Provenance: legacy | correlation | anomaly | suggestion"""
+  source: String
   tags: [EntityTagType!]!
   text: String!
   thread: ThreadType
@@ -734,6 +737,7 @@ type DailyMetricsType {
   computedAt: String!
   date: String!
   kmTraveled: Float
+  meetingMinutes: Float
   nConversations: Int
   nDomains: Int
   nMessages: Int
@@ -741,7 +745,9 @@ type DailyMetricsType {
   nUniqueContacts: Int
   outboundRatio: Float
   screenMinutes: Float
+  sleepMinutes: Float
   spendTotal: Float
+  timeAtHome: Float
   timezone: String!
 }
 
@@ -775,6 +781,8 @@ type DescriptiveAnswerType {
 
 """A catalog question the compute-then-narrate engine can answer"""
 type DescriptiveQuestionType {
+  """descriptive | predictive | correlational | anomaly | optimization"""
+  analyticType: String
   category: String!
   key: String!
   question: String!
@@ -1174,6 +1182,40 @@ type MessageType implements Node {
   threadId: ID!
 }
 
+"""A dated metric or behavioral anomaly. Computed, not LLM-invented."""
+type MetricAnomalyType {
+  baseline: Float
+  coverage: Float!
+  date: String!
+  detector: String!
+  direction: String!
+  id: String!
+  metadata: JSON!
+  metric: String!
+  score: Float!
+  value: Float
+}
+
+"""
+A pairwise / lagged association over daily_metrics. Language is hypothesis ("associated with"), never cause.
+"""
+type MetricCorrelationType {
+  coverageMean: Float
+  effect: Float
+  id: String!
+  lagDays: Int!
+  metricA: String!
+  metricB: String!
+  n: Int!
+  novelty: Float!
+  pValue: Float
+  pearson: Float
+  qValue: Float
+  robust: Boolean!
+  spearman: Float
+  windowDays: Int!
+}
+
 """One forecast day with its q10/q50/q90 band"""
 type MetricForecastPointType {
   """YYYY-MM-DD"""
@@ -1193,6 +1235,20 @@ type MetricForecastType {
 
   """OK, NOT_ENOUGH_SIGNAL, or UNKNOWN_METRIC"""
   status: String!
+}
+
+"""
+An evidence-linked suggestion. Never emitted without a correlation or anomaly FK.
+"""
+type MetricSuggestionType {
+  acceptedAt: String
+  dismissedAt: String
+  evidence: JSON!
+  id: String!
+  key: String!
+  priority: Int
+  text: String!
+  title: String!
 }
 
 type Mutation {
@@ -1599,6 +1655,11 @@ type Query {
   askOutbox: [AskType!]!
   browserActivities(after: String, before: String, first: Int, last: Int): BrowserActivityConnection!
   browserActivity(id: ID!): BrowserActivityType
+
+  """
+  Answers catalog questions of one analytic type (descriptive, correlational, anomaly, optimization, predictive).
+  """
+  catalogAnswers(analyticType: String!, date: String): [DescriptiveAnswerType!]!
   communication(id: ID!): CommunicationType
   communications(after: String, before: String, first: Int, last: Int): CommunicationConnection!
   concept(id: ID!): ConceptType
@@ -1624,10 +1685,8 @@ type Query {
   """Answers every catalog question from stored daily_metrics."""
   descriptiveAnswers(date: String): [DescriptiveAnswerType!]!
 
-  """
-  The descriptive question catalog the compute-then-narrate engine can answer.
-  """
-  descriptiveQuestions: [DescriptiveQuestionType!]!
+  """The question catalog the compute-then-narrate engine can answer."""
+  descriptiveQuestions(analyticType: String): [DescriptiveQuestionType!]!
 
   """
   Fetch HBPE renewal predictions: periodic behaviors coming due or overdue
@@ -1670,8 +1729,23 @@ type Query {
   knownPlaces(kind: String): [KnownPlaceType!]!
   me: UserType
 
+  """
+  Computed metric and behavioral anomalies. Not the free-text list inside summaries.
+  """
+  metricAnomalies(metric: String, since: String): [MetricAnomalyType!]!
+
+  """
+  Pairwise / lagged associations. Hypotheses ("associated with"), never causes.
+  """
+  metricCorrelations(robustOnly: Boolean, windowDays: Int): [MetricCorrelationType!]!
+
   """1–7 day seasonal-naive + EWMA forecast of daily-metrics scalars"""
   metricForecast(days: Int = 3): [MetricForecastType!]!
+
+  """
+  Evidence-linked suggestions. Findings persist even when derivation.engines is off.
+  """
+  metricSuggestions(includeDismissed: Boolean): [MetricSuggestionType!]!
   myAskGrants: [AskGrantType!]!
   node(id: ID!): Node
   note(id: ID!): NoteType

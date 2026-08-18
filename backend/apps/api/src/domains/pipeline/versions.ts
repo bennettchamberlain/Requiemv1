@@ -134,6 +134,36 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
   [STAGE_IDS.INDEX_EMBED]: () => embedStageVersion(),
 
   /**
+   * DERIVED like `index.embed`, and from the SAME derivation: every dense-embed
+   * stage writes the same `vector(768)` column with the same configured model,
+   * so they rise together — one `CI_EMBED_MODEL` switch re-embeds every type's
+   * corpus, not just content's.
+   */
+  [STAGE_IDS.INDEX_EMBED_COMMUNICATION]: () => embedStageVersion(),
+  [STAGE_IDS.INDEX_EMBED_EVENT]: () => embedStageVersion(),
+  [STAGE_IDS.INDEX_EMBED_ITEM]: () => embedStageVersion(),
+  [STAGE_IDS.INDEX_EMBED_PERSON]: () => embedStageVersion(),
+  [STAGE_IDS.INDEX_EMBED_FILE]: () => embedStageVersion(),
+  [STAGE_IDS.INDEX_EMBED_BROWSER_ACTIVITY]: () => embedStageVersion(),
+
+  /**
+   * v1 — initial conversion of the listeners' tsvector half onto the ledger.
+   *
+   * Bump a type's entry when its weighted-text recipe in
+   * `search-ingress/searchTexts.ts` changes (a new field indexed, a weight
+   * moved): the bump re-vectors that type's corpus — local Postgres work, no
+   * provider, no bill — without touching its embeddings.
+   */
+  [STAGE_IDS.INDEX_VECTOR]: 1,
+  [STAGE_IDS.INDEX_VECTOR_COMMUNICATION]: 1,
+  [STAGE_IDS.INDEX_VECTOR_EVENT]: 1,
+  /** v2 — the recipe gained the last-seen place name (weight 8). */
+  [STAGE_IDS.INDEX_VECTOR_ITEM]: 2,
+  [STAGE_IDS.INDEX_VECTOR_PERSON]: 1,
+  [STAGE_IDS.INDEX_VECTOR_FILE]: 1,
+  [STAGE_IDS.INDEX_VECTOR_BROWSER_ACTIVITY]: 1,
+
+  /**
    * v1 — initial writer for `ci.position`'s seven address columns.
    *
    * A LITERAL that mirrors a derivation, which is the third shape and needs its

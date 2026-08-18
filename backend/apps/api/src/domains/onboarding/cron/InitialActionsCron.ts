@@ -32,7 +32,7 @@ export class InitialActionsCron {
     this.logger.setContext(InitialActionsCron.name);
   }
 
-  @Cron(CronExpression.EVERY_HOUR)
+  @Cron(CronExpression.EVERY_HOUR, { name: 'InitialActionsCron.initializeEligibleUsers' })
   async initializeEligibleUsers(): Promise<void> {
     if (!(await this.featureService.isFeatureEnabled('actions'))) {
       return;

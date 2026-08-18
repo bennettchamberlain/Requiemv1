@@ -36,7 +36,7 @@ export class MemoryCompactionCron {
     this.logger.setContext(MemoryCompactionCron.name);
   }
 
-  @Cron(CronExpression.EVERY_5_MINUTES)
+  @Cron(CronExpression.EVERY_5_MINUTES, { name: 'MemoryCompactionCron.cronCompactMemories' })
   async cronCompactMemories(): Promise<void> {
     const featureEnabled = await this.featureService.isFeatureEnabled('agent.memory.compaction');
 

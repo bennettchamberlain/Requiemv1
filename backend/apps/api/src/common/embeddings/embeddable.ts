@@ -191,6 +191,7 @@ const EMBEDDABLE_SEARCH_TYPES = new Set<string>([
   'note',
   'person',
   'place',
+  'position',
   'thread',
 ]);
 

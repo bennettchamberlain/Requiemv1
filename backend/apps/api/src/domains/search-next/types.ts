@@ -15,6 +15,7 @@ export const INDEXABLE_ENTITIES = [
   'note',
   'person',
   'place',
+  'position',
   'thread',
 ] as const;
 

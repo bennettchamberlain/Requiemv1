@@ -4,7 +4,7 @@ import { Alert, Button, Card } from '@ci/shadcn';
 
 import { useImportApi, type ImportRun, type UnpushedRun } from '../useImportApi';
 
-import { LiveRun } from './LiveRun';
+import { LiveRunList } from './LiveRunList';
 
 export interface SyncStepProps {
   onBackToExport: () => void;
@@ -122,7 +122,7 @@ export function SyncStep({ onBackToExport }: SyncStepProps) {
 
       {pushed != null &&
         (pushed.length > 0 ? (
-          pushed.map((run) => <LiveRun key={run.id} runId={run.id} />)
+          <LiveRunList runIds={pushed.map((run) => run.id)} />
         ) : (
           <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
             Nothing was waiting to sync.
