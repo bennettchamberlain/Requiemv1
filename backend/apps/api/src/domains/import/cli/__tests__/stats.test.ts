@@ -17,6 +17,7 @@ const run = (status: string) => ({
   label: 'takeout.zip',
   source: 'cli',
   dataSources: ['gmail', 'google_photos'],
+      declaredSources: null,
   status,
   percent: 100,
   requestedStages: [],

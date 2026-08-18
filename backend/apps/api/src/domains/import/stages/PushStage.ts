@@ -4,13 +4,23 @@ import { DataSource } from 'typeorm';
 
 import { LoggerService } from '@ci/common/logging';
 import { BrowserActivityService } from '@ci/domains/browser-activity';
+import { EventService as SignallingEventService } from '@ci/domains/events';
 import { type GraphEntityInputDto, GraphIngestService } from '@ci/domains/graph';
+// The events leaf, NOT the maintenance barrel: the barrel would close the
+// module cycle maintenance → llm → tools → import.
+import { SEARCH_INDEX_BACKFILL_QUEUE, SearchIndexBackfillRequestEvent } from '@ci/domains/maintenance/events';
 import { CommunicationService, ContentService, EventService, ItemService } from '@ci/domains/memory';
 import { PositionService } from '@ci/domains/position';
 
 import type { StagedEntity } from '../entities/StagedEntityEntity';
 import type { StagedItem } from '../entities/StagedItemEntity';
-import { destinationsFor, toCanonical, type CanonicalRecord, type Destination } from '../push/canonical';
+import {
+  backfillEntityTypesFor,
+  destinationsFor,
+  toCanonical,
+  type CanonicalRecord,
+  type Destination,
+} from '../push/canonical';
 import { isGraphExcluded, toGraphEntity } from '../push/entities';
 import {
   toBrowserActivityInput,
@@ -107,6 +117,7 @@ export class PushStage implements ImportStageRunner {
     private readonly positions: PositionService,
     private readonly browserActivity: BrowserActivityService,
     private readonly graph: GraphIngestService,
+    private readonly signals: SignallingEventService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(PushStage.name);
@@ -189,6 +200,11 @@ export class PushStage implements ImportStageRunner {
       latestSpace = await this.assertDatabaseHasRoom(context, latestSpace);
     }
 
+    // Everything is in ci.* now; make it searchable. Bulk-pushed rows emit no
+    // per-row *CreatedEvent, so without this kick they wait for the pipeline's
+    // hourly index sweeps.
+    const searchIndex = await this.kickSearchIndexBackfill(context, counts, entities.resolved);
+
     return {
       // Every staged row is RESOLVED one way or another, and this stage's work
       // is examining all of them — so all three outcomes count toward progress.
@@ -220,8 +236,85 @@ export class PushStage implements ImportStageRunner {
           databaseFreeBytes: latestSpace.freeBytes,
           databaseDataDir: latestSpace.dataDir,
         },
+        // What the post-push search-index kick did (absent when nothing was
+        // written, so there was nothing to index).
+        ...(searchIndex ? { searchIndex } : {}),
       },
     };
+  }
+
+  /**
+   * Post-push search-index kick: request pipeline sweeps of the `index.embed_*`
+   * and `index.vector*` stages for exactly the entity types this push wrote, so
+   * imported rows become searchable (embeddings + keyword tsvectors) with every
+   * row's outcome recorded in `ci.pipeline_state`. Requested over pg-boss
+   * ({@link SearchIndexBackfillRequestEvent}, consumed by the pipeline domain's
+   * `SearchIndexSweepRequestListener`) rather than by injecting a service: the
+   * module dependency would close the cycle maintenance → llm → tools → import,
+   * and the queued job survives a process killed between the push completing
+   * and the sweeps starting.
+   *
+   * `person` rides along whenever the entity lane resolved anything: pushed
+   * people are raw `GraphIngestService` upserts that emit no `PersonCreatedEvent`,
+   * so without the sweep they are never searchable. `entities.resolved` is the
+   * CUMULATIVE count (prior attempts included) because a resumed push may be
+   * re-running precisely because the attempt that resolved them died before
+   * this kick.
+   *
+   * Fail-soft by design: the rows are safely in `ci.*` and the sweep is
+   * idempotent, so a failure to enqueue the request must not fail — or retry —
+   * the push stage. It is reported in the stage detail instead, and the missing
+   * rows remain exactly what the next sweep (or a manual orchestrate) picks up.
+   *
+   * Scope caveat, deliberate: destination counts exist for THIS attempt only
+   * (the ledger records that a row settled, not where it landed), so a resumed
+   * push whose earlier attempt wrote rows and died before kicking requests only
+   * what the resume itself wrote. Widening that would mean sweeping every type
+   * on every resume; the un-swept remainder is what `/v1/ingest/finish` and the
+   * CLI `backfill` command exist for.
+   */
+  private async kickSearchIndexBackfill(
+    context: StageRunContext,
+    counts: DestinationCounts,
+    entitiesResolved: number,
+  ): Promise<Record<string, unknown> | null> {
+    const wrote = (Object.entries(counts) as Array<[Destination, number]>)
+      .filter(([, count]) => count > 0)
+      .map(([destination]) => destination);
+
+    const entityTypes: string[] = [...backfillEntityTypesFor(wrote)];
+    if (entitiesResolved > 0) {
+      entityTypes.push('person');
+    }
+
+    if (entityTypes.length === 0) {
+      return null;
+    }
+
+    try {
+      await this.signals.send(
+        SearchIndexBackfillRequestEvent,
+        // userId scopes the pipeline sweeps the listener starts — they are
+        // per-user by design, like everything on the ledger.
+        { userId: context.userId, entityTypes, requestedBy: `import-run:${context.runId}` },
+        { queue: SEARCH_INDEX_BACKFILL_QUEUE },
+      );
+      this.logger.log('Post-push search-index backfill requested', {
+        runId: context.runId,
+        entityTypes,
+      });
+
+      return { requested: entityTypes };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn('Post-push search-index request failed; rows remain for the next sweep', {
+        runId: context.runId,
+        entityTypes,
+        error: message,
+      });
+
+      return { requested: entityTypes, error: message };
+    }
   }
 
   /**

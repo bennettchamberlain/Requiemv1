@@ -63,6 +63,17 @@ export class ImportRunEntity {
   dataSources!: string[];
 
   /**
+   * DECLARED, not detected: the importer(s) the user's chosen service card
+   * stands for, recorded when the run was started from the wizard. NULL for
+   * runs with no such intent on record (inbox, CLI, API callers, pre-column
+   * history). The picker's "imported ✓" credits `declared ∩ detected` when
+   * this is present — which is what keeps a stray readme.md inside an Amazon
+   * archive from marking the Notion tile imported.
+   */
+  @Column({ type: 'text', array: true, name: 'declared_sources', nullable: true })
+  declaredSources!: string[] | null;
+
+  /**
    * Derived CACHE over {@link ImportStageEntity}, maintained by the stage
    * runners. Never the source of truth for whether work remains.
    */

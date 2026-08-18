@@ -8,6 +8,7 @@ const unpushed = (id: string, overrides = {}) => ({
   label: 'takeout.zip',
   source: 'cli',
   dataSources: ['gmail'],
+      declaredSources: null,
   status: 'completed',
   percent: 100,
   requestedStages: ['unpack', 'parse', 'media'],

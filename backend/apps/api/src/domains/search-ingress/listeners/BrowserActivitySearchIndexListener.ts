@@ -13,6 +13,7 @@ import {
   type BrowserActivityDeletedPayload,
 } from '@ci/domains/browser-activity/events';
 import { OnEvent } from '@ci/domains/events';
+import { browserActivitySearchDocument, browserActivityWeightedTexts } from '@ci/domains/search-ingress/searchTexts';
 import { EmbeddingService } from '@ci/domains/search-ingress/services/EmbeddingService';
 import { VectorService } from '@ci/domains/search-ingress/services/VectorService';
 import { type WeightedText } from '@ci/domains/search-ingress/types';
@@ -141,47 +142,10 @@ export class BrowserActivitySearchIndexListener {
   }
 
   private getSearchContent(browserActivity: BrowserActivity): WeightedText[] {
-    const parts: WeightedText[] = [];
-
-    if (browserActivity.title) {
-      parts.push({ text: browserActivity.title, weight: 10 });
-    }
-
-    if (browserActivity.url) {
-      parts.push({ text: browserActivity.url, weight: 5 });
-    }
-
-    const description = browserActivity.properties?.description;
-    if (typeof description === 'string' && description.length > 0) {
-      parts.push({ text: description, weight: 3 });
-    }
-
-    return parts;
+    return browserActivityWeightedTexts(browserActivity);
   }
 
   private getSearchDocument(browserActivity: BrowserActivity): string | null {
-    const parts = new Set<string>();
-
-    const push = (value: unknown) => {
-      if (typeof value !== 'string') {
-        return;
-      }
-
-      const normalized = value.trim();
-
-      if (normalized.length === 0) {
-        return;
-      }
-
-      parts.add(normalized);
-    };
-
-    push(browserActivity.url ?? null);
-    push(browserActivity.title ?? null);
-    push(browserActivity.properties?.description ?? null);
-
-    const result = Array.from(parts).join(' ');
-
-    return result.length > 0 ? result : null;
+    return browserActivitySearchDocument(browserActivity);
   }
 }

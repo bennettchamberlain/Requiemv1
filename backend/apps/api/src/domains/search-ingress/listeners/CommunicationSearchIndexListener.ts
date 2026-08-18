@@ -13,6 +13,7 @@ import {
   type CommunicationUpdatedPayload,
   type CommunicationDeletedPayload,
 } from '@ci/domains/memory/events';
+import { communicationSearchDocument, communicationWeightedTexts } from '@ci/domains/search-ingress/searchTexts';
 
 import { EmbeddingService } from '../services/EmbeddingService';
 import { IndexSkipService } from '../services/IndexSkipService';
@@ -158,29 +159,10 @@ export class CommunicationSearchIndexListener {
   }
 
   private getSearchContent(communication: Communication): WeightedText[] {
-    const parts: WeightedText[] = [];
-
-    if (communication.subject) {
-      parts.push({ text: communication.subject, weight: 10 });
-    }
-
-    if (communication.preview) {
-      parts.push({ text: communication.preview, weight: 5 });
-    }
-
-    return parts;
+    return communicationWeightedTexts(communication);
   }
 
   private getSearchDocument(communication: Communication): string | null {
-    const parts = [communication.subject, communication.preview, communication.content];
-
-    const document = parts
-      .filter((part): part is string => typeof part === 'string' && part.length > 0)
-      .join(' ');
-
-    // Return null (not '') when there is nothing to embed, so indexUpsert's
-    // `searchDocument == null` guard skips embedding instead of asking the model
-    // to embed an empty string — which throws "Received empty embedding vector".
-    return document.length > 0 ? document : null;
+    return communicationSearchDocument(communication);
   }
 }

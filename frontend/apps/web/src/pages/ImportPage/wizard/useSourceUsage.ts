@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { useImportApi, type CatalogSource } from '../useImportApi';
+import { useImportApi, type CatalogSource, type ImportRun } from '../useImportApi';
 
 /**
  * How many runs the roll-up reads.
@@ -60,7 +60,7 @@ export function useSourceUsage(): ReadonlyMap<string, string> {
             continue;
           }
 
-          for (const source of run.dataSources) {
+          for (const source of creditedSources(run)) {
             const previous = next.get(source);
 
             if (previous == null || run.finishedAt > previous) {
@@ -85,6 +85,36 @@ export function useSourceUsage(): ReadonlyMap<string, string> {
   }, [api]);
 
   return lastImportedAt;
+}
+
+/**
+ * The sources a run may CREDIT — the ones "imported ✓" is allowed to cite.
+ *
+ * Detection alone over-claims: recognizers are greedy by design (a lone
+ * readme.md inside an Amazon archive detects as `notion`; any name/email CSV
+ * as `contact_list`), so a run's full `dataSources` list marks tiles the user
+ * never imported. Two rules repair that:
+ *
+ *  - **Declared runs** (started from a wizard service card) credit
+ *    `declared ∩ detected`. Intent bounds the claim, detection keeps it
+ *    honest: a Google-bundle drop declares every member importer but credits
+ *    only the ones the archive actually contained — and never the stray file
+ *    some unrelated recognizer grabbed.
+ *  - **Undeclared runs** (inbox, CLI, pre-declaration history) credit only the
+ *    DOMINANT detected source. `dataSources` is ordered most-rows-first by the
+ *    parse stage, so the head is "what this archive mostly is" — the thing the
+ *    user meaningfully imported — and the one-file tail credits nothing.
+ */
+export function creditedSources(
+  run: Pick<ImportRun, 'dataSources' | 'declaredSources'>,
+): readonly string[] {
+  const declared = run.declaredSources;
+
+  if (declared != null) {
+    return run.dataSources.filter((source) => declared.includes(source));
+  }
+
+  return run.dataSources.slice(0, 1);
 }
 
 /**

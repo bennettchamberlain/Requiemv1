@@ -14,6 +14,7 @@ import path from 'node:path';
 
 import type { FileImporter, Recognition, DirEntry } from './registry';
 import { registerDataSource } from './registry';
+import { headMatches } from './sniff';
 import type { ImportParams } from './timeline';
 import { timeframeContains } from './timeline';
 
@@ -69,14 +70,20 @@ export class AppleHealthFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
+    // 'export.xml' is the most generic filename in this whole registry; the
+    // HealthKit root element is not. One 4 KB read tells them apart.
+    const isHealthExport = (fpath: string) => headMatches(fpath, /<HealthData\b/);
+
     if (stat.isFile()) {
-      return path.basename(root).toLowerCase() === 'export.xml' ? { confidence: 0.95 } : { confidence: 0 };
+      return path.basename(root).toLowerCase() === 'export.xml' && isHealthExport(root)
+        ? { confidence: 0.95 }
+        : { confidence: 0 };
     }
 
     if (stat.isDirectory()) {
       try {
         const names = fs.readdirSync(root);
-        if (names.includes('export.xml')) {
+        if (names.includes('export.xml') && isHealthExport(path.join(root, 'export.xml'))) {
           return { confidence: 0.95 };
         }
 

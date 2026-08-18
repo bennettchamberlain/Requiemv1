@@ -47,6 +47,47 @@ export const BACKFILLABLE_ENTITIES = [
 export type BackfillableEntity = (typeof BACKFILLABLE_ENTITIES)[number];
 
 /**
+ * Entity types the pipeline domain also indexes, mapped to the `ci.pipeline_state`
+ * stage id that owns them. The sweep skips any row that stage has ALREADY
+ * recorded an outcome for — the ledger row, not the embedding, is the ownership
+ * marker:
+ *
+ *  - `done` rows also have an embedding, so the LEFT JOIN on
+ *    `ci_search.embeddings` would exclude them anyway — but only until a stage
+ *    version bump (e.g. a `CI_EMBED_MODEL` change) makes them stale. The pipeline
+ *    re-embeds stale rows itself; this sweep re-enqueueing them would write a
+ *    second, possibly different-model vector for work already scheduled.
+ *  - `skipped` rows are the ones this mapping exists for: the pipeline records
+ *    its examined-and-declined verdict in the ledger, NOT in
+ *    `ci_search.index_skips`, so without this anti-join every sweep re-enqueued
+ *    them as no-op jobs forever.
+ *  - `failed` / `quarantined` rows are owned by the pipeline's retry gate and a
+ *    human respectively; re-enqueueing either duplicates (or overrides) that
+ *    policy.
+ *
+ * Rows the pipeline has never seen (no ledger row) are fair game, which keeps
+ * this sweep an honest safety net for the manual surfaces that still call it
+ * (`/v1/ingest/finish {searchIndexOnly}`, the orchestrate leg, the CLI) —
+ * though with EVERY backfillable type now pipeline-covered and the ledger
+ * pre-filled from the existing index, a manual run finds work only where the
+ * pipeline has genuinely never been.
+ *
+ * Stage ids are string literals rather than an import of the pipeline domain's
+ * `STAGE_IDS`: the pipeline module already imports this module, and ids are
+ * permanent by that domain's own contract. A spec pins each entry to the
+ * declared stage list, so a drift fails the build rather than silently sweeping.
+ */
+export const PIPELINE_COVERED_STAGES: Partial<Record<BackfillableEntity, string>> = {
+  content: 'index.embed',
+  communication: 'index.embed_communication',
+  event: 'index.embed_event',
+  item: 'index.embed_item',
+  person: 'index.embed_person',
+  file: 'index.embed_file',
+  'browser-activity': 'index.embed_browser_activity',
+};
+
+/**
  * Wave D dual-writes `/v1/browser-activity` into `ci.events` (`view`) +
  * `ci.content` (`web-page`). Importers that only ask to backfill
  * `browser-activity` would otherwise leave the timeline rows unindexed.
@@ -355,8 +396,10 @@ export class SearchIndexBackfillService {
 
   /**
    * Rows (id + optional page-order timestamp) with no matching
-   * `ci_search.embeddings` row AND no `ci_search.index_skips` marker, after the
-   * keyset cursor. The skips anti-join is what makes the sweep CONVERGE: the
+   * `ci_search.embeddings` row, no `ci_search.index_skips` marker, and — for
+   * types in {@link PIPELINE_COVERED_STAGES} — no `ci.pipeline_state` ledger row
+   * from the covering stage, after the keyset cursor.
+   * The skips anti-join is what makes the sweep CONVERGE: the
    * listeners intentionally never write an embedding for low-value rows, so
    * without it every backfill run re-enqueued the same skipped rows as no-op
    * jobs forever. Table / id / time columns come from the authoritative
@@ -386,6 +429,15 @@ export class SearchIndexBackfillService {
     // Rows the sweep must never treat as missing (e.g. merge tombstones, whose
     // index rows were deliberately deleted).
     const excluded = source.backfillPredicate ? `AND ${source.backfillPredicate}` : '';
+    // Rows the pipeline domain has already recorded an outcome for (any status
+    // — see PIPELINE_COVERED_STAGES for why skipped/failed matter). The join is
+    // an index-only lookup on the ledger's (entity_type, entity_id, stage) PK.
+    const pipelineStage = PIPELINE_COVERED_STAGES[entityType];
+    const pipelineJoin = pipelineStage
+      ? `LEFT JOIN ci.pipeline_state ps
+             ON ps.entity_type = $1 AND ps.entity_id = s."${source.idColumn}" AND ps.stage = '${pipelineStage}'`
+      : '';
+    const pipelineExcluded = pipelineStage ? 'AND ps.entity_id IS NULL' : '';
     const timeColumn = TIME_PAGED_TYPES[entityType];
 
     if (timeColumn != null) {
@@ -396,8 +448,10 @@ export class SearchIndexBackfillService {
              ON e.entity_type = $1 AND e.entity_id = s."${source.idColumn}"
            LEFT JOIN ci_search.index_skips k
              ON k.entity_type = $1 AND k.entity_id = s."${source.idColumn}"
+           ${pipelineJoin}
           WHERE e.entity_id IS NULL
             AND k.entity_id IS NULL
+            ${pipelineExcluded}
             ${discriminator}
             ${excluded}
             AND ($2::timestamptz IS NULL
@@ -415,8 +469,10 @@ export class SearchIndexBackfillService {
            ON e.entity_type = $1 AND e.entity_id = s."${source.idColumn}"
          LEFT JOIN ci_search.index_skips k
            ON k.entity_type = $1 AND k.entity_id = s."${source.idColumn}"
+         ${pipelineJoin}
         WHERE e.entity_id IS NULL
           AND k.entity_id IS NULL
+          ${pipelineExcluded}
           ${discriminator}
           ${excluded}
           AND ($2::uuid IS NULL OR s."${source.idColumn}" > $2::uuid)

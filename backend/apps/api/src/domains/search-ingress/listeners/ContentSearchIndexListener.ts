@@ -13,6 +13,7 @@ import {
   type ContentDeletedPayload,
   type ContentUpdatedPayload,
 } from '@ci/domains/memory/events';
+import { contentSearchDocument, contentWeightedTexts } from '@ci/domains/search-ingress/searchTexts';
 import { EmbeddingService } from '@ci/domains/search-ingress/services/EmbeddingService';
 import { VectorService } from '@ci/domains/search-ingress/services/VectorService';
 import { type WeightedText } from '@ci/domains/search-ingress/types';
@@ -139,75 +140,10 @@ export class ContentSearchIndexListener {
   }
 
   private getSearchContent(content: Content): WeightedText[] {
-    const parts: WeightedText[] = [];
-
-    if (content.title) {
-      parts.push({ text: content.title, weight: 10 });
-    }
-
-    if (content.text) {
-      parts.push({ text: content.text, weight: 5 });
-    }
-
-    if (content.type) {
-      parts.push({ text: content.type, weight: 3 });
-    }
-
-    if (content.url) {
-      parts.push({ text: content.url, weight: 3 });
-    }
-
-    if (content.mimetype) {
-      parts.push({ text: content.mimetype, weight: 1 });
-    }
-
-    return parts;
+    return contentWeightedTexts(content);
   }
 
   private getSearchDocument(content: Content): string | null {
-    const parts = new Set<string>();
-
-    const push = (value: unknown) => {
-      if (typeof value !== 'string') {
-        return;
-      }
-
-      const normalized = value.trim();
-
-      if (normalized.length === 0) {
-        return;
-      }
-
-      parts.add(normalized);
-    };
-
-    push(content.text ?? null);
-    push(content.type ?? null);
-    push(content.mimetype ?? null);
-    push(content.title ?? null);
-    push(content.url ?? null);
-
-    //We don't have any good examples of source_data fields to search on, but
-    //putting this here as an example in case we ever do
-    // const sourceData = (content.sourceData ?? {}) as Record<string, unknown>;
-    // // We don't have a schema on properties yet. These values are an accumulated
-    // // superset of values we've indexed in various places.
-    // const candidateKeys = [];
-    //
-    // for (const key of candidateKeys) {
-    //   push(sourceData[key]);
-    // }
-    //
-    // const aliases = sourceData['aliases'];
-    //
-    // if (Array.isArray(aliases)) {
-    //   for (const alias of aliases) {
-    //     push(alias);
-    //   }
-    // }
-
-    const result = Array.from(parts).join(' ');
-
-    return result.length > 0 ? result : null;
+    return contentSearchDocument(content);
   }
 }

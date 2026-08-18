@@ -78,11 +78,12 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
                       onClick={() => onToggle(item.key)}
                       className={cn(
                         'relative flex h-full w-full flex-col gap-3 rounded-md border p-3 text-left text-sm transition-colors',
-                        on
-                          ? 'border-primary bg-primary/5'
-                          : imported
-                            ? 'border-green-700/50 bg-green-950/[0.06] dark:border-green-700/45 dark:bg-green-950/40'
-                            : 'hover:bg-muted/50',
+                        // Selection is the ONLY state that colors the card.
+                        // Previously-imported tiles also got a tinted border and
+                        // a corner check, and three of those on an unselected
+                        // grid read as "already picked" — that state now lives
+                        // solely in the dated line at the tile's foot.
+                        on ? 'border-primary bg-primary/5' : 'hover:bg-muted/50',
                         !item.ready && 'opacity-60',
                       )}
                     >
@@ -104,11 +105,6 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
 
                         {on ? (
                           <Check className="h-4 w-4 shrink-0 text-primary" aria-hidden />
-                        ) : imported ? (
-                          <Check
-                            className="h-4 w-4 shrink-0 text-green-700 dark:text-green-400"
-                            aria-hidden
-                          />
                         ) : !item.ready ? (
                           <Badge variant="outline" className="shrink-0 text-[10px]">
                             Coming soon
@@ -153,7 +149,8 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
                           re-importing an archive they have. How MUCH it brought
                           is a fact about the run, and lives on the run. */}
                       {imported && (
-                        <span className="mt-auto pt-1 text-xs text-muted-foreground">
+                        <span className="mt-auto flex items-center gap-1 pt-1 text-xs text-green-700 dark:text-green-400">
+                          <Check aria-hidden className="h-3 w-3 shrink-0" />
                           imported{' '}
                           {new Date(imported).toLocaleDateString(undefined, {
                             day: 'numeric',

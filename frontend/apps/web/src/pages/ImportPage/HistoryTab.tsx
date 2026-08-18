@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 
+/**
+ * Runs fetched per page. One Google Takeout session produced ~150 runs
+ * (oversized media exports as loose files, one run each), so history pages by
+ * keyset cursor instead of hoping one fetch covers a lifetime of imports.
+ */
+const RUNS_PAGE = 100;
+
 import { Alert, Button, Card, cn } from '@ci/shadcn';
 import { AlertTriangle } from '@ci/shadcn/icons';
 
@@ -21,6 +28,9 @@ export function HistoryTab() {
   const [sources, setSources] = useState<readonly ImportSource[]>([]);
   const [runs, setRuns] = useState<readonly ImportRun[]>([]);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [showAllRuns, setShowAllRuns] = useState(false);
+  const [exhausted, setExhausted] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const { run, refresh } = useRunProgress(activeRunId);
@@ -35,9 +45,10 @@ export function HistoryTab() {
       .then(setSources)
       .catch(() => setSources([]));
     void api
-      .listRuns()
+      .listRuns(RUNS_PAGE)
       .then((loaded) => {
         setRuns(loaded);
+        setExhausted(loaded.length < RUNS_PAGE);
 
         // Reattach to whatever is still going, so a reload mid-import does not
         // look like nothing is happening.
@@ -129,7 +140,7 @@ export function HistoryTab() {
           <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {runs
               .filter((entry) => entry.id !== activeRunId)
-              .slice(0, 10)
+              .slice(0, showAllRuns ? undefined : 10)
               .map((entry) => (
                 <li key={entry.id}>
                   <Card className="flex h-full flex-row items-center justify-between gap-2 p-3">
@@ -172,6 +183,42 @@ export function HistoryTab() {
                 </li>
               ))}
           </ul>
+
+          <div className="flex gap-2">
+            {!showAllRuns && runs.filter((entry) => entry.id !== activeRunId).length > 10 && (
+              <Button variant="outline" size="sm" onClick={() => setShowAllRuns(true)}>
+                Show all {runs.filter((entry) => entry.id !== activeRunId).length} loaded imports
+              </Button>
+            )}
+            {showAllRuns && !exhausted && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={loadingMore}
+                onClick={() => {
+                  const last = runs[runs.length - 1];
+
+                  if (last == null) {
+                    return;
+                  }
+
+                  setLoadingMore(true);
+                  void api
+                    .listRuns(RUNS_PAGE, { createdAt: last.createdAt, id: last.id })
+                    .then((page) => {
+                      setRuns((current) => [...current, ...page]);
+                      setExhausted(page.length < RUNS_PAGE);
+                    })
+                    .catch(() => {
+                      // Leave exhausted false so the button stays for a retry.
+                    })
+                    .finally(() => setLoadingMore(false));
+                }}
+              >
+                {loadingMore ? 'Loading…' : `Load ${RUNS_PAGE} more`}
+              </Button>
+            )}
+          </div>
         </section>
       ) : (
         <p className="text-sm text-muted-foreground">

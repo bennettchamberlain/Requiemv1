@@ -9,6 +9,7 @@ import { parseCSV } from './csv';
 import { GPXFileImporter } from './gpx';
 import type { FileImporter, Recognition, DirEntry } from './registry';
 import { registerDataSource } from './registry';
+import { csvHeaderHas } from './sniff';
 import type { ImportParams } from './timeline';
 import { timeframeContains } from './timeline';
 
@@ -28,18 +29,26 @@ export class StravaFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
+    // The columns the parser reads. 'activities.csv' is a name any fitness
+    // export might use; Strava's header is what makes it Strava's.
+    const isStravaActivities = (fpath: string) => csvHeaderHas(fpath, ['activity id', 'activity date']);
+
     if (stat.isFile()) {
-      return path.basename(root).toLowerCase() === 'activities.csv' ? { confidence: 0.9 } : { confidence: 0 };
+      return path.basename(root).toLowerCase() === 'activities.csv' && isStravaActivities(root)
+        ? { confidence: 0.9 }
+        : { confidence: 0 };
     }
 
     if (stat.isDirectory()) {
       try {
         const names = fs.readdirSync(root).map((n) => n.toLowerCase());
-        if (names.includes('activities.csv') && names.includes('activities')) {
+        const activitiesOk =
+          names.includes('activities.csv') && isStravaActivities(path.join(root, 'activities.csv'));
+        if (activitiesOk && names.includes('activities')) {
           return { confidence: 0.95 };
         }
 
-        if (names.includes('activities.csv')) {
+        if (activitiesOk) {
           return { confidence: 0.85 };
         }
       } catch {

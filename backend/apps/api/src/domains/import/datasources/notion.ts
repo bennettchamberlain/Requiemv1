@@ -13,7 +13,18 @@ import { registerDataSource } from './registry';
 import type { ImportParams } from './timeline';
 import { timeframeContains } from './timeline';
 
-// Recurse a directory up to `depth` levels, returning absolute paths of *.md files.
+/**
+ * Notion's exporter names every page `<Title> <32-hex-id>.md` — that suffix is
+ * the signature. A bare `.md` used to score 0.6, which is how a readme inside
+ * an Amazon archive became "Notion data"; markdown with no id is anyone's.
+ */
+const NOTION_MD_RE = /\s[0-9a-f]{32}\.md$/i;
+
+function isNotionMarkdownName(name: string): boolean {
+  return NOTION_MD_RE.test(name);
+}
+
+// Recurse a directory up to `depth` levels, returning absolute paths of Notion-named *.md files.
 function findMarkdownFiles(dir: string, depth: number, out: string[]): void {
   let names: fs.Dirent[];
   try {
@@ -25,7 +36,7 @@ function findMarkdownFiles(dir: string, depth: number, out: string[]): void {
   for (const ent of names) {
     const full = path.join(dir, ent.name);
     if (ent.isFile()) {
-      if (path.extname(ent.name).toLowerCase() === '.md') {
+      if (isNotionMarkdownName(ent.name)) {
         out.push(full);
       }
     } else if (ent.isDirectory() && depth > 0) {
@@ -86,9 +97,10 @@ export class NotionFileImporter implements FileImporter {
     }
 
     if (stat.isFile()) {
-      // A single markdown page dropped directly — recognize modestly so a more
-      // specific importer can outrank us.
-      if (path.extname(root).toLowerCase() === '.md') {
+      // A single exported page dropped directly — recognize modestly so a more
+      // specific importer can outrank us. Only with Notion's id suffix: bare
+      // markdown is anyone's.
+      if (isNotionMarkdownName(path.basename(root))) {
         return { confidence: 0.6 };
       }
 

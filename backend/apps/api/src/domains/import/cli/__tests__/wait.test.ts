@@ -8,6 +8,7 @@ const detail = (status: string, percent: number, stages: Array<Partial<StageSumm
   label: null,
   source: 'cli',
   dataSources: [],
+      declaredSources: null,
   status,
   percent,
   requestedStages: [],

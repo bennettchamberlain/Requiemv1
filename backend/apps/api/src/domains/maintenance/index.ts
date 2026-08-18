@@ -117,7 +117,13 @@ export {
 export {
   SearchIndexBackfillService,
   BACKFILLABLE_ENTITIES,
+  PIPELINE_COVERED_STAGES,
   expandBackfillEntityTypes,
   type BackfillableEntity,
   type SearchIndexBackfillResult,
 } from './services/SearchIndexBackfillService';
+export {
+  SearchIndexBackfillRequestEvent,
+  SEARCH_INDEX_BACKFILL_QUEUE,
+  type SearchIndexBackfillRequestPayload,
+} from './events';

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { parseCSV } from './csv';
 import type { FileImporter, Recognition, DirEntry } from './registry';
 import { registerDataSource } from './registry';
+import { csvHeaderHas } from './sniff';
 import type { ImportParams } from './timeline';
 import { timeframeContains } from './timeline';
 
@@ -111,6 +112,38 @@ const REDDIT_FILES = [
   ...MESSAGE_FILES,
 ];
 
+/**
+ * Per-file REQUIRED CSV columns — the ones the parser below actually reads.
+ *
+ * The signature names are too generic to claim on their own: Google Takeout
+ * exports a YouTube comment history as `comments.csv`, and one inside a
+ * Takeout zip was staged as a Reddit comment on the strength of its filename.
+ * A Reddit export's headers are distinctive (`permalink` above all — YouTube's
+ * file has none), so requiring the parsed columns kills the false positive
+ * while accepting every file the importer could parse anyway.
+ */
+const REQUIRED_HEADERS: Record<string, readonly string[]> = {
+  'posts.csv': ['id', 'permalink', 'title'],
+  'comments.csv': ['id', 'permalink', 'body'],
+  'saved_posts.csv': ['id', 'permalink'],
+  'saved_comments.csv': ['id', 'permalink'],
+  'post_votes.csv': ['id', 'permalink'],
+  'comment_votes.csv': ['id', 'permalink'],
+  'subscribed_subreddits.csv': ['subreddit'],
+  'moderated_subreddits.csv': ['subreddit'],
+  'purchases.csv': ['processor', 'transaction_id'],
+  'messages_archive.csv': ['thread_id', 'subject'],
+  'chat_history.csv': ['message_id', 'username'],
+  'announcements.csv': ['sent_at', 'subject'],
+};
+
+/** Name on the signature list AND header carrying the parsed columns. */
+function isRedditFile(fpath: string): boolean {
+  const required = REQUIRED_HEADERS[path.basename(fpath).toLowerCase()];
+
+  return required != null && csvHeaderHas(fpath, required);
+}
+
 export class RedditFileImporter implements FileImporter {
   async recognize(_ctx: unknown, entry: DirEntry): Promise<Recognition> {
     const root = entry.fullPath || entry.fsRoot || entry.filename;
@@ -126,15 +159,18 @@ export class RedditFileImporter implements FileImporter {
     }
 
     if (stat.isFile()) {
-      return REDDIT_FILES.includes(path.basename(root).toLowerCase())
-        ? { confidence: 0.9 }
-        : { confidence: 0 };
+      return isRedditFile(root) ? { confidence: 0.9 } : { confidence: 0 };
     }
 
     if (stat.isDirectory()) {
       try {
-        const names = fs.readdirSync(root).map((n) => n.toLowerCase());
-        const hits = REDDIT_FILES.filter((f) => names.includes(f)).length;
+        // Count only files whose HEADER passes, not whose name does — a
+        // directory holding someone else's comments.csv + posts.csv would
+        // otherwise clear the two-hit bar on names alone.
+        const names = fs.readdirSync(root);
+        const hits = names.filter(
+          (name) => REDDIT_FILES.includes(name.toLowerCase()) && isRedditFile(path.join(root, name)),
+        ).length;
         if (hits >= 2) {
           return { confidence: 0.95 };
         }
