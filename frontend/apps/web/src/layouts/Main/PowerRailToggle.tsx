@@ -34,6 +34,7 @@ export function PowerRailToggle() {
             // opens and closes it — same property both ways, so closing is
             // the reverse of opening instead of unmounting the wordmark.
             className={cn(
+fix/misc-chat-thread-titles
               'inline-flex h-10 items-center overflow-hidden rounded-full border border-white/55 bg-white/30 p-1 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.7),0_1px_2px_rgba(0,0,0,0.08)] backdrop-blur-md transition-[max-width,padding,gap] duration-200 ease-in-out hover:bg-white/45 dark:border-white/20 dark:bg-white/10 dark:hover:bg-white/20',
               pinned ? 'max-w-52 gap-2 pr-3' : 'max-w-10 gap-0',
             )}

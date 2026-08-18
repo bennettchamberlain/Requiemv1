@@ -4,6 +4,7 @@ import { LoadingPage, Portal, useDeviceLayout } from '@ci/common';
 import { Toaster } from '@ci/shadcn';
 import { Outlet } from 'react-router-dom';
 
+import { AnimatedBackground } from '@/components/AnimatedBackground';
 import { ConnectionModeIndicator, OutboxQueueIndicator } from '@/components/ConnectionModeIndicator';
 import { useTheme } from '@/components/ThemePicker';
 import { useUnsyncedImportsNotice } from '@/components/UnsyncedImports/useUnsyncedImportsNotice';
@@ -44,7 +45,11 @@ export function Main() {
 
   return (
     <PowerRailProvider>
-      <div className="grid h-lvh min-h-0 grid-cols-[auto_1fr] grid-rows-[auto_1fr]">
+      {/* Scenery, behind everything. `relative z-10` on the shell is what keeps
+          it there: the background is `fixed` at z-index 0, and a positioned
+          sibling later in the DOM would otherwise paint over the whole app. */}
+      <AnimatedBackground />
+      <div className="relative z-10 grid h-lvh min-h-0 grid-cols-[auto_1fr] grid-rows-[auto_1fr]">
         {/* Left-aligned so the mark stays put when the rail widens. Centering
             it here walks the logo to the middle of the expanded column. */}
         {/* No padding here: the toggle carries the drawer's own width and

@@ -156,6 +156,59 @@
   box-shadow: var(--ci-button-shadow);
 }
 
+
+/*
+ * The animated background — CI-Portal's, so the platform reads as one product.
+ *
+ * A fixed layer BEHIND everything (`z-index: 0`, and the app shell sits above
+ * it), painting the same base gradient the body already carried plus one glow
+ * that tracks the pointer. `AnimatedBackground` writes `--glow-x`/`--glow-y`;
+ * the gradient below is what turns two numbers into light, so a settled spring
+ * costs nothing — no animation is running, the custom properties simply stop
+ * changing.
+ *
+ * `pointer-events: none` throughout: this is scenery, and it covers the whole
+ * viewport. Anything else would swallow every click in the app.
+ */
+.animated-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.animated-bg__glow {
+  position: absolute;
+  inset: 0;
+  /* Wide, overlapping stops so the falloff reads as light in a room rather than
+     as a disc with an edge. The colour is the app's own primary, not a literal,
+     so a theme change moves the glow with it. */
+  /* `color-mix`, not `hsl(var(--primary) / …)`: these tokens are hex literals
+     (`--primary: #c5e8dc`), so the hsl() form parses as invalid and drops the
+     whole gradient to `none` — silently, since an invalid background-image is
+     simply not painted. */
+  background: radial-gradient(
+    900px circle at var(--glow-x, -9999px) var(--glow-y, -9999px),
+    color-mix(in srgb, var(--primary) 16%, transparent) 0%,
+    color-mix(in srgb, var(--primary) 11%, transparent) 18%,
+    color-mix(in srgb, var(--primary) 6%, transparent) 38%,
+    color-mix(in srgb, var(--primary) 2.5%, transparent) 60%,
+    transparent 80%
+  );
+}
+
+/*
+ * Reduced motion keeps the surface, drops the tracking. The component stops
+ * writing coordinates, so the glow parks off-screen and this layer is simply
+ * the base gradient — the same design, holding still.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .animated-bg__glow {
+    display: none;
+  }
+}
+
 .texture-surface {
   background-image: var(--texture-image, none);
   background-size: var(--texture-size, auto);

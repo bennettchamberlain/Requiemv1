@@ -409,6 +409,27 @@ export const STAGE_SCHEDULES: Record<StageId, StageSchedule> = {
   },
 
   /**
+   * NIGHTLY. `capture.scan` detections into `ci.object_observations`.
+   *
+   * Same tier as `promote.object` and for the same reasons: Postgres only, no
+   * provider, no bill. Ordered behind `promote.place` by `STAGE_DEPENDENCIES`
+   * because it reads `location_entity_id` when something has filled it — not
+   * because a scan needs it, since a scan resolves its own place from the geo
+   * block in its payload.
+   *
+   * Nightly rather than `onArrival` deliberately: a room scan is not something
+   * a user watches a list for the way they watch search, and the sightings it
+   * produces are input to a review queue, not to anything time-critical.
+   */
+  [STAGE_IDS.PROMOTE_OBSERVATION]: {
+    trigger: 'scheduled',
+    cost: 'local',
+    window: 'enrichment',
+    minInterval: 1 * DAYS,
+    maxStaleness: 3 * DAYS,
+  },
+
+  /**
    * NIGHTLY, all legs. One INSERT…SELECT per matrix rule per slice; Postgres
    * only, no provider, no bill.
    *

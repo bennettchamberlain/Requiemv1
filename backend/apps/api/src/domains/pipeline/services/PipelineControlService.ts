@@ -349,6 +349,14 @@ export const STAGE_DEPENDENCIES: Readonly<Partial<Record<StageId, readonly Stage
   [STAGE_IDS.PROMOTE_EDGE_COMMUNICATION]: [STAGE_IDS.ENRICH_PERSON_LINK],
   [STAGE_IDS.PROMOTE_EDGE_EVENT]: [STAGE_IDS.ENRICH_EVENT_PERSON_LINK, STAGE_IDS.PROMOTE_PLACE],
   [STAGE_IDS.PROMOTE_EDGE_INVENTORY]: [STAGE_IDS.PROMOTE_OBJECT],
+  // `promote.observation` reads `ci.events.location_entity_id` when it is set,
+  // which is `promote.place`'s output. Today a `capture.scan` row never has one
+  // — `/v1/events` writes no geo columns, so `promote.place`'s predicate never
+  // selects a scan — and the stage falls back to the geo block inside the
+  // payload. The edge is declared anyway: it is free (ordering within the
+  // night), and it is what keeps the day someone starts populating those
+  // columns from being the day sightings quietly resolve to no place.
+  [STAGE_IDS.PROMOTE_OBSERVATION]: [STAGE_IDS.PROMOTE_PLACE],
   // The observation leg's `resolved_object_id` is `promote.object`'s output;
   // its other columns (content/event/place) are set at capture time. The
   // receipt, position and device legs read only ingest/capture-time columns —
