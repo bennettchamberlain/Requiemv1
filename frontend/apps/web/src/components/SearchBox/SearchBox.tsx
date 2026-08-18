@@ -438,6 +438,21 @@ function SearchBox(
             e.stopPropagation();
 
             const submitted = (e.target as HTMLInputElement).value;
+
+            // Enter commits immediately — cancel the in-flight autoSubmit
+            // debounce (scheduled off the last keystroke, not off this Enter)
+            // so it doesn't fire moments later and redundantly resubmit. Left
+            // alone it used to get killed by SearchBox unmounting on commit;
+            // now that a /memory commit no longer remounts the box (that
+            // remount was itself racing the URL write — see GlobalSearchBox's
+            // commitSearch), nothing else clears this timer.
+            if (debounceTimeoutRef.current) {
+              clearTimeout(debounceTimeoutRef.current);
+              debounceTimeoutRef.current = null;
+            }
+
+            lastAutoSubmittedRef.current = submitted;
+            setIsAutoSubmitPending(false);
             onSubmit({ query: submitted });
             setSelectedIndex(-1);
             setPanelDismissed(true);
