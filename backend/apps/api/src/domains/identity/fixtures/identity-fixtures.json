@@ -1,9 +1,9 @@
 {
   "$comment": [
-    "Cross-repo canonicalisation contract. Executed by CI-Server's jest suite and,",
-    "once the identity module is vendored (design P3), by CI-Import-Tools' runner",
-    "against this same file. A row here is a promise about a URL shape; do not edit",
-    "an expectation to make a failing implementation pass.",
+    "Canonicalisation contract. Executed by CI-Server's jest suite. Design P3 once",
+    "planned to also vendor the identity module into CI-Import-Tools and run this",
+    "same file there — moot now that repo is retired. A row here is a promise about",
+    "a URL shape; do not edit an expectation to make a failing implementation pass.",
     "`canonical: null` means the input yields no url identity and the caller must",
     "fall back to a lower rung."
   ],

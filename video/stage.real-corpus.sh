@@ -51,6 +51,15 @@ WEB_PORT="${WEB_PORT:-3201}"
 IMPORTER_PORT="${IMPORTER_PORT:-12009}"
 
 # The real archive and a checkout of the importer that can push it.
+#
+# NOTE (2026-08-18): CI-Import-Tools has been retired (renamed
+# ZARCHIVED-CI-Import-Tools) and its import functionality is now native in
+# CI-Server (backend/apps/api/src/domains/import/, see docs/cli/ci-import.md
+# for the `ci-import` CLI). This script still shells out to a standalone
+# CI-Import-Tools checkout for its GraphQL-lane bulk push — porting it to the
+# native importer is a known follow-up, not yet done. Until then this stage
+# requires a local CI-Import-Tools clone (or ZARCHIVED-CI-Import-Tools) at
+# $CI_IMPORT_TOOLS.
 ARCHIVE="${CI_ARCHIVE_DB:-$HOME/devel/liam-test-data-export/ci-sync.db}"
 IMPORTER="${CI_IMPORT_TOOLS:-$HOME/devel/ci/CI-Import-Tools}"
 WORK="${STAGE_WORK_DIR:-${TMPDIR:-/tmp}/civideo-real-memory}"

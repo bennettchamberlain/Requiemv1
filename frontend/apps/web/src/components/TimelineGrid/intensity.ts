@@ -26,7 +26,7 @@
  *
  * A high percentile (p95/p98) of the non-zero counts compresses less of that
  * tail, and was measured before settling on the fence, but it fails the case
- * this module exists for. Because CI-Import-Tools imports arrive per source, a
+ * this module exists for. Because bulk archive imports arrive per source, a
  * user typically gets several import days, not one, and a percentile can only
  * discount a fixed share of the sample: with 18 ordinary days plus 3 import
  * days, p95 puts the ceiling at 22,000 (the flat grid, back verbatim) where the

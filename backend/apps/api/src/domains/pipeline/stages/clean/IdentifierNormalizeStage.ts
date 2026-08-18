@@ -45,8 +45,10 @@ const ENTITY_TYPE = 'entity';
  * corpus becomes provisional. This is the whole reason the stage exists: without
  * it, improving the rule fixes only rows written afterwards.
  *
- * Bump it in CI-Import-Tools' copy at the same time, or the two drift and the
- * lookup silently misses.
+ * This rule used to also live in CI-Import-Tools, which required bumping both
+ * copies together or the two would drift and the lookup would silently miss.
+ * That repo is now retired (its import functionality is native here, in
+ * `backend/apps/api/src/domains/import/`) and this is the only copy left.
  */
 export const IDENTIFIER_RULE_GENERATION = 1;
 
@@ -176,13 +178,14 @@ const NANP_LENGTH = 11;
  * identities: a UK `+44 20 7946 0958` and a US `(207) 946-0958` both normalize
  * to `2079460958` and become the same person. E.164 is the fix.
  *
- * But `value_normalized` is a JOIN KEY, shared byte-for-byte with
- * CI-Import-Tools and computed at every lookup by `classifyParticipant`.
- * Redefining it here would break people-linking in both repos silently — no
- * error, no dead letter, just matches that stop happening. So the canonical form
- * goes in its own column and the join key is left alone. Promoting `value_e164`
- * to be the key is a later, reviewable change across both repos, and a version
- * bump when it happens.
+ * But `value_normalized` is a JOIN KEY, computed at every lookup by
+ * `classifyParticipant` and — until CI-Import-Tools' retirement — shared
+ * byte-for-byte with that repo's own copy of the same rule. Redefining it
+ * here silently breaks people-linking against every row already written with
+ * the old rule — no error, no dead letter, just matches that stop happening.
+ * So the canonical form goes in its own column and the join key is left
+ * alone. Promoting `value_e164` to be the key is a later, reviewable change,
+ * and a version bump when it happens.
  *
  * ── Why no default region ─────────────────────────────────────────────────
  *
@@ -289,8 +292,8 @@ export interface IdentifierPatch {
  * failure this stage exists to avoid.
  *
  * The fix is a `normalizeHandle` branch in
- * `domains/graph/utils/normalizeIdentifier.ts` (shared with CI-Import-Tools,
- * like its siblings) plus a bump of {@link IDENTIFIER_RULE_GENERATION}, which
+ * `domains/graph/utils/normalizeIdentifier.ts` plus a bump of
+ * {@link IDENTIFIER_RULE_GENERATION}, which
  * re-opens every row skipped here. Until then the count of
  * `identifiers_unnormalizable` IS the size of that job.
  */

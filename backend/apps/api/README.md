@@ -103,12 +103,12 @@ Two write modes, one invariant (provenance-triple idempotency —
 - **Interactive** single-row creates emit a per-row `*CreatedEvent` → the search index
   updates live.
 - **Bulk** (the GraphQL list mutations `createEvents`, `createCommunications`, … that
-  CI-Import-Tools uses) pass `emitCreated:false` — no per-row fan-out. Rows are persisted
-  and idempotent but **not searchable** until the post-load sweep
+  the native import domain uses) pass `emitCreated:false` — no per-row fan-out. Rows are
+  persisted and idempotent but **not searchable** until the post-load sweep
   `POST /api/maintenance/search-index/backfill` re-emits create events for unindexed rows
   (LEFT JOIN against `ci_search.embeddings`). The full post-import chain is
   `POST /api/maintenance/orchestrate`; see
-  [rest.md — what the importer drives](../../../docs/api/rest.md#what-the-importer-ci-import-tools-drives-during-a-run)
+  [rest.md — what the importer drives](../../../docs/api/rest.md#what-the-importer-drives-during-a-run)
   and the [bulk load runbook](db/postgres/BULK_LOAD_RUNBOOK.md).
 
 ## Configuration

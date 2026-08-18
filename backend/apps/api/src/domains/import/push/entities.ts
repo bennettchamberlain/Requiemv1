@@ -90,8 +90,8 @@ export function naturalKeyFor(staged: StagedEntity): string | null {
  * empty, `participantsFor` then found no participants for any record, and a real
  * import silently dropped all 613 of its item→entity edges.
  *
- * `GraphIngestService` is the server's answer to this exact problem — it
- * describes itself as ingest for the CI-Import-Tools timeline. It derives
+ * `GraphIngestService` is the server's answer to this exact problem — it is
+ * bulk ingest for the archive importer's own knowledge graph. It derives
  * `linked_id` as `uuidv5(key)`, so a natural key is a legal identity; it files
  * rows under `import:<sourceSystem>`; and it indexes emails and phones into
  * `ci.entity_identifiers`, which is what lets communication participants and

@@ -32,7 +32,7 @@ an order where each new data source lands behind the control that makes it defen
 | 2 | **The DB key is never biometric-gated; the UI is.** Gating the DB key breaks background ingest. Biometric app-lock is a presentation gate over the WebView, not a data gate. |
 | 3 | **Encryption at rest is a hard prerequisite for remote wipe**, not an orthogonal feature — "wipe" without it is `File.delete()` on recoverable plaintext pages. With it, destroying one keystore entry crypto-shreds the whole vault. |
 | 4 | **Cleartext cannot be scoped with `networkSecurityConfig`** — the schema has no CIDR support, and the appliance can be any LAN IP. Tailscale Serve is the only path that makes "encrypted in transit" true; ship it as the recommended onboarding path and gate `http://` behind a private-range check plus an interstitial. |
-| 5 | **Communications content is not a mobile problem.** Play's restricted-permissions policy makes `READ_SMS`/`READ_CALL_LOG` effectively unshippable for a memory vault, and iOS exposes no equivalent API at all. Contacts ship metadata-only with tokenized identifiers; message/call *content* routes through CI-Import-Tools on desktop, where it is a deliberate archival act rather than a background daemon. |
+| 5 | **Communications content is not a mobile problem.** Play's restricted-permissions policy makes `READ_SMS`/`READ_CALL_LOG` effectively unshippable for a memory vault, and iOS exposes no equivalent API at all. Contacts ship metadata-only with tokenized identifiers; message/call *content* routes through CI-Server's own import flow on desktop/web (`backend/apps/api/src/domains/import/`), where it is a deliberate archival act rather than a background daemon. |
 
 **Two defects this audit found in code that is already shipping** (§2.4) — both cheap,
 both blocking nothing, both worth fixing before the next data source lands.
@@ -826,8 +826,9 @@ this rather than into it.**
   `CallKit` / `CallDirectory` do not expose it.
 
 **[P] Conclusion: communications content is a desktop/import problem, not a mobile-ETL
-problem.** Route it through **CI-Import-Tools**, where the user makes a deliberate,
-one-time archival decision about a specific export file — rather than granting a
+problem.** Route it through **CI-Server's own import flow** (desktop/web), where the user
+makes a deliberate, one-time archival decision about a specific export file — rather than
+granting a
 background daemon a standing subscription to other people's messages. The
 `/api/v1/communications` ingest endpoint already registered in `outboxFlush.ts:51` **[V]**
 stays; only its *source* changes.
@@ -975,7 +976,7 @@ request at all.** This is the feature that changes that.
 > scrambled tag instead of their number, and never their messages."*
 >
 > **Content-level communications ingest is out of scope for mobile permanently** (§8.2) —
-> route it through CI-Import-Tools on desktop.
+> route it through CI-Server's own import flow on desktop/web.
 
 ---
 
@@ -1015,7 +1016,7 @@ Severity: 🔴 **P0** = blocks the next data source · 🟠 **P1** = before the 
 | **G-4** | **Do not ship or market remote wipe before S1+S2.** Without crypto-shredding, "wipe" is `File.delete()` on recoverable plaintext pages — a false security claim, which is worse than no feature (§5.6). ✅ **S1+S2 have landed**, so this gate no longer blocks building the feature. It still blocks *marketing* it on iOS until the ciphertext assertion runs — a wipe claim resting on an unverified encryption claim is the same false-security failure one level up. |
 | **G-5** | **Health data requires S1, S2, S4, and S5 all landed.** Art. 9 special-category data, on a device that today has no app-lock and talks cleartext to a LAN host. |
 | **G-6** | **Contacts require S11.** Untokenized third-party identifiers must never reach the server, not even once — a token cannot be un-leaked after the raw number has been synced. |
-| **G-7** | **No SMS, call-log, or message-content ingest from mobile, ever** (§8.2). Blocked by Play restricted-permissions policy on Android and by the absence of any API on iOS. Route via CI-Import-Tools. |
+| **G-7** | **No SMS, call-log, or message-content ingest from mobile, ever** (§8.2). Blocked by Play restricted-permissions policy on Android and by the absence of any API on iOS. Route via CI-Server's own import flow. |
 | **G-8** | **Every source added re-opens the store privacy filings.** `DELIVERY.md` §1c already warns that on-device retention forces a re-file of the nutrition label and Data Safety answers. Each of S10/S12 is a re-file, not a silent addition. |
 
 ---

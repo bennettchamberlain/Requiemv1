@@ -334,9 +334,12 @@ Per-method `JwtOrApiKeyAuthGuard`. Thin proxy in front of the local Ollama daemo
 
 ---
 
-## What the importer (CI-Import-Tools) drives during a run
+## What the importer drives during a run
 
-Verified against `CI-Import-Tools/backend/src/ci-server/`. Prefer **REST `/v1/*`** when the server advertises it (`GET /v1/ingest/status`); GraphQL bulk mutations remain the fallback for older servers.
+CI-Server's own native import domain (`backend/apps/api/src/domains/import/`) drives this
+flow in-process today. The sequence below was originally verified against the now-retired
+CI-Import-Tools (`ZARCHIVED-CI-Import-Tools/backend/src/ci-server/`) and still documents the
+REST/GraphQL contract an importer client uses. Prefer **REST `/v1/*`** when the server advertises it (`GET /v1/ingest/status`); GraphQL bulk mutations remain the fallback for older servers.
 
 1. **Data push (REST `/v1/*`, preferred):** NDJSON batches to `/v1/{events,communications,contents,inventory,browser-activity,positions}` (`v1.ts` + `mapping.ts`), dedup on the source triple. Falls back to GraphQL `create*` mutations when `/v1` is unavailable.
 2. **Media (REST):** binary upload → **`POST /files/upload`** (or `/v1/files`), then links the returned `{id}` into records.

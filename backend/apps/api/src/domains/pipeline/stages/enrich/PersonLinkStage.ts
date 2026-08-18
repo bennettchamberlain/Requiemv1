@@ -80,8 +80,10 @@ const EVENT_SUBJECT_TYPE = 'event';
  * Covers {@link classifyIdentifier}: the handle detection, the scheme stripping,
  * and the delegation to `normalizeEmail` / `normalizePhone` / `normalizeName`.
  * Bump it in the same commit that changes any of those — including the shared
- * rule in `domains/graph`, and including CI-Import-Tools' copy of it, because a
- * change on either side makes every stored `value_normalized` provisional.
+ * rule in `domains/graph` — because a change makes every stored
+ * `value_normalized` provisional. (Until CI-Import-Tools' retirement this also
+ * meant bumping its copy of the rule; that repo's import functionality is now
+ * native here.)
  */
 export const IDENTIFIER_RULE_GENERATION = 1;
 

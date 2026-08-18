@@ -188,7 +188,7 @@ Two families: **single writes** return the entity type (`createEvent: EventType!
 
 ### 4.7 Bulk ingest mutations (the importer surface) — detailed
 
-The high-throughput paths CI-Import-Tools calls. **Shape:** `mutation(input: [CreateXInput!]!): [XType!]!` — one round-trip carries an array; the result is in **input order**. The 10 MB body limit exists for these.
+The high-throughput paths the importer calls. **Shape:** `mutation(input: [CreateXInput!]!): [XType!]!` — one round-trip carries an array; the result is in **input order**. The 10 MB body limit exists for these.
 
 **Idempotency — the provenance triple.** Each record carries `(sourceType, sourceSystem, sourceId)`; re-ingesting the same triple is a **no-op find-or-return**, enforced by set-based `INSERT … ON CONFLICT <arbiter> DO NOTHING`. A row is dedupable only when it carries the triple.
 

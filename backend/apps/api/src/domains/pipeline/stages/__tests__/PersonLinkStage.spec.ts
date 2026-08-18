@@ -143,10 +143,9 @@ describe('classifyIdentifier keeps the shared join key byte-identical', () => {
 
     expect(identifier).toMatchObject({ kind, valueNormalized: value });
     // THE contract: `ci.identifier_claims.value_normalized` and
-    // `ci.entity_identifiers.value_normalized` are the same key, computed by the
-    // same function, in this repo AND in CI-Import-Tools. A stage that
-    // normalised by its own rule would write claims nothing can ever join, with
-    // no error anywhere.
+    // `ci.entity_identifiers.value_normalized` are the same key, computed by
+    // the same function. A stage that normalised by its own rule would write
+    // claims nothing can ever join, with no error anywhere.
     expect(identifier?.valueNormalized).toBe(normalizeEmail(raw));
   });
 
