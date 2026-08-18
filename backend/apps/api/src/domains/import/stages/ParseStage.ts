@@ -143,31 +143,7 @@ export class ParseStage implements ImportStageRunner {
 
     const matches = await dataSourcesRecognize(undefined, entry, {}, { descend: true });
 
-    return this.dropGenericWhenSpecialised(matches);
-  }
-
-  /**
-   * Drop the catch-all when a real parser claimed the tree.
-   *
-   * `generic` returns `confidence: 1` unconditionally without inspecting
-   * anything, so it matches every archive — and because this stage runs EVERY
-   * recognized source, it then re-read everything the specialised parsers had
-   * already read. On a real Google Takeout that produced 80,067 duplicate
-   * staged rows next to 309,689 Google Voice ones, with 67,065 filenames
-   * overlapping exactly. They push as contentless `ci.content` rows (no text,
-   * no url, no file, no event), and since `ci.content` carries no time column
-   * they sort ahead of every genuine memory — so the default Memory view became
-   * 80k empty stubs, and per-source counts were inflated 17.5%.
-   *
-   * Upstream made this selection in its drop zone
-   * (`cands.filter(c => c.dataSource !== 'generic')`); the selection layer was
-   * not ported, and no API can deselect an importer. Generic stays as the SOLE
-   * match, which is what makes dragging a bare `.gpx` or a loose PDF still work.
-   */
-  private dropGenericWhenSpecialised(matches: DataSourceRecognition[]): DataSourceRecognition[] {
-    const specialised = matches.filter((match) => match.data_source.name !== GENERIC_DATA_SOURCE);
-
-    return specialised.length > 0 ? specialised : matches;
+    return dropGenericWhenSpecialised(matches);
   }
 
   /** Run one importer, staging everything it emits. */
@@ -222,6 +198,30 @@ export class ParseStage implements ImportStageRunner {
 
     return counts;
   }
+}
+
+/**
+ * Drop the catch-all when a real parser claimed the tree.
+ *
+ * `generic` returns `confidence: 1` unconditionally without inspecting
+ * anything, so it matches every archive — and because this stage runs EVERY
+ * recognized source, it then re-read everything the specialised parsers had
+ * already read. On a real Google Takeout that produced 80,067 duplicate
+ * staged rows next to 309,689 Google Voice ones, with 67,065 filenames
+ * overlapping exactly. They push as contentless `ci.content` rows (no text,
+ * no url, no file, no event), and since `ci.content` carries no time column
+ * they sort ahead of every genuine memory — so the default Memory view became
+ * 80k empty stubs, and per-source counts were inflated 17.5%.
+ *
+ * Upstream made this selection in its drop zone
+ * (`cands.filter(c => c.dataSource !== 'generic')`); the selection layer was
+ * not ported, and no API can deselect an importer. Generic stays as the SOLE
+ * match, which is what makes dragging a bare `.gpx` or a loose PDF still work.
+ */
+export function dropGenericWhenSpecialised(matches: DataSourceRecognition[]): DataSourceRecognition[] {
+  const specialised = matches.filter((match) => match.data_source.name !== GENERIC_DATA_SOURCE);
+
+  return specialised.length > 0 ? specialised : matches;
 }
 
 /**
