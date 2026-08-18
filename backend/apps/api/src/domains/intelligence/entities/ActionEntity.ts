@@ -32,6 +32,9 @@ export class ActionEntity {
   @Column({ type: 'jsonb', name: 'metadata', default: '{}' })
   metadata!: Record<string, unknown>;
 
+  @Column({ type: 'text', default: 'legacy' })
+  source!: string;
+
   @Column({ type: 'boolean', default: false })
   seen!: boolean;
 
@@ -63,6 +66,7 @@ export class ActionEntity {
       imageUrl: entity.imageUrl,
       priority: entity.priority,
       metadata: entity.metadata,
+      source: entity.source ?? 'legacy',
       seen: entity.seen ?? false,
       dismissed: entity.dismissed ?? false,
       threadId: entity.threadId,

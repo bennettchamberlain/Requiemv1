@@ -116,6 +116,7 @@ describe('SearchIndexBackfillService', () => {
         'browser-activity': 1,
         file: 2,
         person: 1,
+        position: 0,
       },
       // No embeddings configured for this DS → drain count is 0 for every type.
       embedded: 0,
@@ -127,6 +128,7 @@ describe('SearchIndexBackfillService', () => {
         'browser-activity': 0,
         file: 0,
         person: 0,
+        position: 0,
       },
     });
 

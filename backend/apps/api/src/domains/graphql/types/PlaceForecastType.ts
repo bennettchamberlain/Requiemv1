@@ -3,8 +3,7 @@ import { Field, Float, Int, ObjectType } from '@nestjs/graphql';
 import type { PlaceForecastItem } from '@ci/domains/predictions';
 
 @ObjectType({
-  description:
-    'A likely next place from the stay-point transition model (recency-decayed, hour/dow backoff)',
+  description: 'A likely next place from the stay-point transition model (recency-decayed, hour/dow backoff)',
 })
 export class PlaceForecastItemType {
   @Field(() => String, { nullable: true })

@@ -74,14 +74,14 @@ interface OutboxRoute {
 }
 
 /**
- * Positions are not a searchable entity — the appliance's `BACKFILLABLE_ENTITIES` lists
- * communication/event/content/item/browser-activity/file/person, not position — so a
- * search-index sweep would do nothing for them. What they *do* need is the two geo legs:
- * `reverse_geocode` turns the point into address/city on the row itself, and
- * `estimate_locations` is how every other entity in the timeline inherits a place from the
- * fixes around it. Skipping these leaves the rows written but inert.
+ * Positions need the GPS reverse leg (`reverse_position` — pipeline
+ * PositionReverseStage writing address onto `ci.position`) and
+ * `estimate_locations` so other timeline entities inherit a place from the
+ * surrounding fixes. Event `reverse_geocode` does not name GPS rows.
+ * Search indexing of named, downsampled positions is the server coalesce
+ * `search_index` leg, not this client finish list.
  */
-const POSITION_FINISH_STAGES = ['reverse_geocode', 'estimate_locations'] as const;
+const POSITION_FINISH_STAGES = ['reverse_position', 'estimate_locations'] as const;
 
 /** Every other `/v1` kind materializes searchable rows with no per-row indexing fan-out. */
 const DEFAULT_V1_FINISH_STAGES = ['search_index'] as const;
@@ -193,6 +193,8 @@ const INGEST_FINISH_STAGE_ORDER = [
   'extract_graph',
   'geocode',
   'reverse_geocode',
+  'reverse_position',
+  'reverse_inventory',
   'estimate_locations',
   'media_dimensions',
   'search_index',

@@ -87,11 +87,11 @@ describe('IngestLifecycleController', () => {
   });
 
   describe('GET /v1/ingest/status', () => {
-    it('delegates to IngestStatusService', async () => {
+    it('delegates to IngestStatusService for the session user', async () => {
       const { controller, status } = makeController();
 
-      await expect(controller.status()).resolves.toBe(statusSnapshot);
-      expect(status.snapshot).toHaveBeenCalledTimes(1);
+      await expect(controller.status(ctx)).resolves.toBe(statusSnapshot);
+      expect(status.snapshot).toHaveBeenCalledWith({ userId: 'user-1', scope: 'user' });
     });
   });
 });

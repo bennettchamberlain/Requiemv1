@@ -6,6 +6,7 @@ import { DataSource } from 'typeorm';
 import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
+import { EventService } from '@ci/domains/events';
 // The geocode domain's PUBLIC barrel, not its internals: `no-cross-domain-internals`
 // in `.dependency-cruiser.mjs` allows exactly `index.ts` and `events.ts` across a
 // domain boundary. `GeocodeService` is the cache-aware orchestration — canonicalize,
@@ -13,6 +14,7 @@ import config from '@ci/configuration';
 // STATUS (never an HTTP code), write the possibly-negative cache row. This stage
 // adds none of that and must never re-implement any of it.
 import { GeocodeService } from '@ci/domains/geocode';
+import { PositionUpdatedEvent } from '@ci/domains/position/events';
 
 import { PIPELINE_QUEUES, STAGE_IDS } from '../../constants';
 import type { Stage, StageResult, StageSource } from '../../types';
@@ -393,6 +395,7 @@ export class PositionReverseStage implements Stage {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly geocodeService: GeocodeService,
     private readonly logger: LoggerService,
+    private readonly eventService: EventService,
   ) {
     this.logger.setContext(PositionReverseStage.name);
   }
@@ -486,6 +489,7 @@ export class PositionReverseStage implements Stage {
 
     try {
       await this.writeAddresses(ctx.userId, resolved, byId);
+      await this.enqueueNamedSearch(resolved);
 
       for (const [id, patch] of resolved) {
         // No `confidence`. `ReverseGeocodeOutcome` carries no precision signal
@@ -696,6 +700,52 @@ export class PositionReverseStage implements Stage {
         new Date(Math.max(...epochs)),
       ],
     );
+  }
+
+  /**
+   * Search indexes named, downsampled GPS. Coalesce runs `search_index` in the
+   * same orchestrate call that only *enqueues* this stage, so unnamed fixes are
+   * often skip-recorded first. `index_skips` is sticky: backfill will not
+   * re-select those ids after the address lands unless something clears the
+   * skip and emits an update. This is that something — one `sendMany` onto
+   * `search-index`, same pattern as SearchIndexBackfillService, not a per-row
+   * fan-out through every queue.
+   */
+  private async enqueueNamedSearch(resolved: Map<string, AddressPatch>): Promise<void> {
+    const ids = [...resolved.keys()];
+    if (ids.length === 0) {
+      return;
+    }
+
+    try {
+      await this.dataSource.query(
+        `DELETE FROM ci_search.index_skips
+          WHERE entity_type = 'position'
+            AND entity_id = ANY($1::uuid[])
+            AND reason = 'unnamed'`,
+        [ids],
+      );
+    } catch (err: unknown) {
+      this.logger.warn('Could not clear unnamed position index skips after reverse', {
+        count: ids.length,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    try {
+      await this.eventService.sendMany(
+        'search-index',
+        ids.map((positionId) => ({
+          name: PositionUpdatedEvent,
+          data: { positionId },
+        })),
+      );
+    } catch (err: unknown) {
+      this.logger.warn('Could not enqueue position search after reverse', {
+        count: ids.length,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 }
 

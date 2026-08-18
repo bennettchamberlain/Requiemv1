@@ -25,7 +25,9 @@ codegen): [graphql-api.md](graphql-api.md).
 | Doc | Covers | Status |
 |---|---|---|
 | [architecture/architecture.md](architecture/architecture.md) | Platform & ecosystem: services, compose topology, domains, data flows, roadmap | living doc |
-| [architecture/correlation-anomaly-suggestions.md](architecture/correlation-anomaly-suggestions.md) | **Derivation layer hole (#55):** pairwise/lagged correlation, FDR, changepoints, evidence-linked suggestions — plan for the engines that turn `daily_metrics` into hypotheses and `ci.actions` | plan |
+| [architecture/correlation-anomaly-suggestions.md](architecture/correlation-anomaly-suggestions.md) | **Derivation layer (#55):** pairwise/lagged correlation, FDR, changepoints, evidence-linked suggestions — engines that turn `daily_metrics` into hypotheses and `ci.actions` | implemented |
+| [architecture/post-ingest-enrichment.md](architecture/post-ingest-enrichment.md) | **Post-ingest enrichment (#51):** server-side finish after bulk `/v1`, GPS reverse on `ci.position`, position search, inventory place FK, coverage % — the producer hole behind daily metrics | implemented |
+| [architecture/thicker-daily-metrics.md](architecture/thicker-daily-metrics.md) | **Thicker daily metrics (#53 leftovers):** `time_at_home`, `meeting_minutes`, `sleep_minutes`; home asked via selector / Q&A / action → `LIVES_IN` | implemented |
 | [architecture/Database.md](architecture/Database.md) | **The database**: engine/extensions, schemas (`ci`/`ci_search`/`ci_etl`/`hbpe`), tables by domain, idempotency/dedup design, indexing (HNSW/GIN/GIST), hypertables, migration workflow | verified 2026-07-06 |
 | [architecture/life-graph-matrix.md](architecture/life-graph-matrix.md) | **Life graph under CTI** (#1945–#1947): ontology, L0/L1/L2 layers, deterministic edge matrix, job path, code map, PR #1943 delivery notes | living doc |
 | [architecture/event-ingest-spec.md](architecture/event-ingest-spec.md) | Unified capture-event ingest (`/v1/events`) spec | partially implemented — see status header |

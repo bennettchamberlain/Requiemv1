@@ -503,6 +503,18 @@ export const ConfigSchema = z.object({
      * ci_derived.daily_metrics. Off until the store has rows.
      */
     'grounded.prompts': booleanStringSchema,
+    /**
+     * Lets the correlation / anomaly / suggestion engines enqueue ci.actions
+     * (and therefore Brief/feed cards). Findings still persist when this is
+     * off. Default off until coverage is real.
+     */
+    'derivation.engines': booleanStringSchema,
+    /**
+     * After bulk `/v1` materialize, enqueue a delayed singleton that runs the
+     * owed enrichment legs even if the client never calls finish. Default on —
+     * the previous default (hope the client remembers) was the #51 hole.
+     */
+    'ingest.selfHeal': booleanStringSchema,
   }),
   environment: z.object({
     'database.query.logging': booleanStringSchema,

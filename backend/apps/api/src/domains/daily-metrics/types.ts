@@ -14,7 +14,10 @@ export type MetricKey =
   | 'km_traveled'
   | 'screen_minutes'
   | 'n_domains'
-  | 'spend_total';
+  | 'spend_total'
+  | 'meeting_minutes'
+  | 'sleep_minutes'
+  | 'time_at_home';
 
 export const METRIC_KEYS: readonly MetricKey[] = [
   'n_messages',
@@ -27,6 +30,9 @@ export const METRIC_KEYS: readonly MetricKey[] = [
   'screen_minutes',
   'n_domains',
   'spend_total',
+  'meeting_minutes',
+  'sleep_minutes',
+  'time_at_home',
 ] as const;
 
 /** A metric is `null` when there is no underlying data for it that day. */
@@ -47,6 +53,9 @@ export const METRIC_SOURCES: Record<MetricKey, readonly string[]> = {
   screen_minutes: ['ci.browser_activity'],
   n_domains: ['ci.browser_activity'],
   spend_total: ['ci.inventory'],
+  meeting_minutes: ['ci.events'],
+  sleep_minutes: ['ci.events'],
+  time_at_home: ['ci.position', 'ci.relationships'],
 };
 
 /** A computed (or stored) day of the feature store. */

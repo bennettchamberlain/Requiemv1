@@ -1,14 +1,18 @@
 import { z } from 'zod';
 
+export type ActionSource = 'legacy' | 'correlation' | 'anomaly' | 'suggestion';
+
 export interface CreateActionDto {
   id?: string;
   title: string;
   text: string;
   imageUrl?: string;
   priority?: number;
-  threadId: string;
+  threadId?: string;
   seen?: boolean;
   dismissed?: boolean;
+  source?: ActionSource;
+  metadata?: Record<string, unknown>;
 }
 
 export interface CreateAnswerDto {

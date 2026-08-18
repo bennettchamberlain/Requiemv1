@@ -172,18 +172,11 @@ export class ForecastResolver {
     }
 
     try {
-      const places = await this.placeForecastService.predictNext(
-        toServiceContext(context),
-        k,
-        horizonHours,
-      );
+      const places = await this.placeForecastService.predictNext(toServiceContext(context), k, horizonHours);
 
       return places.map(PlaceForecastItemType.toType);
     } catch (err) {
-      this.logger.error(
-        'Place forecast query failed',
-        err instanceof Error ? err : new Error(String(err)),
-      );
+      this.logger.error('Place forecast query failed', err instanceof Error ? err : new Error(String(err)));
 
       return [];
     }
@@ -223,10 +216,7 @@ export class ForecastResolver {
     try {
       const serviceContext = toServiceContext(context);
       const user = await this.userService.findById(serviceContext, serviceContext.userId);
-      const result = await this.placeForecastService.rebuild(
-        serviceContext,
-        user?.timezone ?? 'UTC',
-      );
+      const result = await this.placeForecastService.rebuild(serviceContext, user?.timezone ?? 'UTC');
 
       return `${result.clusters} clusters, ${result.transitions} transitions`;
     } catch (err) {

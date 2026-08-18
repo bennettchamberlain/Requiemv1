@@ -13,6 +13,7 @@ import {
   ItemCreatedEvent,
   PersonCreatedEvent,
 } from '@ci/domains/memory/events';
+import { PositionCreatedEvent } from '@ci/domains/position/events';
 import { ENTITY_SOURCE_MAP } from '@ci/domains/search-ingress';
 
 /**
@@ -40,6 +41,7 @@ export const BACKFILLABLE_ENTITIES = [
   'browser-activity',
   'file',
   'person',
+  'position',
 ] as const;
 
 export type BackfillableEntity = (typeof BACKFILLABLE_ENTITIES)[number];
@@ -73,6 +75,7 @@ const EVENT_BY_TYPE: Record<BackfillableEntity, { event: string; idField: string
   'browser-activity': { event: BrowserActivityCreatedEvent, idField: 'browserActivityId' },
   file: { event: FileCreatedEvent, idField: 'fileId' },
   person: { event: PersonCreatedEvent, idField: 'personId' },
+  position: { event: PositionCreatedEvent, idField: 'positionId' },
 };
 
 /**
@@ -85,6 +88,7 @@ const EVENT_BY_TYPE: Record<BackfillableEntity, { event: string; idField: string
  */
 const TIME_PAGED_TYPES: Partial<Record<BackfillableEntity, string>> = {
   communication: 'time',
+  position: 'time',
 };
 
 /** Keyset cursor: the last row of the previous page. `ts` only for time-paged types. */

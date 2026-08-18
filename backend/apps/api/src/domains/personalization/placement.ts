@@ -3,6 +3,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
 import { type UserServiceContext } from '@ci/common/context';
+import { isHomeConfirmSourceId } from '@ci/domains/daily-metrics';
 import { EventService } from '@ci/domains/memory';
 import { isValidTimezone, localDateInTZ, todayInTZ, zonedWallTimeToUTC } from '@ci/domains/planning';
 
@@ -56,6 +57,10 @@ export function placeForSource(source: ContextPromptSource): ContextPromptPlace 
 }
 
 export function writerFor(source: ContextPromptSource): ContextPromptWritePlan['writer'] {
+  if (source.kind === 'daily_metric' && isHomeConfirmSourceId(source.id)) {
+    return 'write_known_place';
+  }
+
   const place = placeForSource(source);
   if (place === 'future_this_week' || source.kind === 'candidate') {
     return 'write_schedule_accept';

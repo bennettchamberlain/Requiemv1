@@ -6,7 +6,7 @@ import {
   type MetricValues,
 } from '../types';
 
-import { pickMetricSurprise } from './metricSurprises';
+import { pickMetricSurprise, pickMetricSurpriseFromAnomalies } from './metricSurprises';
 
 const USER = '00000000-0000-0000-0000-0000000000aa';
 
@@ -96,5 +96,31 @@ describe('pickMetricSurprise', () => {
     ];
 
     expect(pickMetricSurprise(yesterday, week)?.id).toBe('conversations_low');
+  });
+
+  it('picks the highest-score selector metric from persisted anomalies', () => {
+    const surprise = pickMetricSurpriseFromAnomalies(
+      [
+        {
+          date: '2026-08-16',
+          metric: 'n_places',
+          score: 2,
+          value: 1,
+          baseline: 4,
+        },
+        {
+          date: '2026-08-16',
+          metric: 'n_conversations',
+          score: 5,
+          value: 2,
+          baseline: 11,
+        },
+      ],
+      '2026-08-16',
+    );
+
+    expect(surprise?.id).toBe('conversations_low');
+    expect(surprise?.label).toContain('2');
+    expect(surprise?.label).toContain('11');
   });
 });

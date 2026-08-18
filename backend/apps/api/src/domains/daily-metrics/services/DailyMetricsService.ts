@@ -10,6 +10,8 @@ import { shiftIso, todayIsoInTimezone } from '../dateUtil';
 import { DailyMetricEntity } from '../entities/DailyMetricEntity';
 import { assembleDailyMetrics } from '../metrics/assembleDailyMetrics';
 import { DAILY_AGGREGATE_SQL, parseAggregateRow } from '../metrics/dailyAggregateSql';
+import type { PositionFix } from '../places/stayPoints';
+import { timeAtHomeFromFixes } from '../places/timeAtHome';
 import type { DailyMetrics } from '../types';
 
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -45,6 +47,9 @@ export class DailyMetricsService {
 
     const raw = parseAggregateRow(rows[0] ?? {});
     const { metrics, coverage } = assembleDailyMetrics(raw);
+    const atHome = await this.computeTimeAtHome(context.userId, date, timezone);
+    metrics.time_at_home = atHome.minutes;
+    coverage.time_at_home = atHome.coverage;
 
     return {
       userId: context.userId,
@@ -153,6 +158,95 @@ export class DailyMetricsService {
         );
       }
     }
+  }
+
+  private async computeTimeAtHome(
+    userId: string,
+    date: string,
+    timezone: string,
+  ): Promise<{ minutes: number | null; coverage: number }> {
+    const homeRows = (await this.repository.query(
+      `
+      SELECT
+        COALESCE(
+          ST_Y(e.location_point::geometry),
+          CASE
+            WHEN jsonb_typeof(r.properties->'coordinates') = 'array'
+              THEN (r.properties->'coordinates'->>1)::double precision
+            ELSE NULL
+          END
+        ) AS lat,
+        COALESCE(
+          ST_X(e.location_point::geometry),
+          CASE
+            WHEN jsonb_typeof(r.properties->'coordinates') = 'array'
+              THEN (r.properties->'coordinates'->>0)::double precision
+            ELSE NULL
+          END
+        ) AS lng
+      FROM ci.relationships r
+      JOIN ci.users u ON u.entity_id = r.from_entity_id AND u.id = $1
+      JOIN ci.entities e ON e.entity_id = r.to_entity_id AND e.entity_type = 'Location'
+      WHERE r.is_active = TRUE
+        AND r.relationship_type = 'LIVES_IN'
+      ORDER BY r.updated_at DESC
+      LIMIT 1
+      `,
+      [userId],
+    )) as Array<{ lat: string | number | null; lng: string | number | null }>;
+
+    const lat = Number(homeRows[0]?.lat);
+    const lng = Number(homeRows[0]?.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return { minutes: null, coverage: 0 };
+    }
+
+    const clusterRows = (await this.repository.query(
+      `
+      SELECT radius_m
+        FROM ci_derived.place_clusters
+       WHERE user_id = $1
+         AND centroid IS NOT NULL
+       ORDER BY ST_Distance(
+         centroid,
+         ST_SetSRID(ST_MakePoint($3::double precision, $2::double precision), 4326)::geography
+       )
+       LIMIT 1
+      `,
+      [userId, lat, lng],
+    )) as Array<{ radius_m: string | number | null }>;
+    const radiusM = Number(clusterRows[0]?.radius_m);
+
+    const fixRows = (await this.repository.query(
+      `
+      SELECT pos.time AS time,
+             ST_Y(pos.location::geometry) AS lat,
+             ST_X(pos.location::geometry) AS lng
+        FROM ci.position pos
+       WHERE pos.user_id = $1
+         AND pos.location IS NOT NULL
+         AND (pos.time AT TIME ZONE $3)::date = $2::date
+       ORDER BY pos.time
+      `,
+      [userId, date, timezone],
+    )) as Array<{ time: Date | string; lat: string | number; lng: string | number }>;
+
+    const fixes: PositionFix[] = [];
+    for (const row of fixRows) {
+      const fixLat = Number(row.lat);
+      const fixLng = Number(row.lng);
+      if (!Number.isFinite(fixLat) || !Number.isFinite(fixLng)) {
+        continue;
+      }
+
+      fixes.push({ time: new Date(row.time), lat: fixLat, lng: fixLng });
+    }
+
+    return timeAtHomeFromFixes(fixes, {
+      lat,
+      lng,
+      radiusM: Number.isFinite(radiusM) && radiusM > 0 ? radiusM : undefined,
+    });
   }
 
   private userScope(context: ServiceContext): FindOptionsWhere<DailyMetricEntity> {

@@ -57,6 +57,21 @@ export const INTENT_DOMAINS: readonly IntentDomain[] = [
     title: 'Brief',
     description: 'List insights, anomalies, and open actions waiting in Brief.',
   },
+  {
+    key: 'insights',
+    title: 'Insights',
+    description: 'Explain computed associations over daily metrics, with evidence.',
+  },
+  {
+    key: 'anomalies',
+    title: 'Anomalies',
+    description: 'List computed metric and behavioral anomalies.',
+  },
+  {
+    key: 'suggestions',
+    title: 'Suggestions',
+    description: 'List evidence-linked suggestions and record accept/dismiss feedback.',
+  },
 ] as const;
 
 const DOMAIN_KEYS = new Set<string>(INTENT_DOMAINS.map((d) => d.key));

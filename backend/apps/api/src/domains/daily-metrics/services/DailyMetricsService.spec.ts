@@ -50,6 +50,9 @@ const FULL_METRICS: MetricValues = {
   screen_minutes: 30,
   n_domains: 4,
   spend_total: 9.99,
+  meeting_minutes: 45,
+  sleep_minutes: 420,
+  time_at_home: 180,
 };
 
 function entityFor(date: string, metrics: Partial<MetricValues> = {}): DailyMetricEntity {
@@ -75,7 +78,7 @@ describe('DailyMetricsService.computeForDay', () => {
 
     const result = await service.computeForDay(CONTEXT, '2026-07-06', 'America/New_York');
 
-    expect(repo.query).toHaveBeenCalledTimes(1);
+    expect(repo.query).toHaveBeenCalledTimes(2);
     expect(repo.query.mock.calls[0][0]).toBe(DAILY_AGGREGATE_SQL);
     expect(repo.query.mock.calls[0][1]).toEqual([USER, '2026-07-06', 'America/New_York']);
 
@@ -84,6 +87,23 @@ describe('DailyMetricsService.computeForDay', () => {
     expect(result.metrics.outbound_ratio).toBeCloseTo(1 / 3, 4);
     expect(result.coverage.n_messages).toBe(1);
     expect(result.timezone).toBe('America/New_York');
+    expect(result.metrics.time_at_home).toBeNull();
+    expect(result.coverage.time_at_home).toBe(0);
+  });
+
+  it('looks up the nearest place_cluster radius once home is labeled', async () => {
+    const repo = makeRepo();
+    repo.query
+      .mockResolvedValueOnce([{ comms_rows: '0' }])
+      .mockResolvedValueOnce([{ lat: 37.5, lng: -122.3 }])
+      .mockResolvedValueOnce([{ radius_m: 400 }])
+      .mockResolvedValueOnce([]);
+    const { service } = makeService(repo);
+
+    await service.computeForDay(CONTEXT, '2026-07-06', 'America/Los_Angeles');
+
+    expect(String(repo.query.mock.calls[2][0])).toMatch(/place_clusters/);
+    expect(repo.query.mock.calls[2][1]).toEqual([USER, 37.5, -122.3]);
   });
 
   it('reports NULL metrics + zero coverage when the day has no rows (missing != zero)', async () => {

@@ -52,7 +52,10 @@ export type IntentDomainKey =
   | 'media'
   | 'import'
   | 'forecast'
-  | 'brief';
+  | 'brief'
+  | 'insights'
+  | 'anomalies'
+  | 'suggestions';
 
 /** What an intent does to the user's data. Drives confirmation/guardrails. */
 export type IntentAccess = 'read' | 'write' | 'delete';

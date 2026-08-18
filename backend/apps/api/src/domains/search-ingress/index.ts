@@ -16,6 +16,7 @@ import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule } from '@ci/domains/memory';
 import { NotesModule } from '@ci/domains/notes';
 import { ParsingModule } from '@ci/domains/parsing';
+import { PositionModule } from '@ci/domains/position';
 
 import { EmbeddingEntity } from './entities/EmbeddingEntity';
 import { IndexSkipEntity } from './entities/IndexSkipEntity';
@@ -34,6 +35,7 @@ import { MessageSearchIndexListener } from './listeners/MessageSearchIndexListen
 import { NoteSearchIndexListener } from './listeners/NoteSearchIndexListener';
 import { PersonSearchIndexListener } from './listeners/PersonSearchIndexListener';
 import { PlaceSearchIndexListener } from './listeners/PlaceSearchIndexListener';
+import { PositionSearchIndexListener } from './listeners/PositionSearchIndexListener';
 import { ThreadSearchIndexListener } from './listeners/ThreadSearchIndexListener';
 import { EmbeddingService } from './services/EmbeddingService';
 import { IndexSkipService } from './services/IndexSkipService';
@@ -54,6 +56,7 @@ import { VectorService } from './services/VectorService';
     MemoryModule,
     NotesModule,
     ParsingModule,
+    PositionModule,
   ],
   providers: [
     AnswerSearchIndexListener,
@@ -73,6 +76,7 @@ import { VectorService } from './services/VectorService';
     OrphanCleanupService,
     PersonSearchIndexListener,
     PlaceSearchIndexListener,
+    PositionSearchIndexListener,
     ThreadSearchIndexListener,
     VectorService,
   ],

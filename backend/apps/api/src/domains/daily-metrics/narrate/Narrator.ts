@@ -28,6 +28,7 @@ export interface NarrationInput {
   days: number;
   daysWithData: number;
   coveragePct: number;
+  extra?: Record<string, string | number>;
 }
 
 export interface Narrator {
@@ -47,6 +48,11 @@ function templateFields(input: NarrationInput): Record<string, string | number> 
     days: input.days,
     daysWithData: input.daysWithData,
     coveragePct: input.coveragePct,
+    effect: displayValue,
+    lag: 0,
+    q: 'n/a',
+    baseline: 'n/a',
+    ...input.extra,
   };
 }
 
@@ -88,6 +94,10 @@ export class OllamaNarrator implements Narrator {
   async narrate(input: NarrationInput): Promise<string> {
     const deterministic = await this.fallback.narrate(input);
     if (input.value === null) {
+      return deterministic;
+    }
+
+    if (input.spec.category === 'Body' || input.spec.category === 'Mind') {
       return deterministic;
     }
 

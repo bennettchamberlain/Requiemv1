@@ -5,6 +5,12 @@ import { z } from 'zod';
 
 import { type RequestContext, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import {
+  DailyMetricsService,
+  HOME_QUESTION_ID,
+  HomeConfirmService,
+  isHomeConfirmSourceId,
+} from '@ci/domains/daily-metrics';
 import { GraphIngestService } from '@ci/domains/graph';
 import { AnswerService, QuestionService } from '@ci/domains/intelligence';
 import { OllamaService, PROMPT_MODEL } from '@ci/domains/llm';
@@ -87,6 +93,8 @@ export class ContextPromptPersistService {
     private readonly graphIngestService: GraphIngestService,
     private readonly eventService: EventService,
     private readonly placement: PlacementService,
+    private readonly homeConfirmService: HomeConfirmService,
+    private readonly dailyMetricsService: DailyMetricsService,
     private readonly ollamaService: OllamaService,
     private readonly logger: LoggerService,
   ) {
@@ -111,8 +119,15 @@ export class ContextPromptPersistService {
       const questionId = await this.writeLinkedQa(context, row);
       plan = { ...plan, questionId };
 
-      if (writer === 'write_event_actual' || writer === 'write_schedule_accept') {
-        plan = { ...plan, ...(await this.fillTimes(userId, row, timezone, writer)) };
+      if (
+        writer === 'write_event_actual' ||
+        writer === 'write_schedule_accept' ||
+        writer === 'write_known_place'
+      ) {
+        if (writer === 'write_event_actual' || writer === 'write_schedule_accept') {
+          plan = { ...plan, ...(await this.fillTimes(userId, row, timezone, writer)) };
+        }
+
         await this.execute(context, plan, row.selector, row.response, row.source, timezone);
       }
 
@@ -154,7 +169,9 @@ export class ContextPromptPersistService {
     const questionId =
       row.source.kind === 'question' && this.isUuid(row.source.id)
         ? row.source.id
-        : await this.ensurePromptQuestion(context, row.selector.prompt, row.source);
+        : isHomeConfirmSourceId(row.source.id)
+          ? HOME_QUESTION_ID
+          : await this.ensurePromptQuestion(context, row.selector.prompt, row.source);
 
     await this.answerService.create(context, {
       text,
@@ -361,6 +378,20 @@ export class ContextPromptPersistService {
           durationMinutes: plan.durationMinutes,
           endTime: plan.endTime,
         });
+
+        return;
+      }
+
+      case 'write_known_place': {
+        const wrote = await this.homeConfirmService.confirmFromResponse(context, response);
+        if (wrote) {
+          void this.dailyMetricsService.refreshForUser(context).catch((error: unknown) => {
+            this.logger.warn('Home confirm metrics refresh failed', {
+              userId: context.userId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          });
+        }
 
         return;
       }

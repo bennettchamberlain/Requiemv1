@@ -40,6 +40,15 @@ export class DailyMetricsType {
   @Field(() => Float, { nullable: true })
   spendTotal!: number | null;
 
+  @Field(() => Float, { nullable: true })
+  meetingMinutes!: number | null;
+
+  @Field(() => Float, { nullable: true })
+  sleepMinutes!: number | null;
+
+  @Field(() => Float, { nullable: true })
+  timeAtHome!: number | null;
+
   @Field(() => String, { description: 'ISO-8601 when this row was last computed' })
   computedAt!: string;
 
@@ -57,6 +66,9 @@ export class DailyMetricsType {
       screenMinutes: source.metrics.screen_minutes,
       nDomains: source.metrics.n_domains,
       spendTotal: source.metrics.spend_total,
+      meetingMinutes: source.metrics.meeting_minutes,
+      sleepMinutes: source.metrics.sleep_minutes,
+      timeAtHome: source.metrics.time_at_home,
       computedAt: source.computedAt.toISOString(),
     };
   }

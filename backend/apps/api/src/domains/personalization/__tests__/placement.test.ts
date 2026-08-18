@@ -26,6 +26,12 @@ describe('writerFor / placeForSource', () => {
   it('does not treat an upcoming calendar event as an actual to write', () => {
     expect(writerFor({ kind: 'event', id: '01a00c7f-2da6-77fd-b2fb-5fc52f280dde' })).toBe('write_answer');
   });
+
+  it('writes home identity through updateKnownPlace', () => {
+    expect(writerFor({ kind: 'daily_metric', id: 'confirm_home' })).toBe('write_known_place');
+    expect(writerFor({ kind: 'daily_metric', id: 'one_place' })).toBe('write_known_place');
+    expect(writerFor({ kind: 'daily_metric', id: 'conversations_low' })).toBe('write_answer');
+  });
 });
 
 describe('isDayDeferral', () => {
