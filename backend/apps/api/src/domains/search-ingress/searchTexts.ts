@@ -486,6 +486,13 @@ export interface ItemSearchFields {
    * the pipeline loader joins it straight off `ci.entities`.
    */
   lastSeenPlaceName?: string | null;
+  /**
+   * Appearance and composition. "my blue mug" and "what do I own made of
+   * leather" are the questions these answer, and neither is reachable from
+   * name/brand/category alone — a mug is rarely named after its colour.
+   */
+  colors?: string[] | null;
+  materials?: string[] | null;
 }
 
 export function itemSearchDocument(item: ItemSearchFields): string | null {
@@ -499,6 +506,8 @@ export function itemSearchDocument(item: ItemSearchFields): string | null {
   pushPart(parts, item.model ?? null);
   pushPart(parts, item.maintenanceNotes ?? null);
   pushPart(parts, item.lastSeenPlaceName ?? null);
+  pushPart(parts, item.colors?.join(' ') ?? null);
+  pushPart(parts, item.materials?.join(' ') ?? null);
 
   return joinParts(parts);
 }
@@ -534,9 +543,22 @@ export function itemWeightedTexts(item: ItemSearchFields): WeightedText[] {
     parts.push({ text: item.lastSeenPlaceName, weight: 8 });
   }
 
+  // Weighted below brand/model: colour and material NARROW a search ("the blue
+  // one") far more often than they start it, so they should not outrank the
+  // words that name the thing.
+  if (item.colors?.length) {
+    parts.push({ text: item.colors.join(' '), weight: 3 });
+  }
+
+  if (item.materials?.length) {
+    parts.push({ text: item.materials.join(' '), weight: 3 });
+  }
+
   if (item.maintenanceNotes) {
     const maintenanceNotes =
-      typeof item.maintenanceNotes === 'string' ? item.maintenanceNotes : JSON.stringify(item.maintenanceNotes);
+      typeof item.maintenanceNotes === 'string'
+        ? item.maintenanceNotes
+        : JSON.stringify(item.maintenanceNotes);
     if (maintenanceNotes.length > 0) {
       parts.push({ text: maintenanceNotes, weight: 1 });
     }

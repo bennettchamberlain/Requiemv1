@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
@@ -12,7 +12,13 @@ import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next'
 
 import { ItemBaseEntity } from '../entities/ItemBaseEntity';
 import { type Item, ItemEntity } from '../entities/ItemEntity';
-import type { CreateItemDto, UpdateItemDto } from '../types';
+import {
+  PhysicalPropertyError,
+  normalizeColors,
+  normalizeMaterials,
+  normalizePhysicalProperties,
+} from '../physicalProperties';
+import type { CreateItemDto, PhysicalItemPropertiesDto, UpdateItemDto } from '../types';
 
 import { CtiAggregate } from './CtiAggregate';
 import { GraphDeltaWriter } from './GraphDeltaWriter';
@@ -64,6 +70,129 @@ export class ItemService {
     return this.aggregate.composeMany(entities, (entity, base) => ItemEntity.toEgressType(entity, base));
   }
 
+  /**
+   * The physical columns of a write, canonicalized — the ONLY path by which
+   * they reach the table, on every one of create / createMany / update.
+   *
+   * Callers may hand these fields in any unit and any spelling (see
+   * {@link PhysicalItemPropertiesDto}); what lands is millimetres, grams,
+   * millilitres and lowercased term arrays. Keys the caller did not mention are
+   * absent from the result, so a partial update leaves them alone while an
+   * explicit `null` clears them.
+   *
+   * Unreadable input is a client error, not a server one: an unknown unit or a
+   * composition adding to 160% becomes a 400 naming the field, rather than a
+   * constraint violation surfacing as a 500 from inside the transaction.
+   */
+  private physicalPatch(data: PhysicalItemPropertiesDto): Partial<ItemEntity> {
+    let normalized;
+
+    try {
+      normalized = normalizePhysicalProperties(data);
+    } catch (error) {
+      if (error instanceof PhysicalPropertyError) {
+        throw new BadRequestException(error.message);
+      }
+
+      throw error;
+    }
+
+    const patch: Partial<ItemEntity> = { ...normalized };
+
+    // Free-text and reference fields need no canonicalization, only the same
+    // mentioned-vs-cleared discipline.
+    if (data.acquiredFrom !== undefined) {
+      patch.acquiredFrom = data.acquiredFrom?.trim() || null;
+    }
+
+    if (data.acquiredFromEntityId !== undefined) {
+      patch.acquiredFromEntityId = data.acquiredFromEntityId ?? null;
+    }
+
+    if (data.manufacturedAt !== undefined) {
+      patch.manufacturedAt = data.manufacturedAt ?? null;
+    }
+
+    if (data.expiresAt !== undefined) {
+      patch.expiresAt = data.expiresAt ?? null;
+    }
+
+    if (data.isDigital !== undefined) {
+      patch.isDigital = data.isDigital;
+    }
+
+    return patch;
+  }
+
+  /**
+   * The identity claim of a write. `identity_confidence` defaults to 1.0, which
+   * downstream reads as ground truth — so a caller that INFERRED the item (a
+   * vision guess, a receipt line) must be able to say so, and a confidence
+   * outside (0,1] must not reach the CHECK constraint as a 500.
+   */
+  private identityPatch(data: CreateItemDto): Partial<ItemEntity> {
+    const patch: Partial<ItemEntity> = {};
+
+    if (data.identityMethod !== undefined) {
+      patch.identityMethod = data.identityMethod;
+    }
+
+    if (data.identityConfidence !== undefined) {
+      if (!(data.identityConfidence > 0 && data.identityConfidence <= 1)) {
+        throw new BadRequestException(
+          `identityConfidence must be greater than 0 and at most 1 (got ${data.identityConfidence})`,
+        );
+      }
+
+      patch.identityConfidence = data.identityConfidence;
+    }
+
+    return patch;
+  }
+
+  /**
+   * Refuses to mark an item digital while a measurement — stored or incoming —
+   * still gives it a body. The caller is told which fields to clear.
+   */
+  private async assertNoStoredBody(context: ServiceContext, id: string, data: UpdateItemDto): Promise<void> {
+    const stored = await this.itemRepository.findOne({
+      where: {
+        id,
+        ...(context.userId !== SYSTEM_USER && { userId: context.userId }),
+      },
+    });
+
+    if (stored == null) {
+      return;
+    }
+
+    const corporeal = (['lengthMm', 'widthMm', 'heightMm', 'massG', 'volumeMl'] as const).filter((key) =>
+      // An explicit null in the same patch clears the column, so it no longer
+      // counts against the item; anything else leaves the stored value in place.
+      data[key] === undefined ? stored[key] != null : data[key] != null,
+    );
+
+    if (corporeal.length > 0) {
+      throw new BadRequestException(
+        `This item cannot be marked digital while it still has ${corporeal.join(', ')}. ` +
+          'Clear those measurements in the same update, or leave it physical.',
+      );
+    }
+  }
+
+  /**
+   * `quantity` is a count of identical units, so the schema CHECKs it > 0.
+   * Rejecting a fractional or zero count here turns what would be a constraint
+   * violation from inside a transaction into a 400 the caller can act on.
+   */
+  private validQuantity(quantity: number): number {
+    if (!Number.isInteger(quantity) || quantity < 1) {
+      throw new BadRequestException(`quantity must be a whole number of at least 1 (got ${quantity})`);
+    }
+
+    return quantity;
+  }
+
   async create(context: UserServiceContext, data: CreateItemDto): Promise<Item> {
     const id = data.id ?? uuid7();
 
@@ -86,6 +215,9 @@ export class ItemService {
         sourceType: data.sourceType ?? null,
         sourceSystem: data.sourceSystem ?? null,
         sourceId: data.sourceId ?? null,
+        ...(data.quantity !== undefined && { quantity: this.validQuantity(data.quantity) }),
+        ...this.identityPatch(data),
+        ...this.physicalPatch(data),
       });
 
       // Base row first (natural FK order, though the constraint is deferred),
@@ -176,6 +308,12 @@ export class ItemService {
         sourceType: item.sourceType ?? null,
         sourceSystem: item.sourceSystem ?? null,
         sourceId: item.sourceId ?? null,
+        ...(item.quantity !== undefined && { quantity: this.validQuantity(item.quantity) }),
+        ...this.identityPatch(item),
+        // Bulk ingest canonicalizes exactly like the single-row path: a batch
+        // that would violate a measurement CHECK is rejected as a 400 naming
+        // the field, before the set-based INSERT is built.
+        ...this.physicalPatch(item),
       }),
     );
 
@@ -414,6 +552,15 @@ export class ItemService {
   async update(context: ServiceContext, id: string, data: UpdateItemDto): Promise<Item | null> {
     const updateData: Partial<ItemEntity> = {};
 
+    // Turning an existing item digital can collide with a body it already has,
+    // and only the stored row knows about that — `physicalPatch` sees the patch.
+    // Without this the schema's incorporeality CHECK fires mid-transaction and
+    // reaches the caller as a 500, which reads as a server bug rather than the
+    // contradiction it is.
+    if (data.isDigital === true) {
+      await this.assertNoStoredBody(context, id, data);
+    }
+
     if (data.category !== undefined) {
       updateData.category = data.category;
     }
@@ -434,17 +581,34 @@ export class ItemService {
       updateData.currentValue = data.currentValue;
     }
 
+    if (data.purchasePrice !== undefined) {
+      updateData.purchasePrice = data.purchasePrice;
+    }
+
     if (data.currency !== undefined) {
       updateData.currency = data.currency;
+    }
+
+    if (data.acquiredAt !== undefined) {
+      updateData.acquiredAt = data.acquiredAt ?? null;
     }
 
     if (data.condition !== undefined) {
       updateData.condition = data.condition;
     }
 
+    if (data.quantity !== undefined) {
+      updateData.quantity = this.validQuantity(data.quantity);
+    }
+
     if (data.metadata !== undefined) {
       updateData.metadata = data.metadata;
     }
+
+    // Canonicalized measurements, appearance and acquisition — same helper the
+    // create paths use, so there is one definition of what a stored millimetre
+    // means.
+    Object.assign(updateData, this.physicalPatch(data));
 
     // name/description are base-row data; patch only the provided halves.
     const basePatch: Partial<Pick<ItemBaseEntity, 'name' | 'description'>> = {};
@@ -571,6 +735,21 @@ export class ItemService {
 
     if (query.condition) {
       executable = executable.andWhere('item.condition = :condition', { condition: query.condition });
+    }
+
+    // Containment, not equality: "made of leather" must match a leather-and-
+    // brass bag. Normalized through the same helper the writes use, so a query
+    // for 'Leather' finds rows stored as 'leather'; served by the GIN indexes.
+    const materials = normalizeMaterials(query.materials ?? null, 'materials');
+
+    if (materials) {
+      executable = executable.andWhere('item.materials @> :materials', { materials });
+    }
+
+    const colors = normalizeColors(query.colors ?? null, 'colors');
+
+    if (colors) {
+      executable = executable.andWhere('item.colors @> :colors', { colors });
     }
 
     if (query.metadata) {

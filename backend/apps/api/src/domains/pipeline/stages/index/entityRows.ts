@@ -106,6 +106,8 @@ export async function loadItemRows(
             i.brand,
             i.model,
             i.maintenance_notes AS "maintenanceNotes",
+            i.colors,
+            i.materials,
             pl.name AS "lastSeenPlaceName"
        FROM ci.inventory i
        LEFT JOIN ci.entities n ON n.entity_id = i.object_id
