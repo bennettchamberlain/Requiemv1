@@ -57,6 +57,8 @@ import { RedditPostsTransformService } from './services/Reddit/transform/Transfo
 import { RedditSavedTransformService } from './services/Reddit/transform/TransformSaved';
 import { SignalContactsTransformService } from './services/Signal/transform/TransformContacts';
 import { SignalMessagesTransformService } from './services/Signal/transform/TransformMessages';
+import { SlackChannelsTransformService } from './services/Slack/transform/TransformChannels';
+import { SlackMessagesTransformService } from './services/Slack/transform/TransformMessages';
 import { SpotifyPlaylistsTransformService } from './services/Spotify/transform/TransformPlaylists';
 import { SpotifyRecentlyPlayedTransformService } from './services/Spotify/transform/TransformRecentlyPlayed';
 import { SpotifySavedAudiobooksTransformService } from './services/Spotify/transform/TransformSavedAudiobooks';
@@ -120,6 +122,8 @@ import { SyncNowService } from './services/SyncNowService';
     RedditSavedTransformService,
     SignalMessagesTransformService,
     SignalContactsTransformService,
+    SlackMessagesTransformService,
+    SlackChannelsTransformService,
     SteamOwnedGamesTransformService,
     SteamAchievementsTransformService,
     SteamFriendsTransformService,

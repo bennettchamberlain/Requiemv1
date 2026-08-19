@@ -158,6 +158,9 @@ export const ConfigSchema = z.object({
       signal: z.object({
         id: z.string(),
       }),
+      slack: z.object({
+        id: z.string(),
+      }),
     }),
     openid: z.object({
       callbackUrl: z.string(),

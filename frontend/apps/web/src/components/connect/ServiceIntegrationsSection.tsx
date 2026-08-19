@@ -173,6 +173,15 @@ export const SERVICE_PROVIDERS: ServiceProviderConfig[] = [
     ],
   },
   {
+    rawId: '019e3c66-b5d2-7f03-c9e5-1a4f6b9d0c08',
+    logo: '/branding/slack/logo.svg',
+    name: 'Slack',
+    tracks: [
+      { icon: MessageSquare, label: 'Messages' },
+      { icon: Hash, label: 'Channels' },
+    ],
+  },
+  {
     rawId: '019e2b55-a4c1-7f02-b8d4-0c3e5a8f6b07',
     logo: '/branding/reddit/logo.svg',
     name: 'Reddit',
@@ -209,17 +218,6 @@ export const SERVICE_PROVIDERS: ServiceProviderConfig[] = [
     tracks: [
       { icon: ShoppingBag, label: 'Orders' },
       { icon: Package, label: 'Products' },
-    ],
-    disabled: true,
-  },
-  {
-    rawId: 'slack',
-    logo: '/branding/slack/logo.svg',
-    name: 'Slack',
-    tracks: [
-      { icon: MessageSquare, label: 'Messages' },
-      { icon: Hash, label: 'Channels' },
-      { icon: Files, label: 'Shared files' },
     ],
     disabled: true,
   },

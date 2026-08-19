@@ -33,6 +33,7 @@ import {
   MicrosoftClient,
   SpotifyClient,
   SignalClient,
+  SlackClient,
   SteamClient,
 } from './clients';
 import { ConnectionsController } from './controllers/ConnectionsController';
@@ -63,6 +64,7 @@ import { ProviderService } from './services/ProviderService';
     MicrosoftClient,
     SpotifyClient,
     SignalClient,
+    SlackClient,
     SteamClient,
   ],
   controllers: [ConnectionsController, ProvidersController],
@@ -79,6 +81,7 @@ import { ProviderService } from './services/ProviderService';
     MicrosoftClient,
     SpotifyClient,
     SignalClient,
+    SlackClient,
     SteamClient,
   ],
 })
@@ -101,6 +104,7 @@ export {
   MicrosoftClient,
   SpotifyClient,
   SignalClient,
+  SlackClient,
   SteamClient,
 };
 
