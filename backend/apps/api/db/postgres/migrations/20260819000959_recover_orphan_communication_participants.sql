@@ -103,11 +103,23 @@
 -- row already says about direction, and matches the shape every other inbound
 -- Google Voice row in the same conversation carries. For pictures the OWNER
 -- sent, the counterpart ends up in the sender's seat. That is a worse answer
--- than the truth and a better one than nobody, and it is not sticky:
--- `participants_metadata` and `direction` are both in
--- INGEST_REFRESH_COLUMNS.communication, so re-importing the same Takeout
--- overwrites both with the real values the fixed parser now reads out of the
--- `<div class="message">` block the `<img>` sits in.
+-- than the truth and a better one than nobody.
+--
+-- CORRECTION to an earlier draft of this comment, which claimed the guess was
+-- "not sticky" because `participants_metadata` and `direction` are both in
+-- INGEST_REFRESH_COLUMNS.communication. A re-import does refresh those two
+-- columns — but `from_entity_id` / `to_entity_ids` are written by the
+-- enrich.person_link sweep, and a row whose ledger entry is already `done` at
+-- the current stage version is never revisited. So the FK minted from this
+-- guess would outlive the metadata it was guessed from, and no re-import could
+-- correct it.
+--
+-- The final statement below is what makes the guess re-openable: it deletes the
+-- enrich.person_link ledger rows for every id these two statements touched, so
+-- the next sweep re-derives the link from whatever participants_metadata says
+-- THEN — the corrected value after a re-import, or this guess if none has
+-- happened. A guess that can be revisited is a different thing from a guess
+-- that is permanent.
 --
 -- ### B. iMessage tapbacks
 --
@@ -227,9 +239,35 @@ UPDATE ci.communications AS c
   FROM recoverable r
  WHERE c.id = r.id;
 
+-- C. Re-open the person-link ledger for every row A and B touched.
+--
+-- Without this, statement A's derived authorship becomes a permanent
+-- from_entity_id: enrich.person_link records a `done` ledger row per
+-- communication at its stage version, and the sweep's anti-join skips anything
+-- already done at that version. Deleting the ledger rows for exactly these ids
+-- costs one re-derivation each and buys the ability to correct them.
+--
+-- Scoped to this migration's own predicate (the rows that now carry a recovered
+-- `participants_metadata` and still have no link), so it cannot re-open a row
+-- some other run legitimately settled.
+DELETE FROM ci.pipeline_state ps
+ USING ci.communications c
+ WHERE ps.stage = 'enrich.person_link'
+   AND ps.entity_type = 'communication'
+   AND ps.entity_id = c.id
+   AND ps.user_id = c.user_id
+   AND c.source_system IN ('google_voice', 'imessage')
+   AND c.from_entity_id IS NULL
+   AND (c.to_entity_ids IS NULL OR cardinality(c.to_entity_ids) = 0)
+   AND c.participants_metadata <> '{}'::jsonb;
+
 -- ## Verification
 --
--- Before: 6760 / 648 rows match. After: 0 / 0 (both statements re-run as
+-- PROJECTIONS, not results: the counts below come from running the CTEs as
+-- SELECTs against a live appliance database. This migration has NOT been
+-- executed — do not read them as before/after measurements.
+--
+-- Projected: 6760 / 648 rows match. After: 0 / 0 (both statements re-run as
 -- no-ops).
 --
 --   SELECT source_system, direction, count(*) FROM ci.communications
