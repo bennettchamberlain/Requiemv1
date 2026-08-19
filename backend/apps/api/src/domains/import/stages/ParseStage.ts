@@ -32,6 +32,14 @@ import type { ImportStageRunner, StageOutcome, StageRunContext } from '../types'
 /** The catch-all importer's registered name (datasources/generic.ts). */
 const GENERIC_DATA_SOURCE = 'generic';
 
+/**
+ * How often a long-running source's staged count is sampled.
+ *
+ * Below the listener's 1s progress throttle would only produce writes it
+ * discards; far above it makes the counter visibly jerky. 2s reads as live.
+ */
+const PROGRESS_SAMPLE_MS = 2_000;
+
 @Injectable()
 export class ParseStage implements ImportStageRunner {
   readonly kind = 'parse' as const;
@@ -95,8 +103,18 @@ export class ParseStage implements ImportStageRunner {
       let error: string | null = null;
 
       try {
+        // Both halves matter here. `withStageContext` is this branch's telemetry
+        // frame; the `report` callback is main's live-progress sampler, which
+        // keeps `processed` moving during the hour a 73k-file source parses.
+        // The writer stays hoisted (see above) so its counts survive a throw.
         await withStageContext({ stage: 'parse', phase, dataSource: name, file: where }, () =>
-          this.parseOne(context, match, writer),
+          this.parseOne(context, match, writer, (live) =>
+            context.progress({
+              processed: staged + live,
+              total: null,
+              phase,
+            }),
+          ),
         );
       } catch (err) {
         error = describeStageFailure(err, { stage: 'parse', phase });
@@ -205,7 +223,8 @@ export class ParseStage implements ImportStageRunner {
     context: StageRunContext,
     match: DataSourceRecognition,
     writer: StagedWriter,
-  ): Promise<void> {
+    report: (staged: number) => Promise<void>,
+  ): Promise<StagedCounts> {
     const name = match.data_source.name;
     const importer = match.data_source.newFileImporter?.();
 
@@ -223,32 +242,58 @@ export class ParseStage implements ImportStageRunner {
       fsRoot: context.scratchDir,
     };
 
-    await importer.fileImport(undefined, entry, {
-      pipeline: writer,
-      // Where datasources that materialise bytes (MMS parts in
-      // `sms_backup_restore`) are allowed to write them. Left unset they fall
-      // back to `os.tmpdir()`, which is exactly the hazard `configuration.ts`
-      // and `ImportScratchService` both call out: `/tmp` is tmpfs on a stock
-      // appliance, so a large export would consume RAM until the machine died —
-      // and nothing sweeps it, because the purge cron owns `uploadsDir` and the
-      // scratch service owns `scratchDir`. Pointing it at this run's scratch
-      // puts those bytes under the reclaim that already runs when the run ends.
-      mediaStoreDir: context.scratchDir,
-      log: (level, message, meta) => {
-        if (level === 'error' || level === 'warn') {
-          this.logger.warn(message, { runId: context.runId, dataSource: name, ...meta });
-        }
-      },
-    });
+    // A source's progress is sampled from the writer WHILE it parses, not read
+    // off the return value once it finishes. One source can be most of an
+    // import -- a Google Voice export is 73,124 files and stages 157k+ records
+    // -- and reporting only between sources left `processed` frozen at the
+    // previous source's total for the entire hour that one ran, while the rows
+    // it was writing climbed by ~590/second. A frozen counter is worse than no
+    // counter: it reads as a hung import.
+    //
+    // The listener already throttles `progress` to one write a second, so
+    // sampling on a timer here costs nothing extra and cannot outrun the DB.
+    const ticker = setInterval(() => {
+      const live = writer.totals;
 
-    // The parser is done producing; everything it pushed still has to land.
-    await writer.settled();
+      void report(live.items + live.entities).catch(() => undefined);
+    }, PROGRESS_SAMPLE_MS);
+
+    try {
+      await importer.fileImport(undefined, entry, {
+        pipeline: writer,
+        // Where datasources that materialise bytes (MMS parts in
+        // `sms_backup_restore`) are allowed to write them. Left unset they fall
+        // back to `os.tmpdir()`, which is exactly the hazard `configuration.ts`
+        // and `ImportScratchService` both call out: `/tmp` is tmpfs on a stock
+        // appliance, so a large export would consume RAM until the machine died —
+        // and nothing sweeps it, because the purge cron owns `uploadsDir` and the
+        // scratch service owns `scratchDir`. Pointing it at this run's scratch
+        // puts those bytes under the reclaim that already runs when the run ends.
+        mediaStoreDir: context.scratchDir,
+        log: (level, message, meta) => {
+          if (level === 'error' || level === 'warn') {
+            this.logger.warn(message, { runId: context.runId, dataSource: name, ...meta });
+          }
+        },
+      });
+
+      // The parser is done producing; everything it pushed still has to land.
+      await writer.settled();
+    } finally {
+      clearInterval(ticker);
+    }
 
     this.logger.log('Staged a data source', {
       runId: context.runId,
       dataSource: name,
       ...writer.totals,
     });
+
+    // Returned for main's contract, but the caller deliberately reads
+    // `writer.totals` itself AFTER its try/catch instead: a parser that staged
+    // 300,000 rows and then hit one unreadable file never reaches this return,
+    // and those rows are real. The writer is the honest ledger either way.
+    return writer.totals;
   }
 }
 

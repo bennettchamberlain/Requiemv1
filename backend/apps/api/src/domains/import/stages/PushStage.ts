@@ -103,13 +103,36 @@ const NO_DESTINATION_REASON = 'no destination for this record';
  * The order a batch's destinations are written in.
  *
  * The per-row loop this replaced wrote each row's destinations in
- * `destinationsFor` order; keeping a fixed order here preserves that for every
- * row at once — an Audible listen still reaches `content` before `events`.
+ * `destinationsFor` order, and **events come before content there** — for
+ * `social.*`, for `media.play/watch/listen/read`, and for a file-bearing
+ * `calendar.event` / `capture.*`, it returns `['events', 'content']`. No branch
+ * returns content before events; reddit's `['communications', 'content']` names
+ * no event at all.
+ *
+ * That order is load-bearing, not cosmetic. `ContentService.createManyDetailed`
+ * auto-links a content row to its event by the provenance triple
+ * (`resolveEventIdsByTriple`), so writing content first asks for an event row
+ * that does not exist yet and leaves `ci.content.event_id` NULL. Everything
+ * hanging off that link then reads empty: `findMediaFilesByEventIds` — the
+ * query behind every gallery, list and drawer thumbnail — filters on
+ * `content.event_id`, and the L0 `Content -DOCUMENTS-> Event` edge rule has no
+ * candidates at all.
+ *
+ * Measured on a 1,393,402-record corpus imported with content ahead of events:
+ * **0 of 41,851** content rows carried an `event_id`, while 2,916 shared a
+ * provenance triple with an event and should have (linkedin 1,975, twitter 697,
+ * whatsapp 169, facebook 69, instagram 3, reddit 2, grok 1). Sampled pairs show
+ * the content row inserted 44-65ms before its event.
+ *
+ * So: events first. An earlier revision of this comment claimed the fixed order
+ * preserved the per-row behaviour and that "an Audible listen still reaches
+ * `content` before `events`" — an Audible listen is `media.listen`, which
+ * returns `['events', 'content']`, so the claim was exactly backwards.
  */
-const DESTINATION_ORDER: readonly Destination[] = [
+export const DESTINATION_ORDER: readonly Destination[] = [
   'communications',
-  'content',
   'events',
+  'content',
   'inventory',
   'browser_activity',
   'position',
