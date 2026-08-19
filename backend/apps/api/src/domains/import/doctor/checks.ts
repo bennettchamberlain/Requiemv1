@@ -338,14 +338,14 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
       'for that to find, so it fell through to `type = null` and `entityTypeFor` mapped null to ' +
       "DEFAULT_ENTITY_TYPE = 'Concept'. Whether a card lists a phone number is not what decides whether " +
       'its subject is a human. Every known source is fixed forward — linkedin.ts, then vcard.ts, ' +
-      'contactlist.ts and applecontacts.ts in f24110960 — and 20260819091547 re-types and re-keys the ' +
+      'contactlist.ts and applecontacts.ts in f24110960 — and 20260819092314 re-types and re-keys the ' +
       'rows already written. A NON-ZERO count on a source not ' +
       'named there means a FURTHER contact-shaped datasource is omitting `type` on its entity: set it to ' +
       "'contact' at the parser, then write the same re-type-and-re-key migration for it — re-typing " +
       'alone is not enough, because the staged type is folded into `naturalKeyFor`, so the fix moves the ' +
       'upsert key and a re-import would mint a fresh Person beside the stale Concept rather than ' +
       'updating it. The `breakdown` names the importer to go and look at.',
-    mirrors: 'db/postgres/migrations/20260819091547_retype_vcard_contact_concepts_as_person.sql',
+    mirrors: 'db/postgres/migrations/20260819092314_retype_contact_sourced_concepts_as_people.sql',
     // Deliberately NOT scoped to the two sources the migration repairs: that
     // migration cleans a known corpus, this check watches for the NEXT source to
     // make the same mistake. The two predicates agree on the SHAPE — a

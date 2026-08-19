@@ -585,12 +585,14 @@ describe('a card with no phone or email is still a contact', () => {
    * `GraphIngestService` derives `linked_id = uuidv5(key)` from it. So fixing the
    * type MOVES the row's upsert coordinate — which is why the cards written before
    * the fix are not healed by re-importing, and why
-   * `20260819091547_retype_vcard_contact_concepts_as_person.sql` has to re-key as
+   * `20260819092314_retype_contact_sourced_concepts_as_people.sql` has to re-key as
    * well as re-type.
    *
-   * These two pin both key spaces because that migration hard-codes both strings.
-   * If either derivation drifted, the migration would silently stop matching the
-   * importer and would re-key 2,247 rows onto a coordinate nothing ever computes.
+   * These two pin both key spaces because that migration hard-codes both strings,
+   * as does `20260819145716_propose_contact_card_person_name_merge_candidates.sql`
+   * when it selects the rows the re-type moved. If either derivation drifted, those
+   * migrations would silently stop matching the importer -- re-keying rows onto a
+   * coordinate nothing computes, and proposing nothing at all.
    */
   const stagedNaturalKey = (entity: Parameters<typeof resolveEntityType>[0]): string | null =>
     naturalKeyFor({
