@@ -37,25 +37,29 @@ This is a Yarn workspace monorepo with the following structure:
 ├── backend/apps/
 │   ├── api/                    # Main backend API service (NestJS)
 │   ├── hbpe/                   # HBPE behavioral-prediction sidecar (Python/FastAPI, ONNX)
-│   └── summary/                # Temporal hierarchical summarization agent
+│   └── summary/                # Hourly/daily/weekly summarization agent (Python)
 ├── frontend/apps/
-│   └── web/                    # Main web application (React + Vite)
-├── frontend/packages/
-│   ├── capture/                # Camera capture components
-│   ├── common/                 # Shared utilities and components
-│   ├── editor/                 # Rich-text editor package
-│   ├── shadcn/                 # ShadCN components (these typically shouldn't be modified directly, they're just local copies of our component library)
-│   └── template/               # A starter package to copy and paste when you need to create a new package in frontend/packages/
-└── mcp-servers/
-    └── web-search/             # Web-search MCP server (git submodule)
+│   ├── web/                    # Main web application (React + Vite)
+│   ├── ios/                    # Capacitor iOS shell around the web app (not a Yarn workspace)
+│   ├── android/                # Capacitor Android shell around the web app (not a Yarn workspace)
+│   └── mobile/                 # Pointer README left by the iOS/Android split
+└── frontend/packages/
+    ├── capacitor-local-hub/    # Capacitor plugin: on-device hub bridge
+    ├── capacitor-local-llm/    # Capacitor plugin: on-device LLM
+    ├── capacitor-speech/       # Capacitor plugin: speech
+    ├── capture/                # Camera capture components
+    ├── common/                 # Shared utilities and components
+    ├── editor/                 # Rich-text editor package
+    ├── shadcn/                 # ShadCN components (these typically shouldn't be modified directly, they're just local copies of our component library)
+    └── template/               # A starter package to copy and paste when you need to create a new package in frontend/packages/
 ```
 
 ## Architecture at a glance
 
 CI-Server is a multi-service stack: a NestJS API and a React/Vite SPA in front of
 a Postgres 18 data tier (pgvector + TimescaleDB + PostGIS), with Python sidecars
-(HBPE prediction, Summary) driven by Temporal, MinIO for object storage, and
-Ollama for local LLM/embeddings. The diagrams below are rendered by GitHub; for
+(HBPE prediction, Summary) dispatched over the in-Postgres PGBoss job queue,
+MinIO for object storage, and Ollama for local LLM/embeddings. The diagrams below are rendered by GitHub; for
 the full design (domains, data model, data flows) see
 [docs/architecture/architecture.md](docs/architecture/architecture.md).
 
@@ -75,13 +79,13 @@ flowchart TB
 
     subgraph Overmind["overmind (Procfile, host processes)"]
       API["api — NestJS<br/>(REST + GraphQL)"]
-      WEB["web — Vite dev server :5173"]
+      WORKER["worker — NestJS<br/>(CI_ROLE=worker, job consumer)"]
+      WEB["web — Vite dev server"]
     end
 
     subgraph Compose["Docker Compose stack (per-worktree)"]
       PG[("Postgres 18<br/>pgvector · TimescaleDB · PostGIS<br/>+ PGBoss job queue")]
       MINIO[("MinIO<br/>object storage")]
-      TEMP["Temporal<br/>(durable workflows)"]
       SUM["summary service"]
       HBPE["hbpe service"]
     end
@@ -94,10 +98,10 @@ flowchart TB
     R -->|"/"| WEB
     API <--> PG
     API <--> MINIO
-    API --> TEMP
     API <--> OLLAMA
-    TEMP --> SUM
-    TEMP --> HBPE
+    WORKER <--> PG
+    PG -- "PGBoss → /functions/run" --> SUM
+    PG -- "PGBoss → /functions/run" --> HBPE
     SUM --> PG
     HBPE --> PG
     SUM --> OLLAMA
@@ -301,8 +305,8 @@ brew services start ollama
 Test that Ollama is running using:
 
 ```bash
-ollama pull gemma3:1b
-ollama run gemma3:1b "say hello"
+ollama pull gemma4:e4b
+ollama run gemma4:e4b "say hello"
 
 ollama pull nomic-embed-text
 ollama run nomic-embed-text "embed this"
@@ -320,7 +324,7 @@ make dev
 
 1. checks prerequisites (Node version, overmind, Caddy + its admin API on `:2019`, Ollama + required models);
 2. installs dependencies and builds the local service images;
-3. brings up this worktree's Docker stack — **PostgreSQL** (primary DB + PGBoss job queue), **Minio** (S3 object storage), **Temporal** (durable workflow orchestration), and the **summary** / **hbpe** services — preferring the conventional host ports when free and falling back to ephemeral ports otherwise, so multiple worktrees never collide;
+3. brings up this worktree's Docker stack — **PostgreSQL** (primary DB + PGBoss job queue), **Minio** (S3 object storage), and the **summary** / **hbpe** services — preferring the conventional host ports when free and falling back to ephemeral ports otherwise, so multiple worktrees never collide;
 4. runs database migrations;
 5. registers a **Caddy** route at `https://<project>.localhost` and runs the `api` + `web` dev servers via overmind, in the foreground.
 
@@ -362,7 +366,7 @@ Then open `https://<project>.localhost` (e.g. **https://ci-server.localhost**) a
 
 ```
 Username: jsmith@example.com
-Password: ]60.a6{CJ}lB*rHAp;w;
+Password: replace-me-pw-000000
 ```
 
 With the stack up and seeded, this is also the state from which to capture UI
@@ -386,6 +390,16 @@ Run `make` from the project root to see all available commands with descriptions
 | `make init` | Initialize repository after checkout (installs dependencies, sets up VS Code, prepares git hooks) |
 | `make install` | Install project dependencies only |
 | `make health` | Check prerequisites (Node.js version, Yarn version) and report per-stack data volumes |
+
+`frontend/` consumes `@companionintelligence/*` packages from GitHub Packages, which requires a
+`NODE_AUTH_TOKEN` with `read:packages` (see `.yarnrc.yml`). `make init`/`make install` get this
+for free via [`scripts/gh-packages-auth.sh`](scripts/gh-packages-auth.sh), which reuses your `gh`
+CLI login (`gh auth login` first if you haven't). To get the token in your own shell — e.g. to
+run `yarn install` directly — run:
+
+```bash
+source scripts/gh-packages-auth.sh
+```
 
 ### Development
 
@@ -414,11 +428,65 @@ Run `make` from the project root to see all available commands with descriptions
 
 | Command | Description |
 |---------|-------------|
-| `make build` | Build images (`ENV=local\|staging\|production`, default `local`; `GPU=cpu\|cuda\|rocm`, default `cpu`) |
+| `make build` | Build images (`ENV=local\|staging\|production`, default `local`; `GPU=cpu\|cuda\|rocm`, auto-detected from this host's GPU if not passed — see `scripts/detect-gpu.sh`) |
 | `make staging` | Run the staging deployment |
 | `make production` | Run the production deployment |
 | `make publish` | Publish CI-Server images and metadata to the CI-Portal store |
 | `make seed-production` | Seed the production database via an ephemeral proxy |
+
+#### GPU acceleration (HBPE)
+
+`GPU` picks which HBPE image is built. It is auto-detected, so passing it is
+only needed to override the detection:
+
+```bash
+make build GPU=rocm                        # AMD, gfx target auto-detected
+make build GPU=rocm AMDGPU_TARGETS=gfx1030 # …or named explicitly
+make build GPU=cpu                         # no GPU
+```
+
+On AMD, `AMDGPU_TARGETS` is the gfx architecture llama.cpp's HIP backend
+compiles for — `gfx1100` for an RX 7900, `gfx1030` for a 6800/6900.
+`scripts/detect-gpu.sh --amdgpu-arch` reports this host's. Override it on a
+machine with both an APU and a discrete card, where detection takes whichever
+`rocminfo` lists first.
+
+Building the image is only half of it: the container also needs the GPU passed
+in at runtime, which `docker-compose.rocm.yml` does. `make dev` layers that
+file in automatically when `/dev/kfd` and `/dev/dri` exist. For staging or
+production, add it explicitly:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.production.yml \
+               -f docker-compose.rocm.yml --profile production up -d
+```
+
+Without it the service still starts and still answers — it just finds no HSA
+agent and runs on the CPU, silently. If you are unsure which you have, ask the
+container rather than assuming:
+
+```bash
+docker compose exec hbpe-service python -c \
+  "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
+
+### Releasing & image tags
+
+Pushing a git tag triggers `.github/workflows/publish.yml`, which builds every `companion/*` image
+natively per architecture, merges the legs into a multi-arch manifest list, and registers the result
+with CI-Portal.
+
+| Tag | Meaning |
+|---------|-------------|
+| `v<YYYY>.<M>.<D>` | A release. Use `v<YYYY>.<M>.<D>.<N>` for a second release the same day. |
+| `<version>` (no `v`) | What the images are tagged with — the leading `v` is stripped by both the workflow and `make publish`, so `v2026.7.27` publishes `companion/*:2026.7.27`. This is the form CI-Marketplace pins. |
+| `latest` | The **newest release tag only**. Repointed by the publish workflow when, and only when, the tag being built is release-shaped *and* sorts newest. A back-tagged or re-cut older release leaves it alone. |
+| `dev-<short-sha>` | What an untagged local `make publish` produces. Never `latest` — see below. |
+
+`:latest` must never be minted by hand. It was a stale, single-arch, three-month-old orphan for exactly
+that reason: `scripts/publish/publish.sh` used to fall back to `VERSION=latest` for untagged commits, so
+any `REGISTRY=ghcr.io/... make publish` from an untagged checkout overwrote it with a local dev build
+pointing at no release at all.
 
 ### HBPE
 
@@ -450,7 +518,9 @@ yarn lint:fix  # Auto-fix linting issues
 yarn dev                    # Start development server with nodemon
 yarn migrate:make <name>    # Create a new migration file
 yarn migrate:down           # Roll back the last migration
-yarn lint:circular-imports  # Check for circular import dependencies
+yarn depcheck               # Check import boundaries / cycles (dependency-cruiser)
+yarn test                   # Run the backend Jest suite
+yarn typecheck              # Type-check without emitting
 yarn lint                   # Lint backend code
 yarn lint:fix               # Auto-fix backend linting issues
 ```

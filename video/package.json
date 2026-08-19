@@ -1,0 +1,12 @@
+{
+  "name": "ci-memory-video",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "make": "./make.sh",
+    "kit": "./kit.sh"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

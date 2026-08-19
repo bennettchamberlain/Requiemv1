@@ -8,14 +8,19 @@ export class PgBossQueueEntity {
   @Column({ name: 'policy', type: 'text', nullable: true })
   policy!: string | null;
 
-  @Column({ name: 'retry_limit', type: 'integer' })
-  retryLimit!: number;
+  // Nullable in the database, and NULL on any queue created before the retry
+  // policy was written onto the row: pg-boss resolves retries as
+  // COALESCE(job, queue, constructor default), so a queue that never set its
+  // own simply has none. Declaring these non-null made TypeORM hand the DTO a
+  // null typed as `number`, which the UI then rendered as the string "null".
+  @Column({ name: 'retry_limit', type: 'integer', nullable: true })
+  retryLimit!: number | null;
 
-  @Column({ name: 'retry_delay', type: 'integer' })
-  retryDelay!: number;
+  @Column({ name: 'retry_delay', type: 'integer', nullable: true })
+  retryDelay!: number | null;
 
-  @Column({ name: 'retry_backoff', type: 'boolean' })
-  retryBackoff!: boolean;
+  @Column({ name: 'retry_backoff', type: 'boolean', nullable: true })
+  retryBackoff!: boolean | null;
 
   @Column({ name: 'expire_seconds', type: 'integer', nullable: true })
   expireInSeconds!: number | null;

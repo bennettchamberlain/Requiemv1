@@ -5,8 +5,15 @@ import { LoggerService } from '@ci/common/logging';
 import { EventService } from '@ci/domains/events';
 
 import type { BaseTool } from '../core/BaseTool';
-import { intentToolName, type ToolSchema, type ToolResult } from '../core/types';
+import {
+  intentToolName,
+  canonicalizeExecutableToolName,
+  type ToolInvocationContext,
+  type ToolSchema,
+  type ToolResult,
+} from '../core/types';
 import { ToolInvokedEvent } from '../events';
+import { capabilityAllows, capabilityRequiredFor } from '../policy';
 import type { ToolProvider, ProviderHealthStatus } from '../providers/ToolProvider';
 
 /**
@@ -161,17 +168,56 @@ export class ToolRegistry implements OnModuleInit, OnModuleDestroy {
    * Check if a tool exists (by executable name).
    */
   hasTool(name: string): boolean {
-    return this.tools.has(name);
+    return this.resolveRegisteredTool(name) != null;
   }
 
   /**
-   * Execute a tool by its executable name. Donates the invocation (success or failure) as a
-   * behavioral signal for prediction.
+   * Resolve an LLM-emitted name onto a registered tool. Qwen often drops
+   * underscores (`memoryremember`) or keeps the dotted intent id.
    */
-  async executeTool(name: string, context: RequestContext, input: unknown): Promise<ToolResult> {
-    const tool = this.tools.get(name);
+  private resolveRegisteredTool(name: string): { name: string; tool: BaseTool } | undefined {
+    const canonical = canonicalizeExecutableToolName(name);
 
-    if (!tool) {
+    for (const candidate of [canonical, name, intentToolName(name)]) {
+      const tool = this.tools.get(candidate);
+      if (tool) {
+        return { name: candidate, tool };
+      }
+    }
+
+    const mashed = name.replace(/[_.-]/g, '').toLowerCase();
+    if (!mashed) {
+      return undefined;
+    }
+
+    for (const [key, tool] of this.tools) {
+      if (key.replace(/_/g, '').toLowerCase() === mashed) {
+        return { name: key, tool };
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Execute a tool by its executable name, **after checking the caller's authority against the
+   * tool's privacy label**. Donates the invocation (success or failure) as a behavioral signal for
+   * prediction.
+   *
+   * The check lives here rather than in each dispatcher because that is what went wrong before:
+   * MCP enforced it, the LLM dispatcher did not, and the two were only ever kept in step by
+   * whoever remembered. `context.capability` is mandatory (see {@link ToolInvocationContext}), so
+   * a new dispatcher cannot arrive at this method without having stated an authority.
+   *
+   * Refusal is returned as a failed {@link ToolResult}, not thrown — matching TOOL_NOT_FOUND, and
+   * giving the model a legible "you are not allowed to do that" to relay instead of an opaque
+   * "tool execution failed". Transports that owe their client an HTTP status (MCP) keep their own
+   * pre-check and throw there; this is the backstop underneath it.
+   */
+  async executeTool(name: string, context: ToolInvocationContext, input: unknown): Promise<ToolResult> {
+    const resolved = this.resolveRegisteredTool(name);
+
+    if (!resolved) {
       this.logger.warn(`Attempted to execute unknown tool: ${name}`, {
         toolName: name,
         userId: context.userId,
@@ -188,15 +234,58 @@ export class ToolRegistry implements OnModuleInit, OnModuleDestroy {
       };
     }
 
-    this.logger.log(`Executing tool: ${name}`, {
-      toolName: name,
+    const { name: toolName, tool } = resolved;
+
+    const { privacy } = tool.schema;
+
+    if (!capabilityAllows(privacy, context.capability)) {
+      const required = capabilityRequiredFor(privacy);
+
+      // Warn, not debug: a refused call is a caller trying to do something it was not granted —
+      // whether that is a misconfigured integration or an injected chat message, an operator wants
+      // to see it. Deliberately NOT emitted as `tool.invoked`: nothing was invoked, and feeding a
+      // refusal into the behavioral signal would teach prediction that the user did this.
+      this.logger.warn(`Refused tool: ${name}`, {
+        toolName: name,
+        intent: tool.schema.name,
+        userId: context.userId,
+        capability: context.capability,
+        requiredCapability: required,
+        access: privacy.access,
+        destructive: privacy.destructive,
+      });
+
+      return {
+        success: false,
+        error: {
+          code: 'TOOL_FORBIDDEN',
+          message: `Tool '${name}' requires "${required}" access, but this caller is "${context.capability}"`,
+          retryable: false,
+        },
+      };
+    }
+
+    if (privacy.external) {
+      // `external` is the label that says data leaves the appliance, which is the one thing CI
+      // promises it does not do quietly. It gates nothing today (see the README note on the warn
+      // path); surfacing every egress in the log is the floor, not the finished feature.
+      this.logger.warn(`Intent leaves the appliance: ${name}`, {
+        toolName: name,
+        intent: tool.schema.name,
+        userId: context.userId,
+        sensitivity: privacy.sensitivity,
+      });
+    }
+
+    this.logger.log(`Executing tool: ${toolName}`, {
+      toolName,
       userId: context.userId,
-      provider: this.toolToProvider.get(name),
+      provider: this.toolToProvider.get(toolName),
     });
 
     const result = await tool.execute(context, input);
 
-    await this.emitInvoked(name, tool, context, result);
+    await this.emitInvoked(toolName, tool, context, result);
 
     return result;
   }

@@ -3,6 +3,94 @@ import type { EventPayloads } from './event-registry';
 export type Acknowledgement = {
   done: () => void;
   fail: (reason: unknown) => void;
+
+  /**
+   * Release the worker slot WITHOUT completing or failing the job. The job
+   * stays `active` in pg-boss until something calls
+   * {@link EventService.completeJob} / {@link EventService.failJob} with its id
+   * (e.g. a webhook from an external executor), or until the queue's
+   * `expireInSeconds` elapses and pg-boss retries it. Only meaningful with
+   * `autoAcknowledge: false`; LocalEventService treats it as `done`.
+   */
+  defer: () => void;
+};
+
+/**
+ * pg-boss queue-level options a listener can request for its queue. Applied at
+ * queue creation/update on module init by the pg-boss implementation; ignored
+ * by LocalEventService.
+ */
+export type QueueOptions = {
+  /**
+   * pg-boss queue de-duplication policy. Defaults to `standard`, under which a
+   * send's `singletonKey` is STORED AND NEVER ENFORCED — pg-boss 10 makes
+   * de-duplication a queue property, and its unique index on
+   * (name, singleton_key) is partial: `WHERE state='created' AND policy='short'`.
+   * A queue that wants a singletonKey to actually refuse duplicates must say so
+   * here; `SyncOrchestrator` documents the same trap from the other side.
+   *
+   * `short` is queue-WIDE and collapses keyless sends together under
+   * COALESCE(singleton_key,''), so only declare it on a queue whose every send
+   * carries a key.
+   */
+  policy?: 'standard' | 'short' | 'singleton' | 'stately';
+
+  /** Seconds an `active` job may run before pg-boss expires (and retries) it. */
+  expireInSeconds?: number;
+
+  /** Retry attempts before the job is routed to the dead-letter queue. */
+  retryLimit?: number;
+
+  /** Seconds between retries (with pg-boss's backoff applied on top). */
+  retryDelay?: number;
+
+  /**
+   * In-process worker slots for THIS queue, overriding the global
+   * `queues.perQueueConcurrency` downward. For queues whose jobs are heavy
+   * in-process work — parsing a 40GB archive shares the event loop and the
+   * database pool with every interactive request — running six abreast
+   * starves the API; such a queue declares 1 and serializes. Never raises
+   * above the global per-queue ceiling. Ignored by LocalEventService.
+   */
+  localConcurrency?: number;
+
+  /**
+   * Which process consumes this queue. Defaults to `web`, the process every
+   * topology has. A queue whose jobs are heavy in-process work declares
+   * `worker` and is consumed only by the headless worker process (CI_ROLE) —
+   * pg-boss lives in Postgres, so any process can consume; this decides which
+   * one does. Both roles still CREATE the queue and can SEND to it. Ignored
+   * by LocalEventService (single-process by definition).
+   */
+  role?: 'web' | 'worker';
 };
 
 export type EventPayload<E extends keyof EventPayloads> = EventPayloads[E];
+
+/**
+ * Options accepted by {@link EventService.send} and {@link EventService.sendMany}.
+ */
+export type EventSendOptions = {
+  /**
+   * Send to this one queue instead of fanning out to every registered queue.
+   * Ignored by `sendMany`, which always names its target queue positionally.
+   */
+  queue?: string;
+
+  /**
+   * Job priority. Higher is worked sooner; defaults to `DEFAULT_JOB_PRIORITY`
+   * (0). Only the pg-boss implementation honours it — `LocalEventService` runs
+   * listeners inline, so there is no queue to order.
+   */
+  priority?: number;
+
+  /** pg-boss singleton key — suppresses duplicate pending jobs with the same key. */
+  singletonKey?: string;
+
+  /**
+   * Delay before the job becomes visible. pg-boss accepts a Date, an ISO
+   * string, or an integer number of seconds from now. Ignored by LocalEventService
+   * (jobs run inline).
+   */
+  startAfter?: Date | string | number;
+};

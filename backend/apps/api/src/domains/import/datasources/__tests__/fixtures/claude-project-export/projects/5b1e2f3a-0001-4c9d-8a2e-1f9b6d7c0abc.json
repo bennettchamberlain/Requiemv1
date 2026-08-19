@@ -1,0 +1,23 @@
+{
+  "uuid": "5b1e2f3a-0001-4c9d-8a2e-1f9b6d7c0abc",
+  "name": "Book Club Reading List",
+  "description": "Track what our book club is reading, discussion notes, and next picks.",
+  "prompt_template": "You are helping curate and discuss book club selections. Prefer concise summaries and avoid spoilers unless the user explicitly asks for them.",
+  "is_starter_project": false,
+  "created_at": "2026-02-14T18:30:00.000Z",
+  "updated_at": "2026-03-22T11:05:00.000Z",
+  "docs": [
+    {
+      "uuid": "6c2f3a4b-0002-4d0e-9b3f-2a0c7e8d1bcd",
+      "filename": "reading-list.md",
+      "content": "# Current picks\n\n- *Klara and the Sun* — Kazuo Ishiguro (April)\n- *Piranesi* — Susanna Clarke (May)\n\n## Voted down\n\n- *Infinite Jest* (too long for a monthly cadence)",
+      "created_at": "2026-02-14T18:31:00.000Z"
+    },
+    {
+      "uuid": "6c2f3a4b-0003-4d0e-9b3f-2a0c7e8d1bce",
+      "filename": "discussion-notes.md",
+      "content": "## March meeting\n\nEveryone liked the pacing in part one. Mixed feelings about the ending.\n\n## February meeting\n\nGood turnout, six people came prepared with questions.",
+      "created_at": "2026-03-22T11:05:00.000Z"
+    }
+  ]
+}

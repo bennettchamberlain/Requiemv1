@@ -13,13 +13,11 @@ type ReturnType = [
     authorizationUrl: string | null;
     loading: boolean;
     error: unknown | null;
-    endpoints: string[];
     apiKey: string | null;
-    setEndpoints: (endpoints: string[]) => void;
     setApiKey: (apiKey: string) => void;
   },
   {
-    connect: (providerId: string) => Promise<void>;
+    connect: (providerId: string, endpoints: string[]) => Promise<void>;
   },
 ];
 
@@ -29,11 +27,10 @@ export function useConnectService(): ReturnType {
   const [authorizationUrl, setAuthorizationUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<unknown | null>(null);
-  const [endpoints, setEndpoints] = useState<string[]>([]);
   const [apiKey, setApiKey] = useState<string | null>(null);
 
   const connect = useCallback(
-    async (providerId: string) => {
+    async (providerId: string, endpoints: string[]) => {
       setAuthorizationUrl(null);
       setLoading(true);
       setError(null);
@@ -55,7 +52,7 @@ export function useConnectService(): ReturnType {
         setLoading(false);
       }
     },
-    [authToken, endpoints, apiKey],
+    [authToken, apiKey],
   );
 
   return [
@@ -63,8 +60,6 @@ export function useConnectService(): ReturnType {
       authorizationUrl,
       loading,
       error,
-      endpoints,
-      setEndpoints,
       apiKey,
       setApiKey,
     },

@@ -1,22 +1,25 @@
 import { BadRequestException, UseGuards } from '@nestjs/common';
-import { Args, ID, Parent, Query, Mutation, Resolver, ResolveField } from '@nestjs/graphql';
+import { Args, Float, ID, Parent, Query, Mutation, Resolver, ResolveField } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { CreateContentInput } from '@ci/domains/graphql/types/CreateContentInput';
 import { UpdateContentInput } from '@ci/domains/graphql/types/UpdateContentInput';
-import { ContentService } from '@ci/domains/memory';
+import { ContentService, classifyExternalId } from '@ci/domains/memory';
 
+import { type ContentFileMedia, ContentFileLoader } from '../loaders/ContentFileLoader';
 import { EventLoader } from '../loaders/EventLoader';
 import { TagLoader } from '../loaders/TagLoader';
 import { ContentConnection } from '../types/ContentConnection';
 import { ContentEdge } from '../types/ContentEdge';
 import { ContentType } from '../types/ContentType';
+import { DeleteByIdInput } from '../types/DeleteByIdInput';
+import { DeleteByIdPayload } from '../types/DeleteByIdPayload';
 import { EntityTagType } from '../types/EntityTagType';
 import { EventType } from '../types/EventType';
 import { GlobalUID } from '../types/GlobalUID';
 import { PaginationArgs } from '../types/PaginationArgs';
-import { Paginator } from '../utils/Paginator';
+import { entityOwnerScope } from '../utils/entityOwnerScope';
 
 /**
  * Upper bound on rows accepted by a single createContents call. The batch runs
@@ -53,6 +56,7 @@ export class ContentResolver {
     private readonly contentService: ContentService,
     private readonly tagLoader: TagLoader,
     private readonly eventLoader: EventLoader,
+    private readonly contentFileLoader: ContentFileLoader,
   ) {}
 
   /**
@@ -160,11 +164,49 @@ export class ContentResolver {
     return entity ? ContentType.toType(entity) : entity;
   }
 
+  /**
+   * @deprecated Returns a bare boolean and takes a positional `id` argument. Use
+   * {@link deleteContent}, which follows the `DeleteByIdInput`/`DeleteByIdPayload`
+   * convention the rest of this family uses.
+   */
   @Mutation(() => Boolean)
-  async removeContent(@Context() context: RequestContext, @Args('id') id: string): Promise<boolean> {
+  async removeContent(
+    @Context() context: RequestContext,
+    @Args('id', { type: () => ID }) gid: string,
+  ): Promise<boolean> {
     const serviceContext = toServiceContext(context);
 
+    const id = GlobalUID.parse('content', gid);
+
     return this.contentService.remove(serviceContext, id);
+  }
+
+  /**
+   * Deletes content addressed by its global id. Unlike an event this is a HARD
+   * delete — the row and its `ci.entities` base row are destroyed and cannot be
+   * restored.
+   */
+  @Mutation(() => DeleteByIdPayload)
+  async deleteContent(
+    @Context() context: RequestContext,
+    @Args('input') input: DeleteByIdInput,
+  ): Promise<DeleteByIdPayload> {
+    const serviceContext = toServiceContext(context);
+
+    const id = GlobalUID.parse('content', input.id);
+
+    const success = await this.contentService.remove(serviceContext, id);
+
+    if (!success) {
+      return {
+        success: false,
+      };
+    }
+
+    return {
+      success,
+      deletedId: input.id,
+    };
   }
 
   @Query(() => ContentConnection)
@@ -174,14 +216,17 @@ export class ContentResolver {
   ): Promise<ContentConnection> {
     const serviceContext = toServiceContext(context);
 
-    const entities = await this.contentService.findAll(serviceContext);
+    const { entities, hasNextPage, hasPreviousPage, totalCount } = await this.contentService.findPage(
+      serviceContext,
+      {
+        first: pagination.first,
+        last: pagination.last,
+        afterId: pagination.after ? GlobalUID.decode(pagination.after).id : null,
+        beforeId: pagination.before ? GlobalUID.decode(pagination.before).id : null,
+      },
+    );
 
-    const { slice, pageInfo, totalCount } = Paginator.paginate(entities, {
-      ...pagination,
-      getId: (entity) => GlobalUID.encode('content', entity.id),
-    });
-
-    const edges: ContentEdge[] = slice.map((entity) => {
+    const edges: ContentEdge[] = entities.map((entity) => {
       const node = ContentType.toType(entity);
 
       return {
@@ -189,6 +234,13 @@ export class ContentResolver {
         cursor: node.id,
       };
     });
+
+    const pageInfo = {
+      hasNextPage,
+      hasPreviousPage,
+      startCursor: edges.length > 0 ? edges[0].cursor : null,
+      endCursor: edges.length > 0 ? edges[edges.length - 1].cursor : null,
+    };
 
     return {
       edges,
@@ -222,6 +274,54 @@ export class ContentResolver {
     const event = await this.eventLoader.load(serviceContext, parent.__source.event.id);
 
     return event ? EventType.toType(event) : null;
+  }
+
+  /**
+   * Resolve the file a media content row points at (null for every other row).
+   *
+   * `external_id` is structurally overloaded — it holds a `ci.files.id` only
+   * when `external_id_kind` says 'file'. Unclassified rows (NULL kind, written
+   * before migration 20260818215331) are re-tested by shape via
+   * {@link classifyExternalId} rather than assumed to be file ids, matching what
+   * ContentService.findMediaFilesByEventIds does on the event side. The three
+   * media fields below share this one DataLoader call, so a page of content
+   * rows resolves its binaries in a single batch.
+   */
+  private resolveFileMedia(context: RequestContext, parent: ContentType): Promise<ContentFileMedia | null> {
+    const { externalId, externalIdKind, userId } = parent.__source;
+
+    if (!externalId) {
+      return Promise.resolve(null);
+    }
+
+    const kind = externalIdKind ?? classifyExternalId(externalId);
+
+    if (kind !== 'file') {
+      return Promise.resolve(null);
+    }
+
+    return this.contentFileLoader.load(entityOwnerScope(context, userId), externalId);
+  }
+
+  /** Thumbnail (PREVIEW variant) URL of the linked file, when one exists. */
+  @ResolveField(() => String, { nullable: true })
+  async previewUrl(
+    @Context() context: RequestContext,
+    @Parent() parent: ContentType,
+  ): Promise<string | null> {
+    return (await this.resolveFileMedia(context, parent))?.previewUrl ?? null;
+  }
+
+  /** Full-resolution (ORIGINAL variant) URL of the linked file. */
+  @ResolveField(() => String, { nullable: true })
+  async mediaUrl(@Context() context: RequestContext, @Parent() parent: ContentType): Promise<string | null> {
+    return (await this.resolveFileMedia(context, parent))?.mediaUrl ?? null;
+  }
+
+  /** Byte size of the linked ORIGINAL. */
+  @ResolveField(() => Float, { nullable: true })
+  async mediaSize(@Context() context: RequestContext, @Parent() parent: ContentType): Promise<number | null> {
+    return (await this.resolveFileMedia(context, parent))?.size ?? null;
   }
 
   @ResolveField(() => [EntityTagType])

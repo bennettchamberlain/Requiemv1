@@ -3,8 +3,10 @@
  * query / entityTypes / tags. Field names match the backend SavedSearchFiltersInput
  * and the SearchInput filter fields (date is split into startTime/endTime).
  */
+import { isRollingDatePreset } from './Components/ExplorerToolbar/datePresets';
 export interface SavedSearchFiltersInput {
   eventTypes?: string[];
+  datePreset?: string;
   startTime?: string;
   endTime?: string;
   sortBy?: string;
@@ -20,8 +22,7 @@ export interface SavedSearchFiltersInput {
  * Capture the explorer's secondary filter dimensions from the URL into a
  * SavedSearchFiltersInput, so a saved search round-trips the full search the user
  * built. Returns undefined when none are active (so we never store an empty `{}`).
- * Mirrors the param names MemoryPage threads into the search — note the date
- * range lives at ?from / ?to, not ?startTime / ?endTime.
+ * Rolling When presets persist as `datePreset`; custom ranges use startTime/endTime.
  */
 export function buildSavedSearchFilters(params: URLSearchParams): SavedSearchFiltersInput | undefined {
   const csv = (key: string) => {
@@ -30,13 +31,17 @@ export function buildSavedSearchFilters(params: URLSearchParams): SavedSearchFil
     return value && value.length > 0 ? value : undefined;
   };
 
+  const when = params.get('when');
+  const rollingPreset = isRollingDatePreset(when) ? when : undefined;
+
   const filters: SavedSearchFiltersInput = {
     eventTypes: csv('eventTypes'),
     connectors: csv('connectors'),
     people: csv('people'),
     places: csv('places'),
-    startTime: params.get('from') || undefined,
-    endTime: params.get('to') || undefined,
+    datePreset: rollingPreset,
+    startTime: rollingPreset ? undefined : params.get('from') || undefined,
+    endTime: rollingPreset ? undefined : params.get('to') || undefined,
     sortBy: params.get('sortBy') || undefined,
     sortOrder: params.get('sortOrder') || undefined,
     hasLocation: params.get('hasLocation') === '1' ? true : undefined,

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TrainingCenterDatabase
+    xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2">
+    <Activities>
+        <!-- Document order starts at the third segment; <Id> is not the session start. -->
+        <Activity Sport="Walking">
+            <Id>2018-07-03T18:30:00.100Z</Id>
+            <Lap StartTime="2018-07-03T18:30:00.100Z">
+                <TotalTimeSeconds>600</TotalTimeSeconds>
+            </Lap>
+        </Activity>
+        <Activity Sport="Walking">
+            <Id>2018-07-03T17:30:00.100Z</Id>
+            <Lap StartTime="2018-07-03T17:30:00.100Z">
+                <TotalTimeSeconds>600</TotalTimeSeconds>
+            </Lap>
+        </Activity>
+        <Activity Sport="Walking">
+            <Id>2018-07-03T17:00:00.100Z</Id>
+            <Lap StartTime="2018-07-03T17:00:00.100Z">
+                <TotalTimeSeconds>600</TotalTimeSeconds>
+            </Lap>
+        </Activity>
+    </Activities>
+</TrainingCenterDatabase>

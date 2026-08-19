@@ -1,17 +1,35 @@
 import { useCallback } from 'react';
 
-import { Select, Toggle, useToast } from '@ci/shadcn';
+import { Select, Toggle, Tooltip, cn, useToast } from '@ci/shadcn';
 import { Brain, Eye, Wrench } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 
 import { useModel } from '@/hooks';
 
 interface Props {
   withToggles?: boolean;
   visionOnly?: boolean;
+  /**
+   * `composer` is the compact Cursor-style row inside ChatInput.
+   * Default is the standalone toolbar / settings control.
+   */
+  variant?: 'toolbar' | 'composer';
+  /**
+   * Width/appearance of the select trigger. Defaults to the compact toolbar
+   * width; Settings passes a full-width class so it lines up with the other
+   * controls in the section.
+   */
+  triggerClassName?: string;
 }
 
-export function ModelSelector({ withToggles = false, visionOnly = false }: Props) {
+export function ModelSelector({
+  withToggles = false,
+  visionOnly = false,
+  variant = 'toolbar',
+  triggerClassName,
+}: Props) {
   const { toast } = useToast();
+  const { t } = useTranslation();
 
   const [
     {
@@ -31,6 +49,13 @@ export function ModelSelector({ withToggles = false, visionOnly = false }: Props
   const handleSelectModel = visionOnly ? selectVisionModel : selectModel;
   const models = visionOnly ? activeModels.filter((model) => model.vision === true) : activeModels;
   const selectedModelConfig = activeModels.find((model) => model.model === currentModel) ?? null;
+  // Keyed off the same flags that drive `disabled`, not off selectedModelConfig:
+  // an unknown/not-yet-loaded model leaves `tools` undefined, which disables the
+  // toggle but is not `=== false`, so the copy would claim the model is fine.
+  const toolsTooltip = t(toolsSupported ? 'MODEL_TOGGLE_TOOLS' : 'MODEL_TOGGLE_TOOLS_UNSUPPORTED');
+  const thinkingTooltip = t(
+    thinkingSupported ? 'MODEL_TOGGLE_THINKING' : 'MODEL_TOGGLE_THINKING_UNSUPPORTED',
+  );
 
   const handleToggleTools = useCallback(
     (pressed: boolean) => {
@@ -62,9 +87,14 @@ export function ModelSelector({ withToggles = false, visionOnly = false }: Props
     return null;
   }
 
+  const isComposer = variant === 'composer';
+  const resolvedTriggerClassName =
+    triggerClassName ??
+    (isComposer ? 'h-8 w-[148px] border-0 bg-transparent shadow-none px-2 text-xs' : 'w-[150px]');
+
   const selector = (
     <Select value={currentModel ?? undefined} onValueChange={handleSelectModel}>
-      <Select.Trigger className="w-[150px]">
+      <Select.Trigger className={cn(resolvedTriggerClassName)}>
         <Select.Value placeholder="Active model" />
       </Select.Trigger>
       <Select.Content>
@@ -90,30 +120,53 @@ export function ModelSelector({ withToggles = false, visionOnly = false }: Props
   }
 
   return (
-    <div className="flex flex-row">
-      <div className="flex flex-row items-center mr-2 gap-1">
-        <Toggle
-          pressed={toolsEnabled}
-          onPressedChange={handleToggleTools}
-          size="sm"
-          variant="outline"
-          aria-label="Toggle tools"
-          disabled={!toolsSupported}
-          className={!toolsSupported ? 'opacity-50 cursor-not-allowed' : ''}
-        >
-          <Wrench />
-        </Toggle>
-        <Toggle
-          pressed={thinkingEnabled}
-          onPressedChange={handleToggleThinking}
-          size="sm"
-          variant="outline"
-          aria-label="Toggle thinking"
-          disabled={!thinkingSupported}
-          className={!thinkingSupported ? 'opacity-50 cursor-not-allowed' : ''}
-        >
-          <Brain />
-        </Toggle>
+    <div className={cn('flex flex-row items-center', isComposer ? 'gap-1 min-w-0' : '')}>
+      <div className={cn('flex flex-row items-center gap-1', !isComposer && 'mr-2')}>
+        <Tooltip delayDuration={600}>
+          <Tooltip.Content>{toolsTooltip}</Tooltip.Content>
+          {/* A disabled Toggle gets `pointer-events: none`, which would swallow the
+              hover — and an unsupported model is exactly when the tooltip has
+              something to say. Anchor to a wrapper span so it still opens. */}
+          <Tooltip.Trigger asChild>
+            <span className="inline-flex">
+              <Toggle
+                pressed={toolsEnabled}
+                onPressedChange={handleToggleTools}
+                size="sm"
+                variant="outline"
+                aria-label={t('MODEL_TOGGLE_TOOLS')}
+                disabled={!toolsSupported}
+                className={cn(
+                  isComposer && 'h-8 w-8 p-0',
+                  !toolsSupported ? 'opacity-50 cursor-not-allowed' : '',
+                )}
+              >
+                <Wrench />
+              </Toggle>
+            </span>
+          </Tooltip.Trigger>
+        </Tooltip>
+        <Tooltip delayDuration={600}>
+          <Tooltip.Content>{thinkingTooltip}</Tooltip.Content>
+          <Tooltip.Trigger asChild>
+            <span className="inline-flex">
+              <Toggle
+                pressed={thinkingEnabled}
+                onPressedChange={handleToggleThinking}
+                size="sm"
+                variant="outline"
+                aria-label={t('MODEL_TOGGLE_THINKING')}
+                disabled={!thinkingSupported}
+                className={cn(
+                  isComposer && 'h-8 w-8 p-0',
+                  !thinkingSupported ? 'opacity-50 cursor-not-allowed' : '',
+                )}
+              >
+                <Brain />
+              </Toggle>
+            </span>
+          </Tooltip.Trigger>
+        </Tooltip>
       </div>
 
       {selector}

@@ -94,19 +94,26 @@ function useModel(): Value {
     setError(null);
 
     try {
-      const data =
-        (await fetchJson<Model[]>('/api/llm/models', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${authToken}`,
-          },
-        })) ?? [];
+      const payload = await fetchJson<Model[]>('/api/llm/models', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+
+      // An empty or malformed list is a recoverable backend state, not a client
+      // error: Ollama may be unreachable, have no models pulled, or the endpoint
+      // may be misconfigured. `fetchJson` casts the parsed body to `Model[]`
+      // without checking it, so normalise once here — `activeModels` is read with
+      // `.find` during render (thinkingSupported / toolsSupported), which is
+      // outside this try/catch, and ModelProvider wraps the whole routed tree.
+      const data = Array.isArray(payload) ? payload : [];
 
       setActiveModels(data);
 
       const persistedModel = localStorage.getItem(ACTIVE_MODEL_KEY);
-      const model = data.find((m) => m.model === persistedModel) ? persistedModel : (data[0].model ?? null);
+      const model = data.find((m) => m.model === persistedModel) ? persistedModel : (data[0]?.model ?? null);
 
       setSelectedModel(model);
 

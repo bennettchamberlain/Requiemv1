@@ -1,19 +1,21 @@
 import { type ReactNode, useState } from 'react';
 
-import { useQuery } from '@apollo/client';
-import { GlobalUID, LoadingPage, Portal, usePageTitle, EmptyState } from '@ci/common';
-import { Breadcrumb, Card, Label, Textarea, Toggle, cn } from '@ci/shadcn';
-import { Pencil } from '@ci/shadcn/icons';
-import { useParams, Link } from 'react-router-dom';
+import { useMutation, useQuery } from '@apollo/client';
+import { GlobalUID, LoadingPage, usePageTitle, EmptyState } from '@ci/common';
+import { useParams } from 'react-router-dom';
 
-import { useTagEntityService } from '@/api';
 import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
+import { EntityFieldsCard } from '@/components/EntityFields';
 import { EntityGraph } from '@/components/EntityGraph';
 import { EntityRelationshipCards } from '@/components/EntityRelationshipCards/EntityRelationshipCards';
+import { EntityEditToggle, EntityTagsDescriptionCard } from '@/components/EntityTagsDescriptionCard';
 import { ContentIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
-import { TagInput } from '@/components/TagInput';
 import { gql } from '@/graphql';
+import {
+  EntityMedia,
+  resolveStaticUrl,
+} from '@/pages/MemoryPage/Components/EntityDetails/EntityDetailScaffold';
 
 const GET_CONTENT = gql(`
   query GetContent($id: ID!) {
@@ -21,10 +23,26 @@ const GET_CONTENT = gql(`
       id
       title
       text
+      # The drawer renders the image; the page used to select nothing to render it with.
+      mimetype
+      contentUrl: url
+      sourceUrl
       tags {
         id
         label
       }
+    }
+  }
+`);
+
+// Same write the memory drawer makes (UpdateContentDetail), so the page can edit
+// the title as well as the text instead of the text alone.
+const UPDATE_CONTENT_FIELDS = gql(`
+  mutation UpdateContentPageFields($input: UpdateContentInput!) {
+    updateContent(input: $input) {
+      id
+      title
+      text
     }
   }
 `);
@@ -38,7 +56,7 @@ export function ContentPage() {
     },
   });
 
-  const { tagEntities, untagEntities } = useTagEntityService();
+  const [updateContentFields] = useMutation(UPDATE_CONTENT_FIELDS);
 
   const contentItem = data?.content;
 
@@ -64,61 +82,60 @@ export function ContentPage() {
             <ContentIcon />
             <h1 className="text-2xl font-bold">{contentItem.title}</h1>
           </div>
-          <Toggle
-            aria-label="Toggle edit mode"
-            size="sm"
-            variant="outline"
-            className="data-[state=on]:bg-transparent data-[state=on]:*:[svg]:fill-blue-500 data-[state=on]:*:[svg]:stroke-blue-500"
-            pressed={editMode}
-            onPressedChange={setEditMode}
-          >
-            <Pencil />
-          </Toggle>
+          <EntityEditToggle pressed={editMode} onPressedChange={setEditMode} />
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div className="md:col-span-2">
+          <div className="flex flex-col gap-4 md:col-span-2">
+            {/* The drawer's field set and its media, so "Open full page" does not
+                silently drop the title editor and the image. */}
+            <EntityFieldsCard
+              title="Content"
+              resetKey={contentItem.id}
+              editMode={editMode}
+              onEditModeChange={setEditMode}
+              fields={[{ key: 'title', label: 'Title', value: contentItem.title ?? '' }]}
+              metaItems={[{ label: 'Type', value: contentItem.mimetype ?? 'Content' }]}
+              onSave={async (values) => {
+                const result = await updateContentFields({
+                  variables: { input: { id: contentItem.id, title: values.title } },
+                });
+
+                if (!result.data?.updateContent) {
+                  throw new Error('Update was rejected');
+                }
+              }}
+            >
+              {contentItem.mimetype?.startsWith('image/') && (
+                <EntityMedia
+                  src={resolveStaticUrl(contentItem.contentUrl ?? contentItem.sourceUrl)}
+                  contentType={contentItem.mimetype}
+                  alt={contentItem.title ?? ''}
+                />
+              )}
+            </EntityFieldsCard>
+
             <EntityGraph entityId={id!} />
           </div>
+          <EntityTagsDescriptionCard
+            entityType="content"
+            entityId={id!}
+            resetKey={contentItem.id}
+            tags={contentItem.tags.map((t) => t.label)}
+            description={contentItem.text}
+            descriptionLabel="Text"
+            editMode={editMode}
+            onDescriptionSave={async (value) => {
+              const result = await updateContentFields({
+                variables: { input: { id: contentItem.id, text: value } },
+              });
 
-          <Card className="p-0">
-            <Card.Content className="p-4 flex flex-col gap-6">
-              <div className="space-y-2">
-                <Label>Tags</Label>
-
-                <TagInput
-                  key={contentItem.id}
-                  tags={contentItem.tags.map((t) => t.label) ?? []}
-                  readOnly={!editMode}
-                  onTagAdded={async (label) => {
-                    try {
-                      await tagEntities([GlobalUID.encode('content', id!)], [label]);
-
-                      return true;
-                    } catch {
-                      return false;
-                    }
-                  }}
-                  onTagRemoved={async (label) => {
-                    await untagEntities([GlobalUID.encode('content', id!)], [label]);
-                  }}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="description">Text</Label>
-                <Textarea
-                  key={contentItem.id}
-                  id="description"
-                  defaultValue={contentItem?.text ?? ''}
-                  readOnly={!editMode}
-                  className={cn(
-                    'resize-none min-h-[120px]',
-                    editMode ? '' : 'shadow-none focus-visible:ring-0 focus-visible:border-border',
-                  )}
-                />
-              </div>
-            </Card.Content>
-          </Card>
+              // updateContent resolves to the content itself, or null when the write was rejected.
+              if (!result.data?.updateContent) {
+                throw new Error('Update was rejected');
+              }
+            }}
+          />
         </div>
 
         <EntityRelationshipCards entityId={id!} />
@@ -127,36 +144,5 @@ export function ContentPage() {
     );
   }
 
-  return (
-    <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-
-            <Breadcrumb.Separator className="hidden md:block" />
-
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Page>Content</Breadcrumb.Page>
-            </Breadcrumb.Item>
-
-            {contentItem && (
-              <>
-                <Breadcrumb.Separator className="hidden md:block" />
-                <Breadcrumb.Item>
-                  <Breadcrumb.Page>{contentItem.title}</Breadcrumb.Page>
-                </Breadcrumb.Item>
-              </>
-            )}
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
-      {content}
-    </>
-  );
+  return <>{content}</>;
 }

@@ -30,42 +30,55 @@ flowchart TB
       Onboarding["/onboarding"]
     end
     subgraph Memory["Memory & retrieval"]
-      Mem["/memory"]
+      Mem["/memory<br/>+ /memory/people · places · events · things<br/>· knowledge · content · tags · questions · reflections"]
       Search["/search"]
       Saved["/saved-searches"]
+      Shared["/shared/:token"]
       Chat["/chat/:id?"]
-      Feed["/feed/:id?"]
-      Insights["/insights"]
-      InsightDetail["/insights/:id"]
+      Feed["/feed/:id? · /feed/summaries/:id"]
+      Brief["/today/:id? · /brief/:id?"]
+      Insights["/insights · /insights/:id"]
+      Stats["/stats · /forecast"]
     end
     subgraph Records["Records & detail"]
-      People["/people/:id"]
-      Places["/places/:id"]
+      People["/people · /people/:id"]
+      Places["/places · /places/:id"]
       Events["/events/:id"]
       Items["/items/:id"]
       Content["/content/:id"]
       Concepts["/concepts/:id"]
       Comms["/communications/:id"]
-      Notes["/notes/:id?"]
+      Notes["/notes · /notes/:id?"]
+      Tags["/tags"]
       Files["/files"]
       Inventory["/inventory"]
     end
+    subgraph Plan["Planning"]
+      PlanR["/plan"]
+      Schedule["/schedule"]
+    end
     subgraph Ops["Connections & system"]
-      Connect["/connect"]
-      Connections["/connections"]
-      ConnectionDetail["/connections/:id"]
+      Connect["/connect · /device-connect"]
+      Connections["/connections · /connections/:id"]
       Providers["/providers/:id"]
+      Sources["/sources/:half?"]
+      Import["/import"]
       Jobs["/jobs"]
-      Settings["/settings/* (appearance · api-keys · oauth)"]
-      System["/system"]
+      Prompts["/prompts"]
+      Settings["/settings/*"]
+      System["/system · /server"]
       OAuthCb["/oauth/callback · /openid/callback"]
     end
 
     Root --> Public
     Root --> Memory
     Root --> Records
+    Root --> Plan
     Root --> Ops
 ```
+
+> The route list moves fast — `src/App.tsx` is the source of truth; this diagram
+> is a map of the shape, not a guaranteed-complete index.
 
 ## Screenshots
 

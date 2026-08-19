@@ -1,0 +1,5 @@
+CONVERSATION ID,CONVERSATION TITLE,FROM,SENDER PROFILE URL,TO,RECIPIENT PROFILE URLS,DATE,SUBJECT,CONTENT,FOLDER
+conv-1,Project Chat,Ada Lovelace,https://www.linkedin.com/in/adalovelace,Liam Broza,https://www.linkedin.com/in/liambroza,2024-01-01 12:00:00 UTC,Re: Project,"Hi Liam, here is the update:
+- item one, with a comma
+- item two",INBOX
+conv-1,Project Chat,Liam Broza,https://www.linkedin.com/in/liambroza,Ada Lovelace,https://www.linkedin.com/in/adalovelace,2024-01-02 09:15:00 UTC,,Thanks for the update,INBOX

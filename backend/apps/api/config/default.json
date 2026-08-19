@@ -5,6 +5,9 @@
   "logging": {
     "level": "info"
   },
+  "cors": {
+    "allowedOrigins": []
+  },
   "auth": {
     "local": {
       "saltRounds": 10
@@ -46,6 +49,9 @@
       "github": {
         "id": "019d7a32-e4b0-7f01-b5c2-8a1d3e6f9c04"
       },
+      "signal": {
+        "id": "019e3d77-c6e3-8f14-da06-2b5f7c0e1d19"
+      },
       "steam": {
         "id": "019d6470-f9e1-720f-a3ce-299842abaece"
       }
@@ -58,16 +64,18 @@
     },
     "oidc": {
       "issuerUrl": "",
-      "publicBaseUrl": ""
+      "publicBaseUrl": "",
+      "nativeRedirectScheme": "companion"
     },
     "connect": {
       "hubOrigins": ""
     },
     "portal": {
-      "enabled": false,
+      "enabled": true,
       "issuer": "https://hub.ci.computer",
       "jwksUri": "https://hub.ci.computer/api/auth/jwks",
-      "audience": "ci-server,ci-hub,ci-import-tools,ci-browser-extension"
+      "audience": "ci-server,ci-hub,ci-import-tools,ci-browser-extension,ci-even,ci-applet",
+      "pushRelayUrl": ""
     },
     "hubForwardAuth": {
       "enabled": false,
@@ -98,13 +106,29 @@
   "graphql": {
     "maxQueryComplexity": 150
   },
+  "powersync": {
+    "url": "",
+    "jwtSecret": "",
+    "audience": "powersync",
+    "tokenTtl": "300s",
+    "jwtKid": "ci-powersync-hs256"
+  },
   "services": {
     "ollama": {
       "host": "http://host.docker.internal:11434"
     },
     "hbpe": {
       "host": "http://hbpe-service:8002"
+    },
+    "parser": {
+      "host": "http://summary-service:8002"
+    },
+    "summary": {
+      "host": "http://summary-service:8001"
     }
+  },
+  "signalCli": {
+    "restUrl": "http://127.0.0.1:8080"
   },
   "embedding": {
     "model": "nomic-embed-text",
@@ -116,7 +140,33 @@
   },
   "queues": {
     "concurrency": 10,
-    "fetchBatchSize": 10
+    "fetchBatchSize": 10,
+    "perQueueConcurrency": 6
+  },
+  "import": {
+    "scratchDir": "/var/tmp/ci-import",
+    "roots": [],
+    "uploadsDir": "/var/lib/ci-import/uploads",
+    "inboxDir": "/var/lib/ci-import/inbox",
+    "maxArchiveEntries": 2000000,
+    "maxArchiveBytes": 107374182400,
+    "databaseDataDir": ""
+  },
+  "enrichment": {
+    "window": {
+      "enabled": true,
+      "start": "01:00",
+      "durationMinutes": 300,
+      "budgetMinutes": 90,
+      "timezone": ""
+    },
+    "rotation": {
+      "turnMinutes": 20,
+      "usersPerTurn": 1
+    }
+  },
+  "reflection": {
+    "minAnswerConfidence": 0.4
   },
   "features": {
     "scheduled.answer.inferencing": true,
@@ -124,19 +174,30 @@
     "scheduled.entity.promotion": true,
     "pinned.demo.models": false,
     "enable.system.prompt": true,
-    "enable.inventory.page": false,
+    "enable.inventory.page": true,
     "advanced.theme.tab": false,
-    "new.insights.page": false,
     "require.signup.codes": true,
-    "files.page": false,
-    "insights.page": false,
-    "chat.page": false,
-    "jobs.page": false,
-    "stats.page": false,
+    "files.page": true,
+    "insights.page": true,
+    "chat.page": true,
+    "jobs.page": true,
+    "import.page": true,
+    "planning.enabled": true,
+    "planning.page": true,
+    "planning.emptyState": false,
+    "stats.page": true,
+    "schedule.page": true,
     "tags.page": true,
     "hbpe": true,
     "agent.memory.compaction": false,
-    "shared.search": false
+    "shared.search": true,
+    "onboarding.preference.steps": false,
+    "actions": true,
+    "smart.rotation": false,
+    "ask": false,
+    "grounded.prompts": true,
+    "derivation.engines": true,
+    "ingest.selfHeal": true
   },
   "environment": {
     "database.query.logging": false
@@ -149,6 +210,8 @@
   "geocoding": {
     "apiKey": "",
     "batchSize": 200,
-    "rateLimitPerSecond": 10
+    "rateLimitPerSecond": 10,
+    "provider": "portal",
+    "portalBaseUrl": "https://hub.ci.computer"
   }
 }

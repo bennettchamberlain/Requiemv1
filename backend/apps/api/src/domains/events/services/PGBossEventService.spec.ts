@@ -2,6 +2,8 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 
 import type { LoggerService } from '@ci/common/logging';
 
+import { DEFAULT_JOB_PRIORITY } from '../constants';
+
 import { PGBossEventService } from './PGBossEventService';
 
 /**
@@ -19,7 +21,11 @@ describe('PGBossEventService.sendMany', () => {
 
   function makeService(): PGBossEventService {
     logger = { setContext: jest.fn(), debug: jest.fn(), warn: jest.fn(), error: jest.fn(), log: jest.fn() };
-    const service = new PGBossEventService(new EventEmitter2(), logger as unknown as LoggerService);
+    const service = new PGBossEventService(
+      new EventEmitter2(),
+      logger as unknown as LoggerService,
+      {} as never,
+    );
     insert = jest.fn(async () => undefined);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (service as any).boss = { insert };
@@ -46,8 +52,25 @@ describe('PGBossEventService.sendMany', () => {
 
     expect(insert).toHaveBeenCalledTimes(1);
     expect(insert.mock.calls[0][0]).toEqual([
-      { name: 'default', data: { communicationId: 'c1', name: 'communication.created' } },
-      { name: 'default', data: { eventId: 'e1', name: 'event.created' } },
+      {
+        name: 'default',
+        data: { communicationId: 'c1', name: 'communication.created' },
+        priority: DEFAULT_JOB_PRIORITY,
+      },
+      { name: 'default', data: { eventId: 'e1', name: 'event.created' }, priority: DEFAULT_JOB_PRIORITY },
+    ]);
+  });
+
+  it('stamps a caller-supplied priority onto every inserted job', async () => {
+    delete process.env.CI_QUEUE_SUPPRESS;
+    const service = makeService();
+
+    await service.sendMany('default', [{ name: 'communication.created', data: { communicationId: 'c1' } }], {
+      priority: -5,
+    });
+
+    expect(insert.mock.calls[0][0]).toEqual([
+      { name: 'default', data: { communicationId: 'c1', name: 'communication.created' }, priority: -5 },
     ]);
   });
 

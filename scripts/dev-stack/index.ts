@@ -7,7 +7,7 @@
  *      The main checkout working solo therefore gets stable, familiar ports;
  *      concurrent worktrees transparently get ephemeral ones and never collide.
  *   2. Brings up the compose stack for this project (Postgres, object-store,
- *      Temporal, summary, hbpe) on those host ports and waits for health.
+ *      summary, hbpe) on those host ports and waits for health.
  *   3. Runs migrations against the (possibly dynamic) DB port.
  *   4. Registers a Caddy route at <key>.localhost (api / graphql / llm-stream /
  *      mcp-SSE / static / web).
@@ -32,6 +32,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import dotenv from 'dotenv';
 
 import { CaddyClient, routeId } from './caddy';
+import { keyFromArgv } from './key';
 import { fail, link, note, ok, step, table } from './log';
 
 const ROOT = process.cwd();
@@ -39,7 +40,59 @@ dotenv.config({ path: path.join(ROOT, '.env'), quiet: true });
 
 const caddy = new CaddyClient();
 
-const COMPOSE_FILES = ['-f', 'docker-compose.yml', '-f', 'docker-compose.local.yml'];
+/**
+ * Whether this host can pass an AMD GPU into a container.
+ *
+ * Keyed on the device nodes rather than on `rocminfo` or the built image's
+ * flavour, because the nodes are exactly what `devices:` needs to bind — a
+ * host with the ROCm userspace installed but no card, or a card with no
+ * loaded amdkfd driver, must NOT get the overlay or compose refuses to start
+ * the service at all.
+ */
+function rocmDevicesPresent(): boolean {
+  return fs.existsSync('/dev/kfd') && fs.existsSync('/dev/dri');
+}
+
+/**
+ * The group IDs `docker-compose.rocm.yml` binds the container's user into,
+ * read off the host's own device nodes.
+ *
+ * Numeric and derived, never literal: the kernel checks the GID as seen from
+ * the host, and `render` is 109 on Ubuntu but 105 elsewhere. /dev/kfd carries
+ * the render group; the video group comes from a DRM card node, which a
+ * headless box may not have — it falls back to the render GID rather than
+ * being left empty, since compose would reject an empty group_add entry and a
+ * duplicated group is harmless.
+ */
+function amdGroupEnv(): NodeJS.ProcessEnv {
+  if (!rocmDevicesPresent()) {
+    return {};
+  }
+
+  const renderGid = fs.statSync('/dev/kfd').gid;
+
+  const card = fs
+    .readdirSync('/dev/dri')
+    .filter((entry) => entry.startsWith('card'))
+    .sort()[0];
+
+  const videoGid = card != null ? fs.statSync(path.join('/dev/dri', card)).gid : renderGid;
+
+  return { AMD_RENDER_GID: String(renderGid), AMD_VIDEO_GID: String(videoGid) };
+}
+
+const COMPOSE_FILES = [
+  '-f',
+  'docker-compose.yml',
+  '-f',
+  'docker-compose.local.yml',
+  // Appended, not substituted: the overlay only adds device passthrough to
+  // hbpe-service and must lose to nothing in the local file.
+  ...(rocmDevicesPresent() ? ['-f', 'docker-compose.rocm.yml'] : []),
+];
+
+/** Set once at startup; merged into the env of every compose invocation. */
+const AMD_GROUP_ENV = amdGroupEnv();
 
 // Conventional default host ports, preferred when free.
 const DEFAULTS = {
@@ -47,9 +100,9 @@ const DEFAULTS = {
   web: 5173,
   db: 5432,
   objectStore: 9000,
-  temporal: 7233,
   hbpe: 8002,
   summary: 8001,
+  parser: 8003,
 };
 
 // --- ports ------------------------------------------------------------------
@@ -87,33 +140,70 @@ function ephemeralPort(): Promise<number> {
   });
 }
 
-/** Host ports Docker has already published across all running containers. This
- * is the authoritative check for container port conflicts: Docker Desktop on
- * macOS publishes via its VM and the host port frequently isn't reachable on
- * IPv4 loopback (it listens on IPv6 `*`), so a bind- or connect-test misses it
- * — yet `docker compose up` still fails with "port is already allocated". */
-function dockerPublishedPorts(): Set<number> {
-  const res = spawnSync('docker', ['ps', '--format', '{{.Ports}}'], { encoding: 'utf8' });
-  const ports = new Set<number>();
-  for (const match of (res.stdout ?? '').matchAll(/:(\d+)->/g)) {
-    ports.add(Number(match[1]));
+/** Host ports Docker has already published, split by whether they belong to
+ * THIS compose project. Reading them is the authoritative check for container
+ * port conflicts: Docker Desktop on macOS publishes via its VM and the host
+ * port frequently isn't reachable on IPv4 loopback (it listens on IPv6 `*`), so
+ * a bind- or connect-test misses it — yet `docker compose up` still fails with
+ * "port is already allocated".
+ *
+ * The split matters because this stack's own containers are not a conflict:
+ * `compose up` recreates them on whatever ports we pass it. Counting them as
+ * taken is how a stack displaced itself onto ephemeral ports — the services
+ * carry `restart: unless-stopped`, so a reboot without a clean `composeStop`
+ * has the daemon bring them back on the defaults, and the next `make dev`
+ * (which allocates before it ever calls compose) then read its own containers
+ * as foreign squatters and fell back to ephemeral for every service.
+ * `make dev-down` did not help: it only tears down the Caddy route. */
+function dockerPublishedPorts(key: string): { own: Set<number>; foreign: Set<number> } {
+  const res = spawnSync('docker', ['ps', '--format', '{{.Label "com.docker.compose.project"}}\t{{.Ports}}'], {
+    encoding: 'utf8',
+  });
+  const own = new Set<number>();
+  const foreign = new Set<number>();
+
+  for (const line of (res.stdout ?? '').split('\n')) {
+    if (!line.trim()) {
+      continue;
+    }
+
+    const tab = line.indexOf('\t');
+    const project = tab === -1 ? '' : line.slice(0, tab);
+    const target = project === key ? own : foreign;
+
+    for (const match of line.slice(tab + 1).matchAll(/:(\d+)->/g)) {
+      target.add(Number(match[1]));
+    }
   }
 
-  return ports;
+  return { own, foreign };
 }
 
-/** Preferred port if free, else an ephemeral one. "Free" means neither already
- * published by Docker (covers other worktrees' containers) nor answering a
- * connection (covers host processes like another stack's api/web). The
- * ephemeral fallback also skips Docker-published ports. (Small TOCTOU window
- * before the consumer binds — acceptable for local dev.) */
-async function allocPort(preferred: number, dockerPorts: Set<number>): Promise<number> {
-  if (!dockerPorts.has(preferred) && !(await portTaken(preferred))) {
+/** Preferred port if free, else an ephemeral one. "Free" means not published by
+ * another project's containers (covers other worktrees' stacks) and not
+ * answering a connection (covers host processes like another stack's api/web).
+ *
+ * A port this project already publishes stays preferred: it is ours to reuse,
+ * and the live connection it answers is our own container — the very thing the
+ * connect-test must not read as a conflict, since `compose up` will rebind it
+ * anyway. The ephemeral fallback still avoids every Docker-published port,
+ * ours included, so a service that genuinely has to move can't land on a
+ * sibling's. (Small TOCTOU window before the consumer binds — acceptable for
+ * local dev.) */
+async function allocPort(
+  preferred: number,
+  dockerPorts: { own: Set<number>; foreign: Set<number> },
+): Promise<number> {
+  if (dockerPorts.own.has(preferred)) {
+    return preferred;
+  }
+
+  if (!dockerPorts.foreign.has(preferred) && !(await portTaken(preferred))) {
     return preferred;
   }
 
   let port = await ephemeralPort();
-  while (dockerPorts.has(port)) {
+  while (dockerPorts.own.has(port) || dockerPorts.foreign.has(port)) {
     port = await ephemeralPort();
   }
 
@@ -242,7 +332,7 @@ function composeUp(env: NodeJS.ProcessEnv): void {
   run(
     'docker',
     ['compose', ...COMPOSE_FILES, '--profile', 'local', 'up', '-d', '--wait', '--remove-orphans'],
-    env,
+    { ...env, ...AMD_GROUP_ENV },
   );
 
   console.log('');
@@ -253,7 +343,10 @@ function composeStop(key: string): void {
 
   spawnSync('docker', ['compose', ...COMPOSE_FILES, '--profile', 'local', 'stop'], {
     cwd: ROOT,
-    env: { ...process.env, COMPOSE_PROJECT_NAME: key },
+    // The group vars matter even on `stop`: compose interpolates every file it
+    // is handed before it does anything, so an unset AMD_RENDER_GID would warn
+    // (and resolve to an empty group) while tearing the stack down.
+    env: { ...process.env, ...AMD_GROUP_ENV, COMPOSE_PROJECT_NAME: key },
     stdio: 'inherit',
   });
 
@@ -273,39 +366,6 @@ function migrate(dbPort: number, env: NodeJS.ProcessEnv): void {
   console.log('');
 }
 
-// --- key resolution ---------------------------------------------------------
-
-function sanitize(value: string): string {
-  return value.toLowerCase().replace(/[/.]/g, '-');
-}
-
-function gitKey(): string {
-  const git = (...args: string[]) =>
-    spawnSync('git', args, { cwd: ROOT, encoding: 'utf8' }).stdout?.trim() ?? '';
-  const common = git('rev-parse', '--git-common-dir');
-  const top = git('rev-parse', '--show-toplevel');
-  if (!common || !top) {
-    throw new Error('not a git worktree; pass --key to name the stack');
-  }
-
-  const repo = sanitize(path.basename(path.dirname(path.resolve(ROOT, common))));
-  const worktree = sanitize(path.basename(top));
-
-  return worktree === repo ? repo : `${repo}-${worktree}`;
-}
-
-function resolveKey(explicit?: string): string {
-  if (explicit) {
-    return sanitize(explicit);
-  }
-
-  if (process.env.PROJECT_NAME) {
-    return sanitize(process.env.PROJECT_NAME);
-  }
-
-  return gitKey();
-}
-
 // --- lifecycle --------------------------------------------------------------
 
 async function up(key: string): Promise<void> {
@@ -314,15 +374,15 @@ async function up(key: string): Promise<void> {
     process.exit(1);
   }
 
-  const dockerPorts = dockerPublishedPorts();
-  const [apiPort, webPort, dbPort, objPort, temporalPort, hbpePort, summaryPort] = await Promise.all([
+  const dockerPorts = dockerPublishedPorts(key);
+  const [apiPort, webPort, dbPort, objPort, hbpePort, summaryPort, parserPort] = await Promise.all([
     allocPort(DEFAULTS.api, dockerPorts),
     allocPort(DEFAULTS.web, dockerPorts),
     allocPort(DEFAULTS.db, dockerPorts),
     allocPort(DEFAULTS.objectStore, dockerPorts),
-    allocPort(DEFAULTS.temporal, dockerPorts),
     allocPort(DEFAULTS.hbpe, dockerPorts),
     allocPort(DEFAULTS.summary, dockerPorts),
+    allocPort(DEFAULTS.parser, dockerPorts),
   ]);
 
   const composeEnv: NodeJS.ProcessEnv = {
@@ -330,9 +390,9 @@ async function up(key: string): Promise<void> {
     COMPOSE_PROJECT_NAME: key,
     DB_HOST_PORT: String(dbPort),
     OBJECT_STORE_HOST_PORT: String(objPort),
-    ORCHESTRATOR_HOST_PORT: String(temporalPort),
     HBPE_HOST_PORT: String(hbpePort),
     SUMMARY_HOST_PORT: String(summaryPort),
+    PARSER_HOST_PORT: String(parserPort),
     API_HOST_PORT: String(apiPort), // hbpe container calls the host api at this port
   };
 
@@ -400,7 +460,26 @@ async function up(key: string): Promise<void> {
       DATABASE_PORT: String(dbPort),
       OBJECT_STORE_URL: `http://localhost:${objPort}`,
       HBPE_HOST: `http://localhost:${hbpePort}`,
+      // Both sidecars need a host-side URL, not the compose service name. The
+      // API runs on the host under overmind, so config's defaults
+      // (http://hbpe-service:8002, http://summary-service:8001) resolve only
+      // inside the compose network — from here they are ENOTFOUND. Mapped to
+      // services.{hbpe,summary}.host via config/custom-environment-variables.json.
+      SUMMARY_HOST: `http://localhost:${summaryPort}`,
+      PARSER_HOST: `http://localhost:${parserPort}`,
       APP_PUBLIC_HOSTNAME: host, // this stack's own origin (<key>.localhost); OAuth host is separate
+      // Vite's own `/api` proxy, for anyone who opens the raw dev-server port
+      // instead of the Caddy route. Without this it falls back to the hardcoded
+      // `http://localhost:64669` in vite.config.ts — a port nothing listens on —
+      // so EVERY /api call from that origin fails with ECONNREFUSED: no feature
+      // flags (which silently unregisters flag-gated routes, so /import serves a
+      // 404 that reads like "not signed in"), no GraphQL, and an OAuth link that
+      // lands on a blank page.
+      //
+      // 127.0.0.1, not `localhost`: the API binds IPv4 (`0.0.0.0`), while
+      // `localhost` resolves to ::1 first on a dual-stack host. curl falls back
+      // to IPv4; Node's proxy agent reports the AggregateError instead.
+      API_PROXY_TARGET: `http://127.0.0.1:${apiPort}`,
       OVERMIND_SOCKET: overmindSocket,
       // Overmind reloads .env over the environment we hand it, which would
       // overwrite the dynamic per-worktree ports set above. This env already
@@ -418,10 +497,10 @@ async function up(key: string): Promise<void> {
         ['api', String(apiPort)],
         ['web (vite)', String(webPort)],
         ['db', String(dbPort)],
-        ['temporal', String(temporalPort)],
         ['object store', String(objPort)],
         ['hbpe', String(hbpePort)],
         ['summary', String(summaryPort)],
+        ['parser', String(parserPort)],
       ],
       ['left', 'right'],
     );
@@ -461,8 +540,7 @@ async function down(key: string): Promise<void> {
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const command = argv[0] && !argv[0].startsWith('--') ? argv[0] : 'up';
-  const keyFlag = argv.indexOf('--key');
-  const key = resolveKey(keyFlag !== -1 ? argv[keyFlag + 1] : undefined);
+  const key = keyFromArgv(argv);
 
   if (command === 'down') {
     await down(key);

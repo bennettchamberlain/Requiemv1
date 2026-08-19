@@ -1,0 +1,3 @@
+From,To,Sent At,Message,Direction,inviterProfileUrl,inviteeProfileUrl
+Liam Broza,Ada Lovelace,3/10/21 9:00 AM,Hi Ada!,OUTGOING,https://www.linkedin.com/in/liambroza,https://www.linkedin.com/in/adalovelace
+Alan Turing,Liam Broza,4/02/21 1:30 PM,,INCOMING,https://www.linkedin.com/in/alanturing,https://www.linkedin.com/in/liambroza

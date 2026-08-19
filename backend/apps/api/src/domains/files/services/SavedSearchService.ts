@@ -10,9 +10,14 @@ import { EventService } from '@ci/domains/events';
 
 import { SavedSearch, SavedSearchEntity } from '../entities/SavedSearchEntity';
 import { SavedSearchCreatedEvent, SavedSearchUpdatedEvent, SavedSearchDeletedEvent } from '../events';
+import { DEFAULT_SAVED_SEARCHES } from '../seeds/defaultSavedSearches';
 import type { CreateSavedSearchDto, UpdateSavedSearchDto } from '../types';
 
 const TAG_REGEX = /#([\w-]+)/g;
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 @Injectable()
 export class SavedSearchService {
@@ -43,6 +48,42 @@ export class SavedSearchService {
     });
 
     return SavedSearchEntity.toEgressType(entity);
+  }
+
+  /**
+   * Insert the starter library for a user who has no saved searches yet.
+   * Idempotent: a user who already has any row (including after deleting some
+   * seeds but keeping others) is left alone, so a boot or a revisit cannot
+   * duplicate the catalog. Matches the actions-seed pattern.
+   *
+   * @returns true when the catalog was inserted
+   */
+  async ensureDefaults(context: UserServiceContext): Promise<boolean> {
+    const existing = await this.savedSearchRepository.count({
+      where: { userId: context.userId },
+    });
+
+    if (existing > 0) {
+      return false;
+    }
+
+    const rows = DEFAULT_SAVED_SEARCHES.map((seed) => {
+      const entity = new SavedSearchEntity();
+      entity.id = uuidv7();
+      entity.name = seed.name;
+      entity.description = seed.description;
+      entity.query = seed.query ?? '';
+      entity.entityTypes = seed.entityTypes ?? [];
+      entity.tags = this.assembleTags({ query: seed.query, tags: seed.tags });
+      entity.filters = seed.filters ?? null;
+      entity.userId = context.userId;
+
+      return entity;
+    });
+
+    await this.savedSearchRepository.save(rows);
+
+    return true;
   }
 
   async findAll(context: ServiceContext): Promise<SavedSearch[]> {
@@ -106,6 +147,67 @@ export class SavedSearchService {
     });
 
     return this.findById(context, id);
+  }
+
+  /**
+   * Re-point every saved search that filters on `from` so it filters on `to`,
+   * after the underlying tag was renamed.
+   *
+   * Saved searches store tag **labels**, not tag ids, so a rename that only
+   * touched `ci_search.tags` would silently leave them filtering on a label
+   * nothing carries any more — they would just stop returning results.
+   *
+   * Both places the label lives get rewritten: the `tags` array and any
+   * `#label` in the query text. `assembleTags` re-derives the array from the
+   * query on every save, so rewriting one without the other would resurrect
+   * the stale label the next time the user edits the search.
+   *
+   * @returns the number of saved searches changed
+   */
+  async replaceTagLabel(context: UserServiceContext, from: string, to: string): Promise<number> {
+    if (from === to) {
+      return 0;
+    }
+
+    const rows = await this.savedSearchRepository.find({
+      where: { userId: context.userId },
+    });
+
+    // `(?![\w-])` rather than `\b`, so renaming `foo` leaves `#foo-bar` alone
+    // — TAG_REGEX treats hyphens as part of a label.
+    const hashtag = new RegExp(`#${escapeRegExp(from)}(?![\\w-])`, 'gi');
+
+    const changed = rows.filter((row) => {
+      const tags = row.tags ?? [];
+      const nextTags = [...new Set(tags.map((tag) => (tag === from ? to : tag)))];
+      const nextQuery = row.query?.replace(hashtag, () => `#${to}`) ?? row.query;
+
+      const tagsUnchanged =
+        nextTags.length === tags.length && nextTags.every((tag, index) => tag === tags[index]);
+
+      if (tagsUnchanged && nextQuery === row.query) {
+        return false;
+      }
+
+      row.tags = nextTags;
+      row.query = nextQuery;
+
+      return true;
+    });
+
+    if (changed.length === 0) {
+      return 0;
+    }
+
+    await this.savedSearchRepository.save(changed);
+
+    for (const row of changed) {
+      await this.eventService.send(SavedSearchUpdatedEvent, {
+        savedSearchId: row.id,
+      });
+    }
+
+    return changed.length;
   }
 
   /**

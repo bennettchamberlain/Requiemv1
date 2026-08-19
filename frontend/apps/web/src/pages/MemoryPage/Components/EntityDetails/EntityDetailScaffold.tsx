@@ -1,38 +1,37 @@
-import { type ReactNode, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useMemo, useState } from 'react';
 
 import { GlobalUID } from '@ci/common';
-import { Button, Card, Input, Label, Sheet, Textarea, cn, useToast } from '@ci/shadcn';
-import { Loader2, Pencil } from '@ci/shadcn/icons';
+import { Button, Card, IconButton, Label, Sheet, cn, useToast } from '@ci/shadcn';
+import { Loader2, Pencil, Trash2 } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
 import { useTagEntityService } from '@/api';
 import {
+  EntityFields,
+  EntityMetaList,
+  useEntityFieldsEditor,
+  type EditField,
+  type MetaItem,
+} from '@/components/EntityFields';
+import {
   EntityRelationshipCards,
   getEntityDetailPath,
   toGlobalResourceType,
+  type RelatedEntityOpenTarget,
 } from '@/components/EntityRelationshipCards/EntityRelationshipCards';
 import { TagInput } from '@/components/TagInput';
 
 import type { MemoryEntity } from '../../../MemoryPage/useEntityService';
+import { useEntityService } from '../../../MemoryPage/useEntityService';
 
+import { DeleteEntityDialog } from './DeleteEntityDialog';
+import { DELETE_TARGETS } from './deleteTargets';
 import { useReadOnly } from './readOnly';
 
-/** A single editable field rendered read-only or as an input depending on edit mode. */
-export interface EditField {
-  key: string;
-  label: string;
-  /** Current (saved) value, used for read-only display and to seed the editor. */
-  value: string;
-  multiline?: boolean;
-  inputType?: string;
-  placeholder?: string;
-}
-
-/** A read-only label/value pair shown in the metadata card. */
-export interface MetaItem {
-  label: string;
-  value: ReactNode;
-}
+// The field/meta contract now lives with the shared editor so the full-page
+// entity views can render the very same field set (see components/EntityFields).
+export type { EditField, MetaItem };
 
 interface EntityDetailScaffoldProps {
   entity: MemoryEntity;
@@ -222,13 +221,36 @@ export function EntityDetailScaffold({
   taggable = false,
   tagsEditable = false,
 }: EntityDetailScaffoldProps) {
+  const { t } = useTranslation();
   const ref = useMemo(() => resolveEntityRef(entity), [entity]);
   const currentTags = useMemo(() => readTags(entity), [entity]);
   const { tagEntities, untagEntities } = useTagEntityService();
+  const [{ refetch }, { setActiveEntity }] = useEntityService();
   const { toast } = useToast();
   // Shared-search viewer: the drawer is display-only. Suppress every mutation /
   // navigation affordance (the writes are owner-scoped and would silently fail).
   const readOnly = useReadOnly();
+
+  const handleOpenRelatedEntity = useCallback(
+    (target: RelatedEntityOpenTarget) => {
+      setActiveEntity({
+        __typename: 'GenericEntity',
+        id: target.id,
+        name: target.name,
+        entityType: target.entityType,
+        description: target.description,
+        properties: target.properties,
+      });
+    },
+    [setActiveEntity],
+  );
+
+  // Deleting is offered for every type the server can actually remove, keyed off
+  // the entity's own resource type — so it reaches search results and graph
+  // nodes alike, without each *Details body having to opt in.
+  const deleteTarget = ref.resourceType ? (DELETE_TARGETS[ref.resourceType] ?? null) : null;
+  const canDelete = !readOnly && Boolean(deleteTarget && ref.globalId);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const canEdit = !readOnly && Boolean(onSave && editFields && editFields.length > 0);
   // Tags-only edit mode: no persisted fields, just an editable TagInput. Lets
@@ -236,68 +258,40 @@ export function EntityDetailScaffold({
   const canManageTags = !readOnly && Boolean(tagsEditable && taggable && ref.globalId);
   const canEnterEditMode = canEdit || canManageTags;
 
-  // The current persisted values, rebuilt from props every render so external
-  // cache updates are always reflected (read-only display + edit seeding).
-  const liveValues = useMemo(() => {
-    const next: Record<string, string> = {};
-
-    for (const field of editFields ?? []) {
-      next[field.key] = field.value ?? '';
-    }
-
-    return next;
-  }, [editFields]);
-
-  const [values, setValues] = useState<Record<string, string>>(liveValues);
-  const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-
   // Abandon any in-progress edit when the open entity changes (by id), so one
   // entity's edits can never be persisted onto another.
   const entityKey = ref.globalId ?? ref.rawId ?? '';
+  const [editing, setEditing] = useState(false);
   const [activeKey, setActiveKey] = useState(entityKey);
+
   if (activeKey !== entityKey) {
     setActiveKey(entityKey);
     setEditing(false);
-    setSaving(false);
-    setSaveError(null);
+    setConfirmingDelete(false);
   }
 
+  // Shared with the full-page entity views, which offer the same field set.
+  const { values, setValue, saving, saveError, save, reset } = useEntityFieldsEditor({
+    fields: editFields,
+    onSave,
+    editing,
+    resetKey: entityKey,
+  });
+
   const startEditing = () => {
-    // Seed the editor from the latest persisted values each time we enter edit
-    // mode so a stale buffer can't clobber an external update.
-    setValues(liveValues);
-    setSaveError(null);
     setEditing(true);
   };
 
   const handleSave = async () => {
-    if (!onSave) {
-      return;
-    }
-
-    setSaving(true);
-    setSaveError(null);
-
-    try {
-      await onSave(values);
+    // Leave edit mode open on failure so the user can retry without retyping.
+    if (await save()) {
       setEditing(false);
-    } catch (error) {
-      // Keep editing open so the user can retry without losing their changes.
-      const message = error instanceof Error && error.message ? error.message : 'Failed to save changes.';
-
-      setSaveError(message);
-      toast.error(message);
-    } finally {
-      setSaving(false);
     }
   };
 
   const handleCancel = () => {
-    setValues(liveValues);
+    reset();
     setEditing(false);
-    setSaveError(null);
   };
 
   const detailPath = ref.resourceType && ref.rawId ? getEntityDetailPath(ref.resourceType, ref.rawId) : null;
@@ -311,17 +305,28 @@ export function EntityDetailScaffold({
       <Sheet.Header className="gap-2 border-b border-border/60 bg-background/45 p-5 pr-12 backdrop-blur-xl">
         <div className="flex items-start justify-between gap-2">
           <Sheet.Title className="text-xl leading-tight tracking-tight">{title}</Sheet.Title>
-          {canEnterEditMode && !editing && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="-mt-1 size-8 shrink-0"
-              aria-label="Edit"
-              onClick={startEditing}
-            >
-              <Pencil className="size-4" />
-            </Button>
-          )}
+          <div className="flex shrink-0 items-center gap-1">
+            {canEnterEditMode && !editing && (
+              <IconButton
+                variant="ghost"
+                className="-mt-1 size-8 shrink-0"
+                label={t('ENTITY_DETAILS_EDIT')}
+                onClick={startEditing}
+              >
+                <Pencil className="size-4" />
+              </IconButton>
+            )}
+            {canDelete && !editing && (
+              <IconButton
+                variant="ghost"
+                className="-mt-1 size-8 shrink-0 text-muted-foreground hover:text-destructive"
+                label={`Delete ${deleteTarget?.noun ?? 'entity'}`}
+                onClick={() => setConfirmingDelete(true)}
+              >
+                <Trash2 className="size-4" />
+              </IconButton>
+            )}
+          </div>
         </div>
         {/* Always render a description so Radix has an accessible description to
             point `aria-describedby` at (otherwise it logs a console warning). */}
@@ -341,38 +346,7 @@ export function EntityDetailScaffold({
 
         {editFields && editFields.length > 0 && (
           <section className="flex flex-col gap-4 rounded-xl border border-border/60 bg-card/45 p-4 shadow-sm backdrop-blur">
-            {editFields.map((field) => (
-              <div key={field.key} className="flex flex-col gap-2">
-                <Label htmlFor={`field-${field.key}`}>{field.label}</Label>
-                {editing ? (
-                  field.multiline ? (
-                    <Textarea
-                      id={`field-${field.key}`}
-                      value={values[field.key] ?? ''}
-                      placeholder={field.placeholder}
-                      className="min-h-[100px]"
-                      onChange={(event) =>
-                        setValues((prev) => ({ ...prev, [field.key]: event.target.value }))
-                      }
-                    />
-                  ) : (
-                    <Input
-                      id={`field-${field.key}`}
-                      type={field.inputType ?? 'text'}
-                      value={values[field.key] ?? ''}
-                      placeholder={field.placeholder}
-                      onChange={(event) =>
-                        setValues((prev) => ({ ...prev, [field.key]: event.target.value }))
-                      }
-                    />
-                  )
-                ) : field.value ? (
-                  <p className="whitespace-pre-wrap break-words text-sm text-foreground/90">{field.value}</p>
-                ) : (
-                  <p className="text-sm italic text-muted-foreground">—</p>
-                )}
-              </div>
-            ))}
+            <EntityFields fields={editFields} editing={editing} values={values} onChange={setValue} />
           </section>
         )}
 
@@ -383,18 +357,8 @@ export function EntityDetailScaffold({
             <Card.Header className="p-4 pb-2">
               <Card.Title className="text-sm">Details</Card.Title>
             </Card.Header>
-            <Card.Content className="flex flex-col divide-y divide-border/50 p-4 pt-0">
-              {visibleMeta.map((item) => (
-                <div
-                  key={item.label}
-                  className="grid grid-cols-[7rem_minmax(0,1fr)] gap-3 py-2 first:pt-0 last:pb-0"
-                >
-                  <span className="w-28 shrink-0 text-xs uppercase tracking-wide text-muted-foreground">
-                    {item.label}
-                  </span>
-                  <span className="min-w-0 break-words text-sm">{item.value}</span>
-                </div>
-              ))}
+            <Card.Content className="flex flex-col p-4 pt-0">
+              <EntityMetaList items={visibleMeta} />
             </Card.Content>
           </Card>
         )}
@@ -436,7 +400,13 @@ export function EntityDetailScaffold({
         {/* Relationship cards + the "Open full page" link both navigate to the
             owner's per-entity routes (which resolve under the VIEWER's scope and
             fall outside the shared search). Hide both in read-only mode. */}
-        {!readOnly && ref.rawId && <EntityRelationshipCards key={ref.rawId} entityId={ref.rawId} />}
+        {!readOnly && ref.rawId && (
+          <EntityRelationshipCards
+            key={ref.rawId}
+            entityId={ref.rawId}
+            onOpenRelatedEntity={handleOpenRelatedEntity}
+          />
+        )}
 
         {rawData != null && <RawDataDetails data={rawData} />}
 
@@ -471,6 +441,23 @@ export function EntityDetailScaffold({
             )}
           </div>
         </Sheet.Footer>
+      )}
+
+      {confirmingDelete && deleteTarget && ref.globalId && (
+        <DeleteEntityDialog
+          target={deleteTarget}
+          entityId={ref.globalId}
+          typename={entity.__typename === 'GenericEntity' ? undefined : entity.__typename}
+          title={title}
+          onClose={() => setConfirmingDelete(false)}
+          onDeleted={() => {
+            setConfirmingDelete(false);
+            // The entity no longer exists — close the drawer rather than leave
+            // it showing a record the user just removed.
+            setActiveEntity(null);
+          }}
+          onRestored={refetch}
+        />
       )}
     </Sheet.Content>
   );

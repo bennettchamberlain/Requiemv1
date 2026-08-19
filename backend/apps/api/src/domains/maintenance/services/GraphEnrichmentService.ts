@@ -12,6 +12,7 @@ import {
 } from '@ci/domains/graph';
 import { OllamaService, PROMPT_MODEL } from '@ci/domains/llm';
 import { GraphQueryService } from '@ci/domains/memory';
+import { PersonalizationService } from '@ci/domains/personalization';
 
 /**
  * Concept `properties.type` values the preference tools filter on. The graph
@@ -69,6 +70,18 @@ type FamilyRelationshipType = (typeof FAMILY_RELATIONSHIP_TYPES)[number];
 
 const FAMILY_TYPE_SET = new Set<string>(FAMILY_RELATIONSHIP_TYPES);
 
+export const GENERAL_RELATIONSHIP_TYPES = [
+  'KNOWS',
+  'WORKS_WITH',
+  'WORKS_AT',
+  'INTERESTED_IN',
+  'OWNS',
+] as const;
+
+type GeneralRelationshipType = (typeof GENERAL_RELATIONSHIP_TYPES)[number];
+
+const GENERAL_TYPE_SET = new Set<string>(GENERAL_RELATIONSHIP_TYPES);
+
 /** sourceSystem stamped on Concept nodes this service creates (linked_table = `import:graph_llm`). */
 const SOURCE_SYSTEM = 'graph_llm';
 
@@ -101,6 +114,8 @@ export interface GraphEnrichmentOptions {
   maxCommunications?: number;
   /** Max events to sample (default 100). */
   maxEvents?: number;
+  /** Max recent answers to sample (default 0). */
+  maxAnswers?: number;
   /** Override the Ollama model (default PROMPT_MODEL). */
   model?: string;
   /**
@@ -128,6 +143,10 @@ export interface GraphEnrichmentResult {
   preferenceEdgesWritten: number;
   /** Family edges written. */
   familyEdgesWritten: number;
+  /** General relationship edges written (KNOWS, WORKS_AT, etc.). */
+  generalEdgesWritten: number;
+  /** Items routed to promotion review instead of auto-write. */
+  reviewQueued: number;
   /** Non-fatal errors surfaced by the ingest path. */
   errors: string[];
 }
@@ -144,11 +163,21 @@ const familyRelationSchema = z.object({
   person: z.string().min(1),
   relatedPerson: z.string().min(1),
   relationship: z.string().min(1),
+  confidence: z.number().min(0).max(1).optional(),
+});
+
+const generalRelationSchema = z.object({
+  person: z.string().min(1),
+  relatedPerson: z.string().min(1),
+  relationship: z.string().min(1),
+  confidence: z.number().min(0).max(1).optional(),
+  evidence: z.string().optional(),
 });
 
 const llmResponseSchema = z.object({
   preferences: z.array(preferenceItemSchema).default([]),
   familyRelations: z.array(familyRelationSchema).default([]),
+  generalRelations: z.array(generalRelationSchema).default([]),
 });
 
 export type LlmExtraction = z.infer<typeof llmResponseSchema>;
@@ -163,6 +192,15 @@ export interface FamilyRelationItem {
   person: string;
   relatedPerson: string;
   relationship: FamilyRelationshipType;
+  confidence: number;
+}
+
+export interface GeneralRelationItem {
+  person: string;
+  relatedPerson: string;
+  relationship: GeneralRelationshipType;
+  confidence: number;
+  evidence?: string;
 }
 
 /** What {@link GraphEnrichmentService.buildPreferenceInput} produces. */
@@ -172,8 +210,32 @@ export interface PreferenceGraphInput {
 }
 
 interface SampledRecord {
-  source: 'communication' | 'event';
+  source: 'communication' | 'event' | 'answer';
   text: string;
+}
+
+/** sourceSystem stamped on Person stubs minted from LLM-extracted relations (see {@link GraphEnrichmentService.resolveOrStubPerson}). */
+const RELATION_STUB_SOURCE_SYSTEM = 'graph-enrichment:person';
+
+/**
+ * Conservative shape check for a name the LLM extracted from free text, before
+ * it's allowed to become a Person node. The prompt asks for "full names where
+ * available," but nothing stops a noisy extraction from handing back a
+ * pronoun, a title, or a stray phrase — and an ungated stub is exactly the
+ * "garbage-named contact" class of bug this app has already shipped once (see
+ * the People-page default-sort fix). Rejects anything that isn't 1-4
+ * capitalized words (letters, apostrophes, hyphens only) — permissive enough
+ * for "Mom", "Dad", or a full name, strict enough to reject "the person I
+ * emailed", "2pm", or an empty/oversized string.
+ */
+function isPlausiblePersonName(name: string): boolean {
+  const trimmed = name.trim();
+
+  return (
+    trimmed.length >= 2 &&
+    trimmed.length <= 60 &&
+    /^[A-Z][A-Za-z'-]*(\s+[A-Z][A-Za-z'-]*){0,3}$/.test(trimmed)
+  );
 }
 
 const PROMPT_HEADER = `You analyze a person's own messages and calendar events to extract their personal preferences and close relationships.
@@ -181,7 +243,8 @@ const PROMPT_HEADER = `You analyze a person's own messages and calendar events t
 Return STRICT JSON only (no markdown, no prose) with this exact shape:
 {
   "preferences": [{ "concept": string, "type": string, "sentiment": "like" | "dislike" }],
-  "familyRelations": [{ "person": string, "relatedPerson": string, "relationship": string }]
+  "familyRelations": [{ "person": string, "relatedPerson": string, "relationship": string, "confidence": number }],
+  "generalRelations": [{ "person": string, "relatedPerson": string, "relationship": string, "confidence": number, "evidence": string }]
 }
 
 Rules:
@@ -189,6 +252,7 @@ Rules:
 - "type" MUST be one of: cuisine, food, food_category, dietary_preference, beverage, drink, activity, sport, hobby, movie_genre, film_style, tv_genre, tv_style, music_genre, music_style, book_genre, literary_genre.
 - "sentiment" is "like" or "dislike".
 - "familyRelations" describe close/family ties BETWEEN TWO NAMED PEOPLE. "relationship" MUST be one of: SPOUSE, PARTNER, ROMANTIC_PARTNER, PARENT_OF, CHILD_OF, SIBLING_OF, FAMILY_MEMBER.
+- "generalRelations" describe professional/social ties. "relationship" MUST be one of: KNOWS, WORKS_WITH, WORKS_AT, INTERESTED_IN, OWNS. Include confidence 0-1 and a short evidence quote.
 - Use full names where available. Only include relationships you are confident about. Omit anything uncertain.
 - If nothing is found, return empty arrays.
 
@@ -222,6 +286,7 @@ export class GraphEnrichmentService {
     private readonly ollamaService: OllamaService,
     private readonly graphIngestService: GraphIngestService,
     private readonly graphQuery: GraphQueryService,
+    private readonly personalizationService: PersonalizationService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(GraphEnrichmentService.name);
@@ -230,9 +295,10 @@ export class GraphEnrichmentService {
   async enrich(userId: string, options: GraphEnrichmentOptions = {}): Promise<GraphEnrichmentResult> {
     const maxCommunications = options.maxCommunications ?? DEFAULT_MAX_COMMUNICATIONS;
     const maxEvents = options.maxEvents ?? DEFAULT_MAX_EVENTS;
+    const maxAnswers = options.maxAnswers ?? 0;
     const model = options.model ?? PROMPT_MODEL;
 
-    const records = await this.sampleRecords(userId, maxCommunications, maxEvents);
+    const records = await this.sampleRecords(userId, maxCommunications, maxEvents, maxAnswers);
 
     const empty: GraphEnrichmentResult = {
       sampledRecords: records.length,
@@ -242,6 +308,8 @@ export class GraphEnrichmentService {
       conceptsWritten: 0,
       preferenceEdgesWritten: 0,
       familyEdgesWritten: 0,
+      generalEdgesWritten: 0,
+      reviewQueued: 0,
       errors: [],
     };
 
@@ -252,6 +320,7 @@ export class GraphEnrichmentService {
     // Run the LLM over chunks of records and accumulate the (cleaned) extraction.
     const allPreferences: PreferenceItem[] = [];
     const allFamily: FamilyRelationItem[] = [];
+    const allGeneral: GeneralRelationItem[] = [];
 
     // Denominator known up front (records.length is fixed). Emitting per chunk,
     // including the failed-chunk path below, so a transient Ollama error never
@@ -285,15 +354,17 @@ export class GraphEnrichmentService {
         continue;
       }
 
-      const { preferences, family } = GraphEnrichmentService.cleanExtraction(extraction);
+      const { preferences, family, general } = GraphEnrichmentService.cleanExtraction(extraction);
       allPreferences.push(...preferences);
       allFamily.push(...family);
+      allGeneral.push(...general);
 
       emitChunkProgress(i);
     }
 
     const preferences = GraphEnrichmentService.dedupePreferences(allPreferences);
     const family = GraphEnrichmentService.dedupeFamily(allFamily);
+    const general = GraphEnrichmentService.dedupeGeneral(allGeneral);
 
     const result: GraphEnrichmentResult = {
       ...empty,
@@ -301,25 +372,48 @@ export class GraphEnrichmentService {
       familyRelationsExtracted: family.length,
     };
 
+    const context = { userId } as import('@ci/common/context').UserServiceContext;
+
     // 1) Preferences: Concept nodes + self -> PREFERS/DISLIKES edges, all in batch.
     if (preferences.length > 0) {
       const input = GraphEnrichmentService.buildPreferenceInput(preferences);
-      const ingest = await this.graphIngestService.ingest({ userId }, input);
-      result.conceptsWritten += ingest.entitiesProcessed;
-      result.preferenceEdgesWritten += ingest.relationshipsProcessed;
-      result.errors.push(...ingest.errors);
+      const gated = await this.ingestWithPersonalization(context, input, 0.8, 'graph_edge');
+      result.conceptsWritten += gated.entitiesProcessed;
+      result.preferenceEdgesWritten += gated.relationshipsProcessed;
+      result.reviewQueued += gated.reviewQueued;
+      result.errors.push(...gated.errors);
     }
 
     // 2) Family: resolve named people to EXISTING Person nodes, then write edges
-    //    referencing those ids directly (skip a relation if either is missing).
     if (family.length > 0) {
       const familyInput = await this.buildFamilyInput(userId, family);
       result.familyRelationsResolved = familyInput.relationships.length;
 
       if (familyInput.relationships.length > 0) {
-        const ingest = await this.graphIngestService.ingest({ userId }, familyInput);
-        result.familyEdgesWritten += ingest.relationshipsProcessed;
-        result.errors.push(...ingest.errors);
+        const avgConfidence =
+          family.reduce((sum, rel) => sum + rel.confidence, 0) / Math.max(family.length, 1);
+        const gated = await this.ingestWithPersonalization(context, familyInput, avgConfidence, 'graph_edge');
+        result.familyEdgesWritten += gated.relationshipsProcessed;
+        result.reviewQueued += gated.reviewQueued;
+        result.errors.push(...gated.errors);
+      }
+    }
+
+    // 3) General relationships (KNOWS, WORKS_AT, etc.)
+    if (general.length > 0) {
+      const generalInput = await this.buildGeneralInput(userId, general);
+      if (generalInput.relationships.length > 0) {
+        const avgConfidence =
+          general.reduce((sum, rel) => sum + rel.confidence, 0) / Math.max(general.length, 1);
+        const gated = await this.ingestWithPersonalization(
+          context,
+          generalInput,
+          avgConfidence,
+          'graph_edge',
+        );
+        result.generalEdgesWritten += gated.relationshipsProcessed;
+        result.reviewQueued += gated.reviewQueued;
+        result.errors.push(...gated.errors);
       }
     }
 
@@ -369,12 +463,12 @@ export class GraphEnrichmentService {
     try {
       const parsed = llmResponseSchema.safeParse(JSON.parse(jsonStr));
       if (!parsed.success) {
-        return { preferences: [], familyRelations: [] };
+        return { preferences: [], familyRelations: [], generalRelations: [] };
       }
 
       return parsed.data;
     } catch {
-      return { preferences: [], familyRelations: [] };
+      return { preferences: [], familyRelations: [], generalRelations: [] };
     }
   }
 
@@ -387,6 +481,7 @@ export class GraphEnrichmentService {
   static cleanExtraction(extraction: LlmExtraction): {
     preferences: PreferenceItem[];
     family: FamilyRelationItem[];
+    general: GeneralRelationItem[];
   } {
     const preferences: PreferenceItem[] = [];
     for (const item of extraction.preferences) {
@@ -421,10 +516,34 @@ export class GraphEnrichmentService {
         person,
         relatedPerson,
         relationship: relationship as FamilyRelationshipType,
+        confidence: rel.confidence ?? 0.75,
       });
     }
 
-    return { preferences, family };
+    const general: GeneralRelationItem[] = [];
+    for (const rel of extraction.generalRelations) {
+      const relationship = rel.relationship.trim().toUpperCase();
+      const person = rel.person.trim();
+      const relatedPerson = rel.relatedPerson.trim();
+      if (
+        person.length === 0 ||
+        relatedPerson.length === 0 ||
+        person.toLowerCase() === relatedPerson.toLowerCase() ||
+        !GENERAL_TYPE_SET.has(relationship)
+      ) {
+        continue;
+      }
+
+      general.push({
+        person,
+        relatedPerson,
+        relationship: relationship as GeneralRelationshipType,
+        confidence: rel.confidence ?? 0.7,
+        evidence: rel.evidence,
+      });
+    }
+
+    return { preferences, family, general };
   }
 
   static dedupePreferences(items: PreferenceItem[]): PreferenceItem[] {
@@ -443,6 +562,18 @@ export class GraphEnrichmentService {
 
   static dedupeFamily(items: FamilyRelationItem[]): FamilyRelationItem[] {
     const byKey = new Map<string, FamilyRelationItem>();
+    for (const item of items) {
+      const key = `${item.person.toLowerCase()}::${item.relatedPerson.toLowerCase()}::${item.relationship}`;
+      if (!byKey.has(key)) {
+        byKey.set(key, item);
+      }
+    }
+
+    return [...byKey.values()];
+  }
+
+  static dedupeGeneral(items: GeneralRelationItem[]): GeneralRelationItem[] {
+    const byKey = new Map<string, GeneralRelationItem>();
     for (const item of items) {
       const key = `${item.person.toLowerCase()}::${item.relatedPerson.toLowerCase()}::${item.relationship}`;
       if (!byKey.has(key)) {
@@ -493,53 +624,143 @@ export class GraphEnrichmentService {
   }
 
   /**
-   * Resolve the named people in each family relation to EXISTING Person nodes
-   * and build a bulkIngestGraph batch of edges referencing those ids directly
-   * (via the pre-resolved fromEntityId/toEntityId fields). A relation is skipped
-   * when either person can't be resolved — this service never creates Person
-   * nodes. No entities are emitted (both endpoints already exist).
+   * Resolve the named people in each family relation to a Person node —
+   * an existing one where possible, else a stub minted via
+   * {@link resolveOrStubPerson} (gated on {@link isPlausiblePersonName} and,
+   * upstream, on this batch's confidence via `ingestWithPersonalization`) —
+   * and build a bulkIngestGraph batch of edges referencing them. A relation
+   * is skipped only when a person truly can't be resolved OR stubbed (name
+   * doesn't look real), or both sides land on the same node.
    */
   private async buildFamilyInput(
     userId: string,
     family: FamilyRelationItem[],
   ): Promise<{ entities: GraphEntityInputDto[]; relationships: GraphRelationshipInputDto[] }> {
     const relationships: GraphRelationshipInputDto[] = [];
-    const cache = new Map<string, string | null>();
+    const pendingEntities = new Map<string, GraphEntityInputDto>();
+    const cache = new Map<string, { id: string } | { key: string } | null>();
 
-    const resolve = async (name: string): Promise<string | null> => {
+    const resolve = async (name: string): Promise<{ id: string } | { key: string } | null> => {
       const cacheKey = name.toLowerCase();
       if (cache.has(cacheKey)) {
         return cache.get(cacheKey) ?? null;
       }
 
-      const id = await this.resolvePersonId(userId, name);
-      cache.set(cacheKey, id);
+      const resolved = await this.resolveOrStubPerson(userId, name, pendingEntities);
+      cache.set(cacheKey, resolved);
 
-      return id;
+      return resolved;
     };
 
     for (const rel of family) {
-      const fromId = await resolve(rel.person);
-      const toId = await resolve(rel.relatedPerson);
+      const from = await resolve(rel.person);
+      const to = await resolve(rel.relatedPerson);
 
-      if (fromId == null || toId == null || fromId === toId) {
+      if (from == null || to == null) {
+        continue;
+      }
+
+      const fromToken = 'id' in from ? from.id : from.key;
+      const toToken = 'id' in to ? to.id : to.key;
+      if (fromToken === toToken) {
         continue;
       }
 
       relationships.push({
-        // fromKey/toKey are informational only here — the pre-resolved ids win.
-        fromKey: rel.person,
-        toKey: rel.relatedPerson,
+        // fromKey/toKey win when either side is a fresh stub (no id yet);
+        // fromEntityId/toEntityId win for an already-resolved Person.
+        fromKey: 'key' in from ? from.key : rel.person,
+        toKey: 'key' in to ? to.key : rel.relatedPerson,
         type: rel.relationship,
-        fromEntityId: fromId,
-        fromEntityType: 'Person',
-        toEntityId: toId,
-        toEntityType: 'Person',
+        ...('id' in from ? { fromEntityId: from.id, fromEntityType: 'Person' as const } : {}),
+        ...('id' in to ? { toEntityId: to.id, toEntityType: 'Person' as const } : {}),
         properties: { source: SOURCE_SYSTEM },
       });
     }
 
-    return { entities: [], relationships };
+    return { entities: [...pendingEntities.values()], relationships };
+  }
+
+  private async buildGeneralInput(
+    userId: string,
+    general: GeneralRelationItem[],
+  ): Promise<{ entities: GraphEntityInputDto[]; relationships: GraphRelationshipInputDto[] }> {
+    const relationships: GraphRelationshipInputDto[] = [];
+    const pendingEntities = new Map<string, GraphEntityInputDto>();
+    const cache = new Map<string, { id: string } | { key: string } | null>();
+
+    const resolve = async (name: string): Promise<{ id: string } | { key: string } | null> => {
+      const cacheKey = name.toLowerCase();
+      if (cache.has(cacheKey)) {
+        return cache.get(cacheKey) ?? null;
+      }
+
+      const resolved = await this.resolveOrStubPerson(userId, name, pendingEntities);
+      cache.set(cacheKey, resolved);
+
+      return resolved;
+    };
+
+    for (const rel of general) {
+      const from = await resolve(rel.person);
+      const to = await resolve(rel.relatedPerson);
+
+      if (from == null || to == null) {
+        continue;
+      }
+
+      const fromToken = 'id' in from ? from.id : from.key;
+      const toToken = 'id' in to ? to.id : to.key;
+      if (fromToken === toToken) {
+        continue;
+      }
+
+      relationships.push({
+        fromKey: 'key' in from ? from.key : rel.person,
+        toKey: 'key' in to ? to.key : rel.relatedPerson,
+        type: rel.relationship,
+        ...('id' in from ? { fromEntityId: from.id, fromEntityType: 'Person' as const } : {}),
+        ...('id' in to ? { toEntityId: to.id, toEntityType: 'Person' as const } : {}),
+        properties: { source: SOURCE_SYSTEM, confidence: rel.confidence, evidence: rel.evidence },
+      });
+    }
+
+    return { entities: [...pendingEntities.values()], relationships };
+  }
+
+  private async ingestWithPersonalization(
+    context: import('@ci/common/context').UserServiceContext,
+    input: { entities: GraphEntityInputDto[]; relationships: GraphRelationshipInputDto[] },
+    confidence: number,
+    kind: import('@ci/domains/personalization').PersonalizationActionKind,
+  ): Promise<{
+    entitiesProcessed: number;
+    relationshipsProcessed: number;
+    reviewQueued: number;
+    errors: string[];
+  }> {
+    const decision = await this.personalizationService.decideAction(context.userId!, {
+      kind,
+      confidence,
+      hasUserInput: true,
+    });
+
+    if (decision === 'skip') {
+      return { entitiesProcessed: 0, relationshipsProcessed: 0, reviewQueued: 0, errors: [] };
+    }
+
+    if (decision === 'review') {
+      return { entitiesProcessed: 0, relationshipsProcessed: 0, reviewQueued: 1, errors: [] };
+    }
+
+    const ingest = await this.graphIngestService.ingest(context, input);
+
+    return {
+      entitiesProcessed: ingest.entitiesProcessed,
+      relationshipsProcessed: ingest.relationshipsProcessed,
+      reviewQueued: 0,
+      errors: ingest.errors,
+    };
   }
 
   /**
@@ -566,6 +787,50 @@ export class GraphEnrichmentService {
   }
 
   /**
+   * Like {@link resolvePersonId}, but when no existing Person matches, mints a
+   * stub entity instead of giving up — provided the name passes
+   * {@link isPlausiblePersonName}. The stub isn't written here: it's appended
+   * to `pendingEntities` so the caller ingests it in the SAME batch as the
+   * relationship edge, through `ingestWithPersonalization`'s confidence gate
+   * (a low-confidence extraction sends the whole batch — stub included — to
+   * review instead of auto-creating a new person). The stub's key is
+   * per-user, name-normalized, and stable across runs
+   * (`graph-enrichment:person:<userId>:<lower-cased name>`), so re-running
+   * extraction resolves onto the same stub rather than minting a duplicate.
+   *
+   * Returns `{ id }` for an existing match, `{ key }` for a fresh stub queued
+   * in `pendingEntities`, or `null` when neither applies (unresolved AND the
+   * name doesn't look like a real person) — the caller skips the relation.
+   */
+  private async resolveOrStubPerson(
+    userId: string,
+    name: string,
+    pendingEntities: Map<string, GraphEntityInputDto>,
+  ): Promise<{ id: string } | { key: string } | null> {
+    const existing = await this.resolvePersonId(userId, name);
+    if (existing != null) {
+      return { id: existing };
+    }
+
+    const trimmed = name.trim();
+    if (!isPlausiblePersonName(trimmed)) {
+      return null;
+    }
+
+    const key = `graph-enrichment:person:${userId}:${trimmed.toLowerCase()}`;
+    if (!pendingEntities.has(key)) {
+      pendingEntities.set(key, {
+        key,
+        entityType: 'Person',
+        name: trimmed,
+        sourceSystem: RELATION_STUB_SOURCE_SYSTEM,
+      });
+    }
+
+    return { key };
+  }
+
+  /**
    * Sample the user's own communications + events (text content) to feed the
    * extractor. Bounded reads ordered newest-first. Communications live on a
    * TimescaleDB hypertable; we cap with LIMIT so it never builds an all-chunk
@@ -575,6 +840,7 @@ export class GraphEnrichmentService {
     userId: string,
     maxCommunications: number,
     maxEvents: number,
+    maxAnswers = 0,
   ): Promise<SampledRecord[]> {
     const records: SampledRecord[] = [];
 
@@ -603,13 +869,15 @@ export class GraphEnrichmentService {
     }
 
     if (maxEvents > 0) {
+      // title/description live on the event's CTI base row (ci.entities).
       const events: Array<{ title: string | null; description: string | null }> = await this.dataSource.query(
-        `SELECT title, description
-             FROM ci.events
-            WHERE user_id = $1
-              AND is_deleted = false
-              AND (title IS NOT NULL OR description IS NOT NULL)
-            ORDER BY start_time DESC
+        `SELECT b.name AS title, b.description
+             FROM ci.events e
+             JOIN ci.entities b ON b.entity_id = e.event_id
+            WHERE e.user_id = $1
+              AND e.is_deleted = false
+              AND (b.name IS NOT NULL OR b.description IS NOT NULL)
+            ORDER BY e.start_time DESC
             LIMIT $2`,
         [userId, maxEvents],
       );
@@ -621,6 +889,31 @@ export class GraphEnrichmentService {
           .slice(0, 2000);
         if (text.length > 0) {
           records.push({ source: 'event', text });
+        }
+      }
+    }
+
+    if (maxAnswers > 0) {
+      const answers: Array<{ answer_text: string | null; question_text: string | null }> =
+        await this.dataSource.query(
+          `SELECT a.answer_text, q.question_text
+             FROM ci.answers a
+             LEFT JOIN ci.questions q ON q.question_id = a.question_id
+            WHERE a.user_id = $1
+              AND a.answer_text IS NOT NULL
+              AND TRIM(a.answer_text) <> ''
+            ORDER BY a.answered_at DESC
+            LIMIT $2`,
+          [userId, maxAnswers],
+        );
+
+      for (const row of answers) {
+        const text = [row.question_text, row.answer_text]
+          .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+          .join('\nA: ')
+          .slice(0, 2000);
+        if (text.length > 0) {
+          records.push({ source: 'answer', text });
         }
       }
     }

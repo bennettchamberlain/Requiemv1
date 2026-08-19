@@ -4,6 +4,7 @@ import { LoggerService } from '@ci/common/logging';
 
 import type { Connection } from '../entities/ConnectionEntity';
 
+import { firstAccountLabel } from './accountLabel';
 import { BaseOAuth2Client } from './BaseOAuth2Client';
 
 @Injectable()
@@ -27,7 +28,6 @@ export class GitHubClient extends BaseOAuth2Client {
 
   protected readonly extraAuthParams = {};
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   getScopesFromActiveEndpoints(_activeEndpoints: string[]) {
     // GitHub App permissions are defined on the app itself, not via scopes
     return '';
@@ -35,6 +35,12 @@ export class GitHubClient extends BaseOAuth2Client {
 
   getAccountIdentifier(connection: Connection) {
     return this.fetchUser(connection).then((result) => result.login);
+  }
+
+  async getAccountLabel(connection: Connection): Promise<string | null> {
+    const user = await this.fetchUser(connection);
+
+    return firstAccountLabel(user.email, user.login);
   }
 
   /**

@@ -6,9 +6,9 @@ import { LoggerService } from '@ci/common/logging';
 import { OnEvent } from '@ci/domains/events';
 import { FileService, PreviewGeneratedEvent, type PreviewGeneratedPayload } from '@ci/domains/files';
 
+import { ImageDescriptionPreferenceService } from '../services/ImageDescriptionPreferenceService';
 import { OllamaService } from '../services/OllamaService';
-
-const DEFAULT_MODEL = 'llama3.2-vision:11b';
+import { isNonMultimodalModelError } from '../visionErrors';
 
 const PROMPT = `
   Analyze this image and provide a title and description.
@@ -35,6 +35,7 @@ export class ImageDescriptionListener {
   constructor(
     private readonly fileService: FileService,
     private readonly ollamaService: OllamaService,
+    private readonly imageDescriptionPreference: ImageDescriptionPreferenceService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(ImageDescriptionListener.name);
@@ -42,13 +43,24 @@ export class ImageDescriptionListener {
 
   @OnEvent(PreviewGeneratedEvent, { queue: 'image-description' })
   async handle(payload: PreviewGeneratedPayload) {
-    // When the capture source opted out of server-side analysis (e.g. CI-Applet
+    // When the capture source opted out of server-side analysis (e.g. Companion Capture
     // with its own vision endpoint, which writes the title/description directly
     // via PATCH /files/:id), skip the Ollama pass entirely. Absent/false means
     // the server generates the description as usual.
     if (payload.skipDescription === true) {
       this.logger.log('Upload handled analysis itself, skipping image description', {
         previewId: payload.previewId,
+      });
+
+      return;
+    }
+
+    // Settings → Model "Describe images". Off by default so text-only models are
+    // not flooded with multimodal 400s. Completing (not throwing) drains the queue.
+    if (!(await this.imageDescriptionPreference.isEnabled(payload.userId))) {
+      this.logger.log('Image description disabled — skipping', {
+        previewId: payload.previewId,
+        userId: payload.userId,
       });
 
       return;
@@ -86,7 +98,21 @@ export class ImageDescriptionListener {
 
     const fileContent = await this.fileService.getFileContent(serviceContext, thumbnail.key);
     const base64Image = Buffer.from(fileContent).toString('base64');
-    const model = payload.model ?? DEFAULT_MODEL;
+    const messages = [
+      {
+        role: 'user' as const,
+        content: PROMPT,
+        images: [base64Image],
+      },
+    ];
+
+    // Never hard-code a vision tag (e.g. llava:7b) — appliances serve whatever
+    // Hub configured. resolveModel prefers a loaded vision model on native
+    // Ollama; vLLM keeps the served chat id and we complete below on 400.
+    const { model } = await this.ollamaService.resolveModel(serviceContext, {
+      messages,
+      requestedModel: payload.model,
+    });
 
     this.logger.log('Starting LLM chat for image description', {
       model,
@@ -94,21 +120,27 @@ export class ImageDescriptionListener {
       parentFileId: thumbnail.parentId,
     });
 
-    const response = await this.ollamaService.chat(
-      serviceContext,
-      [
-        {
-          role: 'user',
-          content: PROMPT,
-          images: [base64Image],
-        },
-      ],
-      {
+    let response;
+    try {
+      response = await this.ollamaService.chat(serviceContext, messages, {
         model,
         enableTools: false,
         format: 'json',
-      },
-    );
+      });
+    } catch (error) {
+      if (isNonMultimodalModelError(error)) {
+        this.logger.warn('Model cannot accept images — skipping description gracefully', {
+          model,
+          previewId: payload.previewId,
+          parentFileId: thumbnail.parentId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+
+        return;
+      }
+
+      throw error;
+    }
 
     const content = response.message.content.trim();
 

@@ -3,11 +3,18 @@ import { useCallback, useEffect, useState } from 'react';
 import { createHookContext } from '@ci/common';
 import { useSearchParams } from 'react-router-dom';
 
+import {
+  type DatePreset,
+  type DatePresetSelection,
+  resolveDatePreset,
+} from '@/pages/MemoryPage/Components/ExplorerToolbar/datePresets';
+
 type ReturnType = [
   {
     isDropdownPanelVisible: boolean;
     selectedEntityTypes: string[];
     tags: string[];
+    whenPreset: string;
     dateFrom: string;
     dateTo: string;
     sortBy: string;
@@ -18,9 +25,12 @@ type ReturnType = [
     selectAllEntityTypes: () => void;
     clearEntityTypes: () => void;
     toggleEntityType: (type: string) => void;
+    /** Tab-style filter: show only this type, or clear back to all when already sole selection. */
+    selectOnlyEntityType: (type: string) => void;
     setSelectedEntityTypes: (type: string[]) => void;
     setTags: (tags: string[]) => void;
     setDateRange: (from?: string, to?: string) => void;
+    setDatePreset: (preset: DatePresetSelection | null) => void;
     setSort: (sortBy?: string, sortOrder?: string) => void;
   },
 ];
@@ -36,6 +46,27 @@ export const AVAILABLE_ENTITY_TYPES = [
   'Place',
   'Thing',
 ];
+
+/**
+ * Types that come back in search results but have no What picker of their own —
+ * Answers come from the Q&A flow and Concepts are derived, so nothing in the UI
+ * can select either. Without them here, narrowing to (say) People built an
+ * exclude-list out of AVAILABLE_ENTITY_TYPES only, which left answers and
+ * concepts in the results alongside the one type the user asked for. They ride
+ * along on every exclude-list write.
+ */
+export const HIDDEN_ENTITY_TYPES = ['Answer', 'Concept'];
+
+/**
+ * The `excludedEntityTypes` value for a selection: every available type the user
+ * dropped, plus the hidden types. Empty when nothing is narrowed, so callers
+ * delete the param and fall back to the unfiltered default.
+ */
+export function excludedEntityTypesFor(selected: string[]): string[] {
+  const excluded = AVAILABLE_ENTITY_TYPES.filter((type) => !selected.includes(type));
+
+  return excluded.length === 0 ? [] : [...excluded, ...HIDDEN_ENTITY_TYPES];
+}
 
 function sameEntityTypes(a: string[], b: string[]) {
   return a.length === b.length && a.every((type, index) => type === b[index]);
@@ -92,7 +123,10 @@ function useDropdown({ changeSearchParams = true }: { changeSearchParams: boolea
 
     if (changeSearchParams) {
       setSearchParams((searchParams) => {
-        searchParams.set('excludedEntityTypes', AVAILABLE_ENTITY_TYPES.join(','));
+        searchParams.set(
+          'excludedEntityTypes',
+          [...AVAILABLE_ENTITY_TYPES, ...HIDDEN_ENTITY_TYPES].join(','),
+        );
 
         return searchParams;
       });
@@ -102,18 +136,11 @@ function useDropdown({ changeSearchParams = true }: { changeSearchParams: boolea
   const toggleEntityType = useCallback(
     (entityType: string) => {
       setSelectedEntityTypes((prev) => {
-        let next: string[] = [];
-        let excludedTypes: string[] = [];
-
-        if (prev.includes(entityType)) {
-          // Entity was included, now exclude it
-          next = prev.filter((type) => type !== entityType);
-          excludedTypes = AVAILABLE_ENTITY_TYPES.filter((type) => !next.includes(type));
-        } else {
-          // Entity was excluded, now include it
-          next = [...prev, entityType];
-          excludedTypes = AVAILABLE_ENTITY_TYPES.filter((type) => !next.includes(type));
-        }
+        // Included -> exclude it, excluded -> include it back.
+        const next = prev.includes(entityType)
+          ? prev.filter((type) => type !== entityType)
+          : [...prev, entityType];
+        const excludedTypes = excludedEntityTypesFor(next);
 
         if (changeSearchParams) {
           setSearchParams((searchParams) => {
@@ -133,6 +160,47 @@ function useDropdown({ changeSearchParams = true }: { changeSearchParams: boolea
     [setSearchParams],
   );
 
+  const selectOnlyEntityType = useCallback(
+    (entityType: string) => {
+      setSelectedEntityTypes((prev) => {
+        const isOnlySelected = prev.length === 1 && prev[0] === entityType;
+
+        if (isOnlySelected) {
+          if (changeSearchParams) {
+            setSearchParams((searchParams) => {
+              searchParams.delete('excludedEntityTypes');
+              searchParams.delete('includedEntityTypes');
+
+              return searchParams;
+            });
+          }
+
+          return AVAILABLE_ENTITY_TYPES;
+        }
+
+        const next = [entityType];
+        const excludedTypes = excludedEntityTypesFor(next);
+
+        if (changeSearchParams) {
+          setSearchParams((searchParams) => {
+            searchParams.delete('includedEntityTypes');
+
+            if (excludedTypes.length === 0) {
+              searchParams.delete('excludedEntityTypes');
+            } else {
+              searchParams.set('excludedEntityTypes', excludedTypes.join(','));
+            }
+
+            return searchParams;
+          });
+        }
+
+        return next;
+      });
+    },
+    [changeSearchParams, setSearchParams],
+  );
+
   const toggleDropdownPanel = useCallback(() => {
     setDropdownPanelVisible((prev) => !prev);
   }, []);
@@ -140,6 +208,7 @@ function useDropdown({ changeSearchParams = true }: { changeSearchParams: boolea
   // Date range, tags, and sort are read straight from the URL (no inversion logic like entity
   // types), so derive them per-render and write through setters that update the search params.
   const tags = searchParams.get('tags')?.split(',').filter(Boolean) || [];
+  const whenPreset = searchParams.get('when') || '';
   const dateFrom = searchParams.get('from') || '';
   const dateTo = searchParams.get('to') || '';
   const sortBy = searchParams.get('sortBy') || '';
@@ -183,6 +252,44 @@ function useDropdown({ changeSearchParams = true }: { changeSearchParams: boolea
           params.delete('to');
         }
 
+        if (!from && !to) {
+          params.delete('when');
+        } else {
+          params.set('when', 'custom');
+        }
+
+        return params;
+      });
+    },
+    [changeSearchParams, setSearchParams],
+  );
+
+  const setDatePreset = useCallback(
+    (preset: DatePresetSelection | null) => {
+      if (!changeSearchParams) {
+        return;
+      }
+
+      setSearchParams((params) => {
+        if (!preset) {
+          params.delete('when');
+          params.delete('from');
+          params.delete('to');
+
+          return params;
+        }
+
+        if (preset === 'custom') {
+          params.set('when', 'custom');
+
+          return params;
+        }
+
+        const { from, to } = resolveDatePreset(preset as DatePreset);
+        params.set('when', preset);
+        params.set('from', from);
+        params.set('to', to);
+
         return params;
       });
     },
@@ -219,6 +326,7 @@ function useDropdown({ changeSearchParams = true }: { changeSearchParams: boolea
       isDropdownPanelVisible,
       selectedEntityTypes,
       tags,
+      whenPreset,
       dateFrom,
       dateTo,
       sortBy,
@@ -229,9 +337,11 @@ function useDropdown({ changeSearchParams = true }: { changeSearchParams: boolea
       selectAllEntityTypes,
       clearEntityTypes,
       toggleEntityType,
+      selectOnlyEntityType,
       setSelectedEntityTypes,
       setTags,
       setDateRange,
+      setDatePreset,
       setSort,
     },
   ];

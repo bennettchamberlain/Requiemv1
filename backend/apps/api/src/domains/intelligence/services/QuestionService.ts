@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, type FindOptionsWhere, In, IsNull, Repository } from 'typeorm';
+import { DataSource, type FindOptionsWhere, In, IsNull, Not, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, SYSTEM_USER } from '@ci/common/context';
@@ -13,9 +13,216 @@ import {
 } from '@ci/domains/intelligence/events';
 
 import { Question, QuestionEntity } from '../entities/QuestionEntity';
-import type { CreateQuestionDto, UpdateQuestionDto } from '../types';
+import { excludeForkedOriginsSql } from '../questionScope';
+import type { CreateQuestionDto, QuestionCatalogueQueryDto, UpdateQuestionDto } from '../types';
 
 const FEED_QUESTION_QUEUE_LIMIT = 3;
+/** Unanswered front-of-queue questions rotate after this long on the feed. */
+export const FEED_QUESTION_STALE_MS = 30 * 60 * 1000;
+
+/**
+ * Ask the functional questions first.
+ *
+ * `ci.questions.answer_tier` splits the catalogue into questions that settle a
+ * fact ("What foods are you allergic to?"), questions that record a taste
+ * ("Window or aisle?"), and questions that ask for a story ("How did you end up
+ * in the city you live in now?"). A memory system earns the third kind by
+ * getting the first two right, so every selector orders by this rank before it
+ * applies its own tie-break.
+ *
+ * NULL sorts last, not first: an untiered row is a legacy question from the
+ * pre-catalogue era, and those are exactly the abstract ones we do not want to
+ * lead with. (Postgres defaults NULLs FIRST on DESC and LAST on ASC; spelling
+ * the rank out as an integer avoids depending on that.)
+ */
+const TIER_RANK_SQL = `
+  CASE q.answer_tier
+    WHEN 'factual'    THEN 0
+    WHEN 'preference' THEN 1
+    WHEN 'narrative'  THEN 2
+    ELSE 3
+  END
+`;
+
+const GAP_AWARE_CANDIDATE_SQL = `
+  WITH category_coverage AS (
+    SELECT
+      q.question_category AS category,
+      COUNT(DISTINCT a.answer_id)::int AS answered_count
+    FROM ci.questions q
+    LEFT JOIN ci.answers a
+      ON a.question_id = q.question_id
+      AND a.user_id = $1
+      AND a.answer_text IS NOT NULL
+      AND TRIM(a.answer_text) <> ''
+    WHERE q.is_active = TRUE
+      AND (q.is_private_to IS NULL OR q.is_private_to = $1)
+      ${excludeForkedOriginsSql('q', '$1')}
+    GROUP BY q.question_category
+  )
+  SELECT q.question_id AS id
+  FROM ci.questions q
+  LEFT JOIN category_coverage cc ON cc.category = q.question_category
+  WHERE q.is_active = TRUE
+    AND (q.is_private_to IS NULL OR q.is_private_to = $1)
+    ${excludeForkedOriginsSql('q', '$1')}
+    AND NOT EXISTS (
+      SELECT 1
+      FROM ci.answers a
+      WHERE a.question_id = q.question_id
+        AND a.user_id = $1
+        AND a.answer_text IS NOT NULL
+        AND TRIM(a.answer_text) <> ''
+    )
+    AND NOT EXISTS (
+      SELECT 1
+      FROM ci.feed_queue fq
+      WHERE fq.user_id = $1
+        AND fq.question_id = q.question_id
+    )
+  ORDER BY ${TIER_RANK_SQL} ASC, COALESCE(cc.answered_count, 0) ASC, RANDOM()
+  LIMIT 1;
+`;
+
+/**
+ * The caller's most recent real answer to each question, or nothing. A LATERAL
+ * rather than a plain LEFT JOIN so a question that somehow carries two answer
+ * rows still yields exactly one catalogue row.
+ *
+ * `$1` is the caller's user id (NULL for a system caller, which then matches no
+ * answers — `= NULL` is NULL, not true).
+ */
+const CATALOGUE_ANSWER_LATERAL_SQL = `
+  LEFT JOIN LATERAL (
+    SELECT
+      a.answer_id,
+      a.answer_text,
+      a.answer_source,
+      a.answer_confidence,
+      a.answer_rationale,
+      a.answered_at
+    FROM ci.answers a
+    WHERE a.question_id = q.question_id
+      AND a.user_id = $1::uuid
+      AND a.answer_text IS NOT NULL
+      AND TRIM(a.answer_text) <> ''
+    ORDER BY a.answered_at DESC, a.answer_id DESC
+    LIMIT 1
+  ) a ON TRUE
+`;
+
+/**
+ * Visibility + lifecycle + free-text predicate. Facets are computed against
+ * THIS and not against the full predicate below: narrowing to one category must
+ * not collapse the category picker to the one category already chosen.
+ */
+const CATALOGUE_BASE_WHERE_SQL = `
+  (q.is_private_to IS NULL OR q.is_private_to = $1::uuid)
+  ${excludeForkedOriginsSql('q', '$1::uuid')}
+  AND ($2 = 'all' OR q.is_active = ($2 = 'active'))
+  AND ($3::text IS NULL OR q.question_text ILIKE '%' || $3 || '%')
+`;
+
+const CATALOGUE_FULL_WHERE_SQL = `
+  ${CATALOGUE_BASE_WHERE_SQL}
+  AND ($4::text IS NULL OR q.question_category = $4)
+  AND ($5::text IS NULL OR q.answer_tier = $5)
+  AND ($6 = 'all' OR (a.answer_id IS NOT NULL) = ($6 = 'answered'))
+`;
+
+/** The answered/unanswered state of one catalogue row, for the browse surface. */
+export interface QuestionCatalogueAnswer {
+  id: string;
+  text: string;
+  /** 'user_input' | 'inferred' | 'observed' | 'imported' — drives AnswerProvenance. */
+  source: string | null;
+  confidence: number | null;
+  rationale: string | null;
+  answeredAt: Date;
+}
+
+export interface QuestionCatalogueEntry {
+  id: string;
+  text: string;
+  category: string | null;
+  answerTier: string | null;
+  questionType: string | null;
+  frequencyRecommendation: string | null;
+  isActive: boolean;
+  isSeedQuestion: boolean;
+  createdByLlm: boolean;
+  isPrivateTo: string | null;
+  /**
+   * Set when this row is the caller's own copy of a shared catalogue row, minted
+   * because their edit could not land on the shared original. The original is
+   * hidden from them, so this row stands in its place.
+   */
+  forkedFromQuestionId: string | null;
+  timesAsked: number;
+  timesAnswered: number;
+  createdAt: Date;
+  updatedAt: Date;
+  answer: QuestionCatalogueAnswer | null;
+}
+
+export interface QuestionCatalogueFacetBucket {
+  value: string | null;
+  count: number;
+}
+
+export interface QuestionCataloguePage {
+  data: QuestionCatalogueEntry[];
+  totalCount: number;
+  limit: number;
+  offset: number;
+  facets: {
+    categories: QuestionCatalogueFacetBucket[];
+    answerTiers: QuestionCatalogueFacetBucket[];
+    answeredCount: number;
+    unansweredCount: number;
+  };
+}
+
+/**
+ * Make a user string safe to drop between `%…%` in an ILIKE. Without this a
+ * search for `_` or `%` matches everything, and a trailing backslash makes the
+ * pattern invalid. Backslash is Postgres' default LIKE escape character.
+ */
+function escapeLikeTerm(term: string): string {
+  return term.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
+type CatalogueRow = {
+  id: string;
+  text: string;
+  category: string | null;
+  answer_tier: string | null;
+  question_type: string | null;
+  frequency_recommendation: string | null;
+  is_active: boolean;
+  is_seed_question: boolean;
+  created_by_llm: boolean;
+  is_private_to: string | null;
+  forked_from_question_id: string | null;
+  times_asked: number;
+  times_answered: number;
+  created_at: Date;
+  updated_at: Date;
+  answer_id: string | null;
+  answer_text: string | null;
+  answer_source: string | null;
+  answer_confidence: number | null;
+  answer_rationale: string | null;
+  answered_at: Date | null;
+  total_count: number;
+};
+
+type CatalogueFacetRow = {
+  category: string | null;
+  answer_tier: string | null;
+  count: number;
+  answered_count: number;
+};
 
 @Injectable()
 export class QuestionService {
@@ -40,6 +247,40 @@ export class QuestionService {
   }
 
   /**
+   * Which questions a caller may SEE, keyed by id: the shared catalogue
+   * (`is_private_to IS NULL`) plus their own private questions, never another
+   * user's. This is the read rule, and it is deliberately wider than the write
+   * rule below — being shown a shared question costs nothing, changing one
+   * changes what every other person on the appliance gets asked.
+   */
+  private readableWhere(context: ServiceContext, id: string): FindOptionsWhere<QuestionEntity>[] {
+    const clauses: FindOptionsWhere<QuestionEntity>[] = [{ id, isPrivateTo: IsNull() }];
+
+    if (context.userId && context.userId !== SYSTEM_USER) {
+      clauses.push({ id, isPrivateTo: context.userId });
+    }
+
+    return clauses;
+  }
+
+  /**
+   * Whether a row the caller can see is also a row they may write to IN PLACE.
+   *
+   * Only their own private questions are — plus everything, for a system caller
+   * (migrations, cron, internal services, which have no user to fork on behalf
+   * of). A shared catalogue row is read-only to an ordinary caller: `update`
+   * forks it into a private copy instead, see {@link forkSharedQuestion}.
+   *
+   * `remove` uses the same rule and does NOT fork, so hard delete stays
+   * own-private-only: ci.answers and ci.feed_queue both cascade from
+   * ci.questions, and a shared row can hold other people's answers. Retiring a
+   * shared reflection is `isActive: false`, which forks.
+   */
+  private isWritableInPlace(context: ServiceContext, question: QuestionEntity): boolean {
+    return context.userId === SYSTEM_USER || question.isPrivateTo === context.userId;
+  }
+
+  /**
    * @param options.emitCreated When true (default) a QuestionCreatedEvent is sent so
    *   the row indexes/enriches live. The bulk path passes false: emitting a per-row
    *   pgboss event for every ingested row is the dominant cost at import volume, so
@@ -59,6 +300,7 @@ export class QuestionService {
       id,
       text: data.text,
       category: data.category,
+      answerTier: data.answerTier ?? null,
       isSeedQuestion: data.isSeedQuestion ?? false,
       createdByLlm: data.createdByLlm ?? false,
       frequencyRecommendation: data.frequencyRecommendation,
@@ -100,6 +342,7 @@ export class QuestionService {
         id: item.id ?? uuidv7(),
         text: item.text,
         category: item.category,
+        answerTier: item.answerTier ?? null,
         isSeedQuestion: item.isSeedQuestion ?? false,
         createdByLlm: item.createdByLlm ?? false,
         frequencyRecommendation: item.frequencyRecommendation,
@@ -131,6 +374,32 @@ export class QuestionService {
     return entities.map((entity) => QuestionEntity.toEgressType(byId.get(entity.id) ?? entity));
   }
 
+  /**
+   * Which shared rows this caller has replaced with a private copy, as origin
+   * ids. The SQL selectors express this as a NOT EXISTS (see
+   * {@link excludeForkedOriginsSql}); the repository-based ones filter with
+   * this instead, because TypeORM's `where` cannot express the anti-join.
+   *
+   * Queried rather than derived from the result set: a fork retired with
+   * `isActive: false` is exactly the case where the origin must still be
+   * hidden, and that fork is not in an active-only result to derive from.
+   */
+  private async forkedOriginIds(context: ServiceContext): Promise<Set<string>> {
+    if (!context.userId || context.userId === SYSTEM_USER) {
+      return new Set();
+    }
+
+    const forks = await this.questionRepository.find({
+      where: { isPrivateTo: context.userId, forkedFromQuestionId: Not(IsNull()) },
+    });
+
+    return new Set(
+      forks
+        .map((fork) => fork.forkedFromQuestionId)
+        .filter((originId): originId is string => Boolean(originId)),
+    );
+  }
+
   async findAll(context: ServiceContext): Promise<Question[]> {
     const whereClauses: FindOptionsWhere<QuestionEntity>[] = [
       {
@@ -143,33 +412,202 @@ export class QuestionService {
       whereClauses.push({ isActive: true, isPrivateTo: context.userId });
     }
 
-    const result = await this.questionRepository.find({
-      where: whereClauses,
-    });
+    const [result, replaced] = await Promise.all([
+      this.questionRepository.find({ where: whereClauses }),
+      this.forkedOriginIds(context),
+    ]);
 
     const unique = new Map<string, QuestionEntity>();
 
     for (const entity of result) {
+      if (replaced.has(entity.id)) {
+        continue;
+      }
+
       unique.set(entity.id, entity);
     }
 
     return Array.from(unique.values()).map((entity) => QuestionEntity.toEgressType(entity));
   }
 
-  async findById(context: ServiceContext, id: string): Promise<Question | null> {
-    const whereClauses: FindOptionsWhere<QuestionEntity>[] = [
-      {
-        id: id,
-        isPrivateTo: IsNull(),
-      },
+  /**
+   * The reflection catalogue, browsable: paged, filterable by category / answer
+   * tier / lifecycle / answered-state and searchable by text, with each row
+   * carrying the caller's own answer (and its provenance) when one exists.
+   *
+   * `findAll` cannot serve this — it returns only active questions, applies no
+   * filters, and hands the whole catalogue to the caller to slice in memory.
+   * At ~1.3k active rows that is already the difference between a page and a
+   * full table scan on every keystroke.
+   */
+  async findCatalogue(
+    context: ServiceContext,
+    query: QuestionCatalogueQueryDto,
+  ): Promise<QuestionCataloguePage> {
+    const { status, answered, limit, offset } = query;
+    const userId = context.userId === SYSTEM_USER ? null : context.userId;
+    const search = query.search ? escapeLikeTerm(query.search) : null;
+
+    // Positions are shared between the page query and the facet query, so the
+    // two predicates stay in lockstep. $4..$6 are page-only.
+    const params = [
+      userId,
+      status,
+      search,
+      query.category ?? null,
+      query.answerTier ?? null,
+      answered,
+      limit,
+      offset,
     ];
 
-    if (context?.userId && context.userId !== SYSTEM_USER) {
-      whereClauses.push({ id: id, isPrivateTo: context.userId });
+    const rows = (await this.dataSource.query(
+      `
+      SELECT
+        q.question_id AS id,
+        q.question_text AS text,
+        q.question_category AS category,
+        q.answer_tier,
+        q.question_type,
+        q.frequency_recommendation,
+        q.is_active,
+        q.is_seed_question,
+        q.created_by_llm,
+        q.is_private_to,
+        q.forked_from_question_id,
+        q.times_asked,
+        q.times_answered,
+        q.created_at,
+        q.updated_at,
+        a.answer_id,
+        a.answer_text,
+        a.answer_source,
+        a.answer_confidence,
+        a.answer_rationale,
+        a.answered_at,
+        COUNT(*) OVER ()::int AS total_count
+      FROM ci.questions q
+      ${CATALOGUE_ANSWER_LATERAL_SQL}
+      WHERE ${CATALOGUE_FULL_WHERE_SQL}
+      ORDER BY
+        q.question_category ASC NULLS LAST,
+        ${TIER_RANK_SQL} ASC,
+        q.question_text ASC,
+        q.question_id ASC
+      LIMIT $7 OFFSET $8;
+      `,
+      params,
+    )) satisfies Array<CatalogueRow>;
+
+    // The facet query ignores $4..$6 but is handed the same array: node-postgres
+    // tolerates unreferenced trailing params only when they are not passed, so
+    // slice down to what the statement actually uses.
+    const facetRows = (await this.dataSource.query(
+      `
+      SELECT
+        q.question_category AS category,
+        q.answer_tier,
+        COUNT(*)::int AS count,
+        COUNT(*) FILTER (WHERE a.answer_id IS NOT NULL)::int AS answered_count
+      FROM ci.questions q
+      ${CATALOGUE_ANSWER_LATERAL_SQL}
+      WHERE ${CATALOGUE_BASE_WHERE_SQL}
+      GROUP BY 1, 2;
+      `,
+      params.slice(0, 3),
+    )) satisfies Array<CatalogueFacetRow>;
+
+    const categories = new Map<string | null, number>();
+    const answerTiers = new Map<string | null, number>();
+    let answeredCount = 0;
+    let unansweredCount = 0;
+
+    for (const row of facetRows) {
+      const count = Number(row.count);
+      const answeredInBucket = Number(row.answered_count);
+
+      categories.set(row.category, (categories.get(row.category) ?? 0) + count);
+      answerTiers.set(row.answer_tier, (answerTiers.get(row.answer_tier) ?? 0) + count);
+      answeredCount += answeredInBucket;
+      unansweredCount += count - answeredInBucket;
     }
 
+    // The window count rides on the rows, so an empty page carries none. That is
+    // usually because nothing matched — but it is also what a page past the end
+    // looks like (deactivate the last row on the last page and you are there),
+    // and reporting 0 then would tell the pager there is nothing to go back to.
+    const totalCount =
+      rows.length > 0
+        ? Number(rows[0].total_count)
+        : offset === 0
+          ? 0
+          : Number(
+              (
+                (await this.dataSource.query(
+                  `
+                  SELECT COUNT(*)::int AS total_count
+                  FROM ci.questions q
+                  ${CATALOGUE_ANSWER_LATERAL_SQL}
+                  WHERE ${CATALOGUE_FULL_WHERE_SQL};
+                  `,
+                  params.slice(0, 6),
+                )) satisfies Array<{ total_count: number }>
+              )[0]?.total_count ?? 0,
+            );
+
+    const toSortedBuckets = (buckets: Map<string | null, number>): QuestionCatalogueFacetBucket[] =>
+      Array.from(buckets.entries())
+        .map(([value, count]) => ({ value, count }))
+        // Untiered/uncategorised rows sort last — they are the pre-catalogue
+        // leftovers, not something to lead a picker with.
+        .sort((left, right) =>
+          left.value === null ? 1 : right.value === null ? -1 : left.value.localeCompare(right.value),
+        );
+
+    return {
+      data: rows.map((row) => ({
+        id: row.id,
+        text: row.text,
+        category: row.category,
+        answerTier: row.answer_tier,
+        questionType: row.question_type,
+        frequencyRecommendation: row.frequency_recommendation,
+        isActive: row.is_active,
+        isSeedQuestion: row.is_seed_question,
+        createdByLlm: row.created_by_llm,
+        isPrivateTo: row.is_private_to,
+        forkedFromQuestionId: row.forked_from_question_id,
+        timesAsked: Number(row.times_asked),
+        timesAnswered: Number(row.times_answered),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        answer:
+          row.answer_id && row.answer_text
+            ? {
+                id: row.answer_id,
+                text: row.answer_text,
+                source: row.answer_source,
+                confidence: row.answer_confidence,
+                rationale: row.answer_rationale,
+                answeredAt: row.answered_at as Date,
+              }
+            : null,
+      })),
+      totalCount,
+      limit,
+      offset,
+      facets: {
+        categories: toSortedBuckets(categories),
+        answerTiers: toSortedBuckets(answerTiers),
+        answeredCount,
+        unansweredCount,
+      },
+    };
+  }
+
+  async findById(context: ServiceContext, id: string): Promise<Question | null> {
     const result = await this.questionRepository.findOne({
-      where: whereClauses,
+      where: this.readableWhere(context, id),
     });
 
     return result ? QuestionEntity.toEgressType(result) : null;
@@ -200,6 +638,29 @@ export class QuestionService {
     return Array.from(unique.values()).map((entity) => QuestionEntity.toEgressType(entity));
   }
 
+  /**
+   * Apply an edit to a reflection the caller can see.
+   *
+   * The catalogue mixes ~1.3k shared rows every user on the appliance is asked
+   * from with each person's own private ones, so what this DOES depends on
+   * which kind the row is:
+   *
+   * - the caller's own private question, or any question for a system caller —
+   *   edited in place, as before;
+   * - a shared catalogue row — copied first. The caller gets a private copy
+   *   carrying their edit, and the shared row is left exactly as it was. See
+   *   {@link forkSharedQuestion};
+   * - anything else (another user's private question) — `null`, no write.
+   *
+   * Editing a shared row in place would mean one person rewording, recategorising
+   * or retiring (`isActive: false`) what everybody else gets asked — and
+   * "retire this, it is too personal" is precisely the edit somebody makes
+   * without meaning it for the whole household.
+   *
+   * NOTE the returned question's `id` is the fork's, not the id that was passed
+   * in, whenever a shared row was forked. Callers that re-fetch by the id they
+   * sent will find the untouched origin; use the returned row.
+   */
   async update(
     context: ServiceContext,
     questionId: string,
@@ -207,8 +668,17 @@ export class QuestionService {
   ): Promise<Question | null> {
     const updateData: Partial<QuestionEntity> = {};
 
+    // `subcategory` is the historical spelling; `category` wins when both come in.
     if (data.subcategory !== undefined) {
       updateData.category = data.subcategory;
+    }
+
+    if (data.category !== undefined) {
+      updateData.category = data.category;
+    }
+
+    if (data.answerTier !== undefined) {
+      updateData.answerTier = data.answerTier;
     }
 
     if (data.text !== undefined) {
@@ -252,20 +722,27 @@ export class QuestionService {
     }
 
     const question = await this.questionRepository.findOne({
-      where: {
-        id: questionId,
-        ...(context.userId !== SYSTEM_USER && {
-          isPrivateTo: context.userId,
-        }),
-      },
+      where: this.readableWhere(context, questionId),
     });
 
-    if (question) {
-      Object.assign(question, updateData);
-      await this.questionRepository.save(question);
-    } else {
+    if (!question) {
       return null;
     }
+
+    if (!this.isWritableInPlace(context, question)) {
+      // Reachable only for a shared row (readableWhere already excluded other
+      // people's private ones), and only for a caller who has an id to own the
+      // copy — every edge routes through toServiceContext, which rejects the
+      // rest, but a fork with no owner would violate questions_fork_is_owned.
+      if (!context.userId || context.userId === SYSTEM_USER) {
+        return null;
+      }
+
+      return this.forkSharedQuestion(context.userId, question, updateData);
+    }
+
+    Object.assign(question, updateData);
+    await this.questionRepository.save(question);
 
     await this.eventService.send(QuestionUpdatedEvent, {
       questionId: questionId,
@@ -274,17 +751,117 @@ export class QuestionService {
     return this.findById(context, questionId);
   }
 
-  async remove(context: ServiceContext, id: string): Promise<boolean> {
-    const question = await this.questionRepository.findOne({
-      where: {
-        id: id,
-        ...(context.userId !== SYSTEM_USER && {
-          isPrivateTo: context.userId,
-        }),
-      },
+  /**
+   * Copy-on-write for a shared catalogue row: the caller gets a private copy of
+   * it carrying their edit, and the shared row is not touched.
+   *
+   * A second edit updates that same copy rather than minting another — the
+   * `questions_fork_owner_uniq` partial index makes one-fork-per-(origin, owner)
+   * a database guarantee, and this is the read that honours it.
+   *
+   * The copy is NOT seed content, whatever the origin was: the seed migration's
+   * own down-path deletes rows by `is_seed_question AND NOT created_by_llm`, and
+   * it must not take somebody's edit with it.
+   */
+  private async forkSharedQuestion(
+    userId: string,
+    origin: QuestionEntity,
+    updateData: Partial<QuestionEntity>,
+  ): Promise<Question> {
+    const existingFork = await this.questionRepository.findOne({
+      where: { forkedFromQuestionId: origin.id, isPrivateTo: userId },
     });
 
-    if (!question) {
+    if (existingFork) {
+      Object.assign(existingFork, updateData, {
+        isPrivateTo: userId,
+        forkedFromQuestionId: origin.id,
+      });
+      await this.questionRepository.save(existingFork);
+
+      await this.eventService.send(QuestionUpdatedEvent, {
+        questionId: existingFork.id,
+      });
+
+      return QuestionEntity.toEgressType(existingFork);
+    }
+
+    const fork = this.questionRepository.create({
+      id: uuidv7(),
+      text: origin.text,
+      category: origin.category,
+      answerTier: origin.answerTier ?? null,
+      contextTags: origin.contextTags,
+      questionType: origin.questionType,
+      frequencyRecommendation: origin.frequencyRecommendation,
+      isActive: origin.isActive,
+      isSeedQuestion: false,
+      createdByLlm: false,
+      // Presentation counters belong to the shared row's history, not this copy's.
+      timesAsked: 0,
+      timesAnswered: 0,
+    });
+
+    // Ownership and provenance are the fork's identity and are applied last: an
+    // edit may carry `isPrivateTo` (UpdateQuestionDto allows it) and must not be
+    // able to hand the new row to somebody else or hide where it came from.
+    Object.assign(fork, updateData, {
+      isPrivateTo: userId,
+      forkedFromQuestionId: origin.id,
+    });
+
+    const saved = await this.questionRepository.save(fork);
+
+    await this.adoptOwnHistory(userId, origin.id, saved.id);
+
+    await this.eventService.send(QuestionCreatedEvent, {
+      questionId: saved.id,
+    });
+
+    return QuestionEntity.toEgressType(saved);
+  }
+
+  /**
+   * Move the caller's own history from a shared row onto the copy that now
+   * replaces it for them. Nobody else's rows move.
+   *
+   * Answers point at a question id, so without this an edit would leave the
+   * caller's existing answers on an origin they no longer see — their answered
+   * reflection would read as unanswered. The feed row is deleted rather than
+   * repointed: `feed_queue` is unique on (user_id, question_id) and the
+   * gap-aware selector re-queues the copy on the next pass if it is still
+   * unanswered.
+   */
+  private async adoptOwnHistory(userId: string, originId: string, forkId: string): Promise<void> {
+    await this.dataSource.query(
+      `
+      UPDATE ci.answers
+      SET question_id = $3
+      WHERE question_id = $2
+        AND user_id = $1;
+      `,
+      [userId, originId, forkId],
+    );
+
+    await this.removeFromFeedQueue(userId, originId);
+  }
+
+  /**
+   * Hard delete, and deliberately NOT copy-on-write like {@link update}: it
+   * stays own-private-only. ci.answers and ci.feed_queue both cascade from
+   * ci.questions, so deleting a shared catalogue row would destroy answers
+   * other people wrote. Retiring a shared reflection is `isActive: false`,
+   * which forks a private copy and leaves everyone else's feed alone.
+   *
+   * Returns false rather than throwing when the caller may not delete the row,
+   * including when they can see it perfectly well.
+   */
+  async remove(context: ServiceContext, id: string): Promise<boolean> {
+    const question = await this.questionRepository.findOne({
+      where: this.readableWhere(context, id),
+    });
+
+    if (!question || !this.isWritableInPlace(context, question)) {
       return false;
     }
 
@@ -327,20 +904,33 @@ export class QuestionService {
     };
 
     const rows = (await this.dataSource.query(`
-      SELECT
-        q.question_id as id,
-        COALESCE(q.is_private_to, a.user_id) as user_id
-      FROM
-        ci.questions as q
-      LEFT JOIN ci.answers as a ON a.question_id = q.question_id
-      WHERE q.is_active = TRUE
-        AND (a.answer_id IS NULL OR a.answer_text IS NULL)
-        AND (
-          q.is_private_to IS NULL
-          OR a.user_id IS NULL
-          OR a.user_id = q.is_private_to
-        )
-      LIMIT 5;
+      WITH unanswered AS (
+        SELECT
+          q.question_id AS id,
+          COALESCE(q.is_private_to, u.user_id) AS user_id,
+          q.created_at,
+          ROW_NUMBER() OVER (
+            PARTITION BY COALESCE(q.is_private_to, u.user_id)
+            ORDER BY ${TIER_RANK_SQL} ASC, q.created_at ASC
+          ) AS rn
+        FROM ci.questions q
+        CROSS JOIN (SELECT DISTINCT id AS user_id FROM ci.users WHERE id IS NOT NULL) u
+        WHERE q.is_active = TRUE
+          AND (q.is_private_to IS NULL OR q.is_private_to = u.user_id)
+          ${excludeForkedOriginsSql('q', 'u.user_id')}
+          AND NOT EXISTS (
+            SELECT 1
+            FROM ci.answers a
+            WHERE a.question_id = q.question_id
+              AND a.user_id = u.user_id
+              AND a.answer_method IN ('user', 'inferred')
+              AND a.answer_text IS NOT NULL
+              AND TRIM(a.answer_text) <> ''
+          )
+      )
+      SELECT id, user_id
+      FROM unanswered
+      WHERE rn <= 1;
     `)) satisfies Array<Row>;
 
     const groupedByUserId = new Map<string | null, string[]>();
@@ -363,24 +953,29 @@ export class QuestionService {
       return null;
     }
 
+    await this.cleanupFeedQueue(context.userId);
+    await this.rotateStaleFeedQuestions(context.userId);
+    await this.ensureFeedQueueHasQuestion(context.userId);
+
     type Row = {
       id: string;
+      feed_queue_id: string;
     };
-
-    await this.cleanupFeedQueue(context.userId);
 
     const rows = (await this.dataSource.query(
       `
       SELECT
-        q.question_id as id
+        q.question_id as id,
+        fq.feed_queue_id
       FROM
         ci.feed_queue as fq
       JOIN ci.questions as q ON q.question_id = fq.question_id
       LEFT JOIN ci.answers as a ON a.question_id = fq.question_id
         AND a.user_id = fq.user_id
       WHERE fq.user_id = $1
+        AND fq.question_id IS NOT NULL
         AND q.is_active = TRUE
-        AND (a.answer_id IS NULL OR a.answer_text IS NULL)
+        AND (a.answer_id IS NULL OR a.answer_text IS NULL OR TRIM(a.answer_text) = '')
       ORDER BY fq.enqueued_at ASC, fq.feed_queue_id ASC
       LIMIT 1;
     `,
@@ -391,7 +986,134 @@ export class QuestionService {
       return null;
     }
 
-    return this.findById(context, rows[0].id);
+    const { id: questionId, feed_queue_id: feedQueueId } = rows[0];
+    await this.recordFeedQuestionPresentation(context.userId, questionId);
+
+    const question = await this.findById(context, questionId);
+    if (!question) {
+      return null;
+    }
+
+    return Object.assign(question, { presentationId: feedQueueId });
+  }
+
+  /**
+   * Move a front-of-queue question that was shown but left unanswered for too
+   * long to the back and top up with a fresh pick when possible.
+   */
+  async rotateStaleFeedQuestions(userId: string): Promise<boolean> {
+    type FrontRow = {
+      feed_queue_id: string;
+      question_id: string;
+      metadata: Record<string, unknown> | null;
+    };
+
+    const frontRows = (await this.dataSource.query(
+      `
+      SELECT
+        fq.feed_queue_id,
+        fq.question_id,
+        fq.metadata
+      FROM ci.feed_queue fq
+      JOIN ci.questions q ON q.question_id = fq.question_id
+      LEFT JOIN ci.answers a
+        ON a.question_id = fq.question_id
+        AND a.user_id = fq.user_id
+      WHERE fq.user_id = $1
+        AND fq.question_id IS NOT NULL
+        AND q.is_active = TRUE
+        AND (a.answer_id IS NULL OR a.answer_text IS NULL OR TRIM(a.answer_text) = '')
+      ORDER BY fq.enqueued_at ASC, fq.feed_queue_id ASC
+      LIMIT 1;
+      `,
+      [userId],
+    )) satisfies Array<FrontRow>;
+
+    const front = frontRows[0];
+    if (!front) {
+      return false;
+    }
+
+    const lastPresentedRaw = front.metadata?.lastPresentedAt;
+    if (typeof lastPresentedRaw !== 'string') {
+      return false;
+    }
+
+    const lastPresentedAt = Date.parse(lastPresentedRaw);
+    if (!Number.isFinite(lastPresentedAt) || Date.now() - lastPresentedAt < FEED_QUESTION_STALE_MS) {
+      return false;
+    }
+
+    await this.dataSource.query(
+      `
+      UPDATE ci.feed_queue
+      SET
+        enqueued_at = NOW(),
+        metadata = (COALESCE(metadata, '{}'::jsonb) - 'lastPresentedAt') || jsonb_build_object('rotatedAt', to_jsonb(NOW()::text))
+      WHERE feed_queue_id = $1;
+      `,
+      [front.feed_queue_id],
+    );
+
+    await this.enqueueNextFeedQueueQuestion(userId, FEED_QUESTION_QUEUE_LIMIT);
+
+    return true;
+  }
+
+  /** Stamp first presentation time on the feed row and bump times_asked on the question. */
+  async recordFeedQuestionPresentation(userId: string, questionId: string): Promise<void> {
+    type Row = { updated: boolean };
+    const rows = (await this.dataSource.query(
+      `
+      UPDATE ci.feed_queue
+      SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('lastPresentedAt', to_jsonb(NOW()::text))
+      WHERE user_id = $1
+        AND question_id = $2
+        AND (metadata->>'lastPresentedAt' IS NULL)
+      RETURNING TRUE AS updated;
+      `,
+      [userId, questionId],
+    )) satisfies Array<Row>;
+
+    if (!rows[0]?.updated) {
+      return;
+    }
+
+    await this.dataSource.query(
+      `
+      UPDATE ci.questions
+      SET times_asked = times_asked + 1
+      WHERE question_id = $1;
+      `,
+      [questionId],
+    );
+  }
+
+  /** Ensure at least one unanswered question is queued when candidates exist. */
+  async ensureFeedQueueHasQuestion(userId: string): Promise<boolean> {
+    type QueueCountRow = { count: string };
+    const countRows = (await this.dataSource.query(
+      `
+      SELECT COUNT(*)::text AS count
+      FROM ci.feed_queue fq
+      JOIN ci.questions q ON q.question_id = fq.question_id
+      LEFT JOIN ci.answers a
+        ON a.question_id = fq.question_id
+        AND a.user_id = fq.user_id
+      WHERE fq.user_id = $1
+        AND fq.question_id IS NOT NULL
+        AND q.is_active = TRUE
+        AND (a.answer_id IS NULL OR a.answer_text IS NULL OR TRIM(a.answer_text) = '');
+      `,
+      [userId],
+    )) satisfies Array<QueueCountRow>;
+
+    const activeCount = Number.parseInt(countRows[0]?.count ?? '0', 10);
+    if (activeCount > 0) {
+      return false;
+    }
+
+    return this.enqueueNextFeedQueueQuestion(userId, 1);
   }
 
   async listFeedQueueUserIds(): Promise<string[]> {
@@ -438,30 +1160,9 @@ export class QuestionService {
     type CandidateRow = {
       id: string;
     };
-    const candidates = (await this.dataSource.query(
-      `
-      SELECT q.question_id as id
-      FROM ci.questions as q
-      WHERE q.is_active = TRUE
-        AND (q.is_private_to IS NULL OR q.is_private_to = $1)
-        AND NOT EXISTS (
-          SELECT 1
-          FROM ci.answers as a
-          WHERE a.question_id = q.question_id
-            AND a.user_id = $1
-            AND a.answer_text IS NOT NULL
-        )
-        AND NOT EXISTS (
-          SELECT 1
-          FROM ci.feed_queue as fq
-          WHERE fq.user_id = $1
-            AND fq.question_id = q.question_id
-        )
-      ORDER BY q.created_at ASC, q.question_id ASC
-      LIMIT 1;
-      `,
-      [userId],
-    )) satisfies Array<CandidateRow>;
+    const candidates = (await this.dataSource.query(GAP_AWARE_CANDIDATE_SQL, [
+      userId,
+    ])) satisfies Array<CandidateRow>;
 
     const candidate = candidates[0];
     if (!candidate) {

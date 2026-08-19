@@ -1,0 +1,228 @@
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+
+import { EntityTagsDescriptionCard } from './EntityTagsDescriptionCard';
+
+const tagEntities = vi.fn().mockResolvedValue(undefined);
+const untagEntities = vi.fn().mockResolvedValue(undefined);
+const toastError = vi.fn();
+
+vi.mock('@/api', () => ({
+  useTagEntityService: () => ({ tagEntities, untagEntities }),
+}));
+
+vi.mock('@ci/shadcn', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+
+  return { ...actual, useToast: () => ({ toast: { error: toastError, success: vi.fn() } }) };
+});
+
+const BASE = {
+  entityType: 'person' as const,
+  entityId: '019fdcb3-b482-7101-af89-264466bf95ff',
+  resetKey: 'person-1',
+};
+
+describe('EntityTagsDescriptionCard', () => {
+  it('says so when there is nothing recorded, instead of showing empty inputs', () => {
+    render(<EntityTagsDescriptionCard {...BASE} tags={[]} description={null} editMode={false} />);
+
+    expect(screen.getByText('No tags yet')).toBeInTheDocument();
+    expect(screen.getByText('No description yet')).toBeInTheDocument();
+    // The bare editor chrome is what read as broken; in read mode it should not be there at all.
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  });
+
+  it('names the placeholder after the field, which is not always "description"', () => {
+    render(
+      <EntityTagsDescriptionCard
+        {...BASE}
+        tags={[]}
+        description=""
+        descriptionLabel="Summary"
+        editMode={false}
+      />,
+    );
+
+    expect(screen.getByText('No summary yet')).toBeInTheDocument();
+  });
+
+  it('shows the real values when there are any', () => {
+    render(
+      <EntityTagsDescriptionCard
+        {...BASE}
+        tags={['colleague']}
+        description="Met at the conference."
+        editMode={false}
+      />,
+    );
+
+    expect(screen.queryByText('No tags yet')).not.toBeInTheDocument();
+    expect(screen.getByText('colleague')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Met at the conference.')).toBeInTheDocument();
+  });
+
+  it('offers the editors in edit mode even when empty', () => {
+    render(
+      <EntityTagsDescriptionCard
+        {...BASE}
+        tags={[]}
+        description={null}
+        editMode
+        onDescriptionSave={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText('No tags yet')).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Add a description…')).toBeInTheDocument();
+  });
+
+  it('persists an edited description on blur', async () => {
+    const onDescriptionSave = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <EntityTagsDescriptionCard
+        {...BASE}
+        tags={[]}
+        description="Before"
+        editMode
+        onDescriptionSave={onDescriptionSave}
+      />,
+    );
+
+    const textarea = screen.getByDisplayValue('Before');
+    fireEvent.change(textarea, { target: { value: 'After' } });
+    fireEvent.blur(textarea);
+
+    await waitFor(() => {
+      expect(onDescriptionSave).toHaveBeenCalledWith('After');
+    });
+  });
+
+  it('does not write when the text came back unchanged', () => {
+    const onDescriptionSave = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <EntityTagsDescriptionCard
+        {...BASE}
+        tags={[]}
+        description="Before"
+        editMode
+        onDescriptionSave={onDescriptionSave}
+      />,
+    );
+
+    const textarea = screen.getByDisplayValue('Before');
+    fireEvent.change(textarea, { target: { value: 'Changed' } });
+    fireEvent.change(textarea, { target: { value: 'Before' } });
+    fireEvent.blur(textarea);
+
+    expect(onDescriptionSave).not.toHaveBeenCalled();
+  });
+
+  it('restores the previous text and reports a failed save', async () => {
+    const onDescriptionSave = vi.fn().mockRejectedValue(new Error('rejected'));
+
+    render(
+      <EntityTagsDescriptionCard
+        {...BASE}
+        tags={[]}
+        description="Before"
+        editMode
+        onDescriptionSave={onDescriptionSave}
+      />,
+    );
+
+    const textarea = screen.getByDisplayValue('Before');
+    fireEvent.change(textarea, { target: { value: 'After' } });
+    fireEvent.blur(textarea);
+
+    await waitFor(() => {
+      expect(toastError).toHaveBeenCalled();
+      expect(screen.getByDisplayValue('Before')).toBeInTheDocument();
+    });
+  });
+
+  it('keeps the field read-only when the entity type has no write path', () => {
+    render(
+      <EntityTagsDescriptionCard
+        {...BASE}
+        tags={[]}
+        description="Preview text"
+        descriptionLabel="Summary"
+        editMode
+      />,
+    );
+
+    // Editable-looking chrome that silently discards edits is the defect, not the fix.
+    expect(screen.getByDisplayValue('Preview text')).toHaveAttribute('readonly');
+  });
+
+  it('does not leave the label pointing at a control that is not rendered', () => {
+    render(<EntityTagsDescriptionCard {...BASE} tags={[]} description={null} editMode={false} />);
+
+    // The Tags label is also on screen and never carries `for`, so target this one by its text.
+    const label = screen.getByText('Description');
+
+    // A `for` naming an id that is not in the document is announced as labelling nothing.
+    expect(label.getAttribute('for')).toBeNull();
+  });
+
+  it('names the textarea whenever there is one to name', () => {
+    const { container } = render(
+      <EntityTagsDescriptionCard {...BASE} tags={[]} description="Something" editMode={false} />,
+    );
+
+    const target = container.querySelector(`#${screen.getByText('Description').getAttribute('for')}`);
+
+    expect(target).not.toBeNull();
+    expect(target!.tagName.toLowerCase()).toBe('textarea');
+  });
+
+  it('restores a tag and reports it when the removal fails', async () => {
+    untagEntities.mockRejectedValueOnce(new Error('nope'));
+
+    const { container } = render(
+      <EntityTagsDescriptionCard {...BASE} tags={['colleague']} description={null} editMode />,
+    );
+
+    // TagInput drops the tag optimistically and puts it back only on an explicit `false`, so
+    // swallowing the failure would leave the screen disagreeing with the server.
+    fireEvent.click(container.querySelector('button[type="button"]')!);
+
+    await waitFor(() => {
+      expect(toastError).toHaveBeenCalledWith("Couldn't remove tag “colleague”.");
+      expect(screen.getByText('colleague')).toBeInTheDocument();
+    });
+  });
+
+  it('shows the placeholder as soon as the last tag is removed', async () => {
+    const { container, rerender } = render(
+      <EntityTagsDescriptionCard {...BASE} tags={['colleague']} description={null} editMode />,
+    );
+
+    fireEvent.click(container.querySelector('button[type="button"]')!);
+
+    await waitFor(() => {
+      expect(untagEntities).toHaveBeenCalled();
+    });
+
+    // Leaving edit mode before the page query refetches: the prop is still stale, so without a
+    // local count this renders the empty bordered box the placeholder exists to replace.
+    rerender(
+      <EntityTagsDescriptionCard {...BASE} tags={['colleague']} description={null} editMode={false} />,
+    );
+
+    expect(screen.getByText('No tags yet')).toBeInTheDocument();
+  });
+
+  it('renders type-specific detail above the tags', () => {
+    render(
+      <EntityTagsDescriptionCard {...BASE} tags={[]} description={null} editMode={false}>
+        <div>Organizer: Hanzla Mateen</div>
+      </EntityTagsDescriptionCard>,
+    );
+
+    expect(screen.getByText('Organizer: Hanzla Mateen')).toBeInTheDocument();
+  });
+});

@@ -1,32 +1,36 @@
 import { expect, test } from '@playwright/test';
 
 // Authenticated (chromium project reuses the storageState from global-setup).
-// The app exposes four Memory views behind the breadcrumb dropdown: the last
-// crumb names the active view and opens an icon grid (mirroring the header
-// plus-button's Add panel); the active view lives in the `?view=` param.
+//
+// DesktopMemoryPage.tsx does NOT have a breadcrumb-dropdown view switcher —
+// it renders four always-visible tab buttons in the `nav-views` header portal
+// (List / Map / Gallery / Graph), each with an `aria-label` from the
+// MEMORY_VIEW_* i18n strings ("List view", "Map view", "Gallery view",
+// "Graph view") and `aria-pressed` reflecting whether it is the active tab.
+// The active view lives in the `?view=` param.
 
 test('defaults to the list view with seeded results', async ({ page }) => {
-  await page.goto('/memory');
+  await page.goto('/memory/events');
 
-  // Default view is list; the breadcrumb view switcher names the active view.
-  await expect(page.getByLabel('List view')).toBeVisible();
+  // Default view is list; the header nav-views tab names the active view.
+  const listTab = page.getByRole('button', { name: 'List view' });
+  await expect(listTab).toBeVisible();
+  await expect(listTab).toHaveAttribute('aria-pressed', 'true');
 });
 
 const VIEWS = [
-  { label: 'List', view: 'list' },
-  { label: 'Gallery', view: 'gallery' },
   { label: 'Map', view: 'map' },
+  { label: 'Gallery', view: 'gallery' },
   { label: 'Graph', view: 'graph' },
 ] as const;
 
 for (const { label, view } of VIEWS) {
   test(`switches to the ${view} view`, async ({ page }) => {
-    await page.goto('/memory');
+    await page.goto('/memory/events');
 
-    // Open the breadcrumb view switcher, then pick the view from its grid.
-    await page.getByRole('button', { name: 'change view' }).click();
-    await page.getByRole('menuitem', { name: label, exact: true }).click();
+    await page.getByRole('button', { name: `${label} view` }).click();
     await expect(page).toHaveURL(new RegExp(`view=${view}`));
+    await expect(page.getByRole('button', { name: `${label} view` })).toHaveAttribute('aria-pressed', 'true');
 
     // Save a screenshot artifact for each view (uploaded by the e2e workflow).
     await page.screenshot({ path: `test-results/screenshots/memory-${view}-desktop.png` });

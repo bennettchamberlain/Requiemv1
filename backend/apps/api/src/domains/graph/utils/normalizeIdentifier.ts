@@ -15,6 +15,8 @@
  * digits, so callers can skip non-matchable values rather than store empties.
  */
 
+import { isNonNameParticipant } from './participantSanity';
+
 export type IdentifierKind = 'email' | 'phone' | 'name';
 
 export function normalizeEmail(raw: string | null | undefined): string | null {
@@ -22,7 +24,14 @@ export function normalizeEmail(raw: string | null | undefined): string | null {
     return null;
   }
 
-  const normalized = raw.trim().toLowerCase();
+  // Many sources hand us the full RFC 5322 mailbox ("Display Name <addr@x>",
+  // or "<addr@x>") rather than a bare address. Extract the angle-bracketed
+  // address first — otherwise the display name is folded into the identifier
+  // and the same mailbox fragments across many Person entities.
+  const angle = raw.match(/<([^>]+)>/);
+  const candidate = angle ? angle[1] : raw;
+
+  const normalized = candidate.trim().toLowerCase();
 
   return normalized.length > 0 ? normalized : null;
 }
@@ -158,6 +167,14 @@ function isPhoneShaped(trimmed: string): boolean {
  * The phone branch used to fire on ANY digit-bearing string, which turned chat
  * handles into bogus short "phone numbers" ("alexmz12" -> phone '12') and let
  * unrelated handles sharing a digit run collide into one Person.
+ *
+ * The `name` branch is the permissive one — it is the fallthrough — so a parser
+ * leak arrives here as a perfectly ordinary "name" and leaves as somebody's
+ * contact card. {@link isNonNameParticipant} is the door: a call-log heading,
+ * an export filename or anything carrying a newline is refused (and logged)
+ * rather than classified. Refusing means the participant does not resolve and
+ * does not mint, which is the same "unresolved" state every one of these
+ * callers already handles for a participant nothing matched.
  */
 export function classifyParticipant(raw: string | null): ClassifiedIdentifier | null {
   if (raw == null) {
@@ -166,6 +183,10 @@ export function classifyParticipant(raw: string | null): ClassifiedIdentifier | 
 
   const trimmed = raw.trim();
   if (trimmed.length === 0) {
+    return null;
+  }
+
+  if (isNonNameParticipant(trimmed, 'classifyParticipant')) {
     return null;
   }
 

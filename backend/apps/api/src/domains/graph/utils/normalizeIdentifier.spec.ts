@@ -18,6 +18,13 @@ describe('normalizeEmail', () => {
     expect(normalizeEmail(null)).toBeNull();
     expect(normalizeEmail(undefined)).toBeNull();
   });
+
+  it('extracts the address from an RFC 5322 mailbox so display names do not fragment identity', () => {
+    expect(normalizeEmail('Bill Hegemon <hegemon.bill@gmail.com>')).toBe('hegemon.bill@gmail.com');
+    expect(normalizeEmail('<Hegemon.Bill@Gmail.com>')).toBe('hegemon.bill@gmail.com');
+    // A bare address (no angle brackets) still normalizes as before.
+    expect(normalizeEmail('hegemon.bill@gmail.com')).toBe('hegemon.bill@gmail.com');
+  });
 });
 
 describe('normalizePhone', () => {
@@ -151,5 +158,47 @@ describe('splitPersonName', () => {
     expect(splitPersonName('  Brian   Paul  ')).toEqual({ first_name: 'Brian', last_name: 'Paul' });
     expect(splitPersonName('   ')).toBeNull();
     expect(splitPersonName(null)).toBeNull();
+  });
+});
+
+describe('classifyParticipant refuses what is structurally not a name', () => {
+  // The `name` branch is the fallthrough, so every parser leak used to arrive
+  // here as an ordinary name and leave as a Person. THE regression these guard:
+  // 3,079 live Person rows named with a Google Voice call-log heading and 241
+  // named with a Messenger export filename — the latter twice, because
+  // migration 20260818220731 deleted the rows without stopping the minter.
+  it('refuses a call-log heading, in every verb the parser emits', () => {
+    for (const heading of [
+      'Missed call from',
+      'Placed call to',
+      'Received call from',
+      'Voicemail from',
+      'Recorded call with',
+    ]) {
+      expect(classifyParticipant(heading)).toBeNull();
+    }
+  });
+
+  it('refuses a heading that swallowed the contact name with it', () => {
+    expect(classifyParticipant('Placed call to \nNancy Davis')).toBeNull();
+    expect(classifyParticipant('Missed call from Steven Stone')).toBeNull();
+  });
+
+  it('refuses an export filename', () => {
+    expect(classifyParticipant('Group Conversation - 2024-09-25T01_45_41Z.html')).toBeNull();
+    expect(classifyParticipant('messages.json')).toBeNull();
+  });
+
+  it('refuses anything carrying a newline, including an email-shaped one', () => {
+    expect(classifyParticipant('Alice\nSmith')).toBeNull();
+    expect(classifyParticipant('Missed call from \nalice@example.com')).toBeNull();
+  });
+
+  it('still classifies the clean value the repaired metadata now carries', () => {
+    expect(classifyParticipant('Nancy Davis')).toEqual({ kind: 'name', valueNormalized: 'nancy davis' });
+    expect(classifyParticipant('voicemail@from.example.com')).toEqual({
+      kind: 'email',
+      valueNormalized: 'voicemail@from.example.com',
+    });
   });
 });

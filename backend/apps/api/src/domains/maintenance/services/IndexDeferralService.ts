@@ -41,11 +41,12 @@ import { LoggerService } from '@ci/common/logging';
 export const DEFERRABLE_INDEXES: ReadonlyArray<{ schema: string; name: string; note: string }> = [
   // --- Full-text (GIN tsvector) — rebuilt cheaply in bulk -----------------
   { schema: 'ci', name: 'entities_fts_idx', note: 'GIN(search_vector) on ci.entities' },
-  { schema: 'ci', name: 'facts_fts_idx', note: 'GIN(fact_search_vector) on ci.facts' },
   { schema: 'ci', name: 'document_chunks_fts_idx', note: 'GIN(content_search_vector) on ci.document_chunks' },
   { schema: 'ci', name: 'messages_fts_idx', note: 'GIN(search_vector) on ci.messages' },
-  // --- pgvector ANN (HNSW) on messages ------------------------------------
-  { schema: 'ci', name: 'messages_embedding_idx', note: 'HNSW(message_embedding) on ci.messages' },
+  // NB: 'facts_fts_idx' (ci.facts table dropped) and 'messages_embedding_idx'
+  // (ci.messages.message_embedding column removed) were removed from this list —
+  // both no longer exist in the schema, so dropDeferredIndexes() would only ever
+  // no-op on them. Verified absent via pg_indexes / to_regclass('ci.facts').
   // --- pgvector ANN (HNSW) on the search embeddings table -----------------
   // The single most expensive index to maintain during a large load; the
   // primary search read path (semantic/boosted/hybrid cosine). See migration

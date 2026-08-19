@@ -1,0 +1,9 @@
+[
+  {
+    "header": "YouTube",
+    "title": "Watched Some Video",
+    "titleUrl": "https://www.youtube.com/watch?v=zzz999",
+    "time": "2026-04-01T12:34:56.789Z",
+    "products": ["YouTube"]
+  }
+]

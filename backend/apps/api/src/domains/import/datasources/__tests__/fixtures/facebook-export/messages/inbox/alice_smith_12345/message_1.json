@@ -1,0 +1,17 @@
+{
+  "participants": [{"name": "Alice Smith"}, {"name": "Test User"}],
+  "messages": [
+    {
+      "sender_name": "Alice Smith",
+      "timestamp_ms": 1609459200000,
+      "content": "Happy New Year!"
+    },
+    {
+      "sender_name": "Test User",
+      "timestamp_ms": 1609459260000,
+      "content": "Happy New Year to you too! 🎉"
+    }
+  ],
+  "title": "Alice Smith",
+  "thread_type": "Regular"
+}

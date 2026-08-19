@@ -1,0 +1,44 @@
+[
+  {
+    "uuid": "cccccccc-0000-0000-0000-000000000001",
+    "name": "Reviewing photos",
+    "created_at": "2026-05-01T10:00:00Z",
+    "updated_at": "2026-05-01T10:10:00Z",
+    "chat_messages": [
+      {
+        "uuid": "cm-1",
+        "text": "What do you think of this shot?",
+        "sender": "human",
+        "created_at": "2026-05-01T10:00:00Z",
+        "content": [{ "type": "text", "text": "What do you think of this shot?" }],
+        "files": [{ "file_name": "sunset.png" }]
+      },
+      {
+        "uuid": "cm-2",
+        "text": "",
+        "sender": "human",
+        "created_at": "2026-05-01T10:05:00Z",
+        "content": [],
+        "files": [{ "file_name": "beach.png" }]
+      },
+      {
+        "uuid": "cm-3",
+        "text": "Nice composition in both.",
+        "sender": "assistant",
+        "created_at": "2026-05-01T10:06:00Z",
+        "content": [{ "type": "text", "text": "Nice composition in both." }],
+        "attachments": [
+          { "file_name": "notes.txt", "file_type": "text/plain", "extracted_content": "some extracted text" }
+        ]
+      },
+      {
+        "uuid": "cm-4",
+        "text": "Compare with this old one.",
+        "sender": "human",
+        "created_at": "2026-05-01T10:07:00Z",
+        "content": [{ "type": "text", "text": "Compare with this old one." }],
+        "files": [{ "file_name": "missing.jpg" }]
+      }
+    ]
+  }
+]

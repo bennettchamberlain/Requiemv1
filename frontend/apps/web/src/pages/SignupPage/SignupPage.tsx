@@ -3,6 +3,7 @@ import type { BaseSyntheticEvent } from 'react';
 import { Button, Card, Separator } from '@ci/shadcn';
 import { Link, useSearchParams } from 'react-router-dom';
 
+import { OidcButton } from '@/components/OidcButton';
 import { useAuth } from '@/hooks';
 
 import { SignupForm, type SignupFormData } from './SignupForm';
@@ -42,9 +43,7 @@ export function SignupPage() {
             <p className="text-destructive mb-2 text-center text-sm">Sign up failed. Please try again.</p>
           )}
 
-          <Button variant="outline" className="w-full" asChild>
-            <a href="/api/authenticate/oidc">Sign up with CI Portal</a>
-          </Button>
+          <OidcButton label="Sign up with CI Portal" variant="outline" />
         </Card.Content>
       </Card>
 

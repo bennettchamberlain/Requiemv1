@@ -11,7 +11,7 @@ const PREVIEW_MAX_CHARS = 140;
  * the rows where content itself IS the preview. Same one-line + ellipsis shape
  * as the importer's clip, so stored and derived previews are indistinguishable.
  */
-function previewFromContent(content: string | null | undefined): string | null {
+export function previewFromContent(content: string | null | undefined): string | null {
   if (!content) {
     return null;
   }
@@ -27,17 +27,26 @@ function previewFromContent(content: string | null | undefined): string | null {
 
 @Entity({ schema: 'ci', name: 'communications' })
 export class CommunicationEntity {
-  // Surrogate primary key (with the hypertable partition cols time + user_id) so
-  // distinct messages sharing a timestamp + type coexist; idempotent re-sync
-  // dedupes on communications_source_triple_uniq. See migration
-  // 20260624130000_communications_surrogate_pk.
+  // Surrogate primary key, so distinct messages sharing a timestamp + type
+  // coexist; idempotent re-sync dedupes on communications_source_triple_uniq
+  // (the pure provenance triple — the table stopped being a hypertable in
+  // 20260807072321, so the partition columns are out of the key).
   @PrimaryColumn({ type: 'uuid' })
   id!: string;
 
-  @PrimaryColumn({ type: 'timestamptz' })
+  /**
+   * CTI discriminator pin (migration 20260811061411): always 'Communication'.
+   * Pairs with id in the composite FK to ci.entities(entity_id, entity_type)
+   * so a detail row can never point at a base row of another type. DEFAULTed
+   * and CHECKed in the schema; never written by the application.
+   */
+  @Column({ type: 'text', name: 'entity_type', default: 'Communication', insert: false, update: false })
+  entityType!: string;
+
+  @Column({ type: 'timestamptz' })
   time!: Date;
 
-  @PrimaryColumn({ type: 'uuid', name: 'user_id' })
+  @Column({ type: 'uuid', name: 'user_id' })
   userId!: string;
 
   @Column({ type: 'text', name: 'communication_type' })
@@ -159,4 +168,4 @@ export class CommunicationEntity {
   }
 }
 
-export type Communication = Readonly<CommunicationEntity>;
+export type Communication = Readonly<Omit<CommunicationEntity, 'entityType'>>;

@@ -33,7 +33,7 @@ test('Login to beta-1.companionintel.com', async ({ page }, testInfo) => {
 
   await page.getByRole('button', { name: 'Log in' }).click();
 
-  await expect(page.getByText('Feed')).toBeVisible();
+  await expect(page.getByText('Plan')).toBeVisible();
 
   await page.screenshot({ path: testInfo.outputPath('home.jpg') });
 });

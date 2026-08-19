@@ -3,11 +3,36 @@ services:
     image: ci/api
     env_file:
       - .env
+    volumes:
+      # See docker-compose.production.yml for why these two share a mount and
+      # why /repo is read-only.
+      - ${CI_IMPORT_WORK_DIR:-./import-work}:/var/lib/ci-import
+      - ${CI_REPO_DIR:-~/Downloads}:/repo:ro
     environment:
+      CI_ROLE: web
       DATABASE_HOST: database
+      CI_IMPORT_SCRATCH_DIR: ${CI_IMPORT_SCRATCH_DIR:-/var/lib/ci-import/scratch}
+      CI_IMPORT_ROOTS: ${CI_IMPORT_ROOTS:-["/repo"]}
       OBJECT_STORE_URL: http://object-store:9000
       OLLAMA_HOST: http://host.docker.internal:11434
+      # OpenAI-compatible chat backend (Hub-injected on managed deploys). When
+      # unset, the API falls back to native Ollama on OLLAMA_HOST.
+      LLM_API_BASE: ${LLM_API_BASE:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_DEFAULT_CHAT_MODEL: ${LLM_DEFAULT_CHAT_MODEL:-}
+      # Embeddings stay on native Ollama even when chat runs on vLLM/Lemonade;
+      # falls back to OLLAMA_HOST when unset.
+      OLLAMA_EMBED_HOST: ${OLLAMA_EMBED_HOST:-}
       HBPE_HOST: http://hbpe-service:8002
+      # `api` exists only in the staging/production overrides — there is no base
+      # definition to inherit this from, and `env_file: .env` above does not
+      # help because the code reads SENTRY_DSN, not SENTRY_DSN_API. Without it
+      # staging reports from hbpe and summary but silently not from the API.
+      SENTRY_DSN: ${SENTRY_DSN_API:-}
+      SENTRY_ENV: ${SENTRY_ENV:-}
+      CI_TELEMETRY: ${CI_TELEMETRY:-}
+      CI_LOCAL_ONLY: ${CI_LOCAL_ONLY:-}
+      CI_SERVER_VERSION: ${CI_SERVER_VERSION:-}
     networks:
       - ci
     extra_hosts:
@@ -18,6 +43,30 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    depends_on:
+      migrate-database:
+        condition: service_completed_successfully
+      database:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles: [ "staging" ]
+
+  # The headless half of the api — see docker-compose.production.yml.
+  worker:
+    image: ci/api
+    env_file:
+      - .env
+    volumes:
+      - ${CI_IMPORT_WORK_DIR:-./import-work}:/var/lib/ci-import
+    environment:
+      CI_ROLE: worker
+      DATABASE_HOST: database
+      OBJECT_STORE_URL: http://object-store:9000
+      CI_IMPORT_SCRATCH_DIR: ${CI_IMPORT_SCRATCH_DIR:-/var/lib/ci-import/scratch}
+      SENTRY_DSN: ${SENTRY_DSN_API:-}
+      SENTRY_ENV: ${SENTRY_ENV:-}
+    networks:
+      - ci
     depends_on:
       migrate-database:
         condition: service_completed_successfully
@@ -51,6 +100,7 @@ services:
   hbpe-service:
     environment:
       DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+      API_URL: http://api:3030
       API_JWT_SECRET: ${AUTH_TOKEN_SECRET}
     devices:
       - /dev/kfd
@@ -65,21 +115,20 @@ services:
     ports:
       - 9000:9000
 
-  orchestrator:
-    environment:
-      DATABASE_PASSWORD: ${ORCHESTRATOR_DATABASE_PASSWORD}
-      DYNAMIC_CONFIG_FILE_PATH: /etc/temporal/config/dynamicconfig/local.yaml
-    volumes:
-      - ./infrastructure/orchestrator/dynamicconfig.yaml:/etc/temporal/config/dynamicconfig/local.yaml:ro
-
   summary-service:
     # Pass the shared LLM config from .env explicitly (not via env_file) so
     # host-oriented vars like DATABASE_HOST=localhost don't leak into the container.
     environment:
       DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+      # Function-run completion callbacks POST to the api service; the JWT
+      # secret must match AUTH_JWT_AUTHTOKENSECRET so the callback passes auth.
+      API_URL: http://api:3030
+      API_JWT_SECRET: ${AUTH_TOKEN_SECRET}
       LLM_API_BASE: ${LLM_API_BASE:-http://host.docker.internal:11434/v1}
       LLM_API_KEY: ${LLM_API_KEY:-ollama}
-      LLM_DEFAULT_CHAT_MODEL: ${LLM_DEFAULT_CHAT_MODEL:-gemma4:latest}
+      # Unset by default: the summary service uses the Hub-injected model, or
+      # discovers a served model from LLM_API_BASE/models at startup.
+      LLM_DEFAULT_CHAT_MODEL: ${LLM_DEFAULT_CHAT_MODEL:-}
       SUMMARY_OUTPUT_MODE: ${SUMMARY_OUTPUT_MODE:-native}
       SUMMARY_OUTPUT_RETRIES: ${SUMMARY_OUTPUT_RETRIES:-3}
 
@@ -108,11 +157,9 @@ services:
     environment:
       ADMIN_PASSWORD: ${DATABASE_ADMIN_PASSWORD}
       COMPANION_PASSWORD: ${DATABASE_PASSWORD}
-      ORCHESTRATOR_PASSWORD: ${ORCHESTRATOR_DATABASE_PASSWORD}
-
-  setup-orchestrator:
-    environment:
-      DATABASE_PASSWORD: ${ORCHESTRATOR_DATABASE_PASSWORD}
+      # Unset means "skip the replication role", which leaves powersync unable to
+      # authenticate. See infrastructure/powersync/README.md.
+      POWERSYNC_PASSWORD: ${POWERSYNC_DATABASE_PASSWORD:-}
 
 volumes:
   db-data:

@@ -18,8 +18,10 @@ type ResourceType =
   | 'provider-key'
   | 'question'
   | 'saved-search'
+  | 'schedule-candidate'
   | 'summary'
   | 'tag'
+  | 'task'
   | 'thread'
   | 'user';
 

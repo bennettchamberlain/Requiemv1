@@ -75,6 +75,10 @@ export interface GeocodeOutcome {
   lowConfidence?: boolean;
   normalizedAddress?: string | null;
   locationType?: string | null;
+  /** Provider's stable place id — the strongest place-dedupe key. */
+  placeId?: string | null;
+  /** Provider address components ({address_components: [...]}) for hierarchy. */
+  components?: Record<string, unknown> | null;
 }
 
 /** Outcome of a reverse-geocode attempt (coords -> place name). */
@@ -87,6 +91,10 @@ export interface ReverseGeocodeOutcome {
   cached: boolean;
   /** Whether a retry is worthwhile (transient provider failure). */
   retryable: boolean;
+  /** Provider's stable place id — the strongest place-dedupe key. */
+  placeId?: string | null;
+  /** Provider address components ({address_components: [...]}) for hierarchy. */
+  components?: Record<string, unknown> | null;
 }
 
 /** Options controlling a single {@link GeocodeService.geocode} call. */
@@ -131,6 +139,36 @@ export class GeocodeService {
 
   static hashQuery(raw: string): string {
     return createHash('sha256').update(GeocodeService.canonicalize(raw)).digest('hex');
+  }
+
+  /**
+   * Cache key for a REVERSE lookup: the coordinate pair rounded to 4 decimals
+   * (~11 m, so nearby pins share a cached label) under a `reverse:` namespace
+   * that cannot collide with a forward address hash.
+   *
+   * Extracted from {@link reverseGeocode} so that a READER of those rows —
+   * `promote.place_position` reads them by primary key for the address
+   * components `enrich.position_reverse` already paid for — computes the same
+   * key rather than re-deriving it. A second copy of this expression is a
+   * silent cache miss on the day one of them changes, and a silent cache miss
+   * reads as "this place has no hierarchy", not as a bug.
+   */
+  static reverseCacheKey(lat: number, lng: number): string {
+    return `reverse:${lat.toFixed(4)},${lng.toFixed(4)}`;
+  }
+
+  /**
+   * `ci.geocode_cache.query_hash` for a reverse lookup.
+   *
+   * Hashes the structured key DIRECTLY — do NOT route it through
+   * {@link hashQuery}, whose `canonicalize()` strips '-', '.' and ',' (it is
+   * built for free-text addresses). That would collapse all four coordinate
+   * quadrants into one cache row (37.42,-122.08 vs -37.42,122.08 vs ...), so
+   * the first quadrant to resolve poisons the others with a wrong-hemisphere
+   * place name.
+   */
+  static hashReverseQuery(lat: number, lng: number): string {
+    return createHash('sha256').update(GeocodeService.reverseCacheKey(lat, lng)).digest('hex');
   }
 
   /**
@@ -227,6 +265,8 @@ export class GeocodeService {
         lowConfidence: confidence <= LOW_CONFIDENCE_THRESHOLD,
         normalizedAddress: result.normalizedAddress ?? null,
         locationType: result.locationType ?? null,
+        placeId: result.placeId ?? null,
+        components: result.components ?? null,
       };
     }
 
@@ -257,13 +297,10 @@ export class GeocodeService {
       return { status: 'INVALID_REQUEST', placeName: null, cached: false, retryable: false };
     }
 
-    const cacheKey = `reverse:${lat.toFixed(4)},${lng.toFixed(4)}`;
-    // Hash the structured key DIRECTLY — do NOT route it through hashQuery, whose
-    // canonicalize() strips '-', '.' and ',' (it's built for free-text addresses).
-    // That would collapse all four coordinate quadrants into one cache row
-    // (37.42,-122.08 vs -37.42,122.08 vs ...), so the first quadrant to resolve
-    // poisons the others with a wrong-hemisphere place name.
-    const queryHash = createHash('sha256').update(cacheKey).digest('hex');
+    // Both from the statics above, so the writer here and the readers of these
+    // rows (`promote.place_position`) can never disagree about the key.
+    const cacheKey = GeocodeService.reverseCacheKey(lat, lng);
+    const queryHash = GeocodeService.hashReverseQuery(lat, lng);
 
     // --- Cache check -------------------------------------------------------
     if (!options.bustCache) {
@@ -276,6 +313,8 @@ export class GeocodeService {
           placeName: cached.status === 'OK' ? (cached.normalizedAddress ?? null) : null,
           cached: true,
           retryable: false,
+          placeId: cached.placeId ?? null,
+          components: cached.components ?? null,
         };
       }
     }
@@ -303,7 +342,14 @@ export class GeocodeService {
     await this.writeCache(cacheKey, queryHash, result);
 
     if (result.status === 'OK' && result.normalizedAddress) {
-      return { status: 'OK', placeName: result.normalizedAddress, cached: false, retryable: false };
+      return {
+        status: 'OK',
+        placeName: result.normalizedAddress,
+        cached: false,
+        retryable: false,
+        placeId: result.placeId ?? null,
+        components: result.components ?? null,
+      };
     }
 
     // Negative result (ZERO_RESULTS / REQUEST_DENIED / INVALID_REQUEST) — cached
@@ -324,6 +370,8 @@ export class GeocodeService {
         lowConfidence: confidence <= LOW_CONFIDENCE_THRESHOLD,
         normalizedAddress: row.normalizedAddress,
         locationType: row.locationType,
+        placeId: row.placeId ?? null,
+        components: row.components ?? null,
       };
     }
 

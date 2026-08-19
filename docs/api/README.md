@@ -4,7 +4,7 @@
 
 CI-Server is the **memory brain** of the Companion Intelligence appliance — a personal database, RAG/search engine, knowledge graph, and behavioral-prediction engine. This directory documents every way to talk to it.
 
-It is a single **NestJS 10** process (default `0.0.0.0:3030`) backed by PostgreSQL 18 + pgvector + TimescaleDB + PostGIS (see [Database.md](../architecture/Database.md)), Ollama (local LLM/embeddings), PGBoss (jobs), and MinIO (object store). All clients — the React/Vite web app, CI-Import-Tools, CI-Connect, mobile App Intents, and MCP agents (CI-Hermes, CI-OpenClaw) — reach it through the surfaces below.
+It is a single **NestJS 10** process (default `0.0.0.0:3030`) backed by PostgreSQL 18 + pgvector + TimescaleDB + PostGIS (see [Database.md](../architecture/Database.md)), Ollama (local LLM/embeddings), PGBoss (jobs), and MinIO (object store). All clients — the React/Vite web app, CI-Connect, mobile App Intents, and MCP agents (CI-Hermes, CI-OpenClaw) — reach it through the surfaces below. (The importer is CI-Server's own native import domain, `backend/apps/api/src/domains/import/`, running in-process — not a separate external client — ported from the now-retired CI-Import-Tools.)
 
 ## The three surfaces
 
@@ -20,13 +20,13 @@ Cross-cutting concerns — **authentication (session cookies / API keys / OIDC),
 
 1. **No server-side `/api` prefix.** Controllers mount at bare paths (`/graph`, `/v1/events`). Browsers call same-origin `/api/*`; the fronting proxy (Vite dev server / Caddy / Traefik) **strips `/api`** before the request reaches Nest. A raw API client (or the importer) calls the bare path. *(A few controllers — `api/maintenance`, `api/intents` — hardcode `api/` into their own path so their public URL survives the rewrite.)*
 
-2. **Three credentials, one guard.** Most routes accept **either** an access-token `Authorization: Bearer` JWT (the web app), an `x-api-key` header (programmatic clients), **or** a Portal OIDC bearer (migration path) — via `JwtOrApiKeyAuthGuard`. `userId` flows through an AsyncLocalStorage context and scopes every query. There is no global auth guard and no `@Public` decorator — a route is public simply by declaring no auth guard (`/health`, the login endpoints, `/_internal/features/global`).
+2. **Three credentials, one guard.** Most routes accept **either** an access-token `Authorization: Bearer` JWT (the web app), an API key as `x-api-key` or `Authorization: Bearer <key>` (programmatic clients), **or** a Portal OIDC bearer (migration path) — via `JwtOrApiKeyAuthGuard`. `userId` flows through an AsyncLocalStorage context and scopes every query. There is no global auth guard and no `@Public` decorator — a route is public simply by declaring no auth guard (`/health`, the login endpoints, `/_internal/features/global`).
 
 3. **Bulk ingest dedups on the provenance triple `(source_type, source_system, source_id)`.** Every high-volume write path (`createEvents`, `createCommunications`, `createContents`, `createInventoryItems`, `createBrowserActivities`, `/v1/events`) is set-based and idempotent on this triple — the importer can re-push the same records without creating duplicates. See [graphql.md §4.7](graphql.md#47-bulk-ingest-mutations-the-importer-surface--detailed).
 
 4. **Bulk load defers indexing.** The bulk paths pass `emitCreated:false` — they skip the per-row event fan-out, so search embedding is **deferred** to `POST /api/maintenance/search-index/backfill`. An import that pushes data but never runs the maintenance chain will have rows that are stored but not yet searchable.
 
-5. **The importer's full flow** (CI-Import-Tools) is: push records via the GraphQL bulk mutations → upload media via `POST /files/upload` → sync the graph via `bulkIngestGraph` + `bulkIngestItemRelationships` → run the enrichment chain via `POST /api/maintenance/orchestrate` (or the per-leg fallback) → poll `GET /api/maintenance/search-index/embedded-count` for the embed-drain progress. See [rest.md — "What the importer drives"](rest.md#what-the-importer-ci-import-tools-drives-during-a-run).
+5. **The importer's full flow** is: push records via the GraphQL bulk mutations → upload media via `POST /files/upload` → sync the graph via `bulkIngestGraph` + `bulkIngestItemRelationships` → run the enrichment chain via `POST /api/maintenance/orchestrate` (or the per-leg fallback) → poll `GET /api/maintenance/search-index/embedded-count` for the embed-drain progress. See [rest.md — "What the importer drives"](rest.md#what-the-importer-drives-during-a-run).
 
 ## Quick start
 

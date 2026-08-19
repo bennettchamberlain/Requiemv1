@@ -77,9 +77,10 @@ function decodeGlobalId(globalId: string): string {
   }
 }
 
-export function useActionListService(limit: number = 5) {
+export function useActionListService(limit: number = 5, options?: { skip?: boolean }) {
   const { data, loading, error, refetch } = useQuery<FeedActionsQueryResult>(GET_FEED_ACTIONS, {
     variables: { limit },
+    skip: options?.skip === true,
   });
 
   const [markAsSeen] = useMutation(MARK_ACTION_AS_SEEN);
@@ -115,7 +116,9 @@ export function useActionListService(limit: number = 5) {
   return [
     {
       data: actions,
-      loading,
+      // Only block the feed before the first payload; background refetches must
+      // not swap the whole page back to a spinner.
+      loading: loading && data === undefined,
       error,
     },
     {

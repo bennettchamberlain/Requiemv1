@@ -13,6 +13,7 @@ export const FILTER_PARAMS = [
   'tags',
   'from',
   'to',
+  'when',
   'sortBy',
   'sortOrder',
   'connectors',

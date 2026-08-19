@@ -3,10 +3,10 @@ import type { DataSource } from 'typeorm';
 import { IngestStatusService } from '../IngestStatusService';
 
 describe('IngestStatusService.snapshot', () => {
-  it('assembles table counts, per-type index tallies, and queue depth from the four queries', async () => {
+  it('assembles table counts, per-type index tallies, queue depth, and coverage', async () => {
     const dataSource = {
       query: jest.fn(async (sql: string) => {
-        if (/FROM ci\.communications/.test(sql)) {
+        if (/AS communications/.test(sql)) {
           return [
             {
               communications: '10',
@@ -27,7 +27,19 @@ describe('IngestStatusService.snapshot', () => {
           return [{ entity_type: 'event', count: '2' }];
         }
 
-        // pgboss queue states
+        if (/comms_linked/.test(sql)) {
+          return [
+            {
+              comms_linked: '4',
+              events_linked: '5',
+              events_geocoded: '6',
+              positions_named: '0',
+              inv_coords: '8',
+              inv_placed: '1',
+            },
+          ];
+        }
+
         return [
           { state: 'created', count: '5' },
           { state: 'failed', count: '1' },
@@ -35,7 +47,7 @@ describe('IngestStatusService.snapshot', () => {
       }),
     } as unknown as DataSource;
 
-    const snapshot = await new IngestStatusService(dataSource).snapshot();
+    const snapshot = await new IngestStatusService(dataSource).snapshot({ userId: 'user-1', scope: 'user' });
 
     expect(snapshot.tables).toEqual({
       communications: 10,
@@ -48,7 +60,8 @@ describe('IngestStatusService.snapshot', () => {
     expect(snapshot.searchIndex.embeddingsByType).toEqual({ communication: 7 });
     expect(snapshot.searchIndex.skipsByType).toEqual({ event: 2 });
     expect(snapshot.searchIndex.queue).toEqual({ created: 5, active: 0, failed: 1 });
-    expect(new Date(snapshot.at).getTime()).not.toBeNaN();
-    expect((dataSource.query as jest.Mock).mock.calls).toHaveLength(4);
+    expect(snapshot.coverage.geocoded.positionsAddressed).toEqual({ rows: 60, matched: 0, pct: 0 });
+    expect(snapshot.coverage.geocoded.inventoryPlaced.pct).toBeCloseTo(1 / 8);
+    expect(snapshot.coverage.embedded.communication.pctDecided).toBeCloseTo(7 / 10);
   });
 });

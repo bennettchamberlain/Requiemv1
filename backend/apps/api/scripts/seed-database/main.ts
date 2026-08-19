@@ -1,20 +1,11 @@
 import path from 'path';
 
-import { Module } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
 import { MultiBar, Presets } from 'cli-progress';
 
 import { LoggerService } from '@ci/common/logging';
-import { AgentModule } from '@ci/domains/agent';
-import { EtlModule } from '@ci/domains/etl';
-import { EventService, LocalEventService } from '@ci/domains/events';
 import { FileService } from '@ci/domains/files';
-import { GraphQLModule } from '@ci/domains/graphql';
-import { LLMModule, OllamaService } from '@ci/domains/llm';
-import { McpModule } from '@ci/domains/mcp';
-import { ToolsModule } from '@ci/domains/tools';
 
-import { App } from '../../src/application';
+import { createAdminTestingModule } from '../support/admin-testing-module';
 
 import * as actionsData from './data/actions';
 import * as communicationsData from './data/communications';
@@ -42,58 +33,21 @@ import { seedNotes } from './seed-notes';
 import { seedPeople } from './seed-people';
 import { seedPlaces } from './seed-places';
 import { seedRelationships } from './seed-relationships';
+import { seedSavedSearches } from './seed-saved-searches';
 import { seedSummaries } from './seed-summaries';
 import { seedThreads } from './seed-threads';
 import { seedUsers } from './seed-users';
 
 const logger = new LoggerService();
 
-@Module({
-  providers: [{ provide: OllamaService, useValue: {} }],
-  exports: [OllamaService],
-})
-class SeedLLMModule {}
-
 (async function () {
   const dataDir = path.resolve(__dirname, '..', 'seed-database');
 
-  const createFilteredLogger = () => {
-    const logger = new LoggerService();
-
-    logger.error = () => {};
-
-    logger.warn = () => {};
-
-    logger.log = () => {};
-
-    logger.debug = () => {};
-
-    return logger;
-  };
-
-  const module = await Test.createTestingModule({
-    imports: [App],
-  })
-    .overrideProvider(LoggerService)
-    .useFactory({
-      factory: createFilteredLogger,
-    })
-    .overrideProvider(EventService)
-    .useClass(LocalEventService)
+  const module = await createAdminTestingModule()
+    // Seed data references files by id without uploading any bytes, so nothing
+    // here needs object storage.
     .overrideProvider(FileService)
     .useValue({})
-    .overrideModule(AgentModule)
-    .useModule(class {})
-    .overrideModule(EtlModule)
-    .useModule(class {})
-    .overrideModule(GraphQLModule)
-    .useModule(class {})
-    .overrideModule(LLMModule)
-    .useModule(SeedLLMModule)
-    .overrideModule(McpModule)
-    .useModule(class {})
-    .overrideModule(ToolsModule)
-    .useModule(class {})
     .compile();
 
   await module.init();
@@ -169,6 +123,7 @@ class SeedLLMModule {}
 
   try {
     await seedUsers(module, multibar);
+    await seedSavedSearches(module, multibar);
     await seedPeople(module, multibar);
     await seedAnswers(module, multibar, path.resolve(dataDir, 'data', 'answers.csv'));
     await seedThreads(module, multibar);

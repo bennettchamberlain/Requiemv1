@@ -16,7 +16,7 @@ import {
 } from '@nestjs/common';
 import { z } from 'zod';
 
-import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
+import { Context, type RequestContext, type UserServiceContext, toServiceContext } from '@ci/common/context';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
@@ -25,6 +25,7 @@ import { BaseOAuth2Client } from '@ci/domains/connections/clients/BaseOAuth2Clie
 import { EventService } from '@ci/domains/events';
 
 import { ClientFactory } from '../clients';
+import type { Connection } from '../entities/ConnectionEntity';
 import { CloudOAuthProxyService } from '../services/CloudOAuthProxyService';
 import { ConnectionService } from '../services/ConnectionService';
 import type { CompleteConnectionDto, CreateConnectionDto, UpdateConnectionDto } from '../types';
@@ -83,6 +84,11 @@ interface CompleteOpenIDDto {
   params: Record<string, string>;
 }
 
+// Steam's fixed OpenID 2.0 OP endpoint. The value in the callback body is
+// attacker-controlled and must never be used as the verification target; we
+// always verify against this constant (mirrors SteamClient.authorizationEndpoint).
+const STEAM_OPENID_ENDPOINT = 'https://steamcommunity.com/openid/login';
+
 @Controller('connections')
 export class ConnectionsController {
   constructor(
@@ -105,7 +111,6 @@ export class ConnectionsController {
 
     const connection = await this.connectionService.create(serviceContext, input);
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { accessToken, refreshToken, ...returnedConnection } = connection;
 
     return returnedConnection;
@@ -119,7 +124,6 @@ export class ConnectionsController {
     const connections = await this.connectionService.findAll(serviceContext);
 
     return connections.map((connection) => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { accessToken, refreshToken, ...returnedConnection } = connection;
 
       return returnedConnection;
@@ -137,7 +141,6 @@ export class ConnectionsController {
       throw new NotFoundException();
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { accessToken, refreshToken, ...returnedConnection } = connection;
 
     return returnedConnection;
@@ -158,7 +161,6 @@ export class ConnectionsController {
       throw new NotFoundException();
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { accessToken, refreshToken, ...returnedConnection } = connection;
 
     return returnedConnection;
@@ -275,6 +277,11 @@ export class ConnectionsController {
         externalId: body.userProviderId,
       });
 
+      const stored = await this.connectionService.findById(serviceContext, connectionId);
+      if (stored) {
+        await this.persistAccountLabel(serviceContext, stored);
+      }
+
       return;
     }
 
@@ -330,6 +337,11 @@ export class ConnectionsController {
     await this.update(context, connectionId, {
       externalId,
     });
+
+    const labeled = await this.connectionService.findById(serviceContext, connectionId);
+    if (labeled) {
+      await this.persistAccountLabel(serviceContext, labeled);
+    }
   }
 
   @UseGuards(JwtOrApiKeyAuthGuard)
@@ -374,6 +386,16 @@ export class ConnectionsController {
       throw new UnauthorizedException('Invalid OpenID claimed_id');
     }
 
+    // The op_endpoint arrives in the callback body and is fully attacker-
+    // controlled. Verifying against it is a blind SSRF (fetch any URL) AND an
+    // identity bypass (attacker's server answers "is_valid:true"). Steam's OP
+    // endpoint is a fixed, well-known constant — always verify against that and
+    // reject any callback that claims a different one.
+    if (opEndpoint !== STEAM_OPENID_ENDPOINT) {
+      this.logger.log('Untrusted OpenID op_endpoint', { opEndpoint });
+      throw new UnauthorizedException('Untrusted OpenID op_endpoint');
+    }
+
     // --- Direct Verification (Section 11.4.2) ---
     // Send all params back to the OP with openid.mode changed to check_authentication
     const verifyParams = new URLSearchParams();
@@ -386,7 +408,7 @@ export class ConnectionsController {
       }
     }
 
-    const verifyResponse = await fetch(opEndpoint, {
+    const verifyResponse = await fetch(STEAM_OPENID_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: verifyParams.toString(),
@@ -428,5 +450,27 @@ export class ConnectionsController {
       needsReauth: false,
       externalId: steamId,
     });
+  }
+
+  private async persistAccountLabel(context: UserServiceContext, connection: Connection): Promise<void> {
+    if (connection.accountLabel) {
+      return;
+    }
+
+    try {
+      const label = await this.clientFactory
+        .getClientByProviderId(connection.providerId)
+        .getAccountLabel(connection);
+      if (!label) {
+        return;
+      }
+
+      await this.connectionService.update(context, connection.id, { accountLabel: label });
+    } catch (error) {
+      this.logger.warn('Could not record account label for connection', {
+        connectionId: connection.id,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
   }
 }

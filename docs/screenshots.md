@@ -23,10 +23,17 @@ are produced manually (not in CI) and committed under `docs/images/`.
    specifically demonstrating dark mode) and export as PNG.
 
 4. Save to `docs/images/` using the file names in the table below, then reference
-   the image from the relevant doc, e.g.:
+   the image from the relevant doc with a path relative to that doc — e.g. from
+   the root `README.md`:
 
    ```markdown
    ![Memory graph view](docs/images/memory-graph.png)
+   ```
+
+   …or from another file under `docs/`:
+
+   ```markdown
+   ![Memory graph view](images/memory-graph.png)
    ```
 
 ## Conventions
@@ -52,8 +59,14 @@ screenshot exists in `docs/images/` and is wired into a doc.
 | Memory graph | `/memory` | `memory-graph.png` | 3D force-graph view of entities & relationships |
 | Search | `/search` | `search.png` | Query box with ranked results |
 | Chat / Ask | `/chat` | `chat.png` | "Ask my memory" conversation surface |
+| Today | `/today` | `today.png` | Daily brief surface |
 | Feed | `/feed` | `feed.png` | Activity / import feed with progress |
 | Insights | `/insights` | `insights.png` | HBPE-derived insights / predictions |
+| Forecast | `/forecast` | `forecast.png` | HBPE forecast strip / week view |
+| Plan | `/plan` | `plan.png` | Task list (planning domain) |
+| Schedule | `/schedule` | `schedule.png` | Schedule surface with event candidates |
+| Sources | `/sources` | `sources.png` | Data sources overview |
+| Import | `/import` | `import.png` | Native import run kickoff + progress |
 | Connections | `/connections` | `connections.png` | Connected providers (Google, Microsoft, Facebook, Spotify) |
 | Connect | `/connect` | `connect.png` | Add-a-connection / OAuth start |
 | Files | `/files` | `files.png` | Uploaded files and document pipeline |

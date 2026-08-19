@@ -3,6 +3,7 @@ import GraphQLJSONObject from 'graphql-type-json';
 
 import { type Event } from '@ci/domains/memory';
 
+import { ContentConnection } from './ContentConnection';
 import { EntityTagType } from './EntityTagType';
 import { GlobalUID } from './GlobalUID';
 import { Node } from './Node';
@@ -65,6 +66,12 @@ export class EventType implements Node, Taggable {
   @Field(() => ID, { nullable: true })
   sourceId!: string | null;
 
+  @Field(() => String, {
+    nullable: true,
+    description: "'pending' when the local row has been changed here but not pushed back to `sourceSystem`.",
+  })
+  externalSyncStatus!: string | null;
+
   @Field(() => Float, { nullable: true })
   confidenceScore!: number;
 
@@ -80,8 +87,31 @@ export class EventType implements Node, Taggable {
   @Field(() => String, { nullable: true })
   status!: string;
 
+  @Field(() => ID, {
+    nullable: true,
+    description: 'Parent event for sub-events / follow-ups. Children: filter by this id.',
+  })
+  parentEventId!: string | null;
+
+  @Field(() => ID, {
+    nullable: true,
+    description: 'Task this planned block schedules (`event_type = planned_block`).',
+  })
+  taskId!: string | null;
+
+  @Field(() => Int, {
+    nullable: true,
+    description: 'Intended minutes for a planned block. Distinct from generated durationMinutes.',
+  })
+  plannedMinutes!: number | null;
+
   @Field(() => [EntityTagType])
   tags!: EntityTagType[];
+
+  @Field(() => ContentConnection, {
+    description: 'Content rows linked to this event via ci.content.event_id.',
+  })
+  contents?: ContentConnection;
 
   static toType(event: Event): EventType {
     return {
@@ -102,12 +132,16 @@ export class EventType implements Node, Taggable {
       organizerEntityId: event.organizerEntityId,
       sourceType: event.sourceType,
       sourceSystem: event.sourceSystem,
+      externalSyncStatus: event.externalSyncStatus,
       sourceId: event.sourceId,
       confidenceScore: event.confidenceScore,
       isRecurring: event.isRecurring,
       isAllDay: event.isAllDay,
       metadata: event.metadata,
       status: event.status,
+      parentEventId: event.parentEventId ? GlobalUID.encode('event', event.parentEventId) : null,
+      taskId: event.taskId ? GlobalUID.encode('task', event.taskId) : null,
+      plannedMinutes: event.plannedMinutes,
       tags: [], // Hydrated by resolver
     };
   }

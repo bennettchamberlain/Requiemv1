@@ -1,0 +1,7 @@
+{
+  "pages": [
+    { "StartDateTime": "2024-01-15T08:04:00Z", "EndDateTime": "2024-01-15T08:52:10Z", "AppName": "Microsoft Edge", "Publisher": "Microsoft Corporation", "DeviceName": "DESKTOP-DUMMY01" },
+    { "StartDateTime": "2024-01-15T09:30:00Z", "EndDateTime": "2024-01-15T10:15:42Z", "AppName": "Microsoft Word", "Publisher": "Microsoft Corporation", "DeviceName": "DESKTOP-DUMMY01" },
+    { "EndDateTime": "/Date(1705600000000)/", "AppName": "Xbox App", "Publisher": "Microsoft Corporation", "DeviceName": "DESKTOP-DUMMY02" }
+  ]
+}

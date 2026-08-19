@@ -1,0 +1,16 @@
+[
+  {
+    "full_name": "companionintelligence/CI-Server",
+    "html_url": "https://github.com/companionintelligence/CI-Server",
+    "description": "The memory brain appliance core.",
+    "language": "TypeScript",
+    "starred_at": "2024-08-12T17:55:48Z"
+  },
+  {
+    "full_name": "ggml-org/llama.cpp",
+    "html_url": "https://github.com/ggml-org/llama.cpp",
+    "description": "LLM inference in C/C++",
+    "language": "C++",
+    "starred_at": "2024-09-01T08:30:00Z"
+  }
+]

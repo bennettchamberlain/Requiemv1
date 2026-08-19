@@ -1,3 +1,5 @@
+import type { ApiKeyCapability } from '@ci/common/decorators';
+
 export interface LoginDto {
   username: string;
   password: string;
@@ -12,6 +14,14 @@ export interface SignupDto {
 
 export interface JwtPayload {
   sub: string;
+  /**
+   * Session id (the SessionEntity row) the token belongs to. Present on
+   * session tokens minted since CSRF principal-binding; access tokens and
+   * legacy session tokens carry only `sub`. Optional so pre-upgrade cookies
+   * keep verifying — a sid-less session token resolves to the anonymous CSRF
+   * scope until its first rotation embeds the claim.
+   */
+  sid?: string;
 }
 
 export interface SignedRequest extends Request {
@@ -28,7 +38,24 @@ export interface UpdateSignupCodeDto {
 }
 
 export interface RotationResult {
+  /** New session token, or `null` on a grace-period match (keep the cookie). */
   sessionToken: string | null;
+  /**
+   * Id of the session row the refresh matched — returned on BOTH branches, so
+   * the refresh response can bind (or upgrade) the CSRF cookie to its session
+   * even when a grace match sets no new session cookie.
+   */
+  sessionId: string;
+}
+
+/**
+ * A freshly-issued session: the signed cookie value plus the id of the row it
+ * belongs to, so identity-boundary callers (login / signup / OIDC) can mint a
+ * CSRF token bound to that very session.
+ */
+export interface IssuedSession {
+  sessionToken: string;
+  sessionId: string;
 }
 
 /**
@@ -58,12 +85,14 @@ export const CONNECT_KEY_NAME_PREFIX = 'app:';
 export interface CreateApiKeyDto {
   name: string;
   scopes?: string[];
+  capability?: ApiKeyCapability;
   expires_at?: string;
 }
 
 export interface UpdateApiKeyDto {
   name?: string;
   scopes?: string[];
+  capability?: ApiKeyCapability;
 }
 
 export interface ApiKeyResponse {
@@ -71,6 +100,7 @@ export interface ApiKeyResponse {
   name: string;
   prefix: string;
   scopes: string[];
+  capability: ApiKeyCapability;
   expires_at: Date | null;
   last_used_at: Date | null;
   created_at: Date;
