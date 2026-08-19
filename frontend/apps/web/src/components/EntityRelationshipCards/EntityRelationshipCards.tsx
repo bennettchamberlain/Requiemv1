@@ -251,6 +251,10 @@ export function getEntityDetailPath(entityType: string, entityId: string): strin
       return `/concepts/${entityId}`;
     case 'note':
       return `/notes/${entityId}`;
+    case 'file':
+      // Files have no standalone page; their viewer is a route on the Content
+      // grid, which is still a real address the drawer can hand out.
+      return `/memory/content/${entityId}`;
     default:
       return null;
   }
