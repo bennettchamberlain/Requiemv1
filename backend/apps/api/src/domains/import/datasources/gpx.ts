@@ -202,7 +202,26 @@ export class GPXFileImporter implements FileImporter {
       },
       metadata: {
         Source: 'GPX',
-        ...(trackName && { Name: trackName }),
+        // `<trk><name>` names the TRACK, not any point on it. It rides along as
+        // `Track Name` — provenance, readable on the row — and deliberately NOT
+        // as `Name`, which is the key `toPositionInput` reads as the place name
+        // for the fix (push/inputs.ts).
+        //
+        // Stamped into `Name`, one 10 km run with `<name>Morning Run</name>`
+        // gave ~1,000 trackpoints the identical place name; `promote.place_position`
+        // then resolves the route into ~90 distinct 0.001-degree cells and mints
+        // up to 90 Location entities all called "Morning Run" — one venue per
+        // 100 m of pavement, none of them a place.
+        //
+        // Leaving `Name` unset does not leave the slot empty: `titleFor` falls
+        // back to `basename(row.filename)`, so a nameless trkpt titles as
+        // 'track.gpx', which `toPositionInput` already rejects as the record's
+        // own staged filename. The fix keeps its coordinates and a NULL name,
+        // which is what makes it a reverse-geocode candidate.
+        //
+        // Waypoints are untouched — `<wpt><name>` names a POINT, and
+        // createWaypointItem still reads it as `Name`.
+        ...(trackName && { 'Track Name': trackName }),
         ...(activityType && { 'Activity Type': activityType }),
       },
     };
