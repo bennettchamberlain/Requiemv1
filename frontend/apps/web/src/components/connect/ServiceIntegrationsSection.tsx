@@ -173,6 +173,15 @@ export const SERVICE_PROVIDERS: ServiceProviderConfig[] = [
     ],
   },
   {
+    rawId: '019e2b55-a4c1-7f02-b8d4-0c3e5a8f6b07',
+    logo: '/branding/reddit/logo.svg',
+    name: 'Reddit',
+    tracks: [
+      { icon: MessageSquare, label: 'Posts & comments' },
+      { icon: Bookmark, label: 'Saved' },
+    ],
+  },
+  {
     rawId: 'discord',
     logo: '/branding/discord/logo.svg',
     name: 'Discord',
@@ -253,16 +262,6 @@ export const SERVICE_PROVIDERS: ServiceProviderConfig[] = [
     tracks: [
       { icon: Video, label: 'Watch history' },
       { icon: Users, label: 'Follows' },
-    ],
-    disabled: true,
-  },
-  {
-    rawId: 'reddit',
-    logo: '/branding/reddit/logo.svg',
-    name: 'Reddit',
-    tracks: [
-      { icon: MessageSquare, label: 'Posts & comments' },
-      { icon: Bookmark, label: 'Saved' },
     ],
     disabled: true,
   },
