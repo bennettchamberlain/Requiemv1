@@ -41,11 +41,7 @@ import { InboxScanService } from './services/InboxScanService';
 import { PlannedBlockService } from './services/PlannedBlockService';
 import { PlanningTimeService } from './services/PlanningTimeService';
 import { TaskService } from './services/TaskService';
-import {
-  EventNowService,
-  TodoProcessService,
-  VerifyDoneService,
-} from './services/TodoProcessService';
+import { EventNowService, TodoProcessService, VerifyDoneService } from './services/TodoProcessService';
 import { TodoScanService } from './services/TodoScanService';
 
 /**
@@ -94,5 +90,12 @@ export { TASK_STATUSES };
 
 export { isValidTimezone, localDateInTZ, todayInTZ, zonedWallTimeToUTC } from '@ci/common/time/zoned';
 
-export type { Task, TaskStatus, TaskDependency, TaskPendingChange, TaskPendingChangeKind, TaskPendingChangeStatus };
+export type {
+  Task,
+  TaskStatus,
+  TaskDependency,
+  TaskPendingChange,
+  TaskPendingChangeKind,
+  TaskPendingChangeStatus,
+};
 export type { CreateTaskDto, UpdateTaskDto, FindTasksOptions, CreateTaskPendingChangeDto } from './types';

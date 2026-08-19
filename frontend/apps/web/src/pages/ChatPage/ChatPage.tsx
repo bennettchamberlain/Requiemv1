@@ -104,12 +104,10 @@ function ChatPageContent() {
 
   useEffect(() => {
     if (thread && !hasSetInitialMessages.current) {
-      const generating =
-        thread.generationStatus === 'queued' || thread.generationStatus === 'running';
+      const generating = thread.generationStatus === 'queued' || thread.generationStatus === 'running';
       const loaded = thread.messages ?? [];
       const last = loaded[loaded.length - 1];
-      const messages =
-        generating && last?.role === 'assistant' ? loaded.slice(0, -1) : loaded;
+      const messages = generating && last?.role === 'assistant' ? loaded.slice(0, -1) : loaded;
 
       setInitialMessages(messages);
       hasSetInitialMessages.current = true;

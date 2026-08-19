@@ -158,8 +158,7 @@ function AppRoutes() {
   // load. Route to `/device-connect` (Portal picker). `/server` is Advanced URL
   // entry. `/connect` is Sources and must not be used here.
   useEffect(() => {
-    const pairing =
-      location.pathname === '/device-connect' || location.pathname === '/server';
+    const pairing = location.pathname === '/device-connect' || location.pathname === '/server';
 
     if (isNativePlatform() && !getApiBaseUrl() && !pairing) {
       navigate('/device-connect', { replace: true });

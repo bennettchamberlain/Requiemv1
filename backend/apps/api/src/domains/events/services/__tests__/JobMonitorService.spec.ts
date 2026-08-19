@@ -355,9 +355,9 @@ describe('JobMonitorService.getDashboard', () => {
     const nextRun = { toISO: () => '2026-08-18T01:00:00.000Z' };
     const durableAt = new Date('2026-08-01T12:00:00.000Z');
 
-    const spy = jest.spyOn(CronRunStore, 'lastRunByName').mockResolvedValueOnce(
-      new Map([['PipelineTickCron.tick', durableAt]]),
-    );
+    const spy = jest
+      .spyOn(CronRunStore, 'lastRunByName')
+      .mockResolvedValueOnce(new Map([['PipelineTickCron.tick', durableAt]]));
 
     try {
       const cronJobs = new Map<string, unknown>([

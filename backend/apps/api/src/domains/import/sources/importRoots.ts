@@ -170,10 +170,7 @@ export async function resolveWithinRoots(requested: string, roots: string[]): Pr
  * only, no inbox at all. Only the inbox batch surface may CONSUME an inbox
  * path, and it resolves through {@link resolveWithinUserInbox} instead.
  */
-export async function resolveWithinImportRoots(
-  requested: string,
-  email: string | null,
-): Promise<string> {
+export async function resolveWithinImportRoots(requested: string, email: string | null): Promise<string> {
   const roots = configuredImportRoots();
 
   if (email != null) {

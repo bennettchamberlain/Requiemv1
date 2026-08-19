@@ -205,7 +205,12 @@ function applyEndpointValue(
   }
 
   const record = value as Record<string, unknown>;
-  const id = typeof record.entityId === 'string' ? record.entityId : typeof record.id === 'string' ? record.id : undefined;
+  const id =
+    typeof record.entityId === 'string'
+      ? record.entityId
+      : typeof record.id === 'string'
+        ? record.id
+        : undefined;
   if (id && UUID_RE.test(id)) {
     operation[idKey] ??= id;
   }

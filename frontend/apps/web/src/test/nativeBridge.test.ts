@@ -132,12 +132,16 @@ describe('nativeBridge — native uses the Capacitor plugins', () => {
   it('openExternalUrl prefers LocalHub.openUrl (system Safari) over Capacitor Browser', async () => {
     const hubOpenUrl = vi.fn(async () => {});
     const { win, browserOpen } = fakeNativeWindow();
-    (win as { Capacitor: { Plugins: Record<string, unknown> } }).Capacitor.Plugins.LocalHub = { openUrl: hubOpenUrl };
+    (win as { Capacitor: { Plugins: Record<string, unknown> } }).Capacitor.Plugins.LocalHub = {
+      openUrl: hubOpenUrl,
+    };
     setWindow(win);
 
     await openExternalUrl('https://hub.companionintelligence.com/api/auth/oauth2/authorize');
 
-    expect(hubOpenUrl).toHaveBeenCalledWith({ url: 'https://hub.companionintelligence.com/api/auth/oauth2/authorize' });
+    expect(hubOpenUrl).toHaveBeenCalledWith({
+      url: 'https://hub.companionintelligence.com/api/auth/oauth2/authorize',
+    });
     expect(browserOpen).not.toHaveBeenCalled();
   });
 

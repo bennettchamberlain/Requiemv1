@@ -47,9 +47,7 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
       .map((section) => ({
         ...section,
         items: section.items.filter((item) =>
-          [item.label, ...(item.memberNames ?? [])].some((name) =>
-            name.toLowerCase().includes(needle),
-          ),
+          [item.label, ...(item.memberNames ?? [])].some((name) => name.toLowerCase().includes(needle)),
         ),
       }))
       .filter((section) => section.items.length > 0);
@@ -155,9 +153,7 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
                         // The services this one download stands for, by name —
                         // someone scanning the grid for "Instagram" must find
                         // it on the Meta tile, not conclude it is unsupported.
-                        <span className="text-xs text-muted-foreground">
-                          {item.memberNames.join(' · ')}
-                        </span>
+                        <span className="text-xs text-muted-foreground">{item.memberNames.join(' · ')}</span>
                       )}
 
                       {item.objects.length > 0 && (

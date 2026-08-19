@@ -13,7 +13,10 @@ import {
   type BrowserActivityDeletedPayload,
 } from '@ci/domains/browser-activity/events';
 import { OnEvent } from '@ci/domains/events';
-import { browserActivitySearchDocument, browserActivityWeightedTexts } from '@ci/domains/search-ingress/searchTexts';
+import {
+  browserActivitySearchDocument,
+  browserActivityWeightedTexts,
+} from '@ci/domains/search-ingress/searchTexts';
 import { EmbeddingService } from '@ci/domains/search-ingress/services/EmbeddingService';
 import { VectorService } from '@ci/domains/search-ingress/services/VectorService';
 import { type WeightedText } from '@ci/domains/search-ingress/types';

@@ -174,8 +174,8 @@ export function InboxPanel() {
       {scan.recognitionPartial ? (
         <Alert>
           <Alert.Description>
-            Every item is listed, but some have not been identified yet — rescan to finish
-            identifying them. Importing now still works.
+            Every item is listed, but some have not been identified yet — rescan to finish identifying them.
+            Importing now still works.
           </Alert.Description>
         </Alert>
       ) : null}

@@ -64,9 +64,9 @@ describe('sectionFor', () => {
   });
 
   it('files tasks with pending confirmation ahead of date buckets', () => {
-    expect(
-      sectionFor(task({ dueAt: '2026-01-15T12:00:00Z', hasPendingChange: true }), TODAY, 'UTC'),
-    ).toBe('needs_confirmation');
+    expect(sectionFor(task({ dueAt: '2026-01-15T12:00:00Z', hasPendingChange: true }), TODAY, 'UTC')).toBe(
+      'needs_confirmation',
+    );
   });
 
   it('files a past deadline as overdue', () => {

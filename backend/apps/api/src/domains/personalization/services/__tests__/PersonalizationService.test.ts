@@ -93,7 +93,13 @@ describe('PersonalizationService.decide for planning task kinds', () => {
   it('cautious always reviews task_create / mutate / complete / event_revise', () => {
     const profile = PersonalizationService.profileForTrustMode('cautious');
 
-    for (const kind of ['task_create', 'task_mutate', 'task_complete', 'event_revise', 'schedule_accept'] as const) {
+    for (const kind of [
+      'task_create',
+      'task_mutate',
+      'task_complete',
+      'event_revise',
+      'schedule_accept',
+    ] as const) {
       expect(PersonalizationService.decide(profile, { kind, confidence: 0.99 })).toBe('review');
     }
   });
@@ -119,19 +125,13 @@ describe('PersonalizationService.decide for planning task kinds', () => {
 
     expect(PersonalizationService.decide(profile, { kind: 'task_create', confidence: 0.9 })).toBe('auto');
     expect(PersonalizationService.decide(profile, { kind: 'task_mutate', confidence: 0.8 })).toBe('review');
-    expect(PersonalizationService.decide(profile, { kind: 'task_complete', confidence: 0.85 })).toBe(
-      'auto',
-    );
+    expect(PersonalizationService.decide(profile, { kind: 'task_complete', confidence: 0.85 })).toBe('auto');
   });
 
   it('hands_off auto-accepts from 0.7 upward', () => {
     const profile = PersonalizationService.profileForTrustMode('hands_off');
 
-    expect(PersonalizationService.decide(profile, { kind: 'event_revise', confidence: 0.72 })).toBe(
-      'auto',
-    );
-    expect(PersonalizationService.decide(profile, { kind: 'task_create', confidence: 0.65 })).toBe(
-      'review',
-    );
+    expect(PersonalizationService.decide(profile, { kind: 'event_revise', confidence: 0.72 })).toBe('auto');
+    expect(PersonalizationService.decide(profile, { kind: 'task_create', confidence: 0.65 })).toBe('review');
   });
 });

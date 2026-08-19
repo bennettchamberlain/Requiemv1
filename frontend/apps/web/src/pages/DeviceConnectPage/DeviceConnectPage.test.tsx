@@ -86,7 +86,12 @@ describe('DeviceConnectPage', () => {
   });
 
   it('lists Memory Servers after Portal OIDC', async () => {
-    h.loginWithPortalOidc.mockResolvedValue({ accessToken: 'oidc-at', idToken: null, tokenType: 'Bearer', expiresIn: 3600 });
+    h.loginWithPortalOidc.mockResolvedValue({
+      accessToken: 'oidc-at',
+      idToken: null,
+      tokenType: 'Bearer',
+      expiresIn: 3600,
+    });
     h.listMemoryServers.mockResolvedValue([
       { id: 'home', name: 'Home', status: 'active', memoryUrl: 'https://memory.example.com/app' },
     ]);

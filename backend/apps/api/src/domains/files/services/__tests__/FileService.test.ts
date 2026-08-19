@@ -37,7 +37,13 @@ function makeRepo() {
 
 function makeService(repo: ReturnType<typeof makeRepo>) {
   const eventService = { send: jest.fn() };
-  const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() };
+  const logger = {
+    setContext: jest.fn(),
+    log: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+    error: jest.fn(),
+  };
 
   const service = new FileService(repo as never, eventService as never, logger as never);
 
@@ -146,11 +152,20 @@ describe('FileService.create — hash dedup', () => {
 
   it('dedups by externalId before ever computing a hash', async () => {
     const repo = makeRepo();
-    const existing = { id: 'existing-external', userId: 'owner-1', externalId: 'ext-42', bucket: null, key: null };
+    const existing = {
+      id: 'existing-external',
+      userId: 'owner-1',
+      externalId: 'ext-42',
+      bucket: null,
+      key: null,
+    };
     repo.findOne.mockResolvedValue(existing);
     const { service, s3Send } = makeService(repo);
 
-    const result = await service.create(ownerCtx, { externalId: 'ext-42', buffer: Buffer.from('irrelevant') });
+    const result = await service.create(ownerCtx, {
+      externalId: 'ext-42',
+      buffer: Buffer.from('irrelevant'),
+    });
 
     expect(result.id).toBe('existing-external');
     expect(repo.save).not.toHaveBeenCalled();

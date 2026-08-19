@@ -14,12 +14,7 @@
  * PKCE is persisted to localStorage before Safari opens because iOS often kills
  * the webview while the user is on the Portal, then cold-starts us from the callback.
  */
-import {
-  addAppUrlOpenListener,
-  closeBrowser,
-  getLaunchUrl,
-  openExternalUrl,
-} from '@ci/common';
+import { addAppUrlOpenListener, closeBrowser, getLaunchUrl, openExternalUrl } from '@ci/common';
 
 import { DEFAULT_PORTAL_URL } from './portal-client';
 
@@ -157,7 +152,10 @@ function readPersistedOidcCallbackUrl(): string | null {
   }
 }
 
-export function parsePortalOidcCallback(url: string, expectedState?: string): { code: string } | { error: Error } | null {
+export function parsePortalOidcCallback(
+  url: string,
+  expectedState?: string,
+): { code: string } | { error: Error } | null {
   if (!url.startsWith(OIDC_REDIRECT_URI)) {
     return null;
   }
@@ -218,7 +216,11 @@ export class OidcCancelledError extends Error {
   }
 }
 
-function awaitOidcCallback(expectedState: string, signal?: AbortSignal, timeoutMs = 300_000): Promise<{ code: string }> {
+function awaitOidcCallback(
+  expectedState: string,
+  signal?: AbortSignal,
+  timeoutMs = 300_000,
+): Promise<{ code: string }> {
   return new Promise((resolve, reject) => {
     let unlisten: (() => void) | undefined;
     const cleanup = () => {
@@ -299,15 +301,14 @@ type CapacitorHttpPlugin = {
 };
 
 async function tokenFetch(url: string, body: URLSearchParams): Promise<Response> {
-  const cap = (
+  const cap =
     typeof window !== 'undefined'
       ? (
           window as unknown as {
             Capacitor?: { Plugins?: { CapacitorHttp?: CapacitorHttpPlugin } };
           }
         ).Capacitor?.Plugins?.CapacitorHttp
-      : undefined
-  );
+      : undefined;
 
   if (cap?.request) {
     const result = await cap.request({

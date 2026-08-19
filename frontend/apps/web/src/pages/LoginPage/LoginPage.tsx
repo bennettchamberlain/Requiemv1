@@ -43,7 +43,9 @@ export function LoginPage() {
           {error != null && !showPasswordForm && (
             <Alert variant="destructive" className="mb-4">
               <AlertCircleIcon />
-              <Alert.Title>{error instanceof Error ? error.message : 'Sign in failed. Please try again.'}</Alert.Title>
+              <Alert.Title>
+                {error instanceof Error ? error.message : 'Sign in failed. Please try again.'}
+              </Alert.Title>
             </Alert>
           )}
           {oidcError && error == null && (

@@ -13,7 +13,10 @@ const DEVICE_ID_KEY = 'ci.native.deviceId';
 type PushPlugin = {
   requestPermissions: () => Promise<{ receive: string }>;
   register: () => Promise<void>;
-  addListener: (event: 'registration', cb: (token: { value: string }) => void) => Promise<{ remove: () => void }>;
+  addListener: (
+    event: 'registration',
+    cb: (token: { value: string }) => void,
+  ) => Promise<{ remove: () => void }>;
 };
 
 function pushPlugin(): PushPlugin | undefined {
@@ -56,25 +59,25 @@ export async function registerNativePushToken(): Promise<void> {
     return;
   }
 
-    try {
-      const permission = await push.requestPermissions();
+  try {
+    const permission = await push.requestPermissions();
 
-      if (permission.receive !== 'granted') {
-        return;
-      }
-
-      let tokenWrite: Promise<void> = Promise.resolve();
-      const handle = await push.addListener('registration', (token) => {
-        tokenWrite = upsertDeviceToken(token.value).finally(() => {
-          void handle.remove();
-        });
-      });
-
-      await push.register();
-      await tokenWrite;
-    } catch {
-      // Local notifications still work. Remote push needs Portal relay + store certs.
+    if (permission.receive !== 'granted') {
+      return;
     }
+
+    let tokenWrite: Promise<void> = Promise.resolve();
+    const handle = await push.addListener('registration', (token) => {
+      tokenWrite = upsertDeviceToken(token.value).finally(() => {
+        void handle.remove();
+      });
+    });
+
+    await push.register();
+    await tokenWrite;
+  } catch {
+    // Local notifications still work. Remote push needs Portal relay + store certs.
+  }
 }
 
 async function upsertDeviceToken(pushToken: string): Promise<void> {

@@ -120,7 +120,9 @@ function extractSessionCookie(setCookie: string | null): string | null {
   return pairs.length ? pairs.join('; ') : null;
 }
 
-function memoryUrlForDevice(device: { apps?: Array<{ slug?: string; name?: string; url?: string }> }): string | null {
+function memoryUrlForDevice(device: {
+  apps?: Array<{ slug?: string; name?: string; url?: string }>;
+}): string | null {
   const apps = device.apps ?? [];
   const memory = apps.find(
     (a) => MEMORY_SLUGS.includes(a.slug ?? '') || /memory|ci-server/i.test(a.name ?? ''),
@@ -174,10 +176,7 @@ export async function signInToPortal(
   return { token, cookie, kind: 'session' };
 }
 
-async function listMemoryWithOauthToken(
-  auth: PortalAuth,
-  portal: string,
-): Promise<MemoryServerDevice[]> {
+async function listMemoryWithOauthToken(auth: PortalAuth, portal: string): Promise<MemoryServerDevice[]> {
   const headers: Record<string, string> = {};
 
   if (auth.token) {

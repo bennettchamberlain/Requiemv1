@@ -7,10 +7,7 @@ import type { AbstractPowerSyncDatabase } from '@powersync/web';
 import { useAuth } from '@/hooks';
 
 import { GraphQLBackendConnector } from './connector';
-import {
-  bindPowerSyncDatabase,
-  measurePowerSyncSizeBytes,
-} from './session';
+import { bindPowerSyncDatabase, measurePowerSyncSizeBytes } from './session';
 import { openWebPowerSyncDatabase } from './webDatabase';
 import { POWER_SYNC_CACHE_BUDGET_BYTES, shrinkToBudget } from './workingSet';
 

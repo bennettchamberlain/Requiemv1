@@ -4,10 +4,7 @@ import { isNativePlatform } from '@ci/common';
 import { Button, Card } from '@ci/shadcn';
 import { usePowerSync } from '@powersync/react';
 
-import {
-  clearPowerSyncWorkingSet,
-  measurePowerSyncSizeBytes,
-} from '@/api/powersync/session';
+import { clearPowerSyncWorkingSet, measurePowerSyncSizeBytes } from '@/api/powersync/session';
 import {
   POWER_SYNC_CACHE_BUDGET_BYTES,
   formatCacheBudget,
@@ -55,9 +52,9 @@ export function WorkingSetSection() {
           <h3 className="text-sm font-medium">On-device working set</h3>
           <p className="text-sm text-muted-foreground">
             This phone keeps a rolling window of notes, messages, and threads
-            {isNativePlatform() ? ' in native SQLite' : ''} — currently the last {lookbackDays}{' '}
-            days, capped at {budgetLabel}. It is not a copy of the whole Memory Server.
-            Graph, events, and embeddings stay online.
+            {isNativePlatform() ? ' in native SQLite' : ''} — currently the last {lookbackDays} days, capped
+            at {budgetLabel}. It is not a copy of the whole Memory Server. Graph, events, and embeddings stay
+            online.
           </p>
           <p className="text-sm text-muted-foreground">
             Used: {usedLabel} / {budgetLabel}

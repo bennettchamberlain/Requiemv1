@@ -178,7 +178,15 @@ export class ChatTurnService {
         throw err;
       }
     } finally {
-      await this.persistTurn(serviceContext, payload, model, generated, signal.aborted, latestText, latestThink);
+      await this.persistTurn(
+        serviceContext,
+        payload,
+        model,
+        generated,
+        signal.aborted,
+        latestText,
+        latestThink,
+      );
 
       if (!failed) {
         await this.setGenerationStatus(serviceContext, payload.threadId, 'idle');
@@ -291,17 +299,20 @@ export class ChatTurnService {
     for (let i = 0; i < rest.length; i++) {
       const message = rest[i];
 
-      await this.messageService.create({ userId: payload.ownerId }, {
-        model,
-        role: message.role,
-        content: message.content,
-        canceled: aborted && i === rest.length - 1,
-        threadId: payload.threadId,
-        ...(message.tool_calls && {
-          toolCalls: message.tool_calls as unknown[] as Record<string, unknown>[],
-        }),
-        promptMessageId: payload.promptMessageId,
-      });
+      await this.messageService.create(
+        { userId: payload.ownerId },
+        {
+          model,
+          role: message.role,
+          content: message.content,
+          canceled: aborted && i === rest.length - 1,
+          threadId: payload.threadId,
+          ...(message.tool_calls && {
+            toolCalls: message.tool_calls as unknown[] as Record<string, unknown>[],
+          }),
+          promptMessageId: payload.promptMessageId,
+        },
+      );
     }
   }
 

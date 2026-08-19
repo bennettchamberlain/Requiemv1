@@ -114,7 +114,15 @@ function makeListener(opts: { content?: string; externalCreatedAt?: Date | null 
     logger as any,
   );
 
-  return { listener, fileService, ollamaService, itemService, observationService, imageDescriptionPreference, logger };
+  return {
+    listener,
+    fileService,
+    ollamaService,
+    itemService,
+    observationService,
+    imageDescriptionPreference,
+    logger,
+  };
 }
 
 function upload(overrides: Record<string, unknown> = {}) {

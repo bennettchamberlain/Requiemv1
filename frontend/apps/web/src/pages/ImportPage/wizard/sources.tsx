@@ -708,9 +708,7 @@ export function pickableSections(catalog: readonly CatalogSource[]): PickSection
       }
     }
 
-    return items.sort(
-      (a, b) => Number(b.ready) - Number(a.ready) || a.label.localeCompare(b.label),
-    );
+    return items.sort((a, b) => Number(b.ready) - Number(a.ready) || a.label.localeCompare(b.label));
   };
 
   const covered = new Set<string>();

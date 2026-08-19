@@ -45,14 +45,18 @@ function makeService(rows: ProviderKeyEntity[] = []) {
 
   const update = jest.fn(async (id: string, patch: Record<string, unknown>) => {
     const row = store.find((r) => r.id === id);
-    if (row) {Object.assign(row, patch);}
+    if (row) {
+      Object.assign(row, patch);
+    }
 
     return { affected: row ? 1 : 0 };
   });
 
   const del = jest.fn(async (id: string) => {
     const index = store.findIndex((r) => r.id === id);
-    if (index !== -1) {store.splice(index, 1);}
+    if (index !== -1) {
+      store.splice(index, 1);
+    }
 
     return { affected: index !== -1 ? 1 : 0 };
   });
@@ -72,7 +76,7 @@ function makeService(rows: ProviderKeyEntity[] = []) {
 }
 
 describe('ProviderKeyService — tenancy scoping', () => {
-  it('findAll returns only the caller\'s own keys for a non-system caller', async () => {
+  it("findAll returns only the caller's own keys for a non-system caller", async () => {
     const { service } = makeService([
       makeRow({ id: 'mine', userId: OWNER }),
       makeRow({ id: 'theirs', userId: OTHER }),
@@ -141,7 +145,7 @@ describe('ProviderKeyService — tenancy scoping', () => {
     expect(store).toHaveLength(1);
   });
 
-  it('delete removes the owner\'s own key', async () => {
+  it("delete removes the owner's own key", async () => {
     const { service, store } = makeService([makeRow({ id: 'k1', userId: OWNER })]);
 
     const result = await service.delete(OWN_CONTEXT, 'k1');

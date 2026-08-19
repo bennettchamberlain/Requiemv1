@@ -52,7 +52,9 @@ beforeEach(() => {
   localStorage.clear();
   vi.stubGlobal(
     'fetch',
-    vi.fn(async () => tokenResponse({ access_token: 'AT', id_token: 'IT', token_type: 'Bearer', expires_in: 3600 })),
+    vi.fn(async () =>
+      tokenResponse({ access_token: 'AT', id_token: 'IT', token_type: 'Bearer', expires_in: 3600 }),
+    ),
   );
 });
 
@@ -75,7 +77,9 @@ describe('loginWithPortalOidc', () => {
     const tokens = await promise;
 
     expect(tokens).toEqual({ accessToken: 'AT', idToken: 'IT', tokenType: 'Bearer', expiresIn: 3600 });
-    expect(authorizeUrl.origin + authorizeUrl.pathname).toBe(`${DEFAULT_PORTAL_URL}/api/auth/oauth2/authorize`);
+    expect(authorizeUrl.origin + authorizeUrl.pathname).toBe(
+      `${DEFAULT_PORTAL_URL}/api/auth/oauth2/authorize`,
+    );
     expect(authorizeUrl.searchParams.get('client_id')).toBe(OIDC_CLIENT_ID);
     expect(authorizeUrl.searchParams.get('redirect_uri')).toBe(OIDC_REDIRECT_URI);
     expect(authorizeUrl.searchParams.get('response_type')).toBe('code');

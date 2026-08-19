@@ -12,7 +12,7 @@ const runDetail = (id: string) => ({
   label: 'takeout.zip',
   source: 'api',
   dataSources: [],
-      declaredSources: null,
+  declaredSources: null,
   status: 'queued',
   percent: 0,
   requestedStages: ['unpack', 'parse', 'media', 'push'],

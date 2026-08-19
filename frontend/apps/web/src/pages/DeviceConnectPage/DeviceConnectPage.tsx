@@ -305,7 +305,12 @@ export function DeviceConnectPage() {
                   </form>
                 </>
               )}
-              <Button type="button" variant="ghost" className={`w-full ${TOUCH}`} onClick={() => navigate('/server')}>
+              <Button
+                type="button"
+                variant="ghost"
+                className={`w-full ${TOUCH}`}
+                onClick={() => navigate('/server')}
+              >
                 Enter a Memory Server URL instead
               </Button>
             </div>
@@ -338,7 +343,11 @@ export function DeviceConnectPage() {
                       <span
                         className={`shrink-0 rounded-full px-2 py-0.5 text-sm ${active ? 'bg-green-500/15 text-green-600 dark:text-green-400' : 'bg-muted text-foreground/80'}`}
                       >
-                        {connectingId === device.id ? 'Connecting…' : reachable ? device.status : 'unreachable'}
+                        {connectingId === device.id
+                          ? 'Connecting…'
+                          : reachable
+                            ? device.status
+                            : 'unreachable'}
                       </span>
                     </button>
                   );
@@ -346,7 +355,13 @@ export function DeviceConnectPage() {
               )}
               {signInError ? <p className="text-destructive text-sm">{signInError}</p> : null}
               <div className="mt-2 flex items-center justify-between">
-                <Button variant="ghost" size="sm" className={TOUCH} onClick={() => setStep('sign-in')} disabled={connectingId !== null}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={TOUCH}
+                  onClick={() => setStep('sign-in')}
+                  disabled={connectingId !== null}
+                >
                   Back
                 </Button>
                 <LoadingButton

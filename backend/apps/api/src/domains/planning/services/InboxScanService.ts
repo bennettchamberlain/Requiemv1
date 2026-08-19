@@ -180,16 +180,12 @@ export class InboxScanService {
         inboxBlock,
       ].join('\n');
 
-      const response = await this.ollamaService.chat(
-        context as never,
-        [{ role: 'user', content: prompt }],
-        {
-          model: PROMPT_MODEL,
-          enableTools: false,
-          format: RESPONSE_JSON_SCHEMA,
-          signal: controller.signal,
-        },
-      );
+      const response = await this.ollamaService.chat(context as never, [{ role: 'user', content: prompt }], {
+        model: PROMPT_MODEL,
+        enableTools: false,
+        format: RESPONSE_JSON_SCHEMA,
+        signal: controller.signal,
+      });
 
       const parsed = responseSchema.safeParse(JSON.parse(response.message.content || '{}'));
 

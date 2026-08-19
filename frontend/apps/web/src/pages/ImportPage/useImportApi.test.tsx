@@ -317,8 +317,8 @@ describe('useImportApi uploadFile', () => {
  * outright on a hidden tab.
  */
 describe('useActiveImports', () => {
-  function Probe() {
-    const { snapshot } = useActiveImports(20, 5_000);
+  function Probe({ activeMs = 20, idleMs = 5_000 }: { activeMs?: number; idleMs?: number } = {}) {
+    const { snapshot } = useActiveImports(activeMs, idleMs);
 
     return <span data-testid="state">{snapshot == null ? 'none' : String(snapshot.active)}</span>;
   }
@@ -373,7 +373,9 @@ describe('useActiveImports', () => {
   it('asks one endpoint, once, whatever the run count', async () => {
     const fetchMock = stub(ACTIVE);
 
-    render(<Probe />);
+    // A long active cadence so this assertion cannot race the 20ms poll the
+    // other cases use — we are counting first-paint requests, not ticks.
+    render(<Probe activeMs={60_000} />);
 
     await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('true'));
     // Thirteen runs in flight; one request.

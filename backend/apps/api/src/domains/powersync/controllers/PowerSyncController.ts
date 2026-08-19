@@ -20,10 +20,7 @@ export class PowerSyncController {
    */
   @UseGuards(JwtOrApiKeyAuthGuard)
   @Get('token')
-  issueToken(
-    @Context() context: RequestContext,
-    @Query('cutoff') cutoff?: string,
-  ): PowerSyncCredentials {
+  issueToken(@Context() context: RequestContext, @Query('cutoff') cutoff?: string): PowerSyncCredentials {
     const { userId } = toServiceContext(context);
 
     return this.tokenService.issueToken(userId, cutoff);

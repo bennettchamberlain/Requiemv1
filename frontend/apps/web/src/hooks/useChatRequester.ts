@@ -227,7 +227,17 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
 
       return success;
     },
-    [activeModels, authToken, selectedModel, onNewThread, toolsEnabled, thinkingEnabled, toast, detach, openStream],
+    [
+      activeModels,
+      authToken,
+      selectedModel,
+      onNewThread,
+      toolsEnabled,
+      thinkingEnabled,
+      toast,
+      detach,
+      openStream,
+    ],
   );
 
   const cancel = useCallback(

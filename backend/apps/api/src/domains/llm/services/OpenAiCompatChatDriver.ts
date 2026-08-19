@@ -76,7 +76,8 @@ export class OpenAiCompatChatDriver {
     const rawContent = choice?.message?.content ?? '';
     const salvaged = extractEmbeddedToolCalls(rawContent);
     const toolCalls = structured.length > 0 ? structured : salvaged.toolCalls;
-    const content = toolCalls.length > 0 || salvaged.toolCalls.length > 0 ? stripToolMarkup(rawContent) : rawContent;
+    const content =
+      toolCalls.length > 0 || salvaged.toolCalls.length > 0 ? stripToolMarkup(rawContent) : rawContent;
 
     return toChatResponse(request.model, {
       content,
@@ -396,7 +397,10 @@ export function stripToolMarkup(content: string): string {
 
 function consumeQwenCoderBlock(block: string, toolCalls: ToolCall[]): void {
   const trimmed = block.trim();
-  const lines = trimmed.split('\n').map((line) => line.trim()).filter(Boolean);
+  const lines = trimmed
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
   if (lines.length === 0) {
     return;
   }

@@ -113,9 +113,7 @@ export class HealSelfCollationService {
           result.skipped += 1;
         }
       } catch (err) {
-        result.errors.push(
-          `${candidate.entityId}: ${err instanceof Error ? err.message : String(err)}`,
-        );
+        result.errors.push(`${candidate.entityId}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
 
@@ -177,11 +175,7 @@ export class HealSelfCollationService {
           ? [props.email]
           : [];
 
-      const candidates = [
-        ...emails,
-        ...phones,
-        ...(typeof row.name === 'string' ? [row.name] : []),
-      ];
+      const candidates = [...emails, ...phones, ...(typeof row.name === 'string' ? [row.name] : [])];
 
       let best: OwnerMatch | null = null;
       for (const raw of candidates) {

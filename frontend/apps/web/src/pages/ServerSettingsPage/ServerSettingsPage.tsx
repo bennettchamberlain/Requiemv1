@@ -97,8 +97,8 @@ export function ServerSettingsPage() {
         <Card.Header>
           <Card.Title>Advanced: Memory Server URL</Card.Title>
           <Card.Description>
-            Type an origin for a box that is not listed in Portal. Prefer Connect this
-            device when Hub has published this Memory Server.
+            Type an origin for a box that is not listed in Portal. Prefer Connect this device when Hub has
+            published this Memory Server.
           </Card.Description>
         </Card.Header>
 

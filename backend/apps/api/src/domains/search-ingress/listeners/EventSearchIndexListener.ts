@@ -13,7 +13,11 @@ import {
   type EventDeletedPayload,
   type EventUpdatedPayload,
 } from '@ci/domains/memory/events';
-import { eventDisplayTitle, eventSearchDocument, eventWeightedTexts } from '@ci/domains/search-ingress/searchTexts';
+import {
+  eventDisplayTitle,
+  eventSearchDocument,
+  eventWeightedTexts,
+} from '@ci/domains/search-ingress/searchTexts';
 import { EmbeddingService } from '@ci/domains/search-ingress/services/EmbeddingService';
 import { VectorService } from '@ci/domains/search-ingress/services/VectorService';
 import { type WeightedText } from '@ci/domains/search-ingress/types';

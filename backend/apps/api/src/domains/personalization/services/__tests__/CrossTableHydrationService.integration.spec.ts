@@ -33,79 +33,82 @@ if (!availability.available) {
 
 jest.setTimeout(60_000);
 
-describeWithDatabase(`CrossTableHydrationService SQL agrees with the live schema (${availability.target})`, () => {
-  let dataSource: DataSource;
-  let service: CrossTableHydrationService;
+describeWithDatabase(
+  `CrossTableHydrationService SQL agrees with the live schema (${availability.target})`,
+  () => {
+    let dataSource: DataSource;
+    let service: CrossTableHydrationService;
 
-  beforeAll(async () => {
-    const connection = resolveConnection();
+    beforeAll(async () => {
+      const connection = resolveConnection();
 
-    if (connection == null) {
-      throw new Error('databaseAvailability passed but no connection resolved');
-    }
+      if (connection == null) {
+        throw new Error('databaseAvailability passed but no connection resolved');
+      }
 
-    dataSource = new DataSource({
-      type: 'postgres',
-      ...(connection.url != null
-        ? { url: connection.url }
-        : {
-            host: connection.host,
-            port: connection.port,
-            username: connection.username,
-            password: connection.password,
-            database: connection.database,
-          }),
+      dataSource = new DataSource({
+        type: 'postgres',
+        ...(connection.url != null
+          ? { url: connection.url }
+          : {
+              host: connection.host,
+              port: connection.port,
+              username: connection.username,
+              password: connection.password,
+              database: connection.database,
+            }),
+      });
+      await dataSource.initialize();
+
+      // Only `dataSource` participates in the SQL under test. The collaborators are
+      // stubbed rather than wired, so this stays a schema test and does not quietly
+      // become an end-to-end personalization test. Both reads return no rows for a
+      // random user, so nothing downstream of the query is exercised anyway.
+      service = new CrossTableHydrationService(
+        dataSource,
+        { ingest: async () => ({ entities: [], errors: [] }) } as never,
+        { getProfile: async () => ({ trustMode: 'balanced' }) } as never,
+        {
+          setContext: () => undefined,
+          log: () => undefined,
+          debug: () => undefined,
+          warn: () => undefined,
+          error: () => undefined,
+        } as never,
+      );
     });
-    await dataSource.initialize();
 
-    // Only `dataSource` participates in the SQL under test. The collaborators are
-    // stubbed rather than wired, so this stays a schema test and does not quietly
-    // become an end-to-end personalization test. Both reads return no rows for a
-    // random user, so nothing downstream of the query is exercised anyway.
-    service = new CrossTableHydrationService(
-      dataSource,
-      { ingest: async () => ({ entities: [], errors: [] }) } as never,
-      { getProfile: async () => ({ trustMode: 'balanced' }) } as never,
-      {
-        setContext: () => undefined,
-        log: () => undefined,
-        debug: () => undefined,
-        warn: () => undefined,
-        error: () => undefined,
-      } as never,
-    );
-  });
+    afterAll(async () => {
+      if (dataSource?.isInitialized) {
+        await dataSource.destroy();
+      }
+    });
 
-  afterAll(async () => {
-    if (dataSource?.isInitialized) {
-      await dataSource.destroy();
-    }
-  });
+    it('hydrateInventory executes — ci.inventory and its columns all resolve', async () => {
+      const result = await service.hydrateInventory({ userId: randomUUID() } as never);
 
-  it('hydrateInventory executes — ci.inventory and its columns all resolve', async () => {
-    const result = await service.hydrateInventory({ userId: randomUUID() } as never);
+      expect(result.sampledRecords).toBe(0);
+    });
 
-    expect(result.sampledRecords).toBe(0);
-  });
+    it('hydrateAnswers executes — the answers/questions join resolves', async () => {
+      // The sibling query, checked in the same pass: fixing one broken read and
+      // leaving its neighbour unexecuted is how the LifeContextService bug hid a
+      // second one behind the first.
+      const result = await service.hydrateAnswers({ userId: randomUUID() } as never);
 
-  it('hydrateAnswers executes — the answers/questions join resolves', async () => {
-    // The sibling query, checked in the same pass: fixing one broken read and
-    // leaving its neighbour unexecuted is how the LifeContextService bug hid a
-    // second one behind the first.
-    const result = await service.hydrateAnswers({ userId: randomUUID() } as never);
+      expect(result.sampledRecords).toBe(0);
+    });
 
-    expect(result.sampledRecords).toBe(0);
-  });
+    it('names a table that exists, and not the one that never did', async () => {
+      // A direct guard on the specific drift. If `ci.items` is ever introduced as
+      // a real table this test should be revisited, not deleted — the point is
+      // that inventory is read from wherever inventory actually lives.
+      const [{ inventory, items }] = (await dataSource.query(
+        `SELECT to_regclass('ci.inventory')::text AS inventory, to_regclass('ci.items')::text AS items`,
+      )) as { inventory: string | null; items: string | null }[];
 
-  it('names a table that exists, and not the one that never did', async () => {
-    // A direct guard on the specific drift. If `ci.items` is ever introduced as
-    // a real table this test should be revisited, not deleted — the point is
-    // that inventory is read from wherever inventory actually lives.
-    const [{ inventory, items }] = (await dataSource.query(
-      `SELECT to_regclass('ci.inventory')::text AS inventory, to_regclass('ci.items')::text AS items`,
-    )) as { inventory: string | null; items: string | null }[];
-
-    expect(inventory).toBe('ci.inventory');
-    expect(items).toBeNull();
-  });
-});
+      expect(inventory).toBe('ci.inventory');
+      expect(items).toBeNull();
+    });
+  },
+);
