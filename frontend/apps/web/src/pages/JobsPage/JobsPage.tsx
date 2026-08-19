@@ -8,10 +8,12 @@ import { PageContent } from '@/components/layout';
 
 import { describeCron } from './cronDescriptor';
 import { describeCronExpression } from './cronSchedule';
+import { DeadLettersCard } from './DeadLettersCard';
 import { categoryDot } from './jobCategories';
 import { JobHistoryCharts } from './JobHistoryCharts';
 import { JobsTable } from './JobsTable';
 import { COMPACT_CARD } from './layout';
+import { useDeadLetters } from './useDeadLetters';
 import { useJobHistory } from './useJobHistory';
 import { useJobsDashboard, type JobsDashboardResponse } from './useJobsDashboard';
 import { DEFAULT_JOB_FILTERS, useJobsList, type JobFilters } from './useJobsList';
@@ -41,6 +43,7 @@ export function JobsPage() {
   const list = useJobsList(filters);
   const { types: jobTypes } = useJobTypes();
   const history = useJobHistory(windowHours, filters.queue);
+  const deadLetters = useDeadLetters();
 
   const onFilterChange = useCallback((next: Partial<JobFilters>) => {
     setFilters((current) => ({ ...current, ...next }));
@@ -50,7 +53,8 @@ export function JobsPage() {
     void dashboard.refresh();
     void list.refresh();
     void history.refresh();
-  }, [dashboard, list, history]);
+    void deadLetters.refresh();
+  }, [dashboard, list, history, deadLetters]);
 
   return (
     <>
@@ -83,6 +87,17 @@ export function JobsPage() {
             filters={filters}
             categories={CATEGORIES}
             onChange={onFilterChange}
+          />
+
+          {/* Above the schedules and below the jobs table: dead letters are
+              work that was LOST, which outranks "what is scheduled to run" and
+              sits next to the table whose dead-lettered tab points at it. */}
+          <DeadLettersCard
+            groups={deadLetters.groups}
+            total={deadLetters.total}
+            loading={deadLetters.loading}
+            error={deadLetters.error}
+            onReplay={deadLetters.replay}
           />
 
           <SchedulesCard

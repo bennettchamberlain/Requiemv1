@@ -13,7 +13,7 @@ import {
 } from '@ci/common/decorators';
 import { IdFormatGuard, JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 
-import { PipelineRunService } from '../../services/PipelineRunService';
+import { type DeadLetterBulkReplayResult, PipelineRunService } from '../../services/PipelineRunService';
 import { PipelineController } from '../PipelineController';
 
 /**
@@ -93,6 +93,24 @@ function makeService() {
       jobIds: ['job-1'],
       replayedAt: new Date('2026-08-09T12:00:00Z'),
     })),
+    replayDeadLetters: jest.fn(
+      async (): Promise<DeadLetterBulkReplayResult> => ({
+        requested: 1,
+        claimed: 1,
+        limit: 50,
+        replayed: [
+          {
+            id: LETTER_ID,
+            eventName: 'infer.question.answer',
+            queue: null,
+            jobIds: ['job-1'],
+            replayedAt: new Date('2026-08-18T12:00:00Z'),
+          },
+        ],
+        failed: [],
+        skipped: [],
+      }),
+    ),
   };
 }
 
@@ -317,6 +335,128 @@ describe('PipelineController', () => {
     });
   });
 
+  describe('POST /api/pipeline/dead-letters/replay', () => {
+    const LETTER_2 = '00000000-0000-7000-8000-0000000000d2';
+
+    it('passes an explicit id batch through', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/api/pipeline/dead-letters/replay')
+        .send({ ids: [LETTER_ID, LETTER_2] })
+        .expect(200);
+
+      expect(service.replayDeadLetters).toHaveBeenCalledWith(
+        { userId: USER },
+        { ids: [LETTER_ID, LETTER_2], eventName: undefined, failedAfter: undefined, limit: undefined },
+      );
+      expect(response.body.replayed).toHaveLength(1);
+    });
+
+    it('passes the failure-class selector through, with failedAfter parsed as a date', async () => {
+      await request(app.getHttpServer())
+        .post('/api/pipeline/dead-letters/replay')
+        .send({ eventName: 'infer.question.answer', failedAfter: '2026-08-18T00:00:00.000Z', limit: 25 })
+        .expect(200);
+
+      expect(service.replayDeadLetters).toHaveBeenCalledWith(
+        { userId: USER },
+        {
+          ids: undefined,
+          eventName: 'infer.question.answer',
+          failedAfter: new Date('2026-08-18T00:00:00.000Z'),
+          limit: 25,
+        },
+      );
+    });
+
+    it('400s an empty selector rather than replaying everything', async () => {
+      // The safety property of the whole endpoint: most of a real backlog is one
+      // config error, and blind replay re-runs it against the same broken config.
+      await request(app.getHttpServer()).post('/api/pipeline/dead-letters/replay').send({}).expect(400);
+
+      expect(service.replayDeadLetters).not.toHaveBeenCalled();
+    });
+
+    it('400s a failedAfter it cannot read, instead of widening the selector to everything', async () => {
+      // `z.coerce.date()` alone yields an Invalid Date here, which would bind as
+      // NULL — i.e. no filter at all.
+      await request(app.getHttpServer())
+        .post('/api/pipeline/dead-letters/replay')
+        .send({ failedAfter: 'not-a-date' })
+        .expect(400);
+
+      expect(service.replayDeadLetters).not.toHaveBeenCalled();
+    });
+
+    it('400s a malformed id in the batch before it reaches a ::uuid cast', async () => {
+      // The single-id route gets this from IdFormatGuard; a body array is the
+      // schema's job.
+      await request(app.getHttpServer())
+        .post('/api/pipeline/dead-letters/replay')
+        .send({ ids: [LETTER_ID, 'not-a-uuid'] })
+        .expect(400);
+
+      expect(service.replayDeadLetters).not.toHaveBeenCalled();
+    });
+
+    it('400s a batch larger than the page ceiling', async () => {
+      const ids = Array.from(
+        { length: 201 },
+        (_, i) => `00000000-0000-7000-8000-${String(i).padStart(12, '0')}`,
+      );
+
+      await request(app.getHttpServer()).post('/api/pipeline/dead-letters/replay').send({ ids }).expect(400);
+    });
+
+    it('reports partial failure as 200 with a body, not as a 500', async () => {
+      // Some letters replayed and some did not is the NORMAL outcome of a batch.
+      // Failing the call would hide the ones that went back on the bus.
+      service.replayDeadLetters.mockResolvedValueOnce({
+        requested: 2,
+        claimed: 2,
+        limit: 50,
+        replayed: [
+          {
+            id: LETTER_ID,
+            eventName: 'infer.question.answer',
+            queue: null,
+            jobIds: ['job-1'],
+            replayedAt: new Date('2026-08-18T12:00:00Z'),
+          },
+        ],
+        failed: [{ id: LETTER_2, eventName: 'infer.question.answer', reason: 'pg-boss is down' }],
+        skipped: [],
+      });
+
+      const response = await request(app.getHttpServer())
+        .post('/api/pipeline/dead-letters/replay')
+        .send({ ids: [LETTER_ID, LETTER_2] })
+        .expect(200);
+
+      expect(response.body.replayed).toHaveLength(1);
+      expect(response.body.failed[0]).toMatchObject({ id: LETTER_2, reason: 'pg-boss is down' });
+    });
+
+    it('reports an already-replayed double submit as skipped, at 200', async () => {
+      // The claim guard lives in SQL. A second submit claims nothing, and that is
+      // a normal answer — not a 409 that would hide the rest of the batch.
+      service.replayDeadLetters.mockResolvedValueOnce({
+        requested: 2,
+        claimed: 0,
+        limit: 50,
+        replayed: [],
+        failed: [],
+        skipped: [LETTER_ID, LETTER_2],
+      });
+
+      const response = await request(app.getHttpServer())
+        .post('/api/pipeline/dead-letters/replay')
+        .send({ ids: [LETTER_ID, LETTER_2] })
+        .expect(200);
+
+      expect(response.body).toMatchObject({ claimed: 0, skipped: [LETTER_ID, LETTER_2] });
+    });
+  });
+
   // -------------------------------------------------------------------------
   // Auth declarations
   //
@@ -342,7 +482,7 @@ describe('PipelineController', () => {
       },
     );
 
-    it.each(['pauseRun', 'resumeRun', 'cancelRun', 'replayDeadLetter'] as const)(
+    it.each(['pauseRun', 'resumeRun', 'cancelRun', 'replayDeadLetter', 'replayDeadLetters'] as const)(
       '%s requires write capability, so a read-only key cannot steer a run',
       (name) => {
         expect(Reflect.getMetadata(REQUIRE_CAPABILITY_KEY, handler(name))).toBe(WRITE_CAPABILITY);
@@ -365,6 +505,7 @@ describe('PipelineController', () => {
         'cancelRun',
         'listDeadLetters',
         'replayDeadLetter',
+        'replayDeadLetters',
       ] as const) {
         expect(Reflect.getMetadata(REQUIRE_SCOPES_KEY, handler(name))).toBeUndefined();
       }
