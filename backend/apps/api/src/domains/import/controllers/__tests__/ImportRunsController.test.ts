@@ -447,3 +447,37 @@ describe('ImportRunsController stage mapping', () => {
     expect(parse.finishedAt).toBeNull();
   });
 });
+
+/**
+ * The declaration-order trap, guarded.
+ *
+ * `runs/active` and `runs/unpushed` are literal paths that must be declared
+ * ABOVE `runs/:runId`. Express matches in declaration order, so below it both
+ * resolve as a run id named "active"/"unpushed" — the endpoint keeps existing
+ * and silently stops working. The controller says so in a comment on each; a
+ * comment does not fail a build, and reordering methods is exactly the kind of
+ * tidy-up that looks harmless in review.
+ *
+ * Asserted off the Nest route metadata rather than by booting an HTTP app: the
+ * ordering IS the metadata, and reading it keeps this a unit test.
+ */
+describe('ImportRunsController route declaration order', () => {
+  const pathsInOrder = (): string[] => {
+    const proto = ImportRunsController.prototype as unknown as Record<string, unknown>;
+
+    return Object.getOwnPropertyNames(proto)
+      .filter((name) => name !== 'constructor')
+      .map((name) => Reflect.getMetadata('path', proto[name] as object) as string | undefined)
+      .filter((path): path is string => typeof path === 'string');
+  };
+
+  it.each([['runs/active'], ['runs/unpushed']])('declares %s before the runs/:runId catch-all', (literal) => {
+    const paths = pathsInOrder();
+    const literalAt = paths.indexOf(literal);
+    const paramAt = paths.indexOf('runs/:runId');
+
+    expect(literalAt).toBeGreaterThanOrEqual(0);
+    expect(paramAt).toBeGreaterThanOrEqual(0);
+    expect(literalAt).toBeLessThan(paramAt);
+  });
+});
