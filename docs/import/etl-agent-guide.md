@@ -825,12 +825,61 @@ the scratch tree as the only copy.
 
 ## 6. What to measure — the QA baseline
 
-**There is no `ci-import doctor` on `main` as of `5f29d3fdb`.** A branch named
-`feat/import-qa-doctor` exists locally in this repo but is at `origin/main` with
-no commits of its own and is not pushed, so nothing about its contents can be
-stated here. Until it lands, this list *is* the baseline: run it by hand after
-any import you are using to validate a fix, and treat a change in any line as
-something to explain.
+**`ci-import doctor` HAS landed** — it was absent at `5f29d3fdb`, when this
+section was written, and is present on `main` as of `93fc6d8a9`. Run it first;
+the hand-written SQL below stays as the explanation of *what* it measures and as
+the fallback when you need a shape the checks do not cover.
+
+```bash
+yarn ci-import doctor
+```
+
+Nineteen checks over `ci.*`, `ci_search.*` and the pipeline tables, ~200ms.
+Each finding carries a count, a `breakdown` by `source_system`, sample rows, a
+`remedy`, and `mirrors` — the migration whose repair the check is the standing
+version of. Useful flags: `--list` (the vocabulary, nothing run), `--check <id>`
+(repeatable), `--failures-only`, `--timeout <ms>`, `--json`.
+
+Exit code **1 when any `high` check is FOUND**, so it gates a script directly.
+
+| severity | checks |
+|---|---|
+| `high` | `comms-missing-thread-id`, `comms-missing-participants`, `comms-placeholder-content`, `position-not-a-place-name`, `person-name-garbage`, `capture-events-without-content`, `events-dated-before-1990`, `events-timestamped-at-import`, `pipeline-overdue-retries`, `pipeline-quarantined`, `pipeline-dead-letters` |
+| `medium` | `person-bare-phone-name`, `person-duplicate-names`, `events-location-without-name`, `content-media-mimetype-mismatch`, `events-dated-in-future`, `pipeline-orphan-shards`, `events-missing-search-vector`, `communications-missing-search-vector` |
+
+### ⚠️ Run it AFTER the enrichment chain, not before
+
+This is the single most common way to misread this tool, and it costs hours.
+`doctor` counts the DESTINATION tables, so every check whose repair lives in a
+backfill leg reads as a catastrophe mid-import and cures itself minutes later.
+
+Measured on 2026-08-19 against the live QA corpus:
+
+| | before `backfill` | after (14s later) |
+|---|---|---|
+| `comms-missing-participants` | **5,381** | **25** |
+| ↳ twitter | 5,176 (100% of the source) | **0** |
+| ↳ instagram | 160 | **0** |
+| ↳ grok | 16 | **0** |
+
+So: run `ci-import backfill extract_people link_communications` (or the whole
+chain) and only then believe a participant, vector, or geocode finding. Each
+check's own `remedy` text names the leg that repairs it — read it before
+concluding a parser is at fault.
+
+Two corollaries, both learned the hard way:
+
+- **A `--json` run writes ONLY JSON to stdout**; the human "high findings: …"
+  summary goes to stderr via `CliError`. Do not redirect with `2>&1` and then
+  wonder why `json.load` fails on trailing text — that is your redirect, not a
+  bug.
+- **Some checks are permanently non-zero and should be.** The 25 participant
+  rows that survive the backfill are LinkedIn system notices ("Message request
+  accepted", "X left the conversation"), reddit `communication_type='post'` (an
+  author, no recipient), and claude chats (no person on either end) — rows that
+  arguably should not be `ci.communications` at all. **Chasing that check to
+  zero will do damage.** Judge a finding by whether the row should exist, not
+  by whether the count is zero.
 
 ### 6.1 Did the run do what it said?
 
@@ -1087,7 +1136,10 @@ Listed so the next agent does not mistake silence for confidence.
    index the other eight tables in that list carry, is not written down anywhere
    in the tree. The stale comment in `PushStage.ts` suggests the second reading;
    treat that as a hypothesis, not a finding.
-3. **`ci-import doctor` does not exist on `main`** (§6). Do not cite it.
+3. **`ci-import doctor` now EXISTS on `main`** (§6) — it did not at `5f29d3fdb`, when this
+   document was first written, and the earlier revision's "do not cite it" is retracted here.
+   Cite it, but only alongside the enrichment-ordering warning in §6: read before the backfill
+   legs run, it reports thousands of rows that are not broken.
 4. **The measurements in §1.4 are one run on one machine**, taken mid-flight on
    2026-08-19 against a dev stack, not a benchmark. The *ratio* (96.7% of wall
    clock is one stage) is a structural consequence of `localConcurrency: 1` and
