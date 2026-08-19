@@ -7,6 +7,7 @@ import { computeChunkSize } from '@ci/common/persistence';
 
 import { EntityIdentifierEntity } from '../entities/EntityIdentifierEntity';
 import { type IdentifierKind, normalizeIdentifier } from '../utils/normalizeIdentifier';
+import { isNonNameParticipant } from '../utils/participantSanity';
 
 /** A normalized (kind, value) pair used as a lookup key. */
 export interface IdentifierKey {
@@ -90,6 +91,17 @@ export class EntityIdentifierService {
     for (const entry of entries) {
       const collect = (kind: IdentifierKind, values: unknown) => {
         for (const candidate of toStringArray(values)) {
+          // A display name that is structurally not a name must never enter the
+          // index: this table's (owner, kind, value) tuple is what every
+          // people-linking lookup resolves against, so a garbage `name` row is
+          // not cosmetic — it is a permanent claim on that string, and the
+          // Person holding it keeps being resolved to. Emails and phones go
+          // through the same door because the guard also catches embedded
+          // newlines, which are markup leaking through whatever the kind.
+          if (isNonNameParticipant(candidate, 'EntityIdentifierService.upsertForEntities')) {
+            continue;
+          }
+
           const valueNormalized = normalizeIdentifier(kind, candidate);
           if (valueNormalized == null) {
             continue;
@@ -550,9 +562,7 @@ export class EntityIdentifierService {
     selfEntityId: string,
     raw: { emails?: unknown; phones?: unknown; names?: unknown },
   ): Promise<number> {
-    return this.upsertForEntities(ownerUserId, [
-      { entityId: selfEntityId, raw, source: 'self' },
-    ]);
+    return this.upsertForEntities(ownerUserId, [{ entityId: selfEntityId, raw, source: 'self' }]);
   }
 }
 
