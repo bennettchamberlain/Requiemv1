@@ -3,7 +3,7 @@ import os from 'os';
 import path from 'path';
 
 import { GoogleVoiceFileImporter } from '../googlevoice';
-import type { ImportParams } from '../timeline';
+import type { ImportParams, Relationship } from '../timeline';
 
 import type { EmittedGraph } from './support/emitted';
 
