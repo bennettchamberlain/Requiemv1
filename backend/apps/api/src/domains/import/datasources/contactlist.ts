@@ -193,7 +193,15 @@ export class ContactListFileImporter implements FileImporter {
       }
 
       params.pipeline.push({
-        entity: { name, attributes, metadata: { Source: 'ContactList', File: path.basename(full) } },
+        // `type` is declared for the same reason as in vcard.ts: a contact-list row
+        // is a contact even when it carries no phone or email for
+        // `hasContactIdentity` to find.
+        entity: {
+          name,
+          type: 'contact',
+          attributes,
+          metadata: { Source: 'ContactList', File: path.basename(full) },
+        },
       });
     }
   }
