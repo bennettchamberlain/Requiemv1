@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, mkdir, stat, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, realpath, stat, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -95,6 +95,16 @@ async function freshInbox(): Promise<string> {
   await mkdir(dir);
 
   return dir;
+}
+
+/**
+ * Where a run's claim on an inbox unit is RECORDED — the RESOLVED path, since
+ * every inbox surface reaches the bytes through a resolver that realpaths
+ * before it checks containment. A fixture that spells the claim any other way
+ * describes a row the importer never writes.
+ */
+async function claimedPath(inbox: string, unit: string): Promise<string> {
+  return path.join(await realpath(inbox), unit);
 }
 
 beforeEach(() => {
@@ -256,7 +266,7 @@ describe('ImportInboxService.scan', () => {
 
   it('marks units an unfinished run already claims', async () => {
     const inbox = await freshInbox();
-    const file = path.join(inbox, 'export.zip');
+    const file = await claimedPath(inbox, 'export.zip');
 
     await writeFile(file, 'bytes');
 
@@ -271,6 +281,33 @@ describe('ImportInboxService.scan', () => {
     });
   });
 
+  it('matches those claims through a SYMLINKED inbox path, where the two disagree', async () => {
+    // The claim half of the same namespace split the declaration test pins:
+    // a run records the path the resolver produced — a realpath — so a lookup
+    // spelled the configured way matches nothing once the inbox crosses a
+    // symlink, and a unit another run is already importing reads as free.
+    const real = await mkdtemp(path.join(os.tmpdir(), 'ci-inbox-real-'));
+    const linkRoot = `${real}-link`;
+
+    await symlink(real, linkRoot);
+    await mkdir(path.join(real, USER_FOLDER), { recursive: true });
+    await writeFile(path.join(real, USER_FOLDER, 'export.zip'), 'bytes');
+
+    const claimed = path.join(await realpath(real), USER_FOLDER, 'export.zip');
+    const { service, findActiveByPaths } = build({
+      findActiveByPaths: jest.fn(async () => [{ sourcePath: claimed, runId: 'run-9', userId: ctx.userId }]),
+    });
+
+    // Point config at the LINK, so inboxDir and the recorded claim differ.
+    await withInbox(path.join(linkRoot, USER_FOLDER), async () => {
+      const scan = await service.scan(ctx);
+
+      expect(scan.units[0]).toMatchObject({ activeRunId: 'run-9', claimed: true });
+    });
+
+    expect(findActiveByPaths).toHaveBeenCalledWith([claimed]);
+  });
+
   /**
    * The inbox is ONE folder shared by every account on the appliance. Reporting
    * only the caller's own claims let two users start runs over the same
@@ -281,7 +318,7 @@ describe('ImportInboxService.scan', () => {
    */
   it('marks a unit another account is importing as claimed, without exposing their run', async () => {
     const inbox = await freshInbox();
-    const file = path.join(inbox, 'export.zip');
+    const file = await claimedPath(inbox, 'export.zip');
 
     await writeFile(file, 'bytes');
 
@@ -306,7 +343,7 @@ describe('ImportInboxService.scan', () => {
 
   it('does not offer a unit another account is importing', async () => {
     const inbox = await freshInbox();
-    const claimed = path.join(inbox, 'claimed.zip');
+    const claimed = await claimedPath(inbox, 'claimed.zip');
 
     await writeFile(claimed, 'bytes');
 
@@ -471,7 +508,7 @@ describe('ImportInboxService.startBatch', () => {
 
   it('imports everything the scan yields when no units are named, skipping claimed ones', async () => {
     const inbox = await freshInbox();
-    const claimed = path.join(inbox, 'claimed.zip');
+    const claimed = await claimedPath(inbox, 'claimed.zip');
 
     await writeFile(path.join(inbox, 'a.vcf'), 'BEGIN:VCARD');
     await writeFile(claimed, 'bytes');

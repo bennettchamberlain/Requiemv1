@@ -6,6 +6,7 @@ import config from '@ci/configuration';
 
 import {
   PathOutsideImportRootsError,
+  realUserInboxDir,
   resolveWithinImportRoots,
   resolveWithinRoots,
   resolveWithinUserInbox,
@@ -227,6 +228,46 @@ describe('resolveWithinUserInbox', () => {
         }
       }),
     );
+  });
+});
+
+describe('realUserInboxDir', () => {
+  /**
+   * The invariant it exists for: a unit's resolved path, taken relative to it,
+   * NAMES the unit. Against `userInboxDir()` under a symlinked mount the same
+   * subtraction yields a `../../…` escape — which is how the service drop
+   * folder a unit sits in went missing from what its run declared, and how a
+   * claim recorded on the resolved path matched no unit the scan listed.
+   */
+  it('agrees with what the resolver returns, symlinked mount and all', async () => {
+    const real = await mkdtemp(path.join(os.tmpdir(), 'ci-inbox-real-'));
+    const link = `${real}-link`;
+    const email = 'kyle@lifescope.io';
+
+    await mkdir(path.join(real, 'kyle_lifescope.io', 'reddit'), { recursive: true });
+    await writeFile(path.join(real, 'kyle_lifescope.io', 'reddit', 'export.zip'), 'bytes');
+    await symlink(real, link);
+
+    await withInbox(link, async () => {
+      const unit = path.join(userInboxDir(email), 'reddit', 'export.zip');
+      const resolved = await resolveWithinUserInbox(unit, email);
+
+      expect(path.relative(await realUserInboxDir(email), resolved)).toBe(
+        path.join('reddit', 'export.zip'),
+      );
+      // And the configured spelling is exactly what does NOT hold.
+      expect(path.relative(userInboxDir(email), resolved)).toContain('..');
+    });
+  });
+
+  it('falls back to the configured path for a subtree that is not provisioned yet', async () => {
+    const inbox = await mkdtemp(path.join(os.tmpdir(), 'ci-inbox-'));
+
+    await withInbox(inbox, async () => {
+      // Only ever a comparison step, so an account whose folder the boot sweep
+      // has not created yet gets a usable root instead of an exception.
+      expect(await realUserInboxDir('kyle@lifescope.io')).toBe(userInboxDir('kyle@lifescope.io'));
+    });
   });
 });
 
