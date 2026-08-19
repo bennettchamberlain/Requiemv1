@@ -1556,12 +1556,17 @@ type Mutation {
   Push a task to a later user-local date (`YYYY-MM-DD`) and count the push.
   """
   deferTask(id: ID!, until: String!): TaskType
+  deleteBrowserActivity(input: DeleteByIdInput!): DeleteByIdPayload!
+  deleteCommunication(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteConcept(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteConnection(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteConnectionSyncJob(input: DeleteByIdInput!): DeleteByIdPayload!
+  deleteContent(input: DeleteByIdInput!): DeleteByIdPayload!
+  deleteEvent(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteItem(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteNote(input: DeleteByIdInput!): DeleteByIdPayload!
   deletePerson(input: DeleteByIdInput!): DeleteByIdPayload!
+  deletePlace(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteProviderKey(id: ID!): Boolean!
   deleteRelationship(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteSavedSearch(input: DeleteByIdInput!): DeleteByIdPayload!
@@ -1610,6 +1615,7 @@ type Mutation {
   Move an event to a new time, keeping its duration. Externally-sourced events are moved locally only and marked pending — the change is not pushed to the source calendar.
   """
   rescheduleEvent(endTime: DateTime, id: ID!, startTime: DateTime!): EventType
+  restoreEvent(input: RestoreByIdInput!): EventType
 
   """Return a placed event to the slate, deleting the event it minted"""
   returnEventToSlate(eventId: ID!): ScheduleCandidateType!
@@ -2189,6 +2195,10 @@ type ResolveTaskPendingChangePayload {
   change: TaskPendingChangeType
   success: Boolean!
   task: TaskType
+}
+
+input RestoreByIdInput {
+  id: String!
 }
 
 type RunAskPayload {

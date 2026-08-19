@@ -46,6 +46,7 @@ function makeService(rows: Array<{ id: string }> = []) {
 
     return qb;
   });
+  qb.leftJoin = jest.fn(() => qb);
   qb.getRawMany = jest.fn(async () => rows);
 
   const contentRepository = { createQueryBuilder: jest.fn(() => qb) };
@@ -109,6 +110,8 @@ describe('ContentService.getEntitiesForContents keyset paging', () => {
 
     expect(recorded.wheres.map((where) => where.sql)).toEqual([
       'content.user_id = :userId',
+      // Media rows belonging to a soft-deleted event are hidden alongside it.
+      '(content.event_id IS NULL OR content_event.is_deleted = false)',
       'content.created_at >= :startTime',
       'content.created_at <= :endTime',
       '(content.created_at < :afterTime OR (content.created_at = :afterTime AND content.id < :afterId))',

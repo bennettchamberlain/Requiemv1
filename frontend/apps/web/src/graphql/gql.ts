@@ -120,6 +120,16 @@ type Documents = {
     "\n  mutation UpdateNoteDetail($input: UpdateNoteInput!) {\n    updateNote(input: $input) {\n      success\n      note {\n        id\n        title\n        content\n      }\n    }\n  }\n": typeof types.UpdateNoteDetailDocument,
     "\n  query GetPersonProfileForDrawer($id: ID!) {\n    person(id: $id) {\n      ...PersonEditorFields\n    }\n  }\n": typeof types.GetPersonProfileForDrawerDocument,
     "\n  mutation UpdatePlaceDetail($input: UpdatePlaceInput!) {\n    updatePlace(input: $input) {\n      id\n      name\n      description\n      properties\n    }\n  }\n": typeof types.UpdatePlaceDetailDocument,
+    "\n  mutation DeleteMemoryEvent($input: DeleteByIdInput!) {\n    deleteEvent(input: $input) {\n      success\n      deletedId\n    }\n  }\n": typeof types.DeleteMemoryEventDocument,
+    "\n  mutation DeleteMemoryContent($input: DeleteByIdInput!) {\n    deleteContent(input: $input) {\n      success\n      deletedId\n    }\n  }\n": typeof types.DeleteMemoryContentDocument,
+    "\n  mutation DeleteMemoryPlace($input: DeleteByIdInput!) {\n    deletePlace(input: $input) {\n      success\n      deletedId\n    }\n  }\n": typeof types.DeleteMemoryPlaceDocument,
+    "\n  mutation DeleteMemoryPerson($input: DeleteByIdInput!) {\n    deletePerson(input: $input) {\n      success\n      deletedId\n    }\n  }\n": typeof types.DeleteMemoryPersonDocument,
+    "\n  mutation DeleteMemoryItem($input: DeleteByIdInput!) {\n    deleteItem(input: $input) {\n      success\n      deletedId\n    }\n  }\n": typeof types.DeleteMemoryItemDocument,
+    "\n  mutation DeleteMemoryConcept($input: DeleteByIdInput!) {\n    deleteConcept(input: $input) {\n      success\n      deletedId\n    }\n  }\n": typeof types.DeleteMemoryConceptDocument,
+    "\n  mutation DeleteMemoryNote($input: DeleteByIdInput!) {\n    deleteNote(input: $input) {\n      success\n      deletedId\n    }\n  }\n": typeof types.DeleteMemoryNoteDocument,
+    "\n  mutation DeleteMemoryCommunication($input: DeleteByIdInput!) {\n    deleteCommunication(input: $input) {\n      success\n      deletedId\n    }\n  }\n": typeof types.DeleteMemoryCommunicationDocument,
+    "\n  mutation DeleteMemoryBrowserActivity($input: DeleteByIdInput!) {\n    deleteBrowserActivity(input: $input) {\n      success\n      deletedId\n    }\n  }\n": typeof types.DeleteMemoryBrowserActivityDocument,
+    "\n  mutation RestoreMemoryEvent($input: RestoreByIdInput!) {\n    restoreEvent(input: $input) {\n      id\n    }\n  }\n": typeof types.RestoreMemoryEventDocument,
     "\n  query GetSavedSearch($id: ID!) {\n    savedSearch(id: $id) {\n      id\n      name\n      description\n      query\n      entityTypes\n      tags\n      filters {\n        eventTypes\n        startTime\n        endTime\n        datePreset\n        sortBy\n        sortOrder\n        connectors\n        people\n        places\n        hasLocation\n        semantic\n      }\n    }\n  }\n": typeof types.GetSavedSearchDocument,
     "\n  query GraphNodeEntity($id: ID!) {\n    node(id: $id) {\n      __typename\n      id\n\n      ... on Taggable {\n        tags {\n          label\n        }\n      }\n\n      ... on FileType {\n        galleryContentType: contentType\n        galleryFilename: filename\n        galleryPreviewUrl: previewUrl\n        gallerySourceUrl: sourceUrl\n      }\n\n      ... on ContentType {\n        galleryMimetype: mimetype\n        galleryTitle: title\n        galleryContentUrl: url\n        galleryContentSourceUrl: sourceUrl\n      }\n\n      ... on CommunicationType {\n        bucketTime: time\n      }\n\n      ... on EventType {\n        bucketStartTime: startTime\n        eventType\n        mapCoordinates: locationCoordinates\n        galleryMediaContentType: mediaContentType\n        galleryPreviewUrl: previewUrl\n        gallerySourceUrl: mediaUrl\n        galleryTitle: title\n        galleryLocationName: locationName\n      }\n\n      ... on PlaceType {\n        mapProperties: properties\n      }\n\n      ...CommunicationGridItemData\n      ...ConceptGridItemData\n      ...ContentGridItemData\n      ...EventGridItemData\n      ...FileGridItemData\n      ...ItemGridItemData\n      ...PersonGridItemData\n      ...PlaceGridItemData\n\n      ...TableCommunicationRowData\n      ...TableConceptRowData\n      ...TableContentRowData\n      ...TableEventRowData\n      ...TableFileRowData\n      ...TableItemRowData\n      ...TablePersonRowData\n      ...TablePlaceRowData\n\n      ...TimelineCommunicationCardData\n      ...TimelineEventCardData\n    }\n  }\n": typeof types.GraphNodeEntityDocument,
     "\n  fragment TableAnswerRowData on AnswerType {\n    id\n    answer\n    question {\n      id\n      text\n    }\n  }\n": typeof types.TableAnswerRowDataFragmentDoc,
@@ -297,6 +307,16 @@ const documents: Documents = {
     "\n  mutation UpdateNoteDetail($input: UpdateNoteInput!) {\n    updateNote(input: $input) {\n      success\n      note {\n        id\n        title\n        content\n      }\n    }\n  }\n": types.UpdateNoteDetailDocument,
     "\n  query GetPersonProfileForDrawer($id: ID!) {\n    person(id: $id) {\n      ...PersonEditorFields\n    }\n  }\n": types.GetPersonProfileForDrawerDocument,
     "\n  mutation UpdatePlaceDetail($input: UpdatePlaceInput!) {\n    updatePlace(input: $input) {\n      id\n      name\n      description\n      properties\n    }\n  }\n": types.UpdatePlaceDetailDocument,
+    "\n  mutation DeleteMemoryEvent($input: DeleteByIdInput!) {\n    deleteEvent(input: $input) {\n      success\n      deletedId\n    }\n  }\n": types.DeleteMemoryEventDocument,
+    "\n  mutation DeleteMemoryContent($input: DeleteByIdInput!) {\n    deleteContent(input: $input) {\n      success\n      deletedId\n    }\n  }\n": types.DeleteMemoryContentDocument,
+    "\n  mutation DeleteMemoryPlace($input: DeleteByIdInput!) {\n    deletePlace(input: $input) {\n      success\n      deletedId\n    }\n  }\n": types.DeleteMemoryPlaceDocument,
+    "\n  mutation DeleteMemoryPerson($input: DeleteByIdInput!) {\n    deletePerson(input: $input) {\n      success\n      deletedId\n    }\n  }\n": types.DeleteMemoryPersonDocument,
+    "\n  mutation DeleteMemoryItem($input: DeleteByIdInput!) {\n    deleteItem(input: $input) {\n      success\n      deletedId\n    }\n  }\n": types.DeleteMemoryItemDocument,
+    "\n  mutation DeleteMemoryConcept($input: DeleteByIdInput!) {\n    deleteConcept(input: $input) {\n      success\n      deletedId\n    }\n  }\n": types.DeleteMemoryConceptDocument,
+    "\n  mutation DeleteMemoryNote($input: DeleteByIdInput!) {\n    deleteNote(input: $input) {\n      success\n      deletedId\n    }\n  }\n": types.DeleteMemoryNoteDocument,
+    "\n  mutation DeleteMemoryCommunication($input: DeleteByIdInput!) {\n    deleteCommunication(input: $input) {\n      success\n      deletedId\n    }\n  }\n": types.DeleteMemoryCommunicationDocument,
+    "\n  mutation DeleteMemoryBrowserActivity($input: DeleteByIdInput!) {\n    deleteBrowserActivity(input: $input) {\n      success\n      deletedId\n    }\n  }\n": types.DeleteMemoryBrowserActivityDocument,
+    "\n  mutation RestoreMemoryEvent($input: RestoreByIdInput!) {\n    restoreEvent(input: $input) {\n      id\n    }\n  }\n": types.RestoreMemoryEventDocument,
     "\n  query GetSavedSearch($id: ID!) {\n    savedSearch(id: $id) {\n      id\n      name\n      description\n      query\n      entityTypes\n      tags\n      filters {\n        eventTypes\n        startTime\n        endTime\n        datePreset\n        sortBy\n        sortOrder\n        connectors\n        people\n        places\n        hasLocation\n        semantic\n      }\n    }\n  }\n": types.GetSavedSearchDocument,
     "\n  query GraphNodeEntity($id: ID!) {\n    node(id: $id) {\n      __typename\n      id\n\n      ... on Taggable {\n        tags {\n          label\n        }\n      }\n\n      ... on FileType {\n        galleryContentType: contentType\n        galleryFilename: filename\n        galleryPreviewUrl: previewUrl\n        gallerySourceUrl: sourceUrl\n      }\n\n      ... on ContentType {\n        galleryMimetype: mimetype\n        galleryTitle: title\n        galleryContentUrl: url\n        galleryContentSourceUrl: sourceUrl\n      }\n\n      ... on CommunicationType {\n        bucketTime: time\n      }\n\n      ... on EventType {\n        bucketStartTime: startTime\n        eventType\n        mapCoordinates: locationCoordinates\n        galleryMediaContentType: mediaContentType\n        galleryPreviewUrl: previewUrl\n        gallerySourceUrl: mediaUrl\n        galleryTitle: title\n        galleryLocationName: locationName\n      }\n\n      ... on PlaceType {\n        mapProperties: properties\n      }\n\n      ...CommunicationGridItemData\n      ...ConceptGridItemData\n      ...ContentGridItemData\n      ...EventGridItemData\n      ...FileGridItemData\n      ...ItemGridItemData\n      ...PersonGridItemData\n      ...PlaceGridItemData\n\n      ...TableCommunicationRowData\n      ...TableConceptRowData\n      ...TableContentRowData\n      ...TableEventRowData\n      ...TableFileRowData\n      ...TableItemRowData\n      ...TablePersonRowData\n      ...TablePlaceRowData\n\n      ...TimelineCommunicationCardData\n      ...TimelineEventCardData\n    }\n  }\n": types.GraphNodeEntityDocument,
     "\n  fragment TableAnswerRowData on AnswerType {\n    id\n    answer\n    question {\n      id\n      text\n    }\n  }\n": types.TableAnswerRowDataFragmentDoc,
@@ -794,6 +814,46 @@ export function gql(source: "\n  query GetPersonProfileForDrawer($id: ID!) {\n  
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "\n  mutation UpdatePlaceDetail($input: UpdatePlaceInput!) {\n    updatePlace(input: $input) {\n      id\n      name\n      description\n      properties\n    }\n  }\n"): (typeof documents)["\n  mutation UpdatePlaceDetail($input: UpdatePlaceInput!) {\n    updatePlace(input: $input) {\n      id\n      name\n      description\n      properties\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation DeleteMemoryEvent($input: DeleteByIdInput!) {\n    deleteEvent(input: $input) {\n      success\n      deletedId\n    }\n  }\n"): (typeof documents)["\n  mutation DeleteMemoryEvent($input: DeleteByIdInput!) {\n    deleteEvent(input: $input) {\n      success\n      deletedId\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation DeleteMemoryContent($input: DeleteByIdInput!) {\n    deleteContent(input: $input) {\n      success\n      deletedId\n    }\n  }\n"): (typeof documents)["\n  mutation DeleteMemoryContent($input: DeleteByIdInput!) {\n    deleteContent(input: $input) {\n      success\n      deletedId\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation DeleteMemoryPlace($input: DeleteByIdInput!) {\n    deletePlace(input: $input) {\n      success\n      deletedId\n    }\n  }\n"): (typeof documents)["\n  mutation DeleteMemoryPlace($input: DeleteByIdInput!) {\n    deletePlace(input: $input) {\n      success\n      deletedId\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation DeleteMemoryPerson($input: DeleteByIdInput!) {\n    deletePerson(input: $input) {\n      success\n      deletedId\n    }\n  }\n"): (typeof documents)["\n  mutation DeleteMemoryPerson($input: DeleteByIdInput!) {\n    deletePerson(input: $input) {\n      success\n      deletedId\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation DeleteMemoryItem($input: DeleteByIdInput!) {\n    deleteItem(input: $input) {\n      success\n      deletedId\n    }\n  }\n"): (typeof documents)["\n  mutation DeleteMemoryItem($input: DeleteByIdInput!) {\n    deleteItem(input: $input) {\n      success\n      deletedId\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation DeleteMemoryConcept($input: DeleteByIdInput!) {\n    deleteConcept(input: $input) {\n      success\n      deletedId\n    }\n  }\n"): (typeof documents)["\n  mutation DeleteMemoryConcept($input: DeleteByIdInput!) {\n    deleteConcept(input: $input) {\n      success\n      deletedId\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation DeleteMemoryNote($input: DeleteByIdInput!) {\n    deleteNote(input: $input) {\n      success\n      deletedId\n    }\n  }\n"): (typeof documents)["\n  mutation DeleteMemoryNote($input: DeleteByIdInput!) {\n    deleteNote(input: $input) {\n      success\n      deletedId\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation DeleteMemoryCommunication($input: DeleteByIdInput!) {\n    deleteCommunication(input: $input) {\n      success\n      deletedId\n    }\n  }\n"): (typeof documents)["\n  mutation DeleteMemoryCommunication($input: DeleteByIdInput!) {\n    deleteCommunication(input: $input) {\n      success\n      deletedId\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation DeleteMemoryBrowserActivity($input: DeleteByIdInput!) {\n    deleteBrowserActivity(input: $input) {\n      success\n      deletedId\n    }\n  }\n"): (typeof documents)["\n  mutation DeleteMemoryBrowserActivity($input: DeleteByIdInput!) {\n    deleteBrowserActivity(input: $input) {\n      success\n      deletedId\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation RestoreMemoryEvent($input: RestoreByIdInput!) {\n    restoreEvent(input: $input) {\n      id\n    }\n  }\n"): (typeof documents)["\n  mutation RestoreMemoryEvent($input: RestoreByIdInput!) {\n    restoreEvent(input: $input) {\n      id\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

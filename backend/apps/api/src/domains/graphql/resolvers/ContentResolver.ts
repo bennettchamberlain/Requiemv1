@@ -13,6 +13,8 @@ import { TagLoader } from '../loaders/TagLoader';
 import { ContentConnection } from '../types/ContentConnection';
 import { ContentEdge } from '../types/ContentEdge';
 import { ContentType } from '../types/ContentType';
+import { DeleteByIdInput } from '../types/DeleteByIdInput';
+import { DeleteByIdPayload } from '../types/DeleteByIdPayload';
 import { EntityTagType } from '../types/EntityTagType';
 import { EventType } from '../types/EventType';
 import { GlobalUID } from '../types/GlobalUID';
@@ -162,6 +164,11 @@ export class ContentResolver {
     return entity ? ContentType.toType(entity) : entity;
   }
 
+  /**
+   * @deprecated Returns a bare boolean and takes a positional `id` argument. Use
+   * {@link deleteContent}, which follows the `DeleteByIdInput`/`DeleteByIdPayload`
+   * convention the rest of this family uses.
+   */
   @Mutation(() => Boolean)
   async removeContent(
     @Context() context: RequestContext,
@@ -172,6 +179,34 @@ export class ContentResolver {
     const id = GlobalUID.parse('content', gid);
 
     return this.contentService.remove(serviceContext, id);
+  }
+
+  /**
+   * Deletes content addressed by its global id. Unlike an event this is a HARD
+   * delete — the row and its `ci.entities` base row are destroyed and cannot be
+   * restored.
+   */
+  @Mutation(() => DeleteByIdPayload)
+  async deleteContent(
+    @Context() context: RequestContext,
+    @Args('input') input: DeleteByIdInput,
+  ): Promise<DeleteByIdPayload> {
+    const serviceContext = toServiceContext(context);
+
+    const id = GlobalUID.parse('content', input.id);
+
+    const success = await this.contentService.remove(serviceContext, id);
+
+    if (!success) {
+      return {
+        success: false,
+      };
+    }
+
+    return {
+      success,
+      deletedId: input.id,
+    };
   }
 
   @Query(() => ContentConnection)
