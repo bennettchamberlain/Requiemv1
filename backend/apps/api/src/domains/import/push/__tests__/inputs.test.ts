@@ -207,6 +207,26 @@ describe('toContentInput', () => {
 
     expect(toContentInput(purchase).external_id_kind).toBeUndefined();
   });
+
+  // Defect F22: migration 20260818215331 backfilled the column with
+  // `source_system IS DISTINCT FROM 'spotify' -> 'file'`, which mislabelled
+  // every OTHER datasource that stamps metadata.URI. Spotify is not special —
+  // toContentInput reads metadata.URI, not the source system — so pin each of
+  // the four sources the old rule got wrong.
+  it.each([
+    ['amazon_music', 'amazonmusic:track:B07JQZ1KMP'],
+    ['amazon_music', 'amazonmusic:album:B08XYZ1234'],
+    ['audible', 'audible:asin:B002V0QK4C'],
+    ['kindle', 'kindle:asin:B00X4WHP55'],
+    ['kindle', 'kindle:doc:B00X4WHP55'],
+    ['prime_video', 'primevideo:title:9f2c1b0a4d3e5f60'],
+  ])('stamps external_uri for %s URI %s, not just spotify', (dataSource, uri) => {
+    const rec = recordFor({ classification: 'play', dataSource, metadata: { URI: uri } });
+    const input = toContentInput(rec);
+
+    expect(input.external_id).toBe(uri);
+    expect(input.external_id_kind).toBe('external_uri');
+  });
 });
 
 describe('toContentInput — Reddit media', () => {
