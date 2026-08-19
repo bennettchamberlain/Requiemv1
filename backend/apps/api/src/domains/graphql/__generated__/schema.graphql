@@ -1865,6 +1865,7 @@ type PlaceNearType {
 }
 
 type PlaceType implements Node & Taggable {
+  boundary: JSON
   description: String
   entityType: String!
   estimated: Boolean
@@ -2098,6 +2099,7 @@ type Query {
   """
   placeForecast(horizonHours: Int = 4, k: Int = 5): [PlaceForecastItemType!]!
   places(after: String, before: String, first: Int, last: Int, query: String): PlaceConnection!
+  placesContaining(latitude: Float!, limit: Int, longitude: Float!): [PlaceType!]!
   placesNear(latitude: Float!, limit: Int, longitude: Float!, radiusMeters: Float): [PlaceNearType!]!
 
   """

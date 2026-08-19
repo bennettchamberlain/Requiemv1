@@ -356,6 +356,7 @@ describe('GeocodeBatchListener Place linking', () => {
       lng: -122.1,
       placeId: null,
       components: null,
+      bounds: null,
     });
     expect(updates[0].data.location_entity_id).toBe(`place:${USER}:1600 amphitheatre pkwy:37.400:-122.100`);
   });
@@ -377,6 +378,7 @@ describe('GeocodeBatchListener Place linking', () => {
       lng: -122.0774,
       placeId: null,
       components: null,
+      bounds: null,
     });
     // The name + entity-id are written in the same EventService.update payload
     // so the index update is atomic.

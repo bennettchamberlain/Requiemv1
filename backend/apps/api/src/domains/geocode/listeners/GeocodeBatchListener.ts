@@ -152,6 +152,7 @@ export class GeocodeBatchListener {
             const place = await this.linkPlace(context, candidate.location_name, lat, lng, {
               placeId: outcome.placeId,
               components: outcome.components,
+              bounds: outcome.bounds,
             });
 
             await this.eventService.update(context, candidate.event_id, {
@@ -275,6 +276,7 @@ export class GeocodeBatchListener {
             const place = await this.linkPlace(context, outcome.placeName, lat, lng, {
               placeId: outcome.placeId,
               components: outcome.components,
+              bounds: outcome.bounds,
             });
 
             await this.eventService.update(context, candidate.event_id, {
@@ -425,7 +427,11 @@ export class GeocodeBatchListener {
     name: string,
     lat: number,
     lng: number,
-    resolution: { placeId?: string | null; components?: Record<string, unknown> | null } = {},
+    resolution: {
+      placeId?: string | null;
+      components?: Record<string, unknown> | null;
+      bounds?: { north: number; south: number; east: number; west: number } | null;
+    } = {},
   ): Promise<{ id: string } | null> {
     try {
       return await this.placeService.findOrCreateForGeocode(context, {
@@ -434,6 +440,7 @@ export class GeocodeBatchListener {
         lng,
         placeId: resolution.placeId ?? null,
         components: resolution.components ?? null,
+        bounds: resolution.bounds ?? null,
       });
     } catch (error) {
       this.logger.warn('Failed to find-or-create place for geocoded event', {

@@ -376,6 +376,30 @@ export class PlaceResolver {
     }));
   }
 
+  /**
+   * Places whose polygon footprint covers a point, most specific first — the
+   * containment half of #1811's "queried with GIS lookups" (#2161). Only places
+   * that carry a boundary can match; a place known as a bare point is not a
+   * container.
+   */
+  @Query(() => [PlaceType])
+  async placesContaining(
+    @Context() context: RequestContext,
+    @Args('latitude', { type: () => Float }) latitude: number,
+    @Args('longitude', { type: () => Float }) longitude: number,
+    @Args('limit', { type: () => Int, nullable: true }) limit?: number,
+  ): Promise<PlaceType[]> {
+    const serviceContext = toServiceContext(context);
+
+    const places = await this.placeService.placesContaining(serviceContext, {
+      lat: latitude,
+      lng: longitude,
+      limit: limit ?? undefined,
+    });
+
+    return places.map((place) => PlaceType.toType(place));
+  }
+
   @ResolveField(() => [EntityTagType])
   async tags(@Context() context: RequestContext, @Parent() parent: PlaceType): Promise<EntityTagType[]> {
     const serviceContext = toServiceContext(context);
