@@ -151,13 +151,16 @@
 		<string>arm64</string>
 	</array>
 	<!-- iPhone-only build (TARGETED_DEVICE_FAMILY = 1). The `~ipad` orientation
-	     variants were deliberately REMOVED so the plist and the build setting agree:
-	     leaving them behind declares iPad support the binary does not have, and that
-	     declaration is what puts the app in front of an iPad reviewer. On iPad this
-	     ships as an iPhone-compatibility app (Apple's own scaled phone window), which
-	     the @ci/fe-web mobile layout is actually designed for. If iPad becomes a real
-	     target, restore the key *and* add a tablet tier to `useDeviceLayout` in
-	     @ci/common — see DELIVERY.md §1a. -->
+	     variants were deliberately REMOVED as dead weight, not because they were
+	     doing anything: iPad compatibility and App Review device assignment are
+	     driven solely by TARGETED_DEVICE_FAMILY, and iOS never reads a `~ipad`
+	     variant on an iPhone-only binary. They are gone so the plist and the build
+	     setting do not disagree. On iPad this ships as an iPhone-compatibility app
+	     (Apple's own scaled phone window), which the @ci/fe-web mobile layout is
+	     actually designed for. To reverse: set TARGETED_DEVICE_FAMILY = "1,2" in
+	     BOTH the Debug and Release configs of the App target (the plist alone will
+	     not do it), restore the `~ipad` orientation key here, and add a tablet tier
+	     to the layout hooks — see DELIVERY.md §1a. -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
