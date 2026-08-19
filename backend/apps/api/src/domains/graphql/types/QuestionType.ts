@@ -17,6 +17,10 @@ export class QuestionType implements Node {
   @Field(() => String)
   category!: string;
 
+  /** 'factual' | 'preference' | 'narrative'; null for pre-catalogue questions. */
+  @Field(() => String, { nullable: true })
+  answerTier!: string | null;
+
   @Field(() => String)
   text!: string;
 
@@ -53,6 +57,7 @@ export class QuestionType implements Node {
       __source: question,
       id: GlobalUID.encode('question', question.id),
       category: question.category,
+      answerTier: question.answerTier ?? null,
       text: question.text,
       // contextTags: question.contextTags,
       questionType: question.questionType,
