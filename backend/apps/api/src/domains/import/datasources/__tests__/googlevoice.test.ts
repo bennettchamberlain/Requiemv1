@@ -580,6 +580,75 @@ describe('Google Voice participants', () => {
     expect(edges[0].metadata?.direction).toBe('outgoing');
   });
 
+  it('attributes EVERY image of a multi-image MMS, not just the first', async () => {
+    // The real export wraps each attachment in its OWN div inside the message
+    // block — the shape below is copied from a live conversation file. The lazy
+    // `([\\s\\S]*?)<\\/div>` this replaced ended the block at the first of those
+    // wrappers, so images 2..N were attributed to nobody: 274 rows on the live
+    // corpus, every one an attachment with per-message index >= 2 and NOT ONE
+    // with index 1.
+    const stubs = [1, 2, 3, 4].map((n) => `Dana Wu - Text - 2025-03-01T12_01_00Z-1-${n}`);
+    const pipeline = await importInline(
+      `<html><body>
+         <div class="hChatLog hfeed"><div class="message">
+           <abbr class="dt" title="2025-03-01T12:01:00.000Z">Mar 1</abbr>:
+           <cite class="sender vcard"><a class="tel" href="tel:+15558887777"><span class="fn">Dana Wu</span></a></cite>:
+           <q></q>
+           ${stubs.map((s) => `<div><img src="${s}" alt="Image MMS Attachment" /></div>`).join(' ')}
+         </div></div>
+       </body></html>`,
+      stubs.map((s) => `${s}.jpg`),
+    );
+
+    const attachments = pipeline.filter((p) => p.item?.metadata?.Attachment === 'image');
+    // Guard against the vacuous pass: four <img> in, four items out.
+    expect(attachments).toHaveLength(4);
+
+    for (const attachment of attachments) {
+      expect(attachment.item.metadata.Sender).toBe('Dana Wu');
+      expect(attachment.item.metadata.Direction).toBe('incoming');
+      expect(attachment.item.metadata.To).toBe('My Phone');
+      expect(participantEdges(attachment).map((e) => e.to.entity?.name)).toEqual(['Dana Wu']);
+    }
+  });
+
+  it('does not attribute one message\u2019s attachments to the next message\u2019s sender', async () => {
+    // Finding the block's real close means finding the RIGHT one. Resuming the
+    // scan mid-block, or over-running into the following sibling, would file
+    // Dana's pictures under Evan and hand the reader a confident wrong answer
+    // in place of the old blank one.
+    const pipeline = await importInline(
+      `<html><body>
+         <div class="hChatLog hfeed"><div class="message">
+           <abbr class="dt" title="2025-03-01T12:01:00.000Z">Mar 1</abbr>:
+           <cite class="sender vcard"><a class="tel" href="tel:+15558887777"><span class="fn">Dana Wu</span></a></cite>:
+           <q></q>
+           <div><img src="Dana Wu - Text - 2025-03-01T12_01_00Z-1-1" /></div>
+           <div><img src="Dana Wu - Text - 2025-03-01T12_01_00Z-1-2" /></div>
+         </div> <div class="message">
+           <abbr class="dt" title="2025-03-01T12:05:00.000Z">Mar 1</abbr>:
+           <cite class="sender vcard"><a class="tel" href="tel:+15550001111"><span class="fn">Evan Reed</span></a></cite>:
+           <q></q>
+           <div><img src="Dana Wu - Text - 2025-03-01T12_01_00Z-2-1" /></div>
+         </div></div>
+       </body></html>`,
+      [
+        'Dana Wu - Text - 2025-03-01T12_01_00Z-1-1.jpg',
+        'Dana Wu - Text - 2025-03-01T12_01_00Z-1-2.jpg',
+        'Dana Wu - Text - 2025-03-01T12_01_00Z-2-1.jpg',
+      ],
+    );
+
+    const senderOf = (stub: string): unknown =>
+      pipeline.find(
+        (p) => p.item?.metadata?.Attachment === 'image' && p.item.content?.filename === `${stub}.jpg`,
+      )?.item.metadata.Sender;
+
+    expect(senderOf('Dana Wu - Text - 2025-03-01T12_01_00Z-1-1')).toBe('Dana Wu');
+    expect(senderOf('Dana Wu - Text - 2025-03-01T12_01_00Z-1-2')).toBe('Dana Wu');
+    expect(senderOf('Dana Wu - Text - 2025-03-01T12_01_00Z-2-1')).toBe('Evan Reed');
+  });
+
   it('claims no sender for an image that sits outside every message block', async () => {
     // The filename label names the THREAD, never the author. Filing it as a
     // sender is how this importer previously minted 241 Person entities named

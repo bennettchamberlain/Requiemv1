@@ -212,7 +212,7 @@ export class GoogleVoiceFileImporter implements FileImporter {
     // <div class="haudio"> block (hAudio microformat) with <abbr class="published">
     // / <abbr class="duration"> and, for voicemails, a <span class="note">
     // transcript — never a <div class="message"> or a <q> text body. The
-    // msgRegex below doesn't match haudio divs at all, so without this branch
+    // messageBlocks() below doesn't match haudio divs at all, so without this branch
     // every call/voicemail file silently produced zero items. Route them to a
     // dedicated handler instead of falling into the SMS/MMS message loop.
     if (/<div class="haudio"/i.test(raw)) {
@@ -221,12 +221,10 @@ export class GoogleVoiceFileImporter implements FileImporter {
       return;
     }
 
-    // Each message is a flat <div class="message"> … </div> block. The real Google
+    // Each message is a <div class="message"> … </div> block. The real Google
     // Voice HTML uses <abbr class="dt" title="ISO">, a <cite class="sender vcard">
     // with <a class="tel" href="tel:…"><span class="fn">name</span></a>, then the
     // body in <q>…</q>. Pull each field independently (order-tolerant).
-    const msgRegex = /<div class="message[^"]*">([\s\S]*?)<\/div>/gi;
-    let match: RegExpExecArray | null;
     const participants: Record<string, GVEntity> = {};
     // The non-'Me' party in the file is the conversation contact; sender 'Me'
     // marks an outbound message. Track the contact so an outbound message (whose
@@ -246,8 +244,7 @@ export class GoogleVoiceFileImporter implements FileImporter {
     // block DOES carry a <cite class="sender vcard">, so remember it here while
     // we still know which block we are in.
     const attachmentSenders = new Map<string, { isOutbound: boolean; sender: GVEntity }>();
-    while ((match = msgRegex.exec(raw)) !== null) {
-      const block = match[1];
+    for (const block of messageBlocks(raw)) {
       // Read the sender BEFORE the no-body bail-out: an image-only MMS is still
       // a message from somebody, and both `participants` and the contact
       // tracking below are strictly better for knowing about it.
@@ -543,6 +540,73 @@ function counterpartEdges(
       metadata: { direction: isOutbound ? 'outgoing' : 'incoming' },
     },
   ];
+}
+
+/**
+ * The inner HTML of every `<div class="message">` block, each with its FULL
+ * extent.
+ *
+ * Not a regex, because the extent is not regular. A real Google Voice MMS
+ * wraps every attachment in its own sibling div inside the message:
+ *
+ *   <div class="message">…<q></q>
+ *     <div><img src="…-7-1"/></div> <div><img src="…-7-2"/></div> …
+ *   </div>
+ *
+ * The lazy `([\s\S]*?)<\/div>` this replaced stopped at the FIRST `</div>`,
+ * which closes the first attachment wrapper — so the captured block ended
+ * after image 1 and images 2..N sat outside every block the parser could see.
+ * `attachmentSenders` therefore had no entry for them, and they reached
+ * ci.communications with no sender, no recipient and no direction. On the live
+ * corpus that is 274 rows, and the signature is exact: every one is an
+ * attachment whose per-message index is >= 2 (168 x "-2", 48 x "-3", … 1 x
+ * "-15") and NOT ONE has index 1.
+ *
+ * Counting `<div` / `</div>` finds the real close. Scanning resumes AFTER the
+ * block rather than inside it: a message div never nests another message div,
+ * and re-entering one would attribute the same attachments twice.
+ */
+function messageBlocks(raw: string): string[] {
+  const blocks: string[] = [];
+  const openRegex = /<div class="message[^"]*">/gi;
+  let open: RegExpExecArray | null;
+  while ((open = openRegex.exec(raw)) !== null) {
+    const start = open.index + open[0].length;
+    const end = matchingDivCloseIndex(raw, start);
+    blocks.push(raw.slice(start, end));
+    openRegex.lastIndex = end;
+  }
+
+  return blocks;
+}
+
+/**
+ * Index of the `</div>` closing the div whose body starts at `from`.
+ *
+ * Returns the end of the string when the markup is unbalanced, so a truncated
+ * export still yields its final block instead of silently dropping it — the
+ * lazy regex used to "recover" from bad markup by ending the block early, and
+ * ending it late loses nothing that was ever parsed out of it.
+ */
+function matchingDivCloseIndex(raw: string, from: number): number {
+  const tagRegex = /<(\/?)div\b[^>]*>/gi;
+  tagRegex.lastIndex = from;
+  let depth = 0;
+  let tag: RegExpExecArray | null;
+  while ((tag = tagRegex.exec(raw)) !== null) {
+    if (!tag[1]) {
+      depth++;
+      continue;
+    }
+
+    if (depth === 0) {
+      return tag.index;
+    }
+
+    depth--;
+  }
+
+  return raw.length;
 }
 
 function stripTags(h: string): string {
