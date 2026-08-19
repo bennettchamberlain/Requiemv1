@@ -113,7 +113,7 @@ flowchart TB
     end
 
     subgraph Data["Data Tier"]
-      PG[("Postgres 18<br/>+ TimescaleDB hypertables<br/>+ pgvector embeddings<br/>+ PostGIS")]
+      PG[("Postgres 18<br/>+ TimescaleDB hypertables<br/>+ pgvector embeddings<br/>+ PostGIS<br/>(graph = entities/relationships tables)")]
       OBJ[("MinIO<br/>S3-compatible object store")]
     end
 
@@ -154,6 +154,8 @@ flowchart TB
 | `setup-database` | `ci/setup-database` | One-shot: migrations and seed | — |
 | `secrets` / `generate-secrets` | `ci/setup-secrets` | One-shot: generates and mounts `.env.secrets` | — |
 | `gateway` | NGINX ([`infrastructure/gateway/`](../../infrastructure/gateway)) | TLS + routing — **staging/production compose only**; local dev fronts the stack with host Caddy via `make dev` (see the [root README](../../README.md)) | — |
+| `dbproxy` / `dbconnstr` | — | `tooling`-profile helpers: TCP proxy to the DB and the connection string printer (`make dbshell`, `make dburl`) | — |
+| `powersync` | `journeyapps/powersync-service` | Sync service backing the local-first mobile clients | — |
 | `api` | `ci/api` | The NestJS backend — containerized in **staging/production**; under `make dev` it runs on the host via overmind | — |
 
 Environments are selected via the Compose **file** stack (`docker-compose.yml` + `docker-compose.{local,staging,production}.yml`), plus the `tooling` profile for ad-hoc DB proxies/shells (`make dbshell`, `make tooling`).
@@ -170,7 +172,7 @@ Located at `backend/apps/api/src/domains/`. Each domain is a NestJS module with 
 | `connections` | OAuth clients (Google, MS, Facebook, Spotify), token storage |
 | `etl` | Per-provider sync services (`Google/`, `Microsoft/`, `Facebook/`, `Spotify/`, `Steam/`), `SyncOrchestrator`, `PromoteService` (raw → graph) |
 | `graph` | Graph primitives over the relational `ci.entities`/`ci.relationships` tables (no graph extension), plus `entity_identifiers`, `item_relationships`, and bulk graph ingest |
-| `memory` | High-level domain services: `PersonService`, `PlaceService`, `EventService`, `ContentService`, `FileService`, `ItemService`, `ConceptService`, `CommunicationService`, `UserContextService`; the `v1/events` capture-ingest controller |
+| `memory` | High-level domain services: `PersonService`, `PlaceService`, `EventService`, `ContentService`, `FileService`, `ItemService`, `ConceptService`, `CommunicationService`, `UserContextService` |
 | `intelligence` | Conversational layer: `QuestionService`, `AnswerService`, `ActionService` (the "ask my memory" surface) |
 | `conversations` | Chat threads, messages, agent dispatch |
 | `summaries` | Reads of hourly/daily/weekly summaries produced by `summary-service` |
@@ -303,7 +305,7 @@ and the [bulk load runbook](../../backend/apps/api/db/postgres/BULK_LOAD_RUNBOOK
 | Editor lib | `frontend/packages/editor` | Rich-text / note editor |
 | Common lib | `frontend/packages/common` | Shared hooks, types, GraphQL fragments |
 | ShadCN lib | `frontend/packages/shadcn` | Local copy of the component library |
-| Native (future) | `frontend/apps/native` | Placeholder for mobile/native shell |
+| Mobile | `frontend/apps/ios`, `frontend/apps/android` | Capacitor shells around the `@ci/fe-web` SPA; native plugins in `frontend/packages/capacitor-*`. `frontend/apps/mobile` is the pointer README left by the iOS/Android split |
 | Browser ext. | [CI-Browser-Extension](https://github.com/companionintelligence/CI-Browser-Extension) | Talks to `browser-activity` |
 | XR / Spatial | [CI-Spatial-Companion-*](https://github.com/companionintelligence/), [CI-XR-Scan](https://github.com/companionintelligence/CI-XR-Scan) | Use `position` + AR relative coordinates |
 | Wearables / IoT | [CI-Pebble](https://github.com/companionintelligence/CI-Pebble), [CI-Mentra](https://github.com/companionintelligence/CI-Mentra), [CI-OMI](https://github.com/companionintelligence/CI-OMI), [CI-Even-Realities](https://github.com/companionintelligence/CI-Even-Realities) | Push to `devices` / `sensors` / `measurements` |
@@ -344,8 +346,8 @@ flowchart LR
 | Environment | Compose file | Use |
 |---|---|---|
 | local | `docker-compose.yml` + `docker-compose.local.yml` | **`make dev`** developer loop — per-worktree stack (Postgres, MinIO, hbpe/summary), Vite + nodemon on the host, Caddy route at `https://<project>.localhost` (see the [root README](../../README.md)) |
-| staging | `docker-compose.staging.yml` | Pre-prod parity (containerized `api` + NGINX `gateway`); runs against staging secrets |
-| production | `docker-compose.production.yml` | Production deploys inside CI-Hub |
+| staging | `docker-compose.yml` + `docker-compose.staging.yml` | Pre-prod parity (containerized `api` + NGINX `gateway`); runs against staging secrets |
+| production | `docker-compose.yml` + `docker-compose.production.yml` | Production deploys inside CI-Hub |
 | `tooling` (profile) | (profile flag on the above) | DB proxies/shells, ad-hoc admin (`make dbshell`, `make tooling`) |
 
 Secrets are mounted via the `secrets` volume produced by `setup-secrets`, with provider OAuth credentials, DB credentials, JWT signing keys, and the cross-service shared secret used by HBPE and Summary to sign service JWTs.
@@ -370,7 +372,7 @@ The roadmap below is synthesized from the current repo state (domains present, c
 
 | Theme | Item |
 |---|---|
-| Native shell | Fill in `frontend/apps/native` (currently placeholder) |
+| Native shell | Grow the shipped Capacitor apps (`frontend/apps/ios`, `frontend/apps/android`) beyond the web-view shell — on-device model + offline sync |
 | HBPE | Move from nightly batch to incremental online updates; expose richer prediction reads in `domains/predictions` |
 | Summary | Add monthly + yearly tiers; surface summary timeline in the web SPA |
 | Tools | Grow the **ToolRegistry** (`domains/tools`) beyond today's surface (calendar, contacts, files) — exposed through `POST /mcp` and `GET /api/intents` |
