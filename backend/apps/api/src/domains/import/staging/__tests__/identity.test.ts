@@ -4,6 +4,7 @@ import {
   entityKey,
   hasContactIdentity,
   hashItem,
+  isShortCode,
   mergeAccumulatedMetadata,
   needsContentDigest,
   normalizeHandle,
@@ -69,6 +70,51 @@ describe('entityIdentityKey', () => {
 
   it('is null for an entity with no handle at all', () => {
     expect(entityIdentityKey({ name: 'European Vacation', type: 'album' })).toBeNull();
+  });
+});
+
+describe('isShortCode', () => {
+  /*
+   * The rule that keeps an SMS service out of somebody's address book. It has
+   * to split TWO kinds of phone from each other without ever catching a name,
+   * because the only caller that matters (googlevoice.ts participantType) uses
+   * it to decide between `Person` and `Concept`.
+   */
+  it('accepts the three-to-six digit codes a real export carries', () => {
+    // Every one of these is a name on the QA corpus's 142 mis-filed rows.
+    for (const code of ['411', '2222', '32665', '99217', '227898', '+411']) {
+      expect(isShortCode(code)).toBe(true);
+    }
+  });
+
+  it('stops exactly where normalizeHandle starts keying, so there is no gap', () => {
+    expect(isShortCode('123456')).toBe(true);
+    expect(normalizeHandle('123456')).toBe('');
+
+    expect(isShortCode('1234567')).toBe(false);
+    expect(normalizeHandle('1234567')).toBe('1234567');
+  });
+
+  it('refuses a number a person can be reached on, however it is punctuated', () => {
+    for (const phone of ['+15558887777', '555-888-7777', '(555) 888 7777', '+44 20 7946 0000']) {
+      expect(isShortCode(phone)).toBe(false);
+    }
+  });
+
+  it('refuses anything that is not a phone field at all', () => {
+    // A name, a name carrying a digit, an email, and the empty/absent cases.
+    // Without the phone-shape guard "Studio 54" would read as a short code.
+    for (const value of ['Dana Wu', 'Studio 54', '411@example.invalid', '', '   ', undefined, null, 42]) {
+      expect(isShortCode(value)).toBe(false);
+    }
+  });
+
+  it('refuses phone punctuation carrying no number at all', () => {
+    // Passes the shape test and normalizes to nothing, so only the digit count
+    // separates it from a short code. A `tel:` href really can be junk.
+    for (const value of ['+', '()', '- . -']) {
+      expect(isShortCode(value)).toBe(false);
+    }
   });
 });
 
