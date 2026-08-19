@@ -1268,6 +1268,17 @@ export class ImportRunService {
    *
    * Splitting the queues narrows the window; it does not close it, because a
    * kind's queue is still ordered and a big parse still makes its siblings wait.
+   * CORRECTION: the key alone did nothing. pg-boss 10 makes de-duplication a
+   * QUEUE property, and its unique index on (name, singleton_key) is partial —
+   * `WHERE state='created' AND policy='short'` — while every queue here is
+   * created with the default `standard` policy, under which a singletonKey is
+   * stored and never enforced. `SyncOrchestrator.ts:299` already said so, and
+   * `select policy from pgboss.queue` on a live appliance returned `standard`
+   * for all 32. The four per-kind stage queues are now declared
+   * `policy: 'short'` (ImportStageListener), which is what makes this key bite.
+   * The legacy shared drain queue stays `standard`, because the deleted-stage
+   * fallback below targets it without a key.
+   *
    * Keying on the stage id lets pg-boss refuse the duplicate at insert time.
    * Crash recovery is unaffected: the key only suppresses a job while one is
    * pending, so once a lost job has left the queue the sweep enqueues again.
