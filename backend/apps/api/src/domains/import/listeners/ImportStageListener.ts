@@ -5,7 +5,7 @@ import { serves } from '@ci/common/roles';
 import { Cron } from '@ci/common/schedule';
 import { OnEvent } from '@ci/domains/events';
 
-import { IMPORT_QUEUE } from '../constants';
+import { IMPORT_QUEUE, IMPORT_STAGE_CONCURRENCY } from '../constants';
 import { ImportStageEvent } from '../events';
 import { ImportRunService } from '../services/ImportRunService';
 import { ImportScratchService } from '../services/ImportScratchService';
@@ -122,7 +122,16 @@ export class ImportStageListener implements OnApplicationBootstrap {
   // `role: 'worker'`: stage jobs run in the headless worker process (when a
   // deployment splits roles), so a parser's synchronous stretches cannot
   // stutter the web process serving buttons.
-  @OnEvent(ImportStageEvent, { queue: IMPORT_QUEUE, queueOptions: { role: 'worker', localConcurrency: 1 } })
+  //
+  // The literal `1` moved to IMPORT_STAGE_CONCURRENCY because the progress UI
+  // now has to state it: with thirteen runs against one slot, "queued for 51
+  // minutes" is the NORMAL state of a batch import rather than a stall, and
+  // only the concurrency explains why. Both read the same constant so the
+  // claim on screen cannot go stale behind a change made here.
+  @OnEvent(ImportStageEvent, {
+    queue: IMPORT_QUEUE,
+    queueOptions: { role: 'worker', localConcurrency: IMPORT_STAGE_CONCURRENCY },
+  })
   async handleStage(payload: unknown): Promise<void> {
     await this.runStage(payload);
   }

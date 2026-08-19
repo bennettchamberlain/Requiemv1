@@ -74,3 +74,25 @@ export const IMPORT_STAGE_WEIGHTS: Record<ImportStageKindName, number> = {
   media: 30,
   push: 15,
 };
+
+// ---------------------------------------------------------------------------
+// Scheduling
+// ---------------------------------------------------------------------------
+
+/**
+ * Stage jobs this appliance executes at once, across every run and every user.
+ *
+ * ONE. Stage jobs run in the API's own process, and a parse is long stretches
+ * of parser work plus a firehose of staged-row writes — six abreast (the global
+ * per-queue default) starves the event loop and the connection pool until Skip
+ * on an onboarding page hangs. See {@link ImportStageListener.handleStage},
+ * which passes this as its `localConcurrency`.
+ *
+ * Declared here rather than left as a literal in the decorator because the
+ * progress UI has to state it. Thirteen runs against one slot is what makes
+ * "queued for 51 minutes" the NORMAL state of a batch import rather than a
+ * stall, and a user cannot tell those two apart unless the surface says how
+ * many stages can run at once. A UI that hardcoded its own "1" would go on
+ * claiming it after someone raised this — so both read the same constant.
+ */
+export const IMPORT_STAGE_CONCURRENCY = 1;

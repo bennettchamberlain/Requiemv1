@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
-import { compactNumber, computeFraction, formatDuration, runStatusLabel, stageLabel } from './runFormat';
+import {
+  compactNumber,
+  computeFraction,
+  formatDuration,
+  formatElapsed,
+  formatRate,
+  humanizeUnit,
+  queueStateLabel,
+  runStatusLabel,
+  STAGE_BLURBS,
+  stageLabel,
+} from './runFormat';
 
 describe('computeFraction', () => {
   it('returns null when there is no denominator', () => {
@@ -64,5 +75,85 @@ describe('stageLabel', () => {
     expect(stageLabel('unpack')).toBe('Unpack');
     expect(stageLabel('parse')).toBe('Read');
     expect(stageLabel('push')).toBe('Save');
+  });
+});
+
+/**
+ * The vocabulary the pinned progress region runs on.
+ *
+ * All of it exists because a real 13-source import was unreadable: thirteen runs
+ * sharing one label, twelve of them saying "queued", a 704k-item parse and a
+ * 298-item one looking identical, and `items_per_sec` recorded on every row and
+ * rendered nowhere.
+ */
+describe('humanizeUnit', () => {
+  it('turns a staged folder or archive name into something to read', () => {
+    // The observed batch's actual unit names.
+    expect(humanizeUnit('google-takeout')).toBe('Google Takeout');
+    expect(humanizeUnit('whatsapp')).toBe('Whatsapp');
+    expect(humanizeUnit('contact_list')).toBe('Contact List');
+  });
+
+  it('drops an archive extension, which is noise next to the run row', () => {
+    expect(humanizeUnit('takeout-20260819.zip')).toBe('Takeout 20260819');
+    expect(humanizeUnit('backup.tar')).toBe('Backup');
+  });
+
+  it('has nothing to say about nothing, so the caller can fall back', () => {
+    expect(humanizeUnit(null)).toBeNull();
+    expect(humanizeUnit('   ')).toBeNull();
+  });
+});
+
+describe('formatRate', () => {
+  it('keeps a decimal below 10/s, where the difference is hours', () => {
+    // A contact list parsed at 6.1/s on the observed batch; a Takeout at 555/s.
+    expect(formatRate(6.098197753881312)).toBe('6.1/s');
+    expect(formatRate(554.9437648218284)).toBe('555/s');
+    expect(formatRate(1_240)).toBe('1.2k/s');
+  });
+
+  it('says nothing rather than "0/s" when nothing was measured', () => {
+    expect(formatRate(null)).toBeNull();
+    expect(formatRate(0)).toBeNull();
+  });
+});
+
+describe('queueStateLabel', () => {
+  it('separates the two things the database both calls "queued"', () => {
+    // Enqueued, needs the appliance's single slot — normal, and it can last an
+    // hour on a batch import.
+    expect(queueStateLabel('waiting', { position: 1 })).toBe('Next in the import queue');
+    expect(queueStateLabel('waiting', { position: 3 })).toBe('Waiting — 3rd in the import queue');
+    // Not enqueued at all: its own run has not reached this stage.
+    expect(queueStateLabel('blocked')).toBe('Not started yet');
+  });
+
+  it('says nothing for a stage that is doing or has done something', () => {
+    // Those lines carry live counts instead; a queue label would displace them.
+    expect(queueStateLabel('running')).toBeNull();
+    expect(queueStateLabel('done')).toBeNull();
+  });
+});
+
+describe('formatElapsed', () => {
+  it('reads an elapsed millisecond count at the scale it happens to be', () => {
+    expect(formatElapsed(1_872)).toBe('1.9s');
+    expect(formatElapsed(2_734_458)).toBe('45m 34s');
+    expect(formatElapsed(66 * 60_000)).toBe('1h 6m');
+  });
+
+  it('refuses to invent one', () => {
+    expect(formatElapsed(null)).toBeNull();
+    expect(formatElapsed(-1)).toBeNull();
+  });
+});
+
+describe('stage labels', () => {
+  it('names the media stage, which rendered as the raw word and no blurb', () => {
+    // Weight 30 against parse's 35 — on a photo export it is the longest leg of
+    // the import, and it was the least explained thing on the screen.
+    expect(stageLabel('media')).toBe('Store files');
+    expect(STAGE_BLURBS.media).toBe('Copy its photos, videos and voicemails into storage');
   });
 });
