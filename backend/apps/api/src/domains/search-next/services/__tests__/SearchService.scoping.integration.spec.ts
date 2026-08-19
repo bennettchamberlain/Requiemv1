@@ -105,19 +105,25 @@ describeWithDatabase(`SearchService scoping against a live Postgres (${availabil
 
   afterAll(async () => {
     if (dataSource?.isInitialized) {
-      await dataSource.query('DELETE FROM ci_search.vectors WHERE user_id = ANY($1::uuid[])', [[userA, userB]]);
-      await dataSource.query('DELETE FROM ci_search.embeddings WHERE user_id = ANY($1::uuid[])', [[userA, userB]]);
+      await dataSource.query('DELETE FROM ci_search.vectors WHERE user_id = ANY($1::uuid[])', [
+        [userA, userB],
+      ]);
+      await dataSource.query('DELETE FROM ci_search.embeddings WHERE user_id = ANY($1::uuid[])', [
+        [userA, userB],
+      ]);
       await dataSource.destroy();
     }
   });
 
   afterEach(async () => {
     await dataSource.query('DELETE FROM ci_search.vectors WHERE user_id = ANY($1::uuid[])', [[userA, userB]]);
-    await dataSource.query('DELETE FROM ci_search.embeddings WHERE user_id = ANY($1::uuid[])', [[userA, userB]]);
+    await dataSource.query('DELETE FROM ci_search.embeddings WHERE user_id = ANY($1::uuid[])', [
+      [userA, userB],
+    ]);
   });
 
   describe('keywordSearch (mode: keyword)', () => {
-    it('never returns another user\'s row, even for the identical matching term', async () => {
+    it("never returns another user's row, even for the identical matching term", async () => {
       await seedVector(userA, 'person', 'mochi the golden retriever');
       await seedVector(userB, 'person', 'mochi the golden retriever');
 
@@ -163,7 +169,7 @@ describeWithDatabase(`SearchService scoping against a live Postgres (${availabil
   });
 
   describe('semanticSearch (mode: semantic)', () => {
-    it('never returns another user\'s embedding row', async () => {
+    it("never returns another user's embedding row", async () => {
       await seedEmbedding(userA, 'person');
       await seedEmbedding(userB, 'person');
 
@@ -193,7 +199,7 @@ describeWithDatabase(`SearchService scoping against a live Postgres (${availabil
   });
 
   describe('boostedKeywordSearch (mode: boosted)', () => {
-    it('never returns another user\'s row even when both keyword and embedding tables carry the match', async () => {
+    it("never returns another user's row even when both keyword and embedding tables carry the match", async () => {
       // Same entity id in both tables per user, so a correctly-scoped result
       // set is unambiguous: exactly one row, belonging to the caller.
       const entityIdA = randomUUID();
@@ -210,7 +216,7 @@ describeWithDatabase(`SearchService scoping against a live Postgres (${availabil
   });
 
   describe('hybridSearch (mode: hybrid)', () => {
-    it('fuses both channels but still never leaks another user\'s row', async () => {
+    it("fuses both channels but still never leaks another user's row", async () => {
       const entityIdA = randomUUID();
       const entityIdB = randomUUID();
       await seedVector(userA, 'person', 'mochi the dog', entityIdA);

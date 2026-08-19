@@ -76,4 +76,7 @@ export type { Acknowledgement, EventSendOptions, QueueOptions } from './types';
 // backfill. Exporting them here keeps callers off `events/constants` directly,
 // which the no-cross-domain-internals dependency rule forbids.
 export { DEFAULT_JOB_PRIORITY, INTERACTIVE_JOB_PRIORITY, BACKFILL_JOB_PRIORITY } from './constants';
-export { defineEvent } from './event-registration';
+// EventListenerRegistry is the live record of `@OnEvent` queue declarations.
+// Other domains' tests assert policy/role off it; exporting here keeps them
+// off `events/event-registration` internals (no-cross-domain-internals).
+export { defineEvent, EventListenerRegistry } from './event-registration';

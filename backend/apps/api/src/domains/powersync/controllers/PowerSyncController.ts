@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
@@ -20,9 +20,9 @@ export class PowerSyncController {
    */
   @UseGuards(JwtOrApiKeyAuthGuard)
   @Get('token')
-  issueToken(@Context() context: RequestContext): PowerSyncCredentials {
+  issueToken(@Context() context: RequestContext, @Query('cutoff') cutoff?: string): PowerSyncCredentials {
     const { userId } = toServiceContext(context);
 
-    return this.tokenService.issueToken(userId);
+    return this.tokenService.issueToken(userId, cutoff);
   }
 }

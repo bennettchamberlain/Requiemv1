@@ -5,10 +5,7 @@ import { Brain, ChevronRight } from '@ci/shadcn/icons';
 import { Link, useLocation } from 'react-router-dom';
 
 import { useFeatures } from '@/common/feature';
-import {
-  MEMORY_HUB_SECTIONS,
-  isMemoryHubPath,
-} from '@/components/MemoryHub/memoryHubSections';
+import { MEMORY_HUB_SECTIONS, isMemoryHubPath } from '@/components/MemoryHub/memoryHubSections';
 
 import { usePowerRail } from '../PowerRailContext';
 

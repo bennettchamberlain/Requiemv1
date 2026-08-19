@@ -81,7 +81,9 @@ describe('PlannedBlockService', () => {
       timezoneFor: jest.fn().mockResolvedValue('UTC'),
       today: jest.fn().mockResolvedValue('2026-08-18'),
       localDate: jest.fn().mockResolvedValue('2026-08-18'),
-      toInstant: jest.fn(async (_ctx: unknown, date: string, wall: string) => new Date(`${date}T${wall}:00.000Z`)),
+      toInstant: jest.fn(
+        async (_ctx: unknown, date: string, wall: string) => new Date(`${date}T${wall}:00.000Z`),
+      ),
     };
 
     const module = await Test.createTestingModule({

@@ -60,6 +60,8 @@ import type {
 } from '@powersync/web';
 import { UpdateType } from '@powersync/web';
 
+import { getWorkingSetCutoffIso } from './workingSet';
+
 const CREATE_NOTE_MUTATION = `
   mutation PowerSyncCreateNote($input: CreateNoteInput!) {
     createNote(input: $input) {
@@ -121,12 +123,20 @@ export class GraphQLBackendConnector implements PowerSyncBackendConnector {
       return null;
     }
 
-    const response = await fetch(buildApiUrl('/api/powersync/token'), {
+    const cutoff = encodeURIComponent(getWorkingSetCutoffIso());
+    const response = await fetch(buildApiUrl(`/api/powersync/token?cutoff=${cutoff}`), {
       headers: {
         ...apiKeyHeaders(),
         ...(token ? { authorization: `Bearer ${token}` } : {}),
       },
     });
+
+    if (response.status === 503) {
+      // PowerSync is off on this appliance. Stay GraphQL-only; do not retry forever.
+      console.warn('[PowerSync] Token endpoint unavailable; staying GraphQL-only');
+
+      return null;
+    }
 
     if (!response.ok) {
       // Network/server error reaching our own API — transient, let PowerSync retry.

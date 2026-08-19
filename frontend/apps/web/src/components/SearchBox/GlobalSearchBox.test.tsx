@@ -238,7 +238,12 @@ describe('GlobalSearchBox suggestions', () => {
   it('selecting a person suggestion decodes its GlobalUID and opens the detail route', async () => {
     h.search = {
       data: [
-        { __typename: 'PersonType', id: GlobalUID.encode('person', '42'), name: 'Alice', filterName: 'Alice' },
+        {
+          __typename: 'PersonType',
+          id: GlobalUID.encode('person', '42'),
+          name: 'Alice',
+          filterName: 'Alice',
+        },
       ],
       tags: [],
       loading: false,

@@ -125,7 +125,9 @@ export function EditTaskModal({ task, onClose, onSaved }: Props) {
       <Dialog.Content className="sm:max-w-[425px]">
         <Dialog.Header>
           <Dialog.Title>Edit task</Dialog.Title>
-          <Dialog.Description>Change the title, notes, due date, or how long it should take.</Dialog.Description>
+          <Dialog.Description>
+            Change the title, notes, due date, or how long it should take.
+          </Dialog.Description>
         </Dialog.Header>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">

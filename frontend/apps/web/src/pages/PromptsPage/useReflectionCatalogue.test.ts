@@ -20,6 +20,7 @@ function entry(overrides: Partial<CatalogueEntry> = {}): CatalogueEntry {
     isSeedQuestion: true,
     createdByLlm: false,
     isPrivateTo: null,
+    forkedFromQuestionId: null,
     timesAsked: 0,
     timesAnswered: 0,
     createdAt: '2026-01-01T00:00:00.000Z',

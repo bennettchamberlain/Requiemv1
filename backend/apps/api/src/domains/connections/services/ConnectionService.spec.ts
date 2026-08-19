@@ -126,7 +126,7 @@ describe('ConnectionService — tenancy scoping', () => {
     expect(result?.id).toBe('c1');
   });
 
-  it('update refuses to touch another owner\'s connection', async () => {
+  it("update refuses to touch another owner's connection", async () => {
     const { service, store } = makeService([makeRow({ id: 'c1', userId: OWNER, name: 'original' })]);
 
     const result = await service.update(OTHER_CONTEXT, 'c1', { name: 'hijacked' } as never);
@@ -135,14 +135,14 @@ describe('ConnectionService — tenancy scoping', () => {
     expect(store[0].name).toBe('original');
   });
 
-  it('remove refuses to deactivate another owner\'s connection', async () => {
+  it("remove refuses to deactivate another owner's connection", async () => {
     const { service, store } = makeService([makeRow({ id: 'c1', userId: OWNER, active: true })]);
 
     await expect(service.remove(OTHER_CONTEXT, 'c1')).rejects.toBeInstanceOf(NotFoundException);
     expect(store[0].active).toBe(true);
   });
 
-  it('remove deactivates (not deletes) the owner\'s own connection', async () => {
+  it("remove deactivates (not deletes) the owner's own connection", async () => {
     const { service, store } = makeService([makeRow({ id: 'c1', userId: OWNER, active: true })]);
 
     const result = await service.remove(OWN_CONTEXT, 'c1');

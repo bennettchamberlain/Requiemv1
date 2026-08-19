@@ -17,6 +17,7 @@ import {
   AnomalyEngine,
   COLD_START_MIN_DAYS,
 } from '@ci/domains/daily-metrics';
+import { excludeForkedOriginsSql } from '@ci/domains/intelligence';
 import { OllamaService, PROMPT_MODEL } from '@ci/domains/llm/services/OllamaService';
 import { UserContextService } from '@ci/domains/memory';
 
@@ -634,6 +635,7 @@ export class ContextPromptGenerateService {
       FROM ci.questions q
       WHERE q.is_active = TRUE
         AND (q.is_private_to IS NULL OR q.is_private_to = $1)
+        ${excludeForkedOriginsSql('q', '$1')}
         AND NOT EXISTS (
           SELECT 1 FROM ci.answers a
           WHERE a.question_id = q.question_id AND a.user_id = $1
@@ -659,6 +661,7 @@ export class ContextPromptGenerateService {
           AND TRIM(a.answer_text) <> ''
         WHERE q.is_active = TRUE
           AND (q.is_private_to IS NULL OR q.is_private_to = $1)
+          ${excludeForkedOriginsSql('q', '$1')}
         GROUP BY q.question_category
       )
       SELECT category

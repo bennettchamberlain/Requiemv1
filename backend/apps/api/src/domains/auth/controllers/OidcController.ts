@@ -214,6 +214,7 @@ export class OidcController {
       redirect ?? undefined,
       // Already bounced once — proceed here rather than risk a redirect loop.
       req.query[OIDC_ORIGIN_BOUNCE_PARAM] !== undefined,
+      client,
     );
 
     if (bounceUrl) {

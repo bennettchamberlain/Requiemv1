@@ -204,10 +204,7 @@ export class ImportRunsController {
    */
   @UseGuards(JwtOrApiKeyAuthGuard)
   @Post('recognize')
-  async recognize(
-    @Context() context: RequestContext,
-    @Body() body: RecognizeBody,
-  ): Promise<PathRecognition> {
+  async recognize(@Context() context: RequestContext, @Body() body: RecognizeBody): Promise<PathRecognition> {
     if (!body?.path) {
       throw new BadRequestException('path is required');
     }

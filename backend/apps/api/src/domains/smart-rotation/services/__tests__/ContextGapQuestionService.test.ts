@@ -109,9 +109,13 @@ describe('ContextGapQuestionService.tryGenerateAndEnqueue', () => {
     const { service, ollamaService } = buildService({
       dataSource: {
         query: jest.fn().mockImplementation(async (sql: string) => {
-          if (sql.includes('EXISTS')) {return [{ recent: false }];}
+          if (sql.includes('EXISTS')) {
+            return [{ recent: false }];
+          }
 
-          if (sql.includes('category_coverage')) {return [{ category: 'finance' }];}
+          if (sql.includes('category_coverage')) {
+            return [{ category: 'finance' }];
+          }
 
           return [];
         }),
@@ -131,9 +135,13 @@ describe('ContextGapQuestionService.tryGenerateAndEnqueue', () => {
     const { service, ollamaService } = buildService({
       dataSource: {
         query: jest.fn().mockImplementation(async (sql: string) => {
-          if (sql.includes('EXISTS')) {return [{ recent: false }];}
+          if (sql.includes('EXISTS')) {
+            return [{ recent: false }];
+          }
 
-          if (sql.includes('category_coverage')) {return [];}
+          if (sql.includes('category_coverage')) {
+            return [];
+          }
 
           return [];
         }),

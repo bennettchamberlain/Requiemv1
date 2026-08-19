@@ -59,11 +59,17 @@ function matches(row: DeltaEntity, fragment: string, params?: Record<string, unk
   const expected = params?.[paramName];
   const actual = (row as unknown as Record<string, unknown>)[field];
 
-  if (op === '=') {return actual === expected;}
+  if (op === '=') {
+    return actual === expected;
+  }
 
-  if (op === '>=') {return (actual as Date) >= (expected as Date);}
+  if (op === '>=') {
+    return (actual as Date) >= (expected as Date);
+  }
 
-  if (op === '<=') {return (actual as Date) <= (expected as Date);}
+  if (op === '<=') {
+    return (actual as Date) <= (expected as Date);
+  }
 
   return false;
 }
@@ -109,10 +115,15 @@ function makeQueryBuilder(rows: DeltaEntity[]): FakeQueryBuilder {
 
     (brackets as unknown as { whereFactory: (qb: unknown) => void }).whereFactory(subBuilder);
 
-    filtered = filtered.filter((row) => orClauses.some((clause) => matches(row, clause.fragment, clause.params)));
+    filtered = filtered.filter((row) =>
+      orClauses.some((clause) => matches(row, clause.fragment, clause.params)),
+    );
   };
 
-  const applyWhere = (fragmentOrBrackets: string | Brackets, params?: Record<string, unknown>): FakeQueryBuilder => {
+  const applyWhere = (
+    fragmentOrBrackets: string | Brackets,
+    params?: Record<string, unknown>,
+  ): FakeQueryBuilder => {
     if (fragmentOrBrackets instanceof Brackets) {
       applyBrackets(fragmentOrBrackets);
     } else {
@@ -164,7 +175,9 @@ function makeService(rows: DeltaEntity[] = []) {
   const findOne = jest.fn(async ({ where }: { where: Record<string, unknown> }) => {
     return (
       store.find((row) =>
-        Object.entries(where).every(([key, value]) => (row as unknown as Record<string, unknown>)[key] === value),
+        Object.entries(where).every(
+          ([key, value]) => (row as unknown as Record<string, unknown>)[key] === value,
+        ),
       ) ?? null
     );
   });
@@ -178,7 +191,9 @@ function makeService(rows: DeltaEntity[] = []) {
       : ((deltaIdFilter as { value?: string[] })?.value ?? []);
 
     return store.filter((row) => {
-      if (!ids.includes(row.deltaId)) {return false;}
+      if (!ids.includes(row.deltaId)) {
+        return false;
+      }
 
       return Object.entries(where)
         .filter(([key]) => key !== 'deltaId')
@@ -193,13 +208,17 @@ function makeService(rows: DeltaEntity[] = []) {
     let affected = 0;
 
     for (const row of store) {
-      if (!ids.includes(row.deltaId)) {continue;}
+      if (!ids.includes(row.deltaId)) {
+        continue;
+      }
 
       const scopeOk = Object.entries(whereClause)
         .filter(([key]) => key !== 'deltaId')
         .every(([key, value]) => (row as unknown as Record<string, unknown>)[key] === value);
 
-      if (!scopeOk) {continue;}
+      if (!scopeOk) {
+        continue;
+      }
 
       Object.assign(row, patch);
       affected += 1;
@@ -274,7 +293,7 @@ describe('DeltaService — tenancy scoping', () => {
   });
 
   describe('findDeltas', () => {
-    it('excludes another owner\'s row for a non-system caller', async () => {
+    it("excludes another owner's row for a non-system caller", async () => {
       const { service } = makeService([
         makeRow({ deltaId: 'mine', ownerUserId: OWNER }),
         makeRow({ deltaId: 'theirs', ownerUserId: OTHER }),
@@ -296,7 +315,7 @@ describe('DeltaService — tenancy scoping', () => {
       expect(result.map((d) => d.deltaId).sort()).toEqual(['mine', 'theirs']);
     });
 
-    it('combines owner scope with the caller\'s explicit filters (entityId + unsummarizedOnly)', async () => {
+    it("combines owner scope with the caller's explicit filters (entityId + unsummarizedOnly)", async () => {
       const { service } = makeService([
         makeRow({ deltaId: 'a', ownerUserId: OWNER, entityId: 'e1', summaryId: null }),
         makeRow({ deltaId: 'b', ownerUserId: OWNER, entityId: 'e1', summaryId: 'sum-1' }),
@@ -325,7 +344,7 @@ describe('DeltaService — tenancy scoping', () => {
       expect(result.map((d) => d.deltaId).sort()).toEqual(['as-from', 'as-subject', 'as-to']);
     });
 
-    it('rejects reading another owner\'s entity evolution entirely', async () => {
+    it("rejects reading another owner's entity evolution entirely", async () => {
       const { service } = makeService([makeRow({ deltaId: 'theirs', ownerUserId: OTHER, entityId: 'e1' })]);
 
       const result = await service.findEvolutionForEntity(OWN_CONTEXT, 'e1');
@@ -353,7 +372,9 @@ describe('DeltaService — tenancy scoping', () => {
     });
 
     it('lets SYSTEM_USER stamp across owners', async () => {
-      const { service, store } = makeService([makeRow({ deltaId: 'theirs', ownerUserId: OTHER, summaryId: null })]);
+      const { service, store } = makeService([
+        makeRow({ deltaId: 'theirs', ownerUserId: OTHER, summaryId: null }),
+      ]);
 
       const affected = await service.markAsSummarized(SYSTEM_CONTEXT, {
         deltaIds: ['theirs'],
@@ -366,7 +387,7 @@ describe('DeltaService — tenancy scoping', () => {
   });
 
   describe('countUnsummarized', () => {
-    it('counts only the caller\'s own unsummarized deltas', async () => {
+    it("counts only the caller's own unsummarized deltas", async () => {
       const { service } = makeService([
         makeRow({ deltaId: 'a', ownerUserId: OWNER, summaryId: null }),
         makeRow({ deltaId: 'b', ownerUserId: OWNER, summaryId: 'done' }),

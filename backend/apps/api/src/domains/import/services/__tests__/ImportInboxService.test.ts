@@ -392,6 +392,7 @@ describe('ImportInboxService.scan', () => {
     for (let index = 0; index < 25_000; index += 1) {
       await writeFile(path.join(big, `f${String(index).padStart(6, '0')}.txt`), 'x');
     }
+
     await mkdir(path.join(inbox, 'zzz'));
     await writeFile(path.join(inbox, 'zzz', 'export.csv'), 'x');
 
@@ -898,7 +899,7 @@ describe('folder-scoped recognition', () => {
     const call = dataSourcesRecognize.mock.calls.find((c) =>
       (c[1] as { fullPath: string }).fullPath.endsWith('/amazon'),
     );
-    const only = (call?.[3] as { only?: ReadonlySet<string> }).only;
+    const only = (call?.[3] as { only?: ReadonlySet<string> } | undefined)?.only;
 
     expect(only).toEqual(new Set(['amazon', 'prime_video', 'audible', 'kindle_reading', 'amazon_music']));
   });

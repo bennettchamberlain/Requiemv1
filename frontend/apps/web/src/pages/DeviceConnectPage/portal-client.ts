@@ -1,0 +1,271 @@
+/**
+ * Portal client for the native `/device-connect` flow. Signs into CI-Portal, then
+ * lists Companion Memory (`ci-memory`) apps the user owns so the phone can point
+ * at a Hub-published Memory Server.
+ *
+ * Portal OIDC access tokens must hit `/api/users/me/apps?slug=…`, not `/api/devices`
+ * (that route 401s on OIDC). Email/password uses `/api/devices` and filters for
+ * the Memory app URL. Modeled on CI-Hub's mobile-connect portal-client, without
+ * Tauri — Capacitor native HTTP is used when present so webview CORS cannot block
+ * the Portal origin.
+ */
+
+const PRODUCTION_PORTAL_URL = 'https://hub.ci.computer';
+const DEVELOPMENT_PORTAL_URL = 'https://hub.companionintelligence.com';
+
+function portalUrlFromEnv(): string {
+  try {
+    const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
+    const baked = env?.VITE_CI_CLOUD_URL?.trim() || env?.CI_CLOUD_URL?.trim();
+
+    if (baked) {
+      return baked.replace(/\/+$/, '');
+    }
+
+    // Native simulator/device talks to CI cloud *dev* unless the web build was
+    // explicitly marked production. Prod is hub.ci.computer.
+    if (env?.VITE_CI_HUB_ENVIRONMENT === 'production') {
+      return PRODUCTION_PORTAL_URL;
+    }
+
+    return DEVELOPMENT_PORTAL_URL;
+  } catch {
+    return DEVELOPMENT_PORTAL_URL;
+  }
+}
+
+export const DEFAULT_PORTAL_URL = portalUrlFromEnv();
+
+export interface PortalAuth {
+  token: string | null;
+  cookie: string | null;
+  kind?: 'session' | 'oauth';
+}
+
+export interface MemoryServerDevice {
+  id: string;
+  name: string;
+  status: string;
+  memoryUrl: string | null;
+}
+
+const MEMORY_SLUGS = ['ci-memory', 'companion-memory', 'ci-server'];
+
+export function normalizePortalUrl(url: string): string {
+  return url.trim().replace(/\/+$/, '') || DEFAULT_PORTAL_URL;
+}
+
+type CapacitorHttpPlugin = {
+  request: (opts: {
+    url: string;
+    method?: string;
+    headers?: Record<string, string>;
+    data?: unknown;
+    connectTimeout?: number;
+    readTimeout?: number;
+  }) => Promise<{ status: number; data: unknown; headers?: Record<string, string> }>;
+};
+
+async function portalFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const cap = (
+    window as unknown as {
+      Capacitor?: { Plugins?: { CapacitorHttp?: CapacitorHttpPlugin } };
+    }
+  ).Capacitor?.Plugins?.CapacitorHttp;
+
+  if (cap?.request) {
+    const headers: Record<string, string> = {};
+    if (init.headers) {
+      const raw = init.headers;
+      if (raw instanceof Headers) {
+        raw.forEach((value, key) => {
+          headers[key] = value;
+        });
+      } else if (Array.isArray(raw)) {
+        for (const [key, value] of raw) {
+          headers[key] = value;
+        }
+      } else {
+        Object.assign(headers, raw);
+      }
+    }
+
+    const result = await cap.request({
+      url,
+      method: (init.method ?? 'GET').toUpperCase(),
+      headers,
+      data: init.body ? JSON.parse(String(init.body)) : undefined,
+      connectTimeout: 15_000,
+      readTimeout: 15_000,
+    });
+
+    const body = typeof result.data === 'string' ? result.data : JSON.stringify(result.data ?? {});
+
+    return new Response(body, { status: result.status, headers: result.headers });
+  }
+
+  return fetch(url, { ...init, signal: init.signal ?? AbortSignal.timeout(15_000) });
+}
+
+function extractSessionCookie(setCookie: string | null): string | null {
+  if (!setCookie) {
+    return null;
+  }
+
+  const pairs = setCookie
+    .split(/,(?=[^;]+?=)/)
+    .map((c) => (c.split(';')[0] ?? '').trim())
+    .filter((c) => /session|token|^ci/i.test(c));
+
+  return pairs.length ? pairs.join('; ') : null;
+}
+
+function memoryUrlForDevice(device: {
+  apps?: Array<{ slug?: string; name?: string; url?: string }>;
+}): string | null {
+  const apps = device.apps ?? [];
+  const memory = apps.find(
+    (a) => MEMORY_SLUGS.includes(a.slug ?? '') || /memory|ci-server/i.test(a.name ?? ''),
+  );
+
+  return memory?.url ?? null;
+}
+
+export async function signInToPortal(
+  email: string,
+  password: string,
+  portalUrl = DEFAULT_PORTAL_URL,
+): Promise<PortalAuth> {
+  const portal = normalizePortalUrl(portalUrl);
+  const res = await portalFetch(`${portal}/api/auth/sign-in/email`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+
+  if (!res.ok) {
+    let message = `Sign-in failed (${res.status})`;
+
+    try {
+      const body = (await res.json()) as { message?: string };
+
+      if (body?.message) {
+        message = body.message;
+      }
+    } catch {
+      /* keep default */
+    }
+
+    throw new Error(message);
+  }
+
+  const cookie = extractSessionCookie(res.headers.get('set-cookie'));
+  let token: string | null = null;
+
+  try {
+    const body = (await res.json()) as { token?: string; session?: { token?: string } };
+    token = body?.token ?? body?.session?.token ?? null;
+  } catch {
+    /* token may only be in the cookie */
+  }
+
+  if (!token && !cookie) {
+    throw new Error('Sign-in succeeded but no session was returned by the Portal.');
+  }
+
+  return { token, cookie, kind: 'session' };
+}
+
+async function listMemoryWithOauthToken(auth: PortalAuth, portal: string): Promise<MemoryServerDevice[]> {
+  const headers: Record<string, string> = {};
+
+  if (auth.token) {
+    headers.Authorization = `Bearer ${auth.token}`;
+  }
+
+  const seen = new Set<string>();
+  const devices: MemoryServerDevice[] = [];
+
+  for (const slug of MEMORY_SLUGS) {
+    const res = await portalFetch(`${portal}/api/users/me/apps?slug=${encodeURIComponent(slug)}`, {
+      method: 'GET',
+      headers,
+    });
+
+    if (!res.ok) {
+      throw new Error(`Could not load your Memory Servers (${res.status}).`);
+    }
+
+    const body = (await res.json()) as {
+      apps?: Array<{ slug?: string; url?: string; deviceName?: string; deviceSlug?: string }>;
+    };
+
+    for (const app of body.apps ?? []) {
+      const key = app.url || app.deviceSlug || app.deviceName;
+
+      if (!key || seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      devices.push({
+        id: app.deviceSlug || app.url || key,
+        name: app.deviceName || app.deviceSlug || key,
+        status: 'active',
+        memoryUrl: app.url ?? null,
+      });
+    }
+
+    if (devices.length > 0) {
+      break;
+    }
+  }
+
+  return devices;
+}
+
+/** List Companion Memory appliances the authenticated Portal user owns. */
+export async function listMemoryServers(
+  auth: PortalAuth,
+  portalUrl = DEFAULT_PORTAL_URL,
+): Promise<MemoryServerDevice[]> {
+  const portal = normalizePortalUrl(portalUrl);
+
+  if (auth.kind === 'oauth') {
+    return listMemoryWithOauthToken(auth, portal);
+  }
+
+  const headers: Record<string, string> = {};
+
+  if (auth.token) {
+    headers.Authorization = `Bearer ${auth.token}`;
+  }
+
+  if (auth.cookie) {
+    headers.Cookie = auth.cookie;
+  }
+
+  const res = await portalFetch(`${portal}/api/devices`, { method: 'GET', headers });
+
+  if (!res.ok) {
+    throw new Error(`Could not load your Memory Servers (${res.status}).`);
+  }
+
+  const body = (await res.json()) as {
+    devices?: Array<{
+      id: string;
+      name?: string;
+      displayName?: string;
+      slug?: string;
+      status?: string;
+      apps?: Array<{ slug?: string; name?: string; url?: string }>;
+    }>;
+  };
+
+  return (body.devices ?? []).map((d) => ({
+    id: d.id,
+    name: d.displayName || d.name || d.slug || d.id,
+    status: d.status ?? 'unknown',
+    memoryUrl: memoryUrlForDevice(d),
+  }));
+}

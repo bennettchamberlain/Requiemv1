@@ -1,5 +1,5 @@
 import { apiKeyHeaders } from './apiAuth';
-import { buildApiUrl } from './apiBase';
+import { buildApiUrl, isNativePlatform } from './apiBase';
 
 interface Opts extends RequestInit {
   timeout?: number;
@@ -171,6 +171,90 @@ async function parseErrorBody(res: Response): Promise<{ serverMessage?: string; 
   }
 }
 
+type CapacitorHttpPlugin = {
+  request: (opts: {
+    url: string;
+    method?: string;
+    headers?: Record<string, string>;
+    data?: unknown;
+    connectTimeout?: number;
+    readTimeout?: number;
+  }) => Promise<{ status: number; data: unknown; headers?: Record<string, string> }>;
+};
+
+function capacitorHttp(): CapacitorHttpPlugin | undefined {
+  if (typeof window === 'undefined' || !isNativePlatform()) {
+    return undefined;
+  }
+
+  return (
+    window as unknown as {
+      Capacitor?: { Plugins?: { CapacitorHttp?: CapacitorHttpPlugin } };
+    }
+  ).Capacitor?.Plugins?.CapacitorHttp;
+}
+
+function flattenHeaders(headers?: HeadersInit): Record<string, string> {
+  if (!headers) {
+    return {};
+  }
+
+  if (headers instanceof Headers) {
+    const out: Record<string, string> = {};
+    headers.forEach((value, key) => {
+      out[key] = value;
+    });
+
+    return out;
+  }
+
+  if (Array.isArray(headers)) {
+    return Object.fromEntries(headers);
+  }
+
+  return { ...headers };
+}
+
+function requestData(body: BodyInit | null | undefined): unknown {
+  if (body == null) {
+    return undefined;
+  }
+
+  if (typeof body === 'string') {
+    try {
+      return JSON.parse(body);
+    } catch {
+      return body;
+    }
+  }
+
+  return body;
+}
+
+/**
+ * Native webview `fetch` is CORS-bound and has no Hub cookie. CapacitorHttp
+ * goes out as a real origin-less request so Traefik/Memory see the call.
+ * Web and tests without the plugin keep `window.fetch`.
+ */
+async function nativeAwareFetch(input: RequestInfo, init: RequestInit, timeout?: number): Promise<Response> {
+  const cap = typeof input === 'string' ? capacitorHttp() : undefined;
+
+  if (!cap?.request || typeof input !== 'string') {
+    return fetch(input, init);
+  }
+
+  const result = await cap.request({
+    url: input,
+    method: (init.method ?? 'GET').toUpperCase(),
+    headers: flattenHeaders(init.headers),
+    data: requestData(init.body),
+    ...(timeout != null ? { connectTimeout: timeout, readTimeout: timeout } : {}),
+  });
+  const body = typeof result.data === 'string' ? result.data : JSON.stringify(result.data ?? {});
+
+  return new Response(body, { status: result.status, headers: result.headers });
+}
+
 export async function fetchJson<T>(input: RequestInfo, init?: Opts): Promise<T | undefined> {
   const { timeout, skipApiKey, ...rest } = init ?? {};
 
@@ -199,7 +283,7 @@ export async function fetchJson<T>(input: RequestInfo, init?: Opts): Promise<T |
   // would later abort an already-settled request and keep the event loop alive.
   let res: Response;
   try {
-    res = await fetch(resolved, rest);
+    res = await nativeAwareFetch(resolved, rest, timeout);
   } finally {
     if (timeoutId != null) {
       clearTimeout(timeoutId);

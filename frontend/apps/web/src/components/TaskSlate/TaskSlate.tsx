@@ -132,7 +132,7 @@ function CandidateCard({
       )}
     >
       <GripVertical
-        className="absolute left-1.5 top-3 h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground"
+        className="absolute left-1.5 top-3 h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground pointer-coarse:text-muted-foreground/70"
         strokeWidth={1.5}
         aria-hidden
       />
@@ -149,6 +149,7 @@ function CandidateCard({
           'pointer-events-none opacity-0 transition-opacity',
           'group-hover:pointer-events-auto group-hover:opacity-100',
           'focus-within:pointer-events-auto focus-within:opacity-100',
+          // Touch has no hover — keep the actions on the card, a little larger.
           'pointer-coarse:pointer-events-auto pointer-coarse:opacity-100',
         )}
       >
@@ -158,7 +159,7 @@ function CandidateCard({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-6 w-6"
+                className="h-6 w-6 pointer-coarse:h-8 pointer-coarse:w-8"
                 aria-label={`Personalize ${candidate.title}`}
                 disabled={personalizing}
                 onClick={(e) => {
@@ -185,7 +186,7 @@ function CandidateCard({
               sourceKind: 'schedule-candidate',
               sourceId: candidate.id,
             }}
-            className="h-6 w-6"
+            className="h-6 w-6 pointer-coarse:h-8 pointer-coarse:w-8"
           />
         )}
 
@@ -194,7 +195,7 @@ function CandidateCard({
             <Button
               variant="ghost"
               size="icon"
-              className="h-6 w-6"
+              className="h-6 w-6 pointer-coarse:h-8 pointer-coarse:w-8"
               aria-label={`Snooze ${candidate.title}`}
               onClick={() => onSnooze(candidate.id, new Date(Date.now() + SNOOZE_MS))}
             >
@@ -209,7 +210,7 @@ function CandidateCard({
             <Button
               variant="ghost"
               size="icon"
-              className="h-6 w-6"
+              className="h-6 w-6 pointer-coarse:h-8 pointer-coarse:w-8"
               aria-label={`Dismiss ${candidate.title}`}
               onClick={() => onDecline(candidate.id, 'never')}
             >

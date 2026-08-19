@@ -98,6 +98,12 @@ export const ConfigSchema = z.object({
       issuer: z.string(),
       jwksUri: z.string(),
       audience: z.string(),
+      /**
+       * Optional Portal (or Lifescope) push relay. The appliance stores device
+       * tokens but must not hold the app's APNs/FCM key; when set, token writes
+       * are forwarded here. Empty = local notifications only.
+       */
+      pushRelayUrl: z.string().default(''),
     }),
     // Traefik forward-auth identity header signed by CI-Hub. When enabled, the
     // server verifies the HMAC-SHA256 signature on X-CI-Hub-User before trusting

@@ -26,6 +26,11 @@
  * values, then decode the transport encoding (QUOTED-PRINTABLE/CHARSET) before
  * the RFC 6350 §3.4 TEXT unescaping.
  *
+ * And it reads the NOTE as a record rather than as prose: an export that
+ * merged another address book leaves that book's `Emails:`/`PhoneNumbers:`
+ * there instead of in properties, so a handle-less card is recovered from its
+ * own note before it reaches entity resolution. See handlesFromNote.
+ *
  * It also emits an ITEM per card, not an entity alone. A contact is a RECORD
  * the archive holds, and every reporting surface here is keyed on `items`:
  * `stats`' by-data-source table, `query --ds`, the ingest job's new/dup
@@ -562,6 +567,82 @@ function uniq(values: string[]): string[] {
 }
 
 /**
+ * `Emails:` / `PhoneNumbers:` inside a NOTE — the shape the Android and
+ * LinkedIn syncs leave behind in an Apple Contacts export.
+ *
+ * A card that was merged from another address book keeps the source record as
+ * free text rather than as properties:
+ *
+ *     NOTE:Source: MOBILE_CONTACTS\nCompanies: null\nEmails: teo@example.com
+ *      \nPhoneNumbers: 518.641.2094\nCreatedAt: 12/16/13\, 2:15 PM\n
+ *
+ * Those really are the contact's own handles — the export just wrote them in
+ * the wrong place. In the developer's 4,927-card archive 682 cards carry an
+ * email ONLY there and 369 a phone, and one card carries nothing else at all:
+ * no FN, `N:;;;;`, and a NOTE reading `Emails: inversin@d2.com`. That card had
+ * neither a name nor a handle to key on, so `PushStage` skipped it with
+ * `no stable name or handle to resolve by` and downgraded every single import
+ * of that archive to `partial` — one row in 4,040.
+ *
+ * Recovered per KIND and only as a FALLBACK: a card with structured EMAIL
+ * properties keeps exactly those, because a note is a historical record and the
+ * property list is the current one. This adds what would otherwise be lost; it
+ * never augments what the card already states.
+ */
+const NOTE_EMAIL_KEY = /^\s*e-?mails?\s*:\s*(.*)$/i;
+const NOTE_PHONE_KEY = /^\s*(?:phone\s?numbers?|phones?|tels?)\s*:\s*(.*)$/i;
+
+/**
+ * A value worth promoting to an `identity: true` attribute.
+ *
+ * `Companies: null` shows the export writes the literal string `null` for an
+ * absent field, so the shape has to be checked rather than the emptiness. The
+ * phone floor is seven digits because that is where `normalizeHandle`
+ * (staging/identity.ts) stops producing a key — anything shorter would become
+ * an attribute that looks like an identity and resolves to nothing.
+ */
+const NOTE_EMAIL_VALUE = /^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/;
+const MIN_PHONE_DIGITS = 7;
+
+/**
+ * Handles recovered from a card's note text. Values are returned as written —
+ * normalization is `staging/identity.ts`'s job, and the same rules have to
+ * apply to a recovered handle as to a structured one.
+ */
+export function handlesFromNote(note: string): { emails: string[]; phones: string[] } {
+  const emails: string[] = [];
+  const phones: string[] = [];
+
+  for (const line of note.split('\n')) {
+    const email = NOTE_EMAIL_KEY.exec(line);
+
+    if (email) {
+      for (const value of email[1].split(',')) {
+        const trimmed = value.trim();
+        if (NOTE_EMAIL_VALUE.test(trimmed)) {
+          emails.push(trimmed);
+        }
+      }
+
+      continue;
+    }
+
+    const phone = NOTE_PHONE_KEY.exec(line);
+
+    if (phone) {
+      for (const value of phone[1].split(',')) {
+        const trimmed = value.trim();
+        if (trimmed.replace(/\D/g, '').length >= MIN_PHONE_DIGITS) {
+          phones.push(trimmed);
+        }
+      }
+    }
+  }
+
+  return { emails: uniq(emails), phones: uniq(phones) };
+}
+
+/**
  * The accumulating entity-metadata keys. A contact that resolves to an entity
  * some earlier source already created must be able to ADD to it — an email the
  * mail headers never showed, the person's employer, their address — rather than
@@ -780,6 +861,29 @@ export function buildContact(lines: ContentLine[], file: string): BuiltContact |
 
   if (birthday) {
     attributes.push({ name: 'birth_date', value: birthday });
+  }
+
+  // The card's own note, read as the record it is. See handlesFromNote: an
+  // export that merged another address book writes that address book's emails
+  // and phones into NOTE instead of into properties, and a card whose ONLY
+  // content is such a note has nothing for entity resolution to key on at all.
+  // Per kind and fallback-only — structured properties always win.
+  if (notes.length > 0 && (emails.length === 0 || phones.length === 0)) {
+    const recovered = handlesFromNote(notes.join('\n'));
+
+    if (emails.length === 0) {
+      for (const value of recovered.emails) {
+        emails.push(value);
+        attributes.push({ name: 'email', value, identity: true });
+      }
+    }
+
+    if (phones.length === 0) {
+      for (const value of recovered.phones) {
+        phones.push(value);
+        attributes.push({ name: 'phone', value, identity: true });
+      }
+    }
   }
 
   const name = fn || structuredName;

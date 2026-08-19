@@ -139,22 +139,27 @@ export class QuestionsController {
     return question;
   }
 
+  /**
+   * Hard delete, own private reflections only. A shared catalogue row is not
+   * deletable by anybody through this endpoint — ci.answers and ci.feed_queue
+   * cascade from ci.questions, so it would take other people's answers with it.
+   * Retiring a shared reflection is `PATCH { isActive: false }`, which forks.
+   *
+   * The refusal is a 404 rather than a 403, and the service's `false` is the
+   * only thing consulted: a visibility pre-check here is what previously let
+   * this endpoint answer 204 while deleting nothing, since the writer applies a
+   * stricter rule than `findById` does.
+   */
   @UseGuards(JwtOrApiKeyAuthGuard)
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Context() context: RequestContext, @Param('id') questionId: string): Promise<void> {
     const serviceContext = toServiceContext(context);
 
-    const question = await this.questionService.findById(serviceContext, questionId);
+    const removed = await this.questionService.remove(serviceContext, questionId);
 
-    if (!question) {
+    if (!removed) {
       throw new NotFoundException('Question not found');
-    }
-
-    const removal = this.questionService.remove(serviceContext, questionId);
-
-    if (!removal) {
-      throw new NotFoundException();
     }
   }
 }

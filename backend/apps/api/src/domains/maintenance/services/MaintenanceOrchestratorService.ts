@@ -27,10 +27,7 @@ import {
   EventParticipantBackfillService,
 } from './EventParticipantBackfillService';
 import { type GraphEnrichmentOptions, GraphEnrichmentService } from './GraphEnrichmentService';
-import {
-  type HealSelfCollationOptions,
-  HealSelfCollationService,
-} from './HealSelfCollationService';
+import { type HealSelfCollationOptions, HealSelfCollationService } from './HealSelfCollationService';
 import { InventoryReverseService } from './InventoryReverseService';
 import {
   DEFAULT_ESTIMATE_SOURCE_SYSTEMS,

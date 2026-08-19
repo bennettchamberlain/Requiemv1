@@ -17,7 +17,10 @@ import { useSourceCounts } from './useSourceCounts';
 
 const h = vi.hoisted(() => ({
   importEnabled: true,
-  api: { ready: true, listRuns: vi.fn() } as { ready: boolean; listRuns: (limit?: number) => Promise<unknown[]> },
+  api: { ready: true, listRuns: vi.fn() } as {
+    ready: boolean;
+    listRuns: (limit?: number) => Promise<unknown[]>;
+  },
   devices: { devices: [] as unknown[], loading: false },
 }));
 
@@ -26,7 +29,9 @@ vi.mock('@/common/feature', async () => {
 
   return {
     ...actual,
-    useFeatures: () => ({ isFeatureEnabled: (flag: string) => (flag === 'import.page' ? h.importEnabled : true) }),
+    useFeatures: () => ({
+      isFeatureEnabled: (flag: string) => (flag === 'import.page' ? h.importEnabled : true),
+    }),
   };
 });
 

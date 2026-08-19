@@ -14,12 +14,7 @@ import { EditEventModal } from './EditEventModal';
 import { EditTaskModal, type EditableTask } from './EditTaskModal';
 import { NewTaskForm } from './NewTaskForm';
 import { Task } from './Task';
-import {
-  childrenOf,
-  groupIntoSections,
-  localDateOf,
-  type SectionedTask,
-} from './taskSections';
+import { childrenOf, groupIntoSections, localDateOf, type SectionedTask } from './taskSections';
 
 const GET_TASKS = gql(`
   query GetTasks($first: Int, $after: String) {

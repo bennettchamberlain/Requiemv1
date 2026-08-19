@@ -457,8 +457,8 @@ describe('GraphTabPanel (webbed-feet spike)', () => {
       // reads `edgeCall[1]` to check the POSTed body, and vi.fn types its
       // `mock.calls` from this signature — a one-parameter mock makes that a
       // 1-tuple and the read a type error.
-      const fetchMock = vi.fn(async (input: RequestInfo, _init?: RequestInit) => {
-        const url = typeof input === 'string' ? input : input.url;
+      const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
 
         if (url.includes('/api/graph/edges')) {
           return {
@@ -486,9 +486,11 @@ describe('GraphTabPanel (webbed-feet spike)', () => {
           expect(screen.getByTestId('graph-canvas-3d')).toHaveAttribute('data-link-count', '1');
         });
 
-        const edgeCall = fetchMock.mock.calls.find(([input]) =>
-          String(typeof input === 'string' ? input : (input as Request).url).includes('/api/graph/edges'),
-        );
+        const edgeCall = fetchMock.mock.calls.find(([input]) => {
+          const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+
+          return url.includes('/api/graph/edges');
+        });
         expect(edgeCall).toBeDefined();
         const body = JSON.parse(String(edgeCall![1]?.body)) as { ids: string[] };
         expect(body.ids[0]).toBe('user-1');

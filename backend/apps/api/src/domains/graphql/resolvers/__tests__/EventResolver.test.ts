@@ -63,7 +63,15 @@ function makeResolver() {
     eventContentsLoader as never,
   );
 
-  return { resolver, eventService, personLoader, placeLoader, tagLoader, eventMediaLoader, eventContentsLoader };
+  return {
+    resolver,
+    eventService,
+    personLoader,
+    placeLoader,
+    tagLoader,
+    eventMediaLoader,
+    eventContentsLoader,
+  };
 }
 
 describe('EventResolver.events', () => {

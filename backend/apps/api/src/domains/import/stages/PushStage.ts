@@ -56,7 +56,7 @@ import {
   readDatabaseSpace,
   type DatabaseSpace,
 } from '../storage/databaseSpace';
-import { dropReasonFor } from '../telemetry/dropReasons';
+import { type DropReason, dropReasonFor } from '../telemetry/dropReasons';
 import { buildStageSummary, SUMMARY_KEY, type StageSummary } from '../telemetry/stageSummary';
 import type { ImportStageRunner, StageOutcome, StageRunContext } from '../types';
 
@@ -70,11 +70,12 @@ const PUSH_BATCH = 500;
  * `staged_entities.push_error` for an entity `skipped` because it had neither
  * a handle nor a name to resolve by — see {@link toGraphEntity}.
  *
- * The one entity-skip reason that counts toward `partial` (see the `partial`
- * computation in {@link PushStage.run}). Recorded rather than left `NULL` so a
- * RESUMED push can still tell this apart from a bookkeeping-type exclusion
- * (`isGraphExcluded`) when it re-derives `entities.unresolved` from what a
- * dead attempt already settled — see {@link PushStage.settledCounts}.
+ * Recorded rather than left `NULL` so a RESUMED push can still tell this apart
+ * from a bookkeeping-type exclusion (`isGraphExcluded`) when it re-derives
+ * `entities.unresolved` from what a dead attempt already settled — see
+ * {@link PushStage.settledCounts} — and so the reason can be reported from the
+ * run itself rather than only from this constant. See
+ * {@link PushStage.unresolvedEntityReport}.
  */
 const UNRESOLVED_ENTITY_REASON = 'no stable name or handle to resolve by';
 
@@ -98,6 +99,25 @@ const UNRESOLVED_ENTITY_REASON = 'no stable name or handle to resolve by';
  * still separate the two from rows a dead attempt settled.
  */
 const NO_DESTINATION_REASON = 'no destination for this record';
+
+/**
+ * The slug this skip reason is reported under.
+ *
+ * {@link UNRESOLVED_ENTITY_REASON} is the sentence a person reads; this is what
+ * a caller matches on. Typed as {@link DropReason} so it can only ever be a
+ * member of the closed drop vocabulary, and used by BOTH readers of this skip —
+ * {@link PushStage.unresolvedEntityReport} and the `entityDrops` tally in
+ * {@link PushStage.summarize} — so the count on `detail.entities` and the count
+ * under `detail.summary` cannot drift into disagreeing about one event.
+ *
+ * `dropSeverityFor` classifies it as a `gap`, which is the honest reading: the
+ * record did not arrive. It is deliberately NOT what makes the run `partial`;
+ * see the `partial` computation in {@link PushStage.run}.
+ */
+const UNRESOLVED_ENTITY_SLUG: DropReason = 'entity_unresolved';
+
+/** How many unresolved entities the report names individually. */
+const UNRESOLVED_EXAMPLE_LIMIT = 5;
 
 /**
  * The order a batch's destinations are written in.
@@ -148,6 +168,46 @@ interface RowPlan {
   wrote: boolean;
   /** Set only by the per-row retry, and only for a genuine failure. */
   failure: string | null;
+}
+
+/**
+ * What {@link PushStage.unresolvedEntityReport} puts on the stage's detail.
+ *
+ * Two names for the skip on purpose: `reason` is the stable slug a caller
+ * matches, `message` the sentence a person reads. Reporting only the second
+ * would make every consumer parse prose; reporting only the first would throw
+ * away the better explanation the ledger already holds.
+ */
+interface UnresolvedEntityReport {
+  reason: string;
+  message: string;
+  count: number;
+  /** data_source → how many of its records had no key. */
+  sources: Record<string, number>;
+  /** A bounded sample, each identifying one record well enough to find it. */
+  examples: string[];
+}
+
+/**
+ * One unresolved record, in as few words as identify it.
+ *
+ * These rows have no name — that is what makes them unresolved — so the file
+ * the record came from is the identifying fact, and the staged id is the last
+ * resort that at least makes the row itself reachable.
+ */
+function describeUnresolved(row: {
+  id: string;
+  dataSource: string | null;
+  metadata: Record<string, unknown> | null;
+}): string {
+  const metadata = row.metadata ?? {};
+  const files = metadata.Files;
+  const origin =
+    (typeof metadata.File === 'string' ? metadata.File : null) ??
+    (Array.isArray(files) && typeof files[0] === 'string' ? files[0] : null);
+  const source = row.dataSource ?? 'unknown';
+
+  return origin ? `${source}: ${origin}` : `${source}: staged row ${row.id}`;
 }
 
 /**
@@ -262,6 +322,24 @@ export class PushStage implements ImportStageRunner {
       failed: prior.entities.failed + attempt.failed,
     };
 
+    // What was skipped for want of a key, named. Read from the ledger so it
+    // covers a resume, and only when there is something to say.
+    const unresolvedEntities =
+      entities.unresolved > 0 ? await this.unresolvedEntityReport(context.runId) : null;
+
+    if (unresolvedEntities) {
+      // Logged as a warning because it no longer shows up as `partial` — see
+      // the `partial` computation below. A count that stays inside a JSONB
+      // column is not something anyone watching a run go past will notice.
+      this.logger.warn('Entities could not be resolved', {
+        runId: context.runId,
+        reason: UNRESOLVED_ENTITY_REASON,
+        count: unresolvedEntities.count,
+        sources: unresolvedEntities.sources,
+        examples: unresolvedEntities.examples,
+      });
+    }
+
     // Entities count toward this stage's total, because resolving them IS part
     // of its work — and because the parse stage already counts them, so leaving
     // them out made the two steps disagree about the same import. A real Amazon
@@ -342,13 +420,30 @@ export class PushStage implements ImportStageRunner {
       // Rows that could not be sent are not a failed import — the ones that went
       // are in ci.* and useful. The run says `partial` and the ledger says which.
       //
-      // `entities.skipped` deliberately does NOT factor in here: it also counts
-      // bookkeeping-type exclusions (`isGraphExcluded`) — an `email_thread` per
-      // thread on every ordinary gmail import — which is the stage working as
-      // designed, not a gap. `entities.unresolved` is the subset that IS a gap:
-      // a row with no handle and no name, which will never resolve on a retry
-      // either.
-      partial: failed > 0 || entities.unresolved > 0,
+      // `partial` means SOMETHING IS STILL OUTSTANDING: rows a retry can send,
+      // an archive a person can re-export. `failed` is that; neither kind of
+      // entity skip is.
+      //
+      // `entities.skipped` never counted here — it also counts bookkeeping-type
+      // exclusions (`isGraphExcluded`), an `email_thread` per thread on every
+      // ordinary gmail import, which is the stage working as designed.
+      // `entities.unresolved` used to, and no longer does. A row with neither a
+      // handle nor a name will not resolve on a retry either, and it will not
+      // resolve on the next import of the same archive: the record the export
+      // handed us is incomplete, and nothing anyone does to this run changes
+      // that. Downgrading the whole import for it made `partial` the permanent
+      // resting state of a corpus containing ONE such row — a real 4,040-entity
+      // Apple archive finished `partial` on every clean-room import because of
+      // a single contact card whose only content was a note — and a status that
+      // is always on stops being read.
+      //
+      // The loss is not hidden by this; it is moved to where it can be acted on.
+      // `entities.unresolved` is still counted, `detail.entities.unresolvedDetail`
+      // now names the reason, the data sources and example records, and the
+      // stage logs a warning. A parser regression that unresolves thousands of
+      // rows shows up as that count and that warning rather than as a badge
+      // shared with every re-import that had nothing to do.
+      partial: failed > 0,
       // `deduped` is reported separately from `pushed`: it is a real outcome
       // (the record is in ci.*, it just arrived earlier) and reads as neither a
       // write nor a loss.
@@ -357,7 +452,11 @@ export class PushStage implements ImportStageRunner {
         deduped,
         failed,
         destinations: counts,
-        entities,
+        // `unresolvedDetail` rides INSIDE `entities` so that the count and the
+        // reason for it cannot be read apart, and is absent when there is
+        // nothing unresolved — `entities` keeps its four existing keys and
+        // their existing meanings for every other run.
+        entities: { ...entities, ...(unresolvedEntities ? { unresolvedDetail: unresolvedEntities } : {}) },
         // Reported whether or not it was ever close to the floor. An import
         // that filled a volume is obvious afterwards; what nobody could see is
         // how much room the last one left, which is the number that says
@@ -480,7 +579,8 @@ export class PushStage implements ImportStageRunner {
         // retry either. Everything else skipped here is `isGraphExcluded`
         // doing its job — an `email_thread` row per gmail thread — and must
         // not be reported as a loss.
-        const slug = row.reason === UNRESOLVED_ENTITY_REASON ? 'entity_unresolved' : 'entity_excluded';
+        const slug: DropReason =
+          row.reason === UNRESOLVED_ENTITY_REASON ? UNRESOLVED_ENTITY_SLUG : 'entity_excluded';
 
         entityDrops[slug] = (entityDrops[slug] ?? 0) + count;
       } else {
@@ -984,6 +1084,68 @@ export class PushStage implements ImportStageRunner {
     );
 
     return Number(count);
+  }
+
+  /**
+   * The unresolved entities, named — reason, data sources, and enough of each
+   * record to go and look at it.
+   *
+   * The reason was always recorded; it was never reachable. `push_error` on a
+   * `staged_entities` row is excellent prose — "no stable name or handle to
+   * resolve by" says exactly what happened and implies what to do about it —
+   * and the only way to read it was to write the join against `import_runs` by
+   * hand. What the run surfaced instead was the word `partial` and a count of
+   * skipped groups that lumped this together with the `email_thread` exclusions
+   * a gmail import produces by design.
+   *
+   * Read from the ledger rather than from this attempt's counters for the same
+   * reason {@link settledCounts} is: on a resumed push the rows in question were
+   * settled by the attempt that died, and in-process counters would report none
+   * of them.
+   *
+   * `examples` are drawn from the staged metadata — the FILE a record came from
+   * is what makes it findable in the export, and these rows have no name by
+   * definition. Bounded: a corpus that unresolves ten thousand rows is a bug to
+   * be counted, not a list to be pasted into a JSONB column.
+   */
+  private async unresolvedEntityReport(runId: string): Promise<UnresolvedEntityReport> {
+    const [sources, samples] = await Promise.all([
+      this.dataSource.query<Array<{ dataSource: string | null; count: string }>>(
+        `SELECT data_source AS "dataSource", count(*) AS count
+           FROM ci_import.staged_entities
+          WHERE run_id = $1::uuid AND push_status = 'skipped' AND push_error = $2
+          GROUP BY data_source
+          ORDER BY count(*) DESC`,
+        [runId, UNRESOLVED_ENTITY_REASON],
+      ),
+      this.dataSource.query<
+        Array<{ id: string; dataSource: string | null; metadata: Record<string, unknown> | null }>
+      >(
+        `SELECT id, data_source AS "dataSource", metadata
+           FROM ci_import.staged_entities
+          WHERE run_id = $1::uuid AND push_status = 'skipped' AND push_error = $2
+          ORDER BY id
+          LIMIT $3`,
+        [runId, UNRESOLVED_ENTITY_REASON, UNRESOLVED_EXAMPLE_LIMIT],
+      ),
+    ]);
+
+    const bySource: Record<string, number> = {};
+    let count = 0;
+
+    for (const row of sources) {
+      const rows = Number(row.count);
+      bySource[row.dataSource ?? 'unknown'] = rows;
+      count += rows;
+    }
+
+    return {
+      reason: UNRESOLVED_ENTITY_SLUG,
+      message: UNRESOLVED_ENTITY_REASON,
+      count,
+      sources: bySource,
+      examples: samples.map((row) => describeUnresolved(row)),
+    };
   }
 
   /**

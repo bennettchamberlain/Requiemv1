@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, type FindOptionsWhere, In, IsNull, Repository } from 'typeorm';
+import { DataSource, type FindOptionsWhere, In, IsNull, Not, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, SYSTEM_USER } from '@ci/common/context';
@@ -13,6 +13,7 @@ import {
 } from '@ci/domains/intelligence/events';
 
 import { Question, QuestionEntity } from '../entities/QuestionEntity';
+import { excludeForkedOriginsSql } from '../questionScope';
 import type { CreateQuestionDto, QuestionCatalogueQueryDto, UpdateQuestionDto } from '../types';
 
 const FEED_QUESTION_QUEUE_LIMIT = 3;
@@ -56,6 +57,7 @@ const GAP_AWARE_CANDIDATE_SQL = `
       AND TRIM(a.answer_text) <> ''
     WHERE q.is_active = TRUE
       AND (q.is_private_to IS NULL OR q.is_private_to = $1)
+      ${excludeForkedOriginsSql('q', '$1')}
     GROUP BY q.question_category
   )
   SELECT q.question_id AS id
@@ -63,6 +65,7 @@ const GAP_AWARE_CANDIDATE_SQL = `
   LEFT JOIN category_coverage cc ON cc.category = q.question_category
   WHERE q.is_active = TRUE
     AND (q.is_private_to IS NULL OR q.is_private_to = $1)
+    ${excludeForkedOriginsSql('q', '$1')}
     AND NOT EXISTS (
       SELECT 1
       FROM ci.answers a
@@ -115,6 +118,7 @@ const CATALOGUE_ANSWER_LATERAL_SQL = `
  */
 const CATALOGUE_BASE_WHERE_SQL = `
   (q.is_private_to IS NULL OR q.is_private_to = $1::uuid)
+  ${excludeForkedOriginsSql('q', '$1::uuid')}
   AND ($2 = 'all' OR q.is_active = ($2 = 'active'))
   AND ($3::text IS NULL OR q.question_text ILIKE '%' || $3 || '%')
 `;
@@ -148,6 +152,12 @@ export interface QuestionCatalogueEntry {
   isSeedQuestion: boolean;
   createdByLlm: boolean;
   isPrivateTo: string | null;
+  /**
+   * Set when this row is the caller's own copy of a shared catalogue row, minted
+   * because their edit could not land on the shared original. The original is
+   * hidden from them, so this row stands in its place.
+   */
+  forkedFromQuestionId: string | null;
   timesAsked: number;
   timesAnswered: number;
   createdAt: Date;
@@ -193,6 +203,7 @@ type CatalogueRow = {
   is_seed_question: boolean;
   created_by_llm: boolean;
   is_private_to: string | null;
+  forked_from_question_id: string | null;
   times_asked: number;
   times_answered: number;
   created_at: Date;
@@ -236,28 +247,37 @@ export class QuestionService {
   }
 
   /**
-   * Which questions a caller may edit, keyed by id.
-   *
-   * Same rule as {@link findById}: the shared catalogue (`is_private_to IS
-   * NULL`) plus the caller's own private questions, and never another user's.
-   * It used to be own-private-ONLY, which meant nobody could correct or retire
-   * any of the ~1.3k seeded catalogue rows — every one of them is public — while
-   * `DELETE /questions/:id` still answered 204, because the controller checks
-   * visibility with findById and then calls a writer with a stricter rule.
-   *
-   * `remove` deliberately keeps the stricter rule: ci.answers and ci.feed_queue
-   * both cascade, so widening hard delete would let one caller destroy another's
-   * answers. Retiring a catalogue question is `isActive: false`.
+   * Which questions a caller may SEE, keyed by id: the shared catalogue
+   * (`is_private_to IS NULL`) plus their own private questions, never another
+   * user's. This is the read rule, and it is deliberately wider than the write
+   * rule below — being shown a shared question costs nothing, changing one
+   * changes what every other person on the appliance gets asked.
    */
-  private writableWhere(context: ServiceContext, id: string): FindOptionsWhere<QuestionEntity>[] {
-    if (context.userId === SYSTEM_USER) {
-      return [{ id }];
+  private readableWhere(context: ServiceContext, id: string): FindOptionsWhere<QuestionEntity>[] {
+    const clauses: FindOptionsWhere<QuestionEntity>[] = [{ id, isPrivateTo: IsNull() }];
+
+    if (context.userId && context.userId !== SYSTEM_USER) {
+      clauses.push({ id, isPrivateTo: context.userId });
     }
 
-    return [
-      { id, isPrivateTo: IsNull() },
-      { id, isPrivateTo: context.userId },
-    ];
+    return clauses;
+  }
+
+  /**
+   * Whether a row the caller can see is also a row they may write to IN PLACE.
+   *
+   * Only their own private questions are — plus everything, for a system caller
+   * (migrations, cron, internal services, which have no user to fork on behalf
+   * of). A shared catalogue row is read-only to an ordinary caller: `update`
+   * forks it into a private copy instead, see {@link forkSharedQuestion}.
+   *
+   * `remove` uses the same rule and does NOT fork, so hard delete stays
+   * own-private-only: ci.answers and ci.feed_queue both cascade from
+   * ci.questions, and a shared row can hold other people's answers. Retiring a
+   * shared reflection is `isActive: false`, which forks.
+   */
+  private isWritableInPlace(context: ServiceContext, question: QuestionEntity): boolean {
+    return context.userId === SYSTEM_USER || question.isPrivateTo === context.userId;
   }
 
   /**
@@ -354,6 +374,32 @@ export class QuestionService {
     return entities.map((entity) => QuestionEntity.toEgressType(byId.get(entity.id) ?? entity));
   }
 
+  /**
+   * Which shared rows this caller has replaced with a private copy, as origin
+   * ids. The SQL selectors express this as a NOT EXISTS (see
+   * {@link excludeForkedOriginsSql}); the repository-based ones filter with
+   * this instead, because TypeORM's `where` cannot express the anti-join.
+   *
+   * Queried rather than derived from the result set: a fork retired with
+   * `isActive: false` is exactly the case where the origin must still be
+   * hidden, and that fork is not in an active-only result to derive from.
+   */
+  private async forkedOriginIds(context: ServiceContext): Promise<Set<string>> {
+    if (!context.userId || context.userId === SYSTEM_USER) {
+      return new Set();
+    }
+
+    const forks = await this.questionRepository.find({
+      where: { isPrivateTo: context.userId, forkedFromQuestionId: Not(IsNull()) },
+    });
+
+    return new Set(
+      forks
+        .map((fork) => fork.forkedFromQuestionId)
+        .filter((originId): originId is string => Boolean(originId)),
+    );
+  }
+
   async findAll(context: ServiceContext): Promise<Question[]> {
     const whereClauses: FindOptionsWhere<QuestionEntity>[] = [
       {
@@ -366,13 +412,18 @@ export class QuestionService {
       whereClauses.push({ isActive: true, isPrivateTo: context.userId });
     }
 
-    const result = await this.questionRepository.find({
-      where: whereClauses,
-    });
+    const [result, replaced] = await Promise.all([
+      this.questionRepository.find({ where: whereClauses }),
+      this.forkedOriginIds(context),
+    ]);
 
     const unique = new Map<string, QuestionEntity>();
 
     for (const entity of result) {
+      if (replaced.has(entity.id)) {
+        continue;
+      }
+
       unique.set(entity.id, entity);
     }
 
@@ -423,6 +474,7 @@ export class QuestionService {
         q.is_seed_question,
         q.created_by_llm,
         q.is_private_to,
+        q.forked_from_question_id,
         q.times_asked,
         q.times_answered,
         q.created_at,
@@ -524,6 +576,7 @@ export class QuestionService {
         isSeedQuestion: row.is_seed_question,
         createdByLlm: row.created_by_llm,
         isPrivateTo: row.is_private_to,
+        forkedFromQuestionId: row.forked_from_question_id,
         timesAsked: Number(row.times_asked),
         timesAnswered: Number(row.times_answered),
         createdAt: row.created_at,
@@ -553,19 +606,8 @@ export class QuestionService {
   }
 
   async findById(context: ServiceContext, id: string): Promise<Question | null> {
-    const whereClauses: FindOptionsWhere<QuestionEntity>[] = [
-      {
-        id: id,
-        isPrivateTo: IsNull(),
-      },
-    ];
-
-    if (context?.userId && context.userId !== SYSTEM_USER) {
-      whereClauses.push({ id: id, isPrivateTo: context.userId });
-    }
-
     const result = await this.questionRepository.findOne({
-      where: whereClauses,
+      where: this.readableWhere(context, id),
     });
 
     return result ? QuestionEntity.toEgressType(result) : null;
@@ -596,6 +638,29 @@ export class QuestionService {
     return Array.from(unique.values()).map((entity) => QuestionEntity.toEgressType(entity));
   }
 
+  /**
+   * Apply an edit to a reflection the caller can see.
+   *
+   * The catalogue mixes ~1.3k shared rows every user on the appliance is asked
+   * from with each person's own private ones, so what this DOES depends on
+   * which kind the row is:
+   *
+   * - the caller's own private question, or any question for a system caller —
+   *   edited in place, as before;
+   * - a shared catalogue row — copied first. The caller gets a private copy
+   *   carrying their edit, and the shared row is left exactly as it was. See
+   *   {@link forkSharedQuestion};
+   * - anything else (another user's private question) — `null`, no write.
+   *
+   * Editing a shared row in place would mean one person rewording, recategorising
+   * or retiring (`isActive: false`) what everybody else gets asked — and
+   * "retire this, it is too personal" is precisely the edit somebody makes
+   * without meaning it for the whole household.
+   *
+   * NOTE the returned question's `id` is the fork's, not the id that was passed
+   * in, whenever a shared row was forked. Callers that re-fetch by the id they
+   * sent will find the untouched origin; use the returned row.
+   */
   async update(
     context: ServiceContext,
     questionId: string,
@@ -657,15 +722,27 @@ export class QuestionService {
     }
 
     const question = await this.questionRepository.findOne({
-      where: this.writableWhere(context, questionId),
+      where: this.readableWhere(context, questionId),
     });
 
-    if (question) {
-      Object.assign(question, updateData);
-      await this.questionRepository.save(question);
-    } else {
+    if (!question) {
       return null;
     }
+
+    if (!this.isWritableInPlace(context, question)) {
+      // Reachable only for a shared row (readableWhere already excluded other
+      // people's private ones), and only for a caller who has an id to own the
+      // copy — every edge routes through toServiceContext, which rejects the
+      // rest, but a fork with no owner would violate questions_fork_is_owned.
+      if (!context.userId || context.userId === SYSTEM_USER) {
+        return null;
+      }
+
+      return this.forkSharedQuestion(context.userId, question, updateData);
+    }
+
+    Object.assign(question, updateData);
+    await this.questionRepository.save(question);
 
     await this.eventService.send(QuestionUpdatedEvent, {
       questionId: questionId,
@@ -674,17 +751,117 @@ export class QuestionService {
     return this.findById(context, questionId);
   }
 
-  async remove(context: ServiceContext, id: string): Promise<boolean> {
-    const question = await this.questionRepository.findOne({
-      where: {
-        id: id,
-        ...(context.userId !== SYSTEM_USER && {
-          isPrivateTo: context.userId,
-        }),
-      },
+  /**
+   * Copy-on-write for a shared catalogue row: the caller gets a private copy of
+   * it carrying their edit, and the shared row is not touched.
+   *
+   * A second edit updates that same copy rather than minting another — the
+   * `questions_fork_owner_uniq` partial index makes one-fork-per-(origin, owner)
+   * a database guarantee, and this is the read that honours it.
+   *
+   * The copy is NOT seed content, whatever the origin was: the seed migration's
+   * own down-path deletes rows by `is_seed_question AND NOT created_by_llm`, and
+   * it must not take somebody's edit with it.
+   */
+  private async forkSharedQuestion(
+    userId: string,
+    origin: QuestionEntity,
+    updateData: Partial<QuestionEntity>,
+  ): Promise<Question> {
+    const existingFork = await this.questionRepository.findOne({
+      where: { forkedFromQuestionId: origin.id, isPrivateTo: userId },
     });
 
-    if (!question) {
+    if (existingFork) {
+      Object.assign(existingFork, updateData, {
+        isPrivateTo: userId,
+        forkedFromQuestionId: origin.id,
+      });
+      await this.questionRepository.save(existingFork);
+
+      await this.eventService.send(QuestionUpdatedEvent, {
+        questionId: existingFork.id,
+      });
+
+      return QuestionEntity.toEgressType(existingFork);
+    }
+
+    const fork = this.questionRepository.create({
+      id: uuidv7(),
+      text: origin.text,
+      category: origin.category,
+      answerTier: origin.answerTier ?? null,
+      contextTags: origin.contextTags,
+      questionType: origin.questionType,
+      frequencyRecommendation: origin.frequencyRecommendation,
+      isActive: origin.isActive,
+      isSeedQuestion: false,
+      createdByLlm: false,
+      // Presentation counters belong to the shared row's history, not this copy's.
+      timesAsked: 0,
+      timesAnswered: 0,
+    });
+
+    // Ownership and provenance are the fork's identity and are applied last: an
+    // edit may carry `isPrivateTo` (UpdateQuestionDto allows it) and must not be
+    // able to hand the new row to somebody else or hide where it came from.
+    Object.assign(fork, updateData, {
+      isPrivateTo: userId,
+      forkedFromQuestionId: origin.id,
+    });
+
+    const saved = await this.questionRepository.save(fork);
+
+    await this.adoptOwnHistory(userId, origin.id, saved.id);
+
+    await this.eventService.send(QuestionCreatedEvent, {
+      questionId: saved.id,
+    });
+
+    return QuestionEntity.toEgressType(saved);
+  }
+
+  /**
+   * Move the caller's own history from a shared row onto the copy that now
+   * replaces it for them. Nobody else's rows move.
+   *
+   * Answers point at a question id, so without this an edit would leave the
+   * caller's existing answers on an origin they no longer see — their answered
+   * reflection would read as unanswered. The feed row is deleted rather than
+   * repointed: `feed_queue` is unique on (user_id, question_id) and the
+   * gap-aware selector re-queues the copy on the next pass if it is still
+   * unanswered.
+   */
+  private async adoptOwnHistory(userId: string, originId: string, forkId: string): Promise<void> {
+    await this.dataSource.query(
+      `
+      UPDATE ci.answers
+      SET question_id = $3
+      WHERE question_id = $2
+        AND user_id = $1;
+      `,
+      [userId, originId, forkId],
+    );
+
+    await this.removeFromFeedQueue(userId, originId);
+  }
+
+  /**
+   * Hard delete, and deliberately NOT copy-on-write like {@link update}: it
+   * stays own-private-only. ci.answers and ci.feed_queue both cascade from
+   * ci.questions, so deleting a shared catalogue row would destroy answers
+   * other people wrote. Retiring a shared reflection is `isActive: false`,
+   * which forks a private copy and leaves everyone else's feed alone.
+   *
+   * Returns false rather than throwing when the caller may not delete the row,
+   * including when they can see it perfectly well.
+   */
+  async remove(context: ServiceContext, id: string): Promise<boolean> {
+    const question = await this.questionRepository.findOne({
+      where: this.readableWhere(context, id),
+    });
+
+    if (!question || !this.isWritableInPlace(context, question)) {
       return false;
     }
 
@@ -740,6 +917,7 @@ export class QuestionService {
         CROSS JOIN (SELECT DISTINCT id AS user_id FROM ci.users WHERE id IS NOT NULL) u
         WHERE q.is_active = TRUE
           AND (q.is_private_to IS NULL OR q.is_private_to = u.user_id)
+          ${excludeForkedOriginsSql('q', 'u.user_id')}
           AND NOT EXISTS (
             SELECT 1
             FROM ci.answers a

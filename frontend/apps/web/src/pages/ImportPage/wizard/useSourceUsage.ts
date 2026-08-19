@@ -105,9 +105,7 @@ export function useSourceUsage(): ReadonlyMap<string, string> {
  *    parse stage, so the head is "what this archive mostly is" — the thing the
  *    user meaningfully imported — and the one-file tail credits nothing.
  */
-export function creditedSources(
-  run: Pick<ImportRun, 'dataSources' | 'declaredSources'>,
-): readonly string[] {
+export function creditedSources(run: Pick<ImportRun, 'dataSources' | 'declaredSources'>): readonly string[] {
   const declared = run.declaredSources;
 
   if (declared != null) {

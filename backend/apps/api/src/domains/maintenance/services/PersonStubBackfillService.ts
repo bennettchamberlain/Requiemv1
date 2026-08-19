@@ -12,12 +12,7 @@ import {
   type IdentifierKey,
   splitPersonName,
 } from '@ci/domains/graph';
-import {
-  matchOwner,
-  readSelfIdentity,
-  shouldMapContactToSelf,
-  type SelfIdentity,
-} from '@ci/domains/import';
+import { matchOwner, readSelfIdentity, shouldMapContactToSelf, type SelfIdentity } from '@ci/domains/import';
 import { PersonalizationService, type TrustMode } from '@ci/domains/personalization';
 
 /** Default window width — one TimescaleDB-chunk-friendly slice per pass. */

@@ -18,7 +18,7 @@ jest.mock('undici', () => ({
 }));
 
 // Import AFTER the mock so the controller module picks up the mocked `undici`.
- 
+
 import { OidcController } from '../OidcController';
 
 const SESSION_COOKIE_NAME = config.auth.cookies.sessionTokenName;

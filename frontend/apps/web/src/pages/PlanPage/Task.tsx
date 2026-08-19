@@ -10,13 +10,16 @@ interface Props {
   depth?: number;
   onToggle: (id: string, done: boolean) => void;
   onDelete: (e: React.MouseEvent, id: string) => void;
-  onEdit?: (e: React.MouseEvent, task: {
-    id: string;
-    title: string;
-    description?: string | null;
-    dueAt?: string | null;
-    estimatedMinutes?: number | null;
-  }) => void;
+  onEdit?: (
+    e: React.MouseEvent,
+    task: {
+      id: string;
+      title: string;
+      description?: string | null;
+      dueAt?: string | null;
+      estimatedMinutes?: number | null;
+    },
+  ) => void;
   onAcceptProposed?: (id: string) => void;
   onDeclineProposed?: (id: string) => void;
   onAcceptAndSchedule?: (id: string) => void;

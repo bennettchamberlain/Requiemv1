@@ -5,7 +5,13 @@ import { LoggerService } from '@ci/common/logging';
 import { EventService } from '@ci/domains/events';
 
 import type { BaseTool } from '../core/BaseTool';
-import { intentToolName, canonicalizeExecutableToolName, type ToolInvocationContext, type ToolSchema, type ToolResult } from '../core/types';
+import {
+  intentToolName,
+  canonicalizeExecutableToolName,
+  type ToolInvocationContext,
+  type ToolSchema,
+  type ToolResult,
+} from '../core/types';
 import { ToolInvokedEvent } from '../events';
 import { capabilityAllows, capabilityRequiredFor } from '../policy';
 import type { ToolProvider, ProviderHealthStatus } from '../providers/ToolProvider';
