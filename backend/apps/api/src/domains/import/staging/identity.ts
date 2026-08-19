@@ -144,9 +144,26 @@ export function hasContactIdentity(entity: Entity): boolean {
  * Resolve the staged `type` for an entity.
  *
  * Datasources that only know they captured a person's handle (gmail, telegram,
- * vcard, …) omit `type`; those default to 'contact' so they do not land as null
- * rows the push then mis-maps. Entities with no contact identity keep their
+ * …) omit `type`; those default to 'contact' so they do not land as null rows
+ * the push then mis-maps. Entities with no contact identity keep their
  * (possibly null) type untouched.
+ *
+ * ## This is a handle-based default, NOT a source-based one
+ *
+ * The distinction matters, and reading it the other way cost one address book.
+ * The only person signal here is {@link hasContactIdentity} — an attribute that
+ * looks like a phone or an email. It cannot rescue an entity that IS a person but
+ * carries no way to reach them: a vCard with just a name, a LinkedIn connection
+ * whose export withheld the address. Those fell through to `type = null` and were
+ * filed as `Concept` by `entityTypeFor` (push/entities.ts) — 2,247 rows from one
+ * `.vcf` on a live appliance, 1,779 of them duplicating a real `Person`.
+ *
+ * A datasource that knows what it parsed must therefore SET `type` itself rather
+ * than rely on this default, as vcard.ts, contactlist.ts, applecontacts.ts and
+ * linkedin.ts all now do. An earlier revision of this comment named vcard among
+ * the sources this default covered, and that claim is exactly the belief that let
+ * the bug sit — the type is a fact about the FORMAT, not about which optional
+ * fields a given record happens to fill.
  */
 export function resolveEntityType(entity: Entity): string | null {
   if (entity.type && entity.type.trim()) {

@@ -327,6 +327,75 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
     `,
   },
   {
+    id: 'contact-cards-typed-as-concept',
+    severity: 'high',
+    title: 'Contact cards filed as Concept instead of Person — a human sitting in the graph as a thing',
+    scope: 'ci.entities',
+    remedy:
+      'A contact card whose subject is not a Person. The cause is always the same: the parser typed the ' +
+      'ITEM it emitted but not the ENTITY beside it, so `resolveEntityType` had only ' +
+      '`hasContactIdentity` left to classify it — and a card carrying just a NAME has no phone or email ' +
+      'for that to find, so it fell through to `type = null` and `entityTypeFor` mapped null to ' +
+      "DEFAULT_ENTITY_TYPE = 'Concept'. Whether a card lists a phone number is not what decides whether " +
+      'its subject is a human. Every known source is fixed forward — linkedin.ts, then vcard.ts, ' +
+      'contactlist.ts and applecontacts.ts in f24110960 — and 20260819091547 re-types and re-keys the ' +
+      'rows already written. A NON-ZERO count on a source not ' +
+      'named there means a FURTHER contact-shaped datasource is omitting `type` on its entity: set it to ' +
+      "'contact' at the parser, then write the same re-type-and-re-key migration for it — re-typing " +
+      'alone is not enough, because the staged type is folded into `naturalKeyFor`, so the fix moves the ' +
+      'upsert key and a re-import would mint a fresh Person beside the stale Concept rather than ' +
+      'updating it. The `breakdown` names the importer to go and look at.',
+    mirrors: 'db/postgres/migrations/20260819091547_retype_vcard_contact_concepts_as_person.sql',
+    // Deliberately NOT scoped to the two sources the migration repairs: that
+    // migration cleans a known corpus, this check watches for the NEXT source to
+    // make the same mistake. The two predicates agree on the SHAPE — a
+    // handle-less contact card filed as a Concept by an importer — and differ in
+    // how they recognise one, which is the one divergence from this file's
+    // mirroring rule worth having: a vcard-scoped check could not have caught
+    // vcard, and could not have caught contactlist.ts or applecontacts.ts either.
+    //
+    // Recognising a contact card from its properties alone is the whole
+    // difficulty, and it must be done WITHOUT a source list. What does NOT work
+    // is `properties ? 'Source'`: every parser stamps it, so that predicate also
+    // flags 20 Uber Eats dishes ("Seared Ahi Tuna Salad", "Horchata") which are
+    // entirely legitimate Concepts. A HIGH check that can never reach zero is
+    // worse than no check, so the discriminator is the contact-card metadata
+    // vocabulary instead — keys only a parser reading a person's card emits.
+    // Verified on the live corpus: this predicate returns 2,247 (every mis-typed
+    // vCard row, nothing else) before the migration and 0 after.
+    //
+    // Handle-absence is the other half, and on the reference corpus it is exact:
+    // 0 of the 2,249 mis-typed rows carried properties->'email' or ->'phone', and
+    // 0 of the 1,335 correctly-typed cards lacked one. A Concept WITH a handle is
+    // a different (and so far hypothetical) bug, left out rather than folded in.
+    //
+    // KNOWN BLIND SPOT, stated because a silent one is the failure mode this file
+    // exists to prevent: the 2 mis-typed `contact_list` rows are invisible here.
+    // Their parser stamps only {Source, File}, so nothing in the row's own data
+    // says "contact" — the migration catches them by source, and this check
+    // cannot. A datasource whose contact entities carry no contact metadata at all
+    // is only reachable by a source list, which is exactly what this check is
+    // built to avoid needing.
+    sql: String.raw`
+      WITH bad AS (
+        SELECT entity_id, name, linked_table, owner_user_id
+          FROM ci.entities
+         WHERE entity_type = 'Concept'
+           AND linked_table LIKE 'import:%'
+           AND merged_into_entity_id IS NULL
+           AND properties ?| array['Names', 'Emails', 'Phones', 'Organizations',
+                                   'JobTitles', 'Nicknames', 'SocialProfiles', 'Birthday']
+           AND NOT (properties ? 'email' OR properties ? 'phone')
+           AND name IS NOT NULL
+           AND btrim(name) <> ''
+      )
+      SELECT count(*)::bigint AS count,
+             ${breakdownBy('linked_table')} AS breakdown,
+             ${SAMPLE} AS sample
+        FROM bad
+    `,
+  },
+  {
     id: 'person-duplicate-names',
     severity: 'medium',
     title: 'Person entities sitting in exact-duplicate name groups — the same human, several times',
