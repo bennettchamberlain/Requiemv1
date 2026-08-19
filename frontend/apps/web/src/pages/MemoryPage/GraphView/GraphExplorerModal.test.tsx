@@ -453,7 +453,11 @@ describe('GraphTabPanel (webbed-feet spike)', () => {
     });
 
     it('preloads edges among busy dots when switching to 3D overview', async () => {
-      const fetchMock = vi.fn(async (input: RequestInfo) => {
+      type FetchMock = (
+        input: RequestInfo,
+        init?: RequestInit,
+      ) => Promise<{ ok: boolean; json: () => Promise<unknown> }>;
+      const fetchMock = vi.fn<FetchMock>(async (input) => {
         const url = typeof input === 'string' ? input : input.url;
 
         if (url.includes('/api/graph/edges')) {
