@@ -13,7 +13,7 @@ import {
 } from '@ci/domains/intelligence/events';
 
 import { Question, QuestionEntity } from '../entities/QuestionEntity';
-import type { CreateQuestionDto, UpdateQuestionDto } from '../types';
+import type { CreateQuestionDto, QuestionCatalogueQueryDto, UpdateQuestionDto } from '../types';
 
 const FEED_QUESTION_QUEUE_LIMIT = 3;
 /** Unanswered front-of-queue questions rotate after this long on the feed. */
@@ -81,6 +81,138 @@ const GAP_AWARE_CANDIDATE_SQL = `
   LIMIT 1;
 `;
 
+/**
+ * The caller's most recent real answer to each question, or nothing. A LATERAL
+ * rather than a plain LEFT JOIN so a question that somehow carries two answer
+ * rows still yields exactly one catalogue row.
+ *
+ * `$1` is the caller's user id (NULL for a system caller, which then matches no
+ * answers — `= NULL` is NULL, not true).
+ */
+const CATALOGUE_ANSWER_LATERAL_SQL = `
+  LEFT JOIN LATERAL (
+    SELECT
+      a.answer_id,
+      a.answer_text,
+      a.answer_source,
+      a.answer_confidence,
+      a.answer_rationale,
+      a.answered_at
+    FROM ci.answers a
+    WHERE a.question_id = q.question_id
+      AND a.user_id = $1::uuid
+      AND a.answer_text IS NOT NULL
+      AND TRIM(a.answer_text) <> ''
+    ORDER BY a.answered_at DESC, a.answer_id DESC
+    LIMIT 1
+  ) a ON TRUE
+`;
+
+/**
+ * Visibility + lifecycle + free-text predicate. Facets are computed against
+ * THIS and not against the full predicate below: narrowing to one category must
+ * not collapse the category picker to the one category already chosen.
+ */
+const CATALOGUE_BASE_WHERE_SQL = `
+  (q.is_private_to IS NULL OR q.is_private_to = $1::uuid)
+  AND ($2 = 'all' OR q.is_active = ($2 = 'active'))
+  AND ($3::text IS NULL OR q.question_text ILIKE '%' || $3 || '%')
+`;
+
+const CATALOGUE_FULL_WHERE_SQL = `
+  ${CATALOGUE_BASE_WHERE_SQL}
+  AND ($4::text IS NULL OR q.question_category = $4)
+  AND ($5::text IS NULL OR q.answer_tier = $5)
+  AND ($6 = 'all' OR (a.answer_id IS NOT NULL) = ($6 = 'answered'))
+`;
+
+/** The answered/unanswered state of one catalogue row, for the browse surface. */
+export interface QuestionCatalogueAnswer {
+  id: string;
+  text: string;
+  /** 'user_input' | 'inferred' | 'observed' | 'imported' — drives AnswerProvenance. */
+  source: string | null;
+  confidence: number | null;
+  rationale: string | null;
+  answeredAt: Date;
+}
+
+export interface QuestionCatalogueEntry {
+  id: string;
+  text: string;
+  category: string | null;
+  answerTier: string | null;
+  questionType: string | null;
+  frequencyRecommendation: string | null;
+  isActive: boolean;
+  isSeedQuestion: boolean;
+  createdByLlm: boolean;
+  isPrivateTo: string | null;
+  timesAsked: number;
+  timesAnswered: number;
+  createdAt: Date;
+  updatedAt: Date;
+  answer: QuestionCatalogueAnswer | null;
+}
+
+export interface QuestionCatalogueFacetBucket {
+  value: string | null;
+  count: number;
+}
+
+export interface QuestionCataloguePage {
+  data: QuestionCatalogueEntry[];
+  totalCount: number;
+  limit: number;
+  offset: number;
+  facets: {
+    categories: QuestionCatalogueFacetBucket[];
+    answerTiers: QuestionCatalogueFacetBucket[];
+    answeredCount: number;
+    unansweredCount: number;
+  };
+}
+
+/**
+ * Make a user string safe to drop between `%…%` in an ILIKE. Without this a
+ * search for `_` or `%` matches everything, and a trailing backslash makes the
+ * pattern invalid. Backslash is Postgres' default LIKE escape character.
+ */
+function escapeLikeTerm(term: string): string {
+  return term.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
+type CatalogueRow = {
+  id: string;
+  text: string;
+  category: string | null;
+  answer_tier: string | null;
+  question_type: string | null;
+  frequency_recommendation: string | null;
+  is_active: boolean;
+  is_seed_question: boolean;
+  created_by_llm: boolean;
+  is_private_to: string | null;
+  times_asked: number;
+  times_answered: number;
+  created_at: Date;
+  updated_at: Date;
+  answer_id: string | null;
+  answer_text: string | null;
+  answer_source: string | null;
+  answer_confidence: number | null;
+  answer_rationale: string | null;
+  answered_at: Date | null;
+  total_count: number;
+};
+
+type CatalogueFacetRow = {
+  category: string | null;
+  answer_tier: string | null;
+  count: number;
+  answered_count: number;
+};
+
 @Injectable()
 export class QuestionService {
   constructor(
@@ -104,6 +236,31 @@ export class QuestionService {
   }
 
   /**
+   * Which questions a caller may edit, keyed by id.
+   *
+   * Same rule as {@link findById}: the shared catalogue (`is_private_to IS
+   * NULL`) plus the caller's own private questions, and never another user's.
+   * It used to be own-private-ONLY, which meant nobody could correct or retire
+   * any of the ~1.3k seeded catalogue rows — every one of them is public — while
+   * `DELETE /questions/:id` still answered 204, because the controller checks
+   * visibility with findById and then calls a writer with a stricter rule.
+   *
+   * `remove` deliberately keeps the stricter rule: ci.answers and ci.feed_queue
+   * both cascade, so widening hard delete would let one caller destroy another's
+   * answers. Retiring a catalogue question is `isActive: false`.
+   */
+  private writableWhere(context: ServiceContext, id: string): FindOptionsWhere<QuestionEntity>[] {
+    if (context.userId === SYSTEM_USER) {
+      return [{ id }];
+    }
+
+    return [
+      { id, isPrivateTo: IsNull() },
+      { id, isPrivateTo: context.userId },
+    ];
+  }
+
+  /**
    * @param options.emitCreated When true (default) a QuestionCreatedEvent is sent so
    *   the row indexes/enriches live. The bulk path passes false: emitting a per-row
    *   pgboss event for every ingested row is the dominant cost at import volume, so
@@ -123,6 +280,7 @@ export class QuestionService {
       id,
       text: data.text,
       category: data.category,
+      answerTier: data.answerTier ?? null,
       isSeedQuestion: data.isSeedQuestion ?? false,
       createdByLlm: data.createdByLlm ?? false,
       frequencyRecommendation: data.frequencyRecommendation,
@@ -164,6 +322,7 @@ export class QuestionService {
         id: item.id ?? uuidv7(),
         text: item.text,
         category: item.category,
+        answerTier: item.answerTier ?? null,
         isSeedQuestion: item.isSeedQuestion ?? false,
         createdByLlm: item.createdByLlm ?? false,
         frequencyRecommendation: item.frequencyRecommendation,
@@ -220,6 +379,179 @@ export class QuestionService {
     return Array.from(unique.values()).map((entity) => QuestionEntity.toEgressType(entity));
   }
 
+  /**
+   * The reflection catalogue, browsable: paged, filterable by category / answer
+   * tier / lifecycle / answered-state and searchable by text, with each row
+   * carrying the caller's own answer (and its provenance) when one exists.
+   *
+   * `findAll` cannot serve this — it returns only active questions, applies no
+   * filters, and hands the whole catalogue to the caller to slice in memory.
+   * At ~1.3k active rows that is already the difference between a page and a
+   * full table scan on every keystroke.
+   */
+  async findCatalogue(
+    context: ServiceContext,
+    query: QuestionCatalogueQueryDto,
+  ): Promise<QuestionCataloguePage> {
+    const { status, answered, limit, offset } = query;
+    const userId = context.userId === SYSTEM_USER ? null : context.userId;
+    const search = query.search ? escapeLikeTerm(query.search) : null;
+
+    // Positions are shared between the page query and the facet query, so the
+    // two predicates stay in lockstep. $4..$6 are page-only.
+    const params = [
+      userId,
+      status,
+      search,
+      query.category ?? null,
+      query.answerTier ?? null,
+      answered,
+      limit,
+      offset,
+    ];
+
+    const rows = (await this.dataSource.query(
+      `
+      SELECT
+        q.question_id AS id,
+        q.question_text AS text,
+        q.question_category AS category,
+        q.answer_tier,
+        q.question_type,
+        q.frequency_recommendation,
+        q.is_active,
+        q.is_seed_question,
+        q.created_by_llm,
+        q.is_private_to,
+        q.times_asked,
+        q.times_answered,
+        q.created_at,
+        q.updated_at,
+        a.answer_id,
+        a.answer_text,
+        a.answer_source,
+        a.answer_confidence,
+        a.answer_rationale,
+        a.answered_at,
+        COUNT(*) OVER ()::int AS total_count
+      FROM ci.questions q
+      ${CATALOGUE_ANSWER_LATERAL_SQL}
+      WHERE ${CATALOGUE_FULL_WHERE_SQL}
+      ORDER BY
+        q.question_category ASC NULLS LAST,
+        ${TIER_RANK_SQL} ASC,
+        q.question_text ASC,
+        q.question_id ASC
+      LIMIT $7 OFFSET $8;
+      `,
+      params,
+    )) satisfies Array<CatalogueRow>;
+
+    // The facet query ignores $4..$6 but is handed the same array: node-postgres
+    // tolerates unreferenced trailing params only when they are not passed, so
+    // slice down to what the statement actually uses.
+    const facetRows = (await this.dataSource.query(
+      `
+      SELECT
+        q.question_category AS category,
+        q.answer_tier,
+        COUNT(*)::int AS count,
+        COUNT(*) FILTER (WHERE a.answer_id IS NOT NULL)::int AS answered_count
+      FROM ci.questions q
+      ${CATALOGUE_ANSWER_LATERAL_SQL}
+      WHERE ${CATALOGUE_BASE_WHERE_SQL}
+      GROUP BY 1, 2;
+      `,
+      params.slice(0, 3),
+    )) satisfies Array<CatalogueFacetRow>;
+
+    const categories = new Map<string | null, number>();
+    const answerTiers = new Map<string | null, number>();
+    let answeredCount = 0;
+    let unansweredCount = 0;
+
+    for (const row of facetRows) {
+      const count = Number(row.count);
+      const answeredInBucket = Number(row.answered_count);
+
+      categories.set(row.category, (categories.get(row.category) ?? 0) + count);
+      answerTiers.set(row.answer_tier, (answerTiers.get(row.answer_tier) ?? 0) + count);
+      answeredCount += answeredInBucket;
+      unansweredCount += count - answeredInBucket;
+    }
+
+    // The window count rides on the rows, so an empty page carries none. That is
+    // usually because nothing matched — but it is also what a page past the end
+    // looks like (deactivate the last row on the last page and you are there),
+    // and reporting 0 then would tell the pager there is nothing to go back to.
+    const totalCount =
+      rows.length > 0
+        ? Number(rows[0].total_count)
+        : offset === 0
+          ? 0
+          : Number(
+              (
+                (await this.dataSource.query(
+                  `
+                  SELECT COUNT(*)::int AS total_count
+                  FROM ci.questions q
+                  ${CATALOGUE_ANSWER_LATERAL_SQL}
+                  WHERE ${CATALOGUE_FULL_WHERE_SQL};
+                  `,
+                  params.slice(0, 6),
+                )) satisfies Array<{ total_count: number }>
+              )[0]?.total_count ?? 0,
+            );
+
+    const toSortedBuckets = (buckets: Map<string | null, number>): QuestionCatalogueFacetBucket[] =>
+      Array.from(buckets.entries())
+        .map(([value, count]) => ({ value, count }))
+        // Untiered/uncategorised rows sort last — they are the pre-catalogue
+        // leftovers, not something to lead a picker with.
+        .sort((left, right) =>
+          left.value === null ? 1 : right.value === null ? -1 : left.value.localeCompare(right.value),
+        );
+
+    return {
+      data: rows.map((row) => ({
+        id: row.id,
+        text: row.text,
+        category: row.category,
+        answerTier: row.answer_tier,
+        questionType: row.question_type,
+        frequencyRecommendation: row.frequency_recommendation,
+        isActive: row.is_active,
+        isSeedQuestion: row.is_seed_question,
+        createdByLlm: row.created_by_llm,
+        isPrivateTo: row.is_private_to,
+        timesAsked: Number(row.times_asked),
+        timesAnswered: Number(row.times_answered),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        answer:
+          row.answer_id && row.answer_text
+            ? {
+                id: row.answer_id,
+                text: row.answer_text,
+                source: row.answer_source,
+                confidence: row.answer_confidence,
+                rationale: row.answer_rationale,
+                answeredAt: row.answered_at as Date,
+              }
+            : null,
+      })),
+      totalCount,
+      limit,
+      offset,
+      facets: {
+        categories: toSortedBuckets(categories),
+        answerTiers: toSortedBuckets(answerTiers),
+        answeredCount,
+        unansweredCount,
+      },
+    };
+  }
+
   async findById(context: ServiceContext, id: string): Promise<Question | null> {
     const whereClauses: FindOptionsWhere<QuestionEntity>[] = [
       {
@@ -271,8 +603,17 @@ export class QuestionService {
   ): Promise<Question | null> {
     const updateData: Partial<QuestionEntity> = {};
 
+    // `subcategory` is the historical spelling; `category` wins when both come in.
     if (data.subcategory !== undefined) {
       updateData.category = data.subcategory;
+    }
+
+    if (data.category !== undefined) {
+      updateData.category = data.category;
+    }
+
+    if (data.answerTier !== undefined) {
+      updateData.answerTier = data.answerTier;
     }
 
     if (data.text !== undefined) {
@@ -316,12 +657,7 @@ export class QuestionService {
     }
 
     const question = await this.questionRepository.findOne({
-      where: {
-        id: questionId,
-        ...(context.userId !== SYSTEM_USER && {
-          isPrivateTo: context.userId,
-        }),
-      },
+      where: this.writableWhere(context, questionId),
     });
 
     if (question) {
