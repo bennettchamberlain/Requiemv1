@@ -451,3 +451,70 @@ describe('WhatsApp chat identity across export shapes', () => {
     expect(pushed[0].item.metadata!.Conversation).toBe('LITA Companion Tech Team');
   });
 });
+
+describe('the system-line filter must not eat human messages', () => {
+  const LRM = '\u200e';
+
+  const importChat = async (body: string): Promise<EmittedGraph[]> => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wa-sys-'));
+    fs.writeFileSync(path.join(dir, '_chat.txt'), body);
+    const pipeline: EmittedGraph[] = [];
+    const drops: string[] = [];
+    // `drop` hangs off the PIPELINE, not off params — that is where the parser
+    // calls it (`params.pipeline.drop?.()`), and the real collaborator is
+    // StagedWriter, which carries both `push` and `drop`.
+    const collector = Object.assign(pipeline, { drop: (reason: string) => drops.push(reason) });
+
+    await new WhatsAppFileImporter().fileImport({}, { filename: path.basename(dir), fullPath: dir }, {
+      pipeline: collector,
+      timeframe: {},
+      log: () => {},
+    } as unknown as ImportParams);
+    fs.rmSync(dir, { recursive: true, force: true });
+    (pipeline as EmittedGraph[] & { drops?: string[] }).drops = drops;
+
+    return pipeline;
+  };
+
+  const line = (text: string) => `[1/15/25, 9:30:00 AM] Dana Wu: ${text}\n`;
+  const bodies = (p: EmittedGraph[]) => p.map((g) => String(g.item.metadata?.Text ?? ''));
+
+  /**
+   * `SYSTEM_VERB_RE` is right-unbounded — `.+ (added|removed|left|…)` matches
+   * those words ANYWHERE in a body. On one real 5,254-message export it
+   * destroyed 53 human messages (7,901 characters) alongside the 41 system
+   * lines it meant to suppress. These five are verbatim from that corpus.
+   */
+  it.each([
+    'btw there is a RS-232 cable in the box if needed for reading from the left side elevator motherboard',
+    'We just wrapped up xmas here, everybody just left the house',
+    'I changed the copyright to Lita from Clai on that web panel also.',
+    'well i left the page anyway',
+    'To be 100% clear - I have unplugged and removed their PI',
+  ])('keeps a human message containing a system verb: %s', async (text) => {
+    const pipeline = await importChat(line(text));
+
+    expect(bodies(pipeline)).toEqual([text]);
+  });
+
+  it('still suppresses a genuine system line, which WhatsApp marks with U+200E', async () => {
+    const pipeline = await importChat(line(`${LRM}Batis Samadian added you`));
+
+    expect(pipeline).toHaveLength(0);
+  });
+
+  it('records the suppression instead of returning silently', async () => {
+    const pipeline = await importChat(line(`${LRM}Batis Samadian added you`));
+
+    expect((pipeline as EmittedGraph[] & { drops?: string[] }).drops).toEqual(['whatsapp_system_line']);
+  });
+
+  it('keeps a media placeholder, which carries the marker but is not a system line', async () => {
+    // The marker alone cannot be the rule: WhatsApp puts it on every line it
+    // generates, including these. 745 of one export's lines carry it and only
+    // 41 are system lines.
+    const pipeline = await importChat(line(`${LRM}image omitted`));
+
+    expect(pipeline).toHaveLength(1);
+  });
+});
