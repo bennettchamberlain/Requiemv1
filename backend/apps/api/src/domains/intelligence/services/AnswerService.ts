@@ -60,6 +60,8 @@ export class AnswerService {
       },
       ...(data.answerMethod !== undefined ? { answerMethod: data.answerMethod } : {}),
       ...(data.answerSource !== undefined ? { answerSource: data.answerSource } : {}),
+      ...(data.answerConfidence !== undefined ? { answerConfidence: data.answerConfidence } : {}),
+      ...(data.answerRationale !== undefined ? { answerRationale: data.answerRationale } : {}),
       ...(data.sessionContext !== undefined ? { sessionContext: data.sessionContext } : {}),
     });
 
@@ -213,6 +215,10 @@ export class AnswerService {
       updateData.answerConfidence = data.answerConfidence;
     }
 
+    if (data.answerRationale !== undefined) {
+      updateData.answerRationale = data.answerRationale;
+    }
+
     if (data.answerSource !== undefined) {
       updateData.answerSource = data.answerSource;
     }
@@ -255,6 +261,32 @@ export class AnswerService {
 
     if (data.sharingLevel !== undefined) {
       updateData.sharingLevel = data.sharingLevel;
+    }
+
+    // A text edit with no explicit provenance is a USER CORRECTION: the person
+    // read what the appliance had inferred on their behalf and rewrote it. Those
+    // words are now theirs, so the row stops claiming to be a machine inference —
+    // source and method flip, and the confidence and rationale are cleared rather
+    // than left behind, since a score the model gave to text it no longer wrote
+    // would be a lie the UI renders as a badge.
+    //
+    // Gated on the caller NOT naming a source, so the inference listener's own
+    // update (which passes answerSource: 'inferred' explicitly) is untouched. The
+    // REST/GraphQL edit paths only ever pass `text`, which is exactly the case
+    // this catches.
+    const isUserCorrection = data.text !== undefined && data.answerSource === undefined;
+
+    if (isUserCorrection) {
+      updateData.answerSource = 'user_input';
+      updateData.answerMethod = data.answerMethod ?? 'user';
+
+      if (data.answerConfidence === undefined) {
+        updateData.answerConfidence = null;
+      }
+
+      if (data.answerRationale === undefined) {
+        updateData.answerRationale = null;
+      }
     }
 
     const answer = await this.answerRepository.findOne({

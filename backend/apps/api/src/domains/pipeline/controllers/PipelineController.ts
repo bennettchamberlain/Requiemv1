@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
@@ -7,6 +7,7 @@ import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 
 import {
+  type DeadLetterBulkReplayResult,
   type DeadLetterReplayResult,
   MAX_DEAD_LETTER_PAGE,
   MAX_RUN_PAGE,
@@ -59,6 +60,45 @@ const deadLettersQuerySchema = z.object({
 
 type DeadLettersQuery = z.infer<typeof deadLettersQuerySchema>;
 
+/**
+ * `POST /api/pipeline/dead-letters/replay` — the bulk form.
+ *
+ * A selector is REQUIRED. There is deliberately no "replay everything" spelling:
+ * a real backlog is mostly one or two config errors repeated, and blind replay
+ * re-runs them against the same broken config, re-fails, and writes a fresh
+ * letter per attempt. Making the caller name a class of failure IS the safety
+ * property, so an empty body is a 400 rather than a very expensive no-op.
+ *
+ * `ids` is capped at the same ceiling as a list page: the batch an operator can
+ * see is the batch they can act on, and every claimed letter carries a verbatim
+ * payload back onto the bus.
+ */
+const replayDeadLettersSchema = z
+  .object({
+    ids: z.array(z.string().uuid()).min(1).max(MAX_DEAD_LETTER_PAGE).optional(),
+    eventName: z.string().min(1).max(256).optional(),
+
+    /**
+     * ISO-8601 instant. Bare `z.coerce.date()` also accepts `"nonsense"` and
+     * yields an Invalid Date, which would bind as NULL and silently WIDEN the
+     * selector to every letter; the refinement rejects that with a 400 instead.
+     */
+    failedAfter: z.coerce
+      .date()
+      .refine((value) => !Number.isNaN(value.getTime()), { message: 'failedAfter is not a date' })
+      .optional(),
+
+    limit: z.coerce.number().int().min(1).max(MAX_DEAD_LETTER_PAGE).optional(),
+  })
+  .refine((body) => body.ids != null || body.eventName != null || body.failedAfter != null, {
+    message:
+      'Name the letters to replay: pass ids, and/or eventName and/or failedAfter. ' +
+      'Replaying every dead letter is not offered — most of a backlog is one config error, ' +
+      'and re-emitting it just re-fails.',
+  });
+
+type ReplayDeadLettersBody = z.infer<typeof replayDeadLettersSchema>;
+
 /** `GET /api/pipeline/state`. */
 export interface PipelineStateResponse {
   stages: StageCoverage[];
@@ -73,6 +113,9 @@ export interface PipelineRunsResponse {
 export interface PipelineDeadLettersResponse {
   deadLetters: PipelineDeadLetterView[];
 }
+
+/** `POST /api/pipeline/dead-letters/replay`. */
+export type PipelineDeadLettersReplayResponse = DeadLetterBulkReplayResult;
 
 /**
  * The operator's window onto the pipeline: what has been processed, what is
@@ -234,6 +277,39 @@ export class PipelineController {
     });
 
     return { deadLetters };
+  }
+
+  /**
+   * Re-emit MANY dead letters' preserved payloads in one call.
+   *
+   * Declared BEFORE `dead-letters/:id/replay` so route order can never make
+   * `replay` read as an `:id` — the two patterns differ in segment count today,
+   * but the ordering costs nothing and removes the question.
+   *
+   * Same WRITE capability and same user scoping as the single-id route, and the
+   * same claim: `replayed_at IS NULL`, stamped before the emit, in ONE statement
+   * for the whole batch. A double-submit therefore claims nothing the second
+   * time — the guard is the database's, not the button's.
+   *
+   * 200 even when some letters failed: partial failure is the normal outcome of
+   * a batch, and the response body says exactly which letters went back on the
+   * bus, which failed and why, and which were skipped because they had already
+   * been replayed. A blanket 500 would hide the ones that succeeded. Only a
+   * malformed request (400 — including an empty selector) fails the call itself.
+   */
+  @Post('dead-letters/replay')
+  @HttpCode(200)
+  @RequireCapability(WRITE_CAPABILITY)
+  replayDeadLetters(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(replayDeadLettersSchema)) body: ReplayDeadLettersBody,
+  ): Promise<PipelineDeadLettersReplayResponse> {
+    return this.pipelineRunService.replayDeadLetters(toServiceContext(context), {
+      ids: body.ids,
+      eventName: body.eventName,
+      failedAfter: body.failedAfter,
+      limit: body.limit,
+    });
   }
 
   /**

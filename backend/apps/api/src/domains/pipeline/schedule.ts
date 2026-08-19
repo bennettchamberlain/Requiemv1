@@ -399,6 +399,33 @@ export const STAGE_SCHEDULES: Record<StageId, StageSchedule> = {
     maxStaleness: 3 * DAYS,
   },
 
+  /**
+   * NIGHTLY. The same promotion over `ci.position` — named GPS fixes into
+   * places, and `ci.position.location_entity_id`.
+   *
+   * Same tier and same cadence as `promote.place`, for the same reasons: it
+   * reads `ci.geocode_cache` BY PRIMARY KEY, so no provider call and no bill,
+   * and `STAGE_DEPENDENCIES` (not the cadence) is what keeps it behind
+   * `enrich.position_reverse`, which writes both of its inputs.
+   *
+   * NO `perRunCap`, deliberately, and it is worth being explicit because the
+   * producer over this same table has one. `enrich.position_reverse` is capped
+   * because every row it touches is a BILLED provider call; this stage's cost
+   * is a Postgres round trip per DISTINCT venue in a slice, and the candidate
+   * set is only the NAMED fixes (2,815 of 65,115 on the legacy corpus). What
+   * bounds a sweep here is `MAX_SLICES_PER_SWEEP`, the same thing that bounds
+   * `promote.place`. A cap would be a second, weaker copy of that number, and
+   * on a first import it would be the reason the map fills over weeks instead
+   * of overnight.
+   */
+  [STAGE_IDS.PROMOTE_PLACE_POSITION]: {
+    trigger: 'scheduled',
+    cost: 'local',
+    window: 'enrichment',
+    minInterval: 1 * DAYS,
+    maxStaleness: 3 * DAYS,
+  },
+
   /** NIGHTLY. Purchases into `ci.inventory`. Reads nothing another stage produces. */
   [STAGE_IDS.PROMOTE_OBJECT]: {
     trigger: 'scheduled',

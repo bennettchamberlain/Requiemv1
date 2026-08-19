@@ -143,7 +143,9 @@ enum AnswerSource {
 
 type AnswerType implements Node {
   answer: String!
+  answerConfidence: Float
   answerMethod: String!
+  answerRationale: String
   answerSource: String
   answeredAt: DateTime!
   id: ID!
@@ -2074,6 +2076,7 @@ type QuestionEdge implements Edge {
 }
 
 type QuestionType implements Node {
+  answerTier: String
   category: String!
   createdByLlm: Boolean
   id: ID!

@@ -1,5 +1,6 @@
 import { type MouseEvent } from 'react';
 
+import { AnswerProvenance } from '@/components/AnswerProvenance';
 import { AnswerIcon } from '@/components/icons';
 import { gql, useFragment, type FragmentType } from '@/graphql';
 
@@ -9,6 +10,9 @@ export const ANSWER_FRAGMENT = gql(`
   fragment AnswerGridItemData on AnswerType {
     id
     answer
+    answerSource
+    answerConfidence
+    answerRationale
     question {
       id
       text
@@ -43,8 +47,13 @@ export function AnswerGridItem({ answer, onClick }: Props) {
         </div>
       </EntityGridItem.Content>
 
-      <EntityGridItem.Footer className="self-end">
+      <EntityGridItem.Footer className="self-end flex items-center gap-2">
         <div className="text-sm text-muted-foreground">Reflection</div>
+        <AnswerProvenance
+          source={data.answerSource}
+          confidence={data.answerConfidence}
+          rationale={data.answerRationale}
+        />
       </EntityGridItem.Footer>
     </EntityGridItem>
   );
