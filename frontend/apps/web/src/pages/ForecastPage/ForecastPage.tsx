@@ -7,7 +7,13 @@ import { ForecastStrip } from '@/components/ForecastStrip';
 import { PageContent } from '@/components/layout';
 import { WeekAhead } from '@/components/WeekAhead';
 
-import { CalibrationPanel, MetricBandsPanel, NextPlacesPanel, NextUpPanel } from './ForecastPanels';
+import {
+  CalibrationPanel,
+  DivergenceHeatmapPanel,
+  MetricBandsPanel,
+  NextPlacesPanel,
+  NextUpPanel,
+} from './ForecastPanels';
 import { useForecastExtras } from './useForecastExtras';
 
 export function ForecastPage() {
@@ -52,6 +58,12 @@ export function ForecastPage() {
             </div>
             <WeekAhead week={week} due={due} />
             <div className="grid gap-4 lg:grid-cols-2">
+              {/* Full width: 48 half-hour columns are unreadable in half a card. */}
+              <DivergenceHeatmapPanel
+                historyDays={extras.historyDays}
+                buckets={forecast.systemStatus === 'READY' ? forecast.buckets : []}
+                className="lg:col-span-2"
+              />
               <NextUpPanel buckets={forecast.buckets} historyDays={extras.historyDays} />
               <MetricBandsPanel metrics={extras.metrics} />
               <NextPlacesPanel places={extras.places} />
