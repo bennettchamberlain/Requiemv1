@@ -75,6 +75,15 @@ export class PlaceService {
       placeId?: string | null;
       /** Provider address components ({address_components: [...]}) for hierarchy. */
       components?: Record<string, unknown> | null;
+      /**
+       * Provider bounding box, when the resolved feature HAS an extent (a city,
+       * neighbourhood or park — never a street address). Stored as the place's
+       * polygon footprint so containment queries can answer "which place is
+       * this coordinate inside?". Structural shape rather than the geocode
+       * domain's GeocodeBounds so memory does not import geocode (the
+       * dependency already runs the other way, via GeocodeBatchListener).
+       */
+      bounds?: { north: number; south: number; east: number; west: number } | null;
     },
   ): Promise<{ id: string; created: boolean }> {
     const trimmedName = input.name.trim();
@@ -103,7 +112,7 @@ export class PlaceService {
 
       if (byPlaceId.length > 0) {
         const id = byPlaceId[0].entity_id;
-        await this.enrichResolvedPlace(context, id, input.lat, input.lng, placeId);
+        await this.enrichResolvedPlace(context, id, input.lat, input.lng, placeId, input.bounds);
         await this.ensureHierarchy(context, id, input.components ?? null);
 
         return { id, created: false };
@@ -123,12 +132,32 @@ export class PlaceService {
     // races safely with concurrent callers for the same cell. Loser sees zero
     // rows affected; both fall through to the SELECT below and return the same
     // id. location_point carries FULL precision (snap lives only in the index).
+    // A bounded feature is an area, not an address: keep place_kind honest so
+    // the hierarchy and the UI don't label a whole city "address".
+    const bounds = normalizeBounds(input.bounds);
+
     await this.placeRepository.manager.query(
-      `INSERT INTO ci.entities (entity_id, entity_type, owner_user_id, name, properties, location_point, place_kind)
+      `INSERT INTO ci.entities (entity_id, entity_type, owner_user_id, name, properties, location_point, place_kind, location_boundary)
        VALUES ($1, 'Location', $2, $3, $4::jsonb,
-               ST_SetSRID(ST_MakePoint($5, $6), 4326)::geography, 'address')
+               ST_SetSRID(ST_MakePoint($5, $6), 4326)::geography, $7,
+               CASE WHEN $8::boolean
+                    THEN ST_MakeEnvelope($9, $10, $11, $12, 4326)::geography
+                    ELSE NULL END)
        ON CONFLICT DO NOTHING`,
-      [newId, context.userId, trimmedName, JSON.stringify(properties), input.lng, input.lat],
+      [
+        newId,
+        context.userId,
+        trimmedName,
+        JSON.stringify(properties),
+        input.lng,
+        input.lat,
+        bounds ? 'neighborhood' : 'address',
+        bounds != null,
+        bounds?.west ?? 0,
+        bounds?.south ?? 0,
+        bounds?.east ?? 0,
+        bounds?.north ?? 0,
+      ],
     );
 
     // Read back the canonical row (whether we inserted or hit a conflict).
@@ -165,7 +194,7 @@ export class PlaceService {
 
         if (winner.length > 0) {
           const id = winner[0].entity_id;
-          await this.enrichResolvedPlace(context, id, input.lat, input.lng, placeId);
+          await this.enrichResolvedPlace(context, id, input.lat, input.lng, placeId, input.bounds);
           await this.ensureHierarchy(context, id, input.components ?? null);
 
           return { id, created: false };
@@ -185,7 +214,7 @@ export class PlaceService {
     if (!was_new) {
       // Pre-existing row matched by snap cell: enrich it with what this
       // resolution knows (full-precision point if missing, the place_id claim).
-      await this.enrichResolvedPlace(context, entity_id, input.lat, input.lng, placeId);
+      await this.enrichResolvedPlace(context, entity_id, input.lat, input.lng, placeId, input.bounds);
     }
 
     await this.ensureHierarchy(context, entity_id, input.components ?? null);
@@ -257,13 +286,34 @@ export class PlaceService {
     lat: number,
     lng: number,
     placeId: string | null,
+    rawBounds?: { north: number; south: number; east: number; west: number } | null,
   ): Promise<void> {
+    // COALESCE throughout: enrichment only FILLS gaps. A boundary a user drew
+    // by hand, or a tighter one from an earlier resolution, is never replaced
+    // by a provider box.
+    const bounds = normalizeBounds(rawBounds);
+
     await this.placeRepository.manager.query(
       `UPDATE ci.entities
           SET location_point = COALESCE(location_point, ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography),
-              place_kind = COALESCE(place_kind, 'address')
+              place_kind = COALESCE(place_kind, 'address'),
+              location_boundary = COALESCE(
+                location_boundary,
+                CASE WHEN $5::boolean
+                     THEN ST_MakeEnvelope($6, $7, $8, $9, 4326)::geography
+                     ELSE NULL END)
         WHERE entity_id = $1 AND owner_user_id = $2`,
-      [entityId, context.userId, lng, lat],
+      [
+        entityId,
+        context.userId,
+        lng,
+        lat,
+        bounds != null,
+        bounds?.west ?? 0,
+        bounds?.south ?? 0,
+        bounds?.east ?? 0,
+        bounds?.north ?? 0,
+      ],
     );
 
     if (placeId) {
@@ -419,6 +469,49 @@ export class PlaceService {
     }
 
     return rows[0].entity_id;
+  }
+
+  /**
+   * Places whose polygon footprint COVERS the given point, most specific
+   * (smallest area) first — "which place am I inside?", the containment
+   * counterpart to {@link placesNear}'s proximity search.
+   *
+   * Runs on entities_location_boundary_gix. ST_Covers (not ST_Contains) so a
+   * point exactly on the boundary edge counts as inside — a coordinate landing
+   * on a city limit belongs to that city rather than to nowhere.
+   *
+   * Only places that actually HAVE a footprint can match: a venue known only as
+   * a point is not a container. Ordering by area means a park inside a city
+   * outranks the city.
+   */
+  async placesContaining(
+    context: UserServiceContext,
+    input: { lat: number; lng: number; limit?: number },
+  ): Promise<Place[]> {
+    const limit = Math.min(Math.max(input.limit ?? 10, 1), 100);
+
+    const rows: Array<{ entity_id: string }> = await this.placeRepository.manager.query(
+      `SELECT entity_id
+         FROM ci.entities
+        WHERE entity_type = 'Location'
+          AND owner_user_id = $1
+          AND location_boundary IS NOT NULL
+          AND ST_Covers(location_boundary, ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography)
+        ORDER BY ST_Area(location_boundary) ASC
+        LIMIT $4`,
+      [context.userId, input.lng, input.lat, limit],
+    );
+
+    if (rows.length === 0) {
+      return [];
+    }
+
+    const places = await this.findByIds(
+      context,
+      rows.map((row) => row.entity_id),
+    );
+
+    return places.filter((place): place is Place => place != null);
   }
 
   /**
@@ -887,4 +980,35 @@ export class PlaceService {
 
     return true;
   }
+}
+
+/**
+ * Validate a provider bounding box before it becomes a polygon. Rejects
+ * non-finite corners, a zero-area or inverted box, and one crossing the
+ * antimeridian (east <= west) — ST_MakeEnvelope would otherwise build an
+ * envelope wrapping most of the globe, which would then "contain" every
+ * coordinate the user has.
+ */
+function normalizeBounds(
+  bounds: { north: number; south: number; east: number; west: number } | null | undefined,
+): { north: number; south: number; east: number; west: number } | null {
+  if (!bounds) {
+    return null;
+  }
+
+  const { north, south, east, west } = bounds;
+
+  if (![north, south, east, west].every((value) => typeof value === 'number' && Number.isFinite(value))) {
+    return null;
+  }
+
+  if (north <= south || east <= west) {
+    return null;
+  }
+
+  if (north > 90 || south < -90 || east > 180 || west < -180) {
+    return null;
+  }
+
+  return { north, south, east, west };
 }

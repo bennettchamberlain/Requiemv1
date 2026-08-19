@@ -2409,6 +2409,7 @@ export type PlaceNearType = {
 
 export type PlaceType = Node & Taggable & {
   __typename?: 'PlaceType';
+  boundary?: Maybe<Scalars['JSON']['output']>;
   description?: Maybe<Scalars['String']['output']>;
   entityType: Scalars['String']['output'];
   estimated?: Maybe<Scalars['Boolean']['output']>;
@@ -2600,6 +2601,7 @@ export type Query = {
   /** Likely next places from the stay-point transition model (recency-decayed, hour/dow backoff) */
   placeForecast: Array<PlaceForecastItemType>;
   places: PlaceConnection;
+  placesContaining: Array<PlaceType>;
   placesNear: Array<PlaceNearType>;
   /** Planned blocks (`event_type = planned_block`) overlapping [from, to). SQL-pushdown, not the explorer events() feed. */
   plannedBlocks: Array<EventType>;
@@ -2946,6 +2948,13 @@ export type QueryPlacesArgs = {
   first?: InputMaybe<Scalars['Int']['input']>;
   last?: InputMaybe<Scalars['Int']['input']>;
   query?: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type QueryPlacesContainingArgs = {
+  latitude: Scalars['Float']['input'];
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  longitude: Scalars['Float']['input'];
 };
 
 

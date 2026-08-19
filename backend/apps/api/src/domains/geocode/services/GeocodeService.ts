@@ -9,7 +9,41 @@ import { LoggerService } from '@ci/common/logging';
 import { GeocodeCacheEntity } from '../entities/GeocodeCacheEntity';
 import { isVirtualLocation } from '../util/virtualLocations';
 
-import { GEOCODE_PROVIDER, type GeocodeProvider, type GeocodeProviderResult } from './GeocodeProvider';
+import {
+  GEOCODE_PROVIDER,
+  type GeocodeBounds,
+  type GeocodeProvider,
+  type GeocodeProviderResult,
+} from './GeocodeProvider';
+
+/**
+ * Rehydrate a cached bounding box. The column is untyped jsonb (and may hold a
+ * row written before the column existed, or by an older shape), so every corner
+ * is re-validated on the way out rather than trusted.
+ */
+function toGeocodeBounds(raw: Record<string, number> | null | undefined): GeocodeBounds | null {
+  const north = raw?.north;
+  const south = raw?.south;
+  const east = raw?.east;
+  const west = raw?.west;
+
+  if (
+    typeof north !== 'number' ||
+    typeof south !== 'number' ||
+    typeof east !== 'number' ||
+    typeof west !== 'number' ||
+    !Number.isFinite(north) ||
+    !Number.isFinite(south) ||
+    !Number.isFinite(east) ||
+    !Number.isFinite(west) ||
+    north <= south ||
+    east <= west
+  ) {
+    return null;
+  }
+
+  return { north, south, east, west };
+}
 
 /** Provider statuses that must NOT be retried — the answer will never change. */
 export const NON_RETRYABLE_STATUSES = new Set<string>(['REQUEST_DENIED', 'INVALID_REQUEST', 'ZERO_RESULTS']);
@@ -79,6 +113,8 @@ export interface GeocodeOutcome {
   placeId?: string | null;
   /** Provider address components ({address_components: [...]}) for hierarchy. */
   components?: Record<string, unknown> | null;
+  /** Result bounding box for a place footprint, when the provider gave one. */
+  bounds?: GeocodeBounds | null;
 }
 
 /** Outcome of a reverse-geocode attempt (coords -> place name). */
@@ -95,6 +131,8 @@ export interface ReverseGeocodeOutcome {
   placeId?: string | null;
   /** Provider address components ({address_components: [...]}) for hierarchy. */
   components?: Record<string, unknown> | null;
+  /** Result bounding box for a place footprint, when the provider gave one. */
+  bounds?: GeocodeBounds | null;
 }
 
 /** Options controlling a single {@link GeocodeService.geocode} call. */
@@ -267,6 +305,7 @@ export class GeocodeService {
         locationType: result.locationType ?? null,
         placeId: result.placeId ?? null,
         components: result.components ?? null,
+        bounds: result.bounds ?? null,
       };
     }
 
@@ -315,6 +354,7 @@ export class GeocodeService {
           retryable: false,
           placeId: cached.placeId ?? null,
           components: cached.components ?? null,
+          bounds: toGeocodeBounds(cached.bounds),
         };
       }
     }
@@ -349,6 +389,7 @@ export class GeocodeService {
         retryable: false,
         placeId: result.placeId ?? null,
         components: result.components ?? null,
+        bounds: result.bounds ?? null,
       };
     }
 
@@ -372,6 +413,7 @@ export class GeocodeService {
         locationType: row.locationType,
         placeId: row.placeId ?? null,
         components: row.components ?? null,
+        bounds: toGeocodeBounds(row.bounds),
       };
     }
 
@@ -399,8 +441,8 @@ export class GeocodeService {
       await this.cacheRepository.query(
         `INSERT INTO ci.geocode_cache
            (query_hash, raw_query, normalized_address, place_id, lat, lng,
-            components, status, partial_match, location_type)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            components, status, partial_match, location_type, bounds)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          ON CONFLICT (query_hash) DO UPDATE SET
            raw_query          = EXCLUDED.raw_query,
            normalized_address = EXCLUDED.normalized_address,
@@ -411,6 +453,7 @@ export class GeocodeService {
            status             = EXCLUDED.status,
            partial_match      = EXCLUDED.partial_match,
            location_type      = EXCLUDED.location_type,
+           bounds             = EXCLUDED.bounds,
            hit_count          = ci.geocode_cache.hit_count + 1,
            updated_at         = now()`,
         [
@@ -424,6 +467,7 @@ export class GeocodeService {
           result.status,
           result.partialMatch ?? false,
           result.locationType ?? null,
+          result.bounds ? JSON.stringify(result.bounds) : null,
         ],
       );
     } catch (error) {

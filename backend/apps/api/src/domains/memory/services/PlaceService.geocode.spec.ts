@@ -129,7 +129,11 @@ describe('PlaceService.findOrCreateForGeocode (place_id + hierarchy)', () => {
     // Enrich: point backfill runs with FULL precision coordinates.
     const enrich = statementsMatching(harness, 'COALESCE(location_point');
     expect(enrich).toHaveLength(1);
-    expect(enrich[0].params).toEqual([EXISTING, USER, -122.0841234, 37.4221234]);
+    // Trailing params are the boundary gate (false — this resolution carried no
+    // bounds) and its unused corners; boundary persistence is covered in
+    // PlaceService.boundary.spec.
+    expect(enrich[0].params?.slice(0, 4)).toEqual([EXISTING, USER, -122.0841234, 37.4221234]);
+    expect(enrich[0].params?.[4]).toBe(false);
     // Hierarchy: city, region, country nodes created/resolved (the keyed
     // read-back SELECT runs once per level; COALESCE(parent_place_id is unique
     // to it, unlike the adoption UPDATE which also filters on place_kind).
