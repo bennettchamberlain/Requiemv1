@@ -434,6 +434,51 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
     `,
   },
   {
+    id: 'blank-social-affiliation-content',
+    severity: 'high',
+    title: 'ci.content rows for a connection or a subreddit membership — an entry with no body at all',
+    scope: 'ci.content',
+    remedy:
+      'A LinkedIn connection and a moderated subreddit carry no Text, no Body and no URL, so the ' +
+      'content row toContentInput built for them has a NULL text AND a NULL url — and ci.content has ' +
+      'no title column, so nothing about the row renders in any Content view. `destinationsFor` was ' +
+      "sending every social.* record to 'content' as well as 'events' (fixed by isSocialAffiliation in " +
+      'push/canonical.ts); 20260819051916 deletes the rows already written. The facts are not lost ' +
+      'either way: the connection is a ci.entities Person carrying the profile URL plus a dated ' +
+      'social event, and the subreddit is an event titled r/<sub>.',
+    mirrors: 'db/postgres/migrations/20260819051916_cleanup_blank_social_affiliation_content_rows.sql',
+    // Provenance-scoped, exactly as the migration is: this watches the ONE
+    // shape the router now withholds, not blank content rows in general. Other
+    // sources produce blank rows for their own reasons (vcard contact cards
+    // with no note, Amazon app purchases) and folding them in here would make
+    // this check permanently non-zero for causes it says nothing about.
+    //
+    // Emptiness is `!~ '[^[:space:]]'` and not `btrim(x) = ''` for the reason
+    // the events-location-without-name check documents: btrim strips SPACES
+    // ONLY, so the btrim form reads a body of two newlines as present.
+    sql: String.raw`
+      WITH bad AS (
+        SELECT id, source_system, source_id, source_data ->> 'Kind' AS kind
+          FROM ci.content
+         WHERE source_type = 'ci-import-tools'
+           AND (
+                (source_system = 'linkedin' AND source_data ->> 'Kind' = 'connection')
+             OR (
+                  source_system = 'reddit'
+                  AND source_data ->> 'Kind' IN ('moderated_subreddit', 'subscribed_subreddit')
+                )
+               )
+           AND external_id IS NULL
+           AND coalesce(text, '') !~ '[^[:space:]]'
+           AND coalesce(url, '') !~ '[^[:space:]]'
+      )
+      SELECT count(*)::bigint AS count,
+             ${breakdownBy('source_system')} AS breakdown,
+             ${SAMPLE} AS sample
+        FROM bad
+    `,
+  },
+  {
     id: 'content-media-mimetype-mismatch',
     severity: 'medium',
     title: "ci.content typed 'media' whose mimetype is not an image, video or audio type",
