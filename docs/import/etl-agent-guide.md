@@ -1138,29 +1138,34 @@ search index. Run against the live appliance mid-import on 2026-08-19 (15,456
 communications, 123,194 events, 41,440 content, 2,006 inventory, 2,952
 browser_activity, 3,284 `Person` entities), twelve of thirteen sources pushed:
 
-| check | sev | mirrors | count |
-|---|---|---|---:|
-| `comms-missing-thread-id` | high | `20260819000746` backfill | 19 |
-| `comms-missing-participants` | high | `20260819000959` backfill | 5,396 |
-| `comms-placeholder-content` | high | `20260819000154` backfill | 0 |
-| `position-not-a-place-name` | high | `push/inputs.ts isNotAPlaceName` | 0 |
-| `person-name-garbage` | high | `20260819002002` backfill | 0 |
-| `person-bare-phone-name` | medium | `20260818220833` merge candidates | 0 |
-| `person-duplicate-names` | medium | — | 768 |
-| `events-location-without-name` | medium | `20260818215813` (its exclusion) | 0 |
-| `capture-events-without-content` | high | `20260818174213` backfill | 182 |
-| `content-media-mimetype-mismatch` | medium | `20260818224249` backfill | 14 |
-| `events-dated-before-1990` | high | — | 0 |
-| `events-dated-in-future` | medium | — | 3 |
-| `events-timestamped-at-import` | high | `time_source` vocabulary | 0 |
-| `pipeline-overdue-retries` | high | — | 801 |
-| `pipeline-quarantined` | high | — | 0 |
-| `pipeline-dead-letters` | high | — | 0 |
-| `pipeline-orphan-shards` | medium | — | 0 |
-| `events-missing-search-vector` | medium | — | 53,145 |
-| `communications-missing-search-vector` | medium | — | 0 |
+| check | sev | mirrors | mid-import | complete + enriched |
+|---|---|---|---:|---:|
+| `comms-missing-thread-id` | high | `20260819000746` backfill | 19 | 19 |
+| `comms-missing-participants` | high | `20260819000959` backfill | 5,396 | 406 |
+| `comms-placeholder-content` | high | `20260819000154` backfill | 0 | 0 |
+| `position-not-a-place-name` | high | `push/inputs.ts isNotAPlaceName` | 0 | 0 |
+| `person-name-garbage` | high | `20260819002002` backfill | 0 | 0 |
+| `person-bare-phone-name` | medium | `20260818220833` merge candidates | 0 | 3,250 |
+| `person-duplicate-names` | medium | — | 768 | 2,595 |
+| `events-location-without-name` | medium | `20260818215813` (its exclusion) | 0 | 0 |
+| `capture-events-without-content` | high | `20260818174213` backfill | 182 | 182 |
+| `content-media-mimetype-mismatch` | medium | `20260818224249` backfill | 14 | 14 |
+| `events-dated-before-1990` | high | — | 0 | 0 |
+| `events-dated-in-future` | medium | — | 3 | 3 |
+| `events-timestamped-at-import` | high | `time_source` vocabulary | 0 | 0 |
+| `pipeline-overdue-retries` | high | — | 801 | 806 |
+| `pipeline-quarantined` | high | — | 0 | 0 |
+| `pipeline-dead-letters` | high | — | 0 | 1 |
+| `pipeline-orphan-shards` | medium | — | 0 | 10 |
+| `events-missing-search-vector` | medium | — | 53,145 | 0 |
+| `communications-missing-search-vector` | medium | — | 0 | 1 |
 
-Read that column as a **snapshot mid-import, not a target**: the two search-vector
+The second column is the same nineteen checks on the FINISHED run (1,393,402
+records: 325,145 communications, 325,849 browser_activity, 127,700 events,
+63,044 position, 507,495 entities) after the enrichment chain ran. Read the two
+together — §6.0.2 is why.
+
+Read the first column as a **snapshot mid-import, not a target**: the two search-vector
 checks and `pipeline-overdue-retries` are expected to be large while the index
 sweeps trail the push, and `events-missing-search-vector` at 53,145 against
 123,194 events is the sweeps being behind, not broken. The rows to treat as
@@ -1193,6 +1198,47 @@ Three rules the registry enforces on itself, worth knowing before you add a chec
 The sections below are the drill-downs the doctor does not do: run-level
 liveness, the drop ledger, and the push detail. Use them **after** a doctor
 finding, or when you have database access and no api key.
+
+### 6.0.2 Run it AFTER the enrichment chain, not before
+
+The single most common way to misread this tool, and it costs hours. `doctor`
+counts the DESTINATION tables, so every check whose repair lives in a backfill
+leg reads as a catastrophe mid-import and cures itself minutes later.
+
+`comms-missing-participants` above is the worked example. Measured 2026-08-19:
+
+| | before `backfill` | after (14s later) |
+|---|---:|---:|
+| `comms-missing-participants` | **5,381** | **25** |
+| ↳ twitter | 5,176 (100% of the source) | **0** |
+| ↳ instagram | 160 | **0** |
+| ↳ grok | 16 | **0** |
+
+The 5,396 in the table is that same pre-enrichment reading. Twitter at 100% of
+its source is the tell: a number that round is a leg that has not run, not a
+parser that failed. It is worth knowing what that costs — one pass at this
+concluded the absence of a `handle` identifier kind was the root cause, built a
+theory on it, and was wrong. Handle-based sources resolve through `name`
+identifiers; there is no `handle` row in `ci.entity_identifiers` and none is
+needed.
+
+So: run `ci-import backfill extract_people link_communications` (or the whole
+chain) and only then believe a participant, vector, or geocode finding. Each
+check's `remedy` names the leg that repairs it — read it before concluding a
+parser is at fault.
+
+**Some checks are permanently non-zero and should be.** The 25 that survive the
+backfill (406 on the full corpus) are LinkedIn system notices ("Message request
+accepted", "X left the conversation"), reddit `communication_type='post'` (an
+author, no recipient), and claude chats (no person on either end) — rows that
+arguably should not be `ci.communications` at all. **Chasing this check to zero
+will delete real rows.** Judge a finding by whether the row should exist, not by
+whether the count is zero.
+
+A count can also rise for an honest reason: `person-duplicate-names` and
+`person-bare-phone-name` go 768 -> 2,595 and 0 -> 3,250 between the two columns
+purely because Google Voice landed 309,689 call/SMS rows whose counterparts are
+phone numbers. More data, same rule.
 
 ### 6.1 Did the run do what it said?
 
