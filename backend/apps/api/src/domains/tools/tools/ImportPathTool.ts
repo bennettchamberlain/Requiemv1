@@ -13,7 +13,6 @@ import {
   StagedSourceService,
   uploadsRoot,
 } from '@ci/domains/import';
-
 import { UserService } from '@ci/domains/user';
 
 import { BaseTool } from '../core/BaseTool';
