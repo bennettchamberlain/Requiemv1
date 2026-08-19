@@ -5,6 +5,8 @@
   "NAV_ADD_PERSON": "Add a person to your Memory",
   "NAV_ADD_CONCEPT": "Add a concept or idea",
   "NAV_ADD_ITEM": "Add an item to your inventory",
+  "NAV_ADD_EVENT": "Add something that happened to your Memory",
+  "NAV_ADD_PLACE": "Add a place to your Memory",
   "NAV_ACTION_UPLOAD": "Upload files into your Memory",
   "NAV_ACTION_CAPTURE": "Take a photo with your camera",
   "NAV_ACTION_CONNECT": "Connect an external account or data source",

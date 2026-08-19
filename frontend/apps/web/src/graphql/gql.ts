@@ -67,7 +67,9 @@ type Documents = {
     "\n  fragment PlaceGridItemData on PlaceType {\n    id\n    name\n    description\n    properties\n  }\n": typeof types.PlaceGridItemDataFragmentDoc,
     "\n  fragment ThreadGridItemData on ThreadType {\n    id\n    name\n    description\n  }\n": typeof types.ThreadGridItemDataFragmentDoc,
     "\n  mutation CreateConcept($input: CreateConceptInput!) {\n    createConcept(input: $input) {\n      success\n      concept {\n        id\n        name\n        description\n      }\n    }\n  }\n": typeof types.CreateConceptDocument,
+    "\n  mutation CreateEvent($input: CreateEventInput!) {\n    createEvent(input: $input) {\n      id\n      title\n      description\n      startTime\n      endTime\n      eventType\n      locationName\n    }\n  }\n": typeof types.CreateEventDocument,
     "\n  mutation CreatePerson($input: CreatePersonInput!) {\n    createPerson(input: $input) {\n      success\n      person {\n        id\n        name\n        description\n      }\n    }\n  }\n": typeof types.CreatePersonDocument,
+    "\n  mutation CreatePlace($input: CreatePlaceInput!) {\n    createPlace(input: $input) {\n      id\n      name\n      description\n      placeKind\n      latitude\n      longitude\n    }\n  }\n": typeof types.CreatePlaceDocument,
     "\n  mutation CreateRelationship($input: CreateRelationshipInput!) {\n    createRelationship(input: $input) {\n      success\n      relationship {\n        id\n        fromNodeId\n        fromNodeType\n        toNodeId\n        toNodeType\n        type\n        properties\n        isBidirectional\n        startDate\n        endDate\n      }\n    }\n  }\n": typeof types.CreateRelationshipDocument,
     "\n  query GetPersonForEdit($id: ID!) {\n    person(id: $id) {\n      ...PersonEditorFields\n    }\n  }\n": typeof types.GetPersonForEditDocument,
     "\n  mutation UpdatePersonProfile($input: UpdatePersonInput!) {\n    updatePerson(input: $input) {\n      success\n      person {\n        ...PersonEditorFields\n      }\n    }\n  }\n": typeof types.UpdatePersonProfileDocument,
@@ -230,7 +232,9 @@ const documents: Documents = {
     "\n  fragment PlaceGridItemData on PlaceType {\n    id\n    name\n    description\n    properties\n  }\n": types.PlaceGridItemDataFragmentDoc,
     "\n  fragment ThreadGridItemData on ThreadType {\n    id\n    name\n    description\n  }\n": types.ThreadGridItemDataFragmentDoc,
     "\n  mutation CreateConcept($input: CreateConceptInput!) {\n    createConcept(input: $input) {\n      success\n      concept {\n        id\n        name\n        description\n      }\n    }\n  }\n": types.CreateConceptDocument,
+    "\n  mutation CreateEvent($input: CreateEventInput!) {\n    createEvent(input: $input) {\n      id\n      title\n      description\n      startTime\n      endTime\n      eventType\n      locationName\n    }\n  }\n": types.CreateEventDocument,
     "\n  mutation CreatePerson($input: CreatePersonInput!) {\n    createPerson(input: $input) {\n      success\n      person {\n        id\n        name\n        description\n      }\n    }\n  }\n": types.CreatePersonDocument,
+    "\n  mutation CreatePlace($input: CreatePlaceInput!) {\n    createPlace(input: $input) {\n      id\n      name\n      description\n      placeKind\n      latitude\n      longitude\n    }\n  }\n": types.CreatePlaceDocument,
     "\n  mutation CreateRelationship($input: CreateRelationshipInput!) {\n    createRelationship(input: $input) {\n      success\n      relationship {\n        id\n        fromNodeId\n        fromNodeType\n        toNodeId\n        toNodeType\n        type\n        properties\n        isBidirectional\n        startDate\n        endDate\n      }\n    }\n  }\n": types.CreateRelationshipDocument,
     "\n  query GetPersonForEdit($id: ID!) {\n    person(id: $id) {\n      ...PersonEditorFields\n    }\n  }\n": types.GetPersonForEditDocument,
     "\n  mutation UpdatePersonProfile($input: UpdatePersonInput!) {\n    updatePerson(input: $input) {\n      success\n      person {\n        ...PersonEditorFields\n      }\n    }\n  }\n": types.UpdatePersonProfileDocument,
@@ -557,7 +561,15 @@ export function gql(source: "\n  mutation CreateConcept($input: CreateConceptInp
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
+export function gql(source: "\n  mutation CreateEvent($input: CreateEventInput!) {\n    createEvent(input: $input) {\n      id\n      title\n      description\n      startTime\n      endTime\n      eventType\n      locationName\n    }\n  }\n"): (typeof documents)["\n  mutation CreateEvent($input: CreateEventInput!) {\n    createEvent(input: $input) {\n      id\n      title\n      description\n      startTime\n      endTime\n      eventType\n      locationName\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
 export function gql(source: "\n  mutation CreatePerson($input: CreatePersonInput!) {\n    createPerson(input: $input) {\n      success\n      person {\n        id\n        name\n        description\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation CreatePerson($input: CreatePersonInput!) {\n    createPerson(input: $input) {\n      success\n      person {\n        id\n        name\n        description\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation CreatePlace($input: CreatePlaceInput!) {\n    createPlace(input: $input) {\n      id\n      name\n      description\n      placeKind\n      latitude\n      longitude\n    }\n  }\n"): (typeof documents)["\n  mutation CreatePlace($input: CreatePlaceInput!) {\n    createPlace(input: $input) {\n      id\n      name\n      description\n      placeKind\n      latitude\n      longitude\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
