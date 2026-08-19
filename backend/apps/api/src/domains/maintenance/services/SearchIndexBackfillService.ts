@@ -8,6 +8,7 @@ import { EventService as SignallingEventService } from '@ci/domains/events';
 import { FileCreatedEvent } from '@ci/domains/files/events';
 import {
   CommunicationCreatedEvent,
+  ConceptCreatedEvent,
   ContentCreatedEvent,
   EventCreatedEvent,
   ItemCreatedEvent,
@@ -27,9 +28,10 @@ const SEARCH_INDEX_QUEUE = 'search-index';
 /**
  * Entity types this backfill re-indexes — the bulk-ingest tables whose
  * createMany() no longer emits a per-row `*CreatedEvent` (the per-row pgboss
- * fan-out was the dominant cost at import volume), plus `person`: the
- * extract_people leg creates stub Person entities through GraphIngestService
- * raw upserts, which likewise emit nothing — so people extracted from
+ * fan-out was the dominant cost at import volume), plus `person` and
+ * `concept`: both are stub `ci.entities` rows GraphIngestService's set-based
+ * bulk path raw-upserts directly — the same no-per-row-event path
+ * `extract_people` uses for Person — so people AND concepts extracted from
  * communications were never searchable until this sweep picked them up.
  * Search indexing for all of these rows is recovered here, as a post-load sweep.
  */
@@ -41,6 +43,7 @@ export const BACKFILLABLE_ENTITIES = [
   'browser-activity',
   'file',
   'person',
+  'concept',
   'position',
 ] as const;
 
@@ -116,6 +119,7 @@ const EVENT_BY_TYPE: Record<BackfillableEntity, { event: string; idField: string
   'browser-activity': { event: BrowserActivityCreatedEvent, idField: 'browserActivityId' },
   file: { event: FileCreatedEvent, idField: 'fileId' },
   person: { event: PersonCreatedEvent, idField: 'personId' },
+  concept: { event: ConceptCreatedEvent, idField: 'conceptId' },
   position: { event: PositionCreatedEvent, idField: 'positionId' },
 };
 
