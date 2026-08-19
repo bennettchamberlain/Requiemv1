@@ -232,6 +232,21 @@ describe('classifyIdentifier — the two widenings', () => {
     expect(classifyIdentifier('   ')).toBeNull();
     expect(classifyIdentifier('mailto:')).toBeNull();
   });
+
+  // This function's LAST branch is `name`, so a parser leak used to become a
+  // claim keyed on a call-log heading — the same door `classifyParticipant`
+  // now closes, closed here too, from the SAME shared predicate.
+  it('refuses a call-log heading, an export filename and an embedded newline', () => {
+    expect(classifyIdentifier('Missed call from')).toBeNull();
+    expect(classifyIdentifier('Recorded call with')).toBeNull();
+    expect(classifyIdentifier('Placed call to \nNancy Davis')).toBeNull();
+    expect(classifyIdentifier('Group Conversation - 2024-09-25T01_45_41Z.html')).toBeNull();
+  });
+
+  it('still keys the clean name and the handle the widenings exist for', () => {
+    expect(classifyIdentifier('Nancy Davis')).toMatchObject({ kind: 'name', valueNormalized: 'nancy davis' });
+    expect(classifyIdentifier('@alice', 'instagram')).toMatchObject({ kind: 'handle' });
+  });
 });
 
 describe('confidence is explicit, graded, and ORDERED', () => {
