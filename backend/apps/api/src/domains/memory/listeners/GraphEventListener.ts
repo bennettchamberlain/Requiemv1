@@ -22,11 +22,16 @@ import { GraphUtilityService } from '../services/GraphUtilityService';
  * tsvector (the search CANDIDATE source) and the `ci_search.embeddings` vector
  * (only a re-rank boost).
  *
- * Every other graph type is handled payload-first by
- * `GraphNodeSearchIndexListener` in search-ingress — its row has no detail half
- * in the CTI table its service reads (`ci.events`, `ci.inventory`, `ci.content`),
- * so the per-type listener would find nothing and log
- * "not found, skipping indexing".
+ * Every other graph type is NOT indexed today. Its row has no detail half in
+ * whatever table its own domain service reads (`ci.events`, `ci.inventory`,
+ * `ci.content`, `ci.files`, ...), so that per-type listener would find nothing
+ * and log "not found, skipping indexing" if invoked — and
+ * `GraphNodeSearchIndexListener` in search-ingress, which DOES see the payload
+ * for these types, deliberately declines them too, for the identical reason: a
+ * `ci_search.vectors` row for something `EntityResolutionService` can never
+ * resolve is a paid-for row that can never be returned. See that listener's
+ * `RESOLVABLE_FROM_ENTITIES_ALONE` for the full argument and what would need to
+ * be true to change it.
  */
 type IndexedDomain = 'person' | 'place' | 'concept';
 

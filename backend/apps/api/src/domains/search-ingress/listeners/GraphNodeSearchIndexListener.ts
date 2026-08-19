@@ -10,40 +10,58 @@ import { VectorService } from '../services/VectorService';
 import { type WeightedText } from '../types';
 
 /**
- * Graph types `GraphEventListener.emitSearchIndexEvent` already re-emits a
- * per-type `*Created`/`*UpdatedEvent` for. Their row lives in `ci.entities`, so
- * `PersonService` / `PlaceService` / `ConceptService` resolve it and the existing
- * `*SearchIndexListener` builds the richer, properties-aware search document.
- * Indexing them here as well would only pay for a second embedding of a strictly
- * poorer document.
+ * Search-vocabulary types this listener is allowed to index, ALLOWLIST rather
+ * than denylist, on purpose — read on before adding to it.
  *
- * Keep in sync with `GRAPH_TYPE_TO_DOMAIN` in
- * `domains/memory/listeners/GraphEventListener.ts` — deliberately duplicated
- * rather than imported, so search-ingress does not reach into another domain's
- * listener module.
+ * `GraphEventService.upsertNode` — reached only through `WriteKnowledgeTool`,
+ * its sole caller — writes ONE row: `ci.entities`. It never creates a matching
+ * detail row in whatever table actually backs a search-vocabulary type
+ * (`ci.events`, `ci.inventory`, `ci.content`, `ci.files`, `ci.notes`, ...). So a
+ * graph-authored node is resolvable by `EntityResolutionService` ONLY for types
+ * whose data lives entirely in `ci.entities` — which today is none of them:
+ *
+ *  - `person` / `place` / `concept` DO live there alone, but are already
+ *    indexed by `GraphEventListener.emitSearchIndexEvent` re-emitting a
+ *    per-type `*Created`/`*UpdatedEvent`, which the existing
+ *    `PersonSearchIndexListener` etc. consume to build a richer,
+ *    properties-aware document. Indexing them again here would just pay for a
+ *    second, poorer embedding of the same node.
+ *  - EVERY OTHER embeddable type — event, item, content, file, file-chunk,
+ *    note, thread, communication, browser-activity, answer — is backed by a
+ *    real detail table a graph-only write never populates. Indexing one of
+ *    these here would write a `ci_search.vectors` candidate (a real DB row,
+ *    plus a paid embedding call) that `EntityResolutionService.resolve()` can
+ *    never turn back into a result: its per-type `findByIds` queries the
+ *    detail table, finds nothing, and the row silently vanishes at read time.
+ *    That is worse than not indexing: it burns embedding cost on something
+ *    provably unfindable, and it makes `ci_search.vectors` claim searchability
+ *    it does not have.
+ *
+ * Hence: allowlist, defaulting empty, so a new embeddable type added anywhere
+ * upstream costs nothing here until someone deliberately opts it in — the
+ * failure mode of an unmaintained DENYLIST (forgetting to add a new
+ * unresolvable type) is silent data-integrity damage; the failure mode of an
+ * unmaintained ALLOWLIST is merely "not indexed yet".
+ *
+ * To add an entry: first make it true. Either (a) give
+ * `EntityResolutionService` a path that reads `ci.entities` directly for a
+ * graph-authored node of that type instead of requiring the detail-table row,
+ * or (b) make `GraphEventService.upsertNode` create the real detail row when
+ * the caller names that type. Only once one of those exists does adding the
+ * type here do anything but pay embedding cost for an unreachable row.
  */
-const HANDLED_BY_PER_TYPE_LISTENER: ReadonlySet<string> = new Set(['person', 'place', 'concept']);
+const RESOLVABLE_FROM_ENTITIES_ALONE: ReadonlySet<string> = new Set([]);
 
 /**
- * Indexes a graph node written through `GraphEventService.upsertNode` for the
- * entity types whose per-type `*SearchIndexListener` cannot see it.
+ * Indexes a graph node written through `GraphEventService.upsertNode`, for
+ * search-vocabulary types that are both (a) not already indexed by a per-type
+ * `*SearchIndexListener` and (b) actually resolvable back to a row from what a
+ * graph-only write produces — see {@link RESOLVABLE_FROM_ENTITIES_ALONE}.
  *
- * `Event`, `Item` and `Content` are class-table-inherited: the authoritative row
- * is split between a `ci.entities` base row and a detail row in `ci.events` /
- * `ci.inventory` / `ci.content`. A generic graph upsert writes only the base
- * half, so `eventService.findById` and friends return null and their listeners
- * log "not found, skipping indexing" — the node stays invisible to search and to
- * /api/memory/recall.
- *
- * This listener closes that gap by indexing straight from the event payload, no
- * domain-service lookup required — which also means it does not race the
- * `default`-queue handler that performs the actual `ci.entities` write.
- *
- * It writes a `ci_search.vectors` row, not just an embedding. In this codebase
- * `ci_search.vectors` is the search CANDIDATE source and `ci_search.embeddings`
- * only a re-rank boost, so an embedding-only write leaves the row unsearchable —
- * and worse, permanently so: `SearchIndexBackfillService` anti-joins on
- * `ci_search.embeddings`, so a row that has one is never swept up again.
+ * That set is empty today, so this listener currently indexes nothing. It
+ * stays registered as the extension point for the day one of the two fixes
+ * described above lands and a type genuinely qualifies — at which point
+ * enabling it is a one-line addition to the allowlist, not a new listener.
  */
 @Injectable()
 export class GraphNodeSearchIndexListener {
@@ -66,11 +84,14 @@ export class GraphNodeSearchIndexListener {
 
     const searchType = normalizeEmbeddableType(node.entityType);
 
-    if (searchType == null || HANDLED_BY_PER_TYPE_LISTENER.has(searchType)) {
+    if (searchType == null || !RESOLVABLE_FROM_ENTITIES_ALONE.has(searchType)) {
       this.logger.debug('Skipping graph node search indexing', {
         entityId: node.entityId,
         entityType: node.entityType ?? null,
-        reason: searchType == null ? 'type has no search representation' : 'handled by per-type listener',
+        reason:
+          searchType == null
+            ? 'type has no search representation'
+            : 'not resolvable from a graph-only entities row, see RESOLVABLE_FROM_ENTITIES_ALONE',
       });
 
       return;
