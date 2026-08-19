@@ -1925,8 +1925,14 @@ type ObjectObservationType implements Node {
   id: ID!
   label: String!
   labelSource: ObservationLabelSource
+
+  """
+  The cropped thumbnail of the sighting, or the whole frame when there is no crop.
+  """
+  media: ContentType
   metadata: JSON!
   observedAt: DateTime!
+  place: PlaceType
   placeEntityId: ID
 
   """How sure the ladder was about the link."""
@@ -2195,6 +2201,7 @@ type ProductModelType implements Node & Taggable {
   How sure we are this model is a real, distinct product. 1.0 = asserted by a human or a catalog; lower = derived from a receipt line or a vision guess.
   """
   identityConfidence: Float!
+  image: ContentType
 
   """ci.content row holding the catalog image."""
   imageContentId: ID

@@ -5,8 +5,10 @@ import { Context, type RequestContext, toServiceContext } from '@ci/common/conte
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { type FindProductModelsFilter, ObjectMergeService, ProductModelService } from '@ci/domains/memory';
 
+import { ContentLoader } from '../loaders/ContentLoader';
 import { ProductIdentifierLoader } from '../loaders/ItemIdentifierLoader';
 import { TagLoader } from '../loaders/TagLoader';
+import { ContentType } from '../types/ContentType';
 import { EntityTagType } from '../types/EntityTagType';
 import { GlobalUID } from '../types/GlobalUID';
 import { MergeProductModelsInput } from '../types/MergeProductModelsInput';
@@ -36,6 +38,7 @@ export class ProductModelResolver {
     private readonly objectMergeService: ObjectMergeService,
     private readonly productIdentifierLoader: ProductIdentifierLoader,
     private readonly tagLoader: TagLoader,
+    private readonly contentLoader: ContentLoader,
   ) {}
 
   /**
@@ -153,6 +156,28 @@ export class ProductModelResolver {
     const rows = await this.productIdentifierLoader.load(serviceContext, parent.__source.id);
 
     return rows.map((row) => ObjectIdentifierType.toType(row));
+  }
+
+  /**
+   * The stock photo, ready to render.
+   *
+   * `image_content_id` is a bare `ci.content` id with no FK, so the picture was
+   * a second round-trip issued by the card that displayed it. Batched here for
+   * the same reason as ObjectObservationType.media: a card is a card, and a
+   * catalog grid of them must not cost one request per tile.
+   */
+  @ResolveField(() => ContentType, { nullable: true })
+  async image(
+    @Context() context: RequestContext,
+    @Parent() parent: ProductModelType,
+  ): Promise<ContentType | null> {
+    if (parent.__source.imageContentId == null) {
+      return null;
+    }
+
+    const content = await this.contentLoader.load(toServiceContext(context), parent.__source.imageContentId);
+
+    return content ? ContentType.toType(content) : null;
   }
 
   @ResolveField(() => [EntityTagType])

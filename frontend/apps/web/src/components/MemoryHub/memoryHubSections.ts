@@ -7,6 +7,7 @@ import {
   ItemIcon,
   PersonIcon,
   PlaceIcon,
+  ReceiptIcon,
   TagIcon,
 } from '@/components/icons';
 
@@ -46,9 +47,16 @@ export const MEMORY_HUB_SECTIONS: MemoryHubSection[] = [
   {
     to: '/memory/things',
     label: 'Things',
-    match: (p) => p === '/memory/things' || p.startsWith('/inventory'),
-    flag: 'enable.inventory.page',
+    // `/items/:id` is the Thing detail page, so it has to keep this tab lit —
+    // the old matcher only covered the retired `/inventory` alias.
+    match: (p) => p === '/memory/things' || p.startsWith('/inventory') || p.startsWith('/items/'),
     icon: ItemIcon,
+  },
+  {
+    to: '/memory/receipts',
+    label: 'Receipts',
+    match: (p) => p === '/memory/receipts' || p.startsWith('/receipts'),
+    icon: ReceiptIcon,
   },
   {
     to: '/memory/content',

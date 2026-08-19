@@ -8,6 +8,7 @@ import { LoggerService } from '@ci/common/logging';
 import { type BulkInsertResult, bulkInsertIdempotent, computeChunkSize } from '@ci/common/persistence';
 import { ObjectIdentifierService } from '@ci/domains/graph/services/ObjectIdentifierService';
 import type { ObjectIdentifierNamespace } from '@ci/domains/graph/utils/normalizeObjectIdentifier';
+import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
 import { type ProductModel, ProductModelEntity } from '../entities/ProductModelEntity';
 import type { CreateProductModelDto, FindProductModelsFilter, UpdateProductModelDto } from '../types';
@@ -254,6 +255,94 @@ export class ProductModelService {
     const byId = new Map(found.map((row) => [row.id, row]));
 
     return ids.map((id) => byId.get(id) ?? null);
+  }
+
+  /**
+   * Identifiers for the explorer's browse, newest first.
+   *
+   * A product model has no domain timestamp at all — `created_at` is when the
+   * catalog row was written, never when anything happened — so this type is a
+   * member of `SearchResolver.BROWSE_OPT_IN_TYPES`: it is merged into the feed
+   * only when the caller NAMES it (the What picker's "Products"), and a browse
+   * restricted to catalog models is honestly ordered by when each model was
+   * learned about. The ordering matches `product_models_user_idx`
+   * `(user_id, created_at DESC)`.
+   *
+   * Mirrors {@link ItemService.getEntitiesForItems}, including the tombstone
+   * filter: a model that lost a merge must not come back in the feed.
+   */
+  async getEntitiesForProducts(
+    context: ServiceContext,
+    options: {
+      limit?: number;
+      startTime?: Date;
+      endTime?: Date;
+      afterTime?: Date;
+      afterId?: string;
+      order?: 'ASC' | 'DESC';
+    } = {},
+  ): Promise<EntityIdentifier<IndexableEntity>[]> {
+    let query = this.repository
+      .createQueryBuilder('product')
+      .select('product.product_id', 'id')
+      .where('product.user_id = :userId', { userId: context.userId })
+      .andWhere('product.merged_into_product_id IS NULL');
+
+    if (options.startTime) {
+      query = query.andWhere('product.created_at >= :startTime', { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere('product.created_at <= :endTime', { endTime: options.endTime });
+    }
+
+    // Composite keyset: page strictly past (afterTime, afterId) in
+    // (created_at DESC, product_id DESC) — see ItemService.getEntitiesForItems.
+    if (options.afterTime && options.afterId) {
+      query = query.andWhere(
+        '(product.created_at < :afterTime OR (product.created_at = :afterTime AND product.product_id < :afterId))',
+        { afterTime: options.afterTime, afterId: options.afterId },
+      );
+    }
+
+    query = query
+      .orderBy('product.created_at', options.order ?? 'DESC')
+      .addOrderBy('product.product_id', 'DESC');
+
+    if (options.limit) {
+      query = query.limit(options.limit);
+    }
+
+    const rows = await query.getRawMany<{ id: string }>();
+
+    return rows.map((row) => ({ id: row.id, type: 'product' as IndexableEntity }));
+  }
+
+  /**
+   * True total behind {@link getEntitiesForProducts} — the same predicates minus
+   * the pagination-only ones, as a real `COUNT(*)`. See
+   * ItemService.countEntitiesForItems for why the page length will not do.
+   */
+  async countEntitiesForProducts(
+    context: ServiceContext,
+    options: { startTime?: Date; endTime?: Date } = {},
+  ): Promise<number> {
+    let query = this.repository
+      .createQueryBuilder('product')
+      .where('product.user_id = :userId', { userId: context.userId })
+      // Same predicate as getEntitiesForProducts, or the count disagrees with
+      // the page it is supposed to describe.
+      .andWhere('product.merged_into_product_id IS NULL');
+
+    if (options.startTime) {
+      query = query.andWhere('product.created_at >= :startTime', { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere('product.created_at <= :endTime', { endTime: options.endTime });
+    }
+
+    return query.getCount();
   }
 
   /** Every live model for the user, newest first. */

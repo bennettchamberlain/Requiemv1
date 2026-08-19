@@ -29,6 +29,8 @@ import { ItemRow } from './rows/ItemRow';
 import { NoteRow } from './rows/NoteRow';
 import { PersonRow } from './rows/PersonRow';
 import { PlaceRow } from './rows/PlaceRow';
+import { ProductRow } from './rows/ProductRow';
+import { ReceiptRow } from './rows/ReceiptRow';
 import { ThreadRow } from './rows/ThreadRow';
 
 export function ListView() {
@@ -129,6 +131,12 @@ export function ListView() {
 
       case 'PlaceType':
         return <PlaceRow key={item.id} place={item} time={time} onClick={() => setActiveEntity(item)} />;
+
+      case 'ProductModelType':
+        return <ProductRow key={item.id} product={item} time={time} onClick={() => setActiveEntity(item)} />;
+
+      case 'ReceiptType':
+        return <ReceiptRow key={item.id} receipt={item} time={time} onClick={() => setActiveEntity(item)} />;
 
       case 'ThreadType':
         return <ThreadRow key={item.id} thread={item} time={time} onClick={() => setActiveEntity(item)} />;

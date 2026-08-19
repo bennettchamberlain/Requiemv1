@@ -15,7 +15,9 @@ import { ItemDetails } from './ItemDetails';
 import { NoteDetails } from './NoteDetails';
 import { PersonDetails } from './PersonDetails';
 import { PlaceDetails } from './PlaceDetails';
+import { ProductDetails } from './ProductDetails';
 import { ReadOnlyProvider } from './readOnly';
+import { ReceiptDetails } from './ReceiptDetails';
 
 export interface Props {
   entity: MemoryEntity;
@@ -47,6 +49,10 @@ function getCategoryComponent({ entity }: Props) {
       return <PersonDetails entity={entity} />;
     case 'PlaceType':
       return <PlaceDetails entity={entity} />;
+    case 'ProductModelType':
+      return <ProductDetails entity={entity} />;
+    case 'ReceiptType':
+      return <ReceiptDetails entity={entity} />;
     // Graph nodes (REST) arrive as a synthetic GenericEntity.
     case 'GenericEntity':
       return <GenericDetails entity={entity} />;

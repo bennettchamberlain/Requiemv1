@@ -12,6 +12,7 @@ import type {
   RawObjectIdentifier,
 } from '@ci/domains/graph/services/ObjectIdentifierService';
 import type { ObjectIdentifierNamespace } from '@ci/domains/graph/utils/normalizeObjectIdentifier';
+import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
 import { type Receipt, ReceiptEntity } from '../entities/ReceiptEntity';
 import { type ReceiptLineItem, ReceiptLineItemEntity } from '../entities/ReceiptLineItemEntity';
@@ -25,6 +26,18 @@ import type {
 
 import { type MintLineInput, type MintResult, ObjectMintService } from './ObjectMintService';
 import { ProductModelService } from './ProductModelService';
+
+/**
+ * The timestamp the explorer browse orders receipts by, as SQL.
+ *
+ * One constant because it is used four times across
+ * {@link ReceiptService.getEntitiesForReceipts} and
+ * {@link ReceiptService.countEntitiesForReceipts} (sort key, keyset predicate,
+ * date-range bounds) and a copy that drifts silently mis-pages the feed.
+ *
+ * @see backend/apps/api/db/postgres/migrations/20260819211924_add_receipts_browse_time_index.sql
+ */
+const RECEIPT_BROWSE_TIME = 'COALESCE(receipt.purchased_at, receipt.created_at)';
 
 /** The `receipts_source_triple_uniq` arbiter. */
 const SOURCE_TRIPLE_CONFLICT_TARGET =
@@ -367,6 +380,104 @@ export class ReceiptService {
       hasMore,
       nextCursor: hasMore && last ? { purchasedAt: last.purchasedAt, id: last.id } : null,
     };
+  }
+
+  /**
+   * Identifiers for the explorer's browse, newest purchase first.
+   *
+   * ── Why `COALESCE(purchased_at, created_at)` and not either column alone ───
+   *
+   * A receipt is the one thing in this domain with a real domain timestamp:
+   * `purchased_at` is WHEN THE PURCHASE HAPPENED, so ordering the browse by
+   * `created_at` (the import's write time, identical for every row of a bulk
+   * load) would be a lie about a column that knows better. But `purchased_at`
+   * is nullable — an OCR backlog is mostly undated — and dropping those rows or
+   * sinking them to the epoch would hide them from the very browse that exists
+   * to reach them. The coalesce keeps both honest: dated receipts sit at their
+   * purchase date, undated ones fall back to the only time they have.
+   *
+   * The expression is the sort key, the keyset key AND the cursor key, and all
+   * three must agree or paging dead-ends — `SearchResolver.getEntityTimestamp`
+   * reads `purchasedAt ?? createdAt` for exactly this reason. It is backed by
+   * `receipts_user_browse_idx`; `receipts_user_time_idx` cannot serve it,
+   * because a `NULLS LAST` ordering on the bare column puts the undated tail
+   * somewhere the coalesced order does not.
+   *
+   * Receipts are nonetheless a member of `SearchResolver.BROWSE_OPT_IN_TYPES`:
+   * they join the feed when the caller NAMES them (the What picker's
+   * "Receipts"), not on the unfiltered chronological browse, because the
+   * undated share of them would otherwise land at import time ahead of the
+   * whole timeline — the problem that gate exists to prevent.
+   */
+  async getEntitiesForReceipts(
+    context: ServiceContext,
+    options: {
+      limit?: number;
+      startTime?: Date;
+      endTime?: Date;
+      afterTime?: Date;
+      afterId?: string;
+      order?: 'ASC' | 'DESC';
+    } = {},
+  ): Promise<EntityIdentifier<IndexableEntity>[]> {
+    let query = this.receiptRepository
+      .createQueryBuilder('receipt')
+      .select('receipt.receipt_id', 'id')
+      .where('receipt.user_id = :userId', { userId: context.userId });
+
+    if (options.startTime) {
+      query = query.andWhere(`${RECEIPT_BROWSE_TIME} >= :startTime`, { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere(`${RECEIPT_BROWSE_TIME} <= :endTime`, { endTime: options.endTime });
+    }
+
+    // Composite keyset: page strictly past (afterTime, afterId) in
+    // (browse time DESC, receipt_id DESC) — see ItemService.getEntitiesForItems.
+    if (options.afterTime && options.afterId) {
+      query = query.andWhere(
+        `(${RECEIPT_BROWSE_TIME} < :afterTime
+          OR (${RECEIPT_BROWSE_TIME} = :afterTime AND receipt.receipt_id < :afterId))`,
+        { afterTime: options.afterTime, afterId: options.afterId },
+      );
+    }
+
+    query = query
+      .orderBy(RECEIPT_BROWSE_TIME, options.order ?? 'DESC')
+      .addOrderBy('receipt.receipt_id', 'DESC');
+
+    if (options.limit) {
+      query = query.limit(options.limit);
+    }
+
+    const rows = await query.getRawMany<{ id: string }>();
+
+    return rows.map((row) => ({ id: row.id, type: 'receipt' as IndexableEntity }));
+  }
+
+  /**
+   * True total behind {@link getEntitiesForReceipts} — the same predicates minus
+   * the pagination-only ones, as a real `COUNT(*)`. See
+   * ItemService.countEntitiesForItems for why the page length will not do.
+   */
+  async countEntitiesForReceipts(
+    context: ServiceContext,
+    options: { startTime?: Date; endTime?: Date } = {},
+  ): Promise<number> {
+    let query = this.receiptRepository
+      .createQueryBuilder('receipt')
+      .where('receipt.user_id = :userId', { userId: context.userId });
+
+    if (options.startTime) {
+      query = query.andWhere(`${RECEIPT_BROWSE_TIME} >= :startTime`, { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere(`${RECEIPT_BROWSE_TIME} <= :endTime`, { endTime: options.endTime });
+    }
+
+    return query.getCount();
   }
 
   /** Patch a receipt header. Absent keys are left alone; an explicit `null` clears. */

@@ -116,6 +116,8 @@ function makeResolver() {
     stub('getEntitiesForNotes') as never,
     stub('getEntitiesForPeople') as never,
     stub('getEntitiesForPlaces') as never,
+    stub('getEntitiesForProducts') as never,
+    stub('getEntitiesForReceipts') as never,
     stub('getEntitiesForAnswers') as never,
     {} as never,
     { search: jest.fn(empty) } as never,

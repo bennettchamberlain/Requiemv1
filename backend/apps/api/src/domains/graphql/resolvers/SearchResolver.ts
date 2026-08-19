@@ -19,6 +19,8 @@ import {
   ItemService,
   PersonService,
   PlaceService,
+  ProductModelService,
+  ReceiptService,
 } from '@ci/domains/memory';
 import { NoteService } from '@ci/domains/notes';
 import { FileChunkService } from '@ci/domains/parsing';
@@ -131,6 +133,17 @@ const BROWSE_OPT_IN_TYPES: ReadonlySet<IndexableEntity> = new Set([
   'place',
   'concept',
   'item',
+  // A catalog model is not a moment at all: `ci.product_models` has only
+  // `created_at`, so a product on the chronology is an import artifact wearing a
+  // date, exactly like `person` and `place` above.
+  'product',
+  // A receipt IS a moment — `purchased_at` is when the purchase happened, and
+  // the browse orders by it (see ReceiptService.getEntitiesForReceipts). It is
+  // still opt-in because that column is NULLABLE: an OCR backlog is mostly
+  // undated, falls back to `created_at`, and would land the whole backlog at
+  // import time ahead of the real timeline — the head this gate exists to keep
+  // clear.
+  'receipt',
 ]);
 
 /** PageInfo for an empty connection (e.g. an unknown/revoked share token). */
@@ -220,6 +233,8 @@ export class SearchResolver {
     private readonly noteService: NoteService,
     private readonly personService: PersonService,
     private readonly placeService: PlaceService,
+    private readonly productModelService: ProductModelService,
+    private readonly receiptService: ReceiptService,
     private readonly answerService: AnswerService,
     private readonly savedSearchService: SavedSearchService,
     private readonly searchService: SearchService,
@@ -838,6 +853,8 @@ export class SearchResolver {
       personResults,
       placeResults,
       itemResults,
+      productResults,
+      receiptResults,
       conceptResults,
       answerResults,
     ] = await Promise.all([
@@ -862,6 +879,13 @@ export class SearchResolver {
       wants('person') ? this.personService.getEntitiesForPeople(context, createdAtOptions) : [],
       wants('place') ? this.placeService.getEntitiesForPlaces(context, createdAtOptions) : [],
       wants('item') ? this.itemService.getEntitiesForItems(context, createdAtOptions) : [],
+      wants('product') ? this.productModelService.getEntitiesForProducts(context, createdAtOptions) : [],
+      // Receipts order by COALESCE(purchased_at, created_at) rather than the row
+      // timestamp the other opt-in types use — the only one of them with a real
+      // domain time. Same keyset shape, different column; see
+      // ReceiptService.getEntitiesForReceipts and getEntityTimestamp, which reads
+      // `purchasedAt ?? createdAt` so the cursor it mints matches this order.
+      wants('receipt') ? this.receiptService.getEntitiesForReceipts(context, createdAtOptions) : [],
       wants('concept') ? this.conceptService.getEntitiesForConcepts(context, createdAtOptions) : [],
       wants('answer') ? this.answerService.getEntitiesForAnswers(context, createdAtOptions) : [],
     ]);
@@ -877,6 +901,8 @@ export class SearchResolver {
       ...personResults,
       ...placeResults,
       ...itemResults,
+      ...productResults,
+      ...receiptResults,
       ...conceptResults,
       ...answerResults,
     ];
@@ -950,6 +976,8 @@ export class SearchResolver {
       wants('person') ? this.personService.countEntitiesForPeople(context, dateOptions) : 0,
       wants('place') ? this.placeService.countEntitiesForPlaces(context, dateOptions) : 0,
       wants('item') ? this.itemService.countEntitiesForItems(context, dateOptions) : 0,
+      wants('product') ? this.productModelService.countEntitiesForProducts(context, dateOptions) : 0,
+      wants('receipt') ? this.receiptService.countEntitiesForReceipts(context, dateOptions) : 0,
       wants('concept') ? this.conceptService.countEntitiesForConcepts(context, dateOptions) : 0,
       wants('answer') ? this.answerService.countEntitiesForAnswers(context, dateOptions) : 0,
     ]);
@@ -1119,7 +1147,14 @@ export class SearchResolver {
     // Types reached by NAMING them (includeTypes) still sort by write time,
     // which is the honest answer for a set that has no other time — a browse
     // restricted to People is ordered by when each person was learned about.
-    const value = entity.time ?? entity.startTime ?? entity.createdAt ?? entity.answeredAt ?? null;
+    // `purchasedAt` before `createdAt`: a receipt's purchase date is its real
+    // domain time, and the browse's SQL orders by COALESCE(purchased_at,
+    // created_at) — a nullish chain in the same order, so a null purchase date
+    // falls through to the write time here exactly as the COALESCE does there.
+    // If the two disagreed, a receipt's cursor would not match its position and
+    // paging past it would skip or repeat rows.
+    const value =
+      entity.time ?? entity.startTime ?? entity.purchasedAt ?? entity.createdAt ?? entity.answeredAt ?? null;
 
     if (value instanceof Date) {
       return value;

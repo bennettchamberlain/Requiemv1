@@ -69,10 +69,14 @@ type GlobalResourceType =
   | 'item'
   | 'message'
   | 'note'
+  | 'observation'
   | 'person'
   | 'place'
+  | 'product'
   | 'provider'
   | 'question'
+  | 'receipt'
+  | 'receipt-line-item'
   | 'saved-search'
   | 'summary'
   | 'tag'
@@ -245,6 +249,14 @@ export function getEntityDetailPath(entityType: string, entityId: string): strin
       return `/communications/${entityId}`;
     case 'item':
       return `/items/${entityId}`;
+    case 'product':
+      // Deliberate: a catalog MODEL has no standalone page. Listed anyway so
+      // the next reader does not add one by reflex — the drawer (ProductDetails)
+      // is currently the whole surface, and a route that 404s would be worse
+      // than no link at all.
+      return null;
+    case 'receipt':
+      return `/receipts/${entityId}`;
     case 'event':
       return `/events/${entityId}`;
     case 'concept':
@@ -364,10 +376,14 @@ export function toGlobalResourceType(entityType: string): GlobalResourceType | n
     case 'item':
     case 'message':
     case 'note':
+    case 'observation':
     case 'person':
     case 'place':
+    case 'product':
     case 'provider':
     case 'question':
+    case 'receipt':
+    case 'receipt-line-item':
     case 'saved-search':
     case 'summary':
     case 'tag':

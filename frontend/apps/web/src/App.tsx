@@ -50,7 +50,9 @@ const ForecastPage = lazy(() => import('@/pages/ForecastPage'));
 const ItemPage = lazy(() => import('@/pages/ItemPage'));
 const SourcesPage = lazy(() => import('@/pages/SourcesPage'));
 const JobsPage = lazy(() => import('@/pages/JobsPage'));
-const InventoryPage = lazy(() => import('@/pages/InventoryPage'));
+const ThingsPage = lazy(() => import('@/pages/ThingsPage'));
+const ReceiptsPage = lazy(() => import('@/pages/ReceiptsPage'));
+const ReceiptPage = lazy(() => import('@/pages/ReceiptPage'));
 const MemoryPage = lazy(() => import('@/pages/MemoryPage'));
 const NotePage = lazy(() => import('@/pages/NotePage'));
 const NotesPage = lazy(() => import('@/pages/NotesPage'));
@@ -290,19 +292,40 @@ function AppRoutes() {
             }
           />
 
-          {isFeatureEnabled('enable.inventory.page') && (
-            <>
-              <Route path="/inventory" element={<Navigate to="/memory/things" replace />} />
-              <Route
-                path="/memory/things"
-                element={
-                  <ProtectedRoute>
-                    <InventoryPage />
-                  </ProtectedRoute>
-                }
-              />
-            </>
-          )}
+          {/* Ungated, like /memory/people and /memory/places. `enable.inventory.page`
+              ships `true` in the API's own default.json and nothing in the repo turns
+              it off, so it never gated anything in practice — but it DID make the
+              route 404 for the moment before the global flag fetch settles, and it
+              cannot cover the sibling Receipts surface (which has no flag of its
+              own). Half a gate over one coherent surface is worse than none. */}
+          <Route path="/inventory" element={<Navigate to="/memory/things" replace />} />
+          <Route
+            path="/memory/things"
+            element={
+              <ProtectedRoute>
+                <ThingsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route path="/receipts" element={<Navigate to="/memory/receipts" replace />} />
+          <Route
+            path="/memory/receipts"
+            element={
+              <ProtectedRoute>
+                <ReceiptsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/receipts/:id"
+            element={
+              <ProtectedRoute>
+                <ReceiptPage />
+              </ProtectedRoute>
+            }
+          />
 
           {isFeatureEnabled('files.page') && (
             <>

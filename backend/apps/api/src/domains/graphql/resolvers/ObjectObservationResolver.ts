@@ -1,12 +1,16 @@
 import { BadRequestException, UseGuards } from '@nestjs/common';
-import { Args, ID, Int, Mutation, Query, Resolver } from '@nestjs/graphql';
+import { Args, ID, Int, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { ObjectObservationService } from '@ci/domains/memory';
 
+import { ContentLoader } from '../loaders/ContentLoader';
+import { PlaceLoader } from '../loaders/PlaceLoader';
+import { ContentType } from '../types/ContentType';
 import { GlobalUID } from '../types/GlobalUID';
 import { ObjectObservationType } from '../types/ObjectObservationType';
+import { PlaceType } from '../types/PlaceType';
 
 const DEFAULT_REVIEW_LIMIT = 50;
 const MAX_REVIEW_LIMIT = 200;
@@ -23,7 +27,11 @@ const MAX_REVIEW_LIMIT = 200;
 @UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => ObjectObservationType)
 export class ObjectObservationResolver {
-  constructor(private readonly observationService: ObjectObservationService) {}
+  constructor(
+    private readonly observationService: ObjectObservationService,
+    private readonly contentLoader: ContentLoader,
+    private readonly placeLoader: PlaceLoader,
+  ) {}
 
   /**
    * The review queue: sightings nobody has confirmed and nothing has resolved,
@@ -47,6 +55,55 @@ export class ObjectObservationResolver {
     );
 
     return rows.map((row) => ObjectObservationType.toType(row));
+  }
+
+  /**
+   * The frame this sighting was made in, ready to render.
+   *
+   * The crop wins over the full frame: it is the tighter picture of the THING,
+   * which is what a review tile is asking the user to judge. The full frame is
+   * the fallback for a sighting no crop was written for.
+   *
+   * Batched, and batched deliberately: a `ci.object_observations` row stores a
+   * bare content id and no FK, so before this field every tile fetched its own
+   * picture — a 24-tile review page cost 24 round-trips, plus 24 more for the
+   * places below, against an `ApolloProvider` on a plain `createHttpLink` that
+   * coalesces nothing. Resolving it here collapses the page to one request, and
+   * the two hops behind it (content -> file -> preview variant) are themselves
+   * batched by {@link ContentLoader} and ContentResolver's ContentFileLoader.
+   */
+  @ResolveField(() => ContentType, {
+    nullable: true,
+    description: 'The cropped thumbnail of the sighting, or the whole frame when there is no crop.',
+  })
+  async media(
+    @Context() context: RequestContext,
+    @Parent() parent: ObjectObservationType,
+  ): Promise<ContentType | null> {
+    const contentId = parent.__source.cropContentId ?? parent.__source.contentId;
+
+    if (contentId == null) {
+      return null;
+    }
+
+    const content = await this.contentLoader.load(toServiceContext(context), contentId);
+
+    return content ? ContentType.toType(content) : null;
+  }
+
+  /** Where the sighting happened. Batched for the same reason as {@link media}. */
+  @ResolveField(() => PlaceType, { nullable: true })
+  async place(
+    @Context() context: RequestContext,
+    @Parent() parent: ObjectObservationType,
+  ): Promise<PlaceType | null> {
+    if (parent.__source.placeEntityId == null) {
+      return null;
+    }
+
+    const place = await this.placeLoader.load(toServiceContext(context), parent.__source.placeEntityId);
+
+    return place ? PlaceType.toType(place) : null;
   }
 
   /**

@@ -42,6 +42,8 @@ function makeResolver() {
     {} as never, // noteService
     {} as never, // personService
     {} as never, // placeService
+    {} as never, // productModelService
+    {} as never, // receiptService
     {} as never, // answerService
     savedSearchService as never,
     {} as never, // searchService
