@@ -89,6 +89,7 @@ describe('doctor check registry', () => {
       'person-duplicate-names',
       'events-location-without-name',
       'capture-events-without-content',
+      'blank-social-affiliation-content',
       'content-media-mimetype-mismatch',
       'pipeline-overdue-retries',
       'pipeline-dead-letters',

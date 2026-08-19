@@ -8,6 +8,7 @@ import {
   isDiscordAttachmentOnly,
   isRedditComment,
   isRedditPost,
+  isSocialAffiliation,
   kindFor,
   redditMediaUrl,
   str,
@@ -254,17 +255,113 @@ describe('destinationsFor', () => {
       expect(destinationsFor(comment)).toEqual(['communications', 'content']);
     });
 
-    it('does not treat an ordinary social vote/subreddit row as a post or comment', () => {
-      // Only Kind 'post'/'saved_post'/'comment'/'saved_comment' qualify — other
-      // reddit exports (subscribed subreddits) keep the generic social.* route.
-      const subscription = recordFor({
+    it('does not treat some other reddit social row as a post or comment', () => {
+      // Only Kind 'post'/'saved_post'/'comment'/'saved_comment' qualify. A
+      // reddit Kind that is neither an authored post/comment nor an affiliation
+      // keeps the generic social.* route — the boundary that stops either
+      // predicate from being widened to "any reddit social row".
+      const other = recordFor({
         classification: 'social',
         dataSource: 'reddit',
-        metadata: { Kind: 'subscribed', Subreddit: 'pics' },
+        metadata: { Kind: 'award', Subreddit: 'pics' },
       });
 
-      expect(destinationsFor(subscription)).toEqual(['events', 'content']);
+      expect(destinationsFor(other)).toEqual(['events', 'content']);
     });
+  });
+
+  describe('social affiliations', () => {
+    // A connection and a subreddit membership are an edge and a membership, not
+    // authored content. They carry no Text/Body/URL, so toContentInput could
+    // only ever write a content row with a NULL text AND a NULL url — and
+    // ci.content has no title column, so nothing about it renders. A real
+    // clean-room import produced 1,977 of them (1,975 LinkedIn connections,
+    // 2 moderated subreddits): 100% of what those sources sent to content.
+
+    it('gives a LinkedIn connection its event but no content row', () => {
+      const connection = recordFor({
+        classification: 'social',
+        dataSource: 'linkedin',
+        metadata: {
+          Title: 'Connected with Morgan Spadone',
+          Name: 'Morgan Spadone',
+          Person: 'Morgan Spadone',
+          Kind: 'connection',
+          Source: 'LinkedIn',
+        },
+      });
+
+      expect(destinationsFor(connection)).toEqual(['events']);
+    });
+
+    it('gives a moderated subreddit its event but no content row', () => {
+      const subreddit = recordFor({
+        classification: 'social',
+        dataSource: 'reddit',
+        metadata: { Title: 'r/bitscoop', Subreddit: 'bitscoop', Kind: 'moderated_subreddit' },
+      });
+
+      expect(destinationsFor(subreddit)).toEqual(['events']);
+    });
+
+    it('still donates a geotagged affiliation’s fix to the position table', () => {
+      // Skipping `content` must not cost the position donation the social.*
+      // branch has always made — the two are independent decisions.
+      const connection = recordFor({
+        classification: 'social',
+        dataSource: 'linkedin',
+        metadata: { Kind: 'connection', Name: 'Morgan Spadone' },
+        latitude: 1,
+        longitude: 2,
+      });
+
+      expect(destinationsFor(connection)).toEqual(['events', 'position']);
+    });
+
+    it('leaves a real LinkedIn post — one with a body — both homes', () => {
+      // The predicate keys on Kind, not on the source: LinkedIn is not
+      // blanket-excluded from content, only its connection rows are.
+      const post = recordFor({
+        classification: 'social',
+        dataSource: 'linkedin',
+        metadata: { Kind: 'post', Text: 'Thoughts on the release' },
+      });
+
+      expect(destinationsFor(post)).toEqual(['events', 'content']);
+    });
+  });
+});
+
+describe('isSocialAffiliation', () => {
+  it('is true for the connection and subreddit-membership Kinds', () => {
+    expect(isSocialAffiliation(recordFor({ dataSource: 'linkedin', metadata: { Kind: 'connection' } }))).toBe(
+      true,
+    );
+    expect(
+      isSocialAffiliation(recordFor({ dataSource: 'reddit', metadata: { Kind: 'moderated_subreddit' } })),
+    ).toBe(true);
+    // Emitted by pushSubreddit for subscribed_subreddits.csv, which the reddit
+    // importer does not read today — covered so enabling that file cannot
+    // reintroduce the empty rows.
+    expect(
+      isSocialAffiliation(recordFor({ dataSource: 'reddit', metadata: { Kind: 'subscribed_subreddit' } })),
+    ).toBe(true);
+  });
+
+  it('is false for an authored row from the same source', () => {
+    expect(isSocialAffiliation(recordFor({ dataSource: 'reddit', metadata: { Kind: 'post' } }))).toBe(false);
+    expect(isSocialAffiliation(recordFor({ dataSource: 'linkedin', metadata: { Kind: 'message' } }))).toBe(
+      false,
+    );
+  });
+
+  it('is false for a matching Kind from another source', () => {
+    // The sourceSystem check comes first: another importer's 'connection' is
+    // not this shape, and must not lose its content row on the strength of a
+    // coincidental metadata value.
+    expect(
+      isSocialAffiliation(recordFor({ dataSource: 'some_other_source', metadata: { Kind: 'connection' } })),
+    ).toBe(false);
   });
 });
 
