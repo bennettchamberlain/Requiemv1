@@ -366,8 +366,14 @@ export const STAGE_DEPENDENCIES: Readonly<Partial<Record<StageId, readonly Stage
   // The edge projections are pure consumers of the linkage columns their
   // producers fill: person-link writes communications' from/to columns; the
   // event leg additionally reads `location_entity_id`, which `promote.place`
-  // writes. Projecting first would write a night of `done` rows over unlinked
-  // sources that only the producers' next version bump could re-open.
+  // writes. THIS graph is the whole of the ordering between them — the shared
+  // nightly cadence that used to double as ordering is gone (the projections
+  // are hourly and unwindowed now, see `STAGE_SCHEDULES`), and it was never
+  // load-bearing: an unlinked source row fails every edge leg's
+  // `StageSource.predicate`, so a projection that outruns its producer skips it
+  // rather than marking it `done`. What this graph still buys is that on a tick
+  // where a producer is due WITH candidates, its consumer waits one tick rather
+  // than projecting a slice the producer is about to widen.
   [STAGE_IDS.PROMOTE_EDGE_COMMUNICATION]: [STAGE_IDS.ENRICH_PERSON_LINK],
   [STAGE_IDS.PROMOTE_EDGE_EVENT]: [STAGE_IDS.ENRICH_EVENT_PERSON_LINK, STAGE_IDS.PROMOTE_PLACE],
   [STAGE_IDS.PROMOTE_EDGE_INVENTORY]: [STAGE_IDS.PROMOTE_OBJECT],

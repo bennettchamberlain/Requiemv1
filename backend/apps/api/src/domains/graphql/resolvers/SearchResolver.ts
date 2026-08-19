@@ -434,7 +434,8 @@ export class SearchResolver {
       const timedOptions = {
         includeTypes: input.includeTypes,
         excludeTypes: input.excludeTypes,
-        includeFiles: input.includeFiles === true,
+        // Files ride the default browse; only an explicit `false` drops them.
+        includeFiles: input.includeFiles !== false,
         startTime,
         eventTypes,
         eventFilter,

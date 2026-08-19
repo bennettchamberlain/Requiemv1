@@ -147,13 +147,22 @@ function entityTime(entity: EntityItem): number {
   return date && !isNaN(date.getTime()) ? date.getTime() : 0;
 }
 
-// The map needs hasLocation:true so every fetched page yields pins (the shared
-// result set is otherwise dominated by un-located rows). This is now derived
-// from `?view=map` in MemoryPage rather than written here as a separate
-// `?hasLocation` param: a URL write with an unmount cleanup reverted navigation
-// away from /memory (the cleanup's setSearchParams fired mid-route-change and
-// snapped the route back). The server still routes hasLocation through its event
-// filter, so the map is an events-only surface — hence "Search events in this area".
+// The map issues its own read (`mapPins`) instead of deriving pins from the
+// explorer's paged feed, and that read is located-only and events-only by
+// construction — hence "Search events in this area".
+//
+// Because of that, the map no longer depends on a `hasLocation` filter being
+// present: it plots the whole located set either way. Clicking the Map tab still
+// applies "Has a location" as a real, chipped, removable filter
+// (applyViewFilterDefaults in MemoryPage) so the explorer feed behind the
+// timeline panel agrees with the pins, but removing that chip widens the panel,
+// not the map. This supersedes LocatedScopeNotice, which used to explain a map
+// left sparse by un-located feed rows — with `mapPins` there is no such gap to
+// explain, and its "N of M loaded results" count would compare two different
+// reads. Historical hazard worth not repeating: an earlier version wrote the
+// `?hasLocation` param from this file with an unmount cleanup, and that cleanup's
+// setSearchParams fired mid-route-change and snapped navigation back to /memory.
+// Nothing here writes on unmount.
 
 /** Pins from the map's own `mapPins` read — the signed-in user's whole located set. */
 function useMapPins({ skip }: { skip: boolean }) {
@@ -958,9 +967,14 @@ function useMapView(readOnly: boolean) {
     loading: source.loading && pins.length === 0,
     error: source.error && pins.length === 0,
     empty: !source.loading && !source.error && pins.length === 0,
-    // "Filtered" drives the empty copy. The map's own Located scope is implicit
-    // (?view=map), so it is never counted as a user filter here.
-    filtered: countActiveFilters(searchParams) > 0 || Boolean(searchParams.get('search')?.trim()),
+    // "Filtered" drives the empty copy. Discount `hasLocation`: clicking the Map
+    // tab applies it as this view's own default chip (applyViewFilterDefaults),
+    // and `mapPins` is located-only whether or not it is set — so it describes
+    // the surface, not a narrowing the user chose. Counting it would make an
+    // empty library read as "nothing matches your filters".
+    filtered:
+      countActiveFilters(searchParams) - (searchParams.get('hasLocation') === '1' ? 1 : 0) > 0 ||
+      Boolean(searchParams.get('search')?.trim()),
     refetch: readOnly ? undefined : owned.refetch,
     setActiveEntity,
     truncated: !readOnly && owned.truncated,
