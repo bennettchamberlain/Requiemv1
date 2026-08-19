@@ -1565,6 +1565,7 @@ export type Mutation = {
   deleteProviderKey: Scalars['Boolean']['output'];
   deleteRelationship: DeleteByIdPayload;
   deleteSavedSearch: DeleteByIdPayload;
+  deleteTag: DeleteByIdPayload;
   deleteTask: DeleteByIdPayload;
   ingestUserSnapshot: IngestUserSnapshotPayload;
   /** Mark an action as dismissed */
@@ -1629,6 +1630,7 @@ export type Mutation = {
   updateQuestion?: Maybe<QuestionType>;
   updateRelationship: UpdateRelationshipPayload;
   updateSavedSearch: UpdateSavedSearchPayload;
+  updateTag: UpdateTagPayload;
   updateTask: UpdateTaskPayload;
 };
 
@@ -1893,6 +1895,11 @@ export type MutationDeleteSavedSearchArgs = {
 };
 
 
+export type MutationDeleteTagArgs = {
+  input: DeleteByIdInput;
+};
+
+
 export type MutationDeleteTaskArgs = {
   input: DeleteByIdInput;
 };
@@ -2123,6 +2130,11 @@ export type MutationUpdateRelationshipArgs = {
 
 export type MutationUpdateSavedSearchArgs = {
   input: UpdateSavedSearchInput;
+};
+
+
+export type MutationUpdateTagArgs = {
+  input: UpdateTagInput;
 };
 
 
@@ -3304,6 +3316,7 @@ export type TagType = Node & {
   __typename?: 'TagType';
   description?: Maybe<Scalars['String']['output']>;
   entities: TaggableEntityConnection;
+  entityCount: Scalars['Int']['output'];
   id: Scalars['ID']['output'];
   label: Scalars['String']['output'];
 };
@@ -3727,6 +3740,21 @@ export type UpdateSavedSearchPayload = {
   __typename?: 'UpdateSavedSearchPayload';
   savedSearch?: Maybe<SavedSearchType>;
   success: Scalars['Boolean']['output'];
+};
+
+export type UpdateTagInput = {
+  description?: InputMaybe<Scalars['String']['input']>;
+  id: Scalars['ID']['input'];
+  label?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type UpdateTagPayload = {
+  __typename?: 'UpdateTagPayload';
+  merged: Scalars['Boolean']['output'];
+  movedEntityCount: Scalars['Int']['output'];
+  success: Scalars['Boolean']['output'];
+  tag?: Maybe<TagType>;
+  updatedSavedSearchCount: Scalars['Int']['output'];
 };
 
 export type UpdateTaskInput = {
@@ -4962,6 +4990,30 @@ export type GetSummaryQueryVariables = Exact<{
 
 export type GetSummaryQuery = { __typename?: 'Query', summary?: { __typename?: 'SummaryType', id: string, title?: string | null, periodType: string, periodStart: any, periodEnd: any, summaryText: string, keyInsights: Array<string>, notableEvents: Array<string>, anomalies: Array<string>, tags: Array<string>, dailyRhythm?: Array<string> | null, productivityPatterns?: Array<string> | null, socialInteractions?: Array<string> | null, keyAccomplishments?: Array<string> | null, moodIndicators?: Array<string> | null, confidenceScore?: number | null, createdAt: any, updatedAt: any, activityCounts: { __typename?: 'ActivityCountsType', total: number, browserActivity?: number | null, communications?: number | null, files?: number | null, events?: number | null, messages?: number | null, screenCaptures?: number | null, apiLogs?: number | null, positions?: number | null, activities?: number | null, measurements?: number | null }, insights: Array<{ __typename?: 'InsightItemType', title: string, summaryText: string, keyActions: Array<string>, relevanceScore: number, tags: Array<string>, relatedEntityIds?: Array<string> | null }> } | null };
 
+export type DeleteTagMutationVariables = Exact<{
+  input: DeleteByIdInput;
+}>;
+
+
+export type DeleteTagMutation = { __typename?: 'Mutation', deleteTag: { __typename?: 'DeleteByIdPayload', success: boolean, deletedId?: string | null } };
+
+export type ListTagsForTestQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type ListTagsForTestQuery = { __typename?: 'Query', tags: { __typename?: 'TagConnection', edges: Array<{ __typename?: 'TagEdge', node: { __typename?: 'TagType', id: string, label: string } }> } };
+
+export type UpdateTagMutationVariables = Exact<{
+  input: UpdateTagInput;
+}>;
+
+
+export type UpdateTagMutation = { __typename?: 'Mutation', updateTag: { __typename?: 'UpdateTagPayload', success: boolean, merged: boolean, movedEntityCount: number, updatedSavedSearchCount: number, tag?: { __typename?: 'TagType', id: string, label: string, description?: string | null, entityCount: number } | null } };
+
+export type GetTagsWithUsageQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type GetTagsWithUsageQuery = { __typename?: 'Query', tags: { __typename?: 'TagConnection', edges: Array<{ __typename?: 'TagEdge', node: { __typename?: 'TagType', id: string, label: string, description?: string | null, entityCount: number } }> } };
+
 export type GetOAuthCallbackUrlQueryVariables = Exact<{ [key: string]: never; }>;
 
 
@@ -5137,4 +5189,8 @@ export const UpdateCurrentUserTimezoneDocument = {"kind":"Document","definitions
 export const GetSharedSavedSearchDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetSharedSavedSearch"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"token"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sharedSavedSearch"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"token"},"value":{"kind":"Variable","name":{"kind":"Name","value":"token"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}}]}}]}}]} as unknown as DocumentNode<GetSharedSavedSearchQuery, GetSharedSavedSearchQueryVariables>;
 export const StatsDailyMetricsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"StatsDailyMetrics"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"from"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"to"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dailyMetrics"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"from"},"value":{"kind":"Variable","name":{"kind":"Name","value":"from"}}},{"kind":"Argument","name":{"kind":"Name","value":"to"},"value":{"kind":"Variable","name":{"kind":"Name","value":"to"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"date"}},{"kind":"Field","name":{"kind":"Name","value":"nMessages"}},{"kind":"Field","name":{"kind":"Name","value":"nPlaces"}},{"kind":"Field","name":{"kind":"Name","value":"kmTraveled"}}]}}]}}]} as unknown as DocumentNode<StatsDailyMetricsQuery, StatsDailyMetricsQueryVariables>;
 export const GetSummaryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetSummary"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"summary"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"periodType"}},{"kind":"Field","name":{"kind":"Name","value":"periodStart"}},{"kind":"Field","name":{"kind":"Name","value":"periodEnd"}},{"kind":"Field","name":{"kind":"Name","value":"summaryText"}},{"kind":"Field","name":{"kind":"Name","value":"keyInsights"}},{"kind":"Field","name":{"kind":"Name","value":"notableEvents"}},{"kind":"Field","name":{"kind":"Name","value":"anomalies"}},{"kind":"Field","name":{"kind":"Name","value":"tags"}},{"kind":"Field","name":{"kind":"Name","value":"activityCounts"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"total"}},{"kind":"Field","name":{"kind":"Name","value":"browserActivity"}},{"kind":"Field","name":{"kind":"Name","value":"communications"}},{"kind":"Field","name":{"kind":"Name","value":"files"}},{"kind":"Field","name":{"kind":"Name","value":"events"}},{"kind":"Field","name":{"kind":"Name","value":"messages"}},{"kind":"Field","name":{"kind":"Name","value":"screenCaptures"}},{"kind":"Field","name":{"kind":"Name","value":"apiLogs"}},{"kind":"Field","name":{"kind":"Name","value":"positions"}},{"kind":"Field","name":{"kind":"Name","value":"activities"}},{"kind":"Field","name":{"kind":"Name","value":"measurements"}}]}},{"kind":"Field","name":{"kind":"Name","value":"insights"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"summaryText"}},{"kind":"Field","name":{"kind":"Name","value":"keyActions"}},{"kind":"Field","name":{"kind":"Name","value":"relevanceScore"}},{"kind":"Field","name":{"kind":"Name","value":"tags"}},{"kind":"Field","name":{"kind":"Name","value":"relatedEntityIds"}}]}},{"kind":"Field","name":{"kind":"Name","value":"dailyRhythm"}},{"kind":"Field","name":{"kind":"Name","value":"productivityPatterns"}},{"kind":"Field","name":{"kind":"Name","value":"socialInteractions"}},{"kind":"Field","name":{"kind":"Name","value":"keyAccomplishments"}},{"kind":"Field","name":{"kind":"Name","value":"moodIndicators"}},{"kind":"Field","name":{"kind":"Name","value":"confidenceScore"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}}]}}]} as unknown as DocumentNode<GetSummaryQuery, GetSummaryQueryVariables>;
+export const DeleteTagDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DeleteTag"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"DeleteByIdInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"deleteTag"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"deletedId"}}]}}]}}]} as unknown as DocumentNode<DeleteTagMutation, DeleteTagMutationVariables>;
+export const ListTagsForTestDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"ListTagsForTest"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"tags"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"edges"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"node"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}}]}}]}}]}}]}}]} as unknown as DocumentNode<ListTagsForTestQuery, ListTagsForTestQueryVariables>;
+export const UpdateTagDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UpdateTag"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UpdateTagInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"updateTag"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"merged"}},{"kind":"Field","name":{"kind":"Name","value":"movedEntityCount"}},{"kind":"Field","name":{"kind":"Name","value":"updatedSavedSearchCount"}},{"kind":"Field","name":{"kind":"Name","value":"tag"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"entityCount"}}]}}]}}]}}]} as unknown as DocumentNode<UpdateTagMutation, UpdateTagMutationVariables>;
+export const GetTagsWithUsageDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetTagsWithUsage"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"tags"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"edges"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"node"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"entityCount"}}]}}]}}]}}]}}]} as unknown as DocumentNode<GetTagsWithUsageQuery, GetTagsWithUsageQueryVariables>;
 export const GetOAuthCallbackUrlDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetOAuthCallbackUrl"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"oAuthCallbackUrl"}}]}}]} as unknown as DocumentNode<GetOAuthCallbackUrlQuery, GetOAuthCallbackUrlQueryVariables>;
