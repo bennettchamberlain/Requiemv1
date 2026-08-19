@@ -88,6 +88,67 @@ describe('RunPipeline stage detail', () => {
     expect(screen.getByText(/unexpected end of mbox/i)).toBeInTheDocument();
   });
 
+  it('names the records that could not be identified, and why', () => {
+    // The bug this closes: a 4,040-entity Apple import finished `partial`
+    // because of ONE contact card with no name and no email, and the excellent
+    // reason the push had recorded for it — "no stable name or handle to
+    // resolve by" — lived only in ci_import.staged_entities.push_error. The run
+    // showed the word `partial` and a count of skipped groups.
+    render(
+      <RunPipeline
+        run={runWith({
+          pushed: 4039,
+          entities: {
+            resolved: 4039,
+            skipped: 1,
+            unresolved: 1,
+            failed: 0,
+            unresolvedDetail: {
+              reason: 'entity_unresolved',
+              message: 'no stable name or handle to resolve by',
+              count: 1,
+              sources: { vcard: 1 },
+              examples: ['vcard: Liam Broza and 4,926 others.vcf'],
+            },
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText(/1 record could not be identified/i)).toBeInTheDocument();
+    expect(screen.getByText(/no stable name or handle to resolve by/i)).toBeInTheDocument();
+    // The export it came from, because that is what makes it findable.
+    expect(screen.getByText(/Liam Broza and 4,926 others\.vcf/)).toBeInTheDocument();
+  });
+
+  it('keeps the by-design skips apart from the ones that are a loss', () => {
+    // `entities.skipped` counts both: an `email_thread` per gmail thread (by
+    // design) and a record with nothing to key on (a gap). Rolled into one
+    // line, ten deliberate exclusions hid the one that mattered.
+    render(
+      <RunPipeline
+        run={runWith({
+          entities: {
+            resolved: 0,
+            skipped: 11,
+            unresolved: 1,
+            failed: 0,
+            unresolvedDetail: {
+              reason: 'entity_unresolved',
+              message: 'no stable name or handle to resolve by',
+              count: 1,
+              sources: { vcard: 1 },
+              examples: [],
+            },
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText(/10 groups skipped/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 record could not be identified/i)).toBeInTheDocument();
+  });
+
   it('calls a partial run a success with gaps', () => {
     render(<RunPipeline run={runWith({ pushed: 1, deduped: 0, failed: 0 })} />);
 
