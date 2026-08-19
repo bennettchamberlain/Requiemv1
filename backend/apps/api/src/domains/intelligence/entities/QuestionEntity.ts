@@ -8,6 +8,15 @@ export class QuestionEntity {
   @Column({ nullable: true, name: 'question_category' })
   category!: string;
 
+  /**
+   * Which half of the catalogue this question belongs to: 'factual' settles a
+   * fact, 'preference' records a taste, 'narrative' asks for a story. Selection
+   * orders by this so the appliance asks the answerable questions first — see
+   * TIER_RANK_SQL in QuestionService. NULL means a pre-catalogue question.
+   */
+  @Column({ type: 'text', nullable: true, name: 'answer_tier' })
+  answerTier?: string | null;
+
   @Column({ name: 'question_text' })
   text!: string;
 
@@ -48,6 +57,7 @@ export class QuestionEntity {
     return {
       id: entity.id,
       category: entity.category,
+      answerTier: entity.answerTier ?? null,
       text: entity.text,
       contextTags: entity.contextTags,
       questionType: entity.questionType,

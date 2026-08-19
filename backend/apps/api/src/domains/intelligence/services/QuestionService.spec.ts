@@ -505,3 +505,58 @@ describe('QuestionService.findUnansweredByUserId', () => {
     expect(result.size).toBe(0);
   });
 });
+
+describe('QuestionService asks the functional questions first', () => {
+  // The catalogue is deliberately weighted toward questions that settle a fact,
+  // and `answer_tier` exists so selection can honour that ordering. These guard
+  // the ordering itself: a later edit that reinstates "oldest first" or
+  // "least-covered category first" as the PRIMARY sort would silently go back to
+  // leading with the abstract, pre-catalogue questions (which sort last as NULL).
+  function capturedSql(service: QuestionService, run: () => Promise<unknown>) {
+    const seen: string[] = [];
+    const ds = (service as unknown as { dataSource: { query: jest.Mock } }).dataSource;
+
+    ds.query.mockImplementation((sql: string) => {
+      seen.push(sql);
+
+      return Promise.resolve([]);
+    });
+
+    return run().then(() => seen);
+  }
+
+  function makeService() {
+    const dataSource = { query: jest.fn().mockResolvedValue([]) };
+
+    return new QuestionService(
+      dataSource as never,
+      { create: jest.fn(), save: jest.fn() } as never,
+      { send: jest.fn() } as never,
+    );
+  }
+
+  const TIER_RANK =
+    /CASE\s+q\.answer_tier[\s\S]*?'factual'\s+THEN 0[\s\S]*?'preference'\s+THEN 1[\s\S]*?'narrative'\s+THEN 2/;
+
+  it('ranks factual before preference before narrative, and untiered last', async () => {
+    const service = makeService();
+    const [sql] = await capturedSql(service, () => service.findUnansweredByUserId());
+
+    expect(sql).toMatch(TIER_RANK);
+    // NULL (pre-catalogue) must sort AFTER narrative, not before it.
+    expect(sql).toMatch(/ELSE 3\s*\n?\s*END/);
+  });
+
+  it('sorts by tier before it sorts by age', async () => {
+    const service = makeService();
+    const [sql] = await capturedSql(service, () => service.findUnansweredByUserId());
+
+    const order = sql.slice(sql.indexOf('ROW_NUMBER'));
+    const tierAt = order.search(/CASE\s+q\.answer_tier/);
+    const createdAt = order.indexOf('q.created_at');
+
+    expect(tierAt).toBeGreaterThan(-1);
+    expect(createdAt).toBeGreaterThan(-1);
+    expect(tierAt).toBeLessThan(createdAt);
+  });
+});
