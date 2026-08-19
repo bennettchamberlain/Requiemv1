@@ -20,6 +20,7 @@ function entry(overrides: Partial<CatalogueEntry> = {}): CatalogueEntry {
     isSeedQuestion: true,
     createdByLlm: false,
     isPrivateTo: null,
+    forkedFromQuestionId: null,
     timesAsked: 0,
     timesAnswered: 0,
     createdAt: '2026-01-01T00:00:00.000Z',
@@ -140,6 +141,26 @@ describe('ReflectionCatalogue', () => {
 
     expect(await screen.findByRole('button', { name: 'Reactivate' })).toBeInTheDocument();
     expect(screen.getByText('Deactivated')).toBeInTheDocument();
+  });
+
+  // Shared reflections are read-only — every user on the appliance is asked from
+  // them — so editing one copies it first. The badge is how a reader tells their
+  // own wording apart from what the appliance shipped.
+  it("marks a reflection that is the reader's own copy of a shared one", async () => {
+    setFetch(() => ok(pageOf([entry({ forkedFromQuestionId: 'shared-1' })])));
+
+    render(<ReflectionCatalogue />);
+
+    expect(await screen.findByText('Your copy')).toBeInTheDocument();
+  });
+
+  it('does not mark a shared reflection as a copy', async () => {
+    setFetch(() => ok(pageOf([entry()])));
+
+    render(<ReflectionCatalogue />);
+
+    await screen.findByText('What foods are you allergic to?');
+    expect(screen.queryByText('Your copy')).not.toBeInTheDocument();
   });
 
   it('searches the whole catalogue on the server, not just the current page', async () => {

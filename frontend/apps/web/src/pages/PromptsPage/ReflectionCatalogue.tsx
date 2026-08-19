@@ -70,6 +70,15 @@ function ReflectionRow({
                 Deactivated
               </Badge>
             )}
+            {entry.forkedFromQuestionId ? (
+              <Badge
+                variant="outline"
+                className="text-xs text-muted-foreground"
+                title="Your own copy of a shared reflection. Editing a shared one copies it first, so your wording is yours alone."
+              >
+                Your copy
+              </Badge>
+            ) : null}
             {entry.answer ? (
               <AnswerProvenance
                 source={entry.answer.source}

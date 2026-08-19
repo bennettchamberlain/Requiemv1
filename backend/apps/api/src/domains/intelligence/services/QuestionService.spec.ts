@@ -46,9 +46,9 @@ function makeService() {
     create,
     save,
     find,
-    // 14 persisted columns, matching repository.metadata.columns.length; drives
+    // 15 persisted columns, matching repository.metadata.columns.length; drives
     // computeChunkSize in createMany.
-    metadata: { target: QuestionEntity, columns: { length: 14 } },
+    metadata: { target: QuestionEntity, columns: { length: 15 } },
     createQueryBuilder: jest.fn(() => makeInsertBuilder(insertRecord)),
   };
 
@@ -155,7 +155,7 @@ describe('QuestionService feed rotation', () => {
 
     const service = new QuestionService(
       dataSource as never,
-      { create: jest.fn(), save: jest.fn(), find: jest.fn(), metadata: { columns: { length: 14 } } } as never,
+      { create: jest.fn(), save: jest.fn(), find: jest.fn(), metadata: { columns: { length: 15 } } } as never,
       { send: jest.fn() } as never,
     );
 
@@ -226,6 +226,16 @@ function matchesClause(row: QuestionEntity, clause: Record<string, unknown>): bo
         return actual === null || actual === undefined;
       }
 
+      if (expected._type === 'not') {
+        const inner = expected._value;
+
+        if (isFindOperator(inner)) {
+          return inner._type === 'isNull' ? actual !== null && actual !== undefined : false;
+        }
+
+        return actual !== inner;
+      }
+
       return false;
     }
 
@@ -244,7 +254,13 @@ function matchesWhere(
 
 function makeQuestion(
   id: string,
-  opts: { isPrivateTo?: string | null; isActive?: boolean } = {},
+  opts: {
+    isPrivateTo?: string | null;
+    isActive?: boolean;
+    isSeedQuestion?: boolean;
+    createdByLlm?: boolean;
+    forkedFromQuestionId?: string | null;
+  } = {},
 ): QuestionEntity {
   return Object.assign(new QuestionEntity(), {
     id,
@@ -252,7 +268,15 @@ function makeQuestion(
     category: 'general',
     isActive: opts.isActive ?? true,
     isPrivateTo: opts.isPrivateTo ?? null,
+    isSeedQuestion: opts.isSeedQuestion ?? false,
+    createdByLlm: opts.createdByLlm ?? false,
+    forkedFromQuestionId: opts.forkedFromQuestionId ?? null,
   });
+}
+
+/** A shipped catalogue row: shared with everyone, seeded, human-written. */
+function makeSeedQuestion(id: string): QuestionEntity {
+  return makeQuestion(id, { isPrivateTo: null, isSeedQuestion: true, createdByLlm: false });
 }
 
 function makeScopedService(rows: QuestionEntity[]) {
@@ -262,16 +286,32 @@ function makeScopedService(rows: QuestionEntity[]) {
   const findOne = jest.fn(async (options: { where: Record<string, unknown> | Record<string, unknown>[] }) => {
     return rows.find((row) => matchesWhere(row, options.where)) ?? null;
   });
-  const save = jest.fn(async (entity: QuestionEntity) => entity);
+  const create = jest.fn((partial: Partial<QuestionEntity>) => Object.assign(new QuestionEntity(), partial));
+  // A save of a row the store has not seen INSERTS it, so a fork minted mid-test
+  // is visible to every later read the way it would be in Postgres.
+  const save = jest.fn(async (entity: QuestionEntity) => {
+    if (!rows.includes(entity)) {
+      rows.push(entity);
+    }
+
+    return entity;
+  });
   const deleteFn = jest.fn(async () => ({ affected: 1 }));
 
-  const repository = { find, findOne, save, delete: deleteFn };
+  const repository = { find, findOne, create, save, delete: deleteFn };
   const send = jest.fn(async () => []);
-  const dataSource = { query: jest.fn(async () => []) };
+  const queries: Array<{ sql: string; params: unknown[] }> = [];
+  const dataSource = {
+    query: jest.fn(async (sql: string, params: unknown[] = []) => {
+      queries.push({ sql, params });
+
+      return [];
+    }),
+  };
 
   const service = new QuestionService(dataSource as never, repository as never, { send } as never);
 
-  return { service, find, findOne, save, delete: deleteFn, send };
+  return { service, rows, find, findOne, create, save, delete: deleteFn, send, queries };
 }
 
 describe('QuestionService privacy scoping (is_private_to)', () => {
@@ -337,8 +377,8 @@ describe('QuestionService privacy scoping (is_private_to)', () => {
     });
   });
 
-  describe('update', () => {
-    it('lets the owner update their own private question', async () => {
+  describe('update on a row the caller owns', () => {
+    it('lets the owner update their own private question in place', async () => {
       const { service, save } = makeScopedService([makeQuestion('mine-1', { isPrivateTo: USER })]);
 
       const result = await service.update(CONTEXT, 'mine-1', { text: 'updated' });
@@ -356,38 +396,157 @@ describe('QuestionService privacy scoping (is_private_to)', () => {
       expect(save).not.toHaveBeenCalled();
     });
 
-    // The catalogue is public (is_private_to IS NULL on all ~1.3k seeded rows),
-    // so an own-private-only write rule made every one of them uneditable — you
-    // could see a badly worded reflection and not correct it, and could not
-    // retire one either, since retiring is `isActive: false` through this same
-    // path. Write scope now matches read scope (findById).
-    it('lets a non-system caller edit a public (shared catalogue) question', async () => {
-      const { service, save } = makeScopedService([makeQuestion('public-1')]);
+    it('lets a system caller edit a shared catalogue row in place (no fork)', async () => {
+      const seed = makeSeedQuestion('seed-1');
+      const { service, rows } = makeScopedService([seed]);
 
-      const result = await service.update(CONTEXT, 'public-1', { text: 'edited' });
+      const result = await service.update(SYSTEM_CONTEXT, 'seed-1', { text: 'corrected' });
 
-      expect(result?.id).toBe('public-1');
-      expect(save).toHaveBeenCalled();
+      expect(result?.id).toBe('seed-1');
+      expect(seed.text).toBe('corrected');
+      expect(rows).toHaveLength(1);
+    });
+  });
+
+  /**
+   * The access rule this whole mechanism exists for.
+   *
+   * `ci.questions` mixes ~1.3k shared rows every user on the appliance is asked
+   * from with each person's own private ones. When the browsable catalogue
+   * shipped, write scope was widened to match read scope, which meant any
+   * authenticated user could reword, recategorise or retire
+   * (`isActive: false`) a shared row FOR EVERYONE. These tests pin the
+   * replacement: a shared row is read-only, and an edit lands on a private copy.
+   */
+  describe('update on a shared catalogue row forks instead of writing through', () => {
+    it('leaves the shared row untouched and returns a private copy carrying the edit', async () => {
+      const seed = makeSeedQuestion('seed-1');
+      const { service, rows } = makeScopedService([seed]);
+
+      const result = await service.update(CONTEXT, 'seed-1', { text: 'my wording' });
+
+      expect(seed.text).toBe('question-seed-1');
+      expect(seed.isPrivateTo).toBeNull();
+
+      expect(result?.id).not.toBe('seed-1');
+      expect(result?.text).toBe('my wording');
+      expect(result?.isPrivateTo).toBe(USER);
+      expect(result?.forkedFromQuestionId).toBe('seed-1');
+      expect(rows).toHaveLength(2);
     });
 
-    it('deactivates rather than deletes when isActive: false comes in', async () => {
-      const question = makeQuestion('public-1');
-      const { service, save } = makeScopedService([question]);
+    it("retiring a shared row retires only the caller's copy, never the shared row", async () => {
+      const seed = makeSeedQuestion('seed-1');
+      const { service } = makeScopedService([seed]);
 
-      await service.update(CONTEXT, 'public-1', { isActive: false });
+      const result = await service.update(CONTEXT, 'seed-1', { isActive: false });
 
-      expect(save).toHaveBeenCalled();
-      expect(question.isActive).toBe(false);
+      expect(result?.isActive).toBe(false);
+      expect(seed.isActive).toBe(true);
+
+      // The other user's view of the catalogue is unchanged.
+      const theirs = await service.findAll({ userId: OTHER_USER } as ServiceContext);
+      expect(theirs.map((q) => q.id)).toEqual(['seed-1']);
     });
 
-    it('applies category and answerTier edits', async () => {
-      const question = makeQuestion('public-1');
-      const { service } = makeScopedService([question]);
+    it('marks the copy as neither seed content nor LLM-written, whatever the origin was', async () => {
+      const { service } = makeScopedService([makeSeedQuestion('seed-1')]);
 
-      await service.update(CONTEXT, 'public-1', { category: 'Work & Money', answerTier: 'preference' });
+      const result = await service.update(CONTEXT, 'seed-1', { text: 'mine' });
 
-      expect(question.category).toBe('Work & Money');
-      expect(question.answerTier).toBe('preference');
+      expect(result?.isSeedQuestion).toBe(false);
+      expect(result?.createdByLlm).toBe(false);
+    });
+
+    it('cannot be talked into handing the copy to another user via isPrivateTo', async () => {
+      const { service } = makeScopedService([makeSeedQuestion('seed-1')]);
+
+      const result = await service.update(CONTEXT, 'seed-1', {
+        text: 'mine',
+        isPrivateTo: OTHER_USER,
+      });
+
+      expect(result?.isPrivateTo).toBe(USER);
+      expect(result?.forkedFromQuestionId).toBe('seed-1');
+    });
+
+    it('reuses the same copy on a second edit rather than minting another', async () => {
+      const { service, rows } = makeScopedService([makeSeedQuestion('seed-1')]);
+
+      const first = await service.update(CONTEXT, 'seed-1', { text: 'first' });
+      const second = await service.update(CONTEXT, 'seed-1', { text: 'second' });
+
+      expect(second?.id).toBe(first?.id);
+      expect(second?.text).toBe('second');
+      expect(rows).toHaveLength(2);
+    });
+
+    it('gives two users independent copies of the same shared row', async () => {
+      const seed = makeSeedQuestion('seed-1');
+      const { service } = makeScopedService([seed]);
+
+      const mine = await service.update(CONTEXT, 'seed-1', { text: 'mine' });
+      const theirs = await service.update({ userId: OTHER_USER } as ServiceContext, 'seed-1', {
+        text: 'theirs',
+      });
+
+      expect(mine?.id).not.toBe(theirs?.id);
+      expect(mine?.text).toBe('mine');
+      expect(theirs?.text).toBe('theirs');
+      expect(seed.text).toBe('question-seed-1');
+    });
+
+    it("moves only the caller's own answers onto the copy", async () => {
+      const { service, queries } = makeScopedService([makeSeedQuestion('seed-1')]);
+
+      const fork = await service.update(CONTEXT, 'seed-1', { text: 'mine' });
+
+      const answerUpdate = queries.find((call) => call.sql.includes('UPDATE ci.answers'));
+
+      expect(answerUpdate).toBeDefined();
+      expect(answerUpdate?.sql).toContain('user_id = $1');
+      expect(answerUpdate?.params).toEqual([USER, 'seed-1', fork?.id]);
+    });
+
+    it("drops the origin from the caller's feed queue so it is not asked again", async () => {
+      const { service, queries } = makeScopedService([makeSeedQuestion('seed-1')]);
+
+      await service.update(CONTEXT, 'seed-1', { isActive: false });
+
+      const feedDelete = queries.find((call) => call.sql.includes('DELETE FROM ci.feed_queue'));
+
+      expect(feedDelete?.params).toEqual([USER, 'seed-1']);
+    });
+  });
+
+  describe('findAll hides a shared row the caller has replaced', () => {
+    it('returns the copy instead of the original, for that caller only', async () => {
+      const rows = [
+        makeSeedQuestion('seed-1'),
+        makeQuestion('my-copy', { isPrivateTo: USER, forkedFromQuestionId: 'seed-1' }),
+      ];
+      const { service } = makeScopedService(rows);
+
+      const mine = await service.findAll(CONTEXT);
+      expect(mine.map((q) => q.id)).toEqual(['my-copy']);
+
+      const theirs = await service.findAll({ userId: OTHER_USER } as ServiceContext);
+      expect(theirs.map((q) => q.id)).toEqual(['seed-1']);
+    });
+
+    it('keeps the original hidden even when the copy was retired', async () => {
+      const rows = [
+        makeSeedQuestion('seed-1'),
+        makeQuestion('my-copy', {
+          isPrivateTo: USER,
+          forkedFromQuestionId: 'seed-1',
+          isActive: false,
+        }),
+      ];
+      const { service } = makeScopedService(rows);
+
+      // The point of "retire this reflection": neither row comes back.
+      await expect(service.findAll(CONTEXT)).resolves.toEqual([]);
     });
   });
 
@@ -408,6 +567,24 @@ describe('QuestionService privacy scoping (is_private_to)', () => {
 
       await expect(service.remove(CONTEXT, 'theirs-1')).resolves.toBe(false);
       expect(deleteFn).not.toHaveBeenCalled();
+    });
+
+    // Delete does NOT fork and is NOT widened to the shared catalogue: ci.answers
+    // and ci.feed_queue both cascade from ci.questions, so deleting a shared row
+    // would destroy answers other people wrote. Retiring one is isActive: false.
+    it('rejects a remove of a shared catalogue row the caller can plainly see', async () => {
+      const { service, delete: deleteFn } = makeScopedService([makeSeedQuestion('seed-1')]);
+
+      await expect(service.findById(CONTEXT, 'seed-1')).resolves.not.toBeNull();
+      await expect(service.remove(CONTEXT, 'seed-1')).resolves.toBe(false);
+      expect(deleteFn).not.toHaveBeenCalled();
+    });
+
+    it('lets a system caller remove a shared catalogue row', async () => {
+      const { service, delete: deleteFn } = makeScopedService([makeSeedQuestion('seed-1')]);
+
+      await expect(service.remove(SYSTEM_CONTEXT, 'seed-1')).resolves.toBe(true);
+      expect(deleteFn).toHaveBeenCalled();
     });
   });
 });
@@ -445,7 +622,7 @@ describe('QuestionService.enqueueNextFeedQueueQuestion', () => {
 
     const service = new QuestionService(
       dataSource as never,
-      { create: jest.fn(), save: jest.fn(), find: jest.fn(), metadata: { columns: { length: 14 } } } as never,
+      { create: jest.fn(), save: jest.fn(), find: jest.fn(), metadata: { columns: { length: 15 } } } as never,
       { send: jest.fn() } as never,
     );
 
@@ -459,6 +636,17 @@ describe('QuestionService.enqueueNextFeedQueueQuestion', () => {
 
     expect(result).toBe(false);
     expect(queries.some((q) => q.sql.includes('category_coverage'))).toBe(false);
+  });
+
+  it('never offers back a shared question the user has replaced with their own copy', async () => {
+    const { service, queries } = makeQueueService({ queueCount: '0', candidate: { id: 'q1' } });
+
+    await service.enqueueNextFeedQueueQuestion('user-1', 3);
+
+    const candidateQuery = queries.find((q) => q.sql.includes('category_coverage'));
+
+    expect(candidateQuery?.sql).toContain('fork.forked_from_question_id = q.question_id');
+    expect(candidateQuery?.sql).toContain('fork.is_private_to = $1');
   });
 
   it('returns false when the queue has room but there is no gap-aware candidate', async () => {
@@ -506,7 +694,7 @@ describe('QuestionService.findUnansweredByUserId', () => {
 
     const service = new QuestionService(
       dataSource as never,
-      { create: jest.fn(), save: jest.fn(), find: jest.fn(), metadata: { columns: { length: 14 } } } as never,
+      { create: jest.fn(), save: jest.fn(), find: jest.fn(), metadata: { columns: { length: 15 } } } as never,
       { send: jest.fn() } as never,
     );
 
@@ -521,7 +709,7 @@ describe('QuestionService.findUnansweredByUserId', () => {
 
     const service = new QuestionService(
       dataSource as never,
-      { create: jest.fn(), save: jest.fn(), find: jest.fn(), metadata: { columns: { length: 14 } } } as never,
+      { create: jest.fn(), save: jest.fn(), find: jest.fn(), metadata: { columns: { length: 15 } } } as never,
       { send: jest.fn() } as never,
     );
 
@@ -625,6 +813,7 @@ describe('QuestionService.findCatalogue', () => {
       is_seed_question: true,
       created_by_llm: false,
       is_private_to: null,
+      forked_from_question_id: null,
       times_asked: 3,
       times_answered: 1,
       created_at: new Date('2026-01-01T00:00:00Z'),
@@ -661,6 +850,17 @@ describe('QuestionService.findCatalogue', () => {
     expect(calls[0].sql).toContain('q.is_private_to IS NULL OR q.is_private_to = $1::uuid');
     expect(calls[0].sql).toContain('a.user_id = $1::uuid');
     expect(calls[0].params[0]).toBe(USER);
+  });
+
+  it('hides a shared row the caller has replaced with their own copy', async () => {
+    const { service, calls } = makeCatalogueService([[], []]);
+
+    await service.findCatalogue(CONTEXT, CATALOGUE_QUERY);
+
+    for (const call of calls) {
+      expect(call.sql).toContain('fork.forked_from_question_id = q.question_id');
+      expect(call.sql).toContain('fork.is_private_to = $1::uuid');
+    }
   });
 
   it('passes NULL for a system caller so no private row and no answer can leak', async () => {
