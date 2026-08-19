@@ -1,0 +1,93 @@
+-- migrate:up
+-- Index ci.position (id) — the prerequisite for sweeping ANY pipeline stage
+-- over this table, named as such in code since the day the first one shipped.
+--
+-- ## Why
+--
+-- `ci.position.id` was added by 20251205185102_add_id_to_position and
+-- backfilled, and no index has ever covered it. The rebuild
+-- (20260807071631_departition_position) recreated every OTHER secondary index
+-- and did not add one for `id`, because at that point nothing looked rows up
+-- by it. Two pipeline stages now do, and both of their hot statements are a
+-- lookup on `id`:
+--
+--   * candidate selection — `PipelineStateService.selectStale`, verbatim:
+--       SELECT s.id FROM ci.position s
+--        WHERE s.user_id = $3 AND (<applicability>)
+--          AND NOT EXISTS (SELECT 1 FROM ci.pipeline_state p WHERE p.entity_id = s.id ...)
+--          AND ($5::uuid IS NULL OR s.id > $5::uuid)
+--        ORDER BY s.id LIMIT $6
+--     — a keyset hop ORDERED BY `id`, with a per-row ledger probe on `id`;
+--   * slice load — `PositionReverseStage.loadRows` and
+--     `PositionPlacePromoteStage.loadRows`, both
+--       ... WHERE p.id = ANY($1::uuid[]) AND p.user_id = $2::uuid.
+--
+-- `ci.position` is a TimescaleDB hypertable: 95 chunks and ~65k rows on the
+-- appliance this was measured on, ~300 chunks projected over a full 25-year
+-- GPS history. With no index on `id`, `id > $cursor` cannot exclude a single
+-- chunk (the partitioning column is `time`, and uuid v7 order only CORRELATES
+-- with it), so every hop of every sweep sequentially scans every chunk and
+-- then sorts. That is why a capped sweep never drains: the cap bounds the rows
+-- RETURNED, not the rows READ, and the read is the whole table each time.
+--
+-- `PositionReverseStage.loadRows` carries the request in its own comment —
+-- "CREATE INDEX position_id_idx ON ci.position (id) is a prerequisite for
+-- sweeping this stage over a real history; it is a migration and belongs with
+-- the change that owns one". This is that change: it lands the second stage
+-- over this table (`promote.place_position`), so it lands the index.
+--
+-- ## Why not CONCURRENTLY
+--
+-- dbmate runs each migration inside a transaction and `CREATE INDEX
+-- CONCURRENTLY` cannot run in one. Every index in this migration set is
+-- therefore a plain build — see 20260701120100_add_embeddings_hnsw_index and
+-- 20260809181915_promote_support, which both say so in the same words. A plain
+-- build takes ACCESS EXCLUSIVE on the hypertable and its chunks for the length
+-- of the build: at 65k rows that is well under a second, and the appliance
+-- takes the pause at migrate time, when it is already down for the deploy.
+--
+-- An operator whose `ci.position` is large enough that the pause is
+-- unacceptable should build it out of band FIRST, after which this migration
+-- is a no-op via IF NOT EXISTS:
+--
+--   CREATE INDEX CONCURRENTLY IF NOT EXISTS position_id_idx ON ci.position (id);
+--
+-- (Out of band, never mid-deploy. An index the running image does not know
+-- about is harmless; a half-built INVALID index left by an interrupted
+-- CONCURRENTLY build is not — drop and rebuild it if that happens.)
+--
+-- ## Shape: (id), not (user_id, id), and not partial
+--
+-- Deliberately the narrowest thing that fixes the measured problem, and
+-- deliberately the exact index the stage comment asked for. `(user_id, id)`
+-- would additionally serve the sweep's `user_id` equality — the argument
+-- 20260809181915_promote_support makes for `events_promote_commerce_sweep_idx`
+-- — but this is a 1-5 user appliance, so that column discards almost nothing,
+-- while `id = ANY(...)` in the slice load wants `id` leading. A partial
+-- `WHERE id IS NOT NULL` would be smaller, but 0 of 65,115 rows carry a NULL
+-- `id` today, so it would buy nothing and would silently stop serving the
+-- lookup if that ever changed. Widen it when a measurement says to, not before
+-- — an index added against a number nobody measured is a write-time cost on
+-- every ci.position INSERT in exchange for nothing.
+--
+-- ## Idempotency
+--
+-- `IF NOT EXISTS`: a second run, or a run after an out-of-band CONCURRENTLY
+-- build, is a no-op. No row is read or written by this migration.
+--
+-- ## Verification, before and after
+--
+--   SELECT count(*) FROM timescaledb_information.chunks WHERE hypertable_name = 'position';
+--   EXPLAIN (ANALYZE, BUFFERS)
+--     SELECT id FROM ci.position
+--      WHERE user_id = '<uuid>' AND location IS NOT NULL AND id IS NOT NULL
+--        AND name IS NOT NULL AND btrim(name) <> '' AND id > '<uuid>'
+--      ORDER BY id LIMIT 200;
+--   -- before: Seq Scan across all chunks + Sort. after: Index Scan on position_id_idx.
+CREATE INDEX IF NOT EXISTS position_id_idx ON ci.position (id);
+
+COMMENT ON INDEX ci.position_id_idx IS
+  'Keyset-sweep and slice-load support for the pipeline stages sourced from ci.position (enrich.position_reverse, promote.place_position): PipelineStateService.selectStale orders by id, and both stages load a slice with id = ANY(...). Without it every sweep hop scans every chunk. Drop it only alongside the last stage sourced from this table.';
+
+-- migrate:down
+DROP INDEX IF EXISTS ci.position_id_idx;
