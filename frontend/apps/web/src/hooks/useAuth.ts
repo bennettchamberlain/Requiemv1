@@ -526,20 +526,25 @@ function useAuth(): ReturnValue {
     };
 
     void (async () => {
+      // Subscribe first. iOS can deliver the Safari return as `appUrlOpen`
+      // while `getLaunchUrl` is still awaiting; that event is dropped if the
+      // listener is not up yet. Duplicate URLs are de-duped via `seenCodes`.
+      const cleanup = await addAppUrlOpenListener(handleUrl);
+
+      if (cancelled) {
+        cleanup();
+
+        return;
+      }
+
+      unsubscribe = cleanup;
+
       if (isIosPlatform()) {
         const launched = await getLaunchUrl();
 
         if (!cancelled && launched) {
           handleUrl(launched);
         }
-      }
-
-      const cleanup = await addAppUrlOpenListener(handleUrl);
-
-      if (cancelled) {
-        cleanup();
-      } else {
-        unsubscribe = cleanup;
       }
     })();
 

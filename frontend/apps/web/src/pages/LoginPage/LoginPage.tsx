@@ -1,7 +1,8 @@
 import type { BaseSyntheticEvent } from 'react';
 import { useState } from 'react';
 
-import { Button, Card, Separator } from '@ci/shadcn';
+import { Alert, Button, Card, Separator } from '@ci/shadcn';
+import { AlertCircleIcon } from '@ci/shadcn/icons';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 
 import { OidcButton } from '@/components/OidcButton';
@@ -10,7 +11,7 @@ import { useAuth } from '@/hooks';
 import { LoginForm, type LoginFormData } from './LoginForm';
 
 export function LoginPage() {
-  const [, { login }] = useAuth();
+  const [{ error }, { login }] = useAuth();
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const oidcError = searchParams.get('error');
@@ -39,7 +40,13 @@ export function LoginPage() {
         </Card.Header>
 
         <Card.Content>
-          {oidcError && (
+          {error != null && !showPasswordForm && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertCircleIcon />
+              <Alert.Title>{error instanceof Error ? error.message : 'Sign in failed. Please try again.'}</Alert.Title>
+            </Alert>
+          )}
+          {oidcError && error == null && (
             <p className="text-destructive mb-4 text-center text-sm">Sign in failed. Please try again.</p>
           )}
 

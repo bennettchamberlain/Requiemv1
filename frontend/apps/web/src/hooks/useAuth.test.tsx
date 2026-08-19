@@ -493,6 +493,7 @@ describe('useAuth', () => {
 
     await waitFor(() => expect(result.current[0].authenticated).toBe(true));
     expect(getLaunchUrl).toHaveBeenCalled();
+    expect(addListener.mock.invocationCallOrder[0]!).toBeLessThan(getLaunchUrl.mock.invocationCallOrder[0]!);
     expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/api/authenticate/oidc/native/exchange'))).toBe(
       true,
     );
