@@ -90,6 +90,20 @@ export function ImportSurface({ variant = 'page', onStageChange }: ImportSurface
           picker and the pinned Continue at 1280×800 — the region scrolls inside
           whatever that comes to.
 
+          MEASURED, not estimated. At 1280x800 this column is 440px. The old
+          `50%` cap took 220px of it; the step row takes 66px; and the wizard
+          lays out search 38px + grid + Continue 56px in what is left — which
+          came to a grid of ZERO. The picker is the DEFAULT step of this page,
+          so the region built to show an import in flight made the page's main
+          control unusable while one ran. (At 1512x982 the same cap left the
+          grid 74px — under two rows.)
+          A fixed ceiling, not a percentage: the thing that has to survive is
+          the picker's grid, whose rows are a fixed height, so the share that
+          may be spent above it is fixed too, not proportional. 8.5rem = 136px
+          keeps the summary line and the first run visible while leaving the
+          grid ~150px; everything past that scrolls inside the region, which is
+          what its internal `min-h-0 flex-1` list is for.
+
           Below `sm` there is deliberately NO cap: a phone gives this column
           about 200px, half of which is less than the region's own heading, so
           capping there clipped the summary mid-sentence and left no room for a
@@ -97,7 +111,7 @@ export function ImportSurface({ variant = 'page', onStageChange }: ImportSurface
           what it has to say. The Jobs page passes no cap for the same reason —
           there the page itself scrolls, and clipping the region would hide the
           very thing an operator opened it to read. */}
-      <ImportActivity className="max-h-none sm:max-h-[50%]" />
+      <ImportActivity className="max-h-none sm:max-h-[8.5rem]" />
 
       {/* ONE navigation row, not two. The wizard's step buttons used to sit in
           a row of their own directly under an Import/Inbox/History tab bar —
