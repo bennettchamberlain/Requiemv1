@@ -7,6 +7,7 @@ import {
   ErrorState,
   ListSkeleton,
   MemoryEmptyState,
+  formatLoadedCount,
   formatRowTime,
   getEntityTimestamp,
   groupEntitiesByBucket,
@@ -31,8 +32,10 @@ import { PlaceRow } from './rows/PlaceRow';
 import { ThreadRow } from './rows/ThreadRow';
 
 export function ListView() {
-  const [{ data, loading, hasNextPage, loadingMore, loadMore, error, refetch }, { setActiveEntity }] =
-    useEntityService();
+  const [
+    { data, loading, hasNextPage, loadingMore, loadMore, error, refetch, totalCount },
+    { setActiveEntity },
+  ] = useEntityService();
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -67,6 +70,8 @@ export function ListView() {
     searchParams.get('sortBy'),
     Boolean(searchParams.get('search')?.trim()),
   );
+  // groupEntitiesByBucket already collects undated entities into one trailing
+  // group; the flat (relevance/name-sorted) branch keeps the server's order.
   const groups = useMemo(() => (grouped ? groupEntitiesByBucket(data) : null), [grouped, data]);
   const filteredBrowse = countActiveFilters(searchParams) > 0 || Boolean(searchParams.get('search')?.trim());
 
@@ -177,7 +182,7 @@ export function ListView() {
       {hasNextPage && <div ref={sentinelRef} className="h-8" />}
 
       <div className="py-3 text-center text-xs text-muted-foreground">
-        {data.length} loaded{loadingMore ? ' · loading…' : hasNextPage ? '' : ' · end'}
+        {formatLoadedCount({ loaded: data.length, totalCount, loadingMore, hasNextPage })}
       </div>
     </div>
   );

@@ -1,12 +1,13 @@
 import { BadRequestException, UseGuards } from '@nestjs/common';
-import { Args, ID, Parent, Query, Mutation, Resolver, ResolveField } from '@nestjs/graphql';
+import { Args, Float, ID, Parent, Query, Mutation, Resolver, ResolveField } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { CreateContentInput } from '@ci/domains/graphql/types/CreateContentInput';
 import { UpdateContentInput } from '@ci/domains/graphql/types/UpdateContentInput';
-import { ContentService } from '@ci/domains/memory';
+import { ContentService, classifyExternalId } from '@ci/domains/memory';
 
+import { type ContentFileMedia, ContentFileLoader } from '../loaders/ContentFileLoader';
 import { EventLoader } from '../loaders/EventLoader';
 import { TagLoader } from '../loaders/TagLoader';
 import { ContentConnection } from '../types/ContentConnection';
@@ -16,6 +17,7 @@ import { EntityTagType } from '../types/EntityTagType';
 import { EventType } from '../types/EventType';
 import { GlobalUID } from '../types/GlobalUID';
 import { PaginationArgs } from '../types/PaginationArgs';
+import { entityOwnerScope } from '../utils/entityOwnerScope';
 
 /**
  * Upper bound on rows accepted by a single createContents call. The batch runs
@@ -52,6 +54,7 @@ export class ContentResolver {
     private readonly contentService: ContentService,
     private readonly tagLoader: TagLoader,
     private readonly eventLoader: EventLoader,
+    private readonly contentFileLoader: ContentFileLoader,
   ) {}
 
   /**
@@ -236,6 +239,54 @@ export class ContentResolver {
     const event = await this.eventLoader.load(serviceContext, parent.__source.event.id);
 
     return event ? EventType.toType(event) : null;
+  }
+
+  /**
+   * Resolve the file a media content row points at (null for every other row).
+   *
+   * `external_id` is structurally overloaded — it holds a `ci.files.id` only
+   * when `external_id_kind` says 'file'. Unclassified rows (NULL kind, written
+   * before migration 20260818215331) are re-tested by shape via
+   * {@link classifyExternalId} rather than assumed to be file ids, matching what
+   * ContentService.findMediaFilesByEventIds does on the event side. The three
+   * media fields below share this one DataLoader call, so a page of content
+   * rows resolves its binaries in a single batch.
+   */
+  private resolveFileMedia(context: RequestContext, parent: ContentType): Promise<ContentFileMedia | null> {
+    const { externalId, externalIdKind, userId } = parent.__source;
+
+    if (!externalId) {
+      return Promise.resolve(null);
+    }
+
+    const kind = externalIdKind ?? classifyExternalId(externalId);
+
+    if (kind !== 'file') {
+      return Promise.resolve(null);
+    }
+
+    return this.contentFileLoader.load(entityOwnerScope(context, userId), externalId);
+  }
+
+  /** Thumbnail (PREVIEW variant) URL of the linked file, when one exists. */
+  @ResolveField(() => String, { nullable: true })
+  async previewUrl(
+    @Context() context: RequestContext,
+    @Parent() parent: ContentType,
+  ): Promise<string | null> {
+    return (await this.resolveFileMedia(context, parent))?.previewUrl ?? null;
+  }
+
+  /** Full-resolution (ORIGINAL variant) URL of the linked file. */
+  @ResolveField(() => String, { nullable: true })
+  async mediaUrl(@Context() context: RequestContext, @Parent() parent: ContentType): Promise<string | null> {
+    return (await this.resolveFileMedia(context, parent))?.mediaUrl ?? null;
+  }
+
+  /** Byte size of the linked ORIGINAL. */
+  @ResolveField(() => Float, { nullable: true })
+  async mediaSize(@Context() context: RequestContext, @Parent() parent: ContentType): Promise<number | null> {
+    return (await this.resolveFileMedia(context, parent))?.size ?? null;
   }
 
   @ResolveField(() => [EntityTagType])

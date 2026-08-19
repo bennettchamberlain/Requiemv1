@@ -19,7 +19,13 @@ import {
   ThreadGridItem,
 } from '@/components/entities';
 
-import { ErrorState, MemoryEmptyState } from '../Components';
+import {
+  ErrorState,
+  MemoryEmptyState,
+  formatLoadedCount,
+  isChronologicalSort,
+  orderDatedFirst,
+} from '../Components';
 import { countActiveFilters } from '../Components/ExplorerToolbar/filterParams';
 import { useEntityService } from '../useEntityService';
 
@@ -32,14 +38,30 @@ export function GalleryView() {
   const [searchParams] = useSearchParams();
   const filteredBrowse = countActiveFilters(searchParams) > 0 || Boolean(searchParams.get('search')?.trim());
 
-  const [{ data, loading, hasNextPage, loadingMore, loadMore, error, refetch }, { setActiveEntity }] =
-    useEntityService();
+  const [
+    { data, loading, hasNextPage, loadingMore, loadMore, error, refetch, totalCount },
+    { setActiveEntity },
+  ] = useEntityService();
+
+  // Under a chronological sort, entities the client cannot date (Content,
+  // Person, Place, Item, … — the server orders them by row-write time, which a
+  // bulk import parks at the very front) go to the back of the grid, mirroring
+  // the trailing "No date" group ListView renders. A relevance/name sort has no
+  // date axis to fall off, so its order is left alone.
+  const ordered = useMemo(() => {
+    const chronological = isChronologicalSort(
+      searchParams.get('sortBy'),
+      Boolean(searchParams.get('search')?.trim()),
+    );
+
+    return chronological ? orderDatedFirst(data) : data;
+  }, [data, searchParams]);
 
   // Ordered list of media-bearing entities (images/video). It drives the
   // lightbox and lets a tile look up its position for arrow navigation.
   const mediaEntries = useMemo(
-    () => data.map(getEntityMedia).filter((m): m is EntityMedia => m != null),
-    [data],
+    () => ordered.map(getEntityMedia).filter((m): m is EntityMedia => m != null),
+    [ordered],
   );
   const mediaIndexById = useMemo(() => {
     const map = new Map<string, number>();
@@ -106,7 +128,7 @@ export function GalleryView() {
     <>
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         <EntityGrid>
-          {data.map((item) => {
+          {ordered.map((item) => {
             // Media-bearing entities (image/video) render as real thumbnails and
             // open the lightbox; everything else keeps its clean text tile and
             // opens the shared details drawer (incl. non-media File/Item).
@@ -200,7 +222,7 @@ export function GalleryView() {
         {hasNextPage && <div ref={sentinelRef} className="h-8" />}
 
         <div className="py-3 text-center text-xs text-muted-foreground">
-          {data.length} loaded{loadingMore ? ' · loading…' : hasNextPage ? '' : ' · end'}
+          {formatLoadedCount({ loaded: data.length, totalCount, loadingMore, hasNextPage })}
         </div>
       </div>
 

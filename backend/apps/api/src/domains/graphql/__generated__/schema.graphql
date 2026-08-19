@@ -416,7 +416,10 @@ type ContentType implements Node & Taggable {
   event: EventType
   externalId: String
   id: ID!
+  mediaSize: Float
+  mediaUrl: String
   mimetype: String
+  previewUrl: String
   sourceData: JSON
   sourceUrl: String
   tags: [EntityTagType!]!

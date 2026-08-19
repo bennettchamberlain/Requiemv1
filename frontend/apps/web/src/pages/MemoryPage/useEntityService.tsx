@@ -41,6 +41,9 @@ const SEARCH_QUERY = gql(`
             galleryFilename: filename
             galleryPreviewUrl: previewUrl
             gallerySourceUrl: sourceUrl
+            # Original byte size, so a tile can decline to use a huge original
+            # as its thumbnail when no PREVIEW variant has been generated.
+            galleryMediaSize: size
           }
 
           ... on ContentType {
@@ -48,6 +51,13 @@ const SEARCH_QUERY = gql(`
             galleryTitle: title
             galleryContentUrl: url
             galleryContentSourceUrl: sourceUrl
+            # Media content rows carry no url/sourceUrl of their own — the
+            # binary is reachable only through external_id -> ci.files, which
+            # ContentResolver resolves into these three fields (mirrors the
+            # EventType media aliases below).
+            galleryPreviewUrl: previewUrl
+            galleryFileUrl: mediaUrl
+            galleryMediaSize: mediaSize
           }
 
           ...AnswerGridItemData
@@ -116,6 +126,7 @@ const SEARCH_QUERY = gql(`
             galleryMediaContentType: mediaContentType
             galleryPreviewUrl: previewUrl
             gallerySourceUrl: mediaUrl
+            galleryMediaSize: mediaSize
             galleryTitle: title
             galleryLocationName: locationName
           }

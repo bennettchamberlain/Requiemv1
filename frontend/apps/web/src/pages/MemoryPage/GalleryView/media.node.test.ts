@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { EntityItem } from '../useEntityService';
 
-import { getEntityMedia } from './media';
+import { MAX_UNPREVIEWED_THUMB_BYTES, getEntityMedia, pickThumbUrl } from './media';
 
 // The real EntityItem is a large masked GraphQL union; tests only need the
 // fields getEntityMedia reads, so build minimal shapes and cast.
@@ -45,8 +45,9 @@ describe('getEntityMedia', () => {
 
       expect(media?.kind).toBe('video');
       expect(media?.fullUrl).toBe('https://cdn.example.com/v.mp4');
-      // No preview → thumb falls back to the full URL.
-      expect(media?.thumbUrl).toBe('https://cdn.example.com/v.mp4');
+      // A preview-less video never becomes the tile's <img> source — the tile
+      // draws the placeholder instead of downloading a file it cannot decode.
+      expect(media?.thumbUrl).toBeNull();
     });
 
     it('defaults the title to "Untitled" when no filename is present', () => {
@@ -83,6 +84,66 @@ describe('getEntityMedia', () => {
   });
 
   describe('ContentType', () => {
+    // The importer's media pass writes these: type='media', no url/sourceUrl at
+    // all, the binary reachable only through external_id -> ci.files, which the
+    // server resolves into galleryFileUrl + galleryPreviewUrl. Reading only
+    // url/sourceUrl left 10,987 image rows as blank tiles.
+    it('resolves a media row from the linked file, preferring the PREVIEW variant', () => {
+      const media = getEntityMedia(
+        entity({
+          __typename: 'ContentType',
+          id: 'c-media',
+          galleryMimetype: 'image/jpeg',
+          galleryContentUrl: null,
+          galleryContentSourceUrl: null,
+          galleryFileUrl: '/files/IMGP0463.JPG',
+          galleryPreviewUrl: '/files/IMGP0463-thumb.jpg',
+          galleryTitle: 'IMGP0463.JPG',
+        }),
+      );
+
+      expect(media).toEqual({
+        entityId: 'c-media',
+        kind: 'image',
+        contentType: 'image/jpeg',
+        thumbUrl: '/static/files/IMGP0463-thumb.jpg',
+        fullUrl: '/static/files/IMGP0463.JPG',
+        title: 'IMGP0463.JPG',
+      });
+    });
+
+    it('falls back to the linked original when the file has no PREVIEW variant', () => {
+      const media = getEntityMedia(
+        entity({
+          __typename: 'ContentType',
+          id: 'c-no-preview',
+          galleryMimetype: 'image/jpeg',
+          galleryFileUrl: '/files/no-preview.jpg',
+          galleryPreviewUrl: null,
+          galleryMediaSize: 512 * 1024,
+        }),
+      );
+
+      expect(media?.thumbUrl).toBe('/static/files/no-preview.jpg');
+      expect(media?.fullUrl).toBe('/static/files/no-preview.jpg');
+    });
+
+    // A web-content row (bookmark thumbnail, oEmbed image) still carries its
+    // own url — the file hop must not shadow it.
+    it('still resolves a content row that carries its own url', () => {
+      const media = getEntityMedia(
+        entity({
+          __typename: 'ContentType',
+          id: 'c-web',
+          galleryMimetype: 'image/png',
+          galleryContentUrl: 'https://example.com/thumb.png',
+          galleryFileUrl: null,
+        }),
+      );
+
+      expect(media?.fullUrl).toBe('https://example.com/thumb.png');
+    });
+
     it('resolves an image with thumb equal to full (no preview variant)', () => {
       const media = getEntityMedia(
         entity({
@@ -280,5 +341,53 @@ describe('getEntityMedia', () => {
 
   it('returns null for entity types without media', () => {
     expect(getEntityMedia(entity({ __typename: 'PersonType', id: 'p1' }))).toBeNull();
+  });
+});
+
+describe('pickThumbUrl', () => {
+  const full = 'https://cdn.example.com/original.jpg';
+
+  it('always prefers the PREVIEW variant', () => {
+    expect(pickThumbUrl({ kind: 'image', previewUrl: '/preview.jpg', fullUrl: full, sizeBytes: 1e9 })).toBe(
+      '/preview.jpg',
+    );
+  });
+
+  it('uses the original for a preview-less image of workable size', () => {
+    expect(pickThumbUrl({ kind: 'image', previewUrl: null, fullUrl: full, sizeBytes: 1024 })).toBe(full);
+  });
+
+  it('uses the original when the size is unknown', () => {
+    expect(pickThumbUrl({ kind: 'image', previewUrl: null, fullUrl: full, sizeBytes: null })).toBe(full);
+  });
+
+  // The largest original in a real corpus here is ~2 GB; the browser would
+  // download all of it to paint a 240px tile.
+  it('declines an oversized original as a thumbnail', () => {
+    expect(
+      pickThumbUrl({
+        kind: 'image',
+        previewUrl: null,
+        fullUrl: full,
+        sizeBytes: MAX_UNPREVIEWED_THUMB_BYTES + 1,
+      }),
+    ).toBeNull();
+    expect(
+      pickThumbUrl({
+        kind: 'image',
+        previewUrl: null,
+        fullUrl: full,
+        sizeBytes: MAX_UNPREVIEWED_THUMB_BYTES,
+      }),
+    ).toBe(full);
+  });
+
+  it('never hands a video source to the tile image', () => {
+    expect(
+      pickThumbUrl({ kind: 'video', previewUrl: null, fullUrl: '/clip.mp4', sizeBytes: 1024 }),
+    ).toBeNull();
+    expect(
+      pickThumbUrl({ kind: 'video', previewUrl: '/clip-thumb.jpg', fullUrl: '/clip.mp4', sizeBytes: null }),
+    ).toBe('/clip-thumb.jpg');
   });
 });
