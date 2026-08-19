@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 
-import { Button } from '@ci/shadcn';
+import { useQuery } from '@apollo/client';
+import { Button, cn } from '@ci/shadcn';
 import { Calendar, Clock, Loader2, MapPin, Search as SearchIcon, X } from '@ci/shadcn/icons';
 import L, { type LatLngExpression } from 'leaflet';
 import { Marker as LeafletMarker, Popup, useMap as useLeafletMap, useMapEvents } from 'react-leaflet';
@@ -8,14 +9,18 @@ import { useSearchParams } from 'react-router-dom';
 
 import { Map } from '@/components/Map';
 import { type MarkerVariant } from '@/components/Map/Marker';
+import { gql, useFragment } from '@/graphql';
 
 import { useEntityService, type EntityItem } from '../../MemoryPage/useEntityService';
 import { boundsToBbox, bboxCenter, formatBbox, parseBbox } from '../bbox';
-import { formatEventTimeRange } from '../Components';
+import { Empty, ErrorState, formatEventTimeRange } from '../Components';
+import { EVENT_FRAGMENT } from '../Components/EntityCard/EventCard';
+import { countActiveFilters } from '../Components/ExplorerToolbar/filterParams';
 import { TimelineView } from '../TimelineView';
 
 import { clusterDiameterPx, mergeCollidingClusters, type PixelCluster } from './clusterOverlap';
 import { readCoordinates, readGeoJsonPoint } from './mapCoordinates';
+import { fitSignature, pinsInBounds, routePoints } from './pinSet';
 import './memory-map.css';
 
 // Colour/icon-code each marker by what it represents, like the old LifeScope map.
@@ -37,6 +42,76 @@ const MARKER_VARIANT_BY_TYPENAME: Record<string, MarkerVariant> = {
 function markerVariant(entity: EntityItem): MarkerVariant {
   return MARKER_VARIANT_BY_TYPENAME[entity.__typename] ?? 'default';
 }
+
+/**
+ * Every located event for the current filters, in one bounded read.
+ *
+ * NOT the explorer feed. The map used to plot `useEntityService`'s page of 30
+ * (`PAGE_SIZE`), which meant ~350 presses of "Load more pins" to see a library
+ * of ten thousand located events — and each new page landed outside the
+ * viewport that had been fitted to the first one. `mapPins` answers the whole
+ * located set for the same filters at once, projected down to a point and a
+ * label; the pins are clustered client-side and the detail of any one event is
+ * fetched when the user opens it.
+ */
+const MAP_PINS_QUERY = gql(`
+  query MapPins($query: String!, $includeTypes: [String!], $excludeTypes: [String!], $eventTypes: [String!], $tags: [String!], $startTime: String, $endTime: String, $connectors: [String!], $people: [String!], $places: [String!], $bbox: [Float!], $semantic: Boolean) {
+    mapPins(
+      input: { query: $query, includeTypes: $includeTypes, excludeTypes: $excludeTypes, eventTypes: $eventTypes, tags: $tags, startTime: $startTime, endTime: $endTime, connectors: $connectors, people: $people, places: $places, bbox: $bbox, semantic: $semantic }
+    ) {
+      totalCount
+      truncated
+      pins {
+        id
+        title
+        latitude
+        longitude
+        startTime
+        endTime
+        eventType
+        locationName
+      }
+    }
+  }
+`);
+
+/**
+ * The event behind a pin, fetched only when one is opened.
+ *
+ * This is the other half of the slim-pin trade: the detail sheet wants the same
+ * hydrated event an explorer row carries, and paying for that up front for
+ * every pin is what the pin cap was protecting us from. One pin, one fetch, on
+ * click.
+ */
+const MAP_PIN_EVENT_QUERY = gql(`
+  query MapPinEvent($id: ID!) {
+    event(id: $id) {
+      ...TimelineEventCardData
+      eventType
+      # Aliased to the key EventDetails reads first for the location line.
+      mapCoordinates: locationCoordinates
+    }
+  }
+`);
+
+/**
+ * A drawable marker, whatever it came from.
+ *
+ * `entity` is the hydrated explorer node when the pin came from the shared
+ * result set (the read-only /shared viewer, which has no `mapPins` access and
+ * keeps reading the owner's feed), and null when it came from `mapPins` — in
+ * which case opening it fetches the event by id.
+ */
+type Pin = {
+  id: string;
+  coords: { lat: number; lng: number };
+  title: string;
+  timeLabel: string | null;
+  /** Sort key (epoch ms) — the route line follows visit order, not latitude. */
+  sortTime: number;
+  variant: MarkerVariant;
+  entity: EntityItem | null;
+};
 
 /**
  * Resolve a marker position for any entity in the explorer result set. Events
@@ -72,8 +147,6 @@ function entityTime(entity: EntityItem): number {
   return date && !isNaN(date.getTime()) ? date.getTime() : 0;
 }
 
-type LocatedEntity = { entity: EntityItem; coords: { lat: number; lng: number } };
-
 // The map needs hasLocation:true so every fetched page yields pins (the shared
 // result set is otherwise dominated by un-located rows). This is now derived
 // from `?view=map` in MemoryPage rather than written here as a separate
@@ -82,48 +155,141 @@ type LocatedEntity = { entity: EntityItem; coords: { lat: number; lng: number } 
 // snapped the route back). The server still routes hasLocation through its event
 // filter, so the map is an events-only surface — hence "Search events in this area".
 
-function useLocatedEntities() {
-  const [{ data, hasNextPage, loadingMore, loadMore }, { setActiveEntity }] = useEntityService();
+/** Pins from the map's own `mapPins` read — the signed-in user's whole located set. */
+function useMapPins({ skip }: { skip: boolean }) {
+  const [{ searchVariables }] = useEntityService();
+  // Paging and the explorer-only knobs (sort order, includeFiles, hasLocation —
+  // which mapPins forces on) are dropped: the map asks for a set, not a page.
+  const {
+    query,
+    includeTypes,
+    excludeTypes,
+    eventTypes,
+    tags,
+    startTime,
+    endTime,
+    connectors,
+    people,
+    places,
+    bbox,
+    semantic,
+  } = searchVariables;
 
-  const located = useMemo<LocatedEntity[]>(() => {
-    return data
-      .map((entity) => ({ entity, coords: getEntityCoordinates(entity) }))
-      .filter((item): item is LocatedEntity => item.coords != null)
-      .sort((a, b) => entityTime(a.entity) - entityTime(b.entity));
+  const { data, loading, error, refetch } = useQuery(MAP_PINS_QUERY, {
+    variables: {
+      query,
+      includeTypes,
+      excludeTypes,
+      eventTypes,
+      tags,
+      startTime,
+      endTime,
+      connectors,
+      people,
+      places,
+      bbox,
+      semantic,
+    },
+    fetchPolicy: 'cache-and-network',
+    notifyOnNetworkStatusChange: true,
+    skip,
+  });
+
+  const pins = useMemo<Pin[]>(() => {
+    const rows = data?.mapPins?.pins ?? [];
+
+    return rows
+      .map((pin) => ({
+        id: pin.id,
+        coords: { lat: pin.latitude, lng: pin.longitude },
+        title: pin.title || 'Untitled event',
+        timeLabel: pin.startTime ? formatEventTimeRange(pin.startTime, pin.endTime) : null,
+        sortTime: pin.startTime ? new Date(pin.startTime).getTime() : 0,
+        variant: 'event' as MarkerVariant,
+        entity: null,
+      }))
+      .sort((a, b) => a.sortTime - b.sortTime);
   }, [data]);
 
-  // Route polyline input: each located entity's own coordinates, in visit-time
-  // order (`located` is already time-sorted). Driving routes from these points —
-  // rather than the markers Leaflet has on the map — keeps cluster centroids out
-  // of the path and orders segments by time instead of latitude.
-  const routeLocations = useMemo<LatLngExpression[]>(
-    () => located.map((item) => [item.coords.lat, item.coords.lng]),
-    [located],
-  );
+  const refetchPins = useCallback(() => {
+    void refetch();
+  }, [refetch]);
 
-  return { located, routeLocations, setActiveEntity, hasNextPage, loadingMore, loadMore };
+  return {
+    pins,
+    loading,
+    error: error != null,
+    refetch: refetchPins,
+    totalCount: data?.mapPins?.totalCount ?? 0,
+    truncated: data?.mapPins?.truncated ?? false,
+  };
+}
+
+/**
+ * Pins derived from the shared explorer feed — the read-only /shared viewer's
+ * path. A shared saved search resolves as its owner through `search`, so its
+ * map keeps reading that feed (and its "Load more pins" control) rather than
+ * `mapPins`, which answers for the signed-in caller's own memories.
+ */
+function useFeedPins() {
+  const [{ data, loading, error }] = useEntityService();
+
+  const pins = useMemo<Pin[]>(() => {
+    return data
+      .map((entity) => ({ entity, coords: getEntityCoordinates(entity) }))
+      .filter((item): item is { entity: EntityItem; coords: { lat: number; lng: number } } => {
+        return item.coords != null;
+      })
+      .map(({ entity, coords }) => ({
+        id: entity.id,
+        coords,
+        title: clusterItemTitle(entity),
+        timeLabel: clusterItemTime(entity),
+        sortTime: entityTime(entity),
+        variant: markerVariant(entity),
+        entity,
+      }))
+      .sort((a, b) => a.sortTime - b.sortTime);
+  }, [data]);
+
+  return { pins, loading, error: error != null };
 }
 
 // ── Marker clustering ───────────────────────────────────────────────────────
 // Dense areas would otherwise render hundreds of overlapping pins. We bucket
-// located entities into a fixed pixel grid at the current zoom (cluster
-// membership is stable under panning — only zoom reprojects — so we only
-// recompute on zoom). Buckets of one render the normal entity pin; larger
-// buckets render a count bubble that zooms to fit its members on click.
+// the pins IN THE CURRENT VIEWPORT into a fixed pixel grid at the current zoom.
+// Buckets of one render the normal entity pin; larger buckets render a count
+// bubble that zooms to fit its members on click.
 //
 // The grid alone is not enough: its edges are hard, so two dense neighbouring
 // cells can place their centroids a few pixels apart and draw one bubble on top
 // of another. Everything below therefore works in PROJECTED PIXELS — the space
 // the collision actually happens in — and mergeCollidingClusters folds any two
 // markers whose discs would touch into one before we unproject back to lat/lng.
+//
+// Viewport-scoping is what makes this safe now that the map holds the whole
+// located set rather than a page of 30: mergeCollidingClusters compares every
+// surviving pair once per merge, so its cost is quadratic in the CLUSTER count.
+// A screen holds at most (width/80)·(height/80) grid cells — a few hundred —
+// however many pins the set has, whereas clustering ten thousand scattered pins
+// at street zoom would have produced ten thousand clusters and hung the tab.
 const CLUSTER_CELL_PX = 80;
+// Pad the viewport so a pin just off-screen is already clustered when it pans
+// in, instead of popping into existence at the edge.
+const VIEWPORT_PAD = 0.25;
 
-type Cluster = { id: string; lat: number; lng: number; items: LocatedEntity[] };
+/**
+ * Most recent pins the route line will connect. See `useMapView.routeLocations`
+ * — every consecutive pair costs one Google Directions request.
+ */
+const MAX_ROUTE_POINTS = 50;
 
-function clusterize(map: L.Map, located: LocatedEntity[], zoom: number): Cluster[] {
-  const cells = new globalThis.Map<string, PixelCluster<LocatedEntity>>();
+type Cluster = { id: string; lat: number; lng: number; items: Pin[] };
 
-  for (const item of located) {
+function clusterize(map: L.Map, pins: Pin[], zoom: number): Cluster[] {
+  const cells = new globalThis.Map<string, PixelCluster<Pin>>();
+
+  for (const item of pins) {
     const point = map.project([item.coords.lat, item.coords.lng], zoom);
     const key = `${Math.floor(point.x / CLUSTER_CELL_PX)}:${Math.floor(point.y / CLUSTER_CELL_PX)}`;
     const bucket = cells.get(key);
@@ -226,35 +392,31 @@ function ClusterPopupContent({
   onZoom,
 }: {
   cluster: Cluster;
-  onSelect: (entity: EntityItem) => void;
+  onSelect: (pin: Pin) => void;
   onZoom: () => void;
 }) {
   return (
     <div className="w-72 overflow-hidden text-card-foreground" onClick={(event) => event.stopPropagation()}>
       <div className="max-h-72 overflow-y-auto py-2">
-        {cluster.items.map(({ entity }) => {
-          const time = clusterItemTime(entity);
-
-          return (
-            <button
-              key={entity.id}
-              type="button"
-              className="flex w-full items-start gap-2 px-3 py-2 text-left text-card-foreground transition-colors duration-150 hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-              onClick={() => onSelect(entity)}
-            >
-              <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium">{clusterItemTitle(entity)}</span>
-                {time && (
-                  <span className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                    <Clock className="h-3 w-3" />
-                    {time}
-                  </span>
-                )}
-              </span>
-            </button>
-          );
-        })}
+        {cluster.items.map((pin) => (
+          <button
+            key={pin.id}
+            type="button"
+            className="flex w-full items-start gap-2 px-3 py-2 text-left text-card-foreground transition-colors duration-150 hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            onClick={() => onSelect(pin)}
+          >
+            <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium">{pin.title}</span>
+              {pin.timeLabel && (
+                <span className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                  <Clock className="h-3 w-3" />
+                  {pin.timeLabel}
+                </span>
+              )}
+            </span>
+          </button>
+        ))}
       </div>
 
       <div className="border-t border-border p-0">
@@ -276,15 +438,15 @@ function ClusterMarker({
   position: [number, number];
   count: number;
   cluster: Cluster;
-  onSelect: (entity: EntityItem) => void;
+  onSelect: (pin: Pin) => void;
   onZoom: () => void;
 }) {
   const map = useLeafletMap();
   const icon = useMemo(() => makeClusterIcon(count), [count]);
   const handleSelect = useCallback(
-    (entity: EntityItem) => {
+    (pin: Pin) => {
       map.closePopup();
-      onSelect(entity);
+      onSelect(pin);
     },
     [map, onSelect],
   );
@@ -323,37 +485,45 @@ function zoomToCluster(map: L.Map, cluster: Cluster) {
 }
 
 function ClusteredMarkers({
-  located,
+  pins,
   onSelect,
-  onHoverEntity,
+  onHoverPin,
 }: {
-  located: LocatedEntity[];
-  onSelect: (entity: EntityItem) => void;
-  onHoverEntity?: (entity: EntityItem | null) => void;
+  pins: Pin[];
+  onSelect: (pin: Pin) => void;
+  onHoverPin?: (pin: Pin | null) => void;
 }) {
   const map = useLeafletMap();
-  const [zoom, setZoom] = useState(() => map.getZoom());
+  // One state for both, because clustering depends on both: zoom decides the
+  // projection, the viewport decides which pins are candidates at all.
+  const [view, setView] = useState(() => ({ zoom: map.getZoom(), bounds: map.getBounds() }));
 
-  useMapEvents({
-    zoomend: () => setZoom(map.getZoom()),
-  });
+  const syncView = useCallback(() => {
+    setView({ zoom: map.getZoom(), bounds: map.getBounds() });
+  }, [map]);
 
-  const clusters = useMemo(() => clusterize(map, located, zoom), [map, located, zoom]);
+  // `moveend` covers panning AND zooming (Leaflet fires it after a zoom too);
+  // `zoomend` is kept so a zoom with no pan still resyncs on every path.
+  useMapEvents({ moveend: syncView, zoomend: syncView });
+
+  const visible = useMemo(() => pinsInBounds(pins, view.bounds.pad(VIEWPORT_PAD)), [pins, view]);
+
+  const clusters = useMemo(() => clusterize(map, visible, view.zoom), [map, visible, view.zoom]);
 
   return (
     <>
       {clusters.map((cluster) => {
         if (cluster.items.length === 1) {
-          const { entity, coords } = cluster.items[0];
+          const pin = cluster.items[0];
 
           return (
             <Map.Marker
-              key={entity.id}
-              position={[coords.lat, coords.lng]}
-              variant={markerVariant(entity)}
-              onClick={() => onSelect(entity)}
-              onMouseEnter={() => onHoverEntity?.(entity)}
-              onMouseLeave={() => onHoverEntity?.(null)}
+              key={pin.id}
+              position={[pin.coords.lat, pin.coords.lng]}
+              variant={pin.variant}
+              onClick={() => onSelect(pin)}
+              onMouseEnter={() => onHoverPin?.(pin)}
+              onMouseLeave={() => onHoverPin?.(null)}
             />
           );
         }
@@ -457,15 +627,12 @@ function SearchAreaControl() {
   );
 }
 
-// ── "Load more pins" control ────────────────────────────────────────────────
-// Desktop's timeline panel pages in more results via an IntersectionObserver,
-// but only when its own cards scroll into view. Located-but-untimed entities
-// render no timeline card, so a result set short on timeline cards leaves the
-// panel too short to ever trip that sentinel — capping the map at the first page
-// even though more located entities exist server-side. Mobile has no timeline
-// panel at all, so without this it is hard-capped at page 1. This explicit
-// control pages in more results independently of the timeline; both the desktop
-// and mobile map views render it.
+// ── "Load more pins" control (shared-search viewer only) ────────────────────
+// The owner's map is not paged any more — `mapPins` answers the whole located
+// set — but the read-only /shared viewer still plots the owner's paginated feed,
+// where the desktop timeline panel's IntersectionObserver only pages when its
+// own cards scroll into view (and mobile has no panel at all). This keeps that
+// surface able to reach past page one.
 function LoadMorePinsControl({
   shown,
   hasNextPage,
@@ -508,24 +675,123 @@ function LoadMorePinsControl({
   );
 }
 
-// Fit the viewport to the located entities the first time they arrive, so the
-// pins are actually on screen — they're often scattered far from the default
-// center (different cities/countries), which is what made the map look empty.
-// Fits once: later pagination or the user's own panning won't yank the view.
-function FitBoundsOnce({ located }: { located: LocatedEntity[] }) {
+/**
+ * Says how much of the located set is on screen when the pin cap cut it short,
+ * so a partial world is never presented as the whole one.
+ */
+function PinCountNotice({ shown, totalCount }: { shown: number; totalCount: number }) {
+  return (
+    <div className="pointer-events-none absolute bottom-4 left-1/2 z-400 -translate-x-1/2">
+      <div className="rounded-md border border-border bg-card/90 px-3 py-1.5 text-xs text-muted-foreground shadow-md">
+        Showing {shown.toLocaleString()} of {totalCount.toLocaleString()} pins — narrow the dates, or search
+        this area, to see the rest.
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Loading / error / empty states for the map surface.
+ *
+ * Without these a failed query, a slow one and a filter combination that
+ * matches nothing all rendered the same thing: an empty world map at the
+ * default centre, indistinguishable from "you have no located memories". The
+ * desktop timeline panel carried its own states, but the mobile map has no
+ * panel at all, so it said nothing whatsoever.
+ */
+function MapStatusOverlay({
+  loading,
+  error,
+  empty,
+  filtered,
+  onRetry,
+  className,
+}: {
+  loading: boolean;
+  error: boolean;
+  empty: boolean;
+  filtered: boolean;
+  onRetry?: () => void;
+  className?: string;
+}) {
+  const stopPropagation = useCallback((el: HTMLDivElement | null) => {
+    if (el) {
+      L.DomEvent.disableClickPropagation(el);
+      L.DomEvent.disableScrollPropagation(el);
+    }
+  }, []);
+
+  if (!loading && !error && !empty) {
+    return null;
+  }
+
+  return (
+    <div
+      className={cn(
+        'pointer-events-none absolute inset-0 z-500 flex items-center justify-center p-6',
+        className,
+      )}
+    >
+      <div
+        ref={stopPropagation}
+        role="status"
+        aria-live="polite"
+        className="pointer-events-auto max-w-sm rounded-lg border border-border bg-card/95 p-2 shadow-lg backdrop-blur"
+      >
+        {loading ? (
+          <div className="flex items-center gap-3 px-4 py-3 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading your places…
+          </div>
+        ) : error ? (
+          <ErrorState
+            title="Couldn't load the map"
+            description="We couldn't load your located memories. Check your connection and try again."
+            onRetry={onRetry}
+            className="px-4 py-6"
+          />
+        ) : (
+          <Empty
+            title={filtered ? 'No located memories match these filters' : 'Nothing to map yet'}
+            description={
+              filtered
+                ? 'The map only shows memories that carry coordinates. Try widening the dates, clearing a filter, or clearing the searched area.'
+                : 'Memories appear here once something you import carries a location — a photo with GPS, a place visit, a calendar entry with an address.'
+            }
+            icon={filtered ? '🔍' : '🗺️'}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Fit the viewport to the pins whenever a NEW set arrives — pins are often
+ * scattered far from the default centre (different cities, countries), which is
+ * what made the map look empty.
+ *
+ * Keyed on the set rather than fitted once: the map used to fit its first page
+ * of 30 and never move again, so everything paged in afterwards landed
+ * off-screen with no indication. It no longer pages, but the set still changes
+ * when filters do, and a filter the user just applied should be what the
+ * viewport shows. Panning inside an unchanged set is never overridden.
+ */
+function FitBoundsToPins({ pins }: { pins: Pin[] }) {
   const map = useLeafletMap();
-  const fitted = useRef(false);
+  const fittedSignature = useRef<string | null>(null);
+  const signature = fitSignature(pins);
 
   useEffect(() => {
-    if (fitted.current || located.length === 0) {
+    if (signature === '' || fittedSignature.current === signature) {
       return;
     }
 
-    const points = located.map((item) => [item.coords.lat, item.coords.lng] as [number, number]);
+    const points = pins.map((pin) => [pin.coords.lat, pin.coords.lng] as [number, number]);
 
     map.fitBounds(L.latLngBounds(points), { padding: [60, 60], maxZoom: 13 });
-    fitted.current = true;
-  }, [located, map]);
+    fittedSignature.current = signature;
+  }, [signature, pins, map]);
 
   return null;
 }
@@ -536,7 +802,7 @@ function MapTimelineConnector({
   active,
   rowElementsRef,
 }: {
-  active: LocatedEntity | null;
+  active: Pin | null;
   rowElementsRef: MutableRefObject<globalThis.Map<string, HTMLDivElement>>;
 }) {
   const map = useLeafletMap();
@@ -549,7 +815,7 @@ function MapTimelineConnector({
       return;
     }
 
-    const row = rowElementsRef.current.get(active.entity.id);
+    const row = rowElementsRef.current.get(active.id);
 
     if (!row) {
       setLine(null);
@@ -579,7 +845,7 @@ function MapTimelineConnector({
   useEffect(() => {
     updateLine();
 
-    const row = active ? rowElementsRef.current.get(active.entity.id) : null;
+    const row = active ? rowElementsRef.current.get(active.id) : null;
     const scrollRoot = row?.closest('[data-radix-scroll-area-viewport]');
 
     scrollRoot?.addEventListener('scroll', updateLine, { passive: true });
@@ -611,19 +877,124 @@ function MapTimelineConnector({
   );
 }
 
+/**
+ * Everything a map view needs, resolved from whichever pin source applies.
+ *
+ * `readOnly` is the shared-search viewer: its results belong to the owner and
+ * only `search` can resolve them, so it keeps the feed-derived pins (and their
+ * paging control). The signed-in map reads `mapPins`.
+ */
+function useMapView(readOnly: boolean) {
+  const [{ hasNextPage, loadingMore, loadMore }, { setActiveEntity }] = useEntityService();
+  const feed = useFeedPins();
+  const owned = useMapPins({ skip: readOnly });
+  const [searchParams] = useSearchParams();
+
+  // Opening a pin from `mapPins` needs the hydrated event the detail sheet
+  // renders; the pin itself carries only what a marker draws.
+  const [openingPinId, setOpeningPinId] = useState<string | null>(null);
+  const { data: openingData, loading: openingLoading } = useQuery(MAP_PIN_EVENT_QUERY, {
+    variables: { id: openingPinId ?? '' },
+    skip: openingPinId == null,
+  });
+  // `useFragment` is the codegen unmasking cast, not a hook — at runtime this is
+  // the query's own event object, so the fields selected alongside the fragment
+  // (eventType, mapCoordinates) travel with it into the detail sheet.
+  const openingEvent = useFragment(EVENT_FRAGMENT, openingData?.event ?? null);
+
+  useEffect(() => {
+    if (openingPinId == null || openingLoading) {
+      return;
+    }
+
+    // The id check matters: Apollo can hand back the previously-opened event for
+    // a moment after the variables change, and opening pin B must never show
+    // event A. Either way the request is finished, so the pin stops pending —
+    // otherwise an event that no longer resolves would wedge the next open.
+    if (openingEvent != null && openingEvent.id === openingPinId) {
+      setActiveEntity({
+        ...openingEvent,
+        __typename: 'EventType',
+        bucketStartTime: openingEvent.startTime,
+      });
+    }
+
+    setOpeningPinId(null);
+  }, [openingEvent, openingLoading, openingPinId, setActiveEntity]);
+
+  const selectPin = useCallback(
+    (pin: Pin) => {
+      if (pin.entity != null) {
+        setActiveEntity(pin.entity);
+
+        return;
+      }
+
+      setOpeningPinId(pin.id);
+    },
+    [setActiveEntity],
+  );
+
+  const source = readOnly ? feed : owned;
+  const pins = source.pins;
+
+  // Route polyline input: the most recent pins' own coordinates, in visit-time
+  // order (`pins` is already time-sorted ascending). Driving routes from these
+  // points — rather than the markers Leaflet has on the map — keeps cluster
+  // centroids out of the path and orders segments by time instead of latitude.
+  //
+  // Hard-capped, and that cap is load-bearing: RouteLayer issues ONE billed
+  // Google Directions request per consecutive pair. The old 30-per-page feed
+  // kept that implicitly small; handing it a full ten-thousand-pin set would
+  // fire ten thousand sequential requests on every map load.
+  const routeLocations = useMemo<LatLngExpression[]>(() => routePoints(pins, MAX_ROUTE_POINTS), [pins]);
+
+  return {
+    pins,
+    routeLocations,
+    selectPin,
+    // First load only: a background refetch must not blank a map that is
+    // already showing pins.
+    loading: source.loading && pins.length === 0,
+    error: source.error && pins.length === 0,
+    empty: !source.loading && !source.error && pins.length === 0,
+    // "Filtered" drives the empty copy. The map's own Located scope is implicit
+    // (?view=map), so it is never counted as a user filter here.
+    filtered: countActiveFilters(searchParams) > 0 || Boolean(searchParams.get('search')?.trim()),
+    refetch: readOnly ? undefined : owned.refetch,
+    setActiveEntity,
+    truncated: !readOnly && owned.truncated,
+    totalCount: readOnly ? pins.length : owned.totalCount,
+    hasNextPage,
+    loadingMore,
+    loadMore,
+  };
+}
+
 export function DesktopMapView({ readOnly = false }: { readOnly?: boolean } = {}) {
-  const { located, routeLocations, setActiveEntity, hasNextPage, loadingMore, loadMore } =
-    useLocatedEntities();
+  const {
+    pins,
+    routeLocations,
+    selectPin,
+    loading,
+    error,
+    empty,
+    filtered,
+    refetch,
+    truncated,
+    totalCount,
+    hasNextPage,
+    loadingMore,
+    loadMore,
+    setActiveEntity,
+  } = useMapView(readOnly);
   const rowElementsRef = useRef(new globalThis.Map<string, HTMLDivElement>());
   const [hoveredEntityId, setHoveredEntityId] = useState<string | null>(null);
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
   const activeEntityId = hoveredEntityId ?? selectedEntityId;
 
-  const locatedById = useMemo(
-    () => new globalThis.Map(located.map((item) => [item.entity.id, item])),
-    [located],
-  );
-  const activeLocated = activeEntityId ? (locatedById.get(activeEntityId) ?? null) : null;
+  const pinsById = useMemo(() => new globalThis.Map(pins.map((pin) => [pin.id, pin])), [pins]);
+  const activePin = activeEntityId ? (pinsById.get(activeEntityId) ?? null) : null;
 
   const registerTimelineRow = useCallback((entityId: string, element: HTMLDivElement | null) => {
     if (element) {
@@ -637,12 +1008,24 @@ export function DesktopMapView({ readOnly = false }: { readOnly?: boolean } = {}
     setHoveredEntityId(entity?.id ?? null);
   }, []);
 
-  const handleEntitySelect = useCallback(
+  const handlePinHover = useCallback((pin: Pin | null) => {
+    setHoveredEntityId(pin?.id ?? null);
+  }, []);
+
+  const handleTimelineSelect = useCallback(
     (entity: EntityItem) => {
       setSelectedEntityId(entity.id);
       setActiveEntity(entity);
     },
     [setActiveEntity],
+  );
+
+  const handlePinSelect = useCallback(
+    (pin: Pin) => {
+      setSelectedEntityId(pin.id);
+      selectPin(pin);
+    },
+    [selectPin],
   );
 
   return (
@@ -653,7 +1036,7 @@ export function DesktopMapView({ readOnly = false }: { readOnly?: boolean } = {}
         <TimelineView
           activeEntityId={activeEntityId}
           onEntityHover={handleTimelineHover}
-          onEntitySelect={handleEntitySelect}
+          onEntitySelect={handleTimelineSelect}
           registerTimelineRow={registerTimelineRow}
         />
         <SoftBlur />
@@ -662,37 +1045,68 @@ export function DesktopMapView({ readOnly = false }: { readOnly?: boolean } = {}
       {/* "Search this area" writes ?bbox, which the shared viewer can't honour
           (the server ignores viewer filters), so hide it in read-only mode. */}
       {!readOnly && <SearchAreaControl />}
-      <LoadMorePinsControl
-        shown={located.length}
-        hasNextPage={hasNextPage}
-        loadingMore={loadingMore}
-        onLoadMore={loadMore}
-      />
-      <MapTimelineConnector active={activeLocated} rowElementsRef={rowElementsRef} />
+      {readOnly && (
+        <LoadMorePinsControl
+          shown={pins.length}
+          hasNextPage={hasNextPage}
+          loadingMore={loadingMore}
+          onLoadMore={loadMore}
+        />
+      )}
+      {truncated && <PinCountNotice shown={pins.length} totalCount={totalCount} />}
+      <MapTimelineConnector active={activePin} rowElementsRef={rowElementsRef} />
       <Map.RouteLayer locations={routeLocations} />
-      <ClusteredMarkers located={located} onSelect={handleEntitySelect} onHoverEntity={handleTimelineHover} />
-      <FitBoundsOnce located={located} />
+      <ClusteredMarkers pins={pins} onSelect={handlePinSelect} onHoverPin={handlePinHover} />
+      <FitBoundsToPins pins={pins} />
+      {/* Padded past the 300px timeline panel so the state reads over the map
+          itself rather than half-hidden behind the panel. Padding, not `left`,
+          so it cannot collide with the `inset-0` on the same element. */}
+      <MapStatusOverlay
+        loading={loading}
+        error={error}
+        empty={empty}
+        filtered={filtered}
+        onRetry={refetch}
+        className="pl-[300px]"
+      />
     </Map>
   );
 }
 
 export function MobileMapView({ readOnly = false }: { readOnly?: boolean } = {}) {
-  const { located, routeLocations, setActiveEntity, hasNextPage, loadingMore, loadMore } =
-    useLocatedEntities();
+  const {
+    pins,
+    routeLocations,
+    selectPin,
+    loading,
+    error,
+    empty,
+    filtered,
+    refetch,
+    truncated,
+    totalCount,
+    hasNextPage,
+    loadingMore,
+    loadMore,
+  } = useMapView(readOnly);
 
   return (
     <Map center={[37.7749, -122.4194]}>
       <Map.Controls position="top-right" />
       {!readOnly && <SearchAreaControl />}
-      <LoadMorePinsControl
-        shown={located.length}
-        hasNextPage={hasNextPage}
-        loadingMore={loadingMore}
-        onLoadMore={loadMore}
-      />
+      {readOnly && (
+        <LoadMorePinsControl
+          shown={pins.length}
+          hasNextPage={hasNextPage}
+          loadingMore={loadingMore}
+          onLoadMore={loadMore}
+        />
+      )}
+      {truncated && <PinCountNotice shown={pins.length} totalCount={totalCount} />}
       <Map.RouteLayer locations={routeLocations} />
-      <ClusteredMarkers located={located} onSelect={setActiveEntity} />
-      <FitBoundsOnce located={located} />
+      <ClusteredMarkers pins={pins} onSelect={selectPin} />
+      <FitBoundsToPins pins={pins} />
+      <MapStatusOverlay loading={loading} error={error} empty={empty} filtered={filtered} onRetry={refetch} />
     </Map>
   );
 }

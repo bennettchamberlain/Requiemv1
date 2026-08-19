@@ -223,6 +223,7 @@ export {
 };
 
 export type { Content } from './entities/ContentEntity';
+export type { MapPin } from './services/EventService';
 export type { PlaceKind } from './entities/PlaceEntity';
 export type { PlaceVisitStats } from './services/PlaceService';
 export { EntityMergeBlockEntity, orderPair, pairKey } from './entities/EntityMergeBlockEntity';
