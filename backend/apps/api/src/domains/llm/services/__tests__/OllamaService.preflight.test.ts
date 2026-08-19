@@ -28,6 +28,12 @@ function useFakeTimersForTimeout() {
   jest.useFakeTimers({ doNotFake: ['nextTick', 'queueMicrotask'] });
 }
 
+// Unconditional, so a failure inside the timeout test cannot leave fake timers
+// installed for everything after it.
+afterEach(() => {
+  jest.useRealTimers();
+});
+
 function makeLogger() {
   return {
     setContext: jest.fn(),
@@ -159,8 +165,6 @@ describe('OllamaService chat-model preflight', () => {
     expect(result).toMatchObject({ reachable: false });
     expect(result.reason).toMatch(/did not list its models/);
     expect(logger.error).not.toHaveBeenCalled();
-
-    jest.useRealTimers();
   });
 
   it('records the last result for anything that wants to read it', async () => {
