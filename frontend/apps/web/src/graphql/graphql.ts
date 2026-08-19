@@ -1933,17 +1933,17 @@ export type MutationRejectPersonDuplicatesArgs = {
 
 
 export type MutationRemoveAnswerArgs = {
-  id: Scalars['String']['input'];
+  id: Scalars['ID']['input'];
 };
 
 
 export type MutationRemoveContentArgs = {
-  id: Scalars['String']['input'];
+  id: Scalars['ID']['input'];
 };
 
 
 export type MutationRemoveEventArgs = {
-  id: Scalars['String']['input'];
+  id: Scalars['ID']['input'];
 };
 
 
@@ -1953,12 +1953,12 @@ export type MutationRemovePersonIdentifierArgs = {
 
 
 export type MutationRemovePlaceArgs = {
-  id: Scalars['String']['input'];
+  id: Scalars['ID']['input'];
 };
 
 
 export type MutationRemoveQuestionArgs = {
-  id: Scalars['String']['input'];
+  id: Scalars['ID']['input'];
 };
 
 
@@ -3410,7 +3410,7 @@ export type ThreadTypeMessagesArgs = {
 
 export type UpdateAnswerInput = {
   answer: Scalars['String']['input'];
-  id: Scalars['String']['input'];
+  id: Scalars['ID']['input'];
 };
 
 export type UpdateBrowserActivityInput = {
@@ -3657,7 +3657,7 @@ export type UpdateProviderKeyInput = {
 
 export type UpdateQuestionInput = {
   category: Scalars['String']['input'];
-  id: Scalars['String']['input'];
+  id: Scalars['ID']['input'];
   text: Scalars['String']['input'];
 };
 

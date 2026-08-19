@@ -142,8 +142,13 @@ export class EventResolver {
   }
 
   @Mutation(() => Boolean)
-  async removeEvent(@Context() context: RequestContext, @Args('id') id: string): Promise<boolean> {
+  async removeEvent(
+    @Context() context: RequestContext,
+    @Args('id', { type: () => ID }) gid: string,
+  ): Promise<boolean> {
     const serviceContext = toServiceContext(context);
+
+    const id = GlobalUID.parse('event', gid);
 
     return this.eventService.remove(serviceContext, id);
   }
