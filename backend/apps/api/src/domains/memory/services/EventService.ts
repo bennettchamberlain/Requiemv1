@@ -1,6 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, IsNull, Repository, type FindOptionsOrder, type FindOptionsWhere } from 'typeorm';
+import {
+  DataSource,
+  In,
+  IsNull,
+  Repository,
+  type FindOptionsOrder,
+  type FindOptionsWhere,
+  type ObjectLiteral,
+  type SelectQueryBuilder,
+} from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/context';
@@ -40,12 +49,42 @@ interface Options {
   hasLocation?: boolean;
   /** "Where" (viewport): bounding box [minLon, minLat, maxLon, maxLat] (EPSG:4326). */
   bbox?: number[];
+  /**
+   * Restrict to this explicit set of event ids, ANDed with every other filter.
+   * The map's pin read uses it to intersect a text-query / tag candidate set
+   * (resolved by the search + tag services, which know nothing about SQL
+   * filters) with the located-event predicates below, so the map honours the
+   * explorer's query and tag filters without a second filter implementation.
+   * An empty array matches nothing.
+   */
+  ids?: string[];
 }
 
 /** Filter subset of {@link Options} that {@link EventService.countEntitiesForEvents} accepts —
  * everything `getEntitiesForEvents` filters *by*, minus the pagination-only fields
  * (`limit`, `order`, `afterTime`, `afterId`), which a total count must not depend on. */
 type CountOptions = Omit<Options, 'limit' | 'order' | 'afterTime' | 'afterId'>;
+
+/** Options for {@link EventService.findMapPins}: the shared filter set plus a hard row cap. */
+type MapPinOptions = CountOptions & { limit: number };
+
+/**
+ * One located event reduced to what a map marker draws — a point, a label, and
+ * enough timestamp to order and caption it. Deliberately NOT an {@link Event}:
+ * the map plots tens of thousands of these at once, and hydrating full events
+ * (media urls, participants, metadata) to draw a 48px pin is what forced the
+ * old 30-pins-per-request paging.
+ */
+export interface MapPin {
+  id: string;
+  title: string | null;
+  startTime: Date | null;
+  endTime: Date | null;
+  eventType: string | null;
+  locationName: string | null;
+  latitude: number;
+  longitude: number;
+}
 
 /**
  * Hourly UTC per-user event count. Declared locally so this domain carries no
@@ -967,41 +1006,31 @@ export class EventService {
     );
   }
 
-  async getEntitiesForEvents(
+  /**
+   * The filter half of the event read path — every predicate
+   * {@link getEntitiesForEvents}, {@link countEntitiesForEvents} and
+   * {@link findMapPins} share, applied to a caller-supplied builder.
+   *
+   * Owning them in one place is what keeps a map pin, an explorer row and the
+   * explorer's totalCount describing the same set of events: the three callers
+   * differ only in what they SELECT and how they order/limit it.
+   */
+  private applyEventFilters<T extends ObjectLiteral>(
+    query: SelectQueryBuilder<T>,
     context: ServiceContext,
-    options: Options,
-  ): Promise<EntityIdentifier<IndexableEntity>[]> {
-    let query = this.dataSource
-      .getRepository(EventEntity)
-      .createQueryBuilder('event')
-      .select(['event.event_id'])
-      .where('event.user_id = :userId', { userId: context.userId })
-      // Tombstoned events are gone as far as every reader is concerned; keeping
-      // them out here also stops the search-index backfill re-indexing them.
-      .andWhere('event.is_deleted = false');
+    options: CountOptions,
+  ): SelectQueryBuilder<T> {
+    // Tombstoned events are gone as far as every reader is concerned. This sits
+    // in the shared filter rather than in each caller so a soft-deleted event
+    // cannot come back as a map pin or inflate the explorer's totalCount while
+    // being absent from the rows — the whole reason these three share a filter.
+    query = query.andWhere('event.is_deleted = false');
 
-    if (options.limit) {
-      query = query.limit(options.limit);
-    }
-
-    if (options.order) {
-      for (const [field, direction] of Object.entries(options.order)) {
-        query = query.orderBy(`event.${field}`, direction as 'ASC' | 'DESC');
-      }
-
-      // Deterministic tiebreak so same-timestamp rows have a stable total order
-      // that the keyset cursor below can page through.
-      query = query.addOrderBy('event.event_id', 'DESC');
-    }
-
-    // Composite keyset: page strictly past (afterTime, afterId). Matches the
-    // (start_time DESC, event_id DESC) order so a same-timestamp cluster larger
-    // than one fetch is walked through instead of re-returning its top rows.
-    if (options.afterTime && options.afterId) {
-      query = query.andWhere(
-        '(event.start_time < :afterTime OR (event.start_time = :afterTime AND event.event_id < :afterId))',
-        { afterTime: options.afterTime, afterId: options.afterId },
-      );
+    // Explicit id set (a text-query / tag candidate set resolved elsewhere).
+    // An empty array is a real "nothing matched", not "no filter" — `= ANY('{}')`
+    // is false for every row, which is exactly the intent.
+    if (options.ids != null) {
+      query = query.andWhere('event.event_id = ANY(:eventIds)', { eventIds: options.ids });
     }
 
     if (options.startTime) {
@@ -1087,6 +1116,45 @@ export class EventService {
       );
     }
 
+    return query;
+  }
+
+  async getEntitiesForEvents(
+    context: ServiceContext,
+    options: Options,
+  ): Promise<EntityIdentifier<IndexableEntity>[]> {
+    let query = this.dataSource
+      .getRepository(EventEntity)
+      .createQueryBuilder('event')
+      .select(['event.event_id'])
+      .where('event.user_id = :userId', { userId: context.userId });
+
+    if (options.limit) {
+      query = query.limit(options.limit);
+    }
+
+    if (options.order) {
+      for (const [field, direction] of Object.entries(options.order)) {
+        query = query.orderBy(`event.${field}`, direction as 'ASC' | 'DESC');
+      }
+
+      // Deterministic tiebreak so same-timestamp rows have a stable total order
+      // that the keyset cursor below can page through.
+      query = query.addOrderBy('event.event_id', 'DESC');
+    }
+
+    // Composite keyset: page strictly past (afterTime, afterId). Matches the
+    // (start_time DESC, event_id DESC) order so a same-timestamp cluster larger
+    // than one fetch is walked through instead of re-returning its top rows.
+    if (options.afterTime && options.afterId) {
+      query = query.andWhere(
+        '(event.start_time < :afterTime OR (event.start_time = :afterTime AND event.event_id < :afterId))',
+        { afterTime: options.afterTime, afterId: options.afterId },
+      );
+    }
+
+    query = this.applyEventFilters(query, context, options);
+
     const results = await query.getRawMany();
 
     return results.map((row: { event_id: string; type: IndexableEntity }) => ({
@@ -1108,69 +1176,75 @@ export class EventService {
       .where('event.user_id = :userId', { userId: context.userId })
       .andWhere('event.is_deleted = false');
 
-    if (options.startTime) {
-      query = query.andWhere('event.start_time >= :startTime', { startTime: options.startTime });
-    }
-
-    if (options.endTime) {
-      query = query.andWhere('event.start_time <= :endTime', { endTime: options.endTime });
-    }
-
-    if (options.eventTypes && options.eventTypes.length > 0) {
-      query = query.andWhere('event.event_type IN (:...eventTypes)', {
-        eventTypes: options.eventTypes,
-      });
-    }
-
-    if (options.connectors && options.connectors.length > 0) {
-      query = query.andWhere('event.source_system IN (:...connectors)', {
-        connectors: options.connectors,
-      });
-    }
-
-    if (options.hasLocation) {
-      query = query.andWhere('event.location_coordinates IS NOT NULL');
-    }
-
-    if (options.bbox && options.bbox.length === 4 && options.bbox.every((value) => Number.isFinite(value))) {
-      const [minLon, minLat, maxLon, maxLat] = options.bbox;
-
-      query = query.andWhere(
-        'ST_Within(event.location_coordinates::geometry, ST_MakeEnvelope(:minLon, :minLat, :maxLon, :maxLat, 4326))',
-        { minLon, minLat, maxLon, maxLat },
-      );
-    }
-
-    if (options.people && options.people.length > 0) {
-      query = query.andWhere(
-        `(
-          event.participant_entity_ids && ARRAY(
-            SELECT entity_id FROM ci.entities
-            WHERE owner_user_id = :userId AND entity_type = 'Person' AND name ILIKE ANY(:peoplePatterns)
-          )::uuid[]
-          OR event.organizer_entity_id IN (
-            SELECT entity_id FROM ci.entities
-            WHERE owner_user_id = :userId AND entity_type = 'Person' AND name ILIKE ANY(:peoplePatterns)
-          )
-        )`,
-        { userId: context.userId, peoplePatterns: options.people.map((name) => `%${name}%`) },
-      );
-    }
-
-    if (options.places && options.places.length > 0) {
-      query = query.andWhere(
-        `(
-          event.location_entity_id IN (
-            SELECT entity_id FROM ci.entities
-            WHERE owner_user_id = :userId AND entity_type = 'Location' AND name ILIKE ANY(:placePatterns)
-          )
-          OR event.location_name ILIKE ANY(:placePatterns)
-        )`,
-        { userId: context.userId, placePatterns: options.places.map((name) => `%${name}%`) },
-      );
-    }
+    query = this.applyEventFilters(query, context, options);
 
     return query.getCount();
+  }
+
+  /**
+   * Located events as map markers: the same filters {@link getEntitiesForEvents}
+   * applies, projected down to a point + label ({@link MapPin}) and ordered
+   * newest-first.
+   *
+   * This exists because the map is not a paged feed. Drawing a life on a map
+   * means plotting the whole located set at once — ten thousand rows here, and
+   * the browse page size is thirty — so the read is bounded by `limit` (a hard
+   * cap the caller reports as truncation) rather than by a cursor.
+   *
+   * `hasLocation` is forced on: a marker with no coordinates is not a marker,
+   * and ST_Y/ST_X of NULL would surface as a pin at (0, 0) in the Gulf of
+   * Guinea. Titles live on the CTI base row, so `ci.entities` is joined the
+   * same way {@link search} joins it.
+   */
+  async findMapPins(context: ServiceContext, options: MapPinOptions): Promise<MapPin[]> {
+    let query = this.dataSource
+      .getRepository(EventEntity)
+      .createQueryBuilder('event')
+      .innerJoin('ci.entities', 'base', 'base.entity_id = event.event_id')
+      .select('event.event_id', 'event_id')
+      .addSelect('base.name', 'title')
+      .addSelect('event.start_time', 'start_time')
+      .addSelect('event.end_time', 'end_time')
+      .addSelect('event.event_type', 'event_type')
+      .addSelect('event.location_name', 'location_name')
+      .addSelect('ST_Y(event.location_coordinates::geometry)', 'latitude')
+      .addSelect('ST_X(event.location_coordinates::geometry)', 'longitude')
+      .where('event.user_id = :userId', { userId: context.userId })
+      .orderBy('event.start_time', 'DESC')
+      .addOrderBy('event.event_id', 'DESC')
+      .limit(options.limit);
+
+    query = this.applyEventFilters(query, context, { ...options, hasLocation: true });
+
+    const rows = await query.getRawMany<{
+      event_id: string;
+      title: string | null;
+      start_time: Date | null;
+      end_time: Date | null;
+      event_type: string | null;
+      location_name: string | null;
+      latitude: number | string | null;
+      longitude: number | string | null;
+    }>();
+
+    return (
+      rows
+        .map((row) => ({
+          id: row.event_id,
+          title: row.title,
+          startTime: row.start_time,
+          endTime: row.end_time,
+          eventType: row.event_type,
+          locationName: row.location_name,
+          // `Number(null)` is 0, not NaN — a null coordinate would otherwise
+          // become a pin in the Gulf of Guinea instead of being dropped below.
+          latitude: row.latitude == null ? Number.NaN : Number(row.latitude),
+          longitude: row.longitude == null ? Number.NaN : Number(row.longitude),
+        }))
+        // A row whose geography failed to project has no place on a map; dropping
+        // it here keeps NaN out of the client's bounds/cluster maths.
+        .filter((pin) => Number.isFinite(pin.latitude) && Number.isFinite(pin.longitude))
+    );
   }
 
   /**
