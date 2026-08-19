@@ -222,25 +222,27 @@ describe('SearchResolver.search — combinable filters', () => {
     expect(eventService.getEntitiesForEvents).toHaveBeenCalledTimes(1);
     expect(browserActivityService.getEntitiesForBrowserActivities).toHaveBeenCalledTimes(1);
     expect(communicationService.getEntitiesForCommunications).toHaveBeenCalledTimes(1);
-    // Files stay out of the default browse (documents/screenshots would bury it).
-    expect(fileService.getEntitiesForFiles).not.toHaveBeenCalled();
+    // Files are part of the default browse like every other indexed type — the
+    // What picker's File entry is the one control over whether they show up.
+    expect(fileService.getEntitiesForFiles).toHaveBeenCalledTimes(1);
     // No filters -> end bound to "now" so recent items are returned, not all history.
     const eventOptions = eventService.getEntitiesForEvents.mock.calls[0][1] as { endTime?: Date };
     expect(eventOptions.endTime).toBeInstanceOf(Date);
   });
 
-  // Regression: the gallery showed no images because standalone media files
-  // (e.g. Capture screenshots with no linked event) were opted out of the
-  // query-less browse and the gallery had no way to pull them in without
-  // narrowing the whole result to files (includeTypes: ['file']).
-  describe('includeFiles (gallery browse)', () => {
-    it('interleaves files with the other timed types instead of replacing them', async () => {
+  // Files used to be opted *out* of the timed browse unless a caller passed
+  // includeFiles — which only the gallery did. That made the same explorer URL
+  // mean different things view to view, and made the File type picker a no-op
+  // everywhere else. Files are now part of the default browse; the type filter
+  // is the single control over whether they appear.
+  describe('includeFiles (files in the timed browse)', () => {
+    it('interleaves files with the other timed types by default', async () => {
       const { resolver, eventService, fileService, fileChunkService, entityResolutionService } =
         makeResolver();
       eventService.getEntitiesForEvents.mockResolvedValue([{ type: 'event', id: 'e1' }]);
       fileService.getEntitiesForFiles.mockResolvedValue([{ type: 'file', id: 'f1' }]);
 
-      await resolver.search(ctx, { includeFiles: true } as SearchInput);
+      await resolver.search(ctx, {} as SearchInput);
 
       expect(eventService.getEntitiesForEvents).toHaveBeenCalledTimes(1);
       expect(fileService.getEntitiesForFiles).toHaveBeenCalledTimes(1);
@@ -253,12 +255,31 @@ describe('SearchResolver.search — combinable filters', () => {
       ]);
     });
 
+    it('honours an explicit type filter that narrows to files', async () => {
+      const { resolver, fileService, eventService } = makeResolver();
+      fileService.getEntitiesForFiles.mockResolvedValue([{ type: 'file', id: 'f1' }]);
+
+      await resolver.search(ctx, { includeTypes: ['file'] } as SearchInput);
+
+      expect(fileService.getEntitiesForFiles).toHaveBeenCalledTimes(1);
+      expect(eventService.getEntitiesForEvents).not.toHaveBeenCalled();
+    });
+
     it('still honours an explicit type filter that excludes files', async () => {
       const { resolver, fileService } = makeResolver();
 
-      await resolver.search(ctx, { includeFiles: true, excludeTypes: ['file'] } as SearchInput);
+      await resolver.search(ctx, { excludeTypes: ['file'] } as SearchInput);
 
       expect(fileService.getEntitiesForFiles).not.toHaveBeenCalled();
+    });
+
+    it('lets a caller opt files out without touching excludeTypes', async () => {
+      const { resolver, fileService, eventService } = makeResolver();
+
+      await resolver.search(ctx, { includeFiles: false } as SearchInput);
+
+      expect(fileService.getEntitiesForFiles).not.toHaveBeenCalled();
+      expect(eventService.getEntitiesForEvents).toHaveBeenCalledTimes(1);
     });
   });
 });
@@ -356,13 +377,13 @@ describe('SearchResolver.search — undated types stay out of the unfiltered bro
     expect(contentService.getEntitiesForContents).not.toHaveBeenCalled();
   });
 
-  // Regression: `includeFiles` is normalised to a strict boolean before the
-  // gate runs, so the old `includeFiles !== false` test could never be true and
-  // the Files entry in the type filter browsed to nothing.
-  it('fetches files when the type filter names them, without includeFiles', async () => {
+  // The gate must not touch `file`: #2110 deliberately made files part of the
+  // default timeline (opt-OUT via includeFiles). They remain the residual
+  // undated head this change does not address.
+  it('leaves files in the default browse, as #2110 decided', async () => {
     const { resolver, fileService } = makeResolver();
 
-    await resolver.search(ctx, { includeTypes: ['file'] } as SearchInput);
+    await resolver.search(ctx, {} as SearchInput);
 
     expect(fileService.getEntitiesForFiles).toHaveBeenCalledTimes(1);
   });

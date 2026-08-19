@@ -80,20 +80,20 @@ const QUERY_CANDIDATE_LIMIT = 300;
  * ahead of the newest genuinely-dated memory (2026-08-18 18:41:33Z) in the
  * unfiltered browse:
  *
- *   content (media, event-linked)  11,211
- *   person                          9,753
- *   place                           1,178
- *   concept / item                      0
- *   content (everything else)           3
- *                                  ------
- *                                   22,145
+ *   content (media, event-linked)  11,211   gated (see below)
+ *   file                           10,521   NOT gated — see the NOTE
+ *   person                          9,753   gated here
+ *   place                           1,178   gated here
+ *   concept / item                      0   gated here
+ *   content (everything else)           3   not gated (has nowhere else to go)
  *
- * — the ~22,000 undated import artifacts a user had to scroll past before
- * reaching their first real memory, which is what made the timeline
- * unreachable rather than merely untidy. `person` and `place` are gated here;
- * the content rows leave by a different door (they are facets of events the
- * same merge already returns — see ContentService.getEntitiesForContents),
- * which takes the head down to 3.
+ * — the undated import artifacts a user had to scroll past before reaching
+ * their first real memory, which is what made the timeline unreachable rather
+ * than merely untidy. `person`, `place`, `concept` and `item` are gated here.
+ * The event-linked content rows leave by a different door (they are facets of
+ * events the same merge already returns — see
+ * ContentService.getEntitiesForContents). Together that takes the head from
+ * 32,666 rows to 10,524, all but 3 of which are files.
  *
  * A person, place, concept or item is not a moment: it is a thing moments refer
  * to, and it has no domain time at all. It belongs on the timeline only when
@@ -104,8 +104,11 @@ const QUERY_CANDIDATE_LIMIT = 300;
  * through the graph/explorer. Only the *unfiltered chronological browse* drops
  * them.
  *
- * NOTE `file` is deliberately NOT in this list; it has its own richer gate
- * (`includeFiles`) — see {@link SearchResolver.browseWants}.
+ * NOTE `file` is deliberately NOT in this list. It carries the same row-write
+ * problem, but #2110 just made it an explicit opt-OUT (`includeFiles`) to fix
+ * the File type picker, and that decision is left standing — see
+ * {@link SearchResolver.browseWants}. Files are therefore the residual undated
+ * head this gate does not address.
  */
 const BROWSE_OPT_IN_TYPES: ReadonlySet<IndexableEntity> = new Set([
   'file-chunk',
@@ -359,7 +362,8 @@ export class SearchResolver {
       const timedOptions = {
         includeTypes: input.includeTypes,
         excludeTypes: input.excludeTypes,
-        includeFiles: input.includeFiles === true,
+        // Files ride the default browse; only an explicit `false` drops them.
+        includeFiles: input.includeFiles !== false,
         startTime,
         eventTypes,
         eventFilter,
@@ -857,15 +861,15 @@ export class SearchResolver {
    *     browse to events;
    *  3. the opt-in gate — {@link BROWSE_OPT_IN_TYPES} plus `file`.
    *
-   * `file` is its own case because it has a dedicated lever: `includeFiles`,
-   * which the gallery sets and nothing else does. The predicate is written
-   * `includeFiles === true || namedExplicitly` rather than the previous
-   * `includeFiles !== false`, and the second half is not cosmetic: the caller
-   * normalises the flag to a strict boolean before this runs
-   * (`input.includeFiles === true`), so `!== false` was already unreachable and
-   * `includeTypes: ['file']` — the Files entry in the type filter — resolved to
-   * `wants('file') === false` and browsed to an empty result. Naming a type must
-   * always fetch it.
+   * `file` is its own case because it has a dedicated lever, `includeFiles`,
+   * and #2110 deliberately made that lever an opt-OUT: files are part of the
+   * default timeline and a caller drops them by passing `false`. That decision
+   * is preserved verbatim here — see `SearchInput.includeFiles` for why it was
+   * inverted (the File type picker was a no-op on every surface that didn't set
+   * the flag). It does mean ~10,500 files, ordered by `created_at`, still sit
+   * ahead of the real timeline on a freshly-imported appliance; giving
+   * `ci.files` a domain timestamp (`external_created_at` is populated on 0 of
+   * 14,194 rows) is the fix, and it is a schema/ETL change, not a gate.
    */
   private browseWants(
     type: IndexableEntity,
@@ -893,7 +897,7 @@ export class SearchResolver {
     const namedExplicitly = includeTypes?.includes(type) ?? false;
 
     if (type === 'file') {
-      return includeFiles === true || namedExplicitly;
+      return includeFiles !== false;
     }
 
     if (BROWSE_OPT_IN_TYPES.has(type)) {
@@ -981,9 +985,11 @@ export class SearchResolver {
     // the sort key, and the types for which it is a LIE about when the thing
     // happened are instead kept out of the unfiltered chronological browse —
     // see BROWSE_OPT_IN_TYPES. What still rides `createdAt` inside the browse
-    // is `note` and non-event-linked `content`: 3 rows ahead of the timeline on
-    // the QA appliance, against ~22,145 before the gate. Giving those a real
-    // domain timestamp is a schema change, not a resolver change.
+    // is `note`, `file` and non-event-linked `content` — 10,524 rows ahead of
+    // the timeline on the QA appliance, against 32,666 before the gate, and all
+    // but 3 of them files. Giving those a real domain timestamp is a schema/ETL
+    // change, not a resolver change: `ci.files.external_created_at` exists and
+    // is populated on 0 of 14,194 rows.
     //
     // Types reached by NAMING them (includeTypes) still sort by write time,
     // which is the honest answer for a set that has no other time — a browse
