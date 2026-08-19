@@ -12,6 +12,8 @@ import {
   EventCreatedEvent,
   ItemCreatedEvent,
   PersonCreatedEvent,
+  ProductCreatedEvent,
+  ReceiptCreatedEvent,
 } from '@ci/domains/memory/events';
 import { PositionCreatedEvent } from '@ci/domains/position/events';
 import { ENTITY_SOURCE_MAP } from '@ci/domains/search-ingress';
@@ -42,6 +44,11 @@ export const BACKFILLABLE_ENTITIES = [
   'file',
   'person',
   'position',
+  // The object tables. Both are written by bulk paths that emit nothing per row
+  // (`ProductModelService.createMany`, `ReceiptService.upsertFromExtraction`),
+  // so like `person` they are only ever indexed by this sweep.
+  'product',
+  'receipt',
 ] as const;
 
 export type BackfillableEntity = (typeof BACKFILLABLE_ENTITIES)[number];
@@ -117,6 +124,8 @@ const EVENT_BY_TYPE: Record<BackfillableEntity, { event: string; idField: string
   file: { event: FileCreatedEvent, idField: 'fileId' },
   person: { event: PersonCreatedEvent, idField: 'personId' },
   position: { event: PositionCreatedEvent, idField: 'positionId' },
+  product: { event: ProductCreatedEvent, idField: 'productId' },
+  receipt: { event: ReceiptCreatedEvent, idField: 'receiptId' },
 };
 
 /**

@@ -36,6 +36,8 @@ import { NoteSearchIndexListener } from './listeners/NoteSearchIndexListener';
 import { PersonSearchIndexListener } from './listeners/PersonSearchIndexListener';
 import { PlaceSearchIndexListener } from './listeners/PlaceSearchIndexListener';
 import { PositionSearchIndexListener } from './listeners/PositionSearchIndexListener';
+import { ProductSearchIndexListener } from './listeners/ProductSearchIndexListener';
+import { ReceiptSearchIndexListener } from './listeners/ReceiptSearchIndexListener';
 import { ThreadSearchIndexListener } from './listeners/ThreadSearchIndexListener';
 import { EmbeddingService } from './services/EmbeddingService';
 import { IndexSkipService } from './services/IndexSkipService';
@@ -77,6 +79,8 @@ import { VectorService } from './services/VectorService';
     PersonSearchIndexListener,
     PlaceSearchIndexListener,
     PositionSearchIndexListener,
+    ProductSearchIndexListener,
+    ReceiptSearchIndexListener,
     ThreadSearchIndexListener,
     VectorService,
   ],

@@ -1,5 +1,14 @@
 /** The entities the importer's bulk-ingest paths write. */
-export type IngestEntityKind = 'communication' | 'event' | 'item' | 'content' | 'browser_activity';
+export type IngestEntityKind =
+  | 'communication'
+  | 'event'
+  | 'item'
+  | 'content'
+  | 'browser_activity'
+  | 'product_model'
+  | 'receipt'
+  | 'receipt_line_item'
+  | 'object_observation';
 
 /**
  * Version of the ingest conflict-refresh contract below. Bumping ANY column
@@ -9,7 +18,7 @@ export type IngestEntityKind = 'communication' | 'event' | 'item' | 'content' | 
  * self-heals (the cross-repo handshake itself is out of scope here — nothing
  * reads this over the wire yet).
  */
-export const INGEST_SCHEMA_VERSION = 1;
+export const INGEST_SCHEMA_VERSION = 2;
 
 /**
  * Central, per-entity list of the DB columns a bulk re-ingest of an existing
@@ -26,6 +35,13 @@ export const INGEST_SCHEMA_VERSION = 1;
  *
  * Bumping a column list MUST bump {@link INGEST_SCHEMA_VERSION} (see its doc)
  * and the snapshot in ingestRefreshColumns.test.ts.
+ *
+ * NOT every list is wired yet. `product_model` / `receipt` /
+ * `receipt_line_item` are DECLARATIVE for now: their services still take the
+ * DO NOTHING find-or-return path and do not pass `conflictUpdateColumns`, so
+ * these lists change no behaviour until they do. They live here anyway because
+ * the point of this file is that the contract is decided in one place BEFORE
+ * three services each invent their own inline array.
  */
 export const INGEST_REFRESH_COLUMNS: Record<IngestEntityKind, readonly string[]> = {
   // CommunicationService.createMany self-heal set: a re-sync corrects e.g. the
@@ -34,7 +50,81 @@ export const INGEST_REFRESH_COLUMNS: Record<IngestEntityKind, readonly string[]>
   // binds parameters in THIS order — keep them in lockstep.
   communication: ['direction', 'participants_metadata', 'content', 'preview', 'subject'],
   event: [],
+  // EMPTY ON PURPOSE, and load-bearing: ci.inventory is the one ingest table a
+  // user edits directly (renaming a thing, correcting its condition, recording
+  // what it is worth now). A refresh list here would let the next re-sync of
+  // the same triple overwrite those edits with whatever the importer still
+  // believes. Object identity did not change that — the identity columns
+  // (product_id, acquisition_*) are resolved server-side, so they are not the
+  // importer's to refresh either.
   item: [],
   content: [],
   browser_activity: [],
+  // The catalog data a product feed owns. Excluded: the resolved links
+  // (product_entity_id, image_content_id, manual_content_ids) and
+  // identity_confidence, which say what the SERVER concluded — a re-sync that
+  // reset identity_confidence would silently re-promote a downgraded guess back
+  // to ground truth.
+  product_model: [
+    'title',
+    'brand',
+    'manufacturer',
+    'model_number',
+    'category',
+    'subcategory',
+    'product_type',
+    'description',
+    'variant_attributes',
+    'spec',
+    'msrp_minor',
+    'currency',
+    'is_digital',
+  ],
+  // What is PRINTED on the receipt, which a better read of the same document
+  // legitimately corrects. Excluded: every resolved pointer
+  // (merchant_entity_id, place_entity_id, event_id, document_content_id) —
+  // those are enrichment's, and clobbering them un-links a receipt the graph
+  // already placed.
+  receipt: [
+    'merchant_name',
+    'purchased_at',
+    'currency',
+    'subtotal_minor',
+    'tax_minor',
+    'tip_minor',
+    'shipping_minor',
+    'discount_minor',
+    'total_minor',
+    'payment_method',
+    'payment_last4',
+    'order_number',
+    'channel',
+    'extraction_state',
+    'extraction_confidence',
+    'extraction_model',
+    'extraction_error',
+    'raw_text',
+  ],
+  // Same rule one level down. `minted_object_id` is absent for the reason
+  // ReceiptService.replaceLineItems already gives: the link to the owned unit
+  // is ObjectMintService's to write, and erasing it strands a possession whose
+  // provenance pointer just disappeared. `product_id` is absent because it is
+  // RESOLVED (by barcode, else find-or-create), not transcribed.
+  receipt_line_item: [
+    'description',
+    'quantity',
+    'unit_price_minor',
+    'total_price_minor',
+    'currency',
+    'brand',
+    'model_number',
+    'category',
+    'is_physical',
+  ],
+  // EMPTY, and the strongest case for it: ObjectObservationService's own
+  // ON CONFLICT already refuses to overwrite a row a human confirmed, and keeps
+  // the resolution columns out of its update list so even an unconfirmed
+  // sighting survives re-detection with whatever it was resolved to. A refresh
+  // list here would be a second, weaker copy of that rule.
+  object_observation: [],
 };

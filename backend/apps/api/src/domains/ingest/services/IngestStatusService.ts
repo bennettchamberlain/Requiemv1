@@ -27,6 +27,19 @@ export interface IngestStatusSnapshot {
     inventory: number;
     browser_activity: number;
     position: number;
+    /**
+     * The object plane. Reported alongside `inventory` rather than folded into
+     * it because the whole point of the split is that they count different
+     * things: `product_models` are what units ARE, `receipts` /
+     * `receipt_line_items` are where they came from, and `object_observations`
+     * are sightings that may never become an owned unit at all — an
+     * observations count far ahead of an inventory count is the expected shape,
+     * not a backlog.
+     */
+    product_models: number;
+    receipts: number;
+    receipt_line_items: number;
+    object_observations: number;
   };
   searchIndex: {
     /** `ci_search.embeddings` rows per entity_type. */
@@ -86,23 +99,35 @@ export class IngestStatusService {
           inventory: string;
           browser_activity: string;
           position: string;
+          product_models: string;
+          receipts: string;
+          receipt_line_items: string;
+          object_observations: string;
         }>
       >(
         userId
           ? `SELECT
-               (SELECT count(*) FROM ci.communications WHERE user_id = $1)   AS communications,
-               (SELECT count(*) FROM ci.events WHERE user_id = $1)           AS events,
-               (SELECT count(*) FROM ci.content WHERE user_id = $1)          AS content,
-               (SELECT count(*) FROM ci.inventory WHERE user_id::uuid = $1)  AS inventory,
-               (SELECT count(*) FROM ci.browser_activity WHERE user_id = $1) AS browser_activity,
-               (SELECT count(*) FROM ci.position WHERE user_id = $1)         AS position`
+               (SELECT count(*) FROM ci.communications WHERE user_id = $1)       AS communications,
+               (SELECT count(*) FROM ci.events WHERE user_id = $1)               AS events,
+               (SELECT count(*) FROM ci.content WHERE user_id = $1)              AS content,
+               (SELECT count(*) FROM ci.inventory WHERE user_id::uuid = $1)      AS inventory,
+               (SELECT count(*) FROM ci.browser_activity WHERE user_id = $1)     AS browser_activity,
+               (SELECT count(*) FROM ci.position WHERE user_id = $1)             AS position,
+               (SELECT count(*) FROM ci.product_models WHERE user_id = $1)       AS product_models,
+               (SELECT count(*) FROM ci.receipts WHERE user_id = $1)             AS receipts,
+               (SELECT count(*) FROM ci.receipt_line_items WHERE user_id = $1)   AS receipt_line_items,
+               (SELECT count(*) FROM ci.object_observations WHERE user_id = $1)  AS object_observations`
           : `SELECT
-               (SELECT count(*) FROM ci.communications)   AS communications,
-               (SELECT count(*) FROM ci.events)           AS events,
-               (SELECT count(*) FROM ci.content)          AS content,
-               (SELECT count(*) FROM ci.inventory)        AS inventory,
-               (SELECT count(*) FROM ci.browser_activity) AS browser_activity,
-               (SELECT count(*) FROM ci.position)         AS position`,
+               (SELECT count(*) FROM ci.communications)       AS communications,
+               (SELECT count(*) FROM ci.events)               AS events,
+               (SELECT count(*) FROM ci.content)              AS content,
+               (SELECT count(*) FROM ci.inventory)            AS inventory,
+               (SELECT count(*) FROM ci.browser_activity)     AS browser_activity,
+               (SELECT count(*) FROM ci.position)             AS position,
+               (SELECT count(*) FROM ci.product_models)       AS product_models,
+               (SELECT count(*) FROM ci.receipts)             AS receipts,
+               (SELECT count(*) FROM ci.receipt_line_items)   AS receipt_line_items,
+               (SELECT count(*) FROM ci.object_observations)  AS object_observations`,
         userId ? [userId] : [],
       ),
       this.dataSource.query<Array<{ entity_type: string; count: string }>>(
@@ -173,6 +198,10 @@ export class IngestStatusService {
       inventory: Number(tablesRaw?.inventory ?? 0),
       browser_activity: Number(tablesRaw?.browser_activity ?? 0),
       position: Number(tablesRaw?.position ?? 0),
+      product_models: Number(tablesRaw?.product_models ?? 0),
+      receipts: Number(tablesRaw?.receipts ?? 0),
+      receipt_line_items: Number(tablesRaw?.receipt_line_items ?? 0),
+      object_observations: Number(tablesRaw?.object_observations ?? 0),
     };
     const embeddingsByType = toByType(embeddingRows);
     const skipsByType = toByType(skipRows);
