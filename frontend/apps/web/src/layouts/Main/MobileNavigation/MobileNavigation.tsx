@@ -1,252 +1,103 @@
-import { type MouseEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
-import { Portal } from '@ci/common';
-import { Sheet, cn } from '@ci/shadcn';
-import { Camera, MonitorCog, MoreHorizontal, Search, type LucideIcon } from '@ci/shadcn/icons';
-import { Link, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 
-import { CaptureModal } from '@/components/modals/CaptureModal';
-import { useCaptureModal } from '@/hooks';
+import { usePowerRail } from '../PowerRailContext';
+import { RailEdgeToggle } from '../RailEdgeToggle';
+import { SecondaryNavigation } from '../SecondaryNavigation';
 
-import {
-  HELP_LINKS,
-  isRailDestinationActive,
-  mobilePrimaryTabCount,
-  splitMobileDestinations,
-  useVisibleRailDestinations,
-  type RailDestination,
-} from '../railDestinations';
-import { useFeedBadgeCount } from '../SecondaryNavigation/useFeedBadgeCount';
+const EDGE_PX = 28;
+const THRESHOLD_PX = 48;
 
 /**
- * Mobile chrome is the Power Rail laid on its side.
+ * Phone chrome around the glass Power Rail.
  *
- * Destinations walk left to right in rail order. Whatever does not fit — plus
- * Search, Capture, Help, and System, which the rail never carried as tabs —
- * lives under the last action. Chat is MessagesSquare, same as the rail; the
- * companion mark is the product, not a destination.
+ * Closed: a `|→` control at the top-left, below the status bar, and a swipe
+ * right from the left edge. Open: the same rail as desktop, glassed, with `←|`
+ * on its trailing edge. Everything lives in that rail — no bottom tab bar.
  */
 export function MobileNavigation() {
-  const destinations = useVisibleRailDestinations();
-  const feedBadgeCount = useFeedBadgeCount();
+  const { expanded, toggle, openOverlay, closeOverlay } = usePowerRail();
   const { pathname } = useLocation();
-  const [{ isOpen: captureOpen }, { open: openCapture, close: closeCapture }] = useCaptureModal();
-  const [moreOpen, setMoreOpen] = useState(false);
-  const barRef = useRef<HTMLDivElement>(null);
-  const [primaryCount, setPrimaryCount] = useState(() => mobilePrimaryTabCount(0, destinations.length));
+  const start = useRef<{ x: number; y: number; tracking: boolean } | null>(null);
 
   useEffect(() => {
-    const bar = barRef.current;
+    closeOverlay();
+  }, [pathname, closeOverlay]);
 
-    if (!bar) {
-      return;
-    }
+  useEffect(() => {
+    const onStart = (event: TouchEvent) => {
+      const touch = event.touches[0];
 
-    const measure = () => {
-      setPrimaryCount(mobilePrimaryTabCount(bar.clientWidth, destinations.length));
+      if (!touch) {
+        return;
+      }
+
+      const fromEdge = touch.clientX <= EDGE_PX;
+      const fromRail = expanded && touch.clientX <= 224;
+
+      start.current = {
+        x: touch.clientX,
+        y: touch.clientY,
+        tracking: expanded ? fromRail : fromEdge,
+      };
     };
 
-    measure();
+    const onEnd = (event: TouchEvent) => {
+      const origin = start.current;
+      start.current = null;
 
-    const observer = new ResizeObserver(measure);
+      if (!origin?.tracking) {
+        return;
+      }
 
-    observer.observe(bar);
+      const touch = event.changedTouches[0];
 
-    return () => observer.disconnect();
-  }, [destinations.length]);
+      if (!touch) {
+        return;
+      }
 
-  const { primary, overflow } = splitMobileDestinations(destinations, primaryCount);
-  const overflowActive = overflow.some((destination) => isRailDestinationActive(destination, pathname));
-  const moreActive =
-    overflowActive || pathname.startsWith('/search') || pathname.startsWith('/system') || moreOpen;
+      const dx = touch.clientX - origin.x;
+      const dy = touch.clientY - origin.y;
 
-  const handleCapture = useCallback(
-    (event: MouseEvent) => {
-      event.preventDefault();
-      setMoreOpen(false);
-      openCapture();
-    },
-    [openCapture],
-  );
+      if (Math.abs(dy) > Math.abs(dx)) {
+        return;
+      }
+
+      if (!expanded && dx >= THRESHOLD_PX) {
+        openOverlay();
+      } else if (expanded && dx <= -THRESHOLD_PX) {
+        closeOverlay();
+      }
+    };
+
+    document.addEventListener('touchstart', onStart, { passive: true });
+    document.addEventListener('touchend', onEnd, { passive: true });
+
+    return () => {
+      document.removeEventListener('touchstart', onStart);
+      document.removeEventListener('touchend', onEnd);
+    };
+  }, [expanded, openOverlay, closeOverlay]);
 
   return (
     <>
-      {captureOpen && (
-        <Portal.Slot id="content-modal">
-          <CaptureModal open onClose={closeCapture} />
-        </Portal.Slot>
+      {!expanded && (
+        <div className="ci-mobile-chrome-top fixed left-[max(0.5rem,env(safe-area-inset-left,0px))] z-50">
+          <RailEdgeToggle open={false} onClick={toggle} />
+        </div>
       )}
 
-      <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
-        <nav className="border-t bg-secondary pb-[env(safe-area-inset-bottom)]">
-          <div ref={barRef} className="flex flex-row items-stretch">
-            {primary.map((destination) => (
-              <TabLink
-                key={destination.id}
-                destination={destination}
-                pathname={pathname}
-                badgeCount={destination.badge === 'feed' ? feedBadgeCount : 0}
-              />
-            ))}
-            <button
-              type="button"
-              aria-label="More"
-              aria-expanded={moreOpen}
-              aria-current={moreActive ? 'page' : undefined}
-              onClick={() => setMoreOpen(true)}
-              className={cn(
-                'flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 p-3 select-none',
-                moreActive && 'text-primary',
-              )}
-            >
-              <MoreHorizontal className="h-6 w-6" strokeWidth={1.25} />
-              <span className="text-xxs">More</span>
-            </button>
-          </div>
-        </nav>
+      {expanded && (
+        <button
+          type="button"
+          aria-label="Dismiss menu"
+          className="fixed inset-0 z-30 bg-black/25"
+          onClick={closeOverlay}
+        />
+      )}
 
-        <Sheet.Content
-          side="bottom"
-          className="max-h-[80vh] gap-0 overflow-y-auto pb-[max(1rem,env(safe-area-inset-bottom))]"
-        >
-          <Sheet.Header>
-            <Sheet.Title>More</Sheet.Title>
-            <Sheet.Description className="sr-only">
-              The rest of the rail, plus search, capture, help, and system.
-            </Sheet.Description>
-          </Sheet.Header>
-
-          {overflow.length > 0 && (
-            <MoreSection>
-              {overflow.map((destination) => (
-                <MoreLink
-                  key={destination.id}
-                  to={destination.to}
-                  label={destination.label}
-                  icon={destination.icon}
-                  active={isRailDestinationActive(destination, pathname)}
-                  badgeCount={destination.badge === 'feed' ? feedBadgeCount : 0}
-                  onClick={() => setMoreOpen(false)}
-                />
-              ))}
-            </MoreSection>
-          )}
-
-          <MoreSection>
-            <MoreLink
-              to="/search"
-              label="Search"
-              icon={Search}
-              active={pathname.startsWith('/search')}
-              onClick={() => setMoreOpen(false)}
-            />
-            <button
-              type="button"
-              onClick={handleCapture}
-              className="flex w-full items-center gap-3 rounded-md px-4 py-3 text-left transition hover:bg-accent"
-            >
-              <Camera className="h-5 w-5 shrink-0" strokeWidth={1.25} />
-              <span className="text-sm">Capture</span>
-            </button>
-            {HELP_LINKS.map((link) => {
-              const Icon = link.icon;
-
-              return (
-                <a
-                  key={link.href}
-                  href={link.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex w-full items-center gap-3 rounded-md px-4 py-3 text-left transition hover:bg-accent"
-                >
-                  <Icon className="h-5 w-5 shrink-0" strokeWidth={1.25} />
-                  <span className="text-sm">{link.label}</span>
-                </a>
-              );
-            })}
-            <MoreLink
-              to="/system"
-              label="System"
-              icon={MonitorCog}
-              active={pathname.startsWith('/system')}
-              onClick={() => setMoreOpen(false)}
-            />
-          </MoreSection>
-        </Sheet.Content>
-      </Sheet>
+      <SecondaryNavigation />
     </>
-  );
-}
-
-function TabLink({
-  destination,
-  pathname,
-  badgeCount,
-}: {
-  destination: RailDestination;
-  pathname: string;
-  badgeCount: number;
-}) {
-  const Icon = destination.icon;
-  const active = isRailDestinationActive(destination, pathname);
-
-  return (
-    <Link
-      to={destination.to}
-      aria-label={destination.label}
-      aria-current={active ? 'page' : undefined}
-      className={cn(
-        'relative flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 p-3 select-none',
-        active && 'text-primary',
-      )}
-    >
-      <Icon className="h-6 w-6" strokeWidth={1.25} />
-      <span className="max-w-full truncate text-xxs">{destination.label}</span>
-      {badgeCount > 0 && (
-        <span className="pointer-events-none absolute right-1 top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground">
-          {badgeCount > 99 ? '99+' : badgeCount}
-        </span>
-      )}
-    </Link>
-  );
-}
-
-function MoreSection({ children }: { children: ReactNode }) {
-  return <div className="flex flex-col px-2 pb-2">{children}</div>;
-}
-
-function MoreLink({
-  to,
-  label,
-  icon: Icon,
-  active,
-  badgeCount = 0,
-  onClick,
-}: {
-  to: string;
-  label: string;
-  icon: LucideIcon;
-  active: boolean;
-  badgeCount?: number;
-  onClick: () => void;
-}) {
-  return (
-    <Link
-      to={to}
-      aria-current={active ? 'page' : undefined}
-      onClick={onClick}
-      className={cn(
-        'flex w-full items-center gap-3 rounded-md px-4 py-3 text-left transition hover:bg-accent',
-        active && 'text-primary',
-      )}
-    >
-      <Icon className="h-5 w-5 shrink-0" strokeWidth={1.25} />
-      <span className="flex-1 text-sm">{label}</span>
-      {badgeCount > 0 && (
-        <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground">
-          {badgeCount > 99 ? '99+' : badgeCount}
-        </span>
-      )}
-    </Link>
   );
 }

@@ -1,11 +1,15 @@
 import type { ReactNode } from 'react';
 
 import { Collapsible, Tooltip, cn } from '@ci/shadcn';
-import { ChevronRight, CircleHelp } from '@ci/shadcn/icons';
+import { Camera, ChevronRight, CircleHelp, MonitorCog, Search } from '@ci/shadcn/icons';
 
-import { usePowerRail } from '../PowerRailContext';
-import { HELP_LINKS, useVisibleRailDestinations } from '../railDestinations';
+import { CaptureModal } from '@/components/modals/CaptureModal';
+import { useCaptureModal } from '@/hooks';
+
 import { NavUser } from '../PrimaryNavigation/NavUser';
+import { usePowerRail } from '../PowerRailContext';
+import { RailEdgeToggle } from '../RailEdgeToggle';
+import { HELP_LINKS, useVisibleRailDestinations } from '../railDestinations';
 
 import { MemorySubmenu } from './MemorySubmenu';
 import { NavLink } from './NavLink';
@@ -104,10 +108,108 @@ function HelpSubmenu() {
   );
 }
 
+function OverlayRail({
+  destinationsList,
+  closeOverlay,
+  expanded,
+}: {
+  destinationsList: ReactNode;
+  closeOverlay: () => void;
+  expanded: boolean;
+}) {
+  const [{ isOpen: captureOpen }, { open: openCapture, close: closeCapture }] = useCaptureModal();
+
+  return (
+    <>
+      {captureOpen && <CaptureModal open onClose={closeCapture} />}
+      <nav
+        id="power-rail"
+        data-state={expanded ? 'expanded' : 'collapsed'}
+        aria-hidden={!expanded}
+        onClick={(event) => {
+          if ((event.target as HTMLElement).closest('a')) {
+            closeOverlay();
+          }
+        }}
+        className={cn(
+          'fixed inset-y-0 left-0 z-40 flex w-56 flex-col overflow-x-hidden p-2 pb-[max(0.5rem,var(--safe-area-bottom))] pt-[max(0.5rem,var(--safe-area-top))] transition-transform duration-200',
+          'border-r border-white/55 bg-white/35 shadow-xl backdrop-blur-xl dark:border-white/20 dark:bg-white/10',
+          expanded ? 'translate-x-0' : 'pointer-events-none -translate-x-full',
+        )}
+      >
+        <Tooltip.Provider>
+          <div className="mb-1 flex justify-end">
+            <RailEdgeToggle open onClick={closeOverlay} />
+          </div>
+          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto [scrollbar-gutter:stable]">
+            {destinationsList}
+            <div className="flex flex-col gap-1">
+              <NavLink to="/search" label="Search">
+                <Search className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+              </NavLink>
+              <button
+                type="button"
+                onClick={() => {
+                  closeOverlay();
+                  openCapture();
+                }}
+                className="flex items-center gap-3 rounded-md px-2 py-2 text-left transition hover:bg-accent hover:text-accent-foreground"
+              >
+                <Camera className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+                <span className="truncate text-sm">Capture</span>
+              </button>
+              <NavLink to="/system" label="System">
+                <MonitorCog className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+              </NavLink>
+            </div>
+          </div>
+
+          <div className="mt-auto flex flex-col gap-1 pb-2">
+            <HelpSubmenu />
+
+            <NavUser />
+          </div>
+        </Tooltip.Provider>
+      </nav>
+    </>
+  );
+}
+
 export function SecondaryNavigation() {
-  const { expanded, pinned, setHovered } = usePowerRail();
+  const { expanded, pinned, setHovered, variant, closeOverlay } = usePowerRail();
   const destinations = useVisibleRailDestinations();
   const feedBadgeCount = useFeedBadgeCount();
+  const overlay = variant === 'overlay';
+
+  const destinationsList = (
+    <div className="flex flex-col gap-1">
+      {destinations.map((destination) => {
+        if (destination.id === 'memory') {
+          return <MemorySubmenu key={destination.id} />;
+        }
+
+        const Icon = destination.icon;
+
+        return (
+          <NavLink
+            key={destination.id}
+            to={destination.to}
+            label={destination.label}
+            end={destination.end}
+            badgeCount={destination.badge === 'feed' ? feedBadgeCount : 0}
+          >
+            <Icon className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+          </NavLink>
+        );
+      })}
+    </div>
+  );
+
+  if (overlay) {
+    return (
+      <OverlayRail destinationsList={destinationsList} closeOverlay={closeOverlay} expanded={expanded} />
+    );
+  }
 
   return (
     // A drawer, not a column that shoves the page around.
@@ -145,27 +247,7 @@ export function SecondaryNavigation() {
       >
         <Tooltip.Provider>
           <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto [scrollbar-gutter:stable]">
-            <div className="flex flex-col gap-1">
-              {destinations.map((destination) => {
-                if (destination.id === 'memory') {
-                  return <MemorySubmenu key={destination.id} />;
-                }
-
-                const Icon = destination.icon;
-
-                return (
-                  <NavLink
-                    key={destination.id}
-                    to={destination.to}
-                    label={destination.label}
-                    end={destination.end}
-                    badgeCount={destination.badge === 'feed' ? feedBadgeCount : 0}
-                  >
-                    <Icon className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-                  </NavLink>
-                );
-              })}
-            </div>
+            {destinationsList}
           </div>
 
           <div className="mt-auto flex flex-col gap-1 pb-2">

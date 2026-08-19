@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { renderWithProviders } from '@/test/renderWithProviders';
 
+import { PowerRailProvider } from '../PowerRailContext';
+
 import { MobileNavigation } from './MobileNavigation';
 
 vi.mock('@/common/feature', async () => {
@@ -20,48 +22,59 @@ vi.mock('@/components/modals/CaptureModal', () => ({
   CaptureModal: () => <div data-testid="capture-modal" />,
 }));
 
+vi.mock('@/hooks', async () => {
+  const actual = await vi.importActual<typeof import('@/hooks')>('@/hooks');
+
+  return {
+    ...actual,
+    useAuth: () => [{ isAuthenticated: true, authToken: 'token' }, { logout: vi.fn() }],
+    useCurrentUser: () => ({ user: { name: 'Test User', email: 'test@example.com', onboarded: true } }),
+    useCaptureModal: () => [{ isOpen: false }, { open: vi.fn(), close: vi.fn() }],
+  };
+});
+
+function renderMobileNav(route = '/today') {
+  return renderWithProviders(
+    <PowerRailProvider variant="overlay">
+      <MobileNavigation />
+    </PowerRailProvider>,
+    { route },
+  );
+}
+
 describe('MobileNavigation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('lays the rail left to right and parks the rest under More', async () => {
-    renderWithProviders(<MobileNavigation />, { route: '/today' });
+  it('starts closed, with the open-edge control and no tab bar', () => {
+    renderMobileNav();
 
-    expect(screen.getByRole('link', { name: 'Plan' })).toHaveAttribute('href', '/plan');
-    expect(screen.getByRole('link', { name: 'Today' })).toHaveAttribute('href', '/today');
-    expect(screen.getByRole('link', { name: 'Forecast' })).toHaveAttribute('href', '/forecast');
-    expect(screen.getByRole('link', { name: 'Memory' })).toHaveAttribute('href', '/memory/events');
+    expect(screen.getByRole('button', { name: 'Open menu' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Plan' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'More' })).not.toBeInTheDocument();
+    expect(document.querySelector('img[src*="logo"]')).toBeNull();
+  });
 
-    expect(screen.queryByRole('link', { name: 'Chat' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+  it('opens the glass rail with the same destinations as the desktop list', async () => {
+    renderMobileNav();
 
-    fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
 
-    expect(await screen.findByRole('link', { name: 'Chat' })).toHaveAttribute('href', '/chat');
-    expect(screen.getByRole('link', { name: 'Sources' })).toHaveAttribute('href', '/sources');
+    expect(await screen.findByRole('link', { name: 'Plan' })).toHaveAttribute('href', '/plan');
+    expect(screen.getByRole('link', { name: 'Chat' })).toHaveAttribute('href', '/chat');
     expect(screen.getByRole('link', { name: 'Search' })).toHaveAttribute('href', '/search');
-    expect(screen.getByRole('link', { name: 'System' })).toHaveAttribute('href', '/system');
-    expect(screen.getByRole('button', { name: 'Capture' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close menu' })).toBeInTheDocument();
   });
 
-  it('marks Today current and does not treat Chat as the product mark', () => {
-    renderWithProviders(<MobileNavigation />, { route: '/today' });
+  it('opens on a right swipe from the left edge', async () => {
+    renderMobileNav();
 
-    expect(screen.getByRole('link', { name: 'Today' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('link', { name: 'Plan' })).not.toHaveAttribute('aria-current');
-    expect(document.querySelector('img')).toBeNull();
-  });
-
-  it('lights More when the current page lives in the overflow', async () => {
-    renderWithProviders(<MobileNavigation />, { route: '/chat' });
-
-    expect(screen.getByRole('button', { name: 'More' })).toHaveAttribute('aria-current', 'page');
-
-    fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    fireEvent.touchStart(document, { touches: [{ clientX: 8, clientY: 240 }] });
+    fireEvent.touchEnd(document, { changedTouches: [{ clientX: 80, clientY: 240 }] });
 
     await waitFor(() => {
-      expect(screen.getByRole('link', { name: 'Chat' })).toHaveAttribute('aria-current', 'page');
+      expect(screen.getByRole('link', { name: 'Today' })).toBeInTheDocument();
     });
   });
 });

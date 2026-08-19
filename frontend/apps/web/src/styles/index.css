@@ -132,6 +132,12 @@
     padding-left: max(1rem, env(safe-area-inset-left, 0px));
     padding-right: max(1rem, env(safe-area-inset-right, 0px));
   }
+
+  /* Fixed phone chrome (rail toggle, connection chip). `top-2` sits under the
+     status bar because those nodes are viewport-fixed, not in the padded column. */
+  .ci-mobile-chrome-top {
+    top: max(0.5rem, var(--safe-area-top));
+  }
 }
 
 /*

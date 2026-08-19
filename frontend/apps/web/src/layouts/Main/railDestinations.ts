@@ -17,8 +17,8 @@ import { useFeatures } from '@/common/feature';
 import { isMemoryHubPath } from '@/components/MemoryHub/memoryHubSections';
 
 /**
- * One destination in the Power Rail — and therefore in the mobile tab bar,
- * left to right in this order, with whatever does not fit living under More.
+ * Destinations in the Power Rail, top to bottom (and on the phone, the same
+ * list inside the glass overlay drawer).
  */
 export interface RailDestination {
   readonly id: string;
@@ -53,12 +53,6 @@ export const HELP_LINKS = [
   },
 ] as const;
 
-/** Minimum width of one tab, including More. Phones land around four plus More. */
-export const MOBILE_TAB_SLOT_MIN_PX = 64;
-
-/** Used before the bar has a width (SSR, first paint, tests without ResizeObserver). */
-export const MOBILE_TAB_FALLBACK_PRIMARY = 4;
-
 export function visibleRailDestinations(isFeatureEnabled: (flag: string) => boolean): RailDestination[] {
   return RAIL_DESTINATIONS.filter((destination) => !destination.flag || isFeatureEnabled(destination.flag));
 }
@@ -67,37 +61,6 @@ export function useVisibleRailDestinations(): RailDestination[] {
   const { isFeatureEnabled } = useFeatures();
 
   return visibleRailDestinations(isFeatureEnabled);
-}
-
-/**
- * How many rail destinations sit on the bar itself. The last slot is always
- * More — Search, Capture, Help, and System are not in the rail, so they need a
- * home even when every destination already fits.
- */
-export function mobilePrimaryTabCount(barWidthPx: number, destinationCount: number): number {
-  if (destinationCount <= 0) {
-    return 0;
-  }
-
-  if (barWidthPx <= 0) {
-    return Math.min(destinationCount, MOBILE_TAB_FALLBACK_PRIMARY);
-  }
-
-  const slots = Math.max(2, Math.floor(barWidthPx / MOBILE_TAB_SLOT_MIN_PX));
-
-  return Math.min(destinationCount, slots - 1);
-}
-
-export function splitMobileDestinations(
-  destinations: readonly RailDestination[],
-  primaryCount: number,
-): { primary: RailDestination[]; overflow: RailDestination[] } {
-  const count = Math.max(0, Math.min(primaryCount, destinations.length));
-
-  return {
-    primary: destinations.slice(0, count),
-    overflow: destinations.slice(count),
-  };
 }
 
 export function isRailDestinationActive(destination: RailDestination, pathname: string): boolean {

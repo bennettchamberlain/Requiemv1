@@ -25,21 +25,23 @@ export function Main() {
 
   if (isMobile) {
     return (
-      <div className="flex h-lvh flex-col pt-[var(--safe-area-top)]">
-        <Toaster position="top-right" theme={themeState.mode} />
-        <div className="fixed top-2 right-2 z-40 flex items-center gap-1.5">
-          <ConnectionModeIndicator />
-          <OutboxQueueIndicator />
+      <PowerRailProvider variant="overlay">
+        <div className="flex h-lvh flex-col pt-[var(--safe-area-top)]">
+          <Toaster position="top-right" theme={themeState.mode} />
+          <div className="ci-mobile-chrome-top fixed right-[max(0.5rem,env(safe-area-inset-right,0px))] z-40 flex items-center gap-1.5">
+            <ConnectionModeIndicator />
+            <OutboxQueueIndicator />
+          </div>
+          <main className="flex-1 min-w-0 overflow-hidden min-h-0 relative">
+            <Suspense fallback={<LoadingPage />}>
+              <Outlet />
+              <Portal id="content-modal" className="absolute inset-0 empty:hidden" />
+            </Suspense>
+          </main>
+          <MobileNavigation />
+          <Portal id="overlay-modal" className="fixed inset-0 z-50 empty:hidden" />
         </div>
-        <main className="flex-1 min-w-0 overflow-hidden min-h-0 relative">
-          <Suspense fallback={<LoadingPage />}>
-            <Outlet />
-            <Portal id="content-modal" className="absolute inset-0 empty:hidden" />
-          </Suspense>
-        </main>
-        <MobileNavigation />
-        <Portal id="overlay-modal" className="fixed inset-0 z-50 empty:hidden" />
-      </div>
+      </PowerRailProvider>
     );
   }
 
