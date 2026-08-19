@@ -23,6 +23,25 @@ const MAX_ENTRIES = 20_000;
 const MAX_UNITS = 500;
 
 /**
+ * Sizing ceiling, per unit — deliberately NOT shared with the walk's
+ * MAX_ENTRIES budget.
+ *
+ * `aggregate` recurses through a recognized unit purely to report sizeBytes /
+ * fileCount. Charging that to the discovery budget means one big export starves
+ * discovery of everything after it: a 79,623-file Google Takeout exhausts 20,000
+ * entries on its own, and the walk then returns on its next iteration, so every
+ * top-level source sorting after `google-takeout` — instagram, linkedin, reddit,
+ * spotify, twitter, uber, whatsapp… — never becomes a unit at all. The scan
+ * reports `truncated: true`, but a caller reading a 28-unit list has no way to
+ * tell WHICH sources it lost, and importing that list reads as "imported
+ * everything" (the same failure MAX_INBOX_BATCH_UNITS refuses to make).
+ *
+ * So sizing is budgeted per unit and its exhaustion is reported on the unit
+ * (`sizeApproximate`) rather than by silently ending discovery.
+ */
+const MAX_UNIT_SIZING_ENTRIES = 50_000;
+
+/**
  * The batch ceiling. A request over it is REJECTED, not truncated — silently
  * importing 100 of 130 units reads as "imported everything" to the person who
  * asked for everything.
@@ -63,6 +82,12 @@ export interface InboxUnit {
    * this boolean is all a client needs to know the unit is unavailable.
    */
   claimed: boolean;
+  /**
+   * True when sizing stopped at MAX_UNIT_SIZING_ENTRIES, so `sizeBytes` and
+   * `fileCount` are lower bounds. The unit is still fully importable — only the
+   * preview numbers are partial.
+   */
+  sizeApproximate: boolean;
 }
 
 export interface InboxScan {
@@ -232,7 +257,9 @@ export class ImportInboxService {
 
         const kind = info.isDirectory() ? 'directory' : 'file';
         const sizeBytes =
-          kind === 'file' ? info.size : (await this.aggregate(resolved, { entries: 0 })).sizeBytes;
+          kind === 'file'
+            ? info.size
+            : (await this.aggregate(resolved, { entries: 0, exhausted: false })).sizeBytes;
 
         const { run } = await this.runs.startRun(ctx, {
           localSource: { path: resolved, kind, sizeBytes },
@@ -312,6 +339,7 @@ export class ImportInboxService {
           recognized: await this.recognize(fullPath),
           activeRunId: null,
           claimed: false,
+          sizeApproximate: false,
         });
         continue;
       }
@@ -323,7 +351,11 @@ export class ImportInboxService {
       const recognized = await this.recognize(fullPath);
 
       if (recognized.length > 0 && recognized[0].confidence >= UNIT_CONFIDENCE) {
-        const aggregate = await this.aggregate(fullPath, state);
+        // A fresh budget per unit: sizing a huge export must not consume the
+        // walk's discovery budget and strand its siblings. See
+        // MAX_UNIT_SIZING_ENTRIES.
+        const budget = { entries: 0, exhausted: false };
+        const aggregate = await this.aggregate(fullPath, budget);
 
         units.push({
           path: relative,
@@ -333,6 +365,7 @@ export class ImportInboxService {
           recognized,
           activeRunId: null,
           claimed: false,
+          sizeApproximate: budget.exhausted,
         });
         continue;
       }
@@ -373,7 +406,7 @@ export class ImportInboxService {
   /** Recursive size/count for a directory unit, bounded by the walk's entry cap. */
   private async aggregate(
     dir: string,
-    state: { entries: number },
+    budget: { entries: number; exhausted: boolean },
   ): Promise<{ sizeBytes: number; fileCount: number }> {
     let sizeBytes = 0;
     let fileCount = 0;
@@ -387,11 +420,12 @@ export class ImportInboxService {
     }
 
     for (const entry of entries) {
-      if (state.entries >= MAX_ENTRIES) {
+      if (budget.entries >= MAX_UNIT_SIZING_ENTRIES) {
+        budget.exhausted = true;
         break;
       }
 
-      state.entries += 1;
+      budget.entries += 1;
 
       if (entry.isSymbolicLink()) {
         continue;
@@ -407,7 +441,7 @@ export class ImportInboxService {
           // Vanished mid-walk; the aggregate is advisory.
         }
       } else if (entry.isDirectory()) {
-        const nested = await this.aggregate(fullPath, state);
+        const nested = await this.aggregate(fullPath, budget);
 
         sizeBytes += nested.sizeBytes;
         fileCount += nested.fileCount;
