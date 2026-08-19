@@ -41,7 +41,16 @@ describe('DESTINATION_ORDER agrees with destinationsFor', () => {
         mediaType: 'image/jpeg',
         mediaPath: '/tmp/x.jpg',
       } as never;
-      const destinations = destinationsFor(rec).filter((d) => rank(d) >= 0);
+      const destinations = destinationsFor(rec);
+
+      // Assert membership BEFORE ordering. Filtering unranked destinations out
+      // — which this test did — discards precisely the drift it exists to
+      // catch: a destination dropped from DESTINATION_ORDER ranks -1, gets
+      // filtered away, and the remaining list is still sorted, so the test
+      // passes while that destination is never written at all.
+      for (const destination of destinations) {
+        expect(DESTINATION_ORDER).toContain(destination);
+      }
 
       const ranks = destinations.map(rank);
       expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
