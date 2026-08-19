@@ -224,7 +224,18 @@ export function kindFor(classification: string | null, mediaType: string | null)
       return 'capture.audio';
     }
 
-    return 'capture.photo'; // no/unknown MIME → default to photo (prior behavior)
+    // A MIME that is present and is NOT media contradicts the classification,
+    // and the classification loses: it is a coarse label an importer chose,
+    // while the mimetype is a statement about the bytes. The Instagram HTML
+    // importer used to stamp 'media' on text/plain entries that carried no file
+    // at all, and this branch's photo default turned every one of them into a
+    // capture.photo event with no photo behind it. 'import.archive_item' is the
+    // same kind classification 'file' gets — the honest "a document" answer.
+    if (mediaType && !mediaType.startsWith('image/')) {
+      return 'import.archive_item';
+    }
+
+    return 'capture.photo'; // image/* or no MIME at all → photo (prior behavior)
   }
 
   if (classification && KIND_BY_CLASSIFICATION[classification]) {
