@@ -379,6 +379,115 @@ describe('drop ledger accounting', () => {
   });
 });
 
+/**
+ * The Android/LinkedIn merge shape. Verbatim from the developer's Apple export
+ * (4,927 cards): the sync wrote the source record into NOTE as free text
+ * instead of into properties, so 682 cards carry an email ONLY there, 369 a
+ * phone — and one card carries nothing else whatsoever. That card is why every
+ * import of this archive finished `partial`: no FN, `N:;;;;`, one NOTE, so no
+ * name and no handle for PushStage to resolve by.
+ */
+describe('handles recovered from a NOTE-embedded export record', () => {
+  it('recovers the email from a card whose only content is a note (the `partial` card)', async () => {
+    const raw = [
+      'BEGIN:VCARD',
+      'VERSION:3.0',
+      'PRODID:-//Apple Inc.//macOS 26.5.1//EN',
+      'N:;;;;',
+      'NOTE:Source: ANDROID_CALENDAR\\nEmails: inversin@d2.com\\nCreatedAt: 2/10/20\\, 6:40 PM\\n',
+      'END:VCARD',
+      '',
+    ].join('\r\n');
+
+    const { pipeline, drops } = await importRaw(raw, 'android.vcf');
+
+    expect(drops).toEqual({});
+    const [entity] = contactEntities(pipeline);
+    expect(entity).toBeDefined();
+    // The point of the whole exercise: an identity attribute, which is what
+    // staging/identity.ts turns into `staged_entities.identity_key` and what
+    // PushStage keys the graph entity on. Without it this card is skipped with
+    // 'no stable name or handle to resolve by'.
+    expect(entity!.attributes).toEqual(
+      expect.arrayContaining([{ name: 'email', value: 'inversin@d2.com', identity: true }]),
+    );
+    expect(entity!.metadata?.Emails).toEqual(['inversin@d2.com']);
+  });
+
+  it('recovers a comma-separated email list and a phone from one note', async () => {
+    const raw = [
+      'BEGIN:VCARD',
+      'VERSION:3.0',
+      'FN:Mary Ahern',
+      'NOTE:Source: MOBILE_CONTACTS\\nCompanies: null\\nEmails: GAceti@example.com\\, gaceti@example.com',
+      ' \\nPhoneNumbers: 443-808-1500\\nCreatedAt: 9/19/15\\, 8:55 AM\\n',
+      'END:VCARD',
+      '',
+    ].join('\r\n');
+
+    const { pipeline } = await importRaw(raw, 'mary.vcf');
+    const [entity] = contactEntities(pipeline);
+
+    expect(entity!.metadata?.Emails).toEqual(['GAceti@example.com', 'gaceti@example.com']);
+    expect(entity!.metadata?.Phones).toEqual(['443-808-1500']);
+  });
+
+  it('leaves the structured properties alone when the card has them', () => {
+    // Fallback, not augmentation: the note is a historical record of another
+    // address book, the property list is what this card currently states.
+    const contact = buildContact(
+      contentLines(
+        [
+          'BEGIN:VCARD',
+          'FN:Teo Acosta',
+          'EMAIL;type=INTERNET:teo@current.example',
+          'NOTE:Source: MOBILE_CONTACTS\\nEmails: teo@stale.example\\nPhoneNumbers: 518.641.2094\\n',
+          'END:VCARD',
+        ].join('\r\n'),
+      ),
+      'teo.vcf',
+    );
+
+    expect(contact!.entity.metadata?.Emails).toEqual(['teo@current.example']);
+    // Per KIND, though — the card states no TEL, so the note's phone is still
+    // the only one there is and is recovered.
+    expect(contact!.entity.metadata?.Phones).toEqual(['518.641.2094']);
+  });
+
+  it('ignores note values that are not handles', () => {
+    // `Companies: null` proves the export writes the literal string for an
+    // absent field, and a short number is not a phone the identity layer can
+    // normalize (staging/identity.ts stops at seven digits).
+    const contact = buildContact(
+      contentLines(
+        [
+          'BEGIN:VCARD',
+          'FN:Nobody Useful',
+          'NOTE:Source: MOBILE_CONTACTS\\nCompanies: null\\nEmails: null\\nPhoneNumbers: 411\\n',
+          'END:VCARD',
+        ].join('\r\n'),
+      ),
+      'nobody.vcf',
+    );
+
+    expect(contact!.entity.metadata?.Emails).toBeUndefined();
+    expect(contact!.entity.metadata?.Phones).toBeUndefined();
+    expect(contact!.entity.attributes?.some((a) => a.identity)).toBe(false);
+  });
+
+  it('does not mistake prose that merely mentions email for a handle', () => {
+    const contact = buildContact(
+      contentLines(
+        ['BEGIN:VCARD', 'FN:Chatty Note', 'NOTE:Email me before you call.', 'END:VCARD'].join('\r\n'),
+      ),
+      'chatty.vcf',
+    );
+
+    expect(contact!.entity.metadata?.Emails).toBeUndefined();
+    expect(contact!.entity.attributes?.some((a) => a.identity)).toBe(false);
+  });
+});
+
 describe('full pipeline: grouped labels + folded NOTE + QUOTED-PRINTABLE ORG together', () => {
   it('imports a realistic Apple-style card intact end to end', async () => {
     const raw = [
