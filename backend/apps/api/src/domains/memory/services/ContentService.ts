@@ -19,6 +19,7 @@ import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next'
 import { ContentBaseEntity } from '../entities/ContentBaseEntity';
 import { Content, ContentEntity } from '../entities/ContentEntity';
 import { EventEntity } from '../entities/EventEntity';
+import { classifyExternalId } from '../externalIdKind';
 import { CreateContentDto, SearchContentDto, UpdateContentDto } from '../types';
 
 import { CtiAggregate } from './CtiAggregate';
@@ -91,7 +92,22 @@ export class ContentService {
     return this.aggregate.composeMany(entities, (entity, base) => ContentEntity.toEgressType(entity, base));
   }
 
-  /** Map a CreateContentDto onto ContentEntity columns (title stays on the base row). */
+  /**
+   * Map a CreateContentDto onto ContentEntity columns (title stays on the base
+   * row).
+   *
+   * `external_id_kind` is stamped HERE, not by the callers, because this is the
+   * one choke point every write path funnels through: `create` (GraphQL
+   * createContent, ETL transforms) and `createManyDetailed` (the importer's
+   * PushStage, the /v1/contents bulk plane, GraphQL createContents) both build
+   * their entities from this method. A caller that knows what it is writing
+   * still wins — the importer stamps 'file' for an uploaded blob and
+   * 'external_uri' for a source URI, and the ETL transforms stamp
+   * SOURCE_NATIVE_EXTERNAL_ID_KIND for a bare platform id that no shape test
+   * could recognise. Everything else falls back to `classifyExternalId`, so a
+   * write path nobody has updated (and any future one) still produces a
+   * classified row instead of depending on the next backfill migration.
+   */
   private toDetailFields(
     item: CreateContentDto,
     id: string,
@@ -105,7 +121,7 @@ export class ContentService {
       url: item.url ?? undefined,
       mimetype: item.mimetype ?? undefined,
       externalId: item.external_id ?? undefined,
-      externalIdKind: item.external_id_kind ?? undefined,
+      externalIdKind: item.external_id_kind ?? classifyExternalId(item.external_id) ?? undefined,
       sourceUrl: item.source_url ?? undefined,
       sourceData: item.source_data ?? undefined,
       sourceType: item.source_type ?? undefined,
@@ -708,6 +724,14 @@ export class ContentService {
 
     if (data.external_id_kind !== undefined) {
       updateData.externalIdKind = data.external_id_kind;
+    } else if (data.external_id !== undefined) {
+      // The kind describes the external_id it was derived from, so an update
+      // that replaces external_id without saying the kind must re-derive it --
+      // carrying the old classification forward would leave a row asserting
+      // 'file' about a value that is now a source URI (or the reverse). When the
+      // new value fits neither shape the honest answer is NULL (unclassified),
+      // not the stale one.
+      updateData.externalIdKind = classifyExternalId(data.external_id) ?? null;
     }
 
     if (data.source_url !== undefined) {

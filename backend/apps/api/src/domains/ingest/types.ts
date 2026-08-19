@@ -132,6 +132,14 @@ export const bulkContentRecordSchema = z.object({
   url: z.string().optional(),
   mimetype: z.string().optional(),
   external_id: z.string().optional(),
+  // What external_id references. Accepted rather than dropped: a client that
+  // knows (the importer stamps 'file' for an uploaded blob, 'external_uri' for
+  // a source-native URI — see push/inputs.ts toContentInput) must be able to
+  // say so over the wire. Zod strips unknown keys, so omitting this field here
+  // silently discarded the classification and left the row to depend on the
+  // shape fallback in ContentService.toDetailFields, which cannot recognise a
+  // bare platform id. Omitted by a client that does not know: still optional.
+  external_id_kind: z.enum(['file', 'external_uri']).optional(),
   source_url: z.string().optional(),
   source_data: z.record(z.unknown()).optional(),
   event_id: z.string().uuid().optional(),

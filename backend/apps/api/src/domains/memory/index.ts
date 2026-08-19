@@ -228,6 +228,17 @@ export type { PersonDuplicateGroup, DuplicateReason } from './services/PersonDup
 export type { PersonInteractionStats } from './services/PersonActivityService';
 export type { MergeCounts } from './services/PersonMergeService';
 export type { CreateEventDto, UpdateEventDto, CreateContentDto, UpdateContentDto } from './types';
+// The `content.external_id_kind` vocabulary and the value-shaped test behind
+// it. Exported because every domain that writes a content row (import, etl,
+// ingest, graphql) has to agree on what the column means — a second
+// implementation of the predicate is a second definition of "is this a file id".
+export {
+  classifyExternalId,
+  EXTERNAL_ID_URI_SHAPE,
+  EXTERNAL_ID_UUID_SHAPE,
+  SOURCE_NATIVE_EXTERNAL_ID_KIND,
+} from './externalIdKind';
+export type { ExternalIdKind } from './externalIdKind';
 // The remaining ingest DTOs, exported for the same reason as the ones above:
 // they are the shapes other domains hand to this one's services, so they belong
 // on the public surface rather than behind a reach into ./types.

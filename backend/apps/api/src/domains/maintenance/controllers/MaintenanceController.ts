@@ -55,14 +55,15 @@ import {
   EventParticipantBackfillService,
 } from '../services/EventParticipantBackfillService';
 import {
+  type ExternalIdKindIntegrityReport,
+  ExternalIdKindIntegrityService,
+} from '../services/ExternalIdKindIntegrityService';
+import {
   type GraphEnrichmentProgressCounts,
   type GraphEnrichmentResult,
   GraphEnrichmentService,
 } from '../services/GraphEnrichmentService';
-import {
-  type HealSelfCollationResult,
-  HealSelfCollationService,
-} from '../services/HealSelfCollationService';
+import { type HealSelfCollationResult, HealSelfCollationService } from '../services/HealSelfCollationService';
 import {
   type DeferralResult,
   type DroppedIndex,
@@ -429,6 +430,7 @@ export class MaintenanceController {
     private readonly graphEnrichmentService: GraphEnrichmentService,
     private readonly searchIndexBackfillService: SearchIndexBackfillService,
     private readonly embedCoverageTelemetryService: EmbedCoverageTelemetryService,
+    private readonly externalIdKindIntegrityService: ExternalIdKindIntegrityService,
     private readonly locationEstimateService: LocationEstimateService,
     private readonly ingestResetService: IngestResetService,
     private readonly maintenanceOrchestratorService: MaintenanceOrchestratorService,
@@ -1216,6 +1218,28 @@ export class MaintenanceController {
     const types = query.types && query.types.length > 0 ? query.types : undefined;
 
     return this.embedCoverageTelemetryService.computeCoverage(types);
+  }
+
+  /**
+   * Integrity check for the `ci.content.external_id_kind` discriminator
+   * (defect F22): every row stamped `'file'` must resolve against `ci.files`.
+   *
+   * `external_id` holds either a `ci.files.id` or an opaque source-native
+   * reference, and no FK can enforce the difference while both live in one
+   * column — so the stamp is the only contract, and until now nothing checked
+   * it. That is how migration 20260818215331 shipped an "everything that is not
+   * Spotify is a file id" rule that labelled every Amazon Music / Audible /
+   * Kindle / Prime Video URI as a file id.
+   *
+   * `orphanFileRows` is the assertion; `malformedFileRows` is the subset that
+   * is not even UUID-shaped, which distinguishes a mislabel (a URI stamped
+   * 'file' — run migration 20260818235804) from a dangling-but-plausible id (a
+   * file row that was deleted). Pure observability: no writes, counts are
+   * GLOBAL, matching /search/coverage.
+   */
+  @Get('content/external-id-kind')
+  async contentExternalIdKindIntegrity(): Promise<ExternalIdKindIntegrityReport> {
+    return this.externalIdKindIntegrityService.check();
   }
 
   /**

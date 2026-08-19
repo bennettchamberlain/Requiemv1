@@ -3,7 +3,7 @@ import { v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/logging';
 import { type Connection } from '@ci/domains/connections';
-import { ContentService, type CreateContentDto } from '@ci/domains/memory';
+import { ContentService, type CreateContentDto, SOURCE_NATIVE_EXTERNAL_ID_KIND } from '@ci/domains/memory';
 
 import { ConnectionSyncJob } from '../../../types';
 interface FacebookPost {
@@ -113,6 +113,7 @@ export class FacebookPostsTransformService {
               url: post.permalink_url || undefined,
               mimetype: 'text/plain',
               external_id: post.id,
+              external_id_kind: SOURCE_NATIVE_EXTERNAL_ID_KIND,
               source_url: post.permalink_url || undefined,
               source_data: {
                 facebook_post_id: post.id,
@@ -145,6 +146,7 @@ export class FacebookPostsTransformService {
               url: post.permalink_url || undefined,
               mimetype: 'text/plain',
               external_id: post.id,
+              external_id_kind: SOURCE_NATIVE_EXTERNAL_ID_KIND,
               source_url: post.permalink_url || undefined,
               source_data: {
                 facebook_post_id: post.id,
