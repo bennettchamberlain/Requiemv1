@@ -7,8 +7,8 @@ import { FilePreviewGenerationListener } from '../FilePreviewGenerationListener'
  * marker 0xdN") that every mainstream viewer decodes fine, but sharp's
  * default failOn: 'warning' turned into failed preview jobs (~8% of a sampled
  * Google Takeout batch). The listener now decodes with failOn: 'error':
- * warning-level quirks produce a normal preview, genuinely undecodable bytes
- * still fail the job.
+ * warning-level quirks produce a normal preview, and genuinely undecodable
+ * bytes are skipped (the job completes) rather than dead-lettered.
  *
  * The fixture below is a real reproduction, not a mock: a tiny JPEG encoded
  * with restart markers and stray bytes stuffed before them, which makes the
@@ -41,17 +41,18 @@ function makeLogger() {
   return { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
 }
 
-function makeListener(fileBytes: Buffer) {
+function makeListener(fileBytes: Buffer | (() => Promise<Buffer>), contentType = 'image/jpeg') {
   const created: unknown[] = [];
+  const logger = makeLogger();
   const fileService = {
     findVariantByParentId: jest.fn(async () => null),
     findById: jest.fn(async () => ({
       id: 'file-1',
       bucket: 'files',
       key: 'user/file-1',
-      contentType: 'image/jpeg',
+      contentType,
     })),
-    getFileContent: jest.fn(async () => fileBytes),
+    getFileContent: jest.fn(async () => (typeof fileBytes === 'function' ? fileBytes() : fileBytes)),
     setDimensions: jest.fn(async () => {}),
     create: jest.fn(async (_ctx: unknown, input: unknown) => {
       created.push(input);
@@ -72,10 +73,10 @@ function makeListener(fileBytes: Buffer) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     eventService as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    makeLogger() as any,
+    logger as any,
   );
 
-  return { listener, fileService, eventService, created };
+  return { listener, fileService, eventService, created, logger };
 }
 
 describe('FilePreviewGenerationListener', () => {
@@ -95,12 +96,52 @@ describe('FilePreviewGenerationListener', () => {
     expect(eventService.send).toHaveBeenCalledTimes(1);
   });
 
-  it('still fails the job on genuinely undecodable bytes (failOn is error, not none)', async () => {
-    const { listener, fileService } = makeListener(Buffer.from('this is not an image at all'));
+  /**
+   * Routing on the MIME prefix alone (`contentType.startsWith('image/')`) hands
+   * sharp anything labelled image/*, and libvips throws "Input buffer contains
+   * unsupported image format" for any bytes it has no loader for. That throw
+   * used to reach the pg-boss worker: 3 retries and then a permanent dead
+   * letter per file (32 on the QA appliance), re-earned on every re-import.
+   * An undecodable file is a skip — the job must complete.
+   */
+  it('skips instead of failing the job when the image bytes are undecodable', async () => {
+    const { listener, fileService, eventService } = makeListener(Buffer.from('this is not an image at all'));
 
     await expect(
       listener.generatePreview({ userId: 'u1', fileId: 'file-1', inventoryCapture: false }),
-    ).rejects.toThrow();
+    ).resolves.toBeUndefined();
+
+    expect(fileService.create).not.toHaveBeenCalled();
+    expect(eventService.send).not.toHaveBeenCalled();
+  });
+
+  it('logs fileId and contentType on a decode skip so the undecodable corpus is countable', async () => {
+    const { listener, logger } = makeListener(Buffer.from('not an image'), 'image/heic');
+
+    await listener.generatePreview({ userId: 'u1', fileId: 'file-1', inventoryCapture: false });
+
+    const decodeWarn = logger.warn.mock.calls.find(
+      ([message]) => message === 'Image decode failed, skipping preview generation',
+    );
+
+    expect(decodeWarn).toBeDefined();
+    expect(decodeWarn?.[1]).toMatchObject({ fileId: 'file-1', contentType: 'image/heic' });
+  });
+
+  /**
+   * The object-storage read stays outside the decode try/catch: unlike a
+   * decode failure, a failed fetch is transient and the queue's retries are
+   * the right answer. Losing that distinction would turn every blip into a
+   * silently missing thumbnail.
+   */
+  it('still fails the job when the original cannot be read from object storage', async () => {
+    const { listener, fileService } = makeListener(async () => {
+      throw new Error('S3 object body was empty for key: user/file-1');
+    });
+
+    await expect(
+      listener.generatePreview({ userId: 'u1', fileId: 'file-1', inventoryCapture: false }),
+    ).rejects.toThrow('S3 object body was empty');
     expect(fileService.create).not.toHaveBeenCalled();
   });
 });

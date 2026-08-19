@@ -98,8 +98,12 @@ export class FilePreviewGenerationListener {
     }
 
     if (result == null) {
-      this.logger.warn('Failed to generate preview, buffer is null', {
+      // The generators return null for input they cannot decode; they have
+      // already logged the file id, content type and the underlying libvips
+      // message. The job completes so the file is not retried forever.
+      this.logger.warn('No preview generated, skipping', {
         fileId: payload.fileId,
+        contentType: file.contentType,
       });
 
       return;
@@ -140,10 +144,15 @@ export class FilePreviewGenerationListener {
   private async generateImagePreview(
     context: UserServiceContext,
     file: RequiredFields<File, 'key', true>,
-  ): Promise<PreviewResult> {
+  ): Promise<PreviewResult | null> {
     // Buffer the original once so the dimensions probe and the resize read the
     // same bytes (one object-storage fetch, and metadata is reliable on a
     // Buffer where it isn't on a partially-consumed stream).
+    //
+    // Deliberately OUTSIDE the try below: an object-storage read failure is
+    // transient and worth the queue's retries, a decode failure is not. Same
+    // split MediaDimensionsStage makes between `object_storage_read_failed`
+    // (retry) and `probe_failed` (skip).
     const original = Buffer.from(await this.fileService.getFileContent(context, file.key));
 
     const sourceDimensions = await this.mediaDimensionsService.fromImageBuffer(original);
@@ -160,28 +169,53 @@ export class FilePreviewGenerationListener {
     // for sequential JPEG") that every mainstream viewer decodes fine; the
     // default turned them into failed preview jobs (~8% of a sampled Takeout
     // batch). Verified against an independent decoder that the tolerant decode
-    // is artifact-free. Genuinely undecodable input still throws.
-    const { data, info } = await sharp(original, { failOn: 'error' })
-      .rotate()
-      .resize(PREVIEW_MAX_DIMENSION, PREVIEW_MAX_DIMENSION, {
-        fit: 'inside',
-      })
-      .jpeg({
-        quality: 80,
-      })
-      .toBuffer({ resolveWithObject: true });
+    // is artifact-free.
+    try {
+      const { data, info } = await sharp(original, { failOn: 'error' })
+        .rotate()
+        .resize(PREVIEW_MAX_DIMENSION, PREVIEW_MAX_DIMENSION, {
+          fit: 'inside',
+        })
+        .jpeg({
+          quality: 80,
+        })
+        .toBuffer({ resolveWithObject: true });
 
-    return {
-      buffer: data,
-      previewDimensions: { width: info.width, height: info.height },
-      sourceDimensions,
-    };
+      return {
+        buffer: data,
+        previewDimensions: { width: info.width, height: info.height },
+        sourceDimensions,
+      };
+    } catch (err: unknown) {
+      // A decode failure is a SKIP, not a job failure. Routing on the MIME
+      // prefix alone means anything labelled image/* reaches sharp, and
+      // libvips throws "Input buffer contains unsupported image format" for
+      // every byte sequence it has no loader for. That throw used to
+      // propagate to the pg-boss worker, which bought 3 retries and then a
+      // permanent dead letter per file — 32 of them on the QA appliance, all
+      // image/jpeg, and re-earned on every re-import. Nothing about the bytes
+      // changes between attempts, so the retries can only cost work.
+      //
+      // Returning null lands in the `result == null` branch of
+      // generatePreview: logged, job completes. fileId + contentType are on
+      // the warn line so the undecodable corpus is countable from the logs
+      // (`grep 'Image decode failed'`), which is what tells us whether a
+      // whole format is missing a loader rather than a few odd files.
+      this.logger.warn('Image decode failed, skipping preview generation', {
+        fileId: file.id,
+        contentType: file.contentType,
+        bytes: original.length,
+        error: errorMessage(err),
+      });
+
+      return null;
+    }
   }
 
   private async generateVideoPreview(
     context: UserServiceContext,
     file: RequiredFields<File, 'key', true>,
-  ): Promise<PreviewResult> {
+  ): Promise<PreviewResult | null> {
     const stream = await this.fileService.getFileStream(context, file.key);
     const tempInput = join(tmpdir(), `ci-preview-${crypto.randomUUID()}`);
     const tempOutput = `${tempInput}-frame.jpg`;
@@ -214,23 +248,41 @@ export class FilePreviewGenerationListener {
 
       // ffmpeg already auto-rotates the extracted frame, so .rotate() is a
       // safety net for any orientation tag still on the JPEG bytes. Same
-      // failOn: 'error' tolerance as the image path (see generateImagePreview).
-      const { data, info } = await sharp(frame, { failOn: 'error' })
-        .rotate()
-        .resize(PREVIEW_MAX_DIMENSION, PREVIEW_MAX_DIMENSION, {
-          fit: 'inside',
-        })
-        .jpeg({ quality: 80 })
-        .toBuffer({ resolveWithObject: true });
+      // failOn: 'error' tolerance as the image path, and the same
+      // skip-don't-throw contract: an undecodable extracted frame is a file
+      // we cannot preview, not a job worth retrying three times and
+      // dead-lettering.
+      try {
+        const { data, info } = await sharp(frame, { failOn: 'error' })
+          .rotate()
+          .resize(PREVIEW_MAX_DIMENSION, PREVIEW_MAX_DIMENSION, {
+            fit: 'inside',
+          })
+          .jpeg({ quality: 80 })
+          .toBuffer({ resolveWithObject: true });
 
-      return {
-        buffer: data,
-        previewDimensions: { width: info.width, height: info.height },
-        sourceDimensions,
-      };
+        return {
+          buffer: data,
+          previewDimensions: { width: info.width, height: info.height },
+          sourceDimensions,
+        };
+      } catch (err: unknown) {
+        this.logger.warn('Video frame decode failed, skipping preview generation', {
+          fileId: file.id,
+          contentType: file.contentType,
+          bytes: frame.length,
+          error: errorMessage(err),
+        });
+
+        return null;
+      }
     } finally {
       await fs.unlink(tempInput).catch(() => {});
       await fs.unlink(tempOutput).catch(() => {});
     }
   }
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
