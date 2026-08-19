@@ -45,6 +45,7 @@
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { unescapeIcsText as unescapeVCardText } from './calendar';
@@ -92,7 +93,14 @@ export class VCardFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    if (fs.existsSync(full) && fs.statSync(full).isFile()) {
+    let st: fs.Stats;
+    try {
+      st = await stat(full);
+    } catch {
+      return { confidence: 0 };
+    }
+
+    if (st.isFile()) {
       const ext = path.extname(full).toLowerCase();
       if (ext === '.vcf' || ext === '.vcard') {
         try {
@@ -115,7 +123,7 @@ export class VCardFileImporter implements FileImporter {
       }
     }
 
-    if (fs.existsSync(full) && fs.statSync(full).isDirectory()) {
+    if (st.isDirectory()) {
       return { confidence: 0, dir_threshold: 0.9 };
     }
 

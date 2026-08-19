@@ -12,6 +12,7 @@
        "Sent Chat History":     [ { "To": "user",   "Created": "...", "Text": "yo" } ] }
 */
 import fs from 'node:fs';
+import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { FileImporter, Recognition, DirEntry } from './registry';
@@ -73,13 +74,13 @@ function readJSON(fpath: string): unknown {
 
 // Locate a signature file (snap_history.json / chat_history.json) inside a
 // directory: check the root and a "json/" subfolder.
-function findSignatureFiles(root: string): string[] {
+async function findSignatureFiles(root: string): Promise<string[]> {
   const found: string[] = [];
   const candidates = [root, path.join(root, 'json'), path.join(root, 'json_data')];
   for (const dir of candidates) {
     let names: string[];
     try {
-      names = fs.readdirSync(dir);
+      names = await readdir(dir);
     } catch {
       continue;
     }
@@ -101,14 +102,14 @@ export class SnapchatFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       const base = path.basename(root).toLowerCase();
       if (SIGNATURE_FILES.includes(base)) {
         return { confidence: 0.95 };
@@ -117,8 +118,8 @@ export class SnapchatFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
-      if (findSignatureFiles(root).length > 0) {
+    if (st.isDirectory()) {
+      if ((await findSignatureFiles(root)).length > 0) {
         return { confidence: 0.95 };
       }
 
@@ -147,7 +148,7 @@ export class SnapchatFileImporter implements FileImporter {
         files = [root];
       }
     } else if (stat.isDirectory()) {
-      files = findSignatureFiles(root);
+      files = await findSignatureFiles(root);
     }
 
     for (const fpath of files) {

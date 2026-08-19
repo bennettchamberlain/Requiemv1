@@ -6,6 +6,7 @@
    the top of the body. One 'note' event per .md file.
 */
 import fs from 'node:fs';
+import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { FileImporter, Recognition, DirEntry } from './registry';
@@ -25,10 +26,10 @@ function isNotionMarkdownName(name: string): boolean {
 }
 
 // Recurse a directory up to `depth` levels, returning absolute paths of Notion-named *.md files.
-function findMarkdownFiles(dir: string, depth: number, out: string[]): void {
+async function findMarkdownFiles(dir: string, depth: number, out: string[]): Promise<void> {
   let names: fs.Dirent[];
   try {
-    names = fs.readdirSync(dir, { withFileTypes: true });
+    names = await readdir(dir, { withFileTypes: true });
   } catch {
     return;
   }
@@ -40,7 +41,7 @@ function findMarkdownFiles(dir: string, depth: number, out: string[]): void {
         out.push(full);
       }
     } else if (ent.isDirectory() && depth > 0) {
-      findMarkdownFiles(full, depth - 1, out);
+      await findMarkdownFiles(full, depth - 1, out);
     }
   }
 }
@@ -89,14 +90,14 @@ export class NotionFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       // A single exported page dropped directly — recognize modestly so a more
       // specific importer can outrank us. Only with Notion's id suffix: bare
       // markdown is anyone's.
@@ -107,9 +108,9 @@ export class NotionFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       const found: string[] = [];
-      findMarkdownFiles(root, 2, found);
+      await findMarkdownFiles(root, 2, found);
       if (found.length > 0) {
         return { confidence: 0.65, dir_threshold: 0.7 };
       }
@@ -139,7 +140,7 @@ export class NotionFileImporter implements FileImporter {
         files.push(root);
       }
     } else if (stat.isDirectory()) {
-      findMarkdownFiles(root, 2, files);
+      await findMarkdownFiles(root, 2, files);
     }
 
     for (const fpath of files) {

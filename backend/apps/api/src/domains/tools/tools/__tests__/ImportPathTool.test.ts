@@ -79,9 +79,12 @@ function build() {
       };
     }),
   };
-  const tool = new ImportPathTool(sources as never, runs as never, makeLogger() as never);
+  const users = {
+    findById: jest.fn(async () => ({ id: 'user-1', email: 'tester@example.com' })),
+  };
+  const tool = new ImportPathTool(sources as never, runs as never, users as never, makeLogger() as never);
 
-  return { tool, sources, runs, calls };
+  return { tool, sources, runs, calls, users };
 }
 
 describe('ImportPathTool', () => {

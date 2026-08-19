@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import fs from 'fs';
+import { readdir, stat } from 'fs/promises';
 import path from 'path';
 
 import Database from 'better-sqlite3';
@@ -12,19 +13,19 @@ import { timeframeContains } from './timeline';
 // Find places.sqlite within a path: the file itself, or anywhere a few levels
 // deep when handed a folder (the importer is dispatched once on the job root, so
 // dropping a whole `browser/` or `Firefox Profile/` folder must still resolve).
-function findPlacesDbs(root: string, depth = 0, out: string[] = []): string[] {
+async function findPlacesDbs(root: string, depth = 0, out: string[] = []): Promise<string[]> {
   if (depth > 4) {
     return out;
   }
 
-  let stat: fs.Stats;
+  let st: fs.Stats;
   try {
-    stat = fs.statSync(root);
+    st = await stat(root);
   } catch {
     return out;
   }
 
-  if (stat.isFile()) {
+  if (st.isFile()) {
     if (path.basename(root) === 'places.sqlite') {
       out.push(root);
     }
@@ -32,13 +33,13 @@ function findPlacesDbs(root: string, depth = 0, out: string[] = []): string[] {
     return out;
   }
 
-  if (!stat.isDirectory()) {
+  if (!st.isDirectory()) {
     return out;
   }
 
   let names: string[];
   try {
-    names = fs.readdirSync(root);
+    names = await readdir(root);
   } catch {
     return out;
   }
@@ -47,7 +48,7 @@ function findPlacesDbs(root: string, depth = 0, out: string[] = []): string[] {
     if (name === 'places.sqlite') {
       out.push(path.join(root, name));
     } else if (!name.startsWith('.')) {
-      findPlacesDbs(path.join(root, name), depth + 1, out);
+      await findPlacesDbs(path.join(root, name), depth + 1, out);
     }
   }
 
@@ -84,11 +85,17 @@ class FirefoxFileImporter implements FileImporter {
     }
 
     // Match the bare file, or a folder that contains a places.sqlite.
-    if (path.basename(full) === 'places.sqlite' && fs.existsSync(full)) {
-      return { confidence: 1.0 };
+    if (path.basename(full) === 'places.sqlite') {
+      try {
+        await stat(full);
+
+        return { confidence: 1.0 };
+      } catch {
+        /* missing or unreadable: fall through to the directory scan */
+      }
     }
 
-    if (findPlacesDbs(full).length > 0) {
+    if ((await findPlacesDbs(full)).length > 0) {
       return { confidence: 0.9, dir_threshold: 0.6 };
     }
 
@@ -101,7 +108,7 @@ class FirefoxFileImporter implements FileImporter {
       return;
     }
 
-    for (const dbPath of findPlacesDbs(root)) {
+    for (const dbPath of await findPlacesDbs(root)) {
       this.importDb(dbPath, params);
     }
   }

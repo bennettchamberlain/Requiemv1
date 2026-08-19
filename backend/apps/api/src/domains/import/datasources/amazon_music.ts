@@ -31,6 +31,7 @@
    edge. */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { open, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseCSV } from './csv';
@@ -79,24 +80,18 @@ function headerKind(text: string): MusicFileKind | null {
   return null;
 }
 
-function sniffKind(fpath: string): MusicFileKind | null {
-  let fd: number | undefined;
+async function sniffKind(fpath: string): Promise<MusicFileKind | null> {
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {
-    fd = fs.openSync(fpath, 'r');
+    handle = await open(fpath, 'r');
     const buf = Buffer.alloc(4096);
-    const n = fs.readSync(fd, buf, 0, 4096, 0);
+    const { bytesRead: n } = await handle.read(buf, 0, 4096, 0);
 
     return headerKind(buf.toString('utf8', 0, n));
   } catch {
     return null;
   } finally {
-    if (fd !== undefined) {
-      try {
-        fs.closeSync(fd);
-      } catch {
-        /* ignore */
-      }
-    }
+    await handle?.close().catch(() => undefined);
   }
 }
 
@@ -172,20 +167,20 @@ export class AmazonMusicFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       const base = path.basename(root);
       if (path.extname(base).toLowerCase() !== '.csv') {
         return { confidence: 0 };
       }
 
-      const kind = sniffKind(root);
+      const kind = await sniffKind(root);
       if (!kind) {
         return { confidence: 0 };
       }
@@ -193,8 +188,8 @@ export class AmazonMusicFileImporter implements FileImporter {
       return { confidence: FILENAME_RES[kind].test(base) ? 0.95 : 0.85 };
     }
 
-    if (stat.isDirectory()) {
-      if (this.findFiles(root).size) {
+    if (st.isDirectory()) {
+      if ((await this.findFiles(root)).size) {
         return { confidence: 0.95 };
       }
 
@@ -208,14 +203,14 @@ export class AmazonMusicFileImporter implements FileImporter {
   // staging adds an "All Data Categories" wrapper above that — recurse deep
   // enough to survive a couple of wrapper directories. First file of each kind
   // wins; a real export carries exactly one of each.
-  private findFiles(
+  private async findFiles(
     dir: string,
     depth = 0,
     out = new Map<MusicFileKind, string>(),
-  ): Map<MusicFileKind, string> {
+  ): Promise<Map<MusicFileKind, string>> {
     let names: fs.Dirent[];
     try {
-      names = fs.readdirSync(dir, { withFileTypes: true });
+      names = await readdir(dir, { withFileTypes: true });
     } catch {
       return out;
     }
@@ -224,10 +219,10 @@ export class AmazonMusicFileImporter implements FileImporter {
       const full = path.join(dir, dirent.name);
       if (dirent.isDirectory()) {
         if (depth < 4) {
-          this.findFiles(full, depth + 1, out);
+          await this.findFiles(full, depth + 1, out);
         }
       } else if (dirent.isFile() && path.extname(dirent.name).toLowerCase() === '.csv') {
-        const kind = sniffKind(full);
+        const kind = await sniffKind(full);
         if (kind && !out.has(kind)) {
           out.set(kind, full);
         }
@@ -256,16 +251,16 @@ export class AmazonMusicFileImporter implements FileImporter {
     let files: Map<MusicFileKind, string>;
     let emitKinds: MusicFileKind[];
     if (stat.isFile()) {
-      const kind = sniffKind(root);
+      const kind = await sniffKind(root);
       if (!kind) {
         return;
       }
 
-      files = this.findFiles(path.dirname(root));
+      files = await this.findFiles(path.dirname(root));
       files.set(kind, root);
       emitKinds = [kind];
     } else if (stat.isDirectory()) {
-      files = this.findFiles(root);
+      files = await this.findFiles(root);
       emitKinds = [...files.keys()];
     } else {
       return;

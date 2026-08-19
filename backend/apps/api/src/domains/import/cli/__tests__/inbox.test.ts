@@ -10,6 +10,7 @@ const unit = (overrides: Partial<InboxUnit> = {}): InboxUnit => ({
   sizeBytes: 1024,
   fileCount: 1,
   recognized: [{ dataSource: 'google_photos', title: 'Google Photos', confidence: 0.9 }],
+  declared: [],
   activeRunId: null,
   claimed: false,
   sizeApproximate: false,
@@ -22,6 +23,7 @@ const scan = (units: InboxUnit[]) => ({
   units,
   skippedSymlinks: 0,
   truncated: false,
+  recognitionPartial: false,
 });
 
 describe('ci-import inbox', () => {
@@ -85,6 +87,7 @@ describe('ci-import inbox', () => {
         units: [],
         skippedSymlinks: 0,
         truncated: false,
+        recognitionPartial: false,
       }),
     });
 

@@ -27,6 +27,7 @@
    donates a position row (mapping.ts destinationsFor).
 */
 import fs from 'node:fs';
+import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { readStore, readManifest, importGrokChats } from './_x_archive';
@@ -731,17 +732,23 @@ export class TwitterFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       const manifestPath = path.join(root, 'data', 'manifest.js');
-      if (fs.existsSync(manifestPath)) {
-        const text = fs.readFileSync(manifestPath, 'utf8');
+      let text: string | undefined;
+      try {
+        text = await readFile(manifestPath, 'utf8');
+      } catch {
+        /* absent or unreadable — not an X archive */
+      }
+
+      if (text !== undefined) {
         // manifest starts with something like 'window.YTD.manifest.part0 = '\n{"archiveInfo":{...}}
         const idx = text.indexOf('=');
         if (idx !== -1) {

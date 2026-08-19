@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { Alert, Button, Card } from '@ci/shadcn';
-import { FileArchive, Folder, Inbox, RefreshCcw } from '@ci/shadcn/icons';
+import { FileArchive, Folder, Inbox, Loader2, RefreshCcw } from '@ci/shadcn/icons';
 
 import { ServiceBadges } from './ServiceBadges';
 import { useImportApi, type InboxScan, type InboxUnitResult } from './useImportApi';
@@ -25,6 +25,7 @@ export function InboxPanel() {
   const [scan, setScan] = useState<InboxScan | null>(null);
   const [results, setResults] = useState<ReadonlyMap<string, InboxUnitResult>>(new Map());
   const [busy, setBusy] = useState(false);
+  const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -32,11 +33,15 @@ export function InboxPanel() {
       return;
     }
 
+    setScanning(true);
+
     try {
       setScan(await api.scanInbox());
       setError(null);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setScanning(false);
     }
   }, [api]);
 
@@ -94,14 +99,31 @@ export function InboxPanel() {
   }, [scan, startUnits]);
 
   if (scan == null) {
-    return error == null ? null : <Alert variant="destructive">{error}</Alert>;
+    if (error != null) {
+      return (
+        <Alert variant="destructive">
+          <Alert.Description>{error}</Alert.Description>
+        </Alert>
+      );
+    }
+
+    // A first scan over a full inbox takes real seconds; silence here reads
+    // as a frozen page.
+    return (
+      <div className="text-muted-foreground flex items-center gap-2 p-4 text-sm">
+        <Loader2 aria-hidden className="size-4 animate-spin" />
+        Scanning the inbox folder…
+      </div>
+    );
   }
 
   if (!scan.available) {
     return (
       <Alert>
-        The inbox folder is not available on this appliance
-        {scan.reason ? ` — ${scan.reason}` : '.'}
+        <Alert.Description>
+          The inbox folder is not available on this appliance
+          {scan.reason ? ` — ${scan.reason}` : '.'}
+        </Alert.Description>
       </Alert>
     );
   }
@@ -119,9 +141,9 @@ export function InboxPanel() {
         </div>
 
         <div className="flex shrink-0 gap-2">
-          <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={busy}>
-            <RefreshCcw aria-hidden className="mr-1 size-4" />
-            Rescan
+          <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={busy || scanning}>
+            <RefreshCcw aria-hidden className={scanning ? 'mr-1 size-4 animate-spin' : 'mr-1 size-4'} />
+            {scanning ? 'Scanning…' : 'Rescan'}
           </Button>
           <Button
             size="sm"
@@ -133,11 +155,28 @@ export function InboxPanel() {
         </div>
       </div>
 
-      {error == null ? null : <Alert variant="destructive">{error}</Alert>}
+      {error == null ? null : (
+        <Alert variant="destructive">
+          <Alert.Description>{error}</Alert.Description>
+        </Alert>
+      )}
 
       {scan.truncated ? (
         <Alert>
-          The inbox holds more than this scan lists. Import what is shown, then rescan for the rest.
+          {/* Bare text lands in the grid's zero-width icon column and wraps
+              per word; alert content always goes through Description. */}
+          <Alert.Description>
+            The inbox holds more than this scan lists. Import what is shown, then rescan for the rest.
+          </Alert.Description>
+        </Alert>
+      ) : null}
+
+      {scan.recognitionPartial ? (
+        <Alert>
+          <Alert.Description>
+            Every item is listed, but some have not been identified yet — rescan to finish
+            identifying them. Importing now still works.
+          </Alert.Description>
         </Alert>
       ) : null}
 
@@ -171,7 +210,16 @@ export function InboxPanel() {
                     )}
                   </div>
 
-                  <ServiceBadges services={unit.recognized.map((recognition) => recognition.dataSource)} />
+                  {/* Titles, not raw importer names — and when recognition saw
+                      nothing (it cannot look inside an archive), the folder's
+                      declared services still say what this will import as. */}
+                  <ServiceBadges
+                    services={
+                      unit.recognized.length > 0
+                        ? unit.recognized.map((recognition) => recognition.title)
+                        : unit.declared
+                    }
+                  />
 
                   {unit.claimed || result?.runId != null ? (
                     <span className="text-muted-foreground shrink-0 text-xs">

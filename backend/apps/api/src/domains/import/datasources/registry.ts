@@ -4,7 +4,7 @@
 // the recognition runner. Some advanced behaviors (FS archive handling, recognition
 // algorithms, OAuth2) are simplified in this implementation.
 
-import { readFileSync, statSync, promises as fsPromises } from 'node:fs';
+import { readFileSync, promises as fsPromises } from 'node:fs';
 import path from 'node:path';
 
 /**
@@ -150,6 +150,15 @@ export interface RecognizeRunOptions {
   maxDepth?: number;
   /** Max entries to scan per directory level (default 200), a runaway guard. */
   maxEntriesPerDir?: number;
+  /**
+   * Restrict recognition to these importer names. The inbox scan sets this
+   * for paths inside a service drop folder: `spotify/` can only hold what the
+   * Spotify importer reads, so asking the other seventy-odd recognizers is
+   * pure waste — the fan-out is the scan's dominant cost. Absent means every
+   * registered importer, which is right whenever the location says nothing
+   * (the inbox root, uploads, the CLI/MCP path tools).
+   */
+  only?: ReadonlySet<string>;
 }
 
 /** Run every importer's `recognize` against a single entry; keep the hits. */
@@ -157,11 +166,16 @@ async function recognizeLevel(
   ctx: ImportContext,
   entry: DirEntry,
   opts: RecognizeParams,
+  only?: ReadonlySet<string>,
 ): Promise<DataSourceRecognition[]> {
   const hits: DataSourceRecognition[] = [];
   for (const ds of dataSources.values()) {
     // all datasources considered (generic no longer skipped)
     if (!ds.newFileImporter) {
+      continue;
+    }
+
+    if (only != null && !only.has(ds.name)) {
       continue;
     }
 
@@ -233,14 +247,14 @@ export async function dataSourcesRecognize(
     // (or same) level stands, and `r` is redundant with it — dropped.
   };
 
-  for (const r of await recognizeLevel(ctx, entry, opts)) {
+  for (const r of await recognizeLevel(ctx, entry, opts, runOpts.only)) {
     consider(r);
   }
 
-  if (runOpts.descend && entry.fullPath && isDirectorySafe(entry.fullPath)) {
+  if (runOpts.descend && entry.fullPath && (await isDirectorySafe(entry.fullPath))) {
     const maxDepth = runOpts.maxDepth ?? 4;
     const maxEntries = runOpts.maxEntriesPerDir ?? 200;
-    await descendRecognize(ctx, entry.fullPath, opts, consider, maxDepth, maxEntries, 1);
+    await descendRecognize(ctx, entry.fullPath, opts, consider, maxDepth, maxEntries, 1, runOpts.only);
   }
 
   const results = [...best.values()].flat();
@@ -265,9 +279,9 @@ export async function dataSourcesRecognize(
   return results;
 }
 
-function isDirectorySafe(p: string): boolean {
+async function isDirectorySafe(p: string): Promise<boolean> {
   try {
-    return statSync(p).isDirectory();
+    return (await fsPromises.stat(p)).isDirectory();
   } catch {
     return false;
   }
@@ -315,6 +329,7 @@ async function descendRecognize(
   maxDepth: number,
   maxEntries: number,
   depth: number,
+  only?: ReadonlySet<string>,
 ): Promise<void> {
   if (depth > maxDepth) {
     return;
@@ -339,12 +354,12 @@ async function descendRecognize(
 
     const childPath = path.join(dir, e.name);
     const childEntry: DirEntry = { filename: e.name, fsRoot: dir, fullPath: childPath };
-    for (const r of await recognizeLevel(ctx, childEntry, opts)) {
+    for (const r of await recognizeLevel(ctx, childEntry, opts, only)) {
       consider(r);
     }
 
     if (e.isDirectory()) {
-      await descendRecognize(ctx, childPath, opts, consider, maxDepth, maxEntries, depth + 1);
+      await descendRecognize(ctx, childPath, opts, consider, maxDepth, maxEntries, depth + 1, only);
     }
   }
 }
@@ -392,7 +407,7 @@ export async function findImportRoots(
     return [rootPath];
   }
 
-  if (!isDirectorySafe(rootPath)) {
+  if (!(await isDirectorySafe(rootPath))) {
     return [rootPath];
   }
 

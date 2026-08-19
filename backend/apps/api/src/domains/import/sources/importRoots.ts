@@ -3,6 +3,8 @@ import path from 'node:path';
 
 import config from '@ci/configuration';
 
+import { sanitizeFilename } from './sanitizeFilename';
+
 /**
  * Where a caller is allowed to point the path-based import tools.
  *
@@ -31,6 +33,27 @@ export function configuredImportRoots(): string[] {
  */
 export function inboxRoot(): string {
   return path.resolve(config.import.inboxDir);
+}
+
+/**
+ * One user's slice of the inbox: `<inboxRoot>/<folder derived from email>`.
+ *
+ * The inbox mount is shared by every account on the appliance, but WHO an
+ * import is for is decided by whoever starts the run — so without scoping,
+ * any account could import (and thereby consume) an archive someone else
+ * dropped. Each account therefore gets its own subtree, and the scan and the
+ * batch never leave the caller's.
+ *
+ * Derived from the EMAIL because it is the one identifier that is both unique
+ * (DB constraint) and recognizable from the desktop side of the mount — the
+ * display name is neither, and two "Kyle"s sharing a folder would recreate
+ * the exact cross-account leak this exists to prevent. Lowercased before
+ * sanitizing so the folder never depends on how the email was cased at
+ * signup; `@` and friends become `_` (e.g. `kyle@lifescope.io` →
+ * `kyle_lifescope.io`).
+ */
+export function userInboxDir(email: string): string {
+  return path.join(inboxRoot(), sanitizeFilename(email.trim().toLowerCase()));
 }
 
 /**
@@ -110,24 +133,37 @@ export async function resolveWithinRoots(requested: string, roots: string[]): Pr
 
 /**
  * The read-side resolver the path tools use: the operator's roots plus the
- * inbox, which is always allowed — the same composition upstream made when it
+ * CALLER's OWN inbox subtree — the same composition upstream made when it
  * appended its data dir to CI_IMPORT_ROOTS so the wizard's dropped files were
- * importable. Reading an inbox path through this resolver is fine; only the
- * inbox batch surface may CONSUME one, and it resolves through
- * {@link resolveWithinInbox} instead.
+ * importable, narrowed to the one slice of the shared mount that is the
+ * caller's. Never the whole inbox root: reading is quieter than consuming,
+ * but another account's dropped archive is not this caller's to read either.
+ * `email: null` means an anonymous or unresolvable caller — configured roots
+ * only, no inbox at all. Only the inbox batch surface may CONSUME an inbox
+ * path, and it resolves through {@link resolveWithinUserInbox} instead.
  */
-export async function resolveWithinImportRoots(requested: string): Promise<string> {
-  return resolveWithinRoots(requested, [...configuredImportRoots(), inboxRoot()]);
+export async function resolveWithinImportRoots(
+  requested: string,
+  email: string | null,
+): Promise<string> {
+  const roots = configuredImportRoots();
+
+  if (email != null) {
+    roots.push(userInboxDir(email));
+  }
+
+  return resolveWithinRoots(requested, roots);
 }
 
 /**
- * The consume-side resolver for the INBOX surfaces: the inbox alone. Every
- * path the scan walks or the batch starts goes through this — so a path under
- * a configured root can never reach the code that claims inbox units, by
+ * The consume-side resolver for the INBOX surfaces: ONE USER's inbox subtree,
+ * nothing else. Every path the scan walks or the batch starts goes through
+ * this — so a path under a configured root can never reach the code that
+ * claims inbox units, and neither can another account's subtree, by
  * construction rather than by a check someone could forget.
  */
-export async function resolveWithinInbox(requested: string): Promise<string> {
-  return resolveWithinRoots(requested, [inboxRoot()]);
+export async function resolveWithinUserInbox(requested: string, email: string): Promise<string> {
+  return resolveWithinRoots(requested, [userInboxDir(email)]);
 }
 
 /**

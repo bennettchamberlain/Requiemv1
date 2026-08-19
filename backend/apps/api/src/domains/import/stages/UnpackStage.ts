@@ -120,12 +120,34 @@ export class UnpackStage implements ImportStageRunner {
     // becomes one archive plus the growing tree, rather than all of them at once.
     await context.progress({ processed: 0, total: 1, phase: 'expanding' });
 
-    const nested = unpackArchives(
+    // Per-archive ticks, throttled to ~1/s: a 72-part Takeout answers "is it
+    // doing anything?" 72 times instead of holding a blank bar for an hour.
+    // The first tick (0 of N) and the last always land, whatever the clock —
+    // the total appearing is the moment the bar becomes meaningful, and the
+    // final tick squares the bar with reality before 'expanded' overwrites
+    // the phase.
+    let lastTickAt = 0;
+
+    const nested = await unpackArchives(
       context.scratchDir,
       (message) => this.logger.debug(message, { runId: context.runId }),
       {
         deleteArchives: true,
         onRejected: (archive) => rejected.push(archive),
+        onProgress: async ({ done, total, current }) => {
+          const boundary = done === 0 || done === total;
+
+          if (!boundary && Date.now() - lastTickAt < 1_000) {
+            return;
+          }
+
+          lastTickAt = Date.now();
+          await context.progress({
+            processed: done,
+            total,
+            phase: current != null ? `extracting ${current}` : 'expanding',
+          });
+        },
       },
     );
 
@@ -140,7 +162,11 @@ export class UnpackStage implements ImportStageRunner {
       this.logger.warn(message, { runId: context.runId }),
     );
 
-    await context.progress({ processed: 1, total: 1, phase: 'expanded' });
+    await context.progress({
+      processed: Math.max(1, nested.length),
+      total: Math.max(1, nested.length),
+      phase: 'expanded',
+    });
 
     return {
       processed: 1,

@@ -4,6 +4,7 @@
    of ENML/HTML. One 'note' event per <note>. */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { open, readdir, stat, type FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseStringPromise } from 'xml2js';
@@ -85,23 +86,19 @@ function looksLikeEnex(text: string): boolean {
   return head.includes('<en-export');
 }
 
-function sniffFile(fpath: string): boolean {
-  let fd: number | undefined;
+async function sniffFile(fpath: string): Promise<boolean> {
+  let fh: FileHandle | undefined;
   try {
-    fd = fs.openSync(fpath, 'r');
+    fh = await open(fpath, 'r');
     const buf = Buffer.alloc(4096);
-    const n = fs.readSync(fd, buf, 0, 4096, 0);
+    const { bytesRead } = await fh.read(buf, 0, 4096, 0);
 
-    return looksLikeEnex(buf.toString('utf8', 0, n));
+    return looksLikeEnex(buf.toString('utf8', 0, bytesRead));
   } catch {
     return false;
   } finally {
-    if (fd !== undefined) {
-      try {
-        fs.closeSync(fd);
-      } catch {
-        /* ignore */
-      }
+    if (fh !== undefined) {
+      await fh.close().catch(() => {});
     }
   }
 }
@@ -113,33 +110,33 @@ export class EvernoteFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       const base = path.basename(root).toLowerCase();
       if (path.extname(base) === '.enex') {
         return { confidence: 0.95 };
       }
 
       // Some exports use a different extension but the same XML body.
-      if (sniffFile(root)) {
+      if (await sniffFile(root)) {
         return { confidence: 0.9 };
       }
 
       return { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       try {
-        const names = fs.readdirSync(root);
+        const names = await readdir(root);
         for (const name of names) {
           if (path.extname(name).toLowerCase() === '.enex') {
-            if (sniffFile(path.join(root, name))) {
+            if (await sniffFile(path.join(root, name))) {
               return { confidence: 0.95 };
             }
 
@@ -152,7 +149,7 @@ export class EvernoteFileImporter implements FileImporter {
           const sub = path.join(root, name);
           let subStat: fs.Stats;
           try {
-            subStat = fs.statSync(sub);
+            subStat = await stat(sub);
           } catch {
             continue;
           }
@@ -162,10 +159,10 @@ export class EvernoteFileImporter implements FileImporter {
           }
 
           try {
-            const subNames = fs.readdirSync(sub);
+            const subNames = await readdir(sub);
             for (const sn of subNames) {
               if (path.extname(sn).toLowerCase() === '.enex') {
-                if (sniffFile(path.join(sub, sn))) {
+                if (await sniffFile(path.join(sub, sn))) {
                   return { confidence: 0.95 };
                 }
 

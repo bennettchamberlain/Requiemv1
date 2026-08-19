@@ -22,6 +22,7 @@
    are recorded in the drop ledger. */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { ResolvedAsset } from './_ai_media';
@@ -80,10 +81,10 @@ const CHATGPT_SIBLINGS = [
 // Claude's data export ships users.json (plural) + projects.json.
 const CLAUDE_SIBLINGS = ['users.json', 'projects.json'];
 
-function readJson(fpath: string): unknown {
+async function readJson(fpath: string): Promise<unknown> {
   let raw: string;
   try {
-    raw = fs.readFileSync(fpath, 'utf8');
+    raw = await readFile(fpath, 'utf8');
   } catch {
     return undefined;
   }
@@ -147,21 +148,21 @@ export class ChatGPTFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       const base = path.basename(root).toLowerCase();
       if (base === 'conversations.json') {
-        return isChatGPTExport(readJson(root)) ? { confidence: 0.95 } : { confidence: 0 };
+        return isChatGPTExport(await readJson(root)) ? { confidence: 0.95 } : { confidence: 0 };
       }
 
       if (isMemoryFilename(base)) {
-        const conf = chatgptMemoryConfidence(readJson(root));
+        const conf = chatgptMemoryConfidence(await readJson(root));
 
         return conf > 0 ? { confidence: conf } : { confidence: 0 };
       }
@@ -169,19 +170,19 @@ export class ChatGPTFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
-      const names = (() => {
-        try {
-          return fs.readdirSync(root);
-        } catch {
-          return [];
-        }
-      })();
+    if (st.isDirectory()) {
+      let names: string[];
+      try {
+        names = await readdir(root);
+      } catch {
+        names = [];
+      }
+
       const conv = findName(names, (n) => n === 'conversations.json');
       if (conv) {
         // conversations.json decides ownership of the whole directory: when it
         // is another vendor's shape the memories file next to it is theirs too.
-        if (isChatGPTExport(readJson(path.join(root, conv)))) {
+        if (isChatGPTExport(await readJson(path.join(root, conv)))) {
           return { confidence: 0.9 };
         }
 
@@ -190,7 +191,7 @@ export class ChatGPTFileImporter implements FileImporter {
 
       const mem = findName(names, isMemoryFilename);
       if (mem && !findName(names, (n) => CLAUDE_SIBLINGS.includes(n))) {
-        const conf = chatgptMemoryConfidence(readJson(path.join(root, mem)));
+        const conf = chatgptMemoryConfidence(await readJson(path.join(root, mem)));
         if (conf > 0) {
           const marked = !!findName(names, (n) => CHATGPT_SIBLINGS.includes(n));
 
