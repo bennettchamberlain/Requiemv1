@@ -467,6 +467,56 @@ describe('toPositionInput', () => {
     expect(typeof fix?.time).toBe('string');
   });
 
+  it.each([
+    ['google_location', 'location.txt'],
+    ['kmlgx', 'Takeout Timeline.kml'],
+    ['nmea', 'drive-2024-03-02.nmea'],
+    ['gpx', 'track.gpx'],
+  ])('refuses %s\u2019s own staged filename as a place name', (dataSource, filename) => {
+    // The trap that made the source-side half of this fix a regression: these
+    // importers used to manufacture "Location <lat>, <lon>" as a title. Removing
+    // that does NOT leave the name empty — `titleFor` falls through to
+    // `basename(row.filename)` (canonical.ts), so the file's own name slides into
+    // the slot the pseudo-name vacated, and `ci.position.name` reads
+    // "location.txt" instead of "Location 33.51469, -117.72169". Strictly worse:
+    // it is not even recognisable as a coordinate any more.
+    //
+    // An extension allowlist cannot catch this class — .txt/.kml/.nmea/.gpx are
+    // not media extensions, and widening the list to "anything with a dot" eats
+    // "St. Louis". Comparing against the staged filename is what makes it
+    // structural.
+    const fix = toPositionInput(
+      recordFor({
+        dataSource,
+        classification: 'location',
+        latitude: 33.51469,
+        longitude: -117.72169,
+        filename,
+        metadata: {},
+      }),
+    );
+
+    expect(fix).not.toBeNull();
+    expect(fix?.name).toBeUndefined();
+  });
+
+  it('still keeps a real place name on a record that also has a filename', () => {
+    // The other side of the same rule: rejecting the filename must not reject a
+    // genuine waypoint name that happens to ride in the same record.
+    const fix = toPositionInput(
+      recordFor({
+        dataSource: 'kmlgx',
+        classification: 'location',
+        latitude: 33.51469,
+        longitude: -117.72169,
+        filename: 'Takeout Timeline.kml',
+        metadata: { Name: 'Las Vegas Convention Center' },
+      }),
+    );
+
+    expect(fix?.name).toBe('Las Vegas Convention Center');
+  });
+
   it('refuses a coordinate pair as a place name', () => {
     // google_fit titles a trackpoint with its own coordinates when it has no
     // waypoint name. Stored as `name`, that makes the row look already-named to
@@ -654,6 +704,9 @@ describe('isNotAPlaceName and its three arms', () => {
     it('does not match a non-media file extension', () => {
       // Out of scope on purpose: this arm is about camera-roll filenames, and
       // widening it to "anything with a dot and 2-4 chars" would eat "St. Louis".
+      // These ARE still rejected as position names — by the staged-filename rule
+      // in toPositionInput, not by an extension list. See the round-trip tests
+      // in the toPositionInput describe block.
       expect(isMediaFilename('track.gpx')).toBe(false);
       expect(isMediaFilename('location.txt')).toBe(false);
     });

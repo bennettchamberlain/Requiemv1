@@ -1011,8 +1011,24 @@ export function toPositionInput(rec: CanonicalRecord): CreatePositionDto | null 
   // GPS-bearing photo its filename as a display title, which is the right title
   // and the wrong place name. 2,085 positions on a real appliance read
   // "IMG_0139.JPG" where the place should be.
+  // The record's OWN staged filename is never its place name. `titleFor` falls
+  // back to `basename(row.filename)` when a record carries no title-worthy
+  // metadata (canonical.ts), so removing a datasource's manufactured pseudo-name
+  // does not leave the slot empty — it lets the file's name slide into it:
+  // google_location's `Records.json` fixes would read 'location.txt', kmlgx
+  // '<file>.kml', nmea '<file>.nmea', and gpx already writes 'track.gpx' on main
+  // for any nameless trkpt. An extension allowlist cannot catch that class,
+  // because the extension is whatever the export happened to use. Comparing
+  // against the filename canonical.ts:1001 already stamped catches all of them.
+  const stagedName = str(m.filename);
+  const stagedBasename = stagedName?.split('/').pop()?.trim();
+
   const name = [rec.title, str(m.Name), str(m.Title)].find(
-    (candidate): candidate is string => candidate != null && candidate !== '' && !isNotAPlaceName(candidate),
+    (candidate): candidate is string =>
+      candidate != null &&
+      candidate !== '' &&
+      !isNotAPlaceName(candidate) &&
+      !(stagedBasename != null && stagedBasename !== '' && candidate.trim() === stagedBasename),
   );
 
   if (name) {

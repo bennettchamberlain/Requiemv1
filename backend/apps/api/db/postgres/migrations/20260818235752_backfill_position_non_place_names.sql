@@ -95,11 +95,22 @@
 --
 -- Idempotent: NULL fails every `~*`/`~` comparison (NULL, not false), so once a
 -- row is cleared it can never match again and a second run updates zero rows.
+--
+-- Every arm compares btrim(name), matching `isMediaFilename`, which trims before
+-- testing. Without it a name carrying stray whitespace is rejected by the code
+-- and missed here, so the guard and the backfill would disagree about the same
+-- string — the exact drift these paired predicates exist to prevent.
+--
+-- The URI arm mirrors `isUriLocation`, the third reject in `isNotAPlaceName`.
+-- No earlier migration has ever cleared a URI-shaped name from ci.position (the
+-- calendar one, 20260818215813, only touches ci.events), so this is its first
+-- pass over this table.
 UPDATE ci.position
    SET name = NULL
- WHERE name ~* '\.(jpe?g|png|heic|heif|gif|mov|mp4|m4v|avi|webp|dng|tiff?)$'
-    OR name ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}([-_][0-9]+)?$'
-    OR name ~* '^\s*(location|position|coordinates?|coords?|point|waypoint|fix|gps)\s*[-:]?\s*[-+]?\d{1,3}(\.\d+)?\s*,\s*[-+]?\d{1,3}(\.\d+)?\s*$';
+ WHERE btrim(name) ~* '\.(jpe?g|png|heic|heif|gif|mov|mp4|m4v|avi|webp|dng|tiff?)$'
+    OR btrim(name) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}([-_][0-9]+)?$'
+    OR btrim(name) ~* '^[a-z][a-z0-9+.-]*://\S+$'
+    OR btrim(name) ~* '^\s*(location|position|coordinates?|coords?|point|waypoint|fix|gps)\s*[-:]?\s*[-+]?\d{1,3}(\.\d+)?\s*,\s*[-+]?\d{1,3}(\.\d+)?\s*$';
 
 -- ## Post-migration verification
 --
