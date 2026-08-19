@@ -153,9 +153,15 @@ export class KMLGXFileImporter implements FileImporter {
             location: { latitude: lat, longitude: lon },
             intermediateLocation: fpath,
             content: { filename: path.basename(fpath) },
+            // No `Name`: a gx:Track coord carries no name, and inventing
+            // `Location ${lat},${lon}` only poisoned `ci.position.name` — a raw
+            // GPS `location.fix` routes to `position` ONLY (destinationsFor in
+            // push/canonical.ts), so the pseudo-name was never rendered as a
+            // title anywhere. A null name is what makes the row a
+            // reverse-geocode candidate. gpx sets `Name` only from a real
+            // <name> element; this parser does not read one yet.
             metadata: {
               Source: 'KMLGX',
-              Name: `Location ${lat.toFixed(5)},${lon.toFixed(5)}`,
               ...(alt !== undefined && !isNaN(alt) && { Altitude: alt }),
             },
           };

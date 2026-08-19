@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 
 import { apiKeyHeaders, buildApiUrl, usePageTitle } from '@ci/common';
-import { Button, IconButton, Table, Card, ToggleGroup, Badge, Tooltip } from '@ci/shadcn';
+import { Button, IconButton, Table, Card, ToggleGroup, Tooltip } from '@ci/shadcn';
 import {
   AlertCircle,
   RefreshCw,
@@ -15,6 +15,7 @@ import {
 } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 
+import { AnswerProvenance, isInferred } from '@/components/AnswerProvenance';
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
 import { useAuth } from '@/hooks';
@@ -26,6 +27,12 @@ interface Answer {
   id: string;
   ragAnswer: string;
   answer: string;
+  /** 'user_input' | 'inferred' | 'observed' | 'imported' — see ci.answers.answer_source. */
+  answerSource?: string | null;
+  /** [0,1] when the appliance inferred this answer; null when a person wrote it. */
+  answerConfidence?: number | null;
+  /** The model's one line on what evidence produced an inferred answer. */
+  answerRationale?: string | null;
   user?: { id: string };
   question?: {
     id: string;
@@ -34,7 +41,7 @@ interface Answer {
 }
 
 export function PromptsPage() {
-  usePageTitle('Questions - Companion Intelligence');
+  usePageTitle('Reflections - Companion Intelligence');
 
   const { t } = useTranslation();
   const [{ authToken }] = useAuth();
@@ -147,15 +154,15 @@ export function PromptsPage() {
     ));
   };
 
-  const isManuallyAnswered = (answer: Answer) => {
-    // If there's a user ID, it was manually answered
-    return answer.user?.id !== undefined;
-  };
+  // Provenance comes from `answerSource`, which is what the writer actually
+  // stamps. It used to be read off `answer.user?.id`, which is populated on
+  // EVERY row — answers are user-scoped, so an answer the appliance inferred on
+  // the user's behalf still belongs to that user. The effect was that all 20
+  // rows on this page, inferred ones included, rendered the same "Manual" badge
+  // and the LLM branch below was dead code.
+  const isManuallyAnswered = (answer: Answer) => !isInferred(answer.answerSource);
 
-  const isLLMAnswered = (answer: Answer) => {
-    // If there's no user ID but there's an answer, it was LLM answered
-    return !answer.user?.id && answer.answer;
-  };
+  const isLLMAnswered = (answer: Answer) => isInferred(answer.answerSource) && Boolean(answer.answer);
 
   const handleEditClick = (answer: Answer) => {
     setEditingAnswer(answer);
@@ -251,7 +258,7 @@ export function PromptsPage() {
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
               {/* Mobile: Title and refresh button in same row */}
               <div className="flex items-center justify-between lg:justify-start">
-                <h1 className="text-2xl font-bold">Questions</h1>
+                <h1 className="text-2xl font-bold">Reflections</h1>
                 <IconButton
                   variant="outline"
                   onClick={fetchAnswers}
@@ -314,13 +321,13 @@ export function PromptsPage() {
             {loading ? (
               <div className="text-center py-8">
                 <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4" />
-                <p>Loading answers...</p>
+                <p>Loading reflections...</p>
               </div>
             ) : error ? (
               <div className="bg-destructive/10 text-destructive rounded-md p-4 flex items-start gap-3">
                 <AlertCircle className="h-5 w-5 mt-0.5 flex-shrink-0" />
                 <div>
-                  <h3 className="font-medium">Error loading answers</h3>
+                  <h3 className="font-medium">Error loading reflections</h3>
                   <p className="text-sm">{error}</p>
                   <Button variant="outline" size="sm" className="mt-2" onClick={fetchAnswers}>
                     Try Again
@@ -330,7 +337,7 @@ export function PromptsPage() {
             ) : (
               <>
                 {answers.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">No answers found in the system</div>
+                  <div className="text-center py-8 text-muted-foreground">No reflections yet</div>
                 ) : (
                   <>
                     {/* Card View - Always shown on mobile, toggleable on desktop */}
@@ -343,15 +350,11 @@ export function PromptsPage() {
                             <div className="flex items-start justify-between">
                               <div className="flex-1">
                                 <div className="flex items-center gap-2 mb-2">
-                                  {isManuallyAnswered(answer) ? (
-                                    <Badge variant="secondary" className="text-xs">
-                                      Manual
-                                    </Badge>
-                                  ) : isLLMAnswered(answer) ? (
-                                    <Badge variant="outline" className="text-xs">
-                                      AI Generated
-                                    </Badge>
-                                  ) : null}
+                                  <AnswerProvenance
+                                    source={answer.answerSource}
+                                    confidence={answer.answerConfidence}
+                                    rationale={answer.answerRationale}
+                                  />
                                 </div>
                                 <h3 className="font-semibold text-sm leading-tight">
                                   <ExpandableText
@@ -371,6 +374,15 @@ export function PromptsPage() {
                                 textId={`answer-${answer.id}`}
                                 maxLength={120}
                               />
+                              {/* The evidence, in the model's own words. Shown inline
+                                  rather than only in the badge tooltip: a reader
+                                  deciding whether to correct an inferred answer needs
+                                  to know what it was built from without hovering. */}
+                              {isLLMAnswered(answer) && answer.answerRationale ? (
+                                <p className="mt-1 text-xs text-muted-foreground italic">
+                                  Based on: {answer.answerRationale}
+                                </p>
+                              ) : null}
                             </div>
                             {answer.ragAnswer && (
                               <div>
@@ -434,7 +446,7 @@ export function PromptsPage() {
                               <Table.Header>
                                 <Table.Row>
                                   <Table.Head className="w-1/4 min-w-[200px] bg-background">
-                                    Question
+                                    Reflection
                                   </Table.Head>
                                   <Table.Head className="w-1/4 min-w-[200px] bg-background">
                                     Answer
@@ -459,15 +471,11 @@ export function PromptsPage() {
                                 <Table.Cell className="break-words align-top">
                                   <div className="space-y-1">
                                     <div className="flex items-center gap-2">
-                                      {isManuallyAnswered(answer) ? (
-                                        <Badge variant="secondary" className="text-xs">
-                                          Manual
-                                        </Badge>
-                                      ) : isLLMAnswered(answer) ? (
-                                        <Badge variant="outline" className="text-xs">
-                                          AI Generated
-                                        </Badge>
-                                      ) : null}
+                                      <AnswerProvenance
+                                        source={answer.answerSource}
+                                        confidence={answer.answerConfidence}
+                                        rationale={answer.answerRationale}
+                                      />
                                     </div>
                                     <ExpandableText
                                       text={answer.question?.text}
@@ -534,7 +542,7 @@ export function PromptsPage() {
                   </>
                 )}
                 <div className="text-xs text-muted-foreground text-right mt-4">
-                  Total answers: {answers.length}
+                  Total reflections: {answers.length}
                 </div>
               </>
             )}

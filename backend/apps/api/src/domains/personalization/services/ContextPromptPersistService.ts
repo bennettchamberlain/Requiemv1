@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import { type RequestContext, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import { todayInTZ } from '@ci/common/time/zoned';
 import {
   DailyMetricsService,
   HOME_QUESTION_ID,
@@ -15,7 +16,6 @@ import { GraphIngestService } from '@ci/domains/graph';
 import { AnswerService, QuestionService } from '@ci/domains/intelligence';
 import { OllamaService, PROMPT_MODEL } from '@ci/domains/llm/services/OllamaService';
 import { EventService } from '@ci/domains/memory';
-import { todayInTZ } from '@ci/domains/planning';
 
 import {
   parseJsonObject,

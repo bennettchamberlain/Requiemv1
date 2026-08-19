@@ -15,6 +15,15 @@ import { isBrowserCapture } from './scheduleClusters';
 
 const MAX_SLIDES = 12;
 
+/**
+ * TimelineJS pads major ticks by `_scaled_padding * major.factor` and minor by
+ * `* minor.factor`. Day labels therefore reach further left/right than hour
+ * marks. When every slide sits on the focus day, zooming out shows yesterday's
+ * major tick with no minor ruler behind it. An era expands earliest/latest so
+ * both axes share the same navigable span (eras are hidden in CSS).
+ */
+export const TIMELINE_AXIS_PAD_DAYS = 2;
+
 export interface TimelineDateParts {
   year: string;
   month: string;
@@ -34,9 +43,16 @@ export interface TimelineSlide {
   autolink?: boolean;
 }
 
+export interface TimelineEra {
+  start_date: TimelineDateParts;
+  end_date: TimelineDateParts;
+  text: { headline: string };
+}
+
 export interface TimelineJsData {
   title: TimelineSlide;
   events: TimelineSlide[];
+  eras?: TimelineEra[];
   scale: 'human';
 }
 
@@ -48,6 +64,47 @@ function partsOf(date: Date): TimelineDateParts {
     hour: String(date.getHours()),
     minute: String(date.getMinutes()),
     second: String(date.getSeconds()),
+  };
+}
+
+function startOfLocalDay(date: Date): Date {
+  const day = new Date(date);
+  day.setHours(0, 0, 0, 0);
+
+  return day;
+}
+
+function endOfLocalDay(date: Date): Date {
+  const day = new Date(date);
+  day.setHours(23, 59, 59, 0);
+
+  return day;
+}
+
+function addLocalDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+
+  return next;
+}
+
+/**
+ * Hidden era that pulls the TimeNav axis through neighbouring days so minor
+ * ticks exist wherever major day labels already appear when zoomed out.
+ */
+export function axisPadEra(events: readonly ScheduleEvent[], focusDay: Date): TimelineEra {
+  let earliest = startOfLocalDay(focusDay).getTime();
+  let latest = endOfLocalDay(focusDay).getTime();
+
+  for (const event of events) {
+    earliest = Math.min(earliest, new Date(event.startTime).getTime());
+    latest = Math.max(latest, new Date(event.endTime ?? event.startTime).getTime());
+  }
+
+  return {
+    start_date: partsOf(startOfLocalDay(addLocalDays(new Date(earliest), -TIMELINE_AXIS_PAD_DAYS))),
+    end_date: partsOf(endOfLocalDay(addLocalDays(new Date(latest), TIMELINE_AXIS_PAD_DAYS))),
+    text: { headline: '' },
   };
 }
 
@@ -231,6 +288,7 @@ export function buildTimelineData(
         },
       },
       events: selected.events.map(toSlide),
+      eras: [axisPadEra(selected.events, day)],
     },
   };
 }

@@ -311,4 +311,143 @@ describe('WhatsApp datasource', () => {
 
     fs.rmSync(dir, { recursive: true, force: true });
   });
+
+  describe('shared-location messages', () => {
+    async function importLines(lines: string[]): Promise<EmittedGraph[]> {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wa-location-'));
+      const chatPath = path.join(dir, '_chat.txt');
+      fs.writeFileSync(chatPath, lines.join('\n') + '\n');
+      const pushed: EmittedGraph[] = [];
+      try {
+        await new WhatsAppFileImporter().fileImport({}, { filename: '_chat.txt', fullPath: chatPath }, {
+          pipeline: pushed,
+          timeframe: {},
+          log: () => {},
+        } as unknown as ImportParams);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+
+      return pushed;
+    }
+
+    it('classifies a maps.google.com "?q=" link as location and extracts the coordinates', async () => {
+      const pushed = await importLines([
+        '[1/1/21, 12:00:00 AM] Alice: location: https://maps.google.com/?q=37.7749,-122.4194',
+      ]);
+
+      expect(pushed.length).toBe(1);
+      const [graph] = pushed;
+      expect(graph.item.classification).toBe('location');
+      expect(graph.item.location).toEqual({ latitude: 37.7749, longitude: -122.4194 });
+      expect(graph.item.metadata.Location).toBe('37.7749, -122.4194');
+      // The original transcript text is still preserved in content/metadata.
+      expect(graph.item.metadata.Text).toContain('maps.google.com');
+    });
+
+    it('extracts coordinates from a "maps/@lat,long" style link too', async () => {
+      const pushed = await importLines([
+        '[1/1/21, 12:00:00 AM] Bob: https://maps.google.com/maps/@37.77,-122.41,15z',
+      ]);
+
+      expect(pushed.length).toBe(1);
+      expect(pushed[0].item.classification).toBe('location');
+      expect(pushed[0].item.location).toEqual({ latitude: 37.77, longitude: -122.41 });
+    });
+
+    it('does not classify a plain-text mention of "location" with no coordinates as a location', async () => {
+      const pushed = await importLines([
+        '[1/1/21, 12:00:00 AM] Alice: Check out this location: my new place',
+      ]);
+
+      expect(pushed.length).toBe(1);
+      expect(pushed[0].item.classification).toBe('message');
+      expect(pushed[0].item.location).toBeUndefined();
+    });
+
+    it('rejects an out-of-range coordinate pair rather than pinning a bogus location', async () => {
+      // Latitude 190 fits the regex's digit count but is not a real latitude.
+      const pushed = await importLines([
+        '[1/1/21, 12:00:00 AM] Alice: location: https://maps.google.com/?q=190.0,45.0',
+      ]);
+
+      expect(pushed.length).toBe(1);
+      expect(pushed[0].item.classification).toBe('message');
+      expect(pushed[0].item.location).toBeUndefined();
+    });
+
+    it('links a located message to its sender the same way an ordinary message does', async () => {
+      const pushed = await importLines([
+        '[1/1/21, 12:00:00 AM] Alice: location: https://maps.google.com/?q=37.7749,-122.4194',
+      ]);
+
+      expect(pushed[0].edges).toEqual([
+        { relation: 'participant', to: { entity: { type: 'contact', name: 'Alice' } } },
+      ]);
+    });
+  });
+});
+
+/**
+ * Which half of the path names the chat.
+ *
+ * WhatsApp has two export shapes and `recognize` above accepts both: the
+ * generic `_chat.txt` inside a folder named after the chat, and a file named
+ * after the chat directly ("WhatsApp Chat with Alice.txt"). The name is
+ * IDENTITY here — it is the thread id and half of every message id — and the
+ * directory-first rule handled only the first shape: several per-chat .txt
+ * files in one folder all took the FOLDER's name, so every chat in the export
+ * collapsed onto a single thread and a single id namespace. Worse, only the
+ * first of them was read at all.
+ */
+describe('WhatsApp chat identity across export shapes', () => {
+  const importDir = async (root: string): Promise<EmittedGraph[]> => {
+    const pipeline: EmittedGraph[] = [];
+    await new WhatsAppFileImporter().fileImport({}, { filename: path.basename(root), fullPath: root }, {
+      pipeline,
+      timeframe: {},
+      log: () => {},
+    } as unknown as ImportParams);
+
+    return pipeline;
+  };
+
+  const exportWith = (files: Record<string, string>): string => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'whatsapp-shape-'));
+    for (const [name, body] of Object.entries(files)) {
+      fs.writeFileSync(path.join(root, name), body);
+    }
+
+    return root;
+  };
+
+  const line = (sender: string, text: string): string => `[1/1/21, 12:00:00 AM] ${sender}: ${text}\n`;
+
+  it('gives each per-chat .txt in one folder its own conversation, and imports them all', async () => {
+    const root = exportWith({
+      'WhatsApp Chat with Alice.txt': line('Alice', 'from alice'),
+      'WhatsApp Chat with Bob.txt': line('Bob', 'from bob'),
+    });
+
+    const pushed = await importDir(root);
+    const conversations = pushed.map((p) => p.item.metadata!.Conversation);
+
+    expect(pushed).toHaveLength(2);
+    expect(new Set(conversations)).toEqual(new Set(['Alice', 'Bob']));
+    // and the ids are namespaced per chat, so two chats can never collide
+    expect(new Set(pushed.map((p) => p.item.id)).size).toBe(2);
+  });
+
+  it('still takes the chat name from the folder for a _chat.txt export', async () => {
+    // The unchanged half: `_chat` normalises to nothing, so the folder wins.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'whatsapp-shape-'));
+    const chatDir = path.join(root, 'WhatsApp Chat - LITA _ Companion Tech Team');
+    fs.mkdirSync(chatDir);
+    fs.writeFileSync(path.join(chatDir, '_chat.txt'), line('Alice', 'hello'));
+
+    const pushed = await importDir(chatDir);
+
+    expect(pushed).toHaveLength(1);
+    expect(pushed[0].item.metadata!.Conversation).toBe('LITA Companion Tech Team');
+  });
 });

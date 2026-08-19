@@ -1,5 +1,18 @@
 import type { StagedItem } from '../../entities/StagedItemEntity';
-import { destinationsFor, kindFor, toCanonical, type CanonicalRecord } from '../canonical';
+import {
+  destinationsFor,
+  discordAttachmentFilename,
+  discordAttachmentUrls,
+  isAttachmentPlaceholderOnly,
+  isDiscordAttachmentOnly,
+  isRedditComment,
+  isRedditPost,
+  kindFor,
+  redditMediaUrl,
+  str,
+  toCanonical,
+  type CanonicalRecord,
+} from '../canonical';
 
 /**
  * The routing rules, which are the whole reason this mapping was ported rather
@@ -74,6 +87,18 @@ describe('kindFor', () => {
     // classification alone cannot pick the kind.
     expect(kindFor('media', 'image/jpeg')).toBe('capture.photo');
     expect(kindFor('media', 'video/mp4')).toBe('capture.video');
+  });
+
+  it('does not call a non-media MIME a photo just because the classification says "media"', () => {
+    // The Instagram HTML importer used to stamp 'media' on text/plain entries
+    // that carried no file at all; the photo default turned each into a
+    // capture.photo event with no photo behind it (six in the live database).
+    // A present, non-media mimetype is a statement about the bytes and beats a
+    // coarse classification label.
+    expect(kindFor('media', 'text/plain')).toBe('import.archive_item');
+    expect(kindFor('media', 'application/pdf')).toBe('import.archive_item');
+    // No MIME at all still defaults to photo, as it always has.
+    expect(kindFor('media', null)).toBe('capture.photo');
   });
 
   it('maps the messaging classifications apart rather than into one bucket', () => {
@@ -191,5 +216,272 @@ describe('destinationsFor', () => {
     // Its source records no time the user did anything, so an event would pin it
     // to import time.
     expect(destinationsFor(recordFor({ classification: 'saved_media' }))).toEqual(['content']);
+  });
+
+  describe('Reddit posts and comments', () => {
+    // Authored communications, not timeline events — a content row rides
+    // along ONLY when the record carries media (see inputs.test.ts's
+    // toContentInput coverage for the row's shape).
+
+    it('sends a text-only post to communications alone', () => {
+      const textPost = recordFor({
+        classification: 'social',
+        dataSource: 'reddit',
+        metadata: { Title: 'A wall of text', Kind: 'post', Subreddit: 'AskReddit' },
+      });
+
+      expect(destinationsFor(textPost)).toEqual(['communications']);
+    });
+
+    it('adds a content row when the post links to media', () => {
+      const imagePost = recordFor({
+        classification: 'social',
+        dataSource: 'reddit',
+        metadata: { Title: 'Sunset', URL: 'https://i.redd.it/abc.jpg', Kind: 'post', Subreddit: 'pics' },
+      });
+
+      expect(destinationsFor(imagePost)).toEqual(['communications', 'content']);
+    });
+
+    it('adds a content row when a comment links to media in its body', () => {
+      const comment = recordFor({
+        classification: 'social',
+        dataSource: 'reddit',
+        metadata: { Body: 'same here: https://i.redd.it/xyz.png', Kind: 'comment', Subreddit: 'pics' },
+      });
+
+      expect(destinationsFor(comment)).toEqual(['communications', 'content']);
+    });
+
+    it('does not treat an ordinary social vote/subreddit row as a post or comment', () => {
+      // Only Kind 'post'/'saved_post'/'comment'/'saved_comment' qualify — other
+      // reddit exports (subscribed subreddits) keep the generic social.* route.
+      const subscription = recordFor({
+        classification: 'social',
+        dataSource: 'reddit',
+        metadata: { Kind: 'subscribed', Subreddit: 'pics' },
+      });
+
+      expect(destinationsFor(subscription)).toEqual(['events', 'content']);
+    });
+  });
+});
+
+describe('isRedditPost / isRedditComment', () => {
+  it('is true only for reddit rows carrying the matching Kind', () => {
+    const post = recordFor({ dataSource: 'reddit', metadata: { Kind: 'post' } });
+    const savedPost = recordFor({ dataSource: 'reddit', metadata: { Kind: 'saved_post' } });
+    const comment = recordFor({ dataSource: 'reddit', metadata: { Kind: 'comment' } });
+
+    expect(isRedditPost(post)).toBe(true);
+    expect(isRedditPost(savedPost)).toBe(true);
+    expect(isRedditPost(comment)).toBe(false);
+    expect(isRedditComment(comment)).toBe(true);
+  });
+
+  it('is false for a non-reddit source even with a matching Kind value', () => {
+    // The dataSource check comes first — a coincidental Kind:'post' from
+    // another importer must not be read as an authored reddit post.
+    const lookalike = recordFor({ dataSource: 'some_other_source', metadata: { Kind: 'post' } });
+
+    expect(isRedditPost(lookalike)).toBe(false);
+  });
+});
+
+describe('redditMediaUrl', () => {
+  it('reads a link post’s media from its URL field', () => {
+    const post = recordFor({
+      dataSource: 'reddit',
+      metadata: { Kind: 'post', URL: 'https://i.redd.it/a.jpg' },
+    });
+
+    expect(redditMediaUrl(post)).toEqual({ url: 'https://i.redd.it/a.jpg', kind: 'image' });
+  });
+
+  it('is null for a post whose URL is not a recognised media link (a self-post permalink)', () => {
+    const selfPost = recordFor({
+      dataSource: 'reddit',
+      metadata: { Kind: 'post', URL: 'https://reddit.com/r/pics/comments/abc123/my_post/' },
+    });
+
+    expect(redditMediaUrl(selfPost)).toBeNull();
+  });
+
+  it('finds the first media link inside a comment’s body markdown', () => {
+    const comment = recordFor({
+      dataSource: 'reddit',
+      metadata: {
+        Kind: 'comment',
+        Body: 'not media: https://example.com, but this is: https://v.redd.it/clip1',
+      },
+    });
+
+    expect(redditMediaUrl(comment)).toEqual({ url: 'https://v.redd.it/clip1', kind: 'video' });
+  });
+
+  it('is null for a comment whose body has no media link at all', () => {
+    const comment = recordFor({ dataSource: 'reddit', metadata: { Kind: 'comment', Body: 'just words' } });
+
+    expect(redditMediaUrl(comment)).toBeNull();
+  });
+
+  it('strips trailing punctuation a sentence wraps the link in', () => {
+    const comment = recordFor({
+      dataSource: 'reddit',
+      metadata: { Kind: 'comment', Body: 'check this out (https://i.redd.it/trailing.png).' },
+    });
+
+    expect(redditMediaUrl(comment)?.url).toBe('https://i.redd.it/trailing.png');
+  });
+});
+
+describe('Discord attachments', () => {
+  describe('discordAttachmentUrls', () => {
+    it('splits space-separated links off a multi-attachment message', () => {
+      const message = recordFor({
+        dataSource: 'discord',
+        metadata: {
+          Attachments: 'https://cdn.discordapp.com/a/1/x.png https://cdn.discordapp.com/a/1/y.png',
+        },
+      });
+
+      expect(discordAttachmentUrls(message)).toEqual([
+        'https://cdn.discordapp.com/a/1/x.png',
+        'https://cdn.discordapp.com/a/1/y.png',
+      ]);
+    });
+
+    it('is empty for a non-Discord source even with an Attachments-shaped field', () => {
+      const notDiscord = recordFor({
+        dataSource: 'imessage',
+        metadata: { Attachments: 'https://cdn.discordapp.com/a/1/x.png' },
+      });
+
+      expect(discordAttachmentUrls(notDiscord)).toEqual([]);
+    });
+
+    it('is empty when the field is absent', () => {
+      expect(discordAttachmentUrls(recordFor({ dataSource: 'discord' }))).toEqual([]);
+    });
+  });
+
+  describe('discordAttachmentFilename', () => {
+    it('decodes a percent-encoded name and drops the signature query string', () => {
+      const url = 'https://cdn.discordapp.com/attachments/1/2/Screenshot%20from%202020.png?ex=1&is=2&hm=3';
+
+      expect(discordAttachmentFilename(url)).toBe('Screenshot from 2020.png');
+    });
+
+    it('is undefined for an unparseable URL', () => {
+      expect(discordAttachmentFilename('not a url')).toBeUndefined();
+    });
+  });
+
+  describe('isDiscordAttachmentOnly', () => {
+    it('is true for a Discord message with attachments and no text', () => {
+      const message = recordFor({
+        dataSource: 'discord',
+        metadata: { Attachments: 'https://cdn.discordapp.com/a/1/x.png' },
+      });
+
+      expect(isDiscordAttachmentOnly(message)).toBe(true);
+    });
+
+    it('is false once the message carries a caption', () => {
+      const captioned = recordFor({
+        dataSource: 'discord',
+        metadata: { Text: 'look!', Attachments: 'https://cdn.discordapp.com/a/1/x.png' },
+      });
+
+      expect(isDiscordAttachmentOnly(captioned)).toBe(false);
+    });
+
+    it('is false for a Discord message with no attachments at all', () => {
+      expect(isDiscordAttachmentOnly(recordFor({ dataSource: 'discord' }))).toBe(false);
+    });
+  });
+
+  // U+FFFC OBJECT REPLACEMENT CHARACTER is what macOS writes into
+  // `message.text` where an inline attachment sits. It is a control glyph, not
+  // text: a live appliance database held 21,781 iMessage rows whose ENTIRE
+  // ci.communications.content was one of them.
+  describe('str() strips the U+FFFC attachment placeholder', () => {
+    it('collapses a body that is nothing but placeholders to null', () => {
+      expect(str('\uFFFC')).toBeNull();
+      expect(str('\uFFFC\uFFFC')).toBeNull();
+      expect(str('\uFFFC ')).toBeNull();
+    });
+
+    it('leaves a CAPTIONED attachment as just the caption', () => {
+      expect(str('\uFFFC look at this')).toBe('look at this');
+      expect(str('\uFFFC\uFFFCGood morning see you tomorrow')).toBe('Good morning see you tomorrow');
+      expect(str('Also, what is this thing called?\uFFFC\uFFFC')).toBe('Also, what is this thing called?');
+    });
+
+    it('still repairs lone surrogates, and never splices two into a fake pair', () => {
+      // The FFFC strip runs AFTER the surrogate repair, so removing the glyph
+      // between a high and a low surrogate cannot fabricate an emoji that was
+      // never in the source.
+      expect(str('\uD83D\uFFFC\uDE00')).toBe('\uFFFD\uFFFD');
+      // A genuine pair is untouched.
+      expect(str('\uD83D\uDE00')).toBe('\uD83D\uDE00');
+    });
+
+    it('does NOT strip U+FFFD — sanitizeText mints it for broken surrogates', () => {
+      expect(str('\uFFFD')).toBe('\uFFFD');
+    });
+  });
+
+  describe('isAttachmentPlaceholderOnly', () => {
+    it('is true for an iMessage body that is only the U+FFFC placeholder', () => {
+      const attachmentOnly = recordFor({
+        classification: 'message',
+        dataSource: 'imessage',
+        metadata: { Text: '\uFFFC', Sender: '+15551234567' },
+      });
+
+      expect(attachmentOnly.description).toBeNull();
+      expect(isAttachmentPlaceholderOnly(attachmentOnly)).toBe(true);
+    });
+
+    it('is true for a body that is only U+FFFD mojibake', () => {
+      const mojibake = recordFor({
+        classification: 'message',
+        dataSource: 'imessage',
+        metadata: { Text: '\uFFFD\uFFFD', Sender: '+15551234567' },
+      });
+
+      expect(isAttachmentPlaceholderOnly(mojibake)).toBe(true);
+    });
+
+    it('is false once the placeholder is joined by real caption text', () => {
+      const captioned = recordFor({
+        classification: 'message',
+        dataSource: 'imessage',
+        metadata: { Text: '\uFFFC Merry Christmas' },
+      });
+
+      expect(captioned.description).toBe('Merry Christmas');
+      expect(isAttachmentPlaceholderOnly(captioned)).toBe(false);
+    });
+
+    it('is false for a message with no body metadata at all', () => {
+      expect(
+        isAttachmentPlaceholderOnly(recordFor({ classification: 'message', dataSource: 'imessage' })),
+      ).toBe(false);
+    });
+
+    it('is false when a lower-priority body key carries the real text', () => {
+      // descriptionFor prefers Text, but falls through to Body — a placeholder
+      // in the preferred key must not blank a record that has real prose.
+      const rec = recordFor({
+        classification: 'message',
+        dataSource: 'imessage',
+        metadata: { Text: '\uFFFC', Body: 'the real message' },
+      });
+
+      expect(rec.description).toBe('the real message');
+      expect(isAttachmentPlaceholderOnly(rec)).toBe(false);
+    });
   });
 });

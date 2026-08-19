@@ -284,7 +284,9 @@ sequenceDiagram
 
 Besides the connector ETL above, there are two **direct ingest surfaces** (both idempotent
 on the provenance triple): capture clients batch-POST to `/v1/events`, and the importer
-(CI-Import-Tools) pushes via the GraphQL bulk mutations with **deferred search indexing**
+(CI-Server's own native import domain, `backend/apps/api/src/domains/import/` — ported
+from the now-retired CI-Import-Tools) pushes via the GraphQL bulk mutations with
+**deferred search indexing**
 (the post-load `/api/maintenance/*` enrichment chain). See
 [api/rest.md](../api/rest.md#ingest-bulk-capture-write-path),
 [api/graphql.md §4.7](../api/graphql.md#47-bulk-ingest-mutations-the-importer-surface--detailed),

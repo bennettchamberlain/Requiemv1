@@ -1,6 +1,6 @@
 import { FetchJsonError } from '@ci/common';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { SignupForm } from './SignupForm';
 
@@ -136,5 +136,69 @@ describe('SignupForm server validation feedback', () => {
     render(<SignupForm />);
 
     expect(screen.getByRole('alert')).toHaveTextContent('Email already in use');
+  });
+});
+
+/**
+ * `require.signup.codes` mounts a whole field — and that field's presence is
+ * what an issue on `signup_code` maps onto. The existing test above only
+ * covers the flag OFF, where a signup_code issue has nowhere to land but the
+ * alert; this covers it ON, where the field exists and must be the one that
+ * shows the message.
+ */
+describe('SignupForm signup code requirement', () => {
+  afterEach(() => {
+    h.codesRequired = false;
+  });
+
+  it('shows the signup code field only when the appliance requires one', () => {
+    h.codesRequired = true;
+    h.error = null;
+
+    render(<SignupForm />);
+
+    expect(screen.getByLabelText('Signup Code')).toBeInTheDocument();
+  });
+
+  it('hides the signup code field when the appliance does not require one', () => {
+    h.codesRequired = false;
+    h.error = null;
+
+    render(<SignupForm />);
+
+    expect(screen.queryByLabelText('Signup Code')).not.toBeInTheDocument();
+  });
+
+  it('maps a signup_code issue onto its own field once the field exists, instead of the alert', async () => {
+    h.codesRequired = true;
+    h.error = new FetchJsonError(400, 'Bad Request', 'Validation failed', [
+      { path: ['signup_code'], message: 'That signup code has already been used' },
+    ]);
+
+    render(<SignupForm />);
+    fillAndSubmit();
+
+    await waitFor(() =>
+      expect(screen.getByText('That signup code has already been used')).toBeInTheDocument(),
+    );
+    // Landed on the field, so the generic envelope alert stays hidden — the
+    // same contract the password field already gets.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('still shows an unrelated issue in the alert alongside the mapped signup_code field error', async () => {
+    h.codesRequired = true;
+    h.error = new FetchJsonError(400, 'Bad Request', 'Validation failed', [
+      { path: ['signup_code'], message: 'That signup code has already been used' },
+      { path: ['terms_accepted'], message: 'You must accept the terms' },
+    ]);
+
+    render(<SignupForm />);
+    fillAndSubmit();
+
+    await waitFor(() =>
+      expect(screen.getByText('That signup code has already been used')).toBeInTheDocument(),
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('You must accept the terms');
   });
 });

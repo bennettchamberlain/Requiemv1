@@ -387,3 +387,40 @@ describe('EntityIdentifierService.findEntityIdByIdentifier', () => {
     await expect(service.findEntityIdByIdentifier(OWNER, 'phone', '4155550100')).resolves.toBeNull();
   });
 });
+
+describe('EntityIdentifierService — a garbage display name never enters the index', () => {
+  // ci.entity_identifiers is what every people-linking lookup resolves against,
+  // so a `name` row keyed on a call-log heading is a permanent claim on that
+  // string: the Person holding it keeps being resolved to, and the next sweep
+  // hands it more communications. 288 such rows were live.
+  it('skips a call-log heading and an export filename, keeping the real name', async () => {
+    const { service, insert } = makeService({});
+
+    const inserted = await service.upsertForEntity(OWNER, ENTITY, {
+      names: [
+        'Missed call from',
+        'Placed call to \nNancy Davis',
+        'Group Conversation - 2024-09-25T01_45_41Z.html',
+        'Nancy Davis',
+      ],
+    });
+
+    expect(insert.calls.values).toEqual([
+      expect.objectContaining({ kind: 'name', valueNormalized: 'nancy davis' }),
+    ]);
+    expect(inserted).toBe(1);
+  });
+
+  it('drops an email or phone that carries a newline — markup, not an address', async () => {
+    const { service, insert } = makeService({});
+
+    await service.upsertForEntity(OWNER, ENTITY, {
+      emails: ['Missed call from \nalice@example.com'],
+      phones: ['+1 (415) 555-0100'],
+    });
+
+    expect(insert.calls.values).toEqual([
+      expect.objectContaining({ kind: 'phone', valueNormalized: '4155550100' }),
+    ]);
+  });
+});

@@ -248,6 +248,47 @@ export class PipelineStateService {
   }
 
   /**
+   * Does this leg have at least one FAILED row whose own retry backoff has
+   * already elapsed?
+   *
+   * A direct probe of `pipeline_state_retry_idx` — `(status, next_attempt_at)
+   * WHERE status = 'failed'` — narrowed by `stage`, `entity_type` and
+   * `user_id`, which the index does not cover but which a "tiny fraction of
+   * the table in steady state" (the migration's own words for that index)
+   * makes cheap to filter after.
+   *
+   * Deliberately NOT routed through {@link selectStale}: that statement's
+   * `NOT EXISTS` is a join against the STAGE'S OWN SOURCE TABLE, because a
+   * fresh or version-bumped candidate is only provable by rejoining the
+   * source. A due retry needs no source at all — `ci.pipeline_state` already
+   * recorded that the entity exists and that it failed — so this is the
+   * ledger alone, `LIMIT 1`, the same "is there anything?" shape as {@link
+   * PipelineControlService.hasCandidates} for the same reason: the tick asks
+   * once a leg, not once an entity.
+   *
+   * This is what makes `stageDueness`'s `hasOverdueRetry` input true, which is
+   * what lets a leg's retry backoff (minutes to hours) outrank its
+   * `minInterval` (up to seven days for a metered stage) — see the "Why
+   * `hasOverdueRetry` is a THIRD input" note on `stageDueness` for the failure
+   * this closes.
+   */
+  async hasOverdueRetry(stage: StageRef, entityType: string, userId: string): Promise<boolean> {
+    const rows = await this.dataSource.query<Array<{ entity_id: string }>>(
+      `SELECT entity_id
+         FROM ci.pipeline_state
+        WHERE stage = $1
+          AND entity_type = $2
+          AND user_id = $3::uuid
+          AND status = 'failed'
+          AND next_attempt_at <= now()
+        LIMIT 1`,
+      [stage.id, entityType, userId],
+    );
+
+    return rows.length > 0;
+  }
+
+  /**
    * Mark ids `running` and charge them an attempt. Returns the ids ACTUALLY
    * claimed, which is not always what was asked for.
    *

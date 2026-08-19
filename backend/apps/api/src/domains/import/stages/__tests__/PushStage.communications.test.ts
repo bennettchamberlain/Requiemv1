@@ -27,8 +27,8 @@ const STAGE_ID = '22222222-2222-4222-8222-222222222222';
 
 /** The account row + self Person row `resolveIsSelf` reads, for an owner named Liam Broza. */
 const OWNER_ROWS = [
-  { name: 'Liam Broza', email: 'liam.broza@example.com' },
-  { name: 'Liam Broza', email: null },
+  { name: 'Liam Broza', email: 'liam.broza@example.com', phones_json: null },
+  { name: 'Liam Broza', email: null, phones_json: [] },
 ];
 
 let nextId = 0;
@@ -120,6 +120,14 @@ function makeStage(
         return ids.flatMap((itemId) =>
           (options.participants ?? []).map((edge) => ({ ...edge, item_id: itemId })),
         );
+      }
+
+      if (sql.includes('SELECT entity_id FROM ci.users')) {
+        return [{ entity_id: null }];
+      }
+
+      if (sql.includes("->>'trust_mode'") || sql.includes('trust_mode')) {
+        return [{ trust_mode: 'balanced' }];
       }
 
       if (sql.includes('FROM ci.users u')) {

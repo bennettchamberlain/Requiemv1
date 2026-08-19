@@ -13,6 +13,7 @@ const unit = (overrides: Partial<InboxUnit> = {}): InboxUnit => ({
   declared: [],
   activeRunId: null,
   claimed: false,
+  sizeApproximate: false,
   ...overrides,
 });
 

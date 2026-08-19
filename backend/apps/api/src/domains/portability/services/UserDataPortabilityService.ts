@@ -546,9 +546,23 @@ export class UserDataPortabilityService {
   }
 
   private async setReplicationRole(queryRunner: QueryRunner, role: 'replica' | 'origin'): Promise<void> {
+    // This GUC is superuser-only (or requires an explicit `GRANT SET ON
+    // PARAMETER`), and the app's `companion` role has neither — so this
+    // always fails outside a superuser connection. A plain try/catch is not
+    // enough to make that non-fatal: Postgres poisons the REST of the
+    // transaction the instant one statement errors, so the very next query
+    // (the first `deleteUserRows` call) would throw "current transaction is
+    // aborted, commands ignored until end of transaction block" even though
+    // this method itself "succeeded" from the caller's point of view. The
+    // savepoint isolates the failed SET so only it gets discarded, leaving
+    // the surrounding delete/insert transaction healthy.
+    await queryRunner.query('SAVEPOINT set_replication_role');
+
     try {
       await queryRunner.query(`SET session_replication_role = '${role}'`);
+      await queryRunner.query('RELEASE SAVEPOINT set_replication_role');
     } catch (error) {
+      await queryRunner.query('ROLLBACK TO SAVEPOINT set_replication_role');
       this.logger.debug('Could not set session_replication_role; continuing with FK order', {
         role,
         error: error instanceof Error ? error.message : String(error),

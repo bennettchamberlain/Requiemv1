@@ -10,7 +10,7 @@ import Database from 'better-sqlite3';
 import { attachmentMediaKind } from './attachment_extract';
 import type { FileImporter, Recognition, DirEntry } from './registry';
 import { registerDataSource } from './registry';
-import type { ImportParams, Graph, Item } from './timeline';
+import type { AttachmentDescriptor, Entity, Graph, ImportParams, Item } from './timeline';
 import { timeframeContains } from './timeline';
 
 interface iMessageOptions {
@@ -28,6 +28,78 @@ function parseCocoaDate(cocoaTimestamp: number): Date {
   const unixSeconds = COCOA_EPOCH_OFFSET + seconds;
 
   return new Date(unixSeconds * 1000);
+}
+
+/** The store-relative key inside an `Attachments/` tree, e.g. `ab/12/<UUID>/IMG_0042.HEIC`. */
+const ATTACHMENTS_SEGMENT = 'Attachments/';
+
+/**
+ * Every on-disk path an `attachment.filename` from chat.db could plausibly
+ * name, most specific first. The caller takes the first one that exists.
+ *
+ * chat.db does NOT store a bare basename: it stores the path the file had on
+ * the Mac that wrote it, which is tilde-rooted
+ * (`~/Library/Messages/Attachments/ab/12/<UUID>/IMG_0042.HEIC`) on every
+ * modern macOS, and absolute (`/Users/<name>/Library/...`) on older ones. The
+ * previous code joined that whole value onto `<chat.db dir>/Attachments/`,
+ * yielding `<dir>/Attachments/~/Library/Messages/Attachments/ab/12/...` — a
+ * path that exists nowhere. `existsSync` was therefore false for essentially
+ * every attachment in a real export, and the descriptor was silently dropped,
+ * which is how 21,781 messages ended up recording neither their text (a bare
+ * U+FFFC) nor the attachment that replaced it.
+ *
+ * The candidates, in order:
+ *  1. tilde form resolved against the EXPORT ROOT — the export mirrors the home
+ *     directory, so `~/Library/...` lives at `<root>/Library/...`;
+ *  2. an absolute path as-is (only hits when importing on the same Mac);
+ *  3. the store-relative tail joined onto `<chat.db dir>/Attachments/` — the
+ *     layout-independent fallback, and the one that works for a flat export
+ *     where chat.db sits next to its own `Attachments/` tree;
+ *  4. the same tail under `<export root>/Attachments/`;
+ *  5. a genuinely relative value under the export root, then under
+ *     `<chat.db dir>/Attachments/` (the historical behaviour, kept so a bare
+ *     `photo.jpg` still resolves).
+ */
+export function imessageAttachmentCandidates(
+  rawFilename: string,
+  exportRoot: string,
+  chatDbPath: string,
+): string[] {
+  const raw = rawFilename.trim();
+  if (!raw) {
+    return [];
+  }
+
+  const attachmentsDir = path.join(path.dirname(chatDbPath), 'Attachments');
+  const out: string[] = [];
+  const add = (candidate: string): void => {
+    if (!out.includes(candidate)) {
+      out.push(candidate);
+    }
+  };
+
+  const tilde = raw.startsWith('~/');
+  const absolute = path.isAbsolute(raw);
+
+  if (tilde) {
+    add(path.join(exportRoot, raw.slice(2)));
+  } else if (absolute) {
+    add(raw);
+  }
+
+  const at = raw.lastIndexOf(ATTACHMENTS_SEGMENT);
+  const tail = at === -1 ? null : raw.slice(at + ATTACHMENTS_SEGMENT.length);
+  if (tail) {
+    add(path.join(attachmentsDir, tail));
+    add(path.join(exportRoot, 'Attachments', tail));
+  }
+
+  if (!tilde && !absolute) {
+    add(path.join(exportRoot, raw));
+    add(path.join(attachmentsDir, raw));
+  }
+
+  return out;
 }
 
 class iMessageFileImporter implements FileImporter {
@@ -117,6 +189,22 @@ class iMessageFileImporter implements FileImporter {
         { identifier: string | null; displayName: string | null; participants: string[] }
       >();
       const chatIdByMessage = new Map<number, number>();
+      /**
+       * Handles that iMessage itself uses as the identifier of a 1:1 chat —
+       * `chat.chat_identifier` equal to the chat's single other participant.
+       *
+       * This is the evidence the thread fallback below needs. A message with no
+       * `chat_message_join` row has no conversation of its own, but if its
+       * correspondent is a handle that IS a 1:1 chat identifier in this same
+       * database, then the thread it belongs to is not a guess — it is a chat
+       * that demonstrably exists, under the exact key its other messages
+       * already use. When the correspondent is NOT such an identifier the
+       * message might equally be an orphaned group message, so nothing is
+       * invented and the thread stays empty. On the live corpus that splits
+       * 45,280 chat-less rows into 8,099 recoverable and 37,181 that honestly
+       * cannot be placed.
+       */
+      const oneToOneChatIdentifiers = new Set<string>();
       try {
         const chatRows = db
           .prepare(
@@ -153,6 +241,16 @@ class iMessageFileImporter implements FileImporter {
           .prepare('SELECT message_id, chat_id FROM chat_message_join')
           .iterate() as Iterable<{ message_id: number; chat_id: number }>) {
           chatIdByMessage.set(r.message_id, r.chat_id);
+        }
+
+        for (const entry of chatById.values()) {
+          if (
+            entry.identifier &&
+            entry.participants.length === 1 &&
+            entry.participants[0] === entry.identifier
+          ) {
+            oneToOneChatIdentifiers.add(entry.identifier);
+          }
         }
       } catch (e) {
         // Older / partial chat.db dumps (and test fixtures) may not have these
@@ -217,6 +315,12 @@ class iMessageFileImporter implements FileImporter {
         attachment_mime_type?: string | null;
       }
       const pending: Record<number, Graph> = {};
+      // Resolution rate for the attachment bytes. Reported once at the end
+      // rather than per row: a real export joins tens of thousands of
+      // attachments, and a silently-zero rate is exactly the failure this
+      // importer had before imessageAttachmentCandidates existed.
+      let attachmentsSeen = 0;
+      let attachmentsResolved = 0;
 
       for (const row of stmt.iterate() as Iterable<Row>) {
         const cocoa = row.message_date;
@@ -247,6 +351,18 @@ class iMessageFileImporter implements FileImporter {
               ? chat.participants.filter((p) => p !== senderHandle)
               : chat.participants.slice()
             : [];
+          // The conversation grouping key. `chat.chat_identifier` is Apple's
+          // own stable per-conversation id and is used whenever the message has
+          // a chat. When it does NOT — no chat_message_join row — the only
+          // other evidence is the correspondent handle, and it is trusted only
+          // when iMessage itself already uses that handle as a 1:1 chat
+          // identifier (see oneToOneChatIdentifiers). Anything else stays
+          // undefined rather than risk filing an orphaned group message into
+          // one participant's private thread.
+          const correspondent = row.contact_id ?? null;
+          const threadIdentifier =
+            chat?.identifier ??
+            (correspondent && oneToOneChatIdentifiers.has(correspondent) ? correspondent : undefined);
           const item: Item = {
             id: row.guid ? row.guid : `imessage_${row.message_id}`,
             classification: 'message',
@@ -260,14 +376,32 @@ class iMessageFileImporter implements FileImporter {
               ...(senderHandle && { Sender: senderHandle }),
               // Prefer the resolved chat participant list (handles group chats
               // and outbound recipients). Fall back to the row-level partner
-              // handle only when chat tables are missing, so older / stripped
+              // handle whenever that list came back EMPTY, so older / stripped
               // dumps still record the 1:1 recipient on outbound messages.
+              //
+              // The fallback used to be gated on `!chat` as well, which made it
+              // unreachable in the case it most needed to cover: a chat row that
+              // exists but whose `chat_handle_join` rows do not (a partial
+              // export, an iOS backup that dropped the join table, a chat whose
+              // membership Apple never wrote). `recipients` is then `[]`, the
+              // first branch does not fire, and `!chat` blocked the second — so
+              // the message reached ci.communications naming nobody at all.
+              // `recipients.length` already encodes "the chat told us nothing",
+              // so the extra clause only ever suppressed a recipient we had.
+              // The branches stay mutually exclusive, so `To` can never
+              // duplicate a handle already listed in `Recipients`.
               ...(recipients.length
                 ? { Recipients: recipients }
-                : !chat && row.is_from_me === 1 && row.contact_id
+                : row.is_from_me === 1 && row.contact_id
                   ? { To: row.contact_id }
                   : {}),
               ...(chat?.identifier && { ChatId: chat.identifier }),
+              // ChatId is display metadata; push/inputs.ts toCommunicationInput
+              // only reads ThreadId (then Thread/Conversation/MessageID) to
+              // populate ci.communications.thread_id, so without this key every
+              // iMessage row landed with thread_id NULL despite chat.db
+              // carrying a perfectly good conversation id.
+              ...(threadIdentifier && { ThreadId: threadIdentifier }),
               ...(chat?.displayName && { GroupName: chat.displayName }),
               ...(row.date_read && { ReadAt: parseCocoaDate(row.date_read).toISOString() }),
               ...(row.date_delivered && { DeliveredAt: parseCocoaDate(row.date_delivered).toISOString() }),
@@ -277,13 +411,39 @@ class iMessageFileImporter implements FileImporter {
           graph = { item, edges: [] };
           pending[row.message_id] = graph;
 
-          // Link the message to its conversation partner so the graph view has a
-          // real item↔entity edge. handle.id is the other party (phone/email)
-          // regardless of direction; direction is recorded on the edge metadata.
-          if (row.contact_id) {
+          // Link the message to its conversation counterpart(s) so the graph
+          // view has a real item↔entity edge, and so PushStage's
+          // `resolveCorrespondents` can fill from_entity_id / to_entity_ids at
+          // push time instead of leaving the row to a later linking sweep.
+          //
+          // `handle.id` is the OTHER party — but only on inbound. Outbound rows
+          // have `message.handle_id` NULL (the owner has no handle row), so
+          // `row.contact_id` is usually null there and staging edges off it
+          // alone left every message the owner ever sent pointing at nobody:
+          // 16,325 outbound iMessages in the live corpus reached
+          // ci.communications with from_entity_id NULL *and* to_entity_ids
+          // empty. On outbound the recipients are the chat participants — the
+          // same list `Recipients` already carries — so stage one edge each.
+          //
+          // Deliberately only the outbound side fans out. On inbound the SENDER
+          // must be the first `participant` edge (resolveCorrespondents reads
+          // `others[0]` as the sender), and the rest of a group's membership are
+          // this message's recipients, which `Recipients` already reports.
+          const counterparts =
+            row.is_from_me === 1
+              ? // Union, deduped: `recipients` is authoritative, and
+                // `row.contact_id` is the 1:1 partner some exports still put on
+                // the outbound row. Both are handles read straight from
+                // chat.db, so neither invents a participant.
+                Array.from(new Set([...recipients, ...(row.contact_id ? [row.contact_id] : [])]))
+              : row.contact_id
+                ? [row.contact_id]
+                : [];
+
+          for (const handle of counterparts) {
             graph.edges!.push({
               relation: 'participant',
-              to: { entity: { type: 'contact', name: row.contact_id } },
+              to: { entity: contactEntity(handle) },
               metadata: { direction: row.is_from_me === 1 ? 'outgoing' : 'incoming' },
             });
           }
@@ -296,20 +456,37 @@ class iMessageFileImporter implements FileImporter {
         // a duplicate ci.events row per attachment at the message's timestamp.
         // A message with several attachments arrives as several joined rows,
         // so descriptors append to the existing array.
-        if (row.attachment_guid && row.attachment_filename) {
+        //
+        // The descriptor is recorded whether or not the BYTES resolve. chat.db
+        // knows the guid, the filename and the MIME type of every attachment it
+        // ever carried, including ones whose files were long since purged off
+        // the Mac; throwing all three away because `existsSync` said no left the
+        // row recording neither the message text (macOS replaced it with a bare
+        // U+FFFC placeholder) nor what had replaced it. A path-less descriptor
+        // is skipped by the upload lane (push/canonical.ts
+        // communicationMediaAttachments drops entries with no `path`), so this
+        // costs nothing downstream and keeps the fact of the attachment.
+        if (row.attachment_guid || row.attachment_filename) {
           try {
-            const attachPath = path.join(path.dirname(chatDbPath), 'Attachments', row.attachment_filename);
-            if (fs.existsSync(attachPath)) {
-              const meta = graph.item!.metadata as Record<string, unknown>;
-              const atts = (meta.MediaAttachments as unknown[] | undefined) ?? [];
-              atts.push({
-                path: attachPath,
-                filename: path.basename(row.attachment_filename),
-                type: attachmentMediaKind(row.attachment_mime_type ?? undefined),
-                mimetype: row.attachment_mime_type ?? undefined,
-              });
-              meta.MediaAttachments = atts;
+            const meta = graph.item!.metadata as Record<string, unknown>;
+            const atts = (meta.MediaAttachments as AttachmentDescriptor[] | undefined) ?? [];
+            const rawName = row.attachment_filename ?? '';
+            const resolved = rawName
+              ? imessageAttachmentCandidates(rawName, baseDir, chatDbPath).find((c) => fs.existsSync(c))
+              : undefined;
+            attachmentsSeen += 1;
+            if (resolved) {
+              attachmentsResolved += 1;
             }
+
+            atts.push({
+              ...(resolved ? { path: resolved } : {}),
+              ...(row.attachment_guid ? { guid: row.attachment_guid } : {}),
+              ...(rawName ? { filename: path.basename(rawName) } : {}),
+              type: attachmentMediaKind(row.attachment_mime_type ?? undefined),
+              ...(row.attachment_mime_type ? { mimetype: row.attachment_mime_type } : {}),
+            });
+            meta.MediaAttachments = atts;
           } catch (e) {
             params.log?.('debug', 'attachment read failed', { error: (e as Error).message });
           }
@@ -343,6 +520,14 @@ class iMessageFileImporter implements FileImporter {
         }
       }
 
+      if (attachmentsSeen > 0) {
+        params.log?.('info', 'imessage attachments', {
+          seen: attachmentsSeen,
+          bytesResolved: attachmentsResolved,
+          descriptorOnly: attachmentsSeen - attachmentsResolved,
+        });
+      }
+
       // Push accumulated graphs
       Object.values(pending).forEach((g) => params.pipeline.push(g));
     } catch (error) {
@@ -371,6 +556,39 @@ class iMessageFileImporter implements FileImporter {
 
     return mapping[code];
   }
+}
+
+/**
+ * The conversation-partner entity for one iMessage `handle.id` — a phone
+ * number or an Apple ID email, never anything else (chat.db has no other
+ * handle shape).
+ *
+ * `attributes` with `identity: true` is what makes this a CONTACT rather than
+ * a bare name. Without it, `entityIdentityKey()` (import/staging/identity.ts)
+ * finds no identity handle on the entity, `naturalKeyFor` falls back to
+ * keying it by NAME instead, and `toGraphEntity` never populates
+ * `properties.phones`/`.emails` — so `GraphIngestService.indexIdentifiers`
+ * never writes a `ci.entity_identifiers` row for it at all. That is a
+ * different (and worse) failure than the usual "first writer wins" race: the
+ * entity isn't merely un-cross-referenced against a vCard contact for the
+ * same number, it is INVISIBLE to every lookup that resolves people by phone
+ * or email, forever — a live-DB audit found 1,799 iMessage-sourced Person
+ * rows named after a bare phone number, EVERY ONE of them with zero
+ * `entity_identifiers` rows, and of those, 330 had the real name sitting on a
+ * DIFFERENT Person entity (predominantly from a `vcard` import) for the exact
+ * same number — unreachable because there was no identifier to join on.
+ *
+ * Mirrors the identical pattern `googlevoice.ts` already uses correctly
+ * (`attributes: [{ name: 'phone', value: p.phone, identity: true }]`).
+ */
+function contactEntity(handle: string): Entity {
+  const isEmail = handle.includes('@');
+
+  return {
+    type: 'contact',
+    name: handle,
+    attributes: [{ name: isEmail ? 'email' : 'phone', value: handle, identity: true }],
+  };
 }
 
 registerDataSource({

@@ -285,7 +285,7 @@ describe('GraphEnrichmentService.enrich (end-to-end with mocked LLM)', () => {
     }
   });
 
-  it('skips a family relation when a person is not in the graph (never invents Person nodes)', async () => {
+  it('stubs a Person node for a plausibly-named family relation with no existing match', async () => {
     const { service, ingest } = makeService({
       comms: [{ subject: null, content: 'My spouse Dana.', summary: null }],
       extraction: {
@@ -293,7 +293,47 @@ describe('GraphEnrichmentService.enrich (end-to-end with mocked LLM)', () => {
         familyRelations: [{ person: 'Liam', relatedPerson: 'Dana', relationship: 'SPOUSE' }],
         generalRelations: [],
       },
-      persons: { liam: SELF }, // Dana has no Person node
+      persons: { liam: SELF }, // Dana has no Person node yet -> gets stubbed, not skipped
+    });
+
+    const result = await service.enrich(USER, { maxEvents: 0 });
+
+    expect(result.familyRelationsExtracted).toBe(1);
+    expect(result.familyRelationsResolved).toBe(1);
+    expect(result.familyEdgesWritten).toBe(1);
+
+    const familyBatch = batchOf(ingest, 0);
+    expect(familyBatch.entities).toEqual([
+      expect.objectContaining({
+        key: `graph-enrichment:person:${USER}:dana`,
+        entityType: 'Person',
+        name: 'Dana',
+        sourceSystem: 'graph-enrichment:person',
+      }),
+    ]);
+    // The stub has no id yet, so the edge references it by key, not fromEntityId/toEntityId.
+    expect(familyBatch.relationships).toEqual([
+      expect.objectContaining({
+        type: 'SPOUSE',
+        fromEntityId: SELF,
+        fromEntityType: 'Person',
+        toKey: `graph-enrichment:person:${USER}:dana`,
+      }),
+    ]);
+    expect(familyBatch.relationships[0]).not.toHaveProperty('toEntityId');
+  });
+
+  it('skips a family relation when the unresolved name does not look like a real person (never invents garbage nodes)', async () => {
+    const { service, ingest } = makeService({
+      comms: [{ subject: null, content: 'My spouse works with the person from accounting.', summary: null }],
+      extraction: {
+        preferences: [],
+        familyRelations: [
+          { person: 'Liam', relatedPerson: 'the person from accounting', relationship: 'SPOUSE' },
+        ],
+        generalRelations: [],
+      },
+      persons: { liam: SELF },
     });
 
     const result = await service.enrich(USER, { maxEvents: 0 });
@@ -301,7 +341,7 @@ describe('GraphEnrichmentService.enrich (end-to-end with mocked LLM)', () => {
     expect(result.familyRelationsExtracted).toBe(1);
     expect(result.familyRelationsResolved).toBe(0);
     expect(result.familyEdgesWritten).toBe(0);
-    // Nothing to write -> ingest is never called.
+    // Nothing plausible to write -> ingest is never called.
     expect(ingest).not.toHaveBeenCalled();
   });
 

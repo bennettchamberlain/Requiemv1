@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/logging';
 import { type Connection, ConnectionService } from '@ci/domains/connections';
-import { type CreateContentDto, ContentService } from '@ci/domains/memory';
+import { type CreateContentDto, ContentService, SOURCE_NATIVE_EXTERNAL_ID_KIND } from '@ci/domains/memory';
 
 import { ConnectionSyncJob } from '../../../types';
 
@@ -149,6 +149,7 @@ export class YouTubePlaylistsTransformService {
       text: description,
       url,
       external_id: playlistId,
+      external_id_kind: SOURCE_NATIVE_EXTERNAL_ID_KIND,
       source_url: url,
       source_type: 'ETL',
       source_system: YOUTUBE_SOURCE_SYSTEM,

@@ -134,3 +134,115 @@ describe('RunPipeline close', () => {
     expect(screen.queryByRole('button', { name: /close/i })).not.toBeInTheDocument();
   });
 });
+
+describe('RunPipeline cancel', () => {
+  it('cancels a still-running import', () => {
+    const onCancel = vi.fn();
+    const run = { ...runWith({ pushed: 1 }), status: 'running', finishedAt: null };
+
+    render(<RunPipeline run={run} onCancel={onCancel} />);
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers no cancel button once the run is finished', () => {
+    // Cancel is the in-progress action; a finished run (even a failed one)
+    // has nothing left to stop.
+    const onCancel = vi.fn();
+
+    render(<RunPipeline run={runWith({ pushed: 1 })} onCancel={onCancel} />);
+
+    expect(screen.queryByRole('button', { name: /cancel/i })).not.toBeInTheDocument();
+  });
+
+  it('offers no cancel button when the host does not supply one, even while running', () => {
+    const run = { ...runWith({ pushed: 1 }), status: 'running', finishedAt: null };
+
+    render(<RunPipeline run={run} />);
+
+    expect(screen.queryByRole('button', { name: /cancel/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('RunPipeline stage retry', () => {
+  function runWithStage(stage: Partial<ImportRunDetail['stages'][number]>): ImportRunDetail {
+    return {
+      ...runWith({}),
+      stages: [
+        {
+          id: 'stage-1',
+          seq: 1,
+          kind: 'unpack',
+          status: 'failed',
+          phase: null,
+          processed: 4,
+          total: 10,
+          weight: 20,
+          etaSeconds: null,
+          durationMs: null,
+          error: 'disk full',
+          detail: {},
+          ...stage,
+        },
+      ],
+    };
+  }
+
+  it('retries a failed stage by its id', () => {
+    const onRetryStage = vi.fn();
+
+    render(<RunPipeline run={runWithStage({ status: 'failed' })} onRetryStage={onRetryStage} />);
+    fireEvent.click(screen.getByRole('button', { name: /try again/i }));
+
+    expect(onRetryStage).toHaveBeenCalledWith('stage-1');
+  });
+
+  it('offers retry for a cancelled stage too', () => {
+    const onRetryStage = vi.fn();
+
+    render(<RunPipeline run={runWithStage({ status: 'cancelled' })} onRetryStage={onRetryStage} />);
+    fireEvent.click(screen.getByRole('button', { name: /try again/i }));
+
+    expect(onRetryStage).toHaveBeenCalledWith('stage-1');
+  });
+
+  it('offers no retry for a stage that is not failed or cancelled', () => {
+    const onRetryStage = vi.fn();
+
+    render(<RunPipeline run={runWithStage({ status: 'running' })} onRetryStage={onRetryStage} />);
+
+    expect(screen.queryByRole('button', { name: /try again/i })).not.toBeInTheDocument();
+  });
+
+  it('offers no retry button when the host does not supply a handler', () => {
+    render(<RunPipeline run={runWithStage({ status: 'failed' })} />);
+
+    expect(screen.queryByRole('button', { name: /try again/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('RunPipeline retry failed push', () => {
+  it('re-queues the rows a completed push could not write', () => {
+    // Distinct from stage retry: the push STAGE completed, but some of its
+    // rows landed in `failed` — this is the only route back for them.
+    const onRetryFailedPush = vi.fn();
+
+    render(<RunPipeline run={runWith({ pushed: 10, failed: 3 })} onRetryFailedPush={onRetryFailedPush} />);
+    fireEvent.click(screen.getByRole('button', { name: /try these again/i }));
+
+    expect(onRetryFailedPush).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers no retry-failed-push button when nothing failed', () => {
+    render(<RunPipeline run={runWith({ pushed: 10, failed: 0 })} onRetryFailedPush={vi.fn()} />);
+
+    expect(screen.queryByRole('button', { name: /try these again/i })).not.toBeInTheDocument();
+  });
+
+  it('offers no retry-failed-push button when the host does not supply a handler', () => {
+    render(<RunPipeline run={runWith({ pushed: 10, failed: 3 })} />);
+
+    expect(screen.queryByRole('button', { name: /try these again/i })).not.toBeInTheDocument();
+  });
+});

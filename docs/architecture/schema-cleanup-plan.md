@@ -1492,9 +1492,11 @@ Ships in release N **alongside** removal of the `@Column` mappings. **No DROPs.*
 
 ```sql
 -- migrate:up
--- Guard: ci.inventory.tags has no writer in THIS repo, but CI-Import-Tools is a
--- separate repo. Assert the column is still at its '{}' default rather than
--- assuming it, since the phase-2 drop is irreversible for its contents.
+-- Guard: ci.inventory.tags has no writer today, but the appliance has been
+-- written to by importers that no longer exist (the retired external
+-- CI-Import-Tools among them), so historical rows may still hold values.
+-- Assert the column is at its '{}' default rather than assuming it, since the
+-- phase-2 drop is irreversible for its contents.
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM ci.inventory
@@ -1823,7 +1825,10 @@ Each of these was investigated, measured or executed, and rejected. **This secti
 
 **Do NOT replace `MemoryCompactionService.ts:78`'s `VALID_ENTITY_TYPES` with `TAGGABLE_ENTITIES`/`INDEXABLE_ENTITIES`.** It is not a stray fifth vocabulary — it is the exact domain of the switch at `:567-671` (`case 'person' | 'concept' | 'place' | 'item' | 'event' | 'content'`, `default: return null`). Substituting the search-index vocabulary desyncs the gate from the switch. Fix the stale doc comment at `:72-77` instead.
 
-**Do NOT make `GraphEntityInput.entityType` a GraphQL enum.** It moves rejection to schema validation, turning one bad value into a whole-request 400 with no per-entity `errors[]`. `GraphIngestService.ts:298-347` already fails an entire batched-insert chunk (and drops every relationship referencing it) when one row raises — validate *in the service* and skip the node with a per-entity error instead. The sole external caller is `CI-Import-Tools/backend/src/ci-server/graph-sync.ts:239`.
+**Do NOT make `GraphEntityInput.entityType` a GraphQL enum.** It moves rejection to schema validation, turning one bad value into a whole-request 400 with no per-entity `errors[]`. `GraphIngestService.ts:298-347` already fails an entire batched-insert chunk (and drops every relationship referencing it) when one row raises — validate *in the service* and skip the node with a per-entity error instead. The sole external caller was `CI-Import-Tools/backend/src/ci-server/graph-sync.ts:239`, before
+that repo's retirement — its import functionality is now native (`backend/apps/api/src/domains/import/`,
+see `PushStage.ts`) and calls `GraphIngestService` directly in-process rather than through this
+mutation. See `ZARCHIVED-CI-Import-Tools` for the retired external caller's code.
 
 ### Deferred — needs a code-side change first, not a migration
 

@@ -619,6 +619,12 @@ export class ClaudeFileImporter implements FileImporter {
             Role: sender === 'human' ? 'user' : 'assistant',
             Direction: sender === 'human' ? 'outgoing' : 'incoming',
             Conversation: conv.name || undefined,
+            // The conversation UUID, not its name: a claude.ai conversation can
+            // be renamed (and an untitled one has no name at all), so the uuid
+            // is the stable thread key. mediaForMessage above already stamps it
+            // this way — the message path did not, so its rows carried no
+            // thread key at all and landed with thread_id NULL.
+            ThreadId: conv.uuid || undefined,
             Source: 'Claude',
             Text: text || undefined,
             MediaAttachments: mediaAttachments.length ? mediaAttachments : undefined,

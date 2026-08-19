@@ -172,6 +172,85 @@ describe('YouTube datasource', () => {
     });
   });
 
+  describe('hybrid JSON+HTML export (findHistoryFiles dedup)', () => {
+    // Newer Takeouts can carry BOTH watch-history.json and watch-history.html
+    // for the same underlying history. findHistoryFiles deliberately drops
+    // the HTML file when both exist so the same history isn't imported twice.
+    const WATCH_JSON = JSON.stringify([
+      {
+        header: 'YouTube',
+        title: 'Watched How to Code in Python - Full Course',
+        titleUrl: 'https://www.youtube.com/watch?v=abc123',
+        time: '2021-01-01T20:00:00.000Z',
+      },
+      {
+        header: 'YouTube',
+        title: 'Watched TypeScript Tutorial for Beginners',
+        titleUrl: 'https://www.youtube.com/watch?v=def456',
+        time: '2021-01-02T14:30:00.000Z',
+      },
+    ]);
+    const WATCH_HTML =
+      '<html><body>' +
+      '<div class="content-cell mdl-cell mdl-cell--6-col mdl-typography--body-1">Watched ' +
+      '<a href="https://www.youtube.com/watch?v=abc123">How to Code in Python - Full Course</a><br>' +
+      'Jan 1, 2021, 8:00:00 PM UTC<br></div>' +
+      '</body></html>';
+
+    async function makeHybridDir(): Promise<string> {
+      const fs = await import('node:fs');
+      const os = await import('node:os');
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'youtube-hybrid-'));
+      fs.writeFileSync(path.join(dir, 'watch-history.json'), WATCH_JSON);
+      fs.writeFileSync(path.join(dir, 'watch-history.html'), WATCH_HTML);
+
+      return dir;
+    }
+
+    it('imports only the JSON watch history when both JSON and HTML are present, not both', async () => {
+      const fs = await import('node:fs');
+      const dir = await makeHybridDir();
+      try {
+        const fi = new YouTubeFileImporter();
+        const pipeline: EmittedGraph[] = [];
+        await fi.fileImport({}, { filename: path.basename(dir), fullPath: dir }, {
+          pipeline,
+          timeframe: {},
+          log: () => {},
+        } as unknown as ImportParams);
+
+        const watches = pipeline.filter((p) => p.item.classification === 'watch');
+        // 2 JSON entries, NOT 2 JSON + 1 HTML (which would double-count the
+        // shared video and add 1 more from the HTML-only side).
+        expect(watches.length).toBe(2);
+        expect(watches.every((p) => p.item.metadata.URL !== undefined)).toBe(true);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('still imports the HTML file when there is no sibling JSON watch history', async () => {
+      const fs = await import('node:fs');
+      const os = await import('node:os');
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'youtube-html-only-'));
+      fs.writeFileSync(path.join(dir, 'watch-history.html'), WATCH_HTML);
+      try {
+        const fi = new YouTubeFileImporter();
+        const pipeline: EmittedGraph[] = [];
+        await fi.fileImport({}, { filename: path.basename(dir), fullPath: dir }, {
+          pipeline,
+          timeframe: {},
+          log: () => {},
+        } as unknown as ImportParams);
+
+        const watches = pipeline.filter((p) => p.item.classification === 'watch');
+        expect(watches.length).toBe(1);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe('subscriptions.csv', () => {
     const root = path.join(FIXTURES_DIR, 'youtube-subscriptions-export');
 

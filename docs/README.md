@@ -67,5 +67,7 @@ codegen): [graphql-api.md](graphql-api.md).
   (source in the CI-Docs repo).
 - **Cross-repo platform architecture & roadmap:** `CI-Engineering/architecture/` (private repo).
 - **HBPE sidecar design docs:** `CI-Engineering/architecture/HBPE/`.
-- **Importer:** CI-Import-Tools (pushes via the GraphQL bulk mutations —
+- **Importer:** CI-Server's own native import domain, `backend/apps/api/src/domains/import/`
+  (pushes via the GraphQL bulk mutations —
   [api/graphql.md §4.7](api/graphql.md#47-bulk-ingest-mutations-the-importer-surface--detailed)).
+  Ported from the now-retired CI-Import-Tools (`ZARCHIVED-CI-Import-Tools`).

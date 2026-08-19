@@ -28,16 +28,14 @@ const MAX_ENTRIES = 20_000;
 const MAX_UNITS = 500;
 
 /**
- * Per-call ceilings for the advisory sub-walks, deliberately SEPARATE from
- * the walk's global budget: sizing one 350GB archive must not eat the entry
+ * Per-call ceiling for the has-any-file probe, deliberately SEPARATE from the
+ * walk's global budget: probing one 350GB archive must not eat the entry
  * budget that decides whether the units after it get listed at all — that
  * exact bug had every scan of a big inbox reporting `truncated` and silently
- * dropping the units that sorted after the archive. Exhausting one of these
- * degrades only its own answer (a floor-valued size, an offered folder), and
- * flags nothing.
+ * dropping the units that sorted after the archive. Exhausting it degrades
+ * only its own answer (an offered folder), and flags nothing.
  */
 const PROBE_ENTRY_BUDGET = 5_000;
-const AGGREGATE_ENTRY_BUDGET = 20_000;
 
 /**
  * Time ceilings on the scan's RECOGNITION work, same contract as the walk
@@ -82,6 +80,25 @@ export const SCAN_RECOGNITION_CACHE = {
   emptyDirTtlMs: 60_000,
   maxEntries: 10_000,
 };
+
+/**
+ * Sizing ceiling, per unit — deliberately NOT shared with the walk's
+ * MAX_ENTRIES budget.
+ *
+ * `aggregate` recurses through a recognized unit purely to report sizeBytes /
+ * fileCount. Charging that to the discovery budget means one big export starves
+ * discovery of everything after it: a 79,623-file Google Takeout exhausts 20,000
+ * entries on its own, and the walk then returns on its next iteration, so every
+ * top-level source sorting after `google-takeout` — instagram, linkedin, reddit,
+ * spotify, twitter, uber, whatsapp… — never becomes a unit at all. The scan
+ * reports `truncated: true`, but a caller reading a 28-unit list has no way to
+ * tell WHICH sources it lost, and importing that list reads as "imported
+ * everything" (the same failure MAX_INBOX_BATCH_UNITS refuses to make).
+ *
+ * So sizing is budgeted per unit and its exhaustion is reported on the unit
+ * (`sizeApproximate`) rather than by silently ending discovery.
+ */
+const MAX_UNIT_SIZING_ENTRIES = 50_000;
 
 /**
  * The batch ceiling. A request over it is REJECTED, not truncated — silently
@@ -144,6 +161,12 @@ export interface InboxUnit {
    * this boolean is all a client needs to know the unit is unavailable.
    */
   claimed: boolean;
+  /**
+   * True when sizing stopped at MAX_UNIT_SIZING_ENTRIES, so `sizeBytes` and
+   * `fileCount` are lower bounds. The unit is still fully importable — only the
+   * preview numbers are partial.
+   */
+  sizeApproximate: boolean;
 }
 
 export interface InboxScan {
@@ -381,7 +404,9 @@ export class ImportInboxService implements OnModuleInit {
 
         const kind = info.isDirectory() ? 'directory' : 'file';
         const sizeBytes =
-          kind === 'file' ? info.size : (await this.aggregate(resolved, { entries: 0 })).sizeBytes;
+          kind === 'file'
+            ? info.size
+            : (await this.aggregate(resolved, { entries: 0, exhausted: false })).sizeBytes;
 
         prepared.push({ unit, resolved, kind, sizeBytes });
       } catch (err: unknown) {
@@ -538,6 +563,7 @@ export class ImportInboxService implements OnModuleInit {
           declared: this.declaredTitles(entry.name),
           activeRunId: null,
           claimed: false,
+          sizeApproximate: false,
         });
         continue;
       }
@@ -550,7 +576,11 @@ export class ImportInboxService implements OnModuleInit {
         continue;
       }
 
-      const aggregate = await this.aggregate(fullPath, { entries: 0 });
+      // A fresh budget per unit: sizing a huge export must not consume the
+      // walk's discovery budget and strand its siblings. See
+      // MAX_UNIT_SIZING_ENTRIES.
+      const budget = { entries: 0, exhausted: false };
+      const aggregate = await this.aggregate(fullPath, budget);
 
       units.push({
         path: entry.name,
@@ -561,6 +591,7 @@ export class ImportInboxService implements OnModuleInit {
         declared: this.declaredTitles(entry.name),
         activeRunId: null,
         claimed: false,
+        sizeApproximate: budget.exhausted,
       });
     }
   }
@@ -573,11 +604,7 @@ export class ImportInboxService implements OnModuleInit {
    * exit on the first file; never follows symlinks. An unreadable subtree
    * counts as empty — fail closed, same as everywhere else on this surface.
    */
-  private async hasFileWithin(
-    dir: string,
-    depth: number,
-    budget: { entries: number },
-  ): Promise<boolean> {
+  private async hasFileWithin(dir: string, depth: number, budget: { entries: number }): Promise<boolean> {
     if (depth <= 0) {
       return false;
     }
@@ -606,10 +633,7 @@ export class ImportInboxService implements OnModuleInit {
         return true;
       }
 
-      if (
-        entry.isDirectory() &&
-        (await this.hasFileWithin(path.join(dir, entry.name), depth - 1, budget))
-      ) {
+      if (entry.isDirectory() && (await this.hasFileWithin(path.join(dir, entry.name), depth - 1, budget))) {
         return true;
       }
     }
@@ -684,10 +708,7 @@ export class ImportInboxService implements OnModuleInit {
           },
         ),
         new Promise<null>((resolve) => {
-          timer = setTimeout(
-            () => resolve(null),
-            Math.min(remaining, SCAN_RECOGNITION_TIMING.perCallMs),
-          );
+          timer = setTimeout(() => resolve(null), Math.min(remaining, SCAN_RECOGNITION_TIMING.perCallMs));
           timer.unref?.();
         }),
       ]);
@@ -761,9 +782,7 @@ export class ImportInboxService implements OnModuleInit {
 
     const registered = allDataSources();
 
-    return declared.map(
-      (name) => registered.find((source) => source.name === name)?.title ?? name,
-    );
+    return declared.map((name) => registered.find((source) => source.name === name)?.title ?? name);
   }
 
   /**
@@ -771,16 +790,9 @@ export class ImportInboxService implements OnModuleInit {
    * cap — Map iteration order is insertion order, and a scan re-inserts what
    * it re-verifies, so the front of the map is the stalest.
    */
-  private remember(
-    target: string,
-    stamp: string,
-    value: InboxUnitRecognition[],
-    isDirectory: boolean,
-  ): void {
+  private remember(target: string, stamp: string, value: InboxUnitRecognition[], isDirectory: boolean): void {
     const ttl =
-      isDirectory && value.length === 0
-        ? SCAN_RECOGNITION_CACHE.emptyDirTtlMs
-        : SCAN_RECOGNITION_CACHE.ttlMs;
+      isDirectory && value.length === 0 ? SCAN_RECOGNITION_CACHE.emptyDirTtlMs : SCAN_RECOGNITION_CACHE.ttlMs;
 
     this.recognitionCache.delete(target);
     this.recognitionCache.set(target, {
@@ -807,7 +819,7 @@ export class ImportInboxService implements OnModuleInit {
    */
   private async aggregate(
     dir: string,
-    budget: { entries: number },
+    budget: { entries: number; exhausted: boolean },
   ): Promise<{ sizeBytes: number; fileCount: number }> {
     let sizeBytes = 0;
     let fileCount = 0;
@@ -821,7 +833,8 @@ export class ImportInboxService implements OnModuleInit {
     }
 
     for (const entry of entries) {
-      if (budget.entries >= AGGREGATE_ENTRY_BUDGET) {
+      if (budget.entries >= MAX_UNIT_SIZING_ENTRIES) {
+        budget.exhausted = true;
         break;
       }
 

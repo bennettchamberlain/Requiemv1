@@ -185,6 +185,7 @@ function DuplicateGroupCard({
     [group.people],
   );
   const hasSelf = orderedPeople.some((person) => person.isSelf);
+  const defaultTargetId = orderedPeople.find((person) => person.isSelf)?.id ?? orderedPeople[0]?.id ?? null;
 
   const merge = async (targetId: string) => {
     const sourceIds = group.people.map((person) => person.id).filter((id) => id !== targetId);
@@ -215,6 +216,10 @@ function DuplicateGroupCard({
   };
 
   const pendingTarget = orderedPeople.find((person) => person.id === pendingTargetId);
+  const openMerge = (targetId: string) => {
+    setMergeError(null);
+    setPendingTargetId(targetId);
+  };
 
   return (
     <div className="rounded-md border p-3">
@@ -254,14 +259,13 @@ function DuplicateGroupCard({
             {(!hasSelf || person.isSelf) && (
               <Button
                 size="sm"
-                variant="outline"
+                variant="ghost"
                 disabled={loading}
                 onClick={() => {
-                  setMergeError(null);
-                  setPendingTargetId(person.id);
+                  openMerge(person.id);
                 }}
               >
-                Keep this one
+                Use as the kept person
               </Button>
             )}
           </div>
@@ -271,10 +275,21 @@ function DuplicateGroupCard({
       {/* The other half of the decision. Without it the only way to clear a
           wrong suggestion is to merge people who are not the same, and the
           group returns on every load. */}
-      <div className="mt-3 flex items-center justify-end gap-3 border-t pt-2">
+      <div className="mt-3 flex flex-wrap items-center justify-end gap-3 border-t pt-2">
         {mergeError && !pendingTargetId && <span className="text-sm text-destructive">{mergeError}</span>}
         <Button size="sm" variant="ghost" disabled={loading || rejecting} onClick={() => void reject()}>
           {rejecting ? 'Saving…' : 'Not the same person'}
+        </Button>
+        <Button
+          size="sm"
+          disabled={loading || defaultTargetId == null}
+          onClick={() => {
+            if (defaultTargetId != null) {
+              openMerge(defaultTargetId);
+            }
+          }}
+        >
+          Merge into one person
         </Button>
       </div>
 
@@ -288,9 +303,9 @@ function DuplicateGroupCard({
       >
         <AlertDialog.Content>
           <AlertDialog.Header>
-            <AlertDialog.Title>Merge people?</AlertDialog.Title>
+            <AlertDialog.Title>Merge into one person?</AlertDialog.Title>
             <AlertDialog.Description>
-              {`The other ${group.people.length - 1 === 1 ? 'person' : `${group.people.length - 1} people`} in this group will be merged into "${pendingTarget?.name || 'Unnamed'}". Their events, messages and contact methods move over; this cannot be undone from the UI.`}
+              {`Events, messages, and contact methods from the other ${group.people.length - 1 === 1 ? 'person' : `${group.people.length - 1} people`} will move onto "${pendingTarget?.name || 'Unnamed'}"${pendingTarget?.isSelf ? ' (You)' : ''}. This folds multi-platform stubs into one Person and cannot be undone from the UI.`}
             </AlertDialog.Description>
           </AlertDialog.Header>
           {mergeError && <div className="text-sm text-destructive">{mergeError}</div>}
@@ -307,7 +322,7 @@ function DuplicateGroupCard({
                 }
               }}
             >
-              {loading ? 'Merging…' : 'Merge'}
+              {loading ? 'Merging…' : 'Merge into one person'}
             </AlertDialog.Action>
           </AlertDialog.Footer>
         </AlertDialog.Content>
@@ -336,20 +351,15 @@ export function PeoplePage() {
   // flight — swapping to a full-page loader would unmount the search input and
   // drop focus on the first keystroke of every new query.
   const view = data ?? previousData;
-  const people = useMemo(() => {
-    const nodes = (view?.people.edges ?? []).map((edge) => edge.node);
-
-    return [...nodes].sort((a, b) => {
-      const aTime = a.interactionStats?.lastInteractionAt
-        ? new Date(a.interactionStats.lastInteractionAt).getTime()
-        : 0;
-      const bTime = b.interactionStats?.lastInteractionAt
-        ? new Date(b.interactionStats.lastInteractionAt).getTime()
-        : 0;
-
-      return bTime - aTime;
-    });
-  }, [view]);
+  // Trust PersonService.findAll's order (plausible-name first, then name, then
+  // recency — see PERSON_NAME_LOOKS_IMPLAUSIBLE_SQL) rather than re-sorting here.
+  // A client-side sort keyed on interaction recency would fight that: the exact
+  // rows the server demotes (bare digit-strings, call-log-heading leftovers) are
+  // typically call-log stubs, so they carry a *recent*
+  // interactionStats.lastInteractionAt, while a freshly-imported real contact
+  // may have none at all — a recency sort would put the garbage name right back
+  // on top of the list, reintroducing the bug the backend ordering fixed.
+  const people = useMemo(() => (view?.people.edges ?? []).map((edge) => edge.node), [view]);
   const duplicateGroups = duplicatesData?.personDuplicates ?? [];
 
   const [loadingMore, setLoadingMore] = useState(false);

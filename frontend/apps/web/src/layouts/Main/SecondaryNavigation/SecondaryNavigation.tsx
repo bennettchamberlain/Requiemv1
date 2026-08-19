@@ -3,7 +3,6 @@ import type { ReactNode } from 'react';
 import { Collapsible, Tooltip, cn } from '@ci/shadcn';
 import {
   BookOpen,
-  Brain,
   ChevronRight,
   Cable,
   CalendarRange,
@@ -22,6 +21,7 @@ import { useFeatures } from '@/common/feature';
 import { usePowerRail } from '../PowerRailContext';
 import { NavUser } from '../PrimaryNavigation/NavUser';
 
+import { MemorySubmenu } from './MemorySubmenu';
 import { NavLink } from './NavLink';
 import { useFeedBadgeCount } from './useFeedBadgeCount';
 
@@ -99,18 +99,20 @@ function HelpSubmenu() {
           <CircleHelp className="h-6 w-6" strokeWidth={1.25} />
         </span>
         <span className="flex-1 truncate text-sm">Help</span>
-        <ChevronRight className="h-4 w-4 shrink-0 transition-transform" />
+        <ChevronRight className="h-4 w-4 shrink-0 transition-transform duration-200" />
       </Collapsible.Trigger>
-      <Collapsible.Content className="flex flex-col gap-1 pl-6">
-        <ExternalNavLink href="https://ci.computer/support" label="Support">
-          <LifeBuoy className="h-4 w-4 shrink-0" strokeWidth={1.25} />
-        </ExternalNavLink>
-        <ExternalNavLink
-          href="https://docs.ci.computer/docs/first-party-apps/digital-memory-server"
-          label="Docs"
-        >
-          <BookOpen className="h-4 w-4 shrink-0" strokeWidth={1.25} />
-        </ExternalNavLink>
+      <Collapsible.Content className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
+        <div className="flex flex-col gap-1 pl-6 pt-1">
+          <ExternalNavLink href="https://ci.computer/support" label="Support">
+            <LifeBuoy className="h-4 w-4 shrink-0" strokeWidth={1.25} />
+          </ExternalNavLink>
+          <ExternalNavLink
+            href="https://docs.ci.computer/docs/first-party-apps/digital-memory-server"
+            label="Docs"
+          >
+            <BookOpen className="h-4 w-4 shrink-0" strokeWidth={1.25} />
+          </ExternalNavLink>
+        </div>
       </Collapsible.Content>
     </Collapsible>
   );
@@ -156,7 +158,7 @@ export function SecondaryNavigation() {
         )}
       >
         <Tooltip.Provider>
-          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto [scrollbar-gutter:stable]">
             <div className="flex flex-col gap-1">
               {isFeatureEnabled('planning.page') && (
                 <NavLink to="/plan" label="Plan">
@@ -180,9 +182,7 @@ export function SecondaryNavigation() {
                 <CloudSun className="h-6 w-6 shrink-0" strokeWidth={1.25} />
               </NavLink>
 
-              <NavLink to="/memory" label="Memory">
-                <Brain className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-              </NavLink>
+              <MemorySubmenu />
 
               <NavLink to="/saved-searches" label="Saved Searches">
                 <FolderSearch2 className="h-6 w-6 shrink-0" strokeWidth={1.25} />

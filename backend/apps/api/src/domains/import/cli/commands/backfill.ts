@@ -21,6 +21,7 @@ const STAGE_HELP: Record<OrchestrateStage, string> = {
   extract_people: 'Create Person stubs from communication participants',
   link_communications: 'Link communications to the people who sent and received them',
   link_events: 'Fill event organizer and participant references',
+  heal_self_collation: 'Fold owner-representing Person stubs into the self Person when trust allows',
   materialize_edges: 'Materialize the deterministic graph edges',
   normalize_relationships: 'Normalize relationship rows onto the canonical vocabulary',
   derive_relationships: 'Derive relationships implied by the normalized ones',

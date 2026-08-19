@@ -20,11 +20,12 @@ import {
  * The three things that would do real damage if they were wrong:
  *
  *  1. **The join key keeps its meaning.** `value_normalized` is computed at
- *     every lookup by `classifyParticipant`, in this repo AND in
- *     CI-Import-Tools, whose copy of the rule must stay byte-identical.
- *     Normalising by a private rule here would break people-linking in both,
- *     silently — no error, no dead letter, just matches that stop happening. So
- *     the E.164 form goes in its own column and the key is left alone.
+ *     every lookup by `classifyParticipant`. Normalising by a private rule
+ *     here would break people-linking silently — no error, no dead letter,
+ *     just matches that stop happening. So the E.164 form goes in its own
+ *     column and the key is left alone. (Until CI-Import-Tools' retirement
+ *     this key also had to stay byte-identical with that repo's own copy of
+ *     the rule; its import functionality is now native here.)
  *  2. **E.164 is derived, never assumed.** A bare ten-digit number needs a
  *     country to become international, and this appliance has no per-user
  *     dialling region. Stamping `+1` on the corpus would fabricate a measured
@@ -139,8 +140,8 @@ describe('toE164', () => {
 describe('normalizeOne', () => {
   it('uses the SHARED rule, not a private one', () => {
     // The property that keeps people-linking working. If this ever diverges,
-    // every lookup computed by `classifyParticipant` — here and in
-    // CI-Import-Tools — stops finding the rows this stage wrote.
+    // every lookup computed by `classifyParticipant` stops finding the rows
+    // this stage wrote.
     const row = identifier({ raw_value: '  Liam@Example.COM ', value_normalized: 'wrong' });
 
     expect(normalizeOne(row)?.target).toBe(normalizeIdentifier('email', '  Liam@Example.COM '));

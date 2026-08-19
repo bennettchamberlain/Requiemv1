@@ -34,7 +34,15 @@ import {
   toPositionInput,
   toWhatsAppCommunicationInput,
 } from '../push/inputs';
-import { type IsSelf, makeIsSelf, NOBODY_IS_SELF, readSelfIdentity } from '../push/self';
+import {
+  type IsSelf,
+  makeIsSelf,
+  matchOwner,
+  NOBODY_IS_SELF,
+  readSelfIdentity,
+  shouldMapContactToSelf,
+  type SelfIdentity,
+} from '../push/self';
 import {
   DATABASE_FREE_FLOOR_BYTES,
   DatabaseVolumeFullError,
@@ -43,6 +51,9 @@ import {
   type DatabaseSpace,
 } from '../storage/databaseSpace';
 import type { ImportStageRunner, StageOutcome, StageRunContext } from '../types';
+
+/** Mirrors personalization TrustMode without importing that domain (cycle risk). */
+type TrustMode = 'cautious' | 'balanced' | 'hands_off';
 
 /** Staged rows read (and pushed) per batch. */
 const PUSH_BATCH = 500;
@@ -178,10 +189,19 @@ export class PushStage implements ImportStageRunner {
     // rows off 'pending', or this attempt's own work would be counted twice.
     const prior = await this.settledCounts(context.runId);
 
+    // Who "me" is, resolved ONCE for the whole run. WhatsApp and Messenger
+    // decide each message's direction by matching its sender against the owner
+    // (see push/self), and a run is hundreds of thousands of records — this
+    // cannot be a per-record, or even a per-batch, lookup. Also drives owner
+    // contact → self Person redirect during entity push.
+    const isSelf = await this.resolveIsSelf(context);
+    const selfEntityId = await this.resolveSelfEntityId(context.userId);
+    const trustMode = await this.resolveTrustMode(context.userId);
+
     // Entities first, always. A communication names its participants by server
     // entity id, so the people have to exist — and be recorded in
     // `entity_mappings` — before the record that points at them is built.
-    const attempt = await this.pushEntities(context);
+    const attempt = await this.pushEntities(context, trustMode, selfEntityId);
 
     const entities = {
       resolved: prior.entities.resolved + attempt.resolved,
@@ -220,14 +240,6 @@ export class PushStage implements ImportStageRunner {
 
     let latestSpace = space;
 
-    // Who "me" is, resolved ONCE for the whole run. WhatsApp and Messenger
-    // decide each message's direction by matching its sender against the owner
-    // (see push/self), and a run is hundreds of thousands of records — this
-    // cannot be a per-record, or even a per-batch, lookup. Unconditional
-    // rather than deferred until the first chat record: it is one owner-scoped
-    // query per run, which is cheaper than the state needed to defer it.
-    const isSelf = await this.resolveIsSelf(context);
-
     for (;;) {
       const batch = await this.nextBatch(context.runId);
 
@@ -235,7 +247,7 @@ export class PushStage implements ImportStageRunner {
         break;
       }
 
-      const outcome = await this.pushBatch(context, batch, counts, isSelf);
+      const outcome = await this.pushBatch(context, batch, counts, isSelf, selfEntityId);
 
       pushed += outcome.pushed;
       failed += outcome.failed;
@@ -443,6 +455,8 @@ export class PushStage implements ImportStageRunner {
    */
   private async pushEntities(
     context: StageRunContext,
+    trustMode: TrustMode,
+    selfEntityId: string | null,
   ): Promise<{ resolved: number; skipped: number; unresolved: number; failed: number }> {
     await context.progress({ processed: 0, total: null, phase: 'resolving people' });
 
@@ -455,6 +469,14 @@ export class PushStage implements ImportStageRunner {
       [context.runId],
     );
 
+    const identity = await readSelfIdentity(this.dataSource, context.userId).catch(
+      (): SelfIdentity => ({
+        names: [],
+        email: null,
+        phones: [],
+      }),
+    );
+
     // Several staged rows can share a natural key — the same artist reached by
     // two parsers in one archive — so the key maps to a LIST. Ingest is given
     // each key once, and every staged row holding it gets the resulting id.
@@ -462,6 +484,7 @@ export class PushStage implements ImportStageRunner {
     const inputs: GraphEntityInputDto[] = [];
     let skipped = 0;
     let unresolved = 0;
+    let resolved = 0;
 
     for (const row of staged) {
       // Bookkeeping types never reach the graph — see isGraphExcluded. This is
@@ -489,6 +512,19 @@ export class PushStage implements ImportStageRunner {
         continue;
       }
 
+      // Owner-representing contacts map onto the self Person instead of minting
+      // a duplicate "bennett" / email-as-name stub.
+      if (
+        selfEntityId != null &&
+        input.entityType === 'Person' &&
+        this.isOwnerContactInput(identity, input, trustMode)
+      ) {
+        await this.recordEntityMapping(row.id, context.userId, selfEntityId);
+        await this.markEntity(row.id, 'pushed', null);
+        resolved += 1;
+        continue;
+      }
+
       const sharing = byKey.get(input.key);
 
       if (sharing) {
@@ -503,21 +539,19 @@ export class PushStage implements ImportStageRunner {
     if (inputs.length === 0) {
       this.logger.log('Resolved staged entities', {
         runId: context.runId,
-        resolved: 0,
+        resolved,
         skipped,
         unresolved,
         failed: 0,
       });
 
-      return { resolved: 0, skipped, unresolved, failed: 0 };
+      return { resolved, skipped, unresolved, failed: 0 };
     }
 
     const result = await this.graph.ingest(
       { userId: context.userId },
       { entities: inputs, relationships: [] },
     );
-
-    let resolved = 0;
 
     for (const mapping of result.entities) {
       for (const row of byKey.get(mapping.key) ?? []) {
@@ -788,6 +822,78 @@ export class PushStage implements ImportStageRunner {
     }
   }
 
+  private async resolveSelfEntityId(userId: string): Promise<string | null> {
+    const rows: Array<{ entity_id: string | null }> = await this.dataSource.query(
+      `SELECT entity_id FROM ci.users WHERE id = $1::uuid`,
+      [userId],
+    );
+
+    return rows[0]?.entity_id ?? null;
+  }
+
+  /**
+   * Read Autonomy trust from the self Person planner — same source as
+   * PersonalizationService.getTrustMode, without importing that module (avoids
+   * import ↔ personalization ↔ llm ↔ tools cycles).
+   */
+  private async resolveTrustMode(userId: string): Promise<TrustMode> {
+    const rows: Array<{ trust_mode: string | null }> = await this.dataSource.query(
+      `SELECT e.properties -> 'planner' ->> 'trust_mode' AS trust_mode
+         FROM ci.users u
+         JOIN ci.entities e ON e.entity_id = u.entity_id
+        WHERE u.id = $1::uuid
+        LIMIT 1`,
+      [userId],
+    );
+
+    const raw = rows[0]?.trust_mode;
+
+    return raw === 'cautious' || raw === 'balanced' || raw === 'hands_off' ? raw : 'balanced';
+  }
+
+  private isOwnerContactInput(
+    identity: SelfIdentity,
+    input: GraphEntityInputDto,
+    trustMode: TrustMode,
+  ): boolean {
+    const props = input.properties ?? {};
+    const candidates: string[] = [];
+    if (typeof input.name === 'string') {
+      candidates.push(input.name);
+    }
+
+    if (typeof props.email === 'string') {
+      candidates.push(props.email);
+    }
+
+    for (const email of Array.isArray(props.emails) ? props.emails : []) {
+      if (typeof email === 'string') {
+        candidates.push(email);
+      }
+    }
+
+    if (typeof props.phone === 'string') {
+      candidates.push(props.phone);
+    }
+
+    for (const phone of Array.isArray(props.phones) ? props.phones : []) {
+      if (typeof phone === 'string') {
+        candidates.push(phone);
+      }
+    }
+
+    const ownerPhones = identity.phones;
+
+    for (const candidate of candidates) {
+      const match = matchOwner(identity, candidate, { phones: ownerPhones });
+      if (shouldMapContactToSelf(match, trustMode)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   /**
    * Push one batch, row by row.
    *
@@ -802,6 +908,7 @@ export class PushStage implements ImportStageRunner {
     batch: StagedItem[],
     counts: DestinationCounts,
     isSelf: IsSelf,
+    selfEntityId: string | null,
   ): Promise<{ pushed: number; failed: number; deduped: number }> {
     const ctx = { userId: context.userId };
 
@@ -831,7 +938,7 @@ export class PushStage implements ImportStageRunner {
         continue;
       }
 
-      await this.sendGroup(ctx, destination, group, counts, isSelf, context);
+      await this.sendGroup(ctx, destination, group, counts, isSelf, selfEntityId, context);
     }
 
     return this.recordOutcomes(context, plans);
@@ -857,10 +964,11 @@ export class PushStage implements ImportStageRunner {
     group: RowPlan[],
     counts: DestinationCounts,
     isSelf: IsSelf,
+    selfEntityId: string | null,
     context: StageRunContext,
   ): Promise<void> {
     try {
-      const wrote = await this.sendMany(ctx, destination, group, isSelf);
+      const wrote = await this.sendMany(ctx, destination, group, isSelf, selfEntityId);
 
       for (const [index, plan] of group.entries()) {
         if (wrote[index]) {
@@ -888,7 +996,7 @@ export class PushStage implements ImportStageRunner {
 
     for (const plan of group) {
       try {
-        if (await this.send(ctx, destination, plan.record, plan.participants, isSelf)) {
+        if (await this.send(ctx, destination, plan.record, plan.participants, isSelf, selfEntityId)) {
           counts[destination] = (counts[destination] ?? 0) + 1;
           plan.wrote = true;
         }
@@ -1010,30 +1118,41 @@ export class PushStage implements ImportStageRunner {
   private resolveCorrespondents(
     participants: Map<string, string[]>,
     direction: string | undefined,
+    selfEntityId: string | null,
   ): { from?: string; to: string[] } {
+    const stripSelf = (ids: string[]) =>
+      selfEntityId == null ? ids : ids.filter((id) => id !== selfEntityId);
+
     const [explicitFrom] = participants.get('from') ?? [];
     const explicitTo = [...(participants.get('to') ?? []), ...(participants.get('cc') ?? [])];
 
     if (explicitFrom != null || explicitTo.length > 0) {
-      return { from: explicitFrom, to: explicitTo };
+      return {
+        from: explicitFrom === selfEntityId ? selfEntityId : explicitFrom,
+        to: stripSelf(explicitTo),
+      };
     }
 
     const others = participants.get('participant') ?? [];
 
     if (others.length === 0) {
-      return { to: [] };
+      return {
+        from: direction === 'outbound' ? (selfEntityId ?? undefined) : undefined,
+        to: [],
+      };
     }
 
-    // Outbound: the owner sent it, so every participant is a recipient. Inbound
-    // (and unknown, which `toCommunicationInput` defaults to inbound): the
-    // first participant is who it came from, and any others share the thread.
+    // Outbound: the owner sent it — from=self, recipients are everyone else.
     if (direction === 'outbound') {
-      return { to: others };
+      return { from: selfEntityId ?? undefined, to: stripSelf(others) };
     }
 
     const [first, ...rest] = others;
+    if (first === selfEntityId) {
+      return { from: undefined, to: stripSelf(rest) };
+    }
 
-    return { from: first, to: rest };
+    return { from: first, to: stripSelf(rest) };
   }
 
   /**
@@ -1057,6 +1176,7 @@ export class PushStage implements ImportStageRunner {
     destination: Destination,
     group: RowPlan[],
     isSelf: IsSelf,
+    selfEntityId: string | null,
   ): Promise<boolean[]> {
     switch (destination) {
       case 'communications': {
@@ -1068,7 +1188,7 @@ export class PushStage implements ImportStageRunner {
               ? toFacebookMessengerCommunicationInput(plan.record, isSelf)
               : toCommunicationInput(plan.record);
 
-          const { from, to } = this.resolveCorrespondents(plan.participants, input.direction);
+          const { from, to } = this.resolveCorrespondents(plan.participants, input.direction, selfEntityId);
 
           if (from) {
             input.from_entity_id = from;
@@ -1165,6 +1285,7 @@ export class PushStage implements ImportStageRunner {
     record: CanonicalRecord,
     participants: Map<string, string[]>,
     isSelf: IsSelf,
+    selfEntityId: string | null,
   ): Promise<boolean> {
     switch (destination) {
       case 'communications': {
@@ -1187,7 +1308,15 @@ export class PushStage implements ImportStageRunner {
         // The whole point of staging edges: a message reaches ci.* with a sender
         // and recipients rather than as text from nobody. `from` is single by
         // definition; everything else addressed is a recipient.
-        const { from, to } = this.resolveCorrespondents(participants, input.direction);
+        //
+        // `selfEntityId` is threaded through rather than passed as null. This is
+        // the row-by-row RETRY of a batch that failed, so it must decide
+        // correspondents identically to `sendMany` — and with null it did not:
+        // an outbound message got `from` undefined instead of the owner, and a
+        // group chat kept the owner's own entity in `to_entity_ids` because
+        // `stripSelf` had nothing to strip. A retried batch produced quietly
+        // different rows from a batch that happened to succeed.
+        const { from, to } = this.resolveCorrespondents(participants, input.direction, selfEntityId);
 
         if (from) {
           input.from_entity_id = from;

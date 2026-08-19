@@ -16,8 +16,8 @@ import path from 'node:path';
 
 import type { FileImporter, Recognition, DirEntry } from './registry';
 import { registerDataSource } from './registry';
-import type { ImportParams } from './timeline';
-import { timeframeContains } from './timeline';
+import type { ImportParams, Metadata } from './timeline';
+import { mediaItemFromFile, timeframeContains } from './timeline';
 
 interface IGMessage {
   sender_name?: string;
@@ -93,6 +93,252 @@ interface HtmlEntry {
   sender?: string;
   text: string;
   ts?: Date;
+  /**
+   * The entry's own markup (already de-duplicated, see dedupeRepeatedFieldRows).
+   * `text` is what survives stripTags, which throws away every identity the
+   * entry carries — the post permalink lives in an `<a href>` ATTRIBUTE and the
+   * media file in an `<img src>`, neither of which a tag strip can reach. The
+   * activity importer reads those off the markup before falling back to text.
+   */
+  html: string;
+}
+
+/**
+ * One label/value cell pair from a Meta activity table, e.g.
+ * `<tr><td class="_a6_q">Caption</td><td class="_2piu _a6_r">…</td></tr>`.
+ *
+ * The label cell is `[^<]*` on purpose: a `<tr>` whose first cell OPENS a
+ * nested block (`<td colspan="2" …><div><div class="pam …"><h2>Owner</h2>…`)
+ * carries a section heading, not a field, and must not match — otherwise the
+ * lazy value group would swallow the sub-table's first `</td></tr>` and report
+ * a fragment as a field value.
+ */
+const FIELD_ROW_PATTERN = '<tr>\\s*<td[^>]*>([^<]*)</td>\\s*<td[^>]*>([\\s\\S]*?)</td>\\s*</tr>';
+
+interface FieldRow {
+  label: string;
+  value: string;
+}
+
+function fieldRows(html: string): FieldRow[] {
+  const re = new RegExp(FIELD_ROW_PATTERN, 'g');
+  const rows: FieldRow[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    rows.push({ label: decodeHtml(m[1]).trim(), value: htmlToText(m[2]) });
+  }
+
+  return rows;
+}
+
+/**
+ * Drop a field row that is byte-identical to the one immediately before it.
+ *
+ * Meta's own renderer emits every post Caption TWICE in liked_posts.html,
+ * saved_posts.html, reposts.html and stories_viewed.html — two adjacent
+ * `<tr>Caption…</tr>` rows with identical text — so the stripped entry text
+ * carried the caption twice, and so did metadata.Description and every
+ * embedding derived from it. Same class of source-side doubling as the Google
+ * Voice call heading (see 20260818213148_backfill_google_voice_call_heading_
+ * duplication.sql); same fix — collapse the literal repeat, invent nothing.
+ *
+ * Scoped to CONSECUTIVE identical rows within ONE entry: two entries that
+ * happen to share a caption are separate chunks and never compare, and a
+ * repeated label with a different value (an Owner's Name vs Username) never
+ * matches.
+ */
+function dedupeRepeatedFieldRows(html: string): string {
+  const re = new RegExp(FIELD_ROW_PATTERN, 'g');
+  let out = '';
+  let last = 0;
+  let previous: string | null = null;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    const row = m[0];
+    // Everything between the previous row and this one is kept verbatim; the
+    // row itself is kept only when it is not a repeat of the row before it.
+    out += html.slice(last, m.index) + (row === previous ? '' : row);
+    previous = row;
+    last = re.lastIndex;
+  }
+
+  return out + html.slice(last);
+}
+
+/** The anchor TEXT of an entry's first link. A follower/following entry is
+ *  nothing but `<a href="…/johndoe">johndoe</a>`, so this is the only name it
+ *  has. */
+function firstLinkText(html: string): string | undefined {
+  const m = /<a\b[^>]*>([\s\S]*?)<\/a>/i.exec(html);
+  const t = m ? htmlToText(m[1]) : '';
+
+  return t ? clipText(t) : undefined;
+}
+
+/** The first absolute http(s) link in an entry — Meta's per-entry permalink. */
+function firstWebLink(html: string): string | undefined {
+  const re = /<a\b[^>]*\bhref="([^"]+)"/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    const href = decodeHtml(m[1]).trim();
+    if (/^https?:\/\//i.test(href)) {
+      return href;
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * The post/reel shortcode in an Instagram permalink — the id of the THING the
+ * entry is about, as opposed to the id of the activity (a like, a save, a story
+ * view), which is per-file and per-position.
+ */
+function instagramShortcode(url: string): string | undefined {
+  const m = /instagram\.com\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/i.exec(url);
+
+  return m ? m[1] : undefined;
+}
+
+/** Field rows that belong to the entry ITSELF — everything before the first
+ *  `<h2>` sub-section (Owner / Media / Hashtags). Without the cut, a saved
+ *  COLLECTION would be named after the first post filed inside it. */
+function headFieldRows(html: string): FieldRow[] {
+  const h2 = html.search(/<h2[\s>]/i);
+
+  return fieldRows(h2 >= 0 ? html.slice(0, h2) : html);
+}
+
+/** Display name + handle of the account that posted the thing this entry is
+ *  about, off the entry's `<h2>Owner</h2>` sub-table. */
+function ownerOf(html: string): { name?: string; handle?: string } {
+  const m = /<h2[^>]*>\s*Owner\s*<\/h2>/i.exec(html);
+  if (!m) {
+    return {};
+  }
+
+  const rows = fieldRows(html.slice(m.index + m[0].length));
+
+  return {
+    name: rows.find((r) => r.label === 'Name')?.value || undefined,
+    handle: rows.find((r) => r.label === 'Username')?.value || undefined,
+  };
+}
+
+function valueOf(rows: FieldRow[], label: string): string | undefined {
+  return rows.find((r) => r.label === label)?.value || undefined;
+}
+
+/** Single-line, length-capped copy of a value, for a title. */
+function clipText(s: string, n = 80): string {
+  const flat = s.replace(/\s+/g, ' ').trim();
+
+  return flat.length > n ? `${flat.slice(0, n - 1).trimEnd()}…` : flat;
+}
+
+/**
+ * Labels that only ever describe an entry's bookkeeping. An entry carrying
+ * nothing BUT these has no content — see hasSubstance.
+ */
+const NON_CONTENT_FIELD_LABELS = new Set(['update time', 'expiration time', 'is an advertisement']);
+
+/**
+ * Does this entry say anything at all?
+ *
+ * other_content.html ships five byte-identical placeholder entries whose only
+ * fields are an EMPTY `Media` cell plus "Is an advertisement: False" and an
+ * "Update time" — no media uri, no caption, no link, nothing. None of that is
+ * an empty string, so the old `if (!text) continue` let all five through, each
+ * under its own `#<i>` id so they never deduped against each other either.
+ */
+function hasSubstance(html: string, url: string | undefined, mediaPath: string | undefined): boolean {
+  if (url || mediaPath) {
+    return true;
+  }
+
+  for (const row of fieldRows(html)) {
+    if (row.value && !NON_CONTENT_FIELD_LABELS.has(row.label.toLowerCase())) {
+      return true;
+    }
+  }
+
+  // Text that is not in a label/value row at all — a follower handle, a
+  // "Product names" list — is content too.
+  return htmlToText(html.replace(new RegExp(FIELD_ROW_PATTERN, 'g'), ' ')).length > 0;
+}
+
+/**
+ * The directory this file's export-relative hrefs resolve against. Meta stamps
+ * `<base href="../../">` in every activity page's <head>, so `media/other/x.jpg`
+ * inside your_instagram_activity/media/profile_photos.html means
+ * <export root>/media/other/x.jpg — two directories UP, not alongside the page.
+ */
+function exportBaseDir(fpath: string, html: string): string {
+  const dir = path.dirname(fpath);
+  const m = /<base[^>]*\bhref="([^"]+)"/i.exec(html);
+
+  return m ? path.resolve(dir, decodeHtml(m[1]).trim()) : dir;
+}
+
+/** Resolve one export-relative href to an absolute path inside the export, or
+ *  null for an absolute URL, a fragment, or anything that escapes the export. */
+function resolveLocalRef(baseDir: string, ref: string): string | null {
+  const href = decodeHtml(ref).trim();
+  if (!href || href.startsWith('#') || href.startsWith('//') || /^[a-z][a-z0-9+.-]*:/i.test(href)) {
+    return null;
+  }
+
+  let rel = href;
+  try {
+    rel = decodeURIComponent(href);
+  } catch {
+    /* keep the raw href when it isn't valid percent-encoding */
+  }
+
+  const abs = path.resolve(baseDir, rel);
+
+  return abs === baseDir || abs.startsWith(baseDir + path.sep) ? abs : null;
+}
+
+/** The first `<img src>` / `<a href>` in the entry pointing at a file that
+ *  actually exists on disk inside the export. */
+function localMediaPath(html: string, baseDir: string): string | undefined {
+  const re = /<(?:img\b[^>]*\bsrc|a\b[^>]*\bhref)="([^"]+)"/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    const abs = resolveLocalRef(baseDir, m[1]);
+    if (!abs) {
+      continue;
+    }
+
+    try {
+      if (fs.statSync(abs).isFile()) {
+        return abs;
+      }
+    } catch {
+      /* not on disk — Meta ships incomplete media trees routinely */
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Classifications whose entries ARE a media file. An entry in one of these
+ * files that resolves to no bytes on disk is skipped: kindFor maps both to
+ * capture.photo (canonical.ts), so emitting one anyway manufactures a photo
+ * event with no photo — six of them in the live database.
+ */
+const MEDIA_LANE_CLASSIFICATIONS = new Set(['media', 'photo', 'image', 'video', 'audio']);
+
+interface ActivityOptions {
+  /**
+   * Entries in this file are single Instagram POSTS, so the post's shortcode is
+   * a legitimate identity for the content row (metadata.URI). False for files
+   * whose entry is a container (a saved collection) or a different object that
+   * merely links to a post (a liked comment).
+   */
+  postUri?: boolean;
 }
 
 // Split a file's <main> body into one entry per trailing date div.
@@ -107,7 +353,9 @@ function parseHtmlEntries(html: string): HtmlEntry[] {
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = DATE_DIV_RE.exec(body)) !== null) {
-    const chunk = body.slice(last, m.index);
+    // Meta repeats a post's Caption row verbatim; collapse it here so BOTH the
+    // stripped text and any per-field read below see the caption exactly once.
+    const chunk = dedupeRepeatedFieldRows(body.slice(last, m.index));
     last = DATE_DIV_RE.lastIndex;
     const ts = parseMetaDate(m[1]);
     // Per-entry sender (message logs put it in an <h2>).
@@ -122,7 +370,7 @@ function parseHtmlEntries(html: string): HtmlEntry[] {
 
     const text = htmlToText(chunk);
     if (text || ts) {
-      entries.push({ sender, text, ts });
+      entries.push({ sender, text, ts, html: chunk });
     }
   }
 
@@ -433,6 +681,7 @@ export class InstagramFileImporter implements FileImporter {
       'like',
       'Instagram like',
       params,
+      { postUri: true },
     );
     await this.processHtmlActivity(
       path.join(actRoot, 'likes', 'liked_comments.html'),
@@ -457,6 +706,7 @@ export class InstagramFileImporter implements FileImporter {
       'interaction',
       'Instagram saved',
       params,
+      { postUri: true },
     );
     await this.processHtmlActivity(
       path.join(actRoot, 'saved', 'saved_collections.html'),
@@ -477,6 +727,7 @@ export class InstagramFileImporter implements FileImporter {
       'social',
       'Instagram repost',
       params,
+      { postUri: true },
     );
     await this.processHtmlActivity(
       path.join(actRoot, 'media', 'other_content.html'),
@@ -505,6 +756,7 @@ export class InstagramFileImporter implements FileImporter {
       'interaction',
       'Instagram story viewed',
       params,
+      { postUri: true },
     );
 
     // 8) Connections -> followers & following. Meta ships one or more numbered
@@ -590,6 +842,7 @@ export class InstagramFileImporter implements FileImporter {
     classification: string,
     label: string,
     params: ImportParams,
+    opts: ActivityOptions = {},
   ): Promise<void> {
     if (!fs.existsSync(fpath)) {
       return;
@@ -613,36 +866,113 @@ export class InstagramFileImporter implements FileImporter {
       return;
     }
 
+    const filename = path.basename(fpath);
+    const baseDir = exportBaseDir(fpath, raw);
+    // A file whose entries ARE media ("Profile photos you've added", "Other
+    // content you've added"). Such an entry without bytes is not a photo, so it
+    // is dropped rather than emitted as a text/plain capture.photo.
+    const mediaLane = MEDIA_LANE_CLASSIFICATIONS.has(classification);
+
     for (const [i, ent] of entries.entries()) {
       if (!timeframeContains(params.timeframe, ent.ts)) {
         continue;
       }
 
+      const id = `instagram:${filename}#${i}`;
+      const html = ent.html;
+      const url = firstWebLink(html);
+      const shortcode = url ? instagramShortcode(url) : undefined;
+      const mediaPath = localMediaPath(html, baseDir);
+      const head = headFieldRows(html);
+      const owner = ownerOf(html);
+      const caption = valueOf(head, 'Caption');
+      // What makes THIS entry distinguishable from the next one, best first:
+      // the entry's own name (a saved collection's "Sales") beats anything
+      // nested inside it; then the caption, which is the half that actually
+      // varies — 22 of this export's likes are posts by the same account, so an
+      // owner-titled timeline would read "Instagram like — Companion
+      // Intelligence" twenty-two times. The owner is not lost: it rides in
+      // metadata.Author/Handle either way, and titles the entry (a repost, a
+      // follow) whose source gives no caption at all.
+      const subject =
+        valueOf(head, 'Name') ??
+        (caption ? clipText(caption) : undefined) ??
+        owner.name ??
+        owner.handle ??
+        firstLinkText(html);
       const text = ent.text;
-      if (!text) {
+
+      const metadata: Metadata = {
+        // `Title` — every call site passes a real human label ("Instagram
+        // like", "Instagram story viewed"). Without it the canonical mapper's
+        // fallback is the raw filename (canonical.ts titleFor), so every one of
+        // these landed on the timeline titled "liked_posts.html". The subject
+        // suffix is what makes one like distinguishable from the next.
+        Title: subject ? `${label} — ${subject}` : label,
+        Description: text || undefined,
+        Type: label,
+        Source: 'Instagram',
+        // The per-entry permalink. It is the ONLY identity these entries carry
+        // and it lives in an href attribute, so the tag strip that produced
+        // `text` never saw it — 2,010 like/save/repost rows reached ci.content
+        // with a blank text AND a blank url because of that.
+        URL: url,
+        PostId: shortcode,
+        // Owner identity, so a later enrichment pass has a name and a handle to
+        // resolve a Person from instead of a caption blob.
+        Author: owner.name,
+        Handle: owner.handle,
+        Caption: caption,
+      };
+
+      // `URI` REPLACES the content row's source_id (push/inputs.ts
+      // toContentInput), which is what collapses a like, a save, a repost and a
+      // story view of the SAME post onto one content row instead of four blank
+      // ones. Only minted where the entry IS a single post — a saved
+      // COLLECTION holds many posts and must not adopt the identity of the
+      // first one, and a liked COMMENT is not the post it hangs under.
+      if (opts.postUri && shortcode) {
+        metadata.URI = `instagram:p:${shortcode}`;
+      }
+
+      if (!hasSubstance(html, url, mediaPath)) {
+        params.pipeline.drop?.('empty_after_parse', id);
         continue;
       }
 
+      if (mediaLane) {
+        if (!mediaPath) {
+          // profile_photos.html entries used to land as text/plain 'media'
+          // rows with an empty external_id and no url, and kindFor read the
+          // 'media' classification as capture.photo — a photo event with no
+          // photo behind it. There is nothing to import here.
+          params.pipeline.drop?.('missing_media', id);
+          continue;
+        }
+
+        // mediaItemFromFile classifies by the file's real MIME and stamps
+        // intermediateLocation, so MediaStage uploads the bytes and the push
+        // stamps metadata.FileId onto the content row.
+        const media = mediaItemFromFile(mediaPath);
+        params.pipeline.push({
+          item: {
+            ...media,
+            id,
+            timestamp: ent.ts,
+            metadata: { ...media.metadata, ...metadata },
+          },
+        });
+        continue;
+      }
+
+      const body = text || url || (metadata.Title as string);
       params.pipeline.push({
         item: {
-          id: `instagram:${path.basename(fpath)}#${i}`,
+          id,
           classification,
           timestamp: ent.ts,
-          content: {
-            filename: path.basename(fpath),
-            mediaType: 'text/plain',
-            data: async () => Buffer.from(text),
-          },
-          // `Title: label` — every call site (processHtmlActivity's callers,
-          // just above) already passes a real human label ("Instagram like",
-          // "Instagram story viewed", "Instagram checkout"). Without a Title
-          // key here, the canonical mapper's fallback is the raw filename
-          // (canonical.ts titleFor), so every one of these landed on the
-          // timeline titled "liked_posts.html" or "stories_viewed.html" —
-          // verified on a real import: all 39 Instagram events, all of them.
-          // `Description: text` keeps the entry's own detail (a caption, a
-          // URL) instead of discarding it now that Title carries the type.
-          metadata: { Title: label, Description: text, Type: label, Source: 'Instagram' },
+          content: { filename, mediaType: 'text/plain', data: async () => Buffer.from(body) },
+          metadata,
         },
       });
     }

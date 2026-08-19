@@ -155,21 +155,28 @@ export class TikTokFileImporter implements FileImporter {
       return;
     }
 
-    for (const rawEntry of list) {
+    list.forEach((rawEntry, index) => {
       const e = asRecord(rawEntry);
       if (!e) {
-        continue;
+        return;
       }
 
       const ts = parseTikTokDate(asString(e.Date));
       if (!timeframeContains(params.timeframe, ts)) {
-        continue;
+        return;
       }
 
       const link = asString(e.Link) || asString(e.VideoLink) || '';
       const id = link.match(/video\/(\d+)/)?.[1];
+      // TikTok's own Date is second-precision and repeats within a rapid
+      // watch/like session, so classification+filename+timestamp alone
+      // (hashItem's fallback) collapses distinct videos watched in the same
+      // second into one row. The video id (or link) plus the list index makes
+      // every row distinct and stable across re-imports of the same export.
+      const iso = ts ? ts.toISOString() : 'no-ts';
       params.pipeline.push({
         item: {
+          id: `tiktok:watch:${id || link || 'unknown'}:${iso}:${index}`,
           classification: 'watch',
           timestamp: ts,
           content: { filename: 'watch.txt', mediaType: 'text/plain', data: async () => Buffer.from(link) },
@@ -181,7 +188,7 @@ export class TikTokFileImporter implements FileImporter {
           },
         },
       });
-    }
+    });
   }
 
   private importLikes(obj: JsonRecord, params: ImportParams): void {
@@ -190,21 +197,25 @@ export class TikTokFileImporter implements FileImporter {
       return;
     }
 
-    for (const rawEntry of list) {
+    list.forEach((rawEntry, index) => {
       const e = asRecord(rawEntry);
       if (!e) {
-        continue;
+        return;
       }
 
       const ts = parseTikTokDate(asString(e.Date));
       if (!timeframeContains(params.timeframe, ts)) {
-        continue;
+        return;
       }
 
       const link = asString(e.Link) || asString(e.VideoLink) || '';
       const id = link.match(/video\/(\d+)/)?.[1];
+      // See importWatch: rapid-fire likes in one session share the same
+      // second-precision Date, so the video id/link + index disambiguates.
+      const iso = ts ? ts.toISOString() : 'no-ts';
       params.pipeline.push({
         item: {
+          id: `tiktok:like:${id || link || 'unknown'}:${iso}:${index}`,
           classification: 'social',
           timestamp: ts,
           content: { filename: 'like.txt', mediaType: 'text/plain', data: async () => Buffer.from(link) },
@@ -216,7 +227,7 @@ export class TikTokFileImporter implements FileImporter {
           },
         },
       });
-    }
+    });
   }
 
   private importFavorites(obj: JsonRecord, params: ImportParams): void {
@@ -225,21 +236,25 @@ export class TikTokFileImporter implements FileImporter {
       return;
     }
 
-    for (const rawEntry of list) {
+    list.forEach((rawEntry, index) => {
       const e = asRecord(rawEntry);
       if (!e) {
-        continue;
+        return;
       }
 
       const ts = parseTikTokDate(asString(e.Date));
       if (!timeframeContains(params.timeframe, ts)) {
-        continue;
+        return;
       }
 
       const link = asString(e.Link) || '';
       const id = link.match(/video\/(\d+)/)?.[1];
+      // See importWatch: several videos favorited in the same second must
+      // not collapse into one row.
+      const iso = ts ? ts.toISOString() : 'no-ts';
       params.pipeline.push({
         item: {
+          id: `tiktok:favorite:${id || link || 'unknown'}:${iso}:${index}`,
           classification: 'social',
           timestamp: ts,
           content: { filename: 'favorite.txt', mediaType: 'text/plain', data: async () => Buffer.from(link) },
@@ -251,7 +266,7 @@ export class TikTokFileImporter implements FileImporter {
           },
         },
       });
-    }
+    });
   }
 
   private importSearch(obj: JsonRecord, params: ImportParams): void {
@@ -260,27 +275,31 @@ export class TikTokFileImporter implements FileImporter {
       return;
     }
 
-    for (const rawEntry of list) {
+    list.forEach((rawEntry, index) => {
       const e = asRecord(rawEntry);
       if (!e) {
-        continue;
+        return;
       }
 
       const ts = parseTikTokDate(asString(e.Date));
       if (!timeframeContains(params.timeframe, ts)) {
-        continue;
+        return;
       }
 
       const term = asString(e.SearchTerm) || '';
+      // See importWatch: repeated searches within the same second (or the
+      // same term searched twice) must not collapse into one row.
+      const iso = ts ? ts.toISOString() : 'no-ts';
       params.pipeline.push({
         item: {
+          id: `tiktok:search:${term || 'unknown'}:${iso}:${index}`,
           classification: 'social',
           timestamp: ts,
           content: { filename: 'search.txt', mediaType: 'text/plain', data: async () => Buffer.from(term) },
           metadata: { Text: term || undefined, Query: term || undefined, Kind: 'search', Source: 'TikTok' },
         },
       });
-    }
+    });
   }
 
   private importComments(obj: JsonRecord, params: ImportParams): void {
@@ -289,20 +308,24 @@ export class TikTokFileImporter implements FileImporter {
       return;
     }
 
-    for (const rawEntry of list) {
+    list.forEach((rawEntry, index) => {
       const e = asRecord(rawEntry);
       if (!e) {
-        continue;
+        return;
       }
 
       const ts = parseTikTokDate(asString(e.Date));
       if (!timeframeContains(params.timeframe, ts)) {
-        continue;
+        return;
       }
 
       const comment = asString(e.Comment) || '';
+      // See importWatch: two comments posted within the same second must not
+      // collapse into one row (comment.txt is a constant filename).
+      const iso = ts ? ts.toISOString() : 'no-ts';
       params.pipeline.push({
         item: {
+          id: `tiktok:comment:${iso}:${index}`,
           classification: 'social',
           timestamp: ts,
           content: {
@@ -318,7 +341,7 @@ export class TikTokFileImporter implements FileImporter {
           },
         },
       });
-    }
+    });
   }
 
   private importDirectMessages(obj: JsonRecord, params: ImportParams): void {
@@ -333,15 +356,15 @@ export class TikTokFileImporter implements FileImporter {
       }
 
       const conversation = key.replace(/^Chat History with /, '').replace(/:$/, '');
-      for (const rawMsg of arr) {
+      arr.forEach((rawMsg, index) => {
         const msg = asRecord(rawMsg);
         if (!msg) {
-          continue;
+          return;
         }
 
         const ts = parseTikTokDate(asString(msg.Date));
         if (!timeframeContains(params.timeframe, ts)) {
-          continue;
+          return;
         }
 
         const content = asString(msg.Content) || '';
@@ -350,8 +373,13 @@ export class TikTokFileImporter implements FileImporter {
         // equals it is inbound (partner -> me), otherwise outbound (me -> partner).
         const isInbound = sender !== undefined && sender === conversation;
         const to = isInbound ? undefined : conversation || undefined;
+        // See importWatch: rapid back-and-forth messages within the same
+        // second (constant 'dm.txt' filename) must not collapse; index is
+        // scoped per-conversation, matched by the conversation in the key.
+        const iso = ts ? ts.toISOString() : 'no-ts';
         params.pipeline.push({
           item: {
+            id: `tiktok:dm:${conversation}:${iso}:${index}`,
             classification: 'message',
             timestamp: ts,
             content: { filename: 'dm.txt', mediaType: 'text/plain', data: async () => Buffer.from(content) },
@@ -367,7 +395,7 @@ export class TikTokFileImporter implements FileImporter {
             },
           },
         });
-      }
+      });
     }
   }
 }

@@ -195,7 +195,13 @@ function pushLocation(
     classification: 'location',
     timestamp: ts,
     location: { latitude: lat, longitude: lon },
-    metadata: { Name: `Location ${lat.toFixed(5)}, ${lon.toFixed(5)}`, Altitude: alt },
+    // No `Name`: an NMEA sentence has no name to give. The invented
+    // `Location ${lat}, ${lon}` was never rendered as a title — a raw GPS
+    // `location.fix` routes to `position` ONLY (destinationsFor in
+    // push/canonical.ts) — it only ever landed in `ci.position.name`, where a
+    // coordinate pair is not a place name. A null name is what makes the row a
+    // reverse-geocode candidate.
+    metadata: { Altitude: alt },
     content: { filename: path.basename(source), data: async () => Buffer.from('') },
   };
   const g: Graph = { item };

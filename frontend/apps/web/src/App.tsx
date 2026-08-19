@@ -103,6 +103,13 @@ function RedirectFeedSummaryToBrief() {
   return <Navigate to={`/brief/summaries/${id ?? ''}`} replace />;
 }
 
+/** Events explorer moved to /memory/events; keep query (view=, filters) intact. */
+function RedirectMemoryToEvents() {
+  const { search } = useLocation();
+
+  return <Navigate to={{ pathname: '/memory/events', search }} replace />;
+}
+
 function Providers({ children }: { children: ReactNode }) {
   return (
     <Router>
@@ -266,6 +273,14 @@ function AppRoutes() {
             path="/memory"
             element={
               <ProtectedRoute>
+                <RedirectMemoryToEvents />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/memory/events"
+            element={
+              <ProtectedRoute>
                 <MemoryPage />
               </ProtectedRoute>
             }
@@ -311,9 +326,15 @@ function AppRoutes() {
 
           {isFeatureEnabled('insights.page') && (
             <>
-              <Route path="/prompts" element={<Navigate to="/memory/questions" replace />} />
+              {/*
+                "Questions" is what this page used to be called; it is
+                "Reflections" in the UI now. Both old paths stay as redirects so
+                bookmarks, docs and any link still in the wild keep working.
+              */}
+              <Route path="/prompts" element={<Navigate to="/memory/reflections" replace />} />
+              <Route path="/memory/questions" element={<Navigate to="/memory/reflections" replace />} />
               <Route
-                path="/memory/questions"
+                path="/memory/reflections"
                 element={
                   <ProtectedRoute>
                     <PromptsPage />
@@ -348,7 +369,7 @@ function AppRoutes() {
             />
           )}
 
-          <Route path="/memory/knowledge" element={<Navigate to="/memory?view=graph" replace />} />
+          <Route path="/memory/knowledge" element={<Navigate to="/memory/events?view=graph" replace />} />
 
           {isFeatureEnabled('chat.page') && (
             <Route

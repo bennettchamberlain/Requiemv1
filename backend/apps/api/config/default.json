@@ -164,6 +164,9 @@
       "usersPerTurn": 1
     }
   },
+  "reflection": {
+    "minAnswerConfidence": 0.4
+  },
   "features": {
     "scheduled.answer.inferencing": true,
     "scheduled.connection.sync": true,

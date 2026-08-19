@@ -66,6 +66,10 @@ function makeStage(
   options: {
     /** Decides each call's fate from its inputs; default writes everything. */
     respond?: (input: CreateCommunicationDto[]) => Array<{ inserted: boolean }>;
+    /** `ci.users.entity_id` — the owner's own entity. Default: no self row. */
+    selfEntityId?: string | null;
+    /** Rows the staged-edge join returns, i.e. the resolved participants. */
+    relationships?: Array<{ item_id: string; relation: string | null; server_entity_id: string }>;
   } = {},
 ): Harness {
   let servedBatch = false;
@@ -90,7 +94,15 @@ function makeStage(
       }
 
       if (sql.includes('staged_relationships')) {
-        return [];
+        return options.relationships ?? [];
+      }
+
+      if (sql.includes('SELECT entity_id FROM ci.users')) {
+        return [{ entity_id: options.selfEntityId ?? null }];
+      }
+
+      if (sql.includes('trust_mode')) {
+        return [{ trust_mode: 'balanced' }];
       }
 
       if (sql.includes('FROM ci.users u')) {
@@ -194,9 +206,12 @@ describe('a batched write still says which rows it wrote', () => {
     // Every other row is a duplicate the service absorbed. Counting sends
     // instead of writes is what claimed 7,339 content records for an archive
     // that produced 2,354.
-    const { stage, updates } = makeStage(Array.from({ length: 6 }, (_, i) => messageRow(`m${i}`)), {
-      respond: (input) => input.map((_row, index) => ({ inserted: index % 2 === 0 })),
-    });
+    const { stage, updates } = makeStage(
+      Array.from({ length: 6 }, (_, i) => messageRow(`m${i}`)),
+      {
+        respond: (input) => input.map((_row, index) => ({ inserted: index % 2 === 0 })),
+      },
+    );
 
     await stage.run(context);
 
@@ -241,5 +256,65 @@ describe('a failed batch degrades to per-row rather than losing the batch', () =
     expect(pushed?.params[0]).toHaveLength(2);
     expect(failed?.params).toHaveLength(2);
     expect(String(failed?.params[1])).toContain('violates not-null constraint');
+  });
+});
+
+/*
+ * Regression (defect F2): the per-row RETRY decided correspondents differently
+ * from the batch it was retrying.
+ *
+ * `sendMany` threads `selfEntityId` into `resolveCorrespondents`; `send` passed
+ * a hard-coded `null`. With null, an outbound message gets no `from` at all —
+ * the owner is who sent it, and that is the only thing an outbound chat message
+ * ever knows — and `stripSelf` has nothing to strip, so the owner's own entity
+ * stays in `to_entity_ids` as one of its own recipients. A batch that happened
+ * to fail once therefore wrote quietly different rows from one that did not,
+ * and the difference was invisible: both paths report success.
+ */
+describe('the per-row retry resolves correspondents the same way the batch does', () => {
+  const SELF = '99999999-9999-4999-8999-999999999999';
+  const CONTACT = '88888888-8888-4888-8888-888888888888';
+
+  const outboundMessage = (n: number) =>
+    messageRow(`m${n}`, {
+      dataSource: 'imessage',
+      metadata: { Source: 'iMessage', 'From Me': true, Text: `m${n}` },
+    } as Partial<StagedItem>);
+
+  it('names the owner as sender and strips it from the recipients', async () => {
+    const rows = [outboundMessage(1), outboundMessage(2)];
+    const { stage, callSizes, sent } = makeStage(rows, {
+      selfEntityId: SELF,
+      // Both the counterpart and the owner are staged as participants — the
+      // shape a group chat produces once outbound edges are staged at all.
+      relationships: rows.flatMap((row) => [
+        { item_id: row.id, relation: 'participant', server_entity_id: CONTACT },
+        { item_id: row.id, relation: 'participant', server_entity_id: SELF },
+      ]),
+      respond: (input) => {
+        if (input.length > 1) {
+          throw new Error('null value in column "content" violates not-null constraint');
+        }
+
+        return input.map(() => ({ inserted: true }));
+      },
+    });
+
+    await stage.run(context);
+
+    // One batched attempt, then one call per row: these assertions are about
+    // the RETRY path, so the batch must actually have failed.
+    expect(callSizes).toEqual([2, 1, 1]);
+
+    // `sent` only records inputs the service accepted, and the batched call
+    // threw before recording anything — so everything here came from the retry.
+    const retried = sent;
+    expect(retried).toHaveLength(2);
+
+    for (const input of retried) {
+      expect(input.direction).toBe('outbound');
+      expect(input.from_entity_id).toBe(SELF);
+      expect(input.to_entity_ids).toEqual([CONTACT]);
+    }
   });
 });

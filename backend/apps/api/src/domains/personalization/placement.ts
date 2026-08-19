@@ -3,9 +3,16 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
 import { type UserServiceContext } from '@ci/common/context';
+import { isValidTimezone, localDateInTZ, todayInTZ, zonedWallTimeToUTC } from '@ci/common/time/zoned';
 import { isHomeConfirmSourceId } from '@ci/domains/daily-metrics';
 import { EventService } from '@ci/domains/memory';
-import { isValidTimezone, localDateInTZ, todayInTZ, zonedWallTimeToUTC } from '@ci/domains/planning';
+// These pure timezone functions live in common/, not domains/planning/, on
+// purpose: importing them via the `@ci/domains/planning` barrel pulled in
+// PlanningModule, which imports PersonalizationModule, which imports this
+// file back — a real cycle (dependency-cruiser flagged it) that also broke at
+// runtime as a TDZ ReferenceError. They have no planning-specific logic, so
+// moving them out of the planning domain removes the cycle at its source
+// instead of routing around it.
 
 import {
   durationFromSpan,
@@ -280,7 +287,16 @@ export class PlacementService {
       },
     });
 
-    const claimed = (await this.dataSource.query(
+    // `dataSource.query()` on an UPDATE statement does NOT return the RETURNING
+    // rows directly — TypeORM's PostgresQueryRunner special-cases UPDATE/DELETE
+    // to return `[rows, rowCount]` (see driver/postgres/PostgresQueryRunner.ts),
+    // unlike a plain SELECT, which returns the rows array on its own. Treating
+    // that pair AS the rows array (as a bare `Array<{ candidate_id }>` cast used
+    // to do here) makes `.length` always 2 — the "lost the claim" branch below
+    // was consequently dead code, so a concurrent accept could never detect that
+    // it lost the race and would silently mint a second, orphaned event pointed
+    // at nothing while the loser's own promoted_event_id write no-opped.
+    const [claimedRows] = (await this.dataSource.query(
       `
       UPDATE ci.event_candidates
       SET status = 'accepted',
@@ -292,9 +308,9 @@ export class PlacementService {
       RETURNING candidate_id
       `,
       [candidateId, context.userId, event.id],
-    )) as Array<{ candidate_id: string }>;
+    )) as [Array<{ candidate_id: string }>, number];
 
-    if (claimed.length === 0) {
+    if (claimedRows.length === 0) {
       await this.eventService.remove(context, event.id);
       throw new Error('schedule accept lost the candidate claim');
     }

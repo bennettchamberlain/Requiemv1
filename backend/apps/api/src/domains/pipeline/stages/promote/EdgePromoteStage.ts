@@ -19,6 +19,7 @@ import { PERSON_LINK_VERSION } from '../enrich/PersonLinkStage';
 
 import { PROMOTE_OBJECT_VERSION } from './ObjectPromoteStage';
 import { PROMOTE_PLACE_VERSION } from './PlacePromoteStage';
+import { PROMOTE_PLACE_POSITION_VERSION } from './PositionPlacePromoteStage';
 
 /**
  * The ids. IDS ARE PERMANENT — each is the third component of
@@ -114,11 +115,21 @@ export const PROMOTE_EDGE_RECEIPT_VERSION = EDGE_PROJECTION_RULE_GENERATION;
 export const PROMOTE_EDGE_OBSERVATION_VERSION = EDGE_PROJECTION_RULE_GENERATION + PROMOTE_OBJECT_VERSION - 1;
 
 /**
- * Position-leg version: `location_entity_id` is snapped to a known place by
- * the position domain at capture time (PositionService / KnownPlacesService),
- * not by a versioned stage — projection generation only.
+ * Position-leg version: `ci.position.location_entity_id` is written by
+ * `promote.place_position`, so its version rides along — same derivation shape
+ * as the inventory and observation legs.
+ *
+ * It did not always: this leg carried the projection generation alone, on the
+ * grounds that the column was "snapped to a known place by the position domain
+ * at capture time (PositionService / KnownPlacesService), not by a versioned
+ * stage". That was true and it was also the bug — no capture path ever wrote
+ * it, and 0 of 65,115 fixes on the legacy corpus carried a place, so this leg's
+ * candidate set (`s.location_entity_id IS NOT NULL`) was permanently empty.
+ * Now that a versioned promoter fills the column, a better place-dedupe rule
+ * there must re-project the edges here.
  */
-export const PROMOTE_EDGE_POSITION_VERSION = EDGE_PROJECTION_RULE_GENERATION;
+export const PROMOTE_EDGE_POSITION_VERSION =
+  EDGE_PROJECTION_RULE_GENERATION + PROMOTE_PLACE_POSITION_VERSION - 1;
 
 /**
  * Device-leg version: `device_entity_id` is written at device registration —
@@ -152,7 +163,8 @@ export function promoteEdgeStageVersion(
       `STAGE_VERSIONS["${stageId}"] declares ${declared} but the stage derives ${derived} from ` +
         `EDGE_PROJECTION_RULE_GENERATION (${EDGE_PROJECTION_RULE_GENERATION}) + its producers' ` +
         `versions (PERSON_LINK_VERSION ${PERSON_LINK_VERSION}, PROMOTE_PLACE_VERSION ` +
-        `${PROMOTE_PLACE_VERSION}, PROMOTE_OBJECT_VERSION ${PROMOTE_OBJECT_VERSION}). ` +
+        `${PROMOTE_PLACE_VERSION}, PROMOTE_PLACE_POSITION_VERSION ${PROMOTE_PLACE_POSITION_VERSION}, ` +
+        `PROMOTE_OBJECT_VERSION ${PROMOTE_OBJECT_VERSION}). ` +
         `Bumping a generation is only half the change: update ` +
         `versions.ts in the same commit, or the two disagree about what has been projected.`,
     );
@@ -262,7 +274,11 @@ export const PROMOTE_EDGE_OBSERVATION_SOURCE: StageSource = {
 /** `ci.position` fixes snapped to a known place — the `position.visited`
  * rule's candidates. Same per-id ledger `enrich.position_reverse` already
  * runs over this table; the projection itself collapses a whole slice to at
- * most a few distinct (owner, place) edges. */
+ * most a few distinct (owner, place) edges.
+ *
+ * This predicate selected NOTHING until `promote.place_position` shipped: the
+ * column it reads had no writer, so 0 of 65,115 fixes on the legacy corpus
+ * qualified. `STAGE_DEPENDENCIES` now orders this leg behind that stage. */
 export const PROMOTE_EDGE_POSITION_SOURCE: StageSource = {
   schema: 'ci',
   table: 'position',

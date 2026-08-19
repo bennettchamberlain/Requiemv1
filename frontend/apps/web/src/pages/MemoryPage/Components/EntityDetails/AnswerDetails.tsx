@@ -21,7 +21,7 @@ export function AnswerDetails({ entity }: Props) {
       subtitle="Answer"
       taggable
       editFields={[
-        { key: 'question', label: 'Question', value: question ?? '' },
+        { key: 'question', label: 'Reflection', value: question ?? '' },
         { key: 'answer', label: 'Answer', value: answer ?? '', multiline: true },
       ]}
       metaItems={[{ label: 'Type', value: 'Answer' }]}

@@ -4,8 +4,6 @@ import { Repository } from 'typeorm';
 
 import { UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { UserEntity } from '@ci/domains/user';
-
 import {
   isValidTimezone,
   localDateInTZ,
@@ -13,7 +11,8 @@ import {
   utcDayBounds,
   utcToZonedWallTime,
   zonedWallTimeToUTC,
-} from '../time/zoned';
+} from '@ci/common/time/zoned';
+import { UserEntity } from '@ci/domains/user';
 
 const FALLBACK_TIMEZONE = 'UTC';
 

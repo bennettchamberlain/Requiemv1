@@ -161,6 +161,11 @@ export interface CreateContentDto {
   url?: string;
   mimetype?: string;
   external_id?: string;
+  // What external_id references — see ContentEntity.externalIdKind and
+  // migration 20260818215331_add_content_external_id_kind. Optional: a caller
+  // that does not know (or does not carry an external_id) simply omits it,
+  // leaving the row unclassified rather than guessed.
+  external_id_kind?: 'file' | 'external_uri';
   source_url?: string;
   source_data?: Record<string, unknown>;
   user_id?: string;
@@ -185,6 +190,7 @@ export interface UpdateContentDto {
   url?: string;
   mimetype?: string;
   external_id?: string;
+  external_id_kind?: 'file' | 'external_uri';
   source_url?: string;
   source_data?: Record<string, unknown>;
   event?: {

@@ -4,7 +4,7 @@ import { v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/logging';
 import { type Connection, ConnectionService } from '@ci/domains/connections';
-import { GeocodeService } from '@ci/domains/geocode';
+import { GeocodeService, isUriLocation } from '@ci/domains/geocode';
 import { EventService as MemoryEventService, type CreateEventDto } from '@ci/domains/memory';
 
 import { ConnectionSyncJob } from '../../../types';
@@ -297,7 +297,9 @@ export class GoogleCalendarTransformService {
       category: 'google_calendar',
       start_time,
       end_time: end_time || undefined,
-      location_name: eventDetails.location || undefined,
+      // A meeting-join link is not a place name — see isUriLocation.
+      location_name:
+        eventDetails.location && !isUriLocation(eventDetails.location) ? eventDetails.location : undefined,
       location_coordinates: location_coordinates || undefined,
       // Inferred / coarse coords carry < 1.0 so HBPE/RAG don't treat them as
       // ground truth; leave the default 1.0 when there are no coordinates.

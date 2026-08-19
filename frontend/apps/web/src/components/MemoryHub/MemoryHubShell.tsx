@@ -7,6 +7,7 @@ import { DropdownProvider } from '@/components/SearchBox/useDropdown';
 
 import { MemoryEntityTypeNav } from './MemoryEntityTypeNav';
 import { MemoryHubNav } from './MemoryHubNav';
+import { isMemoryExplorerPath } from './memoryHubSections';
 
 /** Wraps Memory hub sub-pages with the shared section nav. */
 export function MemoryHubShell({
@@ -18,7 +19,7 @@ export function MemoryHubShell({
   fillHeight?: boolean;
 }) {
   const { pathname } = useLocation();
-  const isExplorer = pathname === '/memory';
+  const isExplorer = isMemoryExplorerPath(pathname);
 
   const shellClass = cn('flex flex-col gap-2', fillHeight && 'min-h-0 flex-1');
 
