@@ -12,9 +12,17 @@ import { isMemoryExplorerPath } from './memoryHubSections';
 /** Wraps Memory hub sub-pages with the shared section nav. */
 export function MemoryHubShell({
   children,
+  actions,
   fillHeight = false,
 }: {
   children: ReactNode;
+  /**
+   * Page-level actions (a "New …" button) pinned to the right of the section
+   * nav. Lives on the shell rather than in each page body so every Memory
+   * surface puts its create affordance in the same place, whichever of the two
+   * navs that surface happens to render.
+   */
+  actions?: ReactNode;
   /** Fill the page content area — only for Events explorer views that split scroll panes. */
   fillHeight?: boolean;
 }) {
@@ -27,7 +35,7 @@ export function MemoryHubShell({
     return (
       <div className={shellClass}>
         <DropdownProvider args={[{ changeSearchParams: true }]}>
-          <MemoryEntityTypeNav />
+          <MemoryEntityTypeNav actions={actions} />
           {children}
         </DropdownProvider>
       </div>
@@ -36,7 +44,7 @@ export function MemoryHubShell({
 
   return (
     <div className={shellClass}>
-      <MemoryHubNav />
+      <MemoryHubNav actions={actions} />
       {children}
     </div>
   );

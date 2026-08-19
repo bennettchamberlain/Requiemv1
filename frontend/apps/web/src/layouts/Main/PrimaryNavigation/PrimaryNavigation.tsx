@@ -2,13 +2,25 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Portal } from '@ci/common';
 import { DropdownMenu, IconButton, Separator, Tooltip, useToast } from '@ci/shadcn';
-import { NotebookPen, Upload, Camera, Plus, Cable, Search, User, Lightbulb, Package } from '@ci/shadcn/icons';
+import {
+  NotebookPen,
+  Upload,
+  Camera,
+  Plus,
+  Cable,
+  Search,
+  User,
+  Lightbulb,
+  Package,
+  CalendarPlus,
+  MapPin,
+} from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { useUploadFile, useTriggerHbpe } from '@/api';
 import { ConnectionModeIndicator, OutboxQueueIndicator } from '@/components/ConnectionModeIndicator';
-import { AddPersonModal } from '@/components/modals/AddItemModal';
+import { AddEventModal, AddPersonModal, AddPlaceModal } from '@/components/modals/AddItemModal';
 import { AddConceptModal } from '@/components/modals/AddItemModal/AddConceptModal.tsx';
 import { CaptureModal } from '@/components/modals/CaptureModal';
 import { InventoryItemModal } from '@/components/modals/InventoryItemModal';
@@ -38,6 +50,10 @@ export function PrimaryNavigation() {
   const [{ isOpen: isAddConceptModalOpen }, { open: openAddConceptModal, close: closeAddConceptModal }] =
     useModalControls();
   const [{ isOpen: isItemModalOpen }, { open: openItemModal, close: closeItemModal }] = useModalControls();
+  const [{ isOpen: isAddEventModalOpen }, { open: openAddEventModal, close: closeAddEventModal }] =
+    useModalControls();
+  const [{ isOpen: isAddPlaceModalOpen }, { open: openAddPlaceModal, close: closeAddPlaceModal }] =
+    useModalControls();
 
   const [, { upload, reset: resetUploader }] = useUploadFile();
 
@@ -191,6 +207,36 @@ export function PrimaryNavigation() {
                       </DropdownMenu.Item>
                     </Tooltip.Trigger>
                   </Tooltip>
+
+                  <Tooltip delayDuration={600}>
+                    <Tooltip.Content side="top" className="pointer-events-none">
+                      {t('NAV_ADD_EVENT')}
+                    </Tooltip.Content>
+                    <Tooltip.Trigger asChild>
+                      <DropdownMenu.Item
+                        onSelect={openAddEventModal}
+                        className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
+                      >
+                        <CalendarPlus className="h-6! w-6!" strokeWidth={1.25} />
+                        <span className="text-xs text-center">Event</span>
+                      </DropdownMenu.Item>
+                    </Tooltip.Trigger>
+                  </Tooltip>
+
+                  <Tooltip delayDuration={600}>
+                    <Tooltip.Content side="top" className="pointer-events-none">
+                      {t('NAV_ADD_PLACE')}
+                    </Tooltip.Content>
+                    <Tooltip.Trigger asChild>
+                      <DropdownMenu.Item
+                        onSelect={openAddPlaceModal}
+                        className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
+                      >
+                        <MapPin className="h-6! w-6!" strokeWidth={1.25} />
+                        <span className="text-xs text-center">Place</span>
+                      </DropdownMenu.Item>
+                    </Tooltip.Trigger>
+                  </Tooltip>
                 </div>
                 <div className="mt-2 -mx-2 -mb-2 bg-muted/50 p-4 rounded-b-lg">
                   <div className="text-center text-sm font-semibold mb-3">Actions</div>
@@ -292,6 +338,12 @@ export function PrimaryNavigation() {
       />
 
       <AddPersonModal open={isAddPersonModalOpen} onClose={closeAddPersonModal} />
+
+      {/* No onCreated here: the nav has no list of its own to refresh, and the
+          Memory/Places pages refetch when they mount or when their own button
+          creates one. */}
+      <AddEventModal open={isAddEventModalOpen} onClose={closeAddEventModal} />
+      <AddPlaceModal open={isAddPlaceModalOpen} onClose={closeAddPlaceModal} />
 
       <AddConceptModal open={isAddConceptModalOpen} onClose={closeAddConceptModal} />
 
