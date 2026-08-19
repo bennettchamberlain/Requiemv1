@@ -79,17 +79,30 @@ export class SlackMessagesTransformService {
         continue;
       }
 
-      try {
-        // createMany upserts on the provenance triple, so a re-synced page is a
-        // refresh rather than a unique violation logged once per message.
-        const created = await this.communicationService.createMany({ userId }, rows);
-        createdCount += created.length;
-      } catch (error) {
-        this.logger.error('Failed to transform Slack messages', {
-          channelId,
-          messageCount: rows.length,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        });
+      // Deliberately per-row create(), NOT createMany(). createMany is the bulk
+      // ingest path and does not emit CommunicationCreatedEvent — see its
+      // docstring: "Search indexing for bulk-loaded rows is deferred to the
+      // post-load batch embed". That backfill is only reachable by POSTing
+      // /api/maintenance/search-index/backfill by hand; nothing schedules it for
+      // an ETL sync. Batching here would therefore write Slack messages that are
+      // absent from ci_search.vectors — i.e. invisible to search — until someone
+      // ran that endpoint manually. Every sibling connector (Gmail, Outlook,
+      // Signal) ingests per-row for the same reason.
+      //
+      // The cost is that a re-synced message raises a unique violation on
+      // communications_source_triple_uniq, logged and swallowed below. That is
+      // noisy but harmless, and is the same behaviour those siblings have.
+      for (const row of rows) {
+        try {
+          await this.communicationService.create({ userId }, row);
+          createdCount += 1;
+        } catch (error) {
+          this.logger.error('Failed to transform Slack message', {
+            channelId,
+            sourceId: row.source_id,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
+        }
       }
     }
 
