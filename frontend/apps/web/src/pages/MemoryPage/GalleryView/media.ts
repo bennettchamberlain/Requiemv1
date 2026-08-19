@@ -29,15 +29,33 @@ export interface EntityMedia {
 /**
  * Above this, a full-resolution original is never used as a grid thumbnail.
  *
- * 70% of this corpus's media originals have no PREVIEW variant yet, so the grid
- * would otherwise download the original and let the browser downscale it —
- * bearable for the ~1 MB median, ruinous for the tail (the largest original
- * here is 2 GB). The cap is deliberately generous: it lets almost every
- * preview-less photo still render while keeping one pathological file from
- * stalling the page. Files above it get the placeholder tile and load their
- * bytes only when the user actually opens the lightbox.
+ * ── The threshold is measured, not guessed ─────────────────────────────────
+ * 7,309 of the 10,472 image originals on the QA appliance (70%) still have no
+ * PREVIEW variant, so the grid downloads the original and lets the browser
+ * downscale it into a ~240px tile. Their size distribution:
+ *
+ *   p25 171 kB   p50 575 kB   p75 1.7 MB   p90 2.7 MB   p99 4.9 MB   max 8.8 MB
+ *   mean 1,077 kB   total 7,687 MB
+ *
+ * An earlier revision of this file capped at 8 MB, which reads generous but is
+ * measurably a no-op: it excludes SEVEN of those 7,309 files (0.1%) and 0.4% of
+ * their bytes. 2 MB is the point where the cap starts paying: it excludes 18.0%
+ * of the files and 52.5% of the bytes, taking the mean tile from 1,077 kB to
+ * 624 kB. A page of 30 preview-less tiles drops from ~31 MB to ~15 MB while 82%
+ * of them still show the actual photograph.
+ *
+ * Going lower buys less than it costs — the next stop, 1 MB, adds only another
+ * 28% of bytes but blanks 37% of the grid — so this is where it stops.
+ *
+ * ── This is a bound, not a fix ─────────────────────────────────────────────
+ * The real fix is generating the 7,309 missing PREVIEW variants (a 300px JPEG
+ * each, via FilePreviewGenerationListener, which only ever runs on upload and
+ * has no backfill path). Until that exists the grid is still serving
+ * full-resolution originals as thumbnails for 82% of preview-less images; this
+ * constant only stops the heavy tail. Files above it draw the placeholder and
+ * fetch their bytes when the lightbox opens.
  */
-export const MAX_UNPREVIEWED_THUMB_BYTES = 8 * 1024 * 1024;
+export const MAX_UNPREVIEWED_THUMB_BYTES = 2 * 1024 * 1024;
 
 /**
  * Choose what the grid tile should load: the PREVIEW variant whenever one

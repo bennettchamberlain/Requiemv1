@@ -537,6 +537,20 @@ export class ContentService {
   /**
    * Lightweight identifiers for the most-recent content, for the unified
    * search/explorer feed. Full entities are batch-resolved downstream.
+   *
+   * `excludeEventLinked` drops every row carrying an `event_id`. Such a row is
+   * a FACET of an event the same feed already returns, not a separate memory:
+   * on the QA appliance all 11,211 event-linked content rows are `type='media'`
+   * and each one points at the very binary its event renders, so the browse
+   * showed every photo twice — and, because content is ordered by `created_at`,
+   * showed both copies ahead of the real timeline (all 11,211 were written after
+   * the newest genuinely-dated memory). The event carries a real `start_time`;
+   * the content row carries only the import's write time. Keeping the event and
+   * dropping the facet loses nothing and un-buries the timeline.
+   *
+   * Applied only by the chronological browse. Query, tag and type-filtered
+   * searches still return these rows — a user who searches for a photo, or
+   * filters to Content, must still find it.
    */
   async getEntitiesForContents(
     context: ServiceContext,
@@ -547,12 +561,18 @@ export class ContentService {
       afterTime?: Date;
       afterId?: string;
       order?: 'ASC' | 'DESC';
+      /** Drop rows that belong to an event (see the method docstring). */
+      excludeEventLinked?: boolean;
     } = {},
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
     let query = this.contentRepository
       .createQueryBuilder('content')
       .select('content.id', 'id')
       .where('content.user_id = :userId', { userId: context.userId });
+
+    if (options.excludeEventLinked) {
+      query = query.andWhere('content.event_id IS NULL');
+    }
 
     if (options.startTime) {
       query = query.andWhere('content.created_at >= :startTime', { startTime: options.startTime });
@@ -591,11 +611,15 @@ export class ContentService {
    */
   async countEntitiesForContents(
     context: ServiceContext,
-    options: { startTime?: Date; endTime?: Date },
+    options: { startTime?: Date; endTime?: Date; excludeEventLinked?: boolean },
   ): Promise<number> {
     let query = this.contentRepository
       .createQueryBuilder('content')
       .where('content.user_id = :userId', { userId: context.userId });
+
+    if (options.excludeEventLinked) {
+      query = query.andWhere('content.event_id IS NULL');
+    }
 
     if (options.startTime) {
       query = query.andWhere('content.created_at >= :startTime', { startTime: options.startTime });

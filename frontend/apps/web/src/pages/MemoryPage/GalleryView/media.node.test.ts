@@ -361,8 +361,27 @@ describe('pickThumbUrl', () => {
     expect(pickThumbUrl({ kind: 'image', previewUrl: null, fullUrl: full, sizeBytes: null })).toBe(full);
   });
 
-  // The largest original in a real corpus here is ~2 GB; the browser would
-  // download all of it to paint a 240px tile.
+  /**
+   * The threshold is a measurement, not a taste — pin the value so a future
+   * edit cannot quietly make it a no-op again. On the QA appliance the 7,309
+   * preview-less image originals run p50 575 kB / p90 2.7 MB / max 8.8 MB, so
+   * an 8 MB cap excluded SEVEN of them (0.1% of files, 0.4% of bytes). At 2 MB
+   * it excludes 18% of the files and 52.5% of the bytes.
+   */
+  it('caps at the measured 2 MB, not a value that excludes nothing', () => {
+    expect(MAX_UNPREVIEWED_THUMB_BYTES).toBe(2 * 1024 * 1024);
+    // p90 of the preview-less distribution — above the cap, so it is declined.
+    expect(
+      pickThumbUrl({ kind: 'image', previewUrl: null, fullUrl: full, sizeBytes: 2_703 * 1024 }),
+    ).toBeNull();
+    // p50 — still rendered, which is why the cap does not stop here.
+    expect(pickThumbUrl({ kind: 'image', previewUrl: null, fullUrl: full, sizeBytes: 575 * 1024 })).toBe(
+      full,
+    );
+  });
+
+  // The largest original in a real corpus here is ~2 GB (a video); the browser
+  // would download all of it to paint a 240px tile.
   it('declines an oversized original as a thumbnail', () => {
     expect(
       pickThumbUrl({

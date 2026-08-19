@@ -27,6 +27,10 @@ export class SearchInput {
    * normally excluded from "recent activity" so documents don't bury the feed,
    * but media surfaces like the gallery need standalone files (e.g. Capture
    * screenshots, which have no linked event) interleaved with everything else.
+   *
+   * This is an OPT-IN: omitting it (or passing false) leaves files out. It is
+   * independent of `includeTypes` — naming `'file'` there fetches files whether
+   * or not this flag is set (it did not before; see SearchResolver.browseWants).
    */
   @Field(() => Boolean, { nullable: true })
   includeFiles?: boolean;

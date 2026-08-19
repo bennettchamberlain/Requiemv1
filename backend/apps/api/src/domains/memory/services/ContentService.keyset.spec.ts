@@ -115,3 +115,30 @@ describe('ContentService.getEntitiesForContents keyset paging', () => {
     ]);
   });
 });
+
+/**
+ * VIEW-01. A content row carrying an `event_id` is a facet of an event the
+ * browse already returns — on the QA appliance all 11,211 of them are
+ * `type='media'` pointing at the very binary their event renders. Because
+ * content is ordered by `created_at` (import time), every one of them also sat
+ * ahead of the entire real timeline. The browse drops them; nothing else does.
+ */
+describe('ContentService.getEntitiesForContents excludeEventLinked', () => {
+  const EVENT_LINKED = 'content.event_id IS NULL';
+
+  it('adds the event_id IS NULL predicate when asked', async () => {
+    const { service, recorded } = makeService();
+
+    await service.getEntitiesForContents(CONTEXT, { excludeEventLinked: true });
+
+    expect(recorded.wheres.map((where) => where.sql)).toContain(EVENT_LINKED);
+  });
+
+  it('adds nothing when not asked, so search and type filters keep every row', async () => {
+    const { service, recorded } = makeService();
+
+    await service.getEntitiesForContents(CONTEXT, {});
+
+    expect(recorded.wheres.map((where) => where.sql)).not.toContain(EVENT_LINKED);
+  });
+});
