@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/logging';
 import { type Connection } from '@ci/domains/connections';
-import { ContentService } from '@ci/domains/memory';
+import { ContentService, SOURCE_NATIVE_EXTERNAL_ID_KIND } from '@ci/domains/memory';
 
 import { ConnectionSyncJob } from '../../../types';
 import type { SlackConversation } from '../sync/slackApi';
@@ -40,6 +40,7 @@ export class SlackChannelsTransformService {
           title,
           text: `Slack channel ${title}`,
           external_id: channel.id,
+          external_id_kind: SOURCE_NATIVE_EXTERNAL_ID_KIND,
           source_type: 'ETL',
           source_system: 'slack',
           source_id: channel.id,

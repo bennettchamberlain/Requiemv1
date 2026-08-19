@@ -24,6 +24,18 @@ export interface SlackMessage {
   bot_id?: string;
 }
 
+export interface SlackUser {
+  id: string;
+  name?: string;
+  real_name?: string;
+  deleted?: boolean;
+  is_bot?: boolean;
+  profile?: {
+    display_name?: string;
+    real_name?: string;
+  };
+}
+
 export interface SlackConversationsListResponse {
   ok: boolean;
   channels: SlackConversation[];
@@ -36,6 +48,14 @@ export interface SlackConversationsHistoryResponse {
   ok: boolean;
   messages: SlackMessage[];
   has_more?: boolean;
+  response_metadata?: {
+    next_cursor?: string;
+  };
+}
+
+export interface SlackUsersListResponse {
+  ok: boolean;
+  members: SlackUser[];
   response_metadata?: {
     next_cursor?: string;
   };
@@ -67,6 +87,34 @@ export async function fetchAllConversations(client: BaseClient, connection: Conn
   return conversations;
 }
 
+/**
+ * The workspace roster, fetched once per sync. `users:read` is already part of
+ * every endpoint's scope set, and without it the only correspondent identity a
+ * message carries is the opaque Slack user id ('U08ABCDEF').
+ */
+export async function fetchAllUsers(client: BaseClient, connection: Connection) {
+  const users: SlackUser[] = [];
+  let cursor: string | undefined;
+
+  do {
+    const params = new URLSearchParams({ limit: '200' });
+
+    if (cursor) {
+      params.set('cursor', cursor);
+    }
+
+    const response = (await client.request(
+      connection,
+      `/users.list?${params.toString()}`,
+    )) as SlackUsersListResponse;
+
+    users.push(...(response.members || []));
+    cursor = response.response_metadata?.next_cursor || undefined;
+  } while (cursor);
+
+  return users;
+}
+
 export async function syncSlackChannelMessages({
   connection,
   client,
@@ -86,8 +134,27 @@ export async function syncSlackChannelMessages({
 
   const conversations = await fetchAllConversations(client, connection);
   const channelMap = Object.fromEntries(conversations.map((channel) => [channel.id, channel]));
+
+  // Roster resolution is a convenience, not a precondition: a workspace that
+  // withheld `users:read` should still ingest messages.
+  let userMap: Record<string, SlackUser> = {};
+
+  try {
+    const users = await fetchAllUsers(client, connection);
+    userMap = Object.fromEntries(users.map((user) => [user.id, user]));
+  } catch (err) {
+    client.logger.error('Slack messages: failed to fetch workspace users', {
+      connectionId: connection.id,
+      error: err instanceof Error ? err.message : 'Unknown error',
+    });
+  }
+
   const messagesByChannel: Record<string, SlackMessage[]> = {};
   const newCursor: Record<string, string | false> = {};
+  // Watermark for the run, taken before any request so messages that arrive
+  // mid-sync are picked up next time rather than skipped.
+  const syncStartedAt = new Date().toISOString();
+  const previousSince = typeof nextCursor.since === 'string' ? nextCursor.since : undefined;
 
   for (const channel of conversations) {
     const channelId = channel.id;
@@ -133,8 +200,11 @@ export async function syncSlackChannelMessages({
 
       if (historical) {
         newCursor[channelId] = nextPageCursor || false;
-      } else {
-        newCursor[channelId] = false;
+      } else if (nextPageCursor) {
+        // Incremental: Slack has more pages inside this window. Keep the cursor
+        // so the next run resumes there — dropping it would strand every
+        // message past the first page once `since` moves on.
+        newCursor[channelId] = nextPageCursor;
       }
     } catch (err) {
       client.logger.error('Slack messages: failed to fetch channel history', {
@@ -143,7 +213,13 @@ export async function syncSlackChannelMessages({
         error: err instanceof Error ? err.message : 'Unknown error',
       });
       messagesByChannel[channelId] = [];
-      newCursor[channelId] = typeof existingCursor === 'string' ? existingCursor : false;
+
+      // Only a cursor that genuinely existed survives the error. Coercing an
+      // absent one to `false` would mark a channel that failed on its very
+      // first page (a 429, say) as permanently backfilled.
+      if (typeof existingCursor === 'string') {
+        newCursor[channelId] = existingCursor;
+      }
     }
   }
 
@@ -153,17 +229,27 @@ export async function syncSlackChannelMessages({
     totalMessages: Object.values(messagesByChannel).reduce((sum, items) => sum + items.length, 0),
   });
 
+  // The `since` watermark is shared by every channel, so it may only advance
+  // once no channel still has an unread page behind a cursor.
+  const pendingIncrementalPages = Object.values(newCursor).some((value) => typeof value === 'string');
+
   return {
     data: {
       messages: messagesByChannel,
       channels: channelMap,
+      users: userMap,
       authedUserId,
     },
     nextCursor: historical
       ? newCursor
-      : {
-          since: new Date().toISOString(),
-        },
+      : pendingIncrementalPages
+        ? {
+            ...newCursor,
+            ...(previousSince ? { since: previousSince } : {}),
+          }
+        : {
+            since: syncStartedAt,
+          },
   };
 }
 

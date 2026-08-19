@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
@@ -139,6 +139,62 @@ export class SlackClient extends BaseOAuth2Client {
     const userToken = tokenData.authed_user?.access_token || tokenData.access_token || null;
     const refreshToken = tokenData.authed_user?.refresh_token || tokenData.refresh_token || null;
     const expiresIn = tokenData.authed_user?.expires_in || tokenData.expires_in;
+    const tokenExpiry = expiresIn ? new Date(Date.now() + expiresIn * 1000) : null;
+
+    return {
+      accessToken: userToken,
+      refreshToken,
+      tokenExpiry,
+    } satisfies TokenExchange;
+  }
+
+  async refreshAccessToken(connection: Connection): Promise<TokenExchange> {
+    if (!connection.refreshToken) {
+      throw new BadRequestException('No refresh token available');
+    }
+
+    const clientCredentials = await this.getClientCredentials(connection);
+
+    // Without user-supplied credentials the base implementation proxies the
+    // refresh through CI Portal, which answers in plain OAuth2 — nothing
+    // Slack-shaped to unwrap.
+    if (!clientCredentials) {
+      return super.refreshAccessToken(connection);
+    }
+
+    const tokenParams = new URLSearchParams({
+      client_id: clientCredentials.clientId,
+      client_secret: clientCredentials.clientSecret,
+      refresh_token: connection.refreshToken,
+      grant_type: 'refresh_token',
+    });
+
+    const tokenResponse = await fetch(this.tokenEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'application/json',
+      },
+      body: tokenParams.toString(),
+    });
+
+    if (!tokenResponse.ok) {
+      throw new Error('Token refresh failed');
+    }
+
+    const tokenData = (await tokenResponse.json()) as SlackOAuthAccessResponse;
+
+    // Slack reports a failed refresh as HTTP 200 with `ok: false`. Without this
+    // check the unwrapping below yields nulls and the caller persists them,
+    // wiping a token that was merely un-refreshable this once.
+    if (!tokenData.ok) {
+      this.logger.error('Slack token refresh failed', { error: tokenData.error });
+      throw new Error(`Token refresh failed: ${tokenData.error || 'unknown error'}`);
+    }
+
+    const userToken = tokenData.authed_user?.access_token ?? tokenData.access_token ?? null;
+    const refreshToken = tokenData.authed_user?.refresh_token ?? tokenData.refresh_token ?? null;
+    const expiresIn = tokenData.authed_user?.expires_in ?? tokenData.expires_in;
     const tokenExpiry = expiresIn ? new Date(Date.now() + expiresIn * 1000) : null;
 
     return {
