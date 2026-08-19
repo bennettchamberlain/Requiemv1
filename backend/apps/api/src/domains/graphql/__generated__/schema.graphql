@@ -1582,6 +1582,16 @@ type Mutation {
   returnEventToSlate(eventId: ID!): ScheduleCandidateType!
   revokeAskGrant(id: ID!): AskGrantPayload!
   runAsk(id: ID!, redactItemIds: [String!]): RunAskPayload!
+
+  """
+  Place an open task into the next free workday gap as a planned calendar block. The click is consent — trust dial does not re-ask.
+  """
+  scheduleTask(
+    """Owner-local YYYY-MM-DD to prefer."""
+    date: String
+    estimatedMinutes: Int
+    id: ID!
+  ): ScheduleTaskPayload!
   setSavedSearchSharing(input: SetSavedSearchSharingInput!): UpdateSavedSearchPayload!
 
   """Defer a candidate until a future instant"""
@@ -1596,6 +1606,9 @@ type Mutation {
 
   """Manually trigger the HBPE pipeline for the current user"""
   triggerHbpe: String!
+
+  """Remove the planned block for this task and clear scheduledFor."""
+  unscheduleTask(id: ID!): TaskType
   untagEntities(input: TagEntitiesInput!): [TaggableEntityType!]!
   updateAnswer(input: UpdateAnswerInput!): AnswerType
   updateBrowserActivity(input: UpdateBrowserActivityInput!): BrowserActivityType
@@ -1957,7 +1970,7 @@ type Query {
   events(after: String, before: String, first: Int, last: Int): EventConnection!
 
   """
-  Events overlapping [from, to) — calendar read path. Excludes cancelled/no-show; keeps tentative. Limited to calendar event types (see SCHEDULE_EVENT_TYPES) plus events with no event_type, which is how user-created and accepted-suggestion events arrive.
+  Events overlapping [from, to) — calendar read path. Excludes cancelled/no-show; keeps tentative. Allowlisted types: calendar_event, meeting, appointment, planned_block, plus events with no event_type (user-created and accepted suggestions).
   """
   eventsInRange(from: DateTime!, to: DateTime!): [EventType!]!
 
@@ -2017,6 +2030,11 @@ type Query {
   places(after: String, before: String, first: Int, last: Int, query: String): PlaceConnection!
   placesNear(latitude: Float!, limit: Int, longitude: Float!, radiusMeters: Float): [PlaceNearType!]!
 
+  """
+  Planned blocks (`event_type = planned_block`) overlapping [from, to). SQL-pushdown, not the explorer events() feed.
+  """
+  plannedBlocks(from: DateTime!, to: DateTime!): [EventType!]!
+
   """Forecast self-consistency scores (not ground-truth accuracy)"""
   predictionCalibration(limit: Int = 14): PredictionCalibrationType
   provider(id: ID!): ProviderType
@@ -2038,7 +2056,7 @@ type Query {
   tags(after: String, before: String, first: Int, last: Int): TagConnection!
   task(id: ID!): TaskType
 
-  """Pending trust-dial confirmations for mutate/complete/revise."""
+  """Pending trust-dial confirmations for mutate/complete/revise/schedule."""
   taskPendingChanges(taskId: ID): [TaskPendingChangeType!]!
   tasks(
     after: String
@@ -2222,6 +2240,15 @@ type ScheduleCandidateType {
   windowStart: DateTime!
 }
 
+type ScheduleTaskPayload {
+  event: EventType
+
+  """placed | proposed | already_placed | no_gap | skipped"""
+  status: String
+  success: Boolean!
+  task: TaskType
+}
+
 input SearchInput {
   after: String
   bbox: [Float!]
@@ -2365,6 +2392,7 @@ enum TaskPendingChangeKind {
   complete
   event_revise
   mutate
+  schedule
 }
 
 enum TaskPendingChangeStatus {

@@ -17,11 +17,19 @@ function makeResolver(enabled = true) {
     findAll: jest.fn().mockResolvedValue([]),
     findById: jest.fn(),
   };
+  const plannedBlockService = {
+    tryPlaceAfterOpen: jest.fn(),
+    scheduleTask: jest.fn(),
+    unschedule: jest.fn(),
+    list: jest.fn().mockResolvedValue([]),
+    applyPendingSchedule: jest.fn(),
+  };
   const featureService = { isFeatureEnabled: jest.fn().mockResolvedValue(enabled) };
 
   return {
-    resolver: new TaskResolver(taskService as never, featureService as never),
+    resolver: new TaskResolver(taskService as never, plannedBlockService as never, featureService as never),
     taskService,
+    plannedBlockService,
     featureService,
   };
 }
