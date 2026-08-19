@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, In, Repository, type WhereExpressionBuilder } from 'typeorm';
+import {
+  Brackets,
+  Repository,
+  type ObjectLiteral,
+  type SelectQueryBuilder,
+  type WhereExpressionBuilder,
+} from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/context';
@@ -495,17 +501,33 @@ export class ContentService {
     };
   }
 
+  /**
+   * Hides content that only exists as the media plumbing of a tombstoned event.
+   *
+   * A photo/video event carries its binary through a `ci.content` row
+   * (type='media'), and that row is indexed in its own right. Deleting the event
+   * is a soft delete (see {@link EventService.remove}), so the FK never fires
+   * and the content row would otherwise keep showing the deleted photo in the
+   * explorer. The LEFT JOIN keeps standalone content (`event_id IS NULL`)
+   * visible, and restoring the event brings its media back with it.
+   */
+  private excludeDeletedEventMedia<T extends ObjectLiteral>(
+    query: SelectQueryBuilder<T>,
+    alias: string,
+  ): SelectQueryBuilder<T> {
+    return query
+      .leftJoin(EventEntity, `${alias}_event`, `${alias}_event.event_id = ${alias}.event_id`)
+      .andWhere(`(${alias}.event_id IS NULL OR ${alias}_event.is_deleted = false)`);
+  }
+
   async findById(context: ServiceContext, id: string): Promise<Content | null> {
-    const result = await this.contentRepository.findOne({
-      where: {
-        id,
-        ...(context.userId !== SYSTEM_USER && {
-          user: {
-            id: context.userId,
-          },
-        }),
-      },
-    });
+    let query = this.contentRepository.createQueryBuilder('content').where('content.id = :id', { id });
+
+    if (context.userId !== SYSTEM_USER) {
+      query = query.andWhere('content.user_id = :userId', { userId: context.userId });
+    }
+
+    const result = await this.excludeDeletedEventMedia(query, 'content').getOne();
 
     if (result == null) {
       return null;
@@ -517,16 +539,19 @@ export class ContentService {
   }
 
   async findByIds(context: ServiceContext, ids: string[]): Promise<(Content | null)[]> {
-    const result = await this.contentRepository.find({
-      where: {
-        id: In(ids),
-        ...(context.userId !== SYSTEM_USER && {
-          user: {
-            id: context.userId,
-          },
-        }),
-      },
-    });
+    if (ids.length === 0) {
+      return [];
+    }
+
+    let query = this.contentRepository
+      .createQueryBuilder('content')
+      .where('content.id IN (:...ids)', { ids });
+
+    if (context.userId !== SYSTEM_USER) {
+      query = query.andWhere('content.user_id = :userId', { userId: context.userId });
+    }
+
+    const result = await this.excludeDeletedEventMedia(query, 'content').getMany();
 
     const contents = await this.composeMany(result);
     const map = new Map(contents.map((content) => [content.id, content]));
@@ -549,10 +574,13 @@ export class ContentService {
       order?: 'ASC' | 'DESC';
     } = {},
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
-    let query = this.contentRepository
-      .createQueryBuilder('content')
-      .select('content.id', 'id')
-      .where('content.user_id = :userId', { userId: context.userId });
+    let query = this.excludeDeletedEventMedia(
+      this.contentRepository
+        .createQueryBuilder('content')
+        .select('content.id', 'id')
+        .where('content.user_id = :userId', { userId: context.userId }),
+      'content',
+    );
 
     if (options.startTime) {
       query = query.andWhere('content.created_at >= :startTime', { startTime: options.startTime });
@@ -593,9 +621,12 @@ export class ContentService {
     context: ServiceContext,
     options: { startTime?: Date; endTime?: Date },
   ): Promise<number> {
-    let query = this.contentRepository
-      .createQueryBuilder('content')
-      .where('content.user_id = :userId', { userId: context.userId });
+    let query = this.excludeDeletedEventMedia(
+      this.contentRepository
+        .createQueryBuilder('content')
+        .where('content.user_id = :userId', { userId: context.userId }),
+      'content',
+    );
 
     if (options.startTime) {
       query = query.andWhere('content.created_at >= :startTime', { startTime: options.startTime });

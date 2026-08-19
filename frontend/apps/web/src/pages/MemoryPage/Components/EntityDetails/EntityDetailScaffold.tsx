@@ -2,7 +2,7 @@ import { type ReactNode, useCallback, useMemo, useState } from 'react';
 
 import { GlobalUID } from '@ci/common';
 import { Button, Card, IconButton, Input, Label, Sheet, Textarea, cn, useToast } from '@ci/shadcn';
-import { Loader2, Pencil } from '@ci/shadcn/icons';
+import { Loader2, Pencil, Trash2 } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
@@ -18,6 +18,8 @@ import { TagInput } from '@/components/TagInput';
 import type { MemoryEntity } from '../../../MemoryPage/useEntityService';
 import { useEntityService } from '../../../MemoryPage/useEntityService';
 
+import { DeleteEntityDialog } from './DeleteEntityDialog';
+import { DELETE_TARGETS } from './deleteTargets';
 import { useReadOnly } from './readOnly';
 
 /** A single editable field rendered read-only or as an input depending on edit mode. */
@@ -229,7 +231,7 @@ export function EntityDetailScaffold({
   const ref = useMemo(() => resolveEntityRef(entity), [entity]);
   const currentTags = useMemo(() => readTags(entity), [entity]);
   const { tagEntities, untagEntities } = useTagEntityService();
-  const [, { setActiveEntity }] = useEntityService();
+  const [{ refetch }, { setActiveEntity }] = useEntityService();
   const { toast } = useToast();
   // Shared-search viewer: the drawer is display-only. Suppress every mutation /
   // navigation affordance (the writes are owner-scoped and would silently fail).
@@ -248,6 +250,13 @@ export function EntityDetailScaffold({
     },
     [setActiveEntity],
   );
+
+  // Deleting is offered for every type the server can actually remove, keyed off
+  // the entity's own resource type — so it reaches search results and graph
+  // nodes alike, without each *Details body having to opt in.
+  const deleteTarget = ref.resourceType ? (DELETE_TARGETS[ref.resourceType] ?? null) : null;
+  const canDelete = !readOnly && Boolean(deleteTarget && ref.globalId);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const canEdit = !readOnly && Boolean(onSave && editFields && editFields.length > 0);
   // Tags-only edit mode: no persisted fields, just an editable TagInput. Lets
@@ -281,6 +290,7 @@ export function EntityDetailScaffold({
     setEditing(false);
     setSaving(false);
     setSaveError(null);
+    setConfirmingDelete(false);
   }
 
   const startEditing = () => {
@@ -330,16 +340,28 @@ export function EntityDetailScaffold({
       <Sheet.Header className="gap-2 border-b border-border/60 bg-background/45 p-5 pr-12 backdrop-blur-xl">
         <div className="flex items-start justify-between gap-2">
           <Sheet.Title className="text-xl leading-tight tracking-tight">{title}</Sheet.Title>
-          {canEnterEditMode && !editing && (
-            <IconButton
-              variant="ghost"
-              className="-mt-1 size-8 shrink-0"
-              label={t('ENTITY_DETAILS_EDIT')}
-              onClick={startEditing}
-            >
-              <Pencil className="size-4" />
-            </IconButton>
-          )}
+          <div className="flex shrink-0 items-center gap-1">
+            {canEnterEditMode && !editing && (
+              <IconButton
+                variant="ghost"
+                className="-mt-1 size-8 shrink-0"
+                label={t('ENTITY_DETAILS_EDIT')}
+                onClick={startEditing}
+              >
+                <Pencil className="size-4" />
+              </IconButton>
+            )}
+            {canDelete && !editing && (
+              <IconButton
+                variant="ghost"
+                className="-mt-1 size-8 shrink-0 text-muted-foreground hover:text-destructive"
+                label={`Delete ${deleteTarget?.noun ?? 'entity'}`}
+                onClick={() => setConfirmingDelete(true)}
+              >
+                <Trash2 className="size-4" />
+              </IconButton>
+            )}
+          </div>
         </div>
         {/* Always render a description so Radix has an accessible description to
             point `aria-describedby` at (otherwise it logs a console warning). */}
@@ -495,6 +517,23 @@ export function EntityDetailScaffold({
             )}
           </div>
         </Sheet.Footer>
+      )}
+
+      {confirmingDelete && deleteTarget && ref.globalId && (
+        <DeleteEntityDialog
+          target={deleteTarget}
+          entityId={ref.globalId}
+          typename={entity.__typename === 'GenericEntity' ? undefined : entity.__typename}
+          title={title}
+          onClose={() => setConfirmingDelete(false)}
+          onDeleted={() => {
+            setConfirmingDelete(false);
+            // The entity no longer exists — close the drawer rather than leave
+            // it showing a record the user just removed.
+            setActiveEntity(null);
+          }}
+          onRestored={refetch}
+        />
       )}
     </Sheet.Content>
   );
