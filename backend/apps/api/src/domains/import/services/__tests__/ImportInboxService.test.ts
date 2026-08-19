@@ -293,6 +293,40 @@ describe('ImportInboxService.scan', () => {
       expect(scan.truncated).toBe(true);
     });
   });
+
+  it('sizing a huge unit does not strand the sources that sort after it', async () => {
+    // The regression: `aggregate` used to spend the WALK's entry budget while
+    // measuring a recognized directory, so one large export consumed discovery
+    // for everything alphabetically after it. On the real corpus a 79,623-file
+    // `google-takeout` meant instagram, linkedin, reddit, spotify, twitter,
+    // uber and whatsapp never became units at all — the scan just reported
+    // `truncated: true` and a caller could not tell what it had lost.
+    const inbox = await freshInbox();
+
+    // `big` sorts before `zzz` and holds more entries than the walk's budget.
+    const big = path.join(inbox, 'big');
+    await mkdir(big);
+    for (let index = 0; index < 25_000; index += 1) {
+      await writeFile(path.join(big, `f${String(index).padStart(6, '0')}.txt`), 'x');
+    }
+    await mkdir(path.join(inbox, 'zzz'));
+    await writeFile(path.join(inbox, 'zzz', 'export.csv'), 'x');
+
+    recognizeByName({ big: 1, zzz: 1 });
+
+    const { service } = build();
+
+    await withInbox(inbox, async () => {
+      const scan = await service.scan(ctx);
+      const names = scan.units.map((unit) => unit.path).sort();
+
+      expect(names).toEqual(['big', 'zzz']);
+      // `big` is fully measured (25,000 < MAX_UNIT_SIZING_ENTRIES), so nothing
+      // here is approximate — the point is that measuring it cost `zzz` nothing.
+      expect(scan.units.find((unit) => unit.path === 'big')?.fileCount).toBe(25_000);
+      expect(scan.units.every((unit) => unit.sizeApproximate === false)).toBe(true);
+    });
+  }, 120_000);
 });
 
 describe('ImportInboxService.startBatch', () => {
