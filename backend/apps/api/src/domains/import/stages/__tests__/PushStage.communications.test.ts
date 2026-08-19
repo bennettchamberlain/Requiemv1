@@ -138,6 +138,20 @@ function makeStage(
         return options.ownerRows ?? OWNER_ROWS;
       }
 
+      // The stage summary's read-back of the ledger (telemetry/stageSummary).
+      // Ahead of the bare count(*) branch below, which these would otherwise
+      // capture — they are grouped counts, not a scalar one. Empty is the
+      // honest answer for a fake that never wrote a ledger row: what is under
+      // test in this file is the push's control flow, not its telemetry, which
+      // has its own tests.
+      if (sql.includes('AS unrouted') || sql.includes('DISTINCT ON (data_source)')) {
+        return [];
+      }
+
+      if (sql.includes('FROM ci_import.staged_entities') && sql.includes('GROUP BY 1, 2')) {
+        return [];
+      }
+
       // settledCounts — checked before the bare count(*) branch, which its
       // second leg would otherwise capture.
       if (sql.includes("'item' AS kind")) {

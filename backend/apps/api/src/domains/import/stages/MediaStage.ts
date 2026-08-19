@@ -10,6 +10,8 @@ import { LoggerService } from '@ci/common/logging';
 import { FileService } from '@ci/domains/files';
 
 import { FILE_CLASSIFICATIONS } from '../push/canonical';
+import { dropReasonFor } from '../telemetry/dropReasons';
+import { buildStageSummary, SUMMARY_KEY, type StageSummary } from '../telemetry/stageSummary';
 import type { ImportStageRunner, StageOutcome, StageRunContext } from '../types';
 
 /** Staged media rows read per batch. Files are uploaded one at a time within it. */
@@ -97,7 +99,13 @@ export class MediaStage implements ImportStageRunner {
       return {
         processed: alreadyDone,
         total,
-        detail: { uploaded: 0, deduped: 0, failed: 0, carriedOver: alreadyDone },
+        detail: {
+          uploaded: 0,
+          deduped: 0,
+          failed: 0,
+          carriedOver: alreadyDone,
+          [SUMMARY_KEY]: await this.summarize(context.runId, alreadyDone === 0),
+        },
       };
     }
 
@@ -168,8 +176,91 @@ export class MediaStage implements ImportStageRunner {
       // and the run must say so rather than reporting a clean success over
       // bytes nobody will be able to open.
       partial: failed > 0,
-      detail: { uploaded, deduped, failed, carriedOver: alreadyDone },
+      detail: {
+        uploaded,
+        deduped,
+        failed,
+        carriedOver: alreadyDone,
+        [SUMMARY_KEY]: await this.summarize(context.runId, false),
+      },
     };
+  }
+
+  /**
+   * The stage's account of itself, read back out of the rows it settled.
+   *
+   * Counted with two GROUP BYs over `staged_items` rather than from the
+   * in-process counters, for three reasons, and every one of them is a
+   * correctness reason rather than a stylistic one:
+   *
+   *  - it covers a RESUME. `uploaded`/`deduped`/`failed` are this attempt's;
+   *    the rows carry every attempt's, so a stage that died at photo 40,000
+   *    and resumed reports the whole import rather than the tail of it.
+   *  - it aggregates the failure reasons that were ALREADY being written per
+   *    row and never read. `markFailed` has always stamped
+   *    `metadata.FileMediaError` — so on a run where files could not be
+   *    stored, the reason for every one of them was sitting in the database
+   *    and the stage detail said `failed: N` and nothing else.
+   *  - it is O(reasons), not O(files). This corpus has single stages of
+   *    700k+ items; the instruction is aggregate by reason, never per row, and
+   *    two grouped counts are the cheapest honest way to do it.
+   */
+  private async summarize(runId: string, noInput: boolean): Promise<StageSummary> {
+    const [stored] = (await this.dataSource.query(
+      `SELECT count(*)::int AS count
+         FROM ci_import.staged_items
+        WHERE run_id = $1::uuid AND metadata->>'FileId' IS NOT NULL`,
+      [runId],
+    )) as Array<{ count: number }>;
+
+    const failures = (await this.dataSource.query(
+      // Grouped on the SLUG, not the prose. `FileMediaError` holds an
+      // exception message — a path, an errno, an object-store response — which
+      // is unique per row and therefore useless as a group key; `markFailed`
+      // now writes the closed-vocabulary slug beside it. COALESCE covers rows
+      // stamped by a build before that key existed.
+      `SELECT COALESCE(metadata->>'FileMediaErrorReason', 'media_upload_failed') AS reason,
+              count(*)::int AS count
+         FROM ci_import.staged_items
+        WHERE run_id = $1::uuid AND metadata->>'FileMediaError' IS NOT NULL
+        GROUP BY 1`,
+      [runId],
+    )) as Array<{ reason: string; count: number }>;
+
+    // Up to five real examples so a person has something to go and look at,
+    // one per reason. Never one per row: a photo library that lost 4,000 files
+    // to a full object store must not write 4,000 rows of telemetry.
+    const samples = (await this.dataSource.query(
+      `SELECT DISTINCT ON (metadata->>'FileMediaErrorReason')
+              COALESCE(metadata->>'FileMediaErrorReason', 'media_upload_failed') AS reason,
+              COALESCE(filename, '(unnamed)') AS filename,
+              left(metadata->>'FileMediaError', 200) AS error
+         FROM ci_import.staged_items
+        WHERE run_id = $1::uuid AND metadata->>'FileMediaError' IS NOT NULL
+        ORDER BY metadata->>'FileMediaErrorReason', id
+        LIMIT 5`,
+      [runId],
+    )) as Array<{ reason: string; filename: string; error: string }>;
+
+    const drops: Record<string, number> = {};
+
+    for (const row of failures) {
+      drops[row.reason] = (drops[row.reason] ?? 0) + row.count;
+    }
+
+    return buildStageSummary({
+      stage: 'media',
+      // One unit: the object store is a single destination, and splitting by
+      // data source here would need a join the selection query does not do.
+      unitKind: 'store',
+      units: [{ unit: 'object_store', produced: stored?.count ?? 0, drops }],
+      zeroInputReason: noInput ? 'no_input' : 'nothing_pending',
+      samples: samples.map((row) => ({
+        reason: dropReasonFor(row.reason),
+        slug: row.reason,
+        detail: `${row.filename}: ${row.error}`,
+      })),
+    });
   }
 
   /**
@@ -191,7 +282,11 @@ export class MediaStage implements ImportStageRunner {
     const contained = relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 
     if (!contained) {
-      await this.markFailed(row.id, 'media path is outside the run scratch directory');
+      await this.markFailed(
+        row.id,
+        'media_path_escaped_scratch',
+        `media path is outside the run scratch directory: ${row.localPath}`,
+      );
 
       return 'failed';
     }
@@ -200,7 +295,7 @@ export class MediaStage implements ImportStageRunner {
       const stats = await stat(resolved);
 
       if (!stats.isFile()) {
-        await this.markFailed(row.id, 'media path is not a file');
+        await this.markFailed(row.id, 'media_not_a_file', `media path is not a file: ${resolved}`);
 
         return 'failed';
       }
@@ -232,7 +327,7 @@ export class MediaStage implements ImportStageRunner {
         error: reason,
       });
 
-      await this.markFailed(row.id, reason);
+      await this.markFailed(row.id, mediaFailureReason(err), reason);
 
       return 'failed';
     }
@@ -307,12 +402,49 @@ export class MediaStage implements ImportStageRunner {
     );
   }
 
-  private async markFailed(id: string, reason: string): Promise<void> {
+  /**
+   * Mark a row this stage could not store, with BOTH halves of the reason.
+   *
+   * `FileMediaError` keeps the prose it always kept — it is what the resume
+   * predicate tests for, and it is the only thing that names the actual file
+   * and errno. `FileMediaErrorReason` is the closed-vocabulary slug beside it,
+   * and it exists because prose cannot be grouped: every row's message is
+   * different, so `SELECT reason, count(*)` over the prose returns one row per
+   * failed file, which at this corpus's scale is not a summary of anything.
+   */
+  private async markFailed(id: string, slug: string, message: string): Promise<void> {
     await this.dataSource.query(
       `UPDATE ci_import.staged_items
-          SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{FileMediaError}', to_jsonb($2::text), true)
+          SET metadata = jsonb_set(
+                jsonb_set(COALESCE(metadata, '{}'::jsonb), '{FileMediaError}', to_jsonb($2::text), true),
+                '{FileMediaErrorReason}', to_jsonb($3::text), true)
         WHERE id = $1::uuid`,
-      [id, reason.slice(0, 500)],
+      [id, message.slice(0, 500), slug],
     );
   }
+}
+
+/**
+ * Which closed-vocabulary slug an upload failure counts under.
+ *
+ * Only three buckets are worth separating, and they are separated by what a
+ * person would DO about them: bytes the archive promised and did not contain
+ * (nothing to do — the export is short), bytes that are there and unreadable
+ * (a permissions or corruption problem on this appliance), and the object
+ * store refusing work (capacity, credentials, a service that is down —
+ * re-runnable). Everything else lands in the last of those, because guessing
+ * finer from an exception message is how a vocabulary stops being closed.
+ */
+function mediaFailureReason(err: unknown): string {
+  const code = (err as NodeJS.ErrnoException | undefined)?.code;
+
+  if (code === 'ENOENT') {
+    return 'media_path_missing';
+  }
+
+  if (code === 'EISDIR' || code === 'ENOTDIR') {
+    return 'media_not_a_file';
+  }
+
+  return 'media_upload_failed';
 }

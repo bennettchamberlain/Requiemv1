@@ -18,6 +18,7 @@ import { ImportRunEntity, type ImportRun, type ImportRunSource } from '../entiti
 import { ImportStageEntity, type ImportStage } from '../entities/ImportStageEntity';
 import { ImportStageEvent } from '../events';
 import { FILE_CLASSIFICATIONS } from '../push/canonical';
+import type { StageFailureContext } from '../telemetry/stageSummary';
 import type { StageOutcome } from '../types';
 
 import { StagedSourceService } from './StagedSourceService';
@@ -1015,13 +1016,31 @@ export class ImportRunService {
     await this.refreshRunRollup(stageId);
   }
 
-  /** Fail a stage, and with it the run. */
-  async failStage(stageId: string, error: string): Promise<void> {
+  /**
+   * Fail a stage, and with it the run.
+   *
+   * `failure` is the same facts as `error`, as FIELDS. The message is what a
+   * person reads in a list and greps a log for; the structured half is what an
+   * agent reads without regexing prose, and it survives being copied out of the
+   * row. Merged into the stage's existing `detail` under
+   * `summary.failure` — the same key {@link StageSummary} uses — so a reader
+   * has one place to look whether the stage completed or died. jsonb_set with
+   * `create_missing` builds the path on a stage whose detail is still `{}`,
+   * which is every stage that failed before producing anything.
+   */
+  async failStage(stageId: string, error: string, failure?: StageFailureContext): Promise<void> {
     await this.dataSource.query(
       `UPDATE ci_import.import_stages
-          SET status = 'failed', error = $2, finished_at = now(), updated_at = now()
+          SET status = 'failed', error = $2, finished_at = now(), updated_at = now(),
+              detail = CASE
+                WHEN $3::jsonb IS NULL THEN detail
+                ELSE jsonb_set(
+                  jsonb_set(COALESCE(detail, '{}'::jsonb), '{summary}',
+                            COALESCE(detail->'summary', '{}'::jsonb), true),
+                  '{summary,failure}', $3::jsonb, true)
+              END
         WHERE id = $1::uuid`,
-      [stageId, error],
+      [stageId, error, failure == null ? null : JSON.stringify(failure)],
     );
 
     await this.dataSource.query(

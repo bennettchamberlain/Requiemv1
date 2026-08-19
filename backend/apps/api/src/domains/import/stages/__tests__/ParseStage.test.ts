@@ -151,14 +151,30 @@ describe('ParseStage.run', () => {
     // not abort the sources that had not run yet.
     expect(outcome.partial).toBe(true);
     expect(outcome.processed).toBe(4); // gmail's 3 + calendar's 1; broken_source staged nothing
-    expect(outcome.detail.failures).toEqual([
-      { dataSource: 'broken_source', error: 'unexpected end of archive' },
-    ]);
+
+    // The recorded failure NAMES what it was doing. A bare exception message
+    // over a 13-source Takeout said nothing about which parser or which path
+    // died, and the scratch tree that held the answer is reclaimed with the
+    // run — see telemetry/stageError.
+    const [failure] = outcome.detail.failures as Array<{ dataSource: string; error: string }>;
+
+    expect(failure.dataSource).toBe('broken_source');
+    expect(failure.error).toContain('unexpected end of archive');
+    expect(failure.error).toContain('dataSource=broken_source');
+    expect(failure.error).toContain('phase=parsing broken_source (2/3)');
+
     // Still recognized — the match happened; only the import itself failed.
     expect(outcome.detail.recognized).toEqual(['gmail', 'broken_source', 'calendar']);
-    // The two sources that DID work are still in the per-source detail.
+
+    // The FAILED source is in the per-source detail too, which it was not
+    // before: the throw used to skip the `perSource` push entirely, so a
+    // parser that staged 300,000 rows and then met one unreadable file
+    // vanished from the run's own report while its rows sat in `staged_items`.
+    // Its counts are whatever its writer had reached, and its `error` says why
+    // it stopped.
     expect(outcome.detail.sources).toEqual([
       { dataSource: 'gmail', ...emptyTotals, items: 3 },
+      { dataSource: 'broken_source', ...emptyTotals, error: failure.error },
       { dataSource: 'calendar', ...emptyTotals, items: 1 },
     ]);
   });
@@ -192,12 +208,12 @@ describe('ParseStage.run', () => {
     const outcome = await stage.run(contextFor());
 
     expect(outcome.partial).toBe(true);
-    expect(outcome.detail.failures).toEqual([
-      {
-        dataSource: 'not_yet_implemented',
-        error: 'not_yet_implemented recognized the tree but has no file importer',
-      },
-    ]);
+
+    const [stubFailure] = outcome.detail.failures as Array<{ dataSource: string; error: string }>;
+
+    expect(stubFailure.dataSource).toBe('not_yet_implemented');
+    expect(stubFailure.error).toContain('recognized the tree but has no file importer');
+    expect(stubFailure.error).toContain('dataSource=not_yet_implemented');
     expect(outcome.processed).toBe(1);
   });
 });
