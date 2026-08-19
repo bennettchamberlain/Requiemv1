@@ -104,6 +104,11 @@ function makeResolver() {
     entityResolutionService,
     fileService,
     fileChunkService,
+    contentService,
+    personService,
+    placeService,
+    conceptService,
+    itemService,
   };
 }
 
@@ -276,5 +281,110 @@ describe('SearchResolver.search — combinable filters', () => {
       expect(fileService.getEntitiesForFiles).not.toHaveBeenCalled();
       expect(eventService.getEntitiesForEvents).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+/**
+ * VIEW-01. The unfiltered browse is a chronology, but ten of the thirteen
+ * result types are ordered by `created_at` — the row-WRITE time — which a bulk
+ * import parks at "now". Measured on the QA appliance, 22,145 rows sat ahead of
+ * the newest genuinely-dated memory: 11,211 event-linked media content rows,
+ * 9,753 people, 1,178 places and 3 others. Reordering within the page cannot
+ * reach them, because the first server pages are entirely made of them.
+ *
+ * These pin the two server-side gates that remove them, and — just as
+ * important — pin that they are removed from the BROWSE only.
+ */
+describe('SearchResolver.search — undated types stay out of the unfiltered browse (VIEW-01)', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('does not fetch person / place / concept / item for a browse with no filters', async () => {
+    const { resolver, personService, placeService, conceptService, itemService } = makeResolver();
+
+    await resolver.search(ctx, {} as SearchInput);
+
+    expect(personService.getEntitiesForPeople).not.toHaveBeenCalled();
+    expect(placeService.getEntitiesForPlaces).not.toHaveBeenCalled();
+    expect(conceptService.getEntitiesForConcepts).not.toHaveBeenCalled();
+    expect(itemService.getEntitiesForItems).not.toHaveBeenCalled();
+  });
+
+  it('still fetches the types that carry a real domain timestamp', async () => {
+    const { resolver, eventService, communicationService, browserActivityService } = makeResolver();
+
+    await resolver.search(ctx, {} as SearchInput);
+
+    expect(eventService.getEntitiesForEvents).toHaveBeenCalledTimes(1);
+    expect(communicationService.getEntitiesForCommunications).toHaveBeenCalledTimes(1);
+    expect(browserActivityService.getEntitiesForBrowserActivities).toHaveBeenCalledTimes(1);
+  });
+
+  it('fetches a gated type as soon as the caller names it', async () => {
+    const { resolver, personService, placeService } = makeResolver();
+
+    await resolver.search(ctx, { includeTypes: ['person', 'place'] } as SearchInput);
+
+    expect(personService.getEntitiesForPeople).toHaveBeenCalledTimes(1);
+    expect(placeService.getEntitiesForPlaces).toHaveBeenCalledTimes(1);
+  });
+
+  // The gate must not leak into search: a user looking for a person by name
+  // must still find them.
+  it('leaves the query path alone — a gated type is still searchable', async () => {
+    const { resolver, searchService, entityResolutionService } = makeResolver();
+    searchService.search.mockResolvedValue([{ type: 'person', id: 'p1' }]);
+
+    await resolver.search(ctx, { query: 'ada' } as SearchInput);
+
+    expect(idsResolvedTo(entityResolutionService.resolve)).toEqual([{ type: 'person', id: 'p1' }]);
+  });
+
+  it('leaves the tag path alone — a gated type is still reachable by tag', async () => {
+    const { resolver, tagService, entityResolutionService } = makeResolver();
+    tagService.getEntitiesForTags.mockResolvedValue([{ type: 'place', id: 'pl1' }]);
+
+    await resolver.search(ctx, { tags: ['holiday'] } as SearchInput);
+
+    expect(idsResolvedTo(entityResolutionService.resolve)).toEqual([{ type: 'place', id: 'pl1' }]);
+  });
+
+  // Every event-linked content row is a facet of an event the same merge
+  // already returns; on the QA appliance all 11,211 of them are type='media'
+  // pointing at the very binary their event renders, so the browse showed each
+  // photo twice AND showed both copies ahead of the real timeline.
+  it('drops event-linked content from the browse fetch and from its total', async () => {
+    const { resolver, contentService } = makeResolver();
+
+    await resolver.search(ctx, {} as SearchInput);
+
+    expect(contentService.getEntitiesForContents).toHaveBeenCalledTimes(1);
+    expect(contentService.getEntitiesForContents.mock.calls[0][1]).toMatchObject({
+      excludeEventLinked: true,
+    });
+    // The denominator the footer renders (VIEW-08) must count exactly what the
+    // fetch returns, or "30 of N" lies.
+    expect(contentService.countEntitiesForContents.mock.calls[0][1]).toMatchObject({
+      excludeEventLinked: true,
+    });
+  });
+
+  it('does not apply the event-linked exclusion to a tag search', async () => {
+    const { resolver, tagService, contentService } = makeResolver();
+    tagService.getEntitiesForTags.mockResolvedValue([{ type: 'content', id: 'c1' }]);
+
+    await resolver.search(ctx, { tags: ['holiday'] } as SearchInput);
+
+    expect(contentService.getEntitiesForContents).not.toHaveBeenCalled();
+  });
+
+  // The gate must not touch `file`: #2110 deliberately made files part of the
+  // default timeline (opt-OUT via includeFiles). They remain the residual
+  // undated head this change does not address.
+  it('leaves files in the default browse, as #2110 decided', async () => {
+    const { resolver, fileService } = makeResolver();
+
+    await resolver.search(ctx, {} as SearchInput);
+
+    expect(fileService.getEntitiesForFiles).toHaveBeenCalledTimes(1);
   });
 });

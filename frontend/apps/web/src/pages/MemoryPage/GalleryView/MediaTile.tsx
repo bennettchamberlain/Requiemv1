@@ -16,9 +16,15 @@ interface Props {
  * A visual gallery tile backed by a real thumbnail. Lazy-loads the image, marks
  * video with a play badge, reveals the title on hover, and falls back to a file
  * glyph if the thumbnail fails to load.
+ *
+ * `media.thumbUrl` is null when nothing cheap enough to render exists — a
+ * preview-less video (whose source an `<img>` can never decode) or an original
+ * too large to serve as a thumbnail. Those draw the glyph straight away rather
+ * than downloading bytes only to fail; the full media still opens on click.
  */
 export function MediaTile({ media, onClick }: Props) {
   const [broken, setBroken] = useState(false);
+  const showThumb = media.thumbUrl != null && !broken;
 
   return (
     <Tooltip delayDuration={600}>
@@ -35,15 +41,15 @@ export function MediaTile({ media, onClick }: Props) {
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           )}
         >
-          {!broken ? (
+          {showThumb ? (
             <img
-              src={media.thumbUrl}
+              src={media.thumbUrl ?? undefined}
               alt={media.title}
               loading="lazy"
               decoding="async"
               // Intrinsic-size hints (≈ the grid track) let the browser reserve the
               // tile box and downscale to it — important when a thumbUrl is the
-              // full-resolution source (e.g. ContentType has no resized preview).
+              // full-resolution source (media with no PREVIEW variant yet).
               width={240}
               height={260}
               onError={() => setBroken(true)}
@@ -52,6 +58,7 @@ export function MediaTile({ media, onClick }: Props) {
           ) : (
             <div className="flex h-full w-full flex-col items-center justify-center gap-2 p-4">
               <FileIcon className="h-10 w-10 text-muted-foreground" />
+              <span className="line-clamp-2 text-center text-xs text-muted-foreground">{media.title}</span>
             </div>
           )}
 

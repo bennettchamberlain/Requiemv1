@@ -67,6 +67,57 @@ const FETCH_MULTIPLIER = 4;
 // client page, capping plain-text search and disabling load-more.
 const QUERY_CANDIDATE_LIMIT = 300;
 
+/**
+ * Types the unfiltered timed browse leaves OUT unless the caller names them in
+ * `includeTypes`.
+ *
+ * ── Why ────────────────────────────────────────────────────────────────────
+ * The browse is a CHRONOLOGY. Every type it merges is ordered by whatever
+ * timestamp it has, and for these types that timestamp is `created_at` — the
+ * row-WRITE time, not the time the thing happened. A bulk import writes the
+ * whole corpus at once, so every one of these rows is stamped "now" and lands
+ * ahead of the entire real timeline. Measured on the QA appliance, rows sitting
+ * ahead of the newest genuinely-dated memory (2026-08-18 18:41:33Z) in the
+ * unfiltered browse:
+ *
+ *   content (media, event-linked)  11,211   gated (see below)
+ *   file                           10,521   NOT gated — see the NOTE
+ *   person                          9,753   gated here
+ *   place                           1,178   gated here
+ *   concept / item                      0   gated here
+ *   content (everything else)           3   not gated (has nowhere else to go)
+ *
+ * — the undated import artifacts a user had to scroll past before reaching
+ * their first real memory, which is what made the timeline unreachable rather
+ * than merely untidy. `person`, `place`, `concept` and `item` are gated here.
+ * The event-linked content rows leave by a different door (they are facets of
+ * events the same merge already returns — see
+ * ContentService.getEntitiesForContents). Together that takes the head from
+ * 32,666 rows to 10,524, all but 3 of which are files.
+ *
+ * A person, place, concept or item is not a moment: it is a thing moments refer
+ * to, and it has no domain time at all. It belongs on the timeline only when
+ * the user asks for it, exactly like `file-chunk` (which was already opt-in for
+ * the same reason: a file's many same-timestamp chunks buried the feed).
+ *
+ * They stay fully reachable — by naming the type, by searching, by tag, and
+ * through the graph/explorer. Only the *unfiltered chronological browse* drops
+ * them.
+ *
+ * NOTE `file` is deliberately NOT in this list. It carries the same row-write
+ * problem, but #2110 just made it an explicit opt-OUT (`includeFiles`) to fix
+ * the File type picker, and that decision is left standing — see
+ * {@link SearchResolver.browseWants}. Files are therefore the residual undated
+ * head this gate does not address.
+ */
+const BROWSE_OPT_IN_TYPES: ReadonlySet<IndexableEntity> = new Set([
+  'file-chunk',
+  'person',
+  'place',
+  'concept',
+  'item',
+]);
+
 /** PageInfo for an empty connection (e.g. an unknown/revoked share token). */
 const EMPTY_PAGE_INFO = {
   hasNextPage: false,
@@ -532,23 +583,8 @@ export class SearchResolver {
       limit?: number;
     },
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
-    // who / where / connector are event-only dimensions; restrict to events when set.
-    const eventsOnly = eventFilter != null;
-    // Document chunks stay opt-in — a file's many same-timestamp chunks would bury
-    // the default browse. Files themselves are part of the default timeline.
-    const optIn = (type: IndexableEntity) => {
-      if (type === 'file-chunk') {
-        return includeTypes?.includes(type) ?? false;
-      }
-
-      return true;
-    };
-
     const wants = (type: IndexableEntity) =>
-      this.matchesTypeFilter(type, includeTypes, excludeTypes) &&
-      (!eventsOnly || type === 'event') &&
-      optIn(type) &&
-      (type !== 'file' || includeFiles !== false);
+      this.browseWants(type, { includeTypes, excludeTypes, includeFiles, eventFilter });
 
     const eventOptions: {
       limit: number;
@@ -690,7 +726,14 @@ export class SearchResolver {
       wants('file') ? this.fileService.getEntitiesForFiles(context, fileOptions) : [],
       wants('file-chunk') ? this.fileChunkService.getEntitiesForFileChunks(context, fileChunkOptions) : [],
       wants('note') ? this.noteService.getEntitiesForNotes(context, createdAtOptions) : [],
-      wants('content') ? this.contentService.getEntitiesForContents(context, createdAtOptions) : [],
+      // Event-linked content is a facet of an event the same merge already
+      // returns — see ContentService.getEntitiesForContents.
+      wants('content')
+        ? this.contentService.getEntitiesForContents(context, {
+            ...createdAtOptions,
+            excludeEventLinked: true,
+          })
+        : [],
       wants('person') ? this.personService.getEntitiesForPeople(context, createdAtOptions) : [],
       wants('place') ? this.placeService.getEntitiesForPlaces(context, createdAtOptions) : [],
       wants('item') ? this.itemService.getEntitiesForItems(context, createdAtOptions) : [],
@@ -755,20 +798,8 @@ export class SearchResolver {
       };
     },
   ): Promise<number> {
-    const eventsOnly = eventFilter != null;
-    const optIn = (type: IndexableEntity) => {
-      if (type === 'file-chunk') {
-        return includeTypes?.includes(type) ?? false;
-      }
-
-      return true;
-    };
-
     const wants = (type: IndexableEntity) =>
-      this.matchesTypeFilter(type, includeTypes, excludeTypes) &&
-      (!eventsOnly || type === 'event') &&
-      optIn(type) &&
-      (type !== 'file' || includeFiles !== false);
+      this.browseWants(type, { includeTypes, excludeTypes, includeFiles, eventFilter });
 
     const dateOptions = { startTime, endTime };
     const eventOptions = {
@@ -788,7 +819,9 @@ export class SearchResolver {
       wants('file') ? this.fileService.countEntitiesForFiles(context, dateOptions) : 0,
       wants('file-chunk') ? this.fileChunkService.countEntitiesForFileChunks(context, dateOptions) : 0,
       wants('note') ? this.noteService.countEntitiesForNotes(context, dateOptions) : 0,
-      wants('content') ? this.contentService.countEntitiesForContents(context, dateOptions) : 0,
+      wants('content')
+        ? this.contentService.countEntitiesForContents(context, { ...dateOptions, excludeEventLinked: true })
+        : 0,
       wants('person') ? this.personService.countEntitiesForPeople(context, dateOptions) : 0,
       wants('place') ? this.placeService.countEntitiesForPlaces(context, dateOptions) : 0,
       wants('item') ? this.itemService.countEntitiesForItems(context, dateOptions) : 0,
@@ -809,6 +842,69 @@ export class SearchResolver {
     return identifiers
       .map((identifier) => resolved.get(`${identifier.type}:${identifier.id}`) ?? null)
       .filter((entry): entry is ResolvedEntity => entry != null);
+  }
+
+  /**
+   * Which entity types the timed browse merges, for BOTH the identifier fetch
+   * ({@link searchByTimedEntities}) and the `totalCount` ({@link countTimedEntities}).
+   *
+   * Shared rather than written twice because the two must agree exactly: a type
+   * counted but not fetched inflates the denominator the footer renders (VIEW-08),
+   * and a type fetched but not counted deflates it — and the `file` gate bug
+   * below had to be fixed identically in both copies.
+   *
+   * Three gates, in order of how specific they are:
+   *
+   *  1. the caller's explicit include/exclude type filter;
+   *  2. the event-only dimensions (who / where / connector / bbox / hasLocation),
+   *     which exist only on the event timeline, so setting any restricts the
+   *     browse to events;
+   *  3. the opt-in gate — {@link BROWSE_OPT_IN_TYPES} plus `file`.
+   *
+   * `file` is its own case because it has a dedicated lever, `includeFiles`,
+   * and #2110 deliberately made that lever an opt-OUT: files are part of the
+   * default timeline and a caller drops them by passing `false`. That decision
+   * is preserved verbatim here — see `SearchInput.includeFiles` for why it was
+   * inverted (the File type picker was a no-op on every surface that didn't set
+   * the flag). It does mean ~10,500 files, ordered by `created_at`, still sit
+   * ahead of the real timeline on a freshly-imported appliance; giving
+   * `ci.files` a domain timestamp (`external_created_at` is populated on 0 of
+   * 14,194 rows) is the fix, and it is a schema/ETL change, not a gate.
+   */
+  private browseWants(
+    type: IndexableEntity,
+    {
+      includeTypes,
+      excludeTypes,
+      includeFiles,
+      eventFilter,
+    }: {
+      includeTypes?: IndexableEntity[];
+      excludeTypes?: IndexableEntity[];
+      includeFiles?: boolean;
+      eventFilter?: unknown;
+    },
+  ): boolean {
+    if (!this.matchesTypeFilter(type, includeTypes, excludeTypes)) {
+      return false;
+    }
+
+    // who / where / connector are event-only dimensions; restrict to events when set.
+    if (eventFilter != null && type !== 'event') {
+      return false;
+    }
+
+    const namedExplicitly = includeTypes?.includes(type) ?? false;
+
+    if (type === 'file') {
+      return includeFiles !== false;
+    }
+
+    if (BROWSE_OPT_IN_TYPES.has(type)) {
+      return namedExplicitly;
+    }
+
+    return true;
   }
 
   private matchesTypeFilter(
@@ -881,6 +977,23 @@ export class SearchResolver {
     // Files/chunks/content have no domain time/startTime — fall back to the row
     // timestamp so they interleave into the browse by upload time rather than
     // sinking to the epoch.
+    //
+    // The `createdAt` fallback CANNOT simply be dropped: it is also the cursor
+    // key (see OrderedResult), and a null here becomes `new Date(0)`, which
+    // travels back as `afterTime` and windows every sibling type's SQL to
+    // "before 1970", emptying the browse. Row-write time is therefore kept as
+    // the sort key, and the types for which it is a LIE about when the thing
+    // happened are instead kept out of the unfiltered chronological browse —
+    // see BROWSE_OPT_IN_TYPES. What still rides `createdAt` inside the browse
+    // is `note`, `file` and non-event-linked `content` — 10,524 rows ahead of
+    // the timeline on the QA appliance, against 32,666 before the gate, and all
+    // but 3 of them files. Giving those a real domain timestamp is a schema/ETL
+    // change, not a resolver change: `ci.files.external_created_at` exists and
+    // is populated on 0 of 14,194 rows.
+    //
+    // Types reached by NAMING them (includeTypes) still sort by write time,
+    // which is the honest answer for a set that has no other time — a browse
+    // restricted to People is ordered by when each person was learned about.
     const value = entity.time ?? entity.startTime ?? entity.createdAt ?? entity.answeredAt ?? null;
 
     if (value instanceof Date) {
