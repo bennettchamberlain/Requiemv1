@@ -168,8 +168,12 @@ describe('useDeadLetters', () => {
       ([, init]) => (init as RequestInit | undefined)?.method === 'POST',
     );
 
-    expect(post?.[0]).toBe('/api/pipeline/dead-letters/replay');
-    expect(JSON.parse((post?.[1] as RequestInit).body as string)).toEqual({ ids: ['a', 'b'] });
+    expect(post).toBeDefined();
+
+    const [postUrl, postInit] = post as [string, RequestInit];
+
+    expect(postUrl).toBe('/api/pipeline/dead-letters/replay');
+    expect(JSON.parse(postInit.body as string)).toEqual({ ids: ['a', 'b'] });
   });
 
   it('never posts an empty selector — that is the "replay everything" the API refuses', async () => {
