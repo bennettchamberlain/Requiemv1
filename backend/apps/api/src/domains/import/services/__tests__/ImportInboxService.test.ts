@@ -550,6 +550,39 @@ describe('service drop folders', () => {
     );
   });
 
+  it('declares through a SYMLINKED inbox path, where the two paths disagree', async () => {
+    // The regression this pins: `resolveWithinRoots` resolves symlinks before
+    // its containment check, so the resolved unit path is a realpath, while the
+    // inbox directory is composed from config and is not. Where the configured
+    // inbox crosses a symlink, `path.relative` between them returns a `../../…`
+    // escape whose first segment is never a service folder — so every unit
+    // declared NOTHING, silently, and only the usage roll-up degraded.
+    //
+    // macOS hides this in plain sight (/tmp and /var are symlinks to /private),
+    // and any bind-mounted appliance data dir does the same.
+    const real = await mkdtemp(path.join(os.tmpdir(), 'ci-inbox-real-'));
+    const linkRoot = `${real}-link`;
+    await symlink(real, linkRoot);
+
+    const userDirReal = path.join(real, USER_FOLDER);
+    await mkdir(path.join(userDirReal, 'reddit'), { recursive: true });
+    await writeFile(path.join(userDirReal, 'reddit', 'export.zip'), 'bytes');
+
+    const startRun = jest.fn(async (_ctx: unknown, _input: { declaredSources?: string[] }) => ({
+      run: { id: 'run-1', label: 'x' },
+    }));
+    const { service } = build({ startRun });
+
+    // Point config at the LINK, so inboxDir and the resolved unit path differ.
+    await withInbox(path.join(linkRoot, USER_FOLDER), async () => {
+      await service.startBatch(ctx, { units: ['reddit/export.zip'], source: 'api' });
+    });
+
+    const [, input] = startRun.mock.calls[0];
+
+    expect(input.declaredSources).toEqual(['reddit']);
+  });
+
   it('declares the shared-folder union when several services share one folder', async () => {
     const inbox = await freshInbox();
 
@@ -574,7 +607,7 @@ describe('service drop folders', () => {
 });
 
 describe('ImportInboxService.onModuleInit', () => {
-  it('creates every existing account\'s subtree at boot, before any scan', async () => {
+  it("creates every existing account's subtree at boot, before any scan", async () => {
     // The folders are drop targets for files moved in BEFORE the app is ever
     // opened, so boot — not the first scan — must be what creates them, for
     // every account the appliance already has.
@@ -802,8 +835,8 @@ describe('folder-scoped recognition', () => {
     });
 
     const optsFor = (suffix: string) =>
-      dataSourcesRecognize.mock.calls.find(
-        (call) => (call[1] as { fullPath: string }).fullPath.endsWith(suffix),
+      dataSourcesRecognize.mock.calls.find((call) =>
+        (call[1] as { fullPath: string }).fullPath.endsWith(suffix),
       )?.[3] as { only?: ReadonlySet<string> };
 
     // The reddit FOLDER is the unit, recognized with only its importer —
@@ -830,9 +863,7 @@ describe('folder-scoped recognition', () => {
     );
     const only = (call?.[3] as { only?: ReadonlySet<string> }).only;
 
-    expect(only).toEqual(
-      new Set(['amazon', 'prime_video', 'audible', 'kindle_reading', 'amazon_music']),
-    );
+    expect(only).toEqual(new Set(['amazon', 'prime_video', 'audible', 'kindle_reading', 'amazon_music']));
   });
 });
 
@@ -856,9 +887,7 @@ describe('unit chips', () => {
     await withInbox(inbox, async () => {
       const scan = await service.scan(ctx);
 
-      expect(scan.units[0].recognized).toEqual([
-        { dataSource: 'email', title: 'Email', confidence: 0.9 },
-      ]);
+      expect(scan.units[0].recognized).toEqual([{ dataSource: 'email', title: 'Email', confidence: 0.9 }]);
     });
   });
 
@@ -911,11 +940,7 @@ describe('startBatch enqueue order', () => {
       // monster takes its slot.
       expect(started).toEqual(['small.zip', 'medium.zip', 'big.zip']);
       // But a client that lined its rows up with its request sees its order.
-      expect(batch.results.map((result) => result.unit)).toEqual([
-        'big.zip',
-        'medium.zip',
-        'small.zip',
-      ]);
+      expect(batch.results.map((result) => result.unit)).toEqual(['big.zip', 'medium.zip', 'small.zip']);
     });
   });
 });

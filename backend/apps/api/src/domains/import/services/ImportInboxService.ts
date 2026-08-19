@@ -1,5 +1,5 @@
 import { Dirent } from 'node:fs';
-import { chmod, lstat, mkdir, readdir } from 'node:fs/promises';
+import { chmod, lstat, mkdir, readdir, realpath } from 'node:fs/promises';
 import path from 'node:path';
 
 import { BadRequestException, Injectable, type OnModuleInit } from '@nestjs/common';
@@ -380,6 +380,10 @@ export class ImportInboxService implements OnModuleInit {
     }
 
     const { dir: inboxDir, email } = await this.userDir(ctx);
+    // Resolved once per batch, not per unit. Falls back to the configured path
+    // when the directory does not exist yet — every unit then fails its own
+    // resolve anyway, and a throw here would take the whole batch with it.
+    const inboxRealDir = await realpath(inboxDir).catch(() => inboxDir);
     const resultByUnit = new Map<string, InboxUnitResult>();
 
     // Two passes so the runs can start SMALLEST FIRST. The stage queue is
@@ -423,8 +427,19 @@ export class ImportInboxService implements OnModuleInit {
         // credits declared ∩ detected instead of dominant-only. Computed from
         // the RESOLVED path so the declaration matches where the bytes really
         // sit, not how the caller spelled the unit.
+        // Both sides of this `relative` must be realpaths. `resolved` already is
+        // — resolveWithinRoots resolves symlinks BEFORE its containment check,
+        // deliberately — while `inboxDir` is composed from config. When the
+        // configured inbox traverses a symlink the two disagree and
+        // `path.relative` returns a `../../…` escape, whose first segment is
+        // never a service folder, so EVERY unit silently declared nothing.
+        //
+        // Not hypothetical and not test-only: macOS puts /tmp and /var behind
+        // symlinks (/private/…), and any bind-mounted or symlinked appliance
+        // data dir does the same. The failure is invisible — the run starts
+        // fine and only the usage roll-up quietly falls back to dominant-only.
         const declared = declaredSourcesForInboxUnit(
-          path.relative(inboxDir, resolved).split(path.sep).join('/'),
+          path.relative(inboxRealDir, resolved).split(path.sep).join('/'),
         );
 
         const { run } = await this.runs.startRun(ctx, {
