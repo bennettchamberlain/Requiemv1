@@ -111,6 +111,21 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Companion uses the camera to capture photos and videos for your memory.</string>
 	<!--
+	  Local Network Privacy (iOS 14+) is a SEPARATE gate from ATS, and both must be
+	  open. ATS decides whether the OS will perform a cleartext http:// load at all;
+	  NSLocalNetworkUsageDescription is what lets a request reach a local-network
+	  address once ATS has allowed it. The user is prompted once per app, and a
+	  denial is silent — connections simply fail. CompanionAPI and
+	  CompanionIntentClient use plain URLSession against whatever the user entered
+	  on the /server screen (e.g. http://192.168.1.50:3030), so without this string
+	  those requests are refused even with NSAllowsLocalNetworking set.
+
+	  ⚠️ The Simulator does NOT enforce local-network privacy, so a green simulator
+	  run proves nothing here — this needs one on-device test.
+	-->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Companion connects to your Companion appliance on your local network, so your notes, photos and events stay on hardware you control.</string>
+	<!--
 	  Location — WHEN-IN-USE ONLY, deliberately. Adding
 	  NSLocationAlwaysAndWhenInUseUsageDescription (plus UIBackgroundModes: location)
 	  is a separate product decision: see DEVICE_DATA_COMPLIANCE.md §3.4 and §7
