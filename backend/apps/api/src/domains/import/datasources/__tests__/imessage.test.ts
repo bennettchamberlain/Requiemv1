@@ -154,7 +154,12 @@ describe('imessage importer', () => {
   // NULL on outbound), so the other participants vanish. We resolve the full
   // chat membership and emit Recipients[] minus the sender, plus ChatId /
   // GroupName so the conversation is identifiable downstream.
-  it('emits Recipients[] + ChatId/GroupName by joining chat_handle_join', async () => {
+  //
+  // ThreadId mirrors ChatId: push/inputs.ts's toCommunicationInput only reads
+  // metadata.ThreadId (not ChatId) to populate ci.communications.thread_id,
+  // so without ThreadId every iMessage row lands with thread_id NULL even
+  // though chat.chat_identifier was resolved correctly.
+  it('emits Recipients[] + ChatId/GroupName/ThreadId by joining chat_handle_join', async () => {
     const importer = getImporter('imessage');
     const dir = await fs.promises.mkdtemp(path.join(tmpdir(), 'imsg-'));
     const db = new Database(path.join(dir, 'chat.db'));
@@ -220,6 +225,7 @@ describe('imessage importer', () => {
     expect(out11.item!.metadata!['Recipients']).toEqual(['+15551110001']);
     expect(out11.item!.metadata!['Sender']).toBeUndefined();
     expect(out11.item!.metadata!['ChatId']).toBe('+15551110001');
+    expect(out11.item!.metadata!['ThreadId']).toBe('+15551110001');
     expect(out11.item!.metadata!['GroupName']).toBeUndefined();
     expect(out11.item!.metadata!['To']).toBeUndefined();
 
@@ -227,17 +233,67 @@ describe('imessage importer', () => {
     expect(in11.item!.metadata!['Sender']).toBe('+15551110001');
     expect(in11.item!.metadata!['Recipients']).toBeUndefined();
     expect(in11.item!.metadata!['ChatId']).toBe('+15551110001');
+    expect(in11.item!.metadata!['ThreadId']).toBe('+15551110001');
 
     const outg = pushed.find((g) => g.item?.id === 'outg-guid')!;
     expect(outg.item!.metadata!['Recipients']).toEqual(['+15551110002', '+15551110003']);
     expect(outg.item!.metadata!['Sender']).toBeUndefined();
     expect(outg.item!.metadata!['ChatId']).toBe('chat200');
+    expect(outg.item!.metadata!['ThreadId']).toBe('chat200');
     expect(outg.item!.metadata!['GroupName']).toBe('Lunch Crew');
 
+    // Same chat (200) as outg — both messages in the group thread carry the
+    // SAME ThreadId, which is the point: they group together in
+    // ci.communications.thread_id.
     const ing = pushed.find((g) => g.item?.id === 'ing-guid')!;
     expect(ing.item!.metadata!['Sender']).toBe('+15551110002');
     expect(ing.item!.metadata!['Recipients']).toEqual(['+15551110003']);
+    expect(ing.item!.metadata!['ThreadId']).toBe('chat200');
     expect(ing.item!.metadata!['GroupName']).toBe('Lunch Crew');
+  });
+
+  // Regression: the chat table resolves chat.chat_identifier per conversation,
+  // but the original code only ever wrote it to metadata.ChatId — a key the
+  // generic communications mapper (push/inputs.ts toCommunicationInput) never
+  // reads. Every iMessage row landed with ci.communications.thread_id NULL
+  // despite the source having a perfectly good, stable per-conversation
+  // identifier. This asserts the fix directly.
+  it('carries the resolved chat_identifier as ThreadId, not just ChatId', async () => {
+    const importer = getImporter('imessage');
+    const dir = await fs.promises.mkdtemp(path.join(tmpdir(), 'imsg-'));
+    const db = new Database(path.join(dir, 'chat.db'));
+    db.exec(`
+      CREATE TABLE handle (ROWID INTEGER PRIMARY KEY, id TEXT);
+      CREATE TABLE message (ROWID INTEGER PRIMARY KEY, guid TEXT, date INTEGER, text TEXT, is_from_me INTEGER, service TEXT, handle_id INTEGER);
+      CREATE TABLE attachment (ROWID INTEGER PRIMARY KEY, guid TEXT, filename TEXT, mime_type TEXT);
+      CREATE TABLE message_attachment_join (message_id INTEGER, attachment_id INTEGER);
+      CREATE TABLE chat (ROWID INTEGER PRIMARY KEY, chat_identifier TEXT, display_name TEXT);
+      CREATE TABLE chat_message_join (chat_id INTEGER, message_id INTEGER);
+      CREATE TABLE chat_handle_join (chat_id INTEGER, handle_id INTEGER);
+    `);
+    db.prepare('INSERT INTO handle (ROWID, id) VALUES (?, ?)').run(1, '+15559990000');
+    db.prepare('INSERT INTO chat (ROWID, chat_identifier, display_name) VALUES (?, ?, ?)').run(
+      300,
+      'chat999threadkey',
+      null,
+    );
+    db.prepare('INSERT INTO chat_handle_join (chat_id, handle_id) VALUES (?, ?)').run(300, 1);
+    db.prepare(
+      'INSERT INTO message (ROWID, guid, date, text, is_from_me, service, handle_id) VALUES (?,?,?,?,?,?,?)',
+    ).run(30, 'thread-guid', 600000000, 'hi', 0, 'iMessage', 1);
+    db.prepare('INSERT INTO chat_message_join (chat_id, message_id) VALUES (?, ?)').run(300, 30);
+    db.close();
+
+    const pushed: Graph[] = [];
+    await importer.fileImport(
+      {},
+      { filename: dir, fullPath: dir } as DirEntry,
+      { pipeline: { push: (g: Graph) => pushed.push(g as EmittedGraph) } } as unknown as ImportParams,
+    );
+
+    const msg = pushed.find((g) => g.item?.id === 'thread-guid')!;
+    expect(msg.item!.metadata!['ChatId']).toBe('chat999threadkey');
+    expect(msg.item!.metadata!['ThreadId']).toBe('chat999threadkey');
   });
 
   it('maps the partner direction-aware: outbound -> To, inbound -> Sender', async () => {
