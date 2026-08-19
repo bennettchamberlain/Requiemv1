@@ -82,18 +82,30 @@
 	  NSAllowsArbitraryLoadsInWebContent rather than the app-wide
 	  NSAllowsArbitraryLoads, which is the App-Store-preferred, narrower exception.
 
-	  ⚠️ "where all our network requests originate" is NOT true and has not been
+	  ⚠️ "where all our network requests originate" is NOT true, and has not been
 	  since App Intents landed: CompanionAPI (the Siri/"Remember this" client) and
 	  CompanionIntentClient both use plain URLSession, which
-	  NSAllowsArbitraryLoadsInWebContent does not cover. DELIVERY.md §1a records
-	  NSAllowsLocalNetworking as the applied fix for exactly that gap. It is absent
-	  here because the duplicate-key bug ate it — the copy of this dict that
-	  declared it was the dead first copy. Restoring it is a deliberate behaviour
-	  change and is NOT part of the de-duplication; see DELIVERY.md §1a.
+	  NSAllowsArbitraryLoadsInWebContent does NOT cover — it exempts WKWebView
+	  content only. That is why NSAllowsLocalNetworking is also set: it is the
+	  documented fix for exactly that gap (DELIVERY.md §1a, "Applied now, narrow"),
+	  covering .local and unqualified/private-range LAN hosts, and Apple asks for no
+	  review justification for it.
+
+	  It was recorded as applied but was never actually in effect: the copy of this
+	  dict that declared it was the dead FIRST copy of a duplicated key, and
+	  CFPropertyList takes last-wins. De-duplicating the file exposed that; this
+	  restores the decision the doc already records.
+
+	  Still deliberately NOT covered: a public http:// origin, and a Tailscale
+	  100.64/10 address (CGNAT, not private-range). Closing those needs app-wide
+	  NSAllowsArbitraryLoads — do not add it without the review justification and
+	  the Data Safety update called for in DELIVERY.md §1a.
 	-->
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoadsInWebContent</key>
+		<true/>
+		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
 	<key>NSCameraUsageDescription</key>
