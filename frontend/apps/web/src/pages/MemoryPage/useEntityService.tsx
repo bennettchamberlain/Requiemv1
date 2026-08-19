@@ -158,6 +158,53 @@ export type MemoryEntityOf<TName extends MemoryEntity['__typename']> = Extract<
   { __typename: TName }
 >;
 
+/**
+ * Apollo's normalized cache key for an explorer node (`EventType:<globalId>`),
+ * or null for anything that isn't cache-backed — graph nodes arrive as a
+ * synthetic `GenericEntity` and members of the search union that don't
+ * implement `Node` carry no `id`.
+ */
+function entityCacheKey(entity: MemoryEntity | null | undefined): string | null {
+  if (entity == null || entity.__typename === 'GenericEntity') {
+    return null;
+  }
+
+  const { id } = entity as { id?: string | null };
+
+  return id ? `${entity.__typename}:${id}` : null;
+}
+
+/**
+ * Re-resolve the entity backing the open detail drawer against the live query
+ * result.
+ *
+ * `setActiveEntity` is handed the node object the clicked row was rendered
+ * from — a snapshot frozen at click time. When the drawer saves, the mutation
+ * writes the new field values into the Apollo cache, every watcher of the
+ * search query re-reads, and the list row behind the drawer picks up a *new*
+ * node object with the new values. Holding the snapshot meant the drawer alone
+ * kept rendering the pre-save values, so a successful edit looked like it had
+ * been thrown away.
+ *
+ * Falling back to the snapshot keeps drawers whose entity is no longer in the
+ * result set (filters changed underneath it, graph-node drawers) rendering
+ * exactly what they render today.
+ */
+export function resolveLiveEntity<TEntity extends MemoryEntity>(
+  selected: TEntity | null,
+  results: ReadonlyArray<EntityItem>,
+): TEntity | null {
+  const key = entityCacheKey(selected);
+
+  if (key == null) {
+    return selected;
+  }
+
+  const live = results.find((node) => entityCacheKey(node) === key);
+
+  return (live as TEntity | undefined) ?? selected;
+}
+
 type ReturnType = [
   {
     data: Array<EntityItem>;
@@ -251,7 +298,9 @@ function useEntityService({
     notifyOnNetworkStatusChange: true,
   });
 
-  const [activeEntity, setActiveEntity] = useState<MemoryEntity | null>(null);
+  // The node object captured when a row was clicked. Never rendered directly —
+  // see `activeEntity` below, which keeps the drawer in step with the cache.
+  const [selectedEntity, setActiveEntity] = useState<MemoryEntity | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
 
   const pageInfo = data?.search?.pageInfo;
@@ -288,6 +337,11 @@ function useEntityService({
   }, [fetchMore, hasNextPage, loadingMore, pageInfo?.endCursor]);
 
   const results = useMemo(() => (data?.search?.edges ?? []).map((edge) => edge.node), [data]);
+
+  // Read the open drawer's entity back out of the live result on every render,
+  // so a save made in the drawer is reflected in the drawer and not only in the
+  // list behind it.
+  const activeEntity = useMemo(() => resolveLiveEntity(selectedEntity, results), [selectedEntity, results]);
 
   const refetchSearch = useCallback(() => {
     void refetch();
