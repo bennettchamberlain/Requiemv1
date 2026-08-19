@@ -24,6 +24,7 @@ import {
   type DatePreset,
 } from './Components/ExplorerToolbar/datePresets';
 import { ExplorerToolbar } from './Components/ExplorerToolbar/ExplorerToolbar';
+import { applyViewFilterDefaults, readMemoryView } from './Components/ExplorerToolbar/viewFilterSupport';
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
 import { ListView } from './ListView';
@@ -84,15 +85,17 @@ export default function DesktopMemoryPage() {
   // restores in the same view; list is the desktop default since it always
   // shows results (the map renders empty for data without coordinates).
   const activeTab = searchParams.get('view') ?? 'list';
+  // Switching view never changes the filter set behind the user's back — the
+  // one exception is the Map tab, which applies "Has a location" as a real,
+  // chipped, removable filter (see applyViewFilterDefaults).
   const setActiveTab = (next: string) =>
     setSearchParams((params) => {
       const nextParams = new URLSearchParams(params);
       nextParams.set('view', next);
 
-      return nextParams;
+      return applyViewFilterDefaults(nextParams, readMemoryView(next));
     });
   // Advanced filters render inside the header search panel and stay visible.
-  // MemoryPage can derive the map's hasLocation scope from `?view=`.
   // Events is a What-bar filter, not a top-level view — rewrite legacy ?view=events.
   useEffect(() => {
     const view = searchParams.get('view');

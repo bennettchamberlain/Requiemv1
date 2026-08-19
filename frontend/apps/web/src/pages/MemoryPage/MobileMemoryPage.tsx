@@ -13,6 +13,7 @@ import { useEntityService } from '../MemoryPage/useEntityService';
 import { EntityDetails } from './Components';
 import { ExplorerToolbar, MemorySearchField } from './Components/ExplorerToolbar/ExplorerToolbar';
 import { countActiveFilters } from './Components/ExplorerToolbar/filterParams';
+import { applyViewFilterDefaults, readMemoryView } from './Components/ExplorerToolbar/viewFilterSupport';
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
 import { ListView } from './ListView';
@@ -31,12 +32,15 @@ export default function MobileMemoryPage() {
   // The active view lives in the URL (`?view=`) so a query is shareable and
   // restores in the same view; list is the mobile default.
   const activeTab = searchParams.get('view') ?? 'list';
+  // Switching view never changes the filter set behind the user's back — the
+  // one exception is the Map tab, which applies "Has a location" as a real,
+  // chipped, removable filter (see applyViewFilterDefaults).
   const setActiveTab = (next: string) =>
     setSearchParams((params) => {
       const nextParams = new URLSearchParams(params);
       nextParams.set('view', next);
 
-      return nextParams;
+      return applyViewFilterDefaults(nextParams, readMemoryView(next));
     });
   const [detailsOpen, setDetailsOpen] = useState(false);
   const activeFilterCount = countActiveFilters(searchParams);
