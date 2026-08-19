@@ -4,7 +4,7 @@ import { useQuery } from '@apollo/client';
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { EntityServiceProvider, useEntityService } from './useEntityService';
+import { EntityServiceProvider, resolveLiveEntity, useEntityService } from './useEntityService';
 
 // Same technique as useSearchService.test.ts: mock Apollo's useQuery directly
 // so the variables/fetchMore contract can be asserted without reproducing the
@@ -20,6 +20,27 @@ const refetch = vi.fn();
 
 function edge(id: string, cursor = id) {
   return { cursor, node: { __typename: 'EventType', id } };
+}
+
+/**
+ * An edge whose node carries a title, standing in for what Apollo hands back
+ * after a mutation renormalises the same `EventType:<id>`: a brand new node
+ * object with the new field values.
+ */
+function titledEdge(id: string, title: string) {
+  return { cursor: id, node: { __typename: 'EventType', id, title } };
+}
+
+function searchResult(edges: Array<ReturnType<typeof titledEdge>>) {
+  return {
+    data: {
+      search: {
+        totalCount: edges.length,
+        pageInfo: { hasNextPage: false, endCursor: null },
+        edges,
+      },
+    },
+  };
 }
 
 function setResult(
@@ -176,6 +197,89 @@ describe('useEntityService', () => {
     };
 
     expect(merged.search.edges.map((e) => e.cursor)).toEqual(['c1', 'c2']);
+  });
+
+  describe('the entity backing the open detail drawer', () => {
+    // Regression: the drawer used to render the node object captured at click
+    // time. A save writes the new values into the Apollo cache, the list row
+    // behind the drawer re-renders with them — and the drawer kept showing the
+    // old ones, so a successful edit looked like it had been discarded.
+    it('picks up field values written to the cache after a save', () => {
+      setResult(searchResult([titledEdge('e1', 'Before')]));
+
+      const { result, rerender } = renderService({ searchQuery: '' });
+      const clicked = result.current[0].data[0];
+
+      act(() => {
+        result.current[1].setActiveEntity(clicked);
+      });
+
+      expect(result.current[0].activeEntity).toMatchObject({ id: 'e1', title: 'Before' });
+
+      // What Apollo does after `updateEvent` resolves: same normalized entity,
+      // new node object, new title.
+      setResult(searchResult([titledEdge('e1', 'After')]));
+      rerender();
+
+      expect(result.current[0].activeEntity).toMatchObject({ id: 'e1', title: 'After' });
+    });
+
+    it('keeps showing the entity once it drops out of the result set', () => {
+      setResult(searchResult([titledEdge('e1', 'Before')]));
+
+      const { result, rerender } = renderService({ searchQuery: '' });
+
+      act(() => {
+        result.current[1].setActiveEntity(result.current[0].data[0]);
+      });
+
+      // The search re-ran with a narrower filter and no longer contains it —
+      // the drawer is still open, so it must not blank out.
+      setResult(searchResult([]));
+      rerender();
+
+      expect(result.current[0].activeEntity).toMatchObject({ id: 'e1', title: 'Before' });
+    });
+
+    it('closes when cleared', () => {
+      setResult(searchResult([titledEdge('e1', 'Before')]));
+
+      const { result } = renderService({ searchQuery: '' });
+
+      act(() => {
+        result.current[1].setActiveEntity(result.current[0].data[0]);
+      });
+      act(() => {
+        result.current[1].setActiveEntity(null);
+      });
+
+      expect(result.current[0].activeEntity).toBeNull();
+    });
+  });
+
+  describe('resolveLiveEntity', () => {
+    it('matches on type as well as id, so two entities sharing an id never cross', () => {
+      const selected = { __typename: 'PlaceType', id: 'shared', name: 'Before' } as never;
+      const results = [
+        { __typename: 'EventType', id: 'shared', title: 'Someone else' },
+        { __typename: 'PlaceType', id: 'shared', name: 'After' },
+      ] as never;
+
+      expect(resolveLiveEntity(selected, results)).toMatchObject({
+        __typename: 'PlaceType',
+        name: 'After',
+      });
+    });
+
+    it('leaves graph nodes alone — they are not in the Apollo cache', () => {
+      const generic = {
+        __typename: 'GenericEntity' as const,
+        id: 'e1',
+        name: 'From the graph',
+      };
+
+      expect(resolveLiveEntity(generic, [{ __typename: 'EventType', id: 'e1' } as never])).toBe(generic);
+    });
   });
 
   it('does not request another page while one is already loading or none remains', () => {
