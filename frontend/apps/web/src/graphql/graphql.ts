@@ -5466,6 +5466,8 @@ export type NoteReferenceSearchQuery = { __typename?: 'Query', search: { __typen
         | { __typename: 'NoteType', id: string, referenceTitle?: string | null }
         | { __typename: 'PersonType', id: string, referenceName?: string | null }
         | { __typename: 'PlaceType', id: string, placeReferenceName?: string | null }
+        | { __typename: 'ProductModelType', id: string }
+        | { __typename: 'ReceiptType', id: string }
         | { __typename: 'ThreadType', id: string }
        }> } };
 
