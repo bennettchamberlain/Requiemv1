@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ScheduleEvent } from '@/api/useScheduleService';
 
-import { eventsOnDay, pickNowNext } from './todayNowNext';
+import { eventsOnDay, pickNowNext } from './nowNext';
 
 function event(overrides: Partial<ScheduleEvent> = {}): ScheduleEvent {
   return {
