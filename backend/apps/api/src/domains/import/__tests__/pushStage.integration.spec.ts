@@ -432,7 +432,39 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
     );
 
     expect(row.push_status).toBe('skipped');
-    expect(outcome.partial).toBe(true);
+    // Skipped, counted, NAMED — and not `partial`. Nothing about this row can
+    // change on a retry or on a re-import of the same export: the record it was
+    // built from carries no name and no handle. See the `partial` computation
+    // in PushStage; the loss is reported instead of being made into a badge
+    // that a corpus with one such row would wear forever.
+    expect(outcome.partial).toBe(false);
+    expect(outcome.detail.entities).toMatchObject({
+      unresolved: 1,
+      unresolvedDetail: {
+        reason: 'entity_unresolved',
+        message: 'no stable name or handle to resolve by',
+        count: 1,
+        // NULL data_source and empty metadata: the fallback that at least makes
+        // the row itself reachable.
+        examples: [expect.stringContaining('unknown: staged row ')],
+      },
+    });
+  });
+
+  it('says nothing about unresolved entities when there are none', async () => {
+    // `unresolvedDetail` is absent, not an empty shell: every ordinary run
+    // would otherwise carry a report of nothing having gone wrong.
+    const runId = await harness.startRun();
+
+    await harness.dataSource.query(
+      `INSERT INTO ci_import.staged_entities (run_id, user_id, type, name, metadata, identity_key)
+            VALUES ($1::uuid, $2::uuid, 'contact', 'Alice', '{}'::jsonb, 'alice@example.com')`,
+      [runId, harness.userId],
+    );
+
+    const outcome = await makeStage().stage.run(contextFor(runId));
+
+    expect(outcome.detail.entities).not.toHaveProperty('unresolvedDetail');
   });
 
   it('does not report partial for a bookkeeping-type entity, even though it is skipped', async () => {
@@ -464,10 +496,13 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
     expect(outcome.partial).toBe(false);
   });
 
-  it('keeps an unresolvable entity partial across a resume', async () => {
+  it('still reports an unresolvable entity, and its reason, across a resume', async () => {
     // A resumed push re-derives its counters from the ledger (`settledCounts`)
     // rather than the in-memory attempt, so the "genuinely unresolvable" signal
-    // has to survive that round trip too — not just the first attempt.
+    // has to survive that round trip too — not just the first attempt. The
+    // report is read from the same ledger for exactly this reason: the second
+    // attempt has no rows of its own to count, and reporting the loss only on
+    // the attempt that happened to see it first is how it went missing before.
     const runId = await harness.startRun();
 
     await harness.dataSource.query(
@@ -478,12 +513,18 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
 
     const first = await makeStage().stage.run(contextFor(runId));
 
-    expect(first.partial).toBe(true);
+    expect(first.partial).toBe(false);
 
     const second = await makeStage().stage.run(contextFor(runId));
 
-    expect(second.detail.entities).toMatchObject({ resolved: 0, skipped: 1, unresolved: 1, failed: 0 });
-    expect(second.partial).toBe(true);
+    expect(second.detail.entities).toMatchObject({
+      resolved: 0,
+      skipped: 1,
+      unresolved: 1,
+      failed: 0,
+      unresolvedDetail: { reason: 'entity_unresolved', count: 1 },
+    });
+    expect(second.partial).toBe(false);
   });
 
   it('keeps a bookkeeping exclusion non-partial across a resume', async () => {
