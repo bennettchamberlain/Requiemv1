@@ -1560,6 +1560,8 @@ export type Mutation = {
   returnEventToSlate: ScheduleCandidateType;
   revokeAskGrant: AskGrantPayload;
   runAsk: RunAskPayload;
+  /** Place an open task into the next free workday gap as a planned calendar block. The click is consent — trust dial does not re-ask. */
+  scheduleTask: ScheduleTaskPayload;
   setSavedSearchSharing: UpdateSavedSearchPayload;
   /** Defer a candidate until a future instant */
   snoozeCandidate: ScheduleCandidateType;
@@ -1569,6 +1571,8 @@ export type Mutation = {
   tagEntities: Array<TaggableEntityType>;
   /** Manually trigger the HBPE pipeline for the current user */
   triggerHbpe: Scalars['String']['output'];
+  /** Remove the planned block for this task and clear scheduledFor. */
+  unscheduleTask?: Maybe<TaskType>;
   untagEntities: Array<TaggableEntityType>;
   updateAnswer?: Maybe<AnswerType>;
   updateBrowserActivity?: Maybe<BrowserActivityType>;
@@ -1957,6 +1961,13 @@ export type MutationRunAskArgs = {
 };
 
 
+export type MutationScheduleTaskArgs = {
+  date?: InputMaybe<Scalars['String']['input']>;
+  estimatedMinutes?: InputMaybe<Scalars['Int']['input']>;
+  id: Scalars['ID']['input'];
+};
+
+
 export type MutationSetSavedSearchSharingArgs = {
   input: SetSavedSearchSharingInput;
 };
@@ -1970,6 +1981,11 @@ export type MutationSnoozeCandidateArgs = {
 
 export type MutationTagEntitiesArgs = {
   input: TagEntitiesInput;
+};
+
+
+export type MutationUnscheduleTaskArgs = {
+  id: Scalars['ID']['input'];
 };
 
 
@@ -2422,7 +2438,7 @@ export type Query = {
   /** Distinct event types ("how things happened") present for the user. */
   eventTypes: Array<Scalars['String']['output']>;
   events: EventConnection;
-  /** Events overlapping [from, to) — calendar read path. Excludes cancelled/no-show; keeps tentative. Limited to calendar event types (see SCHEDULE_EVENT_TYPES) plus events with no event_type, which is how user-created and accepted-suggestion events arrive. */
+  /** Events overlapping [from, to) — calendar read path. Excludes cancelled/no-show; keeps tentative. Allowlisted types: calendar_event, meeting, appointment, planned_block, plus events with no event_type (user-created and accepted suggestions). */
   eventsInRange: Array<EventType>;
   /** Get actions for the feed, prioritizing unseen actions */
   feedActions: Array<ActionType>;
@@ -2461,6 +2477,8 @@ export type Query = {
   placeForecast: Array<PlaceForecastItemType>;
   places: PlaceConnection;
   placesNear: Array<PlaceNearType>;
+  /** Planned blocks (`event_type = planned_block`) overlapping [from, to). SQL-pushdown, not the explorer events() feed. */
+  plannedBlocks: Array<EventType>;
   /** Forecast self-consistency scores (not ground-truth accuracy) */
   predictionCalibration?: Maybe<PredictionCalibrationType>;
   provider?: Maybe<ProviderType>;
@@ -2480,7 +2498,7 @@ export type Query = {
   tag?: Maybe<TagType>;
   tags: TagConnection;
   task?: Maybe<TaskType>;
-  /** Pending trust-dial confirmations for mutate/complete/revise. */
+  /** Pending trust-dial confirmations for mutate/complete/revise/schedule. */
   taskPendingChanges: Array<TaskPendingChangeType>;
   tasks: TaskConnection;
   thread?: Maybe<ThreadType>;
@@ -2800,6 +2818,12 @@ export type QueryPlacesNearArgs = {
 };
 
 
+export type QueryPlannedBlocksArgs = {
+  from: Scalars['DateTime']['input'];
+  to: Scalars['DateTime']['input'];
+};
+
+
 export type QueryPredictionCalibrationArgs = {
   limit?: InputMaybe<Scalars['Int']['input']>;
 };
@@ -3102,6 +3126,15 @@ export type ScheduleCandidateType = {
   windowStart: Scalars['DateTime']['output'];
 };
 
+export type ScheduleTaskPayload = {
+  __typename?: 'ScheduleTaskPayload';
+  event?: Maybe<EventType>;
+  /** placed | proposed | already_placed | no_gap | skipped */
+  status?: Maybe<Scalars['String']['output']>;
+  success: Scalars['Boolean']['output'];
+  task?: Maybe<TaskType>;
+};
+
 export type SearchInput = {
   after?: InputMaybe<Scalars['String']['input']>;
   bbox?: InputMaybe<Array<Scalars['Float']['input']>>;
@@ -3265,7 +3298,8 @@ export type TaskEdge = Edge & {
 export type TaskPendingChangeKind =
   | 'complete'
   | 'event_revise'
-  | 'mutate';
+  | 'mutate'
+  | 'schedule';
 
 export type TaskPendingChangeStatus =
   | 'accepted'
@@ -4586,6 +4620,14 @@ export type CompleteTaskMutationVariables = Exact<{
 
 export type CompleteTaskMutation = { __typename?: 'Mutation', completeTask?: { __typename?: 'TaskType', id: string, status: TaskStatus, completedAt?: any | null } | null };
 
+export type GetPlanDayQueryVariables = Exact<{
+  from: Scalars['DateTime']['input'];
+  to: Scalars['DateTime']['input'];
+}>;
+
+
+export type GetPlanDayQuery = { __typename?: 'Query', eventsInRange: Array<{ __typename?: 'EventType', id: string, title?: string | null, startTime: any, endTime?: any | null, eventType?: string | null, taskId?: string | null, status?: string | null }> };
+
 export type ReopenTaskMutationVariables = Exact<{
   id: Scalars['ID']['input'];
 }>;
@@ -4620,6 +4662,13 @@ export type DeclineTaskPendingChangeMutationVariables = Exact<{
 
 
 export type DeclineTaskPendingChangeMutation = { __typename?: 'Mutation', declineTaskPendingChange: { __typename?: 'ResolveTaskPendingChangePayload', success: boolean } };
+
+export type ScheduleTaskMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type ScheduleTaskMutation = { __typename?: 'Mutation', scheduleTask: { __typename?: 'ScheduleTaskPayload', success: boolean, status?: string | null, task?: { __typename?: 'TaskType', id: string, scheduledFor?: string | null, estimatedMinutes?: number | null } | null } };
 
 export type TaskRowFragmentFragment = { __typename?: 'TaskType', id: string, title: string, description?: string | null, status: TaskStatus, priority: number, parentId?: string | null, dueAt?: any | null, scheduledFor?: string | null, deferUntil?: string | null, estimatedMinutes?: number | null, completedAt?: any | null } & { ' $fragmentName'?: 'TaskRowFragmentFragment' };
 
@@ -4888,11 +4937,13 @@ export const ListTasksForTestDocument = {"kind":"Document","definitions":[{"kind
 export const CreateTaskDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"CreateTask"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"CreateTaskInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"createTask"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"task"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"TaskRowFragment"}}]}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"TaskRowFragment"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"TaskType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"priority"}},{"kind":"Field","name":{"kind":"Name","value":"parentId"}},{"kind":"Field","name":{"kind":"Name","value":"dueAt"}},{"kind":"Field","name":{"kind":"Name","value":"scheduledFor"}},{"kind":"Field","name":{"kind":"Name","value":"deferUntil"}},{"kind":"Field","name":{"kind":"Name","value":"estimatedMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"completedAt"}}]}}]} as unknown as DocumentNode<CreateTaskMutation, CreateTaskMutationVariables>;
 export const GetTasksDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetTasks"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"first"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"after"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"tasks"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"first"},"value":{"kind":"Variable","name":{"kind":"Name","value":"first"}}},{"kind":"Argument","name":{"kind":"Name","value":"after"},"value":{"kind":"Variable","name":{"kind":"Name","value":"after"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"edges"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"node"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"priority"}},{"kind":"Field","name":{"kind":"Name","value":"parentId"}},{"kind":"Field","name":{"kind":"Name","value":"dueAt"}},{"kind":"Field","name":{"kind":"Name","value":"scheduledFor"}},{"kind":"Field","name":{"kind":"Name","value":"deferUntil"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"TaskRowFragment"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}}]}},{"kind":"Field","name":{"kind":"Name","value":"taskPendingChanges"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"taskId"}},{"kind":"Field","name":{"kind":"Name","value":"kind"}},{"kind":"Field","name":{"kind":"Name","value":"rationale"}},{"kind":"Field","name":{"kind":"Name","value":"confidence"}},{"kind":"Field","name":{"kind":"Name","value":"status"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"TaskRowFragment"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"TaskType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"priority"}},{"kind":"Field","name":{"kind":"Name","value":"parentId"}},{"kind":"Field","name":{"kind":"Name","value":"dueAt"}},{"kind":"Field","name":{"kind":"Name","value":"scheduledFor"}},{"kind":"Field","name":{"kind":"Name","value":"deferUntil"}},{"kind":"Field","name":{"kind":"Name","value":"estimatedMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"completedAt"}}]}}]} as unknown as DocumentNode<GetTasksQuery, GetTasksQueryVariables>;
 export const CompleteTaskDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"CompleteTask"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"completeTask"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"completedAt"}}]}}]}}]} as unknown as DocumentNode<CompleteTaskMutation, CompleteTaskMutationVariables>;
+export const GetPlanDayDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetPlanDay"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"from"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"DateTime"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"to"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"DateTime"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"eventsInRange"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"from"},"value":{"kind":"Variable","name":{"kind":"Name","value":"from"}}},{"kind":"Argument","name":{"kind":"Name","value":"to"},"value":{"kind":"Variable","name":{"kind":"Name","value":"to"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"startTime"}},{"kind":"Field","name":{"kind":"Name","value":"endTime"}},{"kind":"Field","name":{"kind":"Name","value":"eventType"}},{"kind":"Field","name":{"kind":"Name","value":"taskId"}},{"kind":"Field","name":{"kind":"Name","value":"status"}}]}}]}}]} as unknown as DocumentNode<GetPlanDayQuery, GetPlanDayQueryVariables>;
 export const ReopenTaskDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"ReopenTask"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"reopenTask"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"completedAt"}}]}}]}}]} as unknown as DocumentNode<ReopenTaskMutation, ReopenTaskMutationVariables>;
 export const AcceptProposedTaskDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"AcceptProposedTask"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"acceptProposedTask"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"status"}}]}}]}}]} as unknown as DocumentNode<AcceptProposedTaskMutation, AcceptProposedTaskMutationVariables>;
 export const DeclineProposedTaskDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DeclineProposedTask"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"declineProposedTask"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"status"}}]}}]}}]} as unknown as DocumentNode<DeclineProposedTaskMutation, DeclineProposedTaskMutationVariables>;
 export const AcceptTaskPendingChangeDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"AcceptTaskPendingChange"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"acceptTaskPendingChange"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"task"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"notes"}},{"kind":"Field","name":{"kind":"Name","value":"parentId"}}]}}]}}]}}]} as unknown as DocumentNode<AcceptTaskPendingChangeMutation, AcceptTaskPendingChangeMutationVariables>;
 export const DeclineTaskPendingChangeDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DeclineTaskPendingChange"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"declineTaskPendingChange"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}}]}}]}}]} as unknown as DocumentNode<DeclineTaskPendingChangeMutation, DeclineTaskPendingChangeMutationVariables>;
+export const ScheduleTaskDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"ScheduleTask"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"scheduleTask"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"task"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"scheduledFor"}},{"kind":"Field","name":{"kind":"Name","value":"estimatedMinutes"}}]}}]}}]}}]} as unknown as DocumentNode<ScheduleTaskMutation, ScheduleTaskMutationVariables>;
 export const GetProviderDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetProvider"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"provider"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"logoUrl"}},{"kind":"Field","name":{"kind":"Name","value":"authType"}},{"kind":"Field","name":{"kind":"Name","value":"localOnly"}},{"kind":"Field","name":{"kind":"Name","value":"appSetupUrl"}},{"kind":"Field","name":{"kind":"Name","value":"openidKeyLink"}},{"kind":"Field","name":{"kind":"Name","value":"theme"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"backgroundColor"}},{"kind":"Field","name":{"kind":"Name","value":"borderColor"}}]}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"ProviderEndpointsFragment"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"ProviderEndpointsFragment"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"ProviderType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"endpoints"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}}]}}]}}]} as unknown as DocumentNode<GetProviderQuery, GetProviderQueryVariables>;
 export const CreateSavedSearchDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"CreateSavedSearch"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"CreateSavedSearchInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"createSavedSearch"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"savedSearch"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"SavedSearchGridItemFragment"}}]}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SavedSearchGridItemFragment"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"SavedSearchType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"query"}},{"kind":"Field","name":{"kind":"Name","value":"entityTypes"}},{"kind":"Field","name":{"kind":"Name","value":"tags"}},{"kind":"Field","name":{"kind":"Name","value":"filters"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"eventTypes"}},{"kind":"Field","name":{"kind":"Name","value":"startTime"}},{"kind":"Field","name":{"kind":"Name","value":"endTime"}},{"kind":"Field","name":{"kind":"Name","value":"datePreset"}},{"kind":"Field","name":{"kind":"Name","value":"sortBy"}},{"kind":"Field","name":{"kind":"Name","value":"sortOrder"}},{"kind":"Field","name":{"kind":"Name","value":"connectors"}},{"kind":"Field","name":{"kind":"Name","value":"people"}},{"kind":"Field","name":{"kind":"Name","value":"places"}},{"kind":"Field","name":{"kind":"Name","value":"hasLocation"}},{"kind":"Field","name":{"kind":"Name","value":"semantic"}}]}},{"kind":"Field","name":{"kind":"Name","value":"isPublic"}},{"kind":"Field","name":{"kind":"Name","value":"shareToken"}}]}}]} as unknown as DocumentNode<CreateSavedSearchMutation, CreateSavedSearchMutationVariables>;
 export const DeleteSavedSearchDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DeleteSavedSearch"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"DeleteByIdInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"deleteSavedSearch"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"deletedId"}}]}}]}}]} as unknown as DocumentNode<DeleteSavedSearchMutation, DeleteSavedSearchMutationVariables>;

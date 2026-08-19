@@ -72,6 +72,37 @@ function node(overrides: Record<string, unknown> = {}) {
   };
 }
 
+const GET_PLAN_DAY = gql(`
+  query GetPlanDay($from: DateTime!, $to: DateTime!) {
+    eventsInRange(from: $from, to: $to) {
+      id
+      title
+      startTime
+      endTime
+      eventType
+      taskId
+      status
+    }
+  }
+`);
+
+function dayBounds() {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+
+  return { from: start.toISOString(), to: end.toISOString() };
+}
+
+function dayMock(events: Array<Record<string, unknown>> = []) {
+  return {
+    request: { query: GET_PLAN_DAY, variables: dayBounds() },
+    result: { data: { eventsInRange: events } },
+    maxUsageCount: Number.POSITIVE_INFINITY,
+  };
+}
+
 function tasksMock(nodes: ReturnType<typeof node>[]) {
   return {
     request: { query: GET_TASKS, variables: { first: 200 } },
@@ -98,13 +129,13 @@ describe('PlanPage', () => {
 
   it('invites the user to add something when there is nothing planned and the empty state is enabled', async () => {
     featureState.emptyState = true;
-    renderWithProviders(<PlanPage />, { mocks: [tasksMock([])] });
+    renderWithProviders(<PlanPage />, { mocks: [tasksMock([]), dayMock()] });
 
     expect(await screen.findByText(/nothing planned yet/i)).toBeInTheDocument();
   });
 
   it('does not show the empty state when the feature flag is off', async () => {
-    renderWithProviders(<PlanPage />, { mocks: [tasksMock([])] });
+    renderWithProviders(<PlanPage />, { mocks: [tasksMock([]), dayMock()] });
 
     await screen.findByLabelText(/new task title/i);
     expect(screen.queryByText(/nothing planned yet/i)).not.toBeInTheDocument();
@@ -124,6 +155,7 @@ describe('PlanPage', () => {
           node({ id: 'b', title: 'Someday thing' }),
           node({ id: 'c', title: 'Finished thing', status: 'done' }),
         ]),
+        dayMock(),
       ],
     });
 
@@ -135,7 +167,7 @@ describe('PlanPage', () => {
 
   it('renders a completed task as checked and struck through', async () => {
     renderWithProviders(<PlanPage />, {
-      mocks: [tasksMock([node({ title: 'Finished thing', status: 'done' })])],
+      mocks: [tasksMock([node({ title: 'Finished thing', status: 'done' })]), dayMock()],
     });
 
     const checkbox = await screen.findByRole('checkbox', { name: /reopen finished thing/i });
@@ -149,6 +181,7 @@ describe('PlanPage', () => {
     renderWithProviders(<PlanPage />, {
       mocks: [
         tasksMock([node()]),
+        dayMock(),
         {
           request: { query: COMPLETE_TASK, variables: { id: 'dGFzazoxMTE=' } },
           result: {
@@ -176,7 +209,7 @@ describe('PlanPage', () => {
   });
 
   it('disables the add button until a title is typed', async () => {
-    renderWithProviders(<PlanPage />, { mocks: [tasksMock([])] });
+    renderWithProviders(<PlanPage />, { mocks: [tasksMock([]), dayMock()] });
 
     const button = await screen.findByRole('button', { name: /add/i });
 
@@ -188,11 +221,45 @@ describe('PlanPage', () => {
   });
 
   it('does not submit a whitespace-only title', async () => {
-    renderWithProviders(<PlanPage />, { mocks: [tasksMock([])] });
+    renderWithProviders(<PlanPage />, { mocks: [tasksMock([]), dayMock()] });
 
     await screen.findByLabelText(/new task title/i);
     fireEvent.change(screen.getByLabelText(/new task title/i), { target: { value: '   ' } });
 
     expect(screen.getByRole('button', { name: /add/i })).toBeDisabled();
+  });
+
+  it('shows an empty calendar strip and a Schedule button on open work', async () => {
+    renderWithProviders(<PlanPage />, { mocks: [tasksMock([node()]), dayMock()] });
+
+    expect(await screen.findByRole('heading', { name: /on the calendar/i })).toBeInTheDocument();
+    expect(screen.getByText(/nothing on the calendar yet/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^schedule$/i })).toBeInTheDocument();
+  });
+
+  it('renders committed time on the calendar strip', async () => {
+    const start = new Date();
+    start.setHours(10, 0, 0, 0);
+
+    renderWithProviders(<PlanPage />, {
+      mocks: [
+        tasksMock([]),
+        dayMock([
+          {
+            __typename: 'EventType',
+            id: 'evt-1',
+            title: 'Write the brief',
+            startTime: start.toISOString(),
+            endTime: new Date(start.getTime() + 30 * 60_000).toISOString(),
+            eventType: 'planned_block',
+            taskId: 'dGFzazoxMTE=',
+            status: 'planned',
+          },
+        ]),
+      ],
+    });
+
+    expect(await screen.findByText('Write the brief')).toBeInTheDocument();
+    expect(screen.getByText('Planned')).toBeInTheDocument();
   });
 });
