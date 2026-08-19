@@ -152,6 +152,16 @@
     "maxArchiveBytes": 107374182400,
     "databaseDataDir": ""
   },
+  "accountDeletion": {
+    "graceDays": 30,
+    "purge": {
+      "enabled": true,
+      "batchSize": 500,
+      "maxAccountsPerRun": 5,
+      "retryBackoffMinutes": 60,
+      "excludedColumns": []
+    }
+  },
   "enrichment": {
     "window": {
       "enabled": true,

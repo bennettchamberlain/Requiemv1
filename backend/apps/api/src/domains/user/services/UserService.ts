@@ -17,10 +17,10 @@ import { CreateUserDto, UpdateUserDto } from '../types';
  * Stamped onto the row when deletion is requested, so changing this value never moves
  * a deadline already promised to someone who has left.
  *
- * TODO: move to config once the background purge job exists — until something is
- * actually reading `purgeAfter` to delete rows, this is a promise, not a schedule.
+ * Now a real schedule rather than a promise: `AccountPurgeService` reads `purgeAfter`
+ * and destroys the data once it passes.
  */
-const PURGE_GRACE_DAYS = 30;
+const purgeGraceDays = () => config.accountDeletion.graceDays;
 
 @Injectable()
 export class UserService {
@@ -95,9 +95,9 @@ export class UserService {
    * revocation: `@DeleteDateColumn` makes every read on this repository skip the row,
    * so login, JWT, API-key and OIDC resolution all start failing on the next request
    * without any of them knowing this feature exists. The rows themselves are removed
-   * afterwards by the background purge, no earlier than `purgeAfter` — a hard delete
-   * here would raise a foreign-key violation anyway (33 tables reference users(id)
-   * with no ON DELETE action; see the migration).
+   * afterwards by `AccountPurgeService`, no earlier than `purgeAfter` — a hard delete
+   * here would raise a foreign-key violation anyway (eighteen constraints reference
+   * users(id) with no ON DELETE action; see the migration).
    *
    * Idempotent: a second request finds nothing (the first one hid the row) and
    * returns false rather than throwing.
@@ -113,7 +113,7 @@ export class UserService {
       return false;
     }
 
-    const purgeAfter = new Date(Date.now() + PURGE_GRACE_DAYS * 24 * 60 * 60 * 1000);
+    const purgeAfter = new Date(Date.now() + purgeGraceDays() * 24 * 60 * 60 * 1000);
 
     // One write, not `softDelete()` then `update()`: the access gate (`deletedAt`) and
     // the promise about when the data goes (`purgeAfter`) must never exist apart.
@@ -129,10 +129,11 @@ export class UserService {
   /**
    * Hard-delete a user row.
    *
-   * ⚠️ This is not the account-deletion path — use {@link requestDeletion}. It cannot
-   * succeed for any account that has stored anything: 33 tables reference users(id)
-   * with no ON DELETE action, so Postgres raises a foreign-key violation. It survives
-   * only because nothing calls it; the background purge will supersede it.
+   * ⚠️ This is not the account-deletion path — use {@link requestDeletion}, and see
+   * `AccountPurgeService` for the hard delete. It cannot succeed for any account that
+   * has stored anything: eighteen constraints reference users(id) with no ON DELETE
+   * action, so Postgres raises a foreign-key violation. It survives only because
+   * nothing calls it.
    */
   async remove(context: ServiceContext, id: string): Promise<boolean> {
     if (context.userId !== SYSTEM_USER && context.userId !== id) {

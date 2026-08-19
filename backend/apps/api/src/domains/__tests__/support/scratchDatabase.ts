@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { DataSource } from 'typeorm';
 
-import { isPortOpen, resolveConnection, type DatabaseAvailability } from './pipelineHarness';
+import { isPortOpen, resolveConnection, type DatabaseAvailability } from './databaseConnection';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -122,7 +122,7 @@ const MIGRATIONS_TABLE = 'public.schema_migrations';
  * The migrations, as dbmate orders them: by filename, which begins with the
  * UTC timestamp `yarn workspace @ci/be-api migrate:make` stamps.
  */
-const MIGRATIONS_DIR = path.resolve(__dirname, '../../../../../db/postgres/migrations');
+const MIGRATIONS_DIR = path.resolve(__dirname, '../../../../db/postgres/migrations');
 
 // ---------------------------------------------------------------------------
 // Connection resolution
