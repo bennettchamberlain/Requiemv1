@@ -1,4 +1,8 @@
-interface DayEvent {
+import { IconButton } from '@ci/shadcn';
+import { Pencil } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
+
+export interface DayEvent {
   id: string;
   title?: string | null;
   startTime: string;
@@ -7,11 +11,18 @@ interface DayEvent {
   taskId?: string | null;
 }
 
+interface Props {
+  events: DayEvent[];
+  onEdit?: (event: DayEvent) => void;
+}
+
 function formatClock(iso: string): string {
   return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(new Date(iso));
 }
 
-export function DaySchedule({ events }: { events: DayEvent[] }) {
+export function DaySchedule({ events, onEdit }: Props) {
+  const { t } = useTranslation();
+
   if (events.length === 0) {
     return (
       <section className="rounded-lg border border-dashed border-border px-4 py-3">
@@ -33,18 +44,28 @@ export function DaySchedule({ events }: { events: DayEvent[] }) {
         {sorted.map((event) => {
           const planned = event.eventType === 'planned_block';
           const end = event.endTime ? `–${formatClock(event.endTime)}` : '';
+          const title = event.title || 'Untitled';
 
           return (
             <li
               key={event.id}
-              className="flex items-baseline gap-3 rounded-md border border-border bg-card px-3 py-2 text-sm"
+              className="flex items-center gap-3 rounded-md border border-border bg-card px-3 py-2 text-sm"
             >
               <span className="shrink-0 tabular-nums text-muted-foreground">
                 {formatClock(event.startTime)}
                 {end}
               </span>
-              <span className="min-w-0 flex-1 truncate font-medium">{event.title || 'Untitled'}</span>
+              <span className="min-w-0 flex-1 truncate font-medium">{title}</span>
               {planned ? <span className="shrink-0 text-xs text-teal-600 dark:text-teal-400">Planned</span> : null}
+              {onEdit ? (
+                <IconButton
+                  variant="ghost"
+                  label={t('PLAN_EVENT_EDIT', { title })}
+                  onClick={() => onEdit(event)}
+                >
+                  <Pencil className="h-4 w-4" />
+                </IconButton>
+              ) : null}
             </li>
           );
         })}

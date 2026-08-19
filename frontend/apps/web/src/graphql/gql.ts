@@ -152,6 +152,9 @@ type Documents = {
     "\n  mutation ConfirmKnownPlace($input: UpdateKnownPlaceInput!) {\n    updateKnownPlace(input: $input) {\n      id\n      label\n      kind\n    }\n  }\n": typeof types.ConfirmKnownPlaceDocument,
     "\n  mutation DeleteTask($input: DeleteByIdInput!) {\n    deleteTask(input: $input) {\n      success\n      deletedId\n    }\n  }\n": typeof types.DeleteTaskDocument,
     "\n  query ListTasksForTest {\n    tasks(first: 10) {\n      edges {\n        node {\n          id\n          title\n        }\n      }\n    }\n  }\n": typeof types.ListTasksForTestDocument,
+    "\n  mutation UpdatePlanDayEvent($input: UpdateEventInput!) {\n    updateEvent(input: $input) {\n      id\n      title\n      startTime\n      endTime\n      eventType\n      taskId\n      status\n    }\n  }\n": typeof types.UpdatePlanDayEventDocument,
+    "\n  mutation UpdatePlanDayEventTask($input: UpdateTaskInput!) {\n    updateTask(input: $input) {\n      success\n      task {\n        id\n        title\n        scheduledFor\n        estimatedMinutes\n      }\n    }\n  }\n": typeof types.UpdatePlanDayEventTaskDocument,
+    "\n  mutation UpdateTask($input: UpdateTaskInput!) {\n    updateTask(input: $input) {\n      success\n      task {\n        id\n        ...TaskRowFragment\n      }\n    }\n  }\n": typeof types.UpdateTaskDocument,
     "\n  mutation CreateTask($input: CreateTaskInput!) {\n    createTask(input: $input) {\n      success\n      task {\n        id\n        ...TaskRowFragment\n      }\n    }\n  }\n": typeof types.CreateTaskDocument,
     "\n  query GetTasks($first: Int, $after: String) {\n    tasks(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          status\n          priority\n          parentId\n          dueAt\n          scheduledFor\n          deferUntil\n          title\n          ...TaskRowFragment\n        }\n      }\n      totalCount\n    }\n    taskPendingChanges {\n      id\n      taskId\n      kind\n      rationale\n      confidence\n      status\n    }\n  }\n": typeof types.GetTasksDocument,
     "\n  mutation CompleteTask($id: ID!) {\n    completeTask(id: $id) {\n      id\n      status\n      completedAt\n    }\n  }\n": typeof types.CompleteTaskDocument,
@@ -317,6 +320,9 @@ const documents: Documents = {
     "\n  mutation ConfirmKnownPlace($input: UpdateKnownPlaceInput!) {\n    updateKnownPlace(input: $input) {\n      id\n      label\n      kind\n    }\n  }\n": types.ConfirmKnownPlaceDocument,
     "\n  mutation DeleteTask($input: DeleteByIdInput!) {\n    deleteTask(input: $input) {\n      success\n      deletedId\n    }\n  }\n": types.DeleteTaskDocument,
     "\n  query ListTasksForTest {\n    tasks(first: 10) {\n      edges {\n        node {\n          id\n          title\n        }\n      }\n    }\n  }\n": types.ListTasksForTestDocument,
+    "\n  mutation UpdatePlanDayEvent($input: UpdateEventInput!) {\n    updateEvent(input: $input) {\n      id\n      title\n      startTime\n      endTime\n      eventType\n      taskId\n      status\n    }\n  }\n": types.UpdatePlanDayEventDocument,
+    "\n  mutation UpdatePlanDayEventTask($input: UpdateTaskInput!) {\n    updateTask(input: $input) {\n      success\n      task {\n        id\n        title\n        scheduledFor\n        estimatedMinutes\n      }\n    }\n  }\n": types.UpdatePlanDayEventTaskDocument,
+    "\n  mutation UpdateTask($input: UpdateTaskInput!) {\n    updateTask(input: $input) {\n      success\n      task {\n        id\n        ...TaskRowFragment\n      }\n    }\n  }\n": types.UpdateTaskDocument,
     "\n  mutation CreateTask($input: CreateTaskInput!) {\n    createTask(input: $input) {\n      success\n      task {\n        id\n        ...TaskRowFragment\n      }\n    }\n  }\n": types.CreateTaskDocument,
     "\n  query GetTasks($first: Int, $after: String) {\n    tasks(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          status\n          priority\n          parentId\n          dueAt\n          scheduledFor\n          deferUntil\n          title\n          ...TaskRowFragment\n        }\n      }\n      totalCount\n    }\n    taskPendingChanges {\n      id\n      taskId\n      kind\n      rationale\n      confidence\n      status\n    }\n  }\n": types.GetTasksDocument,
     "\n  mutation CompleteTask($id: ID!) {\n    completeTask(id: $id) {\n      id\n      status\n      completedAt\n    }\n  }\n": types.CompleteTaskDocument,
@@ -898,6 +904,18 @@ export function gql(source: "\n  mutation DeleteTask($input: DeleteByIdInput!) {
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "\n  query ListTasksForTest {\n    tasks(first: 10) {\n      edges {\n        node {\n          id\n          title\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query ListTasksForTest {\n    tasks(first: 10) {\n      edges {\n        node {\n          id\n          title\n        }\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation UpdatePlanDayEvent($input: UpdateEventInput!) {\n    updateEvent(input: $input) {\n      id\n      title\n      startTime\n      endTime\n      eventType\n      taskId\n      status\n    }\n  }\n"): (typeof documents)["\n  mutation UpdatePlanDayEvent($input: UpdateEventInput!) {\n    updateEvent(input: $input) {\n      id\n      title\n      startTime\n      endTime\n      eventType\n      taskId\n      status\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation UpdatePlanDayEventTask($input: UpdateTaskInput!) {\n    updateTask(input: $input) {\n      success\n      task {\n        id\n        title\n        scheduledFor\n        estimatedMinutes\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation UpdatePlanDayEventTask($input: UpdateTaskInput!) {\n    updateTask(input: $input) {\n      success\n      task {\n        id\n        title\n        scheduledFor\n        estimatedMinutes\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation UpdateTask($input: UpdateTaskInput!) {\n    updateTask(input: $input) {\n      success\n      task {\n        id\n        ...TaskRowFragment\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation UpdateTask($input: UpdateTaskInput!) {\n    updateTask(input: $input) {\n      success\n      task {\n        id\n        ...TaskRowFragment\n      }\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

@@ -161,7 +161,7 @@ describe('PlanPage', () => {
 
     expect(await screen.findByText('Overdue thing')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /overdue/i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /someday/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /potential upcoming/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /done/i })).toBeInTheDocument();
   });
 
@@ -234,7 +234,10 @@ describe('PlanPage', () => {
 
     expect(await screen.findByRole('heading', { name: /on the calendar/i })).toBeInTheDocument();
     expect(screen.getByText(/nothing on the calendar yet/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^schedule$/i })).toBeInTheDocument();
+    const schedule = screen.getByRole('button', { name: /^schedule$/i });
+    expect(schedule).toBeInTheDocument();
+    expect(schedule).toHaveClass('ci-primary-surface');
+    expect(screen.getByRole('button', { name: /edit write the migration/i })).toBeInTheDocument();
   });
 
   it('renders committed time on the calendar strip', async () => {
@@ -261,5 +264,34 @@ describe('PlanPage', () => {
 
     expect(await screen.findByText('Write the brief')).toBeInTheDocument();
     expect(screen.getByText('Planned')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /edit write the brief/i })).toBeInTheDocument();
+  });
+
+  it('opens the calendar item editor from the day strip', async () => {
+    const start = new Date();
+    start.setHours(10, 0, 0, 0);
+
+    renderWithProviders(<PlanPage />, {
+      mocks: [
+        tasksMock([]),
+        dayMock([
+          {
+            __typename: 'EventType',
+            id: 'evt-1',
+            title: 'Write the brief',
+            startTime: start.toISOString(),
+            endTime: new Date(start.getTime() + 30 * 60_000).toISOString(),
+            eventType: 'planned_block',
+            taskId: 'dGFzazoxMTE=',
+            status: 'planned',
+          },
+        ]),
+      ],
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /edit write the brief/i }));
+
+    expect(await screen.findByRole('dialog', { name: /edit calendar item/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/^title$/i)).toHaveValue('Write the brief');
   });
 });

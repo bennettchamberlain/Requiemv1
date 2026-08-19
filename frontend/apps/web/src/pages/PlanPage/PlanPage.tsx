@@ -8,8 +8,10 @@ import { useFeatures } from '@/common/feature';
 import { PageContent } from '@/components/layout';
 import { gql } from '@/graphql';
 
-import { DaySchedule } from './DaySchedule';
+import { DaySchedule, type DayEvent } from './DaySchedule';
 import { DeleteTaskModal } from './DeleteTaskModal';
+import { EditEventModal } from './EditEventModal';
+import { EditTaskModal, type EditableTask } from './EditTaskModal';
 import { NewTaskForm } from './NewTaskForm';
 import { Task } from './Task';
 import {
@@ -168,6 +170,8 @@ export function PlanPage() {
   const [declinePending] = useMutation(DECLINE_PENDING);
   const [scheduleTask] = useMutation(SCHEDULE_TASK);
   const [focusedTask, setFocusedTask] = useState<string | null>(null);
+  const [editingTask, setEditingTask] = useState<EditableTask | null>(null);
+  const [editingEvent, setEditingEvent] = useState<DayEvent | null>(null);
 
   const pendingByTask = useMemo(() => {
     const map = new Map<string, { id: string; rationale: string | null; kind: string }>();
@@ -212,6 +216,13 @@ export function PlanPage() {
     setFocusedTask(id);
   };
 
+  const handleEdit = (e: React.MouseEvent, task: EditableTask) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    setEditingTask(task);
+  };
+
   const refresh = () => {
     void refetch();
     void refetchDay();
@@ -234,6 +245,7 @@ export function PlanPage() {
         depth={depth}
         onToggle={handleToggle}
         onDelete={handleDelete}
+        onEdit={handleEdit}
         onAcceptProposed={(id) => void acceptProposed({ variables: { id } }).then(refresh)}
         onDeclineProposed={(id) => void declineProposed({ variables: { id } }).then(refresh)}
         onAcceptAndSchedule={handleAcceptAndSchedule}
@@ -285,7 +297,7 @@ export function PlanPage() {
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
           <NewTaskForm onCreated={() => void refetch()} />
 
-          <DaySchedule events={dayData?.eventsInRange ?? []} />
+          <DaySchedule events={dayData?.eventsInRange ?? []} onEdit={setEditingEvent} />
 
           {/* `relative` scopes the loading and empty states, both of which
               position themselves `absolute inset-0`. Without a positioned
@@ -296,6 +308,12 @@ export function PlanPage() {
       </PageContent>
 
       {focusedTask && <DeleteTaskModal taskId={focusedTask} onClose={() => setFocusedTask(null)} />}
+      {editingTask && (
+        <EditTaskModal task={editingTask} onClose={() => setEditingTask(null)} onSaved={refresh} />
+      )}
+      {editingEvent && (
+        <EditEventModal event={editingEvent} onClose={() => setEditingEvent(null)} onSaved={refresh} />
+      )}
     </>
   );
 }
