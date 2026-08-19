@@ -1,6 +1,19 @@
-import { Card } from '@ci/shadcn';
+import { useMemo } from 'react';
+
+import { Card, cn } from '@ci/shadcn';
 
 import type { ForecastBucket } from '@/api/useForecastService';
+import { l0Background } from '@/components/ForecastStrip/ForecastStrip';
+import { normalizeClass } from '@/lib/activityPalette';
+
+import {
+  HEATMAP_COLUMNS,
+  MINUTES_PER_SLOT,
+  buildHeatmapRows,
+  formatClock,
+  tallyDivergence,
+  type HeatmapCell,
+} from './heatmapModel';
 
 type MetricForecast = {
   metric: string;
@@ -13,6 +26,7 @@ type HistoryDay = {
   buckets: Array<{
     bucketIndex: number;
     predictedL0: Array<{ label: string; probability: number }>;
+    actualL0?: string | null;
   }>;
 };
 
@@ -223,6 +237,174 @@ export function CalibrationPanel({ calibration }: { calibration: Calibration | n
         {calibration.latest.driftFlag && (
           <div className="text-destructive">Self-consistency has drifted below its recent baseline.</div>
         )}
+      </Card.Content>
+    </Card>
+  );
+}
+
+// ── Divergence heatmap ────────────────────────────────────────────────────────
+
+/** One label per three hours; 48 tick labels collide at any card width. */
+const COLUMN_LABEL_EVERY = 6;
+
+/**
+ * Cell hue comes from the shared activity palette, exactly as the strip above
+ * does, so WORK is one colour across the whole page.
+ */
+function cellColor(label: string): string {
+  return l0Background(normalizeClass(label));
+}
+
+function cellTitle(cell: HeatmapCell, rowLabel: string): string {
+  const window = `${rowLabel} ${formatClock(cell.localMin)}–${formatClock(cell.localMin + MINUTES_PER_SLOT)}`;
+  const probability = cell.predictedProbs.find((entry) => entry.label === cell.predictedDominant);
+  const confidence = `${Math.round((probability?.probability ?? 0) * 100)}%`;
+
+  if (cell.kind === 'predicted') {
+    return `${window}: predicted ${cell.predictedDominant} (${confidence})`;
+  }
+
+  if (!cell.predictedDominant) {
+    return `${window}: ${cell.actualL0} — nothing was predicted for this slot`;
+  }
+
+  return cell.divergent
+    ? `${window}: predicted ${cell.predictedDominant} (${confidence}), actually ${cell.actualL0} — missed`
+    : `${window}: ${cell.actualL0}, as predicted (${confidence})`;
+}
+
+function HeatmapCellView({ cell, rowLabel }: { cell: HeatmapCell | null; rowLabel: string }) {
+  if (!cell) {
+    return <div className="h-5 bg-muted-foreground/10" />;
+  }
+
+  return (
+    <div
+      // A native title rather than 300-odd Radix tooltip roots: this grid is an
+      // order of magnitude denser than the strip above, and its accessible
+      // reading is carried by the summary line and the grid's aria-label.
+      title={cellTitle(cell, rowLabel)}
+      className={cn('h-5 cursor-default', cell.divergent && 'ring-2 ring-inset ring-foreground')}
+      style={{ backgroundColor: cellColor(cell.colorLabel), opacity: cell.opacity }}
+      data-testid={cell.divergent ? 'heatmap-cell-divergent' : 'heatmap-cell'}
+    />
+  );
+}
+
+/**
+ * Where the model was wrong.
+ *
+ * "Forecast trust" reports top-1 match and ECE — one number for how often the
+ * model is right, with no way to see WHICH hours it misses. This grid puts each
+ * logged day on a row of 48 half-hours: past days render the class that actually
+ * happened, ringed wherever the model's dominant class disagreed; then a seam;
+ * then the day ahead at confidence opacity. A ring that keeps landing at 6pm
+ * says something an aggregate ECE never can.
+ *
+ * Rows are the model's forecast days (HBPE logs and bins by UTC); columns are
+ * the viewer's local clock — the same display-only reordering the strip above
+ * applies. See heatmapModel.ts.
+ */
+export function DivergenceHeatmapPanel({
+  historyDays = [],
+  buckets = [],
+  className,
+}: {
+  historyDays?: HistoryDay[];
+  buckets?: ForecastBucket[];
+  className?: string;
+}) {
+  const rows = useMemo(
+    () =>
+      buildHeatmapRows(
+        historyDays.map((day) => ({
+          date: day.date,
+          buckets: day.buckets.map((slot) => ({
+            bucketIndex: slot.bucketIndex,
+            predictedL0: slot.predictedL0,
+            actualL0: slot.actualL0 ?? null,
+          })),
+        })),
+        buckets,
+      ),
+    [historyDays, buckets],
+  );
+
+  const { scored, missed } = useMemo(() => tallyDivergence(rows), [rows]);
+  const firstAhead = rows.findIndex((row) => row.kind === 'ahead');
+
+  // Nothing logged and nothing forecast — "Forecast trust" already says the
+  // engine is cold, so an empty grid would only repeat it.
+  if (rows.length === 0) {
+    return null;
+  }
+
+  const summary =
+    scored === 0
+      ? 'No half-hours scored yet — rings appear once the nightly actuals backfill has run.'
+      : `Missed ${missed} of ${scored} scored half-hours (${Math.round((missed / scored) * 100)}%).`;
+
+  return (
+    <Card className={className}>
+      <Card.Header>
+        <Card.Title>Where it was wrong</Card.Title>
+        <Card.Description>
+          Each row is a forecast day, each cell a half-hour on your local clock. Past days show what actually
+          happened; a ring marks a half-hour the model called differently.
+        </Card.Description>
+      </Card.Header>
+      <Card.Content className="flex flex-col gap-3">
+        <div
+          role="img"
+          aria-label={`Prediction divergence heatmap across ${rows.length} days. ${summary}`}
+          className="grid items-center gap-x-2 gap-y-1"
+          style={{ gridTemplateColumns: 'auto minmax(0, 1fr)' }}
+        >
+          <div />
+          <div
+            className="grid text-[9px] text-muted-foreground"
+            style={{ gridTemplateColumns: `repeat(${HEATMAP_COLUMNS}, minmax(0, 1fr))` }}
+          >
+            {Array.from({ length: HEATMAP_COLUMNS }, (_, column) => (
+              <span key={column} className="whitespace-nowrap">
+                {column % COLUMN_LABEL_EVERY === 0 ? formatClock(column * MINUTES_PER_SLOT) : ''}
+              </span>
+            ))}
+          </div>
+
+          {rows.map((row, index) => (
+            <div key={row.key} className="contents">
+              {index === firstAhead && index > 0 && (
+                <>
+                  <div />
+                  <div className="flex items-center gap-2 py-0.5" role="separator">
+                    <span className="text-[9px] uppercase tracking-wide text-muted-foreground">observed</span>
+                    <div className="flex-1 border-t border-dashed border-border" />
+                    <span className="text-[9px] uppercase tracking-wide text-muted-foreground">forecast</span>
+                  </div>
+                </>
+              )}
+
+              <div className="whitespace-nowrap pr-1 text-right text-[10px] text-muted-foreground">
+                {row.label}
+              </div>
+              <div
+                className="grid gap-px overflow-hidden rounded-sm"
+                style={{ gridTemplateColumns: `repeat(${HEATMAP_COLUMNS}, minmax(0, 1fr))` }}
+              >
+                {row.cells.map((cell, column) => (
+                  <HeatmapCellView key={column} cell={cell} rowLabel={row.label} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <p className="text-sm text-muted-foreground">{summary}</p>
+        <p className="text-[10px] text-muted-foreground">
+          Solid cells are observed. Faded cells are predictions — the fainter the cell, the less sure the
+          model was.
+        </p>
       </Card.Content>
     </Card>
   );
