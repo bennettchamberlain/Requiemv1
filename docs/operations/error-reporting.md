@@ -121,7 +121,7 @@ Each component still gets its own DSN variable, and every event carries a
 |---|---|---|
 | `backend/apps/api` | `ci-server-api` | `SENTRY_DSN_API` |
 | `frontend/apps/web` | `ci-server-web` | `VITE_SENTRY_DSN` (build time) |
-| `frontend/apps/mobile` | `ci-server-mobile` | `VITE_SENTRY_DSN` (build time — same bundle) |
+| `frontend/apps/ios` / `frontend/apps/android` | `ci-server-mobile` | `VITE_SENTRY_DSN` (build time — same `@ci/fe-web` bundle) |
 | `backend/apps/hbpe` | `ci-server-hbpe` | `SENTRY_DSN_HBPE` |
 | `backend/apps/summary` | `ci-server-summary` | `SENTRY_DSN_SUMMARY` |
 

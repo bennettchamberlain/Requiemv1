@@ -9,7 +9,7 @@
 # fetched some other way before the App target can build.
 #
 # Run this once before opening the Xcode project (or building via xcodebuild):
-#   frontend/apps/mobile/ios/App/Frameworks/fetch-clitertlm-xcframework.sh
+#   frontend/apps/ios/ios/App/Frameworks/fetch-clitertlm-xcframework.sh
 
 set -euo pipefail
 

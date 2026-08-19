@@ -56,7 +56,7 @@ const FOCUS_AREAS: Record<string, FocusAreaMetadata> = {
     // (captureFocusAreas below) — a stated interest, nothing measured. Copy
     // implying the app tracks workouts or monitors progress would overstate the
     // product and jeopardise the Play "no health features" certification; see
-    // frontend/apps/mobile/GOOGLE_HEALTH_DECLARATION.md.
+    // frontend/apps/ios/GOOGLE_HEALTH_DECLARATION.md (Android copy in apps/android).
     description: 'Organize workout notes, routines, and goals so your training context stays in one place',
   },
   nutrition: {

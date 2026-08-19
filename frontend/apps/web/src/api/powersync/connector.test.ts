@@ -82,7 +82,8 @@ describe('GraphQLBackendConnector.fetchCredentials', () => {
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
 
-    expect(url).toBe('/api/powersync/token');
+    expect(url).toContain('/api/powersync/token');
+    expect(url).toContain('cutoff=');
     expect((init.headers as Record<string, string>).authorization).toBe('Bearer jwt-abc');
   });
 
@@ -105,6 +106,13 @@ describe('GraphQLBackendConnector.fetchCredentials', () => {
     const connector = new GraphQLBackendConnector(() => 'jwt-abc');
 
     await expect(connector.fetchCredentials()).rejects.toThrow('500');
+  });
+
+  it('returns null on 503 so the app stays GraphQL-only', async () => {
+    stubFetch(jsonResponse({}, false, 503));
+    const connector = new GraphQLBackendConnector(() => 'jwt-abc');
+
+    await expect(connector.fetchCredentials()).resolves.toBeNull();
   });
 });
 

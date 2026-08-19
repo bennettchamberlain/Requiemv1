@@ -281,5 +281,5 @@ Beyond "publish a privacy policy," a personal-data client needs: **controller/pr
 ---
 
 _Audit basis: 5-dimension review + completeness critic, 2026-07-15, against the branch at
-`frontend/apps/mobile`. Store policies change frequently — re-verify Apple App Review
+`frontend/apps/ios`. Store policies change frequently — re-verify Apple App Review
 Guidelines and Google Play policies at submission time._

@@ -3,8 +3,8 @@
  * runs inside the native shell. Plugins are reached through the runtime
  * `window.Capacitor.Plugins` bridge that Capacitor injects — deliberately NOT via
  * `@capacitor/*` imports — so the web bundle never pulls in native dependencies.
- * The native shell (frontend/apps/mobile) declares the actual plugin packages so
- * they are present at runtime.
+ * The native shells (`frontend/apps/ios` and `frontend/apps/android`) declare the
+ * actual plugin packages so they are present at runtime.
  *
  * Every function degrades gracefully on web (no `window.Capacitor`): secure storage
  * falls back to `localStorage`, and external links fall back to a normal navigation.

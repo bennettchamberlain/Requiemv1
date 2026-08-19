@@ -186,6 +186,7 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ['@ci/shadcn', 'react', 'react-dom', 'react-router-dom'],
+    exclude: ['@powersync/capacitor', '@capacitor-community/sqlite'],
   },
   worker: {
     // @powersync/web ships its SQLite worker as an ES module; the default

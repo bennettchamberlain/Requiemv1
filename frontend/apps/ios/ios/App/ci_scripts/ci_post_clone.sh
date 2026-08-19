@@ -16,7 +16,7 @@
 
 set -eu
 
-# Six levels up: ci_scripts → App → ios → mobile → apps → frontend → repo root.
+# Six levels up: ci_scripts → App → ios → ios-package → apps → frontend → repo root.
 REPO_ROOT="${CI_PRIMARY_REPOSITORY_PATH:-$(cd "$(dirname "$0")/../../../../../.." && pwd)}"
 
 TARGET="$REPO_ROOT/ci_scripts/ci_post_clone.sh"

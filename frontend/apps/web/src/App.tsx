@@ -67,6 +67,7 @@ const SearchPage = lazy(() => import('@/pages/SearchPage'));
 const FilesPage = lazy(() => import('@/pages/FilesPage'));
 const SavedSearchesPage = lazy(() => import('@/pages/SavedSearchesPage'));
 const ServerSettingsPage = lazy(() => import('@/pages/ServerSettingsPage'));
+const DeviceConnectPage = lazy(() => import('@/pages/DeviceConnectPage'));
 const SharedSearchPage = lazy(() => import('@/pages/SharedSearchPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 const StatsPage = lazy(() => import('@/pages/StatsPage'));
@@ -154,11 +155,14 @@ function AppRoutes() {
   useLocationTracking();
 
   // On the native app the API origin must be configured before anything else can
-  // load. If we're running natively with no server set, route to the setup screen.
-  // Inert on web (isNativePlatform() is false there).
+  // load. Route to `/device-connect` (Portal picker). `/server` is Advanced URL
+  // entry. `/connect` is Sources and must not be used here.
   useEffect(() => {
-    if (isNativePlatform() && !getApiBaseUrl() && location.pathname !== '/server') {
-      navigate('/server', { replace: true });
+    const pairing =
+      location.pathname === '/device-connect' || location.pathname === '/server';
+
+    if (isNativePlatform() && !getApiBaseUrl() && !pairing) {
+      navigate('/device-connect', { replace: true });
     }
   }, [location.pathname, navigate]);
 
@@ -193,6 +197,7 @@ function AppRoutes() {
         />
 
         <Route element={<CenteredLayout />}>
+          <Route path="/device-connect" element={<DeviceConnectPage />} />
           <Route path="/server" element={<ServerSettingsPage />} />
 
           <Route

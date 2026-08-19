@@ -65,7 +65,7 @@ gradle.taskGraph.whenReady { graph ->
             "Set ANDROID_KEYSTORE_PATH (to an existing .jks), ANDROID_KEYSTORE_PASSWORD, " +
             "ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD.\n" +
             "In CI these come from the repo secrets listed in " +
-            "frontend/apps/mobile/README.md -> 'Store releases'.\n" +
+            "frontend/apps/android/README.md -> 'Store releases'.\n" +
             "For a local sideload build use ./gradlew assembleDebug instead."
         )
     }

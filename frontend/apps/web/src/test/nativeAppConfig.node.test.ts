@@ -41,12 +41,13 @@ function repoRoot(): string {
 }
 
 const ROOT = repoRoot();
-const MOBILE = join(ROOT, 'frontend/apps/mobile');
+const IOS = join(ROOT, 'frontend/apps/ios');
+const ANDROID = join(ROOT, 'frontend/apps/android');
 
 const read = (relative: string) => readFileSync(join(ROOT, relative), 'utf8');
 
-const infoPlist = () => readFileSync(join(MOBILE, 'ios/App/App/Info.plist'), 'utf8');
-const androidManifest = () => readFileSync(join(MOBILE, 'android/app/src/main/AndroidManifest.xml'), 'utf8');
+const infoPlist = () => readFileSync(join(IOS, 'ios/App/App/Info.plist'), 'utf8');
+const androidManifest = () => readFileSync(join(ANDROID, 'android/app/src/main/AndroidManifest.xml'), 'utf8');
 
 describe('native app config — OIDC deep-link scheme stays in sync', () => {
   it('iOS registers the scheme in CFBundleURLSchemes', () => {
@@ -81,7 +82,7 @@ describe('native app config — OIDC deep-link scheme stays in sync', () => {
 
 describe('native app config — store-required settings are not silently reverted', () => {
   it('ships an Apple Privacy Manifest declaring required-reason APIs', () => {
-    const manifestPath = join(MOBILE, 'ios/App/App/PrivacyInfo.xcprivacy');
+    const manifestPath = join(IOS, 'ios/App/App/PrivacyInfo.xcprivacy');
     expect(existsSync(manifestPath)).toBe(true);
 
     const privacy = readFileSync(manifestPath, 'utf8');
@@ -95,7 +96,7 @@ describe('native app config — store-required settings are not silently reverte
   it('the Privacy Manifest is wired into the Xcode target (not just present on disk)', () => {
     // A file that is not in Copy-Bundle-Resources never reaches the built app, so the
     // upload is rejected exactly as if it did not exist.
-    const pbxproj = readFileSync(join(MOBILE, 'ios/App/App.xcodeproj/project.pbxproj'), 'utf8');
+    const pbxproj = readFileSync(join(IOS, 'ios/App/App.xcodeproj/project.pbxproj'), 'utf8');
 
     expect(pbxproj).toContain('PrivacyInfo.xcprivacy in Resources');
   });
@@ -123,6 +124,25 @@ describe('native app config — store-required settings are not silently reverte
 
   it('disables Android backup so a private memory app is not copied to cloud/adb backup', () => {
     expect(androidManifest()).toContain('android:allowBackup="false"');
+  });
+
+  it('ships iOS and Android as separate Capacitor packages', () => {
+    expect(JSON.parse(readFileSync(join(IOS, 'package.json'), 'utf8')).name).toBe('@ci/fe-ios');
+    expect(JSON.parse(readFileSync(join(ANDROID, 'package.json'), 'utf8')).name).toBe('@ci/fe-android');
+    expect(existsSync(join(IOS, 'android'))).toBe(false);
+    expect(existsSync(join(ANDROID, 'ios'))).toBe(false);
+    expect(existsSync(join(ROOT, 'frontend/apps/mobile/capacitor.config.ts'))).toBe(false);
+  });
+
+  it('does not request iOS Screen Time or full-library photo access', () => {
+    const plist = infoPlist();
+    const pbxproj = readFileSync(join(IOS, 'ios/App/App.xcodeproj/project.pbxproj'), 'utf8');
+
+    expect(plist).not.toContain('NSPhotoLibraryUsageDescription');
+    expect(plist).toContain('NSPhotoLibraryAddUsageDescription');
+    expect(plist).not.toContain('FamilyControls');
+    expect(pbxproj).not.toContain('DeviceActivity');
+    expect(androidManifest()).not.toContain('PACKAGE_USAGE_STATS');
   });
 
   it('keeps the iOS cleartext exception scoped to web content, not app-wide', () => {

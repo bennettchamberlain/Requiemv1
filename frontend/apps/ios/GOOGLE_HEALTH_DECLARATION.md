@@ -275,10 +275,10 @@ manifests via the merger):
 (`TTS_SERVICE`, `CustomTabsService`).
 
 > ⚠️ **Read the merged manifest, not the source one, when you fill in any Play declaration.**
-> `frontend/apps/mobile/android/app/src/main/AndroidManifest.xml:45-51` shows 6 permissions;
+> `frontend/apps/ios/android/app/src/main/AndroidManifest.xml:45-51` shows 6 permissions;
 > the build merges in 4 more. Declaring from the source file under-reports by 40%. The merged
 > output lands at
-> `frontend/apps/mobile/android/app/build/intermediates/merged_manifest/…/AndroidManifest.xml`.
+> `frontend/apps/ios/android/app/build/intermediates/merged_manifest/…/AndroidManifest.xml`.
 
 **Absent and confirmed absent:** `android.permission.health.*`, `BODY_SENSORS`,
 `BODY_SENSORS_BACKGROUND`, `ACTIVITY_RECOGNITION`, `FOREGROUND_SERVICE_HEALTH`, any
@@ -290,7 +290,7 @@ core-splashscreen and the eight Capacitor plugin projects — nothing else.
 ever syncs health in a foreground service, `DEVICE_DATA_COMPLIANCE.md` §3.1's note about an
 FGS `health` type declaration applies and this changes.
 
-**iOS purpose-string surface**, complete, from `frontend/apps/mobile/ios/App/App/Info.plist`:
+**iOS purpose-string surface**, complete, from `frontend/apps/ios/ios/App/App/Info.plist`:
 
 `NSCameraUsageDescription` (`:40`) · `NSMicrophoneUsageDescription` (`:42`) ·
 `NSSpeechRecognitionUsageDescription` (`:53`) · `NSPhotoLibraryAddUsageDescription` (`:55`)
@@ -300,7 +300,7 @@ No `com.apple.developer.healthkit` entitlement (there is no `App.entitlements` f
 `NSHealthShareUsageDescription`, no `NSHealthUpdateUsageDescription`, no
 `NSMotionUsageDescription`, no CoreMotion.
 
-**Capacitor plugin surface**, complete, from `frontend/apps/mobile/package.json:18-31`:
+**Capacitor plugin surface**, complete, from `frontend/apps/ios/package.json:18-31`:
 `@capacitor/{android,app,browser,core,ios,local-notifications,splash-screen,status-bar}`,
 `@ci/capacitor-{local-hub,local-llm,speech}`, `capacitor-secure-storage-plugin`. The lockfile
 resolves ~80 packages, **zero** matching health / fitness / motion / pedometer / Health
@@ -336,7 +336,7 @@ description: 'Plan meals, organize grocery lists, and align food choices with yo
 
 Reachable at `/onboarding` (`frontend/apps/web/src/App.tsx:151`) and **verified present in the
 web bundle checked in under
-`frontend/apps/mobile/android/app/src/main/assets/public/assets/`** — i.e. it is in the
+`frontend/apps/ios/android/app/src/main/assets/public/assets/`** — i.e. it is in the
 binary, not just the source tree.
 
 **What it actually is:** a checkbox of interest topics, stored as a preference answer that
@@ -669,10 +669,10 @@ In-repo, read 2026-08-13 — store status: [`DELIVERY.md`](./DELIVERY.md) §1a/�
 [`DEVICE_DATA_COMPLIANCE.md`](./DEVICE_DATA_COMPLIANCE.md) §3.1/§6.1/§6.2/§7/§9 ·
 `.github/workflows/mobile-build.yml:8,10`.
 
-Health-surface audit (§3): `frontend/apps/mobile/android/app/src/main/AndroidManifest.xml` +
+Health-surface audit (§3): `frontend/apps/ios/android/app/src/main/AndroidManifest.xml` +
 the generated merged manifest under `android/app/build/intermediates/merged_manifest/` ·
-`frontend/apps/mobile/ios/App/App/Info.plist` (+ absence of any `*.entitlements`) ·
-`frontend/apps/mobile/package.json`, `yarn.lock` ·
+`frontend/apps/ios/ios/App/App/Info.plist` (+ absence of any `*.entitlements`) ·
+`frontend/apps/ios/package.json`, `yarn.lock` ·
 `frontend/packages/capacitor-{local-hub,local-llm,speech}/**` ·
 `frontend/apps/web/src/pages/OnboardingPage/{FocusAreas,TimeAndPlaceStep}.tsx` ·
 `frontend/apps/web/src/lib/activityPalette.ts` · `frontend/apps/web/src/App.tsx` ·

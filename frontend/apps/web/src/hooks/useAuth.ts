@@ -16,6 +16,9 @@ import {
 import { jwtDecode } from 'jwt-decode';
 import { useNavigate, useLocation } from 'react-router-dom';
 
+import { disconnectAndClearPowerSync } from '@/api/powersync/session';
+import { registerNativePushToken } from '@/lib/registerNativePushToken';
+
 const authChannel = new BroadcastChannel('auth');
 
 // On native the durable credential is an API key kept in the OS keystore — the
@@ -348,6 +351,8 @@ function useAuth(): ReturnValue {
   );
 
   const logout = useCallback(async () => {
+    await disconnectAndClearPowerSync();
+
     if (isNativePlatform()) {
       // No cookie session to revoke. Clear the local credential; the API key stays
       // valid server-side (the /api/keys revoke endpoint is JWT-only, and we hold no
@@ -522,6 +527,14 @@ function useAuth(): ReturnValue {
       unsubscribe();
     };
   }, [navigate]);
+
+  useEffect(() => {
+    if (!isNativePlatform() || (!nativeApiKey && !accessToken)) {
+      return;
+    }
+
+    void registerNativePushToken();
+  }, [nativeApiKey, accessToken]);
 
   useEffect(() => {
     const handleAuthMessage = (event: MessageEvent) => {
