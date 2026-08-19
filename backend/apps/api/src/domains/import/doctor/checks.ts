@@ -239,7 +239,8 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
   {
     id: 'position-not-a-place-name',
     severity: 'high',
-    title: 'ci.position.name holding a coordinate pair, a media filename, a bare UUID stem, or a URI',
+    title:
+      'ci.position.name holding a coordinate pair, a media filename, a bare UUID stem, a URI, or a title',
     scope: 'ci.position',
     remedy:
       'A fake place name is strictly worse than no place name: it renders in the Places view as though ' +
@@ -263,7 +264,22 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
            AND (   btrim(name) ~* '\.(jpe?g|png|heic|heif|gif|mov|mp4|m4v|avi|webp|dng|tiff?)$'
                 OR btrim(name) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}([-_][0-9]+)?$'
                 OR btrim(name) ~* '^[a-z][a-z0-9+.-]*://\S+$'
-                OR btrim(name) ~* '^[[:space:]]*((location|position|coordinates?|coords?|point|waypoint|fix|gps)[[:space:]]*[-:]?[[:space:]]*)?[-+]?[0-9]{1,3}(\.[0-9]+)?[[:space:]]*,[[:space:]]*[-+]?[0-9]{1,3}(\.[0-9]+)?[[:space:]]*$')
+                OR btrim(name) ~* '^[[:space:]]*((location|position|coordinates?|coords?|point|waypoint|fix|gps)[[:space:]]*[-:]?[[:space:]]*)?[-+]?[0-9]{1,3}(\.[0-9]+)?[[:space:]]*,[[:space:]]*[-+]?[0-9]{1,3}(\.[0-9]+)?[[:space:]]*$'
+                -- A TITLE: prose, not a name. The fourth arm isNotAPlaceName
+                -- grew (isTitleText) and this check did not, so it reported a
+                -- clean bill of health for exactly the class that arm exists to
+                -- reject — an Uber trip sentence, a clipped tweet body. Copied
+                -- verbatim from NOT_A_PLACE_NAME_SQL in
+                -- PositionPlacePromoteStage so the three mirrors read alike:
+                -- U+2026 means the value is a PREFIX of longer text, !/?
+                -- mean it is a sentence, and more than MAX_PLACE_NAME_WORDS (14)
+                -- words is longer than any place name on this corpus. . and
+                -- @ stay out of the punctuation arm: 'A.G. Bartlett Building'
+                -- and 'On Jane Stanford Way @ Gilbert Biological Sciences' are
+                -- real names, and each is a live ci.position.name.
+                OR btrim(name) ~ '…$'
+                OR btrim(name) ~ '[!?]'
+                OR array_length(regexp_split_to_array(btrim(name), '\s+'), 1) > 14)
       )
       SELECT count(*)::bigint AS count,
              ${breakdownBy('source_system')} AS breakdown,

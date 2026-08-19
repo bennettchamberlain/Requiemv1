@@ -112,3 +112,37 @@ describe('doctor check registry', () => {
     expect(findCheck('comms-null-thread')).toBeUndefined();
   });
 });
+
+describe('position-not-a-place-name must not drift from the guard it mirrors', () => {
+  /**
+   * `isNotAPlaceName` has FOUR arms and its own docstring says so: "an arm added
+   * here needs its twin there". #2137 added the fourth (`isTitleText`) and
+   * updated NOT_A_PLACE_NAME_SQL in PositionPlacePromoteStage, but not this
+   * check — so the standing check reported a clean bill of health for exactly
+   * the class that arm exists to reject: an Uber trip sentence, a clipped tweet
+   * body.
+   *
+   * Asserted against the SQL text rather than a live database because the drift
+   * is what matters: a check missing an arm is silently, permanently blind, and
+   * nothing else in the tree notices.
+   */
+  const sql = () => findCheck('position-not-a-place-name')?.sql ?? '';
+
+  it('carries the coordinate, URI, media-filename and UUID arms', () => {
+    expect(sql()).toContain(String.raw`\.(jpe?g|png|heic`);
+    expect(sql()).toContain('[a-z][a-z0-9+.-]*://');
+    expect(sql()).toContain('[0-9a-f]{8}-[0-9a-f]{4}');
+  });
+
+  it('carries the title arm too — the one that drifted', () => {
+    // U+2026: the clip mark, meaning the value is a PREFIX of longer text.
+    expect(sql()).toContain('\u2026');
+    expect(sql()).toContain('[!?]');
+    expect(sql()).toContain('regexp_split_to_array');
+  });
+
+  it('bounds place names at the same 14 words the guard does', () => {
+    // A different number here is drift wearing the right shape.
+    expect(sql()).toMatch(/regexp_split_to_array\([^)]*\)[^>]*>\s*14/);
+  });
+});
