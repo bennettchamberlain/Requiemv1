@@ -68,6 +68,7 @@ describeWithDatabase(
         dataSource,
         { ingest: async () => ({ entities: [], errors: [] }) } as never,
         { getProfile: async () => ({ trustMode: 'balanced' }) } as never,
+        { extract: async () => null } as never,
         {
           setContext: () => undefined,
           log: () => undefined,
