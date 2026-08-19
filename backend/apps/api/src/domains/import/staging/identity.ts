@@ -60,6 +60,42 @@ export function normalizeHandle(value: unknown): string {
 }
 
 /**
+ * A value made of nothing but digits and the punctuation phone numbers are
+ * written with. Used to tell a phone FIELD from a name that happens to contain
+ * a digit, before asking how long the number is.
+ */
+const PHONE_SHAPED = /^[+()\-./\s\d]+$/;
+
+/**
+ * True when a phone-shaped value is an SMS SHORT CODE — the three-to-six digit
+ * number a service texts from ("411", "32665", "227898", "+411") rather than a
+ * line a person can be reached on.
+ *
+ * Defined as "phone-shaped, but too short for {@link normalizeHandle} to key
+ * on" rather than by a digit count of its own, so there is exactly ONE
+ * threshold in the file. If that threshold ever moves, a number stops being a
+ * short code on precisely the day it starts being a handle, instead of leaving
+ * a band that is neither.
+ *
+ * A value carrying no digits is a NAME, not a short number, and is not a short
+ * code: the distinction drawn here is between two kinds of phone. An email is
+ * excluded for the same reason — `normalizeHandle` keys it, so it is a handle.
+ */
+export function isShortCode(value: unknown): boolean {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const trimmed = value.trim();
+
+  if (!PHONE_SHAPED.test(trimmed)) {
+    return false;
+  }
+
+  return trimmed.replace(/\D/g, '').length > 0 && normalizeHandle(trimmed) === '';
+}
+
+/**
  * The normalized identity handles an entity carries — drawn from exactly the
  * attributes {@link hasContactIdentity} treats as a contact signal. Kept in
  * lockstep with it so every entity that resolves to 'contact' via an identity

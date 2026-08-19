@@ -189,6 +189,7 @@ export {
   entityKey,
   hasContactIdentity,
   hashItem,
+  isShortCode,
   mergeAccumulatedMetadata,
   normalizeHandle,
   resolveEntityType,
