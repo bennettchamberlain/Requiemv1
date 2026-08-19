@@ -5,6 +5,8 @@ import path from 'node:path';
 
 import { stripCallLogHeading } from '@ci/domains/graph';
 
+import { isShortCode } from '../staging/identity';
+
 import type { FileImporter, Recognition, DirEntry } from './registry';
 import { registerDataSource } from './registry';
 import type { ImportParams, EntityAttribute, Relationship } from './timeline';
@@ -14,6 +16,42 @@ type GoogleVoiceOptions = Record<string, never>;
 interface GVEntity {
   name?: string;
   phone?: string;
+}
+
+/**
+ * The staged `type` for one end of a Google Voice conversation.
+ *
+ * Declared here rather than left to `resolveEntityType`, whose
+ * `hasContactIdentity` fallback infers 'contact' only from an attribute long
+ * enough to be a HANDLE. Every participant this file stages carries at most a
+ * phone, so the ones whose number is too short resolved to a null type and
+ * `push/entities.ts entityTypeFor` filed them under `DEFAULT_ENTITY_TYPE` —
+ * `Concept` — by accident. On the QA corpus that was 142 rows.
+ *
+ * The accident landed on the right answer, and that is the point of saying it
+ * out loud: those 142 rows are SMS SHORT CODES ("411", "99217", "227898"), the
+ * numbers services text from. Google Voice's other end is not a person by
+ * construction the way a vCard's is — this is a message log, not an address
+ * book — so the type cannot simply be 'contact' the way `vcard.ts`,
+ * `contactlist.ts` and `applecontacts.ts` may declare it. A row named "411" in
+ * somebody's list of people is wrong, it would enter duplicate detection and
+ * the person search index, and nothing downstream would catch it:
+ * `isNonNameParticipant` deliberately lets a bare number through ("a short
+ * handle, a bare phone number, a single token — all still pass").
+ *
+ * So: a real handle, or a name with no number at all, is a `contact` and
+ * becomes a `Person`; a short code is a `short_code` and keeps falling to
+ * `Concept`, which is exactly what that default is documented to mean — "a
+ * thing worth having a node for that is neither a person nor a place". The
+ * difference from today is that it is now a decision the parser records, not a
+ * side effect of a digit threshold in another module.
+ *
+ * Short codes are staged rather than dropped because they are real
+ * correspondents: 5,307 communications on the QA corpus have one as their
+ * `from_entity_id`.
+ */
+function participantType(participant: GVEntity): 'contact' | 'short_code' {
+  return isShortCode(participant.phone) ? 'short_code' : 'contact';
 }
 
 /** Prefix marking a Google Voice thread id that names a FILE, not a contact. */
@@ -324,6 +362,7 @@ export class GoogleVoiceFileImporter implements FileImporter {
 
       params.pipeline.push({
         entity: {
+          type: participantType(p),
           name: p.name || p.phone,
           attributes: p.phone ? [{ name: 'phone', value: p.phone, identity: true } as EntityAttribute] : [],
         },
@@ -481,6 +520,7 @@ export class GoogleVoiceFileImporter implements FileImporter {
     if (sender.phone || sender.name) {
       params.pipeline.push({
         entity: {
+          type: participantType(sender),
           name: sender.name || sender.phone,
           attributes: sender.phone
             ? [{ name: 'phone', value: sender.phone, identity: true } as EntityAttribute]
@@ -532,7 +572,12 @@ function counterpartEdges(
       relation: 'participant',
       to: {
         entity: {
-          type: 'contact',
+          // Same rule as the two entity pushes above, and it matters most here:
+          // this edge is the only one of the three that has never run against
+          // the QA corpus, so its hard-coded 'contact' was a latent `Person`
+          // named "411" waiting for the next import rather than a row anyone
+          // could see. See participantType.
+          type: participantType({ name, phone }),
           name,
           attributes: phone ? [{ name: 'phone', value: phone, identity: true } as EntityAttribute] : [],
         },
