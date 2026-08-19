@@ -28,7 +28,6 @@ export class GitHubClient extends BaseOAuth2Client {
 
   protected readonly extraAuthParams = {};
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   getScopesFromActiveEndpoints(_activeEndpoints: string[]) {
     // GitHub App permissions are defined on the app itself, not via scopes
     return '';

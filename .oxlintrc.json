@@ -9,6 +9,7 @@
     ".yarn/**",
     ".pnp.*",
     ".claude/worktrees/**",
+    ".worktrees/**",
     "**/.venv/**",
     "**/docs/**",
     "**/__generated__/**",

@@ -27,13 +27,13 @@ import { DailyMetricsModule } from '@ci/domains/daily-metrics';
 import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
 import { ImportModule } from '@ci/domains/import';
-import { UserModule } from '@ci/domains/user';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule } from '@ci/domains/memory';
 import { ParsingModule } from '@ci/domains/parsing';
 import { PredictionsModule } from '@ci/domains/predictions';
 import { SearchNextModule } from '@ci/domains/search-next';
 import { SummariesModule } from '@ci/domains/summaries';
+import { UserModule } from '@ci/domains/user';
 
 import { IntentCatalogService } from './catalog/IntentCatalogService';
 import { ToolInvokedListener } from './listeners/ToolInvokedListener';

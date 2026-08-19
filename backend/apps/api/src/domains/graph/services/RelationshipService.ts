@@ -274,7 +274,6 @@ export class RelationshipService {
         userId: context.userId,
       });
     } else {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { id, properties, type, toNodeId, fromNodeId, ...updateData } = prepared;
 
       Object.assign(record, updateData);
