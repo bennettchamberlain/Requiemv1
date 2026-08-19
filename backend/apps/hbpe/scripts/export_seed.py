@@ -10,14 +10,15 @@ Usage (inside the container):
     python3 scripts/export_seed.py > /tmp/seed.sql
     # then copy out: docker cp ci-server-hbpe-service-1:/tmp/seed.sql .
 """
+
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import psycopg2.extras
 
-from ci.database import get_conn
+from ci.hbpe.database import get_conn
 
 
 def _q(v: object) -> str:
@@ -37,7 +38,6 @@ def _q(v: object) -> str:
 def export() -> None:
     with get_conn() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-
             # ── resolve user ──────────────────────────────────────────────────
             cur.execute("SELECT id::text FROM ci.users ORDER BY created_at LIMIT 1")
             row = cur.fetchone()
@@ -47,7 +47,8 @@ def export() -> None:
             user_id = row["id"]
 
             # ── fetch data ────────────────────────────────────────────────────
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT
                     cluster_id::text, user_id::text, l0_class, label, display_name,
                     keywords, member_count, naming_method, is_active,
@@ -55,38 +56,47 @@ def export() -> None:
                 FROM hbpe.l1_clusters
                 WHERE user_id = %s::uuid
                 ORDER BY l0_class, label
-            """, (user_id,))
+            """,
+                (user_id,),
+            )
             clusters = [dict(r) for r in cur.fetchall()]
 
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT event_id::text, cluster_id::text, similarity, assigned_at
                 FROM hbpe.l1_event_cluster ec
                 JOIN hbpe.l1_clusters cl ON cl.cluster_id = ec.cluster_id
                 WHERE cl.user_id = %s::uuid
                 ORDER BY assigned_at
-            """, (user_id,))
+            """,
+                (user_id,),
+            )
             event_clusters = [dict(r) for r in cur.fetchall()]
 
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT id::text, user_id::text, date::text, seq_order,
                        bucket_idx, level, token_id, soft_prob, serialized_at
                 FROM hbpe.token_stream
                 WHERE user_id = %s::uuid
                 ORDER BY date, seq_order
-            """, (user_id,))
+            """,
+                (user_id,),
+            )
             tokens = [dict(r) for r in cur.fetchall()]
 
-    now = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     cluster_ids = [c["cluster_id"] for c in clusters]
-    event_ids   = [e["event_id"]   for e in event_clusters]
-    token_ids   = [t["id"]         for t in tokens]
+    event_ids = [e["event_id"] for e in event_clusters]
+    token_ids = [t["id"] for t in tokens]
 
     out = []
 
     out.append("-- migrate:up")
-    out.append(f"-- HBPE seed data — exported {datetime.now(timezone.utc).isoformat()[:19]}Z")
+    out.append(f"-- HBPE seed data — exported {datetime.now(UTC).isoformat()[:19]}Z")
     out.append(f"-- user_id: {user_id}")
-    out.append(f"-- {len(clusters)} L1 clusters · {len(event_clusters)} event assignments · {len(tokens)} token rows")
+    out.append(
+        f"-- {len(clusters)} L1 clusters · {len(event_clusters)} event assignments · {len(tokens)} token rows"
+    )
     out.append("")
 
     # ── l1_clusters ───────────────────────────────────────────────────────────
@@ -99,7 +109,11 @@ def export() -> None:
         out.append("VALUES")
         rows = []
         for c in clusters:
-            kw = ("ARRAY[" + ",".join(f"'{k}'" for k in c["keywords"]) + "]") if c["keywords"] else "NULL"
+            kw = (
+                ("ARRAY[" + ",".join(f"'{k}'" for k in c["keywords"]) + "]")
+                if c["keywords"]
+                else "NULL"
+            )
             rows.append(
                 f"    ({_q(c['cluster_id'])}::uuid, {_q(c['user_id'])}::uuid, "
                 f"{_q(c['l0_class'])}, {_q(c['label'])}, {_q(c['display_name'])}, "
@@ -113,7 +127,9 @@ def export() -> None:
     # ── l1_event_cluster ──────────────────────────────────────────────────────
     if event_clusters:
         out.append("-- hbpe.l1_event_cluster")
-        out.append("INSERT INTO hbpe.l1_event_cluster (event_id, cluster_id, similarity, assigned_at)")
+        out.append(
+            "INSERT INTO hbpe.l1_event_cluster (event_id, cluster_id, similarity, assigned_at)"
+        )
         out.append("VALUES")
         rows = []
         for e in event_clusters:
@@ -129,7 +145,9 @@ def export() -> None:
     if tokens:
         out.append("-- hbpe.token_stream")
         out.append("INSERT INTO hbpe.token_stream")
-        out.append("    (id, user_id, date, seq_order, bucket_idx, level, token_id, soft_prob, serialized_at)")
+        out.append(
+            "    (id, user_id, date, seq_order, bucket_idx, level, token_id, soft_prob, serialized_at)"
+        )
         out.append("VALUES")
         rows = []
         for t in tokens:

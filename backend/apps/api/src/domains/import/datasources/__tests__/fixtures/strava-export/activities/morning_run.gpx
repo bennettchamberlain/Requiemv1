@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Strava" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Morning Run</name>
+    <time>2021-01-01T07:00:00Z</time>
+  </metadata>
+  <trk>
+    <name>Morning Run</name>
+    <type>running</type>
+    <trkseg>
+      <trkpt lat="37.7749" lon="-122.4194">
+        <ele>10</ele>
+        <time>2021-01-01T07:00:00Z</time>
+      </trkpt>
+      <trkpt lat="37.7752" lon="-122.4187">
+        <ele>12</ele>
+        <time>2021-01-01T07:01:00Z</time>
+      </trkpt>
+      <trkpt lat="37.7758" lon="-122.4178">
+        <ele>15</ele>
+        <time>2021-01-01T07:02:00Z</time>
+      </trkpt>
+      <trkpt lat="37.7762" lon="-122.4165">
+        <ele>14</ele>
+        <time>2021-01-01T07:03:00Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>

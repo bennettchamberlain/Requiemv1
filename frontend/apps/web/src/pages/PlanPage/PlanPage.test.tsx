@@ -1,0 +1,297 @@
+import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { gql } from '@/graphql';
+import { renderWithProviders } from '@/test/renderWithProviders';
+
+import { PlanPage } from './PlanPage';
+
+const featureState = vi.hoisted(() => ({ emptyState: false }));
+
+vi.mock('@/common/feature', () => ({
+  useFeatures: () => ({
+    isFeatureEnabled: (name: string) => (name === 'planning.emptyState' ? featureState.emptyState : false),
+  }),
+}));
+
+// Must match PlanPage.tsx GetTasks document exactly (codegen uniqueness).
+const GET_TASKS = gql(`
+  query GetTasks($first: Int, $after: String) {
+    tasks(first: $first, after: $after) {
+      edges {
+        node {
+          id
+          status
+          priority
+          parentId
+          dueAt
+          scheduledFor
+          deferUntil
+          title
+          ...TaskRowFragment
+        }
+      }
+      totalCount
+    }
+    taskPendingChanges {
+      id
+      taskId
+      kind
+      rationale
+      confidence
+      status
+    }
+  }
+`);
+
+const COMPLETE_TASK = gql(`
+  mutation CompleteTask($id: ID!) {
+    completeTask(id: $id) {
+      id
+      status
+      completedAt
+    }
+  }
+`);
+
+function node(overrides: Record<string, unknown> = {}) {
+  return {
+    __typename: 'TaskType',
+    id: 'dGFzazoxMTE=',
+    title: 'Write the migration',
+    description: null,
+    status: 'open',
+    priority: 3,
+    parentId: null,
+    dueAt: null,
+    scheduledFor: null,
+    deferUntil: null,
+    estimatedMinutes: null,
+    completedAt: null,
+    ...overrides,
+  };
+}
+
+const GET_PLAN_DAY = gql(`
+  query GetPlanDay($from: DateTime!, $to: DateTime!) {
+    eventsInRange(from: $from, to: $to) {
+      id
+      title
+      startTime
+      endTime
+      eventType
+      taskId
+      status
+    }
+  }
+`);
+
+function dayBounds() {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+
+  return { from: start.toISOString(), to: end.toISOString() };
+}
+
+function dayMock(events: Array<Record<string, unknown>> = []) {
+  return {
+    request: { query: GET_PLAN_DAY, variables: dayBounds() },
+    result: { data: { eventsInRange: events } },
+    maxUsageCount: Number.POSITIVE_INFINITY,
+  };
+}
+
+function tasksMock(nodes: ReturnType<typeof node>[]) {
+  return {
+    request: { query: GET_TASKS, variables: { first: 200 } },
+    result: {
+      data: {
+        tasks: {
+          __typename: 'TaskConnection',
+          edges: nodes.map((n) => ({ __typename: 'TaskEdge', node: n })),
+          totalCount: nodes.length,
+        },
+        taskPendingChanges: [],
+      },
+    },
+    // `cache-and-network` issues the query again on mount in the test
+    // environment; without this the second read has no mock to satisfy it.
+    maxUsageCount: Number.POSITIVE_INFINITY,
+  };
+}
+
+describe('PlanPage', () => {
+  beforeEach(() => {
+    featureState.emptyState = false;
+  });
+
+  it('invites the user to add something when there is nothing planned and the empty state is enabled', async () => {
+    featureState.emptyState = true;
+    renderWithProviders(<PlanPage />, { mocks: [tasksMock([]), dayMock()] });
+
+    expect(await screen.findByText(/nothing planned yet/i)).toBeInTheDocument();
+  });
+
+  it('does not show the empty state when the feature flag is off', async () => {
+    renderWithProviders(<PlanPage />, { mocks: [tasksMock([]), dayMock()] });
+
+    await screen.findByLabelText(/new task title/i);
+    expect(screen.queryByText(/nothing planned yet/i)).not.toBeInTheDocument();
+  });
+
+  it('groups tasks under their section headings', async () => {
+    // Fixed "today" is impossible without controlling the clock, so anchor the
+    // fixtures on the real one: sectioning is proved exhaustively in
+    // taskSections.node.test.ts, and this only checks the wiring.
+    const today = new Date();
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+
+    renderWithProviders(<PlanPage />, {
+      mocks: [
+        tasksMock([
+          node({ id: 'a', title: 'Overdue thing', dueAt: yesterday.toISOString() }),
+          node({ id: 'b', title: 'Someday thing' }),
+          node({ id: 'c', title: 'Finished thing', status: 'done' }),
+        ]),
+        dayMock(),
+      ],
+    });
+
+    expect(await screen.findByText('Overdue thing')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /overdue/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /potential upcoming/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /done/i })).toBeInTheDocument();
+  });
+
+  it('renders a completed task as checked and struck through', async () => {
+    renderWithProviders(<PlanPage />, {
+      mocks: [tasksMock([node({ title: 'Finished thing', status: 'done' })]), dayMock()],
+    });
+
+    const checkbox = await screen.findByRole('checkbox', { name: /reopen finished thing/i });
+
+    expect(checkbox).toBeChecked();
+  });
+
+  it('completes a task when its checkbox is ticked', async () => {
+    const completed = node({ status: 'done', completedAt: new Date().toISOString() });
+
+    renderWithProviders(<PlanPage />, {
+      mocks: [
+        tasksMock([node()]),
+        dayMock(),
+        {
+          request: { query: COMPLETE_TASK, variables: { id: 'dGFzazoxMTE=' } },
+          result: {
+            data: {
+              completeTask: {
+                __typename: 'TaskType',
+                id: completed.id,
+                status: 'done',
+                completedAt: completed.completedAt,
+              },
+            },
+          },
+        },
+      ],
+    });
+
+    const checkbox = await screen.findByRole('checkbox', { name: /complete write the migration/i });
+
+    fireEvent.click(checkbox);
+
+    // The mutation result normalises into the cache, flipping the row.
+    await waitFor(() => {
+      expect(screen.getByRole('checkbox', { name: /reopen write the migration/i })).toBeChecked();
+    });
+  });
+
+  it('disables the add button until a title is typed', async () => {
+    renderWithProviders(<PlanPage />, { mocks: [tasksMock([]), dayMock()] });
+
+    const button = await screen.findByRole('button', { name: /add/i });
+
+    expect(button).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/new task title/i), { target: { value: 'Something' } });
+
+    expect(button).toBeEnabled();
+  });
+
+  it('does not submit a whitespace-only title', async () => {
+    renderWithProviders(<PlanPage />, { mocks: [tasksMock([]), dayMock()] });
+
+    await screen.findByLabelText(/new task title/i);
+    fireEvent.change(screen.getByLabelText(/new task title/i), { target: { value: '   ' } });
+
+    expect(screen.getByRole('button', { name: /add/i })).toBeDisabled();
+  });
+
+  it('shows an empty calendar strip and a Schedule button on open work', async () => {
+    renderWithProviders(<PlanPage />, { mocks: [tasksMock([node()]), dayMock()] });
+
+    expect(await screen.findByRole('heading', { name: /on the calendar/i })).toBeInTheDocument();
+    expect(screen.getByText(/nothing on the calendar yet/i)).toBeInTheDocument();
+    const schedule = screen.getByRole('button', { name: /^schedule$/i });
+    expect(schedule).toBeInTheDocument();
+    expect(schedule).toHaveClass('ci-primary-surface');
+    expect(screen.getByRole('button', { name: /edit write the migration/i })).toBeInTheDocument();
+  });
+
+  it('renders committed time on the calendar strip', async () => {
+    const start = new Date();
+    start.setHours(10, 0, 0, 0);
+
+    renderWithProviders(<PlanPage />, {
+      mocks: [
+        tasksMock([]),
+        dayMock([
+          {
+            __typename: 'EventType',
+            id: 'evt-1',
+            title: 'Write the brief',
+            startTime: start.toISOString(),
+            endTime: new Date(start.getTime() + 30 * 60_000).toISOString(),
+            eventType: 'planned_block',
+            taskId: 'dGFzazoxMTE=',
+            status: 'planned',
+          },
+        ]),
+      ],
+    });
+
+    expect(await screen.findByText('Write the brief')).toBeInTheDocument();
+    expect(screen.getByText('Planned')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /edit write the brief/i })).toBeInTheDocument();
+  });
+
+  it('opens the calendar item editor from the day strip', async () => {
+    const start = new Date();
+    start.setHours(10, 0, 0, 0);
+
+    renderWithProviders(<PlanPage />, {
+      mocks: [
+        tasksMock([]),
+        dayMock([
+          {
+            __typename: 'EventType',
+            id: 'evt-1',
+            title: 'Write the brief',
+            startTime: start.toISOString(),
+            endTime: new Date(start.getTime() + 30 * 60_000).toISOString(),
+            eventType: 'planned_block',
+            taskId: 'dGFzazoxMTE=',
+            status: 'planned',
+          },
+        ]),
+      ],
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /edit write the brief/i }));
+
+    expect(await screen.findByRole('dialog', { name: /edit calendar item/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/^title$/i)).toHaveValue('Write the brief');
+  });
+});

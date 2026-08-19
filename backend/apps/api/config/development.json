@@ -11,6 +11,12 @@
     },
     "hbpe": {
       "host": "http://localhost:8002"
+    },
+    "parser": {
+      "host": "http://localhost:8003"
     }
+  },
+  "features": {
+    "smart.rotation": true
   }
 }

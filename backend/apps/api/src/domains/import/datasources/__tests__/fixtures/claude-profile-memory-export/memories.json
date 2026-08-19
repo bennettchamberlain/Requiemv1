@@ -1,0 +1,6 @@
+[
+  {
+    "conversations_memory": "**Work context**\n\nJordan Fabricated is a staff engineer at Contoso Example Corp, working on a self-hosted photo pipeline (Rust, SQLite, Docker).\n\n**Personal context**\n\nLives in Springfield with two cats; enjoys trail running and film photography.\n\n**Top of mind**\n\nMigrating the photo pipeline off a legacy NAS before the September deadline.\n\n**Brief history**\n\nStarted at Contoso in 2019 after freelancing; adopted the second cat in 2024.\n\n**Other instructions**\n\nPrefers concise answers with code samples in Rust.",
+    "account_uuid": "0f3c5a7e-2222-4000-9000-00000000abcd"
+  }
+]

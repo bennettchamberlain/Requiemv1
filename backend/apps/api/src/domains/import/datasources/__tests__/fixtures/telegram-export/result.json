@@ -1,0 +1,70 @@
+{
+  "about": "Here is the data you requested. Most of the data is stored in machine-readable JSON.",
+  "personal_information": {
+    "user_id": 123456789,
+    "first_name": "Liam",
+    "last_name": "Broza",
+    "phone_number": "+15551234567"
+  },
+  "contacts": {
+    "about": "This contains data about your contacts.",
+    "list": [
+      {
+        "first_name": "Steve",
+        "last_name": "Berry",
+        "phone_number": "+15559876543",
+        "date": "2024-01-10T09:00:00",
+        "date_unixtime": "1704877200"
+      }
+    ]
+  },
+  "chats": {
+    "about": "This contains all chats you have.",
+    "list": [
+      {
+        "name": "Steve Berry",
+        "type": "personal_chat",
+        "id": 987654321,
+        "messages": [
+          {
+            "id": 1,
+            "type": "service",
+            "date": "2024-08-12T17:55:00",
+            "date_unixtime": "1723485300",
+            "action": "create_group"
+          },
+          {
+            "id": 2,
+            "type": "message",
+            "date": "2024-08-12T17:56:00",
+            "date_unixtime": "1723485360",
+            "from": "Steve Berry",
+            "from_id": "user987654321",
+            "text": "Hey, are we still on for the architecture review?",
+            "text_entities": [
+              { "type": "plain", "text": "Hey, are we still on for the architecture review?" }
+            ]
+          },
+          {
+            "id": 3,
+            "type": "message",
+            "date": "2024-08-12T18:01:00",
+            "date_unixtime": "1723485660",
+            "from": "Liam Broza",
+            "from_id": "user123456789",
+            "text": [
+              "Yes — see ",
+              { "type": "link", "text": "https://example.com/agenda" },
+              " for the agenda."
+            ],
+            "text_entities": [
+              { "type": "plain", "text": "Yes — see " },
+              { "type": "link", "text": "https://example.com/agenda" },
+              { "type": "plain", "text": " for the agenda." }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -10,11 +10,14 @@ import {
   useForm,
   useToast,
   formDataSchema as s,
+  IconButton,
   Input,
   Label,
   Popover,
+  Tooltip,
 } from '@ci/shadcn';
 import { ChevronLeft, ChevronRight, Info } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import logo from '@/assets/logo.png';
@@ -45,6 +48,8 @@ const GET_PROVIDER = gql(`
   }
 `);
 
+export { GET_PROVIDER };
+
 export const ConnectFormSchema = s.object({
   endpoints: s.array(s.string()).nullable().default(null),
 });
@@ -57,6 +62,7 @@ export function ProviderPage() {
   const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { t } = useTranslation();
 
   const { data, loading: queryLoading } = useQuery(GET_PROVIDER, {
     variables: {
@@ -67,13 +73,20 @@ export function ProviderPage() {
 
   const provider = data?.provider;
 
-  const [{ authorizationUrl, loading: connectLoading, error, setEndpoints, apiKey, setApiKey }, { connect }] =
+  const [{ authorizationUrl, loading: connectLoading, error, apiKey, setApiKey }, { connect }] =
     useConnectService();
 
   const isOpenId = provider?.authType === 'openid';
-  const isConnectDisabled = isOpenId && (apiKey == null || apiKey.length === 0);
+  const isApiKey = provider?.authType === 'api_key';
+  const requiresApiKey = isOpenId || isApiKey;
+  const isConnectDisabled = requiresApiKey && (apiKey == null || apiKey.length === 0);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  const form = useForm<ConnectFormData>({
+    resolver: formDataResolver(ConnectFormSchema),
+    shouldUnregister: false,
+  });
 
   const handleConnect = useCallback(() => {
     if (!provider) {
@@ -82,21 +95,28 @@ export function ProviderPage() {
 
     const id = GlobalUID.parse('provider', provider.id);
 
-    connect(id);
-  }, [connect, provider]);
+    connect(id, form.getValues('endpoints') || []);
+  }, [connect, provider, form]);
 
   const handleGoBack = useCallback(() => {
-    navigate('/connect');
+    navigate('/sources/connect');
   }, [navigate]);
 
   useEffect(() => {
-    if (!authorizationUrl) {
+    if (authorizationUrl === null) {
+      return;
+    }
+
+    if (authorizationUrl === '') {
+      toast.success(`Connected to ${provider?.name ?? 'provider'}`);
+      navigate('/sources/connect');
+
       return;
     }
 
     // We have to do `window.location` since this is an external URL.
     window.location.href = authorizationUrl;
-  }, [authorizationUrl]);
+  }, [authorizationUrl, navigate, provider?.name, toast]);
 
   useEffect(() => {
     if (!error) {
@@ -107,11 +127,6 @@ export function ProviderPage() {
 
     // handleGoBack();
   }, [error]);
-
-  const form = useForm<ConnectFormData>({
-    resolver: formDataResolver(ConnectFormSchema),
-    shouldUnregister: false,
-  });
 
   const backgroundStyle = useMemo(() => {
     if (provider?.theme?.backgroundColor && isHexColor(provider.theme.backgroundColor)) {
@@ -182,22 +197,32 @@ export function ProviderPage() {
                   </div>
 
                   <div className="p-6">
-                    <Endpoints provider={provider} setEndpoints={setEndpoints} />
+                    <Endpoints provider={provider} />
 
-                    {isOpenId && (
+                    {(isOpenId || isApiKey) && (
                       <div className="mt-6 space-y-2">
                         <div className="flex items-center gap-1.5">
-                          <Label htmlFor="openid-api-key">Enter your {provider.name} OpenID API key</Label>
+                          <Label htmlFor="openid-api-key">
+                            {isApiKey
+                              ? `Enter your ${provider.name} REST API key`
+                              : `Enter your ${provider.name} OpenID API key`}
+                          </Label>
                           {provider.openidKeyLink && (
                             <Popover>
-                              <Popover.Trigger asChild>
-                                <button
-                                  type="button"
-                                  className="cursor-pointer text-muted-foreground hover:text-foreground"
-                                >
-                                  <Info className="h-4 w-4" />
-                                </button>
-                              </Popover.Trigger>
+                              <Tooltip delayDuration={600}>
+                                <Tooltip.Content>{t('PROVIDER_API_KEY_HELP')}</Tooltip.Content>
+                                <Popover.Trigger asChild>
+                                  <Tooltip.Trigger asChild>
+                                    <button
+                                      type="button"
+                                      className="cursor-pointer text-muted-foreground hover:text-foreground"
+                                      aria-label={t('PROVIDER_API_KEY_HELP')}
+                                    >
+                                      <Info className="h-4 w-4" />
+                                    </button>
+                                  </Tooltip.Trigger>
+                                </Popover.Trigger>
+                              </Tooltip>
                               <Popover.Content className="text-sm w-fit">
                                 To get your API key, go to{' '}
                                 <a
@@ -233,15 +258,14 @@ export function ProviderPage() {
           </div>
 
           <div className="flex justify-center items-center px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-            <Button
+            <IconButton
               variant="ghost"
-              size="icon"
               className="cursor-pointer"
               onClick={handleGoBack}
-              aria-label="Go back to connect page"
+              label={t('PROVIDER_BACK_TO_CONNECTIONS')}
             >
               <ChevronLeft className="h-4 w-4" />
-            </Button>
+            </IconButton>
 
             <Button
               variant="ghost"

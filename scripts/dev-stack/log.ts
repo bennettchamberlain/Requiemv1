@@ -32,16 +32,26 @@ export const link = (url: string, text: string = url): string => `\x1b]8;;${url}
 
 type Align = 'left' | 'right';
 
+/** Printable width: SGR colour codes and OSC 8 hyperlink wrappers occupy no
+ * columns, so measuring raw `.length` would over-pad any cell built with link()
+ * and skew the whole table. */
+const visibleWidth = (text: string): number =>
+  // eslint-disable-next-line no-control-regex -- matching ESC is the whole point
+  text.replace(/\x1b\]8;;.*?\x07/g, '').replace(/\x1b\[[0-9;]*m/g, '').length;
+
 /** Render a box-drawing table, indented two spaces to sit under a status line.
  * Columns are left-aligned unless `align[i]` says otherwise (e.g. 'right' for a
  * numeric column). */
 export function table(headers: string[], rows: string[][], align: Align[] = []): void {
   const widths = headers.map((header, i) =>
-    Math.max(header.length, ...rows.map((row) => (row[i] ?? '').length)),
+    Math.max(visibleWidth(header), ...rows.map((row) => visibleWidth(row[i] ?? ''))),
   );
 
-  const pad = (text: string, i: number): string =>
-    align[i] === 'right' ? text.padStart(widths[i]) : text.padEnd(widths[i]);
+  const pad = (text: string, i: number): string => {
+    const fill = ' '.repeat(Math.max(0, widths[i] - visibleWidth(text)));
+
+    return align[i] === 'right' ? `${fill}${text}` : `${text}${fill}`;
+  };
 
   const rule = (left: string, mid: string, right: string): string =>
     `  ${left}${widths.map((w) => '─'.repeat(w + 2)).join(mid)}${right}`;

@@ -102,12 +102,12 @@ flowchart TB
 flowchart TB
   subgraph CAP["Capture surfaces"]
     Ext["Browser Extension"]
-    Imp["Import-Tools (REST + MCP + CLI)"]
     Conn["Connectors / Applet"]
   end
   CAP --> SRV
 
   subgraph SRV["CI-Server — the memory brain"]
+    IMPD["Native import domain<br/>archive ingest (REST + MCP + CLI)"]
     GQL["GraphQL CRUD<br/>createEvent, updateNote, search…"]
     REST["REST<br/>/v1/events, /api/memory/*"]
     MCPS["MCP server 'companion-memory'<br/>publishes schema://graphql + tools"]
@@ -128,6 +128,13 @@ flowchart TB
   SRV --> OLL["Ollama (local LLM + embeddings)"]
   PORT["CI-Portal (Cloudflare Workers)<br/>OIDC IdP — identity only, no data"] -.->|tokens| SRV
 ```
+
+> **Δ 2026-08-18** — this diagram used to show `Import-Tools` as a third capture
+> surface alongside the browser extension. CI-Import-Tools is
+> [retired](https://github.com/companionintelligence/ZARCHIVED-CI-Import-Tools/);
+> archive import is now a **domain inside CI-Server**
+> (`backend/apps/api/src/domains/import/`), reached over REST, the `import.*` MCP
+> tools, and the `ci-import` CLI — hence its node moved inside the server box.
 
 **The structural contrast:** Apple funnels *Action→Intent* and *Content→Entity* through **one runtime** governed by **one schema**, then fans out to many surfaces. CI fans capabilities out across **many independent surfaces** (GraphQL, REST, MCP, native tools) with **no single semantic catalog or dispatcher** — and the harnesses reach in through *yet another* path (bespoke REST memory plugins) rather than the MCP server we already built.
 

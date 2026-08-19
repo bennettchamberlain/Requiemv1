@@ -1,0 +1,194 @@
+import { useCallback, useEffect, useState } from 'react';
+
+import { Button, Card, Textarea } from '@ci/shadcn';
+import { Loader2, UserRound } from '@ci/shadcn/icons';
+
+import { fetchAboutYou, submitAboutYouCorrection, type AboutYouView } from '@/api/usePersonaCompose';
+import { useAuth } from '@/hooks';
+
+export function AboutYouSection() {
+  const [{ authToken }] = useAuth();
+  const [view, setView] = useState<AboutYouView | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [correction, setCorrection] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [savedNote, setSavedNote] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setView(await fetchAboutYou(authToken));
+    } catch {
+      setError('Could not load what Companion knows about you.');
+    } finally {
+      setLoading(false);
+    }
+  }, [authToken]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const handleCorrection = async () => {
+    const trimmed = correction.trim();
+    if (!trimmed || saving) {
+      return;
+    }
+
+    setSaving(true);
+    setSavedNote(null);
+    try {
+      await submitAboutYouCorrection(authToken, trimmed);
+      setCorrection('');
+      setSavedNote('Saved — the next “How you’d do it” will use this.');
+      await load();
+    } catch {
+      setSavedNote('Could not save that correction.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.5} />
+        Loading…
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div>
+        <p className="mb-3 text-sm text-destructive">{error}</p>
+        <Button size="sm" variant="outline" onClick={() => void load()}>
+          Try again
+        </Button>
+      </div>
+    );
+  }
+
+  const prefers = view?.preferences.filter((p) => p.relationship === 'PREFERS') ?? [];
+  const dislikes = view?.preferences.filter((p) => p.relationship === 'DISLIKES') ?? [];
+
+  return (
+    <>
+      <div className="mb-6">
+        <div className="mb-2 flex items-center gap-2">
+          <UserRound className="h-5 w-5 text-muted-foreground" strokeWidth={1.5} />
+          <h2 className="text-lg font-semibold">About you</h2>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          How Companion currently understands you — used to personalize “How you’d do it”. Wrong? Correct it
+          below.
+        </p>
+      </div>
+
+      {!view?.hasSignal && (
+        <Card className="mb-4 border-dashed">
+          <Card.Content className="p-4 text-sm text-muted-foreground">
+            Still thin — answer questions on the Feed, or add a correction below so Companion has something to
+            work with.
+          </Card.Content>
+        </Card>
+      )}
+
+      {view?.dossier && (
+        <section className="mb-6 space-y-2">
+          <h3 className="text-sm font-medium">Dossier</h3>
+          <p className="text-sm leading-relaxed text-foreground/90">{view.dossier.summary}</p>
+          {view.dossier.tone && <p className="text-xs text-muted-foreground">Tone: {view.dossier.tone}</p>}
+          {view.dossier.personalityTraits && view.dossier.personalityTraits.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Traits: {view.dossier.personalityTraits.join(', ')}
+            </p>
+          )}
+          {view.dossier.challenges && view.dossier.challenges.length > 0 && (
+            <p className="text-xs text-muted-foreground">Challenges: {view.dossier.challenges.join(', ')}</p>
+          )}
+        </section>
+      )}
+
+      {(prefers.length > 0 || dislikes.length > 0) && (
+        <section className="mb-6 grid gap-4 sm:grid-cols-2">
+          {prefers.length > 0 && (
+            <div>
+              <h3 className="mb-2 text-sm font-medium">Preferences</h3>
+              <ul className="space-y-1 text-sm text-muted-foreground">
+                {prefers.slice(0, 12).map((p) => (
+                  <li key={p.entityId}>{p.name}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {dislikes.length > 0 && (
+            <div>
+              <h3 className="mb-2 text-sm font-medium">Dislikes</h3>
+              <ul className="space-y-1 text-sm text-muted-foreground">
+                {dislikes.slice(0, 12).map((p) => (
+                  <li key={p.entityId}>{p.name}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      )}
+
+      {view && view.family.length > 0 && (
+        <section className="mb-6">
+          <h3 className="mb-2 text-sm font-medium">Family</h3>
+          <ul className="space-y-1 text-sm text-muted-foreground">
+            {view.family.map((member) => (
+              <li key={member.entityId}>
+                {member.name} ({member.relationship}
+                {member.age != null ? `, ${member.age}` : ''})
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {view && view.recentAnswers.length > 0 && (
+        <section className="mb-6">
+          <h3 className="mb-2 text-sm font-medium">Recent answers</h3>
+          <ul className="space-y-3">
+            {view.recentAnswers.slice(0, 5).map((answer) => (
+              <li key={answer.id} className="rounded-lg border border-border p-3">
+                {answer.question && <p className="mb-1 text-xs text-muted-foreground">{answer.question}</p>}
+                <p className="text-sm text-foreground/90">{answer.answer}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <section>
+        <h3 className="mb-2 text-sm font-medium">Something wrong?</h3>
+        <p className="mb-2 text-xs text-muted-foreground">
+          Tell Companion what to correct. This becomes a first-person answer used in the next personalization.
+        </p>
+        <Textarea
+          value={correction}
+          onChange={(e) => setCorrection(e.target.value)}
+          rows={3}
+          placeholder="e.g. I prefer short meetings in the morning, not evening calls…"
+          className="mb-2"
+        />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            disabled={saving || correction.trim().length === 0}
+            onClick={() => void handleCorrection()}
+          >
+            {saving ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" strokeWidth={1.5} /> : null}
+            Save correction
+          </Button>
+          {savedNote && <span className="text-xs text-muted-foreground">{savedNote}</span>}
+        </div>
+      </section>
+    </>
+  );
+}

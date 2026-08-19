@@ -173,3 +173,26 @@ export function isVirtualLocation(location: string | null | undefined): boolean 
 
   return false;
 }
+
+/**
+ * True if `value`, taken as a whole, IS a URL/URI rather than containing one —
+ * a meeting-join link ("https://khronosgroup.zoom.us/w/99353948195?tk=…") or a
+ * custom-scheme URI ("altspace://account.altvr.com/api/events/…") that a
+ * calendar source wrote into its location field.
+ *
+ * This is a distinct, narrower check than {@link isVirtualLocation}: that
+ * function decides what to keep OUT of the geocoder (a broader denylist that
+ * also catches bare tokens like "zoom" or "tbd", which can still be a
+ * meaningful — if not geocodable — label). This one decides what must never be
+ * written into `events.location_name` at all, because it isn't a place name in
+ * any sense — it's a link. Deliberately narrow and structural (RFC 3986
+ * `scheme "://"`), mirroring `isCoordinateText` in
+ * `import/push/inputs.ts` (ffe607646, "a coordinate pair is not a place
+ * name"): matching the generic URI grammar rather than a per-app hostname list
+ * means a meeting tool not yet seen is still caught, and a real place name that
+ * merely mentions a URL in passing ("Cafe, see https://cafe.example for menu")
+ * is NOT caught, because the value must be nothing BUT the URI.
+ */
+export function isUriLocation(value: string): boolean {
+  return /^[a-z][a-z0-9+.-]*:\/\/\S+$/i.test(value.trim());
+}

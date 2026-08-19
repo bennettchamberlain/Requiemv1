@@ -1,15 +1,16 @@
-import { useCallback, useMemo, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, type ReactNode } from 'react';
 
 import { ErrorPage, LoadingPage, useDeviceLayout } from '@ci/common';
-import { Button, Dialog, Popover, cn } from '@ci/shadcn';
-import { Settings, X } from '@ci/shadcn/icons';
+import { Dialog, IconButton, cn } from '@ci/shadcn';
+import { X } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
 
 import { useActionService, useThreadService } from '@/api';
 import { Chat } from '@/components/Chat';
+import { ChatWithAgentMenu } from '@/components/ChatWithAgent';
 import { InlineModal } from '@/components/InlineModal';
 import { Markdown } from '@/components/Markdown';
-import { ModelSelector } from '@/components/ModelSelector';
 import { Tag } from '@/components/Tag';
 import { useChatRequester } from '@/hooks';
 
@@ -21,22 +22,33 @@ interface Props {
 export function FeedModal({ onClose }: Props) {
   const { id: actionId } = useParams<{ id?: string }>();
 
+  const { t } = useTranslation();
   const { isMobile } = useDeviceLayout();
 
   const [{ data: action, loading: actionLoading, error: actionError }] = useActionService(actionId ?? null);
   const [{ thread }] = useThreadService(action?.threadId ?? null);
   const [
     { stream, loading: chatRequestLoading, streaming: chatRequestStreaming, hasStartedReceiving },
-    { submit: submitChatRequest, stop: stopChatRequest },
+    { submit: submitChatRequest, stop: stopChatRequest, attach: attachChatStream, detach: detachChatStream },
   ] = useChatRequester({
     threadId: thread?.id ?? null,
   });
 
-  const handleOpenChange = useCallback((open: boolean) => {
-    if (!open) {
-      onClose?.();
+  useEffect(() => {
+    if (thread?.id && (thread.generationStatus === 'queued' || thread.generationStatus === 'running')) {
+      void attachChatStream(thread.id);
     }
-  }, []);
+  }, [thread?.id, thread?.generationStatus, attachChatStream]);
+
+  const handleOpenChange = useCallback(
+    (open: boolean) => {
+      if (!open) {
+        detachChatStream();
+        onClose?.();
+      }
+    },
+    [detachChatStream, onClose],
+  );
 
   const actionContext = useMemo(() => {
     if (!action?.metadata || typeof action.metadata !== 'object') {
@@ -50,6 +62,19 @@ export function FeedModal({ onClose }: Props) {
 
   const rationaleText = actionContext ?? 'No rationale available yet.';
 
+  const chatContext = useMemo(() => {
+    if (!action) {
+      return null;
+    }
+
+    return {
+      title: action.title,
+      body: action.text,
+      sourceKind: 'action' as const,
+      sourceId: action.id,
+    };
+  }, [action]);
+
   const messages = useMemo(() => {
     const baseMessages = thread?.messages ?? [];
     const actionMessage =
@@ -62,17 +87,23 @@ export function FeedModal({ onClose }: Props) {
           ]
         : [];
 
+    const generating = thread?.generationStatus === 'queued' || thread?.generationStatus === 'running';
+    const withoutInFlight =
+      generating && baseMessages[baseMessages.length - 1]?.role === 'assistant'
+        ? baseMessages.slice(0, -1)
+        : baseMessages;
+
     if (isMobile) {
-      return [...actionMessage, ...baseMessages];
+      return [...actionMessage, ...withoutInFlight];
     }
 
-    const hasAssistantMessage = baseMessages.some((message) => message.role === 'assistant');
+    const hasAssistantMessage = withoutInFlight.some((message) => message.role === 'assistant');
 
     if (!hasAssistantMessage) {
-      return [...actionMessage, ...baseMessages];
+      return [...actionMessage, ...withoutInFlight];
     }
 
-    return baseMessages;
+    return withoutInFlight;
   }, [thread, isMobile, action?.text]);
 
   const renderTitle = !(actionLoading || actionError);
@@ -88,25 +119,17 @@ export function FeedModal({ onClose }: Props) {
     return (
       <InlineModal open onClose={onClose}>
         <div className="flex items-center justify-between border-b bg-stone-50 dark:bg-secondary gap-2 p-2 pt-[max(1rem,env(safe-area-inset-top))]">
-          <div className="flex-1">
-            <Popover>
-              <Popover.Trigger>
-                <Button className="flex-1" variant="ghost" size="icon">
-                  <Settings />
-                </Button>
-              </Popover.Trigger>
-              <Popover.Content className="p-2 relative left-2 w-auto">
-                <ModelSelector withToggles />
-              </Popover.Content>
-            </Popover>
-          </div>
+          {/* Spacer balancing the close button so the title stays centred. The
+              model selector that used to sit here now lives in Settings ▸ Model. */}
+          <div className="flex-1" />
 
           <div className="font-bold">{action?.title}</div>
 
-          <div className="flex flex-1 justify-end">
-            <Button variant="ghost" size="icon" onClick={onClose}>
+          <div className="flex flex-1 justify-end gap-1">
+            {chatContext ? <ChatWithAgentMenu context={chatContext} size="sm" /> : null}
+            <IconButton variant="ghost" onClick={onClose} label={t('COMMON_CLOSE')}>
               <X />
-            </Button>
+            </IconButton>
           </div>
         </div>
 
@@ -150,12 +173,10 @@ export function FeedModal({ onClose }: Props) {
             )}
           </div>
 
-          <ModelSelector withToggles />
-
           <div className="flex items-center justify-end">
-            <Button variant="ghost" size="icon" onClick={onClose}>
+            <IconButton variant="ghost" onClick={onClose} label={t('COMMON_CLOSE')}>
               <X />
-            </Button>
+            </IconButton>
           </div>
         </Dialog.Header>
 
@@ -168,8 +189,11 @@ export function FeedModal({ onClose }: Props) {
             )}
 
             <div className="flex-1 prose dark:prose-invert">
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Why this suggestion
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Why this suggestion
+                </div>
+                {chatContext ? <ChatWithAgentMenu context={chatContext} size="sm" /> : null}
               </div>
               <Markdown>{rationaleText}</Markdown>
             </div>

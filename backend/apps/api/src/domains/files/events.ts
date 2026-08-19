@@ -58,7 +58,7 @@ export type PreviewGeneratedPayload = {
   previewId: string;
   model?: string;
   /**
-   * When true, the capture source (e.g. CI-Applet with its own vision endpoint)
+   * When true, the capture source (e.g. Companion Capture with its own vision endpoint)
    * already produced a title/description — it writes them via PATCH /files/:id —
    * so {@link ImageDescriptionListener} skips its Ollama pass. Absent/false means
    * the server should generate the description as usual.
@@ -80,12 +80,26 @@ export type MediaDimensionsBackfillRequestPayload = {
   limit?: number;
 };
 
+/**
+ * Requeue vision description for originals that still lack a description
+ * (skipped while image description was off, or failed on a non-vision model).
+ * Fired when the user turns image description back on in Settings.
+ */
+export const ImageDescriptionBackfillRequestEvent = 'file.image-description-backfill-request';
+
+export type ImageDescriptionBackfillRequestPayload = {
+  userId: string;
+  /** Max originals to requeue in this batch (default: listener DEFAULT_LIMIT). */
+  limit?: number;
+};
+
 defineEvent<FileCreatedPayload>(FileCreatedEvent);
 defineEvent<FileUpdatedPayload>(FileUpdatedEvent);
 defineEvent<FileUploadedPayload>(FileUploadedEvent);
 defineEvent<FileDeletedPayload>(FileRemovedEvent);
 defineEvent<PreviewGeneratedPayload>(PreviewGeneratedEvent);
 defineEvent<MediaDimensionsBackfillRequestPayload>(MediaDimensionsBackfillRequestEvent);
+defineEvent<ImageDescriptionBackfillRequestPayload>(ImageDescriptionBackfillRequestEvent);
 
 declare module '@ci/domains/events/registry' {
   interface EventRegistry {
@@ -95,6 +109,7 @@ declare module '@ci/domains/events/registry' {
     [FileRemovedEvent]: FileDeletedPayload;
     [PreviewGeneratedEvent]: PreviewGeneratedPayload;
     [MediaDimensionsBackfillRequestEvent]: MediaDimensionsBackfillRequestPayload;
+    [ImageDescriptionBackfillRequestEvent]: ImageDescriptionBackfillRequestPayload;
   }
 }
 

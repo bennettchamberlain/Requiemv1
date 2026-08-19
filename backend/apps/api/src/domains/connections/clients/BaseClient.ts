@@ -20,6 +20,16 @@ export abstract class BaseClient {
   abstract getAccountIdentifier(connection: Connection): Promise<string>;
 
   /**
+   * Human-readable account identity for the UI (email, login, phone).
+   * Distinct from {@link getAccountIdentifier}, which is the stable provider id.
+   */
+  getAccountLabel(connection: Connection): Promise<string | null> {
+    void connection;
+
+    return Promise.resolve(null);
+  }
+
+  /**
    * The OAuth scopes this provider requests. Returns `null` for providers that
    * don't use scopes (e.g. OpenID providers like Steam).
    */

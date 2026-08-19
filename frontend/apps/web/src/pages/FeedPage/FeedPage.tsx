@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ComponentProps, type ElementType } from 'react';
 
-import { GlobalUID, ErrorPage, LoadingPage, Portal, useDeviceLayout, usePageTitle } from '@ci/common';
-import { Breadcrumb, useToast } from '@ci/shadcn';
-import { useNavigate, useParams, Link } from 'react-router-dom';
+import { GlobalUID, ErrorPage, LoadingPage, useDeviceLayout, usePageTitle } from '@ci/common';
+import { useToast } from '@ci/shadcn';
+import { useTranslation } from 'react-i18next';
+import { useNavigate, useParams } from 'react-router-dom';
 
-import { useActionListService, useForecastService } from '@/api';
+import { useActionListService } from '@/api';
 import { useFeatures } from '@/common/feature';
-import { ForecastStrip } from '@/components/ForecastStrip';
 import { PageContent } from '@/components/layout';
 import { Markdown } from '@/components/Markdown';
 import { type FragmentType } from '@/graphql';
@@ -15,6 +15,7 @@ import { useModalControls } from '@/hooks';
 import { BentoCard } from '../../components/BentoCard';
 import { Carousel } from '../../components/Carousel';
 
+import { ContextPromptCard } from './ContextPromptCard';
 import { FeedModal } from './FeedModal';
 import type { INSIGHT_CARD_FRAGMENT } from './InsightCard';
 import { InsightCard } from './InsightCard';
@@ -25,19 +26,65 @@ import { useFeedQuestionService, type FeedQuestion } from './useFeedQuestionServ
 import { useSummariesService } from './useSummariesService';
 
 type CarouselProps = Partial<ComponentProps<typeof Carousel>>;
-const DISMISSED_INSIGHTS_STORAGE_KEY = 'feed:dismissed-insights:v1';
 const MAX_INSIGHT_SUMMARY_CARDS = 20;
 
-export function FeedPage() {
-  usePageTitle('Feed - Companion Intelligence');
+export interface FeedPageProps {
+  /**
+   * Rendered inside a host page (Today) that already owns the document title
+   * and the page frame. PageContent is the page's scroll container
+   * (`w-full h-full overflow-auto`), so nesting a second one gives the screen
+   * two scrollbars and two sets of padding.
+   */
+  embedded?: boolean;
+}
+
+export function FeedPage({ embedded = false }: FeedPageProps = {}) {
+  usePageTitle(embedded ? null : 'Brief - Companion Intelligence');
+
+  const { t } = useTranslation();
 
   const { isMobile } = useDeviceLayout();
   const { toast } = useToast();
   const navigate = useNavigate();
 
   const { id: actionId } = useParams<{ id?: string }>();
+
+  /**
+   * Where this brief lives, so its own links stay inside it.
+   *
+   * The cards deep-link by action id and the modal writes that id into the URL.
+   * Embedded in Today those have to address /today, or opening a card would
+   * navigate you off the page you opened it from.
+   */
+  const basePath = embedded ? '/today' : '/brief';
+
+  // Embedded, the host owns the frame; this keeps the column gap PageContent
+  // would have supplied, and none of its padding, height or scrolling. No
+  // padding on purpose — the desktop carousel bleeds with `-mx-6` against
+  // PageContent's `p-6`, so padding here would double it.
+  //
+  // `relative` matters on all four exits: LoadingPage and ErrorPage are
+  // `absolute inset-0 z-10`, and without a positioned boundary they anchor to
+  // the HOST's PageContent, so a brief that is merely loading would black out
+  // the schedule above it. `min-h-60` gives those overlays height to fill.
+  //
+  // `shrink-0` is what makes `min-h-60` safe. Setting a min-height REPLACES a
+  // flex item's `min-height: auto` content-based automatic minimum, and that
+  // automatic minimum is the only reason a page overflows its host and scrolls
+  // rather than being squashed. Without this, schedule and brief — which
+  // together exceed any normal viewport — would both compress below their
+  // content, overlap each other, and push part of the page out of scroll range.
+  //
+  // `Frame` is a stable reference either way (a module-level component or the
+  // string 'div'), so this never remounts the subtree it wraps.
+  const Frame: ElementType = embedded ? 'div' : PageContent;
+  const frameClassName = embedded
+    ? `relative flex min-h-60 w-full min-w-0 shrink-0 flex-col ${isMobile ? 'gap-2' : 'gap-4'}`
+    : undefined;
+  const { isFeatureEnabled } = useFeatures();
+  const actionsEnabled = isFeatureEnabled('actions');
   const [{ data: actions, loading, error }, { markActionAsSeen, markActionAsDismissed }] =
-    useActionListService(5);
+    useActionListService(5, { skip: !actionsEnabled });
   const [
     { data: summaries, loading: summariesLoading, error: summariesError },
     { markSummaryAsSeen, markSummaryAsDismissed },
@@ -46,72 +93,82 @@ export function FeedPage() {
     { question, submitting: questionSubmitting, error: questionError },
     { submitAnswer: submitQuestionAnswer },
   ] = useFeedQuestionService();
-  const { isFeatureEnabled } = useFeatures();
-  const hbpeEnabled = isFeatureEnabled('hbpe');
-  const [{ data: forecast, stalled: forecastStalled }] = useForecastService();
   const [dismissedActionIds, setDismissedActionIds] = useState<Set<string>>(new Set());
   const [dismissedSummaryIds, setDismissedSummaryIds] = useState<Set<string>>(new Set());
-  const [dismissedInsightIds, setDismissedInsightIds] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(DISMISSED_INSIGHTS_STORAGE_KEY);
-      if (!raw) {
-        return;
-      }
-
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) {
-        return;
-      }
-
-      setDismissedInsightIds(new Set(parsed.filter((value): value is string => typeof value === 'string')));
-    } catch {
-      setDismissedInsightIds(new Set());
-    }
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem(DISMISSED_INSIGHTS_STORAGE_KEY, JSON.stringify(Array.from(dismissedInsightIds)));
-  }, [dismissedInsightIds]);
+  // Session-only hide for rare legacy nested insights (no dedicated summary row).
+  const [dismissedLegacyInsightIds, setDismissedLegacyInsightIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (questionError == null) {
       return;
     }
 
-    toast.error('We could not load or submit a question right now.');
+    toast.error('We could not load or submit a reflection right now.');
   }, [questionError, toast]);
 
   const visibleActions = useMemo(
-    () => actions.filter((action) => !action.dismissed && !dismissedActionIds.has(action.id)),
-    [actions, dismissedActionIds],
+    () =>
+      actionsEnabled
+        ? actions.filter((action) => !action.dismissed && !dismissedActionIds.has(action.id))
+        : [],
+    [actions, actionsEnabled, dismissedActionIds],
   );
 
-  const visibleSummaries = useMemo(
+  const activeSummaries = useMemo(
     () => summaries.filter((summary) => !summary.dismissed && !dismissedSummaryIds.has(summary.id)),
     [summaries, dismissedSummaryIds],
   );
-  const visibleInsights = useMemo(
-    () =>
-      visibleSummaries.flatMap((summary) =>
-        summary.insights
-          .map((insight, idx) => ({
-            id: `${summary.id}:${idx}`,
-            summarySeen: summary.seen,
-            insight,
-          }))
-          .filter((item) => !dismissedInsightIds.has(item.id)),
-      ),
-    [dismissedInsightIds, visibleSummaries],
+  const insightPeriodSummaries = useMemo(
+    () => activeSummaries.filter((summary) => summary.periodType === 'insight'),
+    [activeSummaries],
   );
+  const visibleSummaries = useMemo(
+    () => activeSummaries.filter((summary) => summary.periodType !== 'insight'),
+    [activeSummaries],
+  );
+  const visibleInsights = useMemo(() => {
+    const fromInsightRows = insightPeriodSummaries.map((summary) => {
+      const insight = summary.insights[0] ?? {
+        title: summary.title || 'Proactive Insight',
+        summaryText: summary.summaryText,
+        keyActions: [] as string[],
+        relevanceScore: 0,
+        tags: summary.tags,
+        relatedEntityIds: null as string[] | null,
+      };
+
+      return {
+        id: summary.id,
+        summaryId: summary.id,
+        isSeen: summary.seen,
+        insight,
+        dismissMode: 'summary' as const,
+      };
+    });
+
+    const fromNested = visibleSummaries.flatMap((summary) =>
+      summary.insights
+        .map((insight, idx) => ({
+          id: `${summary.id}:${idx}`,
+          summaryId: summary.id,
+          isSeen: summary.seen,
+          insight,
+          dismissMode: 'legacy' as const,
+        }))
+        .filter((item) => !dismissedLegacyInsightIds.has(item.id)),
+    );
+
+    return [...fromInsightRows, ...fromNested];
+  }, [dismissedLegacyInsightIds, insightPeriodSummaries, visibleSummaries]);
   const mixedInsightSummaryCards = useMemo(() => {
     const mixed: Array<
       | {
           kind: 'insight';
           id: string;
           insightId: string;
+          summaryId: string;
           isSeen: boolean;
+          dismissMode: 'summary' | 'legacy';
           insight: (typeof visibleInsights)[number]['insight'];
         }
       | {
@@ -129,7 +186,9 @@ export function FeedPage() {
           kind: 'insight',
           id: `insight:${insight.id}`,
           insightId: insight.id,
-          isSeen: insight.summarySeen,
+          summaryId: insight.summaryId,
+          isSeen: insight.isSeen,
+          dismissMode: insight.dismissMode,
           insight: insight.insight,
         });
       }
@@ -190,11 +249,11 @@ export function FeedPage() {
 
   const handleCardClick = useCallback(
     async (id: string) => {
-      navigate(`/feed/${id}`, { replace: true });
+      navigate(`${basePath}/${id}`, { replace: true });
       openModal();
       await markActionAsSeen(id);
     },
-    [markActionAsSeen, navigate, openModal],
+    [basePath, markActionAsSeen, navigate, openModal],
   );
 
   const handleActionDismiss = useCallback(
@@ -202,12 +261,12 @@ export function FeedPage() {
       setDismissedActionIds((prev) => new Set(prev).add(id));
 
       if (actionId === id) {
-        navigate('/feed', { replace: true });
+        navigate(basePath, { replace: true });
       }
 
       await markActionAsDismissed(id);
     },
-    [actionId, markActionAsDismissed, navigate],
+    [actionId, basePath, markActionAsDismissed, navigate],
   );
 
   const handleSummaryDismiss = useCallback(
@@ -218,19 +277,29 @@ export function FeedPage() {
     [markSummaryAsDismissed],
   );
 
-  const handleInsightDismiss = useCallback((insightId: string) => {
-    setDismissedInsightIds((prev) => new Set(prev).add(insightId));
-  }, []);
+  const handleInsightDismiss = useCallback(
+    async (insightId: string, summaryId: string, dismissMode: 'summary' | 'legacy') => {
+      if (dismissMode === 'legacy') {
+        setDismissedLegacyInsightIds((prev) => new Set(prev).add(insightId));
+
+        return;
+      }
+
+      setDismissedSummaryIds((prev) => new Set(prev).add(summaryId));
+      await markSummaryAsDismissed(summaryId);
+    },
+    [markSummaryAsDismissed],
+  );
 
   const handleModalClose = useCallback(() => {
-    navigate('/feed', { replace: true });
+    navigate(basePath, { replace: true });
     closeModal();
-  }, [navigate, closeModal]);
+  }, [basePath, navigate, closeModal]);
 
   const handleSummaryClick = useCallback(
     async (encodedId: string) => {
       await markSummaryAsSeen(encodedId);
-      navigate(`/insights/${GlobalUID.parse('summary', encodedId)}`);
+      navigate(`/brief/summaries/${GlobalUID.parse('summary', encodedId)}`);
     },
     [markSummaryAsSeen, navigate],
   );
@@ -244,187 +313,182 @@ export function FeedPage() {
     [submitQuestionAnswer],
   );
 
-  if (loading) {
+  if (actionsEnabled && loading) {
     return (
-      <PageContent>
+      <Frame className={frameClassName}>
         <LoadingPage />
-      </PageContent>
+      </Frame>
     );
   }
 
-  if (error) {
+  if (actionsEnabled && error) {
     return (
-      <PageContent>
+      <Frame className={frameClassName}>
         <ErrorPage error={error} />
-      </PageContent>
+      </Frame>
     );
   }
 
   if (isMobile) {
-    const carouselProps = {
-      className: 'h-full -mx-2',
-      containerClassName: 'h-full',
-      slideClassName: 'h-full px-2',
-      initialIndex: selectedActionCardIndex,
-    } satisfies CarouselProps;
+    const actionList = actionCards.map((card) =>
+      card.kind === 'question' ? (
+        <QuestionCard
+          key={card.id}
+          question={card.question as FeedQuestion}
+          submitting={questionSubmitting}
+          onSubmit={handleQuestionSubmit}
+        />
+      ) : (
+        <BentoCard
+          key={card.id}
+          title={card.action.title}
+          description={
+            <div className="prose dark:prose-invert">
+              <Markdown>{card.action.text}</Markdown>
+            </div>
+          }
+          tags={card.action.tags}
+          imageUrl={card.action.imageUrl}
+          onClick={() => void handleCardClick(card.action.id)}
+          onDismiss={() => void handleActionDismiss(card.action.id)}
+          dismissLabel={t('FEED_CARD_DISMISS_ACTION')}
+          showUnseenIndicator={!card.action.seen}
+        />
+      ),
+    );
+
+    const insightList = mixedInsightSummaryCards.map((card) =>
+      card.kind === 'insight' ? (
+        <InsightCard
+          key={card.id}
+          insight={card.insight as FragmentType<typeof INSIGHT_CARD_FRAGMENT>}
+          isSeen={card.isSeen}
+          onClick={() => void handleSummaryClick(card.summaryId)}
+          onDismiss={() => void handleInsightDismiss(card.insightId, card.summaryId, card.dismissMode)}
+        />
+      ) : (
+        <SummaryCard
+          key={card.id}
+          summary={card.summary as FragmentType<typeof SUMMARY_CARD_FRAGMENT>}
+          onClick={() => void handleSummaryClick(card.summary.id)}
+          onDismiss={() => void handleSummaryDismiss(card.summary.id)}
+        />
+      ),
+    );
 
     return (
-      <PageContent>
-        {showMobileEmptyState ? (
-          <div className="flex min-h-[40vh] items-center justify-center py-10">
-            <p className="text-center text-xl font-medium text-muted-foreground opacity-70">All Caught Up!</p>
-          </div>
-        ) : (
-          <Carousel {...carouselProps}>
-            {actionCards.map((card) =>
-              card.kind === 'question' ? (
-                <QuestionCard
-                  key={card.id}
-                  question={card.question as FeedQuestion}
-                  submitting={questionSubmitting}
-                  onSubmit={handleQuestionSubmit}
-                />
-              ) : (
-                <BentoCard
-                  key={card.id}
-                  title={card.action.title}
-                  description={
-                    <div className="prose dark:prose-invert">
-                      <Markdown>{card.action.text}</Markdown>
-                    </div>
-                  }
-                  tags={card.action.tags}
-                  imageUrl={card.action.imageUrl}
-                  onClick={() => void handleCardClick(card.action.id)}
-                  onDismiss={() => void handleActionDismiss(card.action.id)}
-                  dismissLabel="Dismiss action"
-                  showUnseenIndicator={!card.action.seen}
-                />
-              ),
-            )}
+      <>
+        <Frame className={frameClassName}>
+          {showMobileEmptyState ? (
+            <p className="py-6 text-center text-base font-medium text-muted-foreground">All Caught Up!</p>
+          ) : (
+            <>
+              {(actionsEnabled || Boolean(question)) && (
+                <section className="flex flex-col gap-2">
+                  <h2 className="text-lg font-semibold tracking-tight text-foreground">
+                    {actionsEnabled ? 'Actions' : 'Reflections'}
+                  </h2>
+                  {isActionsRowEmpty ? (
+                    <p className="py-4 text-center text-sm text-muted-foreground">All Caught Up!</p>
+                  ) : (
+                    <div className="flex flex-col gap-2">{actionList}</div>
+                  )}
+                </section>
+              )}
 
-            {mixedInsightSummaryCards.map((card) =>
-              card.kind === 'insight' ? (
-                <InsightCard
-                  key={card.id}
-                  insight={card.insight as FragmentType<typeof INSIGHT_CARD_FRAGMENT>}
-                  isSeen={card.isSeen}
-                  onDismiss={() => handleInsightDismiss(card.insightId)}
-                />
-              ) : (
-                <SummaryCard
-                  key={card.id}
-                  summary={card.summary as FragmentType<typeof SUMMARY_CARD_FRAGMENT>}
-                  onClick={() => void handleSummaryClick(card.summary.id)}
-                  onDismiss={() => void handleSummaryDismiss(card.summary.id)}
-                />
-              ),
-            )}
-          </Carousel>
-        )}
+              <section className="flex flex-col gap-2">
+                <h2 className="text-lg font-semibold tracking-tight text-foreground">Insights & Summaries</h2>
+                {summariesError && (
+                  <p className="text-sm text-muted-foreground">
+                    We could not load live insights. Preview cards are shown until the service recovers.
+                  </p>
+                )}
+                {showInsightsRowEmptyState ? (
+                  <p className="py-4 text-center text-sm text-muted-foreground">
+                    You've seen everything for now, let Companion learn and come back later
+                  </p>
+                ) : (
+                  <div className="flex flex-col gap-2">{insightList}</div>
+                )}
+              </section>
+            </>
+          )}
+        </Frame>
 
-        {summariesError && (
-          <div className="py-4 text-center text-sm text-muted-foreground">
-            We could not load live insights. Preview cards are shown until the service recovers.
-          </div>
-        )}
-
-        {hbpeEnabled && forecast && (
-          <div className="px-2 pb-4">
-            <h3 className="text-sm font-semibold text-foreground mb-2">Tomorrow's Forecast</h3>
-            <ForecastStrip
-              buckets={forecast.buckets}
-              generatedAt={forecast.generatedAt}
-              systemStatus={forecast.systemStatus}
-              stalled={forecastStalled}
-            />
-          </div>
-        )}
-
+        {/* Outside the frame, as the desktop exit already does it.
+          On mobile FeedModal is an InlineModal — `absolute inset-0` — so it
+          fills its nearest positioned ancestor. Inside the frame that ancestor
+          is the frame, which is only as tall as the brief's own content, so an
+          action card would open into a box partway down the page instead of
+          over it. Outside, it resolves to the host: Today's PageContent when
+          embedded, or the layout's `relative` <main> when this page stands on
+          its own. */}
         {isModalOpen && <FeedModal onClose={handleModalClose} />}
-      </PageContent>
+      </>
     );
   }
 
   const carouselProps = {
     className: '-mx-6',
-    containerClassName: 'px-6 pb-6 pt-1',
+    containerClassName: 'px-6 py-1',
     slideClassName: 'flex-none min-w-[550px] basis-[550px] mr-6',
   } satisfies CarouselProps;
 
   return (
     <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-            <Breadcrumb.Separator className="hidden md:block" />
-            <Breadcrumb.Item>
-              <Breadcrumb.Page>Feed</Breadcrumb.Page>
-            </Breadcrumb.Item>
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
+      <Frame className={frameClassName}>
+        <ContextPromptCard />
 
-      <PageContent>
-        {hbpeEnabled && forecast && (
+        {(actionsEnabled || Boolean(question)) && (
           <>
-            <h2 className="text-2xl font-bold text-foreground">Tomorrow's Forecast</h2>
-            <ForecastStrip
-              buckets={forecast.buckets}
-              generatedAt={forecast.generatedAt}
-              systemStatus={forecast.systemStatus}
-              stalled={forecastStalled}
-            />
-          </>
-        )}
+            <h2 className="text-2xl font-bold text-foreground">
+              {actionsEnabled ? 'Actions' : 'Reflections'}
+            </h2>
 
-        <h2 className="text-2xl font-bold text-foreground">Actions</h2>
-
-        {isActionsRowEmpty ? (
-          <div className="flex min-h-[220px] items-center justify-center">
-            <p className="text-center text-lg font-medium text-muted-foreground opacity-70">All Caught Up!</p>
-          </div>
-        ) : (
-          <Carousel {...carouselProps} initialIndex={selectedActionCardIndex}>
-            {actionCards.map((card) =>
-              card.kind === 'question' ? (
-                <QuestionCard
-                  key={card.id}
-                  question={card.question as FeedQuestion}
-                  submitting={questionSubmitting}
-                  onSubmit={handleQuestionSubmit}
-                  className="hover:shadow-lg transition-shadow duration-200"
-                />
-              ) : (
-                <BentoCard
-                  key={card.id}
-                  title={card.action.title}
-                  description={
-                    <div className="prose dark:prose-invert">
-                      <Markdown>{card.action.text}</Markdown>
-                    </div>
-                  }
-                  tags={card.action.tags}
-                  imageUrl={card.action.imageUrl}
-                  onClick={() => void handleCardClick(card.action.id)}
-                  onDismiss={() => void handleActionDismiss(card.action.id)}
-                  dismissLabel="Dismiss action"
-                  showUnseenIndicator={!card.action.seen}
-                  className="hover:shadow-lg transition-shadow duration-200"
-                />
-              ),
+            {isActionsRowEmpty ? (
+              <div className="flex min-h-[220px] items-center justify-center">
+                <p className="text-center text-lg font-medium text-muted-foreground opacity-70">
+                  All Caught Up!
+                </p>
+              </div>
+            ) : (
+              <Carousel {...carouselProps} initialIndex={selectedActionCardIndex}>
+                {actionCards.map((card) =>
+                  card.kind === 'question' ? (
+                    <QuestionCard
+                      key={card.id}
+                      question={card.question as FeedQuestion}
+                      submitting={questionSubmitting}
+                      onSubmit={handleQuestionSubmit}
+                      className="hover:shadow-lg transition-shadow duration-200"
+                    />
+                  ) : (
+                    <BentoCard
+                      key={card.id}
+                      title={card.action.title}
+                      description={
+                        <div className="prose dark:prose-invert">
+                          <Markdown>{card.action.text}</Markdown>
+                        </div>
+                      }
+                      tags={card.action.tags}
+                      imageUrl={card.action.imageUrl}
+                      onClick={() => void handleCardClick(card.action.id)}
+                      onDismiss={() => void handleActionDismiss(card.action.id)}
+                      dismissLabel={t('FEED_CARD_DISMISS_ACTION')}
+                      showUnseenIndicator={!card.action.seen}
+                      className="hover:shadow-lg transition-shadow duration-200"
+                    />
+                  ),
+                )}
+              </Carousel>
             )}
-          </Carousel>
+          </>
         )}
 
         <h2 className="text-2xl font-bold text-foreground">Insights & Summaries</h2>
 
-        <div className="space-y-3">
+        <div className="space-y-2">
           {summariesError && (
             <div className="text-sm text-destructive">
               We could not load live insights. Preview cards are shown until the service recovers.
@@ -445,7 +509,10 @@ export function FeedPage() {
                     key={card.id}
                     insight={card.insight as FragmentType<typeof INSIGHT_CARD_FRAGMENT>}
                     isSeen={card.isSeen}
-                    onDismiss={() => handleInsightDismiss(card.insightId)}
+                    onClick={() => void handleSummaryClick(card.summaryId)}
+                    onDismiss={() =>
+                      void handleInsightDismiss(card.insightId, card.summaryId, card.dismissMode)
+                    }
                     className="hover:shadow-lg transition-shadow duration-200 h-110"
                   />
                 ) : (
@@ -461,7 +528,7 @@ export function FeedPage() {
             </Carousel>
           )}
         </div>
-      </PageContent>
+      </Frame>
 
       {isModalOpen && <FeedModal onClose={handleModalClose} />}
     </>

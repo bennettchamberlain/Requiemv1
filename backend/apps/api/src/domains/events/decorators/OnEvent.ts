@@ -5,11 +5,18 @@ import { DEFAULT_QUEUE } from '../constants';
 import { EventListenerRegistry } from '../event-registration';
 import type { EventPayloads } from '../event-registry';
 import type { EventRegistry } from '../registry';
-import type { Acknowledgement } from '../types';
+import type { Acknowledgement, QueueOptions } from '../types';
 
 interface Opts {
   autoAcknowledge?: boolean;
   queue?: string;
+
+  /**
+   * pg-boss queue-level options (expiration, retries) applied when the queue is
+   * created/updated at module init. Set `autoAcknowledge: false` and call
+   * `ack.defer()` for jobs whose completion is reported out-of-band (webhook).
+   */
+  queueOptions?: QueueOptions;
 }
 
 /**
@@ -24,14 +31,14 @@ export function OnEvent<E extends keyof EventRegistry>(
   opts?: Opts,
 ): ReturnType<typeof applyDecorators>;
 export function OnEvent<E extends string>(event: E, opts?: Opts) {
-  const { autoAcknowledge = true, queue = DEFAULT_QUEUE } = opts ?? {};
+  const { autoAcknowledge = true, queue = DEFAULT_QUEUE, queueOptions } = opts ?? {};
 
   const decorator = (target: unknown, key: string | symbol, descriptor: PropertyDescriptor) => {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     const className = (target as Function).constructor?.name ?? 'UnknownClass';
     const methodName = String(key);
 
-    EventListenerRegistry.register(event as string, className, methodName, queue);
+    EventListenerRegistry.register(event as string, className, methodName, queue, queueOptions);
 
     if (autoAcknowledge) {
       const originalMethod = descriptor.value;

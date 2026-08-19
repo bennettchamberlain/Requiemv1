@@ -1,8 +1,8 @@
 import { type ReactNode, useState } from 'react';
 
 import { useQuery } from '@apollo/client';
-import { EmptyState, LoadingPage, Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb, Button } from '@ci/shadcn';
+import { EmptyState, LoadingPage, usePageTitle } from '@ci/common';
+import { Button } from '@ci/shadcn';
 import { Link } from 'react-router-dom';
 
 import { NoteIcon } from '@/components/icons';
@@ -28,6 +28,8 @@ const GET_NOTES = gql(`
 export function NotesPage() {
   usePageTitle('Notes - Companion Intelligence');
 
+  // GraphQL, not PowerSync. The list was a local watched query, but this
+  // deployment has no PowerSync service, so isLoading never cleared.
   const { data, loading } = useQuery(GET_NOTES, {
     variables: { first: 50 },
   });
@@ -75,24 +77,6 @@ export function NotesPage() {
 
   return (
     <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-
-            <Breadcrumb.Separator className="hidden md:block" />
-
-            <Breadcrumb.Item>
-              <Breadcrumb.Page>Notes</Breadcrumb.Page>
-            </Breadcrumb.Item>
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
       {content}
 
       {focusedNote && <DeleteNoteModal noteId={focusedNote} onClose={() => setFocusedNote(null)} />}

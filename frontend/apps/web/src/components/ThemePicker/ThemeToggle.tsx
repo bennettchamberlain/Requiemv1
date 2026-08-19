@@ -1,10 +1,12 @@
-import { Button } from '@ci/shadcn';
+import { IconButton } from '@ci/shadcn';
 import { Monitor, Moon, Sun } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 
 import { useTheme } from './useTheme';
 
 export function ThemeToggle() {
   const { themeState, setTheme } = useTheme();
+  const { t } = useTranslation();
 
   const handleToggle = () => {
     if (themeState.mode === 'light') {
@@ -32,25 +34,19 @@ export function ThemeToggle() {
   const getTooltipText = () => {
     switch (themeState.mode) {
       case 'light':
-        return 'Switch to dark mode';
+        return t('THEME_SWITCH_TO_DARK');
       case 'dark':
-        return 'Switch to system mode';
+        return t('THEME_SWITCH_TO_SYSTEM');
       case 'system':
-        return 'Switch to light mode';
+        return t('THEME_SWITCH_TO_LIGHT');
       default:
-        return 'Toggle theme';
+        return t('THEME_SWITCH_TO_LIGHT');
     }
   };
 
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      onClick={handleToggle}
-      title={getTooltipText()}
-      aria-label={getTooltipText()}
-    >
+    <IconButton variant="ghost" onClick={handleToggle} label={getTooltipText()}>
       {getIcon()}
-    </Button>
+    </IconButton>
   );
 }

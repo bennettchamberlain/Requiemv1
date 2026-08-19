@@ -1,22 +1,20 @@
 """
-Unit tests for the Phase 5a actuals backfill (ci.pipeline.actuals_backfill).
+Unit tests for the Phase 5a actuals backfill (ci.hbpe.pipeline.actuals_backfill).
 
 These test the coverage arithmetic, the return-dict contract, and that the
 backfill issues the UPDATE then the coverage SELECT with the user_id/lookback
 parameters — without needing a live Postgres. A DB-backed integration test that
 asserts the join against seeded token_stream rows is a follow-up (see PR body).
 """
+
 from __future__ import annotations
 
 import contextlib
-import sys
-import types
-from pathlib import Path
-from unittest import mock
 
-SRC = Path(__file__).resolve().parents[1] / "src"
-if str(SRC) not in sys.path:
-    sys.path.insert(0, str(SRC))
+# No sys.path manipulation here. ci-hbpe is an installed workspace member, so
+# `import ci.hbpe...` resolves on its own. Prepending this service's src/ also
+# put a regular `ci` package ahead of the shared PEP 420 namespace, which made
+# every other ci.* import fail for the rest of the pytest session.
 
 
 class _FakeCursor:
@@ -56,7 +54,7 @@ class _FakeConn:
 
 def _install_fake_db(monkeypatch, cursor: _FakeCursor):
     """Stub ci.database.get_conn (imported by the module) with a fake conn."""
-    import ci.pipeline.actuals_backfill as ab
+    import ci.hbpe.pipeline.actuals_backfill as ab
 
     @contextlib.contextmanager
     def fake_get_conn():
@@ -111,7 +109,7 @@ def test_lookback_and_user_id_are_bound(monkeypatch):
     # Both statements ran, both with the same bound params.
     assert len(cur.executed) == 2
     update_sql, update_params = cur.executed[0]
-    cov_sql, cov_params = cur.executed[1]
+    _cov_sql, cov_params = cur.executed[1]
     assert "UPDATE hbpe.prediction_log" in update_sql
     assert update_params == {"user_id": "user-4", "lookback": 7}
     assert cov_params == {"user_id": "user-4", "lookback": 7}

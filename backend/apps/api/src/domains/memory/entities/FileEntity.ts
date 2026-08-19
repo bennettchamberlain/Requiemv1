@@ -1,57 +1,43 @@
-import {
-  Entity,
-  PrimaryColumn,
-  Column,
-  CreateDateColumn,
-  UpdateDateColumn,
-  ManyToOne,
-  JoinColumn,
-  Repository,
-  SelectQueryBuilder,
-} from 'typeorm';
+import { ChildEntity, Column } from 'typeorm';
 
-import { UserEntity } from '@ci/domains/user';
+import { BaseEntity } from './BaseEntity';
 
-@Entity({ schema: 'ci', name: 'entities' })
-export class FileEntity {
-  @PrimaryColumn('uuid', { name: 'entity_id' })
-  id!: string;
+/**
+ * A file's presence in the knowledge graph, stored as a `File`-discriminated row
+ * in the shared `ci.entities` table.
+ *
+ * This is NOT the files domain's `FileEntity` (`@ci/domains/files`, table
+ * `ci.files`), which owns the content, storage key, and metadata. This row only
+ * references that record — `linked_table = 'files'`, `linked_id = <file uuid>`
+ * — so the graph can relate a file to people, events, and places without the
+ * files domain knowing the graph exists. The dependency runs one way: memory
+ * listens for `FileUploadedEvent` and maintains this row; files never imports
+ * memory.
+ */
+@ChildEntity('File')
+export class FileEntity extends BaseEntity {
+  // Declared byte-identical to PersonEntity's: the columns are nullable in the
+  // DB (with a both-or-neither CHECK), and two children must not disagree about
+  // one physical column.
+  @Column({ type: 'text', name: 'linked_table', nullable: true })
+  linkedTable!: string | null;
 
-  @Column({ type: 'text', name: 'entity_type', default: 'File' })
-  entity_type!: string;
+  @Column({ type: 'text', name: 'linked_id', nullable: true })
+  linkedId!: string | null;
 
-  @Column({ type: 'text', nullable: true })
-  name!: string | null;
-
-  @Column({ type: 'text', nullable: true })
-  description!: string | null;
-
-  @Column({ type: 'jsonb', default: '{}' })
-  properties!: Record<string, unknown>;
-
-  @Column({ type: 'text', nullable: false })
-  linked_id!: string;
-
-  @Column({ type: 'text', nullable: false })
-  linked_table!: string;
-
-  // Helper method for creating filtered queries
-  static createFileQuery(
-    repository: Repository<FileEntity>,
-    alias: string = 'file',
-  ): SelectQueryBuilder<FileEntity> {
-    return repository
-      .createQueryBuilder(alias)
-      .where(`${alias}.entity_type = :entityType`, { entityType: 'File' });
+  static toEgressType(entity: FileEntity): File {
+    return {
+      id: entity.id,
+      name: entity.name,
+      description: entity.description,
+      properties: entity.properties,
+      linkedTable: entity.linkedTable,
+      linkedId: entity.linkedId,
+      userId: entity.userId ?? null,
+      createdAt: entity.createdAt,
+      updatedAt: entity.updatedAt,
+    };
   }
-
-  @ManyToOne(() => UserEntity, { nullable: true })
-  @JoinColumn({ name: 'owner_user_id' })
-  user?: UserEntity;
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  created_at!: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updated_at!: Date;
 }
+
+export type File = Readonly<FileEntity>;

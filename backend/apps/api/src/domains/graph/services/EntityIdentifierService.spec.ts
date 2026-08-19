@@ -70,8 +70,22 @@ describe('EntityIdentifierService.upsertForEntity', () => {
 
     expect(insert.calls.orIgnore).toBe(1);
     expect(insert.calls.values).toEqual([
-      { ownerUserId: OWNER, entityId: ENTITY, kind: 'email', valueNormalized: 'john@example.com' },
-      { ownerUserId: OWNER, entityId: ENTITY, kind: 'phone', valueNormalized: '4155550100' },
+      {
+        ownerUserId: OWNER,
+        entityId: ENTITY,
+        kind: 'email',
+        valueNormalized: 'john@example.com',
+        rawValue: '  John@Example.COM ',
+        source: null,
+      },
+      {
+        ownerUserId: OWNER,
+        entityId: ENTITY,
+        kind: 'phone',
+        valueNormalized: '4155550100',
+        rawValue: '+1 (415) 555-0100',
+        source: null,
+      },
     ]);
     expect(inserted).toBe(2);
   });
@@ -86,8 +100,22 @@ describe('EntityIdentifierService.upsertForEntity', () => {
     });
 
     expect(insert.calls.values).toEqual([
-      { ownerUserId: OWNER, entityId: ENTITY, kind: 'email', valueNormalized: 'a@b.com' },
-      { ownerUserId: OWNER, entityId: ENTITY, kind: 'phone', valueNormalized: '4155550100' },
+      {
+        ownerUserId: OWNER,
+        entityId: ENTITY,
+        kind: 'email',
+        valueNormalized: 'a@b.com',
+        rawValue: null,
+        source: null,
+      },
+      {
+        ownerUserId: OWNER,
+        entityId: ENTITY,
+        kind: 'phone',
+        valueNormalized: '4155550100',
+        rawValue: '+1 415 555 0100',
+        source: null,
+      },
     ]);
   });
 
@@ -125,7 +153,14 @@ describe('EntityIdentifierService.upsertForEntity', () => {
     await service.upsertForEntity(OWNER, ENTITY, { emails: 'solo@example.com' });
 
     expect(insert.calls.values).toEqual([
-      { ownerUserId: OWNER, entityId: ENTITY, kind: 'email', valueNormalized: 'solo@example.com' },
+      {
+        ownerUserId: OWNER,
+        entityId: ENTITY,
+        kind: 'email',
+        valueNormalized: 'solo@example.com',
+        rawValue: null,
+        source: null,
+      },
     ]);
   });
 });
@@ -145,10 +180,38 @@ describe('EntityIdentifierService.upsertForEntities', () => {
     expect(insert.calls.valuesCalls).toHaveLength(1);
     expect(insert.calls.orIgnore).toBe(1);
     expect(insert.calls.values).toEqual([
-      { ownerUserId: OWNER, entityId: ENTITY, kind: 'email', valueNormalized: 'john@example.com' },
-      { ownerUserId: OWNER, entityId: ENTITY, kind: 'phone', valueNormalized: '4155550100' },
-      { ownerUserId: OWNER, entityId: ENTITY_2, kind: 'email', valueNormalized: 'jane@example.com' },
-      { ownerUserId: OWNER, entityId: ENTITY_2, kind: 'name', valueNormalized: 'jose garcia' },
+      {
+        ownerUserId: OWNER,
+        entityId: ENTITY,
+        kind: 'email',
+        valueNormalized: 'john@example.com',
+        rawValue: '  John@Example.COM ',
+        source: null,
+      },
+      {
+        ownerUserId: OWNER,
+        entityId: ENTITY,
+        kind: 'phone',
+        valueNormalized: '4155550100',
+        rawValue: '+1 (415) 555-0100',
+        source: null,
+      },
+      {
+        ownerUserId: OWNER,
+        entityId: ENTITY_2,
+        kind: 'email',
+        valueNormalized: 'jane@example.com',
+        rawValue: null,
+        source: null,
+      },
+      {
+        ownerUserId: OWNER,
+        entityId: ENTITY_2,
+        kind: 'name',
+        valueNormalized: 'jose garcia',
+        rawValue: 'José  GARCÍA',
+        source: null,
+      },
     ]);
     expect(inserted).toBe(4);
   });
@@ -164,8 +227,22 @@ describe('EntityIdentifierService.upsertForEntities', () => {
     // Matches the sequential per-entity statements this replaces: the first
     // INSERT claimed the tuple, the second was ignored by ON CONFLICT.
     expect(insert.calls.values).toEqual([
-      { ownerUserId: OWNER, entityId: ENTITY, kind: 'email', valueNormalized: 'shared@example.com' },
-      { ownerUserId: OWNER, entityId: ENTITY_2, kind: 'phone', valueNormalized: '4155550100' },
+      {
+        ownerUserId: OWNER,
+        entityId: ENTITY,
+        kind: 'email',
+        valueNormalized: 'shared@example.com',
+        rawValue: null,
+        source: null,
+      },
+      {
+        ownerUserId: OWNER,
+        entityId: ENTITY_2,
+        kind: 'phone',
+        valueNormalized: '4155550100',
+        rawValue: null,
+        source: null,
+      },
     ]);
   });
 
@@ -178,7 +255,14 @@ describe('EntityIdentifierService.upsertForEntities', () => {
     ]);
 
     expect(insert.calls.values).toEqual([
-      { ownerUserId: OWNER, entityId: ENTITY_2, kind: 'email', valueNormalized: 'good@example.com' },
+      {
+        ownerUserId: OWNER,
+        entityId: ENTITY_2,
+        kind: 'email',
+        valueNormalized: 'good@example.com',
+        rawValue: null,
+        source: null,
+      },
     ]);
     expect(inserted).toBe(1);
   });
@@ -301,5 +385,42 @@ describe('EntityIdentifierService.findEntityIdByIdentifier', () => {
     const { service } = makeService({ findOne });
 
     await expect(service.findEntityIdByIdentifier(OWNER, 'phone', '4155550100')).resolves.toBeNull();
+  });
+});
+
+describe('EntityIdentifierService — a garbage display name never enters the index', () => {
+  // ci.entity_identifiers is what every people-linking lookup resolves against,
+  // so a `name` row keyed on a call-log heading is a permanent claim on that
+  // string: the Person holding it keeps being resolved to, and the next sweep
+  // hands it more communications. 288 such rows were live.
+  it('skips a call-log heading and an export filename, keeping the real name', async () => {
+    const { service, insert } = makeService({});
+
+    const inserted = await service.upsertForEntity(OWNER, ENTITY, {
+      names: [
+        'Missed call from',
+        'Placed call to \nNancy Davis',
+        'Group Conversation - 2024-09-25T01_45_41Z.html',
+        'Nancy Davis',
+      ],
+    });
+
+    expect(insert.calls.values).toEqual([
+      expect.objectContaining({ kind: 'name', valueNormalized: 'nancy davis' }),
+    ]);
+    expect(inserted).toBe(1);
+  });
+
+  it('drops an email or phone that carries a newline — markup, not an address', async () => {
+    const { service, insert } = makeService({});
+
+    await service.upsertForEntity(OWNER, ENTITY, {
+      emails: ['Missed call from \nalice@example.com'],
+      phones: ['+1 (415) 555-0100'],
+    });
+
+    expect(insert.calls.values).toEqual([
+      expect.objectContaining({ kind: 'phone', valueNormalized: '4155550100' }),
+    ]);
   });
 });

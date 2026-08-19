@@ -5,6 +5,8 @@ import { type Person } from '@ci/domains/memory';
 import { EntityTagType } from './EntityTagType';
 import { GlobalUID } from './GlobalUID';
 import { Node } from './Node';
+import { PersonAddressType } from './PersonAddressType';
+import { RelationshipType } from './RelationshipType';
 import { Taggable } from './Taggable';
 
 @ObjectType({ implements: () => [Node, Taggable] })
@@ -26,11 +28,46 @@ export class PersonType implements Node, Taggable {
   firstName!: string | null;
 
   @Field(() => String, { nullable: true })
+  middleName!: string | null;
+
+  @Field(() => String, { nullable: true })
   lastName!: string | null;
+
+  /** ISO date (YYYY-MM-DD). */
+  @Field(() => String, { nullable: true })
+  birthDate!: string | null;
+
+  /** True for the user's own person entity. */
+  @Field(() => Boolean)
+  isSelf!: boolean;
+
+  @Field(() => String, { nullable: true })
+  nickname!: string | null;
+
+  @Field(() => String, { nullable: true })
+  pronouns!: string | null;
 
   @Field(() => String, { nullable: true })
   gender!: string | null;
 
+  @Field(() => String, { nullable: true })
+  jobTitle!: string | null;
+
+  @Field(() => String, { nullable: true })
+  organization!: string | null;
+
+  @Field(() => String, { nullable: true })
+  department!: string | null;
+
+  @Field(() => String, { nullable: true })
+  website!: string | null;
+
+  /** Every labelled address; `addresses[0]` is the primary one. */
+  @Field(() => [PersonAddressType])
+  addresses!: PersonAddressType[];
+
+  // The primary address, flattened. Predates `addresses` and is kept in sync
+  // with it — prefer `addresses` for anything that renders more than one line.
   @Field(() => String, { nullable: true })
   address!: string | null;
 
@@ -58,6 +95,13 @@ export class PersonType implements Node, Taggable {
   @Field(() => [EntityTagType])
   tags!: EntityTagType[];
 
+  /** Life-graph ego edges — resolved from ci.relationships (WS5). */
+  @Field(() => [RelationshipType], { nullable: true })
+  outgoingRelationships?: RelationshipType[];
+
+  @Field(() => [RelationshipType], { nullable: true })
+  incomingRelationships?: RelationshipType[];
+
   static toType(person: Person): PersonType {
     return {
       __typename: PersonType.name,
@@ -66,8 +110,20 @@ export class PersonType implements Node, Taggable {
       name: person.name,
       description: person.description,
       firstName: person.firstName,
+      middleName: person.middleName,
       lastName: person.lastName,
+      birthDate: person.birthDate,
+      isSelf: person.isSelf,
+      nickname: person.nickname,
+      pronouns: person.pronouns,
       gender: person.gender,
+      jobTitle: person.jobTitle,
+      organization: person.organization,
+      department: person.department,
+      website: person.website,
+      // `?? []` because not every caller hands over a full egress Person —
+      // search results and fixtures build the shape by hand.
+      addresses: (person.addresses ?? []).map((address) => PersonAddressType.toType(address)),
       address: person.address,
       streetAddress: person.streetAddress,
       streetAddress2: person.streetAddress2,
@@ -75,7 +131,7 @@ export class PersonType implements Node, Taggable {
       region: person.region,
       country: person.country,
       postalCode: person.postalCode,
-      avatarUrl: person.avatarUrl,
+      avatarUrl: (person.properties?.avatar_url as string) ?? null,
       tags: [], // Resolved by PersonResolver
     };
   }

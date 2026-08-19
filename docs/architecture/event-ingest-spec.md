@@ -21,7 +21,8 @@
 JSON-Schema registry, and the migration of existing typed controllers onto this path.
 
 **Superseded in part:** bulk *import* (as opposed to live capture) did not converge on
-`/v1/events` — CI-Import-Tools pushes through the **GraphQL bulk mutations**
+`/v1/events` — the importer (CI-Server's native import domain, ported from the now-retired
+CI-Import-Tools) pushes through the **GraphQL bulk mutations**
 (`createEvents`, `createCommunications`, …) with the same provenance-triple idempotency and
 deferred search indexing. See
 [docs/api/graphql.md §4.7](../api/graphql.md#47-bulk-ingest-mutations-the-importer-surface--detailed)

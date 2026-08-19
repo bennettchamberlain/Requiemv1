@@ -54,6 +54,10 @@ export interface ConnectConsentParams {
   /** Per-request CSP nonce; stamped on the inline <style> so the page's own
    *  styles apply while any injected inline style (no nonce) is blocked. */
   nonce: string;
+  /** True when this render is the one-shot retry after a CSRF failure on
+   *  /approve; echoed as a hidden field so a second consecutive failure renders
+   *  a hard error instead of redirect-looping. */
+  csrfRetry?: boolean;
 }
 
 /** Escape a string for safe interpolation into HTML text/attribute context. */
@@ -94,10 +98,10 @@ function capabilityLinesForScopes(scopes: string[]): string[] {
  * (`.actions{display:flex}`), the layout this consent page has always used.
  */
 const CONSENT_STYLES = /* css */ `
-    :root{color-scheme:dark;--bg:#041620;--card:#0a222e;--border:#1f4a55;--fg:#f5f8fa;--fg-dim:#9bb2b7;--brand-grad:linear-gradient(135deg,#0b6e74 0%,#079d99 100%);--on-accent:#fff;--shadow:0 6px 24px rgba(4,22,32,.22)}
-    @media (prefers-color-scheme:light){:root{color-scheme:light;--bg:#f3f3f3;--card:#f7f7f9;--border:#d3dddf;--fg:#010f16;--fg-dim:#4f6168;--shadow:0 6px 24px rgba(4,22,32,.12)}}
+    :root{color-scheme:dark;--bg:#041620;--card:#0c323c;--border:#073038;--fg:#e8f2f4;--fg-dim:#a3babf;--brand-grad:linear-gradient(135deg,#0e766a 0%,#064741 100%);--on-accent:#f0fdf4;--shadow:0 6px 24px rgba(4,22,32,.22)}
+    @media (prefers-color-scheme:light){:root{color-scheme:light;--bg:#f3faf7;--card:#f0f9f5;--border:#dfece6;--fg:#0a222e;--fg-dim:#3a524b;--shadow:0 6px 24px rgba(4,22,32,.12)}}
     *{box-sizing:border-box}
-    body{font-family:"Montserrat",system-ui,-apple-system,"Segoe UI",sans-serif;margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--fg);padding:40px 20px}
+    body{font-family:"Manrope",system-ui,-apple-system,"Segoe UI",sans-serif;margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--fg);padding:40px 20px}
     .card{width:100%;max-width:440px;text-align:center;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:36px 28px;box-shadow:var(--shadow)}
     .logo-wrap{display:flex;justify-content:center;margin:0 auto 22px}
     .cm{width:56px;height:56px;object-fit:contain;border-radius:14px;background:#000;box-shadow:0 2px 10px rgba(0,0,0,.28)}
@@ -129,7 +133,10 @@ const CONSENT_STYLES = /* css */ `
  * by the caller.
  */
 export function renderConnectConsentPage(params: ConnectConsentParams): string {
-  const displayName = escapeHtml(params.appName?.trim() || params.appUrn);
+  // Normalise once: the trimmed name drives both the heading and the hidden
+  // app_name field that carries it through the CSRF self-heal round-trip.
+  const trimmedAppName = params.appName?.trim();
+  const displayName = escapeHtml(trimmedAppName || params.appUrn);
   const appUrn = escapeHtml(params.appUrn);
   const state = escapeHtml(params.state);
   const returnUrl = escapeHtml(params.returnUrl);
@@ -173,7 +180,17 @@ export function renderConnectConsentPage(params: ConnectConsentParams): string {
         <input type="hidden" name="app" value="${appUrn}" />
         <input type="hidden" name="state" value="${state}" />
         <input type="hidden" name="return" value="${returnUrl}" />
-        <input type="hidden" name="csrf" value="${csrfToken}" />
+        <input type="hidden" name="csrf" value="${csrfToken}" />${
+          trimmedAppName
+            ? `
+        <input type="hidden" name="app_name" value="${escapeHtml(trimmedAppName)}" />`
+            : ''
+        }${
+          params.csrfRetry
+            ? `
+        <input type="hidden" name="csrf_retry" value="1" />`
+            : ''
+        }
         <button class="btn primary" type="submit">Allow</button>
       </form>
     </div>
@@ -191,8 +208,21 @@ export function renderConnectConsentPage(params: ConnectConsentParams): string {
  * URL is silently refused (the POST completes, then nothing happens). A
  * `<meta http-equiv="refresh">` is a top-level navigation, NOT a form submission,
  * so form-action does not apply — the same navigation kind the "Not now" <a> link
- * uses, which reaches CI-Hub fine. The <a> is a no-JS manual fallback. The dark
- * background matches the consent page so there's no white flash on the hop.
+ * uses, which reaches CI-Hub fine. The dark background matches the consent page
+ * so there's no white flash on the hop.
+ *
+ * The "Continue" <a> is the manual escape hatch for the browsers where the
+ * meta refresh never fires (Firefox's blockautorefresh setting,
+ * kiosk/enterprise policies, some privacy extensions) — without it those users
+ * would be stranded on an endless spinner, and this page cannot script its way
+ * out (nginx stamps `script-src 'self'`, so no inline JS). Since the refresh
+ * normally wins instantly, the link stays invisible for a few seconds
+ * (CSS-only reveal) so the ordinary hop shows just the spinner.
+ *
+ * The copy deliberately differs from the Hub's /memory-connect/finishing
+ * interstitial ("Applying your memory connection"): by the time this page
+ * renders, access IS granted — all that's left is carrying the browser back to
+ * where the connect flow started, so it says exactly that.
  *
  * `hubUrl` is an already-origin-allowlisted CI-Hub URL; it is HTML-escaped here
  * for the meta content and href attributes.
@@ -206,29 +236,37 @@ export function renderConnectRedirectPage(hubUrl: string): string {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta http-equiv="refresh" content="0; url=${url}" />
-  <title>Connecting…</title>
+  <title>Taking you back…</title>
   <style>
     :root { color-scheme: dark light; }
     * { box-sizing: border-box; }
-    body { font-family: "Montserrat", system-ui, -apple-system, "Segoe UI", sans-serif;
+    body { font-family: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
       margin: 0; min-height: 100vh; display: grid; place-items: center;
-      background: #041620; color: #f5f8fa; padding: 40px 20px; }
-    @media (prefers-color-scheme: light) { body { background: #f3f3f3; color: #010f16; } }
+      background: #041620; color: #e8f2f4; padding: 40px 20px; }
+    @media (prefers-color-scheme: light) { body { background: #f3faf7; color: #0a222e; } }
     .wrap { display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; }
     .spinner { width: 34px; height: 34px; border-radius: 50%;
-      border: 3px solid rgba(155, 178, 183, .25); border-top-color: #079d99;
+      border: 3px solid rgba(163, 186, 191, .25); border-top-color: #0a6358;
       animation: spin .8s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
     .msg { margin: 0; font-size: 15px; font-weight: 600; }
-    .link { font-size: 13px; color: #9bb2b7; text-decoration: underline; text-underline-offset: 3px; }
+    /* Hidden until the meta refresh has clearly not fired; the delay is the
+       only "detection" available without JS. */
+    .link { font-size: 13px; color: #9bb2b7; text-decoration: underline; text-underline-offset: 3px;
+      opacity: 0; animation: reveal .4s ease 4s forwards; }
     .link:hover { color: inherit; }
+    @keyframes reveal { to { opacity: 1; } }
+    @media (prefers-reduced-motion: reduce) {
+      .spinner { animation: none; }
+      /* No animations ⇒ no timed reveal — keep the fallback link visible. */
+      .link { animation: none; opacity: 1; }
+    }
   </style>
 </head>
 <body>
   <main class="wrap">
     <div class="spinner" aria-hidden="true"></div>
-    <p class="msg">Connecting to Companion Memory…</p>
+    <p class="msg">Access granted — taking you back…</p>
     <a class="link" href="${url}">Continue</a>
   </main>
 </body>

@@ -5,6 +5,7 @@ import documentary from './assets/documentary.png';
 import drama from './assets/drama.png';
 import horror from './assets/horror.png';
 import { OptionGrid } from './OptionGrid';
+import { StepHeader } from './StepHeader';
 
 const options = [
   {
@@ -33,13 +34,13 @@ export function MoviePreferences() {
   const form = useFormContext();
 
   return (
-    <>
-      <div className="text-center text-2xl mb-6 md:mb-10">Would you rather watch?</div>
+    <div className="space-y-6 w-full">
+      <StepHeader title="Would you rather watch?" />
       <Form.Field
         control={form.control}
         name="movie_preference"
         render={({ field }) => <OptionGrid options={options} onValueChange={field.onChange} />}
       />
-    </>
+    </div>
   );
 }

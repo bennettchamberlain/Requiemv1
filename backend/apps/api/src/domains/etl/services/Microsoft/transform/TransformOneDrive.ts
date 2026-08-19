@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { LoggerService } from '@ci/common/logging';
 import { type Connection, ConnectionService } from '@ci/domains/connections';
 import { FileService } from '@ci/domains/files';
-import { ContentService } from '@ci/domains/memory';
+import { ContentService, SOURCE_NATIVE_EXTERNAL_ID_KIND } from '@ci/domains/memory';
 
 import { ConnectionSyncJob } from '../../../types';
 
@@ -226,7 +226,11 @@ export class OneDriveTransformService {
             text: `OneDrive document: ${itemName}`,
             url: webUrl ?? undefined,
             mimetype: mimeType,
+            // OneDrive's OWN item id, not the ci.files row created just above
+            // (that one gets its own generated uuid) — joining this against
+            // ci.files would find nothing.
             external_id: itemId,
+            external_id_kind: SOURCE_NATIVE_EXTERNAL_ID_KIND,
             user: {
               id: userId,
             },

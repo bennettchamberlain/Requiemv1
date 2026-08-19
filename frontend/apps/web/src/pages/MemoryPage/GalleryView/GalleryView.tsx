@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { Images } from '@ci/shadcn/icons';
+import { useSearchParams } from 'react-router-dom';
 
 import {
   AnswerGridItem,
@@ -10,6 +10,7 @@ import {
   ContentGridItem,
   EntityGrid,
   EventGridItem,
+  FileChunkGridItem,
   FileGridItem,
   ItemGridItem,
   NoteGridItem,
@@ -18,7 +19,14 @@ import {
   ThreadGridItem,
 } from '@/components/entities';
 
-import { Empty, ErrorState } from '../Components';
+import {
+  ErrorState,
+  MemoryEmptyState,
+  formatLoadedCount,
+  isChronologicalSort,
+  orderDatedFirst,
+} from '../Components';
+import { countActiveFilters } from '../Components/ExplorerToolbar/filterParams';
 import { useEntityService } from '../useEntityService';
 
 import { getEntityMedia, type EntityMedia } from './media';
@@ -27,15 +35,33 @@ import { MediaTile } from './MediaTile';
 
 export function GalleryView() {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [searchParams] = useSearchParams();
+  const filteredBrowse = countActiveFilters(searchParams) > 0 || Boolean(searchParams.get('search')?.trim());
 
-  const [{ data, loading, hasNextPage, loadingMore, loadMore, error, refetch }, { setActiveEntity }] =
-    useEntityService();
+  const [
+    { data, loading, hasNextPage, loadingMore, loadMore, error, refetch, totalCount },
+    { setActiveEntity },
+  ] = useEntityService();
+
+  // Under a chronological sort, entities the client cannot date (Content,
+  // Person, Place, Item, … — the server orders them by row-write time, which a
+  // bulk import parks at the very front) go to the back of the grid, mirroring
+  // the trailing "No date" group ListView renders. A relevance/name sort has no
+  // date axis to fall off, so its order is left alone.
+  const ordered = useMemo(() => {
+    const chronological = isChronologicalSort(
+      searchParams.get('sortBy'),
+      Boolean(searchParams.get('search')?.trim()),
+    );
+
+    return chronological ? orderDatedFirst(data) : data;
+  }, [data, searchParams]);
 
   // Ordered list of media-bearing entities (images/video). It drives the
   // lightbox and lets a tile look up its position for arrow navigation.
   const mediaEntries = useMemo(
-    () => data.map(getEntityMedia).filter((m): m is EntityMedia => m != null),
-    [data],
+    () => ordered.map(getEntityMedia).filter((m): m is EntityMedia => m != null),
+    [ordered],
   );
   const mediaIndexById = useMemo(() => {
     const map = new Map<string, number>();
@@ -70,7 +96,7 @@ export function GalleryView() {
 
   if (loading && data.length === 0) {
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         <EntityGrid>
           {Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="h-full w-full animate-pulse rounded-lg border bg-card" />
@@ -84,7 +110,7 @@ export function GalleryView() {
   // query failure read as "No results found".
   if (error && data.length === 0) {
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         <ErrorState onRetry={refetch} />
       </div>
     );
@@ -92,31 +118,36 @@ export function GalleryView() {
 
   if (data.length === 0) {
     return (
-      <Empty
-        title="No results found"
-        description="Connect your data sources or try a different search to see content here"
-        icon={Images}
-      />
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+        <MemoryEmptyState filtered={filteredBrowse} />
+      </div>
     );
   }
 
   return (
     <>
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         <EntityGrid>
-          {data.map((item) => {
+          {ordered.map((item) => {
             // Media-bearing entities (image/video) render as real thumbnails and
             // open the lightbox; everything else keeps its clean text tile and
             // opens the shared details drawer (incl. non-media File/Item).
             const mediaIdx = mediaIndexById.get(item.id);
             if (mediaIdx != null) {
-              return (
-                <MediaTile
-                  key={item.id}
-                  media={mediaEntries[mediaIdx]}
-                  onClick={() => setLightboxIndex(mediaIdx)}
-                />
-              );
+              // FileType (incl. Capture screenshots): open the details sheet so
+              // the sidebar shows EntityMedia + metadata. Other media (e.g.
+              // Event photos) keep the cross-item lightbox.
+              const openMedia = () => {
+                if (item.__typename === 'FileType') {
+                  setActiveEntity(item);
+
+                  return;
+                }
+
+                setLightboxIndex(mediaIdx);
+              };
+
+              return <MediaTile key={item.id} media={mediaEntries[mediaIdx]} onClick={openMedia} />;
             }
 
             switch (item.__typename) {
@@ -149,6 +180,11 @@ export function GalleryView() {
 
               case 'EventType':
                 return <EventGridItem key={item.id} event={item} onClick={() => setActiveEntity(item)} />;
+
+              case 'FileChunkType':
+                return (
+                  <FileChunkGridItem key={item.id} fileChunk={item} onClick={() => setActiveEntity(item)} />
+                );
 
               case 'FileType':
                 return <FileGridItem key={item.id} file={item} onClick={() => setActiveEntity(item)} />;
@@ -186,7 +222,7 @@ export function GalleryView() {
         {hasNextPage && <div ref={sentinelRef} className="h-8" />}
 
         <div className="py-3 text-center text-xs text-muted-foreground">
-          {data.length} loaded{loadingMore ? ' · loading…' : hasNextPage ? '' : ' · end'}
+          {formatLoadedCount({ loaded: data.length, totalCount, loadingMore, hasNextPage })}
         </div>
       </div>
 

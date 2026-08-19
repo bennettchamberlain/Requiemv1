@@ -1,16 +1,28 @@
 import { ForbiddenException, Injectable, type OnModuleInit } from '@nestjs/common';
 import { z, type ZodTypeAny } from 'zod';
 
-import type { RequestContext } from '@ci/common/context';
 import { INTENTS_SCOPE } from '@ci/common/decorators';
-import { type ApiKeyScopedRequest, isScopeLimitedApiKey } from '@ci/common/guards';
+import { type ApiKeyScopedRequest, apiKeyCapabilityOf, isScopeLimitedApiKey } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
-import { type JSONSchema, ToolRegistry, intentToolName } from '@ci/domains/tools';
+import {
+  type JSONSchema,
+  type ToolInvocationContext,
+  ToolRegistry,
+  capabilityAllows,
+  capabilityRequiredFor,
+  intentToolName,
+} from '@ci/domains/tools';
 
 import type { McpRegisteredTool } from '../types';
 
 import { GraphQLToolAdapter } from './GraphQLToolAdapter';
 import { McpExecutorService } from './McpExecutorService';
+
+// `capabilityAllows` used to be defined here, which made the privacy label mean something only to
+// callers who arrived over MCP — the LLM dispatcher reached the same tools through a door with no
+// lock on it. The rule now lives in the tools domain (see `domains/tools/policy`) and is enforced
+// inside ToolRegistry.executeTool for every transport; MCP keeps its pre-check because it owes its
+// client a 403 with a specific message, not because it is the only thing standing there.
 
 @Injectable()
 export class McpToolService implements OnModuleInit {
@@ -63,13 +75,21 @@ export class McpToolService implements OnModuleInit {
    * (sessions/JWT, and empty-scope keys such as the bulk importer's) still see every tool.
    */
   getToolsForRequest(req: ApiKeyScopedRequest): McpRegisteredTool[] {
+    // Capability applies to every api-key principal, including empty-scope (full-surface) ones:
+    // "sees every surface" and "may delete on it" are separate grants, and the importer key that
+    // holds no scopes is exactly the credential that should be able to write without deleting.
+    const capability = apiKeyCapabilityOf(req);
+    const withinCapability = (tool: McpRegisteredTool) => capabilityAllows(tool.privacy, capability);
+
     if (!isScopeLimitedApiKey(req)) {
-      return this.getTools();
+      return this.getTools().filter(withinCapability);
     }
 
     const mayRunIntents = this.mayRunIntents(req);
 
-    return this.getTools().filter((tool) => tool.source !== 'graphql' && mayRunIntents);
+    return this.getTools().filter(
+      (tool) => tool.source !== 'graphql' && mayRunIntents && withinCapability(tool),
+    );
   }
 
   /**
@@ -107,6 +127,17 @@ export class McpToolService implements OnModuleInit {
     // no authorization at all. This is the enforcement point; the catalog filter is only
     // the courtesy of not advertising what would fail.
     const scopeLimited = isScopeLimitedApiKey(context.req);
+    const capability = apiKeyCapabilityOf(context.req);
+
+    // Checked before the surface checks, because it is the answer that does not depend on which
+    // plane the tool lives on: a read-only key is refused `deleteMemory` whether that tool came
+    // from the GraphQL schema or the intent catalog, and the message should say so rather than
+    // blaming the scope.
+    if (!capabilityAllows(tool.privacy, capability)) {
+      throw new ForbiddenException(
+        `Tool "${name}" requires "${capabilityRequiredFor(tool.privacy)}" access, but this API key is "${capability}"`,
+      );
+    }
 
     if (tool.source === 'graphql') {
       if (scopeLimited) {
@@ -130,10 +161,12 @@ export class McpToolService implements OnModuleInit {
       );
     }
 
-    // Native tool execution
+    // Native tool execution. The capability travels WITH the call rather than being left behind at
+    // the transport: the registry re-checks it, so the pre-check above is the courtesy of a precise
+    // 403 and this is what actually authorizes the execution.
     const userId = (context.req.user as { id?: string })?.id;
-    const requestContext: RequestContext = { userId };
-    const result = await this.toolRegistry.executeTool(name, requestContext, args);
+    const invocationContext: ToolInvocationContext = { userId, capability };
+    const result = await this.toolRegistry.executeTool(name, invocationContext, args);
 
     if (!result.success) {
       throw new Error(result.error?.message ?? `Tool "${name}" execution failed`);

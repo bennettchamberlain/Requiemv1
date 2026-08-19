@@ -42,6 +42,9 @@ export class ConnectionType {
   @Field(() => String, { nullable: true })
   externalId!: string | null;
 
+  @Field(() => String, { nullable: true })
+  accountLabel!: string | null;
+
   static toType(connection: Connection): ConnectionType {
     return {
       __typename: ConnectionType.name,
@@ -53,9 +56,10 @@ export class ConnectionType {
       tokenExpiry: connection.tokenExpiry,
       syncState: connection.syncState,
       activeEndpoints: connection.activeEndpoints,
-      providerId: connection.providerId,
+      providerId: GlobalUID.encode('provider', connection.providerId),
       needsReauth: connection.needsReauth,
       externalId: connection.externalId,
+      accountLabel: connection.accountLabel,
     };
   }
 }

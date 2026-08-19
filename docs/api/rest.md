@@ -13,7 +13,7 @@ Grounded in source; every route cites `file:line`.
   - **Dev (`make dev`)** — Caddy strips `/api` and forwards to the API.
   - **Vite standalone** (`frontend/apps/web/vite.config.ts:139-148`) — `proxy['/api']` rewrites `^/api` → `''`, target `API_PROXY_TARGET`, `xfwd: true`.
   - So browser `/api/graph/stats` → server `/graph/stats`. A raw API client (or the importer, which targets the API host directly) calls `/graph/stats` with **no** `/api`.
-- **Two controllers bake `api/` into the path**: `MaintenanceController` (`@Controller('api/maintenance')`, `MaintenanceController.ts:374`) and `IntentsController` (`@Controller('api/intents')`, `IntentsController.ts:18`). These mount at server paths `/api/maintenance/*` and `/api/intents/*`. Reached through the proxy the browser path is `/api/api/maintenance/*`; reached **directly** on the API host it is `/api/maintenance/*` (which is exactly how the importer's `maintenance-runner.ts` builds them from the GraphQL base URL). Everywhere below, **Path = the literal server-mounted path**.
+- **Two controllers bake `api/` into the path**: `MaintenanceController` (`@Controller('api/maintenance')`, `MaintenanceController.ts:374`) and `IntentsController` (`@Controller(['api/intents', 'api/agent/intents'])`, `IntentsController.ts`). These mount at server paths `/api/maintenance/*`, `/api/intents/*`, and `/api/agent/intents/*`. Reached through the proxy the browser path is `/api/api/maintenance/*`; reached **directly** on the API host it is `/api/maintenance/*` (which is exactly how the importer's `maintenance-runner.ts` builds them from the GraphQL base URL). Everywhere below, **Path = the literal server-mounted path**.
 - **Object-store media is NOT served by a Nest controller.** File downloads/thumbnails are presigned MinIO URLs the frontend fetches via a separate same-origin `/static/*` proxy (Vite `proxy['/static']`, target `:9000`, rewrites `^/static`→`''`, forces the signing `Host`; `vite.config.ts:160-170`). `FilesController` has **no** `download`/`thumbnail` route — only `upload` and `PATCH :id`.
 
 ### Body-size limits (`common/middleware/BodyParserMiddleware.ts`)
@@ -23,7 +23,7 @@ Grounded in source; every route cites `file:line`.
 | Route | JSON body limit | Source |
 |-------|-----------------|--------|
 | `POST /graphql` | **10 mb** | `BodyParserMiddleware.ts` (path-matched; importer bulk mutations) |
-| `/v1/*` (whole machine-ingest plane) | **10 mb** JSON | `BodyParserMiddleware.ts` (CI-Applet perception snapshots, `{records}` bulk envelopes) |
+| `/v1/*` (whole machine-ingest plane) | **10 mb** JSON | `BodyParserMiddleware.ts` (Companion Capture perception snapshots, `{records}` bulk envelopes) |
 | `/v1/*` with `Content-Type: application/x-ndjson` | **no overall cap** — middleware bypassed, raw stream handed to the route handler | `BodyParserMiddleware.ts` NDJSON bypass; per-line 1 MB ceiling enforced in `domains/ingest/ndjson.ts` |
 | Any route with `@BodyLimit('…')` | that value | `BodyParserMiddleware.ts` |
 | **Everything else (default)** | **100 kb** | `BodyParserMiddleware.ts` |
@@ -35,7 +35,7 @@ Grounded in source; every route cites `file:line`.
 | Guard | Accepts | Notes |
 |-------|---------|-------|
 | `JwtOrApiKeyAuthGuard` | Passport `jwt` **or** `api-key` strategy, **or** a Portal-brokered OIDC Bearer when `auth.portal.enabled` (`JwtOrApiKeyAuthGuard.ts:22,30-44`) | The default guard on almost every data route. 401 on failure. |
-| `ApiKeyGuard` | `api-key` strategy only (`ApiKeyGuard.ts:6`) | Agent-facing `/memory/*` routes — machine callers with an `x-api-key`. |
+| `ApiKeyGuard` | `api-key` strategy only (`ApiKeyGuard.ts:6`) | Agent-facing `/memory/*` routes — machine callers with an API key, as `x-api-key` or `Authorization: Bearer <key>`. |
 | `JwtAuthGuard` | `jwt` strategy only (`JwtAuthGuard.ts:6`) | Human-session-only routes (`/onboarding/onboard`, `/_internal/features`). |
 | `HubForwardAuthGuard` | HMAC-signed `X-CI-Hub-User` header, verified against a shared secret; **fails closed** when `auth.hubForwardAuth.enabled` is false (`HubForwardAuthGuard.ts:25-60`) | Only on `GET /audit/forward-auth/whoami`. |
 
@@ -226,7 +226,7 @@ Class-level `JwtOrApiKeyAuthGuard` (`:146`). All GET; each query zod-validated.
 
 ### `MemoryController` (agent-facing) — `memory`  ·  `domains/agent/controllers/MemoryController.ts:47`
 
-**Per-method guards.** The first four are `ApiKeyGuard` (machine callers with `x-api-key`); `compact` is `JwtOrApiKeyAuthGuard`.
+**Per-method guards.** The first four are `ApiKeyGuard` (machine callers with an API key, as `x-api-key` or `Authorization: Bearer <key>`); `compact` is `JwtOrApiKeyAuthGuard`.
 
 | Verb | Path | Handler | Auth | Purpose |
 |------|------|---------|------|---------|
@@ -235,6 +235,20 @@ Class-level `JwtOrApiKeyAuthGuard` (`:146`). All GET; each query zod-validated.
 | POST | `/memory/write` | `write` (`:120`) | `ApiKeyGuard` | Store a raw memory fragment verbatim. **201**. |
 | POST | `/memory/turn` | `turn` (`:137`) | `ApiKeyGuard` | Ingest a conversation turn (dedup by SHA-256 UUIDv8). Body `{ sessionId, platform, messages[] }`. Returns `{ created, skipped }`. Driven by OpenClaw `afterTurn` / Hermes `sync_turn`. |
 | POST | `/memory/compact` | `compact` (`:202`) | `JwtOrApiKeyAuthGuard` | Manually trigger compaction (background). Returns `{ queued }`. |
+
+### `PersonaIntelligenceController` — `v1/intelligence`  ·  `domains/persona/controllers/PersonaIntelligenceController.ts:60`
+
+Persona × task intelligence for the web UI and connect keys (Hermes/OpenClaw). All routes use `JwtOrApiKeyAuthGuard`, require `@RequireScopes('memory')`, and declare `@RequireCapability` per method so scoped connect keys can reach them.
+
+| Verb | Path | Handler | Capability | Purpose |
+|------|------|---------|------------|---------|
+| GET | `/v1/intelligence/agent-harnesses` | `agentHarnesses` | read | Linked agent apps (Hermes/OpenClaw) with reachable URLs for “Open with agent”. Returns `{ harnesses }`. |
+| POST | `/v1/intelligence/how-youd-do-it` | `howYoudDoIt` | read | Multi-prompt persona compose for a task. Body `{ task, includeRecall?, candidateId? }`. Returns approach steps, evidence, confidence. |
+| POST | `/v1/intelligence/how-youd-do-it/apply` | `applyHowYoudDoIt` | write | Write compose approach steps onto the Possibilities slate. Body `{ result }` (full `HowYoudDoItResult`). Returns `{ added }`. |
+| GET | `/v1/intelligence/about-you` | `aboutYou` | read | Read dossier, preferences, recent answers for Settings → About you. |
+| POST | `/v1/intelligence/about-you/correction` | `aboutYouCorrection` | write | Teach-loop correction; writes Q&A and invalidates compose cache. Body `{ text }`. |
+
+**MCP:** the same compose pipeline is exposed as native intent `persona.compose` (executable name `persona_compose`) for keys carrying `intents`.
 
 ### `ThreadsController` — `threads`  ·  `domains/conversations/controllers/ThreadsController.ts:35`
 
@@ -278,16 +292,17 @@ Per-method `JwtOrApiKeyAuthGuard`. Token secrets stripped from all read response
 
 ---
 
-## Agent / intents — `api/intents` · `domains/agent/controllers/IntentsController.ts:18`
+## Agent / intents — `api/intents` + `api/agent/intents` · `domains/agent/controllers/IntentsController.ts`
 
-Class-level `JwtOrApiKeyAuthGuard`. Publishes the CI Intent catalog (typed capability declaration) so any agent (Hermes, OpenClaw, external MCP client) reads one manifest. Server-mounted at `/api/intents/*`.
+Class-level `JwtOrApiKeyAuthGuard` + `intents` scope. Publishes the CI Intent catalog and executes those intents through `ToolRegistry`. Same handlers mount on `/api/intents/*` (legacy) and `/api/agent/intents/*` (canonical for Hermes / OpenClaw). GET requires capability `read`. POST uses `read` as the HTTP floor; `ToolRegistry.executeTool` is the verb gate (a write intent such as `suggestions.feedback` still needs a write key).
 
 | Verb | Path | Handler | Purpose |
 |------|------|---------|---------|
-| GET | `/api/intents` | `getManifest` (`:23`) | Full `IntentManifest` (domains + entities + intents). |
-| GET | `/api/intents/domains` | `getDomains` (`:29`) | `{ domains: IntentDomain[] }`. |
-| GET | `/api/intents/entities` | `getEntities` (`:35`) | `{ entities: CiEntityDescriptor[] }`. |
-| GET | `/api/intents/:name` | `getIntent` (`:41`) | One intent by dotted name (e.g. `memory.recall`); 404 if unknown. |
+| GET | `/api/intents` | `getManifest` | Full `IntentManifest` (domains + entities + intents). Same at `/api/agent/intents`. |
+| GET | `/api/intents/domains` | `getDomains` | `{ domains: IntentDomain[] }`. |
+| GET | `/api/intents/entities` | `getEntities` | `{ entities: CiEntityDescriptor[] }`. |
+| GET | `/api/intents/:name` | `getIntent` | One intent by dotted name (e.g. `memory.recall`); 404 if unknown. |
+| POST | `/api/intents/:name/execute` | `execute` | Raw JSON body = tool input. Name may be dotted or underscored. Unknown → **404**. Known → **200 `ToolResult`**. |
 
 ---
 
@@ -319,15 +334,18 @@ Per-method `JwtOrApiKeyAuthGuard`. Thin proxy in front of the local Ollama daemo
 
 ---
 
-## What the importer (CI-Import-Tools) drives during a run
+## What the importer drives during a run
 
-Verified against `CI-Import-Tools/backend/src/ci-server/`. On `main` today the importer's **push** step uses **GraphQL bulk mutations**, and the binary + enrichment steps use these **REST** endpoints:
+CI-Server's own native import domain (`backend/apps/api/src/domains/import/`) drives this
+flow in-process today. The sequence below was originally verified against the now-retired
+CI-Import-Tools (`ZARCHIVED-CI-Import-Tools/backend/src/ci-server/`) and still documents the
+REST/GraphQL contract an importer client uses. Prefer **REST `/v1/*`** when the server advertises it (`GET /v1/ingest/status`); GraphQL bulk mutations remain the fallback for older servers.
 
-1. **Data push (GraphQL, not REST):** kind-routed batch mutations `createEvents` / `createCommunications` / `createInventoryItems` / `createContents` / `createBrowserActivities` (`graphql.ts`), dedup on the source triple → `POST /graphql` (10 mb body limit). **`POST /v1/events` is the convergence target** the importer is moving to.
-2. **Media (REST):** binary upload → **`POST /files/upload`** (`media.ts`; the URL is derived from the GraphQL URL by swapping `/graphql`→`/files/upload`), then links the returned `{id}` into records.
-3. **Post-push enrichment (REST, `api/maintenance/*`):** `maintenance-runner.ts` **prefers one `POST /api/maintenance/orchestrate`** call (streamed) covering all legs, and **falls back to the per-leg chain** when orchestrate is absent: `extract-people-from-communications`, `link-communications`, `link-events`, `extract-graph`, `geocode-locations`, `reverse-geocode-locations`, `estimate-locations`, `backfill-media-dimensions`, `search-index/backfill`.
+1. **Data push (REST `/v1/*`, preferred):** NDJSON batches to `/v1/{events,communications,contents,inventory,browser-activity,positions}` (`v1.ts` + `mapping.ts`), dedup on the source triple. Falls back to GraphQL `create*` mutations when `/v1` is unavailable.
+2. **Media (REST):** binary upload → **`POST /files/upload`** (or `/v1/files`), then links the returned `{id}` into records.
+3. **Post-push enrichment:** `POST /v1/ingest/finish` (`searchIndexOnly` / staged orchestration) when available; otherwise `api/maintenance/*` (`orchestrate` or the per-leg chain ending in `search-index/backfill`). A `browser-activity`-scoped search backfill also indexes dual-written `event` + `content` rows on the server.
 4. **Graph sync (GraphQL):** entities + relationships via `bulkIngestGraph`, and item↔item edges (email→attachment, photo→album) via `bulkIngestItemRelationships`.
-5. **Embed-drain progress (REST):** polls **`GET /api/maintenance/search-index/embedded-count`** to animate its stage-6 bar toward the enqueued count (best-effort).
+5. **Embed-drain progress (REST):** polls ingest status / embedded-count endpoints to animate the drain bar (best-effort).
 
 ---
 

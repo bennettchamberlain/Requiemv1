@@ -67,9 +67,9 @@ binary" is answerable from this repo:
    in `common/embeddings/services/EmbeddingGenerationService.ts`. It does **not**
    read the `LLM_*` env vars.
 2. **Python summary-service** — already an **OpenAI-compatible** client
-   (`apps/summary/src/llm_config.py`) reading `LLM_API_BASE` / `LLM_API_KEY` /
+   (`apps/summary/src/ci/summary/llm_config.py`) reading `LLM_API_BASE` / `LLM_API_KEY` /
    `LLM_DEFAULT_CHAT_MODEL` / `LLM_DEFAULT_EMBEDDING_MODEL`
-   (`apps/summary/src/config.py`).
+   (`apps/summary/src/ci/summary/config.py`).
 
 The summary-service is already shaped correctly. The unification work is mostly
 **bringing the NestJS API up to the same OpenAI-compatible contract** and pointing
@@ -341,7 +341,7 @@ These gate the whole integration:
 | OpenClaw render + `/models` | `CI-Hub/packages/backend/src/modules/app-lifecycle/data/openclaw-ci-entrypoint.sh` |
 | CI-Server API native Ollama client + hardcoded models | `CI-Server/backend/apps/api/src/domains/llm/services/OllamaService.ts` |
 | CI-Server hardcoded embedding model | `CI-Server/backend/apps/api/src/common/embeddings/services/EmbeddingGenerationService.ts` |
-| CI-Server summary OpenAI client + `LLM_*` | `CI-Server/backend/apps/summary/src/llm_config.py`, `…/config.py` |
+| CI-Server summary OpenAI client + `LLM_*` | `CI-Server/backend/apps/summary/src/ci/summary/llm_config.py`, `…/config.py` |
 | CI-Server config layering | `CI-Server/backend/apps/api/config/*.json`, `…/src/configuration.ts` |
 | CI-Server marketplace packaging (slug `companion` → rename `companion-memory`, 8642) | `CI-Server/scripts/publish/manifest/config.json`, `…/publish.sh` |
 | CI-Server cloud-OAuth-only Hub use | `CI-Server/backend/apps/api/src/domains/connections/services/CloudOAuthProxyService.ts` |

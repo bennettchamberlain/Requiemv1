@@ -18,6 +18,7 @@ import { v4 as uuidv4, v7 as uuidv7 } from 'uuid';
 
 import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import { serves } from '@ci/common/roles';
 import config from '@ci/configuration';
 import { EventService } from '@ci/domains/events';
 import { FileUpdatedEvent, FileUploadedEvent } from '@ci/domains/files/events';
@@ -28,6 +29,17 @@ import { FileVariant, type CreateFileDto, type UpdateFileDto, type UploadFileDto
 
 const BUCKET_REGION = config.staticfiles.bucket ?? 'us-east-1';
 const SIGNATURE_URL = config.staticfiles.auth.signatureUrl ?? config.staticfiles.storageUrl;
+
+/**
+ * Hourly UTC per-user file count. Declared locally so this domain carries no
+ * dependency on aggregating consumers; they enforce the shape structurally
+ * where they consume it.
+ */
+export interface HourlyFileCount {
+  userId: string;
+  bucketStart: Date;
+  count: number;
+}
 
 @Injectable()
 export class FileService implements OnModuleInit {
@@ -64,6 +76,13 @@ export class FileService implements OnModuleInit {
   }
 
   async onModuleInit() {
+    // Web-role work: two processes racing HeadBucket→CreateBucket is a boot
+    // failure waiting on a timing; the web process (present in every
+    // topology) owns ensuring the bucket.
+    if (!serves('web')) {
+      return;
+    }
+
     try {
       await this.s3.send(
         new HeadBucketCommand({
@@ -224,7 +243,14 @@ export class FileService implements OnModuleInit {
    */
   async getEntitiesForFiles(
     context: ServiceContext,
-    options: { limit?: number; startTime?: Date; endTime?: Date; order?: 'ASC' | 'DESC' } = {},
+    options: {
+      limit?: number;
+      startTime?: Date;
+      endTime?: Date;
+      afterTime?: Date;
+      afterId?: string;
+      order?: 'ASC' | 'DESC';
+    } = {},
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
     let query = this.fileRepository
       .createQueryBuilder('file')
@@ -240,7 +266,16 @@ export class FileService implements OnModuleInit {
       query = query.andWhere('file.created_at <= :endTime', { endTime: options.endTime });
     }
 
-    query = query.orderBy('file.created_at', options.order ?? 'DESC');
+    // Composite keyset: page strictly past (afterTime, afterId) in (created_at DESC, id DESC).
+    if (options.afterTime && options.afterId) {
+      query = query.andWhere(
+        '(file.created_at < :afterTime OR (file.created_at = :afterTime AND file.id < :afterId))',
+        { afterTime: options.afterTime, afterId: options.afterId },
+      );
+    }
+
+    // Deterministic tiebreak so same-timestamp rows page consistently.
+    query = query.orderBy('file.created_at', options.order ?? 'DESC').addOrderBy('file.id', 'DESC');
 
     if (options.limit) {
       query = query.limit(options.limit);
@@ -249,6 +284,31 @@ export class FileService implements OnModuleInit {
     const rows = await query.getRawMany<{ id: string }>();
 
     return rows.map((row) => ({ id: row.id, type: 'file' as IndexableEntity }));
+  }
+
+  /**
+   * True total of files matching the same filters {@link getEntitiesForFiles} applies (minus
+   * the pagination-only `limit`/`order`/`afterTime`/`afterId`) — a real `COUNT(*)`, not the
+   * length of one `limit`-bounded page of identifiers. See EventService.countEntitiesForEvents.
+   */
+  async countEntitiesForFiles(
+    context: ServiceContext,
+    options: { startTime?: Date; endTime?: Date },
+  ): Promise<number> {
+    let query = this.fileRepository
+      .createQueryBuilder('file')
+      .where('file.user_id = :userId', { userId: context.userId })
+      .andWhere('file.variant = :variant', { variant: FileVariant.ORIGINAL });
+
+    if (options.startTime) {
+      query = query.andWhere('file.created_at >= :startTime', { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere('file.created_at <= :endTime', { endTime: options.endTime });
+    }
+
+    return query.getCount();
   }
 
   async findByHash(context: UserServiceContext, fileHash: string): Promise<SignedFile | null> {
@@ -390,6 +450,16 @@ export class FileService implements OnModuleInit {
     return { file: created, deduped: false };
   }
 
+  async putObject(_context: ServiceContext, bucket: string, key: string, body: Buffer): Promise<void> {
+    await this.s3.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Body: body,
+      }),
+    );
+  }
+
   async getFileContent(context: ServiceContext, key: string): Promise<Uint8Array> {
     const response = await this.s3.send(
       new GetObjectCommand({
@@ -523,5 +593,55 @@ export class FileService implements OnModuleInit {
       ...FileEntity.toEgressType(file),
       url: parsedUrl.pathname + parsedUrl.search,
     };
+  }
+
+  /**
+   * Hourly UTC activity buckets for the activity rollup: files counted by
+   * creation time, per user. Soft-deleted files are excluded automatically by
+   * the query builder (FileEntity has a @DeleteDateColumn); ownerless rows are
+   * skipped.
+   */
+  async aggregateHourlyActivity(): Promise<HourlyFileCount[]> {
+    const rows: Array<{ user_id: string; bucket_start: Date; count: number }> = await this.fileRepository
+      .createQueryBuilder('file')
+      .select('file.userId', 'user_id')
+      .addSelect(`date_trunc('hour', file.createdAt, 'UTC')`, 'bucket_start')
+      .addSelect('COUNT(*)::int', 'count')
+      .where('file.userId IS NOT NULL')
+      .groupBy('user_id')
+      .addGroupBy('bucket_start')
+      .getRawMany();
+
+    return rows.map((row) => ({ userId: row.user_id, bucketStart: row.bucket_start, count: row.count }));
+  }
+
+  /**
+   * Originals that are still missing a description but already have a PREVIEW
+   * child — candidates to re-fire {@link PreviewGeneratedEvent} after the user
+   * turns image description back on.
+   */
+  async findUndescribedImagePreviews(
+    userId: string,
+    limit: number,
+  ): Promise<Array<{ previewId: string; parentFileId: string }>> {
+    const rows: Array<{ preview_id: string; parent_file_id: string }> = await this.fileRepository
+      .createQueryBuilder('preview')
+      .innerJoin(
+        FileEntity,
+        'original',
+        'original.id = preview.parentId AND original.userId = preview.userId',
+      )
+      .select('preview.id', 'preview_id')
+      .addSelect('original.id', 'parent_file_id')
+      .where('preview.userId = :userId', { userId })
+      .andWhere('preview.variant = :previewVariant', { previewVariant: FileVariant.PREVIEW })
+      .andWhere('original.variant = :originalVariant', { originalVariant: FileVariant.ORIGINAL })
+      .andWhere('original.contentType LIKE :imagePrefix', { imagePrefix: 'image/%' })
+      .andWhere("(original.description IS NULL OR btrim(original.description) = '')")
+      .orderBy('original.createdAt', 'DESC')
+      .limit(Math.max(1, Math.min(limit, 2000)))
+      .getRawMany();
+
+    return rows.map((row) => ({ previewId: row.preview_id, parentFileId: row.parent_file_id }));
   }
 }

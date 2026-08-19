@@ -11,13 +11,15 @@
     "e2e:ui": "playwright test --config playwright.e2e.config.ts --ui",
     "e2e:headed": "playwright test --config playwright.e2e.config.ts --headed",
     "e2e:report": "playwright show-report",
-    "prepare": "husky"
+    "prepare": "husky && sh scripts/merge-uv-lock.sh --register"
   },
   "packageManager": "yarn@4.9.1",
   "workspaces": [
     "backend/apps/*",
     "frontend/apps/*",
-    "frontend/packages/*"
+    "frontend/packages/*",
+    "!frontend/apps/ios",
+    "!frontend/apps/android"
   ],
   "resolutions": {
     "@protobufjs/utf8": "^1.1.1",

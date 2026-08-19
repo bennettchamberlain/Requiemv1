@@ -48,6 +48,22 @@ describe('ContentGridItem', () => {
     expect(screen.getByText('Content')).toBeInTheDocument();
   });
 
+  // Photo/video events with no linked content row (fixed today) leave an image-typed
+  // entity with both contentUrl and sourceUrl null. Before the fix this rendered a
+  // broken <img> tag; it must fall back to the same placeholder tile as text content.
+  it('falls back to the placeholder tile for image content with no thumbnail URL at all', () => {
+    renderWithProviders(
+      <ContentGridItem
+        content={makeContent({ mimetype: 'image/jpeg', contentUrl: null, sourceUrl: null })}
+      />,
+    );
+
+    expect(screen.queryByRole('img')).toBeNull();
+    expect(screen.getByText('A note')).toBeInTheDocument();
+    expect(screen.getByText('some body text')).toBeInTheDocument();
+    expect(screen.getByText('Content')).toBeInTheDocument();
+  });
+
   it('fires onClick', () => {
     const onClick = vi.fn();
     renderWithProviders(<ContentGridItem content={makeContent()} onClick={onClick} />);

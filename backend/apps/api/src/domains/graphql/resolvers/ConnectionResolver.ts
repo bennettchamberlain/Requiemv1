@@ -3,7 +3,7 @@ import { Args, ID, Mutation, Parent, Query, Resolver, ResolveField } from '@nest
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
-import { ConnectionService } from '@ci/domains/connections';
+import { ClientFactory, ConnectionService, type Connection } from '@ci/domains/connections';
 
 import { ProviderLoader } from '../loaders/ProviderLoader';
 import { ConnectionConnection } from '../types/ConnectionConnection';
@@ -25,6 +25,7 @@ import { Paginator } from '../utils/Paginator';
 export class ConnectionResolver {
   constructor(
     private readonly connectionService: ConnectionService,
+    private readonly clientFactory: ClientFactory,
     private readonly providerLoader: ProviderLoader,
   ) {}
 
@@ -152,6 +153,48 @@ export class ConnectionResolver {
     const entity = await this.connectionService.findById(serviceContext, decodedId);
 
     return entity ? ConnectionType.toType(entity) : null;
+  }
+
+  @ResolveField(() => String, { nullable: true })
+  async accountLabel(@Parent() connection: ConnectionType): Promise<string | null> {
+    if (connection.__source.accountLabel) {
+      return connection.__source.accountLabel;
+    }
+
+    try {
+      const source = await this.withFreshAccessToken(connection.__source);
+      const label = await this.clientFactory.getClientByProviderId(source.providerId).getAccountLabel(source);
+      if (!label) {
+        return null;
+      }
+
+      await this.connectionService.update({ userId: source.userId }, source.id, { accountLabel: label });
+
+      return label;
+    } catch {
+      return null;
+    }
+  }
+
+  private async withFreshAccessToken(connection: Connection): Promise<Connection> {
+    const expired = !connection.tokenExpiry || new Date(connection.tokenExpiry) < new Date();
+    if (!connection.refreshToken || !expired) {
+      return connection;
+    }
+
+    const client = this.clientFactory.getClientByProviderId(connection.providerId);
+    const refreshed = await client.refreshAccessToken(connection);
+    const credentials =
+      refreshed.refreshToken == null
+        ? { accessToken: refreshed.accessToken, tokenExpiry: refreshed.tokenExpiry }
+        : refreshed;
+
+    return (
+      (await this.connectionService.update({ userId: connection.userId }, connection.id, credentials)) ?? {
+        ...connection,
+        ...credentials,
+      }
+    );
   }
 
   @ResolveField(() => ProviderType)

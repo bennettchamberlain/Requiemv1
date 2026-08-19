@@ -1,0 +1,5 @@
+[
+  { "DateTime": "2024-01-15T08:00:00Z", "DeviceId": "{d1e0f5a2-1111-4000-8000-000000000001}", "AccuracyRadius": 65, "Latitude": 47.641944, "Longitude": -122.127222 },
+  { "DateTime": "2024-01-16T18:30:00Z", "DeviceId": "{d1e0f5a2-1111-4000-8000-000000000001}", "AccuracyRadius": 120, "Latitude": 47.603243, "Longitude": -122.330286 },
+  { "DateTime": "2024-01-18T22:45:00Z", "DeviceId": "{d1e0f5a2-1111-4000-8000-000000000002}", "AccuracyRadius": 30, "Latitude": 47.674409, "Longitude": -122.121788 }
+]

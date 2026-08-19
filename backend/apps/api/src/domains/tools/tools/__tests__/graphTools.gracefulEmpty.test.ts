@@ -2,7 +2,8 @@
  * B1 — graceful-empty + correctness on the IMPORTER's actual vocabulary.
  *
  * The importer only writes Person/Location/Organization/Concept nodes and
- * KNOWS/MENTIONS edges (see CI-Import-Tools/backend/src/ci-server/graph-sync.ts).
+ * KNOWS/MENTIONS edges (see `backend/apps/api/src/domains/import/push/entities.ts`,
+ * ported from CI-Import-Tools' now-retired `backend/src/ci-server/graph-sync.ts`).
  * It never writes PREFERS/DISLIKES or family edges (SPOUSE/PARENT_OF/…), and the
  * Concepts it writes carry no `properties.type` of `cuisine`/`movie_genre`.
  *

@@ -41,5 +41,6 @@ export interface Thread {
   name: string | null;
   model: string;
   description: string | null;
+  generationStatus?: 'idle' | 'queued' | 'running' | 'failed';
   messages?: Message[];
 }

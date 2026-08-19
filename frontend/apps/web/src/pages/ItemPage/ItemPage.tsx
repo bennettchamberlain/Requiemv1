@@ -1,19 +1,19 @@
 import { type ReactNode, useState } from 'react';
 
-import { useQuery } from '@apollo/client';
-import { GlobalUID, LoadingPage, Portal, usePageTitle, EmptyState } from '@ci/common';
-import { Breadcrumb, Card, Label, Textarea, Toggle, cn } from '@ci/shadcn';
-import { Pencil } from '@ci/shadcn/icons';
-import { useParams, Link } from 'react-router-dom';
+import { useMutation, useQuery } from '@apollo/client';
+import { GlobalUID, LoadingPage, usePageTitle, EmptyState } from '@ci/common';
+import { useParams } from 'react-router-dom';
 
-import { useTagEntityService } from '@/api';
 import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
+import { EntityFieldsCard } from '@/components/EntityFields';
 import { EntityGraph } from '@/components/EntityGraph';
 import { EntityRelationshipCards } from '@/components/EntityRelationshipCards/EntityRelationshipCards';
+import { EntityEditToggle, EntityTagsDescriptionCard } from '@/components/EntityTagsDescriptionCard';
 import { ItemIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
-import { TagInput } from '@/components/TagInput';
 import { gql } from '@/graphql';
+
+import { ItemProperties } from './ItemProperties';
 
 export const GET_ITEM = gql(`
   query GetItem($id: ID!) {
@@ -21,9 +21,50 @@ export const GET_ITEM = gql(`
       id
       name
       description
+      category
+      brand
+      model
+      currentValue
+      purchasePrice
+      condition
+      quantity
+      acquiredAt
+      acquisitionMethod
+      acquiredFrom
+      manufacturedAt
+      expiresAt
+      lengthMm
+      widthMm
+      heightMm
+      massG
+      volumeMl
+      unitSystem
+      colors
+      colorHex
+      materials
+      composition
       tags {
         id
         label
+      }
+    }
+  }
+`);
+
+// Same write the memory drawer makes (UpdateItemDetail), so the page can edit
+// the name, category, brand, model and value instead of the description alone.
+const UPDATE_ITEM_FIELDS = gql(`
+  mutation UpdateItemPageFields($input: UpdateItemInput!) {
+    updateItem(input: $input) {
+      success
+      item {
+        id
+        name
+        description
+        category
+        brand
+        model
+        currentValue
       }
     }
   }
@@ -38,7 +79,7 @@ export function ItemPage() {
     },
   });
 
-  const { tagEntities, untagEntities } = useTagEntityService();
+  const [updateItemFields] = useMutation(UPDATE_ITEM_FIELDS);
 
   const item = data?.item;
 
@@ -60,99 +101,91 @@ export function ItemPage() {
             <ItemIcon />
             <h1 className="text-2xl font-bold">{item.name}</h1>
           </div>
-          <Toggle
-            aria-label="Toggle edit mode"
-            size="sm"
-            variant="outline"
-            className="data-[state=on]:bg-transparent data-[state=on]:*:[svg]:fill-blue-500 data-[state=on]:*:[svg]:stroke-blue-500"
-            pressed={editMode}
-            onPressedChange={setEditMode}
-          >
-            <Pencil />
-          </Toggle>
+          <EntityEditToggle pressed={editMode} onPressedChange={setEditMode} />
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div className="md:col-span-2">
+          <div className="flex flex-col gap-4 md:col-span-2">
+            {/* The drawer's field set, so "Open full page" does not silently drop
+                the name, category, brand, model and value editors. */}
+            <EntityFieldsCard
+              title="Item"
+              resetKey={item.id}
+              editMode={editMode}
+              onEditModeChange={setEditMode}
+              fields={[
+                { key: 'name', label: 'Name', value: item.name ?? '' },
+                { key: 'category', label: 'Category', value: item.category ?? '' },
+                { key: 'brand', label: 'Brand', value: item.brand ?? '' },
+                { key: 'model', label: 'Model', value: item.model ?? '' },
+                {
+                  key: 'currentValue',
+                  label: 'Estimated value ($)',
+                  value: item.currentValue != null ? String(item.currentValue) : '',
+                  inputType: 'number',
+                },
+              ]}
+              onSave={async (values) => {
+                // Clearing the field should null out the value, not persist $0. Guard
+                // against unparseable input by treating it as cleared too.
+                const trimmedValue = values.currentValue?.trim() ?? '';
+                const parsedValue = trimmedValue === '' ? null : Number(trimmedValue);
+                const currentValue = parsedValue == null || Number.isNaN(parsedValue) ? null : parsedValue;
+
+                const result = await updateItemFields({
+                  variables: {
+                    input: {
+                      id: item.id,
+                      name: values.name || '',
+                      category: values.category,
+                      brand: values.brand,
+                      model: values.model,
+                      currentValue,
+                    },
+                  },
+                });
+
+                if (!result.data?.updateItem.success) {
+                  throw new Error('Update was rejected');
+                }
+              }}
+            />
+
             <EntityGraph entityId={id!} />
           </div>
+          <EntityTagsDescriptionCard
+            entityType="item"
+            entityId={id!}
+            resetKey={item.id}
+            tags={item.tags.map((t) => t.label)}
+            description={item.description}
+            editMode={editMode}
+            onDescriptionSave={async (value) => {
+              // UpdateItemInput requires `name`, so a description-only edit has to resend it.
+              // That makes this a last-write-wins update on the name as well: if it was renamed
+              // elsewhere since this page loaded, the cached value here would win. Same trade the
+              // existing MemoryPage detail editors make, and the page has no polling to widen it.
+              // The `?? ''` only fires when the stored name is genuinely null — the query selects
+              // `name`, so it is not a projection gap — and null and '' both render as 'Unnamed'.
+              // Omitting the field instead is not an option: it is non-null on the input.
+              const result = await updateItemFields({
+                variables: { input: { id: item.id, name: item.name ?? '', description: value } },
+              });
 
-          <Card className="p-0">
-            <Card.Content className="p-4 flex flex-col gap-6">
-              <div className="space-y-2">
-                <Label>Tags</Label>
-
-                <TagInput
-                  key={item.id}
-                  tags={item.tags.map((t) => t.label) ?? []}
-                  readOnly={!editMode}
-                  onTagAdded={async (label) => {
-                    try {
-                      await tagEntities([GlobalUID.encode('item', id!)], [label]);
-
-                      return true;
-                    } catch {
-                      return false;
-                    }
-                  }}
-                  onTagRemoved={async (label) => {
-                    await untagEntities([GlobalUID.encode('item', id!)], [label]);
-                  }}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  key={item.id}
-                  id="description"
-                  defaultValue={item?.description ?? ''}
-                  readOnly={!editMode}
-                  className={cn(
-                    'resize-none min-h-[120px]',
-                    editMode ? '' : 'shadow-none focus-visible:ring-0 focus-visible:border-border',
-                  )}
-                />
-              </div>
-            </Card.Content>
-          </Card>
+              if (!result.data?.updateItem.success) {
+                throw new Error('Update was rejected');
+              }
+            }}
+          >
+            <ItemProperties item={item} />
+          </EntityTagsDescriptionCard>
         </div>
 
         <EntityRelationshipCards entityId={id!} />
-        <EntityEvolutionPanel entityId={id!} />
+        <EntityEvolutionPanel entityId={id!} entityName={item.name} />
       </PageContent>
     );
   }
 
-  return (
-    <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-
-            <Breadcrumb.Separator className="hidden md:block" />
-
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Page>Item</Breadcrumb.Page>
-            </Breadcrumb.Item>
-
-            {item && (
-              <>
-                <Breadcrumb.Separator className="hidden md:block" />
-                <Breadcrumb.Item>
-                  <Breadcrumb.Page>{item.name}</Breadcrumb.Page>
-                </Breadcrumb.Item>
-              </>
-            )}
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
-      {content}
-    </>
-  );
+  return <>{content}</>;
 }

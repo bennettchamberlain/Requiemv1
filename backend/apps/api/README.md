@@ -15,7 +15,7 @@ browser's `/api` prefix (Caddy under `make dev`).
 ## Getting started
 
 See the [repo README](../../../README.md) for prerequisites and `make dev`, which brings up
-the whole per-worktree stack (Postgres, MinIO, Temporal, hbpe/summary services, Caddy route,
+the whole per-worktree stack (Postgres, MinIO, hbpe/summary services, Caddy route,
 api + web dev servers). To run just this service against an already-running stack:
 
 ```bash
@@ -60,13 +60,15 @@ src/
 | `files` | Uploads, previews, MinIO-backed storage, saved searches |
 | `events` | **The in-process event bus** (PGBoss) — not calendar events; see below |
 | `agent` / `mcp` / `tools` | Agent memory (`/memory/*`), the MCP server (`POST /mcp`), the shared ToolRegistry + intent catalog |
-| `notes`, `devices`, `position`, `browser-activity`, `geocode`, `entity-resolution`, `summaries`, `predictions`, `audit` | What they say on the tin |
+| `planning` | Task list CRUD (`ci.tasks`), defer/reopen, tenancy isolation |
+| `schedule` | Schedule surface: `event_candidates` live in their own table (not `ci.events`) so HBPE never trains on hypotheticals; accept mints a real event, decline/snooze/return-to-slate manage the possible layer. `ci.rhythms` is P2 fit-solver scaffolding (schema only). |
+| `notes`, `devices`, `position`, `browser-activity`, `geocode`, `entity-resolution`, `summaries`, `predictions`, `audit` | What they say on the tin — `predictions` proxies HBPE histogram/week/due forecasts |
 
 ### Common infrastructure (`src/common/`)
 
 | Piece | What it does |
 |---|---|
-| `guards/` | `JwtOrApiKeyAuthGuard` (Bearer JWT ∥ `x-api-key` ∥ Portal OIDC) and friends. No global guard: a route with no guard is public. See [auth-and-conventions.md](../../../docs/api/auth-and-conventions.md). |
+| `guards/` | `JwtOrApiKeyAuthGuard` (Bearer JWT ∥ api key, as `x-api-key` or Bearer ∥ Portal OIDC) and friends. No global guard: a route with no guard is public. See [auth-and-conventions.md](../../../docs/api/auth-and-conventions.md). |
 | `context/` | AsyncLocalStorage request context — auth strategies set `{ userId }`, services read it via `toServiceContext()`, which throws if unauthenticated |
 | `pipes/` | zod-based `ValidationPipe` (the codebase validates with zod, not class-validator) |
 | `middleware/` | `BodyParserMiddleware` — `main.ts` boots with `bodyParser: false` and this applies per-route limits (default 100 KB; `/graphql` gets 10 MB for bulk mutations) |
@@ -101,12 +103,12 @@ Two write modes, one invariant (provenance-triple idempotency —
 - **Interactive** single-row creates emit a per-row `*CreatedEvent` → the search index
   updates live.
 - **Bulk** (the GraphQL list mutations `createEvents`, `createCommunications`, … that
-  CI-Import-Tools uses) pass `emitCreated:false` — no per-row fan-out. Rows are persisted
-  and idempotent but **not searchable** until the post-load sweep
+  the native import domain uses) pass `emitCreated:false` — no per-row fan-out. Rows are
+  persisted and idempotent but **not searchable** until the post-load sweep
   `POST /api/maintenance/search-index/backfill` re-emits create events for unindexed rows
   (LEFT JOIN against `ci_search.embeddings`). The full post-import chain is
   `POST /api/maintenance/orchestrate`; see
-  [rest.md — what the importer drives](../../../docs/api/rest.md#what-the-importer-ci-import-tools-drives-during-a-run)
+  [rest.md — what the importer drives](../../../docs/api/rest.md#what-the-importer-drives-during-a-run)
   and the [bulk load runbook](db/postgres/BULK_LOAD_RUNBOOK.md).
 
 ## Configuration

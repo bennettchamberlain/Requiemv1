@@ -13,6 +13,8 @@ import { CommunicationConnection } from '../types/CommunicationConnection';
 import { CommunicationEdge } from '../types/CommunicationEdge';
 import { CommunicationType } from '../types/CommunicationType';
 import { CreateCommunicationInput } from '../types/CreateCommunicationInput';
+import { DeleteByIdInput } from '../types/DeleteByIdInput';
+import { DeleteByIdPayload } from '../types/DeleteByIdPayload';
 import { EntityTagType } from '../types/EntityTagType';
 import { GlobalUID } from '../types/GlobalUID';
 import { PaginationArgs } from '../types/PaginationArgs';
@@ -116,6 +118,7 @@ export class CommunicationResolver {
         to_entity_ids: item.toEntityIds,
         participants_metadata: item.participantsMetadata,
         attachments: item.attachments,
+        duration_seconds: item.durationSeconds,
         source_type: item.sourceType,
         source_system: item.sourceSystem,
         source_id: item.sourceId,
@@ -140,6 +143,34 @@ export class CommunicationResolver {
     });
 
     return entity ? CommunicationType.toType(entity) : null;
+  }
+
+  /**
+   * Deletes a message/call addressed by its global id. A HARD delete — the
+   * communication and its `ci.entities` base row are destroyed and cannot be
+   * restored. The people it was with are untouched.
+   */
+  @Mutation(() => DeleteByIdPayload)
+  async deleteCommunication(
+    @Context() context: RequestContext,
+    @Args('input') input: DeleteByIdInput,
+  ): Promise<DeleteByIdPayload> {
+    const serviceContext = toServiceContext(context);
+
+    const id = GlobalUID.parse('communication', input.id);
+
+    const success = await this.communicationService.remove(serviceContext, id);
+
+    if (!success) {
+      return {
+        success: false,
+      };
+    }
+
+    return {
+      success,
+      deletedId: input.id,
+    };
   }
 
   @ResolveField(() => PersonType, { nullable: true })

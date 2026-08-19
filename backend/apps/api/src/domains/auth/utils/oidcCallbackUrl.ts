@@ -121,15 +121,22 @@ function resolveRequestOrigin(origin: OidcCallbackRequestOrigin): string {
  *
  * Compares HOST, never scheme. Cookies are keyed by host, not by scheme, so the
  * scheme is irrelevant to the bug — and comparing it would be actively dangerous:
- * the ci-memory gateway sets `X-Forwarded-Proto $scheme`, overwriting Traefik's
- * `https` with its own internal `http`. An origin comparison would therefore never
- * match on the public host and would bounce the browser to it forever.
+ * the ci-memory gateway used to set `X-Forwarded-Proto $scheme`, overwriting
+ * Traefik's `https` with its own internal `http`, so an origin comparison would
+ * never match on the public host and would bounce the browser to it forever.
+ *
+ * The gateway now forwards the client's scheme (`$client_proto` in
+ * `infrastructure/gateway/nginx.conf`, so that `secure: req.secure` produces
+ * Secure cookies on HTTPS installs), but keep comparing host only: any appliance
+ * still running an older gateway image sends the rewritten `http`, and the host
+ * comparison is correct either way.
  */
 export function resolveOidcOriginBounce(
   origin: OidcCallbackRequestOrigin,
   publicBaseUrl: string | undefined,
   redirectPath?: string,
   alreadyBounced = false,
+  client?: string,
 ): string | null {
   // One hop only — never risk a redirect loop on the sign-in path.
   if (alreadyBounced) {
@@ -161,6 +168,13 @@ export function resolveOidcOriginBounce(
 
   if (redirectPath) {
     target.searchParams.set('redirect', redirectPath);
+  }
+
+  // Native initiate (`?client=native`) must survive this hop. Dropping it turns
+  // the callback into a web session cookie in Safari, and the phone never sees
+  // `companion://oidc/callback`. Web sign-in does not send this flag.
+  if (client === 'native') {
+    target.searchParams.set('client', 'native');
   }
 
   target.searchParams.set(OIDC_ORIGIN_BOUNCE_PARAM, '1');

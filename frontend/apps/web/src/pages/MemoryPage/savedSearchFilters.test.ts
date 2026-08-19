@@ -7,9 +7,17 @@ describe('buildSavedSearchFilters', () => {
     expect(buildSavedSearchFilters(new URLSearchParams('search=hello&view=list'))).toBeUndefined();
   });
 
-  it('captures every dimension, mapping ?from/?to to startTime/endTime', () => {
+  it('stores rolling When presets as datePreset instead of fixed dates', () => {
+    const params = new URLSearchParams('when=yesterday&from=ignored&to=ignored');
+
+    expect(buildSavedSearchFilters(params)).toEqual({
+      datePreset: 'yesterday',
+    });
+  });
+
+  it('captures custom ranges as startTime/endTime', () => {
     const params = new URLSearchParams(
-      'eventTypes=visited,messaged&connectors=gmail&people=alice,bob&places=paris&from=2024-01-01&to=2024-12-31&sortBy=time&sortOrder=desc&hasLocation=1&semantic=1',
+      'eventTypes=visited,messaged&connectors=gmail&people=alice,bob&places=paris&when=custom&from=2024-01-01&to=2024-12-31&sortBy=time&sortOrder=desc&hasLocation=1&semantic=1',
     );
 
     expect(buildSavedSearchFilters(params)).toEqual({

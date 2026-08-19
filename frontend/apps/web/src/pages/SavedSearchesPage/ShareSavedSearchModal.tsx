@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { useMutation } from '@apollo/client';
-import { Button, Dialog, Label, useToast } from '@ci/shadcn';
+import { Button, Dialog, IconButton, Label, useToast } from '@ci/shadcn';
 import { Check, ClipboardCopy, Facebook, Linkedin, Mail, MessageSquare } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 
 import { gql, useFragment, type FragmentType } from '@/graphql';
 
@@ -35,6 +36,7 @@ const SET_SAVED_SEARCH_SHARING = gql(`
 
 export function ShareSavedSearchModal({ savedSearch: savedSearchMask, onClose }: Props) {
   const savedSearch = useFragment(SavedSearchGridItemFragment, savedSearchMask);
+  const { t } = useTranslation();
   const { toast } = useToast();
 
   const [copied, setCopied] = useState<'link' | 'embed' | null>(null);
@@ -193,10 +195,9 @@ export function ShareSavedSearchModal({ savedSearch: savedSearchMask, onClose }:
                     onFocus={(e) => e.currentTarget.select()}
                     className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm break-all"
                   />
-                  <Button
+                  <IconButton
                     variant="outline"
-                    size="icon"
-                    aria-label="Copy share link"
+                    label={t('SAVED_SEARCH_COPY_LINK')}
                     onClick={() => copyToClipboard(url, 'link')}
                   >
                     {copied === 'link' ? (
@@ -204,7 +205,7 @@ export function ShareSavedSearchModal({ savedSearch: savedSearchMask, onClose }:
                     ) : (
                       <ClipboardCopy className="w-4 h-4" />
                     )}
-                  </Button>
+                  </IconButton>
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Turning sharing off, then on again, issues a new link and disables the old one.
@@ -234,10 +235,9 @@ export function ShareSavedSearchModal({ savedSearch: savedSearchMask, onClose }:
                     onFocus={(e) => e.currentTarget.select()}
                     className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm font-mono"
                   />
-                  <Button
+                  <IconButton
                     variant="outline"
-                    size="icon"
-                    aria-label="Copy embed code"
+                    label={t('SAVED_SEARCH_COPY_EMBED')}
                     onClick={() => copyToClipboard(iframeSnippet(token), 'embed')}
                   >
                     {copied === 'embed' ? (
@@ -245,7 +245,7 @@ export function ShareSavedSearchModal({ savedSearch: savedSearchMask, onClose }:
                     ) : (
                       <ClipboardCopy className="w-4 h-4" />
                     )}
-                  </Button>
+                  </IconButton>
                 </div>
               </div>
             </>

@@ -21,6 +21,20 @@ export class SearchInput {
   @Field(() => [String], { nullable: true })
   includeTypes?: IndexableEntity[];
 
+  /**
+   * Opt standalone files *out* of the timed browse. Files are part of the
+   * default timeline like every other indexed type; pass `false` to drop them
+   * without also dropping whatever `excludeTypes` is already carrying.
+   *
+   * This used to default the other way — files were excluded unless a caller
+   * asked for them — which made the explorer's File type picker a no-op on
+   * every surface that didn't set the flag, and made the same URL mean
+   * different things in the gallery (which set it) and the list (which didn't).
+   * Callers that want a document-free feed should say so explicitly.
+   */
+  @Field(() => Boolean, { nullable: true })
+  includeFiles?: boolean;
+
   @Field(() => [String], { nullable: true })
   tags?: string[];
 

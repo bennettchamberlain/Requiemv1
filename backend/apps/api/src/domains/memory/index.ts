@@ -29,29 +29,58 @@ import { UserModule, UserEntity } from '@ci/domains/user';
 
 import { GraphController } from './controllers/GraphController';
 import { BaseEntity } from './entities/BaseEntity';
+import { CommunicationBaseEntity } from './entities/CommunicationBaseEntity';
 import { type Communication, CommunicationEntity } from './entities/CommunicationEntity';
 import { type Concept, ConceptEntity } from './entities/ConceptEntity';
+import { ContentBaseEntity } from './entities/ContentBaseEntity';
 import { ContentEntity } from './entities/ContentEntity';
+import { EntityMergeBlockEntity } from './entities/EntityMergeBlockEntity';
+import { EventBaseEntity } from './entities/EventBaseEntity';
 import { type Event, EventEntity } from './entities/EventEntity';
 import { FileEntity } from './entities/FileEntity';
 import { GraphNodeEntity } from './entities/GraphNodeEntity';
-import { type Item, type InventoryCondition, ItemEntity } from './entities/ItemEntity';
+import { ItemBaseEntity } from './entities/ItemBaseEntity';
+import {
+  type Item,
+  type InventoryCondition,
+  type InventoryIdentityMethod,
+  type InventoryLifecycleState,
+  ItemEntity,
+} from './entities/ItemEntity';
+import {
+  type ObjectObservation,
+  ObjectObservationEntity,
+  type ObservationBoundingBox,
+  type ObservationLabelSource,
+  type ObservationResolutionMethod,
+  type ObservationSourceKind,
+} from './entities/ObjectObservationEntity';
 import { type Person, PersonEntity } from './entities/PersonEntity';
 import { type Place, PlaceEntity } from './entities/PlaceEntity';
+import { type ProductModel, ProductModelEntity } from './entities/ProductModelEntity';
+import { type Receipt, ReceiptEntity, type ReceiptExtractionState } from './entities/ReceiptEntity';
+import { type ReceiptLineItem, ReceiptLineItemEntity } from './entities/ReceiptLineItemEntity';
 import { RelationshipEntity } from './entities/RelationshipEntity';
-import { ThingEntity } from './entities/ThingEntity';
 import { GraphEventListener } from './listeners/GraphEventListener';
 import { CommunicationService } from './services/CommunicationService';
 import { ConceptService } from './services/ConceptService';
 import { ContentService } from './services/ContentService';
+import { EntityMergeBlockService } from './services/EntityMergeBlockService';
 import { EventService } from './services/EventService';
 import { FileService } from './services/FileService';
+import { GraphDeltaWriter } from './services/GraphDeltaWriter';
 import { GraphEventService } from './services/GraphEventService';
 import { GraphQueryService } from './services/GraphQueryService';
 import { GraphReadService } from './services/GraphReadService';
 import { GraphUtilityService } from './services/GraphUtilityService';
 import { ItemService } from './services/ItemService';
 import { KnownPlacesService } from './services/KnownPlacesService';
+import { LifeStatsService } from './services/LifeStatsService';
+import { MergeCandidateService } from './services/MergeCandidateService';
+import { ObjectObservationService } from './services/ObjectObservationService';
+import { PersonActivityService } from './services/PersonActivityService';
+import { PersonDuplicateService } from './services/PersonDuplicateService';
+import { PersonMergeService } from './services/PersonMergeService';
 import { PersonService } from './services/PersonService';
 import { PlaceService } from './services/PlaceService';
 import { UserContextService } from './services/UserContextService';
@@ -62,16 +91,23 @@ import { UserContextService } from './services/UserContextService';
 @Module({
   imports: [
     TypeOrmModule.forFeature([
-      BaseEntity,
+      EntityMergeBlockEntity,
       CommunicationEntity,
+      CommunicationBaseEntity,
       ContentEntity,
+      ContentBaseEntity,
       EventEntity,
+      EventBaseEntity,
       PersonEntity,
       ConceptEntity,
       PlaceEntity,
-      ThingEntity,
       GraphNodeEntity,
       ItemEntity,
+      ItemBaseEntity,
+      ProductModelEntity,
+      ReceiptEntity,
+      ReceiptLineItemEntity,
+      ObjectObservationEntity,
       RelationshipEntity,
       FileEntity,
       BrowserActivityEntity,
@@ -85,6 +121,7 @@ import { UserContextService } from './services/UserContextService';
     SearchNextModule,
   ],
   providers: [
+    GraphDeltaWriter,
     CommunicationService,
     ContentService,
     EventService,
@@ -96,19 +133,32 @@ import { UserContextService } from './services/UserContextService';
     UserContextService,
     GraphEventListener,
     PersonService,
+    PersonActivityService,
+    EntityMergeBlockService,
+    PersonDuplicateService,
+    MergeCandidateService,
+    PersonMergeService,
     ConceptService,
     FileService,
     PlaceService,
     KnownPlacesService,
+    LifeStatsService,
+    ObjectObservationService,
   ],
   controllers: [GraphController],
   exports: [
     CommunicationService,
     ContentService,
+    GraphDeltaWriter,
     EventService,
     GraphEventService,
     ItemService,
     PersonService,
+    PersonActivityService,
+    EntityMergeBlockService,
+    PersonDuplicateService,
+    MergeCandidateService,
+    PersonMergeService,
     ConceptService,
     UserContextService,
     GraphUtilityService,
@@ -117,32 +167,50 @@ import { UserContextService } from './services/UserContextService';
     FileService,
     PlaceService,
     KnownPlacesService,
+    ObjectObservationService,
   ],
 })
 export class MemoryModule {}
 
+// FileEntity is deliberately absent: the graph's file row is an internal
+// concern maintained by the FileUploadedEvent listener, and re-exporting it
+// under that name would collide with the files domain's FileEntity — the
+// record it references — at every call site that imports both.
 export {
+  BaseEntity,
   CommunicationEntity,
+  CommunicationBaseEntity,
   ContentEntity,
+  ContentBaseEntity,
   EventEntity,
-  FileEntity,
+  EventBaseEntity,
   ItemEntity,
+  ObjectObservationEntity,
   PersonEntity,
   ConceptEntity,
   PlaceEntity,
-  ThingEntity,
+  ProductModelEntity,
+  ReceiptEntity,
+  ReceiptLineItemEntity,
   GraphNodeEntity,
+  ItemBaseEntity,
   RelationshipEntity,
 };
 
 // Services
 export {
   ContentService,
+  GraphDeltaWriter,
   EventService,
   CommunicationService,
   GraphEventService,
   ItemService,
   PersonService,
+  PersonActivityService,
+  EntityMergeBlockService,
+  PersonDuplicateService,
+  MergeCandidateService,
+  PersonMergeService,
   ConceptService,
   UserContextService,
   GraphUtilityService,
@@ -151,10 +219,93 @@ export {
   FileService,
   PlaceService,
   KnownPlacesService,
+  ObjectObservationService,
 };
 
 export type { Content } from './entities/ContentEntity';
+export type { MapPin } from './services/EventService';
+export type { PlaceKind } from './entities/PlaceEntity';
+export type { PlaceVisitStats } from './services/PlaceService';
+export { EntityMergeBlockEntity, orderPair, pairKey } from './entities/EntityMergeBlockEntity';
+export { previewFromContent } from './entities/CommunicationEntity';
+export type { BlockReason } from './services/EntityMergeBlockService';
+export type {
+  PersonDuplicateGroup,
+  PersonDuplicatePage,
+  DuplicateReason,
+} from './services/PersonDuplicateService';
+export type {
+  MergeCandidate,
+  MergeCandidateEvidence,
+  MergeCandidatePage,
+  MergeCandidateStatus,
+} from './services/MergeCandidateService';
+export {
+  encodeMergeCandidateCursor,
+  isMergeCandidateStatus,
+  MERGE_CANDIDATE_STATUSES,
+} from './services/MergeCandidateService';
+export type { PersonInteractionStats } from './services/PersonActivityService';
+export type { MergeCounts } from './services/PersonMergeService';
 export type { CreateEventDto, UpdateEventDto, CreateContentDto, UpdateContentDto } from './types';
+// The `content.external_id_kind` vocabulary and the value-shaped test behind
+// it. Exported because every domain that writes a content row (import, etl,
+// ingest, graphql) has to agree on what the column means — a second
+// implementation of the predicate is a second definition of "is this a file id".
+export {
+  classifyExternalId,
+  EXTERNAL_ID_URI_SHAPE,
+  EXTERNAL_ID_UUID_SHAPE,
+  SOURCE_NATIVE_EXTERNAL_ID_KIND,
+} from './externalIdKind';
+export type { ExternalIdKind } from './externalIdKind';
+// The remaining ingest DTOs, exported for the same reason as the ones above:
+// they are the shapes other domains hand to this one's services, so they belong
+// on the public surface rather than behind a reach into ./types.
+export type {
+  CreateItemDto,
+  UpdateItemDto,
+  PhysicalItemPropertiesDto,
+  CreatePersonDto,
+  UpdatePersonDto,
+} from './types';
+// The physical vocabulary of an item. Exported because the API layer needs the
+// same enums the CHECK constraints hold, and importers/listeners need the same
+// unit parsing the services use — a second implementation of either is a second
+// definition of what a millimetre is.
+export {
+  ACQUISITION_METHODS,
+  MAX_ARRAY_TERMS,
+  MAX_DIMENSION_MM,
+  MAX_MASS_G,
+  MAX_VOLUME_ML,
+  PhysicalPropertyError,
+  UNIT_SYSTEMS,
+  normalizeAcquisitionMethod,
+  normalizeColorHex,
+  normalizeColors,
+  normalizeComposition,
+  normalizeMaterials,
+  normalizePhysicalProperties,
+  normalizeUnitSystem,
+  parseDimensions,
+  parseLengthMm,
+  parseMassG,
+  parseVolumeMl,
+} from './physicalProperties';
+export type { AcquisitionMethod, NormalizedPhysicalProperties, UnitSystem } from './physicalProperties';
+// The observation ingest shapes. Both the CV listener (llm domain) and the
+// `capture.scan` promoter (pipeline domain) hand these to
+// ObjectObservationService, so they belong on the public surface for exactly
+// the reason the item/person DTOs above do.
+export type {
+  CreateObjectObservationDto,
+  FindObjectObservationsFilter,
+  ObservationCoordinates,
+  ResolveObjectObservationDto,
+} from './types';
+export type { ObjectObservationWriteResult } from './services/ObjectObservationService';
+export { detectionKeyFor } from './services/ObjectObservationService';
 export type {
   KnownPlace,
   KnownPlaceKind,
@@ -162,9 +313,29 @@ export type {
   KnownPlaceCandidate,
 } from './services/KnownPlacesService';
 export type { Concept, Event, Item, InventoryCondition, Person, Communication, Place };
+export type {
+  InventoryIdentityMethod,
+  InventoryLifecycleState,
+  ObjectObservation,
+  ObservationBoundingBox,
+  ObservationLabelSource,
+  ObservationResolutionMethod,
+  ObservationSourceKind,
+  ProductModel,
+  Receipt,
+  ReceiptExtractionState,
+  ReceiptLineItem,
+};
 export {
   CommunicationDirection,
   CommunicationType,
   CreateCommunicationDto,
+  NORMALIZED_PERSON_FIELDS,
   UpdateCommunicationDto,
+  ensureSinglePrimary,
+  formatPersonAddress,
+  isPersonAddressEmpty,
+  readPersonAddresses,
+  serializePersonAddress,
 } from './types';
+export type { PersonAddress } from './types';

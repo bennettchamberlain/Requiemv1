@@ -1,0 +1,60 @@
+# Build context exclusions, shared by every image built from the repo
+# root (api, gateway, and the Python services once they join the uv
+# workspace, since a workspace member needs the root manifest and lock).
+#
+# Deliberately conservative. The api image copies backend/apps/api/dist
+# and the gateway copies frontend/apps/web/dist out of this context, so
+# a blanket dist/ or build/ rule here breaks both builds. Exclude things
+# by name, never by generic build-output pattern.
+
+# Version control and CI metadata
+.git
+.github
+.husky
+
+# Secrets and local machine state. .env is gitignored, so without this it
+# would be shipped into every image context.
+.env
+.env.*
+!.env.default
+!.env.example
+.hotswap/
+.claude/
+.beads/
+.overmind*.sock
+
+# JavaScript dependencies. The api image runs `yarn workspaces focus`
+# inside the build, so nothing installed locally needs to travel.
+node_modules
+**/node_modules
+.pnp.*
+.yarn/cache
+.yarn/unplugged
+.yarn/install-state.gz
+.yarn/sdks
+.eslintcache
+
+# Python. The venv is the host's, built for the host's platform, and uv
+# recreates it in the image from uv.lock.
+.venv
+**/.venv
+**/__pycache__
+**/*.py[cod]
+.mypy_cache
+.pytest_cache
+.ruff_cache
+
+# Test and documentation artifacts
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+**/coverage
+docs
+video
+
+# Editor and OS noise
+.vscode
+.idea
+.DS_Store

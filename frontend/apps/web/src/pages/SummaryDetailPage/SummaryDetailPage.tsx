@@ -1,6 +1,6 @@
-import { Portal, ErrorPage, LoadingPage, usePageTitle } from '@ci/common';
-import { Breadcrumb, Badge, Card } from '@ci/shadcn';
-import { Link, useParams } from 'react-router-dom';
+import { ErrorPage, LoadingPage, usePageTitle } from '@ci/common';
+import { Badge, Card } from '@ci/shadcn';
+import { useParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 
@@ -44,32 +44,6 @@ export function SummaryDetailPage() {
 
   return (
     <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-            <Breadcrumb.Separator className="hidden md:block" />
-            <Breadcrumb.Item>
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Insights</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-            {summary && (
-              <>
-                <Breadcrumb.Separator />
-                <Breadcrumb.Item>
-                  <Breadcrumb.Page>{summary.title || 'Summary'}</Breadcrumb.Page>
-                </Breadcrumb.Item>
-              </>
-            )}
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
       <PageContent>
         <div className="max-w-4xl mx-auto space-y-6">
           <div className="space-y-4">
@@ -85,9 +59,11 @@ export function SummaryDetailPage() {
                 <span className="font-medium">Period:</span> {formatDate(summary.periodStart)} -{' '}
                 {formatDate(summary.periodEnd)}
               </div>
-              <div>
-                <span className="font-medium">Total Activities:</span> {summary.activityCounts.total}
-              </div>
+              {summary.periodType !== 'insight' && (
+                <div>
+                  <span className="font-medium">Total Activities:</span> {summary.activityCounts.total}
+                </div>
+              )}
             </div>
 
             {summary.tags && summary.tags.length > 0 && (
@@ -102,9 +78,24 @@ export function SummaryDetailPage() {
           </div>
 
           <Card className="p-6">
-            <h2 className="text-xl font-semibold text-foreground">Summary</h2>
+            <h2 className="text-xl font-semibold text-foreground">
+              {summary.periodType === 'insight' ? 'Insight' : 'Summary'}
+            </h2>
             <p className="text-base text-foreground leading-relaxed">{summary.summaryText}</p>
           </Card>
+
+          {summary.periodType === 'insight' &&
+            summary.insights?.[0]?.keyActions &&
+            summary.insights[0].keyActions.length > 0 && (
+              <Card className="p-6">
+                <h2 className="text-xl font-semibold text-foreground">Suggested Actions</h2>
+                <ul className="list-disc pl-6 space-y-2 text-base text-foreground">
+                  {summary.insights[0].keyActions.map((action: string, idx: number) => (
+                    <li key={idx}>{action}</li>
+                  ))}
+                </ul>
+              </Card>
+            )}
 
           {summary.keyInsights && summary.keyInsights.length > 0 && (
             <Card className="p-6">
