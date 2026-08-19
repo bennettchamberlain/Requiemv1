@@ -413,6 +413,81 @@ describeWithDatabase(`the import spine (${importDatabase.target})`, () => {
       expect(sendsFor(run.id).map((payload) => payload.stageId)).toEqual([stages[1].id]);
     });
 
+    it('keys every stage job on its stage id, so a waiting stage cannot collect duplicates', async () => {
+      // The staleness gate above cannot actually distinguish "waiting its turn"
+      // from "its job was lost": both look like a queued stage nothing has
+      // touched, because nothing touches a stage while it waits. Stage jobs run
+      // at localConcurrency 1 appliance-wide, so on a real multi-source import
+      // that wait is long — a measured 13-source run had a single Google Takeout
+      // parse hold the worker for 45 minutes, and the twelve stages queued
+      // behind it had accumulated 107 pending jobs across 16 stage ids.
+      //
+      // pg-boss refuses the duplicate at insert time when the send carries a
+      // singletonKey, which is why the key is asserted here rather than the
+      // sweep being taught a distinction it has no data for.
+      const { run, stages } = await startRun(await stageDrop());
+
+      events.send.mockClear();
+      await age(stages[0].id);
+      await service.resumeInterrupted();
+
+      const call = events.send.mock.calls.find(
+        (each) => (each[1] as Record<string, unknown>).runId === run.id,
+      );
+
+      expect(call).toBeDefined();
+      expect(call?.[2]).toMatchObject({ singletonKey: stages[0].id });
+    });
+
+    it('never enqueues past a stage that is still RUNNING', async () => {
+      // The data-loss regression this exists to stop, observed on a real
+      // 13-source import of a full personal-data corpus:
+      //
+      //   unpack  completed 03:34:53
+      //   parse   started   03:45:08   <- waited ten minutes for its queue slot
+      //   media   started   03:45:40   completed 0/0
+      //   push    started   03:49:00   completed 0/0
+      //   run     completed, percent 100, finished 03:49:00 — while parse ran on
+      //
+      // `media` and `push` had been queued since 03:34:50, so by the time parse
+      // finally started they were long past STALE_STAGE_MINUTES. parse going
+      // RUNNING removed it from the queued set, `media` became the first queued
+      // stage, and the sweep enqueued it. The Google Takeout run reported
+      // success and landed ZERO of its 703,956 items.
+      //
+      // Waiting for the stage in front of you is indistinguishable from a lost
+      // job if you only look at staleness — nothing touches a waiting stage.
+      const { run, stages } = await startRun(await stageDrop());
+
+      // Stage 0 is executing; stages 1..n are queued and long stale.
+      expect(await service.beginStage(stages[0].id)).toBe(true);
+      for (const stage of stages.slice(1)) {
+        await age(stage.id);
+      }
+
+      events.send.mockClear();
+
+      await service.resumeInterrupted();
+
+      // Nothing enqueued, and above all the run is NOT closed out.
+      expect(sendsFor(run.id)).toEqual([]);
+
+      const [row] = await dataSource.query<Array<{ finished_at: string | null; status: string }>>(
+        `SELECT finished_at, status FROM ci_import.import_runs WHERE id = $1::uuid`,
+        [run.id],
+      );
+
+      expect(row.finished_at).toBeNull();
+
+      // And the running stage is untouched — still claimed by its owner.
+      const [live] = await dataSource.query<Array<{ status: string }>>(
+        `SELECT status FROM ci_import.import_stages WHERE id = $1::uuid`,
+        [stages[0].id],
+      );
+
+      expect(live.status).toBe('running');
+    });
+
     it('closes out a run whose last stage completed but never finished', async () => {
       const { run, stages } = await startRun(await stageDrop());
 

@@ -1,6 +1,7 @@
 /* Generic Email datasource (.mbox / .eml).
    Parses RFC-5322 messages from mbox archives and .eml files (attachments simplified). */
 import fs from 'node:fs';
+import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import readline from 'node:readline';
 
@@ -31,7 +32,7 @@ export class EmailFileImporter implements FileImporter {
     }
 
     try {
-      const st = fs.statSync(full);
+      const st = await stat(full);
       if (st.isFile()) {
         const ext = path.extname(full).toLowerCase();
         if (ext === '.mbox' || ext === '.eml') {
@@ -43,7 +44,7 @@ export class EmailFileImporter implements FileImporter {
           return { confidence: 0.7 };
         }
       } else if (st.isDirectory()) {
-        const ents = fs.readdirSync(full);
+        const ents = await readdir(full);
         if (ents.some((e) => e.toLowerCase().endsWith('.mbox') || e.toLowerCase().endsWith('.eml'))) {
           return { confidence: 0.6, dir_threshold: 0.9 };
         }

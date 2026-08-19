@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 
-import { Badge, Button, cn } from '@ci/shadcn';
-import { Check } from '@ci/shadcn/icons';
+import { Badge, Button, cn, Input } from '@ci/shadcn';
+import { Check, Search } from '@ci/shadcn/icons';
 
 import type { CatalogSource } from '../useImportApi';
 
@@ -20,29 +20,66 @@ export interface PickStepProps {
  *
  * A grid of recognizable brands grouped into sections, because the person
  * answering has never heard of an "importer" — they know they use Spotify. A
- * source whose parser is not written yet is still shown, badged "coming soon"
- * and sorted last: "we know this service and haven't finished it" is a
- * materially different answer from silence, which reads as unsupported.
+ * source whose parser is not written yet is still shown, badged "coming soon":
+ * "we know this service and haven't finished it" is a materially different
+ * answer from silence, which reads as unsupported.
  */
 export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProps) {
   const [logoFailed, setLogoFailed] = useState<ReadonlySet<string>>(new Set());
+  const [query, setQuery] = useState('');
   const lastImportedAt = useSourceUsage();
   const ownedImporters = useMemo(() => unambiguousImporters(catalog), [catalog]);
 
-  // No search box and no category chips. Both were answers to a grid of ~100
-  // one-line names with nothing to tell them apart; the tiles now carry a logo,
-  // a name and what each one imports, and the list is already grouped under the
-  // same headings the chips repeated. Scrolling is the navigation.
-  const visible = useMemo(() => pickableSections(catalog), [catalog]);
+  const sections = useMemo(() => pickableSections(catalog), [catalog]);
+
+  // The filter matches a tile's own name AND the member names a bundle tile
+  // carries — typing "gmail" must surface the Google tile, not an empty grid.
+  // Sections with no surviving tiles disappear whole; an empty heading reads
+  // as "everything here was taken away".
+  const visible = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+
+    if (needle === '') {
+      return sections;
+    }
+
+    return sections
+      .map((section) => ({
+        ...section,
+        items: section.items.filter((item) =>
+          [item.label, ...(item.memberNames ?? [])].some((name) => name.toLowerCase().includes(needle)),
+        ),
+      }))
+      .filter((section) => section.items.length > 0);
+  }, [sections, query]);
 
   return (
-    // Search and the facet chips stay pinned with the stepper above; only the
-    // service grid scrolls. The filter controls are what CAUSE the content
-    // swaps, so they must not live in the region whose scrollbar those swaps
-    // toggle — and losing the search box off the top of a 100-service list
-    // was no good either.
+    // The search box stays pinned with the stepper above; only the service
+    // grid scrolls. The filter is what CAUSES the content swaps, so it must
+    // not live in the region whose scrollbar those swaps toggle — and losing
+    // it off the top of a 100-service list would be no better.
     <div className="flex h-full min-h-0 flex-col gap-5">
+      <div className="relative">
+        <Search
+          aria-hidden
+          className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+        />
+        <Input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search services…"
+          aria-label="Search services"
+          className="pl-8"
+        />
+      </div>
+
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto">
+        {visible.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            No services match “{query.trim()}”. Anything can still be imported from the Upload tab —
+            unrecognized files land as documents.
+          </p>
+        )}
         {visible.map((section) => (
           <section key={section.key} className="space-y-2">
             <h3 className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
@@ -111,6 +148,13 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
                           </Badge>
                         ) : null}
                       </span>
+
+                      {item.memberNames != null && item.memberNames.length > 0 && (
+                        // The services this one download stands for, by name —
+                        // someone scanning the grid for "Instagram" must find
+                        // it on the Meta tile, not conclude it is unsupported.
+                        <span className="text-xs text-muted-foreground">{item.memberNames.join(' · ')}</span>
+                      )}
 
                       {item.objects.length > 0 && (
                         // Filled column-first, so the vocabulary order reads

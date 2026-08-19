@@ -23,6 +23,10 @@ vi.mock('@/lib/accountDataPortability', () => ({
   uploadLegacyAccountImport,
 }));
 
+vi.mock('./WorkingSetSection', () => ({
+  WorkingSetSection: () => null,
+}));
+
 /** The hidden `<input type="file">` — its `<Label>` targets a nonexistent id, so it
  *  cannot be reached via getByLabelText and is queried directly instead. */
 function fileInput(): HTMLInputElement {

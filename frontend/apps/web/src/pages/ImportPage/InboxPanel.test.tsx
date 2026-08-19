@@ -20,6 +20,7 @@ const UNITS = [
     sizeBytes: 2_400_000_000,
     fileCount: 1042,
     recognized: [{ dataSource: 'gmail', title: 'Gmail', confidence: 0.9 }],
+    declared: [],
     activeRunId: null,
     claimed: false,
   },
@@ -29,6 +30,7 @@ const UNITS = [
     sizeBytes: 12_000,
     fileCount: 1,
     recognized: [],
+    declared: ['Contacts'],
     activeRunId: 'run-live',
     claimed: true,
   },
@@ -40,6 +42,7 @@ const UNITS = [
     sizeBytes: 5_000,
     fileCount: 1,
     recognized: [],
+    declared: [],
     activeRunId: null,
     claimed: true,
   },
@@ -52,6 +55,7 @@ const scanInbox = vi.fn(
     units: UNITS,
     skippedSymlinks: 0,
     truncated: false,
+    recognitionPartial: false,
   }),
 );
 
@@ -138,6 +142,33 @@ describe('InboxPanel', () => {
     await waitFor(() => expect(scanInbox).toHaveBeenCalledTimes(2));
   });
 
+  it('says it is scanning while the first scan is in flight', async () => {
+    let release: (scan: import('./useImportApi').InboxScan) => void = () => undefined;
+
+    scanInbox.mockImplementationOnce(
+      () =>
+        new Promise<import('./useImportApi').InboxScan>((resolve) => {
+          release = resolve;
+        }),
+    );
+
+    render(<InboxPanel />);
+
+    // The pending call must read as work, not as a frozen page.
+    expect(await screen.findByText(/scanning the inbox folder/i)).toBeInTheDocument();
+
+    release({
+      available: true,
+      inboxDir: '/inbox/u',
+      units: [],
+      skippedSymlinks: 0,
+      truncated: false,
+      recognitionPartial: false,
+    });
+
+    expect(await screen.findByRole('button', { name: /rescan/i })).toBeInTheDocument();
+  });
+
   it('reports an unavailable inbox rather than an empty one', async () => {
     scanInbox.mockResolvedValueOnce({
       available: false,
@@ -146,6 +177,7 @@ describe('InboxPanel', () => {
       units: [],
       skippedSymlinks: 0,
       truncated: false,
+      recognitionPartial: false,
     });
 
     render(<InboxPanel />);

@@ -1492,9 +1492,11 @@ Ships in release N **alongside** removal of the `@Column` mappings. **No DROPs.*
 
 ```sql
 -- migrate:up
--- Guard: ci.inventory.tags has no writer in THIS repo, but CI-Import-Tools is a
--- separate repo. Assert the column is still at its '{}' default rather than
--- assuming it, since the phase-2 drop is irreversible for its contents.
+-- Guard: ci.inventory.tags has no writer today, but the appliance has been
+-- written to by importers that no longer exist (the retired external
+-- CI-Import-Tools among them), so historical rows may still hold values.
+-- Assert the column is at its '{}' default rather than assuming it, since the
+-- phase-2 drop is irreversible for its contents.
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM ci.inventory

@@ -10,17 +10,9 @@ import { LoggerService } from '@ci/common/logging';
 import { EventService } from '@ci/domains/events';
 
 import { type Task, TaskEntity } from '../entities/TaskEntity';
-import {
-  type TaskPendingChange,
-  TaskPendingChangeEntity,
-} from '../entities/TaskPendingChangeEntity';
+import { type TaskPendingChange, TaskPendingChangeEntity } from '../entities/TaskPendingChangeEntity';
 import { TaskCreatedEvent, TaskUpdatedEvent, TaskRemovedEvent } from '../events';
-import type {
-  CreateTaskDto,
-  CreateTaskPendingChangeDto,
-  FindTasksOptions,
-  UpdateTaskDto,
-} from '../types';
+import type { CreateTaskDto, CreateTaskPendingChangeDto, FindTasksOptions, UpdateTaskDto } from '../types';
 
 /**
  * Owner-scoped CRUD for planning tasks.
@@ -455,6 +447,8 @@ export class TaskService {
       task = hasTaskFields
         ? await this.update(context, change.taskId, taskPatch as UpdateTaskDto)
         : await this.findById(context, change.taskId);
+    } else {
+      task = await this.findById(context, change.taskId);
     }
 
     change.status = 'accepted';

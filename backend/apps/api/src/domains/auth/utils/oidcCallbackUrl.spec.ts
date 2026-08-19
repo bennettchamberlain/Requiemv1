@@ -187,4 +187,22 @@ describe('resolveOidcOriginBounce', () => {
   it('does not bounce when the public base URL is unparseable', () => {
     expect(resolveOidcOriginBounce({ host: 'localhost:3030', secure: false }, 'not a url')).toBeNull();
   });
+
+  it('carries client=native across the bounce so the callback still deep-links', () => {
+    expect(
+      resolveOidcOriginBounce(
+        { host: '192.168.1.50:8642', secure: false },
+        PUBLIC_BASE,
+        undefined,
+        false,
+        'native',
+      ),
+    ).toBe(`${PUBLIC_BASE}${INITIATE_PATH}?client=native&${OIDC_ORIGIN_BOUNCE_PARAM}=1`);
+  });
+
+  it('does not add a client flag for ordinary web sign-in', () => {
+    expect(resolveOidcOriginBounce({ host: '192.168.1.50:8642', secure: false }, PUBLIC_BASE)).toBe(
+      `${PUBLIC_BASE}${INITIATE_PATH}?${OIDC_ORIGIN_BOUNCE_PARAM}=1`,
+    );
+  });
 });

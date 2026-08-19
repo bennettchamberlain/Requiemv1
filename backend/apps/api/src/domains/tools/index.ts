@@ -33,6 +33,7 @@ import { ParsingModule } from '@ci/domains/parsing';
 import { PredictionsModule } from '@ci/domains/predictions';
 import { SearchNextModule } from '@ci/domains/search-next';
 import { SummariesModule } from '@ci/domains/summaries';
+import { UserModule } from '@ci/domains/user';
 
 import { IntentCatalogService } from './catalog/IntentCatalogService';
 import { ToolInvokedListener } from './listeners/ToolInvokedListener';
@@ -116,6 +117,7 @@ const nativeToolInstances = [
     PredictionsModule,
     SummariesModule,
     DailyMetricsModule,
+    UserModule,
   ],
   providers: [
     ToolRegistry,

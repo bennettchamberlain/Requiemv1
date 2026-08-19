@@ -185,16 +185,12 @@ export class TodoProcessService {
         memoryBlock.slice(0, 4000),
       ].join('\n');
 
-      const response = await this.ollamaService.chat(
-        context as never,
-        [{ role: 'user', content: prompt }],
-        {
-          model: PROMPT_MODEL,
-          enableTools: false,
-          format: 'json',
-          signal: controller.signal,
-        },
-      );
+      const response = await this.ollamaService.chat(context as never, [{ role: 'user', content: prompt }], {
+        model: PROMPT_MODEL,
+        enableTools: false,
+        format: 'json',
+        signal: controller.signal,
+      });
 
       const parsed = suggestionSchema.safeParse(JSON.parse(response.message.content || '{}'));
 
@@ -248,12 +244,7 @@ export class EventNowService {
 
     for (const block of blocks) {
       const title = (block.metadata?.title as string | undefined) ?? 'planned block';
-      const recall = await searchBlock(
-        this.searchService,
-        context,
-        `${title} what actually happened`,
-        6,
-      );
+      const recall = await searchBlock(this.searchService, context, `${title} what actually happened`, 6);
 
       if (!recall.trim()) {
         continue;

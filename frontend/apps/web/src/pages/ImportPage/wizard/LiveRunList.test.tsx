@@ -22,8 +22,7 @@ vi.mock('../useImportApi', async (importOriginal) => {
     // internally calls the real `useImportApi` (a module-local binding a mock
     // cannot intercept), which needs the whole auth provider tree. What THIS
     // spec owns is the render-weight split, not the polling.
-    useRunsProgress: () =>
-      new Map(runsPage.value.map((run) => [run.id as string, run as ImportRun])),
+    useRunsProgress: () => new Map(runsPage.value.map((run) => [run.id as string, run as ImportRun])),
   };
 });
 

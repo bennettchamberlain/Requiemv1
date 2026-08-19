@@ -508,7 +508,8 @@ export class WriteKnowledgeTool extends BaseTool<WriteKnowledgeInput, WriteKnowl
 
     const trimmed = ref.name.trim().toLowerCase();
     const typed = ref.entityType?.trim().toLowerCase();
-    const fromBatch = (typed ? createdByName.get(`${typed}::${trimmed}`) : undefined) ?? createdByName.get(trimmed);
+    const fromBatch =
+      (typed ? createdByName.get(`${typed}::${trimmed}`) : undefined) ?? createdByName.get(trimmed);
     if (fromBatch) {
       return fromBatch;
     }

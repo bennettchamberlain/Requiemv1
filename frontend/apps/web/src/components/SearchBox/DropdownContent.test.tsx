@@ -28,7 +28,10 @@ function params(): URLSearchParams {
   return new URLSearchParams(screen.getByTestId('query').textContent ?? '');
 }
 
-function renderContent(props: Partial<React.ComponentProps<typeof DropdownContent>> = {}, route = '/memory/events') {
+function renderContent(
+  props: Partial<React.ComponentProps<typeof DropdownContent>> = {},
+  route = '/memory/events',
+) {
   return renderWithProviders(
     <DropdownProvider args={[{ changeSearchParams: true }]}>
       <DropdownContent {...props} />

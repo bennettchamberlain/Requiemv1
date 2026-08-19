@@ -29,6 +29,7 @@
    already-recognized directory, or it is silently dropped. */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { ResolvedAsset } from './_ai_media';
@@ -108,10 +109,10 @@ const CHATGPT_SIBLINGS = [
   'chat.html',
 ];
 
-function readJson(fpath: string): unknown {
+async function readJson(fpath: string): Promise<unknown> {
   let raw: string;
   try {
-    raw = fs.readFileSync(fpath, 'utf8');
+    raw = await readFile(fpath, 'utf8');
   } catch {
     return undefined;
   }
@@ -199,21 +200,21 @@ export class ClaudeFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       const base = path.basename(root).toLowerCase();
       if (base === 'conversations.json') {
-        return isClaudeExport(readJson(root)) ? { confidence: 0.95 } : { confidence: 0 };
+        return isClaudeExport(await readJson(root)) ? { confidence: 0.95 } : { confidence: 0 };
       }
 
       if (isMemoryFilename(base)) {
-        const conf = claudeMemoryConfidence(readJson(root));
+        const conf = claudeMemoryConfidence(await readJson(root));
 
         return conf > 0 ? { confidence: conf } : { confidence: 0 };
       }
@@ -221,19 +222,19 @@ export class ClaudeFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
-      const names = (() => {
-        try {
-          return fs.readdirSync(root);
-        } catch {
-          return [];
-        }
-      })();
+    if (st.isDirectory()) {
+      let names: string[];
+      try {
+        names = await readdir(root);
+      } catch {
+        names = [];
+      }
+
       const conv = findName(names, (n) => n === 'conversations.json');
       if (conv) {
         // conversations.json decides ownership of the whole directory: when it
         // is another vendor's shape the memories file next to it is theirs too.
-        if (isClaudeExport(readJson(path.join(root, conv)))) {
+        if (isClaudeExport(await readJson(path.join(root, conv)))) {
           return { confidence: 0.9 };
         }
 
@@ -242,7 +243,7 @@ export class ClaudeFileImporter implements FileImporter {
 
       const mem = findName(names, isMemoryFilename);
       if (mem && !findName(names, (n) => CHATGPT_SIBLINGS.includes(n))) {
-        const conf = claudeMemoryConfidence(readJson(path.join(root, mem)));
+        const conf = claudeMemoryConfidence(await readJson(path.join(root, mem)));
         if (conf > 0) {
           const marked = !!findName(names, (n) => CLAUDE_SIBLINGS.includes(n));
 
@@ -618,6 +619,12 @@ export class ClaudeFileImporter implements FileImporter {
             Role: sender === 'human' ? 'user' : 'assistant',
             Direction: sender === 'human' ? 'outgoing' : 'incoming',
             Conversation: conv.name || undefined,
+            // The conversation UUID, not its name: a claude.ai conversation can
+            // be renamed (and an untitled one has no name at all), so the uuid
+            // is the stable thread key. mediaForMessage above already stamps it
+            // this way — the message path did not, so its rows carried no
+            // thread key at all and landed with thread_id NULL.
+            ThreadId: conv.uuid || undefined,
             Source: 'Claude',
             Text: text || undefined,
             MediaAttachments: mediaAttachments.length ? mediaAttachments : undefined,

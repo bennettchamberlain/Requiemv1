@@ -1,5 +1,5 @@
 import { Button, Checkbox, IconButton } from '@ci/shadcn';
-import { Trash } from '@ci/shadcn/icons';
+import { CalendarRange, Pencil, Trash } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 
 import { gql } from '@/graphql';
@@ -10,10 +10,23 @@ interface Props {
   depth?: number;
   onToggle: (id: string, done: boolean) => void;
   onDelete: (e: React.MouseEvent, id: string) => void;
+  onEdit?: (
+    e: React.MouseEvent,
+    task: {
+      id: string;
+      title: string;
+      description?: string | null;
+      dueAt?: string | null;
+      estimatedMinutes?: number | null;
+    },
+  ) => void;
   onAcceptProposed?: (id: string) => void;
   onDeclineProposed?: (id: string) => void;
+  onAcceptAndSchedule?: (id: string) => void;
+  onSchedule?: (id: string) => void;
   pendingChangeId?: string | null;
   pendingRationale?: string | null;
+  pendingKind?: string | null;
   onAcceptPending?: (changeId: string) => void;
   onDeclinePending?: (changeId: string) => void;
   children?: React.ReactNode;
@@ -53,10 +66,14 @@ export function Task({
   depth = 0,
   onToggle,
   onDelete,
+  onEdit,
   onAcceptProposed,
   onDeclineProposed,
+  onAcceptAndSchedule,
+  onSchedule,
   pendingChangeId,
   pendingRationale,
+  pendingKind,
   onAcceptPending,
   onDeclinePending,
   children,
@@ -110,8 +127,22 @@ export function Task({
               <Button size="sm" variant="default" onClick={() => onAcceptProposed(task.id)}>
                 Add to plan
               </Button>
+              {onAcceptAndSchedule ? (
+                <Button size="sm" variant="secondary" onClick={() => onAcceptAndSchedule(task.id)}>
+                  Add and schedule
+                </Button>
+              ) : null}
               <Button size="sm" variant="outline" onClick={() => onDeclineProposed(task.id)}>
                 Dismiss
+              </Button>
+            </div>
+          ) : null}
+
+          {!proposed && !done && !task.scheduledFor && onSchedule ? (
+            <div className="mt-1 flex flex-wrap gap-2">
+              <Button type="button" size="sm" onClick={() => onSchedule(task.id)}>
+                <CalendarRange className="h-4 w-4" />
+                Schedule
               </Button>
             </div>
           ) : null}
@@ -119,7 +150,7 @@ export function Task({
           {pendingChangeId && onAcceptPending && onDeclinePending ? (
             <div className="mt-1 flex flex-wrap gap-2">
               <Button size="sm" variant="default" onClick={() => onAcceptPending(pendingChangeId)}>
-                Confirm
+                {pendingKind === 'schedule' ? 'Place on calendar' : 'Confirm'}
               </Button>
               <Button size="sm" variant="outline" onClick={() => onDeclinePending(pendingChangeId)}>
                 Ignore
@@ -128,13 +159,34 @@ export function Task({
           ) : null}
         </div>
 
-        <IconButton
-          onClick={(e) => onDelete(e, task.id)}
-          variant="ghost"
-          label={t('PLAN_TASK_DELETE', { title: task.title })}
-        >
-          <Trash className="h-4 w-4" />
-        </IconButton>
+        <div className="flex shrink-0 items-center gap-0.5">
+          {onEdit ? (
+            <IconButton
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onEdit(e, {
+                  id: task.id,
+                  title: task.title,
+                  description: task.description,
+                  dueAt: task.dueAt as string | null,
+                  estimatedMinutes: task.estimatedMinutes,
+                });
+              }}
+              variant="ghost"
+              label={t('PLAN_TASK_EDIT', { title: task.title })}
+            >
+              <Pencil className="h-4 w-4" />
+            </IconButton>
+          ) : null}
+          <IconButton
+            onClick={(e) => onDelete(e, task.id)}
+            variant="ghost"
+            label={t('PLAN_TASK_DELETE', { title: task.title })}
+          >
+            <Trash className="h-4 w-4" />
+          </IconButton>
+        </div>
       </div>
 
       {children ? <ul className="flex flex-col gap-2">{children}</ul> : null}

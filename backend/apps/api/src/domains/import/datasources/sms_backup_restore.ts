@@ -1,6 +1,8 @@
 /* SMS Backup & Restore — Android XML export (<smses><sms .../><mms .../></smses>). */
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
+import type { FileHandle } from 'node:fs/promises';
+import { open, readdir, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -187,30 +189,33 @@ export class SmsBackupRestoreFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       if (path.extname(root).toLowerCase() !== '.xml') {
         return { confidence: 0 };
       }
 
-      return this.peekIsSms(root) || this.peekIsCalls(root) ? { confidence: 0.9 } : { confidence: 0 };
+      return (await this.peekIsSms(root)) || (await this.peekIsCalls(root))
+        ? { confidence: 0.9 }
+        : { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       try {
-        const names = fs.readdirSync(root);
+        const names = await readdir(root);
         for (const name of names) {
           if (path.extname(name).toLowerCase() !== '.xml') {
             continue;
           }
 
-          if (this.peekIsSms(path.join(root, name)) || this.peekIsCalls(path.join(root, name))) {
+          const fpath = path.join(root, name);
+          if ((await this.peekIsSms(fpath)) || (await this.peekIsCalls(fpath))) {
             return { confidence: 0.9 };
           }
         }
@@ -225,33 +230,29 @@ export class SmsBackupRestoreFileImporter implements FileImporter {
   }
 
   // Read only the first ~2KB to sniff for the <smses root without loading huge files.
-  private peekIsSms(fpath: string): boolean {
+  private async peekIsSms(fpath: string): Promise<boolean> {
     return this.peekContains(fpath, looksLikeSmses);
   }
 
   // Read only the first ~2KB to sniff for the <calls root without loading huge files.
-  private peekIsCalls(fpath: string): boolean {
+  private async peekIsCalls(fpath: string): Promise<boolean> {
     return this.peekContains(fpath, looksLikeCalls);
   }
 
-  private peekContains(fpath: string, pred: (text: string) => boolean): boolean {
-    let fd: number | undefined;
+  private async peekContains(fpath: string, pred: (text: string) => boolean): Promise<boolean> {
+    let handle: FileHandle | undefined;
     try {
-      fd = fs.openSync(fpath, 'r');
+      handle = await open(fpath, 'r');
       const buf = Buffer.alloc(2048);
-      const n = fs.readSync(fd, buf, 0, 2048, 0);
+      const { bytesRead } = await handle.read(buf, 0, 2048, 0);
 
-      return pred(buf.toString('utf8', 0, n));
+      return pred(buf.toString('utf8', 0, bytesRead));
     } catch {
       return false;
     } finally {
-      if (fd !== undefined) {
-        try {
-          fs.closeSync(fd);
-        } catch {
-          /* ignore */
-        }
-      }
+      await handle?.close().catch(() => {
+        /* ignore */
+      });
     }
   }
 
@@ -284,7 +285,7 @@ export class SmsBackupRestoreFileImporter implements FileImporter {
         }
 
         const fpath = path.join(root, name);
-        if (this.peekIsSms(fpath) || this.peekIsCalls(fpath)) {
+        if ((await this.peekIsSms(fpath)) || (await this.peekIsCalls(fpath))) {
           await this.processFile(fpath, params);
         }
       }

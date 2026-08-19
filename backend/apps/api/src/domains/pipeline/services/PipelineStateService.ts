@@ -9,6 +9,9 @@ import {
   MAX_ATTEMPTS_BEFORE_QUARANTINE,
   RETRY_BACKOFF_BASE_SECONDS,
   RETRY_BACKOFF_MAX_SECONDS,
+  TRANSIENT_FAILURE_REASONS,
+  TRANSIENT_RETRY_BACKOFF_BASE_SECONDS,
+  isTransientFailureReason,
 } from '../constants';
 import type {
   DeadLetterInput,
@@ -44,6 +47,35 @@ export interface RetryBackoffOptions {
   maxSeconds?: number;
   /** Attempts after which the entity is quarantined instead of retried. */
   maxAttempts?: number;
+  /**
+   * Delay after the first TRANSIENT failure, in seconds. Doubles per consecutive
+   * transient failure and saturates at `maxSeconds`, and unlike the permanent
+   * schedule it never ends in quarantine.
+   */
+  transientBaseSeconds?: number;
+}
+
+/** What `releaseQuarantined()` was asked to un-park, and what it found. */
+export interface ReleaseQuarantinedInput {
+  /**
+   * Reasons to release, matched exactly. Defaults to
+   * {@link TRANSIENT_FAILURE_REASONS} — the set that can no longer quarantine at
+   * all, so the default is precisely "undo what the old policy did".
+   */
+  reasons?: readonly string[];
+
+  /** Restrict to one stage. Absent means every stage, which is the common case. */
+  stage?: string;
+}
+
+/** @see PipelineStateService.releaseQuarantined */
+export interface ReleaseQuarantinedResult {
+  /** Rows moved from `quarantined` back to `failed`, due immediately. */
+  released: number;
+  /** The reasons actually used, echoed so a defaulted call is self-documenting. */
+  reasons: string[];
+  /** The stage filter applied, or null when every stage was in scope. */
+  stage: string | null;
 }
 
 /**
@@ -118,6 +150,16 @@ function assertIdentifier(kind: string, value: string): void {
  *    anything is written. The database deliberately does NOT enforce it with a
  *    CHECK: a constraint that can reject the error path turns a recoverable
  *    failure into a lost one.
+ *  - **A TRANSIENT failure never spends the quarantine budget.** `attempts` is
+ *    charged by `claim()` and REFUNDED here when the reason is one of
+ *    `TRANSIENT_FAILURE_REASONS`; `transient_attempts` counts those separately
+ *    and drives its own long backoff. Two counters exist because one could not
+ *    tell the difference between a row that can never succeed and a provider
+ *    that was briefly unreachable — and with a five-attempt budget at a 60 s
+ *    doubling backoff, fifteen minutes of outage was enough to make the second
+ *    look exactly like the first. It cost a real appliance 12,237 quarantined
+ *    `ci.position` rows, 19 % of that corpus, none of which could ever get an
+ *    address or reach the map again.
  */
 @Injectable()
 export class PipelineStateService {
@@ -314,8 +356,10 @@ export class PipelineStateService {
    * version, and non-terminal rows at any version, stay claimable, so version
    * bumps and crash recovery both still work.
    *
-   * `attempts` is incremented HERE and nowhere else, so it counts genuine
-   * starts. `stage_version` is deliberately left alone — see the class comment.
+   * `attempts` is incremented HERE and nowhere else. The one thing that ever
+   * moves it back is the transient REFUND in `complete()`/`fail()`, which is
+   * what keeps a provider outage from spending a budget sized for poison
+   * records. `stage_version` is deliberately left alone — see the class comment.
    */
   async claim(stage: StageRef, entityType: string, ids: string[], userId: string | null): Promise<string[]> {
     const uniqueIds = [...new Set(ids)];
@@ -373,10 +417,30 @@ export class PipelineStateService {
    * `done` and `skipped` are stamped with the stage's current version, which is
    * what removes them from the candidate set until that version moves. `failed`
    * additionally gets a retry gate — an exponential backoff computed IN SQL
-   * from the row's own `attempts`, so it needs no read-modify-write and cannot
+   * from the row's own counters, so it needs no read-modify-write and cannot
    * race a concurrent claim. Once a row has spent its attempt budget the same
    * statement parks it as `quarantined`, which no sweep reclaims and only a
    * version bump (or a human) revives.
+   *
+   * ── The two budgets ────────────────────────────────────────────────────────
+   *
+   * Which budget a failure spends is decided by its REASON, classified in
+   * TypeScript above and carried into the statement as a per-row flag:
+   *
+   *  - **permanent** (anything not in `TRANSIENT_FAILURE_REASONS`) — keeps the
+   *    attempt `claim()` charged, backs off `RETRY_BACKOFF_BASE_SECONDS *
+   *    2^(attempts-1)`, and quarantines once `attempts` reaches
+   *    `MAX_ATTEMPTS_BEFORE_QUARANTINE`. This is the poison-record path and it
+   *    is unchanged.
+   *  - **transient** (`provider_unavailable`, `ollama_unreachable`) — REFUNDS
+   *    the attempt, increments `transient_attempts` instead, backs off
+   *    `TRANSIENT_RETRY_BACKOFF_BASE_SECONDS * 2^transient_attempts`, and can
+   *    NEVER quarantine. An outage is a fact about the world; it must not
+   *    accumulate into a verdict about a row.
+   *
+   * Anything that is not another transient failure resets `transient_attempts`
+   * to 0, so an episode that ends leaves the next one starting at 15 minutes
+   * rather than at the 6-hour cap.
    *
    * Rejects `skipped`/`failed` results carrying no reason, before writing
    * anything. A stage that cannot say why it skipped a row has not skipped it,
@@ -399,6 +463,7 @@ export class PipelineStateService {
     const ids: string[] = [];
     const statuses: string[] = [];
     const reasons: (string | null)[] = [];
+    const transient: boolean[] = [];
 
     for (const [entityId, result] of results) {
       this.assertValidResult(stage.id, entityId, result);
@@ -406,32 +471,70 @@ export class PipelineStateService {
       ids.push(entityId);
       statuses.push(result.outcome);
       reasons.push(result.reason ?? null);
+      // Classified HERE rather than in SQL so the rule is one pure predicate over
+      // a declared set, testable without a database and readable from the reason
+      // column afterwards. Only meaningful for `failed`; the statement ignores it
+      // for every other outcome.
+      transient.push(result.outcome === 'failed' && isTransientFailureReason(result.reason));
     }
 
     if (ids.length === 0) {
       return { done: 0, skipped: 0, failed: 0, quarantined: 0 };
     }
 
+    // `transient_attempts` does double duty in this statement: it is the column
+    // the transient backoff counts, AND it is how the per-row class crosses into
+    // the `ON CONFLICT` clause. `DO UPDATE` cannot see `t` — only `ps` and
+    // `EXCLUDED` — so the flag rides in on the row we tried to insert, where
+    // `EXCLUDED.transient_attempts = 1` means "this failure was the world's
+    // fault" and 0 means everything else.
     const rows = await this.dataSource.query<Array<{ status: string }>>(
       `INSERT INTO ci.pipeline_state AS ps
               (entity_type, entity_id, stage, stage_version, status, reason, attempts,
-               next_attempt_at, updated_at)
-       SELECT $1, t.entity_id, $2, $3::int, t.status, t.reason, 1,
+               transient_attempts, next_attempt_at, updated_at)
+       SELECT $1, t.entity_id, $2, $3::int, t.status, t.reason,
+              CASE WHEN t.transient THEN 0 ELSE 1 END,
+              CASE WHEN t.transient THEN 1 ELSE 0 END,
               CASE WHEN t.status = 'failed'
-                   THEN now() + make_interval(secs => LEAST($4::float8, $5::float8))
+                   THEN now() + make_interval(secs => LEAST(
+                          CASE WHEN t.transient THEN $10::float8 ELSE $4::float8 END,
+                          $5::float8))
               END,
               now()
-         FROM unnest($6::uuid[], $7::text[], $8::text[]) AS t(entity_id, status, reason)
+         FROM unnest($6::uuid[], $7::text[], $8::text[], $9::bool[])
+              AS t(entity_id, status, reason, transient)
        ON CONFLICT (entity_type, entity_id, stage) DO UPDATE
           SET stage_version   = EXCLUDED.stage_version,
               status          = CASE
-                                  WHEN EXCLUDED.status = 'failed' AND ps.attempts >= $9::int
+                                  WHEN EXCLUDED.status = 'failed'
+                                   AND EXCLUDED.transient_attempts = 0
+                                   AND ps.attempts >= $11::int
                                   THEN 'quarantined'
                                   ELSE EXCLUDED.status
                                 END,
               reason          = EXCLUDED.reason,
+              -- The refund. claim() charged this row an attempt; a failure the
+              -- row did not cause gives it straight back, so an outage of any
+              -- length leaves the quarantine budget exactly where it was.
+              attempts        = CASE
+                                  WHEN EXCLUDED.status = 'failed'
+                                   AND EXCLUDED.transient_attempts = 1
+                                  THEN GREATEST(ps.attempts - 1, 0)
+                                  ELSE ps.attempts
+                                END,
+              transient_attempts = CASE
+                                  WHEN EXCLUDED.status = 'failed'
+                                   AND EXCLUDED.transient_attempts = 1
+                                  THEN ps.transient_attempts + 1
+                                  ELSE 0
+                                END,
               next_attempt_at = CASE
-                                  WHEN EXCLUDED.status = 'failed' AND ps.attempts < $9::int
+                                  WHEN EXCLUDED.status = 'failed'
+                                   AND EXCLUDED.transient_attempts = 1
+                                  THEN now() + make_interval(secs => LEAST(
+                                         $10::float8 * power(2, ps.transient_attempts),
+                                         $5::float8))
+                                  WHEN EXCLUDED.status = 'failed' AND ps.attempts < $11::int
                                   THEN now() + make_interval(secs => LEAST(
                                          $4::float8 * power(2, GREATEST(ps.attempts - 1, 0)),
                                          $5::float8))
@@ -447,6 +550,8 @@ export class PipelineStateService {
         ids,
         statuses,
         reasons,
+        transient,
+        TRANSIENT_RETRY_BACKOFF_BASE_SECONDS,
         MAX_ATTEMPTS_BEFORE_QUARANTINE,
       ],
     );
@@ -472,6 +577,18 @@ export class PipelineStateService {
    * hour forever. It is not permanent — a version bump re-selects quarantined
    * rows along with everything else, so a fixed enricher re-admits its own
    * casualties.
+   *
+   * A shared reason that names a TRANSIENT failure takes the same escape hatch
+   * `complete()` does — refund the attempt, count it in `transient_attempts`,
+   * back off on the long schedule, never quarantine. One reason for the whole
+   * slice means one class for the whole slice, so the flag is a scalar here
+   * rather than the per-row array `complete()` binds.
+   *
+   * Note that the DEFAULT reason from `PipelineSliceListener` is
+   * `stage_threw: <message>`, which is not classifiable and therefore permanent
+   * — see `TRANSIENT_FAILURE_REASONS` for why pattern-matching an error message
+   * is not offered, and `releaseQuarantined()` for the operator's remedy when a
+   * real outage came through that path.
    */
   async fail(
     stage: StageRef,
@@ -499,27 +616,61 @@ export class PipelineStateService {
     const baseSeconds = options.baseSeconds ?? RETRY_BACKOFF_BASE_SECONDS;
     const maxSeconds = options.maxSeconds ?? RETRY_BACKOFF_MAX_SECONDS;
     const maxAttempts = options.maxAttempts ?? MAX_ATTEMPTS_BEFORE_QUARANTINE;
+    const transientBaseSeconds = options.transientBaseSeconds ?? TRANSIENT_RETRY_BACKOFF_BASE_SECONDS;
+    const transient = isTransientFailureReason(reason.trim());
 
-    if (!Number.isFinite(baseSeconds) || baseSeconds < 0 || !Number.isFinite(maxSeconds) || maxSeconds < 0) {
+    if (
+      !Number.isFinite(baseSeconds) ||
+      baseSeconds < 0 ||
+      !Number.isFinite(maxSeconds) ||
+      maxSeconds < 0 ||
+      !Number.isFinite(transientBaseSeconds) ||
+      transientBaseSeconds < 0
+    ) {
       throw new Error(
-        `Invalid retry backoff for stage "${stage.id}": base=${String(baseSeconds)}s max=${String(maxSeconds)}s. ` +
-          `A NaN gate would make next_attempt_at NULL and the row would never be retried.`,
+        `Invalid retry backoff for stage "${stage.id}": base=${String(baseSeconds)}s max=${String(maxSeconds)}s ` +
+          `transientBase=${String(transientBaseSeconds)}s. A NaN gate would make next_attempt_at NULL and the ` +
+          `row would never be retried.`,
       );
     }
 
+    // `$9::bool` is the whole slice's class, so unlike `complete()` it can be
+    // read directly in the `ON CONFLICT` clause — a bound parameter is visible
+    // there, the `t` alias is not.
     const rows = await this.dataSource.query<Array<{ status: string }>>(
       `INSERT INTO ci.pipeline_state AS ps
               (entity_type, entity_id, stage, stage_version, status, reason, attempts,
-               next_attempt_at, updated_at)
-       SELECT $1, t.entity_id, $2, $3::int, 'failed', $4, 1,
-              now() + make_interval(secs => LEAST($5::float8, $6::float8)),
+               transient_attempts, next_attempt_at, updated_at)
+       SELECT $1, t.entity_id, $2, $3::int, 'failed', $4,
+              CASE WHEN $9::bool THEN 0 ELSE 1 END,
+              CASE WHEN $9::bool THEN 1 ELSE 0 END,
+              now() + make_interval(secs => LEAST(
+                CASE WHEN $9::bool THEN $10::float8 ELSE $5::float8 END,
+                $6::float8)),
               now()
          FROM unnest($7::uuid[]) AS t(entity_id)
        ON CONFLICT (entity_type, entity_id, stage) DO UPDATE
           SET stage_version   = EXCLUDED.stage_version,
-              status          = CASE WHEN ps.attempts >= $8::int THEN 'quarantined' ELSE 'failed' END,
+              status          = CASE
+                                  WHEN NOT $9::bool AND ps.attempts >= $8::int THEN 'quarantined'
+                                  ELSE 'failed'
+                                END,
               reason          = EXCLUDED.reason,
+              -- The refund: an outage must leave the quarantine budget untouched,
+              -- however long it lasts. See the class comment's invariants.
+              attempts        = CASE
+                                  WHEN $9::bool THEN GREATEST(ps.attempts - 1, 0)
+                                  ELSE ps.attempts
+                                END,
+              transient_attempts = CASE
+                                  WHEN $9::bool THEN ps.transient_attempts + 1
+                                  ELSE 0
+                                END,
               next_attempt_at = CASE
+                                  WHEN $9::bool
+                                  THEN now() + make_interval(secs => LEAST(
+                                         $10::float8 * power(2, ps.transient_attempts),
+                                         $6::float8))
                                   WHEN ps.attempts >= $8::int THEN NULL
                                   ELSE now() + make_interval(secs => LEAST(
                                          $5::float8 * power(2, GREATEST(ps.attempts - 1, 0)),
@@ -527,10 +678,102 @@ export class PipelineStateService {
                                 END,
               updated_at      = now()
        RETURNING ps.status`,
-      [entityType, stage.id, stage.version, reason, baseSeconds, maxSeconds, uniqueIds, maxAttempts],
+      [
+        entityType,
+        stage.id,
+        stage.version,
+        reason,
+        baseSeconds,
+        maxSeconds,
+        uniqueIds,
+        maxAttempts,
+        transient,
+        transientBaseSeconds,
+      ],
     );
 
     return this.tally(rows);
+  }
+
+  /**
+   * Move quarantined rows BACK to `failed`, due now, for named reasons.
+   *
+   * ── Why this exists ────────────────────────────────────────────────────────
+   *
+   * Quarantine has exactly one exit today: bump the stage's version, which
+   * re-opens the WHOLE corpus. On a `cost: 'metered'` stage that is a bill for
+   * every row in the table in order to retry a few thousand, which is why the
+   * honest answer to "the provider had an outage last night" has been to do
+   * nothing. This is the targeted lever: name the reasons, re-open only the rows
+   * that carry them.
+   *
+   * The classified transient reasons can no longer quarantine at all, so the
+   * rows this finds are either from a build that predates that fix (which the
+   * accompanying migration already released once) or, more usefully, carry a
+   * reason the declared set deliberately does NOT cover — `stage_threw:
+   * ECONNREFUSED …`, `provider_status_unrecognized`, `embedding_write_failed`
+   * during a Postgres restart. Those are unclassifiable at write time, because
+   * classifying them means pattern-matching an error message. They are perfectly
+   * classifiable AFTERWARDS by a human who knows what was broken, and that human
+   * is who this is for.
+   *
+   * ── Why re-attempting is safe ──────────────────────────────────────────────
+   *
+   * A released row goes back to `failed` with a due gate — the ordinary state of
+   * a row awaiting retry — so nothing downstream sees a state it does not
+   * already handle. `attempts` is reset so the retry starts from a full budget,
+   * and `transient_attempts` with it. If the underlying cause is still present
+   * the row simply fails again and re-quarantines on its own schedule: the worst
+   * outcome of a wrong call here is the work of one more attempt per row, which
+   * is why this is `write` and not `full`.
+   *
+   * REASONS ARE REQUIRED to be meaningful — an empty list is a no-op returning
+   * zero, never "release everything". Blanket release is the operation that
+   * re-runs the same broken config over the entire ledger, which is the same
+   * argument `replayDeadLetters` makes for refusing an empty selector.
+   */
+  async releaseQuarantined(
+    userId: string,
+    input: ReleaseQuarantinedInput = {},
+  ): Promise<ReleaseQuarantinedResult> {
+    const reasons = [...new Set(input.reasons ?? [...TRANSIENT_FAILURE_REASONS])].filter(
+      (reason) => reason.trim().length > 0,
+    );
+    const stage = input.stage ?? null;
+
+    if (reasons.length === 0) {
+      return { released: 0, reasons, stage };
+    }
+
+    // `next_attempt_at = now()` rather than a stagger: what a release costs is
+    // bounded by the stage's own schedule (window, `minInterval`, `perRunCap`),
+    // not by how many rows become due at once. Making them due is this
+    // statement's whole job; deciding when to spend on them is not.
+    const rows = await this.dataSource.query<Array<{ entity_id: string }>>(
+      `UPDATE ci.pipeline_state
+          SET status             = 'failed',
+              attempts           = 0,
+              transient_attempts = 0,
+              next_attempt_at    = now(),
+              updated_at         = now()
+        WHERE status = 'quarantined'
+          AND user_id = $1::uuid
+          AND reason = ANY($2::text[])
+          AND ($3::text IS NULL OR stage = $3::text)
+        RETURNING entity_id`,
+      [userId, reasons, stage],
+    );
+
+    if (rows.length > 0) {
+      this.logger.log('Released quarantined ledger rows', {
+        userId,
+        stage,
+        reasons,
+        released: rows.length,
+      });
+    }
+
+    return { released: rows.length, reasons, stage };
   }
 
   /**

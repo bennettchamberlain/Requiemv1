@@ -83,4 +83,10 @@ export interface LocalHubPlugin {
 
   /** Removes one value. Resolves successfully when it was already absent. */
   secureRemove(options: { key: string }): Promise<void>;
+
+  /**
+   * Opens `url` in the system browser (Safari / Chrome), not an in-app webview.
+   * Used for Portal PKCE so the custom-scheme redirect can bounce back into the app.
+   */
+  openUrl(options: { url: string }): Promise<void>;
 }

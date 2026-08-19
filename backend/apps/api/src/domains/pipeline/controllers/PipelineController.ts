@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
@@ -7,6 +7,7 @@ import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 
 import {
+  type DeadLetterBulkReplayResult,
   type DeadLetterReplayResult,
   MAX_DEAD_LETTER_PAGE,
   MAX_RUN_PAGE,
@@ -15,6 +16,7 @@ import {
   type PipelineRunSummary,
   PipelineRunService,
 } from '../services/PipelineRunService';
+import { PipelineStateService, type ReleaseQuarantinedResult } from '../services/PipelineStateService';
 import type { StageCoverage } from '../types';
 
 /**
@@ -59,6 +61,65 @@ const deadLettersQuerySchema = z.object({
 
 type DeadLettersQuery = z.infer<typeof deadLettersQuerySchema>;
 
+/**
+ * `POST /api/pipeline/dead-letters/replay` — the bulk form.
+ *
+ * A selector is REQUIRED. There is deliberately no "replay everything" spelling:
+ * a real backlog is mostly one or two config errors repeated, and blind replay
+ * re-runs them against the same broken config, re-fails, and writes a fresh
+ * letter per attempt. Making the caller name a class of failure IS the safety
+ * property, so an empty body is a 400 rather than a very expensive no-op.
+ *
+ * `ids` is capped at the same ceiling as a list page: the batch an operator can
+ * see is the batch they can act on, and every claimed letter carries a verbatim
+ * payload back onto the bus.
+ */
+const replayDeadLettersSchema = z
+  .object({
+    ids: z.array(z.string().uuid()).min(1).max(MAX_DEAD_LETTER_PAGE).optional(),
+    eventName: z.string().min(1).max(256).optional(),
+
+    /**
+     * ISO-8601 instant. Bare `z.coerce.date()` also accepts `"nonsense"` and
+     * yields an Invalid Date, which would bind as NULL and silently WIDEN the
+     * selector to every letter; the refinement rejects that with a 400 instead.
+     */
+    failedAfter: z.coerce
+      .date()
+      .refine((value) => !Number.isNaN(value.getTime()), { message: 'failedAfter is not a date' })
+      .optional(),
+
+    limit: z.coerce.number().int().min(1).max(MAX_DEAD_LETTER_PAGE).optional(),
+  })
+  .refine((body) => body.ids != null || body.eventName != null || body.failedAfter != null, {
+    message:
+      'Name the letters to replay: pass ids, and/or eventName and/or failedAfter. ' +
+      'Replaying every dead letter is not offered — most of a backlog is one config error, ' +
+      'and re-emitting it just re-fails.',
+  });
+
+type ReplayDeadLettersBody = z.infer<typeof replayDeadLettersSchema>;
+
+/**
+ * `POST /api/pipeline/quarantine/release` — un-park quarantined rows by reason.
+ *
+ * Both fields are optional and they are not the same kind of optional. Omitting
+ * `stage` genuinely means "every stage", because a reason means the same thing
+ * wherever it is written. Omitting `reasons` falls back to
+ * `TRANSIENT_FAILURE_REASONS` — a DECLARED list, reviewable in a diff, not
+ * "everything" — so the default call is exactly "undo what a provider outage did
+ * under the old policy" and nothing wider. There is deliberately no spelling
+ * that releases every quarantined row: that re-runs whatever is actually broken
+ * across the whole ledger, and the reasons the operator can see in
+ * `GET /api/pipeline/state` are the ones they can act on.
+ */
+const releaseQuarantineSchema = z.object({
+  reasons: z.array(z.string().min(1).max(256)).min(1).max(50).optional(),
+  stage: z.string().min(1).max(128).optional(),
+});
+
+type ReleaseQuarantineBody = z.infer<typeof releaseQuarantineSchema>;
+
 /** `GET /api/pipeline/state`. */
 export interface PipelineStateResponse {
   stages: StageCoverage[];
@@ -73,6 +134,12 @@ export interface PipelineRunsResponse {
 export interface PipelineDeadLettersResponse {
   deadLetters: PipelineDeadLetterView[];
 }
+
+/** `POST /api/pipeline/dead-letters/replay`. */
+export type PipelineDeadLettersReplayResponse = DeadLetterBulkReplayResult;
+
+/** `POST /api/pipeline/quarantine/release`. */
+export type PipelineQuarantineReleaseResponse = ReleaseQuarantinedResult;
 
 /**
  * The operator's window onto the pipeline: what has been processed, what is
@@ -116,7 +183,14 @@ export interface PipelineDeadLettersResponse {
 @Controller('api/pipeline')
 @UseGuards(JwtOrApiKeyAuthGuard)
 export class PipelineController {
-  constructor(private readonly pipelineRunService: PipelineRunService) {}
+  constructor(
+    private readonly pipelineRunService: PipelineRunService,
+    // The ledger itself, injected alongside the run service because
+    // `PipelineStateService` is the ONLY writer of `ci.pipeline_state` and the
+    // quarantine release is a ledger write. Routing it through the run service
+    // would put a second writer one delegation away from that invariant.
+    private readonly pipelineStateService: PipelineStateService,
+  ) {}
 
   /**
    * Per-stage ledger coverage: `done` / `skipped` / `failed` / `pending`
@@ -237,6 +311,39 @@ export class PipelineController {
   }
 
   /**
+   * Re-emit MANY dead letters' preserved payloads in one call.
+   *
+   * Declared BEFORE `dead-letters/:id/replay` so route order can never make
+   * `replay` read as an `:id` — the two patterns differ in segment count today,
+   * but the ordering costs nothing and removes the question.
+   *
+   * Same WRITE capability and same user scoping as the single-id route, and the
+   * same claim: `replayed_at IS NULL`, stamped before the emit, in ONE statement
+   * for the whole batch. A double-submit therefore claims nothing the second
+   * time — the guard is the database's, not the button's.
+   *
+   * 200 even when some letters failed: partial failure is the normal outcome of
+   * a batch, and the response body says exactly which letters went back on the
+   * bus, which failed and why, and which were skipped because they had already
+   * been replayed. A blanket 500 would hide the ones that succeeded. Only a
+   * malformed request (400 — including an empty selector) fails the call itself.
+   */
+  @Post('dead-letters/replay')
+  @HttpCode(200)
+  @RequireCapability(WRITE_CAPABILITY)
+  replayDeadLetters(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(replayDeadLettersSchema)) body: ReplayDeadLettersBody,
+  ): Promise<PipelineDeadLettersReplayResponse> {
+    return this.pipelineRunService.replayDeadLetters(toServiceContext(context), {
+      ids: body.ids,
+      eventName: body.eventName,
+      failedAfter: body.failedAfter,
+      limit: body.limit,
+    });
+  }
+
+  /**
    * Re-emit one dead letter's preserved payload and stamp `replayed_at`.
    *
    * The payload goes back on the bus BYTE FOR BYTE — payload fidelity is the
@@ -254,5 +361,39 @@ export class PipelineController {
     @Param('id') letterId: string,
   ): Promise<DeadLetterReplayResult> {
     return this.pipelineRunService.replayDeadLetter(toServiceContext(context), letterId);
+  }
+
+  /**
+   * Send quarantined rows back to the sweep, selected by the reason they carry.
+   *
+   * Quarantine's only other exit is a stage-version bump, which re-opens the
+   * entire corpus — on a metered stage, a bill for every row in the table in
+   * order to retry a few thousand. This releases exactly the rows whose recorded
+   * reason the operator names, which is the difference between "the geocode
+   * provider was down for twenty minutes last night" costing one retry per
+   * affected fix and costing nothing at all because nobody could justify the
+   * bump.
+   *
+   * `write`, not `full`: a released row goes back to `failed` with a due gate —
+   * the ordinary state of a row awaiting retry — and if the cause is still there
+   * it re-quarantines on its own. Nothing is deleted and nothing is
+   * irreversible, so the blast radius of a wrong call is one more attempt per
+   * row.
+   *
+   * 200 with a count, never a 404 for "nothing matched": zero released is a
+   * legitimate and common answer (the reason was already clean), and it is a
+   * different thing from a request that could not be understood.
+   */
+  @Post('quarantine/release')
+  @HttpCode(200)
+  @RequireCapability(WRITE_CAPABILITY)
+  releaseQuarantine(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(releaseQuarantineSchema)) body: ReleaseQuarantineBody,
+  ): Promise<PipelineQuarantineReleaseResponse> {
+    return this.pipelineStateService.releaseQuarantined(toServiceContext(context).userId, {
+      reasons: body.reasons,
+      stage: body.stage,
+    });
   }
 }

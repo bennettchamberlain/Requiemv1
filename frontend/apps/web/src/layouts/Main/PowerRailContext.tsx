@@ -2,6 +2,8 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 
 const STORAGE_KEY = 'ci-power-rail-expanded';
 
+export type PowerRailVariant = 'dock' | 'overlay';
+
 interface PowerRailContextValue {
   /** Showing labels right now — pinned open, hovered open, or held by a popover. */
   expanded: boolean;
@@ -15,8 +17,12 @@ interface PowerRailContextValue {
    * mouseleave and collapses the rail mid-click.
    */
   holdOpen: boolean;
-  /** Pin it open, or unpin it. */
+  /** `overlay` is the mobile glass drawer; `dock` is the desktop lane. */
+  variant: PowerRailVariant;
+  /** Pin it open, or unpin it. On overlay, opens or closes the drawer. */
   toggle: () => void;
+  openOverlay: () => void;
+  closeOverlay: () => void;
   setHovered: (hovered: boolean) => void;
   setHoldOpen: (holdOpen: boolean) => void;
 }
@@ -39,7 +45,13 @@ function writeStoredExpanded(expanded: boolean) {
   }
 }
 
-export function PowerRailProvider({ children }: { children: ReactNode }) {
+export function PowerRailProvider({
+  children,
+  variant = 'dock',
+}: {
+  children: ReactNode;
+  variant?: PowerRailVariant;
+}) {
   // Two reasons the rail is open, and they must not fight. `pinned` is a
   // decision: it survives the pointer leaving, and a reload. `hovered` is a
   // passing intention that expires the moment you move away. Pinned wins, so
@@ -48,30 +60,47 @@ export function PowerRailProvider({ children }: { children: ReactNode }) {
   //
   // `holdOpen` is a third reason: a portaled popover (Colours) is open, so the
   // pointer left the rail on purpose and must not collapse it underneath.
-  const [pinned, setPinned] = useState(readStoredExpanded);
+  //
+  // Overlay (phone) is a fourth: a swipe or the edge control opens a glass
+  // drawer. It is not pinned, not stored, and never hover-driven.
+  const [pinned, setPinned] = useState(variant === 'dock' ? readStoredExpanded : false);
   const [hovered, setHovered] = useState(false);
   const [holdOpen, setHoldOpen] = useState(false);
+  const [overlayOpen, setOverlayOpen] = useState(false);
 
   const toggle = useCallback(() => {
+    if (variant === 'overlay') {
+      setOverlayOpen((current) => !current);
+
+      return;
+    }
+
     setPinned((current) => {
       const next = !current;
       writeStoredExpanded(next);
 
       return next;
     });
-  }, []);
+  }, [variant]);
+
+  const openOverlay = useCallback(() => setOverlayOpen(true), []);
+  const closeOverlay = useCallback(() => setOverlayOpen(false), []);
 
   const value = useMemo(
     () => ({
-      expanded: pinned || hovered || holdOpen,
-      pinned,
-      hovered,
+      expanded: variant === 'overlay' ? overlayOpen : pinned || hovered || holdOpen,
+      // Overlay is always a floating drawer, never a pinned column.
+      pinned: variant === 'overlay' ? false : pinned,
+      hovered: variant === 'overlay' ? overlayOpen : hovered,
       holdOpen,
+      variant,
       toggle,
+      openOverlay,
+      closeOverlay,
       setHovered,
       setHoldOpen,
     }),
-    [pinned, hovered, holdOpen, toggle],
+    [variant, overlayOpen, pinned, hovered, holdOpen, toggle, openOverlay, closeOverlay],
   );
 
   return <PowerRailContext.Provider value={value}>{children}</PowerRailContext.Provider>;

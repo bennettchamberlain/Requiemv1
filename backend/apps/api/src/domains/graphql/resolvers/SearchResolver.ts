@@ -1,5 +1,5 @@
 import { UseGuards } from '@nestjs/common';
-import { Args, Query, Resolver } from '@nestjs/graphql';
+import { Args, Int, Query, Resolver } from '@nestjs/graphql';
 import { type FindOptionsOrder } from 'typeorm';
 
 import { Context, type RequestContext, type UserServiceContext, toServiceContext } from '@ci/common/context';
@@ -41,6 +41,7 @@ import { FileChunkType } from '../types/FileChunkType';
 import { FileType } from '../types/FileType';
 import { GlobalUID } from '../types/GlobalUID';
 import { ItemType } from '../types/ItemType';
+import { MapPinsType } from '../types/MapPinType';
 import { NoteType } from '../types/NoteType';
 import { PersonType } from '../types/PersonType';
 import { PlaceType } from '../types/PlaceType';
@@ -66,6 +67,69 @@ const FETCH_MULTIPLIER = 4;
 // a single page is never truncated — the old 25 cap fell short of the 30-row
 // client page, capping plain-text search and disabling load-more.
 const QUERY_CANDIDATE_LIMIT = 300;
+/**
+ * Pin caps for the map read (`mapPins`).
+ *
+ * The map is capped by row count rather than paged: it draws a whole located
+ * set at once, and a pin is ~150 bytes on the wire against a hydrated search
+ * node's several kilobytes. Ten thousand covers a full personal library
+ * (measured: 11,297 located events on the QA appliance) in one ~630ms read; the
+ * hard ceiling keeps a pathological library from serialising unbounded.
+ * Truncation is reported (`MapPinsType.truncated`) rather than hidden.
+ */
+const MAP_PIN_DEFAULT_LIMIT = 10_000;
+const MAP_PIN_MAX_LIMIT = 20_000;
+
+/**
+ * Types the unfiltered timed browse leaves OUT unless the caller names them in
+ * `includeTypes`.
+ *
+ * ── Why ────────────────────────────────────────────────────────────────────
+ * The browse is a CHRONOLOGY. Every type it merges is ordered by whatever
+ * timestamp it has, and for these types that timestamp is `created_at` — the
+ * row-WRITE time, not the time the thing happened. A bulk import writes the
+ * whole corpus at once, so every one of these rows is stamped "now" and lands
+ * ahead of the entire real timeline. Measured on the QA appliance, rows sitting
+ * ahead of the newest genuinely-dated memory (2026-08-18 18:41:33Z) in the
+ * unfiltered browse:
+ *
+ *   content (media, event-linked)  11,211   gated (see below)
+ *   file                           10,521   NOT gated — see the NOTE
+ *   person                          9,753   gated here
+ *   place                           1,178   gated here
+ *   concept / item                      0   gated here
+ *   content (everything else)           3   not gated (has nowhere else to go)
+ *
+ * — the undated import artifacts a user had to scroll past before reaching
+ * their first real memory, which is what made the timeline unreachable rather
+ * than merely untidy. `person`, `place`, `concept` and `item` are gated here.
+ * The event-linked content rows leave by a different door (they are facets of
+ * events the same merge already returns — see
+ * ContentService.getEntitiesForContents). Together that takes the head from
+ * 32,666 rows to 10,524, all but 3 of which are files.
+ *
+ * A person, place, concept or item is not a moment: it is a thing moments refer
+ * to, and it has no domain time at all. It belongs on the timeline only when
+ * the user asks for it, exactly like `file-chunk` (which was already opt-in for
+ * the same reason: a file's many same-timestamp chunks buried the feed).
+ *
+ * They stay fully reachable — by naming the type, by searching, by tag, and
+ * through the graph/explorer. Only the *unfiltered chronological browse* drops
+ * them.
+ *
+ * NOTE `file` is deliberately NOT in this list. It carries the same row-write
+ * problem, but #2110 just made it an explicit opt-OUT (`includeFiles`) to fix
+ * the File type picker, and that decision is left standing — see
+ * {@link SearchResolver.browseWants}. Files are therefore the residual undated
+ * head this gate does not address.
+ */
+const BROWSE_OPT_IN_TYPES: ReadonlySet<IndexableEntity> = new Set([
+  'file-chunk',
+  'person',
+  'place',
+  'concept',
+  'item',
+]);
 
 /** PageInfo for an empty connection (e.g. an unknown/revoked share token). */
 const EMPTY_PAGE_INFO = {
@@ -184,6 +248,116 @@ export class SearchResolver {
     }
 
     return this.executeSearch(toServiceContext(context), input, { matchTags: true });
+  }
+
+  /**
+   * Every located event for the current filters, as map markers.
+   *
+   * The map used to render the explorer's `search` feed, whose page size is 30
+   * for every view: plotting a library of ten thousand located events took some
+   * three hundred and fifty presses of "Load more pins", and each press
+   * hydrated thirty full nodes to draw thirty dots. A map is not a feed — it
+   * shows a whole set at once, and the client clusters it — so this query
+   * returns the whole located set in one bounded read, projected down to a
+   * point and a label ({@link MapPinType}).
+   *
+   * Filter parity with `search` is deliberate and is why this lives on the
+   * search resolver rather than growing its own filter language:
+   *   - who / where / connector / when / activity go straight down to SQL
+   *     through the same {@link EventService} filters the timed search path uses;
+   *   - a free-text query and tags are resolved by the same search/tag services
+   *     `search` uses, then intersected in SQL via the `ids` filter.
+   * `hasLocation` is forced on regardless of input — an unlocated event has no
+   * pin — and the result is events-only, exactly as `?view=map` already was.
+   *
+   * `totalCount` is a real COUNT(*) of the matching located set, so a truncated
+   * response can say how much of the map it is showing instead of quietly
+   * drawing a partial world.
+   */
+  @Query(() => MapPinsType, {
+    description:
+      'Located events as map markers for the given filters. Events-only and located-only; ' +
+      'returns the whole matching set in one read (capped at ' +
+      `${MAP_PIN_MAX_LIMIT} pins), not a page.`,
+  })
+  async mapPins(
+    @Context() context: RequestContext,
+    @Args('input') input: SearchInput,
+    @Args('limit', { type: () => Int, nullable: true }) limit?: number,
+  ): Promise<MapPinsType> {
+    // Shared saved searches stay on the `search` feed: their result set is the
+    // owner's, resolved through runSharedSearch, and this query resolves the
+    // caller's own memories. Returning nothing here keeps the two from being
+    // silently crossed — the read-only viewer never calls it.
+    if (input.shareToken != null && input.shareToken.length > 0) {
+      return { pins: [], totalCount: 0, truncated: false };
+    }
+
+    const serviceContext = toServiceContext(context);
+    const pinLimit = Math.min(Math.max(limit ?? MAP_PIN_DEFAULT_LIMIT, 1), MAP_PIN_MAX_LIMIT);
+
+    // The map plots events. An entity-type filter that excludes them (e.g. the
+    // explorer narrowed to People) empties the map — the same outcome the
+    // events-only `search` path produces, surfaced without a round trip.
+    if (!this.matchesTypeFilter('event', input.includeTypes, input.excludeTypes)) {
+      return { pins: [], totalCount: 0, truncated: false };
+    }
+
+    const query = input.query != null && input.query.length > 0 ? input.query : undefined;
+    const tags = input.tags && input.tags.length > 0 ? input.tags : undefined;
+
+    // Free text and tags are candidate sets, not SQL predicates: resolve them
+    // with the same services `search` uses, then hand the surviving event ids to
+    // the SQL filter so both halves AND together (LifeScope parity).
+    let ids: string[] | undefined;
+
+    if (query != null) {
+      const identifiers = await this.searchByQuery(serviceContext, {
+        query,
+        includeTypes: input.includeTypes,
+        excludeTypes: input.excludeTypes,
+        semantic: input.semantic === true,
+        maxResults: Math.max(pinLimit, QUERY_CANDIDATE_LIMIT),
+      });
+
+      ids = identifiers.filter((identifier) => identifier.type === 'event').map(({ id }) => id);
+    }
+
+    if (tags != null) {
+      const tagged = await this.searchByTags(serviceContext, tags);
+      const taggedEventIds = new Set(
+        tagged.filter((identifier) => identifier.type === 'event').map(({ id }) => id),
+      );
+
+      ids = ids == null ? [...taggedEventIds] : ids.filter((id) => taggedEventIds.has(id));
+    }
+
+    const filters = {
+      startTime: input.startTime ? new Date(input.startTime) : undefined,
+      endTime: input.endTime ? new Date(input.endTime) : undefined,
+      eventTypes: input.eventTypes && input.eventTypes.length > 0 ? input.eventTypes : undefined,
+      connectors: input.connectors && input.connectors.length > 0 ? input.connectors : undefined,
+      people: input.people && input.people.length > 0 ? input.people : undefined,
+      places: input.places && input.places.length > 0 ? input.places : undefined,
+      bbox:
+        input.bbox && input.bbox.length === 4 && input.bbox.every((value) => Number.isFinite(value))
+          ? input.bbox
+          : undefined,
+      // Forced: a pin is a coordinate. See MapPinsType / findMapPins.
+      hasLocation: true,
+      ids,
+    };
+
+    const [pins, totalCount] = await Promise.all([
+      this.eventService.findMapPins(serviceContext, { ...filters, limit: pinLimit }),
+      this.eventService.countEntitiesForEvents(serviceContext, filters),
+    ]);
+
+    return {
+      pins: pins.map((pin) => ({ ...pin, id: GlobalUID.encode('event', pin.id) })),
+      totalCount,
+      truncated: pins.length < totalCount,
+    };
   }
 
   /**
@@ -311,7 +485,8 @@ export class SearchResolver {
       const timedOptions = {
         includeTypes: input.includeTypes,
         excludeTypes: input.excludeTypes,
-        includeFiles: input.includeFiles === true,
+        // Files ride the default browse; only an explicit `false` drops them.
+        includeFiles: input.includeFiles !== false,
         startTime,
         eventTypes,
         eventFilter,
@@ -531,23 +706,8 @@ export class SearchResolver {
       limit?: number;
     },
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
-    // who / where / connector are event-only dimensions; restrict to events when set.
-    const eventsOnly = eventFilter != null;
-    // Document chunks stay opt-in — a file's many same-timestamp chunks would bury
-    // the default browse. Files themselves are part of the default timeline.
-    const optIn = (type: IndexableEntity) => {
-      if (type === 'file-chunk') {
-        return includeTypes?.includes(type) ?? false;
-      }
-
-      return true;
-    };
-
     const wants = (type: IndexableEntity) =>
-      this.matchesTypeFilter(type, includeTypes, excludeTypes) &&
-      (!eventsOnly || type === 'event') &&
-      optIn(type) &&
-      (type !== 'file' || includeFiles !== false);
+      this.browseWants(type, { includeTypes, excludeTypes, includeFiles, eventFilter });
 
     const eventOptions: {
       limit: number;
@@ -689,7 +849,14 @@ export class SearchResolver {
       wants('file') ? this.fileService.getEntitiesForFiles(context, fileOptions) : [],
       wants('file-chunk') ? this.fileChunkService.getEntitiesForFileChunks(context, fileChunkOptions) : [],
       wants('note') ? this.noteService.getEntitiesForNotes(context, createdAtOptions) : [],
-      wants('content') ? this.contentService.getEntitiesForContents(context, createdAtOptions) : [],
+      // Event-linked content is a facet of an event the same merge already
+      // returns — see ContentService.getEntitiesForContents.
+      wants('content')
+        ? this.contentService.getEntitiesForContents(context, {
+            ...createdAtOptions,
+            excludeEventLinked: true,
+          })
+        : [],
       wants('person') ? this.personService.getEntitiesForPeople(context, createdAtOptions) : [],
       wants('place') ? this.placeService.getEntitiesForPlaces(context, createdAtOptions) : [],
       wants('item') ? this.itemService.getEntitiesForItems(context, createdAtOptions) : [],
@@ -754,20 +921,8 @@ export class SearchResolver {
       };
     },
   ): Promise<number> {
-    const eventsOnly = eventFilter != null;
-    const optIn = (type: IndexableEntity) => {
-      if (type === 'file-chunk') {
-        return includeTypes?.includes(type) ?? false;
-      }
-
-      return true;
-    };
-
     const wants = (type: IndexableEntity) =>
-      this.matchesTypeFilter(type, includeTypes, excludeTypes) &&
-      (!eventsOnly || type === 'event') &&
-      optIn(type) &&
-      (type !== 'file' || includeFiles !== false);
+      this.browseWants(type, { includeTypes, excludeTypes, includeFiles, eventFilter });
 
     const dateOptions = { startTime, endTime };
     const eventOptions = {
@@ -787,7 +942,9 @@ export class SearchResolver {
       wants('file') ? this.fileService.countEntitiesForFiles(context, dateOptions) : 0,
       wants('file-chunk') ? this.fileChunkService.countEntitiesForFileChunks(context, dateOptions) : 0,
       wants('note') ? this.noteService.countEntitiesForNotes(context, dateOptions) : 0,
-      wants('content') ? this.contentService.countEntitiesForContents(context, dateOptions) : 0,
+      wants('content')
+        ? this.contentService.countEntitiesForContents(context, { ...dateOptions, excludeEventLinked: true })
+        : 0,
       wants('person') ? this.personService.countEntitiesForPeople(context, dateOptions) : 0,
       wants('place') ? this.placeService.countEntitiesForPlaces(context, dateOptions) : 0,
       wants('item') ? this.itemService.countEntitiesForItems(context, dateOptions) : 0,
@@ -808,6 +965,69 @@ export class SearchResolver {
     return identifiers
       .map((identifier) => resolved.get(`${identifier.type}:${identifier.id}`) ?? null)
       .filter((entry): entry is ResolvedEntity => entry != null);
+  }
+
+  /**
+   * Which entity types the timed browse merges, for BOTH the identifier fetch
+   * ({@link searchByTimedEntities}) and the `totalCount` ({@link countTimedEntities}).
+   *
+   * Shared rather than written twice because the two must agree exactly: a type
+   * counted but not fetched inflates the denominator the footer renders (VIEW-08),
+   * and a type fetched but not counted deflates it — and the `file` gate bug
+   * below had to be fixed identically in both copies.
+   *
+   * Three gates, in order of how specific they are:
+   *
+   *  1. the caller's explicit include/exclude type filter;
+   *  2. the event-only dimensions (who / where / connector / bbox / hasLocation),
+   *     which exist only on the event timeline, so setting any restricts the
+   *     browse to events;
+   *  3. the opt-in gate — {@link BROWSE_OPT_IN_TYPES} plus `file`.
+   *
+   * `file` is its own case because it has a dedicated lever, `includeFiles`,
+   * and #2110 deliberately made that lever an opt-OUT: files are part of the
+   * default timeline and a caller drops them by passing `false`. That decision
+   * is preserved verbatim here — see `SearchInput.includeFiles` for why it was
+   * inverted (the File type picker was a no-op on every surface that didn't set
+   * the flag). It does mean ~10,500 files, ordered by `created_at`, still sit
+   * ahead of the real timeline on a freshly-imported appliance; giving
+   * `ci.files` a domain timestamp (`external_created_at` is populated on 0 of
+   * 14,194 rows) is the fix, and it is a schema/ETL change, not a gate.
+   */
+  private browseWants(
+    type: IndexableEntity,
+    {
+      includeTypes,
+      excludeTypes,
+      includeFiles,
+      eventFilter,
+    }: {
+      includeTypes?: IndexableEntity[];
+      excludeTypes?: IndexableEntity[];
+      includeFiles?: boolean;
+      eventFilter?: unknown;
+    },
+  ): boolean {
+    if (!this.matchesTypeFilter(type, includeTypes, excludeTypes)) {
+      return false;
+    }
+
+    // who / where / connector are event-only dimensions; restrict to events when set.
+    if (eventFilter != null && type !== 'event') {
+      return false;
+    }
+
+    const namedExplicitly = includeTypes?.includes(type) ?? false;
+
+    if (type === 'file') {
+      return includeFiles !== false;
+    }
+
+    if (BROWSE_OPT_IN_TYPES.has(type)) {
+      return namedExplicitly;
+    }
+
+    return true;
   }
 
   private matchesTypeFilter(
@@ -880,6 +1100,23 @@ export class SearchResolver {
     // Files/chunks/content have no domain time/startTime — fall back to the row
     // timestamp so they interleave into the browse by upload time rather than
     // sinking to the epoch.
+    //
+    // The `createdAt` fallback CANNOT simply be dropped: it is also the cursor
+    // key (see OrderedResult), and a null here becomes `new Date(0)`, which
+    // travels back as `afterTime` and windows every sibling type's SQL to
+    // "before 1970", emptying the browse. Row-write time is therefore kept as
+    // the sort key, and the types for which it is a LIE about when the thing
+    // happened are instead kept out of the unfiltered chronological browse —
+    // see BROWSE_OPT_IN_TYPES. What still rides `createdAt` inside the browse
+    // is `note`, `file` and non-event-linked `content` — 10,524 rows ahead of
+    // the timeline on the QA appliance, against 32,666 before the gate, and all
+    // but 3 of them files. Giving those a real domain timestamp is a schema/ETL
+    // change, not a resolver change: `ci.files.external_created_at` exists and
+    // is populated on 0 of 14,194 rows.
+    //
+    // Types reached by NAMING them (includeTypes) still sort by write time,
+    // which is the honest answer for a set that has no other time — a browse
+    // restricted to People is ordered by when each person was learned about.
     const value = entity.time ?? entity.startTime ?? entity.createdAt ?? entity.answeredAt ?? null;
 
     if (value instanceof Date) {

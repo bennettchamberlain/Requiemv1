@@ -186,7 +186,7 @@ describe('UserDataPortabilityService', () => {
 
       return {
         setEncoding: () => undefined,
-         
+
         [Symbol.asyncIterator]: async function* () {
           yield text;
         },
@@ -237,8 +237,24 @@ describe('UserDataPortabilityService', () => {
 
       const req = fakeRequest([
         manifest(),
-        { type: 'file-chunk', id: 'f1', bucket: 'ci-files', key: 'user-1/f1', index: 1, total: 2, data: chunk1 },
-        { type: 'file-chunk', id: 'f1', bucket: 'ci-files', key: 'user-1/f1', index: 0, total: 2, data: chunk0 },
+        {
+          type: 'file-chunk',
+          id: 'f1',
+          bucket: 'ci-files',
+          key: 'user-1/f1',
+          index: 1,
+          total: 2,
+          data: chunk1,
+        },
+        {
+          type: 'file-chunk',
+          id: 'f1',
+          bucket: 'ci-files',
+          key: 'user-1/f1',
+          index: 0,
+          total: 2,
+          data: chunk0,
+        },
       ]);
 
       const result = await service.importNdjsonStream({ userId: USER_ID } as never, req, 'jane@example.com');

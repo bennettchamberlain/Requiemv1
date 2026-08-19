@@ -255,7 +255,14 @@ describeWithDb(
 
       const ownerRemove = await eventService.remove(owner, event.id);
       expect(ownerRemove).toBe(true);
-      expect(await readEntityName(event.id)).toBeNull();
+      // Events are tombstoned, not destroyed: the base row survives (so the
+      // deletion can be undone) but the event is no longer readable, and a
+      // second delete finds nothing to remove.
+      expect(await eventService.findById(owner, event.id)).toBeNull();
+      expect(await eventService.remove(owner, event.id)).toBe(false);
+
+      expect(await eventService.restore(owner, event.id)).not.toBeNull();
+      expect(await readEntityName(event.id)).toBe('Renamed by owner');
     });
 
     it("CommunicationService (CtiAggregate, flat userId column) rejects a stranger's write and accepts the owner's", async () => {

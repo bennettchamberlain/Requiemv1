@@ -14,6 +14,7 @@
  * Trip column reads go through `pick()` which tries both name styles, so one code
  * path serves both trip schemas. */
 import fs from 'node:fs';
+import { open, readdir, stat as fsStat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseCSV } from './csv';
@@ -86,16 +87,16 @@ const EATS_FILE_RE = /^user_orders(-\d+)?\.csv$/i;
 
 // Recursively collect every CSV matching `re` under a directory (bounded depth;
 // Uber exports are small and nest files at Uber Data/<Rider|Eats>/<file>).
-function findCsvFiles(root: string, re: RegExp, maxDepth = 6): string[] {
+async function findCsvFiles(root: string, re: RegExp, maxDepth = 6): Promise<string[]> {
   const out: string[] = [];
-  const walk = (dir: string, depth: number) => {
+  const walk = async (dir: string, depth: number): Promise<void> => {
     if (depth > maxDepth) {
       return;
     }
 
     let entries: fs.Dirent[];
     try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
+      entries = await readdir(dir, { withFileTypes: true });
     } catch {
       return;
     }
@@ -103,14 +104,14 @@ function findCsvFiles(root: string, re: RegExp, maxDepth = 6): string[] {
     for (const e of entries) {
       const full = path.join(dir, e.name);
       if (e.isDirectory()) {
-        walk(full, depth + 1);
+        await walk(full, depth + 1);
       } else if (e.isFile() && re.test(e.name)) {
         out.push(full);
       }
     }
   };
 
-  walk(root, 0);
+  await walk(root, 0);
 
   return out.sort();
 }
@@ -124,7 +125,7 @@ export class UberFileImporter implements FileImporter {
 
     let stat: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      stat = await fsStat(root);
     } catch {
       return { confidence: 0 };
     }
@@ -132,7 +133,7 @@ export class UberFileImporter implements FileImporter {
     if (stat.isFile()) {
       const base = path.basename(root);
       if (TRIPS_FILE_RE.test(base)) {
-        return this.headerMatches(root) ? { confidence: 0.95 } : { confidence: 0.8 };
+        return (await this.headerMatches(root)) ? { confidence: 0.95 } : { confidence: 0.8 };
       }
 
       if (EATS_FILE_RE.test(base)) {
@@ -143,12 +144,18 @@ export class UberFileImporter implements FileImporter {
     }
 
     if (stat.isDirectory()) {
-      const trips = findCsvFiles(root, TRIPS_FILE_RE);
+      const trips = await findCsvFiles(root, TRIPS_FILE_RE);
       if (trips.length) {
-        return trips.some((f) => this.headerMatches(f)) ? { confidence: 0.95 } : { confidence: 0.8 };
+        for (const f of trips) {
+          if (await this.headerMatches(f)) {
+            return { confidence: 0.95 };
+          }
+        }
+
+        return { confidence: 0.8 };
       }
 
-      if (findCsvFiles(root, EATS_FILE_RE).length) {
+      if ((await findCsvFiles(root, EATS_FILE_RE)).length) {
         return { confidence: 0.85 };
       }
 
@@ -158,24 +165,19 @@ export class UberFileImporter implements FileImporter {
     return { confidence: 0 };
   }
 
-  private headerMatches(fpath: string): boolean {
-    let fd: number | undefined;
+  private async headerMatches(fpath: string): Promise<boolean> {
     try {
-      fd = fs.openSync(fpath, 'r');
-      const buf = Buffer.alloc(4096);
-      const n = fs.readSync(fd, buf, 0, 4096, 0);
+      const fh = await open(fpath, 'r');
+      try {
+        const buf = Buffer.alloc(4096);
+        const { bytesRead } = await fh.read(buf, 0, 4096, 0);
 
-      return headerHasTripCols(buf.toString('utf8', 0, n));
+        return headerHasTripCols(buf.toString('utf8', 0, bytesRead));
+      } finally {
+        await fh.close().catch(() => {});
+      }
     } catch {
       return false;
-    } finally {
-      if (fd !== undefined) {
-        try {
-          fs.closeSync(fd);
-        } catch {
-          /* ignore */
-        }
-      }
     }
   }
 
@@ -199,8 +201,8 @@ export class UberFileImporter implements FileImporter {
       tripFiles = TRIPS_FILE_RE.test(base) ? [root] : [];
       eatsFiles = EATS_FILE_RE.test(base) ? [root] : [];
     } else {
-      tripFiles = findCsvFiles(root, TRIPS_FILE_RE);
-      eatsFiles = findCsvFiles(root, EATS_FILE_RE);
+      tripFiles = await findCsvFiles(root, TRIPS_FILE_RE);
+      eatsFiles = await findCsvFiles(root, EATS_FILE_RE);
     }
 
     if (!tripFiles.length && !eatsFiles.length) {
@@ -426,18 +428,32 @@ export class UberFileImporter implements FileImporter {
       return;
     }
 
-    const title = address || `${tripTitle} (${leg.toLowerCase()})`;
+    // The body is a human sentence either way — it is read by a person, not by
+    // the place-name mapping.
+    const body = address || `${tripTitle} (${leg.toLowerCase()})`;
     params.pipeline.push({
       item: {
         id,
         classification: 'location',
         timestamp: ts,
         location: coords,
-        content: { filename: 'position.txt', mediaType: 'text/plain', data: async () => Buffer.from(title) },
+        content: { filename: 'position.txt', mediaType: 'text/plain', data: async () => Buffer.from(body) },
         metadata: {
-          Title: title,
-          // `Name` is what the location.fix mapping prefers for a place name, so
-          // the position arrives addressed rather than as bare coordinates.
+          // `Title` and `Name` are both read as the fix's PLACE NAME
+          // (push/inputs.ts toPositionInput, via titleFor's location.fix arm), so
+          // each is set only when the export actually recorded an address for
+          // THIS leg. The ride narration used to fill the gap, and a trip
+          // narration names the TRIP, not any point along it — the same defect
+          // as gpx stamping a track name on every trackpoint. 37 positions on
+          // the corpus were named "Uber ride from <addr> to <addr> (request)",
+          // and `promote.place_position` turned 7 of them into Location entities
+          // that the Places list rendered as venues.
+          //
+          // The narration is not lost: it stays on `Trip` (with `Leg`), which is
+          // provenance, and the request leg's fix keeps its coordinates and a
+          // NULL name — which is exactly what makes it a reverse-geocode
+          // candidate, so it ends up better named than the narration ever was.
+          Title: address || undefined,
           Name: address || undefined,
           Leg: leg,
           Trip: tripTitle,

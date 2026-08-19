@@ -539,7 +539,21 @@ export function toCommunicationInput(rec: CanonicalRecord): CreateCommunicationD
     input.direction = direction;
   }
 
-  const thread = str(m.ThreadId) || str(m.Thread) || str(m.MessageID);
+  // `Conversation` is the key eleven datasources already stamp the per-chat
+  // identity onto (claude, chatgpt, discord, facebook, googlevoice, grok,
+  // instagram, linkedin, telegram, tiktok, whatsapp) — it is this codebase's
+  // most common spelling of "which conversation is this", not a display-only
+  // label. It was missing from this chain, so every source that did not ALSO
+  // stamp ThreadId lost its grouping here and landed with
+  // ci.communications.thread_id NULL: 4,840 LinkedIn rows, 228 Instagram and 4
+  // Claude, measured on the live database. Both special-case mappers below
+  // (Messenger, WhatsApp) had to read it themselves precisely because this
+  // chain did not.
+  //
+  // It sits AFTER Thread (a source that stamps both means the explicit one) and
+  // BEFORE MessageID, which is a per-MESSAGE id — a last-resort key that makes
+  // every message its own thread, so a real conversation key must beat it.
+  const thread = str(m.ThreadId) || str(m.Thread) || str(m.Conversation) || str(m.MessageID);
   if (thread) {
     input.thread_id = thread;
   }
@@ -762,13 +776,9 @@ export function toWhatsAppCommunicationInput(
   const input = toCommunicationInput(rec);
   const sender = str(rec.metadata.Sender);
   input.direction = sender && isSelf(sender) ? 'outbound' : 'inbound';
-  // toCommunicationInput only reads ThreadId/Thread/MessageID for threadId —
-  // the WhatsApp importer stamps the chat name onto `Conversation`, so without
-  // this every WhatsApp message loses its thread grouping.
-  const conversation = str(rec.metadata.Conversation);
-  if (conversation) {
-    input.thread_id = conversation;
-  }
+  // thread_id needs no override here any more: `Conversation` — the chat name
+  // the WhatsApp importer stamps — is now part of toCommunicationInput's own
+  // fallback chain. Direction is the only thing this wrapper still decides.
 
   return input;
 }
@@ -849,23 +859,170 @@ const POSITION_SOURCE_BY_LOCATION_SOURCE: Record<
   wifi: 'wifi',
 };
 
+// Two signed decimals separated by a comma. Shared by both arms of
+// isCoordinateText below, and mirrored in SQL by the two backfills that recover
+// rows written before each arm existed:
+// db/postgres/migrations/20260818212254_backfill_position_coordinate_names.sql
+// (bare) and 20260818235752_backfill_position_non_place_names.sql (labelled).
+const COORDINATE_PAIR = String.raw`[-+]?\d{1,3}(?:\.\d+)?\s*,\s*[-+]?\d{1,3}(?:\.\d+)?`;
+
+// A closed vocabulary of GENERIC geolocation nouns — words that mean "a point
+// on the earth" and nothing more specific. Deliberately not a venue vocabulary:
+// "Cafe", "Pier", "Park" are absent, so a real place whose name happens to be
+// followed by numbers is never swallowed by the label arm.
+const GEO_LABEL = String.raw`(?:location|position|coordinates?|coords?|point|waypoint|fix|gps)`;
+
+// `[-:]` and not `[:-]`: the same two characters, ordered so the SQL twin of
+// this pattern in the backfill migration cannot be misread as the start of a
+// POSIX character-class name (`[:alpha:]`).
+const COORDINATE_TEXT = new RegExp(String.raw`^\s*(?:${GEO_LABEL}\s*[-:]?\s*)?${COORDINATE_PAIR}\s*$`, 'i');
+
+/**
+ * Is this string just a coordinate pair — "33.51469, -117.72169" — or the same
+ * pair wearing a generic label, "Location 33.51469, -117.72169"?
+ *
+ * Deliberately narrow: two signed decimals separated by a comma and nothing
+ * else, optionally preceded by ONE generic geolocation noun. "Cafe 40.7, 74.0"
+ * keeps its name, because a place whose name happens to contain numbers is
+ * still a name and "Cafe" is not a word that means "a point on the earth".
+ *
+ * The label arm is not hypothetical. The original anchor (`^\s*[-+]?\d`)
+ * required the string to START with the number, so every labelled variant
+ * sailed through untouched: `google_location`, `kmlgx` and `nmea` each
+ * manufactured `Location ${lat.toFixed(5)}, ${lon.toFixed(5)}` and it landed in
+ * `ci.position.name` exactly like google_fit's bare pair did. Those three no
+ * longer mint the string at all (that is the real fix — see each datasource),
+ * but this stays the structural backstop: an importer we do not control, a
+ * third-party export, or a re-import of already-corrupted data can all present
+ * the same shape, and the guard should not depend on owning every producer.
+ */
+export function isCoordinateText(value: string): boolean {
+  return COORDINATE_TEXT.test(value);
+}
+
+// Extensions of things that are FILES, not places. Any name ending in one of
+// these is a media filename that rode in as the item's display title. Mirrored
+// in SQL by 20260818235752_backfill_position_non_place_names.sql.
+const MEDIA_EXTENSION = /\.(?:jpe?g|png|heic|heif|gif|mov|mp4|m4v|avi|webp|dng|tiff?)$/i;
+
+// A bare UUID stem, with or without Apple's `_N` burst/segment suffix
+// ("A20CEAAC-8F30-403E-A17B-E60DBC744DBB_3"). Same defect one step further
+// along: an export that strips the extension leaves an opaque identifier that
+// is even less of a place name than the filename it came from.
+const BARE_UUID_STEM = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:[_-]\d+)?$/i;
+
+/**
+ * Is this string a media filename rather than a place name — "IMG_0139.JPG",
+ * "A20CEAAC-8F30-403E-A17B-E60DBC744DBB_3.mov"?
+ *
+ * Every GPS-bearing photo donates a position row, and `titleFor` gives a
+ * `capture.*` item its filename as a display title (correctly — that is the
+ * only label a photo has). `toPositionInput` then read that title as the
+ * position's NAME, so 2,085 rows on a real appliance had a filename where the
+ * place should be, and the Places view rendered them as such.
+ *
+ * Structural like its two neighbours: a file extension / opaque identifier
+ * grammar, not a per-importer denylist, so a camera roll from a source we have
+ * never seen is caught too.
+ */
+export function isMediaFilename(value: string): boolean {
+  const trimmed = value.trim();
+
+  return MEDIA_EXTENSION.test(trimmed) || BARE_UUID_STEM.test(trimmed);
+}
+
+// The character `clip` (push/canonical.ts) appends when it truncates. Nothing
+// else in the import pipeline emits U+2026, so a trailing one is a receipt: the
+// value is the first 79/119 characters of something longer, not a whole label.
+const CLIP_ELLIPSIS = '…';
+
+// Sentence-terminal punctuation. `!` and `?` only, and deliberately NOT `.`:
+// real place names carry dots — 'A.G. Bartlett Building' and 'Bongeunsa Temple.
+// Lotte Duty Free Shop' are both live on the corpus — while of the 2,428
+// distinct ci.position.name values there, the only two carrying a bang or a
+// query mark are the geotagged tweets this arm exists for. `@` is out for the
+// same reason: 'On Jane Stanford Way @ Gilbert Biological Sciences' is a real
+// transit stop.
+const SENTENCE_PUNCTUATION = /[!?]/;
+
+// A place name is a noun phrase, and a fully-qualified one is bounded: venue,
+// street, city, state, ZIP, country. Measured over every distinct non-blank
+// ci.position.name on the corpus, the longest GENUINE name is 14 words — 'Red
+// Roof PLUS+ Boston - Framingham, 650 Cochituate Rd, Framingham, MA 01701,
+// United States' — and the shortest narration surviving the two arms above is
+// 16. The bound is in WORDS and not characters because at 90 characters the two
+// classes interleave (an 89-character 'Uber ride from … (request)' is SHORTER
+// than that 90-character hotel) and at 14 words they do not.
+const MAX_PLACE_NAME_WORDS = 14;
+
+/**
+ * Is this string a TITLE — a message body, a social post, a page headline, a
+ * narration — rather than the name of a place?
+ *
+ * The fifth upstream of `ci.position.name`, and the one none of the arms above
+ * could see. `titleFor` (push/canonical.ts) gives every record a display label,
+ * and for a geotagged message, tweet or trip that label is body text or a
+ * sentence about what happened. `toPositionInput` read it as the place name, so
+ * `promote.place_position` minted a Location entity per snippet and the Places
+ * list filled with "Check out a replay of BitScoop Labs' first live stream!
+ * #BitScoop…" and "Uber ride from 110 E 30th St, Austin, TX 78705, US to 101 Red
+ * River St, Austin, TX 78701, US (request)" — 44 of the 203 named positions on
+ * the corpus at the time of measurement.
+ *
+ * Three structural arms, in ascending order of what they assume:
+ *
+ *  1. It ends in the clip ellipsis. That character is `clip`'s truncation mark
+ *     and nothing else writes it, so the value is a PREFIX of a longer text. A
+ *     truncated string cannot be a place's name even when the place is real — it
+ *     will not geocode, and it forks the entity graph against the full name.
+ *  2. It contains `!` or `?`. A name neither exclaims nor asks.
+ *  3. It runs longer than any place name observed, in words. See
+ *     {@link MAX_PLACE_NAME_WORDS}.
+ *
+ * A grammar rather than a denylist, same as its three neighbours: these shapes
+ * hold for a Facebook check-in body and a Strava note from importers that do not
+ * exist yet, where `/^Uber ride from /` would hold for exactly one producer.
+ *
+ * The asymmetry that justifies the tight word bound: a false REJECT costs a name
+ * that the reverse-geocoder then supplies from the coordinates the row already
+ * has, while a false ACCEPT is a permanent Location entity named after a
+ * sentence.
+ */
+export function isTitleText(value: string): boolean {
+  const trimmed = value.trim();
+
+  return (
+    trimmed.endsWith(CLIP_ELLIPSIS) ||
+    SENTENCE_PUNCTUATION.test(trimmed) ||
+    trimmed.split(/\s+/).length > MAX_PLACE_NAME_WORDS
+  );
+}
+
+/**
+ * The four structural rejects, read as one rule: a coordinate pair, a URI, a
+ * media filename and a title/body snippet are each provably NOT the name of a
+ * place, whatever slot the importer put them in.
+ *
+ * Rejecting leaves `ci.position.name` NULL, which is the point — a null name is
+ * what makes the row a candidate for the reverse-geocoder to fill with a real
+ * one. A fake name is strictly worse than no name: it displays as though the
+ * place were already known.
+ *
+ * Mirrored into SQL by `NOT_A_PLACE_NAME_SQL`
+ * (domains/pipeline/stages/promote/PositionPlacePromoteStage.ts), which gates
+ * the same column for rows written before this guard existed. The two must not
+ * drift — an arm added here needs its twin there.
+ */
+export function isNotAPlaceName(value: string): boolean {
+  return isCoordinateText(value) || isUriLocation(value) || isMediaFilename(value) || isTitleText(value);
+}
+
 /**
  * Map a canonical record to a CreatePositionDto. Called for the `position`
  * partition produced by destinationsFor (raw GPS, place visits, GPS-bearing
  * photos). Skips records without coordinates by returning null — those have
  * nothing useful to donate to the location estimator.
  */
-/**
- * Is this string just a coordinate pair — "33.51469, -117.72169"?
- *
- * Deliberately narrow: two signed decimals separated by a comma, and nothing
- * else. "Cafe 40.7, 74.0" keeps its name, because a place whose name happens to
- * contain numbers is still a name.
- */
-function isCoordinateText(value: string): boolean {
-  return /^\s*[-+]?\d{1,3}(?:\.\d+)?\s*,\s*[-+]?\d{1,3}(?:\.\d+)?\s*$/.test(value);
-}
-
 export function toPositionInput(rec: CanonicalRecord): CreatePositionDto | null {
   if (!rec.coordinates) {
     return null;
@@ -917,9 +1074,10 @@ export function toPositionInput(rec: CanonicalRecord): CreatePositionDto | null 
     input.address = address;
   }
 
-  // Prefer a human title (place name, photo filename) over the empty default so
-  // a position row keeps a readable label when viewed in isolation — but a
-  // COORDINATE PAIR RENDERED AS TEXT IS NOT A NAME.
+  // Prefer a human title over the empty default so a position row keeps a
+  // readable label when viewed in isolation — but a COORDINATE PAIR, A URI, A
+  // MEDIA FILENAME, OR A SENTENCE RENDERED AS TEXT IS NOT A NAME. See
+  // isNotAPlaceName.
   //
   // It is the geometry this row already stores, and writing it into `name`
   // makes the row look already-named to everything downstream. The
@@ -936,8 +1094,50 @@ export function toPositionInput(rec: CanonicalRecord): CreatePositionDto | null 
   // title and wrong for a place name, so the filtering belongs here, where the
   // two meanings separate — and it holds for any importer that titles a fix
   // with its own coordinates.
-  const name = [rec.title, str(m.Name), str(m.Title)].find(
-    (candidate): candidate is string => candidate != null && candidate !== '' && !isCoordinateText(candidate),
+  //
+  // The same split explains the media-filename arm: `titleFor` gives a
+  // GPS-bearing photo its filename as a display title, which is the right title
+  // and the wrong place name. 2,085 positions on a real appliance read
+  // "IMG_0139.JPG" where the place should be. And the title arm
+  // (`isTitleText`), for the same reason one step further out: a geotagged
+  // tweet's display title is its body text.
+  // The record's OWN staged filename is never its place name. `titleFor` falls
+  // back to `basename(row.filename)` when a record carries no title-worthy
+  // metadata (canonical.ts), so removing a datasource's manufactured pseudo-name
+  // does not leave the slot empty — it lets the file's name slide into it:
+  // google_location's `Records.json` fixes would read 'location.txt', kmlgx
+  // '<file>.kml', nmea '<file>.nmea', and gpx already writes 'track.gpx' on main
+  // for any nameless trkpt. An extension allowlist cannot catch that class,
+  // because the extension is whatever the export happened to use. Comparing
+  // against the filename canonical.ts:1001 already stamped catches all of them.
+  const stagedName = str(m.filename);
+  const stagedBasename = stagedName?.split('/').pop()?.trim();
+
+  // WHICH SLOTS may hold a place name, decided by what the record IS.
+  //
+  // The shape guard above says what a place name cannot LOOK like; this says
+  // where one can come FROM, and it is the arm that does not depend on guessing
+  // prose from a string. `location.fix` is the only kind whose subject is a
+  // point on the earth, and `titleFor` gives such a record a place-derived title
+  // (Name/Place/Venue/Address — canonical.ts). Every OTHER kind that reaches the
+  // position partition rode in because it happened to carry coordinates: a
+  // geotagged message, a geotagged tweet, a located search, a GPS-bearing photo.
+  // Their `title` is the message body, the post text, the query, or the
+  // filename — a label for the RECORD, never for the ground under it.
+  //
+  // `Name` stays readable for every kind because it is the one key that MEANS a
+  // name: an importer filling it on a photo is stating "this fix is at a place
+  // called X", which is exactly the claim `name` records. `Title` is a display
+  // label and gets the same treatment as `rec.title`.
+  const namesAPlace = rec.kind === 'location.fix';
+  const candidates = namesAPlace ? [rec.title, str(m.Name), str(m.Title)] : [str(m.Name)];
+
+  const name = candidates.find(
+    (candidate): candidate is string =>
+      candidate != null &&
+      candidate !== '' &&
+      !isNotAPlaceName(candidate) &&
+      !(stagedBasename != null && stagedBasename !== '' && candidate.trim() === stagedBasename),
   );
 
   if (name) {

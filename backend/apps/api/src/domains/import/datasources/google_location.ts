@@ -2,6 +2,7 @@
    Recognizes directory containing Records.json and parses minimal location points.
 */
 import fs from 'node:fs';
+import { stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { FileImporter, DirEntry, Recognition } from './registry';
@@ -31,8 +32,16 @@ export class GoogleLocationFileImporter implements FileImporter {
     }
 
     try {
-      if (fs.statSync(base).isDirectory()) {
-        if (fs.existsSync(path.join(base, 'Records.json'))) {
+      if ((await stat(base)).isDirectory()) {
+        let hasRecords = false;
+        try {
+          await stat(path.join(base, 'Records.json'));
+          hasRecords = true;
+        } catch {
+          /* Records.json absent */
+        }
+
+        if (hasRecords) {
           // heuristic similar to Go: folder name contains "Location History" + file present
           const name = path.basename(base);
           if (/location history/i.test(name)) {
@@ -123,10 +132,20 @@ export class GoogleLocationFileImporter implements FileImporter {
         classification: 'location',
         timestamp: ts,
         location: { latitude: lat, longitude: lon },
+        // No `Title`/`Name`: a Records.json fix has no name, and this parser
+        // used to invent one — `Location ${lat}, ${lon}` — so the item would
+        // not be titled by the synthetic `location.txt` filename. That title
+        // was never rendered: a raw GPS `location.fix` routes to `position`
+        // ONLY (destinationsFor in push/canonical.ts — it leaves the events
+        // timeline entirely), so the string's single effect was to land in
+        // `ci.position.name`, where a coordinate pair is not a place name. A
+        // position with NO name is precisely what makes the row a candidate
+        // for the reverse-geocoder to fill with a real one. Same shape gpx
+        // already follows: emit `Name` only when the source actually carries
+        // one.
         metadata: {
           Accuracy: loc.accuracy,
           Altitude: loc.altitude,
-          Title: `Location ${lat.toFixed(5)}, ${lon.toFixed(5)}`,
         },
         content: { filename: 'location.txt', data: async () => Buffer.from('') },
       };

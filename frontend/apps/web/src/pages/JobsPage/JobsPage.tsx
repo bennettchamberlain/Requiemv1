@@ -1,20 +1,29 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { usePageTitle } from '@ci/common';
-import { Badge, Button, Card, Skeleton } from '@ci/shadcn';
+import { Accordion, Badge, Button, Card, Skeleton, cn } from '@ci/shadcn';
 import { AlertTriangle, RefreshCcw } from '@ci/shadcn/icons';
 
 import { PageContent } from '@/components/layout';
 
 import { describeCron } from './cronDescriptor';
 import { describeCronExpression } from './cronSchedule';
-import { categoryDot } from './jobCategories';
+import { DeadLettersCard } from './DeadLettersCard';
+import { FoldBody, FoldCard, FoldTrigger, cardPad, usePhone } from './Fold';
+import { categoryDot, categoryLabel, CATEGORY_LABELS } from './jobCategories';
 import { JobHistoryCharts } from './JobHistoryCharts';
+import { JobsImportActivity } from './JobsImportActivity';
 import { JobsTable } from './JobsTable';
-import { COMPACT_CARD } from './layout';
+import { useDeadLetters } from './useDeadLetters';
 import { useJobHistory } from './useJobHistory';
 import { useJobsDashboard, type JobsDashboardResponse } from './useJobsDashboard';
-import { DEFAULT_JOB_FILTERS, useJobsList, type JobFilters } from './useJobsList';
+import {
+  DEFAULT_JOB_FILTERS,
+  DESKTOP_JOB_PAGE_SIZE,
+  MOBILE_JOB_PAGE_SIZE,
+  useJobsList,
+  type JobFilters,
+} from './useJobsList';
 import { useJobTypes, type JobTypesResponse } from './useJobTypes';
 
 /** Category keys the API's taxonomy exposes, in the order the filter lists them. */
@@ -34,13 +43,26 @@ const CATEGORIES = [
 export function JobsPage() {
   usePageTitle('Jobs - Companion Intelligence');
 
+  const phone = usePhone();
+
   const [filters, setFilters] = useState<JobFilters>(DEFAULT_JOB_FILTERS);
   const [windowHours, setWindowHours] = useState(24);
+
+  // Phone pages of 50 cards are unreadable; desktop stays at 50. The limit is
+  // a server page size, so it has to live on the filters the list hook sends.
+  useEffect(() => {
+    const limit = phone ? MOBILE_JOB_PAGE_SIZE : DESKTOP_JOB_PAGE_SIZE;
+
+    setFilters((current) =>
+      current.limit === limit ? current : { ...current, limit, offset: 0 },
+    );
+  }, [phone]);
 
   const dashboard = useJobsDashboard();
   const list = useJobsList(filters);
   const { types: jobTypes } = useJobTypes();
   const history = useJobHistory(windowHours, filters.queue);
+  const deadLetters = useDeadLetters();
 
   const onFilterChange = useCallback((next: Partial<JobFilters>) => {
     setFilters((current) => ({ ...current, ...next }));
@@ -50,12 +72,68 @@ export function JobsPage() {
     void dashboard.refresh();
     void list.refresh();
     void history.refresh();
-  }, [dashboard, list, history]);
+    void deadLetters.refresh();
+  }, [dashboard, list, history, deadLetters]);
+
+  const jobsTable = (
+    <JobsTable
+      data={list.data}
+      loading={list.loading}
+      error={list.error}
+      jobTypes={jobTypes}
+      filters={filters}
+      categories={CATEGORIES}
+      onChange={onFilterChange}
+    />
+  );
+  const historyCharts = (
+    <JobHistoryCharts
+      data={history.data}
+      loading={history.loading}
+      error={history.error}
+      windowHours={windowHours}
+      onWindowChange={setWindowHours}
+      queue={filters.queue}
+    />
+  );
+  const schedules = (
+    <SchedulesCard
+      crons={dashboard.data?.crons ?? []}
+      loading={dashboard.loading}
+      jobTypes={jobTypes}
+    />
+  );
+  const deadLettersCard = (
+    <DeadLettersCard
+      groups={deadLetters.groups}
+      total={deadLetters.total}
+      loading={deadLetters.loading}
+      error={deadLetters.error}
+      onReplay={deadLetters.replay}
+    />
+  );
 
   return (
     <>
       <PageContent>
         <div className="flex flex-col gap-3">
+          {/* Above Queue Activity, because it outranks it while it exists.
+
+              This page answers "what is the queue doing" for an operator, and
+              pg-boss answers that in pg-boss's terms: on a live 13-source
+              import it read `import-stages: 142 created, 1 active` — a number
+              that is not even the backlog (a redelivered stage job is a
+              deliberate no-op and leaves its row behind; those 142 rows covered
+              19 distinct stages). Nothing on this page said which archive was
+              importing, how far along it was, or which stage had been waiting
+              an hour.
+
+              The SAME component the import surface pins, not a second copy —
+              two implementations of a progress card drift, and the one nobody
+              is looking at is the one that rots. Renders nothing when no import
+              is in flight, so the page is unchanged the rest of the time. */}
+          <JobsImportActivity />
+
           <SummaryCard
             summary={dashboard.data?.summary}
             loading={dashboard.loading}
@@ -66,30 +144,24 @@ export function JobsPage() {
             onSelectState={(state) => onFilterChange({ state, offset: 0 })}
           />
 
-          <JobHistoryCharts
-            data={history.data}
-            loading={history.loading}
-            error={history.error}
-            windowHours={windowHours}
-            onWindowChange={setWindowHours}
-            queue={filters.queue}
-          />
-
-          <JobsTable
-            data={list.data}
-            loading={list.loading}
-            error={list.error}
-            jobTypes={jobTypes}
-            filters={filters}
-            categories={CATEGORIES}
-            onChange={onFilterChange}
-          />
-
-          <SchedulesCard
-            crons={dashboard.data?.crons ?? []}
-            loading={dashboard.loading}
-            jobTypes={jobTypes}
-          />
+          {/* Phone: live work first (jobs), reference last (history, schedules,
+              dead letters). Desktop keeps history above the table and dead
+              letters next to the tab that points at them. */}
+          {phone ? (
+            <>
+              {jobsTable}
+              {historyCharts}
+              {schedules}
+              {deadLettersCard}
+            </>
+          ) : (
+            <>
+              {historyCharts}
+              {jobsTable}
+              {deadLettersCard}
+              {schedules}
+            </>
+          )}
         </div>
       </PageContent>
     </>
@@ -115,6 +187,8 @@ function SummaryCard({
   onRefresh,
   onSelectState,
 }: SummaryCardProps) {
+  const phone = usePhone();
+
   // Each tile is a shortcut into the table below it — a number an operator
   // cannot click is a number they have to go hunting for.
   const tiles = useMemo(
@@ -130,8 +204,14 @@ function SummaryCard({
   );
 
   return (
-    <Card className={COMPACT_CARD}>
-      <Card.Header className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+    <FoldCard>
+      <Card.Header
+        className={cn(
+          'flex gap-2',
+          phone ? 'flex-row items-center justify-between' : 'flex-col md:flex-row md:items-center md:justify-between',
+          cardPad(phone),
+        )}
+      >
         <div>
           <Card.Title className="text-lg">Queue Activity</Card.Title>
           <Card.Description>
@@ -144,11 +224,17 @@ function SummaryCard({
               : 'Current job workload'}
           </Card.Description>
         </div>
-        <Button variant="outline" size="sm" onClick={onRefresh} className="w-full md:w-auto">
-          <RefreshCcw className="mr-2 h-4 w-4" /> Refresh
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onRefresh}
+          className={phone ? 'shrink-0' : 'w-full md:w-auto'}
+        >
+          <RefreshCcw className={phone ? 'h-4 w-4' : 'mr-2 h-4 w-4'} />
+          {phone ? <span className="sr-only">Refresh</span> : 'Refresh'}
         </Button>
       </Card.Header>
-      <Card.Content className="space-y-3">
+      <Card.Content className={cn('space-y-3', cardPad(phone))}>
         {staleSince ? (
           <div
             role="status"
@@ -173,7 +259,7 @@ function SummaryCard({
         {loading && !summary ? (
           <Skeleton className="h-24 w-full" />
         ) : (
-          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <div className={phone ? 'grid grid-cols-2 gap-2' : 'grid gap-3 sm:grid-cols-3 lg:grid-cols-6'}>
             {tiles.map((tile) => (
               <button
                 key={tile.label}
@@ -188,7 +274,7 @@ function SummaryCard({
           </div>
         )}
       </Card.Content>
-    </Card>
+    </FoldCard>
   );
 }
 
@@ -208,107 +294,177 @@ function SchedulesCard({
   loading: boolean;
   jobTypes: JobTypesResponse | null;
 }) {
-  return (
-    <Card className={COMPACT_CARD}>
-      <Card.Header>
-        <Card.Title className="text-base">Schedules</Card.Title>
-        <Card.Description>Recurring jobs registered in this process ({crons.length})</Card.Description>
-      </Card.Header>
-      <Card.Content>
-        {loading && !crons.length ? (
-          <Skeleton className="h-32 w-full" />
-        ) : !crons.length ? (
-          <p className="text-sm text-muted-foreground">No recurring jobs are registered here.</p>
-        ) : (
-          // A table, like the Jobs list — same columns-and-rows shape, so the two
-          // cards read as one system rather than two unrelated widgets. The grid
-          // of cards it replaced could not be scanned down a column (every
-          // schedule's cron sat at a different x-position).
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-border/60 text-left text-xs uppercase text-muted-foreground">
-                  <th scope="col" className="py-1.5 pr-3 font-medium">
-                    Schedule
-                  </th>
-                  <th scope="col" className="py-1.5 pr-3 font-medium">
-                    Category
-                  </th>
-                  <th scope="col" className="py-1.5 pr-3 font-medium">
-                    Every
-                  </th>
-                  <th scope="col" className="py-1.5 pr-3 font-medium">
-                    When
-                  </th>
-                  <th scope="col" className="py-1.5 pr-3 font-medium">
-                    Status
-                  </th>
-                  <th scope="col" className="py-1.5 pr-3 text-right font-medium">
-                    Next run
-                  </th>
-                  <th scope="col" className="py-1.5 text-right font-medium">
-                    Last run
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {crons.map((cron) => {
-                  // Crons register as `ClassName.methodName`; the taxonomy is
-                  // keyed by EVENT name, so a cron that emits a known event gets
-                  // the same label and colour the Jobs table gives it. The rest
-                  // fall back to their registration key, which is at least
-                  // greppable — the old UI showed a bare UUID.
-                  const descriptor = describeCron(cron.name, jobTypes);
-                  // `0 */15 * * * *` is six positional fields you have to count
-                  // before you know what it does. Split into how-often and
-                  // where-in-the-period, both columns become scannable — and the
-                  // raw expression stays on the cells' title, since that is the
-                  // form you paste back into a decorator.
-                  const schedule = describeCronExpression(cron.cron);
+  const phone = usePhone();
+  const rows = useMemo(
+    () =>
+      crons.map((cron) => ({
+        cron,
+        descriptor: describeCron(cron.name, jobTypes),
+        schedule: describeCronExpression(cron.cron),
+      })),
+    [crons, jobTypes],
+  );
 
-                  return (
-                    <tr key={cron.name} className="border-b border-border/40 last:border-0">
-                      <td className="py-1.5 pr-3">
-                        <span className="flex items-center gap-1.5 font-medium" title={cron.name}>
-                          <span
-                            aria-hidden
-                            className={`h-2 w-2 shrink-0 rounded-full ${categoryDot(descriptor.category)}`}
-                          />
-                          <span className="truncate">{descriptor.label}</span>
-                        </span>
-                      </td>
-                      <td className="py-1.5 pr-3 text-muted-foreground">{descriptor.categoryLabel}</td>
-                      <td className="py-1.5 pr-3 whitespace-nowrap" title={schedule.raw}>
-                        {schedule.frequency}
-                      </td>
-                      <td
-                        className="py-1.5 pr-3 whitespace-nowrap text-muted-foreground"
-                        title={schedule.raw}
-                      >
-                        {schedule.when || '—'}
-                      </td>
-                      <td className="py-1.5 pr-3">
-                        <Badge
-                          variant={cron.running ? 'outline' : 'secondary'}
-                          className="text-[10px] uppercase"
-                        >
-                          {cron.running ? 'scheduled' : 'stopped'}
-                        </Badge>
-                      </td>
-                      <td className="py-1.5 pr-3 text-right tabular-nums text-muted-foreground">
-                        {cron.nextRunAt ? new Date(cron.nextRunAt).toLocaleTimeString() : '—'}
-                      </td>
-                      <td className="py-1.5 text-right tabular-nums text-muted-foreground">
-                        {cron.lastRunAt ? new Date(cron.lastRunAt).toLocaleTimeString() : '—'}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card.Content>
-    </Card>
+  return (
+    <FoldCard fold>
+      <Card.Header className={cardPad(phone)}>
+        <FoldTrigger>
+          <Card.Title className="text-base">Schedules</Card.Title>
+          <Card.Description>Recurring jobs registered in this process ({crons.length})</Card.Description>
+        </FoldTrigger>
+      </Card.Header>
+      <FoldBody>
+        <Card.Content className={cardPad(phone)}>
+          {loading && !crons.length ? (
+            <Skeleton className="h-32 w-full" />
+          ) : !crons.length ? (
+            <p className="text-sm text-muted-foreground">No recurring jobs are registered here.</p>
+          ) : phone ? (
+            <SchedulesPhoneList rows={rows} />
+          ) : (
+            // A table, like the Jobs list — same columns-and-rows shape, so the two
+            // cards read as one system rather than two unrelated widgets. The grid
+            // of cards it replaced could not be scanned down a column (every
+            // schedule's cron sat at a different x-position).
+            <SchedulesTable rows={rows} />
+          )}
+        </Card.Content>
+      </FoldBody>
+    </FoldCard>
+  );
+}
+
+type ScheduleRow = {
+  cron: JobsDashboardResponse['crons'][number];
+  descriptor: ReturnType<typeof describeCron>;
+  schedule: ReturnType<typeof describeCronExpression>;
+};
+
+function SchedulesTable({ rows }: { rows: readonly ScheduleRow[] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-sm">
+        <thead>
+          <tr className="border-b border-border/60 text-left text-xs uppercase text-muted-foreground">
+            <th scope="col" className="py-1.5 pr-3 font-medium">
+              Schedule
+            </th>
+            <th scope="col" className="py-1.5 pr-3 font-medium">
+              Category
+            </th>
+            <th scope="col" className="py-1.5 pr-3 font-medium">
+              Every
+            </th>
+            <th scope="col" className="py-1.5 pr-3 font-medium">
+              When
+            </th>
+            <th scope="col" className="py-1.5 pr-3 font-medium">
+              Status
+            </th>
+            <th scope="col" className="py-1.5 pr-3 text-right font-medium">
+              Next run
+            </th>
+            <th scope="col" className="py-1.5 text-right font-medium">
+              Last run
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ cron, descriptor, schedule }) => (
+            <tr key={cron.name} className="border-b border-border/40 last:border-0">
+              <td className="py-1.5 pr-3">
+                <span className="flex items-center gap-1.5 font-medium" title={cron.name}>
+                  <span
+                    aria-hidden
+                    className={`h-2 w-2 shrink-0 rounded-full ${categoryDot(descriptor.category)}`}
+                  />
+                  <span className="truncate">{descriptor.label}</span>
+                </span>
+              </td>
+              <td className="py-1.5 pr-3 text-muted-foreground">{descriptor.categoryLabel}</td>
+              <td className="py-1.5 pr-3 whitespace-nowrap" title={schedule.raw}>
+                {schedule.frequency}
+              </td>
+              <td className="py-1.5 pr-3 whitespace-nowrap text-muted-foreground" title={schedule.raw}>
+                {schedule.when || '—'}
+              </td>
+              <td className="py-1.5 pr-3">
+                <Badge variant={cron.running ? 'outline' : 'secondary'} className="text-[10px] uppercase">
+                  {cron.running ? 'scheduled' : 'stopped'}
+                </Badge>
+              </td>
+              <td className="py-1.5 pr-3 text-right tabular-nums text-muted-foreground">
+                {cron.nextRunAt ? new Date(cron.nextRunAt).toLocaleTimeString() : '—'}
+              </td>
+              <td className="py-1.5 text-right tabular-nums text-muted-foreground">
+                {cron.lastRunAt ? new Date(cron.lastRunAt).toLocaleTimeString() : '—'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SchedulesPhoneList({ rows }: { rows: readonly ScheduleRow[] }) {
+  const groups = useMemo(() => {
+    const map = new Map<string, ScheduleRow[]>();
+
+    for (const row of rows) {
+      const list = map.get(row.descriptor.category) ?? [];
+      list.push(row);
+      map.set(row.descriptor.category, list);
+    }
+
+    const order = Object.keys(CATEGORY_LABELS);
+
+    return [...map.entries()].sort((left, right) => {
+      const li = order.indexOf(left[0]);
+      const ri = order.indexOf(right[0]);
+
+      return (li === -1 ? 99 : li) - (ri === -1 ? 99 : ri);
+    });
+  }, [rows]);
+
+  return (
+    <Accordion type="multiple" className="w-full">
+      {groups.map(([category, items]) => (
+        <Accordion.Item key={category} value={category}>
+          <Accordion.Trigger className="py-2.5 text-sm hover:no-underline">
+            <span className="flex min-w-0 items-center gap-2">
+              <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${categoryDot(category)}`} />
+              <span className="truncate">{categoryLabel(category)}</span>
+              <span className="text-xs font-normal text-muted-foreground tabular-nums">{items.length}</span>
+            </span>
+          </Accordion.Trigger>
+          <Accordion.Content>
+            <ul className="pb-1">
+              {items.map(({ cron, descriptor, schedule }) => (
+                <li key={cron.name} className="border-t border-border/40 py-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="min-w-0 font-medium" title={cron.name}>
+                      {descriptor.label}
+                    </span>
+                    <Badge
+                      variant={cron.running ? 'outline' : 'secondary'}
+                      className="shrink-0 text-[10px] uppercase"
+                    >
+                      {cron.running ? 'scheduled' : 'stopped'}
+                    </Badge>
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted-foreground" title={schedule.raw}>
+                    {schedule.frequency}
+                    {schedule.when ? ` · ${schedule.when}` : ''}
+                    {' · next '}
+                    {cron.nextRunAt ? new Date(cron.nextRunAt).toLocaleTimeString() : '—'}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </Accordion.Content>
+        </Accordion.Item>
+      ))}
+    </Accordion>
   );
 }

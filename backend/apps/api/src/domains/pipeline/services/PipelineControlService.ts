@@ -339,6 +339,18 @@ const UNCLAIMABLE_SHARD_STATUSES: readonly string[] = [SHARD_STATUS.CANCELLED];
  *    `DuplicateDetectStage` records `skipped: no_identifier_claims` for a person
  *    with none, so running it first writes a corpus of skips that only a version
  *    bump can re-open.
+ *  - `promote.place_position` ← `enrich.position_reverse`. The reverse geocoder
+ *    writes BOTH of the promoter's inputs: `ci.position.name`, which is what
+ *    makes a fix a candidate at all, and the `ci.geocode_cache` row whose
+ *    address components become the place's hierarchy. Promoting first promotes
+ *    the handful of fixes an importer happened to name and silently skips the
+ *    rest until a version bump — the same failure the `promote.place` ←
+ *    `enrich.geocode` edge exists to prevent, one table over.
+ *  - `promote.edge_position` ← `promote.place_position`. Its predicate is
+ *    literally `s.location_entity_id IS NOT NULL`, and as of that stage this
+ *    column finally has a writer. Before it, this leg's candidate set was
+ *    permanently empty (0 of 65,115 fixes on the legacy corpus), which is why
+ *    the edge did not exist and why it does now.
  *
  * Stages absent from this map depend on nothing: `enrich.media_dimensions`,
  * `index.embed`, `enrich.position_reverse`, `clean.temporal_repair` and
@@ -347,14 +359,21 @@ const UNCLAIMABLE_SHARD_STATUSES: readonly string[] = [SHARD_STATUS.CANCELLED];
 export const STAGE_DEPENDENCIES: Readonly<Partial<Record<StageId, readonly StageId[]>>> = {
   [STAGE_IDS.ENRICH_ESTIMATE_LOCATION]: [STAGE_IDS.ENRICH_GEOCODE],
   [STAGE_IDS.PROMOTE_PLACE]: [STAGE_IDS.ENRICH_GEOCODE, STAGE_IDS.ENRICH_ESTIMATE_LOCATION],
+  [STAGE_IDS.PROMOTE_PLACE_POSITION]: [STAGE_IDS.ENRICH_POSITION_REVERSE],
   [STAGE_IDS.ENRICH_PERSON_LINK]: [STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE],
   [STAGE_IDS.ENRICH_EVENT_PERSON_LINK]: [STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE],
   [STAGE_IDS.CLEAN_DUPLICATE_DETECT]: [STAGE_IDS.ENRICH_PERSON_LINK, STAGE_IDS.ENRICH_EVENT_PERSON_LINK],
   // The edge projections are pure consumers of the linkage columns their
   // producers fill: person-link writes communications' from/to columns; the
   // event leg additionally reads `location_entity_id`, which `promote.place`
-  // writes. Projecting first would write a night of `done` rows over unlinked
-  // sources that only the producers' next version bump could re-open.
+  // writes. THIS graph is the whole of the ordering between them — the shared
+  // nightly cadence that used to double as ordering is gone (the projections
+  // are hourly and unwindowed now, see `STAGE_SCHEDULES`), and it was never
+  // load-bearing: an unlinked source row fails every edge leg's
+  // `StageSource.predicate`, so a projection that outruns its producer skips it
+  // rather than marking it `done`. What this graph still buys is that on a tick
+  // where a producer is due WITH candidates, its consumer waits one tick rather
+  // than projecting a slice the producer is about to widen.
   [STAGE_IDS.PROMOTE_EDGE_COMMUNICATION]: [STAGE_IDS.ENRICH_PERSON_LINK],
   [STAGE_IDS.PROMOTE_EDGE_EVENT]: [STAGE_IDS.ENRICH_EVENT_PERSON_LINK, STAGE_IDS.PROMOTE_PLACE],
   [STAGE_IDS.PROMOTE_EDGE_INVENTORY]: [STAGE_IDS.PROMOTE_OBJECT],
@@ -368,9 +387,12 @@ export const STAGE_DEPENDENCIES: Readonly<Partial<Record<StageId, readonly Stage
   [STAGE_IDS.PROMOTE_OBSERVATION]: [STAGE_IDS.PROMOTE_PLACE],
   // The observation leg's `resolved_object_id` is `promote.object`'s output;
   // its other columns (content/event/place) are set at capture time. The
-  // receipt, position and device legs read only ingest/capture-time columns —
-  // no producer stage, so no entry.
+  // receipt and device legs read only ingest/capture-time columns — no producer
+  // stage, so no entry.
   [STAGE_IDS.PROMOTE_EDGE_OBSERVATION]: [STAGE_IDS.PROMOTE_OBJECT],
+  // The position leg USED to belong in that sentence. It no longer does:
+  // `ci.position.location_entity_id` has a producer now.
+  [STAGE_IDS.PROMOTE_EDGE_POSITION]: [STAGE_IDS.PROMOTE_PLACE_POSITION],
 };
 
 /**

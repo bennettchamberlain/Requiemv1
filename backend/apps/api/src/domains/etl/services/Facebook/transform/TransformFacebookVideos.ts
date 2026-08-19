@@ -3,7 +3,7 @@ import { v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/logging';
 import { type Connection } from '@ci/domains/connections';
-import { ContentService, type CreateContentDto } from '@ci/domains/memory';
+import { ContentService, type CreateContentDto, SOURCE_NATIVE_EXTERNAL_ID_KIND } from '@ci/domains/memory';
 
 import { ConnectionSyncJob } from '../../../types';
 interface FacebookVideo {
@@ -61,6 +61,7 @@ export class FacebookVideosTransformService {
                   : undefined,
               mimetype: 'video/mp4',
               external_id: video.id,
+              external_id_kind: SOURCE_NATIVE_EXTERNAL_ID_KIND,
               source_url: video.source || undefined,
               source_data: {
                 facebook_video_id: video.id,
@@ -87,6 +88,7 @@ export class FacebookVideosTransformService {
               url: video.permalink_url || video.source || undefined,
               mimetype: 'video/mp4',
               external_id: video.id,
+              external_id_kind: SOURCE_NATIVE_EXTERNAL_ID_KIND,
               source_url: video.source || undefined,
               source_data: {
                 facebook_video_id: video.id,

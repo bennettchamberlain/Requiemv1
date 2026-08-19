@@ -192,4 +192,21 @@ describe('App routing', () => {
       expect(notFound()).not.toBeInTheDocument();
     });
   });
+
+  // The page the user reads as "Reflections" was called "Questions", and before
+  // that it lived at /prompts. Both older paths are in bookmarks and links, so
+  // they redirect rather than 404.
+  describe('the paths Reflections replaced', () => {
+    it.each([
+      ['/prompts', '/memory/reflections'],
+      ['/memory/questions', '/memory/reflections'],
+    ])('redirects %s to %s', async (from, to) => {
+      h.features = { loading: false, enabled: true };
+
+      renderAt(from);
+
+      await waitFor(() => expect(window.location.pathname).toBe(to));
+      expect(notFound()).not.toBeInTheDocument();
+    });
+  });
 });

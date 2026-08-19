@@ -95,8 +95,11 @@ export function ServerSettingsPage() {
     <div className="w-full max-w-sm">
       <Card>
         <Card.Header>
-          <Card.Title>Connect to your Companion Memory</Card.Title>
-          <Card.Description>Enter the address of your Memory Server.</Card.Description>
+          <Card.Title>Advanced: Memory Server URL</Card.Title>
+          <Card.Description>
+            Type an origin for a box that is not listed in Portal. Prefer Connect this device when Hub has
+            published this Memory Server.
+          </Card.Description>
         </Card.Header>
 
         <Card.Content>
@@ -123,6 +126,14 @@ export function ServerSettingsPage() {
 
             <Button type="submit" className="w-full" disabled={status === 'testing'}>
               {status === 'testing' ? 'Testing…' : 'Test & Connect'}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full"
+              onClick={() => navigate('/device-connect')}
+            >
+              Find a server through Portal
             </Button>
           </form>
         </Card.Content>

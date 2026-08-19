@@ -27,7 +27,10 @@ function params(): URLSearchParams {
   return new URLSearchParams(screen.getByTestId('query').textContent ?? '');
 }
 
-function renderFilter(props: Partial<React.ComponentProps<typeof EntityTypeFilter>> = {}, route = '/memory/events') {
+function renderFilter(
+  props: Partial<React.ComponentProps<typeof EntityTypeFilter>> = {},
+  route = '/memory/events',
+) {
   return renderWithProviders(
     <DropdownProvider args={[{ changeSearchParams: true }]}>
       <EntityTypeFilter modal={false} {...props} />

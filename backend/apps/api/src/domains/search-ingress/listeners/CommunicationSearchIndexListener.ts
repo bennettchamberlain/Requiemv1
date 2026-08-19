@@ -13,7 +13,10 @@ import {
   type CommunicationUpdatedPayload,
   type CommunicationDeletedPayload,
 } from '@ci/domains/memory/events';
-import { communicationSearchDocument, communicationWeightedTexts } from '@ci/domains/search-ingress/searchTexts';
+import {
+  communicationSearchDocument,
+  communicationWeightedTexts,
+} from '@ci/domains/search-ingress/searchTexts';
 
 import { EmbeddingService } from '../services/EmbeddingService';
 import { IndexSkipService } from '../services/IndexSkipService';

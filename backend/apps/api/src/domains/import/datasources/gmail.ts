@@ -1,6 +1,7 @@
 /* Gmail datasource (stub TypeScript port) */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import readline from 'node:readline';
 
@@ -27,7 +28,14 @@ export class GmailFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    if (fs.existsSync(full) && fs.statSync(full).isFile()) {
+    let st: fs.Stats;
+    try {
+      st = await stat(full);
+    } catch {
+      return { confidence: 0 };
+    }
+
+    if (st.isFile()) {
       const ext = path.extname(full).toLowerCase();
       if (ext === '.mbox') {
         // Boost to 1.0 when the path contains Takeout markers — outranks generic email@0.95.
@@ -52,9 +60,9 @@ export class GmailFileImporter implements FileImporter {
       }
     }
 
-    if (fs.existsSync(full) && fs.statSync(full).isDirectory()) {
+    if (st.isDirectory()) {
       // Gmail Takeout folder often contains "All mail Including Spam and Trash.mbox"
-      const entries = fs.readdirSync(full);
+      const entries = await readdir(full);
       const lp = full.toLowerCase();
       const isTakeout = lp.includes('takeout') || lp.includes('google') || lp.includes('gmail');
       if (entries.some((e) => e.toLowerCase().endsWith('.mbox'))) {

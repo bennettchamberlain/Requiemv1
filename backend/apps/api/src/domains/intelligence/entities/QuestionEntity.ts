@@ -8,6 +8,15 @@ export class QuestionEntity {
   @Column({ nullable: true, name: 'question_category' })
   category!: string;
 
+  /**
+   * Which half of the catalogue this question belongs to: 'factual' settles a
+   * fact, 'preference' records a taste, 'narrative' asks for a story. Selection
+   * orders by this so the appliance asks the answerable questions first — see
+   * TIER_RANK_SQL in QuestionService. NULL means a pre-catalogue question.
+   */
+  @Column({ type: 'text', nullable: true, name: 'answer_tier' })
+  answerTier?: string | null;
+
   @Column({ name: 'question_text' })
   text!: string;
 
@@ -38,6 +47,15 @@ export class QuestionEntity {
   @Column({ type: 'uuid', nullable: true, name: 'is_private_to' })
   isPrivateTo?: string | null;
 
+  /**
+   * Set when this row is one user's private copy of a shared catalogue row,
+   * minted because a shared row is read-only to an ordinary caller. The origin
+   * is filtered out of that user's selections so the copy replaces it rather
+   * than sitting beside it — see `excludeForkedOriginsSql`.
+   */
+  @Column({ type: 'uuid', nullable: true, name: 'forked_from_question_id' })
+  forkedFromQuestionId?: string | null;
+
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date;
 
@@ -48,6 +66,7 @@ export class QuestionEntity {
     return {
       id: entity.id,
       category: entity.category,
+      answerTier: entity.answerTier ?? null,
       text: entity.text,
       contextTags: entity.contextTags,
       questionType: entity.questionType,
@@ -58,6 +77,7 @@ export class QuestionEntity {
       timesAsked: entity.timesAsked,
       timesAnswered: entity.timesAnswered,
       isPrivateTo: entity.isPrivateTo,
+      forkedFromQuestionId: entity.forkedFromQuestionId ?? null,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };

@@ -1,5 +1,6 @@
 /* GPX (GPS Exchange Format) datasource (TypeScript port) */
 import fs from 'node:fs';
+import { stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseStringPromise } from 'xml2js';
@@ -51,17 +52,17 @@ interface GPXWaypoint {
  * data source across the whole tree, and a bare .gpx scores 1.0 against
  * Strava's 0.95. GPX would then win and activities.csv would be dropped.
  */
-function inStravaExport(filePath: string): boolean {
+async function inStravaExport(filePath: string): Promise<boolean> {
   let dir = path.dirname(filePath);
   // activities/<file>.gpx -> activities/ -> export root. Two hops is enough;
   // bounded so a .gpx near the filesystem root can't walk up indefinitely.
   for (let i = 0; i < 3; i++) {
     try {
-      if (fs.existsSync(path.join(dir, 'activities.csv'))) {
-        return true;
-      }
+      await stat(path.join(dir, 'activities.csv'));
+
+      return true;
     } catch {
-      /* unreadable dir — treat as not-Strava */
+      /* absent or unreadable — treat as not-Strava */
     }
 
     const parent = path.dirname(dir);
@@ -85,12 +86,16 @@ export class GPXFileImporter implements FileImporter {
     // Check if it's a .gpx file
     if (baseDir.toLowerCase().endsWith('.gpx')) {
       // Defer to strava.ts for activity tracks inside a Strava archive.
-      return inStravaExport(baseDir) ? { confidence: 0 } : { confidence: 1.0 };
+      return (await inStravaExport(baseDir)) ? { confidence: 0 } : { confidence: 1.0 };
     }
 
     // Check if it's a directory (will walk it looking for .gpx files)
-    if (fs.existsSync(baseDir) && fs.statSync(baseDir).isDirectory()) {
-      return { confidence: 0, dir_threshold: 0.9 };
+    try {
+      if ((await stat(baseDir)).isDirectory()) {
+        return { confidence: 0, dir_threshold: 0.9 };
+      }
+    } catch {
+      /* absent or unreadable — no match */
     }
 
     return { confidence: 0 };
@@ -197,7 +202,26 @@ export class GPXFileImporter implements FileImporter {
       },
       metadata: {
         Source: 'GPX',
-        ...(trackName && { Name: trackName }),
+        // `<trk><name>` names the TRACK, not any point on it. It rides along as
+        // `Track Name` — provenance, readable on the row — and deliberately NOT
+        // as `Name`, which is the key `toPositionInput` reads as the place name
+        // for the fix (push/inputs.ts).
+        //
+        // Stamped into `Name`, one 10 km run with `<name>Morning Run</name>`
+        // gave ~1,000 trackpoints the identical place name; `promote.place_position`
+        // then resolves the route into ~90 distinct 0.001-degree cells and mints
+        // up to 90 Location entities all called "Morning Run" — one venue per
+        // 100 m of pavement, none of them a place.
+        //
+        // Leaving `Name` unset does not leave the slot empty: `titleFor` falls
+        // back to `basename(row.filename)`, so a nameless trkpt titles as
+        // 'track.gpx', which `toPositionInput` already rejects as the record's
+        // own staged filename. The fix keeps its coordinates and a NULL name,
+        // which is what makes it a reverse-geocode candidate.
+        //
+        // Waypoints are untouched — `<wpt><name>` names a POINT, and
+        // createWaypointItem still reads it as `Name`.
+        ...(trackName && { 'Track Name': trackName }),
         ...(activityType && { 'Activity Type': activityType }),
       },
     };

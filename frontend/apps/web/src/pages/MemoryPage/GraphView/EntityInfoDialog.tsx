@@ -1,5 +1,5 @@
 import { Badge, Button, cn } from '@ci/shadcn';
-import { Crosshair, PanelRight, X } from '@ci/shadcn/icons';
+import { Crosshair, Loader2, PanelRight, X } from '@ci/shadcn/icons';
 
 import type { GraphLink, GraphNode } from '@/api/useGraphOverview';
 import { colorForRawType } from '@/components/entities/entityVisuals';
@@ -21,6 +21,8 @@ interface EntityInfoDialogProps {
   isFocused: boolean;
   onFocus: () => void;
   onOpenDetails: () => void;
+  /** True while the node is being resolved to its real entity for the detail drawer. */
+  openDetailsPending?: boolean;
   onSelectNode: (nodeId: string) => void;
   onSelectLink: (linkId: string) => void;
   onClose: () => void;
@@ -39,6 +41,7 @@ export function EntityInfoDialog({
   isFocused,
   onFocus,
   onOpenDetails,
+  openDetailsPending = false,
   onSelectNode,
   onSelectLink,
   onClose,
@@ -148,8 +151,19 @@ export function EntityInfoDialog({
           <Crosshair className="mr-1.5 h-3.5 w-3.5" />
           {isFocused ? 'Focused' : 'Focus'}
         </Button>
-        <Button type="button" size="sm" variant="outline" className="flex-1" onClick={onOpenDetails}>
-          <PanelRight className="mr-1.5 h-3.5 w-3.5" />
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="flex-1"
+          onClick={onOpenDetails}
+          disabled={openDetailsPending}
+        >
+          {openDetailsPending ? (
+            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <PanelRight className="mr-1.5 h-3.5 w-3.5" />
+          )}
           Details
         </Button>
       </div>

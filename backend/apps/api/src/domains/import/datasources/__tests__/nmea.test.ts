@@ -40,9 +40,12 @@ describe('NMEA datasource', () => {
     const items = pipeline.filter((p) => p.item);
     expect(items.length).toBeGreaterThanOrEqual(1);
     expect(items[0].item.location!.latitude).toBeCloseTo(37 + 45.1234 / 60, 6);
-    // Title-bearing Name from coordinates so titleFor doesn't fall back to the bare filename.
-    expect(items[0].item.metadata.Name).toBe('Location 37.75206, -122.42798');
-    expect(items[0].item.metadata.Name).not.toBe(items[0].item.content.filename);
+    // No fabricated `Name`. An NMEA sentence has no name to give, and the
+    // `Location 37.75206, -122.42798` this used to emit was never rendered as a
+    // title (raw-GPS location.fix routes to `position` only) — it only ever
+    // landed in ci.position.name, where a coordinate pair is not a place name.
+    expect(items[0].item.metadata.Name).toBeUndefined();
+    expect(items[0].item.metadata.Title).toBeUndefined();
   });
   it('assigns unique, stable, idempotent ids to colliding same-second fixes', async () => {
     // GGA-only file (no RMC date) at the same wall-clock second and identical coords:

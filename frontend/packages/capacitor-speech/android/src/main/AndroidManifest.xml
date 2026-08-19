@@ -2,7 +2,7 @@
 
     <!-- SpeechRecognizer captures from the microphone, so the plugin declares the
          permission itself rather than relying on the host app to remember. The host app
-         (frontend/apps/mobile) also declares it for the in-webview capture flow; the
+         (frontend/apps/android) also declares it for the in-webview capture flow; the
          manifest merger unions identical <uses-permission> entries. The runtime grant is
          requested through Capacitor's permission flow (@CapacitorPlugin(permissions = ...)
          + requestPermissionForAlias in SpeechPlugin) — the WebView's lazy getUserMedia

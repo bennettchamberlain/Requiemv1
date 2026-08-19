@@ -98,6 +98,12 @@ export const ConfigSchema = z.object({
       issuer: z.string(),
       jwksUri: z.string(),
       audience: z.string(),
+      /**
+       * Optional Portal (or Lifescope) push relay. The appliance stores device
+       * tokens but must not hold the app's APNs/FCM key; when set, token writes
+       * are forwarded here. Empty = local notifications only.
+       */
+      pushRelayUrl: z.string().default(''),
     }),
     // Traefik forward-auth identity header signed by CI-Hub. When enabled, the
     // server verifies the HMAC-SHA256 signature on X-CI-Hub-User before trusting
@@ -449,6 +455,28 @@ export const ConfigSchema = z.object({
       usersPerTurn: z.coerce.number().int().positive().default(1),
     }),
   }),
+  // The reflection loop — the appliance answering a personal question ON THE
+  // USER'S BEHALF from their own imported data (see AnswerInferenceListener).
+  // Everything it writes lands in ci.answers next to answers the user typed
+  // themselves, so the only thing separating a well-evidenced inference from a
+  // fabrication is the confidence the model reports and this floor.
+  reflection: z
+    .object({
+      /**
+       * Confidence below which NO answer is written at all — the question is
+       * left unanswered rather than filled with a guess.
+       *
+       * 0.4 is the bottom of the "inferred from indirect or partial evidence"
+       * band the model is scored against (see INFERRED_ANSWER_PROMPT_RULES);
+       * anything under it the prompt itself calls a guess. Raise it on an
+       * appliance whose owner wants only well-evidenced inferences; set it to 0
+       * to write whatever comes back, which is the pre-confidence behaviour and
+       * is not recommended — an unanswered question costs a blank card, a
+       * fabricated one costs the user's trust in every other answer on the page.
+       */
+      minAnswerConfidence: z.coerce.number().min(0).max(1).default(0.4),
+    })
+    .default({}),
   features: z.object({
     'scheduled.answer.inferencing': booleanStringSchema,
     'scheduled.connection.sync': booleanStringSchema,
@@ -462,9 +490,10 @@ export const ConfigSchema = z.object({
     /** The archive-import surface (/import): upload, run progress, the source catalogue and the guide. */
     'import.page': booleanStringSchema,
     /**
-     * Wholesale gate for the Prompts browse page (`/memory/questions`) and the
-     * Forecast tooltip link into Brief. `/insights` itself always redirects to
-     * `/brief`; this flag does not hide Brief.
+     * Wholesale gate for the Reflections browse page (`/memory/reflections`,
+     * formerly `/memory/questions`) and the Forecast tooltip link into Brief.
+     * `/insights` itself always redirects to `/brief`; this flag does not hide
+     * Brief.
      */
     'insights.page': booleanStringSchema,
     /** Wholesale gate for the Chat page (/chat + nav entry points). */

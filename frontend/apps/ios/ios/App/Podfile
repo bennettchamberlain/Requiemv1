@@ -1,0 +1,57 @@
+require_relative '../../node_modules/@capacitor/ios/scripts/pods_helpers'
+
+platform :ios, '15.0'
+use_frameworks!
+
+# workaround to avoid Xcode caching of Pods that requires
+# Product -> Clean Build Folder after new Cordova plugins installed
+# Requires CocoaPods 1.6 or newer
+install! 'cocoapods', :disable_input_output_paths => true
+
+# The block below is GENERATED -- do not hand-edit. `cap sync ios` rewrites everything
+# between the method definition and its `end` from the installed Capacitor plugins,
+# deriving each pod name from the package name (`@ci/capacitor-speech` ->
+# `CiCapacitorSpeech`) and each path from node_modules. Comments and hand-added `pod`
+# lines inside it are lost on the next sync. To change what lands there, change the
+# plugin package (its `name`, its `capacitor.ios.src`, or its podspec filename) -- see
+# CiCapacitorLocalHub.podspec. The `target`/`post_install` sections below are outside the
+# block and ARE preserved.
+#
+# Two things about the generator are worth knowing before editing this file. It splices
+# on the literal method-definition text, so a comment that merely quotes that text is
+# treated as the start of the block and corrupts the file. And it emits the *resolved*
+# path: the `@ci/*` plugins are declared with Yarn's `portal:` protocol, so their
+# node_modules entries are symlinks and the generated lines point straight at
+# ../../../../packages/<name> -- CocoaPods compiles the working-tree Swift, with no
+# reinstall between a source edit and a build.
+def capacitor_pods
+  pod 'Capacitor', :path => '../../node_modules/@capacitor/ios'
+  pod 'CapacitorCordova', :path => '../../node_modules/@capacitor/ios'
+  pod 'CapacitorCommunitySqlite', :path => '../../node_modules/@capacitor-community/sqlite'
+  pod 'CapacitorApp', :path => '../../node_modules/@capacitor/app'
+  pod 'CapacitorBrowser', :path => '../../node_modules/@capacitor/browser'
+  pod 'CapacitorCamera', :path => '../../node_modules/@capacitor/camera'
+  pod 'CapacitorLocalNotifications', :path => '../../node_modules/@capacitor/local-notifications'
+  pod 'CapacitorPushNotifications', :path => '../../node_modules/@capacitor/push-notifications'
+  pod 'CapacitorSplashScreen', :path => '../../node_modules/@capacitor/splash-screen'
+  pod 'CapacitorStatusBar', :path => '../../node_modules/@capacitor/status-bar'
+  pod 'CiCapacitorLocalHub', :path => '../../../../packages/capacitor-local-hub'
+  pod 'CiCapacitorSpeech', :path => '../../../../packages/capacitor-speech'
+  pod 'PowersyncCapacitor', :path => '../../node_modules/@powersync/capacitor'
+  pod 'CapacitorSecureStoragePlugin', :path => '../../node_modules/capacitor-secure-storage-plugin'
+end
+
+target 'App' do
+  capacitor_pods
+  # Add your Pods here
+end
+
+post_install do |installer|
+  assertDeploymentTarget(installer)
+  # Xcode 26 / the iOS 26 SDK dropped iOS 14; force every pod target to the App minimum (15.0).
+  installer.pods_project.targets.each do |t|
+    t.build_configurations.each do |c|
+      c.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+    end
+  end
+end

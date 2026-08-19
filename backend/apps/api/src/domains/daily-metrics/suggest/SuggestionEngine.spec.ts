@@ -16,7 +16,6 @@ import {
   type MetricValues,
 } from '../types';
 
-
 import { SuggestionEngine } from './SuggestionEngine';
 
 const USER = '00000000-0000-0000-0000-0000000000aa';

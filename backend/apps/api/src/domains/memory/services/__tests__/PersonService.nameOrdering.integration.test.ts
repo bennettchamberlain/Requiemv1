@@ -39,7 +39,6 @@ const availability = databaseAvailability(ENV);
 const describeWithDb = availability.available ? describe : describe.skip;
 
 if (!availability.available) {
-   
   console.warn(`[PersonService.nameOrdering.integration] SKIPPED — ${availability.reason}`);
 }
 

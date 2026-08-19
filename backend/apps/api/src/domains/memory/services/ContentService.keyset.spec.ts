@@ -46,6 +46,7 @@ function makeService(rows: Array<{ id: string }> = []) {
 
     return qb;
   });
+  qb.leftJoin = jest.fn(() => qb);
   qb.getRawMany = jest.fn(async () => rows);
 
   const contentRepository = { createQueryBuilder: jest.fn(() => qb) };
@@ -109,9 +110,38 @@ describe('ContentService.getEntitiesForContents keyset paging', () => {
 
     expect(recorded.wheres.map((where) => where.sql)).toEqual([
       'content.user_id = :userId',
+      // Media rows belonging to a soft-deleted event are hidden alongside it.
+      '(content.event_id IS NULL OR content_event.is_deleted = false)',
       'content.created_at >= :startTime',
       'content.created_at <= :endTime',
       '(content.created_at < :afterTime OR (content.created_at = :afterTime AND content.id < :afterId))',
     ]);
+  });
+});
+
+/**
+ * VIEW-01. A content row carrying an `event_id` is a facet of an event the
+ * browse already returns — on the QA appliance all 11,211 of them are
+ * `type='media'` pointing at the very binary their event renders. Because
+ * content is ordered by `created_at` (import time), every one of them also sat
+ * ahead of the entire real timeline. The browse drops them; nothing else does.
+ */
+describe('ContentService.getEntitiesForContents excludeEventLinked', () => {
+  const EVENT_LINKED = 'content.event_id IS NULL';
+
+  it('adds the event_id IS NULL predicate when asked', async () => {
+    const { service, recorded } = makeService();
+
+    await service.getEntitiesForContents(CONTEXT, { excludeEventLinked: true });
+
+    expect(recorded.wheres.map((where) => where.sql)).toContain(EVENT_LINKED);
+  });
+
+  it('adds nothing when not asked, so search and type filters keep every row', async () => {
+    const { service, recorded } = makeService();
+
+    await service.getEntitiesForContents(CONTEXT, {});
+
+    expect(recorded.wheres.map((where) => where.sql)).not.toContain(EVENT_LINKED);
   });
 });

@@ -77,9 +77,7 @@ vi.mock('../DropZone', () => ({
       </button>
       <button
         type="button"
-        onClick={() =>
-          onFiles(Array.from({ length: 60 }, (_, i) => new File(['x'], `part-${i}.mp4`)))
-        }
+        onClick={() => onFiles(Array.from({ length: 60 }, (_, i) => new File(['x'], `part-${i}.mp4`)))}
       >
         drop many
       </button>
@@ -264,7 +262,9 @@ describe('ExportStep', () => {
       stages: ['unpack', 'parse', 'media'],
       declaredSources: ['spotify'],
     });
-    await waitFor(() => expect(onRunsStarted).toHaveBeenCalledWith('spotify', ['run-drop-chatgpt-export.zip']));
+    await waitFor(() =>
+      expect(onRunsStarted).toHaveBeenCalledWith('spotify', ['run-drop-chatgpt-export.zip']),
+    );
     // One row, named for the archive it became.
     expect(screen.getByText('chatgpt-export.zip')).toBeInTheDocument();
   });

@@ -2,6 +2,7 @@ import type { StagedItem } from '../../entities/StagedItemEntity';
 import {
   destinationsFor,
   discordAttachmentFilename,
+  edgeProjectionSourcesFor,
   discordAttachmentUrls,
   isAttachmentPlaceholderOnly,
   isDiscordAttachmentOnly,
@@ -87,6 +88,18 @@ describe('kindFor', () => {
     // classification alone cannot pick the kind.
     expect(kindFor('media', 'image/jpeg')).toBe('capture.photo');
     expect(kindFor('media', 'video/mp4')).toBe('capture.video');
+  });
+
+  it('does not call a non-media MIME a photo just because the classification says "media"', () => {
+    // The Instagram HTML importer used to stamp 'media' on text/plain entries
+    // that carried no file at all; the photo default turned each into a
+    // capture.photo event with no photo behind it (six in the live database).
+    // A present, non-media mimetype is a statement about the bytes and beats a
+    // coarse classification label.
+    expect(kindFor('media', 'text/plain')).toBe('import.archive_item');
+    expect(kindFor('media', 'application/pdf')).toBe('import.archive_item');
+    // No MIME at all still defaults to photo, as it always has.
+    expect(kindFor('media', null)).toBe('capture.photo');
   });
 
   it('maps the messaging classifications apart rather than into one bucket', () => {
@@ -471,5 +484,42 @@ describe('Discord attachments', () => {
       expect(rec.description).toBe('the real message');
       expect(isAttachmentPlaceholderOnly(rec)).toBe(false);
     });
+  });
+});
+
+describe('edgeProjectionSourcesFor', () => {
+  /**
+   * The seam between two vocabularies that were named independently: the
+   * import's `Destination` and the deterministic-edge matrix's
+   * `DeterministicEdgeSource`. A wrong pair here is silent — the listener drops
+   * the unknown string and the leg is simply never kicked — so every pair is
+   * pinned by name rather than by a round-trip through a map.
+   */
+  it('maps each edge-bearing destination to the matrix source spelling', () => {
+    expect(edgeProjectionSourcesFor(['communications'])).toEqual(['communications']);
+    expect(edgeProjectionSourcesFor(['events'])).toEqual(['events']);
+    expect(edgeProjectionSourcesFor(['content'])).toEqual(['content']);
+    expect(edgeProjectionSourcesFor(['inventory'])).toEqual(['inventory']);
+    // The one that is NOT the destination's own name.
+    expect(edgeProjectionSourcesFor(['position'])).toEqual(['positions']);
+  });
+
+  it('maps browser_activity to nothing — the matrix has no rule over that table', () => {
+    expect(edgeProjectionSourcesFor(['browser_activity'])).toEqual([]);
+  });
+
+  it('returns an empty list rather than a full scope for a push with no edge sources', () => {
+    // The caller must read this as "request nothing". A scope-less payload
+    // would read to the listener as "every source", turning a
+    // browser-activity-only import into a full-corpus projection pass.
+    expect(edgeProjectionSourcesFor([])).toEqual([]);
+  });
+
+  it('deduplicates and orders stably, so repeated pushes make identical requests', () => {
+    expect(edgeProjectionSourcesFor(['content', 'communications', 'content', 'events'])).toEqual([
+      'communications',
+      'events',
+      'content',
+    ]);
   });
 });

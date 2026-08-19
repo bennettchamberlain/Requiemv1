@@ -140,10 +140,32 @@ async def _rollup_summary(
     )
 
     if not child_summaries:
-        raise ValueError(
-            f"No {child_period_type} summaries found for {period_type} aggregation: "
-            f"{start_iso} to {end_iso}"
+        # An empty window is a routine state, not a failure. The rollup crons
+        # fire on the calendar (daily 00:10, weekly Monday, monthly the 1st)
+        # regardless of whether the child cadence produced anything, so a
+        # quiet day — a powered-off appliance, a fresh install, no captured
+        # activity — has no hourly summaries to aggregate. Raising here spent
+        # the pg-boss retry budget and left a dead letter every single time,
+        # which buries the failures that actually mean something.
+        #
+        # Skipped is reported as a successful run with `skipped` set, the same
+        # shape dossier_refresh uses; the next window is unaffected because
+        # nothing was written.
+        logger.info(
+            f"{period_type}_summary_skipped",
+            user_id=user_id[:8],
+            reason="no_child_summaries",
+            child_period_type=child_period_type,
+            start=start_iso,
+            end=end_iso,
         )
+
+        return {
+            "summary_id": None,
+            "summary_type": period_type,
+            "skipped": "no_summaries",
+            f"num_{child_period_type}_summaries": 0,
+        }
 
     summary_data = await generate_rollup_summary_activity(period_type, child_summaries)
     summary_id = await store_summary_activity(
@@ -231,7 +253,21 @@ async def dossier_refresh(
     hourly_summaries = summaries.get("hourly", [])
 
     if not daily_summaries and not hourly_summaries:
-        raise ValueError("No summaries found for dossier generation")
+        # Same "no input yet" case as the rollups, but this one recurs hourly:
+        # PythonFunctionCrons.dossierRefresh fans out at :12 every hour for
+        # every onboarded user with no precondition, while hourly summaries
+        # only run at :05. An appliance with a quiet hour therefore hit this
+        # raise as a matter of routine — 19 dead letters on the QA box, one
+        # per hour, forever. Nothing about the retry changes the input.
+        logger.info(
+            "dossier_refresh_skipped",
+            user_id=user_id[:8],
+            reason="no_summaries",
+            lookback_days=lookback_days,
+            end=end_iso,
+        )
+
+        return {"entity_id": entity_id, "dossier": None, "skipped": "no_summaries"}
 
     dossier = await generate_dossier_activity(
         user_id,

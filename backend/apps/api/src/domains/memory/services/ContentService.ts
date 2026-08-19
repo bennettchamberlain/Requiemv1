@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, In, Repository, type WhereExpressionBuilder } from 'typeorm';
+import {
+  Brackets,
+  Repository,
+  type ObjectLiteral,
+  type SelectQueryBuilder,
+  type WhereExpressionBuilder,
+} from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/context';
@@ -19,6 +25,7 @@ import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next'
 import { ContentBaseEntity } from '../entities/ContentBaseEntity';
 import { Content, ContentEntity } from '../entities/ContentEntity';
 import { EventEntity } from '../entities/EventEntity';
+import { classifyExternalId } from '../externalIdKind';
 import { CreateContentDto, SearchContentDto, UpdateContentDto } from '../types';
 
 import { CtiAggregate } from './CtiAggregate';
@@ -91,7 +98,22 @@ export class ContentService {
     return this.aggregate.composeMany(entities, (entity, base) => ContentEntity.toEgressType(entity, base));
   }
 
-  /** Map a CreateContentDto onto ContentEntity columns (title stays on the base row). */
+  /**
+   * Map a CreateContentDto onto ContentEntity columns (title stays on the base
+   * row).
+   *
+   * `external_id_kind` is stamped HERE, not by the callers, because this is the
+   * one choke point every write path funnels through: `create` (GraphQL
+   * createContent, ETL transforms) and `createManyDetailed` (the importer's
+   * PushStage, the /v1/contents bulk plane, GraphQL createContents) both build
+   * their entities from this method. A caller that knows what it is writing
+   * still wins — the importer stamps 'file' for an uploaded blob and
+   * 'external_uri' for a source URI, and the ETL transforms stamp
+   * SOURCE_NATIVE_EXTERNAL_ID_KIND for a bare platform id that no shape test
+   * could recognise. Everything else falls back to `classifyExternalId`, so a
+   * write path nobody has updated (and any future one) still produces a
+   * classified row instead of depending on the next backfill migration.
+   */
   private toDetailFields(
     item: CreateContentDto,
     id: string,
@@ -105,7 +127,7 @@ export class ContentService {
       url: item.url ?? undefined,
       mimetype: item.mimetype ?? undefined,
       externalId: item.external_id ?? undefined,
-      externalIdKind: item.external_id_kind ?? undefined,
+      externalIdKind: item.external_id_kind ?? classifyExternalId(item.external_id) ?? undefined,
       sourceUrl: item.source_url ?? undefined,
       sourceData: item.source_data ?? undefined,
       sourceType: item.source_type ?? undefined,
@@ -479,17 +501,33 @@ export class ContentService {
     };
   }
 
+  /**
+   * Hides content that only exists as the media plumbing of a tombstoned event.
+   *
+   * A photo/video event carries its binary through a `ci.content` row
+   * (type='media'), and that row is indexed in its own right. Deleting the event
+   * is a soft delete (see {@link EventService.remove}), so the FK never fires
+   * and the content row would otherwise keep showing the deleted photo in the
+   * explorer. The LEFT JOIN keeps standalone content (`event_id IS NULL`)
+   * visible, and restoring the event brings its media back with it.
+   */
+  private excludeDeletedEventMedia<T extends ObjectLiteral>(
+    query: SelectQueryBuilder<T>,
+    alias: string,
+  ): SelectQueryBuilder<T> {
+    return query
+      .leftJoin(EventEntity, `${alias}_event`, `${alias}_event.event_id = ${alias}.event_id`)
+      .andWhere(`(${alias}.event_id IS NULL OR ${alias}_event.is_deleted = false)`);
+  }
+
   async findById(context: ServiceContext, id: string): Promise<Content | null> {
-    const result = await this.contentRepository.findOne({
-      where: {
-        id,
-        ...(context.userId !== SYSTEM_USER && {
-          user: {
-            id: context.userId,
-          },
-        }),
-      },
-    });
+    let query = this.contentRepository.createQueryBuilder('content').where('content.id = :id', { id });
+
+    if (context.userId !== SYSTEM_USER) {
+      query = query.andWhere('content.user_id = :userId', { userId: context.userId });
+    }
+
+    const result = await this.excludeDeletedEventMedia(query, 'content').getOne();
 
     if (result == null) {
       return null;
@@ -501,16 +539,19 @@ export class ContentService {
   }
 
   async findByIds(context: ServiceContext, ids: string[]): Promise<(Content | null)[]> {
-    const result = await this.contentRepository.find({
-      where: {
-        id: In(ids),
-        ...(context.userId !== SYSTEM_USER && {
-          user: {
-            id: context.userId,
-          },
-        }),
-      },
-    });
+    if (ids.length === 0) {
+      return [];
+    }
+
+    let query = this.contentRepository
+      .createQueryBuilder('content')
+      .where('content.id IN (:...ids)', { ids });
+
+    if (context.userId !== SYSTEM_USER) {
+      query = query.andWhere('content.user_id = :userId', { userId: context.userId });
+    }
+
+    const result = await this.excludeDeletedEventMedia(query, 'content').getMany();
 
     const contents = await this.composeMany(result);
     const map = new Map(contents.map((content) => [content.id, content]));
@@ -521,6 +562,20 @@ export class ContentService {
   /**
    * Lightweight identifiers for the most-recent content, for the unified
    * search/explorer feed. Full entities are batch-resolved downstream.
+   *
+   * `excludeEventLinked` drops every row carrying an `event_id`. Such a row is
+   * a FACET of an event the same feed already returns, not a separate memory:
+   * on the QA appliance all 11,211 event-linked content rows are `type='media'`
+   * and each one points at the very binary its event renders, so the browse
+   * showed every photo twice — and, because content is ordered by `created_at`,
+   * showed both copies ahead of the real timeline (all 11,211 were written after
+   * the newest genuinely-dated memory). The event carries a real `start_time`;
+   * the content row carries only the import's write time. Keeping the event and
+   * dropping the facet loses nothing and un-buries the timeline.
+   *
+   * Applied only by the chronological browse. Query, tag and type-filtered
+   * searches still return these rows — a user who searches for a photo, or
+   * filters to Content, must still find it.
    */
   async getEntitiesForContents(
     context: ServiceContext,
@@ -531,12 +586,21 @@ export class ContentService {
       afterTime?: Date;
       afterId?: string;
       order?: 'ASC' | 'DESC';
+      /** Drop rows that belong to an event (see the method docstring). */
+      excludeEventLinked?: boolean;
     } = {},
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
-    let query = this.contentRepository
-      .createQueryBuilder('content')
-      .select('content.id', 'id')
-      .where('content.user_id = :userId', { userId: context.userId });
+    let query = this.excludeDeletedEventMedia(
+      this.contentRepository
+        .createQueryBuilder('content')
+        .select('content.id', 'id')
+        .where('content.user_id = :userId', { userId: context.userId }),
+      'content',
+    );
+
+    if (options.excludeEventLinked) {
+      query = query.andWhere('content.event_id IS NULL');
+    }
 
     if (options.startTime) {
       query = query.andWhere('content.created_at >= :startTime', { startTime: options.startTime });
@@ -575,11 +639,18 @@ export class ContentService {
    */
   async countEntitiesForContents(
     context: ServiceContext,
-    options: { startTime?: Date; endTime?: Date },
+    options: { startTime?: Date; endTime?: Date; excludeEventLinked?: boolean },
   ): Promise<number> {
-    let query = this.contentRepository
-      .createQueryBuilder('content')
-      .where('content.user_id = :userId', { userId: context.userId });
+    let query = this.excludeDeletedEventMedia(
+      this.contentRepository
+        .createQueryBuilder('content')
+        .where('content.user_id = :userId', { userId: context.userId }),
+      'content',
+    );
+
+    if (options.excludeEventLinked) {
+      query = query.andWhere('content.event_id IS NULL');
+    }
 
     if (options.startTime) {
       query = query.andWhere('content.created_at >= :startTime', { startTime: options.startTime });
@@ -708,6 +779,14 @@ export class ContentService {
 
     if (data.external_id_kind !== undefined) {
       updateData.externalIdKind = data.external_id_kind;
+    } else if (data.external_id !== undefined) {
+      // The kind describes the external_id it was derived from, so an update
+      // that replaces external_id without saying the kind must re-derive it --
+      // carrying the old classification forward would leave a row asserting
+      // 'file' about a value that is now a source URI (or the reverse). When the
+      // new value fits neither shape the honest answer is NULL (unclassified),
+      // not the stale one.
+      updateData.externalIdKind = classifyExternalId(data.external_id) ?? null;
     }
 
     if (data.source_url !== undefined) {

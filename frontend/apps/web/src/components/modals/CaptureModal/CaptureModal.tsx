@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Camera } from '@ci/capture';
 import { fetchJson, useDeviceLayout } from '@ci/common';
 import { Dialog, cn, IconButton, Popover, useToast } from '@ci/shadcn';
-import { Send, Settings, X } from '@ci/shadcn/icons';
+import { Send, Settings, X, Images } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 
 import { useUploadFile } from '@/api';
@@ -12,6 +12,7 @@ import { Chat, type FormData } from '@/components/Chat';
 import { InlineModal } from '@/components/InlineModal';
 import { ModelSelector } from '@/components/ModelSelector';
 import { useAuth, useChatRequester, useModel } from '@/hooks';
+import { pickPhotosFromLibrary } from '@/lib/pickPhotosFromLibrary';
 import { getMediaType } from '@/lib/utils';
 
 interface Props {
@@ -195,6 +196,14 @@ export function CaptureModal({ open = false, onClose }: Props) {
     [ensureImageModelSupported, selectedModel, toast, upload],
   );
 
+  const handleLibraryPick = useCallback(async () => {
+    const picked = await pickPhotosFromLibrary({ multiple: true });
+
+    for (const file of picked) {
+      await handleCapturedMedia(file, 'photo');
+    }
+  }, [handleCapturedMedia]);
+
   const createFileThread = useCallback(async () => {
     const thread = await fetchJson<Thread>('/api/threads', {
       method: 'POST',
@@ -280,6 +289,14 @@ export function CaptureModal({ open = false, onClose }: Props) {
         <InlineModal open={open} onClose={handleClose} className="fixed">
           <div className="absolute top-[env(safe-area-inset-top)] right-0 z-10">
             <div className="flex-1 text-right text-white">
+              <IconButton
+                label="Choose from library"
+                variant="ghost"
+                size="icon"
+                onClick={() => void handleLibraryPick()}
+              >
+                <Images />
+              </IconButton>
               <IconButton label={t('COMMON_CLOSE')} variant="ghost" size="icon" onClick={handleClose}>
                 <X />
               </IconButton>
@@ -358,6 +375,15 @@ export function CaptureModal({ open = false, onClose }: Props) {
         <Dialog.Header className="flex flex-row items-center justify-between border-b bg-stone-50 dark:bg-secondary rounded-t-lg gap-2 p-2 pl-4">
           <Dialog.Title className="flex-1">Upload Images and Videos</Dialog.Title>
           <Dialog.Description className="hidden">Capture audio or video and upload to CI</Dialog.Description>
+
+          <IconButton
+            label="Choose from library"
+            variant="ghost"
+            size="icon"
+            onClick={() => void handleLibraryPick()}
+          >
+            <Images />
+          </IconButton>
 
           <ModelSelector withToggles visionOnly />
 

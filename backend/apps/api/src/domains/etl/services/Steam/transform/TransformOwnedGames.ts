@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { toServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { type Connection } from '@ci/domains/connections';
-import { ContentService, EventService } from '@ci/domains/memory';
+import { ContentService, EventService, SOURCE_NATIVE_EXTERNAL_ID_KIND } from '@ci/domains/memory';
 
 import { ConnectionSyncJob } from '../../../types';
 
@@ -81,6 +81,7 @@ export class SteamOwnedGamesTransformService {
               url: `https://store.steampowered.com/app/${game.appid}`,
               ...(iconUrl ? { source_url: iconUrl } : {}),
               external_id: String(game.appid),
+              external_id_kind: SOURCE_NATIVE_EXTERNAL_ID_KIND,
               source_data: {
                 appid: game.appid,
                 playtime_forever: game.playtime_forever,

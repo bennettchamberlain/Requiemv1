@@ -2,6 +2,7 @@
    Consolidated minimal importer: fetches messages with basic metadata, timeframe filtering.
 */
 import fs from 'fs';
+import { stat } from 'node:fs/promises';
 import path from 'path';
 
 import Database from 'better-sqlite3';
@@ -116,8 +117,12 @@ class iMessageFileImporter implements FileImporter {
     ];
 
     for (const dbPath of chatDbPaths) {
-      if (fs.existsSync(dbPath)) {
+      try {
+        await stat(dbPath);
+
         return { confidence: 0.9 };
+      } catch {
+        /* not present */
       }
     }
 
@@ -184,6 +189,22 @@ class iMessageFileImporter implements FileImporter {
         { identifier: string | null; displayName: string | null; participants: string[] }
       >();
       const chatIdByMessage = new Map<number, number>();
+      /**
+       * Handles that iMessage itself uses as the identifier of a 1:1 chat —
+       * `chat.chat_identifier` equal to the chat's single other participant.
+       *
+       * This is the evidence the thread fallback below needs. A message with no
+       * `chat_message_join` row has no conversation of its own, but if its
+       * correspondent is a handle that IS a 1:1 chat identifier in this same
+       * database, then the thread it belongs to is not a guess — it is a chat
+       * that demonstrably exists, under the exact key its other messages
+       * already use. When the correspondent is NOT such an identifier the
+       * message might equally be an orphaned group message, so nothing is
+       * invented and the thread stays empty. On the live corpus that splits
+       * 45,280 chat-less rows into 8,099 recoverable and 37,181 that honestly
+       * cannot be placed.
+       */
+      const oneToOneChatIdentifiers = new Set<string>();
       try {
         const chatRows = db
           .prepare(
@@ -220,6 +241,16 @@ class iMessageFileImporter implements FileImporter {
           .prepare('SELECT message_id, chat_id FROM chat_message_join')
           .iterate() as Iterable<{ message_id: number; chat_id: number }>) {
           chatIdByMessage.set(r.message_id, r.chat_id);
+        }
+
+        for (const entry of chatById.values()) {
+          if (
+            entry.identifier &&
+            entry.participants.length === 1 &&
+            entry.participants[0] === entry.identifier
+          ) {
+            oneToOneChatIdentifiers.add(entry.identifier);
+          }
         }
       } catch (e) {
         // Older / partial chat.db dumps (and test fixtures) may not have these
@@ -320,6 +351,18 @@ class iMessageFileImporter implements FileImporter {
               ? chat.participants.filter((p) => p !== senderHandle)
               : chat.participants.slice()
             : [];
+          // The conversation grouping key. `chat.chat_identifier` is Apple's
+          // own stable per-conversation id and is used whenever the message has
+          // a chat. When it does NOT — no chat_message_join row — the only
+          // other evidence is the correspondent handle, and it is trusted only
+          // when iMessage itself already uses that handle as a 1:1 chat
+          // identifier (see oneToOneChatIdentifiers). Anything else stays
+          // undefined rather than risk filing an orphaned group message into
+          // one participant's private thread.
+          const correspondent = row.contact_id ?? null;
+          const threadIdentifier =
+            chat?.identifier ??
+            (correspondent && oneToOneChatIdentifiers.has(correspondent) ? correspondent : undefined);
           const item: Item = {
             id: row.guid ? row.guid : `imessage_${row.message_id}`,
             classification: 'message',
@@ -333,14 +376,32 @@ class iMessageFileImporter implements FileImporter {
               ...(senderHandle && { Sender: senderHandle }),
               // Prefer the resolved chat participant list (handles group chats
               // and outbound recipients). Fall back to the row-level partner
-              // handle only when chat tables are missing, so older / stripped
+              // handle whenever that list came back EMPTY, so older / stripped
               // dumps still record the 1:1 recipient on outbound messages.
+              //
+              // The fallback used to be gated on `!chat` as well, which made it
+              // unreachable in the case it most needed to cover: a chat row that
+              // exists but whose `chat_handle_join` rows do not (a partial
+              // export, an iOS backup that dropped the join table, a chat whose
+              // membership Apple never wrote). `recipients` is then `[]`, the
+              // first branch does not fire, and `!chat` blocked the second — so
+              // the message reached ci.communications naming nobody at all.
+              // `recipients.length` already encodes "the chat told us nothing",
+              // so the extra clause only ever suppressed a recipient we had.
+              // The branches stay mutually exclusive, so `To` can never
+              // duplicate a handle already listed in `Recipients`.
               ...(recipients.length
                 ? { Recipients: recipients }
-                : !chat && row.is_from_me === 1 && row.contact_id
+                : row.is_from_me === 1 && row.contact_id
                   ? { To: row.contact_id }
                   : {}),
               ...(chat?.identifier && { ChatId: chat.identifier }),
+              // ChatId is display metadata; push/inputs.ts toCommunicationInput
+              // only reads ThreadId (then Thread/Conversation/MessageID) to
+              // populate ci.communications.thread_id, so without this key every
+              // iMessage row landed with thread_id NULL despite chat.db
+              // carrying a perfectly good conversation id.
+              ...(threadIdentifier && { ThreadId: threadIdentifier }),
               ...(chat?.displayName && { GroupName: chat.displayName }),
               ...(row.date_read && { ReadAt: parseCocoaDate(row.date_read).toISOString() }),
               ...(row.date_delivered && { DeliveredAt: parseCocoaDate(row.date_delivered).toISOString() }),
@@ -350,13 +411,39 @@ class iMessageFileImporter implements FileImporter {
           graph = { item, edges: [] };
           pending[row.message_id] = graph;
 
-          // Link the message to its conversation partner so the graph view has a
-          // real item↔entity edge. handle.id is the other party (phone/email)
-          // regardless of direction; direction is recorded on the edge metadata.
-          if (row.contact_id) {
+          // Link the message to its conversation counterpart(s) so the graph
+          // view has a real item↔entity edge, and so PushStage's
+          // `resolveCorrespondents` can fill from_entity_id / to_entity_ids at
+          // push time instead of leaving the row to a later linking sweep.
+          //
+          // `handle.id` is the OTHER party — but only on inbound. Outbound rows
+          // have `message.handle_id` NULL (the owner has no handle row), so
+          // `row.contact_id` is usually null there and staging edges off it
+          // alone left every message the owner ever sent pointing at nobody:
+          // 16,325 outbound iMessages in the live corpus reached
+          // ci.communications with from_entity_id NULL *and* to_entity_ids
+          // empty. On outbound the recipients are the chat participants — the
+          // same list `Recipients` already carries — so stage one edge each.
+          //
+          // Deliberately only the outbound side fans out. On inbound the SENDER
+          // must be the first `participant` edge (resolveCorrespondents reads
+          // `others[0]` as the sender), and the rest of a group's membership are
+          // this message's recipients, which `Recipients` already reports.
+          const counterparts =
+            row.is_from_me === 1
+              ? // Union, deduped: `recipients` is authoritative, and
+                // `row.contact_id` is the 1:1 partner some exports still put on
+                // the outbound row. Both are handles read straight from
+                // chat.db, so neither invents a participant.
+                Array.from(new Set([...recipients, ...(row.contact_id ? [row.contact_id] : [])]))
+              : row.contact_id
+                ? [row.contact_id]
+                : [];
+
+          for (const handle of counterparts) {
             graph.edges!.push({
               relation: 'participant',
-              to: { entity: contactEntity(row.contact_id) },
+              to: { entity: contactEntity(handle) },
               metadata: { direction: row.is_from_me === 1 ? 'outgoing' : 'incoming' },
             });
           }
