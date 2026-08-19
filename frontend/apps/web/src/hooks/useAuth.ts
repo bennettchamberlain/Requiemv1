@@ -6,6 +6,8 @@ import {
   createHookContext,
   fetchJson,
   FetchJsonError,
+  getLaunchUrl,
+  isIosPlatform,
   isNativePlatform,
   parseOidcCallbackUrl,
   secureStorageGet,
@@ -473,17 +475,19 @@ function useAuth(): ReturnValue {
 
   // Native only: complete "Sign in with CI Portal" when the system browser redirects
   // back into the app via the `companion://oidc/callback?...` deep link. Unrelated
-  // deep links (other schemes/paths) parse to null and are ignored.
+  // deep links (other schemes/paths) parse to null and are ignored. iOS often
+  // cold-starts from Safari's "Open with Companion", so we also consume
+  // `getLaunchUrl` there — web and Android keep the live listener only.
   useEffect(() => {
     if (!isNativePlatform()) {
       return;
     }
 
     let unsubscribe = () => {};
-
     let cancelled = false;
+    const seenCodes = new Set<string>();
 
-    void addAppUrlOpenListener((url) => {
+    const handleUrl = (url: string) => {
       const params = parseOidcCallbackUrl(url);
 
       if (!params) {
@@ -496,6 +500,11 @@ function useAuth(): ReturnValue {
         return;
       }
 
+      if (seenCodes.has(params.code)) {
+        return;
+      }
+
+      seenCodes.add(params.code);
       const { code } = params;
 
       void (async () => {
@@ -514,13 +523,25 @@ function useAuth(): ReturnValue {
           setLoginError(err);
         }
       })();
-    }).then((cleanup) => {
+    };
+
+    void (async () => {
+      if (isIosPlatform()) {
+        const launched = await getLaunchUrl();
+
+        if (!cancelled && launched) {
+          handleUrl(launched);
+        }
+      }
+
+      const cleanup = await addAppUrlOpenListener(handleUrl);
+
       if (cancelled) {
         cleanup();
       } else {
         unsubscribe = cleanup;
       }
-    });
+    })();
 
     return () => {
       cancelled = true;

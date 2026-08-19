@@ -9,6 +9,7 @@ export {
   buildApiUrl,
   getApiBaseUrl,
   initApiBaseUrl,
+  isIosPlatform,
   isNativePlatform,
   persistApiBaseUrl,
   setApiBaseUrl,

@@ -448,4 +448,82 @@ describe('useAuth', () => {
     expect(result.current[0].authToken).toBeNull();
     expect(refreshCalls).toBe(1);
   });
+
+  it('iOS: finishes Memory OIDC from getLaunchUrl after a Safari cold start', async () => {
+    const getLaunchUrl = vi.fn(async () => ({ url: 'companion://oidc/callback?code=otc-ios' }));
+    const addListener = vi.fn(async () => ({ remove: async () => undefined }));
+    const secureStore = new Map<string, string>();
+
+    (window as unknown as { Capacitor?: unknown }).Capacitor = {
+      isNativePlatform: () => true,
+      getPlatform: () => 'ios',
+      Plugins: {
+        App: { getLaunchUrl, addListener },
+        SecureStoragePlugin: {
+          get: vi.fn(async ({ key }: { key: string }) => {
+            if (!secureStore.has(key)) {
+              throw new Error('not found');
+            }
+
+            return { value: secureStore.get(key) };
+          }),
+          set: vi.fn(async ({ key, value }: { key: string; value: string }) => {
+            secureStore.set(key, value);
+
+            return { value: true };
+          }),
+          remove: vi.fn(async () => ({ value: true })),
+        },
+      },
+    };
+
+    const fetchMock = setFetch((url) => {
+      if (url.endsWith('/api/authenticate/oidc/native/exchange')) {
+        return jsonResponse({ accessToken: 'native-jwt' });
+      }
+
+      if (url.endsWith('/api/keys')) {
+        return jsonResponse({ id: 'key-1', key: 'stored-api-key' });
+      }
+
+      return emptyResponse();
+    });
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => expect(result.current[0].authenticated).toBe(true));
+    expect(getLaunchUrl).toHaveBeenCalled();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/api/authenticate/oidc/native/exchange'))).toBe(
+      true,
+    );
+    expect(secureStore.get('ci.apiKey')).toBe('stored-api-key');
+  });
+
+  it('Android: does not consume getLaunchUrl for Memory OIDC', async () => {
+    const getLaunchUrl = vi.fn(async () => ({ url: 'companion://oidc/callback?code=otc-android' }));
+    const addListener = vi.fn(async () => ({ remove: async () => undefined }));
+
+    (window as unknown as { Capacitor?: unknown }).Capacitor = {
+      isNativePlatform: () => true,
+      getPlatform: () => 'android',
+      Plugins: {
+        App: { getLaunchUrl, addListener },
+        SecureStoragePlugin: {
+          get: vi.fn(async () => {
+            throw new Error('not found');
+          }),
+          set: vi.fn(async () => ({ value: true })),
+          remove: vi.fn(async () => ({ value: true })),
+        },
+      },
+    };
+
+    setFetch(() => emptyResponse());
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => expect(result.current[0].loading).toBe(false));
+    expect(getLaunchUrl).not.toHaveBeenCalled();
+    expect(result.current[0].authenticated).toBe(false);
+  });
 });
