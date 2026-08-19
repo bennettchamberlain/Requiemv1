@@ -1,5 +1,5 @@
 import { UseGuards } from '@nestjs/common';
-import { Args, Query, Resolver } from '@nestjs/graphql';
+import { Args, Int, Query, Resolver } from '@nestjs/graphql';
 import { type FindOptionsOrder } from 'typeorm';
 
 import { Context, type RequestContext, type UserServiceContext, toServiceContext } from '@ci/common/context';
@@ -41,6 +41,7 @@ import { FileChunkType } from '../types/FileChunkType';
 import { FileType } from '../types/FileType';
 import { GlobalUID } from '../types/GlobalUID';
 import { ItemType } from '../types/ItemType';
+import { MapPinsType } from '../types/MapPinType';
 import { NoteType } from '../types/NoteType';
 import { PersonType } from '../types/PersonType';
 import { PlaceType } from '../types/PlaceType';
@@ -66,6 +67,18 @@ const FETCH_MULTIPLIER = 4;
 // a single page is never truncated — the old 25 cap fell short of the 30-row
 // client page, capping plain-text search and disabling load-more.
 const QUERY_CANDIDATE_LIMIT = 300;
+/**
+ * Pin caps for the map read (`mapPins`).
+ *
+ * The map is capped by row count rather than paged: it draws a whole located
+ * set at once, and a pin is ~150 bytes on the wire against a hydrated search
+ * node's several kilobytes. Ten thousand covers a full personal library
+ * (measured: 11,297 located events on the QA appliance) in one ~630ms read; the
+ * hard ceiling keeps a pathological library from serialising unbounded.
+ * Truncation is reported (`MapPinsType.truncated`) rather than hidden.
+ */
+const MAP_PIN_DEFAULT_LIMIT = 10_000;
+const MAP_PIN_MAX_LIMIT = 20_000;
 
 /**
  * Types the unfiltered timed browse leaves OUT unless the caller names them in
@@ -235,6 +248,116 @@ export class SearchResolver {
     }
 
     return this.executeSearch(toServiceContext(context), input, { matchTags: true });
+  }
+
+  /**
+   * Every located event for the current filters, as map markers.
+   *
+   * The map used to render the explorer's `search` feed, whose page size is 30
+   * for every view: plotting a library of ten thousand located events took some
+   * three hundred and fifty presses of "Load more pins", and each press
+   * hydrated thirty full nodes to draw thirty dots. A map is not a feed — it
+   * shows a whole set at once, and the client clusters it — so this query
+   * returns the whole located set in one bounded read, projected down to a
+   * point and a label ({@link MapPinType}).
+   *
+   * Filter parity with `search` is deliberate and is why this lives on the
+   * search resolver rather than growing its own filter language:
+   *   - who / where / connector / when / activity go straight down to SQL
+   *     through the same {@link EventService} filters the timed search path uses;
+   *   - a free-text query and tags are resolved by the same search/tag services
+   *     `search` uses, then intersected in SQL via the `ids` filter.
+   * `hasLocation` is forced on regardless of input — an unlocated event has no
+   * pin — and the result is events-only, exactly as `?view=map` already was.
+   *
+   * `totalCount` is a real COUNT(*) of the matching located set, so a truncated
+   * response can say how much of the map it is showing instead of quietly
+   * drawing a partial world.
+   */
+  @Query(() => MapPinsType, {
+    description:
+      'Located events as map markers for the given filters. Events-only and located-only; ' +
+      'returns the whole matching set in one read (capped at ' +
+      `${MAP_PIN_MAX_LIMIT} pins), not a page.`,
+  })
+  async mapPins(
+    @Context() context: RequestContext,
+    @Args('input') input: SearchInput,
+    @Args('limit', { type: () => Int, nullable: true }) limit?: number,
+  ): Promise<MapPinsType> {
+    // Shared saved searches stay on the `search` feed: their result set is the
+    // owner's, resolved through runSharedSearch, and this query resolves the
+    // caller's own memories. Returning nothing here keeps the two from being
+    // silently crossed — the read-only viewer never calls it.
+    if (input.shareToken != null && input.shareToken.length > 0) {
+      return { pins: [], totalCount: 0, truncated: false };
+    }
+
+    const serviceContext = toServiceContext(context);
+    const pinLimit = Math.min(Math.max(limit ?? MAP_PIN_DEFAULT_LIMIT, 1), MAP_PIN_MAX_LIMIT);
+
+    // The map plots events. An entity-type filter that excludes them (e.g. the
+    // explorer narrowed to People) empties the map — the same outcome the
+    // events-only `search` path produces, surfaced without a round trip.
+    if (!this.matchesTypeFilter('event', input.includeTypes, input.excludeTypes)) {
+      return { pins: [], totalCount: 0, truncated: false };
+    }
+
+    const query = input.query != null && input.query.length > 0 ? input.query : undefined;
+    const tags = input.tags && input.tags.length > 0 ? input.tags : undefined;
+
+    // Free text and tags are candidate sets, not SQL predicates: resolve them
+    // with the same services `search` uses, then hand the surviving event ids to
+    // the SQL filter so both halves AND together (LifeScope parity).
+    let ids: string[] | undefined;
+
+    if (query != null) {
+      const identifiers = await this.searchByQuery(serviceContext, {
+        query,
+        includeTypes: input.includeTypes,
+        excludeTypes: input.excludeTypes,
+        semantic: input.semantic === true,
+        maxResults: Math.max(pinLimit, QUERY_CANDIDATE_LIMIT),
+      });
+
+      ids = identifiers.filter((identifier) => identifier.type === 'event').map(({ id }) => id);
+    }
+
+    if (tags != null) {
+      const tagged = await this.searchByTags(serviceContext, tags);
+      const taggedEventIds = new Set(
+        tagged.filter((identifier) => identifier.type === 'event').map(({ id }) => id),
+      );
+
+      ids = ids == null ? [...taggedEventIds] : ids.filter((id) => taggedEventIds.has(id));
+    }
+
+    const filters = {
+      startTime: input.startTime ? new Date(input.startTime) : undefined,
+      endTime: input.endTime ? new Date(input.endTime) : undefined,
+      eventTypes: input.eventTypes && input.eventTypes.length > 0 ? input.eventTypes : undefined,
+      connectors: input.connectors && input.connectors.length > 0 ? input.connectors : undefined,
+      people: input.people && input.people.length > 0 ? input.people : undefined,
+      places: input.places && input.places.length > 0 ? input.places : undefined,
+      bbox:
+        input.bbox && input.bbox.length === 4 && input.bbox.every((value) => Number.isFinite(value))
+          ? input.bbox
+          : undefined,
+      // Forced: a pin is a coordinate. See MapPinsType / findMapPins.
+      hasLocation: true,
+      ids,
+    };
+
+    const [pins, totalCount] = await Promise.all([
+      this.eventService.findMapPins(serviceContext, { ...filters, limit: pinLimit }),
+      this.eventService.countEntitiesForEvents(serviceContext, filters),
+    ]);
+
+    return {
+      pins: pins.map((pin) => ({ ...pin, id: GlobalUID.encode('event', pin.id) })),
+      totalCount,
+      truncated: pins.length < totalCount,
+    };
   }
 
   /**

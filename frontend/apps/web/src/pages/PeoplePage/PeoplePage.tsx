@@ -1,6 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { useMutation, useQuery } from '@apollo/client';
+import { useApolloClient, useMutation, useQuery } from '@apollo/client';
 import { EmptyState, GlobalUID, LoadingPage, usePageTitle } from '@ci/common';
 import { AlertDialog, Avatar, Badge, Button, Card, Input } from '@ci/shadcn';
 import { Merge } from '@ci/shadcn/icons';
@@ -128,6 +128,48 @@ const REJECT_PERSON_DUPLICATES = gql(`
   }
 `);
 
+/**
+ * Re-read the ONE person a merge kept. Merging moves events, messages and
+ * identifiers onto the target, so its row is stale afterwards — but re-running
+ * GET_PEOPLE to refresh it would replay that hook's original variables
+ * (`first: PAGE_SIZE`, no cursor) and throw away every page the user scrolled
+ * in. This writes the same normalized PersonType the list edge already points
+ * at, so the row updates in place and the accumulated list survives.
+ */
+const GET_MERGED_PERSON = gql(`
+  query GetMergedPerson($id: ID!) {
+    person(id: $id) {
+      id
+      name
+      description
+      firstName
+      lastName
+      avatarUrl
+      birthDate
+      isSelf
+      identifiers {
+        kind
+        value
+        rawValue
+        label
+      }
+      interactionStats {
+        eventCount
+        communicationCount
+        lastInteractionAt
+      }
+    }
+  }
+`);
+
+/** What a duplicate-group action did, so the page can patch the list precisely. */
+interface MergeOutcome {
+  /** People folded away and no longer in the list, or [] for "not the same". */
+  removedIds: string[];
+  /** The surviving person whose aggregates changed, or null when nothing merged. */
+  keptId: string | null;
+}
+
 type PersonNode = GetPeopleQuery['people']['edges'][number]['node'];
 type DuplicateGroup = GetPersonDuplicatesQuery['personDuplicates']['groups'][number];
 type MergeCandidate = GetMergeCandidatesQuery['mergeCandidates']['edges'][number]['node'];
@@ -238,7 +280,7 @@ function MergeSuggestionCard({
   people: readonly MergablePerson[];
   heading: ReactNode;
   note?: ReactNode;
-  onMerged: () => Promise<unknown>;
+  onMerged: (outcome: MergeOutcome) => Promise<unknown>;
 }) {
   const [mergePeople, { loading }] = useMutation(MERGE_PEOPLE);
   const [rejectDuplicates, { loading: rejecting }] = useMutation(REJECT_PERSON_DUPLICATES);
@@ -262,7 +304,7 @@ function MergeSuggestionCard({
       await mergePeople({ variables: { input: { targetId, sourceIds } } });
       setPendingTargetId(null);
       setMergeError(null);
-      await onMerged();
+      await onMerged({ removedIds: sourceIds, keptId: targetId });
     } catch (error) {
       // Keep the dialog open and show what went wrong instead of silently
       // closing on failure.
@@ -278,7 +320,8 @@ function MergeSuggestionCard({
     try {
       await rejectDuplicates({ variables: { personIds: people.map((person) => person.id) } });
       setMergeError(null);
-      await onMerged();
+      // Nothing left the list — only the duplicate suggestions changed.
+      await onMerged({ removedIds: [], keptId: null });
     } catch (error) {
       setMergeError(error instanceof Error ? error.message : 'Could not record that. Please try again.');
     }
@@ -401,7 +444,7 @@ function DuplicateGroupCard({
   onMerged,
 }: {
   group: DuplicateGroup;
-  onMerged: () => Promise<unknown>;
+  onMerged: (outcome: MergeOutcome) => Promise<unknown>;
 }) {
   // A group can be truncated (six members of a value shared by hundreds); say
   // so rather than implying the merge would cover all of them.
@@ -435,7 +478,7 @@ function MergeCandidateCard({
   onMerged,
 }: {
   candidate: MergeCandidate;
-  onMerged: () => Promise<unknown>;
+  onMerged: (outcome: MergeOutcome) => Promise<unknown>;
 }) {
   return (
     <MergeSuggestionCard
@@ -464,8 +507,17 @@ export function PeoplePage() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
 
-  const { data, previousData, loading, error, refetch, fetchMore } = useQuery(GET_PEOPLE, {
-    variables: { query: searchQuery.trim() === '' ? null : searchQuery.trim(), first: PAGE_SIZE },
+  const client = useApolloClient();
+
+  // Same object identity the cache entry is keyed on, so the post-merge patch
+  // below targets exactly the entry fetchMore has been appending to.
+  const peopleVariables = useMemo(
+    () => ({ query: searchQuery.trim() === '' ? null : searchQuery.trim(), first: PAGE_SIZE }),
+    [searchQuery],
+  );
+
+  const { data, previousData, loading, error, fetchMore } = useQuery(GET_PEOPLE, {
+    variables: peopleVariables,
     notifyOnNetworkStatusChange: true,
   });
   // Which kind of duplicate group to show. The page used to ask for an
@@ -647,7 +699,65 @@ export function PeoplePage() {
     return () => observer.disconnect();
   }, [hasNextPage, loadMore]);
 
-  const onMerged = async () => Promise.all([refetch(), refetchDuplicates(), refetchCandidates()]);
+  // Patch the accumulated list rather than refetch()ing it. refetch() replays
+  // the hook's ORIGINAL variables (first: PAGE_SIZE, no cursor) and overwrites
+  // the cache entry fetchMore has been appending to, so on a 21k-person list
+  // every merge threw the user back to row 30 — on the one page whose whole
+  // purpose is working a long duplicate queue.
+  const onMerged = useCallback(
+    async ({ removedIds, keptId }: MergeOutcome) => {
+      const removed = new Set(removedIds);
+
+      if (removed.size > 0) {
+        client.cache.updateQuery({ query: GET_PEOPLE, variables: peopleVariables }, (prev) => {
+          if (!prev?.people) {
+            return prev;
+          }
+
+          const edges = prev.people.edges.filter((edge) => !removed.has(edge.node.id));
+          const dropped = prev.people.edges.length - edges.length;
+
+          if (dropped === 0) {
+            return prev;
+          }
+
+          return {
+            ...prev,
+            people: {
+              ...prev.people,
+              edges,
+              totalCount: Math.max(0, prev.people.totalCount - dropped),
+            },
+          };
+        });
+      }
+
+      await Promise.all([
+        keptId != null
+          ? client.query({
+              query: GET_MERGED_PERSON,
+              variables: { id: keptId },
+              fetchPolicy: 'network-only',
+            })
+          : Promise.resolve(),
+        refetchDuplicates(),
+        refetchCandidates(),
+      ]);
+
+      // Only now that the duplicate groups and scored candidates have been
+      // re-read (so nothing still references them) is it safe to drop the
+      // merged-away people; evicting first would leave those queries pointing
+      // at missing objects mid-render.
+      if (removed.size > 0) {
+        for (const id of removedIds) {
+          client.cache.evict({ id: client.cache.identify({ __typename: 'PersonType', id }) });
+        }
+
+        client.cache.gc();
+      }
+    },
+    [client, peopleVariables, refetchCandidates, refetchDuplicates],
+  );
 
   let content: ReactNode | null = null;
 

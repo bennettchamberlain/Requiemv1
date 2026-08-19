@@ -57,6 +57,34 @@ export function userInboxDir(email: string): string {
 }
 
 /**
+ * One user's inbox subtree as the RESOLVERS see it: {@link userInboxDir} put
+ * through the same `realpath` that {@link resolveWithinRoots} applies before
+ * its containment check.
+ *
+ * The two spellings are the same string only when no symlink sits above the
+ * mount, and differ the moment one does — macOS puts `/tmp` and `/var` behind
+ * `/private`, and a bind-mounted appliance data dir does the same. Anything
+ * that compares a resolved path back against the inbox — `path.relative()` to
+ * name a unit, or a lookup keyed on a path a run recorded — must start from
+ * THIS root, or the two live in different namespaces and the comparison
+ * quietly answers wrong: `path.relative()` yields a `../../…` escape rather
+ * than the unit's path, and an equality test matches nothing.
+ *
+ * Falls back to the literal path when the directory cannot be resolved (an
+ * account whose subtree is not provisioned yet), so a caller still gets a
+ * usable root instead of an exception from what is only a comparison step.
+ */
+export async function realUserInboxDir(email: string): Promise<string> {
+  const dir = userInboxDir(email);
+
+  try {
+    return await realpath(dir);
+  } catch {
+    return dir;
+  }
+}
+
+/**
  * Where uploads are staged: `<uploadsDir>/<dropId>/<filename>`, registered in
  * `ci_import.staged_sources`. Importer-owned like the inbox, but root-only —
  * nothing lands here except through the API, and the TTL purge sweeps it.

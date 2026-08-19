@@ -184,6 +184,12 @@ promotePlacePositionStageVersion();
  * Kept as a predicate here rather than relying solely on the write-side guard
  * because this stage also runs over rows written BEFORE that guard existed —
  * exactly the population the paired backfill is repairing.
+ *
+ * The fifth upstream — the TITLE — was enumerated above long before it was
+ * covered. It is the last three arms below, mirroring `isTitleText`: on the
+ * corpus this stage had already turned 7 of those titles into Location entities
+ * with names like "Uber ride from 520 4th St, San Francisco, CA 94107, US to 999
+ * California St, San Francisco, CA 94108, US (request)".
  */
 const NOT_A_PLACE_NAME_SQL = [
   // A media filename, and the bare-UUID stem an export leaves when it drops the
@@ -194,6 +200,17 @@ const NOT_A_PLACE_NAME_SQL = [
   String.raw`btrim(s.name) ~* '^[a-z][a-z0-9+.-]*://\S+$'`,
   // A coordinate pair, bare or wearing a generic geolocation noun.
   String.raw`btrim(s.name) ~* '^(location|position|coordinates?|coords?|point|waypoint|fix|gps)?\s*[-:]?\s*[-+]?[0-9]{1,3}(\.[0-9]+)?\s*,\s*[-+]?[0-9]{1,3}(\.[0-9]+)?$'`,
+  // A TITLE: prose, not a name. `clip`'s truncation mark (U+2026) means the
+  // value is a PREFIX of a longer text; `!`/`?` mean it is a sentence; and more
+  // than MAX_PLACE_NAME_WORDS words means it is longer than any place name on
+  // this corpus. `.` and `@` are deliberately absent from the punctuation arm —
+  // 'A.G. Bartlett Building' and 'On Jane Stanford Way @ Gilbert Biological
+  // Sciences' are real, and each is a live ci.position.name.
+  String.raw`btrim(s.name) ~ '…$'`,
+  String.raw`btrim(s.name) ~ '[!?]'`,
+  // `regexp_split_to_array` on btrim'd text cannot yield an empty array, so
+  // array_length is never NULL here and the comparison is never three-valued.
+  String.raw`array_length(regexp_split_to_array(btrim(s.name), '\s+'), 1) > 14`,
 ].join(' OR ');
 
 export const PROMOTE_PLACE_POSITION_SOURCE: StageSource = {

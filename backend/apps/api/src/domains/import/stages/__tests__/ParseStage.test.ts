@@ -151,14 +151,30 @@ describe('ParseStage.run', () => {
     // not abort the sources that had not run yet.
     expect(outcome.partial).toBe(true);
     expect(outcome.processed).toBe(4); // gmail's 3 + calendar's 1; broken_source staged nothing
-    expect(outcome.detail.failures).toEqual([
-      { dataSource: 'broken_source', error: 'unexpected end of archive' },
-    ]);
+
+    // The recorded failure NAMES what it was doing. A bare exception message
+    // over a 13-source Takeout said nothing about which parser or which path
+    // died, and the scratch tree that held the answer is reclaimed with the
+    // run — see telemetry/stageError.
+    const [failure] = outcome.detail.failures as Array<{ dataSource: string; error: string }>;
+
+    expect(failure.dataSource).toBe('broken_source');
+    expect(failure.error).toContain('unexpected end of archive');
+    expect(failure.error).toContain('dataSource=broken_source');
+    expect(failure.error).toContain('phase=parsing broken_source (2/3)');
+
     // Still recognized — the match happened; only the import itself failed.
     expect(outcome.detail.recognized).toEqual(['gmail', 'broken_source', 'calendar']);
-    // The two sources that DID work are still in the per-source detail.
+
+    // The FAILED source is in the per-source detail too, which it was not
+    // before: the throw used to skip the `perSource` push entirely, so a
+    // parser that staged 300,000 rows and then met one unreadable file
+    // vanished from the run's own report while its rows sat in `staged_items`.
+    // Its counts are whatever its writer had reached, and its `error` says why
+    // it stopped.
     expect(outcome.detail.sources).toEqual([
       { dataSource: 'gmail', ...emptyTotals, items: 3 },
+      { dataSource: 'broken_source', ...emptyTotals, error: failure.error },
       { dataSource: 'calendar', ...emptyTotals, items: 1 },
     ]);
   });
@@ -192,12 +208,119 @@ describe('ParseStage.run', () => {
     const outcome = await stage.run(contextFor());
 
     expect(outcome.partial).toBe(true);
-    expect(outcome.detail.failures).toEqual([
-      {
-        dataSource: 'not_yet_implemented',
-        error: 'not_yet_implemented recognized the tree but has no file importer',
-      },
-    ]);
+
+    const [stubFailure] = outcome.detail.failures as Array<{ dataSource: string; error: string }>;
+
+    expect(stubFailure.dataSource).toBe('not_yet_implemented');
+    expect(stubFailure.error).toContain('recognized the tree but has no file importer');
+    expect(stubFailure.error).toContain('dataSource=not_yet_implemented');
     expect(outcome.processed).toBe(1);
+  });
+});
+
+describe('progress during one long source', () => {
+  /**
+   * The regression: `run()` reported progress only BETWEEN sources, so a
+   * corpus dominated by one source showed a frozen counter for as long as that
+   * source ran. Measured on a real Google Takeout, `processed` sat at 1,364
+   * for the whole google_voice leg while the rows it was staging climbed from
+   * 169,264 to 198,771 -- a live import that reads as a hung one.
+   *
+   * The parser here never returns until released, so every `progress` call
+   * observed while it is suspended is by construction a call made DURING the
+   * source, which is the property under test.
+   */
+  it('advances processed while a single source is still parsing', async () => {
+    jest.useFakeTimers();
+
+    try {
+      let release!: () => void;
+      const parsing = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+
+      // Totals the writer reports grow while the parser is suspended.
+      let live = { ...emptyTotals, items: 0 };
+
+      dataSourcesRecognize.mockResolvedValue([
+        {
+          data_source: {
+            name: 'google_voice',
+            title: 'google_voice',
+            icon: '',
+            description: '',
+            newFileImporter: () => ({
+              recognize: async () => ({ confidence: 1 }),
+              fileImport: async () => parsing,
+            }),
+          },
+          recognition: { confidence: 1 },
+        } as unknown as DataSourceRecognition,
+      ]);
+
+      const updates: Array<{ sql: string; params: unknown[] }> = [];
+      const dataSource = {
+        manager: {},
+        query: jest.fn(async (sql: string, params: unknown[]) => {
+          updates.push({ sql, params });
+
+          return [];
+        }),
+      };
+      const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), debug: jest.fn() };
+
+      StagedWriter.mockImplementation(() => ({
+        push: jest.fn(),
+        settled: jest.fn(async () => undefined),
+        get totals() {
+          return live;
+        },
+      }));
+
+      const stage = new ParseStage(dataSource as never, logger as never);
+      const context = contextFor();
+      const running = stage.run(context);
+
+      // Let run() reach the suspended fileImport and arm the sampler.
+      await Promise.resolve();
+      await Promise.resolve();
+
+      const before = (context.progress as jest.Mock).mock.calls.length;
+
+      live = { ...emptyTotals, items: 40_000 };
+      await jest.advanceTimersByTimeAsync(2_000);
+      live = { ...emptyTotals, items: 90_000 };
+      await jest.advanceTimersByTimeAsync(2_000);
+
+      const midRun = (context.progress as jest.Mock).mock.calls.slice(before).map((c) => c[0].processed);
+
+      // The counter moved WHILE the source was still parsing -- the whole point.
+      expect(midRun).toEqual(expect.arrayContaining([40_000, 90_000]));
+
+      release();
+      await running;
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('stops sampling once the source finishes', async () => {
+    jest.useFakeTimers();
+
+    try {
+      dataSourcesRecognize.mockResolvedValue([matchFor('calendar')]);
+      const { stage } = buildStage({ calendar: { ...emptyTotals, items: 3 } });
+      const context = contextFor();
+
+      await stage.run(context);
+
+      const after = (context.progress as jest.Mock).mock.calls.length;
+      await jest.advanceTimersByTimeAsync(10_000);
+
+      // A leaked interval would keep writing progress for a finished stage.
+      expect((context.progress as jest.Mock).mock.calls.length).toBe(after);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

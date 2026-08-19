@@ -264,8 +264,27 @@ describe('Uber datasource', () => {
       // No address column exists for the request, so it stays unnamed rather
       // than borrowing the pickup's.
       expect(request.item.metadata!.Name).toBeUndefined();
+      // …and `Title` too, which used to fall back to the ride narration. Both
+      // keys are read as the fix's PLACE NAME (titleFor's location.fix arm, then
+      // toPositionInput), and a trip narration names the TRIP, not any point
+      // along it: 37 positions on a real corpus were named "Uber ride from
+      // <addr> to <addr> (request)", and `promote.place_position` turned 7 of
+      // them into Location entities the Places list rendered as venues.
+      expect(request.item.metadata!.Title).toBeUndefined();
+      // The narration is not lost — it stays on `Trip`, which no place-name path
+      // reads, alongside `Leg`.
       expect(request.item.metadata!.Trip).toBe('Uber ride from 1 Market St to 900 North Point St');
       expect(request.item.metadata!.Source).toBe('Uber');
+    });
+
+    it('still names a leg that DOES have an address', async () => {
+      // The other side of the rule: dropping the narration fallback must not
+      // cost a leg the address the export actually recorded. 159 of the 203
+      // named positions on the corpus are exactly this — a real street address.
+      const pos = (await loadReq([REQ_ROW])).filter((p) => p.item.classification === 'location');
+      const pickup = pos.find((p) => p.item.metadata!.Leg === 'Pickup')!;
+      expect(pickup.item.metadata!.Name).toBe('1 Market St');
+      expect(pickup.item.metadata!.Title).toBe('1 Market St');
     });
 
     // Named for the field it holds, not for Uber's column — lyft.ts writes the

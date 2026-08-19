@@ -1,4 +1,10 @@
-import { MAX_SLICES_PER_SWEEP, PIPELINE_QUEUES } from '../constants';
+import {
+  MAX_ATTEMPTS_BEFORE_QUARANTINE,
+  MAX_SLICES_PER_SWEEP,
+  PIPELINE_QUEUES,
+  RETRY_BACKOFF_MAX_SECONDS,
+  TRANSIENT_RETRY_BACKOFF_BASE_SECONDS,
+} from '../constants';
 import { PipelineSliceEvent, PipelineSweepEvent } from '../events';
 import type { StageResult } from '../types';
 
@@ -696,6 +702,209 @@ describeWithDatabase(`pipeline integration (${availability.target})`, () => {
         }
       } finally {
         await nameless.teardown();
+      }
+    });
+  });
+  // -------------------------------------------------------------------------
+  // 8. A provider outage, which is not a verdict about any row
+  // -------------------------------------------------------------------------
+
+  describe('a transient failure', () => {
+    const ROWS = 4;
+
+    let harness: PipelineHarness;
+    let ids: string[];
+
+    /**
+     * One more round of "everything fails because the provider is down".
+     *
+     * The existing gate is dragged into the past FIRST, standing in for the
+     * passage of the backoff exactly as the `stage that throws` block does, and
+     * the sweep follows. That order matters: it leaves the gate the policy
+     * actually wrote on the last round observable, instead of the one this
+     * helper stamped over it. Scoped to this harness's stage id.
+     */
+    async function outageRound(): Promise<void> {
+      await harness.dataSource.query(
+        `UPDATE ci.pipeline_state SET next_attempt_at = now() - interval '1 minute' WHERE stage = $1`,
+        [harness.stageId],
+      );
+      await harness.sweep({ sliceSize: ROWS });
+    }
+
+    beforeAll(async () => {
+      harness = await PipelineHarness.start();
+      ids = await harness.seed(ROWS, { withDecoys: false });
+
+      harness.setBehaviour(
+        (_ctx, sliceIds) =>
+          new Map(sliceIds.map((id) => [id, { outcome: 'failed' as const, reason: 'provider_unavailable' }])),
+      );
+
+      // Twice the attempt budget. Under the policy this replaces, every row was
+      // terminally `quarantined` after five — about fifteen minutes of outage.
+      for (let round = 0; round < MAX_ATTEMPTS_BEFORE_QUARANTINE * 2; round += 1) {
+        await outageRound();
+      }
+    });
+
+    afterAll(async () => {
+      await harness.teardown();
+    });
+
+    it('never quarantines, however long the provider stays down', async () => {
+      const rows = await harness.ledgerRows();
+
+      expect(rows).toHaveLength(ROWS);
+
+      for (const row of rows) {
+        expect(row.status).toBe('failed');
+        expect(row.reason).toBe('provider_unavailable');
+        // Still reclaimable: the sweep takes `failed` rows whose gate is due,
+        // and only `failed` rows.
+        expect(row.next_attempt_at).not.toBeNull();
+      }
+
+      expect(await harness.coverage()).toMatchObject({ quarantined: 0, failed: ROWS });
+    });
+
+    it('refunds every attempt it was charged, counting the outage separately', async () => {
+      const rows = await harness.ledgerRows();
+
+      for (const row of rows) {
+        // `claim()` charged ten attempts; all ten came back, which is what
+        // leaves the quarantine budget intact for a failure that is real.
+        expect(row.attempts).toBe(0);
+        expect(row.transient_attempts).toBe(MAX_ATTEMPTS_BEFORE_QUARANTINE * 2);
+      }
+    });
+
+    it('holds the gate at the cap rather than hammering an unwell provider', async () => {
+      const rows = await harness.ledgerRows();
+
+      for (const row of rows) {
+        const delaySeconds = ((row.next_attempt_at as Date).getTime() - Date.now()) / 1000;
+
+        // Ten doublings from 15 minutes saturates long before this. Asserted as
+        // a window because Postgres computes it from its own `now()`.
+        expect(delaySeconds).toBeGreaterThan(RETRY_BACKOFF_MAX_SECONDS * 0.9);
+        expect(delaySeconds).toBeLessThanOrEqual(RETRY_BACKOFF_MAX_SECONDS + 60);
+      }
+    });
+
+    it('starts the next episode at the base delay once a row succeeds', async () => {
+      harness.setBehaviour((_ctx, sliceIds) => allDone(sliceIds));
+      await outageRound();
+
+      const recovered = await harness.ledgerRows();
+
+      for (const row of recovered) {
+        expect(row.status).toBe('done');
+        // The episode is over, so the counter that measures it is too.
+        expect(row.transient_attempts).toBe(0);
+      }
+
+      // A `done` row is not a candidate at any gate, so re-opening it takes the
+      // one lever that does: the stage version.
+      harness.bumpStageVersion();
+      harness.setBehaviour(
+        (_ctx, sliceIds) =>
+          new Map(sliceIds.map((id) => [id, { outcome: 'failed' as const, reason: 'provider_unavailable' }])),
+      );
+      await outageRound();
+
+      for (const row of await harness.ledgerRows()) {
+        const delaySeconds = ((row.next_attempt_at as Date).getTime() - Date.now()) / 1000;
+
+        expect(delaySeconds).toBeGreaterThan(TRANSIENT_RETRY_BACKOFF_BASE_SECONDS * 0.5);
+        expect(delaySeconds).toBeLessThan(TRANSIENT_RETRY_BACKOFF_BASE_SECONDS * 1.5);
+      }
+    });
+
+    it('still quarantines a row whose failure IS its own fault', async () => {
+      // The counterpart assertion, and the reason the split has to be a
+      // classification rather than a bigger budget: a poison record must still
+      // stop costing a worker slot.
+      harness.setBehaviour(
+        (_ctx, sliceIds) =>
+          new Map(sliceIds.map((id) => [id, { outcome: 'failed' as const, reason: 'address_write_failed' }])),
+      );
+
+      for (let round = 0; round < MAX_ATTEMPTS_BEFORE_QUARANTINE; round += 1) {
+        await outageRound();
+      }
+
+      for (const row of await harness.ledgerRows()) {
+        expect(row.status).toBe('quarantined');
+      }
+    });
+
+    it('releases quarantined rows by reason, restoring a full budget', async () => {
+      // The recovery path for the 12,237 rows an earlier build already parked,
+      // and for reasons the declared transient set deliberately does not cover.
+      const result = await harness.stateService.releaseQuarantined(harness.userId, {
+        reasons: ['address_write_failed'],
+        stage: harness.stageId,
+      });
+
+      expect(result.released).toBe(ROWS);
+
+      for (const row of await harness.ledgerRows()) {
+        expect(row.status).toBe('failed');
+        expect(row.attempts).toBe(0);
+        expect(row.transient_attempts).toBe(0);
+        expect(row.next_attempt_at).not.toBeNull();
+      }
+
+      // And they are candidates again — which is the whole point, and the thing
+      // a quarantined row is not.
+      harness.resetInvocations();
+      harness.setBehaviour((_ctx, sliceIds) => allDone(sliceIds));
+
+      const retry = await harness.sweep({ sliceSize: ROWS });
+
+      expect(retry.dispatchedIds.sort()).toEqual([...ids].sort());
+    });
+
+    it('leaves rows another user quarantined alone', async () => {
+      const other = await PipelineHarness.start();
+
+      try {
+        const otherIds = await other.seed(2, { withDecoys: false });
+
+        other.setBehaviour(
+          (_ctx, sliceIds) =>
+            new Map(
+              sliceIds.map((id) => [id, { outcome: 'failed' as const, reason: 'address_write_failed' }]),
+            ),
+        );
+
+        for (let round = 0; round < MAX_ATTEMPTS_BEFORE_QUARANTINE; round += 1) {
+          await other.sweep({ sliceSize: 2 });
+          await other.dataSource.query(
+            `UPDATE ci.pipeline_state SET next_attempt_at = now() - interval '1 minute' WHERE stage = $1`,
+            [other.stageId],
+          );
+        }
+
+        expect((await other.ledgerRows()).map((row) => row.status)).toEqual(
+          otherIds.map(() => 'quarantined'),
+        );
+
+        // A different user's release must not reach them: the statement is
+        // scoped by `user_id` in SQL, not filtered after the fact.
+        const result = await other.stateService.releaseQuarantined(harness.userId, {
+          reasons: ['address_write_failed'],
+          stage: other.stageId,
+        });
+
+        expect(result.released).toBe(0);
+
+        for (const row of await other.ledgerRows()) {
+          expect(row.status).toBe('quarantined');
+        }
+      } finally {
+        await other.teardown();
       }
     });
   });

@@ -1362,6 +1362,23 @@ type KnownPlaceType {
   source: String!
 }
 
+type MapPinType {
+  endTime: DateTime
+  eventType: String
+  id: ID!
+  latitude: Float!
+  locationName: String
+  longitude: Float!
+  startTime: DateTime
+  title: String
+}
+
+type MapPinsType {
+  pins: [MapPinType!]!
+  totalCount: Int!
+  truncated: Boolean!
+}
+
 type MergeCandidateConnection {
   edges: [MergeCandidateEdge!]!
   pageInfo: PageInfo!
@@ -2040,6 +2057,11 @@ type Query {
   items(after: String, before: String, first: Int, last: Int): ItemConnection!
   knownPlaceCandidates: [KnownPlaceCandidateType!]!
   knownPlaces(kind: String): [KnownPlaceType!]!
+
+  """
+  Located events as map markers for the given filters. Events-only and located-only; returns the whole matching set in one read (capped at 20000 pins), not a page.
+  """
+  mapPins(input: SearchInput!, limit: Int): MapPinsType!
   me: UserType
   mergeCandidates(after: String, first: Int, status: String): MergeCandidateConnection!
 
