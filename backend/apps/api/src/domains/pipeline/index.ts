@@ -293,7 +293,11 @@ export {
 };
 export type { IdentifierClaim } from './entities/IdentifierClaimEntity';
 export { PipelineStateService } from './services/PipelineStateService';
-export type { RetryBackoff } from './services/PipelineStateService';
+export type {
+  ReleaseQuarantinedInput,
+  ReleaseQuarantinedResult,
+  RetryBackoff,
+} from './services/PipelineStateService';
 export { PipelineDispatchService } from './services/PipelineDispatchService';
 export type { StartSweepInput, SweepHopResult } from './services/PipelineDispatchService';
 export { StageRegistry, STAGE_REGISTRY, assertStageRegistryComplete } from './services/StageRegistry';
@@ -307,6 +311,8 @@ export {
   PIPELINE_QUEUE_NAMES,
   STAGE_ID_LIST,
   STAGE_IDS,
+  TRANSIENT_FAILURE_REASONS,
+  isTransientFailureReason,
 } from './constants';
 export type { PipelineQueue, StageId } from './constants';
 export { STAGE_VERSIONS, stageVersion } from './versions';

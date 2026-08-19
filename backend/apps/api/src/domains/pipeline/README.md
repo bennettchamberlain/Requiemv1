@@ -498,8 +498,9 @@ communication-link backfill never finished over a 22-year history.)
 | Call | Writes | Notes |
 | --- | --- | --- |
 | `claim(stage, entityType, ids, userId)` | `status='running'`, `attempts + 1`, `next_attempt_at = NULL`, `user_id` | Returns the ids **actually** claimed. Refuses rows another worker holds a live claim on, and rows already terminal at the current version. **Inserts `stage_version = 0` and never advances it** — see below. |
-| `complete(stage, entityType, results)` | `stage_version = current`, `status`, `reason`, retry gate for `failed` | `failed` rows whose `attempts` have hit `MAX_ATTEMPTS_BEFORE_QUARANTINE` (5) become `quarantined` in the same statement. Tally comes from `RETURNING`, so it reports what was actually written. |
+| `complete(stage, entityType, results)` | `stage_version = current`, `status`, `reason`, `attempts` / `transient_attempts`, retry gate for `failed` | A PERMANENT `failed` row whose `attempts` have hit `MAX_ATTEMPTS_BEFORE_QUARANTINE` (5) becomes `quarantined` in the same statement; a TRANSIENT one has its attempt refunded and cannot quarantine at all. Tally comes from `RETURNING`, so it reports what was actually written. |
 | `fail(stage, entityType, ids, reason)` | Same, one shared reason for the whole slice | The slice-level counterpart, used when the failure is not attributable to any one row. Refuses an empty reason. |
+| `releaseQuarantined(userId, { reasons, stage })` | `status='failed'`, `attempts = 0`, `transient_attempts = 0`, `next_attempt_at = now()` | Un-parks quarantined rows BY REASON — quarantine's only other exit is a version bump, which re-opens the whole corpus. Defaults to `TRANSIENT_FAILURE_REASONS`; an explicitly empty list releases nothing. Behind `POST /api/pipeline/quarantine/release`. |
 
 ### The most load-bearing zero in the subsystem
 
@@ -575,6 +576,37 @@ so it survives a restart. Quarantine is terminal for sweeps but **not a
 tombstone**: a version bump re-selects quarantined rows along with everything
 else, so a fixed enricher automatically re-admits the corpus it previously choked
 on.
+
+### Transient failures do not spend that budget
+
+Five attempts at a 60 s doubling backoff is a budget spent 60 + 120 + 240 + 480 =
+**900 seconds** after the first failure. That is the right sentence for a poison
+record and the wrong one for an outage, and the ledger could not tell them apart:
+a brief reverse-geocode provider outage once left **12,237 `ci.position` rows —
+19 % of that corpus — `quarantined`**, unable to get an address, become a Location
+entity, or reach the map.
+
+So a failure is classified by its REASON. `TRANSIENT_FAILURE_REASONS` declares the
+ones that describe the world rather than the row (`provider_unavailable`,
+`ollama_unreachable`); everything else is permanent and behaves exactly as above.
+
+| | permanent | transient |
+| --- | --- | --- |
+| counter | `attempts` (charged by `claim()`) | `transient_attempts` (`attempts` is REFUNDED) |
+| backoff | 60 s × 2ⁿ, capped at 6 h | 15 min × 2ⁿ, capped at 6 h |
+| terminal? | `quarantined` at 5 attempts | never |
+
+Anything that is not another transient failure resets `transient_attempts`, so an
+episode that ends leaves the next one starting at 15 minutes rather than the cap.
+
+Two things this deliberately does **not** do. It does not raise the attempt limit
+— that only delays the same failure. And it does not pattern-match error text: a
+slice-level `stage_threw: connect ECONNREFUSED …` stays permanent, because
+classifying an arbitrary message is a guess. `releaseQuarantined()` is the remedy
+for those, applied by a human who knows what was broken.
+
+Semantics are proven against a real database in `pipeline.integration.spec.ts`;
+`__tests__/retryBudget.spec.ts` covers the policy from the bound parameters.
 
 ---
 

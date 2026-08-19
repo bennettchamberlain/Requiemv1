@@ -1,3 +1,4 @@
+import { TRANSIENT_FAILURE_REASONS } from '../../constants';
 import { PipelineStateService } from '../PipelineStateService';
 
 /**
@@ -57,6 +58,8 @@ interface HarnessOptions {
   counts?: Partial<Record<Bucket, number | string>>;
   /** Whether the `hasOverdueRetry` probe answers with a hit. */
   overdueRetry?: boolean;
+  /** How many rows the quarantine-release UPDATE reports having moved. */
+  released?: number;
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -65,6 +68,7 @@ function makeHarness(options: HarnessOptions = {}) {
   const writes: Array<{ sql: string; params: unknown[] }> = [];
   const coverageQueries: Array<{ sql: string; params: unknown[] }> = [];
   const retryProbes: Array<{ sql: string; params: unknown[] }> = [];
+  const releases: Array<{ sql: string; params: unknown[] }> = [];
 
   const query = jest.fn(async (raw: string, params?: unknown[]) => {
     const sql = raw.replace(/\s+/g, ' ').trim();
@@ -74,6 +78,16 @@ function makeHarness(options: HarnessOptions = {}) {
       sweeps.push({ sql, params: bound });
 
       return pages.shift() ?? [];
+    }
+
+    // The quarantine release: an UPDATE, not an upsert, so it is recognised
+    // before the catch-all `writes` bucket swallows it.
+    if (/^update\s+ci\.pipeline_state/i.test(sql)) {
+      releases.push({ sql, params: bound });
+
+      return Array.from({ length: options.released ?? 0 }, (_unused, index) => ({
+        entity_id: srcId(index + 1),
+      }));
     }
 
     // The retry probe: `SELECT entity_id FROM ci.pipeline_state WHERE ...
@@ -163,7 +177,18 @@ function makeHarness(options: HarnessOptions = {}) {
       .toLowerCase();
   }
 
-  return { service, query, sweeps, writes, coverageQueries, retryProbes, writtenParams, writtenSql, logger };
+  return {
+    service,
+    query,
+    sweeps,
+    writes,
+    coverageQueries,
+    retryProbes,
+    releases,
+    writtenParams,
+    writtenSql,
+    logger,
+  };
 }
 
 describe('PipelineStateService.selectStale', () => {
@@ -464,6 +489,106 @@ describe('PipelineStateService.fail', () => {
 
     await h.service.fail(makeStage() as never, ENTITY_TYPE, [], 'boom', 1_000);
 
+    expect(h.query).not.toHaveBeenCalled();
+  });
+});
+
+describe('PipelineStateService.releaseQuarantined', () => {
+  // The recovery half of the transient-failure fix. Quarantine's only other
+  // exit is a stage-version bump, which re-opens the WHOLE corpus — on a
+  // metered stage, a bill for every row in the table in order to retry a few
+  // thousand. What the semantics of a release ARE (status, counters, gate) is
+  // asserted against a real database in `pipeline.integration.spec.ts`; what
+  // this file owns is the selector, the scoping and the defaults.
+
+  it('defaults to the declared transient reasons — the set that can no longer quarantine', async () => {
+    const h = makeHarness({ released: 12_237 });
+
+    const result = await h.service.releaseQuarantined(USER);
+
+    expect(result.released).toBe(12_237);
+    expect([...result.reasons].sort()).toEqual([...TRANSIENT_FAILURE_REASONS].sort());
+    expect(result.stage).toBeNull();
+
+    expect(h.releases).toHaveLength(1);
+    expect(h.releases[0].params[0]).toBe(USER);
+    expect(h.releases[0].params[1]).toEqual([...TRANSIENT_FAILURE_REASONS]);
+  });
+
+  it('only ever touches quarantined rows', async () => {
+    const h = makeHarness({ released: 1 });
+
+    await h.service.releaseQuarantined(USER);
+
+    // A release that could also re-open `done` or `skipped` rows would be a
+    // corpus-wide re-run wearing a maintenance route's clothes.
+    expect(h.releases[0].sql.toLowerCase()).toContain("status = 'quarantined'");
+  });
+
+  it('is scoped by user in SQL, not filtered afterwards', async () => {
+    const h = makeHarness({ released: 3 });
+
+    await h.service.releaseQuarantined(USER, { reasons: ['provider_unavailable'] });
+
+    expect(h.releases[0].sql.toLowerCase()).toContain('user_id = $1::uuid');
+  });
+
+  it('restores the attempt budget, so the retry starts from a full five', async () => {
+    const h = makeHarness({ released: 1 });
+
+    await h.service.releaseQuarantined(USER);
+
+    const sql = h.releases[0].sql.toLowerCase().replace(/\s+/g, ' ');
+
+    // Releasing without resetting the counter hands the row back with its
+    // budget already spent: the very next failure re-quarantines it, and the
+    // operator concludes the route does not work.
+    expect(sql).toContain('attempts = 0');
+    expect(sql).toContain('transient_attempts = 0');
+    expect(sql).toContain('next_attempt_at = now()');
+  });
+
+  it('passes an explicit reason list and stage filter through', async () => {
+    const h = makeHarness({ released: 2 });
+
+    const result = await h.service.releaseQuarantined(USER, {
+      reasons: ['stage_threw: connect ECONNREFUSED 127.0.0.1:11434'],
+      stage: 'index.embed',
+    });
+
+    expect(result.stage).toBe('index.embed');
+    expect(h.releases[0].params[1]).toEqual(['stage_threw: connect ECONNREFUSED 127.0.0.1:11434']);
+    expect(h.releases[0].params[2]).toBe('index.embed');
+  });
+
+  it('deduplicates reasons, because an ANY() array with repeats is just noise', async () => {
+    const h = makeHarness({ released: 1 });
+
+    await h.service.releaseQuarantined(USER, {
+      reasons: ['provider_unavailable', 'provider_unavailable'],
+    });
+
+    expect(h.releases[0].params[1]).toEqual(['provider_unavailable']);
+  });
+
+  it('issues no statement at all for an empty selector, rather than releasing everything', async () => {
+    // An empty list is the caller trying to name reasons and naming none. The
+    // one thing it must never mean is "every quarantined row", which is the
+    // operation that re-runs whatever is actually broken across the ledger.
+    const h = makeHarness({ released: 999 });
+
+    const result = await h.service.releaseQuarantined(USER, { reasons: [] });
+
+    expect(result.released).toBe(0);
+    expect(h.query).not.toHaveBeenCalled();
+  });
+
+  it('ignores blank reasons instead of matching rows whose reason is whitespace', async () => {
+    const h = makeHarness({ released: 0 });
+
+    const result = await h.service.releaseQuarantined(USER, { reasons: ['   ', ''] });
+
+    expect(result.released).toBe(0);
     expect(h.query).not.toHaveBeenCalled();
   });
 });

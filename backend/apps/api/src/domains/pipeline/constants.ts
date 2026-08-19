@@ -484,8 +484,97 @@ export const RETRY_BACKOFF_MAX_SECONDS = 6 * 60 * 60;
  * notices. It is not a tombstone — bumping the stage version re-selects
  * quarantined rows along with everything else, so a fixed enricher automatically
  * re-admits the corpus it previously choked on.
+ *
+ * This budget is spent by PERMANENT failures only. See
+ * {@link TRANSIENT_FAILURE_REASONS} for why that distinction had to exist.
  */
 export const MAX_ATTEMPTS_BEFORE_QUARANTINE = 5;
+
+/**
+ * Failure reasons that describe the WORLD, not the row.
+ *
+ * ── The defect this closes ─────────────────────────────────────────────────
+ *
+ * Quarantine is sized for a poison record: five attempts at 60 s doubling —
+ * 60 + 120 + 240 + 480 — so a row that can never succeed stops costing a worker
+ * slot about 15 MINUTES after its first failure. That budget is exactly right
+ * for a malformed coordinate and exactly wrong for a provider outage, because
+ * until this constant existed the ledger could not tell the two apart: it
+ * counted attempts, and an attempt against an unreachable provider counted the
+ * same as an attempt against a row that will never parse.
+ *
+ * The consequence was measured on a real appliance: a brief reverse-geocode
+ * provider outage left 12,237 `ci.position` rows — 19 % of that corpus —
+ * `quarantined` with `reason = 'provider_unavailable'`. Nothing reclaims a
+ * quarantined row, so those fixes could never get a name, never become Location
+ * entities, and never appear on the map. The provider came back in minutes; the
+ * damage was permanent and needed a code change to undo.
+ *
+ * ── The rule ───────────────────────────────────────────────────────────────
+ *
+ * A failure named here does NOT spend the quarantine budget. `claim()` still
+ * charges the attempt (it counts genuine starts); the ledger REFUNDS it when
+ * the outcome carries one of these reasons, and backs the row off on a separate,
+ * much longer schedule — {@link TRANSIENT_RETRY_BACKOFF_BASE_SECONDS} doubling
+ * against `transient_attempts`, a counter that has no ceiling because "the
+ * provider is still down" is not a verdict about the row.
+ *
+ * Membership is DECLARED here rather than inferred from a naming convention, so
+ * it is reviewable in a diff and greppable from both ends: the ledger reads it
+ * when writing a failure, and `PipelineStateService.releaseQuarantined()` reads
+ * it when releasing rows an older build already parked.
+ *
+ * Adding a reason here is a promise that a RETRY CAN SUCCEED WITHOUT THE ROW
+ * CHANGING. Anything else — a coordinate that will never parse, a codec nothing
+ * on the appliance can decode, an API key that is missing — is permanent, and
+ * omission is the safe default: an unlisted reason keeps today's behaviour.
+ *
+ * Deliberately NOT listed, and each for a stated reason:
+ *  - `provider_denied` / `invalid_request` / `zero_results` — already `skipped`,
+ *    never `failed`; `GeocodeService` negative-caches them, so a retry does not
+ *    even reach the provider.
+ *  - `provider_status_unrecognized` — a status the abstraction has never
+ *    produced. Calling it transient would be a guess, and a guess that retries
+ *    forever is worse than one that quarantines visibly.
+ *  - `stage_threw: …` — the slice-level catch-all, whose text is an arbitrary
+ *    error message. Pattern-matching a message for "ECONNREFUSED" is exactly the
+ *    guess this set exists to replace; the release route covers those instead.
+ */
+export const TRANSIENT_FAILURE_REASONS: ReadonlySet<string> = new Set([
+  /** `PositionReverseStage` / `GeocodeStage`: OVER_QUERY_LIMIT or a transport failure. */
+  'provider_unavailable',
+  /** `DenseEmbedStageBase`: the single host Ollama process was not answering. */
+  'ollama_unreachable',
+]);
+
+/**
+ * Is this failure reason one the world can fix on its own?
+ *
+ * A `null`/absent reason is NOT transient. `complete()` already refuses a
+ * `failed` result with no reason, so this only guards the paths that can supply
+ * one — and defaulting an unnamed failure to "retry forever" would resurrect the
+ * invisible self-renewing workload the ledger was built to delete.
+ */
+export function isTransientFailureReason(reason: string | null | undefined): boolean {
+  return reason != null && TRANSIENT_FAILURE_REASONS.has(reason);
+}
+
+/**
+ * First retry delay, in seconds, after a TRANSIENT failure. Doubles per
+ * consecutive transient failure, capped by {@link RETRY_BACKOFF_MAX_SECONDS}.
+ *
+ * 15 minutes rather than the permanent path's 60 s, for two reasons that point
+ * the same way. A provider that just refused everything will still be refusing
+ * everything a minute later, so a short gate buys nothing but load on something
+ * already unwell. And the whole corpus fails together — a transient failure is
+ * never one row's problem — so the retry is a THUNDERING HERD, not a single
+ * call.
+ *
+ * The schedule from a first failure is 15 m, 30 m, 1 h, 2 h, 4 h, then 6 h
+ * forever: roughly eight hours of outage absorbed in six attempts, and no
+ * amount of outage past that ever converts into a terminal state.
+ */
+export const TRANSIENT_RETRY_BACKOFF_BASE_SECONDS = 15 * 60;
 
 // ---------------------------------------------------------------------------
 // Dead letters
