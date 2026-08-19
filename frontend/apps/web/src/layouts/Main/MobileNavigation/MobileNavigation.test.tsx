@@ -5,8 +5,8 @@ import { renderWithProviders } from '@/test/renderWithProviders';
 
 import { PowerRailProvider } from '../PowerRailContext';
 
-import { MobileTopBar } from './MobileTopBar';
 import { MobileNavigation } from './MobileNavigation';
+import { MobileTopBar } from './MobileTopBar';
 
 vi.mock('@/common/feature', async () => {
   const actual = await vi.importActual<typeof import('@/common/feature')>('@/common/feature');

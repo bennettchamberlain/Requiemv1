@@ -7,6 +7,7 @@ import type { UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { EventService } from '@ci/domains/events';
 
+import { ScratchDatabase, scratchDatabaseAvailability } from '../../__tests__/support/scratchDatabase';
 import { DEFAULT_SLICE_SIZE, MAX_SLICES_PER_SWEEP } from '../constants';
 import type { PipelineRunDesiredState } from '../entities/PipelineRunEntity';
 import { PipelineSliceEvent, PipelineSweepEvent } from '../events';
@@ -22,7 +23,6 @@ import { STAGE_VERSIONS } from '../versions';
 
 import { seedLoopCorpus, type SeededCorpus } from './harness/loopCorpus';
 import { HarnessQueue } from './harness/pipelineHarness';
-import { ScratchDatabase, scratchDatabaseAvailability } from './harness/scratchDatabase';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════

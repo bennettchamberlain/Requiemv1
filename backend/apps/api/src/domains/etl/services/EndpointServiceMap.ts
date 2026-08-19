@@ -39,6 +39,12 @@ import { syncOutlookMail } from './Microsoft/sync/SyncOutlookMail';
 import { OneDriveTransformService } from './Microsoft/transform/TransformOneDrive';
 import { OutlookCalendarTransformService } from './Microsoft/transform/TransformOutlookCalendar';
 import { OutlookMailTransformService } from './Microsoft/transform/TransformOutlookMail';
+import { syncComments as syncRedditComments } from './Reddit/sync/SyncComments';
+import { syncPosts as syncRedditPosts } from './Reddit/sync/SyncPosts';
+import { syncSaved as syncRedditSaved } from './Reddit/sync/SyncSaved';
+import { RedditCommentsTransformService } from './Reddit/transform/TransformComments';
+import { RedditPostsTransformService } from './Reddit/transform/TransformPosts';
+import { RedditSavedTransformService } from './Reddit/transform/TransformSaved';
 import { syncContacts as syncSignalContacts } from './Signal/sync/SyncContacts';
 import { syncMessages as syncSignalMessages } from './Signal/sync/SyncMessages';
 import { SignalContactsTransformService } from './Signal/transform/TransformContacts';
@@ -102,6 +108,9 @@ export class EndpointServiceMap {
     private readonly steamAchievementsTransformService: SteamAchievementsTransformService,
     private readonly steamFriendsTransformService: SteamFriendsTransformService,
     private readonly gitHubEventsTransformService: GitHubEventsTransformService,
+    private readonly redditPostsTransformService: RedditPostsTransformService,
+    private readonly redditCommentsTransformService: RedditCommentsTransformService,
+    private readonly redditSavedTransformService: RedditSavedTransformService,
     private readonly signalMessagesTransformService: SignalMessagesTransformService,
     private readonly signalContactsTransformService: SignalContactsTransformService,
     private readonly slackMessagesTransformService: SlackMessagesTransformService,
@@ -148,6 +157,11 @@ export class EndpointServiceMap {
         },
         GitHub: {
           Events: syncGitHubEvents,
+        },
+        Reddit: {
+          Posts: syncRedditPosts,
+          Comments: syncRedditComments,
+          Saved: syncRedditSaved,
         },
         Signal: {
           Messages: syncSignalMessages,
@@ -233,6 +247,11 @@ export class EndpointServiceMap {
         },
         GitHub: {
           Events: this.gitHubEventsTransformService.transform.bind(this.gitHubEventsTransformService),
+        },
+        Reddit: {
+          Posts: this.redditPostsTransformService.transform.bind(this.redditPostsTransformService),
+          Comments: this.redditCommentsTransformService.transform.bind(this.redditCommentsTransformService),
+          Saved: this.redditSavedTransformService.transform.bind(this.redditSavedTransformService),
         },
         Signal: {
           Messages: this.signalMessagesTransformService.transform.bind(this.signalMessagesTransformService),

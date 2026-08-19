@@ -6,10 +6,10 @@ import { Camera, ChevronRight, CircleHelp, MonitorCog } from '@ci/shadcn/icons';
 import { CaptureModal } from '@/components/modals/CaptureModal';
 import { useCaptureModal } from '@/hooks';
 
-import { NavUser } from '../PrimaryNavigation/NavUser';
 import { usePowerRail } from '../PowerRailContext';
-import { RailEdgeToggle } from '../RailEdgeToggle';
+import { NavUser } from '../PrimaryNavigation/NavUser';
 import { HELP_LINKS, useVisibleRailDestinations } from '../railDestinations';
+import { RailEdgeToggle } from '../RailEdgeToggle';
 
 import { MemorySubmenu } from './MemorySubmenu';
 import { NavLink } from './NavLink';

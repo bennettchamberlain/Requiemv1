@@ -31,6 +31,10 @@ const CONNECTOR_LABELS: Readonly<Record<string, string>> = {
   claude: 'Claude',
   chatgpt: 'ChatGPT',
   github_events: 'GitHub',
+  reddit: 'Reddit',
+  reddit_posts: 'Reddit',
+  reddit_comments: 'Reddit',
+  reddit_saved: 'Reddit',
   signal: 'Signal',
   slack: 'Slack',
   // Communication `type` values (CommunicationType.type, not a connector).

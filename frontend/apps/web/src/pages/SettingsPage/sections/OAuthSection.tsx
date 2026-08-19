@@ -44,7 +44,7 @@ const DELETE_PROVIDER_KEY = gql(`
   }
 `);
 
-type OAuthProvider = 'google' | 'microsoft' | 'facebook' | 'spotify' | 'github' | 'slack';
+type OAuthProvider = 'google' | 'microsoft' | 'facebook' | 'spotify' | 'github' | 'reddit' | 'slack';
 
 interface OAuthState {
   oauth: Record<
@@ -67,6 +67,7 @@ export function OAuthSection() {
       facebook: { clientId: '', clientSecret: '' },
       spotify: { clientId: '', clientSecret: '' },
       github: { clientId: '', clientSecret: '' },
+      reddit: { clientId: '', clientSecret: '' },
       slack: { clientId: '', clientSecret: '' },
     },
   });
@@ -82,6 +83,8 @@ export function OAuthSection() {
     spotifyClientSecret: false,
     githubClientId: false,
     githubClientSecret: false,
+    redditClientId: false,
+    redditClientSecret: false,
     slackClientId: false,
     slackClientSecret: false,
   });
@@ -94,6 +97,7 @@ export function OAuthSection() {
     facebook: { clientId: '', clientSecret: '' },
     spotify: { clientId: '', clientSecret: '' },
     github: { clientId: '', clientSecret: '' },
+    reddit: { clientId: '', clientSecret: '' },
     slack: { clientId: '', clientSecret: '' },
   });
 
@@ -105,6 +109,7 @@ export function OAuthSection() {
     facebook: {},
     spotify: {},
     github: {},
+    reddit: {},
     slack: {},
   });
 
@@ -129,6 +134,7 @@ export function OAuthSection() {
       facebook: { clientId: '', clientSecret: '' },
       spotify: { clientId: '', clientSecret: '' },
       github: { clientId: '', clientSecret: '' },
+      reddit: { clientId: '', clientSecret: '' },
       slack: { clientId: '', clientSecret: '' },
     };
 
@@ -442,6 +448,7 @@ export function OAuthSection() {
       <div className="space-y-4">
         {renderProvider('facebook', 'Facebook')}
         {renderProvider('github', 'GitHub')}
+        {renderProvider('reddit', 'Reddit')}
         {renderProvider('slack', 'Slack')}
         {renderProvider('google', 'Google')}
         {renderProvider('microsoft', 'Microsoft')}

@@ -9,7 +9,8 @@ import { ProviderKeyService } from '../services/ProviderKeyService';
 import { BaseClient } from './BaseClient';
 import type { TokenExchange, TokenResponse } from './types';
 
-function formatTokenExchangeError(errorDetails: unknown): string {
+/** Renders an OAuth token-endpoint error body into a message safe to append to an Error. */
+export function formatTokenExchangeError(errorDetails: unknown): string {
   if (typeof errorDetails === 'string') {
     return errorDetails;
   }

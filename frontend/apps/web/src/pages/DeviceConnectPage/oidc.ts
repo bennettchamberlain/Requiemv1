@@ -228,6 +228,7 @@ function awaitOidcCallback(
       unlisten?.();
       signal?.removeEventListener('abort', onAbort);
     };
+
     const onAbort = () => {
       cleanup();
       void closeBrowser();
