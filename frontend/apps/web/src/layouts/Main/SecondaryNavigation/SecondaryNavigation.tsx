@@ -1,24 +1,10 @@
 import type { ReactNode } from 'react';
 
 import { Collapsible, Tooltip, cn } from '@ci/shadcn';
-import {
-  BookOpen,
-  ChevronRight,
-  Cable,
-  CalendarRange,
-  ChartColumn,
-  CloudSun,
-  CircleHelp,
-  LifeBuoy,
-  ListTodo,
-  MessagesSquare,
-  FolderSearch2,
-  Workflow,
-} from '@ci/shadcn/icons';
-
-import { useFeatures } from '@/common/feature';
+import { ChevronRight, CircleHelp } from '@ci/shadcn/icons';
 
 import { usePowerRail } from '../PowerRailContext';
+import { HELP_LINKS, useVisibleRailDestinations } from '../railDestinations';
 import { NavUser } from '../PrimaryNavigation/NavUser';
 
 import { MemorySubmenu } from './MemorySubmenu';
@@ -75,7 +61,7 @@ function HelpSubmenu() {
       <Tooltip>
         <Tooltip.Trigger asChild>
           <a
-            href="https://ci.computer/support"
+            href={HELP_LINKS[0].href}
             target="_blank"
             rel="noopener noreferrer"
             aria-label="Help"
@@ -103,15 +89,15 @@ function HelpSubmenu() {
       </Collapsible.Trigger>
       <Collapsible.Content className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
         <div className="flex flex-col gap-1 pl-6 pt-1">
-          <ExternalNavLink href="https://ci.computer/support" label="Support">
-            <LifeBuoy className="h-4 w-4 shrink-0" strokeWidth={1.25} />
-          </ExternalNavLink>
-          <ExternalNavLink
-            href="https://docs.ci.computer/docs/first-party-apps/digital-memory-server"
-            label="Docs"
-          >
-            <BookOpen className="h-4 w-4 shrink-0" strokeWidth={1.25} />
-          </ExternalNavLink>
+          {HELP_LINKS.map((link) => {
+            const Icon = link.icon;
+
+            return (
+              <ExternalNavLink key={link.href} href={link.href} label={link.label}>
+                <Icon className="h-4 w-4 shrink-0" strokeWidth={1.25} />
+              </ExternalNavLink>
+            );
+          })}
         </div>
       </Collapsible.Content>
     </Collapsible>
@@ -120,7 +106,7 @@ function HelpSubmenu() {
 
 export function SecondaryNavigation() {
   const { expanded, pinned, setHovered } = usePowerRail();
-  const { isFeatureEnabled } = useFeatures();
+  const destinations = useVisibleRailDestinations();
   const feedBadgeCount = useFeedBadgeCount();
 
   return (
@@ -160,58 +146,25 @@ export function SecondaryNavigation() {
         <Tooltip.Provider>
           <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto [scrollbar-gutter:stable]">
             <div className="flex flex-col gap-1">
-              {isFeatureEnabled('planning.page') && (
-                <NavLink to="/plan" label="Plan">
-                  <ListTodo className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-                </NavLink>
-              )}
+              {destinations.map((destination) => {
+                if (destination.id === 'memory') {
+                  return <MemorySubmenu key={destination.id} />;
+                }
 
-              {/* One destination for the day: the schedule leads and the brief
-                  follows, because "what is happening" and "what it means" were
-                  two halves of one question answered from two places. Ungated,
-                  because the brief half is always there — `schedule.page` gates
-                  only the schedule within the page. The calendar icon over the
-                  inbox tray: a tray promises a queue to clear, which this never
-                  was. Forecast keeps its own entry — it describes a horizon
-                  rather than a day. */}
-              <NavLink to="/today" label="Today" badgeCount={feedBadgeCount}>
-                <CalendarRange className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-              </NavLink>
+                const Icon = destination.icon;
 
-              <NavLink to="/forecast" label="Forecast">
-                <CloudSun className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-              </NavLink>
-
-              <MemorySubmenu />
-
-              <NavLink to="/saved-searches" label="Saved Searches">
-                <FolderSearch2 className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-              </NavLink>
-
-              {isFeatureEnabled('chat.page') && (
-                <NavLink to="/chat" label="Chat">
-                  <MessagesSquare className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-                </NavLink>
-              )}
-
-              {/* One entry. Connect, import, and devices are paths on the same
-                page — a rail submenu that opened a second accordion was a
-                second way to do what the tiles already do. */}
-              <NavLink to="/sources" label="Sources" end={false}>
-                <Cable className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-              </NavLink>
-
-              {isFeatureEnabled('jobs.page') && (
-                <NavLink to="/jobs" label="Jobs">
-                  <Workflow className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-                </NavLink>
-              )}
-
-              {isFeatureEnabled('stats.page') && (
-                <NavLink to="/stats" label="Stats">
-                  <ChartColumn className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-                </NavLink>
-              )}
+                return (
+                  <NavLink
+                    key={destination.id}
+                    to={destination.to}
+                    label={destination.label}
+                    end={destination.end}
+                    badgeCount={destination.badge === 'feed' ? feedBadgeCount : 0}
+                  >
+                    <Icon className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+                  </NavLink>
+                );
+              })}
             </div>
           </div>
 
