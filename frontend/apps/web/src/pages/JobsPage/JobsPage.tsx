@@ -53,9 +53,7 @@ export function JobsPage() {
   useEffect(() => {
     const limit = phone ? MOBILE_JOB_PAGE_SIZE : DESKTOP_JOB_PAGE_SIZE;
 
-    setFilters((current) =>
-      current.limit === limit ? current : { ...current, limit, offset: 0 },
-    );
+    setFilters((current) => (current.limit === limit ? current : { ...current, limit, offset: 0 }));
   }, [phone]);
 
   const dashboard = useJobsDashboard();
@@ -97,11 +95,7 @@ export function JobsPage() {
     />
   );
   const schedules = (
-    <SchedulesCard
-      crons={dashboard.data?.crons ?? []}
-      loading={dashboard.loading}
-      jobTypes={jobTypes}
-    />
+    <SchedulesCard crons={dashboard.data?.crons ?? []} loading={dashboard.loading} jobTypes={jobTypes} />
   );
   const deadLettersCard = (
     <DeadLettersCard
@@ -208,7 +202,9 @@ function SummaryCard({
       <Card.Header
         className={cn(
           'flex gap-2',
-          phone ? 'flex-row items-center justify-between' : 'flex-col md:flex-row md:items-center md:justify-between',
+          phone
+            ? 'flex-row items-center justify-between'
+            : 'flex-col md:flex-row md:items-center md:justify-between',
           cardPad(phone),
         )}
       >
