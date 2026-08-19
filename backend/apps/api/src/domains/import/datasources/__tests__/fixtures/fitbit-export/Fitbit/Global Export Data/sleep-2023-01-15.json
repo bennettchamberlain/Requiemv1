@@ -1,0 +1,22 @@
+[
+  {
+    "logId": 32145987001,
+    "dateOfSleep": "2023-01-15",
+    "startTime": "2023-01-14T23:00:00.000",
+    "endTime": "2023-01-15T07:00:00.000",
+    "minutesAsleep": 420,
+    "minutesAwake": 30,
+    "efficiency": 92,
+    "duration": 28800000
+  },
+  {
+    "logId": 32145987055,
+    "dateOfSleep": "2023-01-15",
+    "startTime": "2023-01-15T13:30:00.000",
+    "endTime": "2023-01-15T14:15:00.000",
+    "minutesAsleep": 40,
+    "minutesAwake": 5,
+    "efficiency": 88,
+    "duration": 2700000
+  }
+]

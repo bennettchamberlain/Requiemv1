@@ -1,18 +1,52 @@
 import { Entity, PrimaryColumn, Column } from 'typeorm';
 
+/** One-line preview length cap — matches the importer's clip when it DOES send one. */
+const PREVIEW_MAX_CHARS = 140;
+
+/**
+ * Derive a preview from the content when none was stored. Importers only send
+ * `preview` when clipping actually shortened the content (≤140-char one-line
+ * messages arrive with content but no preview — most chat traffic), so readers
+ * that surface `preview` (search tsvector, list views) saw nothing for exactly
+ * the rows where content itself IS the preview. Same one-line + ellipsis shape
+ * as the importer's clip, so stored and derived previews are indistinguishable.
+ */
+export function previewFromContent(content: string | null | undefined): string | null {
+  if (!content) {
+    return null;
+  }
+
+  const oneLine = content.replace(/\s+/g, ' ').trim();
+
+  if (oneLine.length === 0) {
+    return null;
+  }
+
+  return oneLine.length > PREVIEW_MAX_CHARS ? `${oneLine.slice(0, PREVIEW_MAX_CHARS - 1)}…` : oneLine;
+}
+
 @Entity({ schema: 'ci', name: 'communications' })
 export class CommunicationEntity {
-  // Surrogate primary key (with the hypertable partition cols time + user_id) so
-  // distinct messages sharing a timestamp + type coexist; idempotent re-sync
-  // dedupes on communications_source_triple_uniq. See migration
-  // 20260624130000_communications_surrogate_pk.
+  // Surrogate primary key, so distinct messages sharing a timestamp + type
+  // coexist; idempotent re-sync dedupes on communications_source_triple_uniq
+  // (the pure provenance triple — the table stopped being a hypertable in
+  // 20260807072321, so the partition columns are out of the key).
   @PrimaryColumn({ type: 'uuid' })
   id!: string;
 
-  @PrimaryColumn({ type: 'timestamptz' })
+  /**
+   * CTI discriminator pin (migration 20260811061411): always 'Communication'.
+   * Pairs with id in the composite FK to ci.entities(entity_id, entity_type)
+   * so a detail row can never point at a base row of another type. DEFAULTed
+   * and CHECKed in the schema; never written by the application.
+   */
+  @Column({ type: 'text', name: 'entity_type', default: 'Communication', insert: false, update: false })
+  entityType!: string;
+
+  @Column({ type: 'timestamptz' })
   time!: Date;
 
-  @PrimaryColumn({ type: 'uuid', name: 'user_id' })
+  @Column({ type: 'uuid', name: 'user_id' })
   userId!: string;
 
   @Column({ type: 'text', name: 'communication_type' })
@@ -126,7 +160,7 @@ export class CommunicationEntity {
       connectionId: entity.connectionId,
       isEncrypted: entity.isEncrypted,
       isArchived: entity.isArchived,
-      preview: entity.preview,
+      preview: entity.preview ?? previewFromContent(entity.content),
       sourceType: entity.sourceType,
       sourceSystem: entity.sourceSystem,
       sourceId: entity.sourceId,
@@ -134,4 +168,4 @@ export class CommunicationEntity {
   }
 }
 
-export type Communication = Readonly<CommunicationEntity>;
+export type Communication = Readonly<Omit<CommunicationEntity, 'entityType'>>;

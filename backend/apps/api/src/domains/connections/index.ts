@@ -32,6 +32,7 @@ import {
   GoogleClient,
   MicrosoftClient,
   SpotifyClient,
+  SignalClient,
   SteamClient,
 } from './clients';
 import { ConnectionsController } from './controllers/ConnectionsController';
@@ -61,6 +62,7 @@ import { ProviderService } from './services/ProviderService';
     ProviderKeyService,
     MicrosoftClient,
     SpotifyClient,
+    SignalClient,
     SteamClient,
   ],
   controllers: [ConnectionsController, ProvidersController],
@@ -76,6 +78,7 @@ import { ProviderService } from './services/ProviderService';
     GoogleClient,
     MicrosoftClient,
     SpotifyClient,
+    SignalClient,
     SteamClient,
   ],
 })
@@ -86,6 +89,7 @@ export { ConnectionEntity, ProviderEntity, ProviderKeyEntity };
 
 // Services
 export { ConnectionService, ProviderService, ProviderKeyService, CloudOAuthProxyService };
+export type { PortalDeviceApplication } from './services/CloudOAuthProxyService';
 export { ClientFactory } from './clients';
 
 // Clients
@@ -96,6 +100,7 @@ export {
   GoogleClient,
   MicrosoftClient,
   SpotifyClient,
+  SignalClient,
   SteamClient,
 };
 

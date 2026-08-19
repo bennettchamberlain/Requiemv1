@@ -3,15 +3,18 @@ import { Reflector } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import { type NextFunction, type Request, type Response } from 'express';
 import request from 'supertest';
+import { DataSource } from 'typeorm';
 
 import { ContextService } from '@ci/common/context';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { BodyParserMiddleware } from '@ci/common/middleware';
 import { BrowserActivityService } from '@ci/domains/browser-activity';
-import { CommunicationService, ContentService, ItemService } from '@ci/domains/memory';
+import { CommunicationService, ContentService, EventService, ItemService } from '@ci/domains/memory';
+import { NoteService } from '@ci/domains/notes';
 import { PositionService } from '@ci/domains/position';
 
 import { BulkIngestController } from '../controllers/BulkIngestController';
+import { IngestCoalesceService } from '../services/IngestCoalesceService';
 
 const mockCanActivate = jest.fn();
 
@@ -35,12 +38,52 @@ describe('Bulk ingest routes (/v1/*)', () => {
   const itemService = { createMany: jest.fn(echo) };
   const browserActivityService = { createMany: jest.fn(echo) };
   const positionService = { create: jest.fn(echo) };
+  const eventEcho = async (_context: unknown, data: unknown): Promise<Record<string, unknown>[]> =>
+    (Array.isArray(data) ? data : [data]).map((d, i) => ({
+      id: `event-${i}`,
+      sourceType: (d as Record<string, unknown>).source_type,
+      sourceSystem: (d as Record<string, unknown>).source_system,
+      sourceId: (d as Record<string, unknown>).source_id,
+    }));
+
+  const eventService = { create: jest.fn(eventEcho) };
+  // Notes report per-id outcomes rather than egress rows: they are the one /v1 kind
+  // that dedupes on a client-minted primary key instead of a provenance triple.
+  const noteEcho = async (
+    _context: unknown,
+    data: Array<{ id: string }>,
+  ): Promise<{ created: string[]; updated: string[]; stale: string[]; conflicted: string[] }> => ({
+    created: data.map((note) => note.id),
+    updated: [],
+    stale: [],
+    conflicted: [],
+  });
+  const noteService = { captureMany: jest.fn(noteEcho) };
+  // Capture-log INSERT always "inserts" (new capture); the trailing UPDATE
+  // returns nothing.
+  // The capture-log INSERT is set-based; RETURNING echoes the triple so the
+  // controller can map fresh rows back to envelope entries (params flatten 9
+  // binds per row: user_id, destination, source_type, source_system,
+  // source_id, ...).
+  const captureLogEcho = async (sql: string, params: unknown[] = []) =>
+    /INSERT INTO\s+ci\.capture_events/.test(sql)
+      ? Array.from({ length: params.length / 9 }, (_, r) => ({
+          capture_event_id: `cap-${r}`,
+          source_type: params[r * 9 + 2],
+          source_system: params[r * 9 + 3],
+          source_id: params[r * 9 + 4],
+        }))
+      : [];
+  const dataSourceQuery = jest.fn(captureLogEcho);
 
   beforeEach(() => {
     jest.clearAllMocks();
     mockCanActivate.mockImplementation(() => true);
     communicationService.createMany.mockImplementation(echo);
     itemService.createMany.mockImplementation(echo);
+    eventService.create.mockImplementation(eventEcho);
+    noteService.captureMany.mockImplementation(noteEcho);
+    dataSourceQuery.mockImplementation(captureLogEcho);
   });
 
   beforeAll(async () => {
@@ -52,6 +95,10 @@ describe('Bulk ingest routes (/v1/*)', () => {
         { provide: ItemService, useValue: itemService },
         { provide: BrowserActivityService, useValue: browserActivityService },
         { provide: PositionService, useValue: positionService },
+        { provide: EventService, useValue: eventService },
+        { provide: NoteService, useValue: noteService },
+        { provide: DataSource, useValue: { query: dataSourceQuery } },
+        { provide: IngestCoalesceService, useValue: { schedule: jest.fn(async () => undefined) } },
       ],
     })
       .overrideGuard(JwtOrApiKeyAuthGuard)
@@ -106,6 +153,89 @@ describe('Bulk ingest routes (/v1/*)', () => {
 
       expect(res.body.message).toBe('Validation failed');
       expect(communicationService.createMany).not.toHaveBeenCalled();
+    });
+
+    it('POST /v1/events ingests an { events } envelope through the capture log', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/v1/events')
+        .send({
+          events: [
+            {
+              source_system: 'gmail',
+              source_id: 'msg-1',
+              kind: 'communication.email',
+              occurred_at: '2026-01-01T00:00:00.000Z',
+              payload: { Subject: 'hi' },
+            },
+          ],
+        })
+        .expect(201);
+
+      expect(res.body).toEqual({ ingested: 1, duplicate: 0, rejected: [] });
+      expect(eventService.create).toHaveBeenCalledTimes(1);
+      // Raw-log INSERT + event_id back-link UPDATE.
+      expect(dataSourceQuery).toHaveBeenCalledTimes(2);
+    });
+
+    it('POST /v1/notes ingests a client-minted note through the real pipeline', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/v1/notes')
+        .send({
+          records: [
+            {
+              id: '01920000-0000-7000-8000-000000000001',
+              title: 'Groceries',
+              content: '<p>Groceries</p>',
+              captured_at: '2026-08-13T10:00:00.000Z',
+            },
+          ],
+        })
+        .expect(201);
+
+      expect(res.body).toEqual({ ingested: 1, duplicate: 0, rejected: [] });
+      expect(noteService.captureMany.mock.calls[0][1]).toEqual([
+        {
+          id: '01920000-0000-7000-8000-000000000001',
+          title: 'Groceries',
+          content: '<p>Groceries</p>',
+          capturedAt: new Date('2026-08-13T10:00:00.000Z'),
+        },
+      ]);
+      // No provenance triple, so nothing touches the capture raw log.
+      expect(dataSourceQuery).not.toHaveBeenCalled();
+    });
+
+    it('POST /v1/notes 400s a note with no id, before the service is reached', async () => {
+      // Without an id an at-least-once replay would insert a second copy of the note.
+      const res = await request(app.getHttpServer())
+        .post('/v1/notes')
+        .send({ records: [{ content: '<p>a</p>', captured_at: '2026-08-13T10:00:00.000Z' }] })
+        .expect(400);
+
+      expect(res.body.message).toBe('Validation failed');
+      expect(noteService.captureMany).not.toHaveBeenCalled();
+    });
+
+    it('POST /v1/notes 409s an ownership conflict, so the flusher parks it instead of dropping it', async () => {
+      noteService.captureMany.mockResolvedValueOnce({
+        created: [],
+        updated: [],
+        stale: [],
+        conflicted: ['01920000-0000-7000-8000-000000000001'],
+      });
+
+      await request(app.getHttpServer())
+        .post('/v1/notes')
+        .send({
+          records: [
+            {
+              id: '01920000-0000-7000-8000-000000000001',
+              content: '<p>a</p>',
+              captured_at: '2026-08-13T10:00:00.000Z',
+            },
+          ],
+        })
+        .expect(409);
     });
   });
 

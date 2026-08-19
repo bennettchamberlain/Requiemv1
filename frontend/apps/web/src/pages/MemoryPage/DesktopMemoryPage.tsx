@@ -3,23 +3,30 @@ import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@apollo/client';
 import { GlobalUID, Portal } from '@ci/common';
 import { ENTITY_TYPE_REVERSE_MAP } from '@ci/common/src/constants';
-import { Breadcrumb, cn, DropdownMenu, Sheet } from '@ci/shadcn';
-import { ChartNetwork, ChevronDown, Images, List, Map as MapIcon, type LucideIcon } from '@ci/shadcn/icons';
-import { useSearchParams, Link } from 'react-router-dom';
+import { Button, Sheet, Tooltip } from '@ci/shadcn';
+import { ChartNetwork, Images, List, Map as MapIcon, Plus, type LucideIcon } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
-import { AVAILABLE_ENTITY_TYPES, DropdownProvider } from '@/components/SearchBox/useDropdown';
+import { MemoryHubShell } from '@/components/MemoryHub';
+import { AddEventModal } from '@/components/modals/AddItemModal';
+import { FileChunkModal } from '@/components/modals/FileChunkModal/FileChunkModal';
+import { excludedEntityTypesFor } from '@/components/SearchBox/useDropdown';
 import { gql } from '@/graphql';
+import { useModalControls } from '@/hooks';
 
 import { useEntityService } from '../MemoryPage/useEntityService';
 
+import { ActivityTimelineRail } from './ActivityTimelineRail';
 import { EntityDetails } from './Components/EntityDetails';
-import { ActiveFilterChips, countActiveFilters } from './Components/ExplorerToolbar/ActiveFilterChips';
 import {
-  AdvancedFilters,
-  AdvancedSearchToggle,
-  ResultCount,
-} from './Components/ExplorerToolbar/ExplorerToolbar';
+  isRollingDatePreset,
+  resolveDatePreset,
+  type DatePreset,
+} from './Components/ExplorerToolbar/datePresets';
+import { ExplorerToolbar } from './Components/ExplorerToolbar/ExplorerToolbar';
+import { applyViewFilterDefaults, readMemoryView } from './Components/ExplorerToolbar/viewFilterSupport';
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
 import { ListView } from './ListView';
@@ -38,6 +45,7 @@ const GET_SAVED_SEARCH = gql(`
         eventTypes
         startTime
         endTime
+        datePreset
         sortBy
         sortOrder
         connectors
@@ -53,18 +61,27 @@ const GET_SAVED_SEARCH = gql(`
 const VIEW_TABS: Array<{
   value: string;
   label: string;
-  title: string;
+  titleKey: string;
   Icon: LucideIcon;
 }> = [
-  { value: 'map', label: 'Map', title: 'Map view', Icon: MapIcon },
-  { value: 'list', label: 'List', title: 'List view', Icon: List },
-  { value: 'gallery', label: 'Gallery', title: 'Gallery view', Icon: Images },
-  { value: 'graph', label: 'Graph', title: 'Graph view', Icon: ChartNetwork },
+  { value: 'map', label: 'Map', titleKey: 'MEMORY_VIEW_MAP', Icon: MapIcon },
+  { value: 'list', label: 'List', titleKey: 'MEMORY_VIEW_LIST', Icon: List },
+  { value: 'gallery', label: 'Gallery', titleKey: 'MEMORY_VIEW_GALLERY', Icon: Images },
+  { value: 'graph', label: 'Graph', titleKey: 'MEMORY_VIEW_GRAPH', Icon: ChartNetwork },
 ];
 
 export default function DesktopMemoryPage() {
+  const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [{ activeEntity }, { setActiveEntity }] = useEntityService();
+  const [{ activeEntity, refetch }, { setActiveEntity }] = useEntityService();
+
+  const [{ isOpen: isAddEventOpen }, { open: openAddEvent, close: closeAddEvent }] = useModalControls();
+
+  // Document chunks open in their own dialog; every other entity uses the
+  // details sheet (EntityDetails has no FileChunkType branch).
+  const activeChunkEntity = activeEntity?.__typename === 'FileChunkType' ? activeEntity : null;
+  const activeSheetEntity =
+    activeEntity != null && activeEntity.__typename !== 'FileChunkType' ? activeEntity : null;
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [searchId, setSearchId] = useState<string | null>(null);
 
@@ -72,37 +89,23 @@ export default function DesktopMemoryPage() {
   // restores in the same view; list is the desktop default since it always
   // shows results (the map renders empty for data without coordinates).
   const activeTab = searchParams.get('view') ?? 'list';
+  // Switching view never changes the filter set behind the user's back — the
+  // one exception is the Map tab, which applies "Has a location" as a real,
+  // chipped, removable filter (see applyViewFilterDefaults).
   const setActiveTab = (next: string) =>
     setSearchParams((params) => {
       const nextParams = new URLSearchParams(params);
       nextParams.set('view', next);
 
-      return nextParams;
+      return applyViewFilterDefaults(nextParams, readMemoryView(next));
     });
-  // The advanced-filter drawer state lives in the URL (`?advanced=1`) because it
-  // renders inside the header SearchBox's dropdown panel (GlobalSearchBox pins
-  // the panel open from the same param); this page owns the toggle + content.
-  const advancedOpen = searchParams.get('advanced') === '1';
-  const toggleAdvanced = () =>
-    setSearchParams(
-      (params) => {
-        const nextParams = new URLSearchParams(params);
-
-        if (advancedOpen) {
-          nextParams.delete('advanced');
-        } else {
-          nextParams.set('advanced', '1');
-        }
-
-        return nextParams;
-      },
-      { replace: true },
-    );
-
-  // Make the default view explicit in the URL so the query is shareable and so
-  // MemoryPage can derive the map's hasLocation scope from `?view=`.
+  // Advanced filters render inside the header search panel and stay visible.
+  // Events is a What-bar filter, not a top-level view — rewrite legacy ?view=events. The view it
+  // once addressed (`EventsView`, a TimelineView pinned to Event cards) was deleted: nothing had
+  // rendered it since it was written, and this redirect is why. Old links keep landing on List.
   useEffect(() => {
-    if (!searchParams.get('view')) {
+    const view = searchParams.get('view');
+    if (!view || view === 'events') {
       setSearchParams(
         (params) => {
           const nextParams = new URLSearchParams(params);
@@ -136,6 +139,7 @@ export default function DesktopMemoryPage() {
         'eventTypes',
         'from',
         'to',
+        'when',
         'sortBy',
         'sortOrder',
         'connectors',
@@ -155,11 +159,13 @@ export default function DesktopMemoryPage() {
         const reverseMapped = entityTypes.map(
           (type) => ENTITY_TYPE_REVERSE_MAP[type as keyof typeof ENTITY_TYPE_REVERSE_MAP],
         );
-        const inverseEntityTypes = AVAILABLE_ENTITY_TYPES.filter(
-          (entity) => reverseMapped.indexOf(entity) === -1,
-        );
-        const mappedEntityTypes = inverseEntityTypes.join(',');
-        currentParams.set('excludedEntityTypes', mappedEntityTypes);
+        // Same exclude-list the What pickers write, so a restored search hides
+        // answers too rather than mixing them in with the saved types.
+        const inverseEntityTypes = excludedEntityTypesFor(reverseMapped);
+
+        if (inverseEntityTypes.length > 0) {
+          currentParams.set('excludedEntityTypes', inverseEntityTypes.join(','));
+        }
       }
 
       //Updating included entities is handled in SearchBox.tsx
@@ -183,12 +189,23 @@ export default function DesktopMemoryPage() {
         setCsv('people', filters.people);
         setCsv('places', filters.places);
 
-        if (filters.startTime) {
-          currentParams.set('from', filters.startTime);
-        }
+        if (isRollingDatePreset(filters.datePreset)) {
+          currentParams.set('when', filters.datePreset);
+          const { from, to } = resolveDatePreset(filters.datePreset as DatePreset);
+          currentParams.set('from', from);
+          currentParams.set('to', to);
+        } else {
+          if (filters.startTime) {
+            currentParams.set('from', filters.startTime);
+          }
 
-        if (filters.endTime) {
-          currentParams.set('to', filters.endTime);
+          if (filters.endTime) {
+            currentParams.set('to', filters.endTime);
+          }
+
+          if (filters.startTime || filters.endTime) {
+            currentParams.set('when', 'custom');
+          }
         }
 
         if (filters.sortBy) {
@@ -259,112 +276,79 @@ export default function DesktopMemoryPage() {
     }
   }, []);
 
-  const activeFilterCount = countActiveFilters(searchParams);
-  const activeView = VIEW_TABS.find((tab) => tab.value === activeTab) ?? VIEW_TABS[1];
-
   return (
     <>
-      {/* The view switcher is the last breadcrumb crumb: the current view's name
-          is the trigger, and the expansion mirrors the header plus-button's Add
-          panel (icon grid) so both header menus read as one pattern. */}
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-            <Breadcrumb.Separator className="hidden md:block" />
-            <Breadcrumb.Item>
-              <Breadcrumb.Page>Memory</Breadcrumb.Page>
-            </Breadcrumb.Item>
-            <Breadcrumb.Separator />
-            <Breadcrumb.Item>
-              <DropdownMenu modal={false}>
-                <DropdownMenu.Trigger
-                  aria-label={`${activeView.title} — change view`}
-                  className="hover:text-foreground flex cursor-pointer items-center gap-1 text-sm transition-colors"
-                >
-                  {activeView.label}
-                  <ChevronDown className="size-3.5" />
-                </DropdownMenu.Trigger>
-                <DropdownMenu.Content className="rounded-lg p-2" side="bottom" align="start" sideOffset={4}>
-                  <div className="grid grid-cols-4 gap-2">
-                    {VIEW_TABS.map(({ value, label, title, Icon }) => (
-                      <DropdownMenu.Item
-                        key={value}
-                        title={title}
-                        onSelect={() => setActiveTab(value)}
-                        className={cn(
-                          'h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1',
-                          activeTab === value && 'bg-accent text-accent-foreground',
-                        )}
-                      >
-                        <Icon className="h-6! w-6!" strokeWidth={1.25} />
-                        <span className="text-xs">{label}</span>
-                      </DropdownMenu.Item>
-                    ))}
-                  </div>
-                </DropdownMenu.Content>
-              </DropdownMenu>
-            </Breadcrumb.Item>
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
+      {/* View tabs (list / map / gallery / graph) live in the header nav-views portal. */}
+      <Portal.Slot id="nav-views">
+        <div className="flex flex-wrap items-center gap-1">
+          {VIEW_TABS.map(({ value, label, titleKey, Icon }) => {
+            const title = t(titleKey);
 
-      {/* The Advanced toggle sits inset at the right edge of the header search box
-          (SearchBox's toolsSlot). Borderless h-8 to match the inset controls. */}
-      <Portal.Slot id="nav-tools">
-        <AdvancedSearchToggle
-          open={advancedOpen}
-          onToggle={toggleAdvanced}
-          className="h-7 w-7 rounded-md border-0 shadow-none"
-        />
-      </Portal.Slot>
-
-      {/* The advanced filters and active-filter chips render as a pinned section
-          at the top of the header SearchBox's dropdown panel (its panelHeader
-          slot), above any live search suggestions — so typing never covers them.
-          Chips also surface (without the full controls) whenever the panel opens
-          with filters active; when it's closed, the toggle's count badge stands in. */}
-      <Portal.Slot id="nav-search-panel">
-        {(advancedOpen || activeFilterCount > 0) && (
-          <DropdownProvider args={[{ changeSearchParams: true }]}>
-            <div className="flex flex-col gap-2 p-3">
-              {advancedOpen && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <AdvancedFilters modal={false} />
-                </div>
-              )}
-              {activeFilterCount > 0 && <ActiveFilterChips />}
-            </div>
-          </DropdownProvider>
-        )}
-      </Portal.Slot>
-
-      <PageContent className="p-0 gap-0">
-        {/* Result count only — filters and their chips live in the header search
-            panel. The map stays full-bleed. */}
-        {activeTab !== 'map' && (
-          <div className="flex justify-end px-4 pt-3">
-            <ResultCount />
-          </div>
-        )}
-
-        <div className="flex min-h-0 flex-1 flex-col">
-          {activeTab === 'list' && <ListView />}
-          {activeTab === 'map' && <DesktopMapView />}
-          {activeTab === 'gallery' && <GalleryView />}
-          {activeTab === 'graph' && <GraphView variant="desktop" />}
+            return (
+              <Tooltip key={value} delayDuration={600}>
+                <Tooltip.Content>{title}</Tooltip.Content>
+                <Tooltip.Trigger asChild>
+                  <Button
+                    type="button"
+                    variant={activeTab === value ? 'secondary' : 'ghost'}
+                    size="sm"
+                    aria-label={title}
+                    aria-pressed={activeTab === value}
+                    onClick={() => setActiveTab(value)}
+                    className="h-8 gap-1.5 px-2"
+                  >
+                    <Icon className="h-4 w-4" strokeWidth={1.5} />
+                    <span className="hidden sm:inline">{label}</span>
+                  </Button>
+                </Tooltip.Trigger>
+              </Tooltip>
+            );
+          })}
         </div>
+      </Portal.Slot>
+
+      <PageContent className="gap-2 p-0">
+        <MemoryHubShell
+          actions={
+            <Button size="sm" onClick={openAddEvent}>
+              <Plus className="h-4 w-4" />
+              New event
+            </Button>
+          }
+          fillHeight
+        >
+          <div className="flex min-h-0 flex-1 flex-col gap-2 pb-2">
+            <div className="px-2">
+              <ExplorerToolbar open />
+            </div>
+            {/* List view splits into two independently-scrolled panes: wheeling
+              over the left rail moves the heatmap's window through time, while
+              the result list on the right keeps its own scroll. */}
+            {activeTab === 'list' && (
+              <div className="flex min-h-0 flex-1">
+                <ActivityTimelineRail className="shrink-0 border-r" />
+                <ListView />
+              </div>
+            )}
+            {activeTab === 'map' && <DesktopMapView />}
+            {activeTab === 'gallery' && <GalleryView />}
+            {activeTab === 'graph' && <GraphView variant="desktop" />}
+          </div>
+        </MemoryHubShell>
       </PageContent>
 
-      {activeEntity && (
+      {activeSheetEntity && (
         <Sheet open={detailsOpen} onOpenChange={toggleactiveEntity}>
-          <EntityDetails entity={activeEntity} />
+          <EntityDetails entity={activeSheetEntity} />
         </Sheet>
       )}
+
+      <FileChunkModal entity={activeChunkEntity} onClose={() => setActiveEntity(null)} />
+
+      {/* The explorer reads a `search` connection whose contents the server
+          composes per query — there is no cache entry a new event can be
+          appended to, so refetch the browse instead. */}
+      <AddEventModal open={isAddEventOpen} onClose={closeAddEvent} onCreated={refetch} />
     </>
   );
 }

@@ -45,6 +45,10 @@ import { syncSaved as syncRedditSaved } from './Reddit/sync/SyncSaved';
 import { RedditCommentsTransformService } from './Reddit/transform/TransformComments';
 import { RedditPostsTransformService } from './Reddit/transform/TransformPosts';
 import { RedditSavedTransformService } from './Reddit/transform/TransformSaved';
+import { syncContacts as syncSignalContacts } from './Signal/sync/SyncContacts';
+import { syncMessages as syncSignalMessages } from './Signal/sync/SyncMessages';
+import { SignalContactsTransformService } from './Signal/transform/TransformContacts';
+import { SignalMessagesTransformService } from './Signal/transform/TransformMessages';
 import { syncPlaylists } from './Spotify/sync/SyncPlaylists';
 import { syncRecentlyPlayed } from './Spotify/sync/SyncRecentlyPlayed';
 import { syncSavedAudiobooks } from './Spotify/sync/SyncSavedAudiobooks';
@@ -103,6 +107,8 @@ export class EndpointServiceMap {
     private readonly redditPostsTransformService: RedditPostsTransformService,
     private readonly redditCommentsTransformService: RedditCommentsTransformService,
     private readonly redditSavedTransformService: RedditSavedTransformService,
+    private readonly signalMessagesTransformService: SignalMessagesTransformService,
+    private readonly signalContactsTransformService: SignalContactsTransformService,
   ) {
     this.logger.setContext(EndpointServiceMap.name);
     this.endpointServiceMap = {
@@ -150,6 +156,10 @@ export class EndpointServiceMap {
           Posts: syncRedditPosts,
           Comments: syncRedditComments,
           Saved: syncRedditSaved,
+        },
+        Signal: {
+          Messages: syncSignalMessages,
+          Contacts: syncSignalContacts,
         },
       },
       transform: {
@@ -232,6 +242,10 @@ export class EndpointServiceMap {
           Posts: this.redditPostsTransformService.transform.bind(this.redditPostsTransformService),
           Comments: this.redditCommentsTransformService.transform.bind(this.redditCommentsTransformService),
           Saved: this.redditSavedTransformService.transform.bind(this.redditSavedTransformService),
+        },
+        Signal: {
+          Messages: this.signalMessagesTransformService.transform.bind(this.signalMessagesTransformService),
+          Contacts: this.signalContactsTransformService.transform.bind(this.signalContactsTransformService),
         },
       },
     };

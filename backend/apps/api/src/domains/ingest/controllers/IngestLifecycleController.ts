@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
@@ -63,7 +63,15 @@ export class IngestLifecycleController {
   }
 
   @Get('status')
-  async status(): Promise<IngestStatusSnapshot> {
-    return this.ingestStatusService.snapshot();
+  async status(
+    @Context() context: RequestContext,
+    @Query('scope') scope?: string,
+  ): Promise<IngestStatusSnapshot> {
+    const serviceContext = toServiceContext(context);
+
+    return this.ingestStatusService.snapshot({
+      userId: serviceContext.userId,
+      scope: scope === 'appliance' ? 'appliance' : 'user',
+    });
   }
 }

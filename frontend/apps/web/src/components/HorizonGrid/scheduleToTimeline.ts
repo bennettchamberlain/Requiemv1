@@ -1,0 +1,294 @@
+import type { ScheduleEvent } from '@/api/useScheduleService';
+
+import { isBrowserCapture } from './scheduleClusters';
+
+/**
+ * TimelineJS3 JSON for "today as a story".
+ *
+ * TimelineJS is a storytelling slideshow, not a dense calendar: feeding it every
+ * capture tick makes an unreadable novel. We keep calendar blocks, then sample
+ * the best browser visits (longer / unique titles), capped at MAX_SLIDES.
+ *
+ * Keep the cap modest: TimelineJS mounts every slide and every axis tick in the
+ * DOM. 48 slides over a 35-day range was a wide, expensive time-nav canvas.
+ */
+
+const MAX_SLIDES = 12;
+
+/**
+ * TimelineJS pads major ticks by `_scaled_padding * major.factor` and minor by
+ * `* minor.factor`. Day labels therefore reach further left/right than hour
+ * marks. When every slide sits on the focus day, zooming out shows yesterday's
+ * major tick with no minor ruler behind it. An era expands earliest/latest so
+ * both axes share the same navigable span (eras are hidden in CSS).
+ */
+export const TIMELINE_AXIS_PAD_DAYS = 2;
+
+export interface TimelineDateParts {
+  year: string;
+  month: string;
+  day: string;
+  hour: string;
+  minute: string;
+  second?: string;
+}
+
+export interface TimelineSlide {
+  start_date: TimelineDateParts;
+  end_date?: TimelineDateParts;
+  text: { headline: string; text: string };
+  media?: { url: string; link?: string; caption?: string };
+  group?: string;
+  unique_id: string;
+  autolink?: boolean;
+}
+
+export interface TimelineEra {
+  start_date: TimelineDateParts;
+  end_date: TimelineDateParts;
+  text: { headline: string };
+}
+
+export interface TimelineJsData {
+  title: TimelineSlide;
+  events: TimelineSlide[];
+  eras?: TimelineEra[];
+  scale: 'human';
+}
+
+function partsOf(date: Date): TimelineDateParts {
+  return {
+    year: String(date.getFullYear()),
+    month: String(date.getMonth() + 1),
+    day: String(date.getDate()),
+    hour: String(date.getHours()),
+    minute: String(date.getMinutes()),
+    second: String(date.getSeconds()),
+  };
+}
+
+function startOfLocalDay(date: Date): Date {
+  const day = new Date(date);
+  day.setHours(0, 0, 0, 0);
+
+  return day;
+}
+
+function endOfLocalDay(date: Date): Date {
+  const day = new Date(date);
+  day.setHours(23, 59, 59, 0);
+
+  return day;
+}
+
+function addLocalDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+
+  return next;
+}
+
+/**
+ * Hidden era that pulls the TimeNav axis through neighbouring days so minor
+ * ticks exist wherever major day labels already appear when zoomed out.
+ */
+export function axisPadEra(events: readonly ScheduleEvent[], focusDay: Date): TimelineEra {
+  let earliest = startOfLocalDay(focusDay).getTime();
+  let latest = endOfLocalDay(focusDay).getTime();
+
+  for (const event of events) {
+    earliest = Math.min(earliest, new Date(event.startTime).getTime());
+    latest = Math.max(latest, new Date(event.endTime ?? event.startTime).getTime());
+  }
+
+  return {
+    start_date: partsOf(startOfLocalDay(addLocalDays(new Date(earliest), -TIMELINE_AXIS_PAD_DAYS))),
+    end_date: partsOf(endOfLocalDay(addLocalDays(new Date(latest), TIMELINE_AXIS_PAD_DAYS))),
+    text: { headline: '' },
+  };
+}
+
+function eventUrl(event: ScheduleEvent): string | null {
+  const raw = event.metadata?.url;
+
+  if (typeof raw !== 'string') {
+    return null;
+  }
+
+  const url = raw.trim();
+
+  return /^https?:\/\//i.test(url) ? url : null;
+}
+
+function durationMs(event: ScheduleEvent): number {
+  if (!event.endTime) {
+    return 0;
+  }
+
+  return Math.max(0, new Date(event.endTime).getTime() - new Date(event.startTime).getTime());
+}
+
+function toSlide(event: ScheduleEvent): TimelineSlide {
+  const start = new Date(event.startTime);
+  const end = event.endTime ? new Date(event.endTime) : null;
+  const url = eventUrl(event);
+  const when = start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const bodyBits = [
+    when,
+    event.isAllDay ? 'All day' : null,
+    event.locationName,
+    event.description && event.description.trim() !== event.title.trim() ? event.description.trim() : null,
+    url,
+  ].filter(Boolean);
+
+  const slide: TimelineSlide = {
+    start_date: partsOf(start),
+    text: {
+      headline: event.title || 'Untitled',
+      text: bodyBits.join(' · '),
+    },
+    unique_id: event.id,
+    autolink: false,
+  };
+
+  if (end && !event.isAllDay) {
+    slide.end_date = partsOf(end);
+  }
+
+  // Do not attach media. TimelineJS iframes YouTube/Vimeo/Twitter and those
+  // embeds keep a compositor thread busy on a page that already has a week grid.
+  // The URL still appears in the slide text when present.
+
+  return slide;
+}
+
+export function localDayKey(date: Date): string {
+  const day = new Date(date);
+  day.setHours(0, 0, 0, 0);
+
+  return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+}
+
+export function eventFallsOnDay(event: ScheduleEvent, day: Date): boolean {
+  return localDayKey(new Date(event.startTime)) === localDayKey(day);
+}
+
+function sampleDay(eventsOnDay: ScheduleEvent[]): ScheduleEvent[] {
+  const calendar = eventsOnDay.filter((event) => !isBrowserCapture(event));
+  const browsing = eventsOnDay.filter((event) => isBrowserCapture(event));
+
+  browsing.sort((a, b) => {
+    const d = durationMs(b) - durationMs(a);
+    if (d !== 0) {
+      return d;
+    }
+
+    return a.title.localeCompare(b.title);
+  });
+
+  const seenTitles = new Set<string>();
+  const uniqueBrowsing: ScheduleEvent[] = [];
+  for (const event of browsing) {
+    const key = event.title.trim().toLowerCase();
+    if (seenTitles.has(key)) {
+      continue;
+    }
+
+    seenTitles.add(key);
+    uniqueBrowsing.push(event);
+  }
+
+  return [...calendar, ...uniqueBrowsing].sort(
+    (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime(),
+  );
+}
+
+/**
+ * Story slides around `focusDay`: that day's events are kept first (capped),
+ * then neighbours fill remaining slots so TimelineJS can walk forward and back.
+ */
+export function selectStoryEvents(
+  events: readonly ScheduleEvent[],
+  focusDay: Date,
+  max = MAX_SLIDES,
+): { events: ScheduleEvent[]; startAtSlide: number } {
+  const buckets = new Map<string, ScheduleEvent[]>();
+  for (const event of events) {
+    const key = localDayKey(new Date(event.startTime));
+    const bucket = buckets.get(key) ?? [];
+    bucket.push(event);
+    buckets.set(key, bucket);
+  }
+
+  const days = [...buckets.keys()].sort();
+  const sampled = days.map((key) => sampleDay(buckets.get(key) ?? []));
+  const focusKey = localDayKey(focusDay);
+  const focusIndex = days.indexOf(focusKey);
+  if (focusIndex < 0 || sampled[focusIndex]?.length === 0) {
+    return { events: [], startAtSlide: 0 };
+  }
+
+  const chosen: ScheduleEvent[] = [...sampled[focusIndex].slice(0, max)];
+  let before = focusIndex - 1;
+  let after = focusIndex + 1;
+  while (chosen.length < max && (before >= 0 || after < sampled.length)) {
+    if (before >= 0) {
+      const extra = sampled[before];
+      const room = max - chosen.length;
+      chosen.unshift(...extra.slice(-room));
+      before -= 1;
+    }
+
+    if (chosen.length >= max) {
+      break;
+    }
+
+    if (after < sampled.length) {
+      const extra = sampled[after];
+      const room = max - chosen.length;
+      chosen.push(...extra.slice(0, room));
+      after += 1;
+    }
+  }
+
+  const startAtSlide = Math.max(
+    0,
+    chosen.findIndex((event) => eventFallsOnDay(event, focusDay)),
+  );
+
+  return { events: chosen, startAtSlide };
+}
+
+/** @deprecated Use selectStoryEvents — kept for the one-day sample. */
+export function selectTodayStoryEvents(events: readonly ScheduleEvent[], day: Date): ScheduleEvent[] {
+  return selectStoryEvents(events, day).events.filter((event) => eventFallsOnDay(event, day));
+}
+
+export function buildTodayTimelineData(events: readonly ScheduleEvent[], day: Date): TimelineJsData {
+  return buildTimelineData(events, day).data;
+}
+
+export function buildTimelineData(
+  events: readonly ScheduleEvent[],
+  day: Date,
+): { data: TimelineJsData; startAtSlide: number } {
+  const selected = selectStoryEvents(events, day);
+  const label = day.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+
+  return {
+    startAtSlide: selected.startAtSlide,
+    data: {
+      scale: 'human',
+      title: {
+        unique_id: 'focus-title',
+        start_date: partsOf(day),
+        text: {
+          headline: label,
+          text: 'Use the timeline to move forward or back through your schedule.',
+        },
+      },
+      events: selected.events.map(toSlide),
+      eras: [axisPadEra(selected.events, day)],
+    },
+  };
+}

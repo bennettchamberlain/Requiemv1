@@ -25,11 +25,18 @@ export class ContentEntity {
   @PrimaryColumn('uuid')
   id!: string;
 
-  @Column({ type: 'text', nullable: true })
-  type!: string;
+  /**
+   * CTI discriminator pin (migration 20260811200000): always 'Content'. Pairs
+   * with id in the composite FK to ci.entities(entity_id, entity_type).
+   * DEFAULTed and CHECKed in the schema; never written by the application.
+   */
+  @Column({ type: 'text', name: 'entity_type', default: 'Content', insert: false, update: false })
+  entityType!: string;
+
+  // title lives ONLY on the CTI base row (ci.entities.name, see ContentBaseEntity).
 
   @Column({ type: 'text', nullable: true })
-  title!: string | null;
+  type!: string;
 
   @Column({ type: 'text', nullable: true })
   text!: string | null;
@@ -43,16 +50,23 @@ export class ContentEntity {
   @Column({ type: 'text', nullable: true, name: 'external_id' })
   externalId!: string | null;
 
+  /**
+   * What `externalId` actually references — 'file' (a ci.files.id, no FK) or
+   * 'external_uri' (an opaque source-native reference, e.g. Spotify's
+   * spotify:track:<id>, that never resolves against ci.files). NULL for rows
+   * not yet classified. See migration 20260818215331_add_content_external_id_kind
+   * and ContentService.findMediaFilesByEventIds, which reads this rather than
+   * assuming every external_id is a file id.
+   */
+  @Column({ type: 'text', nullable: true, name: 'external_id_kind' })
+  externalIdKind!: string | null;
+
   @Column({ type: 'text', nullable: true, name: 'source_url' })
   sourceUrl!: string | null;
 
   @Column({ type: 'jsonb', nullable: true, name: 'source_data' })
   sourceData!: Record<string, unknown> | null;
 
-  // Provenance triple for imported content (importer / capture sources). Added by
-  // migration 20260623120300_add_content_provenance. Dedupe key for the batch
-  // createContents mutation; also used to auto-link content to the event sharing
-  // the same triple. Null for derived/manual rows.
   @Column({ type: 'text', nullable: true, name: 'source_type' })
   sourceType!: string | null;
 
@@ -66,13 +80,6 @@ export class ContentEntity {
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity;
 
-  // Raw FK column backing the `user` relation above (same dual-mapping as
-  // EventEntity.userId). The owner is written by ContentService.create setting
-  // this scalar directly. It must stay insertable/updatable: when it was
-  // insert:false the relation's FK write was shadowed and user_id was persisted
-  // NULL on every insert, which silently broke every user_id-scoped read
-  // (search-index listener, idempotency dedupe, content exports). Nullable
-  // because the column maps to a nullable DB column.
   @Column({ type: 'uuid', nullable: true, name: 'user_id' })
   userId!: string | null;
 
@@ -86,15 +93,19 @@ export class ContentEntity {
   @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
   updatedAt!: Date;
 
-  static toEgressType(entity: ContentEntity) {
+  static toEgressType(
+    entity: ContentEntity,
+    base?: { name: string | null; description: string | null } | null,
+  ): Content {
     return {
       id: entity.id,
       type: entity.type,
-      title: entity.title || null,
+      title: base?.name ?? null,
       text: entity.text || null,
       url: entity.url || null,
       mimetype: entity.mimetype || null,
       externalId: entity.externalId || null,
+      externalIdKind: entity.externalIdKind || null,
       sourceUrl: entity.sourceUrl || null,
       sourceData: entity.sourceData || null,
       sourceType: entity.sourceType || null,
@@ -110,8 +121,10 @@ export class ContentEntity {
   }
 }
 
-export type Content = Readonly<Omit<ContentEntity, 'user' | 'event' | 'tags'>> & {
+export type Content = Readonly<Omit<ContentEntity, 'user' | 'event' | 'tags' | 'entityType'>> & {
+  readonly title: string | null;
   user?: User;
   event?: Event;
+  eventId?: string | null;
   tags?: string[];
 };

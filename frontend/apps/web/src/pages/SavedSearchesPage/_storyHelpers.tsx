@@ -23,7 +23,7 @@ export const withApollo: Decorator = (Story) => (
 
 /**
  * A plausible saved-search shaped like SavedSearchGridItemFragment. useFragment is
- * runtime-identity, so the modals/card accept this directly as the masked prop.
+ * runtime-identity, so the modals/row accept this directly as the masked prop.
  */
 export function mockSavedSearch(
   overrides: Record<string, unknown> = {},
@@ -41,6 +41,7 @@ export function mockSavedSearch(
       eventTypes: ['visited'],
       startTime: '2024-06-01T00:00:00.000Z',
       endTime: '2024-06-30T23:59:59.999Z',
+      datePreset: null,
       sortBy: 'time',
       sortOrder: 'desc',
       connectors: ['google-photos'],

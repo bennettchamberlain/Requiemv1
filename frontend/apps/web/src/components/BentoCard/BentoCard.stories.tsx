@@ -58,3 +58,23 @@ export const ExtensiveTagsNoImage: Story = {
     imageUrl: undefined,
   },
 };
+
+// A title long enough to wrap, with the corner affordances on at once — the
+// case where the dismiss button used to sit on top of the second word.
+export const WithActions: Story = {
+  args: {
+    title: 'Review notes from previous Engineering Strategy sessions',
+    imageUrl: undefined,
+    tags: ['Work'],
+    onDismiss: fn(),
+    showUnseenIndicator: true,
+  },
+};
+
+export const WithActionsAndImage: Story = {
+  args: {
+    title: 'Review notes from previous Engineering Strategy sessions',
+    onDismiss: fn(),
+    showUnseenIndicator: true,
+  },
+};

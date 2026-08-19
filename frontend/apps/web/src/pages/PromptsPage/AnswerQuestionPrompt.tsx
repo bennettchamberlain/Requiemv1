@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, type FormEvent } from 'react';
 
+import { apiKeyHeaders, buildApiUrl } from '@ci/common';
 import { Button, Card, Textarea, Spinner } from '@ci/shadcn';
 import { Send } from '@ci/shadcn/icons';
 
@@ -34,8 +35,9 @@ export function AnswerQuestionPrompt({ onAnswerSubmitted }: Props) {
       setFetchingQuestion(true);
       setError(null);
 
-      const response = await fetch('/api/questions/unanswered', {
+      const response = await fetch(buildApiUrl('/api/questions/unanswered'), {
         headers: {
+          ...apiKeyHeaders(),
           Authorization: `Bearer ${authToken}`,
           'Content-Type': 'application/json',
         },
@@ -50,14 +52,14 @@ export function AnswerQuestionPrompt({ onAnswerSubmitted }: Props) {
       }
 
       if (!response.ok) {
-        throw new Error(`Failed to fetch question: ${response.statusText}`);
+        throw new Error(`Failed to fetch reflection: ${response.statusText}`);
       }
 
       const data = await response.json();
       // Update question - this will smoothly transition the question text
       setQuestion(data);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch question';
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch reflection';
       setError(errorMessage);
       console.error('Error fetching unanswered question:', err);
       // Don't clear question on error - keep showing current one
@@ -98,9 +100,10 @@ export function AnswerQuestionPrompt({ onAnswerSubmitted }: Props) {
       setError(null);
 
       try {
-        const response = await fetch('/api/answers', {
+        const response = await fetch(buildApiUrl('/api/answers'), {
           method: 'POST',
           headers: {
+            ...apiKeyHeaders(),
             Authorization: `Bearer ${authToken}`,
             'Content-Type': 'application/json',
           },
@@ -147,7 +150,7 @@ export function AnswerQuestionPrompt({ onAnswerSubmitted }: Props) {
       {fetchingQuestion && !question ? (
         <div className="flex items-center gap-2">
           <Spinner variant="circle" className="h-4 w-4" />
-          <span className="text-sm text-muted-foreground">Loading question...</span>
+          <span className="text-sm text-muted-foreground">Loading reflection...</span>
         </div>
       ) : question ? (
         <form ref={formRef} onSubmit={handleSubmit} className="space-y-3" key="answer-question-form">

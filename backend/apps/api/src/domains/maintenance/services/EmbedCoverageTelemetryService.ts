@@ -20,23 +20,33 @@ export interface EntityCoverage {
   /** embedded / total, clamped to [0, 1]; 0 when total is 0. */
   ratio: number;
   /**
-   * True when the type has source rows but ZERO embeddings — a coverage hole
-   * (gap G2: e.g. content 0/366k). Drives the endpoint's `alarms` list so an
-   * operator/monitor can act without recomputing the ratios. Always false for a
-   * type with no source rows (nothing to embed).
+   * True when the type has source rows but ZERO embeddings — a total coverage
+   * hole (gap G2: e.g. content 0/366k). The severe subset of `underThreshold`.
+   * Always false for a type with no source rows (nothing to embed).
    */
   alarm: boolean;
+  /**
+   * True when the type has source rows but its coverage ratio is below
+   * {@link UNDER_COVERAGE_THRESHOLD} — i.e. meaningfully under-indexed, not just
+   * a complete hole. Catches the partial-coverage gaps a zero-only alarm misses
+   * (e.g. person 0.28%, communications 14%). A superset of `alarm`. Always false
+   * for a type with no source rows.
+   */
+  underThreshold: boolean;
 }
 
 /**
  * Whole-index coverage snapshot: one {@link EntityCoverage} per indexable type,
- * plus a flat `alarms` list of the types tripping the zero-coverage alarm.
+ * a flat `alarms` list of the types tripping the zero-coverage alarm, and an
+ * `underThreshold` list of the types below the coverage-ratio target.
  */
 export interface EmbedCoverageReport {
   /** entity_type -> coverage figures. Every INDEXABLE_ENTITIES type appears. */
   perType: Record<string, EntityCoverage>;
   /** Types with source rows but no embeddings at all (alarm === true). */
   alarms: string[];
+  /** Types below the coverage-ratio target (underThreshold === true; superset of alarms). */
+  underThreshold: string[];
   /** ISO timestamp the snapshot was computed at. */
   computedAt: string;
 }
@@ -79,6 +89,7 @@ export class EmbedCoverageTelemetryService {
 
     const perType: Record<string, EntityCoverage> = {};
     const alarms: string[] = [];
+    const underThreshold: string[] = [];
 
     for (const entityType of types) {
       const source = ENTITY_SOURCE_MAP[entityType];
@@ -97,17 +108,32 @@ export class EmbedCoverageTelemetryService {
       if (coverage.alarm) {
         alarms.push(entityType);
       }
+
+      if (coverage.underThreshold) {
+        underThreshold.push(entityType);
+      }
     }
 
     if (alarms.length > 0) {
-      // Surface the holes in the log stream too, so an appliance without a
+      // Surface the total holes in the log stream too, so an appliance without a
       // metrics scraper still leaves a breadcrumb.
       this.logger.warn('Embed-coverage alarm: types with source rows but no embeddings', {
         alarms,
       });
     }
 
-    return { perType, alarms, computedAt: new Date().toISOString() };
+    // Under-threshold (but non-zero) types are the ones a zero-only alarm used to
+    // miss — warn on them separately so partial-coverage gaps are visible.
+    const partialOnly = underThreshold.filter((type) => !alarms.includes(type));
+
+    if (partialOnly.length > 0) {
+      this.logger.warn(
+        `Embed-coverage below target (ratio < ${UNDER_COVERAGE_THRESHOLD}): types are indexed but under-covered`,
+        { underThreshold: partialOnly },
+      );
+    }
+
+    return { perType, alarms, underThreshold, computedAt: new Date().toISOString() };
   }
 
   /** Source rows for this type, honouring the source map's discriminator. */
@@ -137,15 +163,29 @@ export class EmbedCoverageTelemetryService {
 }
 
 /**
+ * Coverage ratio below which a type with source rows is flagged `underThreshold`
+ * (meaningfully under-indexed). 0.9 = at least 90% of rows must carry an
+ * embedding before a type is considered adequately covered.
+ */
+export const UNDER_COVERAGE_THRESHOLD = 0.9;
+
+/**
  * Derive a {@link EntityCoverage} from raw counts. Extracted (and exported) so
  * the ratio/alarm rules are unit-testable without a DataSource:
  *   - ratio is embedded/total, clamped to [0, 1]; 0 when total is 0.
- *   - alarm trips only when total > 0 AND embedded === 0 (a real hole, not an
- *     empty type).
+ *   - alarm trips only when total > 0 AND embedded === 0 (a total hole).
+ *   - underThreshold trips when total > 0 AND ratio < `threshold` (partial
+ *     coverage — the gap a zero-only alarm misses). A superset of alarm. Never
+ *     trips for an empty type (nothing to embed).
  */
-export function buildCoverage(total: number, embedded: number): EntityCoverage {
+export function buildCoverage(
+  total: number,
+  embedded: number,
+  threshold: number = UNDER_COVERAGE_THRESHOLD,
+): EntityCoverage {
   const ratio = total > 0 ? Math.min(Math.max(embedded / total, 0), 1) : 0;
   const alarm = total > 0 && embedded === 0;
+  const underThreshold = total > 0 && ratio < threshold;
 
-  return { total, embedded, ratio, alarm };
+  return { total, embedded, ratio, alarm, underThreshold };
 }

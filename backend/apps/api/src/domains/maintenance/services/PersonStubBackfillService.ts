@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
@@ -12,6 +12,8 @@ import {
   type IdentifierKey,
   splitPersonName,
 } from '@ci/domains/graph';
+import { matchOwner, readSelfIdentity, shouldMapContactToSelf, type SelfIdentity } from '@ci/domains/import';
+import { PersonalizationService, type TrustMode } from '@ci/domains/personalization';
 
 /** Default window width — one TimescaleDB-chunk-friendly slice per pass. */
 const DEFAULT_WINDOW_DAYS = 7;
@@ -116,6 +118,8 @@ export class PersonStubBackfillService {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly graphIngestService: GraphIngestService,
     private readonly entityIdentifierService: EntityIdentifierService,
+    @Inject(PersonalizationService)
+    private readonly personalization: Pick<PersonalizationService, 'getTrustMode'>,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(PersonStubBackfillService.name);
@@ -140,6 +144,11 @@ export class PersonStubBackfillService {
     }
 
     const { start, end } = bounds;
+    const identity = await readSelfIdentity(this.dataSource, userId).catch(
+      (): SelfIdentity => ({ names: [], email: null, phones: [] }),
+    );
+    const trustMode = await this.personalization.getTrustMode(userId);
+    const selfEntityId = await this.resolveSelfEntityId(userId);
 
     let examined = 0;
     let identifiersSeen = 0;
@@ -157,7 +166,15 @@ export class PersonStubBackfillService {
     while (windowEnd > start) {
       const windowStart = new Date(Math.max(start.getTime(), windowEnd.getTime() - windowMs));
 
-      const windowResult = await this.backfillWindow(userId, windowStart, windowEnd, windowLimit);
+      const windowResult = await this.backfillWindow(
+        userId,
+        windowStart,
+        windowEnd,
+        windowLimit,
+        identity,
+        trustMode,
+        selfEntityId,
+      );
       examined += windowResult.examined;
       identifiersSeen += windowResult.identifiersSeen;
       identifiersExisting += windowResult.identifiersExisting;
@@ -191,6 +208,15 @@ export class PersonStubBackfillService {
       windows,
       range: { start: start.toISOString(), end: end.toISOString() },
     };
+  }
+
+  private async resolveSelfEntityId(userId: string): Promise<string | null> {
+    const rows: Array<{ entity_id: string | null }> = await this.dataSource.query(
+      `SELECT entity_id FROM ci.users WHERE id = $1::uuid`,
+      [userId],
+    );
+
+    return rows[0]?.entity_id ?? null;
   }
 
   /**
@@ -241,6 +267,9 @@ export class PersonStubBackfillService {
     windowStart: Date,
     windowEnd: Date,
     limit: number,
+    identity: SelfIdentity,
+    trustMode: TrustMode,
+    selfEntityId: string | null,
   ): Promise<{
     examined: number;
     identifiersSeen: number;
@@ -334,6 +363,28 @@ export class PersonStubBackfillService {
             continue;
           }
 
+          const matchRaw = seen.rawName.length > 0 ? seen.rawName : seen.key.valueNormalized;
+          const ownerMatch = matchOwner(identity, matchRaw);
+          if (selfEntityId != null && shouldMapContactToSelf(ownerMatch, trustMode)) {
+            // Fold owner identifiers onto self instead of minting a duplicate stub.
+            if (seen.key.kind === 'email' || seen.key.kind === 'phone') {
+              await this.entityIdentifierService.repointToEntity(
+                userId,
+                selfEntityId,
+                seen.key.kind,
+                matchRaw,
+                'self_collation',
+              );
+            } else {
+              await this.entityIdentifierService.claimForSelf(userId, selfEntityId, {
+                names: [matchRaw],
+              });
+            }
+
+            identifiersExisting += 1;
+            continue;
+          }
+
           // properties.{emails|phones|names} is what GraphIngestService
           // .indexIdentifiers reads to populate ci.entity_identifiers; the value
           // rides as a single-element string[] (the canonical contract shape) so
@@ -342,9 +393,11 @@ export class PersonStubBackfillService {
           const propertyKey =
             seen.key.kind === 'email' ? 'emails' : seen.key.kind === 'phone' ? 'phones' : 'names';
           // Display-name participants also get structured first/middle/last
-          // parts (middle omitted when the name has only two tokens) so the
-          // Person surfaces firstName/lastName like contact-importer rows do.
-          // Email/phone raws are addresses, not names — no parts for those.
+          // parts (middle omitted when the name has only two tokens; no parts
+          // at all for a single token — a lone token isn't reliably a first
+          // name) so the Person surfaces firstName/lastName like
+          // contact-importer rows do. Email/phone raws are addresses, not
+          // names — no parts for those.
           const nameParts = seen.key.kind === 'name' ? splitPersonName(seen.rawName) : null;
           newEntities.push({
             key: `${STUB_SOURCE_SYSTEM}:${seen.key.kind}:${seen.key.valueNormalized}`,

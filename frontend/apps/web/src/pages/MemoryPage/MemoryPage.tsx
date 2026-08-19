@@ -12,6 +12,21 @@ import { parseBbox } from './bbox';
 const DesktopPage = lazy(() => import('./DesktopMemoryPage'));
 const MobilePage = lazy(() => import('./MobileMemoryPage'));
 
+/**
+ * The explorer's query comes from the URL and nothing else. Every view — List,
+ * Gallery, Map, Graph — reads this one filter set, so the same link means the
+ * same thing wherever it opens.
+ *
+ * Two filters used to be derived from `?view=` here instead: the gallery forced
+ * `includeFiles` on and the map forced `hasLocation` on. Switching views
+ * silently changed the result set, and the toolbar showed no sign of it — the
+ * map's coercion also made the whole browse events-only, because `hasLocation`
+ * puts the server on its event-filter path. Both are gone. Files now follow the
+ * What picker's File type like every other type, and the Map tab applies
+ * "Has a location" as a visible, removable filter when you click it (see
+ * DesktopMemoryPage/MobileMemoryPage). Filters a view genuinely cannot honour
+ * are marked as such in the toolbar — see Components/ExplorerToolbar/viewFilterSupport.
+ */
 export function MemoryPage() {
   usePageTitle('Memory - Companion Intelligence');
   const [searchParams] = useSearchParams();
@@ -33,12 +48,7 @@ export function MemoryPage() {
           connectors: searchParams.get('connectors')?.split(',').filter(Boolean) || undefined,
           people: searchParams.get('people')?.split(',').filter(Boolean) || undefined,
           places: searchParams.get('places')?.split(',').filter(Boolean) || undefined,
-          // The map (`?view=map`) is a located-events surface, so it derives
-          // hasLocation here rather than the map writing its own `?hasLocation`
-          // param (whose unmount cleanup reverted navigation away from /memory).
-          // A user-set Located filter still works via the explicit param.
-          hasLocation:
-            searchParams.get('hasLocation') === '1' || searchParams.get('view') === 'map' || undefined,
+          hasLocation: searchParams.get('hasLocation') === '1' || undefined,
           bbox: parseBbox(searchParams.get('bbox')),
           semantic: searchParams.get('semantic') === '1' || undefined,
         },

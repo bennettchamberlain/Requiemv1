@@ -9,8 +9,8 @@ import { createPositionSchemaRoot } from '@ci/domains/position';
  * REST bulk-ingest envelopes for the `/v1/*` machine-ingest plane.
  *
  * Every kind shares ONE request shape — `{ records: [...] }` — mirroring
- * `POST /v1/events`' `{ events: [...] }` batch style, and ONE response shape
- * ({@link BulkIngestResponse}). Record schemas match each destination service's
+ * `POST /v1/events`' earlier `{ events: [...] }` batch style (captureEventSchema
+ * above), and ONE response shape ({@link BulkIngestResponse}). Record schemas match each destination service's
  * create DTO EXACTLY (field names and casing included), so the controller can
  * hand the parsed records to the service with only type coercions (ISO string →
  * Date) and no field renaming:
@@ -31,6 +31,44 @@ const bulkEnvelope = <T extends z.ZodTypeAny>(record: T) =>
   z.object({
     records: z.array(record).min(1).max(MAX_BULK_INPUT_SIZE),
   });
+
+// ---------------------------------------------------------------------------
+// POST /v1/events → capture raw log + EventService.create
+// ---------------------------------------------------------------------------
+
+// G1 unified-capture ingest envelope (event-ingest-spec §4.2), pragmatic v1
+// subset. Every capture source — importer, browser ext, pipe — POSTs this shape
+// to /v1/events. `kind` is open text for v1; a closed enum + per-kind payload
+// schema registry is a follow-up. Predates the `{ records: [...] }` bulk
+// envelope below, hence the `{ events: [...] }` key and 1,000-record cap.
+export const captureEventSchema = z.object({
+  // Provenance source_type, defaulted to 'capture' by the handler when absent
+  // (the value this endpoint always stamped). Lets a bulk importer present its
+  // real triple — e.g. ci-import-tools sends ('ci-import-tools', '<dataSource>',
+  // items.id) — so materialized events dedup against rows the same importer
+  // created over GraphQL createEvents, and content rows auto-link by the
+  // matching triple. Capture sources that omit it are unchanged.
+  source_type: z.string().min(1).optional(),
+  source_system: z.string().min(1),
+  source_id: z.string().min(1),
+  kind: z.string().min(1),
+  occurred_at: z.string().datetime(),
+  /** ISO 8601, when the event ended — for sources that know the span (viewing
+   *  sessions, calendar events, flights). Materializes as events.end_time. */
+  ended_at: z.string().datetime().optional(),
+  observed_at: z.string().datetime().optional(),
+  title: z.string().optional(),
+  description: z.string().optional(),
+  payload: z.record(z.unknown()).default({}),
+  confidence_score: z.number().min(0).max(1).optional(),
+});
+
+export const ingestEventsSchema = z.object({
+  events: z.array(captureEventSchema).min(1).max(1000),
+});
+
+export type CaptureEvent = z.infer<typeof captureEventSchema>;
+export type IngestEventsRequest = z.infer<typeof ingestEventsSchema>;
 
 // ---------------------------------------------------------------------------
 // POST /v1/communications → CommunicationService.createMany
@@ -65,7 +103,7 @@ export const bulkCommunicationRecordSchema = z.object({
   is_encrypted: z.boolean().optional(),
   is_archived: z.boolean().optional(),
   preview: z.string().optional(),
-  // Provenance triple for idempotent re-ingest (communications_source_dedup).
+  // Provenance triple for idempotent re-ingest (communications_source_triple_uniq).
   source_type: z.string().optional(),
   source_system: z.string().optional(),
   source_id: z.string().optional(),
@@ -94,6 +132,14 @@ export const bulkContentRecordSchema = z.object({
   url: z.string().optional(),
   mimetype: z.string().optional(),
   external_id: z.string().optional(),
+  // What external_id references. Accepted rather than dropped: a client that
+  // knows (the importer stamps 'file' for an uploaded blob, 'external_uri' for
+  // a source-native URI — see push/inputs.ts toContentInput) must be able to
+  // say so over the wire. Zod strips unknown keys, so omitting this field here
+  // silently discarded the classification and left the row to depend on the
+  // shape fallback in ContentService.toDetailFields, which cannot recognise a
+  // bare platform id. Omitted by a client that does not know: still optional.
+  external_id_kind: z.enum(['file', 'external_uri']).optional(),
   source_url: z.string().optional(),
   source_data: z.record(z.unknown()).optional(),
   event_id: z.string().uuid().optional(),
@@ -108,6 +154,37 @@ export const ingestContentsSchema = bulkEnvelope(bulkContentRecordSchema);
 
 export type BulkContentRecord = z.infer<typeof bulkContentRecordSchema>;
 export type IngestContentsRequest = z.infer<typeof ingestContentsSchema>;
+
+// ---------------------------------------------------------------------------
+// POST /v1/notes → NoteService.captureMany
+// ---------------------------------------------------------------------------
+
+/**
+ * The one bulk kind whose `id` is REQUIRED rather than optional.
+ *
+ * Notes are the outbox's interactive-capture kind: the client mints the id
+ * before the note is queued, so the note has a stable identity from the instant
+ * it is written and nothing has to be reconciled when it drains. That id is
+ * also the idempotency key — notes carry no provenance triple, so the primary
+ * key is what makes an at-least-once replay free (NoteService.captureMany).
+ * Accepting a note without one would mean a replay inserting a second copy,
+ * which is precisely the failure this route exists to avoid.
+ *
+ * `captured_at` is required for the same reason: it is the last-write-wins
+ * discriminator against whatever is already stored, so a snapshot that sat in
+ * the queue while the note was edited elsewhere loses instead of clobbering.
+ */
+export const bulkNoteRecordSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string().nullable().optional(),
+  content: z.string().nullable().optional(),
+  captured_at: z.string().datetime(),
+});
+
+export const ingestNotesSchema = bulkEnvelope(bulkNoteRecordSchema);
+
+export type BulkNoteRecord = z.infer<typeof bulkNoteRecordSchema>;
+export type IngestNotesRequest = z.infer<typeof ingestNotesSchema>;
 
 // ---------------------------------------------------------------------------
 // POST /v1/inventory → ItemService.createMany
@@ -131,7 +208,41 @@ export const bulkInventoryRecordSchema = z.object({
   acquiredAt: z.string().datetime().optional(),
   identifierCodes: z.record(z.unknown()).optional(),
   condition: z.enum(['new', 'like_new', 'good', 'fair', 'poor', 'broken', 'n/a']).optional(),
+  quantity: z.number().int().positive().optional(),
   metadata: z.record(z.unknown()).optional(),
+  // Physical properties. Measurements accept a canonical SI number OR a
+  // unit-bearing string ('12 in', '2.5 lb'), because a product feed rarely
+  // publishes millimetres — ItemService resolves them through the one
+  // normalizer before the write, and rejects the batch with a 400 naming the
+  // field if it cannot. Everything the schema does NOT check here (bounds,
+  // colour hygiene, composition sums) is checked there, so this stays a shape
+  // guard and does not become a second, drifting copy of those rules.
+  lengthMm: z.union([z.number(), z.string()]).nullable().optional(),
+  widthMm: z.union([z.number(), z.string()]).nullable().optional(),
+  heightMm: z.union([z.number(), z.string()]).nullable().optional(),
+  massG: z.union([z.number(), z.string()]).nullable().optional(),
+  volumeMl: z.union([z.number(), z.string()]).nullable().optional(),
+  /** '12 x 8 x 2 in' — fills only the axes not sent individually. */
+  dimensions: z.string().nullable().optional(),
+  unitSystem: z.enum(['metric', 'imperial']).nullable().optional(),
+  colors: z
+    .union([z.array(z.string()), z.string()])
+    .nullable()
+    .optional(),
+  colorHex: z.string().nullable().optional(),
+  materials: z
+    .union([z.array(z.string()), z.string()])
+    .nullable()
+    .optional(),
+  composition: z
+    .record(z.union([z.number(), z.string()]))
+    .nullable()
+    .optional(),
+  acquisitionMethod: z.string().nullable().optional(),
+  acquiredFrom: z.string().nullable().optional(),
+  manufacturedAt: z.string().datetime().nullable().optional(),
+  expiresAt: z.string().datetime().nullable().optional(),
+  isDigital: z.boolean().optional(),
   // Provenance triple for idempotent re-ingest (inventory_source_triple_uniq).
   sourceType: z.string().optional(),
   sourceSystem: z.string().optional(),
@@ -177,23 +288,22 @@ export type IngestPositionsRequest = z.infer<typeof ingestPositionsSchema>;
 // ---------------------------------------------------------------------------
 
 /**
- * Shared bulk-ingest response, mirroring POST /v1/events' shape.
+ * Shared bulk-ingest response — one shape for POST /v1/events and every
+ * `{ records: [...] }` bulk kind. Every kind runs the same three-layer
+ * capture→materialize→link pipeline (BulkIngestController.captureAndMaterialize),
+ * so the accounting is uniform:
  *
- * Duplicate detection: every kind dedupes server-side on the provenance triple
- * (source_type, source_system, source_id) — positions dedupe on (user_id, time)
- * — but the bulk services return the created-OR-existing rows without exposing
- * the per-row inserted-vs-found flag (bulkInsertIdempotent computes it, the
- * services strip it before returning). So:
- *
- *   - `ingested` counts the records the service ACCEPTED (created now or
- *     already present — an idempotent re-send is counted here, not in
- *     `duplicate`);
- *   - `duplicate` counts only records collapsed WITHIN this request (two
- *     records sharing a triple / a position time), i.e.
- *     `records.length - accepted`;
- *   - `rejected` is per-record schema/processing failures. The bulk services
- *     are all-or-nothing per batch, so a service error rejects the whole
- *     request (HTTP error) rather than filling this array.
+ *   - `ingested` counts captures accepted THIS request: records whose
+ *     provenance triple appended a fresh raw-log row, plus triple-less records
+ *     (no capture identity — they materialize directly, deduped only by their
+ *     service's own key, e.g. positions on (user_id, time));
+ *   - `duplicate` counts records whose (destination, triple) capture key
+ *     already existed in the raw log — an idempotent re-send lands HERE — plus
+ *     within-request repeats of a key;
+ *   - `rejected` is per-record failures. Validation rejects individually
+ *     (NDJSON lines / envelope 400s); materialization is all-or-nothing per
+ *     batch, so a service failure rejects the batch's records together after
+ *     compensating their raw-log rows (they are safely re-sendable).
  */
 export interface BulkIngestResponse {
   ingested: number;

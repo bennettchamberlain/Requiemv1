@@ -7,6 +7,7 @@
  */
 
 import type { CiEntityType, IntentDomainKey, IntentPrivacy, JSONSchema } from '../core/types';
+import type { DispatchRuling, DispatchTier } from '../policy/dispatchPolicy';
 
 /**
  * Display descriptor for a schema domain — the standardized verb vocabulary tools are grouped
@@ -38,9 +39,31 @@ export interface ManifestIntent {
   description: string;
   parameters: JSONSchema;
   privacy: IntentPrivacy;
+  /**
+   * Whether the on-device tier can serve this intent from local data (see
+   * `IntentDefinition.localCapable`).
+   *
+   * Published so a client can gate its UI without asking the appliance — which is the only way it
+   * *can* ask while offline. Paired with `privacy.destructive` / `privacy.external`, it is the
+   * complete input to the shared `resolveDispatch` rule, so the on-device dispatcher runs the
+   * server's policy rather than a second copy of it.
+   */
+  localCapable: boolean;
   consumes: CiEntityType[];
   produces: CiEntityType[];
   phrases: string[];
+  /**
+   * The server's own `resolveDispatch` ruling for the tier the caller asked about, present only
+   * when the request named a tier (`GET /api/intents?tier=local`).
+   *
+   * This exists so the on-device dispatcher never re-derives the rule. `localCapable` + `privacy`
+   * are *sufficient* to compute it, but "sufficient input" still means two more implementations —
+   * one in Kotlin, one in Swift — of a rule whose own docs warn that "two copies of a security
+   * rule are two rules". Publishing the decision keeps the copy count at one: native code reads
+   * `dispatch.decision` and branches, and a policy change ships with the appliance rather than
+   * waiting on two app-store releases.
+   */
+  dispatch?: DispatchRuling;
 }
 
 /**
@@ -54,4 +77,6 @@ export interface IntentManifest {
   domains: IntentDomain[];
   entities: CiEntityDescriptor[];
   intents: ManifestIntent[];
+  /** Echoes the tier the rulings in `intents[].dispatch` were computed for, when one was asked for. */
+  tier?: DispatchTier;
 }

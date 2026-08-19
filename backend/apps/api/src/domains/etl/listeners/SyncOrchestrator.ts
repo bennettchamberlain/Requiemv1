@@ -30,12 +30,20 @@ export class SyncOrchestrator {
    * For historical syncs, this is where there are no prior ones, or the last one was successful and has a nextCursor,
    * or the last one was successful and has no nextCursor but was completed more than TTL ago.
    */
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Cron(CronExpression.EVERY_MINUTE, { name: 'SyncOrchestrator.orchestrateSyncJobs' })
   async orchestrateSyncJobs(): Promise<void> {
     const activeConnections = await this.connectionService.findActiveConnections();
 
-    activeConnections.forEach(({ connection }) => {
-      connection.activeEndpoints.forEach(async (endpoint) => {
+    // for...of, not forEach. `Array.prototype.forEach` discards the promise an
+    // async callback returns, so a rejection inside the body is orphaned: it
+    // reaches neither this method's caller, nor the @Cron wrapper, nor Nest's
+    // own scheduler catch — it surfaces as an unhandled rejection, which
+    // application.ts turns into process.exit(1). The body below makes six
+    // awaited database calls and runs every minute, so one pool timeout was
+    // enough to restart the API. Awaiting also bounds the concurrency, which was
+    // previously every connection × every endpoint at once.
+    for (const { connection } of activeConnections) {
+      for (const endpoint of connection.activeEndpoints) {
         const providerEndpoint = connection.provider!.endpoints.find((e) => e.name === endpoint);
         if (!providerEndpoint) {
           this.logger.error('Active endpoint not found on provider', {
@@ -43,7 +51,10 @@ export class SyncOrchestrator {
             endpoint,
           });
 
-          return;
+          // `continue`, not `return`: inside the old async forEach callback this
+          // skipped one endpoint, but in a for...of it would abandon every
+          // remaining endpoint AND every remaining connection in the sweep.
+          continue;
         }
 
         const iterationType = providerEndpoint.iterationType;
@@ -88,14 +99,16 @@ export class SyncOrchestrator {
             );
 
             if (stalledInProgress) {
-              stalledInProgress.forEach(async (sync) => {
+              // for...of: an async forEach callback orphans its rejection (see
+              // orchestrateSyncJobs above).
+              for (const sync of stalledInProgress) {
                 await this.connectionSyncJobService.markAsCompleted(
                   { userId: connection.userId },
                   sync.id,
                   'failed',
                   { error: 'Sync job stalled in progress' },
                 );
-              });
+              }
             }
 
             if (successes.length > 0 && (!pendingOrInProgress || stalledInProgress.length > 0)) {
@@ -153,18 +166,21 @@ export class SyncOrchestrator {
             );
 
             if (stalledInProgress.length > 0) {
-              stalledInProgress.forEach(async (sync) => {
+              // for...of: an async forEach callback orphans its rejection (see
+              // orchestrateSyncJobs above).
+              for (const sync of stalledInProgress) {
                 await this.connectionSyncJobService.markAsCompleted(
                   { userId: connection.userId },
                   sync.id,
                   'failed',
                   { error: 'Sync job stalled in progress' },
                 );
-              });
+              }
             }
 
             if (pendingOrInProgress) {
-              return;
+              // `continue`, not `return` — see the note at the top of the loop.
+              continue;
             }
 
             if (successes.length > 0) {
@@ -207,8 +223,8 @@ export class SyncOrchestrator {
             }
           }
         }
-      });
-    });
+      }
+    }
   }
 
   /**
@@ -216,7 +232,7 @@ export class SyncOrchestrator {
    * It will only execute one endpoint job per connection to avoid rate limits.
    * It will also limit itself to 5 total jobs in progress to avoid overwhelming the system.
    */
-  @Cron(CronExpression.EVERY_30_SECONDS)
+  @Cron(CronExpression.EVERY_30_SECONDS, { name: 'SyncOrchestrator.executeSyncJobs' })
   async executeSyncJobs(): Promise<void> {
     const pendingSyncJobs = await this.connectionSyncJobService.search(
       { userId: SYSTEM_USER },
@@ -276,6 +292,24 @@ export class SyncOrchestrator {
       return;
     }
 
+    // Claim check. `executeSyncJobs` selects rows by `status: 'pending'` every
+    // 30 seconds and enqueues without an idempotency key, so a sync still
+    // running when the next tick fires gets enqueued again — and pg-boss will
+    // not stop it, because every queue here uses the default `standard` policy
+    // under which a singletonKey is stored but not enforced. Without this check
+    // the handler would then set `in_progress` a second time and re-run
+    // `serviceFunction` against the same un-advanced cursor: a duplicate
+    // provider fetch and a duplicate ingest. It also stops a completed row from
+    // being resurrected by a late redelivery.
+    if (syncJob.status !== 'pending') {
+      this.logger.debug('Sync job is no longer pending; skipping duplicate delivery', {
+        connectionSyncJobId: syncJob.id,
+        status: syncJob.status,
+      });
+
+      return;
+    }
+
     await this.connectionSyncJobService.update({ userId: SYSTEM_USER }, syncJob.id, {
       status: 'in_progress',
     });
@@ -318,7 +352,6 @@ export class SyncOrchestrator {
       //Some providers explicitly return null for refreshToken, which was overwriting the
       //existing refreshToken. Strip it out in those cases.
       if (refreshCredentials.refreshToken == null) {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { refreshToken, ...stripped } = refreshCredentials;
         newCredentials = stripped;
       } else {
@@ -355,12 +388,31 @@ export class SyncOrchestrator {
         historical: syncJob.type === 'historical',
       });
 
+      const completedAt = new Date();
+
       await this.connectionSyncJobService.update({ userId: SYSTEM_USER }, syncJob.id, {
         data: results.data,
         nextCursor: results.nextCursor || {},
         error: undefined,
         status: 'success',
-        completedAt: new Date(),
+        completedAt,
+      });
+
+      // Stamp the connection itself, not just the job row.
+      //
+      // `syncState.lastSyncedAt` was already the convention — `findActiveConnections`
+      // reads exactly this key for its own summary — but nothing in the codebase
+      // ever WROTE it, so every reader got null forever and the UI's "synced N
+      // days ago" could never appear. The successful completion of a sync job is
+      // the one moment that fact is true, so it is recorded here.
+      //
+      // Merged into the existing object rather than replacing it: syncState also
+      // carries per-endpoint cursors that the next run needs.
+      await this.connectionService.update({ userId: connection!.userId }, connection!.id, {
+        syncState: {
+          ...(connection!.syncState ?? {}),
+          lastSyncedAt: completedAt.toISOString(),
+        },
       });
     } catch (err) {
       this.logger.error('Error executing sync job', {
@@ -378,7 +430,7 @@ export class SyncOrchestrator {
    * This method finds sync jobs that need to be transformed, retrieves their data, then
    * calls the appropriate transformation function based on the connection and endpoint.
    */
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Cron(CronExpression.EVERY_MINUTE, { name: 'SyncOrchestrator.executeTransformJobs' })
   async executeTransformJobs(): Promise<void> {
     const syncJobsToTransform = (
       await this.connectionSyncJobService.search(
@@ -389,7 +441,7 @@ export class SyncOrchestrator {
           orderBy: 'updated_at:DESC',
         },
       )
-    ).slice(0, 10);
+    ).slice(0, 2);
 
     for (const { id } of syncJobsToTransform) {
       await this.eventService.send(ConnectionSyncJobTransformEvent, {
@@ -408,6 +460,21 @@ export class SyncOrchestrator {
     if (!syncJob) {
       this.logger.error('Sync job not found for transformation', {
         connectionSyncJobId: payload.connectionSyncJobId,
+      });
+
+      return;
+    }
+
+    // The self-DoS this prevents: `executeTransformJobs` runs every minute and
+    // selects rows with `lastTransformed: null`, which is only written on
+    // COMPLETION — and `updated_at` does not move while the transform runs. So
+    // any transform exceeding 60 seconds was re-enqueued once a minute until it
+    // finished, and with the `etl` per-queue ceiling of 6 a five-minute
+    // transform ended up with six concurrent copies of itself, each holding a
+    // slot. GmailTransformService.transformGmail routinely exceeds a minute.
+    if (syncJob.lastTransformed != null) {
+      this.logger.debug('Sync job has already been transformed; skipping duplicate delivery', {
+        connectionSyncJobId: syncJob.id,
       });
 
       return;
@@ -450,9 +517,17 @@ export class SyncOrchestrator {
         connectionSyncJobId: syncJob.id,
       });
     } catch (err) {
-      this.logger.error('Error executing sync job', {
+      this.logger.error('Error transforming sync job', {
         connectionSyncJobId: syncJob.id,
         error: err instanceof Error ? err.message : 'Unknown error',
+      });
+
+      // Mark transformed so a failed/heavy job does not re-queue forever after API OOM restarts.
+      await this.connectionSyncJobService.update({ userId: SYSTEM_USER }, syncJob.id, {
+        lastTransformed: new Date(),
+        error: {
+          transformError: err instanceof Error ? err.message : 'Unknown error',
+        },
       });
     }
   }

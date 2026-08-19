@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   ConflictException,
   Controller,
@@ -37,6 +38,13 @@ import {
   type CommunicationLinkBackfillResult,
   CommunicationLinkBackfillService,
 } from '../services/CommunicationLinkBackfillService';
+import { DerivedRelationshipService } from '../services/DerivedRelationshipService';
+import {
+  type DeterministicEdgeBackfillProgress,
+  type DeterministicEdgeBackfillResult,
+  DeterministicEdgeBackfillService,
+} from '../services/DeterministicEdgeBackfillService';
+import { DETERMINISTIC_EDGE_RULE_IDS } from '../services/deterministicEdgeMatrix';
 import {
   type EmbedCoverageReport,
   EmbedCoverageTelemetryService,
@@ -47,10 +55,15 @@ import {
   EventParticipantBackfillService,
 } from '../services/EventParticipantBackfillService';
 import {
+  type ExternalIdKindIntegrityReport,
+  ExternalIdKindIntegrityService,
+} from '../services/ExternalIdKindIntegrityService';
+import {
   type GraphEnrichmentProgressCounts,
   type GraphEnrichmentResult,
   GraphEnrichmentService,
 } from '../services/GraphEnrichmentService';
+import { type HealSelfCollationResult, HealSelfCollationService } from '../services/HealSelfCollationService';
 import {
   type DeferralResult,
   type DroppedIndex,
@@ -68,10 +81,12 @@ import {
   ORCHESTRATE_STAGES,
   type OrchestrateSummary,
 } from '../services/MaintenanceOrchestratorService';
+import { NoteContentFoldService } from '../services/NoteContentFoldService';
 import {
   type PersonStubBackfillResult,
   PersonStubBackfillService,
 } from '../services/PersonStubBackfillService';
+import { RelationshipNormalizeService } from '../services/RelationshipNormalizeService';
 import {
   BACKFILLABLE_ENTITIES,
   type SearchIndexBackfillResult,
@@ -282,6 +297,23 @@ const extractPeopleFromCommunicationsSchema = linkCommunicationsSchema;
 
 type ExtractPeopleFromCommunicationsRequest = z.infer<typeof extractPeopleFromCommunicationsSchema>;
 
+// Body for POST /api/maintenance/materialize-edges. All optional: with no time
+// range each matrix rule derives its own bounds from its candidates' MIN/MAX
+// time and walks the whole history in windows. `rules` restricts the run to a
+// subset of the deterministic-edge matrix (unknown ids 400 here).
+const materializeEdgesSchema = z.object({
+  /** Lower bound (inclusive) on the source rows' time column. */
+  startTime: z.coerce.date().optional(),
+  /** Upper bound (exclusive) on the source rows' time column. */
+  endTime: z.coerce.date().optional(),
+  /** Window width in days (default 30). Each window is one bounded insert. */
+  windowDays: z.coerce.number().int().min(1).max(365).optional(),
+  /** Subset of the deterministic-edge matrix to run (default: all rules). */
+  rules: z.array(z.enum(DETERMINISTIC_EDGE_RULE_IDS)).min(1).optional(),
+});
+
+type MaterializeEdgesRequest = z.infer<typeof materializeEdgesSchema>;
+
 // Body for POST /api/maintenance/link-events. All optional. ci.events isn't a
 // hypertable, so there's no time-window knob to expose — just the per-page
 // candidate cap. Defaults sweep every candidate ci.events row for the user.
@@ -291,6 +323,13 @@ const linkEventsSchema = z.object({
 });
 
 type LinkEventsRequest = z.infer<typeof linkEventsSchema>;
+
+const healSelfCollationSchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+  dryRun: z.boolean().optional(),
+});
+
+type HealSelfCollationRequest = z.infer<typeof healSelfCollationSchema>;
 
 // Body for POST /api/maintenance/extract-graph. All optional: caps how much of
 // the user's own data the LLM extraction samples per run. Re-runnable.
@@ -317,6 +356,8 @@ const orchestrateSchema = z.object({
       extractPeople: extractPeopleFromCommunicationsSchema.optional(),
       linkCommunications: linkCommunicationsSchema.optional(),
       linkEvents: linkEventsSchema.optional(),
+      healSelfCollation: healSelfCollationSchema.optional(),
+      materializeEdges: materializeEdgesSchema.optional(),
       extractGraph: extractGraphSchema.optional(),
       geocode: geocodeLocationsSchema.optional(),
       reverseGeocode: geocodeLocationsSchema.optional(),
@@ -381,9 +422,15 @@ export class MaintenanceController {
     private readonly communicationLinkBackfillService: CommunicationLinkBackfillService,
     private readonly personStubBackfillService: PersonStubBackfillService,
     private readonly eventParticipantBackfillService: EventParticipantBackfillService,
+    private readonly healSelfCollationService: HealSelfCollationService,
+    private readonly deterministicEdgeBackfillService: DeterministicEdgeBackfillService,
+    private readonly relationshipNormalizeService: RelationshipNormalizeService,
+    private readonly derivedRelationshipService: DerivedRelationshipService,
+    private readonly noteContentFoldService: NoteContentFoldService,
     private readonly graphEnrichmentService: GraphEnrichmentService,
     private readonly searchIndexBackfillService: SearchIndexBackfillService,
     private readonly embedCoverageTelemetryService: EmbedCoverageTelemetryService,
+    private readonly externalIdKindIntegrityService: ExternalIdKindIntegrityService,
     private readonly locationEstimateService: LocationEstimateService,
     private readonly ingestResetService: IngestResetService,
     private readonly maintenanceOrchestratorService: MaintenanceOrchestratorService,
@@ -769,6 +816,142 @@ export class MaintenanceController {
   }
 
   /**
+   * Fold owner-representing Person stubs into the self Person when Autonomy
+   * trust allows (`person_self_merge` / hands_off auto). Otherwise counts
+   * candidates for Memory → People review. Idempotent; safe to re-run.
+   */
+  @Post('heal-self-collation')
+  async healSelfCollation(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(healSelfCollationSchema)) body: HealSelfCollationRequest,
+  ): Promise<HealSelfCollationResult> {
+    const serviceContext = toServiceContext(context);
+    const userId = serviceContext.userId;
+
+    if (typeof userId !== 'string') {
+      return {
+        selfEntityId: null,
+        trustMode: 'balanced',
+        examined: 0,
+        merged: 0,
+        reviewed: 0,
+        skipped: 0,
+        errors: [],
+        mergedSourceIds: [],
+      };
+    }
+
+    return this.healSelfCollationService.heal(userId, {
+      limit: body.limit,
+      dryRun: body.dryRun,
+    });
+  }
+
+  /**
+   * Deterministic edge materialization. Projects the deterministic-edge matrix
+   * (communications' from/to link columns, events' organizer/participants/
+   * location) into `ci.relationships`, resolving both endpoints through their
+   * merge tombstone so edges land on the canonical, deduplicated person/place.
+   * This is what makes the graph traversal (which only walks ci.relationships)
+   * actually see a person's emails, event attendance, and event locations.
+   * Re-runnable and idempotent (directed-uniqueness index + ON CONFLICT DO
+   * NOTHING; only new edges are counted / recorded as graph deltas). Run AFTER
+   * link-communications / link-events, which fill the columns this projects.
+   * Operator-triggered; never auto-run.
+   */
+  @Post('materialize-edges')
+  async materializeEdges(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(materializeEdgesSchema)) body: MaterializeEdgesRequest,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Query('stream') stream?: string,
+    @Headers('accept') accept?: string,
+  ): Promise<DeterministicEdgeBackfillResult | void> {
+    const serviceContext = toServiceContext(context);
+    const userId = serviceContext.userId;
+
+    const empty: DeterministicEdgeBackfillResult = { edgesCreated: 0, rules: [] };
+
+    // Opt-in streaming (NDJSON): one {type:'progress'} line per window then a
+    // final {type:'result'} line. When NOT requested, a single synchronous JSON
+    // result. Same JwtOrApiKeyAuthGuard either way.
+    if (wantsStream(stream, accept)) {
+      return this.streamNdjson<DeterministicEdgeBackfillResult>(req, res, async (emit) => {
+        if (typeof userId !== 'string') {
+          return empty;
+        }
+
+        return this.deterministicEdgeBackfillService.backfill(userId, {
+          startTime: body.startTime,
+          endTime: body.endTime,
+          windowDays: body.windowDays,
+          rules: body.rules,
+          onProgress: (partial: DeterministicEdgeBackfillProgress) => emit({ type: 'progress', ...partial }),
+        });
+      });
+    }
+
+    if (typeof userId !== 'string') {
+      return empty;
+    }
+
+    return this.deterministicEdgeBackfillService.backfill(userId, {
+      startTime: body.startTime,
+      endTime: body.endTime,
+      windowDays: body.windowDays,
+      rules: body.rules,
+    });
+  }
+
+  /**
+   * #1947 stage A — rewrite alias relationship types, deactivate IS, stamp
+   * bidirectional flags. Idempotent.
+   */
+  @Post('normalize-relationships')
+  async normalizeRelationships(@Context() context: RequestContext) {
+    const serviceContext = toServiceContext(context);
+    const userId = serviceContext.userId;
+
+    if (typeof userId !== 'string') {
+      return { renamed: 0, swapped: 0, deletedIs: 0, bidirectionalStamped: 0 };
+    }
+
+    return this.relationshipNormalizeService.normalize(userId);
+  }
+
+  /**
+   * #1947 stages C–D — L2 aggregates (COMMUNICATES_WITH, FREQUENTS) and
+   * household Group reification. Idempotent.
+   */
+  @Post('derive-relationships')
+  async deriveRelationships(@Context() context: RequestContext) {
+    const serviceContext = toServiceContext(context);
+    const userId = serviceContext.userId;
+
+    if (typeof userId !== 'string') {
+      return { communicatesWith: 0, frequents: 0, groupsReified: 0 };
+    }
+
+    return this.derivedRelationshipService.derive(userId);
+  }
+
+  /**
+   * Fold ci.notes into CTI Content nodes (Note→Content, provenance user_created).
+   */
+  @Post('fold-notes')
+  async foldNotes(@Context() context: RequestContext) {
+    const serviceContext = toServiceContext(context);
+    const userId = serviceContext.userId;
+
+    if (typeof userId !== 'string') {
+      return { notesFolded: 0 };
+    }
+
+    return this.noteContentFoldService.fold(userId);
+  }
+
+  /**
    * Graph-LLM enrichment. Samples the signed-in user's own communications +
    * events, runs the LOCAL Ollama model over the content to extract personal
    * preferences (liked/disliked concepts) and close/family relationships, then
@@ -801,6 +984,8 @@ export class MaintenanceController {
       conceptsWritten: 0,
       preferenceEdgesWritten: 0,
       familyEdgesWritten: 0,
+      generalEdgesWritten: 0,
+      reviewQueued: 0,
       errors: ['extract-graph requires an authenticated user'],
     };
 
@@ -837,9 +1022,10 @@ export class MaintenanceController {
 
   /**
    * One-shot enrichment orchestrator. Runs the requested maintenance legs (all
-   * nine by default) back-to-back in canonical order — extract_people →
-   * link_communications → link_events → extract_graph → geocode →
-   * reverse_geocode → estimate_locations → media_dimensions → search_index —
+   * ten by default) back-to-back in canonical order — extract_people →
+   * link_communications → link_events → materialize_edges → extract_graph →
+   * geocode → reverse_geocode → estimate_locations → media_dimensions →
+   * search_index —
    * calling the same leg services as the standalone endpoints, with per-leg
    * option passthrough. Fail-soft by default (a leg error is reported and the
    * chain continues); `abortOnError: true` stops the chain and reports the rest
@@ -1035,6 +1221,28 @@ export class MaintenanceController {
   }
 
   /**
+   * Integrity check for the `ci.content.external_id_kind` discriminator
+   * (defect F22): every row stamped `'file'` must resolve against `ci.files`.
+   *
+   * `external_id` holds either a `ci.files.id` or an opaque source-native
+   * reference, and no FK can enforce the difference while both live in one
+   * column — so the stamp is the only contract, and until now nothing checked
+   * it. That is how migration 20260818215331 shipped an "everything that is not
+   * Spotify is a file id" rule that labelled every Amazon Music / Audible /
+   * Kindle / Prime Video URI as a file id.
+   *
+   * `orphanFileRows` is the assertion; `malformedFileRows` is the subset that
+   * is not even UUID-shaped, which distinguishes a mislabel (a URI stamped
+   * 'file' — run migration 20260818235804) from a dangling-but-plausible id (a
+   * file row that was deleted). Pure observability: no writes, counts are
+   * GLOBAL, matching /search/coverage.
+   */
+  @Get('content/external-id-kind')
+  async contentExternalIdKindIntegrity(): Promise<ExternalIdKindIntegrityReport> {
+    return this.externalIdKindIntegrityService.check();
+  }
+
+  /**
    * Ingest observability snapshot: row counts of the bulk-ingest destination
    * tables plus the search-index side (embeddings + skip markers per type, and
    * the search-index queue depth from pgboss). One call answers "did the import
@@ -1108,19 +1316,31 @@ export class MaintenanceController {
    * hypertable (TRUNCATE skips the AFTER DELETE trigger — leaving it populated
    * is the "0 comms on re-import" incident), the whole ci_search index
    * (embeddings/vectors/index_skips), and deletes the not-yet-run search-index
-   * queue jobs. Destructive across ALL users — requires the exact confirm
-   * literal. Returns counts-before per table. The importer's own watermark
-   * (`ci_server.last_push`) must be reset separately; see
-   * db/postgres/INGEST_RESET_RUNBOOK.md.
+   * queue jobs. Requires the exact confirm literal. Returns counts-before per
+   * table. The importer's own watermark (`ci_server.last_push`) must be reset
+   * separately; see db/postgres/INGEST_RESET_RUNBOOK.md.
+   *
+   * It truncates, so it cannot take one user's rows and leave another's — and
+   * this route is behind ordinary user auth, not an admin role, because the
+   * appliance has none. The service therefore REFUSES when any of those tables
+   * still holds another account's data; the confirm literal proves the caller
+   * meant it, not that they were entitled to everyone else's memory.
    */
   @Post('ingest/reset')
   async resetIngest(
+    @Context() context: RequestContext,
     @Body(new ValidationPipe(ingestResetSchema)) body: { confirm: 'RESET_ALL_INGESTED_DATA' },
   ): Promise<IngestResetResult> {
     // The ValidationPipe enforces the confirm literal; the value isn't otherwise used.
     void body;
 
-    return this.ingestResetService.reset();
+    const { userId } = toServiceContext(context);
+
+    if (typeof userId !== 'string') {
+      throw new BadRequestException('An authenticated user is required to reset ingested data');
+    }
+
+    return this.ingestResetService.reset({ userId });
   }
 
   /**

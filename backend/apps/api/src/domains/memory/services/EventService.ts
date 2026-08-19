@@ -1,16 +1,29 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, IsNull, Repository, type FindOptionsOrder, type FindOptionsWhere } from 'typeorm';
+import {
+  DataSource,
+  In,
+  IsNull,
+  Repository,
+  type FindOptionsOrder,
+  type FindOptionsWhere,
+  type ObjectLiteral,
+  type SelectQueryBuilder,
+} from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/context';
-import { bulkInsertIdempotent, INGEST_REFRESH_COLUMNS } from '@ci/common/persistence';
+import { type BulkInsertResult, bulkInsertIdempotent, INGEST_REFRESH_COLUMNS } from '@ci/common/persistence';
 import { EventService as SignallingEventService } from '@ci/domains/events';
 import { EventCreatedEvent, EventUpdatedEvent, EventRemovedEvent } from '@ci/domains/memory/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
+import { EventBaseEntity } from '../entities/EventBaseEntity';
 import { EventEntity, Event } from '../entities/EventEntity';
 import { CreateEventDto, UpdateEventDto, SearchEventDto } from '../types';
+
+import { CtiAggregate } from './CtiAggregate';
+import { GraphDeltaWriter } from './GraphDeltaWriter';
 
 interface Options {
   limit?: number;
@@ -36,20 +49,165 @@ interface Options {
   hasLocation?: boolean;
   /** "Where" (viewport): bounding box [minLon, minLat, maxLon, maxLat] (EPSG:4326). */
   bbox?: number[];
+  /**
+   * Restrict to this explicit set of event ids, ANDed with every other filter.
+   * The map's pin read uses it to intersect a text-query / tag candidate set
+   * (resolved by the search + tag services, which know nothing about SQL
+   * filters) with the located-event predicates below, so the map honours the
+   * explorer's query and tag filters without a second filter implementation.
+   * An empty array matches nothing.
+   */
+  ids?: string[];
 }
 
+/** Filter subset of {@link Options} that {@link EventService.countEntitiesForEvents} accepts —
+ * everything `getEntitiesForEvents` filters *by*, minus the pagination-only fields
+ * (`limit`, `order`, `afterTime`, `afterId`), which a total count must not depend on. */
+type CountOptions = Omit<Options, 'limit' | 'order' | 'afterTime' | 'afterId'>;
+
+/** Options for {@link EventService.findMapPins}: the shared filter set plus a hard row cap. */
+type MapPinOptions = CountOptions & { limit: number };
+
+/**
+ * One located event reduced to what a map marker draws — a point, a label, and
+ * enough timestamp to order and caption it. Deliberately NOT an {@link Event}:
+ * the map plots tens of thousands of these at once, and hydrating full events
+ * (media urls, participants, metadata) to draw a 48px pin is what forced the
+ * old 30-pins-per-request paging.
+ */
+export interface MapPin {
+  id: string;
+  title: string | null;
+  startTime: Date | null;
+  endTime: Date | null;
+  eventType: string | null;
+  locationName: string | null;
+  latitude: number;
+  longitude: number;
+}
+
+/**
+ * Hourly UTC per-user event count. Declared locally so this domain carries no
+ * dependency on aggregating consumers; they enforce the shape structurally
+ * where they consume it.
+ */
+export interface HourlyEventCount {
+  userId: string;
+  bucketStart: Date;
+  count: number;
+}
+
+/**
+ * How far before `from` an event may have started and still be returned by the
+ * calendar range read.
+ *
+ * The overlap predicate `COALESCE(end_time, start_time) >= :from` is an
+ * expression no index covers, and the only applicable index —
+ * events_user_time_idx (user_id, start_time DESC) — can serve the `< :to` upper
+ * bound but has nothing to stop at underneath, so the scan costs O(every event
+ * the user owns before `to`) regardless of how narrow the window is. On a 200k
+ * row table a 7-day window measured as a 2273-buffer seq scan (24.9ms); adding a
+ * lower bound on start_time turns it into a 190-buffer bitmap index scan (2.4ms).
+ * ci.events also holds photo/video rows, so this grows with every day of use.
+ *
+ * The bound is a bounded-lookback trade, not a free win: an event that started
+ * more than this long before the window and is *still* running is dropped. A
+ * quarter is the same span MAX_RANGE_DAYS lets a caller request in one go, and
+ * nothing this appliance ingests — calendar entries, photos, visits, trips —
+ * occupies a single unbroken span that long.
+ */
+const MAX_EVENT_LOOKBACK_DAYS = 92;
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Hard row cap for one calendar range read. The resolver's MAX_RANGE_DAYS bounds
+ * the *span* a caller may ask for but not the row count, and a quarter-wide
+ * request over a photo-heavy library can run to six figures of serialised nodes.
+ * This is a backstop against that, not a pagination scheme: results are ordered
+ * start_time ASC, so a truncated response is the earliest prefix of the window.
+ */
+const MAX_RANGE_EVENTS = 2000;
+
+/**
+ * Event types the schedule calendar renders, as an allowlist.
+ *
+ * `ci.events` is the timeline for everything an ETL connector can flatten, not
+ * just calendar entries: Spotify writes `favorite` and `played_music`, Steam
+ * writes `friend_added` and `game_played`, GitHub writes a `github_*` type per
+ * repo action. None of those are occupied time on a calendar, and a denylist
+ * put the burden on whoever adds the next connector to remember the schedule
+ * surface exists. An allowlist fails closed instead: a new event type is
+ * invisible here until someone adds it deliberately.
+ *
+ * This replaces the `source_type <> 'browser_activity'` stopgap from 6078c06f6,
+ * which only covered the browser fold (itself reverted in 20260812144811).
+ */
+const SCHEDULE_EVENT_TYPES = ['calendar_event', 'meeting', 'appointment', 'planned_block'] as const;
+
+/**
+ * Spanning-aggregate service for the events CTI split: an event is ONE logical
+ * entity persisted as a `ci.entities` base row (discriminated 'Event', the
+ * SOLE owner of title/description — see {@link EventBaseEntity}) plus a
+ * `ci.events` detail row sharing the same uuid. Writes touch both rows in one
+ * transaction; reads compose the egress {@link Event} from the pair with one
+ * batched base-row fetch.
+ */
 @Injectable()
 export class EventService {
+  private readonly aggregate: CtiAggregate<EventEntity, EventBaseEntity>;
+
   constructor(
     @InjectRepository(EventEntity)
     private readonly eventRepository: Repository<EventEntity>,
+    @InjectRepository(EventBaseEntity)
+    private readonly eventBaseRepository: Repository<EventBaseEntity>,
     private readonly signallingEventService: SignallingEventService,
     private readonly dataSource: DataSource,
-  ) {}
+    private readonly graphDeltaWriter: GraphDeltaWriter,
+  ) {
+    this.aggregate = new CtiAggregate({
+      detailRepository: this.eventRepository,
+      detailEntity: EventEntity,
+      baseEntity: EventBaseEntity,
+      baseRepository: this.eventBaseRepository,
+      linkedTable: 'events',
+      scopedWhere: (context, id) => ({
+        id,
+        ...(context.userId !== SYSTEM_USER && {
+          user: { id: context.userId },
+        }),
+      }),
+      // Events are tombstoned, not destroyed: deleting one is a user-facing
+      // action on irreplaceable imported history, and `ci.events.is_deleted`
+      // already exists for exactly this. `remove` flips the flag, `restore`
+      // clears it, and the read paths below skip flagged rows.
+      softDeleteFlag: 'isDeleted',
+    });
+  }
+
+  /**
+   * Composes egress events from detail rows plus one batched fetch of their
+   * base rows (the owners of title/description), preserving input order.
+   */
+  private composeMany(entities: EventEntity[]): Promise<Event[]> {
+    return this.aggregate.composeMany(entities, (entity, base) => EventEntity.toEgressType(entity, base));
+  }
+
+  private async composeOne(entity: EventEntity): Promise<Event> {
+    const [event] = await this.composeMany([entity]);
+
+    return event;
+  }
 
   /** Map a CreateEventDto onto EventEntity columns (shared by the single + bulk paths). */
   private toEntityFields(item: CreateEventDto): Partial<EventEntity> {
     const toCreate = { ...item } as Partial<EventEntity>;
+
+    // title/description are base-row data (ci.entities); never let them near
+    // the detail table.
+    delete (toCreate as Record<string, unknown>).title;
+    delete (toCreate as Record<string, unknown>).description;
 
     if (item.start_time) {
       toCreate.startTime = item.start_time;
@@ -99,6 +257,40 @@ export class EventService {
       toCreate.sharingLevel = item.sharing_level;
     }
 
+    // Provenance: who minted this event and from what. `repository.create()`
+    // reads columns by propertyName and silently drops any key it does not
+    // recognise, so a snake_case DTO key that is not renamed here is not a
+    // no-op — it is a lost write. These four are the trail an event promoted
+    // from a schedule candidate carries; without them a suggested event is
+    // indistinguishable from a hand-created one.
+    //
+    // Compared against `undefined` rather than truthiness: `is_predicted: false`
+    // is the meaningful assertion "the user committed to this, HBPE may train on
+    // it", and 0 is a legal energy_level.
+    if (item.is_predicted !== undefined) {
+      toCreate.isPredicted = item.is_predicted;
+    }
+
+    if (item.inference_sources) {
+      toCreate.inferenceSources = item.inference_sources;
+    }
+
+    if (item.created_by) {
+      toCreate.createdBy = item.created_by;
+    }
+
+    if (item.energy_level !== undefined) {
+      toCreate.energyLevel = item.energy_level;
+    }
+
+    if (item.task_id) {
+      toCreate.taskId = item.task_id;
+    }
+
+    if (item.planned_minutes != null) {
+      toCreate.plannedMinutes = item.planned_minutes;
+    }
+
     return toCreate;
   }
 
@@ -114,6 +306,12 @@ export class EventService {
     // provenance triple capture sources carry. Re-ingesting the same event
     // — flaky-client retries, a full importer re-sync — must NOT create a
     // duplicate. When the triple is present, return the existing row.
+    //
+    // Deliberately NOT filtered by `isDeleted`: `events_source_triple_uniq`
+    // covers tombstoned rows too, so skipping one here would send the insert
+    // below into a guaranteed 23505. Matching it instead means a re-import of
+    // an event the user deleted stays deleted rather than silently coming
+    // back — the deletion outlives the next sync.
     const sourceWhere: FindOptionsWhere<EventEntity> | null =
       item.source_type && item.source_id
         ? {
@@ -127,30 +325,56 @@ export class EventService {
     if (sourceWhere) {
       const existing = await this.eventRepository.findOne({ where: sourceWhere });
       if (existing) {
-        return EventEntity.toEgressType(existing);
+        return this.composeOne(existing);
       }
     }
 
     const id = item.id ?? uuidv7();
 
-    const event = this.eventRepository.create({
-      ...toCreate,
-      id,
-      user: {
-        id: context.userId,
-      },
-    });
-
     let eventResult: EventEntity;
     try {
-      eventResult = await this.eventRepository.save(event);
+      // One transaction across both halves of the aggregate: the base row (the
+      // owner of title/description) first, then the detail.
+      eventResult = await this.eventRepository.manager.transaction(async (manager) => {
+        await manager.getRepository(EventBaseEntity).save(
+          this.aggregate.createBaseRow(manager, {
+            id,
+            userId: context.userId,
+            name: item.title,
+            description: item.description ?? null,
+          }),
+        );
+
+        const event = manager.getRepository(EventEntity).create({
+          ...toCreate,
+          id,
+          user: {
+            id: context.userId,
+          },
+        });
+
+        const saved = await manager.getRepository(EventEntity).save(event);
+        await this.graphDeltaWriter.entityCreated({
+          entityId: id,
+          entityType: 'Event',
+          name: item.title,
+          description: item.description ?? null,
+          ownerUserId: context.userId,
+          changeSource: 'EventService.create',
+          changedByUserId: typeof context.userId === 'string' ? context.userId : null,
+          manager,
+        });
+
+        return saved;
+      });
     } catch (err) {
       // Lost a race to a concurrent insert of the same triple (the partial-
-      // unique index raised 23505) — fetch and return the winner.
+      // unique index raised 23505) — fetch and return the winner. The failed
+      // transaction rolled back the base row too.
       if (sourceWhere && (err as { code?: string })?.code === '23505') {
         const existing = await this.eventRepository.findOne({ where: sourceWhere });
         if (existing) {
-          return EventEntity.toEgressType(existing);
+          return this.composeOne(existing);
         }
       }
 
@@ -161,7 +385,10 @@ export class EventService {
       eventId: eventResult.id,
     });
 
-    return EventEntity.toEgressType(eventResult);
+    return EventEntity.toEgressType(eventResult, {
+      name: item.title,
+      description: item.description ?? null,
+    });
   }
 
   async create(context: UserServiceContext, data: CreateEventDto | CreateEventDto[]): Promise<Event[]> {
@@ -170,6 +397,20 @@ export class EventService {
     }
 
     return this.createManyBatched(context, data);
+  }
+
+  /**
+   * Same ingest as {@link create}, reporting which rows this call actually
+   * INSERTED rather than found already present.
+   *
+   * Batch-only: the single-record path inserts unconditionally, so there is no
+   * ambiguity to report there.
+   */
+  async createDetailed(
+    context: UserServiceContext,
+    data: CreateEventDto[],
+  ): Promise<Array<BulkInsertResult<Event>>> {
+    return this.createManyBatchedDetailed(context, data);
   }
 
   /**
@@ -184,35 +425,113 @@ export class EventService {
    * (POST /api/maintenance/search-index/backfill); single-row create() still emits.
    */
   private async createManyBatched(context: UserServiceContext, data: CreateEventDto[]): Promise<Event[]> {
+    return (await this.createManyBatchedDetailed(context, data)).map(({ entity }) => entity);
+  }
+
+  private async createManyBatchedDetailed(
+    context: UserServiceContext,
+    data: CreateEventDto[],
+  ): Promise<Array<BulkInsertResult<Event>>> {
     if (data.length === 0) {
       return [];
     }
 
-    const entities = data.map((item) =>
+    const withIds = data.map((item) => ({ ...item, id: item.id ?? uuidv7() }));
+
+    const entities = withIds.map((item) =>
       this.eventRepository.create({
         ...this.toEntityFields(item),
-        id: item.id ?? uuidv7(),
+        id: item.id,
         userId: context.userId,
       }),
     );
 
-    const results = await bulkInsertIdempotent({
-      repository: this.eventRepository,
-      entities,
-      primaryKey: 'id',
-      getTriple: (entity) => ({
-        sourceType: entity.sourceType,
-        sourceSystem: entity.sourceSystem,
-        sourceId: entity.sourceId,
-      }),
-      scope: { userId: context.userId },
-      // The events_source_triple_uniq index is NOT user-scoped (see migration
-      // 20260620213807); the arbiter must match it exactly.
-      conflictTarget: '(source_type, source_system, source_id) WHERE source_id IS NOT NULL',
-      tripleColumns: ['source_type', 'source_system', 'source_id'],
-      // Centralized refresh contract — currently empty, so conflicts stay
-      // DO NOTHING find-or-return.
-      conflictUpdateColumns: INGEST_REFRESH_COLUMNS.event,
+    // title/description are base-row data and never touch the detail table.
+    const ingressById = new Map(
+      withIds.map((item) => [item.id, { title: item.title, description: item.description ?? null }]),
+    );
+
+    // One transaction spans both halves of the CTI aggregate: the detail rows
+    // land first (the triple arbiter decides which actually insert), then a
+    // base row is written for exactly the inserted set. The deferred FK
+    // (events_event_id_entities_fk) tolerates the detail-before-base order.
+    const { results, bases } = await this.eventRepository.manager.transaction(async (manager) => {
+      const detailResults = await bulkInsertIdempotent({
+        repository: this.eventRepository,
+        manager,
+        entities,
+        primaryKey: 'id',
+        getTriple: (entity) => ({
+          sourceType: entity.sourceType,
+          sourceSystem: entity.sourceSystem,
+          sourceId: entity.sourceId,
+        }),
+        scope: { userId: context.userId },
+        // Must match events_source_triple_uniq (user-scoped as of 20260808150100).
+        conflictTarget: '(user_id, source_type, source_system, source_id) WHERE source_id IS NOT NULL',
+        tripleColumns: ['source_type', 'source_system', 'source_id'],
+        // Centralized refresh contract — currently empty, so conflicts stay
+        // DO NOTHING find-or-return.
+        conflictUpdateColumns: INGEST_REFRESH_COLUMNS.event,
+      });
+
+      const baseRows = detailResults
+        .filter(({ inserted }) => inserted)
+        .map(({ entity }) => {
+          const ingress = ingressById.get(entity.id);
+          if (!ingress) {
+            // Every inserted id came from withIds — the exact array ingressById
+            // was built from — so a miss means the id mapping broke. Fail
+            // loudly rather than writing a null-labeled base row.
+            throw new Error(`No ingress row for inserted event ${entity.id}`);
+          }
+
+          return this.aggregate.createBaseRow(manager, {
+            id: entity.id,
+            userId: context.userId,
+            name: ingress.title,
+            description: ingress.description,
+          });
+        });
+
+      // ON CONFLICT (entity_id) DO NOTHING guards the theoretical case of a
+      // base row already present for this uuid.
+      await this.aggregate.insertBaseRows(manager, baseRows, '(entity_id) DO NOTHING');
+
+      await this.graphDeltaWriter.recordMany(
+        detailResults
+          .filter(({ inserted }) => inserted)
+          .map(({ entity }) => {
+            const ingress = ingressById.get(entity.id);
+
+            return {
+              nodeType: 'entity' as const,
+              changeType: 'created' as const,
+              entityId: entity.id,
+              entityType: 'Event',
+              ownerUserId: context.userId,
+              changeSource: 'EventService.createMany',
+              changedByUserId: typeof context.userId === 'string' ? context.userId : null,
+              changedFields: {
+                name: { new: ingress?.title ?? null },
+                description: { new: ingress?.description ?? null },
+                entity_type: { new: 'Event' },
+                properties: { new: {} },
+              },
+            };
+          }),
+        manager,
+      );
+
+      // One read covers egress composition for inserted AND pre-existing rows
+      // (a deduped triple resolves to a row whose base values this batch never
+      // carried).
+      const baseEntities = await this.aggregate.fetchBaseMap(
+        detailResults.map(({ entity }) => entity.id),
+        manager,
+      );
+
+      return { results: detailResults, bases: baseEntities };
     });
 
     // Bulk ingest does NOT emit a per-row EventCreatedEvent: the per-row pgboss
@@ -220,25 +539,143 @@ export class EventService {
     // bulk-loaded rows is deferred to the post-load batch embed
     // (POST /api/maintenance/search-index/backfill). Single-row create() still
     // emits, so interactive creates index live.
-    return results.map(({ entity }) => EventEntity.toEgressType(entity));
+    return results.map(({ entity, inserted }) => ({
+      entity: EventEntity.toEgressType(entity, bases.get(entity.id)),
+      inserted,
+    }));
   }
 
-  async findAll(context: ServiceContext): Promise<Event[]> {
-    const result = await this.eventRepository.find({
+  /**
+   * Events overlapping [from, to) — the calendar read path.
+   *
+   * Deliberately NOT the "starts within the window" filter used by
+   * getEntitiesForEvents (the search path). A calendar must show an event that
+   * began before the window and runs into it: a Sunday-night flight still
+   * occupies Monday morning. So the predicate is interval overlap, with an
+   * open-ended event (no end_time) treated as an instant at start_time.
+   *
+   * Cancelled and no-show rows are excluded — they are not occupied time — but
+   * `tentative` is kept, because a maybe on the calendar is still a claim on the
+   * slot and the schedule surface renders it as such.
+   *
+   * Bounded on both sides and capped: see MAX_EVENT_LOOKBACK_DAYS for why the
+   * overlap predicate alone cannot use an index, and MAX_RANGE_EVENTS for the
+   * row cap.
+   *
+   * Filtered to SCHEDULE_EVENT_TYPES, plus rows with a NULL `event_type`. The
+   * NULL arm is load-bearing, not a fallthrough: events the user creates through
+   * EventResolver and events materialized by CandidateService when a schedule
+   * suggestion is accepted both leave `event_type` unset, and dropping them
+   * would empty the calendar of exactly the entries the user put there.
+   */
+  async findInRange(context: ServiceContext, from: Date, to: Date): Promise<Event[]> {
+    // Sargable floor for events_user_time_idx: the planner can now range-scan
+    // (user_id, start_time) instead of walking the user's whole history.
+    const lowerBound = new Date(from.getTime() - MAX_EVENT_LOOKBACK_DAYS * DAY_MS);
+
+    const query = this.dataSource
+      .getRepository(EventEntity)
+      .createQueryBuilder('event')
+      .where('event.is_deleted = false')
+      .andWhere("event.status NOT IN ('cancelled', 'no_show')")
+      .andWhere('event.start_time >= :lowerBound', { lowerBound })
+      .andWhere('event.start_time < :to', { to })
+      .andWhere('COALESCE(event.end_time, event.start_time) >= :from', { from })
+      .andWhere('(event.event_type IS NULL OR event.event_type IN (:...scheduleEventTypes))', {
+        scheduleEventTypes: [...SCHEDULE_EVENT_TYPES],
+      })
+      .orderBy('event.start_time', 'ASC')
+      .addOrderBy('event.event_id', 'ASC')
+      .take(MAX_RANGE_EVENTS);
+
+    if (context.userId !== SYSTEM_USER) {
+      query.andWhere('event.user_id = :userId', { userId: context.userId });
+    }
+
+    const result = await query.getMany();
+
+    return this.composeMany(result);
+  }
+
+  /**
+   * Move an event to a new time, preserving its duration.
+   *
+   * Separate from `update` because a move carries a consequence a generic field
+   * write does not: an event mirrored from an external calendar
+   * (`source_system` set) is only a local copy, and moving it here does NOT
+   * reach the source. Marking it `pending` records that the local row has drifted
+   * ahead of the calendar it came from, so a future sync-back has something to
+   * find (CI-Server-aan) and the UI can say so honestly.
+   *
+   * All-day events ignore the time component: their "when" is a date.
+   */
+  async reschedule(
+    context: ServiceContext,
+    id: string,
+    startTime: Date,
+    endTime?: Date,
+  ): Promise<Event | null> {
+    const event = await this.eventRepository.findOne({
       where: {
-        ...(context.userId !== SYSTEM_USER && {
-          user: { id: context.userId },
-        }),
+        id,
+        // A tombstoned event is not reschedulable — it is gone as far as every
+        // reader is concerned, and moving one would resurrect it in the
+        // calendar's write path without clearing the flag.
+        isDeleted: false,
+        ...(context.userId !== SYSTEM_USER && { user: { id: context.userId } }),
       },
     });
 
-    return result.map((entity) => EventEntity.toEgressType(entity));
+    if (!event) {
+      return null;
+    }
+
+    // Duration is the thing being preserved: a 90-minute meeting dragged to
+    // Thursday is still 90 minutes, even though the caller only names a start.
+    const priorSpanMs =
+      event.endTime && event.startTime ? event.endTime.getTime() - event.startTime.getTime() : 0;
+
+    event.startTime = startTime;
+    event.endTime = endTime ?? (priorSpanMs > 0 ? new Date(startTime.getTime() + priorSpanMs) : null);
+
+    if (event.sourceSystem) {
+      event.externalSyncStatus = 'pending';
+    }
+
+    await this.eventRepository.save(event);
+
+    await this.signallingEventService.send(EventUpdatedEvent, { eventId: event.id });
+
+    return this.findById(context, id);
   }
 
+  async findAll(context: ServiceContext): Promise<Event[]> {
+    const query = this.eventRepository
+      .createQueryBuilder('event')
+      .where("(event.event_type IS NULL OR event.event_type <> 'planned_block')")
+      // Tombstoned events are gone as far as every reader is concerned.
+      .andWhere('event.is_deleted = false');
+
+    if (context.userId !== SYSTEM_USER) {
+      query.andWhere('event.user_id = :userId', { userId: context.userId });
+    }
+
+    const result = await query.getMany();
+
+    return this.composeMany(result);
+  }
+
+  /**
+   * Batch id lookup. Tombstoned events resolve to `null` — which is also what
+   * keeps a just-deleted event out of the search results: SearchResolver
+   * hydrates its candidate ids through here and drops the misses, so the row
+   * disappears immediately rather than waiting on the async un-index.
+   */
   async findByIds(context: ServiceContext, ids: string[]): Promise<(Event | null)[]> {
     const result = await this.eventRepository.find({
       where: {
         id: In(ids),
+        isDeleted: false,
         ...(context.userId !== SYSTEM_USER && {
           user: {
             id: context.userId,
@@ -247,7 +684,8 @@ export class EventService {
       },
     });
 
-    const map = new Map(result.map((entity) => [entity.id, EventEntity.toEgressType(entity)]));
+    const events = await this.composeMany(result);
+    const map = new Map(events.map((event) => [event.id, event]));
 
     return ids.map((id) => map.get(id) ?? null);
   }
@@ -256,24 +694,28 @@ export class EventService {
     const result = await this.eventRepository.findOne({
       where: {
         id,
+        isDeleted: false,
         ...(context.userId !== SYSTEM_USER && {
           user: { id: context.userId },
         }),
       },
     });
 
-    return result ? EventEntity.toEgressType(result) : null;
+    return result ? this.composeOne(result) : null;
   }
 
   async update(context: ServiceContext, id: string, data: UpdateEventDto): Promise<Event | null> {
     const updateData: Partial<EventEntity> = {};
 
+    // title/description are base-row data (ci.entities); patched separately
+    // below, in the same transaction.
+    const basePatch: Partial<Pick<EventBaseEntity, 'name' | 'description'>> = {};
     if (data.title) {
-      updateData.title = data.title;
+      basePatch.name = data.title;
     }
 
     if (data.description) {
-      updateData.description = data.description;
+      basePatch.description = data.description;
     }
 
     if (data.event_type) {
@@ -298,10 +740,6 @@ export class EventService {
 
     if (data.location_name) {
       updateData.locationName = data.location_name;
-    }
-
-    if (data.event_entity_id) {
-      updateData.eventEntityId = data.event_entity_id;
     }
 
     if (data.location_coordinates) {
@@ -368,10 +806,6 @@ export class EventService {
       updateData.isInferred = data.is_inferred;
     }
 
-    if (data.prediction_model) {
-      updateData.predictionModel = data.prediction_model;
-    }
-
     if (data.inference_sources) {
       updateData.inferenceSources = data.inference_sources;
     }
@@ -388,10 +822,6 @@ export class EventService {
       updateData.energyLevel = data.energy_level;
     }
 
-    if (data.productivity_impact) {
-      updateData.productivityImpact = data.productivity_impact;
-    }
-
     if (data.status) {
       updateData.status = data.status;
     }
@@ -404,62 +834,88 @@ export class EventService {
       updateData.externalSyncStatus = data.external_sync_status;
     }
 
-    if (data.last_synced_at) {
-      updateData.lastSyncedAt = data.last_synced_at;
-    }
-
     if (data.parent_event_id) {
       updateData.parentEventId = data.parent_event_id;
-    }
-
-    if (data.related_event_ids) {
-      updateData.relatedEventIds = data.related_event_ids;
-    }
-
-    if (data.supersedes_event_id) {
-      updateData.supersedesEventId = data.supersedes_event_id;
     }
 
     if (data.created_by) {
       updateData.createdBy = data.created_by;
     }
 
-    const event = await this.eventRepository.findOne({
-      where: {
-        id: id,
-        ...(context.userId !== SYSTEM_USER && {
-          user: { id: context.userId },
-        }),
+    // One transaction across both halves of the aggregate (see CtiAggregate).
+    // A title/description-only patch still bumps ci.events.updated_at so
+    // detail-side incremental consumers see the change.
+    const updated = await this.aggregate.applyUpdate(
+      context,
+      id,
+      {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        detail: updateData as any, // TypeORM will handle JSON serialization
+        base: basePatch,
       },
-    });
+      {
+        withinTx: async ({ manager }) => {
+          const base = await manager.getRepository(EventBaseEntity).findOne({ where: { id } });
+          await this.graphDeltaWriter.entityUpdated({
+            entityId: id,
+            entityType: 'Event',
+            name: base?.name ?? null,
+            changedFields: {
+              ...(basePatch.name !== undefined ? { name: { new: basePatch.name } } : {}),
+              ...(basePatch.description !== undefined ? { description: { new: basePatch.description } } : {}),
+              ...(Object.keys(updateData).length > 0 ? { detail_updated: { new: true } } : {}),
+            },
+            ownerUserId: typeof context.userId === 'string' ? context.userId : null,
+            changeSource: 'EventService.update',
+            changedByUserId: typeof context.userId === 'string' ? context.userId : null,
+            manager,
+          });
+        },
+      },
+    );
 
-    if (event) {
-      Object.assign(event, updateData);
-      await this.eventRepository.save(event);
-
-      await this.signallingEventService.send(EventUpdatedEvent, {
-        eventId: event.id,
-      });
-    } else {
+    if (!updated) {
       return null;
     }
 
-    return this.findById(context, id);
+    await this.signallingEventService.send(EventUpdatedEvent, {
+      eventId: updated.id,
+    });
+
+    // The transaction already reloaded the detail row; one base fetch
+    // completes the egress composition.
+    const [event] = await this.composeMany([updated]);
+
+    return event;
   }
 
+  /**
+   * Tombstones an event: `ci.events.is_deleted` is set, both rows stay on disk,
+   * and the read paths above stop returning it. The emitted
+   * {@link EventRemovedEvent} still drops the row from the search index, so it
+   * disappears from the explorer exactly as a physical delete would — but
+   * nothing that referenced it is cascaded away and {@link restore} can bring it
+   * back verbatim.
+   */
   async remove(context: ServiceContext, id: string): Promise<boolean> {
-    const event = await this.findById(context, id);
+    const removed = await this.aggregate.remove(context, id, {
+      withinTx: async ({ manager }) => {
+        const base = await manager.getRepository(EventBaseEntity).findOne({ where: { id } });
+        await this.graphDeltaWriter.entityDeleted({
+          entityId: id,
+          entityType: 'Event',
+          name: base?.name ?? null,
+          ownerUserId: typeof context.userId === 'string' ? context.userId : null,
+          changeSource: 'EventService.remove',
+          changedByUserId: typeof context.userId === 'string' ? context.userId : null,
+          manager,
+        });
+      },
+    });
 
-    if (!event) {
+    if (!removed) {
       return false;
     }
-
-    await this.eventRepository.delete({
-      id,
-      ...(context.userId !== SYSTEM_USER && {
-        user: { id: context.userId },
-      }),
-    });
 
     await this.signallingEventService.send(EventRemovedEvent, {
       eventId: id,
@@ -468,49 +924,113 @@ export class EventService {
     return true;
   }
 
-  async search(context: ServiceContext, query: SearchEventDto): Promise<EventEntity[]> {
-    return this.eventRepository.find({
-      where: {
-        ...query,
-        ...(context.userId !== SYSTEM_USER && {
-          user: { id: context.userId },
-        }),
+  /**
+   * Undoes {@link remove}: clears the tombstone and re-indexes the event, so an
+   * accidental deletion is recoverable (this is what the "Undo" affordance on
+   * the delete toast calls). A no-op for an event that was never deleted.
+   *
+   * @returns the restored event, or `null` when the caller has no tombstoned
+   *   event with that id.
+   */
+  async restore(context: ServiceContext, id: string): Promise<Event | null> {
+    const restored = await this.aggregate.restore(context, id, {
+      withinTx: async ({ manager, after }) => {
+        const base = await manager.getRepository(EventBaseEntity).findOne({ where: { id } });
+        await this.graphDeltaWriter.entityCreated({
+          entityId: id,
+          entityType: 'Event',
+          name: base?.name ?? null,
+          ownerUserId: typeof context.userId === 'string' ? context.userId : (after?.userId ?? null),
+          changeSource: 'EventService.restore',
+          changedByUserId: typeof context.userId === 'string' ? context.userId : null,
+          manager,
+        });
       },
     });
+
+    if (!restored) {
+      return null;
+    }
+
+    // The update listener re-upserts the search-index rows the delete removed.
+    await this.signallingEventService.send(EventUpdatedEvent, {
+      eventId: id,
+    });
+
+    return this.composeOne(restored);
   }
 
-  async getEntitiesForEvents(
-    context: ServiceContext,
-    options: Options,
-  ): Promise<EntityIdentifier<IndexableEntity>[]> {
-    let query = this.dataSource
-      .getRepository(EventEntity)
+  async search(context: ServiceContext, query: SearchEventDto): Promise<Event[]> {
+    const { title, description, ...detailQuery } = query;
+
+    // title/description live on the CTI base row; the FK guarantees every
+    // detail row has one, so the base is joined unconditionally and its
+    // columns are hydrated in the SAME query — no second composition fetch.
+    let qb = this.eventRepository
       .createQueryBuilder('event')
-      .select(['event.event_id'])
-      .where('event.user_id = :userId', { userId: context.userId });
+      .innerJoin('ci.entities', 'base', 'base.entity_id = event.event_id')
+      .addSelect('base.name', 'base_name')
+      .addSelect('base.description', 'base_description')
+      .where('event.is_deleted = false');
 
-    if (options.limit) {
-      query = query.limit(options.limit);
+    if (context.userId !== SYSTEM_USER) {
+      qb = qb.andWhere('event.user_id = :userId', { userId: context.userId });
     }
 
-    if (options.order) {
-      for (const [field, direction] of Object.entries(options.order)) {
-        query = query.orderBy(`event.${field}`, direction as 'ASC' | 'DESC');
+    if (title) {
+      qb = qb.andWhere('base.name = :title', { title });
+    }
+
+    if (description) {
+      qb = qb.andWhere('base.description = :description', { description });
+    }
+
+    for (const [key, value] of Object.entries(detailQuery)) {
+      if (value !== undefined) {
+        qb = qb.andWhere(`event.${key} = :${key}`, { [key]: value });
       }
-
-      // Deterministic tiebreak so same-timestamp rows have a stable total order
-      // that the keyset cursor below can page through.
-      query = query.addOrderBy('event.event_id', 'DESC');
     }
 
-    // Composite keyset: page strictly past (afterTime, afterId). Matches the
-    // (start_time DESC, event_id DESC) order so a same-timestamp cluster larger
-    // than one fetch is walked through instead of re-returning its top rows.
-    if (options.afterTime && options.afterId) {
-      query = query.andWhere(
-        '(event.start_time < :afterTime OR (event.start_time = :afterTime AND event.event_id < :afterId))',
-        { afterTime: options.afterTime, afterId: options.afterId },
-      );
+    // The 1:1 join yields exactly one raw row per entity, in the same order,
+    // so the base columns compose positionally.
+    const { entities, raw } = await qb.getRawAndEntities<{
+      base_name: string | null;
+      base_description: string | null;
+    }>();
+
+    return entities.map((entity, index) =>
+      EventEntity.toEgressType(entity, {
+        name: raw[index]?.base_name ?? null,
+        description: raw[index]?.base_description ?? null,
+      }),
+    );
+  }
+
+  /**
+   * The filter half of the event read path — every predicate
+   * {@link getEntitiesForEvents}, {@link countEntitiesForEvents} and
+   * {@link findMapPins} share, applied to a caller-supplied builder.
+   *
+   * Owning them in one place is what keeps a map pin, an explorer row and the
+   * explorer's totalCount describing the same set of events: the three callers
+   * differ only in what they SELECT and how they order/limit it.
+   */
+  private applyEventFilters<T extends ObjectLiteral>(
+    query: SelectQueryBuilder<T>,
+    context: ServiceContext,
+    options: CountOptions,
+  ): SelectQueryBuilder<T> {
+    // Tombstoned events are gone as far as every reader is concerned. This sits
+    // in the shared filter rather than in each caller so a soft-deleted event
+    // cannot come back as a map pin or inflate the explorer's totalCount while
+    // being absent from the rows — the whole reason these three share a filter.
+    query = query.andWhere('event.is_deleted = false');
+
+    // Explicit id set (a text-query / tag candidate set resolved elsewhere).
+    // An empty array is a real "nothing matched", not "no filter" — `= ANY('{}')`
+    // is false for every row, which is exactly the intent.
+    if (options.ids != null) {
+      query = query.andWhere('event.event_id = ANY(:eventIds)', { eventIds: options.ids });
     }
 
     if (options.startTime) {
@@ -596,12 +1116,135 @@ export class EventService {
       );
     }
 
+    return query;
+  }
+
+  async getEntitiesForEvents(
+    context: ServiceContext,
+    options: Options,
+  ): Promise<EntityIdentifier<IndexableEntity>[]> {
+    let query = this.dataSource
+      .getRepository(EventEntity)
+      .createQueryBuilder('event')
+      .select(['event.event_id'])
+      .where('event.user_id = :userId', { userId: context.userId });
+
+    if (options.limit) {
+      query = query.limit(options.limit);
+    }
+
+    if (options.order) {
+      for (const [field, direction] of Object.entries(options.order)) {
+        query = query.orderBy(`event.${field}`, direction as 'ASC' | 'DESC');
+      }
+
+      // Deterministic tiebreak so same-timestamp rows have a stable total order
+      // that the keyset cursor below can page through.
+      query = query.addOrderBy('event.event_id', 'DESC');
+    }
+
+    // Composite keyset: page strictly past (afterTime, afterId). Matches the
+    // (start_time DESC, event_id DESC) order so a same-timestamp cluster larger
+    // than one fetch is walked through instead of re-returning its top rows.
+    if (options.afterTime && options.afterId) {
+      query = query.andWhere(
+        '(event.start_time < :afterTime OR (event.start_time = :afterTime AND event.event_id < :afterId))',
+        { afterTime: options.afterTime, afterId: options.afterId },
+      );
+    }
+
+    query = this.applyEventFilters(query, context, options);
+
     const results = await query.getRawMany();
 
     return results.map((row: { event_id: string; type: IndexableEntity }) => ({
       id: row.event_id,
       type: 'event' as IndexableEntity,
     }));
+  }
+
+  /**
+   * True total of events matching the same filters {@link getEntitiesForEvents} applies —
+   * a real `COUNT(*)`, not the length of one `limit`-bounded page of identifiers. Used by
+   * the search/explorer `totalCount` field, which previously reported the size of the
+   * over-fetched candidate window (bounded by page size) instead of the actual match count.
+   */
+  async countEntitiesForEvents(context: ServiceContext, options: CountOptions): Promise<number> {
+    let query = this.dataSource
+      .getRepository(EventEntity)
+      .createQueryBuilder('event')
+      .where('event.user_id = :userId', { userId: context.userId })
+      .andWhere('event.is_deleted = false');
+
+    query = this.applyEventFilters(query, context, options);
+
+    return query.getCount();
+  }
+
+  /**
+   * Located events as map markers: the same filters {@link getEntitiesForEvents}
+   * applies, projected down to a point + label ({@link MapPin}) and ordered
+   * newest-first.
+   *
+   * This exists because the map is not a paged feed. Drawing a life on a map
+   * means plotting the whole located set at once — ten thousand rows here, and
+   * the browse page size is thirty — so the read is bounded by `limit` (a hard
+   * cap the caller reports as truncation) rather than by a cursor.
+   *
+   * `hasLocation` is forced on: a marker with no coordinates is not a marker,
+   * and ST_Y/ST_X of NULL would surface as a pin at (0, 0) in the Gulf of
+   * Guinea. Titles live on the CTI base row, so `ci.entities` is joined the
+   * same way {@link search} joins it.
+   */
+  async findMapPins(context: ServiceContext, options: MapPinOptions): Promise<MapPin[]> {
+    let query = this.dataSource
+      .getRepository(EventEntity)
+      .createQueryBuilder('event')
+      .innerJoin('ci.entities', 'base', 'base.entity_id = event.event_id')
+      .select('event.event_id', 'event_id')
+      .addSelect('base.name', 'title')
+      .addSelect('event.start_time', 'start_time')
+      .addSelect('event.end_time', 'end_time')
+      .addSelect('event.event_type', 'event_type')
+      .addSelect('event.location_name', 'location_name')
+      .addSelect('ST_Y(event.location_coordinates::geometry)', 'latitude')
+      .addSelect('ST_X(event.location_coordinates::geometry)', 'longitude')
+      .where('event.user_id = :userId', { userId: context.userId })
+      .orderBy('event.start_time', 'DESC')
+      .addOrderBy('event.event_id', 'DESC')
+      .limit(options.limit);
+
+    query = this.applyEventFilters(query, context, { ...options, hasLocation: true });
+
+    const rows = await query.getRawMany<{
+      event_id: string;
+      title: string | null;
+      start_time: Date | null;
+      end_time: Date | null;
+      event_type: string | null;
+      location_name: string | null;
+      latitude: number | string | null;
+      longitude: number | string | null;
+    }>();
+
+    return (
+      rows
+        .map((row) => ({
+          id: row.event_id,
+          title: row.title,
+          startTime: row.start_time,
+          endTime: row.end_time,
+          eventType: row.event_type,
+          locationName: row.location_name,
+          // `Number(null)` is 0, not NaN — a null coordinate would otherwise
+          // become a pin in the Gulf of Guinea instead of being dropped below.
+          latitude: row.latitude == null ? Number.NaN : Number(row.latitude),
+          longitude: row.longitude == null ? Number.NaN : Number(row.longitude),
+        }))
+        // A row whose geography failed to project has no place on a map; dropping
+        // it here keeps NaN out of the client's bounds/cluster maths.
+        .filter((pin) => Number.isFinite(pin.latitude) && Number.isFinite(pin.longitude))
+    );
   }
 
   /**
@@ -615,6 +1258,7 @@ export class EventService {
       .createQueryBuilder('event')
       .select('DISTINCT event.source_system', 'source_system')
       .where('event.user_id = :userId', { userId: context.userId })
+      .andWhere('event.is_deleted = false')
       .andWhere('event.source_system IS NOT NULL')
       .orderBy('event.source_system', 'ASC')
       .getRawMany();
@@ -633,7 +1277,9 @@ export class EventService {
       .createQueryBuilder('event')
       .select('DISTINCT event.event_type', 'event_type')
       .where('event.user_id = :userId', { userId: context.userId })
+      .andWhere('event.is_deleted = false')
       .andWhere('event.event_type IS NOT NULL')
+      .andWhere("event.event_type <> 'planned_block'")
       .orderBy('event.event_type', 'ASC')
       .getRawMany();
 
@@ -658,6 +1304,7 @@ export class EventService {
         .addSelect('MIN(event.start_time)', 'earliest')
         .addSelect('MAX(event.start_time)', 'latest')
         .where('event.user_id = :userId', { userId: context.userId })
+        .andWhere('event.is_deleted = false')
         .getRawOne();
 
     return {
@@ -665,5 +1312,23 @@ export class EventService {
       earliest: row?.earliest ?? null,
       latest: row?.latest ?? null,
     };
+  }
+
+  /**
+   * Hourly UTC activity buckets for the activity rollup: events counted by
+   * `startTime`, per user.
+   */
+  async aggregateHourlyActivity(): Promise<HourlyEventCount[]> {
+    const rows: Array<{ user_id: string; bucket_start: Date; count: number }> = await this.eventRepository
+      .createQueryBuilder('event')
+      .select('event.userId', 'user_id')
+      .addSelect(`date_trunc('hour', event.startTime, 'UTC')`, 'bucket_start')
+      .addSelect('COUNT(*)::int', 'count')
+      .where('event.is_deleted = false')
+      .groupBy('user_id')
+      .addGroupBy('bucket_start')
+      .getRawMany();
+
+    return rows.map((row) => ({ userId: row.user_id, bucketStart: row.bucket_start, count: row.count }));
   }
 }

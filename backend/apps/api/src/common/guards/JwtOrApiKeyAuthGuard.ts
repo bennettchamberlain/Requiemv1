@@ -5,22 +5,22 @@ import {
   InternalServerErrorException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { GqlExecutionContext } from '@nestjs/graphql';
 import { AuthGuard } from '@nestjs/passport';
 
 import { ContextService } from '@ci/common/context';
 
+import { enforceApiKeyCapability, enforceApiKeyScopes } from './apiKeyScopeEnforcement';
+import { extractBearerToken } from './bearerToken';
 import { PORTAL_TOKEN_VERIFIER, type PortalTokenVerifier } from './PortalTokenVerifier';
-
-function extractBearerToken(request: { headers?: Record<string, unknown> }): string | null {
-  const header = request?.headers?.authorization;
-
-  return typeof header === 'string' && header.startsWith('Bearer ') ? header.slice(7) : null;
-}
 
 @Injectable()
 export class JwtOrApiKeyAuthGuard extends AuthGuard(['jwt', 'api-key']) {
-  constructor(@Inject(PORTAL_TOKEN_VERIFIER) private readonly portalTokenVerifier: PortalTokenVerifier) {
+  constructor(
+    @Inject(PORTAL_TOKEN_VERIFIER) private readonly portalTokenVerifier: PortalTokenVerifier,
+    private readonly reflector: Reflector,
+  ) {
     super();
   }
 
@@ -29,7 +29,7 @@ export class JwtOrApiKeyAuthGuard extends AuthGuard(['jwt', 'api-key']) {
     // strategies during migration (gated by auth.portal.enabled).
     if (this.portalTokenVerifier.enabled) {
       const request = this.getRequest(context);
-      const token = extractBearerToken(request);
+      const token = extractBearerToken(request?.headers?.authorization);
 
       if (token) {
         const user = await this.portalTokenVerifier.verifyAndProvision(token);
@@ -38,12 +38,27 @@ export class JwtOrApiKeyAuthGuard extends AuthGuard(['jwt', 'api-key']) {
           ContextService.set({ userId: user.id });
           request.user = user;
 
+          // Portal principal carries full user authority and no api-key scopes,
+          // so scope enforcement does not apply to this path.
           return true;
         }
       }
     }
 
-    return (await super.canActivate(context)) as boolean;
+    const ok = (await super.canActivate(context)) as boolean;
+
+    // Deny-by-default scope enforcement once the api-key strategy has populated
+    // `req.apiKeyScopes`. A scope-limited key is confined to routes that grant
+    // one of its scopes; empty-scope/legacy keys and JWT principals are unaffected.
+    if (ok) {
+      const request = this.getRequest(context);
+
+      enforceApiKeyScopes(this.reflector, context, request);
+      // Second axis: scopes got the key to this route, capability decides whether it may act here.
+      enforceApiKeyCapability(this.reflector, context, request);
+    }
+
+    return ok;
   }
 
   getRequest(context: ExecutionContext) {

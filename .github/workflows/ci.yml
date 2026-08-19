@@ -1,17 +1,24 @@
 name: CI
 
+# GATED TO MANUAL. Every trigger except workflow_dispatch was removed so this
+# workflow no longer runs on push, pull_request or a schedule — CI silence here
+# means "nobody dispatched it", NOT "everything passed". Run it deliberately:
+#   gh workflow run <file> --ref <branch>
+# Restore a trigger by re-adding it to the `on:` block below.
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   install:
     name: Install dependencies
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     container:
       image: node:22
     steps:
@@ -35,11 +42,20 @@ jobs:
       - name: Install dependencies
         if: steps.cache-modules.outputs.cache-hit != 'true'
         run: yarn install --immutable
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   test:
     name: Run backend tests
     needs: install
     runs-on: ubuntu-latest
+    # Headroom for checkout + install + the test step's own ceiling below. The
+    # meaningful limit is on the step, not here: a JOB timeout cancels the whole
+    # job, which is reported as `cancelled` (and rendered as "fail" by
+    # `gh pr checks`) with no indication of which step ran out of time, and it
+    # skips every remaining step, so nothing can report on the way out. A STEP
+    # timeout fails that step and lets the job finish normally.
+    timeout-minutes: 15
     container:
       image: node:22
     steps:
@@ -61,8 +77,23 @@ jobs:
 
       - name: Install dependencies
         run: yarn install --immutable
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Several times the measured cost: ~400 files in about 2.5 minutes in a
+      # two-core container, so a few minutes on a runner whose cores are slower.
+      # Anything approaching ten means the suite has stopped making progress
+      # rather than merely got slower, and failing the step says so while
+      # leaving the job alive to finish and report.
+      #
+      # What used to sit here was a `--detectOpenHandles --runInBand` step meant
+      # to diagnose the hang on failure. It never once ran — the job timeout
+      # cancelled the job before any `if: failure()` step could start — and it
+      # could not have helped if it had: both of those flags force jest to run
+      # in the main process, which is precisely the configuration that hangs.
+      # See the note in backend/apps/api/jest.config.mjs.
       - name: Run backend API tests
+        timeout-minutes: 10
         run: yarn workspace @ci/be-api test
 
   test-frontend:
@@ -94,6 +125,8 @@ jobs:
 
       - name: Install dependencies
         run: yarn install --immutable
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run frontend unit/component tests
         run: yarn workspace @ci/fe-web test --coverage
@@ -140,6 +173,8 @@ jobs:
 
       - name: Install dependencies
         run: yarn install --immutable
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Type check ${{ matrix.name }}
         run: ${{ matrix.command }}
@@ -181,9 +216,41 @@ jobs:
 
       - name: Install dependencies
         run: yarn install --immutable
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Lint ${{ matrix.name }}
         run: ${{ matrix.command }}
+
+  python:
+    name: Check Python
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+
+      # --locked fails when uv.lock does not match the manifests, which is
+      # the guard against a member changing its dependencies without
+      # relocking. Regenerate with `uv lock`; never hand-merge the lockfile.
+      - name: Install workspace
+        run: uv sync --all-packages --locked
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Check formatting
+        run: uv run ruff format --check .
+
+      - name: Type check
+        run: uv run mypy
+
+      - name: Run tests
+        run: uv run pytest
 
   imports:
     name: Check backend imports
@@ -210,6 +277,8 @@ jobs:
 
       - name: Install dependencies
         run: yarn install --immutable
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check backend imports
         run: yarn workspace @ci/be-api depcheck
@@ -239,6 +308,8 @@ jobs:
 
       - name: Install dependencies
         run: yarn install --immutable
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate GraphQL schema
         run: yarn workspace @ci/be-api graphql:generate

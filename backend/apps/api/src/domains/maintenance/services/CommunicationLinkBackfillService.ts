@@ -199,11 +199,15 @@ export class CommunicationLinkBackfillService {
       return startTime <= endTime ? { start: startTime, end: endTime } : null;
     }
 
+    // The bounds MUST cover every row backfillWindow() will treat as a candidate,
+    // otherwise rows that only need to_entity_ids linked (from_entity_id already
+    // set) fall outside [min,max] and are silently skipped. Keep this predicate
+    // byte-identical to backfillWindow()'s candidate WHERE clause.
     const rows: Array<{ min_time: Date | null; max_time: Date | null }> = await this.dataSource.query(
       `SELECT MIN(time) AS min_time, MAX(time) AS max_time
          FROM ci.communications
         WHERE user_id = $1
-          AND from_entity_id IS NULL`,
+          AND (from_entity_id IS NULL OR to_entity_ids IS NULL OR cardinality(to_entity_ids) = 0)`,
       [userId],
     );
 

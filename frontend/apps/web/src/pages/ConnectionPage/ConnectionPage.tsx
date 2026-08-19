@@ -1,15 +1,13 @@
 import { type ReactNode, useState } from 'react';
 
 import { isReference, type Reference, useMutation, useQuery } from '@apollo/client';
-import { GlobalUID, LoadingPage, Portal, usePageTitle, EmptyState } from '@ci/common';
+import { apiKeyHeaders, buildApiUrl, GlobalUID, LoadingPage, usePageTitle, EmptyState } from '@ci/common';
 import {
-  Breadcrumb,
   Card,
   Label,
   Button,
   Dialog,
   Input,
-  Select,
   useToast,
   Form,
   useForm,
@@ -17,13 +15,12 @@ import {
   formDataSchema as s,
 } from '@ci/shadcn';
 import { AlertCircle, Ban, CheckCircle2, Clock, RefreshCw, Settings, Trash2 } from '@ci/shadcn/icons';
-import { useNavigate, useParams, Link } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { gql, makeFragmentData } from '@/graphql';
 import { useAuth } from '@/hooks';
 import { Endpoints, ENDPOINTS_FRAGMENT } from '@/pages/ProviderPage/Endpoints';
-import { useConnectService } from '@/pages/ProviderPage/useConnectService';
 
 export interface Provider {
   readonly id: string;
@@ -41,6 +38,7 @@ export interface Connection {
   readonly name?: string | null;
   readonly active: boolean;
   readonly externalId?: string | null;
+  readonly accountLabel?: string | null;
   readonly schedule?: string | null;
   readonly tokenExpiry?: Date | null;
   readonly provider?: Provider;
@@ -68,6 +66,7 @@ const GET_CONNECTION = gql(`
       providerId
       needsReauth
       externalId
+      accountLabel
       provider {
         id
         name
@@ -98,6 +97,7 @@ const UPDATE_CONNECTION = gql(`
           providerId
           needsReauth
           externalId
+          accountLabel
           provider {
               id
               name
@@ -294,8 +294,6 @@ export function ConnectionPage() {
   const [modalLoading, setModalLoading] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
 
-  const [{ endpoints, setEndpoints }] = useConnectService();
-
   const { data, loading } = useQuery(GET_CONNECTION, {
     variables: {
       id: GlobalUID.encode('connection', id!),
@@ -380,7 +378,7 @@ export function ConnectionPage() {
             id: connection.id,
             name: editFormData.name || '',
             schedule: editFormData.schedule || '1 hour',
-            activeEndpoints: endpoints,
+            activeEndpoints: form.getValues('endpoints') || [],
             ...(editFormData.accessToken ? { accessToken: editFormData.accessToken } : {}),
           },
         },
@@ -416,7 +414,7 @@ export function ConnectionPage() {
       });
 
       toast.success('Connection deleted successfully');
-      navigate('/connections');
+      navigate('/sources/connect');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
       console.error('Error deleting connection:', errorMessage, err);
@@ -427,10 +425,11 @@ export function ConnectionPage() {
   const handleReauthConnection = async () => {
     try {
       const response = await fetch(
-        `/api/connections/${GlobalUID.parse('connection', connection!.id)}/connect`,
+        buildApiUrl(`/api/connections/${GlobalUID.parse('connection', connection!.id)}/connect`),
         {
           method: 'GET',
           headers: {
+            ...apiKeyHeaders(),
             Authorization: `Bearer ${authToken}`,
           },
         },
@@ -504,6 +503,11 @@ export function ConnectionPage() {
             <div className="flex flex-col gap-2">
               <Label>Provider</Label>
               <div className="text-sm">{connection.provider?.name || 'N/A'}</div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label>Account</Label>
+              <div className="text-sm">{connection.accountLabel || 'N/A'}</div>
             </div>
 
             <div className="flex flex-col gap-2">
@@ -599,35 +603,6 @@ export function ConnectionPage() {
 
   return (
     <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-
-            <Breadcrumb.Separator className="hidden md:block" />
-
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/connections">Connections</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-
-            {connection && (
-              <>
-                <Breadcrumb.Separator className="hidden md:block" />
-                <Breadcrumb.Item>
-                  <Breadcrumb.Page>{connection.name}</Breadcrumb.Page>
-                </Breadcrumb.Item>
-              </>
-            )}
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
       {content}
 
       {/* Edit Connection Modal */}
@@ -667,6 +642,15 @@ export function ConnectionPage() {
                   </div>
                 )}
 
+                {connection?.accountLabel && (
+                  <div className="grid gap-2">
+                    <Label>Account</Label>
+                    <div className="text-sm text-muted-foreground bg-muted px-3 py-2 rounded-md">
+                      {connection.accountLabel} (cannot be changed)
+                    </div>
+                  </div>
+                )}
+
                 {connection?.externalId && (
                   <div className="grid gap-2">
                     <Label>External ID</Label>
@@ -690,31 +674,6 @@ export function ConnectionPage() {
                     />
                   </div>
                 )}
-
-                <div className="grid gap-2">
-                  <Label htmlFor="edit-schedule">Sync Schedule</Label>
-                  <Select
-                    value={editFormData.schedule}
-                    onValueChange={(value) => setEditFormData({ ...editFormData, schedule: value })}
-                    disabled={modalLoading}
-                  >
-                    <Select.Trigger id="edit-schedule">
-                      <Select.Value />
-                    </Select.Trigger>
-                    <Select.Content>
-                      <Select.Item value="1 min">1 Minute</Select.Item>
-                      <Select.Item value="5 min">5 Minutes</Select.Item>
-                      <Select.Item value="10 min">10 Minutes</Select.Item>
-                      <Select.Item value="30 min">30 Minutes</Select.Item>
-                      <Select.Item value="1 hour">1 Hour</Select.Item>
-                      <Select.Item value="2 hours">2 Hours</Select.Item>
-                      <Select.Item value="6 hours">6 Hours</Select.Item>
-                      <Select.Item value="12 hours">12 Hours</Select.Item>
-                      <Select.Item value="daily">Daily</Select.Item>
-                      <Select.Item value="weekly">Weekly</Select.Item>
-                    </Select.Content>
-                  </Select>
-                </div>
               </div>
 
               {connection?.provider && (
@@ -722,7 +681,6 @@ export function ConnectionPage() {
                   <div className="grid gap-2">Endpoints</div>
                   <Endpoints
                     provider={makeFragmentData(connection.provider, ENDPOINTS_FRAGMENT)}
-                    setEndpoints={setEndpoints}
                     startEndpoints={connection.activeEndpoints}
                   />
                 </>

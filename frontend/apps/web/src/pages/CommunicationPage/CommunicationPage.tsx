@@ -1,17 +1,17 @@
 import { type ReactNode, useState } from 'react';
 
-import { useQuery } from '@apollo/client';
-import { GlobalUID, LoadingPage, Portal, usePageTitle, EmptyState } from '@ci/common';
-import { Breadcrumb, Card, Label, Textarea, Toggle, cn } from '@ci/shadcn';
-import { Pencil, User } from '@ci/shadcn/icons';
+import { useMutation, useQuery } from '@apollo/client';
+import { GlobalUID, LoadingPage, usePageTitle, EmptyState } from '@ci/common';
+import { Label } from '@ci/shadcn';
+import { User } from '@ci/shadcn/icons';
 import { useParams, Link } from 'react-router-dom';
 
-import { useTagEntityService } from '@/api';
 import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
+import { EntityFieldsCard, formatEntityLabel, formatEntityTimestamp } from '@/components/EntityFields';
+import { EntityEditToggle, EntityTagsDescriptionCard } from '@/components/EntityTagsDescriptionCard';
 import { CommunicationIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import { Tag } from '@/components/Tag';
-import { TagInput } from '@/components/TagInput';
 import { gql } from '@/graphql';
 
 const GET_COMMUNICATION = gql(`
@@ -22,6 +22,11 @@ const GET_COMMUNICATION = gql(`
       subject
       preview
       content
+
+      # When it was sent, and which way it went. The page used to select
+      # neither, so /communications/:id could not answer "when was this?".
+      time
+      direction
 
       from {
         id
@@ -45,6 +50,18 @@ const GET_COMMUNICATION = gql(`
   }
 `);
 
+// Same write the memory drawer makes (UpdateCommunicationDetail). The page used
+// to mount the edit pencil without one, so it could only ever edit tags.
+const UPDATE_COMMUNICATION_FIELDS = gql(`
+  mutation UpdateCommunicationPageFields($input: UpdateCommunicationInput!) {
+    updateCommunication(input: $input) {
+      id
+      subject
+      content
+    }
+  }
+`);
+
 export function CommunicationPage() {
   const { id } = useParams<{ id: string }>();
 
@@ -54,7 +71,7 @@ export function CommunicationPage() {
     },
   });
 
-  const { tagEntities, untagEntities } = useTagEntityService();
+  const [updateCommunicationFields] = useMutation(UPDATE_COMMUNICATION_FIELDS);
 
   const communication = data?.communication;
 
@@ -83,131 +100,89 @@ export function CommunicationPage() {
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <CommunicationIcon />
+            {/* No subject (chat-style sources): the preview stands in as the
+                heading rather than a synthesized "<Type>" subject. */}
             <h1 className="text-2xl font-bold">
-              {communication.subject || renderTypeSubject(communication.type)}
+              {communication.subject || communication.preview || renderTypeSubject(communication.type)}
             </h1>
           </div>
-          <Toggle
-            aria-label="Toggle edit mode"
-            size="sm"
-            variant="outline"
-            className="data-[state=on]:bg-transparent data-[state=on]:*:[svg]:fill-blue-500 data-[state=on]:*:[svg]:stroke-blue-500"
-            pressed={editMode}
-            onPressedChange={setEditMode}
-          >
-            <Pencil />
-          </Toggle>
+          <EntityEditToggle pressed={editMode} onPressedChange={setEditMode} />
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="md:col-span-2">
-            <Card className="h-full">
-              <Card.Content className="whitespace-pre-wrap">{communication.content}</Card.Content>
-            </Card>
+            {/* The drawer's field set + metadata rows, so "Open full page" keeps
+                the subject/content editor and finally shows the timestamp. */}
+            <EntityFieldsCard
+              className="h-full"
+              title="Message"
+              resetKey={communication.id}
+              editMode={editMode}
+              onEditModeChange={setEditMode}
+              fields={[
+                { key: 'subject', label: 'Subject', value: communication.subject ?? '' },
+                { key: 'content', label: 'Content', value: communication.content ?? '', multiline: true },
+              ]}
+              metaItems={[
+                { label: 'Type', value: formatEntityLabel(communication.type) },
+                { label: 'Direction', value: formatEntityLabel(communication.direction) },
+                { label: 'When', value: formatEntityTimestamp(communication.time) },
+              ]}
+              onSave={async (values) => {
+                const result = await updateCommunicationFields({
+                  variables: {
+                    input: { id: communication.id, subject: values.subject, content: values.content },
+                  },
+                });
+
+                // updateCommunication resolves to the row itself, or null when the write was rejected.
+                if (!result.data?.updateCommunication) {
+                  throw new Error('Update was rejected');
+                }
+              }}
+            />
           </div>
 
-          <Card className="p-0 h-full">
-            <Card.Content className="p-4 flex flex-col gap-6">
-              {communication.from && (
-                <div className="flex flex-col gap-2">
-                  <Label>From</Label>
-                  <Link to={`/people/${GlobalUID.parse('person', communication.from.id)}`}>
-                    <Tag icon={<User />} className="text-sm" text={communication.from.name ?? ''} />
-                  </Link>
-                </div>
-              )}
-
-              {communication.to.edges.length > 0 && (
-                <div className="flex flex-col gap-2">
-                  <Label>To</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {communication.to.edges.map(({ node }) => (
-                      <Link key={node.id} to={`/people/${GlobalUID.parse('person', node.id)}`}>
-                        <Tag icon={<User />} className="text-sm cursor-pointer" text={node.name ?? ''} />
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <Label htmlFor="description">Summary</Label>
-                <Textarea
-                  key={communication.id}
-                  id="preview"
-                  defaultValue={communication.preview ?? ''}
-                  readOnly={!editMode}
-                  className={cn(
-                    'resize-none min-h-[120px]',
-                    editMode ? '' : 'shadow-none focus-visible:ring-0 focus-visible:border-border',
-                  )}
-                />
+          <EntityTagsDescriptionCard
+            entityType="communication"
+            entityId={id!}
+            resetKey={communication.id}
+            tags={communication.tags.map((t) => t.label)}
+            description={communication.preview}
+            descriptionLabel="Summary"
+            editMode={editMode}
+            className="h-full"
+          >
+            {communication.from && (
+              <div className="flex flex-col gap-2">
+                <Label>From</Label>
+                <Link to={`/people/${GlobalUID.parse('person', communication.from.id)}`}>
+                  <Tag icon={<User />} className="text-sm" text={communication.from.name ?? ''} />
+                </Link>
               </div>
+            )}
 
-              <div className="space-y-2">
-                <Label>Tags</Label>
-
-                <TagInput
-                  key={communication.id}
-                  tags={communication.tags.map((t) => t.label) ?? []}
-                  readOnly={!editMode}
-                  onTagAdded={async (label) => {
-                    try {
-                      await tagEntities([GlobalUID.encode('communication', id!)], [label]);
-
-                      return true;
-                    } catch {
-                      return false;
-                    }
-                  }}
-                  onTagRemoved={async (label) => {
-                    await untagEntities([GlobalUID.encode('communication', id!)], [label]);
-                  }}
-                />
+            {communication.to.edges.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <Label>To</Label>
+                <div className="flex flex-wrap gap-2">
+                  {communication.to.edges.map(({ node }) => (
+                    <Link key={node.id} to={`/people/${GlobalUID.parse('person', node.id)}`}>
+                      <Tag icon={<User />} className="text-sm cursor-pointer" text={node.name ?? ''} />
+                    </Link>
+                  ))}
+                </div>
               </div>
-            </Card.Content>
-          </Card>
+            )}
+          </EntityTagsDescriptionCard>
         </div>
 
-        <EntityEvolutionPanel entityId={id!} />
+        <EntityEvolutionPanel entityId={id!} entityName={communication.subject} />
       </PageContent>
     );
   }
 
-  return (
-    <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-
-            <Breadcrumb.Separator className="hidden md:block" />
-
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Page>Communication</Breadcrumb.Page>
-            </Breadcrumb.Item>
-
-            {communication && (
-              <>
-                <Breadcrumb.Separator className="hidden md:block" />
-                <Breadcrumb.Item>
-                  <Breadcrumb.Page>
-                    {communication.subject || renderTypeSubject(communication.type)}
-                  </Breadcrumb.Page>
-                </Breadcrumb.Item>
-              </>
-            )}
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
-      {content}
-    </>
-  );
+  return <>{content}</>;
 }
 
 function renderTypeSubject(type: string) {

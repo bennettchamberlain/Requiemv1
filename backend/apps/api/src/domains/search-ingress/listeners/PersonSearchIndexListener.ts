@@ -13,8 +13,10 @@ import {
   type PersonUpdatedPayload,
   type PersonDeletedPayload,
 } from '@ci/domains/memory/events';
+import { personSearchDocument, personWeightedTexts } from '@ci/domains/search-ingress/searchTexts';
 
 import { EmbeddingService } from '../services/EmbeddingService';
+import { IndexSkipService } from '../services/IndexSkipService';
 import { VectorService } from '../services/VectorService';
 import { type WeightedText } from '../types';
 
@@ -24,6 +26,7 @@ export class PersonSearchIndexListener {
     private readonly personService: PersonService,
     private readonly embeddingGenerationService: EmbeddingGenerationService,
     private readonly embeddingService: EmbeddingService,
+    private readonly indexSkipService: IndexSkipService,
     private readonly vectorService: VectorService,
     private readonly logger: LoggerService,
   ) {
@@ -86,6 +89,20 @@ export class PersonSearchIndexListener {
       return;
     }
 
+    // Merge tombstones must never (re-)enter the search index — the merge
+    // deleted their embedding + vector rows on purpose. Remove any stale rows
+    // defensively in case an update event raced the merge.
+    if (person.mergedIntoEntityId != null) {
+      this.logger.log('Person is a merge tombstone, removing from search index', {
+        personId: person.id,
+      });
+
+      await this.embeddingService.remove(context, { entityType: 'person', entityId: person.id });
+      await this.vectorService.remove(context, { entityType: 'person', entityId: person.id });
+
+      return;
+    }
+
     if (person.userId == null) {
       this.logger.warn('Person has no associated user, cannot index');
 
@@ -96,6 +113,16 @@ export class PersonSearchIndexListener {
 
     if (searchDocument == null) {
       this.logger.log('Person has no search document, skipping embedding');
+
+      // Persist the skip so the backfill sweep (LEFT JOIN on ci_search.embeddings)
+      // stops re-finding this person on every run. Persons only skip on 'empty' —
+      // the message-tuned embedSkipReason heuristics (too-short/trivial) don't
+      // apply, because a bare short name is exactly what a person doc looks like.
+      await this.indexSkipService.recordSkip({
+        entityType: 'person',
+        entityId: person.id,
+        reason: 'empty',
+      });
     } else {
       const embedding = await this.embeddingGenerationService.generateEmbedding(searchDocument);
 
@@ -109,6 +136,12 @@ export class PersonSearchIndexListener {
           embedding,
         },
       );
+
+      // An updated person that gained a name/description is no longer skipped.
+      await this.indexSkipService.clearSkip({
+        entityType: 'person',
+        entityId: person.id,
+      });
 
       this.logger.log('Generated embedding for person');
     }
@@ -134,72 +167,10 @@ export class PersonSearchIndexListener {
   }
 
   private getSearchContent(person: Person): WeightedText[] {
-    const parts: WeightedText[] = [];
-
-    if (person.name) {
-      parts.push({ text: person.name, weight: 10 });
-    }
-
-    if (person.description) {
-      parts.push({ text: person.description, weight: 5 });
-    }
-
-    if (person.properties) {
-      parts.push({ text: JSON.stringify(person.properties), weight: 1 });
-    }
-
-    return parts;
+    return personWeightedTexts(person);
   }
 
   private getSearchDocument(person: Person): string | null {
-    const parts = new Set<string>();
-
-    const push = (value: unknown) => {
-      if (typeof value !== 'string') {
-        return;
-      }
-
-      const normalized = value.trim();
-
-      if (normalized.length === 0) {
-        return;
-      }
-
-      parts.add(normalized);
-    };
-
-    push(person.name ?? null);
-    push(person.description ?? null);
-
-    const properties = (person.properties ?? {}) as Record<string, unknown>;
-    // We don't have a schema on properties yet. These values are an accumulated
-    // superset of values we've indexed in various places.
-    const candidateKeys = [
-      'first_name',
-      'last_name',
-      'email',
-      'occupation',
-      'bio',
-      'phone',
-      'organization',
-      'job_title',
-      'occupation',
-    ];
-
-    for (const key of candidateKeys) {
-      push(properties[key]);
-    }
-
-    const aliases = properties['aliases'];
-
-    if (Array.isArray(aliases)) {
-      for (const alias of aliases) {
-        push(alias);
-      }
-    }
-
-    const result = Array.from(parts).join(' ');
-
-    return result.length > 0 ? result : null;
+    return personSearchDocument(person);
   }
 }

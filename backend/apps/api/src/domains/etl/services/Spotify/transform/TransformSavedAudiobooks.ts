@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { toServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { type Connection } from '@ci/domains/connections';
-import { ContentService, EventService } from '@ci/domains/memory';
+import { ContentService, EventService, SOURCE_NATIVE_EXTERNAL_ID_KIND } from '@ci/domains/memory';
 
 import { ConnectionSyncJob } from '../../../types';
 
@@ -90,7 +90,10 @@ export class SpotifySavedAudiobooksTransformService {
             await Promise.all(
               events.map(async (event) => {
                 await this.eventService.update(context, event.id, {
-                  title: event.title.replace('show', 'audiobook'),
+                  // title is nullable on egress (owned by the CTI base row);
+                  // these rows matched the title filter above, so fall back
+                  // defensively rather than crash.
+                  title: (event.title ?? `Saved show ${audiobook.name}`).replace('show', 'audiobook'),
                 });
               }),
             );
@@ -102,6 +105,7 @@ export class SpotifySavedAudiobooksTransformService {
               url: audiobook.external_urls?.spotify || '',
               source_url: audiobook.external_urls?.spotify || '',
               external_id: audiobook.id,
+              external_id_kind: SOURCE_NATIVE_EXTERNAL_ID_KIND,
               source_data: {
                 authors: audiobook.authors,
                 available_markets: audiobook.available_markets,

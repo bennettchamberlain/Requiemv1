@@ -1,5 +1,8 @@
-import { Button, Form, Input, Select, useFieldArray, useFormContext } from '@ci/shadcn';
+import { Button, Form, IconButton, Input, Select, useFieldArray, useFormContext } from '@ci/shadcn';
 import { X } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
+
+import { StepHeader } from './StepHeader';
 
 type Person = {
   first: string;
@@ -31,6 +34,7 @@ const RELATIONSHIP_GROUPS = [
 ];
 
 export function SocialConnections() {
+  const { t } = useTranslation();
   const form = useFormContext<{ people: Person[] }>();
   const { fields, append, remove } = useFieldArray({
     control: form.control,
@@ -41,13 +45,10 @@ export function SocialConnections() {
   const canAdd = count < 6;
 
   return (
-    <div className="space-y-4">
-      <div className="text-center text-2xl mb-1">Folks you're usually around</div>
-      <div className="text-center text-sm text-muted-foreground mb-4 md:mb-8">
-        Let's start with up to 6 for now
-      </div>
+    <div className="space-y-6 w-full max-w-2xl mx-auto">
+      <StepHeader title="Who are you usually around?" description="Let's start with up to 6 for now." />
 
-      <div className="grid grid-cols-[1fr_1fr_max-content_max-content] items-center gap-3 px-1">
+      <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_max-content_max-content] items-center gap-3 px-1 mx-auto">
         {fields.map((field, index) => (
           <Form.Field
             key={field.id}
@@ -62,7 +63,9 @@ export function SocialConnections() {
                     <Form.Field
                       control={form.control}
                       name={`people.${index}.first`}
-                      render={({ field }) => <Input {...field} placeholder="First" className="w-full" />}
+                      render={({ field }) => (
+                        <Input {...field} placeholder="First" className="w-full h-12 text-lg" />
+                      )}
                     />
                   </Form.Control>
                   <Form.Message />
@@ -74,7 +77,9 @@ export function SocialConnections() {
                     <Form.Field
                       control={form.control}
                       name={`people.${index}.last`}
-                      render={({ field }) => <Input {...field} placeholder="Last" className="w-full" />}
+                      render={({ field }) => (
+                        <Input {...field} placeholder="Last" className="w-full h-12 text-lg" />
+                      )}
                     />
                   </Form.Control>
                   <Form.Message />
@@ -88,15 +93,15 @@ export function SocialConnections() {
                       name={`people.${index}.relationship`}
                       render={({ field }) => (
                         <Select value={field.value ?? ''} onValueChange={field.onChange}>
-                          <Select.Trigger className="w-28 md:w-32 overflow-hidden truncate min-w-0">
+                          <Select.Trigger className="w-full sm:w-44 h-12 min-h-12 data-[size=default]:h-12 text-lg px-3 overflow-hidden [&_svg:not([class*='size-'])]:size-5">
                             <Select.Value placeholder="Relation" />
                           </Select.Trigger>
                           <Select.Content>
                             {RELATIONSHIP_GROUPS.map((group) => (
                               <Select.Group key={group.label}>
-                                <Select.Label>{group.label}</Select.Label>
+                                <Select.Label className="text-sm">{group.label}</Select.Label>
                                 {group.options.map((opt) => (
-                                  <Select.Item key={opt.value} value={opt.value}>
+                                  <Select.Item key={opt.value} value={opt.value} className="text-lg py-2.5">
                                     {opt.label}
                                   </Select.Item>
                                 ))}
@@ -110,15 +115,16 @@ export function SocialConnections() {
                   <Form.Message />
                 </Form.Item>
 
-                <Button
+                <IconButton
                   className="-ml-2 -mr-1 cursor-pointer"
                   type="button"
-                  size="sm"
+                  size="lg"
                   variant="ghost"
                   onClick={() => remove(index)}
+                  label={t('ONBOARDING_REMOVE_PERSON')}
                 >
-                  <X className="h-4 w-4" />
-                </Button>
+                  <X className="h-5 w-5" />
+                </IconButton>
               </>
             )}
           />
@@ -129,6 +135,8 @@ export function SocialConnections() {
         <Button
           type="button"
           variant="secondary"
+          size="lg"
+          className="text-base"
           onClick={() => append({ first: '', last: '', relationship: '' })}
           disabled={!canAdd}
         >

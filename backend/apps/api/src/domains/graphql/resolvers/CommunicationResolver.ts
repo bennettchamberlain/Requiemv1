@@ -13,6 +13,8 @@ import { CommunicationConnection } from '../types/CommunicationConnection';
 import { CommunicationEdge } from '../types/CommunicationEdge';
 import { CommunicationType } from '../types/CommunicationType';
 import { CreateCommunicationInput } from '../types/CreateCommunicationInput';
+import { DeleteByIdInput } from '../types/DeleteByIdInput';
+import { DeleteByIdPayload } from '../types/DeleteByIdPayload';
 import { EntityTagType } from '../types/EntityTagType';
 import { GlobalUID } from '../types/GlobalUID';
 import { PaginationArgs } from '../types/PaginationArgs';
@@ -38,14 +40,17 @@ export class CommunicationResolver {
   ): Promise<CommunicationConnection> {
     const serviceContext = toServiceContext(context);
 
-    const entities = await this.communicationService.findAll(serviceContext);
+    const { entities, hasNextPage, hasPreviousPage, totalCount } = await this.communicationService.findPage(
+      serviceContext,
+      {
+        first: pagination.first,
+        last: pagination.last,
+        afterId: pagination.after ? GlobalUID.decode(pagination.after).id : null,
+        beforeId: pagination.before ? GlobalUID.decode(pagination.before).id : null,
+      },
+    );
 
-    const { slice, pageInfo, totalCount } = Paginator.paginate(entities, {
-      ...pagination,
-      getId: (entity) => GlobalUID.encode('communication', entity.id),
-    });
-
-    const edges: CommunicationEdge[] = slice.map((entity) => {
+    const edges: CommunicationEdge[] = entities.map((entity) => {
       const node = CommunicationType.toType(entity);
 
       return {
@@ -53,6 +58,13 @@ export class CommunicationResolver {
         cursor: node.id,
       };
     });
+
+    const pageInfo = {
+      hasNextPage,
+      hasPreviousPage,
+      startCursor: edges.length > 0 ? edges[0].cursor : null,
+      endCursor: edges.length > 0 ? edges[edges.length - 1].cursor : null,
+    };
 
     return {
       edges,
@@ -106,6 +118,7 @@ export class CommunicationResolver {
         to_entity_ids: item.toEntityIds,
         participants_metadata: item.participantsMetadata,
         attachments: item.attachments,
+        duration_seconds: item.durationSeconds,
         source_type: item.sourceType,
         source_system: item.sourceSystem,
         source_id: item.sourceId,
@@ -130,6 +143,34 @@ export class CommunicationResolver {
     });
 
     return entity ? CommunicationType.toType(entity) : null;
+  }
+
+  /**
+   * Deletes a message/call addressed by its global id. A HARD delete — the
+   * communication and its `ci.entities` base row are destroyed and cannot be
+   * restored. The people it was with are untouched.
+   */
+  @Mutation(() => DeleteByIdPayload)
+  async deleteCommunication(
+    @Context() context: RequestContext,
+    @Args('input') input: DeleteByIdInput,
+  ): Promise<DeleteByIdPayload> {
+    const serviceContext = toServiceContext(context);
+
+    const id = GlobalUID.parse('communication', input.id);
+
+    const success = await this.communicationService.remove(serviceContext, id);
+
+    if (!success) {
+      return {
+        success: false,
+      };
+    }
+
+    return {
+      success,
+      deletedId: input.id,
+    };
   }
 
   @ResolveField(() => PersonType, { nullable: true })

@@ -45,6 +45,8 @@ describe('GraphController — explorer filters (graph parity)', () => {
       getEntityIdsBySourceRecordIds?: jest.Mock;
       getRelationships?: jest.Mock;
       getEntitiesForEvents?: jest.Mock;
+      traverseGraph?: jest.Mock;
+      getEntityTypeCounts?: jest.Mock;
     } = {},
   ) {
     const graphQuery = {
@@ -54,6 +56,8 @@ describe('GraphController — explorer filters (graph parity)', () => {
       getRelationships: overrides.getRelationships ?? jest.fn(async () => []),
       getEntityIdsByTagSources: overrides.getEntityIdsByTagSources ?? jest.fn(async () => []),
       getEntityIdsBySourceRecordIds: overrides.getEntityIdsBySourceRecordIds ?? jest.fn(async () => []),
+      traverseGraph: overrides.traverseGraph ?? jest.fn(async () => ({ nodes: new Map(), edges: [] })),
+      getEntityTypeCounts: overrides.getEntityTypeCounts ?? jest.fn(async () => []),
     };
 
     const tagService = {
@@ -71,6 +75,7 @@ describe('GraphController — explorer filters (graph parity)', () => {
       {} as never, // userContext
       tagService as never,
       eventService as never,
+      {} as never, // lifeStats
     );
 
     return { controller, graphQuery, tagService, eventService };
@@ -185,9 +190,195 @@ describe('GraphController — explorer filters (graph parity)', () => {
     });
   });
 
-  // The unfiltered overview is capped at 200 nodes with no inherent ordering, so
-  // a tag/event match beyond the cap would be absent from the node payload even
-  // though the client scopes to its id. The controller recovers those by id.
+  // The frontend BFS-expands the graph from the owner's anchor entity, so the
+  // capped node payload is filled from the anchor's traversed neighborhood
+  // first and only topped up with recently created entities. A recency-only
+  // page drops the (old) anchor once the account outgrows the cap, collapsing
+  // the client's graph to empty.
+  describe('anchor-neighborhood seeding', () => {
+    const anchor = {
+      entity_id: 'anchor',
+      entity_type: 'Person',
+      name: 'Me',
+      description: null,
+      properties: {},
+    };
+
+    function node(id: string, type = 'Concept') {
+      return { entity_id: id, entity_type: type, name: id, description: null, properties: {} };
+    }
+
+    it('includes the anchor and its neighborhood ahead of recent entities', async () => {
+      const getUserEntity = jest.fn(async () => anchor);
+      const traverseGraph = jest.fn(async () => ({
+        nodes: new Map([
+          ['anchor', anchor],
+          ['friend', node('friend', 'Person')],
+        ]),
+        edges: [],
+      }));
+      // The recency page misses the anchor and its neighbor entirely — the
+      // shape of the original bug.
+      const getNodes = jest.fn(async () => [node('recent-1'), node('recent-2')]);
+
+      const { controller } = setup({ getUserEntity, traverseGraph, getNodes });
+
+      const res = await controller.getGraphData(ctx, dataDto());
+
+      expect(traverseGraph).toHaveBeenCalledWith(
+        'user-1',
+        ['anchor'],
+        expect.objectContaining({ maxNodes: 200 }),
+      );
+      expect(res.data.nodes.map((n) => n.id)).toEqual(['anchor', 'friend', 'recent-1', 'recent-2']);
+    });
+
+    it('keeps the anchor under a type filter that excludes it, but drops excluded neighbors', async () => {
+      const getUserEntity = jest.fn(async () => anchor);
+      const traverseGraph = jest.fn(async () => ({
+        nodes: new Map([
+          ['anchor', anchor],
+          ['friend', node('friend', 'Person')],
+          ['cafe', node('cafe', 'Place')],
+        ]),
+        edges: [],
+      }));
+      const getNodes = jest.fn(async () => []);
+
+      const { controller } = setup({ getUserEntity, traverseGraph, getNodes });
+
+      // Selecting only `place` excludes Person — the anchor must survive
+      // anyway, while the Person neighbor is dropped.
+      const res = await controller.getGraphData(ctx, dataDto({ includeTypes: ['place'] }));
+
+      expect(res.data.nodes.map((n) => n.id).sort()).toEqual(['anchor', 'cafe']);
+    });
+
+    it('skips the traversal and serves the recency page when the user has no anchor entity', async () => {
+      const traverseGraph = jest.fn(async () => ({ nodes: new Map(), edges: [] }));
+      const getNodes = jest.fn(async () => [node('recent-1')]);
+
+      const { controller, graphQuery } = setup({ traverseGraph, getNodes });
+
+      const res = await controller.getGraphData(ctx, dataDto());
+
+      expect(graphQuery.traverseGraph).not.toHaveBeenCalled();
+      expect(res.data.nodes.map((n) => n.id)).toEqual(['recent-1']);
+    });
+  });
+
+  // The anchor neighborhood BFS is first-come-first-served over whatever edges
+  // the anchor has — on a real account one dominant type (Persons) filled all
+  // 200 slots while 183k Communications, 108k Events and 37k Content rows never
+  // appeared. The overview must cap the neighborhood's share and give every
+  // entity type in the account a slice of the remaining budget.
+  describe('per-type representation', () => {
+    const anchor = {
+      entity_id: 'anchor',
+      entity_type: 'Person',
+      name: 'Me',
+      description: null,
+      properties: {},
+    };
+
+    function nodesOf(type: string, count: number) {
+      return Array.from({ length: count }, (_, index) => ({
+        entity_id: `${type.toLowerCase()}-${index}`,
+        entity_type: type,
+        name: `${type} ${index}`,
+        description: null,
+        properties: {},
+      }));
+    }
+
+    it('caps the anchor neighborhood at half the budget and represents every type', async () => {
+      // A neighborhood big enough to consume the whole 200-node budget on its own.
+      const neighborhood = new Map([anchor, ...nodesOf('Person', 250)].map((node) => [node.entity_id, node]));
+      const getUserEntity = jest.fn(async () => anchor);
+      const traverseGraph = jest.fn(async () => ({ nodes: neighborhood, edges: [] }));
+      const getEntityTypeCounts = jest.fn(async () => [
+        { entityType: 'Communication', count: 183353 },
+        { entityType: 'Event', count: 108792 },
+        { entityType: 'Content', count: 37237 },
+        { entityType: 'Person', count: 5943 },
+        { entityType: 'Location', count: 102 },
+        { entityType: 'Concept', count: 13 },
+      ]);
+      const getNodes = jest.fn(async (_owner: string, options: { entityType?: string; limit?: number }) =>
+        options.entityType ? nodesOf(options.entityType, options.limit ?? 0) : [],
+      );
+
+      const { controller } = setup({ getUserEntity, traverseGraph, getEntityTypeCounts, getNodes });
+
+      const res = await controller.getGraphData(ctx, dataDto());
+
+      const byType = new Map<string, number>();
+      for (const node of res.data.nodes) {
+        byType.set(node.entity_type, (byType.get(node.entity_type) ?? 0) + 1);
+      }
+
+      // Every account type is present, and the neighborhood's Persons hold at
+      // most half the budget (plus the per-type Person slice).
+      for (const type of ['Communication', 'Event', 'Content', 'Person', 'Location', 'Concept']) {
+        expect(byType.get(type) ?? 0).toBeGreaterThan(0);
+      }
+
+      expect(res.data.nodes.length).toBeLessThanOrEqual(200);
+      expect(byType.get('Communication')).toBeGreaterThanOrEqual(15);
+    });
+
+    it('lets a scarce type donate its unused share to the plentiful ones', async () => {
+      const getEntityTypeCounts = jest.fn(async () => [
+        { entityType: 'Communication', count: 100000 },
+        { entityType: 'Concept', count: 2 },
+      ]);
+      const getNodes = jest.fn(async (_owner: string, options: { entityType?: string; limit?: number }) => {
+        if (options.entityType === 'Concept') {
+          return nodesOf('Concept', 2);
+        }
+
+        if (options.entityType === 'Communication') {
+          return nodesOf('Communication', options.limit ?? 0);
+        }
+
+        return [];
+      });
+
+      const { controller } = setup({ getEntityTypeCounts, getNodes });
+
+      const res = await controller.getGraphData(ctx, dataDto());
+
+      const conceptCount = res.data.nodes.filter((n) => n.entity_type === 'Concept').length;
+      const commCount = res.data.nodes.filter((n) => n.entity_type === 'Communication').length;
+
+      expect(conceptCount).toBe(2);
+      // Concept could not use its ~half share; Communication absorbs the rest
+      // of the 200-node budget.
+      expect(commCount).toBe(198);
+    });
+
+    it('excludes deselected types from the per-type fill', async () => {
+      const getEntityTypeCounts = jest.fn(async () => [
+        { entityType: 'Communication', count: 1000 },
+        { entityType: 'Person', count: 50 },
+      ]);
+      const getNodes = jest.fn(async (_owner: string, options: { entityType?: string; limit?: number }) =>
+        options.entityType ? nodesOf(options.entityType, Math.min(options.limit ?? 0, 50)) : [],
+      );
+
+      const { controller } = setup({ getEntityTypeCounts, getNodes });
+
+      // Selecting only `person` excludes Communication.
+      const res = await controller.getGraphData(ctx, dataDto({ includeTypes: ['person'] }));
+
+      expect(res.data.nodes.some((n) => n.entity_type === 'Communication')).toBe(false);
+      expect(res.data.nodes.some((n) => n.entity_type === 'Person')).toBe(true);
+    });
+  });
+
+  // The overview is capped at 200 nodes (anchor neighborhood + recency top-up),
+  // so a tag/event match beyond the cap would be absent from the node payload
+  // even though the client scopes to its id. The controller recovers those by id.
   describe('filter-match node payload', () => {
     it('unions filter-matched nodes the capped overview missed, fetched by id', async () => {
       const getEntitiesForTags = jest.fn(async () => [
@@ -223,7 +414,13 @@ describe('GraphController — explorer filters (graph parity)', () => {
       const getNodes = jest.fn(async () => []); // cap missed both matches
       const getNodesByIds = jest.fn(async () => [
         { entity_id: 'person-node', entity_type: 'Person', name: 'P', description: null, properties: {} },
-        { entity_id: 'place-node', entity_type: 'Place', name: 'Q', description: null, properties: {} },
+        {
+          entity_id: 'place-node',
+          entity_type: 'Location',
+          name: 'Q',
+          description: null,
+          properties: {},
+        },
       ]);
 
       const { controller } = setup({ getEntitiesForTags, getEntityIdsByTagSources, getNodes, getNodesByIds });
@@ -251,6 +448,59 @@ describe('GraphController — explorer filters (graph parity)', () => {
       const { controller: small } = setup();
       const smallRes = await small.getGraphData(ctx, dataDto());
       expect(smallRes.truncated).toBe(false);
+    });
+  });
+
+  // The node payload is capped, so the relationship payload must be too: an
+  // unscoped fetch shipped the account's entire relationship table (100k+ rows
+  // with real imports), whose dangling links the client can never render but
+  // still pays to index — freezing the graph view and blocking navigation
+  // away from it (#1598).
+  describe('relationship payload', () => {
+    it('scopes the relationship fetch to the node payload and drops dangling links', async () => {
+      const getNodes = jest.fn(async () => [
+        { entity_id: 'node-a', entity_type: 'Person', name: 'A', description: null, properties: {} },
+        { entity_id: 'node-b', entity_type: 'Place', name: 'B', description: null, properties: {} },
+      ]);
+      const getRelationships = jest.fn(async () => [
+        // Both endpoints in the payload — kept.
+        {
+          relationship_id: 'r-in',
+          from_entity_id: 'node-a',
+          to_entity_id: 'node-b',
+          relationship_type: 'VISITED',
+          strength: 0.7,
+          properties: {},
+        },
+        // One endpoint outside the capped payload — dangling, dropped.
+        {
+          relationship_id: 'r-dangling',
+          from_entity_id: 'node-a',
+          to_entity_id: 'outside-the-cap',
+          relationship_type: 'RELATED_TO',
+          strength: 0.5,
+          properties: {},
+        },
+      ]);
+
+      const { controller } = setup({ getNodes, getRelationships });
+
+      const res = await controller.getGraphData(ctx, dataDto());
+
+      expect(getRelationships).toHaveBeenCalledWith('user-1', {
+        entityIds: expect.arrayContaining(['node-a', 'node-b']),
+        direction: 'both',
+      });
+      expect(res.data.links.map((link) => link.id)).toEqual(['r-in']);
+    });
+
+    it('skips the relationship fetch entirely when the node payload is empty', async () => {
+      const { controller, graphQuery } = setup();
+
+      const res = await controller.getGraphData(ctx, dataDto());
+
+      expect(graphQuery.getRelationships).not.toHaveBeenCalled();
+      expect(res.data.links).toEqual([]);
     });
   });
 });

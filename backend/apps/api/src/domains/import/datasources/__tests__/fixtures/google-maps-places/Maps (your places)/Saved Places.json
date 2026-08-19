@@ -1,0 +1,38 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "geometry": {
+        "coordinates": [
+          -118.3062426,
+          34.0556813
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "date": "2023-09-30T17:32:23Z",
+        "google_maps_url": "http://maps.google.com/?cid=2552432144292227829",
+        "location": {
+          "address": "900 S Serrano Ave # 101, Los Angeles, CA 90006, United States",
+          "name": "St Germaine Apartments"
+        }
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          0,
+          0
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "date": "2022-11-01T03:26:10Z",
+        "google_maps_url": "http://maps.google.com/?q=213+S+12th+St,+San+Jose,+CA+95112&ftid=0x808fccc72eebf787:0xeed4e0b5cc57f124",
+        "Comment": "No location information is available for this saved place"
+      },
+      "type": "Feature"
+    }
+  ]
+}

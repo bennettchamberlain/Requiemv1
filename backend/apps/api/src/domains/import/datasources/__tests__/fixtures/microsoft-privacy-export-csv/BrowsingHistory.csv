@@ -1,0 +1,5 @@
+DateTime,DeviceId,AccuracyRadius,Latitude,Longitude,Time,Title,Url,SearchTerms
+"01/15/2024 08:07:02 +00:00",,65,47.641944,-122.127222,"01/15/2024 08:07:02 +00:00",Weather - Bing,https://www.bing.com/weather,
+"01/15/2024 08:09:44 +00:00",,,,,"01/15/2024 08:09:44 +00:00",Contoso Home,https://www.contoso.example/,
+"01/16/2024 19:22:10 +00:00",,120,47.603243,-122.330286,"01/16/2024 19:22:10 +00:00","Fabrikam, Inc. - Latest News",https://news.fabrikam.example/latest,
+"01/18/2024 22:58:31 +00:00",,,,,"01/18/2024 22:58:31 +00:00",Privacy dashboard - Microsoft account,https://account.microsoft.com/privacy,

@@ -1,15 +1,17 @@
 import type { BaseSyntheticEvent } from 'react';
 import { useState } from 'react';
 
-import { Button, Card, Separator } from '@ci/shadcn';
+import { Alert, Button, Card, Separator } from '@ci/shadcn';
+import { AlertCircleIcon } from '@ci/shadcn/icons';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 
+import { OidcButton } from '@/components/OidcButton';
 import { useAuth } from '@/hooks';
 
 import { LoginForm, type LoginFormData } from './LoginForm';
 
 export function LoginPage() {
-  const [, { login }] = useAuth();
+  const [{ error }, { login }] = useAuth();
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const oidcError = searchParams.get('error');
@@ -18,9 +20,6 @@ export function LoginPage() {
   // OIDC sign-in is a full-page navigation that discards router state, so carry
   // the destination through as a query param the callback can return to.
   const from = (location.state as { from?: string } | null)?.from;
-  const oidcHref = from
-    ? `/api/authenticate/oidc?redirect=${encodeURIComponent(from)}`
-    : '/api/authenticate/oidc';
   // CI Portal (OIDC) is the primary sign-in path. Email/password is kept behind
   // an opt-in toggle rather than shown as the default, so it isn't the first
   // thing users try where it isn't the configured method.
@@ -41,13 +40,19 @@ export function LoginPage() {
         </Card.Header>
 
         <Card.Content>
-          {oidcError && (
+          {error != null && !showPasswordForm && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertCircleIcon />
+              <Alert.Title>
+                {error instanceof Error ? error.message : 'Sign in failed. Please try again.'}
+              </Alert.Title>
+            </Alert>
+          )}
+          {oidcError && error == null && (
             <p className="text-destructive mb-4 text-center text-sm">Sign in failed. Please try again.</p>
           )}
 
-          <Button className="w-full" asChild>
-            <a href={oidcHref}>Sign in with Companion account</a>
-          </Button>
+          <OidcButton label="Sign in with Companion account" redirect={from} />
 
           {showPasswordForm ? (
             <>

@@ -40,6 +40,10 @@ export function EntityGraph({ entityId, maxDepth = 1, nodeLimit = 25 }: Props) {
         highlightedNodeId={entityId}
         centerNodeId={entityId}
         selectedNodeId={entityId}
+        // This panel is on a page ABOUT one entity, so its own connections are the subject and
+        // anything beyond them is background. Raising `maxDepth` past 1 pulls in a neighbour's whole
+        // neighbourhood, which on a sparsely connected entity is most of the picture.
+        focusHops={1}
       />
     );
   }

@@ -45,6 +45,8 @@ export type UpdateFileDto = Pick<CreateFileDto, 'title' | 'description' | 'exter
  */
 export interface SavedSearchFilters {
   eventTypes?: string[];
+  /** Rolling When preset (`yesterday`, `last-week`, `last-month`); resolved at run time. */
+  datePreset?: string;
   startTime?: string;
   endTime?: string;
   sortBy?: string;

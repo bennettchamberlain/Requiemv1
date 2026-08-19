@@ -35,6 +35,41 @@ export class PositionService {
     this.logger.setContext(PositionService.name);
   }
 
+  /**
+   * Aggregate position counts for the location settings UI: total fixes,
+   * per-provider counts (the browser tracker writes provider='browser'), and
+   * the most recent fix time.
+   */
+  async getStats(context: UserServiceContext): Promise<{
+    total: number;
+    byProvider: Record<string, number>;
+    lastFixAt: Date | null;
+  }> {
+    const rows: Array<{ provider: string | null; n: string; last_at: Date | null }> =
+      await this.positionRepository.manager.query(
+        `SELECT provider, COUNT(*) AS n, MAX(time) AS last_at
+           FROM ci.position
+          WHERE user_id = $1
+          GROUP BY provider`,
+        [context.userId],
+      );
+
+    const byProvider: Record<string, number> = {};
+    let total = 0;
+    let lastFixAt: Date | null = null;
+
+    for (const row of rows) {
+      const count = Number(row.n);
+      total += count;
+      byProvider[row.provider ?? 'unknown'] = count;
+      if (row.last_at && (lastFixAt == null || row.last_at > lastFixAt)) {
+        lastFixAt = row.last_at;
+      }
+    }
+
+    return { total, byProvider, lastFixAt };
+  }
+
   async create(
     context: UserServiceContext,
     data: CreatePositionDto[],
@@ -444,9 +479,13 @@ export class PositionService {
   }
 
   private deduplicateByTime(positions: CreatePositionDto[]): CreatePositionDto[] {
-    const seenTimes = new Map<string, CreatePositionDto>();
+    // Key on the parsed instant, not the raw string: two rows for the same
+    // moment written with different timestamp formatting (with/without
+    // milliseconds, `Z` vs `+00:00`, ...) must collapse to one row here, or
+    // both survive into findExistingByTimes and get inserted as duplicates.
+    const seenTimes = new Map<number, CreatePositionDto>();
     for (const position of positions) {
-      seenTimes.set(position.time, position);
+      seenTimes.set(new Date(position.time).getTime(), position);
     }
 
     return Array.from(seenTimes.values());

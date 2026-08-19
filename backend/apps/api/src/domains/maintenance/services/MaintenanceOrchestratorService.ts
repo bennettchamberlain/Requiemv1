@@ -4,11 +4,12 @@ import { DataSource } from 'typeorm';
 
 import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
-import { EventService as SignallingEventService } from '@ci/domains/events';
+import { BACKFILL_JOB_PRIORITY, EventService as SignallingEventService } from '@ci/domains/events';
 import { MediaDimensionsBackfillRequestEvent, MEDIA_DIMENSIONS_QUEUE } from '@ci/domains/files';
 import { EventEntity } from '@ci/domains/memory';
 import { EstimateLocationBatchRequestEvent, GeocodeBatchRequestEvent } from '@ci/domains/memory/events';
-import { EmbeddingEntity } from '@ci/domains/search-ingress';
+import { PipelineSweepEvent } from '@ci/domains/pipeline/events';
+import { EmbeddingEntity, IndexSkipEntity } from '@ci/domains/search-ingress';
 
 import { ESTIMATE_LOCATION_QUEUE } from '../listeners/EstimateLocationBatchListener';
 
@@ -16,34 +17,51 @@ import {
   type CommunicationLinkBackfillOptions,
   CommunicationLinkBackfillService,
 } from './CommunicationLinkBackfillService';
+import { DerivedRelationshipService } from './DerivedRelationshipService';
+import {
+  type DeterministicEdgeBackfillOptions,
+  DeterministicEdgeBackfillService,
+} from './DeterministicEdgeBackfillService';
 import {
   type EventParticipantBackfillOptions,
   EventParticipantBackfillService,
 } from './EventParticipantBackfillService';
 import { type GraphEnrichmentOptions, GraphEnrichmentService } from './GraphEnrichmentService';
+import { type HealSelfCollationOptions, HealSelfCollationService } from './HealSelfCollationService';
+import { InventoryReverseService } from './InventoryReverseService';
 import {
   DEFAULT_ESTIMATE_SOURCE_SYSTEMS,
   DEFAULT_MAX_GAP_HOURS,
   LocationEstimateService,
 } from './LocationEstimateService';
+import { NoteContentFoldService } from './NoteContentFoldService';
 import { type PersonStubBackfillOptions, PersonStubBackfillService } from './PersonStubBackfillService';
+import { RelationshipNormalizeService } from './RelationshipNormalizeService';
 import { type SearchIndexBackfillOptions, SearchIndexBackfillService } from './SearchIndexBackfillService';
 
 /**
  * The canonical execution order of the orchestrated enrichment legs. A request
  * may name any SUBSET of these stages, but they always execute in THIS order —
  * the legs have real data dependencies (extract_people seeds the identifier
- * index link_communications/link_events resolve against; geocoding should land
- * before the estimator so it only fills what nothing else could; search_index
- * runs last so the embeds cover the enriched rows).
+ * index link_communications/link_events resolve against; materialize_edges
+ * projects the columns those two just filled into ci.relationships; geocoding
+ * should land before the estimator so it only fills what nothing else could;
+ * search_index runs last so the embeds cover the enriched rows).
  */
 export const ORCHESTRATE_STAGES = [
   'extract_people',
   'link_communications',
   'link_events',
+  'heal_self_collation',
+  'materialize_edges',
+  'normalize_relationships',
+  'derive_relationships',
+  'fold_notes',
   'extract_graph',
   'geocode',
   'reverse_geocode',
+  'reverse_position',
+  'reverse_inventory',
   'estimate_locations',
   'media_dimensions',
   'search_index',
@@ -56,6 +74,8 @@ export interface OrchestrateLegOptions {
   extractPeople?: PersonStubBackfillOptions;
   linkCommunications?: Omit<CommunicationLinkBackfillOptions, 'onProgress'>;
   linkEvents?: Omit<EventParticipantBackfillOptions, 'onProgress'>;
+  healSelfCollation?: HealSelfCollationOptions;
+  materializeEdges?: Omit<DeterministicEdgeBackfillOptions, 'onProgress'>;
   extractGraph?: Omit<GraphEnrichmentOptions, 'onProgress'>;
   geocode?: { limit?: number; retryNull?: boolean };
   reverseGeocode?: { limit?: number; retryNull?: boolean };
@@ -78,8 +98,9 @@ export interface OrchestrateBody {
   /**
    * When present, after enqueuing the search_index leg poll the embedded count
    * (the same ci_search.embeddings tally the GET embedded-count endpoint reads)
-   * until the enqueued rows have drained or the timeout elapses, emitting
-   * leg-progress {enqueued, embedded} per poll. Default timeout: 10 minutes.
+   * PLUS the ci_search.index_skips count until every enqueued row has embedded
+   * or been skip-marked, or the timeout elapses, emitting leg-progress
+   * {enqueued, embedded, skipped} per poll. Default timeout: 10 minutes.
    */
   searchIndexDrain?: { timeoutMs?: number };
 }
@@ -167,9 +188,15 @@ export class MaintenanceOrchestratorService {
     private readonly personStubBackfillService: PersonStubBackfillService,
     private readonly communicationLinkBackfillService: CommunicationLinkBackfillService,
     private readonly eventParticipantBackfillService: EventParticipantBackfillService,
+    private readonly healSelfCollationService: HealSelfCollationService,
+    private readonly deterministicEdgeBackfillService: DeterministicEdgeBackfillService,
+    private readonly relationshipNormalizeService: RelationshipNormalizeService,
+    private readonly derivedRelationshipService: DerivedRelationshipService,
+    private readonly noteContentFoldService: NoteContentFoldService,
     private readonly graphEnrichmentService: GraphEnrichmentService,
     private readonly locationEstimateService: LocationEstimateService,
     private readonly searchIndexBackfillService: SearchIndexBackfillService,
+    private readonly inventoryReverseService: InventoryReverseService,
   ) {
     this.logger.setContext(MaintenanceOrchestratorService.name);
   }
@@ -319,6 +346,24 @@ export class MaintenanceOrchestratorService {
           onProgress: (partial) => progress({ ...partial }),
         });
 
+      case 'heal_self_collation':
+        return this.healSelfCollationService.heal(userId, options.healSelfCollation ?? {});
+
+      case 'materialize_edges':
+        return this.deterministicEdgeBackfillService.backfill(userId, {
+          ...options.materializeEdges,
+          onProgress: (partial) => progress({ ...partial }),
+        });
+
+      case 'normalize_relationships':
+        return this.relationshipNormalizeService.normalize(userId);
+
+      case 'derive_relationships':
+        return this.derivedRelationshipService.derive(userId);
+
+      case 'fold_notes':
+        return this.noteContentFoldService.fold(userId);
+
       case 'extract_graph':
         return this.graphEnrichmentService.enrich(userId, {
           ...options.extractGraph,
@@ -330,6 +375,12 @@ export class MaintenanceOrchestratorService {
 
       case 'reverse_geocode':
         return this.runGeocodeLeg(userId, options.reverseGeocode ?? {}, 'reverse');
+
+      case 'reverse_position':
+        return this.runPositionReverseLeg(userId, options.reverseGeocode ?? {});
+
+      case 'reverse_inventory':
+        return this.inventoryReverseService.reverse(userId);
 
       case 'estimate_locations':
         return this.runEstimateLocationsLeg(userId, options.estimateLocations ?? {});
@@ -400,6 +451,35 @@ export class MaintenanceOrchestratorService {
     return {
       jobId: jobIds[0] ?? null,
       estimatedEventCount,
+      status: jobIds.length > 0 ? 'enqueued' : 'noop',
+    };
+  }
+
+  /**
+   * Enqueue a pipeline sweep of `enrich.position_reverse` for this user.
+   * Reuses PositionReverseStage (ledger + cache) rather than cloning GPS
+   * reverse into the event-centric geocode leg.
+   */
+  private async runPositionReverseLeg(userId: string, opts: { limit?: number }): Promise<EnqueueLegResult> {
+    const maxIds = opts.limit ?? config.geocoding.batchSize;
+    const jobIds = await this.signallingEventService.send(
+      PipelineSweepEvent,
+      {
+        stage: 'enrich.position_reverse',
+        userId,
+        entityType: 'position',
+        cursor: null,
+        sliceSize: 200,
+        hop: 0,
+        dispatched: 0,
+        maxIds,
+      },
+      { queue: 'pipeline-enrich', priority: BACKFILL_JOB_PRIORITY },
+    );
+
+    return {
+      jobId: jobIds[0] ?? null,
+      estimatedEventCount: maxIds,
       status: jobIds.length > 0 ? 'enqueued' : 'noop',
     };
   }
@@ -488,12 +568,15 @@ export class MaintenanceOrchestratorService {
   /**
    * The search_index leg: run the backfill sweep (bulk re-enqueue of un-indexed
    * rows onto the search-index queue), then — when the body opts into
-   * searchIndexDrain — poll the embedded count until the enqueued rows have
-   * drained or the timeout elapses, emitting leg-progress {enqueued, embedded}.
-   * The embedded figure is a DELTA against a baseline taken before the sweep,
-   * matching how the importer animates its stage-6 bar off the GET
-   * embedded-count endpoint. Skip-marked rows never embed, so the timeout (not
-   * an exact match) is the terminal guarantee.
+   * searchIndexDrain — poll until every enqueued row was either embedded OR
+   * skip-marked, or the timeout elapses, emitting leg-progress
+   * {enqueued, embedded, skipped}. Both figures are DELTAS against baselines
+   * taken before the sweep. Counting skips is what makes the drain terminate on
+   * an exact match: the listeners intentionally decline low-value rows
+   * (`ci_search.index_skips`), so an embedded-only poll never converged on
+   * chatty sources — a 13k-message Discord import with 1.4k skips sat at the
+   * full 10-minute timeout on every sync. The timeout remains the backstop for
+   * a genuinely stalled drain (e.g. Ollama down with jobs still queued).
    */
   private async runSearchIndexLeg(
     body: OrchestrateBody,
@@ -507,15 +590,18 @@ export class MaintenanceOrchestratorService {
     }
 
     const baseline = await this.embeddedCount(opts.entityTypes);
+    const skipBaseline = await this.skippedCount(opts.entityTypes);
     const result = await this.searchIndexBackfillService.backfill(opts);
     const timeoutMs = drain.timeoutMs ?? DRAIN_DEFAULT_TIMEOUT_MS;
     const drainStartedAt = Date.now();
     let embedded = 0;
+    let skipped = 0;
 
-    while (embedded < result.enqueued && Date.now() - drainStartedAt < timeoutMs) {
+    while (embedded + skipped < result.enqueued && Date.now() - drainStartedAt < timeoutMs) {
       await sleep(this.drainPollIntervalMs);
       embedded = Math.max((await this.embeddedCount(opts.entityTypes)) - baseline, 0);
-      progress({ enqueued: result.enqueued, embedded });
+      skipped = Math.max((await this.skippedCount(opts.entityTypes)) - skipBaseline, 0);
+      progress({ enqueued: result.enqueued, embedded, skipped });
     }
 
     return {
@@ -523,7 +609,8 @@ export class MaintenanceOrchestratorService {
       drain: {
         enqueued: result.enqueued,
         embedded,
-        drained: embedded >= result.enqueued,
+        skipped,
+        drained: embedded + skipped >= result.enqueued,
         waitedMs: Date.now() - drainStartedAt,
       },
     };
@@ -543,6 +630,27 @@ export class MaintenanceOrchestratorService {
 
     if (types && types.length > 0) {
       builder.where('embedding.entityType IN (:...types)', { types: [...types] });
+    }
+
+    const row = await builder.getRawOne<{ count: string }>();
+
+    return Number(row?.count ?? 0);
+  }
+
+  /**
+   * Total `ci_search.index_skips` rows, optionally restricted to the swept
+   * entity types — the drain's other terminal signal: a row the listener
+   * examined and intentionally did NOT embed. Same scoping semantics as
+   * {@link embeddedCount}.
+   */
+  private async skippedCount(types?: readonly string[]): Promise<number> {
+    const builder = this.dataSource
+      .getRepository(IndexSkipEntity)
+      .createQueryBuilder('skip')
+      .select('COUNT(*)', 'count');
+
+    if (types && types.length > 0) {
+      builder.where('skip.entityType IN (:...types)', { types: [...types] });
     }
 
     const row = await builder.getRawOne<{ count: string }>();

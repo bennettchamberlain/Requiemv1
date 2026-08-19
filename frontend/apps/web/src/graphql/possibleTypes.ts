@@ -32,6 +32,7 @@ export interface PossibleTypesResultData {
       "SavedSearchConnection",
       "SummaryConnection",
       "TagConnection",
+      "TaskConnection",
       "ThreadConnection"
     ],
     "Edge": [
@@ -56,6 +57,7 @@ export interface PossibleTypesResultData {
       "SavedSearchEdge",
       "SummaryEdge",
       "TagEdge",
+      "TaskEdge",
       "ThreadEdge"
     ],
     "Node": [
@@ -69,6 +71,7 @@ export interface PossibleTypesResultData {
       "ContentType",
       "EntityTagType",
       "EventType",
+      "FileChunkType",
       "FileType",
       "ItemType",
       "MessageType",
@@ -82,6 +85,8 @@ export interface PossibleTypesResultData {
       "SavedSearchType",
       "SummaryType",
       "TagType",
+      "TaskPendingChangeType",
+      "TaskType",
       "ThreadType",
       "UserType"
     ],
@@ -93,6 +98,7 @@ export interface PossibleTypesResultData {
       "ConceptType",
       "ContentType",
       "EventType",
+      "FileChunkType",
       "FileType",
       "ItemType",
       "NoteType",
@@ -131,4 +137,3 @@ export interface PossibleTypesResultData {
   }
 };
       export default result;
-    

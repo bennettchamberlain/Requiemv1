@@ -28,6 +28,14 @@ export interface EntitySource {
    * `undefined` for single-type tables.
    */
   discriminator?: { column: string; value: string };
+  /**
+   * Extra SQL predicate (over source alias `s`) the BACKFILL sweep applies so
+   * rows that must never (re-)index are not treated as "missing". Used by the
+   * ci.entities-backed types to exclude merge tombstones: a merge deletes the
+   * tombstone's embedding+vector, and without this filter the sweep would
+   * re-find and re-index it via PersonCreatedEvent.
+   */
+  backfillPredicate?: string;
 }
 
 /**
@@ -42,11 +50,13 @@ export interface EntitySource {
  * | content          | ci.content           | id          | —                             |
  * | event            | ci.events            | event_id    | —                             |
  * | file             | ci.entities          | entity_id   | entity_type = 'File'          |
+ * | file-chunk       | ci.file_chunks       | id          | —                             |
  * | item             | ci.inventory         | object_id   | —                             |
  * | message          | ci.agent_memories    | id          | —                             |
  * | note             | ci.notes             | id          | —                             |
  * | person           | ci.entities          | entity_id   | entity_type = 'Person'        |
  * | place            | ci.entities          | entity_id   | entity_type = 'Location'      |
+ * | position         | ci.position          | id          | downsample: hour × 3-dec cell |
  * | thread           | ci.threads           | thread_id   | —                             |
  *
  * NOTE: `ci.communications` has a composite PK (id, time, user_id), but the
@@ -62,6 +72,7 @@ export const ENTITY_SOURCE_MAP: Readonly<Record<IndexableEntity, EntitySource>> 
     table: 'entities',
     idColumn: 'entity_id',
     discriminator: { column: 'entity_type', value: 'Concept' },
+    backfillPredicate: 's.merged_into_entity_id IS NULL',
   },
   content: { schema: 'ci', table: 'content', idColumn: 'id' },
   event: { schema: 'ci', table: 'events', idColumn: 'event_id' },
@@ -70,7 +81,9 @@ export const ENTITY_SOURCE_MAP: Readonly<Record<IndexableEntity, EntitySource>> 
     table: 'entities',
     idColumn: 'entity_id',
     discriminator: { column: 'entity_type', value: 'File' },
+    backfillPredicate: 's.merged_into_entity_id IS NULL',
   },
+  'file-chunk': { schema: 'ci', table: 'file_chunks', idColumn: 'id' },
   item: { schema: 'ci', table: 'inventory', idColumn: 'object_id' },
   message: { schema: 'ci', table: 'agent_memories', idColumn: 'id' },
   note: { schema: 'ci', table: 'notes', idColumn: 'id' },
@@ -79,12 +92,33 @@ export const ENTITY_SOURCE_MAP: Readonly<Record<IndexableEntity, EntitySource>> 
     table: 'entities',
     idColumn: 'entity_id',
     discriminator: { column: 'entity_type', value: 'Person' },
+    backfillPredicate: 's.merged_into_entity_id IS NULL',
   },
   place: {
     schema: 'ci',
     table: 'entities',
     idColumn: 'entity_id',
     discriminator: { column: 'entity_type', value: 'Location' },
+    backfillPredicate: 's.merged_into_entity_id IS NULL',
+  },
+  position: {
+    schema: 'ci',
+    table: 'position',
+    idColumn: 'id',
+    // Same local-hour × 3-decimal cell as PositionSearchIndexListener.
+    backfillPredicate: `s.location IS NOT NULL AND COALESCE(btrim(s.address), '') <> '' AND s.id = (
+      SELECT p2.id FROM ci.position p2
+      JOIN ci.users u ON u.id = p2.user_id
+       WHERE p2.user_id = s.user_id
+         AND p2.location IS NOT NULL
+         AND COALESCE(btrim(p2.address), '') <> ''
+         AND date_trunc('hour', p2.time AT TIME ZONE COALESCE(NULLIF(btrim(u.timezone), ''), 'UTC'))
+           = date_trunc('hour', s.time AT TIME ZONE COALESCE(NULLIF(btrim(u.timezone), ''), 'UTC'))
+         AND round(ST_Y(p2.location::geometry)::numeric, 3) = round(ST_Y(s.location::geometry)::numeric, 3)
+         AND round(ST_X(p2.location::geometry)::numeric, 3) = round(ST_X(s.location::geometry)::numeric, 3)
+       ORDER BY p2.time, p2.id
+       LIMIT 1
+    )`,
   },
   thread: { schema: 'ci', table: 'threads', idColumn: 'thread_id' },
 };

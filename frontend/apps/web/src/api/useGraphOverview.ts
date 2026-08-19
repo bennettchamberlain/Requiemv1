@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import { fetchJson } from '@ci/common';
+import { FetchJsonError, fetchJson } from '@ci/common';
 
 type GraphNode = {
   id: string;
@@ -9,6 +9,11 @@ type GraphNode = {
   name: string | null;
   description: string | null;
   properties: Record<string, unknown>;
+  /** Server-computed edge count (dots payload). Absent on the classic payloads,
+   * where the client derives degree from the shipped links. */
+  degree?: number;
+  /** The event's kind (dots payload, Event nodes only). */
+  event_type?: string;
 };
 
 type GraphLink = {
@@ -99,11 +104,40 @@ function combineMatches(tagMatch?: TagMatch, eventMatch?: TagMatch): Set<string>
   return tagSet ?? eventSet ?? null;
 }
 
+/**
+ * Keep only links whose BOTH endpoints are present in the node payload. A link
+ * dangling against an absent node can never render (the explorer only draws
+ * links between loaded nodes), but every dangling link still costs adjacency
+ * indexing and neighbor sorting downstream. Older/other servers shipped the
+ * account's entire relationship table here — hundreds of thousands of dangling
+ * links with real imported data — which froze the main thread for minutes and
+ * blocked navigating away from the graph view (#1598).
+ */
+function dropDanglingLinks(data: { nodes: GraphNode[]; links: GraphLink[] }): {
+  nodes: GraphNode[];
+  links: GraphLink[];
+} {
+  const nodeIds = new Set(data.nodes.map((node) => node.id));
+
+  return {
+    nodes: data.nodes,
+    links: data.links.filter((link) => nodeIds.has(link.source) && nodeIds.has(link.target)),
+  };
+}
+
 function buildSubgraph(
   data: { nodes: GraphNode[]; links: GraphLink[] },
   seedId: string,
   maxDepth: number,
 ): Subgraph {
+  // A BFS from a seed that isn't in the payload prunes everything reachable
+  // only through it — with lots of data that collapses the graph to empty.
+  // Hand the payload through unpruned instead; the explorer's visibility
+  // expansion still bounds what actually renders.
+  if (!data.nodes.some((node) => node.id === seedId)) {
+    return { nodes: data.nodes, links: data.links };
+  }
+
   const visited = new Set<string>([seedId]);
   const queue: Array<{ id: string; depth: number }> = [{ id: seedId, depth: 0 }];
   const adjacency = new Map<string, GraphLink[]>();
@@ -162,6 +196,11 @@ export interface GraphOverviewOptions {
   // Date range (`from`/`to` URL params, ISO strings).
   dateFrom?: string;
   dateTo?: string;
+  /**
+   * Don't fetch at all (the caller is showing the dots overview instead).
+   * While skipped the hook reports `loading: false` with no data.
+   */
+  skip?: boolean;
 }
 
 export function useGraphOverview(
@@ -184,9 +223,10 @@ export function useGraphOverview(
   const hasLocation = options.hasLocation ?? false;
   const dateFrom = options.dateFrom;
   const dateTo = options.dateTo;
+  const skip = options.skip ?? false;
 
   const [state, setState] = useState<GraphOverviewState>({
-    loading: true,
+    loading: !skip,
     error: null,
     userEntityId: null,
     subgraph: null,
@@ -198,6 +238,23 @@ export function useGraphOverview(
 
   useEffect(() => {
     let cancelled = false;
+
+    if (skip) {
+      setState({
+        loading: false,
+        error: null,
+        userEntityId: null,
+        subgraph: null,
+        quickStats: null,
+        currentUser: null,
+        filterMatchedEntityIds: null,
+        filterScope: { tags: false, events: false },
+      });
+
+      return () => {
+        cancelled = true;
+      };
+    }
 
     async function load() {
       try {
@@ -275,6 +332,8 @@ export function useGraphOverview(
           events: graphResponse.eventMatch?.active === true,
         };
 
+        const graphData = dropDanglingLinks(graphResponse.data);
+
         // The user-seeded BFS prunes anything beyond `maxDepth` hops from the
         // owner — fine for the click-driven interactive view, but it would drop
         // filter-matched nodes that sit farther out before the filter is even
@@ -283,8 +342,8 @@ export function useGraphOverview(
         // through unpruned and let the client do the scoping.
         const subgraph =
           filterScope.tags || filterScope.events
-            ? { nodes: graphResponse.data.nodes, links: graphResponse.data.links }
-            : buildSubgraph(graphResponse.data, userEntityId, maxDepth);
+            ? graphData
+            : buildSubgraph(graphData, userEntityId, maxDepth);
 
         if (!cancelled) {
           setState({
@@ -304,7 +363,7 @@ export function useGraphOverview(
         }
 
         const message =
-          error instanceof Error && /401/.test(error.message)
+          error instanceof FetchJsonError && error.status === 401
             ? 'You need to sign in again to load analytics.'
             : error instanceof Error
               ? error.message
@@ -342,6 +401,7 @@ export function useGraphOverview(
     hasLocation,
     dateFrom,
     dateTo,
+    skip,
   ]);
 
   return useMemo(() => state, [state]);

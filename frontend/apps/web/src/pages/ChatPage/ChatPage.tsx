@@ -1,31 +1,38 @@
 import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
-import { Portal, useDeviceLayout, usePageTitle } from '@ci/common';
-import { Breadcrumb, Button, Card } from '@ci/shadcn';
-import { RefreshCw, Send, X } from '@ci/shadcn/icons';
-import { useNavigate, useParams, Link } from 'react-router-dom';
+import { Portal, usePageTitle } from '@ci/common';
+import { Button, Card } from '@ci/shadcn';
+import { Loader2, RefreshCw, Send, Sparkles, X } from '@ci/shadcn/icons';
+import { useNavigate, useParams } from 'react-router-dom';
 
 import { useThreadService } from '@/api';
+import { usePersonaCompose } from '@/api/usePersonaCompose';
 import { Chat, type FormData } from '@/components/Chat';
-import { ModelSelector } from '@/components/ModelSelector';
+import { HowYoudDoItCard } from '@/components/HowYoudDoItCard';
 import { useChatRequester, useCounter, useModel } from '@/hooks';
+import { clearAgentChatContext, readAgentChatContext } from '@/lib/agentChat';
 
 import { ChatSidebar } from './ChatSidebar';
 import { type Message } from './types';
 import { useThreadListService } from './useThreadListService';
 
 function ChatPageContent() {
-  const { isMobile } = useDeviceLayout();
-
   const resolvedThreadId = useRef<string | null>(null);
   const hasSetInitialMessages = useRef(false);
   const lastProcessedResponseRef = useRef<string>('');
+  const threadTitleRefreshTimeoutRef = useRef<number | null>(null);
 
   const navigate = useNavigate();
 
   const { id: initialThreadId } = useParams<{ id?: string }>();
   const [initialMessages, setInitialMessages] = useState<Message[]>([]);
+  const [chatDraft, setChatDraft] = useState('');
   const [{ selectedModel }] = useModel();
+  const [personaTask, setPersonaTask] = useState('');
+  const [applyingPersona, setApplyingPersona] = useState(false);
+  const [applyNote, setApplyNote] = useState<string | null>(null);
+  const [{ loading: personaLoading, error: personaError, result: personaResult }, { compose, apply, clear }] =
+    usePersonaCompose();
 
   const [
     { threads, loading: threadsLoading, error: threadsError },
@@ -50,7 +57,13 @@ function ChatPageContent() {
 
   const [
     { stream, loading: chatRequestLoading, streaming: chatRequestStreaming, hasStartedReceiving },
-    { submit: submitChatRequest, stop: stopChatRequest },
+    {
+      submit: submitChatRequest,
+      stop: stopChatRequest,
+      attach: attachChatStream,
+      detach: detachChatStream,
+      cancel: cancelGeneration,
+    },
   ] = useChatRequester({
     threadId: resolvedThreadId.current,
     onNewThread: handleNewThread,
@@ -58,10 +71,10 @@ function ChatPageContent() {
 
   const navigateToChatList = useCallback(() => {
     incrementNewThreadCount();
-    stopChatRequest();
+    detachChatStream();
     resolvedThreadId.current = null;
     navigate('/chat');
-  }, [incrementNewThreadCount]);
+  }, [incrementNewThreadCount, detachChatStream, navigate]);
 
   useEffect(() => {
     setInitialMessages([]);
@@ -70,31 +83,65 @@ function ChatPageContent() {
   }, [initialThreadId]);
 
   useEffect(() => {
-    if (thread && !hasSetInitialMessages.current) {
-      setInitialMessages(thread.messages ?? []);
-      hasSetInitialMessages.current = true;
+    if (initialThreadId) {
+      return;
     }
-  }, [thread]);
+
+    const seed = readAgentChatContext();
+
+    if (!seed) {
+      return;
+    }
+
+    clearAgentChatContext();
+
+    const draft = seed.body
+      ? `I'd like to talk about "${seed.title}":\n\n${seed.body}`
+      : `I'd like to talk about "${seed.title}".`;
+
+    setChatDraft(draft);
+  }, [initialThreadId]);
+
+  useEffect(() => {
+    if (thread && !hasSetInitialMessages.current) {
+      const generating = thread.generationStatus === 'queued' || thread.generationStatus === 'running';
+      const loaded = thread.messages ?? [];
+      const last = loaded[loaded.length - 1];
+      const messages = generating && last?.role === 'assistant' ? loaded.slice(0, -1) : loaded;
+
+      setInitialMessages(messages);
+      hasSetInitialMessages.current = true;
+
+      if (generating && thread.id) {
+        void attachChatStream(thread.id).then((attached) => {
+          if (!attached) {
+            setInitialMessages(loaded);
+          }
+        });
+      }
+    }
+  }, [thread, attachChatStream]);
 
   const handleSelectThread = useCallback(
     (threadId: string) => {
       if (resolvedThreadId.current !== threadId) {
-        stopChatRequest();
+        detachChatStream();
         navigate(`/chat/${threadId}`);
       }
     },
-    [navigate],
+    [navigate, detachChatStream],
   );
 
   const handleDeleteThread = useCallback(
     (threadId: string) => {
+      cancelGeneration(threadId);
       deleteThread(threadId);
 
       if (resolvedThreadId.current === threadId) {
         navigateToChatList();
       }
     },
-    [deleteThread, navigateToChatList],
+    [cancelGeneration, deleteThread, navigateToChatList],
   );
 
   const handleSubmit = useCallback(
@@ -106,19 +153,78 @@ function ChatPageContent() {
     [submitChatRequest],
   );
 
-  const handleResponseFinished = useCallback((text: string) => {
-    if (text.trim()) {
-      // Only process new responses
-      if (text !== lastProcessedResponseRef.current) {
+  useEffect(() => {
+    return () => {
+      if (threadTitleRefreshTimeoutRef.current != null) {
+        window.clearTimeout(threadTitleRefreshTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleResponseFinished = useCallback(
+    (text: string) => {
+      if (text.trim() && text !== lastProcessedResponseRef.current) {
         lastProcessedResponseRef.current = text;
       }
+
+      refetchThreads();
+      if (threadTitleRefreshTimeoutRef.current != null) {
+        window.clearTimeout(threadTitleRefreshTimeoutRef.current);
+      }
+
+      threadTitleRefreshTimeoutRef.current = window.setTimeout(() => {
+        refetchThreads();
+      }, 5000);
+    },
+    [refetchThreads],
+  );
+
+  const handlePersonaCompose = useCallback(async () => {
+    const trimmed = personaTask.trim();
+    if (!trimmed || personaLoading) {
+      return;
     }
-  }, []);
+
+    setApplyNote(null);
+    try {
+      await compose(trimmed);
+    } catch {
+      // error surfaced via personaError
+    }
+  }, [compose, personaLoading, personaTask]);
+
+  const handlePersonaApply = useCallback(async () => {
+    if (!personaResult || applyingPersona) {
+      return;
+    }
+
+    setApplyingPersona(true);
+    setApplyNote(null);
+    try {
+      const { added } = await apply(personaResult);
+      setApplyNote(
+        added > 0 ? `Added ${added} ${added === 1 ? 'card' : 'cards'} to Possibilities.` : 'Nothing to add.',
+      );
+    } catch {
+      setApplyNote('Could not add to Possibilities.');
+    } finally {
+      setApplyingPersona(false);
+    }
+  }, [apply, applyingPersona, personaResult]);
+
+  const handlePersonaFollowUp = useCallback(
+    (question: string) => {
+      void submitChatRequest({ message: question });
+    },
+    [submitChatRequest],
+  );
 
   const loading = threadsLoading || threadLoading || chatRequestLoading;
   const isSubmitDisabled = selectedModel == null;
   const inputPlaceholder =
-    resolvedThreadId.current == null ? 'Start a new conversation...' : 'Continue the conversation...';
+    resolvedThreadId.current == null
+      ? 'Ask about Memory, Plan, Forecast, Brief…'
+      : 'Continue — Memory, Plan, Forecast, Brief…';
 
   let emptyState: ReactNode;
 
@@ -149,48 +255,68 @@ function ChatPageContent() {
     );
   } else if (resolvedThreadId.current == null) {
     emptyState = (
-      <div className="flex flex-col items-center text-gray-500">
-        <div className="w-16 h-16 mx-auto bg-stone-100 rounded-full flex items-center justify-center mb-4">
-          <Send className="w-8 h-8 text-zinc-400 relative top-0.5 -left-0.5" />
+      <div className="flex w-full max-w-xl flex-col items-center px-4 text-gray-500">
+        <div className="mb-4 mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-stone-100">
+          <Send className="relative -left-0.5 top-0.5 h-8 w-8 text-zinc-400" />
         </div>
-        <p className="text-sm mb-1">Start a conversation with your Companion</p>
-        <p className="text-xs text-gray-400">Ask questions, get recommendations, or explore ideas</p>
+        <p className="mb-1 text-sm">Start a conversation with your Companion</p>
+        <p className="mb-6 text-xs text-gray-400">
+          Ask about Memory, Plan to-dos, Forecast, or Brief — or attach a file
+        </p>
+
+        <div className="w-full rounded-xl border border-border bg-background p-3 text-left">
+          <p className="mb-2 text-xs font-medium text-foreground">How you’d do it</p>
+          <p className="mb-2 text-[11px] text-muted-foreground">
+            Paste a task — Companion synthesizes who you are, then suggests your approach.
+          </p>
+          <textarea
+            value={personaTask}
+            onChange={(e) => setPersonaTask(e.target.value)}
+            rows={2}
+            disabled={personaLoading}
+            aria-label="Task to personalize"
+            placeholder="e.g. Plan a calm dinner for friends this week…"
+            className="mb-2 w-full resize-none rounded-lg border border-border bg-background px-2.5 py-2 text-[13px] text-foreground placeholder:text-muted-foreground/70 focus:border-primary/60 focus:outline-none disabled:opacity-60"
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              className="h-7 text-xs"
+              disabled={personaLoading || personaTask.trim().length === 0}
+              onClick={() => void handlePersonaCompose()}
+            >
+              {personaLoading ? (
+                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" strokeWidth={1.5} />
+              ) : (
+                <Sparkles className="mr-1 h-3.5 w-3.5" strokeWidth={1.5} />
+              )}
+              {personaLoading ? 'Personalizing…' : 'How I’d do this'}
+            </Button>
+            {personaResult && (
+              <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={clear}>
+                Clear
+              </Button>
+            )}
+            {personaError && <span className="text-[11px] text-destructive">{personaError}</span>}
+          </div>
+        </div>
+
+        {personaResult && (
+          <HowYoudDoItCard
+            className="mt-4"
+            result={personaResult}
+            applying={applyingPersona}
+            applyNote={applyNote}
+            onApply={() => void handlePersonaApply()}
+            onFollowUp={handlePersonaFollowUp}
+          />
+        )}
       </div>
     );
   }
 
   return (
     <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-            <Breadcrumb.Separator className="hidden md:block" />
-            <Breadcrumb.Item>
-              <Breadcrumb.Link asChild>
-                <Link to="/chat">Chat</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-            {thread && (
-              <>
-                <Breadcrumb.Separator className="hidden md:block" />
-                <Breadcrumb.Item>
-                  <Breadcrumb.Page>{thread.name || thread.id}</Breadcrumb.Page>
-                </Breadcrumb.Item>
-              </>
-            )}
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
-      <Portal.Slot id="actions">
-        <ModelSelector withToggles />
-      </Portal.Slot>
-
       <Portal.Slot id="tertiary-navigation">
         <ChatSidebar
           threads={threads}
@@ -204,12 +330,6 @@ function ChatPageContent() {
       </Portal.Slot>
 
       <div className="flex flex-col h-full">
-        {isMobile && (
-          <div className="flex flex-row items-center justify-end border-b bg-stone-50 dark:bg-secondary gap-2 p-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
-            <ModelSelector withToggles />
-          </div>
-        )}
-
         <Chat
           key={initialThreadId ?? `new-thread-${newThreadCount}`}
           loading={loading}
@@ -217,6 +337,7 @@ function ChatPageContent() {
           hasStartedReceiving={hasStartedReceiving}
           disabled={isSubmitDisabled}
           placeholder={inputPlaceholder}
+          initialDraft={chatDraft}
           messages={initialMessages}
           emptyState={emptyState}
           readable={stream ?? undefined}

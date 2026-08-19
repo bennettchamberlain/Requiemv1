@@ -22,6 +22,7 @@ import {
   type Person,
   type Place,
 } from '@ci/domains/memory';
+import { FileChunkService, type FileChunk } from '@ci/domains/parsing';
 import {
   INDEXABLE_ENTITIES,
   SearchService,
@@ -50,6 +51,7 @@ export type SearchResult =
   | Content
   | Event
   | File
+  | FileChunk
   | Item
   | Person
   | Place
@@ -62,6 +64,10 @@ export class DatabaseSearchTool extends BaseTool<DatabaseSearchInput, SearchResu
     domain: 'knowledge',
     title: 'Search everything',
     privacy: { access: 'read', sensitivity: 'personal', destructive: false, external: false },
+    // Searches only the user's own corpus. On-device the mirror is partial and there is no pgvector
+    // re-ranking, so results degrade to keyword/recency — a worse answer, not an impossible one,
+    // and this is the intent the offline surface exists for.
+    localCapable: true,
     produces: ['event', 'content', 'person', 'place', 'note', 'file'],
     phrases: ['Search for $query', 'Find anything about $query'],
     description:
@@ -117,6 +123,7 @@ export class DatabaseSearchTool extends BaseTool<DatabaseSearchInput, SearchResu
     private readonly conceptService: ConceptService,
     private readonly contentService: ContentService,
     private readonly eventService: EventService,
+    private readonly fileChunkService: FileChunkService,
     private readonly fileService: FileService,
     private readonly itemService: ItemService,
     private readonly personService: PersonService,
@@ -179,25 +186,38 @@ export class DatabaseSearchTool extends BaseTool<DatabaseSearchInput, SearchResu
     const conceptIds = groupedByType.get('concept') || [];
     const contentIds = groupedByType.get('content') || [];
     const eventIds = groupedByType.get('event') || [];
+    const fileChunkIds = groupedByType.get('file-chunk') || [];
     const fileIds = groupedByType.get('file') || [];
     const itemIds = groupedByType.get('item') || [];
     const peopleIds = groupedByType.get('person') || [];
     const placeIds = groupedByType.get('place') || [];
     const threadIds = groupedByType.get('thread') || [];
 
-    const [answers, communications, concepts, content, events, files, items, people, places, threads] =
-      await Promise.all([
-        this.answerService.findByIds(context, answerIds),
-        this.communicationService.findByIds(context, communicationIds),
-        this.conceptService.findByIds(context, conceptIds),
-        this.contentService.findByIds(context, contentIds),
-        this.eventService.findByIds(context, eventIds),
-        this.fileService.findByIds(context, fileIds),
-        this.itemService.findByIds(context, itemIds),
-        this.personService.findByIds(context, peopleIds),
-        this.placeService.findByIds(context, placeIds),
-        this.threadService.findByIds(context, threadIds),
-      ]);
+    const [
+      answers,
+      communications,
+      concepts,
+      content,
+      events,
+      fileChunks,
+      files,
+      items,
+      people,
+      places,
+      threads,
+    ] = await Promise.all([
+      this.answerService.findByIds(context, answerIds),
+      this.communicationService.findByIds(context, communicationIds),
+      this.conceptService.findByIds(context, conceptIds),
+      this.contentService.findByIds(context, contentIds),
+      this.eventService.findByIds(context, eventIds),
+      this.fileChunkService.findByIds(fileChunkIds),
+      this.fileService.findByIds(context, fileIds),
+      this.itemService.findByIds(context, itemIds),
+      this.personService.findByIds(context, peopleIds),
+      this.placeService.findByIds(context, placeIds),
+      this.threadService.findByIds(context, threadIds),
+    ]);
 
     const resultMap = new Map<string, SearchResult>();
 
@@ -210,6 +230,9 @@ export class DatabaseSearchTool extends BaseTool<DatabaseSearchInput, SearchResu
     concepts.filter((d) => d != null).forEach((d) => resultMap.set(makeCompositeKey('concept', d.id), d));
     content.filter((d) => d != null).forEach((d) => resultMap.set(makeCompositeKey('content', d.id), d));
     events.filter((d) => d != null).forEach((d) => resultMap.set(makeCompositeKey('event', d.id), d));
+    fileChunks
+      .filter((d) => d != null)
+      .forEach((d) => resultMap.set(makeCompositeKey('file-chunk', d.id), d));
     files.filter((d) => d != null).forEach((d) => resultMap.set(makeCompositeKey('file', d.id), d));
     items.filter((d) => d != null).forEach((d) => resultMap.set(makeCompositeKey('item', d.id), d));
     people.filter((d) => d != null).forEach((d) => resultMap.set(makeCompositeKey('person', d.id), d));

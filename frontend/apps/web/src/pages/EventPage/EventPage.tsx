@@ -1,18 +1,18 @@
 import { type ReactNode, useState } from 'react';
 
-import { useQuery } from '@apollo/client';
-import { GlobalUID, LoadingPage, Portal, usePageTitle, EmptyState } from '@ci/common';
-import { Breadcrumb, Card, Label, Textarea, Toggle, cn } from '@ci/shadcn';
-import { Pencil, User } from '@ci/shadcn/icons';
+import { useMutation, useQuery } from '@apollo/client';
+import { GlobalUID, LoadingPage, usePageTitle, EmptyState } from '@ci/common';
+import { Card, Label } from '@ci/shadcn';
+import { User } from '@ci/shadcn/icons';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 
-import { useTagEntityService } from '@/api';
 import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
+import { EntityFieldsCard, formatEntityLabel, formatEntityTimestamp } from '@/components/EntityFields';
+import { EntityEditToggle, EntityTagsDescriptionCard } from '@/components/EntityTagsDescriptionCard';
 import { EventIcon, PlaceIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import { Map } from '@/components/Map';
 import { Tag } from '@/components/Tag';
-import { TagInput } from '@/components/TagInput';
 import { gql } from '@/graphql';
 
 const GET_EVENT = gql(`
@@ -21,6 +21,13 @@ const GET_EVENT = gql(`
       id
       title
       description
+
+      # When it happened, what kind it was and where it came from. The page used
+      # to select none of these, so /events/:id could not answer "when was this?".
+      startTime
+      endTime
+      eventType
+      sourceSystem
 
       tags {
         id
@@ -50,6 +57,18 @@ const GET_EVENT = gql(`
   }
 `);
 
+// Same write the memory drawer makes (UpdateEventDetail), so the page can edit
+// the title as well as the description instead of the description alone.
+const UPDATE_EVENT_FIELDS = gql(`
+  mutation UpdateEventPageFields($input: UpdateEventInput!) {
+    updateEvent(input: $input) {
+      id
+      title
+      description
+    }
+  }
+`);
+
 export function EventPage() {
   const { id } = useParams<{ id: string }>();
 
@@ -61,7 +80,7 @@ export function EventPage() {
     },
   });
 
-  const { tagEntities, untagEntities } = useTagEntityService();
+  const [updateEventFields] = useMutation(UPDATE_EVENT_FIELDS);
 
   const event = data?.event;
 
@@ -85,89 +104,89 @@ export function EventPage() {
             <EventIcon />
             <h1 className="text-2xl font-bold">{event.title}</h1>
           </div>
-          <Toggle
-            aria-label="Toggle edit mode"
-            size="sm"
-            variant="outline"
-            className="data-[state=on]:bg-transparent data-[state=on]:*:[svg]:fill-blue-500 data-[state=on]:*:[svg]:stroke-blue-500"
-            pressed={editMode}
-            onPressedChange={setEditMode}
-          >
-            <Pencil />
-          </Toggle>
+          <EntityEditToggle pressed={editMode} onPressedChange={setEditMode} />
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div className="md:col-span-2">
-            <Card className="p-0">
-              <Card.Content className="p-4 flex flex-col gap-6">
-                {event.organizer && (
-                  <div className="flex flex-col gap-2">
-                    <Label>Organizer</Label>
-                    <Link to={`/people/${GlobalUID.parse('person', event.organizer.id)}`}>
-                      <Tag icon={<User />} className="text-sm" text={event.organizer.name ?? ''} />
-                    </Link>
-                  </div>
-                )}
+          <div className="flex flex-col gap-4 md:col-span-2">
+            {/* The drawer's own field set + metadata rows, so "Open full page"
+                does not silently drop the title editor or the timestamps. */}
+            <EntityFieldsCard
+              title="Event"
+              resetKey={event.id}
+              editMode={editMode}
+              onEditModeChange={setEditMode}
+              fields={[{ key: 'title', label: 'Title', value: event.title ?? '' }]}
+              metaItems={[
+                { label: 'Starts', value: formatEntityTimestamp(event.startTime) },
+                { label: 'Ends', value: formatEntityTimestamp(event.endTime) },
+                { label: 'Type', value: formatEntityLabel(event.eventType) ?? 'Event' },
+                { label: 'Source', value: formatEntityLabel(event.sourceSystem) },
+              ]}
+              onSave={async (values) => {
+                const result = await updateEventFields({
+                  variables: { input: { id: event.id, title: values.title } },
+                });
 
-                {event.participants.edges.length > 0 && (
-                  <div className="flex flex-col gap-2">
-                    <Label>Participants</Label>
-                    <div className="flex flex-wrap gap-2">
-                      {event.participants.edges.map(({ node }) => (
-                        <Link key={node.id} to={`/people/${GlobalUID.parse('person', node.id)}`}>
-                          <Tag icon={<User />} className="text-sm cursor-pointer" text={node.name ?? ''} />
-                        </Link>
-                      ))}
+                // updateEvent resolves to the event itself, or null when the write was rejected.
+                if (!result.data?.updateEvent) {
+                  throw new Error('Update was rejected');
+                }
+              }}
+            />
+
+            <EntityTagsDescriptionCard
+              entityType="event"
+              entityId={id!}
+              resetKey={event.id}
+              tags={event.tags.map((t) => t.label)}
+              description={event.description}
+              editMode={editMode}
+              onDescriptionSave={async (value) => {
+                const result = await updateEventFields({
+                  variables: { input: { id: event.id, description: value } },
+                });
+
+                // updateEvent resolves to the event itself, or null when the write was rejected.
+                if (!result.data?.updateEvent) {
+                  throw new Error('Update was rejected');
+                }
+              }}
+            >
+              {event.organizer && (
+                <div className="flex flex-col gap-2">
+                  <Label>Organizer</Label>
+                  <Link to={`/people/${GlobalUID.parse('person', event.organizer.id)}`}>
+                    <Tag icon={<User />} className="text-sm" text={event.organizer.name ?? ''} />
+                  </Link>
+                </div>
+              )}
+
+              {event.participants.edges.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  <Label>Participants</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {event.participants.edges.map(({ node }) => (
+                      <Link key={node.id} to={`/people/${GlobalUID.parse('person', node.id)}`}>
+                        <Tag icon={<User />} className="text-sm cursor-pointer" text={node.name ?? ''} />
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {event.location && (
+                <div className="flex flex-col gap-2">
+                  <Label>Location</Label>
+                  <Link to={`/places/${GlobalUID.parse('place', event.location.id)}`}>
+                    <div className="flex gap-2 bg-secondary p-2 pr-5 rounded-full items-center cursor-pointer w-fit">
+                      <PlaceIcon />
+                      <div className="text-sm">{event.location?.name ?? ''}</div>
                     </div>
-                  </div>
-                )}
-
-                {event.location && (
-                  <div className="flex flex-col gap-2">
-                    <Label>Location</Label>
-                    <Link to={`/places/${GlobalUID.parse('place', event.location.id)}`}>
-                      <div className="flex gap-2 bg-secondary p-2 pr-5 rounded-full items-center cursor-pointer w-fit">
-                        <PlaceIcon />
-                        <div className="text-sm">{event.location?.name ?? ''}</div>
-                      </div>
-                    </Link>
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  <Label>Tags</Label>
-
-                  <TagInput
-                    key={event.id}
-                    tags={event.tags.map((t) => t.label) ?? []}
-                    readOnly={!editMode}
-                    onTagAdded={async (label) => {
-                      tagEntities([GlobalUID.encode('event', id!)], [label]);
-
-                      return true;
-                    }}
-                    onTagRemoved={(label) => {
-                      void untagEntities([GlobalUID.encode('event', id!)], [label]);
-                    }}
-                  />
+                  </Link>
                 </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="description">Description</Label>
-                  <Textarea
-                    key={event.id}
-                    id="description"
-                    defaultValue={event.description ?? ''}
-                    readOnly={!editMode}
-                    className={cn(
-                      'resize-none min-h-[120px]',
-                      editMode ? '' : 'shadow-none focus-visible:ring-0 focus-visible:border-border',
-                    )}
-                  />
-                </div>
-              </Card.Content>
-            </Card>
+              )}
+            </EntityTagsDescriptionCard>
           </div>
 
           {event.location != null &&
@@ -191,41 +210,10 @@ export function EventPage() {
             )}
         </div>
 
-        <EntityEvolutionPanel entityId={id!} />
+        <EntityEvolutionPanel entityId={id!} entityName={event.title} />
       </PageContent>
     );
   }
 
-  return (
-    <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-
-            <Breadcrumb.Separator className="hidden md:block" />
-
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Page>Event</Breadcrumb.Page>
-            </Breadcrumb.Item>
-
-            {event && (
-              <>
-                <Breadcrumb.Separator className="hidden md:block" />
-                <Breadcrumb.Item>
-                  <Breadcrumb.Page>{event.title}</Breadcrumb.Page>
-                </Breadcrumb.Item>
-              </>
-            )}
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
-      {content}
-    </>
-  );
+  return <>{content}</>;
 }

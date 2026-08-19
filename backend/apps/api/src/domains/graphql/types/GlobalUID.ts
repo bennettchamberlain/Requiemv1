@@ -1,6 +1,10 @@
 type ResourceType =
   | 'action'
   | 'answer'
+  | 'ask'
+  | 'ask-grant'
+  | 'ask-audit'
+  | 'ask-answer'
   | 'browser-activity'
   | 'communication'
   | 'concept'
@@ -9,6 +13,7 @@ type ResourceType =
   | 'content'
   | 'event'
   | 'file'
+  | 'file-chunk'
   | 'item'
   | 'message'
   | 'note'
@@ -18,9 +23,12 @@ type ResourceType =
   | 'provider-key'
   | 'question'
   | 'relationship'
+  | 'schedule-candidate'
   | 'summary'
   | 'saved-search'
   | 'tag'
+  | 'task'
+  | 'taskPendingChange'
   | 'thread'
   | 'user';
 

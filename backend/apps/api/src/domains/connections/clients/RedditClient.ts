@@ -5,7 +5,8 @@ import config from '@ci/configuration';
 
 import type { Connection } from '../entities/ConnectionEntity';
 
-import { BaseOAuth2Client } from './BaseOAuth2Client';
+import { firstAccountLabel } from './accountLabel';
+import { BaseOAuth2Client, formatTokenExchangeError } from './BaseOAuth2Client';
 import type { TokenExchange, TokenResponse } from './types';
 
 export const REDDIT_USER_AGENT = 'web:ci-server:1.0 (by /u/cicompanionintelligence)';
@@ -58,6 +59,14 @@ export class RedditClient extends BaseOAuth2Client {
 
   getAccountIdentifier(connection: Connection): Promise<string> {
     return this.fetchUser(connection).then((result) => result.name);
+  }
+
+  async getAccountLabel(connection: Connection): Promise<string | null> {
+    const user = await this.fetchUser(connection);
+
+    // Reddit's /api/v1/me exposes no email on the `identity` scope, so the
+    // username is the only human-readable label available.
+    return firstAccountLabel(user.name);
   }
 
   async requestRaw(connection: Connection, endpoint: string, options?: RequestInit): Promise<Response> {
@@ -129,7 +138,7 @@ export class RedditClient extends BaseOAuth2Client {
         endpoint: this.tokenEndpoint,
       });
 
-      throw new Error('Token exchange failed');
+      throw new Error(`Token exchange failed: ${formatTokenExchangeError(errorDetails)}`);
     }
 
     let tokenData: TokenResponse;
@@ -188,7 +197,7 @@ export class RedditClient extends BaseOAuth2Client {
           endpoint: this.tokenEndpoint,
         });
 
-        throw new Error('Token exchange failed');
+        throw new Error(`Token refresh failed: ${formatTokenExchangeError(errorDetails)}`);
       }
 
       let tokenData: TokenResponse;

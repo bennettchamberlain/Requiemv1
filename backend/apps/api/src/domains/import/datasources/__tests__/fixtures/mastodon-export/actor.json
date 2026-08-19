@@ -1,0 +1,13 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/v1"
+  ],
+  "id": "https://mastodon.social/users/alice",
+  "type": "Person",
+  "preferredUsername": "alice",
+  "name": "Alice Example",
+  "summary": "<p>Just a test account.</p>",
+  "url": "https://mastodon.social/@alice",
+  "outbox": "https://mastodon.social/users/alice/outbox"
+}

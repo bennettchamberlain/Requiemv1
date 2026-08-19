@@ -1,26 +1,81 @@
 import { createHash, randomBytes } from 'crypto';
 
-import { Controller, Get, HttpCode, Query, Req, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Query,
+  Req,
+  Res,
+  // Still required: the native one-time-code exchange rejects a bad code with a 401.
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Request, Response } from 'express';
-import parseDuration from 'parse-duration';
 import { Agent, fetch as undiciFetch } from 'undici';
+import { z } from 'zod';
 
 import { SYSTEM_USER } from '@ci/common/context';
 import { FeatureService } from '@ci/common/feature';
 import { LoggerService } from '@ci/common/logging';
+import { ValidationPipe } from '@ci/common/pipes';
 import config from '@ci/configuration';
 import { UserService } from '@ci/domains/user';
 
 import { AuthService } from '../services/AuthService';
 import { CsrfService } from '../services/CsrfService';
-import { resolveOidcCallbackUrl } from '../utils/oidcCallbackUrl';
+import { OidcNativeCodeService } from '../services/OidcNativeCodeService';
+import { ensureCsrfCookie, setCsrfCookie, setSessionCookie } from '../utils/authCookies';
+import {
+  OIDC_ORIGIN_BOUNCE_PARAM,
+  type OidcCallbackRequestOrigin,
+  resolveOidcCallbackUrl,
+  resolveOidcOriginBounce,
+} from '../utils/oidcCallbackUrl';
+import { renderSignupConfirmPage } from '../utils/signupConfirmPage';
 
-const COOKIE_MAX_AGE = parseDuration(config.auth.jwt.refreshTokenExpiration) ?? 0;
 const STATE_COOKIE = 'oidc_state';
 const PKCE_COOKIE = 'oidc_pkce';
+// Carries the "this flow was launched by the native app" signal through the IdP round
+// trip. Set alongside state/pkce on initiate and read on callback; both cookies live on
+// CI-Server's own domain in the SAME system browser, so they survive the redirect.
+const CLIENT_COOKIE = 'oidc_client';
+const NATIVE_CLIENT = 'native';
+
+const nativeExchangeSchema = z.object({
+  code: z.string().min(1),
+});
+
 // Carries the post-login destination (e.g. a /shared/<token> deep link) across
 // the full-page OIDC round-trip, which discards the SPA's in-memory router state.
 const REDIRECT_COOKIE = 'oidc_redirect';
+// Holds the signed signup-intent token between the callback (first-time sign-in,
+// no account yet) and the "create account?" confirmation step.
+const SIGNUP_INTENT_COOKIE = 'oidc_signup_intent';
+const SIGNUP_INTENT_MAX_AGE = 10 * 60 * 1000;
+
+/**
+ * Body of the confirm-account form POST. Mirrors ConnectController's
+ * `approveSchema`: the fields arrive from a no-JS form, so they must be
+ * constrained to strings before reaching the CSRF comparison, which would
+ * otherwise surface a non-string as a 500 rather than a clean rejection.
+ */
+const confirmAccountSchema = z.object({
+  // Optional on purpose: the schema constrains the *shape* (a string if
+  // present), while whether a token is missing or empty is a CSRF decision that
+  // belongs to CsrfService. Requiring it here would make the pipe reject with a
+  // 400 before the handler runs, dead-ending exactly the requests the self-heal
+  // redirect below exists to rescue.
+  csrf: z.string().optional(),
+  // Present when this submission came from the one-shot re-render after a CSRF
+  // failure; a second consecutive failure exits to /login instead of looping.
+  csrf_retry: z.string().optional(),
+});
+
+type ConfirmAccountDto = z.infer<typeof confirmAccountSchema>;
 
 /**
  * Validate a post-login redirect target — an open-redirect guard. Returns the
@@ -85,9 +140,18 @@ export class OidcController {
     private readonly authService: AuthService,
     private readonly csrfService: CsrfService,
     private readonly featureService: FeatureService,
+    private readonly oidcNativeCodeService: OidcNativeCodeService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(OidcController.name);
+  }
+
+  /** Build the native deep-link return URL (`<scheme>://oidc/callback?...`). */
+  private nativeRedirectUrl(params: Record<string, string>): string {
+    const scheme = config.auth.oidc.nativeRedirectScheme || 'companion';
+    const search = new URLSearchParams(params).toString();
+
+    return `${scheme}://oidc/callback${search ? `?${search}` : ''}`;
   }
 
   /**
@@ -101,15 +165,17 @@ export class OidcController {
    * resulting localhost callback is unreachable for CI-Portal.
    */
   private getCallbackUrl(req: Request) {
-    return resolveOidcCallbackUrl(
-      {
-        forwardedProto: req.headers['x-forwarded-proto'],
-        forwardedHost: req.headers['x-forwarded-host'],
-        host: req.headers.host,
-        secure: req.secure,
-      },
-      config.auth.oidc.publicBaseUrl,
-    );
+    return resolveOidcCallbackUrl(this.requestOrigin(req), config.auth.oidc.publicBaseUrl);
+  }
+
+  /** The origin the browser used to reach this app, honouring the reverse proxy. */
+  private requestOrigin(req: Request): OidcCallbackRequestOrigin {
+    return {
+      forwardedProto: req.headers['x-forwarded-proto'],
+      forwardedHost: req.headers['x-forwarded-host'],
+      host: req.headers.host,
+      secure: req.secure,
+    };
   }
 
   /**
@@ -117,8 +183,13 @@ export class OidcController {
    */
   @Get()
   @HttpCode(302)
-  initiate(@Query('redirect') redirectParam: string | undefined, @Req() req: Request, @Res() res: Response) {
-    const { issuerUrl } = config.auth.oidc;
+  initiate(
+    @Query('client') client: string | undefined,
+    @Query('redirect') redirectParam: string | undefined,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    const { issuerUrl, publicBaseUrl } = config.auth.oidc;
 
     if (!issuerUrl) {
       // Redirect to the login page with an error rather than dead-ending the
@@ -127,6 +198,27 @@ export class OidcController {
       this.logger.error('OIDC initiate blocked: OIDC_ISSUER_URL is not configured');
 
       return res.redirect('/login?error=oidc_not_configured');
+    }
+
+    // Remember a safe same-origin destination (e.g. a /shared/<token> deep link,
+    // or the /api/connect consent page) so the callback can return there.
+    const redirect = safeRelativePath(redirectParam);
+
+    // The cookies below are set on the origin the browser used, but redirect_uri
+    // is always the public base URL. If those differ, the callback lands on an
+    // origin holding neither cookie and sign-in fails with `invalid_state`, so
+    // move onto the public origin before minting any of them.
+    const bounceUrl = resolveOidcOriginBounce(
+      this.requestOrigin(req),
+      publicBaseUrl,
+      redirect ?? undefined,
+      // Already bounced once — proceed here rather than risk a redirect loop.
+      req.query[OIDC_ORIGIN_BOUNCE_PARAM] !== undefined,
+      client,
+    );
+
+    if (bounceUrl) {
+      return res.redirect(bounceUrl);
     }
 
     const callbackUrl = this.getCallbackUrl(req);
@@ -149,11 +241,20 @@ export class OidcController {
       maxAge: 10 * 60 * 1000,
     });
 
-    // Remember a safe same-origin destination (e.g. a /shared/<token> deep link)
-    // so the callback can return there; clear any stale value otherwise so a
-    // plain sign-in never inherits a previous attempt's redirect.
-    const redirect = safeRelativePath(redirectParam);
+    // Remember whether the native app launched this flow, so the callback returns the
+    // result via the custom-scheme deep link instead of a browser session cookie.
+    if (client === NATIVE_CLIENT) {
+      res.cookie(CLIENT_COOKIE, NATIVE_CLIENT, {
+        httpOnly: true,
+        secure: req.secure,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 10 * 60 * 1000,
+      });
+    }
 
+    // Clear any stale value when there is no redirect, so a plain sign-in never
+    // inherits a previous attempt's destination.
     if (redirect) {
       res.cookie(REDIRECT_COOKIE, redirect, {
         httpOnly: true,
@@ -190,19 +291,37 @@ export class OidcController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
+    // Whether the native app launched this flow (set on `initiate`). When native, every
+    // exit — success or failure — returns via the custom-scheme deep link rather than a
+    // browser redirect, so the system browser can hand control back to the app.
+    const isNative = req.cookies?.[CLIENT_COOKIE] === NATIVE_CLIENT;
+
+    res.clearCookie(CLIENT_COOKIE, {
+      httpOnly: true,
+      secure: req.secure,
+      sameSite: 'lax',
+      path: '/',
+    });
+
+    // Route a failure to the native deep link (`?error=...`) or the web login page.
+    const failRedirect = (reason: string) =>
+      isNative
+        ? res.redirect(this.nativeRedirectUrl({ error: reason }))
+        : res.redirect(`/login?error=${encodeURIComponent(reason)}`);
+
     if (error) {
-      return res.redirect(`/login?error=${encodeURIComponent(error)}`);
+      return failRedirect(error);
     }
 
     if (!code || !state) {
-      return res.redirect('/login?error=missing_params');
+      return failRedirect('missing_params');
     }
 
     // Validate state matches cookie
     const storedState = req.cookies?.[STATE_COOKIE];
 
     if (!storedState || storedState !== state) {
-      return res.redirect('/login?error=invalid_state');
+      return failRedirect('invalid_state');
     }
 
     // Clear state cookie
@@ -224,13 +343,13 @@ export class OidcController {
     });
 
     if (!codeVerifier) {
-      return res.redirect('/login?error=missing_pkce');
+      return failRedirect('missing_pkce');
     }
 
     const { issuerUrl } = config.auth.oidc;
 
     if (!issuerUrl) {
-      return res.redirect('/login?error=oidc_not_configured');
+      return failRedirect('oidc_not_configured');
     }
 
     const callbackUrl = this.getCallbackUrl(req);
@@ -259,7 +378,7 @@ export class OidcController {
 
         this.logger.error(`OIDC token exchange failed: ${tokenResponse.status} ${errorBody}`);
 
-        return res.redirect('/login?error=token_exchange_failed');
+        return failRedirect('token_exchange_failed');
       }
 
       const tokens = (await tokenResponse.json()) as {
@@ -281,7 +400,7 @@ export class OidcController {
       if (!userInfoResponse.ok) {
         this.logger.error(`OIDC userinfo failed: ${userInfoResponse.status}`);
 
-        return res.redirect('/login?error=userinfo_failed');
+        return failRedirect('userinfo_failed');
       }
 
       const userInfo = (await userInfoResponse.json()) as {
@@ -291,70 +410,244 @@ export class OidcController {
       };
 
       if (!userInfo.email) {
-        return res.redirect('/login?error=no_email');
+        return failRedirect('no_email');
       }
 
-      // Find existing user or create a new one
-      let user = await this.userService.findByEmail(userInfo.email);
+      // Existing account for this Portal identity → sign in.
+      const user = await this.userService.findByEmail(userInfo.email);
 
-      if (!user) {
-        // Portal SSO must not bypass the signup-code gate: when codes are
-        // required, only users that already exist on this server may sign in.
-        const isSignupCodeRequired = await this.featureService.isFeatureEnabled('require.signup.codes');
+      if (user) {
+        // Native: return the credential via the deep link — no browser session cookie
+        // can reach the app's cross-origin webview. Mint a short-lived, single-use code
+        // and deep-link it back; the app exchanges it for a JWT at /oidc/native/exchange.
+        if (isNative) {
+          const oneTimeCode = this.oidcNativeCodeService.issue(user.id);
 
-        if (isSignupCodeRequired) {
-          this.logger.warn(
-            `OIDC sign-in rejected for unknown user (signup codes required): ${userInfo.email}`,
-          );
-
-          return res.redirect('/login?error=signup_code_required');
+          return res.redirect(this.nativeRedirectUrl({ code: oneTimeCode }));
         }
 
-        // Auto-create account for Portal-authenticated users.
-        // Generate a random password since they'll authenticate via OIDC.
-        user = await this.userService.create(
-          { userId: SYSTEM_USER },
-          {
-            name: userInfo.name || userInfo.email.split('@')[0],
-            email: userInfo.email,
-            password: randomBytes(32).toString('hex'),
-          },
-        );
+        return this.finishLogin(req, res, user);
       }
 
-      // Issue session tokens (same flow as local login)
-      const sessionToken = await this.authService.issueSessionToken(
-        user.id,
-        this.authService.getSessionMetadata(req),
+      // No account yet. The signup-code gate still applies: when codes are
+      // required, only users that already exist on this server may sign in.
+      const isSignupCodeRequired = await this.featureService.isFeatureEnabled('require.signup.codes');
+
+      if (isSignupCodeRequired) {
+        this.logger.warn(`OIDC sign-in rejected for unknown user (signup codes required): ${userInfo.email}`);
+
+        return isNative
+          ? res.redirect(this.nativeRedirectUrl({ error: 'signup_code_required' }))
+          : res.redirect('/login?error=signup_code_required');
+      }
+
+      // Native first-time sign-in can't run the web "create account?" confirmation
+      // (it lives outside the deep-link flow), so surface it as an error the app can
+      // handle rather than stranding the user on a web page.
+      if (isNative) {
+        return res.redirect(this.nativeRedirectUrl({ error: 'signup_required' }));
+      }
+
+      // First-time web sign-in: do NOT create the account silently. Stash the
+      // OIDC-verified identity in a signed, short-lived cookie and send the user
+      // to the "create account?" confirmation (GET/POST confirm-account below).
+      // REDIRECT_COOKIE is left intact so the confirm POST can honour the
+      // original destination.
+      res.cookie(
+        SIGNUP_INTENT_COOKIE,
+        this.authService.issueSignupIntentToken(userInfo.email, userInfo.name),
+        {
+          httpOnly: true,
+          secure: req.secure,
+          sameSite: 'lax',
+          path: '/',
+          maxAge: SIGNUP_INTENT_MAX_AGE,
+        },
       );
 
-      const csrfToken = this.csrfService.generateToken();
-
-      res.cookie(config.auth.cookies.sessionTokenName, sessionToken, {
-        httpOnly: true,
-        secure: req.secure,
-        sameSite: 'lax',
-        path: '/',
-        maxAge: COOKIE_MAX_AGE,
-      });
-
-      res.cookie(config.auth.cookies.csrfTokenName, csrfToken, {
-        httpOnly: false,
-        secure: req.secure,
-        sameSite: 'strict',
-        path: '/',
-      });
-
-      // Return to the deep link the user was headed for before being bounced to
-      // login (re-validated on read), then clear the one-shot cookie.
-      const storedRedirect = safeRelativePath(req.cookies?.[REDIRECT_COOKIE]);
-      res.clearCookie(REDIRECT_COOKIE, { path: '/' });
-
-      return res.redirect(storedRedirect ?? '/');
+      return res.redirect('/api/authenticate/oidc/confirm-account');
     } catch (err) {
       this.logger.error('OIDC callback error', err instanceof Error ? err.stack : String(err));
 
-      return res.redirect('/login?error=oidc_failed');
+      return failRedirect('oidc_failed');
     }
+  }
+
+  /**
+   * Native-only: exchange the short-lived one-time code delivered by the
+   * `<scheme>://oidc/callback?code=...` deep link for a real access token (JWT). The app
+   * then trades that JWT for a durable API key — the same credential path as password
+   * login. The code is single-use and expires after ~2 minutes; redeeming it here
+   * invalidates it, so it is replay-safe. Unauthenticated by design: the one-time code
+   * IS the bearer of proof, and it never grants access beyond a single JWT issuance.
+   */
+  @Post('native/exchange')
+  @HttpCode(200)
+  nativeExchange(@Body(new ValidationPipe(nativeExchangeSchema)) input: { code: string }) {
+    const userId = this.oidcNativeCodeService.redeem(input.code);
+
+    if (!userId) {
+      // Generic message — do not distinguish "expired" from "unknown" to a caller.
+      this.logger.warn('OIDC native code exchange rejected (invalid or expired code)');
+
+      throw new UnauthorizedException('Invalid or expired code');
+    }
+
+    const accessToken = this.authService.issueAccessToken(userId);
+
+    return { accessToken };
+  }
+
+  /**
+   * First-time sign-in confirmation page. Reads the signed signup-intent cookie
+   * (set by the callback) and asks the user to confirm creating an account. No
+   * JavaScript (gateway CSP); "Create account" is a same-origin form POST.
+   */
+  @Get('confirm-account')
+  async confirmAccountPage(
+    // `unknown`, not `string`: a repeated query key (`?csrf_retry=1&csrf_retry=2`)
+    // arrives as an array, so only a single string counts as the marker (mirrors
+    // singleQueryValue in ConnectController). Treating an array as present would
+    // let a crafted link prematurely burn the one-shot self-heal for the user.
+    @Query('csrf_retry') csrfRetry: unknown,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    let identity: { email: string; name?: string };
+
+    try {
+      identity = this.authService.verifySignupIntentToken(req.cookies?.[SIGNUP_INTENT_COOKIE]);
+    } catch {
+      res.redirect('/login?error=signup_expired');
+
+      return;
+    }
+
+    // CSRF cookie for the confirm POST (double-submit): same value is embedded
+    // in the form's hidden field. Reuses a valid existing cookie (of the same
+    // scope) so re-rendering (or another tab minting) never invalidates an
+    // already-open copy of this page; see utils/authCookies.ts. The scope is
+    // usually anon here — first-time sign-in has no session yet — but a browser
+    // already holding a session keeps its bound token.
+    const csrfToken = ensureCsrfCookie(this.csrfService, req, res, this.authService.resolveCsrfScope(req));
+
+    const cspNonce = randomBytes(16).toString('base64');
+
+    res
+      .type('html')
+      .header(
+        'Content-Security-Policy',
+        `default-src 'none'; style-src 'nonce-${cspNonce}'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
+      )
+      .header('X-Frame-Options', 'DENY')
+      .send(
+        renderSignupConfirmPage({
+          email: identity.email,
+          csrfToken,
+          cancelUrl: '/login',
+          nonce: cspNonce,
+          // Round-trips through the form so a second consecutive CSRF failure
+          // (cookies blocked) lands on /login instead of looping.
+          csrfRetry: typeof csrfRetry === 'string',
+        }),
+      );
+  }
+
+  /**
+   * Create the account after the user confirms. Authorised by the signed
+   * signup-intent cookie (proves the email came from a verified Portal sign-in)
+   * and CSRF-guarded. Then signs the user in and returns to their destination.
+   */
+  // No @HttpCode: this handler injects a non-passthrough @Res(), so Nest's
+  // response pipeline (and with it @HttpCode) never runs — the decorator that
+  // used to sit here claimed 302 while `res.redirect` actually emits 303 for
+  // the CSRF self-heal, which is the status that matters (303 is what forces a
+  // POST to be re-issued as a GET).
+  @Post('confirm-account')
+  async confirmAccount(
+    @Body(new ValidationPipe(confirmAccountSchema)) body: ConfirmAccountDto,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    let identity: { email: string; name?: string };
+
+    try {
+      identity = this.authService.verifySignupIntentToken(req.cookies?.[SIGNUP_INTENT_COOKIE]);
+    } catch {
+      // 303, not the default 302: this exits a POST, and only 303 guarantees the
+      // browser re-issues it as a GET rather than re-POSTing to /login.
+      res.redirect(HttpStatus.SEE_OTHER, '/login?error=signup_expired');
+
+      return;
+    }
+
+    // Signed double-submit CSRF: the hidden `csrf` field must match the csrf
+    // cookie. On failure, self-heal instead of dead-ending on a raw 403: a 303
+    // back to the GET re-renders the page against the browser's current cookie
+    // (the signup-intent cookie is still present), so one extra click recovers.
+    // A second consecutive failure means cookies are blocked — land on /login.
+    try {
+      this.csrfService.validateToken(
+        req.cookies?.[config.auth.cookies.csrfTokenName],
+        body.csrf,
+        this.authService.resolveCsrfScope(req),
+      );
+    } catch (err) {
+      // Only CSRF rejections self-heal; anything else must surface as itself.
+      if (!(err instanceof ForbiddenException)) {
+        throw err;
+      }
+
+      res.redirect(
+        HttpStatus.SEE_OTHER,
+        body.csrf_retry ? '/login?error=csrf' : '/api/authenticate/oidc/confirm-account?csrf_retry=1',
+      );
+
+      return;
+    }
+
+    // Create only if it doesn't already exist (guards a double-submit / a
+    // concurrent tab that already confirmed).
+    const user =
+      (await this.userService.findByEmail(identity.email)) ??
+      (await this.userService.create(
+        { userId: SYSTEM_USER },
+        {
+          name: identity.name || identity.email.split('@')[0],
+          email: identity.email,
+          // Random password — the account authenticates via OIDC.
+          password: randomBytes(32).toString('hex'),
+        },
+      ));
+
+    res.clearCookie(SIGNUP_INTENT_COOKIE, { path: '/' });
+
+    await this.finishLogin(req, res, user);
+  }
+
+  /**
+   * Issue the session + CSRF cookies (same as local login) and redirect to the
+   * stored post-login destination. Shared by the existing-user callback path and
+   * the confirm-account POST.
+   */
+  private async finishLogin(req: Request, res: Response, user: { id: string }): Promise<void> {
+    const { sessionToken, sessionId } = await this.authService.issueSessionToken(
+      user.id,
+      this.authService.getSessionMetadata(req),
+    );
+
+    setSessionCookie(req, res, sessionToken);
+
+    // Identity boundary: mint a fresh CSRF token bound to the new session (the
+    // only rotation points are login, signup, and this OIDC sign-in — see
+    // utils/authCookies.ts).
+    setCsrfCookie(req, res, this.csrfService.generateToken(sessionId));
+
+    // Return to the deep link the user was headed for before being bounced to
+    // login (re-validated on read), then clear the one-shot cookie.
+    const storedRedirect = safeRelativePath(req.cookies?.[REDIRECT_COOKIE]);
+    res.clearCookie(REDIRECT_COOKIE, { path: '/' });
+
+    res.redirect(storedRedirect ?? '/');
   }
 }

@@ -28,6 +28,7 @@ import { MemoryModule } from '@ci/domains/memory';
 import { SearchNextModule } from '@ci/domains/search-next';
 import { UserModule } from '@ci/domains/user';
 
+import { SyncNowController } from './controllers/SyncNowController';
 import { ConnectionSyncJobEntity } from './entities/ConnectionSyncJobEntity';
 import { SyncOrchestrator } from './listeners/SyncOrchestrator';
 import { ConnectionSyncJobService } from './services/ConnectionSyncJobService';
@@ -54,6 +55,8 @@ import { PromoteService } from './services/PromoteService';
 import { RedditCommentsTransformService } from './services/Reddit/transform/TransformComments';
 import { RedditPostsTransformService } from './services/Reddit/transform/TransformPosts';
 import { RedditSavedTransformService } from './services/Reddit/transform/TransformSaved';
+import { SignalContactsTransformService } from './services/Signal/transform/TransformContacts';
+import { SignalMessagesTransformService } from './services/Signal/transform/TransformMessages';
 import { SpotifyPlaylistsTransformService } from './services/Spotify/transform/TransformPlaylists';
 import { SpotifyRecentlyPlayedTransformService } from './services/Spotify/transform/TransformRecentlyPlayed';
 import { SpotifySavedAudiobooksTransformService } from './services/Spotify/transform/TransformSavedAudiobooks';
@@ -64,6 +67,7 @@ import { SpotifyTopArtistsTransformService } from './services/Spotify/transform/
 import { SteamAchievementsTransformService } from './services/Steam/transform/TransformAchievements';
 import { SteamFriendsTransformService } from './services/Steam/transform/TransformFriends';
 import { SteamOwnedGamesTransformService } from './services/Steam/transform/TransformOwnedGames';
+import { SyncNowService } from './services/SyncNowService';
 
 /**
  * @internal
@@ -82,6 +86,7 @@ import { SteamOwnedGamesTransformService } from './services/Steam/transform/Tran
   ],
   providers: [
     ConnectionSyncJobService,
+    SyncNowService,
     EndpointServiceMap,
     PromoteService,
     SyncOrchestrator,
@@ -113,11 +118,14 @@ import { SteamOwnedGamesTransformService } from './services/Steam/transform/Tran
     RedditPostsTransformService,
     RedditCommentsTransformService,
     RedditSavedTransformService,
+    SignalMessagesTransformService,
+    SignalContactsTransformService,
     SteamOwnedGamesTransformService,
     SteamAchievementsTransformService,
     SteamFriendsTransformService,
   ],
-  exports: [ConnectionSyncJobService],
+  controllers: [SyncNowController],
+  exports: [ConnectionSyncJobService, SyncNowService],
 })
 export class EtlModule {}
 

@@ -1,5 +1,9 @@
 import { Entity, Column, PrimaryColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
+import { type ApiKeyCapability, DEFAULT_API_KEY_CAPABILITY } from '@ci/common/decorators';
+
+import type { ApiKeyProvenance } from '../types';
+
 @Entity({ schema: 'ci', name: 'api_keys' })
 export class ApiKeyEntity {
   @PrimaryColumn('uuid')
@@ -17,6 +21,15 @@ export class ApiKeyEntity {
   @Column({ type: 'text', array: true, default: '{}' })
   scopes!: string[];
 
+  /**
+   * What this key may DO on the surfaces its {@link scopes} reach — the second, orthogonal
+   * axis. A CHECK constraint pins the column to the three known values, but reads still go
+   * through `coerceApiKeyCapability`: a rolled-back deploy could leave a value this build
+   * does not know, and the safe reading of an unreadable authority level is the smallest one.
+   */
+  @Column({ type: 'text', default: DEFAULT_API_KEY_CAPABILITY })
+  capability!: ApiKeyCapability;
+
   @Column({ type: 'timestamptz', nullable: true })
   expires_at!: Date | null;
 
@@ -25,6 +38,18 @@ export class ApiKeyEntity {
 
   @Column({ type: 'uuid' })
   user_id!: string;
+
+  /**
+   * Who owns this key's lifecycle. `null` = the user created it, and it is theirs
+   * to rename and re-scope. `'connect'` = minted by the Companion Memory consent
+   * flow, and CI-Hub owns it (rotates, revokes on disconnect/uninstall).
+   *
+   * Explicit rather than inferred from the `app:` name prefix: names are free-form,
+   * so a user could create `app:home-assistant` by hand and have Hub machinery
+   * operate on it.
+   */
+  @Column({ type: 'text', nullable: true })
+  managed_by!: ApiKeyProvenance | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
@@ -38,10 +63,16 @@ export class ApiKeyEntity {
       name: entity.name,
       prefix: entity.prefix,
       scopes: entity.scopes,
+      capability: entity.capability,
       expires_at: entity.expires_at,
       last_used_at: entity.last_used_at,
       created_at: entity.created_at,
       updated_at: entity.updated_at,
+      // Exposed so the UI can tell a Hub-owned connection key from the user's own
+      // by the same fact the API enforces on, rather than re-deriving it from the
+      // key's name and scopes (which drift apart — a connect key may hold an empty
+      // scope set, and a user may legitimately name a key `app:...`).
+      managed_by: entity.managed_by,
     };
   }
 }

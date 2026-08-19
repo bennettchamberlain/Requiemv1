@@ -48,7 +48,8 @@ yarn build
 ## Cross-repo connections
 
 - Consumed by: all clients via REST/GraphQL at ci-server.localhost
-- Receives data from: CI-Browser-Extension, CI-Connect, CI-Import-Tools, CI-Applet
+- Receives data from: CI-Browser-Extension, CI-Connect, CI-Capture
+- Has its own native import/datasource tooling at `backend/apps/api/src/domains/import/` (ported from the now-retired CI-Import-Tools, see `ZARCHIVED-CI-Import-Tools`) rather than receiving imports from an external process
 - Hub installs it alongside marketplace apps via CI-Hub
 - HBPE sidecar reads ci.* and ci_search.* Postgres schemas
 - CI-Portal will become its OIDC IdP (issue #8)
@@ -57,7 +58,7 @@ yarn build
 
 SQL migration files in `backend/apps/api/db/postgres/migrations/` are hand-written and are the source of truth. Update the TypeORM entities to match.
 
-**Never hand-write the timestamp prefix.** Create migration files with `yarn workspace @ci/be-api migrate:make <name>`, which stamps the real UTC time to the second. Hand-picked round timestamps (…120000) have collided across parallel branches; dbmate keys `schema_migrations` on the prefix, so a duplicate breaks `migrate` for everyone. Uniqueness is enforced by `scripts/check-migration-versions.ts` (runs in lint-staged and before `yarn migrate`).
+**Never hand-write the timestamp prefix.** Create migration files with `yarn workspace @ci/be-api migrate:make <name>`, which stamps the real UTC time to the second. Hand-picked round timestamps (…120000) have collided across parallel branches; dbmate keys `schema_migrations` on the prefix, so a duplicate breaks `migrate` for everyone. Uniqueness is enforced by `bin/check-migration-versions.js` (runs in lint-staged and before `yarn migrate`). It is plain CommonJS, not TypeScript, because `migrate` runs it inside the production image, which has no devDependencies — keep it dependency-free.
 
 ## HBPE sidecar
 

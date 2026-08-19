@@ -39,10 +39,29 @@ function scanForResolvers(
   }
 
   for (const importedModule of imports) {
-    const moduleClass =
-      'module' in importedModule ? (importedModule as { module: Type<unknown> }).module : importedModule;
+    if (importedModule == null) {
+      continue;
+    }
 
-    resolvers.push(...scanForResolvers(moduleClass, visited));
+    // Nest `forwardRef(() => Mod)` stores `{ forwardRef: () => Mod }` — not a module class.
+    if (typeof importedModule === 'object' && 'forwardRef' in importedModule) {
+      const resolved = (importedModule as { forwardRef: () => Type<unknown> }).forwardRef();
+
+      if (resolved) {
+        resolvers.push(...scanForResolvers(resolved, visited));
+      }
+
+      continue;
+    }
+
+    const moduleClass =
+      typeof importedModule === 'object' && 'module' in importedModule
+        ? (importedModule as { module: Type<unknown> }).module
+        : (importedModule as Type<unknown>);
+
+    if (moduleClass) {
+      resolvers.push(...scanForResolvers(moduleClass, visited));
+    }
   }
 
   return resolvers;

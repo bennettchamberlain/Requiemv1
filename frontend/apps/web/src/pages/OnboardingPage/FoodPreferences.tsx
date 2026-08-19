@@ -5,6 +5,7 @@ import pasta from './assets/pasta.png';
 import salad from './assets/salad.png';
 import tacos from './assets/tacos.png';
 import { OptionGrid } from './OptionGrid';
+import { StepHeader } from './StepHeader';
 
 const options = [
   {
@@ -33,13 +34,13 @@ export function FoodPreferences() {
   const form = useFormContext();
 
   return (
-    <>
-      <div className="text-center text-2xl mb-6 md:mb-10">Would you rather eat?</div>
+    <div className="space-y-6 w-full">
+      <StepHeader title="Would you rather eat?" />
       <Form.Field
         control={form.control}
         name="food_preference"
         render={({ field }) => <OptionGrid options={options} onValueChange={field.onChange} />}
       />
-    </>
+    </div>
   );
 }

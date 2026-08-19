@@ -1,30 +1,27 @@
-import type { Repository } from 'typeorm';
+import type { DataSource } from 'typeorm';
 
 import { type UserServiceContext } from '@ci/common/context';
 import type { EmbeddingGenerationService } from '@ci/common/embeddings';
 
-import type { EmbeddingEntity } from '../../entities/EmbeddingEntity';
-import type { VectorEntity } from '../../entities/VectorEntity';
 import { SearchService } from '../SearchService';
 
 /**
  * Focused unit test for the naive-RAG message channel (`searchMessages`). We assert
  * the cosine-distance floor added for gap G5 (memory-and-search plan §3/§5): the SQL
  * must gate on `embedding <=> query`, the floor must default to 0.5 (matching semantic
- * mode) and be overridable, and top-K must be corpus-tunable. The repo `query` is
+ * mode) and be overridable, and top-K must be corpus-tunable. The DataSource `query` is
  * stubbed so no Postgres is required.
  */
 const CONTEXT = { userId: 'user-1' } as unknown as UserServiceContext;
 
 function makeService() {
   const query = jest.fn().mockResolvedValue([{ entity_id: 'm1', score: '0.9' }]);
-  const embeddingRepo = { query } as unknown as Repository<EmbeddingEntity>;
-  const vectorRepo = { query: jest.fn() } as unknown as Repository<VectorEntity>;
+  const dataSource = { query } as unknown as DataSource;
   const embeddingGenerationService = {
     generateEmbeddingString: jest.fn().mockResolvedValue('[0.1,0.2]'),
   } as unknown as EmbeddingGenerationService;
 
-  const service = new SearchService(embeddingRepo, embeddingGenerationService, vectorRepo);
+  const service = new SearchService(dataSource, embeddingGenerationService);
 
   return { service, query, embeddingGenerationService };
 }

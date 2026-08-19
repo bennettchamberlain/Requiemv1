@@ -98,8 +98,12 @@ export class FilePreviewGenerationListener {
     }
 
     if (result == null) {
-      this.logger.warn('Failed to generate preview, buffer is null', {
+      // The generators return null for input they cannot decode; they have
+      // already logged the file id, content type and the underlying libvips
+      // message. The job completes so the file is not retried forever.
+      this.logger.warn('No preview generated, skipping', {
         fileId: payload.fileId,
+        contentType: file.contentType,
       });
 
       return;
@@ -140,10 +144,15 @@ export class FilePreviewGenerationListener {
   private async generateImagePreview(
     context: UserServiceContext,
     file: RequiredFields<File, 'key', true>,
-  ): Promise<PreviewResult> {
+  ): Promise<PreviewResult | null> {
     // Buffer the original once so the dimensions probe and the resize read the
     // same bytes (one object-storage fetch, and metadata is reliable on a
     // Buffer where it isn't on a partially-consumed stream).
+    //
+    // Deliberately OUTSIDE the try below: an object-storage read failure is
+    // transient and worth the queue's retries, a decode failure is not. Same
+    // split MediaDimensionsStage makes between `object_storage_read_failed`
+    // (retry) and `probe_failed` (skip).
     const original = Buffer.from(await this.fileService.getFileContent(context, file.key));
 
     const sourceDimensions = await this.mediaDimensionsService.fromImageBuffer(original);
@@ -153,27 +162,91 @@ export class FilePreviewGenerationListener {
     // the *display* orientation, not the stored one. Without this the JPEG
     // bytes are saved as-is and browsers don't reliably honour the tag on
     // derivative JPEGs — photos come back upside-down or sideways.
-    const { data, info } = await sharp(original)
-      .rotate()
-      .resize(PREVIEW_MAX_DIMENSION, PREVIEW_MAX_DIMENSION, {
-        fit: 'inside',
-      })
-      .jpeg({
-        quality: 80,
-      })
-      .toBuffer({ resolveWithObject: true });
+    //
+    // failOn: 'error' (not the 'warning' default): real phone JPEGs — Samsung
+    // above all — routinely trip warning-level libjpeg quirks ("Corrupt JPEG
+    // data: N extraneous bytes before marker 0xdN", "Invalid SOS parameters
+    // for sequential JPEG") that every mainstream viewer decodes fine; the
+    // default turned them into failed preview jobs (~8% of a sampled Takeout
+    // batch). Verified against an independent decoder that the tolerant decode
+    // is artifact-free.
+    try {
+      const { data, info } = await sharp(original, { failOn: 'error' })
+        .rotate()
+        .resize(PREVIEW_MAX_DIMENSION, PREVIEW_MAX_DIMENSION, {
+          fit: 'inside',
+        })
+        .jpeg({
+          quality: 80,
+        })
+        .toBuffer({ resolveWithObject: true });
 
-    return {
-      buffer: data,
-      previewDimensions: { width: info.width, height: info.height },
-      sourceDimensions,
-    };
+      return {
+        buffer: data,
+        previewDimensions: { width: info.width, height: info.height },
+        sourceDimensions,
+      };
+    } catch (err: unknown) {
+      // A decode failure on INTACT bytes is a SKIP; on truncated bytes it is a
+      // retry. Routing on the MIME prefix alone means anything labelled image/*
+      // reaches sharp, and libvips throws "Input buffer contains unsupported
+      // image format" for every byte sequence it has no loader for — a verdict
+      // it returns identically for "this format has no loader" and "this read
+      // came back short". Those need opposite handling, and the exception alone
+      // cannot tell them apart.
+      //
+      // `file.size` is the recorded length at upload, so comparing it against
+      // what we just read is the discriminator. It matters here specifically:
+      // the 32 dead letters that motivated this fix turned out to be COMPLETE,
+      // valid JPEGs that decode cleanly today, i.e. the failures were transient
+      // and the retries were the only recovery they ever had. Skipping on the
+      // first attempt would have removed it.
+      const expected = file.size;
+      const truncated = expected != null && expected > 0 && original.length !== expected;
+
+      if (truncated) {
+        this.logger.warn('Image decode failed on a short read; retrying', {
+          fileId: file.id,
+          contentType: file.contentType,
+          bytes: original.length,
+          expectedBytes: expected,
+          error: errorMessage(err),
+        });
+
+        throw err;
+      }
+
+      // Intact and still undecodable: the format genuinely has no loader.
+      // Returning null lands in the `result == null` branch of generatePreview:
+      // logged, job completes. fileId + contentType are on the warn line so the
+      // undecodable corpus is countable from the logs (`grep 'Image decode
+      // failed'`), which is what tells us whether a whole format is missing a
+      // loader rather than a few odd files.
+      //
+      // The dimensions probe above already succeeded on these bytes more often
+      // than not (MediaDimensionsService uses its own tolerant path), so persist
+      // what it found before giving up — it is free, already in hand, and the
+      // drawer's "Dimensions" row is the one thing a preview-less file can still
+      // show. The caller only reaches setDimensions on the success path.
+      if (sourceDimensions != null) {
+        await this.fileService.setDimensions(context, file.id, sourceDimensions);
+      }
+
+      this.logger.warn('Image decode failed, skipping preview generation', {
+        fileId: file.id,
+        contentType: file.contentType,
+        bytes: original.length,
+        error: errorMessage(err),
+      });
+
+      return null;
+    }
   }
 
   private async generateVideoPreview(
     context: UserServiceContext,
     file: RequiredFields<File, 'key', true>,
-  ): Promise<PreviewResult> {
+  ): Promise<PreviewResult | null> {
     const stream = await this.fileService.getFileStream(context, file.key);
     const tempInput = join(tmpdir(), `ci-preview-${crypto.randomUUID()}`);
     const tempOutput = `${tempInput}-frame.jpg`;
@@ -192,36 +265,79 @@ export class FilePreviewGenerationListener {
       // collapsing it to a single frame.
       const sourceDimensions = await this.mediaDimensionsService.fromVideoFile(tempInput);
 
-      // Extract a single frame
-      await new Promise<void>((resolve, reject) => {
-        ffmpeg(tempInput)
-          .frames(1)
-          .output(tempOutput)
-          .on('end', () => resolve())
-          .on('error', (err: Error) => reject(err))
-          .run();
-      });
+      // Extract a single frame. Classified the same way the image path is: a
+      // container or codec ffmpeg cannot decode is a FORMAT gap — retrying it
+      // three times and dead-lettering buys nothing — while the spool above and
+      // the read below are IO and stay retryable, so they deliberately sit
+      // outside this catch.
+      try {
+        await new Promise<void>((resolve, reject) => {
+          ffmpeg(tempInput)
+            .frames(1)
+            .output(tempOutput)
+            .on('end', () => resolve())
+            .on('error', (err: Error) => reject(err))
+            .run();
+        });
+      } catch (err: unknown) {
+        this.logger.warn('Video frame extraction failed, skipping preview generation', {
+          fileId: file.id,
+          contentType: file.contentType,
+          error: errorMessage(err),
+        });
+
+        // Dimensions survive a failed frame extract — fromVideoFile read them
+        // off the spooled container above and returns null rather than throwing.
+        if (sourceDimensions != null) {
+          await this.fileService.setDimensions(context, file.id, sourceDimensions);
+        }
+
+        return null;
+      }
 
       const frame = await fs.readFile(tempOutput);
 
       // ffmpeg already auto-rotates the extracted frame, so .rotate() is a
-      // safety net for any orientation tag still on the JPEG bytes.
-      const { data, info } = await sharp(frame)
-        .rotate()
-        .resize(PREVIEW_MAX_DIMENSION, PREVIEW_MAX_DIMENSION, {
-          fit: 'inside',
-        })
-        .jpeg({ quality: 80 })
-        .toBuffer({ resolveWithObject: true });
+      // safety net for any orientation tag still on the JPEG bytes. Same
+      // failOn: 'error' tolerance as the image path, and the same
+      // skip-don't-throw contract: an undecodable extracted frame is a file
+      // we cannot preview, not a job worth retrying three times and
+      // dead-lettering.
+      try {
+        const { data, info } = await sharp(frame, { failOn: 'error' })
+          .rotate()
+          .resize(PREVIEW_MAX_DIMENSION, PREVIEW_MAX_DIMENSION, {
+            fit: 'inside',
+          })
+          .jpeg({ quality: 80 })
+          .toBuffer({ resolveWithObject: true });
 
-      return {
-        buffer: data,
-        previewDimensions: { width: info.width, height: info.height },
-        sourceDimensions,
-      };
+        return {
+          buffer: data,
+          previewDimensions: { width: info.width, height: info.height },
+          sourceDimensions,
+        };
+      } catch (err: unknown) {
+        this.logger.warn('Video frame decode failed, skipping preview generation', {
+          fileId: file.id,
+          contentType: file.contentType,
+          bytes: frame.length,
+          error: errorMessage(err),
+        });
+
+        if (sourceDimensions != null) {
+          await this.fileService.setDimensions(context, file.id, sourceDimensions);
+        }
+
+        return null;
+      }
     } finally {
       await fs.unlink(tempInput).catch(() => {});
       await fs.unlink(tempOutput).catch(() => {});
     }
   }
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }

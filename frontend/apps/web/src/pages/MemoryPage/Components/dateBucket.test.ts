@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import type { EntityItem } from '../useEntityService';
 
-import { getDateBucket, getEntityTimestamp, groupEntitiesByBucket, isChronologicalSort } from './utils';
+import {
+  formatLoadedCount,
+  getDateBucket,
+  getEntityTimestamp,
+  groupEntitiesByBucket,
+  isChronologicalSort,
+  orderDatedFirst,
+} from './utils';
 
 const entity = (shape: Record<string, unknown>) => shape as unknown as EntityItem;
 
@@ -89,6 +96,85 @@ describe('groupEntitiesByBucket', () => {
     expect(groups).toHaveLength(1);
     expect(groups[0].label).toBe('No date');
     expect(groups[0].bucket).toBe('undated');
+  });
+
+  // The server orders undated types by row-write time, so a bulk import
+  // interleaves them through the dated run. Emitting a header per contiguous
+  // run gave alternating "No date" / "Today" sections; there is now exactly
+  // one, at the end.
+  it('collects interleaved undated entities into a single trailing group', () => {
+    const person = () => entity({ __typename: 'PersonType' });
+    const groups = groupEntitiesByBucket(
+      [person(), event('2026-01-15T09:00:00'), person(), event('2025-06-01T09:00:00'), person()],
+      NOW,
+    );
+
+    expect(groups.map((g) => g.label)).toEqual(['Today', 'June 2025', 'No date']);
+    expect(groups[groups.length - 1].entities).toHaveLength(3);
+    expect(new Set(groups.map((g) => g.key)).size).toBe(3);
+  });
+
+  it('emits no "No date" group when every entity is dated', () => {
+    const groups = groupEntitiesByBucket([event('2026-01-15T09:00:00')], NOW);
+
+    expect(groups.map((g) => g.bucket)).toEqual(['today']);
+  });
+});
+
+describe('orderDatedFirst', () => {
+  const event = (iso: string) => entity({ __typename: 'EventType', bucketStartTime: iso });
+  const person = (id: string) => entity({ __typename: 'PersonType', id });
+
+  it('moves undated entities to the end, preserving order within each half', () => {
+    const a = person('a');
+    const e1 = event('2026-01-15T09:00:00');
+    const b = person('b');
+    const e2 = event('2025-06-01T09:00:00');
+
+    expect(orderDatedFirst([a, e1, b, e2])).toEqual([e1, e2, a, b]);
+  });
+
+  it('returns the input untouched when everything is dated', () => {
+    const input = [event('2026-01-15T09:00:00'), event('2025-06-01T09:00:00')];
+
+    expect(orderDatedFirst(input)).toBe(input);
+  });
+
+  it('keeps an all-undated page in server order', () => {
+    const input = [person('a'), person('b')];
+
+    expect(orderDatedFirst(input)).toEqual(input);
+  });
+});
+
+describe('formatLoadedCount', () => {
+  it('shows the total as a denominator, thousands-separated', () => {
+    expect(formatLoadedCount({ loaded: 30, totalCount: 141639, loadingMore: false, hasNextPage: true })).toBe(
+      '30 of 141,639 loaded',
+    );
+  });
+
+  it('marks the end of the result set', () => {
+    expect(formatLoadedCount({ loaded: 12, totalCount: 12, loadingMore: false, hasNextPage: false })).toBe(
+      '12 of 12 loaded · end',
+    );
+  });
+
+  it('marks an in-flight page', () => {
+    expect(formatLoadedCount({ loaded: 30, totalCount: 900, loadingMore: true, hasNextPage: true })).toBe(
+      '30 of 900 loaded · loading…',
+    );
+  });
+
+  // totalCount is 0 until the first page resolves, and a stale/undercounted
+  // total must never read as fewer results than are already on screen.
+  it('omits the denominator when the server supplied none or it lags the page', () => {
+    expect(formatLoadedCount({ loaded: 0, totalCount: 0, loadingMore: true, hasNextPage: false })).toBe(
+      '0 loaded · loading…',
+    );
+    expect(formatLoadedCount({ loaded: 30, totalCount: 10, loadingMore: false, hasNextPage: true })).toBe(
+      '30 loaded',
+    );
   });
 });
 
