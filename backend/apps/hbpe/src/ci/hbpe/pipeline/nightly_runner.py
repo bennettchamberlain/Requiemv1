@@ -339,6 +339,8 @@ async def recurrence_profile(user_id: str) -> dict:
 async def drift_detection(user_id: str) -> str:
     import asyncio
 
+    from ci.hbpe.pipeline.baselines import score_baselines_and_store
+    from ci.hbpe.pipeline.l2_gate import count_l2_tokens
     from ci.hbpe.pipeline.scoring import score_and_store
 
     result = await asyncio.get_event_loop().run_in_executor(
@@ -346,6 +348,16 @@ async def drift_detection(user_id: str) -> str:
     )
     status = str(result.get("status", "scored"))
     log.info("drift_detection: %s (user=%s)", status, user_id)
+
+    base = await asyncio.get_event_loop().run_in_executor(
+        None, lambda: score_baselines_and_store(user_id)
+    )
+    log.info("drift_detection baselines: %s (user=%s)", base.get("status"), user_id)
+
+    n_l2 = await asyncio.get_event_loop().run_in_executor(
+        None, lambda: count_l2_tokens(user_id)
+    )
+    log.info("L2 token count user=%s n=%d", user_id[:8], n_l2)
 
     return status
 

@@ -1,27 +1,17 @@
 import type { ReactNode } from 'react';
 
 import { Collapsible, Tooltip, cn } from '@ci/shadcn';
-import {
-  BookOpen,
-  Brain,
-  ChevronRight,
-  Cable,
-  CalendarRange,
-  ChartColumn,
-  CloudSun,
-  CircleHelp,
-  LifeBuoy,
-  ListTodo,
-  MessagesSquare,
-  FolderSearch2,
-  Workflow,
-} from '@ci/shadcn/icons';
+import { Camera, ChevronRight, CircleHelp, MonitorCog } from '@ci/shadcn/icons';
 
-import { useFeatures } from '@/common/feature';
+import { CaptureModal } from '@/components/modals/CaptureModal';
+import { useCaptureModal } from '@/hooks';
 
-import { usePowerRail } from '../PowerRailContext';
 import { NavUser } from '../PrimaryNavigation/NavUser';
+import { usePowerRail } from '../PowerRailContext';
+import { RailEdgeToggle } from '../RailEdgeToggle';
+import { HELP_LINKS, useVisibleRailDestinations } from '../railDestinations';
 
+import { MemorySubmenu } from './MemorySubmenu';
 import { NavLink } from './NavLink';
 import { useFeedBadgeCount } from './useFeedBadgeCount';
 
@@ -75,7 +65,7 @@ function HelpSubmenu() {
       <Tooltip>
         <Tooltip.Trigger asChild>
           <a
-            href="https://ci.computer/support"
+            href={HELP_LINKS[0].href}
             target="_blank"
             rel="noopener noreferrer"
             aria-label="Help"
@@ -92,29 +82,131 @@ function HelpSubmenu() {
   return (
     <Collapsible>
       <Collapsible.Trigger className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition hover:bg-accent hover:text-accent-foreground [&[data-state=open]>svg:last-child]:rotate-90">
-        <CircleHelp className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+        {/* Same 32px leading cell as the account avatar so "Help" and the
+            name share one left edge, instead of each label padding off its
+            own icon width. */}
+        <span className="grid size-8 shrink-0 place-items-center">
+          <CircleHelp className="h-6 w-6" strokeWidth={1.25} />
+        </span>
         <span className="flex-1 truncate text-sm">Help</span>
-        <ChevronRight className="h-4 w-4 shrink-0 transition-transform" />
+        <ChevronRight className="h-4 w-4 shrink-0 transition-transform duration-200" />
       </Collapsible.Trigger>
-      <Collapsible.Content className="flex flex-col gap-1 pl-6">
-        <ExternalNavLink href="https://ci.computer/support" label="Support">
-          <LifeBuoy className="h-4 w-4 shrink-0" strokeWidth={1.25} />
-        </ExternalNavLink>
-        <ExternalNavLink
-          href="https://docs.ci.computer/docs/first-party-apps/digital-memory-server"
-          label="Docs"
-        >
-          <BookOpen className="h-4 w-4 shrink-0" strokeWidth={1.25} />
-        </ExternalNavLink>
+      <Collapsible.Content className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
+        <div className="flex flex-col gap-1 pl-6 pt-1">
+          {HELP_LINKS.map((link) => {
+            const Icon = link.icon;
+
+            return (
+              <ExternalNavLink key={link.href} href={link.href} label={link.label}>
+                <Icon className="h-4 w-4 shrink-0" strokeWidth={1.25} />
+              </ExternalNavLink>
+            );
+          })}
+        </div>
       </Collapsible.Content>
     </Collapsible>
   );
 }
 
+function OverlayRail({
+  destinationsList,
+  closeOverlay,
+  expanded,
+}: {
+  destinationsList: ReactNode;
+  closeOverlay: () => void;
+  expanded: boolean;
+}) {
+  const [{ isOpen: captureOpen }, { open: openCapture, close: closeCapture }] = useCaptureModal();
+
+  return (
+    <>
+      {captureOpen && <CaptureModal open onClose={closeCapture} />}
+      <nav
+        id="power-rail"
+        data-state={expanded ? 'expanded' : 'collapsed'}
+        aria-hidden={!expanded}
+        onClick={(event) => {
+          if ((event.target as HTMLElement).closest('a')) {
+            closeOverlay();
+          }
+        }}
+        className={cn(
+          'fixed inset-y-0 left-0 z-40 flex w-56 flex-col overflow-x-hidden p-2 pb-[max(0.5rem,var(--safe-area-bottom))] pt-[max(0.5rem,var(--safe-area-top))] transition-transform duration-200',
+          'border-r border-white/55 bg-white/35 shadow-xl backdrop-blur-xl dark:border-white/20 dark:bg-white/10',
+          expanded ? 'translate-x-0' : 'pointer-events-none -translate-x-full',
+        )}
+      >
+        <Tooltip.Provider>
+          <div className="mb-1 flex justify-end">
+            <RailEdgeToggle open onClick={closeOverlay} />
+          </div>
+          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto [scrollbar-gutter:stable]">
+            {destinationsList}
+            <div className="flex flex-col gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  closeOverlay();
+                  openCapture();
+                }}
+                className="flex items-center gap-3 rounded-md px-2 py-2 text-left transition hover:bg-accent hover:text-accent-foreground"
+              >
+                <Camera className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+                <span className="truncate text-sm">Capture</span>
+              </button>
+              <NavLink to="/system" label="System">
+                <MonitorCog className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+              </NavLink>
+            </div>
+          </div>
+
+          <div className="mt-auto flex flex-col gap-1 pb-2">
+            <HelpSubmenu />
+
+            <NavUser />
+          </div>
+        </Tooltip.Provider>
+      </nav>
+    </>
+  );
+}
+
 export function SecondaryNavigation() {
-  const { expanded, pinned, setHovered } = usePowerRail();
-  const { isFeatureEnabled } = useFeatures();
+  const { expanded, pinned, setHovered, variant, closeOverlay } = usePowerRail();
+  const destinations = useVisibleRailDestinations();
   const feedBadgeCount = useFeedBadgeCount();
+  const overlay = variant === 'overlay';
+
+  const destinationsList = (
+    <div className="flex flex-col gap-1">
+      {destinations.map((destination) => {
+        if (destination.id === 'memory') {
+          return <MemorySubmenu key={destination.id} />;
+        }
+
+        const Icon = destination.icon;
+
+        return (
+          <NavLink
+            key={destination.id}
+            to={destination.to}
+            label={destination.label}
+            end={destination.end}
+            badgeCount={destination.badge === 'feed' ? feedBadgeCount : 0}
+          >
+            <Icon className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+          </NavLink>
+        );
+      })}
+    </div>
+  );
+
+  if (overlay) {
+    return (
+      <OverlayRail destinationsList={destinationsList} closeOverlay={closeOverlay} expanded={expanded} />
+    );
+  }
 
   return (
     // A drawer, not a column that shoves the page around.
@@ -151,63 +243,8 @@ export function SecondaryNavigation() {
         )}
       >
         <Tooltip.Provider>
-          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
-            <div className="flex flex-col gap-1">
-              {isFeatureEnabled('planning.page') && (
-                <NavLink to="/plan" label="Plan">
-                  <ListTodo className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-                </NavLink>
-              )}
-
-              {/* One destination for the day: the schedule leads and the brief
-                  follows, because "what is happening" and "what it means" were
-                  two halves of one question answered from two places. Ungated,
-                  because the brief half is always there — `schedule.page` gates
-                  only the schedule within the page. The calendar icon over the
-                  inbox tray: a tray promises a queue to clear, which this never
-                  was. Forecast keeps its own entry — it describes a horizon
-                  rather than a day. */}
-              <NavLink to="/today" label="Today" badgeCount={feedBadgeCount}>
-                <CalendarRange className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-              </NavLink>
-
-              <NavLink to="/forecast" label="Forecast">
-                <CloudSun className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-              </NavLink>
-
-              <NavLink to="/memory" label="Memory">
-                <Brain className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-              </NavLink>
-
-              <NavLink to="/saved-searches" label="Saved Searches">
-                <FolderSearch2 className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-              </NavLink>
-
-              {isFeatureEnabled('chat.page') && (
-                <NavLink to="/chat" label="Chat">
-                  <MessagesSquare className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-                </NavLink>
-              )}
-
-              {/* One entry. Connect, import, and devices are paths on the same
-                page — a rail submenu that opened a second accordion was a
-                second way to do what the tiles already do. */}
-              <NavLink to="/sources" label="Sources" end={false}>
-                <Cable className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-              </NavLink>
-
-              {isFeatureEnabled('jobs.page') && (
-                <NavLink to="/jobs" label="Jobs">
-                  <Workflow className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-                </NavLink>
-              )}
-
-              {isFeatureEnabled('stats.page') && (
-                <NavLink to="/stats" label="Stats">
-                  <ChartColumn className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-                </NavLink>
-              )}
-            </div>
+          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto [scrollbar-gutter:stable]">
+            {destinationsList}
           </div>
 
           <div className="mt-auto flex flex-col gap-1 pb-2">

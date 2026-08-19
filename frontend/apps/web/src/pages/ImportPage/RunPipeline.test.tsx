@@ -88,6 +88,67 @@ describe('RunPipeline stage detail', () => {
     expect(screen.getByText(/unexpected end of mbox/i)).toBeInTheDocument();
   });
 
+  it('names the records that could not be identified, and why', () => {
+    // The bug this closes: a 4,040-entity Apple import finished `partial`
+    // because of ONE contact card with no name and no email, and the excellent
+    // reason the push had recorded for it — "no stable name or handle to
+    // resolve by" — lived only in ci_import.staged_entities.push_error. The run
+    // showed the word `partial` and a count of skipped groups.
+    render(
+      <RunPipeline
+        run={runWith({
+          pushed: 4039,
+          entities: {
+            resolved: 4039,
+            skipped: 1,
+            unresolved: 1,
+            failed: 0,
+            unresolvedDetail: {
+              reason: 'entity_unresolved',
+              message: 'no stable name or handle to resolve by',
+              count: 1,
+              sources: { vcard: 1 },
+              examples: ['vcard: Liam Broza and 4,926 others.vcf'],
+            },
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText(/1 record could not be identified/i)).toBeInTheDocument();
+    expect(screen.getByText(/no stable name or handle to resolve by/i)).toBeInTheDocument();
+    // The export it came from, because that is what makes it findable.
+    expect(screen.getByText(/Liam Broza and 4,926 others\.vcf/)).toBeInTheDocument();
+  });
+
+  it('keeps the by-design skips apart from the ones that are a loss', () => {
+    // `entities.skipped` counts both: an `email_thread` per gmail thread (by
+    // design) and a record with nothing to key on (a gap). Rolled into one
+    // line, ten deliberate exclusions hid the one that mattered.
+    render(
+      <RunPipeline
+        run={runWith({
+          entities: {
+            resolved: 0,
+            skipped: 11,
+            unresolved: 1,
+            failed: 0,
+            unresolvedDetail: {
+              reason: 'entity_unresolved',
+              message: 'no stable name or handle to resolve by',
+              count: 1,
+              sources: { vcard: 1 },
+              examples: [],
+            },
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText(/10 groups skipped/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 record could not be identified/i)).toBeInTheDocument();
+  });
+
   it('calls a partial run a success with gaps', () => {
     render(<RunPipeline run={runWith({ pushed: 1, deduped: 0, failed: 0 })} />);
 
@@ -132,5 +193,117 @@ describe('RunPipeline close', () => {
     render(<RunPipeline run={run} onClose={vi.fn()} />);
 
     expect(screen.queryByRole('button', { name: /close/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('RunPipeline cancel', () => {
+  it('cancels a still-running import', () => {
+    const onCancel = vi.fn();
+    const run = { ...runWith({ pushed: 1 }), status: 'running', finishedAt: null };
+
+    render(<RunPipeline run={run} onCancel={onCancel} />);
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers no cancel button once the run is finished', () => {
+    // Cancel is the in-progress action; a finished run (even a failed one)
+    // has nothing left to stop.
+    const onCancel = vi.fn();
+
+    render(<RunPipeline run={runWith({ pushed: 1 })} onCancel={onCancel} />);
+
+    expect(screen.queryByRole('button', { name: /cancel/i })).not.toBeInTheDocument();
+  });
+
+  it('offers no cancel button when the host does not supply one, even while running', () => {
+    const run = { ...runWith({ pushed: 1 }), status: 'running', finishedAt: null };
+
+    render(<RunPipeline run={run} />);
+
+    expect(screen.queryByRole('button', { name: /cancel/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('RunPipeline stage retry', () => {
+  function runWithStage(stage: Partial<ImportRunDetail['stages'][number]>): ImportRunDetail {
+    return {
+      ...runWith({}),
+      stages: [
+        {
+          id: 'stage-1',
+          seq: 1,
+          kind: 'unpack',
+          status: 'failed',
+          phase: null,
+          processed: 4,
+          total: 10,
+          weight: 20,
+          etaSeconds: null,
+          durationMs: null,
+          error: 'disk full',
+          detail: {},
+          ...stage,
+        },
+      ],
+    };
+  }
+
+  it('retries a failed stage by its id', () => {
+    const onRetryStage = vi.fn();
+
+    render(<RunPipeline run={runWithStage({ status: 'failed' })} onRetryStage={onRetryStage} />);
+    fireEvent.click(screen.getByRole('button', { name: /try again/i }));
+
+    expect(onRetryStage).toHaveBeenCalledWith('stage-1');
+  });
+
+  it('offers retry for a cancelled stage too', () => {
+    const onRetryStage = vi.fn();
+
+    render(<RunPipeline run={runWithStage({ status: 'cancelled' })} onRetryStage={onRetryStage} />);
+    fireEvent.click(screen.getByRole('button', { name: /try again/i }));
+
+    expect(onRetryStage).toHaveBeenCalledWith('stage-1');
+  });
+
+  it('offers no retry for a stage that is not failed or cancelled', () => {
+    const onRetryStage = vi.fn();
+
+    render(<RunPipeline run={runWithStage({ status: 'running' })} onRetryStage={onRetryStage} />);
+
+    expect(screen.queryByRole('button', { name: /try again/i })).not.toBeInTheDocument();
+  });
+
+  it('offers no retry button when the host does not supply a handler', () => {
+    render(<RunPipeline run={runWithStage({ status: 'failed' })} />);
+
+    expect(screen.queryByRole('button', { name: /try again/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('RunPipeline retry failed push', () => {
+  it('re-queues the rows a completed push could not write', () => {
+    // Distinct from stage retry: the push STAGE completed, but some of its
+    // rows landed in `failed` — this is the only route back for them.
+    const onRetryFailedPush = vi.fn();
+
+    render(<RunPipeline run={runWith({ pushed: 10, failed: 3 })} onRetryFailedPush={onRetryFailedPush} />);
+    fireEvent.click(screen.getByRole('button', { name: /try these again/i }));
+
+    expect(onRetryFailedPush).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers no retry-failed-push button when nothing failed', () => {
+    render(<RunPipeline run={runWith({ pushed: 10, failed: 0 })} onRetryFailedPush={vi.fn()} />);
+
+    expect(screen.queryByRole('button', { name: /try these again/i })).not.toBeInTheDocument();
+  });
+
+  it('offers no retry-failed-push button when the host does not supply a handler', () => {
+    render(<RunPipeline run={runWith({ pushed: 10, failed: 3 })} />);
+
+    expect(screen.queryByRole('button', { name: /try these again/i })).not.toBeInTheDocument();
   });
 });

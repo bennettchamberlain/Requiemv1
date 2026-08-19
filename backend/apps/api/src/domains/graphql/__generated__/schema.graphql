@@ -143,7 +143,9 @@ enum AnswerSource {
 
 type AnswerType implements Node {
   answer: String!
+  answerConfidence: Float
   answerMethod: String!
+  answerRationale: String
   answerSource: String
   answeredAt: DateTime!
   id: ID!
@@ -292,6 +294,9 @@ type CalibrationScoreType {
   ece: Float
   l0Top1Acc: Float
   l1Top3Acc: Float
+
+  """hmt / b0 / b1 / b2"""
+  modelVersion: String
   nBuckets: Int
   scoredAt: String!
 }
@@ -415,7 +420,10 @@ type ContentType implements Node & Taggable {
   event: EventType
   externalId: String
   id: ID!
+  mediaSize: Float
+  mediaUrl: String
   mimetype: String
+  previewUrl: String
   sourceData: JSON
   sourceUrl: String
   tags: [EntityTagType!]!
@@ -577,29 +585,141 @@ input CreateEventInput {
 
 input CreateInventoryInput {
   acquiredAt: DateTime
+
+  """Seller, giver or source, as free text."""
+  acquiredFrom: String
+  acquisitionMethod: ItemAcquisitionMethod
   brand: String
   category: String
+
+  """Dominant colour as #rrggbb."""
+  colorHex: String
+
+  """Colour names, dominant first."""
+  colors: [String!]
+
+  """
+  {material: fraction} summing to at most 1. Percentages are accepted and converted.
+  """
+  composition: JSON
   condition: ItemCondition
   currency: String
   currentValue: Float
   description: String
+
+  """
+  Shorthand such as "12 x 8 x 2 in". Fills only the axes not given individually.
+  """
+  dimensions: String
+
+  """
+  When it stops being usable. Distinct from a warranty, which is a contract.
+  """
+  expiresAt: DateTime
+
+  """Height, in millimetres."""
+  heightMm: Float
   identifierCodes: JSON
+
+  """A digital item is refused a mass, a size and a volume."""
+  isDigital: Boolean
+
+  """Longest dimension, in millimetres."""
+  lengthMm: Float
+
+  """When the object was made, not when it was acquired."""
+  manufacturedAt: DateTime
+
+  """As-owned mass, in grams."""
+  massG: Float
+
+  """What the object is made of."""
+  materials: [String!]
   metadata: JSON
+  model: String
   name: String!
   purchasePrice: Float
   sourceId: String
   sourceSystem: String
   sourceType: String
   subcategory: String
+  unitSystem: ItemUnitSystem
+
+  """Capacity — what it holds — in millilitres."""
+  volumeMl: Float
+
+  """Width, in millimetres."""
+  widthMm: Float
 }
 
 input CreateItemInput {
+  """When it was bought or received."""
+  acquiredAt: DateTime
+
+  """Seller, giver or source, as free text."""
+  acquiredFrom: String
+  acquisitionMethod: ItemAcquisitionMethod
   brand: String
   category: String
+
+  """Dominant colour as #rrggbb."""
+  colorHex: String
+
+  """Colour names, dominant first."""
+  colors: [String!]
+
+  """
+  {material: fraction} summing to at most 1. Percentages are accepted and converted.
+  """
+  composition: JSON
+  condition: ItemCondition
+  currency: String
   currentValue: Float
   description: String
+
+  """
+  Shorthand such as "12 x 8 x 2 in". Fills only the axes not given individually.
+  """
+  dimensions: String
+
+  """
+  When it stops being usable. Distinct from a warranty, which is a contract.
+  """
+  expiresAt: DateTime
+
+  """Height, in millimetres."""
+  heightMm: Float
+
+  """Serial number, UPC, ISBN, order id, …"""
+  identifierCodes: JSON
+
+  """A digital item is refused a mass, a size and a volume."""
+  isDigital: Boolean
+
+  """Longest dimension, in millimetres."""
+  lengthMm: Float
+
+  """When the object was made, not when it was acquired."""
+  manufacturedAt: DateTime
+
+  """As-owned mass, in grams."""
+  massG: Float
+
+  """What the object is made of."""
+  materials: [String!]
+  metadata: JSON
   model: String
   name: String!
+  purchasePrice: Float
+  quantity: Int
+  subcategory: String
+  unitSystem: ItemUnitSystem
+
+  """Capacity — what it holds — in millilitres."""
+  volumeMl: Float
+
+  """Width, in millimetres."""
+  widthMm: Float
 }
 
 type CreateItemPayload {
@@ -618,24 +738,32 @@ type CreateNotePayload {
 }
 
 input CreatePersonInput {
+  addresses: [PersonAddressInput!]
   avatarUrl: String
   birthDate: String
   city: String
+  contacts: [PersonContactInput!]
   country: String
+  department: String
   description: String
   emails: [String!]
   firstName: String
   gender: String
+  jobTitle: String
   lastName: String
   linkedId: String
   linkedTable: String
   middleName: String
   name: String!
+  nickname: String
+  organization: String
   phones: [String!]
   postalCode: String
+  pronouns: String
   region: String
   streetAddress: String
   streetAddress2: String
+  website: String
 }
 
 type CreatePersonPayload {
@@ -884,8 +1012,16 @@ type EventType implements Node & Taggable {
   metadata: JSON
   organizer: PersonType
   organizerEntityId: ID
+
+  """Parent event for sub-events / follow-ups. Children: filter by this id."""
+  parentEventId: ID
   participantEntityIds: [ID!]
   participants(after: String, before: String, first: Int, last: Int): PersonConnection!
+
+  """
+  Intended minutes for a planned block. Distinct from generated durationMinutes.
+  """
+  plannedMinutes: Int
   previewUrl: String
   sourceId: ID
   sourceSystem: String
@@ -893,6 +1029,9 @@ type EventType implements Node & Taggable {
   startTime: DateTime!
   status: String
   tags: [EntityTagType!]!
+
+  """Task this planned block schedules (`event_type = planned_block`)."""
+  taskId: ID
   title: String
 }
 
@@ -984,6 +1123,12 @@ type ForecastType {
   """
   horizon: String!
 
+  """Served histogram model: hmt, b1, or b2 (D3 gate)."""
+  modelVersion: String
+
+  """True when the histogram is a cold-start baseline, not a trained HMT."""
+  stillLearning: Boolean!
+
   """System status of the HBPE engine (COLD_START, TRAINING, READY)"""
   systemStatus: String!
 }
@@ -1065,6 +1210,21 @@ type InsightItemType {
   title: String!
 }
 
+"""
+How an item came to be owned. A purchase and a gift mean different things by acquiredAt.
+"""
+enum ItemAcquisitionMethod {
+  BORROWED
+  FOUND
+  GIFT
+  INHERITED
+  MADE
+  PURCHASED
+  SAMPLE
+  TRADED
+  UNKNOWN
+}
+
 enum ItemCondition {
   BROKEN
   FAIR
@@ -1098,22 +1258,74 @@ input ItemRelationshipInput {
 }
 
 type ItemType implements Node & Taggable {
+  """When it was bought or received."""
   acquiredAt: DateTime
+
+  """Seller, giver or source."""
+  acquiredFrom: String
+  acquisitionMethod: ItemAcquisitionMethod
   brand: String
   category: String
+
+  """Dominant colour as #rrggbb."""
+  colorHex: String
+
+  """Colour names, dominant first."""
+  colors: [String!]
+
+  """{material: fraction}; {} when the proportions are unknown."""
+  composition: JSON!
   condition: ItemCondition
   createdAt: DateTime!
   currency: String!
   currentValue: Float
   description: String
+
+  """When it stops being usable."""
+  expiresAt: DateTime
   file: FileType
+
+  """Height, in millimetres."""
+  heightMm: Float
   id: ID!
+  isDigital: Boolean!
+
+  """Longest dimension, in millimetres."""
+  lengthMm: Float
+
+  """When the object was made."""
+  manufacturedAt: DateTime
+
+  """As-owned mass, in grams."""
+  massG: Float
+
+  """What the object is made of."""
+  materials: [String!]
   metadata: JSON
   model: String
   name: String
+  purchasePrice: Float
+  quantity: Int!
   subcategory: String
   tags: [EntityTagType!]!
+
+  """The unit system these measurements were entered in. Presentation only."""
+  unitSystem: ItemUnitSystem
   updatedAt: DateTime!
+
+  """Capacity — what it holds — in millilitres."""
+  volumeMl: Float
+
+  """Width, in millimetres."""
+  widthMm: Float
+}
+
+"""
+Display preference for measurements. Stored values are always SI (millimetres, grams, millilitres) whichever this is.
+"""
+enum ItemUnitSystem {
+  IMPERIAL
+  METRIC
 }
 
 """
@@ -1152,6 +1364,52 @@ type KnownPlaceType {
   label: String!
   locationId: String
   source: String!
+}
+
+type MapPinType {
+  endTime: DateTime
+  eventType: String
+  id: ID!
+  latitude: Float!
+  locationName: String
+  longitude: Float!
+  startTime: DateTime
+  title: String
+}
+
+type MapPinsType {
+  pins: [MapPinType!]!
+  totalCount: Int!
+  truncated: Boolean!
+}
+
+type MergeCandidateConnection {
+  edges: [MergeCandidateEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type MergeCandidateEdge {
+  cursor: String!
+  node: MergeCandidateType!
+}
+
+type MergeCandidateEvidenceType {
+  kind: String!
+  score: Float
+  value: String!
+}
+
+type MergeCandidateType {
+  createdAt: DateTime!
+  detectedBy: String!
+  detectorVersion: Int!
+  entityType: String!
+  evidence: [MergeCandidateEvidenceType!]!
+  id: ID!
+  people: [PersonType!]!
+  score: Float!
+  status: String!
 }
 
 input MergePeopleInput {
@@ -1254,6 +1512,12 @@ type MetricSuggestionType {
 type Mutation {
   """Accept a candidate at a chosen time, minting a real event"""
   acceptCandidate(endTime: DateTime, id: ID!, startTime: DateTime!): EventType!
+
+  """Accept a trust-dial proposed task into the open backlog."""
+  acceptProposedTask(id: ID!): TaskType
+
+  """Apply a pending automation change (mutate / complete / event revise)."""
+  acceptTaskPendingChange(id: ID!): ResolveTaskPendingChangePayload!
   addPersonIdentifier(input: AddPersonIdentifierInput!): [PersonIdentifierType!]!
   approveAsk(id: ID!): AskPayload!
 
@@ -1303,19 +1567,31 @@ type Mutation {
   """
   declineCandidate(id: ID!, reason: String = "not_now"): ScheduleCandidateType!
 
+  """Decline a proposed task (archives it)."""
+  declineProposedTask(id: ID!): TaskType
+
+  """Dismiss a pending automation change without applying it."""
+  declineTaskPendingChange(id: ID!): ResolveTaskPendingChangePayload!
+
   """
   Push a task to a later user-local date (`YYYY-MM-DD`) and count the push.
   """
   deferTask(id: ID!, until: String!): TaskType
+  deleteBrowserActivity(input: DeleteByIdInput!): DeleteByIdPayload!
+  deleteCommunication(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteConcept(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteConnection(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteConnectionSyncJob(input: DeleteByIdInput!): DeleteByIdPayload!
+  deleteContent(input: DeleteByIdInput!): DeleteByIdPayload!
+  deleteEvent(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteItem(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteNote(input: DeleteByIdInput!): DeleteByIdPayload!
   deletePerson(input: DeleteByIdInput!): DeleteByIdPayload!
+  deletePlace(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteProviderKey(id: ID!): Boolean!
   deleteRelationship(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteSavedSearch(input: DeleteByIdInput!): DeleteByIdPayload!
+  deleteTag(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteTask(input: DeleteByIdInput!): DeleteByIdPayload!
   ingestUserSnapshot(input: IngestUserSnapshotInput!): IngestUserSnapshotPayload!
 
@@ -1346,12 +1622,12 @@ type Mutation {
   Mark a suggested duplicate group as distinct people, so it is never re-proposed
   """
   rejectPersonDuplicates(personIds: [ID!]!): Boolean!
-  removeAnswer(id: String!): Boolean!
-  removeContent(id: String!): Boolean!
-  removeEvent(id: String!): Boolean!
+  removeAnswer(id: ID!): Boolean!
+  removeContent(id: ID!): Boolean!
+  removeEvent(id: ID!): Boolean!
   removePersonIdentifier(input: RemovePersonIdentifierInput!): [PersonIdentifierType!]!
-  removePlace(id: String!): Boolean!
-  removeQuestion(id: String!): Boolean!
+  removePlace(id: ID!): Boolean!
+  removeQuestion(id: ID!): Boolean!
 
   """Move a completed task back to open."""
   reopenTask(id: ID!): TaskType
@@ -1360,11 +1636,22 @@ type Mutation {
   Move an event to a new time, keeping its duration. Externally-sourced events are moved locally only and marked pending — the change is not pushed to the source calendar.
   """
   rescheduleEvent(endTime: DateTime, id: ID!, startTime: DateTime!): EventType
+  restoreEvent(input: RestoreByIdInput!): EventType
 
   """Return a placed event to the slate, deleting the event it minted"""
   returnEventToSlate(eventId: ID!): ScheduleCandidateType!
   revokeAskGrant(id: ID!): AskGrantPayload!
   runAsk(id: ID!, redactItemIds: [String!]): RunAskPayload!
+
+  """
+  Place an open task into the next free workday gap as a planned calendar block. The click is consent — trust dial does not re-ask.
+  """
+  scheduleTask(
+    """Owner-local YYYY-MM-DD to prefer."""
+    date: String
+    estimatedMinutes: Int
+    id: ID!
+  ): ScheduleTaskPayload!
   sendPeerAsk(input: SendPeerAskInput!): SendPeerAskPayload!
   setSavedSearchSharing(input: SetSavedSearchSharingInput!): UpdateSavedSearchPayload!
 
@@ -1380,6 +1667,9 @@ type Mutation {
 
   """Manually trigger the HBPE pipeline for the current user"""
   triggerHbpe: String!
+
+  """Remove the planned block for this task and clear scheduledFor."""
+  unscheduleTask(id: ID!): TaskType
   untagEntities(input: TagEntitiesInput!): [TaggableEntityType!]!
   updateAnswer(input: UpdateAnswerInput!): AnswerType
   updateBrowserActivity(input: UpdateBrowserActivityInput!): BrowserActivityType
@@ -1400,6 +1690,7 @@ type Mutation {
   updateQuestion(input: UpdateQuestionInput!): QuestionType
   updateRelationship(input: UpdateRelationshipInput!): UpdateRelationshipPayload!
   updateSavedSearch(input: UpdateSavedSearchInput!): UpdateSavedSearchPayload!
+  updateTag(input: UpdateTagInput!): UpdateTagPayload!
   updateTask(input: UpdateTaskInput!): UpdateTaskPayload!
 }
 
@@ -1445,16 +1736,53 @@ type PairingStatusPayload {
   userName: String
 }
 
+input PersonAddressInput {
+  city: String
+  country: String
+  isPrimary: Boolean
+  label: String
+  postalCode: String
+  region: String
+  streetAddress: String
+  streetAddress2: String
+}
+
+type PersonAddressType {
+  city: String
+  country: String
+  formatted: String
+  isPrimary: Boolean!
+  label: String
+  postalCode: String
+  region: String
+  streetAddress: String
+  streetAddress2: String
+}
+
 type PersonConnection implements Connection {
   edges: [PersonEdge!]!
   pageInfo: PageInfo!
   totalCount: Int!
 }
 
+input PersonContactInput {
+  isPrimary: Boolean
+  kind: String!
+  label: String
+  value: String!
+}
+
 type PersonDuplicateGroupType {
   people: [PersonType!]!
   reason: String!
+  totalPeople: Int!
   value: String!
+}
+
+type PersonDuplicatesPayload {
+  groups: [PersonDuplicateGroupType!]!
+  hasMore: Boolean!
+  totalCount: Int!
 }
 
 type PersonEdge implements Edge {
@@ -1480,10 +1808,12 @@ type PersonInteractionStatsType {
 
 type PersonType implements Node & Taggable {
   address: String
+  addresses: [PersonAddressType!]!
   avatarUrl: String
   birthDate: String
   city: String
   country: String
+  department: String
   description: String
   firstName: String
   gender: String
@@ -1492,15 +1822,20 @@ type PersonType implements Node & Taggable {
   incomingRelationships(limit: Int): [RelationshipType!]
   interactionStats: PersonInteractionStatsType!
   isSelf: Boolean!
+  jobTitle: String
   lastName: String
   middleName: String
   name: String
+  nickname: String
+  organization: String
   outgoingRelationships(limit: Int): [RelationshipType!]
   postalCode: String
+  pronouns: String
   region: String
   streetAddress: String
   streetAddress2: String
   tags: [EntityTagType!]!
+  website: String
 }
 
 type PlaceConnection implements Connection {
@@ -1704,7 +2039,7 @@ type Query {
   events(after: String, before: String, first: Int, last: Int): EventConnection!
 
   """
-  Events overlapping [from, to) — calendar read path. Excludes cancelled/no-show; keeps tentative. Limited to calendar event types (see SCHEDULE_EVENT_TYPES) plus events with no event_type, which is how user-created and accepted-suggestion events arrive.
+  Events overlapping [from, to) — calendar read path. Excludes cancelled/no-show; keeps tentative. Allowlisted types: calendar_event, meeting, appointment, planned_block, plus events with no event_type (user-created and accepted suggestions).
   """
   eventsInRange(from: DateTime!, to: DateTime!): [EventType!]!
 
@@ -1727,7 +2062,13 @@ type Query {
   items(after: String, before: String, first: Int, last: Int): ItemConnection!
   knownPlaceCandidates: [KnownPlaceCandidateType!]!
   knownPlaces(kind: String): [KnownPlaceType!]!
+
+  """
+  Located events as map markers for the given filters. Events-only and located-only; returns the whole matching set in one read (capped at 20000 pins), not a page.
+  """
+  mapPins(input: SearchInput!, limit: Int): MapPinsType!
   me: UserType
+  mergeCandidates(after: String, first: Int, status: String): MergeCandidateConnection!
 
   """
   Computed metric and behavioral anomalies. Not the free-text list inside summaries.
@@ -1754,7 +2095,7 @@ type Query {
   pairingStatus(pairingToken: String!, pollKey: String!): PairingStatusPayload!
   people(after: String, before: String, first: Int, last: Int, query: String): PersonConnection!
   person(id: ID!): PersonType
-  personDuplicates(limit: Int): [PersonDuplicateGroupType!]!
+  personDuplicates(limit: Int, offset: Int, reasons: [String!]): PersonDuplicatesPayload!
   place(id: ID!): PlaceType
 
   """
@@ -1763,6 +2104,11 @@ type Query {
   placeForecast(horizonHours: Int = 4, k: Int = 5): [PlaceForecastItemType!]!
   places(after: String, before: String, first: Int, last: Int, query: String): PlaceConnection!
   placesNear(latitude: Float!, limit: Int, longitude: Float!, radiusMeters: Float): [PlaceNearType!]!
+
+  """
+  Planned blocks (`event_type = planned_block`) overlapping [from, to). SQL-pushdown, not the explorer events() feed.
+  """
+  plannedBlocks(from: DateTime!, to: DateTime!): [EventType!]!
 
   """Forecast self-consistency scores (not ground-truth accuracy)"""
   predictionCalibration(limit: Int = 14): PredictionCalibrationType
@@ -1784,11 +2130,19 @@ type Query {
   tag(id: ID!): TagType
   tags(after: String, before: String, first: Int, last: Int): TagConnection!
   task(id: ID!): TaskType
+
+  """Pending trust-dial confirmations for mutate/complete/revise/schedule."""
+  taskPendingChanges(taskId: ID): [TaskPendingChangeType!]!
   tasks(
     after: String
     before: String
     first: Int
     last: Int
+
+    """
+    Only direct children of this task. Pass null (omit) for no parent filter.
+    """
+    parentId: ID
 
     """User-local calendar date, `YYYY-MM-DD`."""
     scheduledFor: String
@@ -1815,6 +2169,7 @@ type QuestionEdge implements Edge {
 }
 
 type QuestionType implements Node {
+  answerTier: String
   category: String!
   createdByLlm: Boolean
   id: ID!
@@ -1861,6 +2216,16 @@ input RemovePersonIdentifierInput {
   kind: String!
   personId: ID!
   value: String!
+}
+
+type ResolveTaskPendingChangePayload {
+  change: TaskPendingChangeType
+  success: Boolean!
+  task: TaskType
+}
+
+input RestoreByIdInput {
+  id: String!
 }
 
 type RunAskPayload {
@@ -1952,6 +2317,15 @@ type ScheduleCandidateType {
   title: String!
   windowEnd: DateTime!
   windowStart: DateTime!
+}
+
+type ScheduleTaskPayload {
+  event: EventType
+
+  """placed | proposed | already_placed | no_gap | skipped"""
+  status: String
+  success: Boolean!
+  task: TaskType
 }
 
 input SearchInput {
@@ -2081,6 +2455,7 @@ input TagEntitiesInput {
 type TagType implements Node {
   description: String
   entities(after: String, before: String, first: Int, last: Int): TaggableEntityConnection!
+  entityCount: Int!
   id: ID!
   label: String!
 }
@@ -2113,17 +2488,49 @@ type TaskEdge implements Edge {
   node: TaskType!
 }
 
+"""What automation wants to do to a task (or its planned event)."""
+enum TaskPendingChangeKind {
+  complete
+  event_revise
+  mutate
+  schedule
+}
+
+enum TaskPendingChangeStatus {
+  accepted
+  declined
+  pending
+}
+
+type TaskPendingChangeType implements Node {
+  confidence: Float
+  createdAt: DateTime!
+  id: ID!
+  kind: TaskPendingChangeKind!
+  patch: JSON!
+  rationale: String
+  resolvedAt: DateTime
+  status: TaskPendingChangeStatus!
+  taskId: ID!
+}
+
 """Lifecycle state of a planning task."""
 enum TaskStatus {
   archived
   done
   in_progress
   open
+  proposed
   skipped
 }
 
 type TaskType implements Node {
   actualMinutes: Int!
+
+  """
+  Direct children. Nesting is parent_id only — walk this field for a tree.
+  """
+  children: [TaskType!]!
   completedAt: DateTime
   createdAt: DateTime!
 
@@ -2176,6 +2583,7 @@ type ThreadEdge implements Edge {
 
 type ThreadType implements Node & Taggable {
   description: String
+  generationStatus: String!
   id: ID!
   messages(after: String, before: String, first: Int, last: Int): MessageConnection!
   name: String
@@ -2184,7 +2592,7 @@ type ThreadType implements Node & Taggable {
 
 input UpdateAnswerInput {
   answer: String!
-  id: String!
+  id: ID!
 }
 
 input UpdateBrowserActivityInput {
@@ -2295,13 +2703,70 @@ input UpdateFileInput {
 }
 
 input UpdateItemInput {
+  """When it was bought or received."""
+  acquiredAt: DateTime
+
+  """Seller, giver or source, as free text."""
+  acquiredFrom: String
+  acquisitionMethod: ItemAcquisitionMethod
   brand: String
   category: String
+
+  """Dominant colour as #rrggbb."""
+  colorHex: String
+
+  """Colour names, dominant first."""
+  colors: [String!]
+
+  """
+  {material: fraction} summing to at most 1. Percentages are accepted and converted.
+  """
+  composition: JSON
+  condition: ItemCondition
+  currency: String
   currentValue: Float
   description: String
+
+  """
+  Shorthand such as "12 x 8 x 2 in". Fills only the axes not given individually.
+  """
+  dimensions: String
+
+  """
+  When it stops being usable. Distinct from a warranty, which is a contract.
+  """
+  expiresAt: DateTime
+
+  """Height, in millimetres."""
+  heightMm: Float
   id: ID!
+
+  """A digital item is refused a mass, a size and a volume."""
+  isDigital: Boolean
+
+  """Longest dimension, in millimetres."""
+  lengthMm: Float
+
+  """When the object was made, not when it was acquired."""
+  manufacturedAt: DateTime
+
+  """As-owned mass, in grams."""
+  massG: Float
+
+  """What the object is made of."""
+  materials: [String!]
+  metadata: JSON
   model: String
   name: String!
+  purchasePrice: Float
+  subcategory: String
+  unitSystem: ItemUnitSystem
+
+  """Capacity — what it holds — in millilitres."""
+  volumeMl: Float
+
+  """Width, in millimetres."""
+  widthMm: Float
 }
 
 type UpdateItemPayload {
@@ -2333,21 +2798,29 @@ type UpdateNotePayload {
 }
 
 input UpdatePersonInput {
+  addresses: [PersonAddressInput!]
   avatarUrl: String
   birthDate: String
   city: String
+  contacts: [PersonContactInput!]
   country: String
+  department: String
   description: String
   firstName: String
   gender: String
   id: String!
+  jobTitle: String
   lastName: String
   middleName: String
   name: String
+  nickname: String
+  organization: String
   postalCode: String
+  pronouns: String
   region: String
   streetAddress: String
   streetAddress2: String
+  website: String
 }
 
 type UpdatePersonPayload {
@@ -2380,7 +2853,7 @@ input UpdateProviderKeyInput {
 
 input UpdateQuestionInput {
   category: String!
-  id: String!
+  id: ID!
   text: String!
 }
 
@@ -2411,6 +2884,20 @@ input UpdateSavedSearchInput {
 type UpdateSavedSearchPayload {
   savedSearch: SavedSearchType
   success: Boolean!
+}
+
+input UpdateTagInput {
+  description: String
+  id: ID!
+  label: String
+}
+
+type UpdateTagPayload {
+  merged: Boolean!
+  movedEntityCount: Int!
+  success: Boolean!
+  tag: TagType
+  updatedSavedSearchCount: Int!
 }
 
 input UpdateTaskInput {

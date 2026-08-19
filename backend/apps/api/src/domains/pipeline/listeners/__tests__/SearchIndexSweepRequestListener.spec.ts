@@ -1,5 +1,8 @@
 import { STAGE_ID_LIST, STAGE_IDS } from '../../constants';
-import { INDEX_STAGES_BY_ENTITY_TYPE, SearchIndexSweepRequestListener } from '../SearchIndexSweepRequestListener';
+import {
+  INDEX_STAGES_BY_ENTITY_TYPE,
+  SearchIndexSweepRequestListener,
+} from '../SearchIndexSweepRequestListener';
 
 function makeLogger() {
   return { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
@@ -67,9 +70,9 @@ describe('SearchIndexSweepRequestListener', () => {
 
     await listener.handleRequest({ userId: USER, entityTypes: ['event', 'not-a-type'] });
 
-    expect(dispatchService.startSweep.mock.calls.map((call) => (call as { stage: string }[])[0].stage)).toEqual(
-      [STAGE_IDS.INDEX_EMBED_EVENT, STAGE_IDS.INDEX_VECTOR_EVENT],
-    );
+    expect(
+      dispatchService.startSweep.mock.calls.map((call) => (call as { stage: string }[])[0].stage),
+    ).toEqual([STAGE_IDS.INDEX_EMBED_EVENT, STAGE_IDS.INDEX_VECTOR_EVENT]);
     expect(logger.warn).toHaveBeenCalled();
   });
 

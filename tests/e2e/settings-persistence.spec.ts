@@ -1,17 +1,18 @@
 import { expect, test } from '@playwright/test';
 
-// Authenticated. The theme is persisted to localStorage ('ci-ui-theme') by the
-// ThemeProvider and re-applied on load — a clean reload-persistence check that
-// needs no LLM or external service.
+// Authenticated. The theme is persisted to localStorage under ThemeProvider's
+// real `storageKey` — 'vite-ui-theme' (App.tsx: `<ThemeProvider storageKey="vite-ui-theme">`),
+// not 'ci-ui-theme' — and re-applied on load. A clean reload-persistence check
+// that needs no LLM or external service.
 
 test('persists the chosen theme across a reload', async ({ page }) => {
   await page.goto('/plan');
 
-  await page.evaluate(() => localStorage.setItem('ci-ui-theme', 'dark'));
+  await page.evaluate(() => localStorage.setItem('vite-ui-theme', 'dark'));
   await page.reload();
 
   await expect(page.locator('html')).toHaveClass(/dark/);
-  expect(await page.evaluate(() => localStorage.getItem('ci-ui-theme'))).toBe('dark');
+  expect(await page.evaluate(() => localStorage.getItem('vite-ui-theme'))).toBe('dark');
 });
 
 test('the settings page is reachable', async ({ page }) => {

@@ -25,10 +25,12 @@ function day(date: string, values: Partial<Record<MetricKey, number>>, coverage 
   return { userId: USER, date, timezone: 'UTC', metrics, coverage: cov, computedAt: new Date() };
 }
 
-function weekOf(metric: MetricKey, value: number): DailyMetrics[] {
-  return ['2026-08-10', '2026-08-11', '2026-08-12', '2026-08-13', '2026-08-14'].map((date) =>
-    day(date, { [metric]: value }),
-  );
+function weekOf(metric: MetricKey, value: number, days = 14): DailyMetrics[] {
+  return Array.from({ length: days }, (_, index) => {
+    const date = `2026-07-${String(index + 1).padStart(2, '0')}`;
+
+    return day(date, { [metric]: value });
+  });
 }
 
 describe('pickMetricSurprise', () => {
@@ -85,6 +87,16 @@ describe('pickMetricSurprise', () => {
         day('2026-08-15', { n_conversations: 12 }),
       ]),
     ).toBeNull();
+  });
+
+  it('does not claim most days with fewer than 14 coverage-gated days', () => {
+    expect(
+      pickMetricSurprise(day('2026-08-16', { n_conversations: 2 }), weekOf('n_conversations', 11, 5)),
+    ).toBeNull();
+  });
+
+  it('skips one_place without a week baseline', () => {
+    expect(pickMetricSurprise(day('2026-08-16', { n_places: 1 }), [])).toBeNull();
   });
 
   it('returns at most one surprise, preferring conversations', () => {

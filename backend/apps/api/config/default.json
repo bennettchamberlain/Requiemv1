@@ -74,7 +74,8 @@
       "enabled": true,
       "issuer": "https://hub.ci.computer",
       "jwksUri": "https://hub.ci.computer/api/auth/jwks",
-      "audience": "ci-server,ci-hub,ci-import-tools,ci-browser-extension,ci-even,ci-applet"
+      "audience": "ci-server,ci-hub,ci-import-tools,ci-browser-extension,ci-even,ci-applet",
+      "pushRelayUrl": ""
     },
     "hubForwardAuth": {
       "enabled": false,
@@ -164,6 +165,9 @@
       "usersPerTurn": 1
     }
   },
+  "reflection": {
+    "minAnswerConfidence": 0.4
+  },
   "features": {
     "scheduled.answer.inferencing": true,
     "scheduled.connection.sync": true,
@@ -191,8 +195,8 @@
     "actions": true,
     "smart.rotation": false,
     "ask": true,
-    "grounded.prompts": false,
-    "derivation.engines": false,
+    "grounded.prompts": true,
+    "derivation.engines": true,
     "ingest.selfHeal": true
   },
   "environment": {

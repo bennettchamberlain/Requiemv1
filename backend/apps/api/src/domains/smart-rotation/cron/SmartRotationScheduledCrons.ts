@@ -60,7 +60,10 @@ export class SmartRotationSummariesCron {
   }
 }
 
-/** Deterministic graph linking — extract people, link comms/events (Import Tools stages 4–6). */
+/**
+ * Deterministic graph linking — the maintenance orchestrator's `extract_people`,
+ * `link_communications` and `link_events` legs.
+ */
 @Injectable()
 export class SmartRotationGraphLinkCron {
   constructor(private readonly rotationService: SmartRotationService) {}

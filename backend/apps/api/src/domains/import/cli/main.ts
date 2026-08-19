@@ -8,7 +8,7 @@ import { ApiError, UnreachableError } from './client';
 import { CliError } from './context';
 import { processTerm } from './output';
 import { buildProgram } from './program';
-import { WaitTimeoutError } from './wait';
+import { WaitTimeoutError, WaitUnreachableError } from './wait';
 
 /**
  * The `ci-import` entry point.
@@ -46,7 +46,11 @@ async function main(): Promise<number> {
       return err.exitCode;
     }
 
-    if (err instanceof UnreachableError || err instanceof WaitTimeoutError) {
+    if (
+      err instanceof UnreachableError ||
+      err instanceof WaitTimeoutError ||
+      err instanceof WaitUnreachableError
+    ) {
       term.err(err.message);
 
       return 2;

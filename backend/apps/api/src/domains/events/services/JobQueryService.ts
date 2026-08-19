@@ -263,7 +263,7 @@ export class JobQueryService {
       // An unknown category matches nothing rather than everything — a typo in
       // a query string should return an empty table, not the unfiltered one.
       builder.andWhere(`job.data->>'name' IN (:...events)`, {
-        events: events.length > 0 ? events : [' no-such-event'],
+        events: events.length > 0 ? events : ['__no-such-category__'],
       });
     }
 

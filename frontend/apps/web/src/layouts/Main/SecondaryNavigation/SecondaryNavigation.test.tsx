@@ -179,14 +179,14 @@ describe('SecondaryNavigation', () => {
   // The toggle shares the rail's `auto` grid column, so a wordmark appearing
   // there on hover widens the column and shoves the page — the exact reflow
   // the absolute drawer above exists to avoid.
-  it('keeps the wordmark out of the toggle until the rail is pinned', () => {
+  it('keeps the wordmark collapsed until the rail is pinned', () => {
     renderToggleAndRail();
 
-    expect(screen.queryByText('Companion Memory')).not.toBeInTheDocument();
+    expect(screen.getByText('Companion Memory')).toHaveAttribute('aria-hidden', 'true');
 
     fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
 
-    expect(screen.getByText('Companion Memory')).toBeInTheDocument();
+    expect(screen.getByText('Companion Memory')).toHaveAttribute('aria-hidden', 'false');
   });
 
   // `end={false}`: both halves are Sources, and the rail should say so on
@@ -213,6 +213,50 @@ describe('SecondaryNavigation', () => {
     expect(screen.queryByRole('link', { name: 'Import' })).not.toBeInTheDocument();
   });
 
+  it('shows Memory hub sections when expanded, and keeps them open on a hub route', () => {
+    renderRail('/memory/people', { expanded: true });
+
+    expect(screen.getByRole('link', { name: 'Events' })).toHaveAttribute('href', '/memory/events');
+    expect(screen.getByRole('link', { name: 'People' })).toHaveAttribute('href', '/memory/people');
+    expect(screen.getByRole('link', { name: 'Places' })).toHaveAttribute('href', '/memory/places');
+    expect(screen.getByRole('link', { name: 'Things' })).toHaveAttribute('href', '/memory/things');
+    expect(screen.getByRole('link', { name: 'Content' })).toHaveAttribute('href', '/memory/content');
+    expect(screen.getByRole('link', { name: 'Tags' })).toHaveAttribute('href', '/memory/tags');
+    expect(screen.getByRole('link', { name: 'Reflections' })).toHaveAttribute('href', '/memory/reflections');
+    expect(screen.getByRole('link', { name: 'People' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('opens Memory sections on hover when expanded, and closes after leave when not sticky', () => {
+    renderRail('/plan', { expanded: true });
+
+    expect(screen.queryByRole('link', { name: 'People' })).not.toBeInTheDocument();
+
+    const submenu = screen.getByTestId('memory-submenu');
+    fireEvent.mouseEnter(submenu);
+    expect(screen.getByRole('link', { name: 'People' })).toBeInTheDocument();
+
+    fireEvent.mouseLeave(submenu);
+    expect(screen.queryByRole('link', { name: 'People' })).not.toBeInTheDocument();
+  });
+
+  it('keeps Memory sections open after a sticky chevron open even off hub routes', () => {
+    renderRail('/plan', { expanded: true });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Memory sections' }));
+    expect(screen.getByRole('link', { name: 'People' })).toBeInTheDocument();
+  });
+
+  it('closes Memory sections when the chevron is clicked, even while hovered', () => {
+    renderRail('/plan', { expanded: true });
+
+    const submenu = screen.getByTestId('memory-submenu');
+    fireEvent.mouseEnter(submenu);
+    expect(screen.getByRole('link', { name: 'People' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse Memory sections' }));
+    expect(screen.queryByRole('link', { name: 'People' })).not.toBeInTheDocument();
+  });
+
   it('lists the spine then More in time-and-tool order', () => {
     renderRail();
 
@@ -220,8 +264,8 @@ describe('SecondaryNavigation', () => {
 
     expect(hrefs.indexOf('/plan')).toBeLessThan(hrefs.indexOf('/today'));
     expect(hrefs.indexOf('/today')).toBeLessThan(hrefs.indexOf('/forecast'));
-    expect(hrefs.indexOf('/forecast')).toBeLessThan(hrefs.indexOf('/memory'));
-    expect(hrefs.indexOf('/memory')).toBeLessThan(hrefs.indexOf('/saved-searches'));
+    expect(hrefs.indexOf('/forecast')).toBeLessThan(hrefs.indexOf('/memory/events'));
+    expect(hrefs.indexOf('/memory/events')).toBeLessThan(hrefs.indexOf('/saved-searches'));
     expect(hrefs.indexOf('/saved-searches')).toBeLessThan(hrefs.indexOf('/chat'));
     expect(hrefs.indexOf('/chat')).toBeLessThan(hrefs.indexOf('/sources'));
     expect(hrefs.indexOf('/sources')).toBeLessThan(hrefs.indexOf('/jobs'));
@@ -250,7 +294,7 @@ describe('PowerRailToggle', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close menu' }));
 
     expect(screen.getByRole('button', { name: 'Open menu' })).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByText('Companion Memory')).not.toBeInTheDocument();
+    expect(screen.getByText('Companion Memory')).toHaveAttribute('aria-hidden', 'true');
     expect(screen.queryByText('Main')).not.toBeInTheDocument();
     expect(localStorage.getItem(STORAGE_KEY)).toBe('false');
   });

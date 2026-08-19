@@ -110,7 +110,7 @@ export function Carousel({
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1">
       <div ref={emblaRef} className={cn(className, 'overflow-hidden')}>
         <div className={cn(containerClassName, 'flex will-change-transform')}>
           {Children.map(children, (child, index) => (
@@ -124,6 +124,7 @@ export function Carousel({
       <div className="flex items-center justify-center">
         <IconButton
           variant="ghost"
+          size="icon-sm"
           className="cursor-pointer"
           onClick={scrollPrev}
           disabled={!canScrollPrev}
@@ -137,13 +138,14 @@ export function Carousel({
             <IconButton
               key={index}
               variant="ghost"
+              size="icon-sm"
               className="cursor-pointer"
               onClick={() => scrollTo(index)}
               label={t('CAROUSEL_GO_TO_SLIDE', { number: index + 1 })}
             >
               <div
                 className={cn(
-                  'h-2 w-2 m-2 rounded-full transition-all duration-200',
+                  'h-2 w-2 rounded-full transition-all duration-200',
                   index === selectedIndex ? 'bg-slate-800 scale-115' : 'bg-slate-300',
                 )}
               ></div>
@@ -153,6 +155,7 @@ export function Carousel({
 
         <IconButton
           variant="ghost"
+          size="icon-sm"
           className="cursor-pointer"
           onClick={scrollNext}
           disabled={!canScrollNext}

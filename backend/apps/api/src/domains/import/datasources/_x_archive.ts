@@ -12,6 +12,7 @@
 */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { mediaItemForAsset, insideRoot } from './_ai_media';
@@ -110,8 +111,14 @@ export function readStore<T>(dataDir: string, base: string, key: string): T[] {
 export const GROK_CHAT_STORE = 'grok-chat-item.js';
 
 /** True when `root` is an X archive that carries Grok chats. */
-export function hasGrokChats(root: string): boolean {
-  return fs.existsSync(path.join(root, 'data', GROK_CHAT_STORE));
+export async function hasGrokChats(root: string): Promise<boolean> {
+  try {
+    await stat(path.join(root, 'data', GROK_CHAT_STORE));
+
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

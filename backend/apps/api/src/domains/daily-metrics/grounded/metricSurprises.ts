@@ -1,8 +1,6 @@
 import type { AnomalyFinding } from '../anomaly/anomalyMath';
+import { COLD_START_MIN_COVERAGE, COLD_START_MIN_DAYS } from '../coldStart';
 import type { DailyMetrics, MetricKey } from '../types';
-
-const MIN_COVERAGE = 0.5;
-const MIN_WEEK_DAYS = 3;
 
 export interface MetricSurprise {
   id: string;
@@ -16,10 +14,10 @@ function coverageOf(row: DailyMetrics, metric: MetricKey): number {
 
 function weekAverage(week: DailyMetrics[], metric: MetricKey): number | null {
   const values = week
-    .filter((row) => coverageOf(row, metric) >= MIN_COVERAGE && row.metrics[metric] !== null)
+    .filter((row) => coverageOf(row, metric) >= COLD_START_MIN_COVERAGE && row.metrics[metric] !== null)
     .map((row) => row.metrics[metric] as number);
 
-  if (values.length < MIN_WEEK_DAYS) {
+  if (values.length < COLD_START_MIN_DAYS) {
     return null;
   }
 
@@ -27,7 +25,7 @@ function weekAverage(week: DailyMetrics[], metric: MetricKey): number | null {
 }
 
 function covered(row: DailyMetrics | null, metric: MetricKey): row is DailyMetrics {
-  return row !== null && coverageOf(row, metric) >= MIN_COVERAGE && row.metrics[metric] !== null;
+  return row !== null && coverageOf(row, metric) >= COLD_START_MIN_COVERAGE && row.metrics[metric] !== null;
 }
 
 function whole(value: number): string {
@@ -71,8 +69,9 @@ export function pickMetricSurprise(
   }
 
   if (covered(yesterday, 'n_places')) {
+    const typical = weekAverage(week, 'n_places');
     const places = yesterday.metrics.n_places as number;
-    if (places === 1) {
+    if (typical !== null && places === 1) {
       return {
         id: 'one_place',
         label:

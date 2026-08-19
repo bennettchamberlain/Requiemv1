@@ -1,7 +1,13 @@
 import { AfterLoad, ChildEntity, Column } from 'typeorm';
 
 import { splitProperties } from '../normalizedProperties';
-import { type NormalizedPersonPropertyKey, type PersonProperties, NORMALIZED_PERSON_FIELDS } from '../types';
+import {
+  type NormalizedPersonPropertyKey,
+  type PersonAddress,
+  type PersonProperties,
+  NORMALIZED_PERSON_FIELDS,
+  readPersonAddresses,
+} from '../types';
 
 import { BaseEntity } from './BaseEntity';
 
@@ -61,8 +67,27 @@ export class PersonEntity extends BaseEntity {
   // fields are read-through and never mapped to their own columns.
   email!: string | null;
 
+  nickname!: string | null;
+
+  pronouns!: string | null;
+
   gender!: string | null;
 
+  jobTitle!: string | null;
+
+  organization!: string | null;
+
+  department!: string | null;
+
+  website!: string | null;
+
+  /**
+   * Every labelled postal address. Pre-list rows surface their flat address
+   * keys here as a single un-labelled entry, so readers never branch on age.
+   */
+  addresses!: PersonAddress[];
+
+  /** The primary address, flattened — mirrors `addresses[0]`. */
   address!: string | null;
 
   streetAddress!: string | null;
@@ -92,7 +117,14 @@ export class PersonEntity extends BaseEntity {
       this.isSelf = this.isSelf === true;
     }
 
+    this.nickname = (props.nickname as string) || null;
+    this.pronouns = (props.pronouns as string) || null;
     this.gender = (props.gender as string) || null;
+    this.jobTitle = (props.job_title as string) || null;
+    this.organization = (props.organization as string) || null;
+    this.department = (props.department as string) || null;
+    this.website = (props.website as string) || null;
+    this.addresses = readPersonAddresses(props);
     this.address = (props.address as string) || null;
     this.streetAddress = (props.street_address as string) || null;
     this.streetAddress2 = (props.street_address_2 as string) || null;
@@ -123,7 +155,14 @@ export class PersonEntity extends BaseEntity {
       isSelf: entity.isSelf,
       isActive: entity.isActive,
       mergedIntoEntityId: entity.mergedIntoEntityId,
+      nickname: entity.nickname,
+      pronouns: entity.pronouns,
       gender: entity.gender,
+      jobTitle: entity.jobTitle,
+      organization: entity.organization,
+      department: entity.department,
+      website: entity.website,
+      addresses: entity.addresses,
       address: entity.address,
       streetAddress: entity.streetAddress,
       streetAddress2: entity.streetAddress2,

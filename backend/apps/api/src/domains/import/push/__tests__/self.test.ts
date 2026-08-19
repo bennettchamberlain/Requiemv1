@@ -1,7 +1,11 @@
 import {
+  isExactOwnerIdentifier,
   makeIsSelf,
+  matchOwner,
   NOBODY_IS_SELF,
+  OWNER_MATCH_CONFIDENCE,
   readSelfIdentity,
+  shouldMapContactToSelf,
   type SelfIdentity,
   type SelfIdentityReader,
 } from '../self';
@@ -18,7 +22,7 @@ import {
  */
 
 function identity(over: Partial<SelfIdentity> = {}): SelfIdentity {
-  return { names: ['Liam Broza'], email: 'liam.broza@example.com', ...over };
+  return { names: ['Liam Broza'], email: 'liam.broza@example.com', phones: [], ...over };
 }
 
 describe('makeIsSelf', () => {
@@ -51,7 +55,7 @@ describe('makeIsSelf', () => {
   it('reads the self Person row as well as the account name', () => {
     // The name onboarding let the owner choose, which is often not the name
     // their identity provider handed over.
-    const isSelf = makeIsSelf({ names: ['lbroza', 'Liam Broza'], email: null });
+    const isSelf = makeIsSelf({ names: ['lbroza', 'Liam Broza'], email: null, phones: [] });
 
     expect(isSelf('Liam Broza')).toBe(true);
   });
@@ -71,15 +75,15 @@ describe('makeIsSelf', () => {
   it('is NOBODY_IS_SELF when there is nothing to match against', () => {
     // The fail-safe. No name and no email is not an error and not a guess: the
     // caller keeps the inbound default it had before this predicate existed.
-    expect(makeIsSelf({ names: [], email: null })).toBe(NOBODY_IS_SELF);
-    expect(makeIsSelf({ names: ['   '], email: null })).toBe(NOBODY_IS_SELF);
+    expect(makeIsSelf({ names: [], email: null, phones: [] })).toBe(NOBODY_IS_SELF);
+    expect(makeIsSelf({ names: ['   '], email: null, phones: [] })).toBe(NOBODY_IS_SELF);
     expect(NOBODY_IS_SELF('Liam Broza')).toBe(false);
   });
 });
 
 describe('readSelfIdentity', () => {
   /** A SelfIdentityReader over fixed rows, recording what it was asked. */
-  function readerFor(rows: Array<{ name: string | null; email: string | null }>) {
+  function readerFor(rows: Array<{ name: string | null; email: string | null; phones_json?: unknown }>) {
     const calls: Array<{ sql: string; params?: unknown[] }> = [];
     const db: SelfIdentityReader = {
       query: (async (sql: string, params?: unknown[]) => {
@@ -94,13 +98,14 @@ describe('readSelfIdentity', () => {
 
   it('collects every name row and the first non-empty email', async () => {
     const { db, calls } = readerFor([
-      { name: null, email: 'liam.broza@example.com' },
-      { name: 'Liam Broza', email: null },
+      { name: null, email: 'liam.broza@example.com', phones_json: null },
+      { name: 'Liam Broza', email: null, phones_json: ['+15551212'] },
     ]);
 
     await expect(readSelfIdentity(db, 'user-1')).resolves.toEqual({
       names: ['Liam Broza'],
       email: 'liam.broza@example.com',
+      phones: ['+15551212'],
     });
     expect(calls[0].params).toEqual(['user-1']);
   });
@@ -123,6 +128,36 @@ describe('readSelfIdentity', () => {
   it('yields an empty identity for a user with no rows at all', async () => {
     const { db } = readerFor([]);
 
-    await expect(readSelfIdentity(db, 'user-1')).resolves.toEqual({ names: [], email: null });
+    await expect(readSelfIdentity(db, 'user-1')).resolves.toEqual({
+      names: [],
+      email: null,
+      phones: [],
+    });
+  });
+});
+
+describe('matchOwner / shouldMapContactToSelf', () => {
+  it('matches exact email and phone with high confidence', () => {
+    const id = identity({ phones: ['+1 415-555-0100'] });
+
+    expect(matchOwner(id, 'liam.broza@example.com')).toEqual({
+      kind: 'email',
+      confidence: OWNER_MATCH_CONFIDENCE.email,
+      raw: 'liam.broza@example.com',
+    });
+    expect(matchOwner(id, '(415) 555-0100')).toMatchObject({ kind: 'phone' });
+    expect(isExactOwnerIdentifier(matchOwner(id, 'liam.broza@example.com')!)).toBe(true);
+  });
+
+  it('maps exact identifiers in every trust mode; name only outside cautious', () => {
+    const id = identity();
+    const email = matchOwner(id, 'liam.broza@example.com');
+    const name = matchOwner(id, 'Liam Broza');
+
+    expect(shouldMapContactToSelf(email, 'cautious')).toBe(true);
+    expect(shouldMapContactToSelf(email, 'balanced')).toBe(true);
+    expect(shouldMapContactToSelf(name, 'cautious')).toBe(false);
+    expect(shouldMapContactToSelf(name, 'balanced')).toBe(true);
+    expect(shouldMapContactToSelf(name, 'hands_off')).toBe(true);
   });
 });

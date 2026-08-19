@@ -5,6 +5,33 @@ import path from 'node:path';
 import config from 'config';
 import { z } from 'zod';
 
+/**
+ * The chat model an appliance uses when nothing overrides it.
+ *
+ * Every LLM-backed feature that is not handed an explicit model lands here:
+ * thread titling, task breakdown, the derivation narrators, the import
+ * enrichers. It is the floor those features are judged against, so a default
+ * too weak to hold a JSON schema does not degrade them — it silently disables
+ * them, because their fallback is deterministic ordering or no output at all.
+ *
+ * `gemma3:1b` was that floor and had aged into exactly this failure: 815MB and
+ * measurably unable to keep to a schema (see TaskBreakdownService), while
+ * CI-Planning had already moved its quality tier to an e4b-class model. Kept as
+ * the shipped default it made "the feature is on" and "the feature works"
+ * different claims.
+ *
+ * `gemma4:e4b` is the modern equivalent of that tier — and deliberately the
+ * EFFICIENT variant, not `gemma4:31b`: this ships to appliances that also hold
+ * an embedding model, HBPE and the summary sidecar in the same GPU, and a
+ * default is a floor everyone pays for, not a ceiling for the best-provisioned
+ * box. Override with `LLM_DEFAULT_CHAT_MODEL` (or Settings → Model); the Hub
+ * injects its own on managed deployments.
+ *
+ * Changing this means changing the model `make health` requires, since a
+ * default nobody has pulled fails at first use rather than at setup.
+ */
+export const DEFAULT_CHAT_MODEL = 'gemma4:e4b';
+
 const booleanStringSchema = z.preprocess((val) => {
   if (val === 'true') {
     return true;
@@ -71,6 +98,12 @@ export const ConfigSchema = z.object({
       issuer: z.string(),
       jwksUri: z.string(),
       audience: z.string(),
+      /**
+       * Optional Portal (or Lifescope) push relay. The appliance stores device
+       * tokens but must not hold the app's APNs/FCM key; when set, token writes
+       * are forwarded here. Empty = local notifications only.
+       */
+      pushRelayUrl: z.string().default(''),
     }),
     // Traefik forward-auth identity header signed by CI-Hub. When enabled, the
     // server verifies the HMAC-SHA256 signature on X-CI-Hub-User before trusting
@@ -185,7 +218,7 @@ export const ConfigSchema = z.object({
     .object({
       apiBase: z.string().optional(),
       apiKey: z.string().default('ollama'),
-      chatModel: z.string().default('gemma3:1b'),
+      chatModel: z.string().default(DEFAULT_CHAT_MODEL),
     })
     .default({}),
   // Local-first sync (PowerSync). The server issues short-lived client tokens via
@@ -422,6 +455,28 @@ export const ConfigSchema = z.object({
       usersPerTurn: z.coerce.number().int().positive().default(1),
     }),
   }),
+  // The reflection loop — the appliance answering a personal question ON THE
+  // USER'S BEHALF from their own imported data (see AnswerInferenceListener).
+  // Everything it writes lands in ci.answers next to answers the user typed
+  // themselves, so the only thing separating a well-evidenced inference from a
+  // fabrication is the confidence the model reports and this floor.
+  reflection: z
+    .object({
+      /**
+       * Confidence below which NO answer is written at all — the question is
+       * left unanswered rather than filled with a guess.
+       *
+       * 0.4 is the bottom of the "inferred from indirect or partial evidence"
+       * band the model is scored against (see INFERRED_ANSWER_PROMPT_RULES);
+       * anything under it the prompt itself calls a guess. Raise it on an
+       * appliance whose owner wants only well-evidenced inferences; set it to 0
+       * to write whatever comes back, which is the pre-confidence behaviour and
+       * is not recommended — an unanswered question costs a blank card, a
+       * fabricated one costs the user's trust in every other answer on the page.
+       */
+      minAnswerConfidence: z.coerce.number().min(0).max(1).default(0.4),
+    })
+    .default({}),
   features: z.object({
     'scheduled.answer.inferencing': booleanStringSchema,
     'scheduled.connection.sync': booleanStringSchema,
@@ -435,9 +490,10 @@ export const ConfigSchema = z.object({
     /** The archive-import surface (/import): upload, run progress, the source catalogue and the guide. */
     'import.page': booleanStringSchema,
     /**
-     * Wholesale gate for the Prompts browse page (`/memory/questions`) and the
-     * Forecast tooltip link into Brief. `/insights` itself always redirects to
-     * `/brief`; this flag does not hide Brief.
+     * Wholesale gate for the Reflections browse page (`/memory/reflections`,
+     * formerly `/memory/questions`) and the Forecast tooltip link into Brief.
+     * `/insights` itself always redirects to `/brief`; this flag does not hide
+     * Brief.
      */
     'insights.page': booleanStringSchema,
     /** Wholesale gate for the Chat page (/chat + nav entry points). */
@@ -507,13 +563,14 @@ export const ConfigSchema = z.object({
     ask: booleanStringSchema,
     /**
      * Lets context-prompt generation ask one number-grounded selector from
-     * ci_derived.daily_metrics. Off until the store has rows.
+     * ci_derived.daily_metrics. Default on; the 14-day coverage floor refuses
+     * "most days" copy for a cold series. Set ENABLE_GROUNDED_PROMPTS=false to disable.
      */
     'grounded.prompts': booleanStringSchema,
     /**
      * Lets the correlation / anomaly / suggestion engines enqueue ci.actions
      * (and therefore Brief/feed cards). Findings still persist when this is
-     * off. Default off until coverage is real.
+     * off. Default on; Brief producer cap is 3 derived actions per local day.
      */
     'derivation.engines': booleanStringSchema,
     /**
@@ -597,7 +654,7 @@ if (!parsed.llm.apiKey) {
 }
 
 if (!parsed.llm.chatModel) {
-  parsed.llm.chatModel = 'gemma3:1b';
+  parsed.llm.chatModel = DEFAULT_CHAT_MODEL;
 }
 
 // GEOCODING_API_KEY takes precedence; fall back to the legacy GOOGLE_MAPS_KEY so
@@ -608,14 +665,22 @@ if (!parsed.geocoding.apiKey && process.env.GOOGLE_MAPS_KEY) {
   parsed.geocoding.apiKey = process.env.GOOGLE_MAPS_KEY;
 }
 
-// The geocoding proxy follows the Portal URL the box already uses unless an
-// explicit base URL is configured (GEOCODING_PORTAL_BASE_URL), so routing
-// geocoding via the hub host instead of Portal directly is a one-variable
-// change. Same shape as the embedding-host fallback above: the OR lives here so
-// the provider reads exactly one config value.
-if (!parsed.geocoding.portalBaseUrl) {
-  parsed.geocoding.portalBaseUrl = parsed.ciPortal.url ?? '';
+/**
+ * The geocoding proxy follows the Portal URL the box already uses unless an
+ * explicit base URL is configured (GEOCODING_PORTAL_BASE_URL), so routing
+ * geocoding via the hub host instead of Portal directly is a one-variable
+ * change. Exported as a pure function (rather than inlined as an `if`) so the
+ * fallback is unit-testable without re-parsing the whole config module under
+ * different env vars.
+ */
+export function resolveGeocodingPortalBaseUrl(configured: string, ciPortalUrl: string | undefined): string {
+  return configured || ciPortalUrl || '';
 }
+
+parsed.geocoding.portalBaseUrl = resolveGeocodingPortalBaseUrl(
+  parsed.geocoding.portalBaseUrl,
+  parsed.ciPortal.url,
+);
 
 // Warn (don't throw) on a geocoding misconfiguration: the server must still
 // boot, and the backfill simply reports a transient/denied status until it is

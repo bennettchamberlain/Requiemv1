@@ -27,6 +27,7 @@ import {
   EventParticipantBackfillService,
 } from './EventParticipantBackfillService';
 import { type GraphEnrichmentOptions, GraphEnrichmentService } from './GraphEnrichmentService';
+import { type HealSelfCollationOptions, HealSelfCollationService } from './HealSelfCollationService';
 import { InventoryReverseService } from './InventoryReverseService';
 import {
   DEFAULT_ESTIMATE_SOURCE_SYSTEMS,
@@ -51,6 +52,7 @@ export const ORCHESTRATE_STAGES = [
   'extract_people',
   'link_communications',
   'link_events',
+  'heal_self_collation',
   'materialize_edges',
   'normalize_relationships',
   'derive_relationships',
@@ -72,6 +74,7 @@ export interface OrchestrateLegOptions {
   extractPeople?: PersonStubBackfillOptions;
   linkCommunications?: Omit<CommunicationLinkBackfillOptions, 'onProgress'>;
   linkEvents?: Omit<EventParticipantBackfillOptions, 'onProgress'>;
+  healSelfCollation?: HealSelfCollationOptions;
   materializeEdges?: Omit<DeterministicEdgeBackfillOptions, 'onProgress'>;
   extractGraph?: Omit<GraphEnrichmentOptions, 'onProgress'>;
   geocode?: { limit?: number; retryNull?: boolean };
@@ -185,6 +188,7 @@ export class MaintenanceOrchestratorService {
     private readonly personStubBackfillService: PersonStubBackfillService,
     private readonly communicationLinkBackfillService: CommunicationLinkBackfillService,
     private readonly eventParticipantBackfillService: EventParticipantBackfillService,
+    private readonly healSelfCollationService: HealSelfCollationService,
     private readonly deterministicEdgeBackfillService: DeterministicEdgeBackfillService,
     private readonly relationshipNormalizeService: RelationshipNormalizeService,
     private readonly derivedRelationshipService: DerivedRelationshipService,
@@ -342,6 +346,9 @@ export class MaintenanceOrchestratorService {
           onProgress: (partial) => progress({ ...partial }),
         });
 
+      case 'heal_self_collation':
+        return this.healSelfCollationService.heal(userId, options.healSelfCollation ?? {});
+
       case 'materialize_edges':
         return this.deterministicEdgeBackfillService.backfill(userId, {
           ...options.materializeEdges,
@@ -453,10 +460,7 @@ export class MaintenanceOrchestratorService {
    * Reuses PositionReverseStage (ledger + cache) rather than cloning GPS
    * reverse into the event-centric geocode leg.
    */
-  private async runPositionReverseLeg(
-    userId: string,
-    opts: { limit?: number },
-  ): Promise<EnqueueLegResult> {
+  private async runPositionReverseLeg(userId: string, opts: { limit?: number }): Promise<EnqueueLegResult> {
     const maxIds = opts.limit ?? config.geocoding.batchSize;
     const jobIds = await this.signallingEventService.send(
       PipelineSweepEvent,

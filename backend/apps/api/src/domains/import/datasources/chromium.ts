@@ -17,6 +17,7 @@
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import Database from 'better-sqlite3';
@@ -110,10 +111,10 @@ function flattenBookmarks(
 }
 
 /** Parse a Chromium `Bookmarks` file, or undefined when it is not one. */
-function readBookmarksFile(fpath: string): FlatBookmark[] | undefined {
+async function readBookmarksFile(fpath: string): Promise<FlatBookmark[] | undefined> {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(fs.readFileSync(fpath, 'utf8'));
+    parsed = JSON.parse(await readFile(fpath, 'utf8'));
   } catch {
     return undefined;
   }
@@ -144,20 +145,24 @@ class ChromiumFileImporter implements FileImporter {
     const base = path.basename(full).toLowerCase();
 
     if (BOOKMARK_FILENAMES.has(base)) {
-      if (!fs.existsSync(full)) {
+      try {
+        await stat(full);
+      } catch {
         return { confidence: 0 };
       }
 
       // Confirm it parses as a Chromium bookmark tree rather than some other
       // file named "Bookmarks" (notably the Takeout `Bookmarks.html`).
-      return readBookmarksFile(full) ? { confidence: 0.95 } : { confidence: 0 };
+      return (await readBookmarksFile(full)) ? { confidence: 0.95 } : { confidence: 0 };
     }
 
     if (!HISTORY_FILENAMES.has(base)) {
       return { confidence: 0 };
     }
 
-    if (!fs.existsSync(full)) {
+    try {
+      await stat(full);
+    } catch {
       return { confidence: 0 };
     }
 
@@ -189,7 +194,7 @@ class ChromiumFileImporter implements FileImporter {
     }
 
     if (BOOKMARK_FILENAMES.has(path.basename(fpath).toLowerCase())) {
-      this.importBookmarks(fpath, params);
+      await this.importBookmarks(fpath, params);
 
       return;
     }
@@ -203,8 +208,8 @@ class ChromiumFileImporter implements FileImporter {
    * Folder / Added Date - so every browser lands on CI-Server's `web.bookmark`
    * the same way.
    */
-  private importBookmarks(fpath: string, params: ImportParams): void {
-    const bookmarks = readBookmarksFile(fpath);
+  private async importBookmarks(fpath: string, params: ImportParams): Promise<void> {
+    const bookmarks = await readBookmarksFile(fpath);
     if (!bookmarks) {
       params.log?.('error', 'parse chromium Bookmarks failed', { path: fpath });
 
@@ -237,7 +242,15 @@ class ChromiumFileImporter implements FileImporter {
             data: async () => Buffer.from(`${b.title}\n${b.url}`),
           },
           metadata: {
-            Title: b.title || undefined,
+            // A title-less save (Chrome allows editing a bookmark's name down
+            // to empty) left `Title` undefined, which push/canonical.ts's
+            // titleFor() falls through all the way to the row's own filename
+            // — this content's is the constant 'bookmark.txt', so every
+            // untitled bookmark showed that instead of the page it saved. The
+            // URL is always present for a real bookmark and is at least the
+            // saved page, not a meaningless constant shared by every one of
+            // them.
+            Title: b.title || b.url || undefined,
             URL: b.url,
             Folder: b.folder || undefined,
             'Added Date': ts?.toISOString(),

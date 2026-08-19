@@ -5,7 +5,11 @@ export const SMART_ROTATION_WORK_TYPES = [
   'schedule_sync',
   'insights',
   'summaries',
-  /** Deterministic graph prep: person stubs + comm/event entity links (Import Tools stages 4–6). */
+  /**
+   * Deterministic graph prep: person stubs + comm/event entity links. Runs the
+   * maintenance orchestrator's `extract_people` → `link_communications` →
+   * `link_events` legs (see `SmartRotationListener`).
+   */
   'graph_link',
   /** LLM relationship extraction from recent comms/events/answers. */
   'graph_enrich',

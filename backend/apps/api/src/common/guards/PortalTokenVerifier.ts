@@ -15,13 +15,10 @@ export interface PortalTokenVerifier {
    */
   verifyAndProvision(token: string): Promise<{ id: string } | null>;
   /**
-   * Verify a portal token and return its OIDC claims WITHOUT provisioning a
-   * local user. Used by the peer-ask surface, where the caller is another
-   * Companion rather than a local user: provisioning there would mint a shadow
-   * account on every box a portal user can reach.
-   */
-  /**
-   * Verify a portal token's claims WITHOUT provisioning a local user.
+   * Verify a portal token's claims WITHOUT provisioning a local user. Used by
+   * the peer-ask surface, where the caller is another Companion rather than a
+   * local user: provisioning there would mint a shadow account on every box a
+   * portal user can reach.
    *
    * `audience`, when supplied, REPLACES the default first-party audience list.
    * The peer surface passes this box's own audience so a token minted for a

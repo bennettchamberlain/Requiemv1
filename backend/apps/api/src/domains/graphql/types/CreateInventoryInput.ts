@@ -2,14 +2,19 @@ import { Field, Float, InputType } from '@nestjs/graphql';
 import GraphQLJSONObject from 'graphql-type-json';
 
 import { ItemCondition } from './ItemType';
+import { PhysicalItemPropertiesInput } from './PhysicalItemProperties';
 
 /**
  * Batch inventory ingest input for the importer. Carries the provenance triple
  * (sourceType, sourceSystem, sourceId) so re-ingest is idempotent — see the
  * inventory_source_triple_uniq partial unique index and ItemService.createMany.
+ *
+ * Inherits the physical half from {@link PhysicalItemPropertiesInput}: an
+ * importer that knows a product's size and weight (most product feeds do) has
+ * somewhere to put them, and the server canonicalizes the units on the way in.
  */
 @InputType()
-export class CreateInventoryInput {
+export class CreateInventoryInput extends PhysicalItemPropertiesInput {
   @Field(() => String)
   name!: string;
 
@@ -24,6 +29,9 @@ export class CreateInventoryInput {
 
   @Field(() => String, { nullable: true })
   brand?: string;
+
+  @Field(() => String, { nullable: true })
+  model?: string;
 
   @Field(() => Float, { nullable: true })
   purchasePrice?: number;

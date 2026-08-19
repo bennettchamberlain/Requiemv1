@@ -50,3 +50,19 @@ export function assertAskTransition(from: AskStatus, to: AskStatus): AskStatus {
 
   return to;
 }
+
+/**
+ * Can this ask still produce an answer?
+ *
+ * Extracted so the check can run BEFORE any side effect rather than only inside
+ * `AskService.complete`, which used to run after the answer row was already
+ * written. A declined ask reaching `complete` threw — correctly — but by then
+ * the disclosure was persisted and readable.
+ *
+ * An auto-answered ask is still `delivered` when it reaches the answer step: the
+ * standing grant is what authorises it, so `consentBasis` being present is the
+ * second accepted shape.
+ */
+export function isAnswerable(status: AskStatus, consentBasis: string | null | undefined): boolean {
+  return status === 'answering' || (status === 'delivered' && consentBasis != null);
+}

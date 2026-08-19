@@ -19,10 +19,29 @@
  * returning a closure is for. A run is hundreds of thousands of records; this
  * must not be per-record work.
  */
-import { normalizeName } from '@ci/domains/graph';
+import { normalizeEmail, normalizeName, normalizePhone } from '@ci/domains/graph';
 
 /** Does this sender display name belong to the appliance owner? */
 export type IsSelf = (name: string) => boolean;
+
+/** How an input string was matched to the owner — used for trust-gated collation. */
+export type OwnerMatchKind = 'email' | 'phone' | 'name';
+
+export interface OwnerMatch {
+  kind: OwnerMatchKind;
+  /** 0–1 evidence strength for PersonalizationService.decide(person_self_merge). */
+  confidence: number;
+  /** The raw input that matched. */
+  raw: string;
+}
+
+/** Fixed confidences for owner matches (email is authoritative account identity). */
+export const OWNER_MATCH_CONFIDENCE = {
+  email: 1,
+  phone: 0.95,
+  nameExact: 0.9,
+  nameFuzzy: 0.8,
+} as const;
 
 /**
  * The fail-safe predicate: nobody is the owner.
@@ -43,6 +62,8 @@ export interface SelfIdentity {
   names: string[];
   /** `ci.users.email` — matched on its local part ("liam.broza" → "liam broza"). */
   email: string | null;
+  /** Phones on the self Person (`properties.phones` / `.phone`), for exact owner match. */
+  phones: string[];
 }
 
 /**
@@ -67,11 +88,16 @@ export interface SelfIdentityReader {
  * the owner.
  */
 const SELF_IDENTITY_SQL = `
-  SELECT u.name AS name, u.email AS email
+  SELECT u.name AS name, u.email AS email, NULL::jsonb AS phones_json
     FROM ci.users u
    WHERE u.id = $1::uuid
   UNION ALL
-  SELECT e.name AS name, NULL::text AS email
+  SELECT e.name AS name, NULL::text AS email,
+         CASE
+           WHEN jsonb_typeof(e.properties->'phones') = 'array' THEN e.properties->'phones'
+           WHEN COALESCE(e.properties->>'phone', '') <> '' THEN jsonb_build_array(e.properties->>'phone')
+           ELSE '[]'::jsonb
+         END AS phones_json
     FROM ci.entities e
    WHERE e.owner_user_id = $1::uuid
      AND e.entity_type = 'Person'
@@ -80,11 +106,13 @@ const SELF_IDENTITY_SQL = `
 
 /** Read the owner's names. Callers decide what a failure means — see PushStage. */
 export async function readSelfIdentity(db: SelfIdentityReader, userId: string): Promise<SelfIdentity> {
-  const rows = await db.query<Array<{ name: string | null; email: string | null }>>(SELF_IDENTITY_SQL, [
-    userId,
-  ]);
+  const rows = await db.query<Array<{ name: string | null; email: string | null; phones_json: unknown }>>(
+    SELF_IDENTITY_SQL,
+    [userId],
+  );
 
   const names: string[] = [];
+  const phones: string[] = [];
   let email: string | null = null;
 
   for (const row of rows) {
@@ -95,9 +123,18 @@ export async function readSelfIdentity(db: SelfIdentityReader, userId: string): 
     if (email == null && typeof row.email === 'string' && row.email.trim().length > 0) {
       email = row.email;
     }
+
+    const rawPhones = row.phones_json;
+    if (Array.isArray(rawPhones)) {
+      for (const phone of rawPhones) {
+        if (typeof phone === 'string' && phone.trim().length > 0 && !phones.includes(phone)) {
+          phones.push(phone);
+        }
+      }
+    }
   }
 
-  return { names, email };
+  return { names, email, phones };
 }
 
 /**
@@ -229,4 +266,118 @@ export function makeIsSelf(identity: SelfIdentity): IsSelf {
 
     return verdict;
   };
+}
+
+/**
+ * Classify a raw string (email, phone, or display name) as the owner when possible.
+ *
+ * Prefer exact email / phone over fuzzy name so trust policy can treat account
+ * email as authoritative while keeping name matches review-gated under
+ * cautious/balanced.
+ */
+export function matchOwner(
+  identity: SelfIdentity,
+  raw: string,
+  options: { phones?: readonly string[] } = {},
+): OwnerMatch | null {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  const emailNorm = normalizeEmail(trimmed);
+  const ownerEmail = identity.email ? normalizeEmail(identity.email) : null;
+  if (emailNorm != null && ownerEmail != null && emailNorm === ownerEmail) {
+    return { kind: 'email', confidence: OWNER_MATCH_CONFIDENCE.email, raw: trimmed };
+  }
+
+  const phoneNorm = normalizePhone(trimmed);
+  if (phoneNorm != null) {
+    const ownerPhones = options.phones ?? identity.phones;
+    for (const phone of ownerPhones) {
+      if (normalizePhone(phone) === phoneNorm) {
+        return { kind: 'phone', confidence: OWNER_MATCH_CONFIDENCE.phone, raw: trimmed };
+      }
+    }
+  }
+
+  const isSelf = makeIsSelf(identity);
+  if (!isSelf(trimmed)) {
+    return null;
+  }
+
+  const folded = fold(trimmed);
+  const exactTargets = new Set<string>();
+  for (const name of identity.names) {
+    const f = fold(name);
+    if (f) {
+      exactTargets.add(f);
+    }
+  }
+
+  if (identity.email) {
+    const local = fold(identity.email.split('@')[0].replace(/[._+-]/g, ' '));
+    if (local) {
+      exactTargets.add(local);
+    }
+  }
+
+  const confidence = exactTargets.has(folded)
+    ? OWNER_MATCH_CONFIDENCE.nameExact
+    : OWNER_MATCH_CONFIDENCE.nameFuzzy;
+
+  return { kind: 'name', confidence, raw: trimmed };
+}
+
+/** True when this match is exact account email or phone — safe to redirect in all trust modes. */
+export function isExactOwnerIdentifier(match: OwnerMatch): boolean {
+  return match.kind === 'email' || match.kind === 'phone';
+}
+
+/**
+ * Whether ingest / stub minting should map this contact onto the self Person
+ * instead of creating a separate stub.
+ *
+ * Exact email/phone always maps. Name matches map under balanced/hands_off so
+ * WhatsApp "Bennett" does not mint a second Person; cautious keeps name stubs
+ * for human review on People.
+ */
+export function shouldMapContactToSelf(
+  match: OwnerMatch | null,
+  trustMode: 'cautious' | 'balanced' | 'hands_off',
+): boolean {
+  if (match == null) {
+    return false;
+  }
+
+  if (isExactOwnerIdentifier(match)) {
+    return true;
+  }
+
+  return trustMode !== 'cautious';
+}
+
+/**
+ * Trust dial for folding owner stubs into self (mirrors `person_self_merge` /
+ * graph_entity decide rules without importing PersonalizationService — that
+ * barrel closes a maintenance ↔ llm ↔ tools ↔ import cycle).
+ */
+export function decideSelfCollation(
+  trustMode: 'cautious' | 'balanced' | 'hands_off',
+  confidence: number,
+): 'auto' | 'review' | 'skip' {
+  if (confidence < 0.7) {
+    return 'review';
+  }
+
+  if (trustMode === 'cautious') {
+    return 'review';
+  }
+
+  if (trustMode === 'hands_off') {
+    return confidence >= 0.7 ? 'auto' : 'review';
+  }
+
+  // balanced — never silent-merge owner stubs; People UI is the review surface.
+  return 'review';
 }

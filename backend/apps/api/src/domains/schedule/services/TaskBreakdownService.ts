@@ -24,8 +24,9 @@ const MAX_INPUT_CHARS = 4000;
  * Ceiling on one brain dump's worth of generation, shared by BOTH samples.
  *
  * The same order as the 10s HbpeService allows itself, with headroom for a cold
- * model: gemma3:1b splits a dump in a second or two once resident, but the first
- * call after a restart pays the load. Past that the honest reading is that the
+ * model: a small local model splits a dump in a second or two once resident, but
+ * the first call after a restart pays the load — and the default is now an
+ * e4b-class model, which is a longer load than the 1b this was measured against. Past that the honest reading is that the
  * model is not coming back, and the user is better told "nothing came back" than
  * left watching a spinner on a note they just typed.
  */
@@ -81,8 +82,8 @@ const responseSchema = z.object({
  * grammar.
  *
  * `format: 'json'` alone only guarantees the output PARSES — the model stays
- * free to invent key names, and `PROMPT_MODEL` (gemma3:1b) reliably does:
- * measured against the live model, "I want to make lunch" came back as
+ * free to invent key names, and a small `PROMPT_MODEL` reliably does. Measured
+ * against gemma3:1b, then the default, "I want to make lunch" came back as
  * `{"tasks:**[": "  "}` and `{"tasks": {"2:": "Make lunch"}}` in 3 of 8 runs.
  * Both are valid JSON and neither survives validation, so the user saw
  * "nothing came back" about half the time. Constraining generation to this

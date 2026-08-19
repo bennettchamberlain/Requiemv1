@@ -16,6 +16,7 @@ export interface CalibrationScore {
   coverage: number | null;
   driftFlag: boolean;
   nBuckets: number | null;
+  modelVersion: string | null;
 }
 
 export interface CalibrationReport {
@@ -43,10 +44,11 @@ export class CalibrationService {
     try {
       const rows = (await this.dataSource.query(
         `
-        SELECT scored_at, brier, l0_top1_acc, l1_top3_acc, ece, coverage, drift_flag, n_buckets
+        SELECT scored_at, brier, l0_top1_acc, l1_top3_acc, ece, coverage, drift_flag, n_buckets, model_version
         FROM hbpe.prediction_score
         WHERE user_id = $1
-        ORDER BY scored_at DESC
+        ORDER BY CASE WHEN model_version = 'hmt' OR model_version LIKE 'hmt%' THEN 0 ELSE 1 END,
+                 scored_at DESC
         LIMIT $2
         `,
         [context.userId, clamped],
@@ -82,6 +84,7 @@ export class CalibrationService {
       coverage: numOrNull(row.coverage),
       driftFlag: Boolean(row.drift_flag),
       nBuckets: numOrNull(row.n_buckets),
+      modelVersion: row.model_version == null ? null : String(row.model_version),
     };
   }
 }

@@ -14,7 +14,9 @@ import { EntityEditToggle, EntityTagsDescriptionCard } from '@/components/Entity
 import { PersonIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import { AddRelationshipModal } from '@/components/modals/AddItemModal/AddRelationshipModal';
-import { gql } from '@/graphql';
+import { EditPersonModal, PERSON_EDITOR_FIELDS } from '@/components/modals/AddItemModal/EditPersonModal';
+import { PersonProfileCard } from '@/components/PersonForm';
+import { gql, useFragment } from '@/graphql';
 
 const ALLOWED_TYPES = {
   communication: ['SENT', 'RECEIVED'],
@@ -74,6 +76,7 @@ const GET_PERSON = gql(`
         id
         label
       }
+      ...PersonEditorFields
     }
   }
 `);
@@ -106,7 +109,10 @@ export function PersonPage() {
   const [updatePersonDescription] = useMutation(UPDATE_PERSON_DESCRIPTION);
 
   const person = data?.person;
+  // Compile-time unmask of the profile fields the query already selected.
+  const profile = useFragment(PERSON_EDITOR_FIELDS, person);
   const [editMode, setEditMode] = useState(false);
+  const [editPersonOpen, setEditPersonOpen] = useState(false);
 
   usePageTitle(
     person?.name ? `Person - ${person.name} - Companion Intelligence` : 'Person - Companion Intelligence',
@@ -197,25 +203,29 @@ export function PersonPage() {
             <EntityGraph entityId={id!} maxDepth={hopDepth} nodeLimit={nodeLimit} />
           </div>
 
-          <EntityTagsDescriptionCard
-            entityType="person"
-            entityId={id!}
-            resetKey={person.id}
-            tags={person.tags.map((t) => t.label)}
-            description={person.description}
-            editMode={editMode}
-            onDescriptionSave={async (value) => {
-              const result = await updatePersonDescription({
-                variables: { input: { id: person.id, description: value } },
-              });
+          <div className="flex flex-col gap-4">
+            {profile && <PersonProfileCard person={profile} onEdit={() => setEditPersonOpen(true)} />}
 
-              // The resolver reports a rejected write (wrong owner, missing row) in the payload
-              // rather than throwing, so a silent no-op would otherwise look like a save.
-              if (!result.data?.updatePerson.success) {
-                throw new Error('Update was rejected');
-              }
-            }}
-          />
+            <EntityTagsDescriptionCard
+              entityType="person"
+              entityId={id!}
+              resetKey={person.id}
+              tags={person.tags.map((t) => t.label)}
+              description={person.description}
+              editMode={editMode}
+              onDescriptionSave={async (value) => {
+                const result = await updatePersonDescription({
+                  variables: { input: { id: person.id, description: value } },
+                });
+
+                // The resolver reports a rejected write (wrong owner, missing row) in the payload
+                // rather than throwing, so a silent no-op would otherwise look like a save.
+                if (!result.data?.updatePerson.success) {
+                  throw new Error('Update was rejected');
+                }
+              }}
+            />
+          </div>
         </div>
 
         <EntityRelationshipCards entityId={id!} />
@@ -235,6 +245,14 @@ export function PersonPage() {
           entityId={id}
           open={addRelationshipModalOpen}
           onClose={() => setAddRelationshipModalOpen(false)}
+        />
+      )}
+
+      {person && (
+        <EditPersonModal
+          personId={person.id}
+          open={editPersonOpen}
+          onClose={() => setEditPersonOpen(false)}
         />
       )}
     </>

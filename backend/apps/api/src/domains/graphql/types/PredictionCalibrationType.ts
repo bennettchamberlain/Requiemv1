@@ -27,6 +27,9 @@ export class CalibrationScoreType {
 
   @Field(() => Int, { nullable: true })
   nBuckets!: number | null;
+
+  @Field(() => String, { nullable: true, description: 'hmt / b0 / b1 / b2' })
+  modelVersion!: string | null;
 }
 
 @ObjectType({

@@ -32,6 +32,7 @@ import { UserSnapshotsModule } from '@ci/domains/user-snapshots';
 
 import { GraphQLController } from './controllers/GraphQLController';
 import { ConnectionLoader } from './loaders/ConnectionLoader';
+import { ContentFileLoader } from './loaders/ContentFileLoader';
 import { EventContentsLoader } from './loaders/EventContentsLoader';
 import { EventLoader } from './loaders/EventLoader';
 import { EventMediaLoader } from './loaders/EventMediaLoader';
@@ -46,6 +47,7 @@ import { PreviewLoader } from './loaders/PreviewLoader';
 import { ProviderKeyLoader } from './loaders/ProviderKeyLoader';
 import { ProviderLoader } from './loaders/ProviderLoader';
 import { QuestionLoader } from './loaders/QuestionLoader';
+import { TagAssignmentCountLoader } from './loaders/TagAssignmentCountLoader';
 import { TagLoader } from './loaders/TagLoader';
 import { ThreadLoader } from './loaders/ThreadLoader';
 import { ThreadMessagesLoader } from './loaders/ThreadMessagesLoader';
@@ -146,6 +148,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     ConnectionLoader,
     ConnectionResolver,
     ConnectionSyncJobResolver,
+    ContentFileLoader,
     ContentResolver,
     DailyMetricsResolver,
     NodeResolver,
@@ -182,6 +185,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     SavedSearchResolver,
     SearchResolver,
     SummaryResolver,
+    TagAssignmentCountLoader,
     TagLoader,
     TagResolver,
     ThreadLoader,

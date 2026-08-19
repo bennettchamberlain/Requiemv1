@@ -8,11 +8,7 @@ describe('owedStages', () => {
   });
 
   it('positions owe reverse_position rather than event reverse_geocode', () => {
-    expect(INGEST_KIND_STAGES.position).toEqual([
-      'reverse_position',
-      'estimate_locations',
-      'search_index',
-    ]);
+    expect(INGEST_KIND_STAGES.position).toEqual(['reverse_position', 'estimate_locations', 'search_index']);
   });
 
   it('maps capture destinations onto the kind table', () => {

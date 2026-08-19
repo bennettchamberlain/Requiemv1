@@ -175,6 +175,18 @@ function StageDetail({ stage, onRetryFailedPush }: { stage: ImportStage; onRetry
     ? (detail.failures as Array<{ dataSource?: string; error?: string }>)
     : [];
   const skippedEntities = entities && typeof entities.skipped === 'number' ? entities.skipped : 0;
+  // The subset of `skipped` that is a LOSS rather than a design decision: a
+  // record with neither a name nor an email/phone, which entity resolution has
+  // nothing to key on. It no longer makes the run `partial` (see PushStage), so
+  // this line is the whole of its visibility.
+  const unresolved = isRecord(entities?.unresolvedDetail) ? entities.unresolvedDetail : null;
+  const unresolvedCount = typeof unresolved?.count === 'number' ? unresolved.count : 0;
+  const unresolvedReason = typeof unresolved?.message === 'string' ? unresolved.message : null;
+  const unresolvedExamples = Array.isArray(unresolved?.examples)
+    ? (unresolved.examples as unknown[]).filter((value): value is string => typeof value === 'string')
+    : [];
+  // Whatever is left is the by-design half — an album, a place, a gmail thread.
+  const excludedEntities = Math.max(skippedEntities - unresolvedCount, 0);
   const deduped = typeof detail.deduped === 'number' ? detail.deduped : 0;
   const failed = typeof detail.failed === 'number' ? detail.failed : 0;
 
@@ -183,6 +195,7 @@ function StageDetail({ stage, onRetryFailedPush }: { stage: ImportStage; onRetry
     !rejected.length &&
     !destinations &&
     !skippedEntities &&
+    !unresolvedCount &&
     !deduped &&
     !failed &&
     !parserFailures.length
@@ -233,7 +246,25 @@ function StageDetail({ stage, onRetryFailedPush }: { stage: ImportStage; onRetry
       ) : null}
 
       {/* Surfaced rather than swallowed: these are records that did NOT arrive. */}
-      {skippedEntities ? <p>{skippedEntities} groups skipped (albums, threads and places)</p> : null}
+      {excludedEntities ? <p>{excludedEntities} groups skipped (albums, threads and places)</p> : null}
+
+      {/* The reason was always recorded on the staged row and was reachable
+          only by hand-writing SQL against ci_import; the run said `partial` and
+          nothing else. Named here, with the export the records came from,
+          because "one contact could not be identified" is answerable and "this
+          import is partial" is not. */}
+      {unresolvedCount ? (
+        <div>
+          <p>
+            {compactNumber(unresolvedCount)} {unresolvedCount === 1 ? 'record' : 'records'} could not be
+            identified
+            {unresolvedReason ? ` — ${unresolvedReason}` : ''}
+          </p>
+          {unresolvedExamples.length ? (
+            <p className="truncate pl-3">{unresolvedExamples.join(' · ')}</p>
+          ) : null}
+        </div>
+      ) : null}
 
       {rejected.map((entry) => (
         <p key={entry.archive ?? entry.reason} className="text-destructive">

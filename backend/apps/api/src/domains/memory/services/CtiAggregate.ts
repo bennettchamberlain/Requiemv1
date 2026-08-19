@@ -18,6 +18,14 @@ import type { BaseEntity } from '../entities/BaseEntity';
  * repository dispatch. Declared structurally (rather than as `EntityManager`)
  * so services and specs can hand in exactly what they have.
  */
+/**
+ * Ids per `IN (...)` chunk in {@link CtiAggregate.fetchBaseMap}. Comfortably
+ * under Postgres's 65,535 bound-parameter ceiling (one param per id here,
+ * unlike an INSERT's per-column multiple), with headroom for the caller's own
+ * other bound values.
+ */
+const FETCH_BASE_MAP_CHUNK = 10_000;
+
 export interface RepositoryProvider {
   getRepository<T extends ObjectLiteral>(target: new () => T): Repository<T>;
 }
@@ -49,6 +57,17 @@ interface CtiAggregateOptions<TDetail extends ObjectLiteral & { id: string }, TB
   linkedTable: string;
   /** Builds the user-scoped detail `where` that authorizes id-addressed operations. */
   scopedWhere: (context: ServiceContext, id: string) => FindOptionsWhere<TDetail>;
+  /**
+   * Boolean detail column that tombstones the aggregate instead of destroying
+   * it. When set, {@link remove} flips this flag rather than deleting the base
+   * row, {@link restore} clears it again, and every id-addressed write
+   * ({@link applyUpdate}, {@link remove}) refuses to touch an already-tombstoned
+   * row. Aggregates that leave it unset keep the physical delete.
+   *
+   * The tombstone only governs THIS aggregate's writes — the owning service is
+   * still responsible for teaching its read paths to skip flagged rows.
+   */
+  softDeleteFlag?: keyof TDetail & string;
 }
 
 /**
@@ -121,9 +140,24 @@ export class CtiAggregate<TDetail extends ObjectLiteral & { id: string }, TBase 
       throw new Error(`No base repository configured for ${this.options.linkedTable} aggregate reads`);
     }
 
-    const bases = await repository.find({
-      where: { id: In(ids) } as FindOptionsWhere<TBase>,
-    });
+    // Chunked: `id IN (...)` puts one bind parameter per id, and a caller that
+    // hands this every row it owns (EventResolver.events did, before it was
+    // fixed to paginate) can exceed Postgres's protocol limit on bound
+    // parameters. Past it, the query does not merely reject cleanly — the
+    // driver desyncs mid-bind and raises "bind message has N parameter
+    // formats but 0 parameters", which reads as nothing about the actual
+    // cause. Verified live: 62,277 ids straight from `events(first: 3)`
+    // loading its user's entire event table before paginating in memory.
+    const bases: TBase[] = [];
+
+    for (let offset = 0; offset < ids.length; offset += FETCH_BASE_MAP_CHUNK) {
+      const slice = ids.slice(offset, offset + FETCH_BASE_MAP_CHUNK);
+      const found = await repository.find({
+        where: { id: In(slice) } as FindOptionsWhere<TBase>,
+      });
+
+      bases.push(...found);
+    }
 
     return new Map(bases.map((base) => [base.id, base]));
   }
@@ -166,7 +200,7 @@ export class CtiAggregate<TDetail extends ObjectLiteral & { id: string }, TBase 
     },
     hooks?: CtiWriteHooks<TDetail>,
   ): Promise<TDetail | null> {
-    const where = this.options.scopedWhere(context, id);
+    const where = this.liveWhere(context, id);
 
     return this.options.detailRepository.manager.transaction(async (manager) => {
       const repository = manager.getRepository(this.options.detailEntity);
@@ -220,14 +254,21 @@ export class CtiAggregate<TDetail extends ObjectLiteral & { id: string }, TBase 
   }
 
   /**
-   * Deletes the aggregate as one unit: the user-scoped detail load authorizes
-   * the deletion, then the BASE row is deleted — the deferred FK's ON DELETE
-   * CASCADE removes the detail in the same statement.
+   * Removes the aggregate as one unit.
+   *
+   * With {@link CtiAggregateOptions.softDeleteFlag} configured this is a
+   * TOMBSTONE: the detail flag is set and both rows stay on disk, so the
+   * deletion is reversible via {@link restore} and nothing that references the
+   * aggregate is cascaded away. Without it the BASE row is deleted and the
+   * deferred FK's ON DELETE CASCADE removes the detail in the same statement.
+   *
+   * Either way the user-scoped detail load authorizes the removal, and an
+   * already-tombstoned aggregate is treated as absent (returns `false`).
    *
    * @returns `true` if a matching aggregate was found and removed.
    */
   async remove(context: ServiceContext, id: string, hooks?: CtiWriteHooks<TDetail>): Promise<boolean> {
-    const where = this.options.scopedWhere(context, id);
+    const where = this.liveWhere(context, id);
 
     return this.options.detailRepository.manager.transaction(async (manager) => {
       const before = await manager.getRepository(this.options.detailEntity).findOne({ where });
@@ -239,9 +280,83 @@ export class CtiAggregate<TDetail extends ObjectLiteral & { id: string }, TBase 
         await hooks.withinTx({ manager, before, after: null });
       }
 
-      await manager.getRepository(this.options.baseEntity).delete({ id } as FindOptionsWhere<TBase>);
+      const softDeleteFlag = this.options.softDeleteFlag;
+
+      if (softDeleteFlag) {
+        await manager
+          .getRepository(this.options.detailEntity)
+          .update({ id } as FindOptionsWhere<TDetail>, this.flagPatch(softDeleteFlag, true));
+      } else {
+        await manager.getRepository(this.options.baseEntity).delete({ id } as FindOptionsWhere<TBase>);
+      }
 
       return true;
     });
+  }
+
+  /**
+   * Clears a tombstone written by {@link remove}, bringing the aggregate back
+   * exactly as it was. Only available to aggregates configured with
+   * {@link CtiAggregateOptions.softDeleteFlag}; a physically deleted aggregate
+   * has nothing to restore.
+   *
+   * @returns the reloaded detail row, or `null` when no tombstoned aggregate
+   *   with that id is visible to the caller.
+   */
+  async restore(
+    context: ServiceContext,
+    id: string,
+    hooks?: CtiWriteHooks<TDetail>,
+  ): Promise<TDetail | null> {
+    const softDeleteFlag = this.options.softDeleteFlag;
+
+    if (!softDeleteFlag) {
+      throw new Error('restore() requires a softDeleteFlag — this aggregate deletes physically');
+    }
+
+    const where = {
+      ...this.options.scopedWhere(context, id),
+      [softDeleteFlag]: true,
+    } as FindOptionsWhere<TDetail>;
+
+    return this.options.detailRepository.manager.transaction(async (manager) => {
+      const repository = manager.getRepository(this.options.detailEntity);
+
+      const before = await repository.findOne({ where });
+      if (!before) {
+        return null;
+      }
+
+      await repository.update({ id } as FindOptionsWhere<TDetail>, this.flagPatch(softDeleteFlag, false));
+
+      const reloaded = await repository.findOne({
+        where: this.options.scopedWhere(context, id),
+      });
+
+      if (hooks?.withinTx) {
+        await hooks.withinTx({ manager, before, after: reloaded });
+      }
+
+      return reloaded;
+    });
+  }
+
+  /**
+   * The scoped `where` narrowed to rows that are not tombstoned, so neither an
+   * update nor a second delete can land on an already-removed aggregate.
+   */
+  private liveWhere(context: ServiceContext, id: string): FindOptionsWhere<TDetail> {
+    const scoped = this.options.scopedWhere(context, id);
+
+    if (!this.options.softDeleteFlag) {
+      return scoped;
+    }
+
+    return { ...scoped, [this.options.softDeleteFlag]: false } as FindOptionsWhere<TDetail>;
+  }
+
+  /** Single-column boolean patch, typed for the detail repository's update(). */
+  private flagPatch(flag: string, value: boolean): QueryDeepPartialEntity<TDetail> {
+    return { [flag]: value } as unknown as QueryDeepPartialEntity<TDetail>;
   }
 }

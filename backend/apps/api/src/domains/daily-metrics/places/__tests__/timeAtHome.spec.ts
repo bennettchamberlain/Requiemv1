@@ -5,7 +5,11 @@ describe('timeAtHomeFromFixes', () => {
   const home = { lat: 37.5, lng: -122.3, radiusM: DEFAULT_STAY_RADIUS_M };
   const t0 = new Date('2026-07-06T08:00:00Z');
 
-  function stayFixes(lat: number, lng: number, minutes: number): Array<{ time: Date; lat: number; lng: number }> {
+  function stayFixes(
+    lat: number,
+    lng: number,
+    minutes: number,
+  ): Array<{ time: Date; lat: number; lng: number }> {
     return [
       { time: t0, lat, lng },
       { time: new Date(t0.getTime() + minutes * 60_000), lat, lng },

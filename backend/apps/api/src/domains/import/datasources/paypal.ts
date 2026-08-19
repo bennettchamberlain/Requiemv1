@@ -1,5 +1,6 @@
 /* PayPal — CSV download (Activity → Statements → Download). */
 import fs from 'node:fs';
+import { open, readdir, stat as fsStat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseCSV } from './csv';
@@ -56,7 +57,7 @@ export class PayPalFileImporter implements FileImporter {
 
     let stat: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      stat = await fsStat(root);
     } catch {
       return { confidence: 0 };
     }
@@ -67,13 +68,14 @@ export class PayPalFileImporter implements FileImporter {
         return { confidence: 0 };
       }
 
-      if (this.headerMatches(root)) {
+      // "download.csv" used to get a moderate confidence bump on the filename
+      // alone, no header read at all — but it's a very common browser default
+      // filename for ANY CSV saved via a download button, completely
+      // unrelated to PayPal. Require the same header check (a "Date" and
+      // "Transaction ID" column) every recognized file needs; a same-named
+      // file that fails it now correctly returns 0.
+      if (await this.headerMatches(root)) {
         return { confidence: 0.9 };
-      }
-
-      // Common PayPal filenames get a moderate bump without header check
-      if (base === 'download.csv' || base.startsWith('paypal')) {
-        return { confidence: 0.5 };
       }
 
       return { confidence: 0 };
@@ -81,13 +83,13 @@ export class PayPalFileImporter implements FileImporter {
 
     if (stat.isDirectory()) {
       try {
-        const names = fs.readdirSync(root);
+        const names = await readdir(root);
         for (const name of names) {
           if (path.extname(name).toLowerCase() !== '.csv') {
             continue;
           }
 
-          if (this.headerMatches(path.join(root, name))) {
+          if (await this.headerMatches(path.join(root, name))) {
             return { confidence: 0.9 };
           }
         }
@@ -101,24 +103,19 @@ export class PayPalFileImporter implements FileImporter {
     return { confidence: 0 };
   }
 
-  private headerMatches(fpath: string): boolean {
-    let fd: number | undefined;
+  private async headerMatches(fpath: string): Promise<boolean> {
     try {
-      fd = fs.openSync(fpath, 'r');
-      const buf = Buffer.alloc(2048);
-      const n = fs.readSync(fd, buf, 0, 2048, 0);
+      const fh = await open(fpath, 'r');
+      try {
+        const buf = Buffer.alloc(2048);
+        const { bytesRead } = await fh.read(buf, 0, 2048, 0);
 
-      return sniffPayPalHeader(buf.toString('utf8', 0, n));
+        return sniffPayPalHeader(buf.toString('utf8', 0, bytesRead));
+      } finally {
+        await fh.close().catch(() => {});
+      }
     } catch {
       return false;
-    } finally {
-      if (fd !== undefined) {
-        try {
-          fs.closeSync(fd);
-        } catch {
-          /* ignore */
-        }
-      }
     }
   }
 
@@ -155,7 +152,7 @@ export class PayPalFileImporter implements FileImporter {
         }
 
         const fpath = path.join(root, name);
-        if (this.headerMatches(fpath)) {
+        if (await this.headerMatches(fpath)) {
           await this.processFile(fpath, params);
         }
       }

@@ -33,7 +33,8 @@ Installed, the binary is on the path as `ci-import` (declared in
 
 Exit codes: **0** success, **2** a failure you can fix (bad path, missing key,
 unreachable server, unknown stage), **1** a failure the appliance owns (5xx, an
-unexpected exception — which also prints a stack).
+unexpected exception — which also prints a stack). `doctor` overloads **1** with
+one more meaning: its gate tripped — see its section below.
 
 ---
 
@@ -69,13 +70,15 @@ turn "import" into a filesystem read primitive.
 exactly the authority any other API client has. Concretely:
 
 - `recognize <path>` asks about the **appliance's** disk and stays inside
-  `CI_IMPORT_ROOTS` (plus the inbox). A path outside them is refused with the
-  remedy, not with a stack trace.
+  `CI_IMPORT_ROOTS` (plus the caller's own inbox subtree). A path outside them is
+  refused with the remedy, not with a stack trace.
 - `import <file>` **uploads the bytes** — the same multipart route the browser
   uses — so it needs no configured root at all and works for any file this
   machine can read. That is the answer for most people, and it is strictly safer
   than widening the gate.
-- `inbox` consumes only from the inbox, which the importer owns.
+- `inbox` consumes only from the caller's own subtree of the inbox, which the
+  importer owns. The subtree is what stops one account importing — and thereby
+  consuming — an archive another account dropped on the shared mount.
 
 The one cost is that a 40GB archive already visible to the server still travels
 over HTTP rather than being read in place. Over localhost that is disk speed;
@@ -132,7 +135,19 @@ legitimate request.
 
 ### `inbox [--start] [--only] [--skip] [--units] [--label] [--wait] [--json]`
 
-Scans the inbox folder; with `--start`, imports it.
+Scans **this account's** inbox subtree; with `--start`, imports it, smallest unit
+first.
+
+The inbox is namespaced per user: `CI_IMPORT_INBOX_DIR` is a root, and each
+account owns one subtree under it, named by lowercasing the account's email and
+replacing every character outside `[A-Za-z0-9._-]` with `_`. So
+`test@example.com` reads and writes `<root>/test_example.com/` and nothing else.
+Inside it, the scan creates a drop
+folder per service (`amazon/`, `google-takeout/`, …); a unit dropped in one
+declares that service as the run's `declared_sources`. A path in the old flat
+layout is refused as *"outside the configured import roots"*, which names the
+wrong variable — `CI_IMPORT_ROOTS` is a different setting for path-based
+imports, and adding to it will not help.
 
 **Deliberate divergence from upstream:** there, a bare `ci-import inbox`
 imported everything it found. Here `unpack` acquires by **rename**, so starting
@@ -141,7 +156,7 @@ Scanning is the safe default; importing is a verb you type.
 
 `--only` / `--skip` filter on the recognized data source (upstream's
 vocabulary); `--units` takes exact paths from a scan. A unit another run already
-holds is never offered — the folder is shared across accounts on the appliance.
+holds is never offered.
 
 ### `runs [runId] [--limit] [--wait] [--json]`
 
@@ -163,6 +178,54 @@ push" is a state, not an error.
 `ci.*` row counts, search-index coverage and queue depth, and a rollup of this
 account's runs. Skipped rows are counted in their own column: a skip is a decided
 row, not a shortfall.
+
+### `doctor [--list] [--check <id>] [--timeout <ms>] [--failures-only] [--json]`
+
+Nineteen data-quality checks over what the importers actually **wrote**, via
+`GET /import/doctor` (and `GET /import/doctor/checks` for `--list`). Every other
+command answers "did the import run"; this is the only one that answers "did it
+write the right rows" — the distinction that matters, because every defect the
+2026-08 QA pass found sat behind a push stage reporting 100%.
+
+Each check is a regression detector for a defect that really shipped, and each
+one names the guard in `push/inputs.ts` or the backfill migration whose predicate
+it **mirrors**, so the two are maintained together. The registry is
+`src/domains/import/doctor/checks.ts`.
+
+- `--list` prints the vocabulary and runs nothing; `--list --json` includes each
+  check's full `remedy`.
+- `--check <id>` is repeatable and restricts the run. An unknown id is a 400 that
+  names it and lists the valid ones, because the caller most likely to send one
+  is an agent working from a half-remembered id.
+- `--timeout <ms>` is the **per-statement** cap, default 15,000, clamped to
+  `[100, 600000]`. Zero would mean "no timeout" to Postgres, which is the
+  opposite of what anyone types it for, hence the floor. Checks run sequentially
+  on one pinned connection (`statement_timeout` is a session setting), so a slow
+  check costs one check, not the suite.
+- `--failures-only` hides the clean rows. They are shown by default because
+  "what ran" is half of what this command is for: a suite that printed only its
+  failures would be indistinguishable from a suite that only ran the failing
+  checks.
+- `--json` emits `DoctorReport`; stdout stays a single parseable document even
+  when the gate trips, since the gate message goes to stderr.
+
+**Exit codes.** 0 when every `high` check answered zero. **1** when any `high`
+check found rows, and also when any `high` check *could not answer* — a timeout
+or a database error. That second half is deliberate and is the part most likely
+to be argued with: a gate reading "I could not look" as "there is nothing there"
+passes exactly when the corpus got big enough for the checks to matter. Raise
+`--timeout` rather than ignoring it. 2 stays "you asked for something
+impossible": unknown check id, no api key, no appliance.
+
+`medium` findings never gate. The split is about whether a machine can act on a
+finding without a human deciding first, not about how much it annoys you —
+future-dated events are the canonical `medium`, because a calendar is a list of
+things that have not happened yet.
+
+Counts are **global**, not user-scoped, matching `/api/maintenance/ingest-status`
+and `/search/coverage`: the question is "is this appliance's data sound", and
+several of the tables carry rows with no owner that a user-scoped query would
+drop without saying so.
 
 ### `backfill [stages...] [--list] [--abort-on-error] [--json]`
 
@@ -201,6 +264,7 @@ Two implementation notes worth knowing:
 | `export` | **dropped** | NDJSON dump of the mirror. It existed to *get data to CI-Server*. Both ends are the same process. `docs/api` covers the portability surfaces. |
 | `push` | **dropped as transport, reused as a stage** | Upstream's `push` was the HTTP transport shipping SQLite to a remote CI-Server — the largest thing consolidation deleted. The name is reused for the `push` **stage**, which is a different operation with the same word attached. |
 | — | **`--wait` (new)** | Upstream's import was synchronous, so there was nothing to wait for. |
+| — | **`doctor` (new)** | Upstream had no equivalent: it wrote to a local SQLite mirror it also owned, so "did the write land correctly" was not a question anyone could ask across a boundary. Here the destination is a shared `ci.*` corpus with guards and backfills of its own, and the checks are how those stay honest. |
 
 The through-line: everything that existed to manage the **local mirror** or the
 **transport to CI-Server** is gone, because the database is local now. What

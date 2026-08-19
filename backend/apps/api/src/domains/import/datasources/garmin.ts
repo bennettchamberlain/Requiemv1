@@ -8,6 +8,7 @@
    columns — we additionally require a Garmin-distinctive column.
 */
 import fs from 'node:fs';
+import { open, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseCSV } from './csv';
@@ -47,20 +48,20 @@ export class GarminFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       const base = path.basename(root).toLowerCase();
       if (path.extname(base) !== '.csv') {
         return { confidence: 0 };
       }
 
-      if (!this.headerMatches(root)) {
+      if (!(await this.headerMatches(root))) {
         return { confidence: 0 };
       }
 
@@ -68,11 +69,11 @@ export class GarminFileImporter implements FileImporter {
       return base === 'activities.csv' ? { confidence: 0.95 } : { confidence: 0.85 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       try {
-        const names = fs.readdirSync(root);
+        const names = await readdir(root);
         const exact = names.find((n) => n.toLowerCase() === 'activities.csv');
-        if (exact && this.headerMatches(path.join(root, exact))) {
+        if (exact && (await this.headerMatches(path.join(root, exact)))) {
           return { confidence: 0.95 };
         }
 
@@ -81,7 +82,7 @@ export class GarminFileImporter implements FileImporter {
             continue;
           }
 
-          if (this.headerMatches(path.join(root, name))) {
+          if (await this.headerMatches(path.join(root, name))) {
             return { confidence: 0.85 };
           }
         }
@@ -96,24 +97,18 @@ export class GarminFileImporter implements FileImporter {
   }
 
   // Read only the first ~4KB to inspect the CSV header row.
-  private headerMatches(fpath: string): boolean {
-    let fd: number | undefined;
+  private async headerMatches(fpath: string): Promise<boolean> {
+    let handle: Awaited<ReturnType<typeof open>> | undefined;
     try {
-      fd = fs.openSync(fpath, 'r');
+      handle = await open(fpath, 'r');
       const buf = Buffer.alloc(4096);
-      const n = fs.readSync(fd, buf, 0, 4096, 0);
+      const { bytesRead } = await handle.read(buf, 0, 4096, 0);
 
-      return headerIsGarmin(buf.toString('utf8', 0, n));
+      return headerIsGarmin(buf.toString('utf8', 0, bytesRead));
     } catch {
       return false;
     } finally {
-      if (fd !== undefined) {
-        try {
-          fs.closeSync(fd);
-        } catch {
-          /* ignore */
-        }
-      }
+      await handle?.close().catch(() => undefined);
     }
   }
 
@@ -141,7 +136,7 @@ export class GarminFileImporter implements FileImporter {
       }
 
       const exact = names.find((n) => n.toLowerCase() === 'activities.csv');
-      if (exact && this.headerMatches(path.join(root, exact))) {
+      if (exact && (await this.headerMatches(path.join(root, exact)))) {
         await this.processFile(path.join(root, exact), params);
       } else {
         for (const name of names) {
@@ -150,7 +145,7 @@ export class GarminFileImporter implements FileImporter {
           }
 
           const fpath = path.join(root, name);
-          if (this.headerMatches(fpath)) {
+          if (await this.headerMatches(fpath)) {
             await this.processFile(fpath, params);
           }
         }
@@ -183,16 +178,16 @@ export class GarminFileImporter implements FileImporter {
       return;
     }
 
-    for (const row of rows) {
+    rows.forEach((row, index) => {
       try {
-        this.pushRow(row, params);
+        this.pushRow(row, base, index, params);
       } catch (e) {
         params.log?.('error', `Failed to import row in ${base}`, { error: (e as Error).message });
       }
-    }
+    });
   }
 
-  private pushRow(row: Record<string, string>, params: ImportParams): void {
+  private pushRow(row: Record<string, string>, base: string, index: number, params: ImportParams): void {
     const dateStr = row['Date'] || '';
     // Garmin Date is local "2023-01-15 10:30:00" — parse as a date (no timezone marker).
     let ts: Date | undefined = dateStr ? new Date(dateStr.replace(' ', 'T')) : undefined;
@@ -210,6 +205,13 @@ export class GarminFileImporter implements FileImporter {
 
     params.pipeline.push({
       item: {
+        // Stable natural key: source file + raw Date + per-file row index. The
+        // constant content.filename ('workout.txt') means hashItem's fallback
+        // hash would otherwise be dataSource+classification+ISO(timestamp)
+        // alone, so two activities recorded in the same second (plausible for
+        // back-to-back Garmin activities) would collide under the staging
+        // table's ON CONFLICT and one would be silently dropped.
+        id: `garmin:${base}:${(row['Date'] || '').trim()}:${index}`,
         classification: 'workout',
         timestamp: ts,
         content: { filename: 'workout.txt', mediaType: 'text/plain', data: async () => Buffer.from(text) },

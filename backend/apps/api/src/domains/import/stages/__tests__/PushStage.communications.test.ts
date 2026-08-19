@@ -27,8 +27,8 @@ const STAGE_ID = '22222222-2222-4222-8222-222222222222';
 
 /** The account row + self Person row `resolveIsSelf` reads, for an owner named Liam Broza. */
 const OWNER_ROWS = [
-  { name: 'Liam Broza', email: 'liam.broza@example.com' },
-  { name: 'Liam Broza', email: null },
+  { name: 'Liam Broza', email: 'liam.broza@example.com', phones_json: null },
+  { name: 'Liam Broza', email: null, phones_json: [] },
 ];
 
 let nextId = 0;
@@ -96,7 +96,7 @@ function makeStage(
   const warnings: Array<[string, unknown]> = [];
 
   const dataSource = {
-    query: jest.fn(async (sql: string) => {
+    query: jest.fn(async (sql: string, params?: unknown[]) => {
       if (sql.includes('pg_database_size')) {
         return [{ bytes: '1000' }];
       }
@@ -111,7 +111,23 @@ function makeStage(
       }
 
       if (sql.includes('staged_relationships')) {
-        return options.participants ?? [];
+        // The edge lookup is asked for a whole batch at once, so the stub
+        // answers per requested id — the fixture means "these edges belong to
+        // each row", which is what it meant when the query was one row at a
+        // time.
+        const ids = (params?.[0] as string[] | undefined) ?? [];
+
+        return ids.flatMap((itemId) =>
+          (options.participants ?? []).map((edge) => ({ ...edge, item_id: itemId })),
+        );
+      }
+
+      if (sql.includes('SELECT entity_id FROM ci.users')) {
+        return [{ entity_id: null }];
+      }
+
+      if (sql.includes("->>'trust_mode'") || sql.includes('trust_mode')) {
+        return [{ trust_mode: 'balanced' }];
       }
 
       if (sql.includes('FROM ci.users u')) {
@@ -120,6 +136,20 @@ function makeStage(
         }
 
         return options.ownerRows ?? OWNER_ROWS;
+      }
+
+      // The stage summary's read-back of the ledger (telemetry/stageSummary).
+      // Ahead of the bare count(*) branch below, which these would otherwise
+      // capture — they are grouped counts, not a scalar one. Empty is the
+      // honest answer for a fake that never wrote a ledger row: what is under
+      // test in this file is the push's control flow, not its telemetry, which
+      // has its own tests.
+      if (sql.includes('AS unrouted') || sql.includes('DISTINCT ON (data_source)')) {
+        return [];
+      }
+
+      if (sql.includes('FROM ci_import.staged_entities') && sql.includes('GROUP BY 1, 2')) {
+        return [];
       }
 
       // settledCounts — checked before the bare count(*) branch, which its
@@ -297,6 +327,57 @@ describe('every other communication', () => {
       source_system: 'gmail',
       source_type: 'ci-import-tools',
     });
+  });
+});
+
+describe('chat participants', () => {
+  it('makes an inbound chat message point at whoever sent it', async () => {
+    // imessage and whatsapp stage `participant`, not from/to — a 1:1 chat has
+    // one other party, and the direction says which way it went. Honouring only
+    // from/to left 432,173 real iMessages with no sender at all, staged WITH
+    // 290,043 resolved participant edges and connected to nobody.
+    const { stage, sent } = makeStage([whatsAppRow('Alice Example', 'hi')], {
+      participants: [{ relation: 'participant', server_entity_id: 'entity-alice' }],
+    });
+
+    await stage.run(context);
+
+    expect(sent[0].direction).toBe('inbound');
+    expect(sent[0].from_entity_id).toBe('entity-alice');
+    expect(sent[0].to_entity_ids ?? []).toEqual([]);
+  });
+
+  it('makes an outbound chat message point at the recipient, not the sender', async () => {
+    // The owner sent it, so the other party is who it went TO. Filing them as
+    // the sender would claim every message the owner wrote came from someone
+    // else.
+    const { stage, sent } = makeStage([whatsAppRow('Liam Broza', 'on my way')], {
+      participants: [{ relation: 'participant', server_entity_id: 'entity-alice' }],
+    });
+
+    await stage.run(context);
+
+    expect(sent[0].direction).toBe('outbound');
+    expect(sent[0].from_entity_id).toBeUndefined();
+    expect(sent[0].to_entity_ids).toEqual(['entity-alice']);
+  });
+
+  it('still prefers an explicit from/to edge over a participant', async () => {
+    // The mail vocabulary is unchanged: gmail stages from/to/cc and must keep
+    // winning, so a record carrying both is decided by the explicit edge.
+    const { stage, sent } = makeStage(
+      [stagedRow({ dataSource: 'gmail', classification: 'email', metadata: { Subject: 'Lunch' } })],
+      {
+        participants: [
+          { relation: 'from', server_entity_id: 'entity-from' },
+          { relation: 'participant', server_entity_id: 'entity-ignored' },
+        ],
+      },
+    );
+
+    await stage.run(context);
+
+    expect(sent[0].from_entity_id).toBe('entity-from');
   });
 });
 

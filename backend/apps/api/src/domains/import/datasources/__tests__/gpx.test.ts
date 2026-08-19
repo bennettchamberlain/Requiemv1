@@ -19,8 +19,19 @@ function makeParams(): { params: ImportParams; collected: EmittedGraph[] } {
   return { params, collected };
 }
 
-describe('GPX title fallback', () => {
-  it('titles trackpoints from the track name instead of the bare filename', async () => {
+describe('GPX track name', () => {
+  it('does not stamp the track name onto a trackpoint as its place name', async () => {
+    // This test used to assert the opposite (`metadata.Name === 'Morning Run'`),
+    // which is where the defect lived. `Name` is the key `toPositionInput` reads
+    // as a fix's PLACE NAME, and a track name describes the TRACK: a 10 km run
+    // with <name>Morning Run</name> gives ~1,000 trackpoints the identical
+    // "place", `promote.place_position` resolves the route into ~90 distinct
+    // 0.001-degree cells, and up to 90 Location entities all called "Morning
+    // Run" land in the Places list — one venue per 100 m of pavement.
+    //
+    // The name is not discarded: it rides as `Track Name`, which no place-name
+    // path reads. The fix keeps its coordinates and no name, which is exactly
+    // what makes it a reverse-geocode candidate.
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'test-gpx-title-'));
     const gpxPath = path.join(tmp, 'morning_run.gpx');
     const gpxContent = `<?xml version="1.0"?><gpx><trk><name>Morning Run</name><trkseg><trkpt lat="12.34" lon="56.78"><time>2024-01-02T03:04:05Z</time></trkpt></trkseg></trk></gpx>`;
@@ -30,10 +41,23 @@ describe('GPX title fallback', () => {
     await fileImporter.fileImport(undefined, { fullPath: gpxPath } as DirEntry, params);
     expect(collected.length).toBe(1);
     const item = collected[0].item;
-    // Name is a title-bearing key honored by titleFor, so the trackpoint no
-    // longer falls back to the bare 'morning_run.gpx' filename.
-    expect(item.metadata.Name).toBe('Morning Run');
-    expect(item.metadata.Name).not.toBe(path.basename(gpxPath));
+    expect(item.metadata.Name).toBeUndefined();
+    expect(item.metadata['Track Name']).toBe('Morning Run');
+  });
+
+  it('still reads a WAYPOINT name as a place name — <wpt><name> names a point', async () => {
+    // The other side of the same rule: the arm above must not cost a genuine
+    // waypoint its name. `<trk><name>` labels a line, `<wpt><name>` labels a
+    // point, and only the second is a place.
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'test-gpx-wpt-name-'));
+    const gpxPath = path.join(tmp, 'summit.gpx');
+    const gpxContent = `<?xml version="1.0"?><gpx><wpt lat="12.34" lon="56.78"><name>Summit</name><time>2024-01-02T03:04:05Z</time></wpt></gpx>`;
+    fs.writeFileSync(gpxPath, gpxContent, 'utf8');
+    const fileImporter = new GPXFileImporter();
+    const { params, collected } = makeParams();
+    await fileImporter.fileImport(undefined, { fullPath: gpxPath } as DirEntry, params);
+    expect(collected.length).toBe(1);
+    expect(collected[0].item.metadata.Name).toBe('Summit');
   });
 });
 

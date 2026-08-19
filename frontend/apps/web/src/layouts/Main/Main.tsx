@@ -4,11 +4,12 @@ import { LoadingPage, Portal, useDeviceLayout } from '@ci/common';
 import { Toaster } from '@ci/shadcn';
 import { Outlet } from 'react-router-dom';
 
-import { ConnectionModeIndicator, OutboxQueueIndicator } from '@/components/ConnectionModeIndicator';
+import { AnimatedBackground } from '@/components/AnimatedBackground';
 import { useTheme } from '@/components/ThemePicker';
 import { useUnsyncedImportsNotice } from '@/components/UnsyncedImports/useUnsyncedImportsNotice';
 
 import { MobileNavigation } from './MobileNavigation/MobileNavigation';
+import { MobileTopBar } from './MobileNavigation/MobileTopBar';
 import { PowerRailProvider } from './PowerRailContext';
 import { PowerRailToggle } from './PowerRailToggle';
 import { PrimaryNavigation } from './PrimaryNavigation';
@@ -24,32 +25,38 @@ export function Main() {
 
   if (isMobile) {
     return (
-      <div className="flex flex-col h-lvh">
-        <Toaster position="top-right" theme={themeState.mode} />
-        <div className="fixed top-2 right-2 z-40 flex items-center gap-1.5">
-          <ConnectionModeIndicator />
-          <OutboxQueueIndicator />
+      <PowerRailProvider variant="overlay">
+        <div className="flex h-lvh flex-col pt-[calc(var(--safe-area-top)+0.5rem)]">
+          <Toaster position="top-right" theme={themeState.mode} />
+          <MobileTopBar />
+          <main className="flex-1 min-w-0 overflow-hidden min-h-0 relative">
+            <Suspense fallback={<LoadingPage />}>
+              <Outlet />
+              <Portal id="content-modal" className="absolute inset-0 empty:hidden" />
+            </Suspense>
+          </main>
+          <MobileNavigation />
+          <Portal id="overlay-modal" className="fixed inset-0 z-50 empty:hidden" />
         </div>
-        <main className="flex-1 min-w-0 overflow-hidden min-h-0 relative">
-          <Suspense fallback={<LoadingPage />}>
-            <Outlet />
-            <Portal id="content-modal" className="absolute inset-0 empty:hidden" />
-          </Suspense>
-        </main>
-        <MobileNavigation />
-        <Portal id="overlay-modal" className="fixed inset-0 z-50 empty:hidden" />
-      </div>
+      </PowerRailProvider>
     );
   }
 
   return (
     <PowerRailProvider>
-      <div className="grid h-lvh min-h-0 grid-cols-[auto_1fr] grid-rows-[auto_1fr]">
+      {/* Scenery, behind everything. `relative z-10` on the shell is what keeps
+          it there: the background is `fixed` at z-index 0, and a positioned
+          sibling later in the DOM would otherwise paint over the whole app. */}
+      <AnimatedBackground />
+      <div className="relative z-10 grid h-lvh min-h-0 grid-cols-[auto_1fr] grid-rows-[auto_1fr]">
         {/* Left-aligned so the mark stays put when the rail widens. Centering
             it here walks the logo to the middle of the expanded column. */}
         {/* No padding here: the toggle carries the drawer's own width and
             inset, so the two line up as one edge. */}
-        <div className="bg-secondary">
+        {/* Stretch with the header row, then center the mark so leftover
+            space is equal above and below — otherwise the toggle sits at the
+            top of a taller PrimaryNavigation cell and looks bottom-heavy. */}
+        <div className="flex items-center bg-secondary">
           <PowerRailToggle />
         </div>
 

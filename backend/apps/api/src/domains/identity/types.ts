@@ -3,9 +3,10 @@
  * `docs/prd/unified-content-identity-lifecycle-embeds.md` (§4).
  *
  * This module is deliberately dependency-free (Node builtins only) so it can be
- * lifted into `backend/packages/object-identity` and vendored into
- * CI-Import-Tools unchanged once the cross-repo sync lands (design P3). Keep it
- * that way: no Nest, no TypeORM, no repo-local imports.
+ * lifted into `backend/packages/object-identity` if it needs to stand alone.
+ * The original plan (design P3) was to vendor it unchanged into CI-Import-Tools
+ * — moot now that repo is retired and its import functionality is native here.
+ * Keep it dependency-free anyway: no Nest, no TypeORM, no repo-local imports.
  */
 
 /**

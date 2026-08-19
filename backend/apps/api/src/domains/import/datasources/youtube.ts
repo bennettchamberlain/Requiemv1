@@ -3,6 +3,7 @@
  * Google MyActivity HTML export (watch-history.html / search-history.html). */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseCSV } from './csv';
@@ -92,14 +93,14 @@ export class YouTubeFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       const base = path.basename(root).toLowerCase();
       if (HISTORY_FILES.has(base)) {
         return { confidence: 0.9 };
@@ -107,7 +108,7 @@ export class YouTubeFileImporter implements FileImporter {
 
       if (base === SUBSCRIPTIONS_FILENAME) {
         try {
-          if (subscriptionsHeaderMatches(fs.readFileSync(root, 'utf8'))) {
+          if (subscriptionsHeaderMatches(await readFile(root, 'utf8'))) {
             return { confidence: 0.85 };
           }
         } catch {
@@ -118,9 +119,9 @@ export class YouTubeFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       try {
-        const names = fs.readdirSync(root).map((n) => n.toLowerCase());
+        const names = (await readdir(root)).map((n) => n.toLowerCase());
         if (names.includes('watch-history.json') || names.includes('watch-history.html')) {
           return { confidence: 0.9 };
         }
@@ -133,13 +134,13 @@ export class YouTubeFileImporter implements FileImporter {
 
         if (names.some((n) => n === 'history')) {
           const histPath = path.join(root, names.find((n) => n === 'history')!);
-          const histNames = fs.readdirSync(histPath).map((f) => f.toLowerCase());
+          const histNames = (await readdir(histPath)).map((f) => f.toLowerCase());
           if (histNames.includes('watch-history.json') || histNames.includes('watch-history.html')) {
             return { confidence: 0.9 };
           }
         }
 
-        if (this.findSubscriptionsCsv(root)) {
+        if (await this.findSubscriptionsCsv(root)) {
           return { confidence: 0.85 };
         }
       } catch {
@@ -170,7 +171,7 @@ export class YouTubeFileImporter implements FileImporter {
         }
       } else if (stat.isDirectory()) {
         files = this.findHistoryFiles(root);
-        subsFile = this.findSubscriptionsCsv(root);
+        subsFile = await this.findSubscriptionsCsv(root);
       }
     } catch {
       return;
@@ -405,10 +406,10 @@ export class YouTubeFileImporter implements FileImporter {
     }
   }
 
-  private findSubscriptionsCsv(dir: string): string | undefined {
+  private async findSubscriptionsCsv(dir: string): Promise<string | undefined> {
     let entries: string[];
     try {
-      entries = fs.readdirSync(dir);
+      entries = await readdir(dir);
     } catch {
       return undefined;
     }
@@ -417,7 +418,7 @@ export class YouTubeFileImporter implements FileImporter {
       const full = path.join(dir, name);
       if (name.toLowerCase() === SUBSCRIPTIONS_FILENAME) {
         try {
-          if (subscriptionsHeaderMatches(fs.readFileSync(full, 'utf8'))) {
+          if (subscriptionsHeaderMatches(await readFile(full, 'utf8'))) {
             return full;
           }
         } catch {
@@ -428,8 +429,8 @@ export class YouTubeFileImporter implements FileImporter {
       }
 
       try {
-        if (fs.statSync(full).isDirectory()) {
-          const sub = this.findSubscriptionsCsv(full);
+        if ((await stat(full)).isDirectory()) {
+          const sub = await this.findSubscriptionsCsv(full);
           if (sub) {
             return sub;
           }

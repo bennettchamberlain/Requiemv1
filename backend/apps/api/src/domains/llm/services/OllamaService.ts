@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, type OnModuleInit } from '@nestjs/common';
 import {
   type ChatResponse,
   type GenerateResponse,
@@ -17,6 +17,7 @@ import {
   ToolRegistry,
   capabilityAllows,
   intentToolName,
+  canonicalizeExecutableToolName,
   type ToolInvocationContext,
   type ToolSchema,
 } from '@ci/domains/tools';
@@ -32,6 +33,94 @@ const DEMO_TEXT_MODEL = 'qwen3:14b';
 const INTERNAL_MODELS = new Set(['nomic-embed-text', 'nomic-embed-text-v2-moe']);
 
 const OPENAI_MODE_CAPABILITIES = ['completion', 'tools'];
+
+/** How long the boot-time model check waits on the inference backend. */
+const PREFLIGHT_TIMEOUT_MS = 5_000;
+
+/**
+ * Bound a promise. The timer is cleared on settle and unref'd meanwhile, so a
+ * preflight can never be the reason a process refuses to exit.
+ */
+async function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let handle: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        handle = setTimeout(() => reject(new Error(message)), ms);
+        handle.unref?.();
+      }),
+    ]);
+  } finally {
+    if (handle) {
+      clearTimeout(handle);
+    }
+  }
+}
+
+/** Outcome of the boot-time check of {@link PROMPT_MODEL} against the served list. */
+export interface ChatModelPreflight {
+  /** The configured id — `LLM_DEFAULT_CHAT_MODEL`, or the compiled-in default. */
+  model: string;
+
+  /** The backend answered AND the configured id is in its list. */
+  available: boolean;
+
+  /**
+   * The backend answered at all. `false` separates "your model id is wrong" from
+   * "the inference server is not up" — two very different operator actions.
+   */
+  reachable: boolean;
+
+  servedModels: string[];
+
+  /** Served ids that look like a misspelling of {@link model}. Empty when none do. */
+  suggestions?: string[];
+
+  /** Why the backend could not be reached. Only set when `reachable` is false. */
+  reason?: string;
+}
+
+/**
+ * Served ids that plausibly are what the configured id MEANT.
+ *
+ * Deliberately crude — it compares the alphanumeric skeleton, so `qwen/qwen3-vl-30b`
+ * and `qwen3-vl:4b` match on `qwen3vl` while `gemma4:e4b` does not. The goal is to
+ * turn "that id is wrong" into "here is the one you meant"; anything cleverer would
+ * be a fuzzy-matching library's job and would still only be printing a hint.
+ */
+export function nearestModelIds(configured: string, served: string[]): string[] {
+  const skeleton = (id: string) => id.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const target = skeleton(configured.split('/').pop() ?? configured);
+
+  if (target.length === 0) {
+    return [];
+  }
+
+  const sharedPrefix = (candidate: string): number => {
+    let shared = 0;
+
+    while (shared < candidate.length && shared < target.length && candidate[shared] === target[shared]) {
+      shared += 1;
+    }
+
+    return shared;
+  };
+
+  return (
+    served
+      .map((id) => ({ id, shared: sharedPrefix(skeleton(id)) }))
+      // At least 4 shared characters: enough to bind a model FAMILY (`qwen3`,
+      // `gemma`, `llava`) without matching every id that happens to start with `q`.
+      .filter((entry) => entry.shared >= 4)
+      // Longest shared prefix first, so `qwen3-vl:4b` outranks `qwen3.5:9b` for a
+      // configured `qwen/qwen3-vl-30b` rather than losing to it on list order.
+      .sort((a, b) => b.shared - a.shared || a.id.localeCompare(b.id))
+      .slice(0, 3)
+      .map((entry) => entry.id)
+  );
+}
 
 function chatChunkToGenerateResponse(chunk: ChatResponse): GenerateResponse {
   return {
@@ -140,7 +229,9 @@ function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
 }
 
 @Injectable()
-export class OllamaService {
+export class OllamaService implements OnModuleInit {
+  private lastPreflight: ChatModelPreflight | null = null;
+
   constructor(
     private readonly llmEndpointService: LlmEndpointService,
     private readonly toolRegistry: ToolRegistry,
@@ -148,6 +239,101 @@ export class OllamaService {
     private readonly featureService: FeatureService,
   ) {
     this.logger.setContext(OllamaService.name);
+  }
+
+  /**
+   * Check the configured chat model against what the backend actually serves,
+   * at boot, and say so LOUDLY when it is not there.
+   *
+   * ── Why ────────────────────────────────────────────────────────────────────
+   *
+   * `PROMPT_MODEL` is `LLM_DEFAULT_CHAT_MODEL`, resolved once at import. Every
+   * background inference path passes it straight to
+   * {@link OllamaService.validateModel}, which throws `Invalid model specified:
+   * <id>` — per job, forever, with nothing at boot to say the id was wrong. On a
+   * live appliance that produced 36 identical dead letters from
+   * `infer.question.answer` alone, all of them `Invalid model specified:
+   * qwen/qwen3-vl-30b` — a vLLM/HuggingFace-style repo id set against an Ollama
+   * backend that has never had a tag by that name. One ERROR line at boot turns
+   * that from a slow leak into a thing an operator reads once.
+   *
+   * ── Failure handling ───────────────────────────────────────────────────────
+   *
+   * Never throws. A misconfigured model must not stop the server from booting —
+   * chat is one feature of an appliance whose job is to keep ingesting — and the
+   * whole point is that the operator gets to READ the diagnosis.
+   *
+   * An UNREACHABLE backend is a warn, not an error: at boot the inference server
+   * routinely has not accepted connections yet, and "could not verify" is a
+   * different claim from "your model id is wrong". Only a backend that answered,
+   * with a list that does not contain the configured id, is an ERROR.
+   *
+   * The list call is bounded by {@link PREFLIGHT_TIMEOUT_MS}. A refused
+   * connection fails instantly, but a host that ACCEPTS and then never answers
+   * would otherwise hold `onModuleInit` — and therefore the whole boot — open
+   * indefinitely, which is a far worse failure than the one being diagnosed.
+   */
+  async onModuleInit(): Promise<void> {
+    await this.preflightChatModel();
+  }
+
+  /** The most recent {@link preflightChatModel} result, or null before the first run. */
+  get chatModelPreflight(): ChatModelPreflight | null {
+    return this.lastPreflight;
+  }
+
+  async preflightChatModel(): Promise<ChatModelPreflight> {
+    const model = PROMPT_MODEL;
+    let served: string[];
+
+    try {
+      served = await withTimeout(
+        this.listServedChatModelIds(),
+        PREFLIGHT_TIMEOUT_MS,
+        `the LLM backend did not list its models within ${PREFLIGHT_TIMEOUT_MS}ms`,
+      );
+    } catch (err: unknown) {
+      const reason = err instanceof Error ? err.message : String(err);
+
+      this.logger.warn(
+        `Could not verify the configured chat model "${model}" — the inference backend did not answer. ` +
+          `If it is still starting this is expected; if it stays unreachable, every LLM job will fail.`,
+        { model, reason },
+      );
+
+      return (this.lastPreflight = { model, available: false, reachable: false, servedModels: [], reason });
+    }
+
+    if (served.includes(model)) {
+      this.logger.log(`Chat model "${model}" is served by the active LLM backend`, {
+        model,
+        servedModels: served.length,
+      });
+
+      return (this.lastPreflight = { model, available: true, reachable: true, servedModels: served });
+    }
+
+    // `qwen/qwen3-vl-30b` vs the served `qwen3-vl:4b` is the real case: the
+    // family is right and the spelling is not, so naming the near-misses is what
+    // makes the log line actionable rather than just accusatory.
+    const suggestions = nearestModelIds(model, served);
+
+    this.logger.error(
+      `Configured chat model "${model}" is NOT served by the active LLM backend. ` +
+        `Every background inference job (question answering, summaries, titles) will fail with ` +
+        `"Invalid model specified: ${model}" and land in ci.pipeline_dead_letters. ` +
+        `Set LLM_DEFAULT_CHAT_MODEL to one of the ${served.length} served ids` +
+        `${suggestions.length > 0 ? ` — did you mean ${suggestions.map((id) => `"${id}"`).join(' or ')}?` : ''}` +
+        `${served.length > 0 ? ` Served: ${served.join(', ')}.` : ' The backend is serving no chat models at all.'}`,
+    );
+
+    return (this.lastPreflight = {
+      model,
+      available: false,
+      reachable: true,
+      servedModels: served,
+      suggestions,
+    });
   }
 
   private get ollama(): Ollama {
@@ -214,6 +400,7 @@ export class OllamaService {
           model,
           messages: [{ role: 'user', content: prompt }],
           signal,
+          enableThinking: false,
         });
 
         for await (const chunk of iterator) {
@@ -294,6 +481,12 @@ export class OllamaService {
     const thinkChunks: string[] = [];
     const toolCalls: ToolCall[] = [];
     const accumulatedMessages: OllamaMessage[] = [];
+    // One tool round, then a prose follow-up. Re-advertising tools after a
+    // failed/partial remember made Qwen retry for minutes on a 2-slot vLLM.
+    // XML dumped into content is still salvaged (salvageTools) without another
+    // advertised-tool generate.
+    const maxToolRounds = 2;
+    let generateRounds = 0;
 
     const stream = (async function* (self) {
       do {
@@ -312,7 +505,12 @@ export class OllamaService {
 
         accumulatedMessages.push(...toolEvaluations);
 
-        const iterationWillCallTools = enableTools && ollamaTools.length > 0 && toolEvaluations.length === 0;
+        if (generateRounds >= maxToolRounds) {
+          break;
+        }
+
+        generateRounds += 1;
+        const iterationWillCallTools = enableTools && ollamaTools.length > 0 && generateRounds === 1;
 
         try {
           if (openAiDriver) {
@@ -321,6 +519,8 @@ export class OllamaService {
               messages: inputMessages.concat(accumulatedMessages),
               tools: iterationWillCallTools ? ollamaTools : undefined,
               signal,
+              enableThinking,
+              salvageTools: enableTools,
             });
 
             for await (const chunk of iterator) {
@@ -345,6 +545,8 @@ export class OllamaService {
               model,
               messages: inputMessages.concat(accumulatedMessages),
               stream: true,
+              // Native Ollama: `think` is a first-class flag. vLLM is the other
+              // branch above and uses chat_template_kwargs.enable_thinking.
               ...(enableThinking && { think: true }),
               ...(iterationWillCallTools && { tools: ollamaTools }),
             });
@@ -420,6 +622,24 @@ export class OllamaService {
           }
         }
       } while (toolCalls.length > 0);
+
+      const wrapUp = savedKnowledgeWrapUp(accumulatedMessages);
+      if (wrapUp && !signal?.aborted) {
+        accumulatedMessages.push({ role: 'assistant', content: wrapUp });
+        yield {
+          model,
+          created_at: new Date(),
+          message: { role: 'assistant', content: wrapUp },
+          done: false,
+          done_reason: '',
+          total_duration: 0,
+          load_duration: 0,
+          prompt_eval_count: 0,
+          prompt_eval_duration: 0,
+          eval_count: 0,
+          eval_duration: 0,
+        };
+      }
     })(this);
 
     Object.defineProperty(stream, 'messages', {
@@ -446,7 +666,7 @@ export class OllamaService {
   private async runChat(
     context: ChatRequestContext,
     messages: OllamaMessage[],
-    { model, enableTools = false, format }: PromptOptions,
+    { model, enableTools = false, format, enableThinking = false }: PromptOptions,
   ): Promise<ChatResponse> {
     await this.validateModel(context, model);
 
@@ -467,6 +687,7 @@ export class OllamaService {
           messages: inputMessages,
           tools: enableTools && ollamaTools.length > 0 ? ollamaTools : undefined,
           format: openAiFormat,
+          enableThinking,
         })
       : await this.ollama.chat({
           model: model,
@@ -498,6 +719,7 @@ export class OllamaService {
         messages: inputMessages.concat(accumulatedMessages),
         tools: enableTools && ollamaTools.length > 0 ? ollamaTools : undefined,
         format: openAiFormat,
+        enableThinking,
       });
     }
 
@@ -522,15 +744,84 @@ export class OllamaService {
       resolvedModel = hasVisualContent ? DEMO_VISION_MODEL : DEMO_TEXT_MODEL;
       resolvedThinking = hasVisualContent ? false : true;
       resolvedTools = hasVisualContent ? false : true;
+      await this.validateModel(context, resolvedModel);
+    } else {
+      resolvedModel = await this.resolveServedChatModel(requestedModel, messages);
     }
-
-    await this.validateModel(context, resolvedModel);
 
     return {
       model: resolvedModel,
       enableThinking: resolvedThinking,
       enableTools: resolvedTools,
     };
+  }
+
+  /**
+   * Pick a chat model that is actually loaded on the active backend (vLLM via
+   * OpenAI-compat, or Ollama). Config defaults like `gemma3:1b` are only used
+   * when that id is in the served list — title jobs and background inference
+   * must not fail because the compile-time default is not loaded.
+   *
+   * When the turn carries images and the backend is native Ollama, prefer a
+   * served model that reports the `vision` capability. The stash version still
+   * sent images to `PROMPT_MODEL` whenever that id was loaded (usually a
+   * text-only chat model). OpenAI-compat backends (vLLM) expose a single chat
+   * id — keep that; listeners complete on a non-multimodal 400 rather than
+   * inventing `llava:7b`.
+   */
+  private async resolveServedChatModel(
+    requestedModel?: string | null,
+    messages: OllamaMessage[] = [],
+  ): Promise<string> {
+    const served = await this.listServedChatModelIds();
+
+    if (served.length === 0) {
+      throw new Error('No chat model is currently loaded on vLLM or Ollama');
+    }
+
+    const hasVisualContent = messages.some((message) => message.images && message.images.length > 0);
+
+    if (hasVisualContent && !this.llmEndpointService.getOpenAiDriver()) {
+      const requested = requestedModel?.trim();
+
+      if (requested && served.includes(requested)) {
+        const requestedCaps = await this.fetchModelCapabilities(requested, { throwOnError: false });
+
+        if (requestedCaps.includes('vision')) {
+          return requested;
+        }
+      }
+
+      for (const id of served) {
+        const capabilities = await this.fetchModelCapabilities(id, { throwOnError: false });
+
+        if (capabilities.includes('vision')) {
+          return id;
+        }
+      }
+    }
+
+    const candidates = [requestedModel, PROMPT_MODEL].filter((model): model is string =>
+      Boolean(model && model.trim()),
+    );
+
+    return candidates.find((model) => served.includes(model)) ?? served[0];
+  }
+
+  private async listServedChatModelIds(): Promise<string[]> {
+    const openAiDriver = this.llmEndpointService.getOpenAiDriver();
+
+    if (openAiDriver) {
+      const modelIds = await openAiDriver.listModels();
+
+      return modelIds.filter((id) => !INTERNAL_MODELS.has(this.parseOllamaModel(id).name));
+    }
+
+    const result = await this.ollama.list();
+
+    return result.models
+      .map((model: { name: string }) => model.name)
+      .filter((name: string) => !INTERNAL_MODELS.has(this.parseOllamaModel(name).name));
   }
 
   private parseOllamaModel(model: string): OllamaModel {
@@ -601,9 +892,10 @@ export class OllamaService {
     const toolResults = await Promise.all(
       toolCalls.map(async (toolCall) => {
         const { name, arguments: args } = toolCall.function;
+        const toolName = canonicalizeExecutableToolName(name);
 
         try {
-          const result = await this.toolRegistry.executeTool(name, invocationContext, args);
+          const result = await this.toolRegistry.executeTool(toolName, invocationContext, args);
 
           return {
             call: toolCall,
@@ -612,7 +904,7 @@ export class OllamaService {
           };
         } catch (error) {
           this.logger.error('Tool execution failed', {
-            toolName: name,
+            toolName,
             error: error instanceof Error ? error.message : String(error),
             userId: context.userId,
           });
@@ -702,4 +994,46 @@ export class OllamaService {
       return [];
     }
   }
+}
+
+/**
+ * Exported for direct unit testing — see `__tests__/OllamaService.savedKnowledgeWrapUp.test.ts`.
+ * A tool-only turn (the model called `memory.remember` or similar and produced
+ * no prose of its own) leaves the user looking at silence unless something
+ * says what happened; a turn that already has prose needs no synthetic
+ * addition.
+ */
+export function savedKnowledgeWrapUp(messages: OllamaMessage[]): string | null {
+  const assistants = messages.filter((message) => message.role === 'assistant');
+  const hasProse = assistants.some(
+    (message) => message.content.replace(/<think>[\s\S]*?<\/think>/g, '').trim() !== '',
+  );
+  const hasTools = assistants.some((message) => (message.tool_calls?.length ?? 0) > 0);
+  if (!hasTools || hasProse) {
+    return null;
+  }
+
+  let created = 0;
+  for (const message of messages) {
+    if (message.role !== 'tool' || !message.content) {
+      continue;
+    }
+
+    try {
+      const parsed = JSON.parse(message.content) as {
+        error?: unknown;
+        createdNodes?: number;
+        createdRelationships?: number;
+      };
+      if (parsed.error) {
+        continue;
+      }
+
+      created += (parsed.createdNodes ?? 0) + (parsed.createdRelationships ?? 0);
+    } catch {
+      // Tool payloads that are not JSON are not a save summary.
+    }
+  }
+
+  return created > 0 ? 'Saved.' : null;
 }

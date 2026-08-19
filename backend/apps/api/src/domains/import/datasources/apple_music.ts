@@ -2,6 +2,8 @@
    The "Apple Music Play Activity.csv" file (also exported as
    "Apple Music - Play Activity.csv") holds one play event per row. */
 import fs from 'node:fs';
+import { open, readdir, stat } from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseCSV } from './csv';
@@ -29,33 +31,33 @@ export class AppleMusicFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       const base = path.basename(root);
       if (filenameMatches(base)) {
         return { confidence: 0.95 };
       }
 
-      if (path.extname(base).toLowerCase() === '.csv' && this.headerMatches(root)) {
+      if (path.extname(base).toLowerCase() === '.csv' && (await this.headerMatches(root))) {
         return { confidence: 0.85 };
       }
 
       return { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
-      for (const f of this.walkCsvFiles(root)) {
+    if (st.isDirectory()) {
+      for await (const f of this.walkCsvFiles(root)) {
         if (filenameMatches(path.basename(f))) {
           return { confidence: 0.95 };
         }
 
-        if (this.headerMatches(f)) {
+        if (await this.headerMatches(f)) {
           return { confidence: 0.85 };
         }
       }
@@ -68,14 +70,14 @@ export class AppleMusicFileImporter implements FileImporter {
 
   // Yield .csv files within root, recursing up to two levels (Apple nests the
   // CSV under "Apple Media Services information/Apple Music Activity/").
-  private *walkCsvFiles(root: string, depth = 0): Generator<string> {
+  private async *walkCsvFiles(root: string, depth = 0): AsyncGenerator<string> {
     if (depth > 2) {
       return;
     }
 
     let entries: fs.Dirent[];
     try {
-      entries = fs.readdirSync(root, { withFileTypes: true });
+      entries = await readdir(root, { withFileTypes: true });
     } catch {
       return;
     }
@@ -91,24 +93,20 @@ export class AppleMusicFileImporter implements FileImporter {
   }
 
   // Read only the first ~8KB to inspect the CSV header row.
-  private headerMatches(fpath: string): boolean {
-    let fd: number | undefined;
+  private async headerMatches(fpath: string): Promise<boolean> {
+    let handle: FileHandle | undefined;
     try {
-      fd = fs.openSync(fpath, 'r');
+      handle = await open(fpath, 'r');
       const buf = Buffer.alloc(8192);
-      const n = fs.readSync(fd, buf, 0, 8192, 0);
+      const { bytesRead } = await handle.read(buf, 0, 8192, 0);
 
-      return headerHasPlayCols(buf.toString('utf8', 0, n));
+      return headerHasPlayCols(buf.toString('utf8', 0, bytesRead));
     } catch {
       return false;
     } finally {
-      if (fd !== undefined) {
-        try {
-          fs.closeSync(fd);
-        } catch {
-          /* ignore */
-        }
-      }
+      await handle?.close().catch(() => {
+        /* ignore */
+      });
     }
   }
 
@@ -118,18 +116,18 @@ export class AppleMusicFileImporter implements FileImporter {
       return;
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = fs.statSync(root);
     } catch {
       return;
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       await this.processFile(root, params);
-    } else if (stat.isDirectory()) {
-      for (const f of this.walkCsvFiles(root)) {
-        if (filenameMatches(path.basename(f)) || this.headerMatches(f)) {
+    } else if (st.isDirectory()) {
+      for await (const f of this.walkCsvFiles(root)) {
+        if (filenameMatches(path.basename(f)) || (await this.headerMatches(f))) {
           await this.processFile(f, params);
         }
       }
@@ -161,16 +159,16 @@ export class AppleMusicFileImporter implements FileImporter {
       return;
     }
 
-    for (const row of rows) {
+    rows.forEach((row, index) => {
       try {
-        this.pushRow(row, params);
+        this.pushRow(row, base, index, params);
       } catch (e) {
         params.log?.('error', `Failed to import row in ${base}`, { error: (e as Error).message });
       }
-    }
+    });
   }
 
-  private pushRow(row: Record<string, string>, params: ImportParams): void {
+  private pushRow(row: Record<string, string>, base: string, index: number, params: ImportParams): void {
     const start = row['Event Start Timestamp'];
     let ts: Date | undefined = start ? new Date(start) : undefined;
     if (ts && isNaN(ts.getTime())) {
@@ -195,6 +193,14 @@ export class AppleMusicFileImporter implements FileImporter {
 
     params.pipeline.push({
       item: {
+        // Stable natural key: source file + raw start timestamp + per-file row
+        // index. The constant content.filename ('play.txt') means hashItem's
+        // fallback hash would otherwise be dataSource+classification+
+        // ISO(timestamp) alone, so two tracks logged in the same second
+        // (repeated/skip-replayed plays are common in a real listening
+        // history) would collide under the staging table's ON CONFLICT and
+        // one would be silently dropped.
+        id: `apple_music:${base}:${(start || '').trim()}:${index}`,
         classification: 'listen',
         timestamp: ts,
         content: {

@@ -4,6 +4,7 @@ import { Repository, In } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
 import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common/context';
+import config from '@ci/configuration';
 import { EventService } from '@ci/domains/events';
 
 import { DeviceEntity } from '../entities/DeviceEntity';
@@ -54,11 +55,41 @@ export class DeviceService {
           deviceId: result.device_id,
         });
 
+        await this.relayPushToken(result);
+
         return DeviceEntity.toEgressType(result);
       }),
     );
 
     return isSingle ? returned[0] : returned;
+  }
+
+  private async relayPushToken(device: {
+    user_id: string;
+    device_id: string;
+    platform?: string;
+    push_token?: string;
+  }): Promise<void> {
+    const relay = config.auth.portal.pushRelayUrl?.trim();
+
+    if (!relay || !device.push_token) {
+      return;
+    }
+
+    try {
+      await fetch(`${relay.replace(/\/+$/, '')}/api/push/devices`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          userId: device.user_id,
+          deviceId: device.device_id,
+          platform: device.platform,
+          push_token: device.push_token,
+        }),
+      });
+    } catch {
+      // The appliance still stores the token. APNs/FCM keys live at Portal, not here.
+    }
   }
 
   async findAll(context: ServiceContext): Promise<Device[]> {
@@ -178,6 +209,7 @@ export class DeviceService {
     if (device) {
       Object.assign(device, updateData);
       await this.deviceRepository.save(device);
+      await this.relayPushToken(device);
     }
 
     await this.eventService.send(DeviceUpdatedEvent, {

@@ -701,3 +701,89 @@ describe('Facebook datasource — HTML media (DYI export)', () => {
     }
   });
 });
+
+describe('Facebook datasource — HTML body-text noise (UI chrome + reaction badges)', () => {
+  // Reproduces contamination found in a real Facebook HTML export: a multi-photo/
+  // video post came back with `metadata.Text` equal to
+  //   "Photos Photos Photos Photos Click for video: Click for video: Click for
+  //   video: 6 Years Ago ... added 4 photos and 3 videos. Jan 14, 2020 5:28:01 pm
+  //   Best #CES Ever! ... Updated Jan 14, 2026 7:29:40 am"
+  // — the thumbnail links' own boilerplate ("Photos", "Click for video: ") was
+  // being scraped as if it were part of the caption. This fixture reproduces
+  // that same anchor-boilerplate pattern, plus a reaction-summary <ul> (Meta
+  // never renders authored post/message text as an HTML list), alongside a
+  // caption that legitimately contains the words "video" and a heart emoji —
+  // the fix must not strip those just because they resemble the chrome.
+  function buildNoisyPostExport(): string {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fb-html-noise-'));
+    const postsDir = path.join(root, 'your_facebook_activity', 'posts');
+    const mediaDir = path.join(postsDir, 'media');
+    fs.mkdirSync(path.join(mediaDir, 'photos'), { recursive: true });
+    fs.mkdirSync(path.join(mediaDir, 'videos'), { recursive: true });
+    fs.writeFileSync(path.join(mediaDir, 'photos', 'pic1.jpg'), 'JPGDATA');
+    fs.writeFileSync(path.join(mediaDir, 'photos', 'pic2.jpg'), 'JPGDATA');
+    fs.writeFileSync(path.join(mediaDir, 'videos', 'clip.mp4'), 'MP4DATA');
+
+    fs.writeFileSync(
+      path.join(postsDir, 'your_posts__check_ins__photos_and_videos_1.html'),
+      '<main><section class="_a6-g">' +
+        '<h2 class="_2ph_ _a6-h _a6-i">Test User shared 2 photos and 1 video.</h2>' +
+        '<div class="_2ph_ _a6-p"><div>' +
+        '<div>' +
+        '<a href="your_facebook_activity/posts/media/photos/pic1.jpg">Photos</a>' +
+        '<a href="your_facebook_activity/posts/media/photos/pic2.jpg">Photos</a>' +
+        '<a href="your_facebook_activity/posts/media/videos/clip.mp4">Click for video: </a>' +
+        '</div>' +
+        "<div>Best #CES Ever! Loved this new video setup, can't wait to share more. ❤️</div>" +
+        '</div></div>' +
+        '<ul class="_a6-p"><li>❤️ Jane Doe and 11 others reacted</li></ul>' +
+        '<footer class="_3-94 _a6-o"><div class="_a72d">Jan 14, 2025 5:28:01 pm</div></footer>' +
+        '</section></main>',
+    );
+
+    return root;
+  }
+
+  async function runImport(root: string) {
+    const fi = new FacebookFileImporter();
+    const pipeline: EmittedGraph[] = [];
+    await fi.fileImport({}, { filename: path.basename(root), fullPath: root }, {
+      pipeline,
+      timeframe: {},
+      log: () => {},
+    } as unknown as ImportParams);
+
+    return pipeline;
+  }
+
+  it('drops thumbnail-link boilerplate and reaction badges but keeps the real caption', async () => {
+    const root = buildNoisyPostExport();
+    try {
+      const items = (await runImport(root)).map((p) => p.item);
+
+      const posts = items.filter((i) => i.classification === 'social');
+      expect(posts.length).toBe(1);
+
+      const text = posts[0].metadata.Text as string;
+      // Only what the person actually wrote survives — including the word
+      // "video" and a heart emoji they typed themselves.
+      expect(text).toBe("Best #CES Ever! Loved this new video setup, can't wait to share more. ❤️");
+
+      // None of the UI chrome leaked in.
+      expect(text).not.toContain('Photos');
+      expect(text).not.toContain('Click for video:');
+      expect(text).not.toContain('Jane Doe');
+      expect(text).not.toContain('reacted');
+      expect(text).not.toContain('others');
+
+      // The attachments themselves are untouched — stripping the boilerplate
+      // link TEXT must not stop the link's href from being discovered.
+      const media = items.filter((i) => i.classification === 'media');
+      expect(media.length).toBe(3);
+      expect(media.filter((m) => m.metadata.Type === 'Photo').length).toBe(2);
+      expect(media.filter((m) => m.metadata.Type === 'Video').length).toBe(1);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

@@ -5,7 +5,7 @@ import { DataSource } from 'typeorm';
 import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { Events, EventService, OnEvent } from '@ci/domains/events';
-import { QuestionService } from '@ci/domains/intelligence';
+import { excludeForkedOriginsSql, QuestionService } from '@ci/domains/intelligence';
 import { GraphEnrichmentService, MaintenanceOrchestratorService } from '@ci/domains/maintenance';
 import {
   ContextPromptGenerateService,
@@ -256,6 +256,7 @@ export class SmartRotationListener {
       FROM ci.questions q
       WHERE q.is_active = TRUE
         AND (q.is_private_to IS NULL OR q.is_private_to = $1)
+        ${excludeForkedOriginsSql('q', '$1')}
         AND NOT EXISTS (
           SELECT 1 FROM ci.answers a
           WHERE a.question_id = q.question_id

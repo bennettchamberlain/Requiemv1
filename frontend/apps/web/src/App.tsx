@@ -67,6 +67,7 @@ const SearchPage = lazy(() => import('@/pages/SearchPage'));
 const FilesPage = lazy(() => import('@/pages/FilesPage'));
 const SavedSearchesPage = lazy(() => import('@/pages/SavedSearchesPage'));
 const ServerSettingsPage = lazy(() => import('@/pages/ServerSettingsPage'));
+const DeviceConnectPage = lazy(() => import('@/pages/DeviceConnectPage'));
 const SharedSearchPage = lazy(() => import('@/pages/SharedSearchPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 const StatsPage = lazy(() => import('@/pages/StatsPage'));
@@ -101,6 +102,13 @@ function RedirectFeedSummaryToBrief() {
   const { id } = useParams<{ id: string }>();
 
   return <Navigate to={`/brief/summaries/${id ?? ''}`} replace />;
+}
+
+/** Events explorer moved to /memory/events; keep query (view=, filters) intact. */
+function RedirectMemoryToEvents() {
+  const { search } = useLocation();
+
+  return <Navigate to={{ pathname: '/memory/events', search }} replace />;
 }
 
 function Providers({ children }: { children: ReactNode }) {
@@ -147,11 +155,13 @@ function AppRoutes() {
   useLocationTracking();
 
   // On the native app the API origin must be configured before anything else can
-  // load. If we're running natively with no server set, route to the setup screen.
-  // Inert on web (isNativePlatform() is false there).
+  // load. Route to `/device-connect` (Portal picker). `/server` is Advanced URL
+  // entry. `/connect` is Sources and must not be used here.
   useEffect(() => {
-    if (isNativePlatform() && !getApiBaseUrl() && location.pathname !== '/server') {
-      navigate('/server', { replace: true });
+    const pairing = location.pathname === '/device-connect' || location.pathname === '/server';
+
+    if (isNativePlatform() && !getApiBaseUrl() && !pairing) {
+      navigate('/device-connect', { replace: true });
     }
   }, [location.pathname, navigate]);
 
@@ -186,6 +196,7 @@ function AppRoutes() {
         />
 
         <Route element={<CenteredLayout />}>
+          <Route path="/device-connect" element={<DeviceConnectPage />} />
           <Route path="/server" element={<ServerSettingsPage />} />
 
           <Route
@@ -266,6 +277,14 @@ function AppRoutes() {
             path="/memory"
             element={
               <ProtectedRoute>
+                <RedirectMemoryToEvents />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/memory/events"
+            element={
+              <ProtectedRoute>
                 <MemoryPage />
               </ProtectedRoute>
             }
@@ -288,8 +307,14 @@ function AppRoutes() {
           {isFeatureEnabled('files.page') && (
             <>
               <Route path="/files" element={<Navigate to="/memory/content" replace />} />
+              {/*
+                The optional :fileId gives an individual file a shareable URL and
+                makes Back close the viewer. It is one route rather than two so
+                FilesPage stays mounted when the param changes — a second route
+                would remount it and throw away every page the user scrolled in.
+              */}
               <Route
-                path="/memory/content"
+                path="/memory/content/:fileId?"
                 element={
                   <ProtectedRoute>
                     <FilesPage />
@@ -311,9 +336,15 @@ function AppRoutes() {
 
           {isFeatureEnabled('insights.page') && (
             <>
-              <Route path="/prompts" element={<Navigate to="/memory/questions" replace />} />
+              {/*
+                "Questions" is what this page used to be called; it is
+                "Reflections" in the UI now. Both old paths stay as redirects so
+                bookmarks, docs and any link still in the wild keep working.
+              */}
+              <Route path="/prompts" element={<Navigate to="/memory/reflections" replace />} />
+              <Route path="/memory/questions" element={<Navigate to="/memory/reflections" replace />} />
               <Route
-                path="/memory/questions"
+                path="/memory/reflections"
                 element={
                   <ProtectedRoute>
                     <PromptsPage />
@@ -348,7 +379,7 @@ function AppRoutes() {
             />
           )}
 
-          <Route path="/memory/knowledge" element={<Navigate to="/memory?view=graph" replace />} />
+          <Route path="/memory/knowledge" element={<Navigate to="/memory/events?view=graph" replace />} />
 
           {isFeatureEnabled('chat.page') && (
             <Route

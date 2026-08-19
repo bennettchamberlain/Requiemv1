@@ -2,7 +2,7 @@ import type { DataSource } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { type UserServiceContext } from '@ci/common/context';
-import type { EmbeddingGenerationService} from '@ci/common/embeddings';
+import type { EmbeddingGenerationService } from '@ci/common/embeddings';
 import { embedSkipReason, shouldEmbedType } from '@ci/common/embeddings';
 import type { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';

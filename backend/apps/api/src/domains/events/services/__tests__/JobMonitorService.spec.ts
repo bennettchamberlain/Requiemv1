@@ -2,6 +2,8 @@ import { UnauthorizedException } from '@nestjs/common';
 import type { SchedulerRegistry } from '@nestjs/schedule';
 import type { Repository } from 'typeorm';
 
+import { CronRunStore } from '@ci/common/schedule';
+
 import type { PgBossArchiveEntity } from '../../entities/PgBossArchiveEntity';
 import type { PgBossJobEntity } from '../../entities/PgBossJobEntity';
 import type { PgBossQueueEntity } from '../../entities/PgBossQueueEntity';
@@ -347,5 +349,101 @@ describe('JobMonitorService.getDashboard', () => {
         lastRunAt: '2026-08-17T00:00:00.000Z',
       },
     ]);
+  });
+
+  it('uses durable ci.cron_runs when the process has never fired the job', async () => {
+    const nextRun = { toISO: () => '2026-08-18T01:00:00.000Z' };
+    const durableAt = new Date('2026-08-01T12:00:00.000Z');
+
+    const spy = jest
+      .spyOn(CronRunStore, 'lastRunByName')
+      .mockResolvedValueOnce(new Map([['PipelineTickCron.tick', durableAt]]));
+
+    try {
+      const cronJobs = new Map<string, unknown>([
+        [
+          'PipelineTickCron.tick',
+          {
+            cronTime: { source: '0 */2 * * * *', timeZone: 'UTC' },
+            isActive: true,
+            nextDate: () => nextRun,
+            lastDate: () => {
+              throw new Error('never fired since boot');
+            },
+          },
+        ],
+      ]);
+
+      const { service } = makeService({ cronJobs });
+      const { crons } = await service.getDashboard(context);
+
+      expect(crons).toEqual([
+        {
+          name: 'PipelineTickCron.tick',
+          cron: '0 */2 * * * *',
+          timezone: 'UTC',
+          running: true,
+          nextRunAt: '2026-08-18T01:00:00.000Z',
+          lastRunAt: '2026-08-01T12:00:00.000Z',
+        },
+      ]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+describe('JobMonitorService.fireCronJobs', () => {
+  it('fires every registered cron once', () => {
+    const ticks: string[] = [];
+    const cronJobs = new Map<string, unknown>([
+      ['A.run', { fireOnTick: () => ticks.push('A.run') }],
+      ['B.run', { fireOnTick: () => ticks.push('B.run') }],
+    ]);
+    const { service } = makeService({ cronJobs });
+
+    expect(service.fireCronJobs()).toEqual({
+      fired: ['A.run', 'B.run'],
+      skipped: [],
+      errors: [],
+    });
+    expect(ticks).toEqual(['A.run', 'B.run']);
+  });
+
+  it('can fire a single named cron and skip the rest', () => {
+    const ticks: string[] = [];
+    const cronJobs = new Map<string, unknown>([
+      ['A.run', { fireOnTick: () => ticks.push('A.run') }],
+      ['B.run', { fireOnTick: () => ticks.push('B.run') }],
+    ]);
+    const { service } = makeService({ cronJobs });
+
+    expect(service.fireCronJobs(['B.run'])).toEqual({
+      fired: ['B.run'],
+      skipped: ['A.run'],
+      errors: [],
+    });
+    expect(ticks).toEqual(['B.run']);
+  });
+
+  it('records a fireOnTick throw without stopping the sweep', () => {
+    const cronJobs = new Map<string, unknown>([
+      [
+        'bad.run',
+        {
+          fireOnTick: () => {
+            throw new Error('boom');
+          },
+        },
+      ],
+      ['ok.run', { fireOnTick: () => undefined }],
+    ]);
+    const { service } = makeService({ cronJobs });
+
+    expect(service.fireCronJobs()).toEqual({
+      fired: ['ok.run'],
+      skipped: [],
+      errors: [{ name: 'bad.run', error: 'boom' }],
+    });
   });
 });

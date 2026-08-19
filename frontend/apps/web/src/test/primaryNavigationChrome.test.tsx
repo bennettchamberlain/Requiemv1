@@ -9,8 +9,8 @@
  * synced yet"). The chips belong in the header's flow, where the header's own
  * layout accounts for them.
  *
- * The mobile layout has no header, so it keeps the fixed placement — nothing
- * here applies to it.
+ * Phone chrome puts the same chips and Add control in `MobileTopBar`, in flow
+ * next to search. Nothing here applies to that layout.
  */
 
 import { type ReactNode } from 'react';
@@ -61,7 +61,11 @@ vi.mock('@/common/feature', async () => {
 // rather than provided for.
 vi.mock('@/components/modals/CaptureModal', () => ({ CaptureModal: () => null }));
 vi.mock('@/components/modals/UploadModal', () => ({ UploadModal: () => null }));
-vi.mock('@/components/modals/AddItemModal', () => ({ AddPersonModal: () => null }));
+vi.mock('@/components/modals/AddItemModal', () => ({
+  AddEventModal: () => null,
+  AddPersonModal: () => null,
+  AddPlaceModal: () => null,
+}));
 vi.mock('@/components/modals/AddItemModal/AddConceptModal.tsx', () => ({ AddConceptModal: () => null }));
 vi.mock('@/components/modals/InventoryItemModal', () => ({ InventoryItemModal: () => null }));
 

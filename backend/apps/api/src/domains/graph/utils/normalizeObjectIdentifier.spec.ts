@@ -9,13 +9,13 @@ import {
 /**
  * THE SHARED VECTOR TABLE.
  *
- * This exact table is duplicated into CI-Import-Tools
- * (`backend/src/ci-server/__tests__/objectIdentifiers.test.ts`). The two
- * normalizers must agree byte-for-byte or the ci.object_identifiers lookup
- * silently misses — a receipt-side GTIN that normalizes differently from the
- * scan-side one produces two claims that never meet.
- *
- * When you add a case here, add it there in the same commit.
+ * Until CI-Import-Tools' retirement, this exact table was duplicated into
+ * that repo (`backend/src/ci-server/__tests__/objectIdentifiers.test.ts`),
+ * since the two normalizers had to agree byte-for-byte or the
+ * ci.object_identifiers lookup would silently miss — a receipt-side GTIN
+ * that normalizes differently from the scan-side one produces two claims
+ * that never meet. CI-Import-Tools' import functionality is now native here
+ * (`backend/apps/api/src/domains/import/`), so this is the only copy left.
  */
 const VECTORS: ReadonlyArray<{
   name: string;

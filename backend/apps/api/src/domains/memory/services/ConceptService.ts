@@ -262,6 +262,30 @@ export class ConceptService extends EntityService<ConceptEntity, Concept> {
     return rows.map((row) => ({ id: row.id, type: 'concept' as IndexableEntity }));
   }
 
+  /**
+   * True total of concepts matching the same filters {@link getEntitiesForConcepts} applies
+   * (minus the pagination-only `limit`/`order`/`afterTime`/`afterId`) — a real `COUNT(*)`, not
+   * the length of one `limit`-bounded page of identifiers. See EventService.countEntitiesForEvents.
+   */
+  async countEntitiesForConcepts(
+    context: ServiceContext,
+    options: { startTime?: Date; endTime?: Date },
+  ): Promise<number> {
+    let query = this.repository
+      .createQueryBuilder('concept')
+      .where('concept.owner_user_id = :userId', { userId: context.userId });
+
+    if (options.startTime) {
+      query = query.andWhere('concept.created_at >= :startTime', { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere('concept.created_at <= :endTime', { endTime: options.endTime });
+    }
+
+    return query.getCount();
+  }
+
   async update(context: ServiceContext, id: string, data: UpdateConceptDto): Promise<Concept | null> {
     const { properties, ...rest } = data;
 

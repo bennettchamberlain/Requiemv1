@@ -3,6 +3,7 @@
  * Current packages: Messages/<channel>/messages.json (array of {ID,Timestamp,Contents,Attachments}),
  * plus Messages/index.json mapping channel ids to display names. */
 import fs from 'node:fs';
+import { open, readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseCSV } from './csv';
@@ -58,11 +59,15 @@ function parseTimestamp(s: string | undefined): Date | undefined {
   return isNaN(d.getTime()) ? undefined : d;
 }
 
-function findMessageFile(channelDir: string): string | null {
+async function findMessageFile(channelDir: string): Promise<string | null> {
   for (const name of MESSAGE_FILES) {
     const p = path.join(channelDir, name);
-    if (fs.existsSync(p)) {
+    try {
+      await stat(p);
+
       return p;
+    } catch {
+      /* ignore */
     }
   }
 
@@ -71,10 +76,10 @@ function findMessageFile(channelDir: string): string | null {
 
 // Package folder casing differs across export eras ("messages" vs "Messages",
 // "account" vs "Account") — look children up case-insensitively.
-function findChildDir(dir: string, name: string): string | null {
+async function findChildDir(dir: string, name: string): Promise<string | null> {
   let names: string[];
   try {
-    names = fs.readdirSync(dir);
+    names = await readdir(dir);
   } catch {
     return null;
   }
@@ -86,7 +91,7 @@ function findChildDir(dir: string, name: string): string | null {
 
     const p = path.join(dir, n);
     try {
-      if (fs.statSync(p).isDirectory()) {
+      if ((await stat(p)).isDirectory()) {
         return p;
       }
     } catch {
@@ -97,7 +102,7 @@ function findChildDir(dir: string, name: string): string | null {
   return null;
 }
 
-function findMessagesDir(root: string): string | null {
+async function findMessagesDir(root: string): Promise<string | null> {
   return findChildDir(root, 'messages');
 }
 
@@ -138,13 +143,13 @@ const EMPTY_CONTEXT: PackageContext = { channelNames: {}, friends: new Map() };
  * the only per-user-id name source in the package. `relationships` covers
  * current friends only; anyone else stays an opaque snowflake id.
  */
-function loadAccountContext(packageRoot: string): {
+async function loadAccountContext(packageRoot: string): Promise<{
   friends: Map<string, string>;
   selfId?: string;
   selfName?: string;
-} {
+}> {
   const friends = new Map<string, string>();
-  const accountDir = findChildDir(packageRoot, 'account');
+  const accountDir = await findChildDir(packageRoot, 'account');
   if (!accountDir) {
     return { friends };
   }
@@ -232,11 +237,70 @@ function participantsFor(
   return resolved;
 }
 
-// True when this directory directly contains channel-id subfolders each with a messages file.
-function hasChannelSubdirs(dir: string): boolean {
+/**
+ * Is this actually a Discord message file, or just a file with the same name?
+ *
+ * Google Chat ships `Google Chat/Groups/<Space|DM …>/messages.json` — the exact
+ * layout `hasChannelSubdirs` was looking for, and the reason a Google Takeout
+ * reported Discord among its data sources. The FILE branch of `recognize` has
+ * always checked content; the directory branch trusted the name, so the two
+ * disagreed about the same bytes.
+ *
+ * Google Chat's file is an object (`{"messages": [...]}`) whose rows carry
+ * `creator`/`created_date`/`text`; Discord's is an array of rows carrying
+ * `ID`/`Timestamp`/`Contents`. A 4KB prefix separates them before anything
+ * parses a large export in full.
+ */
+async function messageFileIsDiscord(fpath: string): Promise<boolean> {
+  try {
+    const base = path.basename(fpath).toLowerCase();
+
+    if (base === 'messages.csv') {
+      const prefix = await readPrefix(fpath);
+
+      return (prefix.split(/\r?\n/)[0]?.trim() ?? '') === DISCORD_HEADER;
+    }
+
+    if (base === 'messages.json') {
+      // Cheap reject first: Discord's rows are keyed "Timestamp", and no
+      // Google Chat export contains that token.
+      if (!(await readPrefix(fpath)).includes('"Timestamp"')) {
+        return false;
+      }
+
+      return looksLikeMessagesJSON(await readFile(fpath, 'utf8'));
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return false;
+}
+
+/** The first 4KB of a file as text, or '' when it cannot be read. */
+async function readPrefix(fpath: string): Promise<string> {
+  try {
+    const fh = await open(fpath, 'r');
+    try {
+      const buf = Buffer.alloc(4096);
+      const { bytesRead: n } = await fh.read(buf, 0, 4096, 0);
+
+      return buf.toString('utf8', 0, n);
+    } finally {
+      await fh.close().catch(() => {});
+    }
+  } catch {
+    return '';
+  }
+}
+
+// True when this directory directly contains channel-id subfolders each with a
+// messages file THIS importer can read — the name alone is not enough, see
+// messageFileIsDiscord.
+async function hasChannelSubdirs(dir: string): Promise<boolean> {
   let names: string[];
   try {
-    names = fs.readdirSync(dir);
+    names = await readdir(dir);
   } catch {
     return false;
   }
@@ -244,14 +308,16 @@ function hasChannelSubdirs(dir: string): boolean {
   for (const name of names) {
     const sub = path.join(dir, name);
     try {
-      if (!fs.statSync(sub).isDirectory()) {
+      if (!(await stat(sub)).isDirectory()) {
         continue;
       }
     } catch {
       continue;
     }
 
-    if (findMessageFile(sub)) {
+    const messageFile = await findMessageFile(sub);
+
+    if (messageFile && (await messageFileIsDiscord(messageFile))) {
       return true;
     }
   }
@@ -266,25 +332,25 @@ export class DiscordFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       const base = path.basename(root).toLowerCase();
       try {
         if (base === 'messages.csv') {
           // A lone messages.csv whose header is exactly ID,Timestamp,Contents,Attachments.
-          const raw = fs.readFileSync(root, 'utf8');
+          const raw = await readFile(root, 'utf8');
           const firstLine = raw.split(/\r?\n/)[0]?.trim() ?? '';
           if (firstLine === DISCORD_HEADER) {
             return { confidence: 0.8 };
           }
         } else if (base === 'messages.json') {
-          if (looksLikeMessagesJSON(fs.readFileSync(root, 'utf8'))) {
+          if (looksLikeMessagesJSON(await readFile(root, 'utf8'))) {
             return { confidence: 0.8 };
           }
         }
@@ -295,14 +361,14 @@ export class DiscordFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       try {
-        const messagesDir = findMessagesDir(root);
-        if (messagesDir && hasChannelSubdirs(messagesDir)) {
+        const messagesDir = await findMessagesDir(root);
+        if (messagesDir && (await hasChannelSubdirs(messagesDir))) {
           return { confidence: 0.9 };
         }
 
-        if (hasChannelSubdirs(root)) {
+        if (await hasChannelSubdirs(root)) {
           return { confidence: 0.85 };
         }
       } catch {
@@ -341,7 +407,7 @@ export class DiscordFileImporter implements FileImporter {
     }
 
     // Locate the messages dir (root/[Mm]essages if it exists, else root itself).
-    const messagesDir = findMessagesDir(root) ?? root;
+    const messagesDir = (await findMessagesDir(root)) ?? root;
 
     // Current packages ship an index.json mapping channel ids to display names —
     // the only place DM channels get a human-readable name.
@@ -358,7 +424,7 @@ export class DiscordFileImporter implements FileImporter {
     // Account/ sits beside Messages/ in a full package; when the user selected
     // the messages dir itself, look one level up for it.
     const packageRoot = messagesDir === root ? path.dirname(root) : root;
-    const ctx: PackageContext = { channelNames, ...loadAccountContext(packageRoot) };
+    const ctx: PackageContext = { channelNames, ...(await loadAccountContext(packageRoot)) };
 
     let names: string[];
     try {
@@ -379,7 +445,7 @@ export class DiscordFileImporter implements FileImporter {
         continue;
       }
 
-      if (findMessageFile(sub)) {
+      if (await findMessageFile(sub)) {
         await this.processChannel(sub, params, ctx);
       }
     }
@@ -420,7 +486,7 @@ export class DiscordFileImporter implements FileImporter {
     const channelName = idxName || jsonName || `Channel ${channelId}`;
     const participants = participantsFor(kind, idxName, recipients, ctx);
 
-    const msgPath = findMessageFile(channelDir);
+    const msgPath = await findMessageFile(channelDir);
     if (!msgPath) {
       return;
     }

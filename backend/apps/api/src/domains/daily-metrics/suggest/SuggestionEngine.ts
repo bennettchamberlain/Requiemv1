@@ -8,6 +8,7 @@ import { FeatureService } from '@ci/common/feature';
 import { LoggerService } from '@ci/common/logging';
 import { ActionService } from '@ci/domains/intelligence';
 
+import { MAX_DERIVED_ACTIONS_PER_DAY } from '../coldStart';
 import { CorrelationEngine } from '../correlation/CorrelationEngine';
 import { shiftIso, todayIsoInTimezone } from '../dateUtil';
 import type { MetricAnomaly } from '../entities/MetricAnomalyEntity';
@@ -88,7 +89,7 @@ export class SuggestionEngine {
 
     const promote = await this.featureService.isFeatureEnabled('derivation.engines');
     if (promote) {
-      await this.promote(context, persisted);
+      await this.promote(context, persisted, timezone);
     }
 
     this.logger.log('Suggestion propose complete', {
@@ -154,7 +155,11 @@ export class SuggestionEngine {
     return MetricSuggestionEntity.toEgressType(saved);
   }
 
-  private async promote(context: UserServiceContext, rows: MetricSuggestion[]): Promise<void> {
+  private async promote(
+    context: UserServiceContext,
+    rows: MetricSuggestion[],
+    timezone: string,
+  ): Promise<void> {
     if (rows.length === 0) {
       return;
     }
@@ -178,6 +183,15 @@ export class SuggestionEngine {
     );
     const chosen = scored[0]?.row;
     if (!chosen) {
+      return;
+    }
+
+    const used = await this.actionService.countDerivedOnLocalDay(
+      context,
+      todayIsoInTimezone(timezone),
+      timezone,
+    );
+    if (used >= MAX_DERIVED_ACTIONS_PER_DAY) {
       return;
     }
 

@@ -1,5 +1,8 @@
 import { Field, InputType } from '@nestjs/graphql';
 
+import { PersonAddressInput } from './PersonAddressType';
+import { PersonContactInput } from './PersonContactInput';
+
 @InputType()
 export class CreatePersonInput {
   @Field()
@@ -30,12 +33,40 @@ export class CreatePersonInput {
   lastName?: string;
 
   @Field({ nullable: true })
+  nickname?: string;
+
+  @Field({ nullable: true })
+  pronouns?: string;
+
+  @Field({ nullable: true })
   gender?: string;
 
   /** ISO date (YYYY-MM-DD). */
   @Field({ nullable: true })
   birthDate?: string;
 
+  @Field({ nullable: true })
+  jobTitle?: string;
+
+  @Field({ nullable: true })
+  organization?: string;
+
+  @Field({ nullable: true })
+  department?: string;
+
+  @Field({ nullable: true })
+  website?: string;
+
+  /**
+   * Labelled addresses (home, work, ...). The primary one is also mirrored onto
+   * the flat `streetAddress`/`city`/... keys, so sending both is redundant —
+   * prefer this.
+   */
+  @Field(() => [PersonAddressInput], { nullable: true })
+  addresses?: PersonAddressInput[];
+
+  // Flat single-address fields. Predate `addresses`; still accepted so existing
+  // capture sources keep working. Ignored when `addresses` is also sent.
   @Field({ nullable: true })
   streetAddress?: string;
 
@@ -56,6 +87,14 @@ export class CreatePersonInput {
 
   @Field({ nullable: true })
   avatarUrl?: string;
+
+  /**
+   * Labelled contact methods (work email, mobile phone, ...); registered as
+   * identifiers with source='user'. The labelled form of `emails`/`phones` —
+   * both are accepted and merged.
+   */
+  @Field(() => [PersonContactInput], { nullable: true })
+  contacts?: PersonContactInput[];
 
   /** Initial contact emails; registered as identifiers (source='user'). */
   @Field(() => [String], { nullable: true })

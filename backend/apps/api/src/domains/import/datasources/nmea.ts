@@ -1,5 +1,6 @@
 /* NMEA GPS sentences datasource (MVP) */
 import fs from 'node:fs';
+import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { FileImporter, DirEntry, Recognition } from './registry';
@@ -17,10 +18,10 @@ export class NMEAFileImporter implements FileImporter {
     }
 
     try {
-      if (fs.statSync(full).isFile()) {
+      if ((await stat(full)).isFile()) {
         const ext = path.extname(full).toLowerCase();
         if (ext === '.nmea' || ext === '.log' || ext === '.txt') {
-          const first = fs.readFileSync(full, 'utf8').split(/\n/).slice(0, 5).join('\n');
+          const first = (await readFile(full, 'utf8')).split(/\n/).slice(0, 5).join('\n');
           if (/^\$GP(RMC|GGA)/m.test(first)) {
             return { confidence: 0.8 };
           }
@@ -194,7 +195,13 @@ function pushLocation(
     classification: 'location',
     timestamp: ts,
     location: { latitude: lat, longitude: lon },
-    metadata: { Name: `Location ${lat.toFixed(5)}, ${lon.toFixed(5)}`, Altitude: alt },
+    // No `Name`: an NMEA sentence has no name to give. The invented
+    // `Location ${lat}, ${lon}` was never rendered as a title — a raw GPS
+    // `location.fix` routes to `position` ONLY (destinationsFor in
+    // push/canonical.ts) — it only ever landed in `ci.position.name`, where a
+    // coordinate pair is not a place name. A null name is what makes the row a
+    // reverse-geocode candidate.
+    metadata: { Altitude: alt },
     content: { filename: path.basename(source), data: async () => Buffer.from('') },
   };
   const g: Graph = { item };

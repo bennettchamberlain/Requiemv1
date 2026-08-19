@@ -1,5 +1,6 @@
 /* WhatsApp — per-chat _chat.txt export (iOS and Android formats). */
 import fs from 'node:fs';
+import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import readline from 'node:readline';
 
@@ -19,6 +20,63 @@ import { timeframeContains } from './timeline';
 // starting its own — the source of the cross-sender content merging.
 const IOS_RE =
   /^\[(\d{1,2}\/\d{1,2}\/\d{2,4}), (\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AP]M)?)\] ([^:]+):[ ]?([\s\S]*)$/;
+/**
+ * The chat's name, from the only place an export records it: the directory.
+ *
+ * This is IDENTITY, not decoration — every message id is
+ * `whatsapp:<conversationName>:<timestamp>:<seq>`, and `Conversation` becomes
+ * the thread id. So it has to be the same name however the archive arrived, and
+ * it was not: uploading sanitises spaces to underscores, while the inbox keeps
+ * the name verbatim. The same export therefore produced
+ *
+ *   whatsapp:LITA _ Companion Tech Team:2025-12-21T17:58:57.000Z:267          (inbox)
+ *   whatsapp:WhatsApp_Chat_-_LITA___Companion_Tech_Team:2026-02-04T…:2683     (upload)
+ *
+ * — different provenance triples for the same message, so re-importing one
+ * export through the other route duplicated all 5,329 messages instead of
+ * deduping them, and the two runs disagreed about the thread as well. The old
+ * prefix strip contributed: `/^WhatsApp Chat( with| -)?/i` only matches the
+ * space-separated form, so the sanitised name kept `WhatsApp_Chat_-_` as part
+ * of the chat's own name.
+ *
+ * Separators are normalised BEFORE the prefix is stripped, so both spellings
+ * converge on `LITA Companion Tech Team`.
+ *
+ * The FILE is consulted before the directory. WhatsApp writes the transcript
+ * as the generic `_chat.txt` and puts the chat name on the containing folder,
+ * which is the layout the directory rule was written for — and for that layout
+ * nothing changes, because `_chat` normalises away to nothing. But WhatsApp's
+ * other supported shape, which `recognize` below accepts explicitly, names the
+ * FILE after the chat: `WhatsApp Chat with Alice.txt`. Several of those land in
+ * one folder, and the directory-first rule gave every one of them the folder's
+ * name — a single thread id for every chat in the export, and one identity
+ * namespace for every message id. Whichever half of the path actually names the
+ * chat has to win, and that is the more specific half.
+ */
+function conversationNameFrom(chatPath: string): string {
+  const normalise = (value: string): string =>
+    value
+      // Underscores stand in for characters the exporter or the upload path
+      // could not keep — including the `|` in this corpus's own chat name.
+      .replace(/[_+]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const stripPrefix = (value: string): string =>
+    value.replace(/^WhatsApp Chat(\s+(?:with|-))?\s*/i, '').trim();
+
+  // `_chat.txt` — the generic transcript name — normalises to '' and falls
+  // through to the directory, which is where that layout keeps the chat name.
+  const fromFile = stripPrefix(normalise(path.basename(chatPath, '.txt').replace(/_chat/i, '')));
+  if (fromFile) {
+    return fromFile;
+  }
+
+  const fromDirectory = stripPrefix(normalise(path.basename(path.dirname(chatPath))));
+
+  return fromDirectory || 'Chat';
+}
+
 // Android: DD/MM/YYYY, HH:MM - Sender: message
 const ANDROID_RE = /^(\d{2}\/\d{2}\/\d{4}), (\d{2}:\d{2}) - ([^:]+):[ ]?([\s\S]*)$/;
 
@@ -127,14 +185,14 @@ export class WhatsAppFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       const base = path.basename(root).toLowerCase();
       if (base === '_chat.txt') {
         return { confidence: 0.97 };
@@ -147,9 +205,9 @@ export class WhatsAppFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       try {
-        const names = fs.readdirSync(root).map((n) => n.toLowerCase());
+        const names = (await readdir(root)).map((n) => n.toLowerCase());
         if (names.includes('_chat.txt')) {
           return { confidence: 0.97 };
         }
@@ -173,30 +231,38 @@ export class WhatsAppFileImporter implements FileImporter {
       return;
     }
 
-    let chatPath = root;
+    let chatPaths: string[] = [root];
     try {
       if (fs.statSync(root).isDirectory()) {
         const names = fs.readdirSync(root);
-        const found =
-          names.find((n) => n.toLowerCase() === '_chat.txt') ||
-          names.find((n) => /^whatsapp chat/i.test(n) && n.endsWith('.txt'));
-        if (!found) {
+        const canonical = names.find((n) => n.toLowerCase() === '_chat.txt');
+        // A `_chat.txt` is WhatsApp's single-chat export directory, so it is
+        // the whole conversation and nothing else in the folder is a
+        // transcript. Otherwise every `WhatsApp Chat …txt` sibling is its own
+        // chat — `find` imported only the FIRST and silently discarded the
+        // rest, which is a whole conversation lost per extra file.
+        chatPaths = canonical
+          ? [path.join(root, canonical)]
+          : // sorted so the emission order does not depend on readdir order
+            names
+              .filter((n) => /^whatsapp chat/i.test(n) && n.endsWith('.txt'))
+              .sort()
+              .map((n) => path.join(root, n));
+        if (!chatPaths.length) {
           return;
         }
-
-        chatPath = path.join(root, found);
       }
     } catch {
       return;
     }
 
-    const conversationName =
-      path
-        .basename(path.dirname(chatPath))
-        .replace(/^WhatsApp Chat( with| -)?/i, '')
-        .trim() ||
-      path.basename(chatPath, '.txt').replace(/_chat/i, '').trim() ||
-      'Chat';
+    for (const chatPath of chatPaths) {
+      await this.importChat(chatPath, params);
+    }
+  }
+
+  private async importChat(chatPath: string, params: ImportParams): Promise<void> {
+    const conversationName = conversationNameFrom(chatPath);
 
     // Attached media sits next to _chat.txt in the same export directory.
     const mediaDir = path.dirname(chatPath);

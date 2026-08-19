@@ -28,6 +28,7 @@ type ResourceType =
   | 'saved-search'
   | 'tag'
   | 'task'
+  | 'taskPendingChange'
   | 'thread'
   | 'user';
 

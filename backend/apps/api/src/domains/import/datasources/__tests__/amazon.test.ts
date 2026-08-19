@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'path';
 
 import { AmazonFileImporter } from '../amazon';
@@ -29,6 +31,22 @@ describe('Amazon datasource', () => {
     expect(rec.confidence).toBe(0);
   });
 
+  it('does not recognize a same-named CSV from a different retailer', async () => {
+    // "Order History.csv" is boilerplate phrasing several other retailers'
+    // own "download your data" exports use verbatim — a Walmart/eBay/Target
+    // export with completely different columns must not be claimed on the
+    // filename alone. The filename tier used to skip the header check
+    // entirely and return 0.95 the moment the name matched.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ci-amazon-lookalike-'));
+    const fpath = path.join(dir, 'Order History.csv');
+    fs.writeFileSync(fpath, 'Item,Category,Store,Total\nWidget,Home,Target,19.99\n');
+
+    const fi = new AmazonFileImporter();
+    const rec = await fi.recognize({}, { filename: 'Order History.csv', fullPath: fpath });
+    expect(rec.confidence).toBe(0);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('imports order rows into purchase items', async () => {
     const root = path.join(FIXTURES_DIR, 'amazon-export');
     const fi = new AmazonFileImporter();
@@ -54,6 +72,15 @@ describe('Amazon datasource', () => {
     expect(first.metadata['Order ID']).toBe('111-2233445-6677889');
     expect(first.timestamp).toBeInstanceOf(Date);
     expect(first.timestamp!.toISOString()).toBe('2023-01-15T10:30:00.000Z');
+
+    // The order-level event carries the same total under BOTH `Total` and
+    // `Amount`. `Amount` is what LifeStatsService's spend chart reads
+    // (amountToMinorSql is `metadata->>'Amount'`, the key coinbase.ts and
+    // venmo.ts already write) — without it, a real import with $45.8k across
+    // 619 orders showed an empty Spending panel telling the user to go import
+    // purchase history that was already sitting there, unread.
+    const orderEvent = pipeline.find((g) => g.item.classification === 'order')!.item;
+    expect(orderEvent.metadata.Amount).toBe(orderEvent.metadata.Total);
 
     // Date-only "Order Date" parses to a valid timestamp.
     expect(purchases[1].item.metadata.Product).toBe('The Pragmatic Programmer, 20th Anniversary Edition');

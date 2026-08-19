@@ -10,6 +10,8 @@ import {
   uploadLegacyAccountImport,
 } from '@/lib/accountDataPortability';
 
+import { WorkingSetSection } from './WorkingSetSection';
+
 function isLegacyJsonExport(file: File): boolean {
   const lower = file.name.toLowerCase();
 
@@ -118,6 +120,8 @@ export function DataPortabilitySection() {
 
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         {success ? <p className="text-sm text-muted-foreground">{success}</p> : null}
+
+        <WorkingSetSection />
       </div>
 
       <input

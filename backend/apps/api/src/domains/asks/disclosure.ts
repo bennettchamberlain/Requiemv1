@@ -61,6 +61,11 @@ export function buildDisclosedAnswer(params: {
 
   const items = formDisclosesItems(params.form) ? kept.map((item) => ({ id: item.id, type: item.type })) : [];
 
+  // NOTE: these counts stay truthful here. This record is the owner's own
+  // receipt ("you shared 4 of 6") and the source the audit is written from, so
+  // blanking it at this layer would blind the owner and the audit to close a
+  // leak that only exists on the ASKER's side. The cut is made in
+  // `AskAnswerType.toType`, which knows who is looking.
   return {
     form: params.form,
     items,

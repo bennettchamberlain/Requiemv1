@@ -5,7 +5,8 @@ import path from 'path';
 import { InstagramFileImporter } from '../instagram';
 import type { ImportParams } from '../timeline';
 
-import type { EmittedGraph } from './support/emitted';
+import { metaText } from './support/emitted';
+import type { EmittedGraph, TestPipeline } from './support/emitted';
 
 const FIXTURES_DIR = path.join(__dirname, 'fixtures');
 
@@ -128,6 +129,22 @@ describe('Instagram datasource — Meta HTML format', () => {
     expect(likes[0].item.timestamp).toBeInstanceOf(Date);
     const text = (await likes[0].item.content!.data!()).toString();
     expect(text).toContain('A great post about AI & privacy');
+  });
+
+  it('titles every activity entry with its human label, not the raw export filename', () => {
+    // Every entry from processHtmlActivity used to have no Title at all, so the
+    // canonical mapper fell back to content.filename — "liked_posts.html",
+    // "stories_viewed.html" — verbatim, on the timeline, repeated once per
+    // entry. Verified on a real import: all 39 Instagram events, every one.
+    return runImport().then((pipeline) => {
+      const likes = pipeline.filter((p) => p.item.classification === 'like');
+
+      expect(likes[0].item.metadata.Title).toMatch(/^Instagram like\b/);
+      expect(likes[0].item.metadata.Title).not.toMatch(/\.html$/);
+      // The entry's own detail (caption/URL) still rides along, now as
+      // Description rather than being the only place it appeared.
+      expect(likes[0].item.metadata.Description).toContain('A great post about AI & privacy');
+    });
   });
 
   it('imports saved items as classification "interaction"', async () => {
@@ -259,5 +276,170 @@ describe('Instagram datasource — same-minute dedup-collapse regression', () =>
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+/*
+ * Fixtures under fixtures/instagram-html-activity are verbatim entry blocks cut
+ * out of a real Instagram DYI export (June 2026), one or two entries per file,
+ * with the surrounding <head>/<main> scaffolding kept intact — including the
+ * `<base href="../../">` that decides where a media href resolves to. The only
+ * edits: saved_posts.html's shortcode was retargeted at liked_posts.html's
+ * first post (so one fixture exercises the like+save collapse), and
+ * profile_photos.html's second entry points at a jpg that is deliberately NOT
+ * in the tree (Meta ships incomplete media trees routinely).
+ */
+describe('Instagram datasource — HTML activity entry fidelity', () => {
+  const root = path.join(FIXTURES_DIR, 'instagram-html-activity');
+
+  async function runImport(): Promise<{ pipeline: EmittedGraph[]; drops: Array<[string, string?]> }> {
+    const fi = new InstagramFileImporter();
+    const pipeline: EmittedGraph[] = [];
+    const drops: Array<[string, string?]> = [];
+    (pipeline as TestPipeline).drop = (reason: string, detail?: string) => {
+      drops.push([reason, detail]);
+    };
+
+    await fi.fileImport({}, { filename: 'instagram-html-activity', fullPath: root }, {
+      pipeline,
+      timeframe: {},
+      log: () => {},
+    } as unknown as ImportParams);
+
+    return { pipeline, drops };
+  }
+
+  function byId(pipeline: EmittedGraph[], id: string): EmittedGraph | undefined {
+    return pipeline.find((g) => g.item.id === id);
+  }
+
+  // ---- F25: the permalink is the entry's only identity, and it was dropped ----
+
+  it('maps the per-entry permalink onto metadata.URL, so the content row stops landing blank', async () => {
+    const { pipeline } = await runImport();
+    const like = byId(pipeline, 'instagram:liked_posts.html#0');
+
+    expect(like).toBeDefined();
+    // push/inputs.ts toContentInput reads metadata.URL into content.url. Before
+    // this, `like` / `post` / `social_bookmark` rows reached ci.content with a
+    // blank text AND a blank url — 2,010 of them — because stripTags cannot see
+    // an href attribute.
+    expect(like!.item.metadata.URL).toBe('https://www.instagram.com/p/DX7KXtTionR/');
+    expect(like!.item.metadata.PostId).toBe('DX7KXtTionR');
+  });
+
+  it('keys a post-bearing entry on the post URI so a like and a save of the same post collapse', async () => {
+    const { pipeline } = await runImport();
+    const like = byId(pipeline, 'instagram:liked_posts.html#0');
+    const saved = byId(pipeline, 'instagram:saved_posts.html#0');
+
+    // metadata.URI REPLACES the content row's source_id (toContentInput), and
+    // ci.content dedups on the provenance triple — so one content row, not two.
+    expect(like!.item.metadata.URI).toBe('instagram:p:DX7KXtTionR');
+    expect(saved!.item.metadata.URI).toBe('instagram:p:DX7KXtTionR');
+    // The EVENTS stay distinct: liking and saving are two occurrences.
+    expect(like!.item.id).not.toBe(saved!.item.id);
+  });
+
+  it('does not give a saved COLLECTION the identity of the first post inside it', async () => {
+    const { pipeline } = await runImport();
+    const collection = byId(pipeline, 'instagram:saved_collections.html#0');
+
+    expect(collection).toBeDefined();
+    // The collection links to several posts; adopting the first one's shortcode
+    // as its URI would merge the collection row onto that post's content row.
+    expect(collection!.item.metadata.URI).toBeUndefined();
+    // ...and it is named after itself, not after a post it contains.
+    expect(collection!.item.metadata.Title).toBe('Instagram saved collection — Sales');
+  });
+
+  it('lifts the post owner into Author/Handle', async () => {
+    const { pipeline } = await runImport();
+    const like = byId(pipeline, 'instagram:liked_posts.html#0');
+
+    expect(like!.item.metadata.Author).toBe('Companion Intelligence');
+    expect(like!.item.metadata.Handle).toBe('companionintelligence');
+  });
+
+  it('de-duplicates the Caption row Meta emits twice per post', async () => {
+    const { pipeline } = await runImport();
+    const like = byId(pipeline, 'instagram:liked_posts.html#0');
+    const description = metaText(like!.item.metadata.Description);
+    const caption = metaText(like!.item.metadata.Caption);
+
+    expect(caption).toContain('Everyone’s using AI. Almost no one trusts it.');
+    // liked_posts.html carries two adjacent, byte-identical <tr>Caption</tr>
+    // rows per entry; the body used to carry the caption (and the label) twice.
+    expect(description.split('Almost no one trusts it').length - 1).toBe(1);
+    expect(description.split(/\bCaption\b/).length - 1).toBe(1);
+  });
+
+  it('titles an entry by what it is about, not by a constant', async () => {
+    const { pipeline } = await runImport();
+    const titles = pipeline
+      .filter((g) => g.item.classification === 'like')
+      .map((g) => metaText(g.item.metadata.Title));
+
+    expect(titles).toHaveLength(2);
+    for (const t of titles) {
+      expect(t.startsWith('Instagram like — ')).toBe(true);
+    }
+
+    // Two likes of two different posts must not share a title.
+    expect(new Set(titles).size).toBe(2);
+  });
+
+  // ---- F24: `if (!text) continue` never fired on non-empty boilerplate ----
+
+  it('drops an entry whose every field is empty or pure bookkeeping', async () => {
+    const { pipeline, drops } = await runImport();
+
+    // other_content.html's entries are an EMPTY Media cell plus "Is an
+    // advertisement: False" and an "Update time" — non-empty text, zero
+    // content, and a distinct `#<i>` id each so they never deduped either.
+    expect(pipeline.filter((g) => g.item.id?.startsWith('instagram:other_content.html#'))).toHaveLength(0);
+    expect(drops).toContainEqual(['empty_after_parse', 'instagram:other_content.html#0']);
+    expect(drops).toContainEqual(['empty_after_parse', 'instagram:other_content.html#1']);
+  });
+
+  // ---- F23: a profile photo with no photo behind it ----
+
+  it('emits a profile photo as a real media item pointed at the file on disk', async () => {
+    const { pipeline } = await runImport();
+    const photo = byId(pipeline, 'instagram:profile_photos.html#0');
+
+    expect(photo).toBeDefined();
+    // The href is export-root-relative via <base href="../../">, two levels up
+    // from your_instagram_activity/media/ — resolving it against the page's own
+    // directory finds nothing.
+    expect(photo!.item.intermediateLocation).toBe(path.join(root, 'media', 'other', '17876858054753740.jpg'));
+    // Classified off the file's real MIME, so MediaStage uploads the bytes and
+    // kindFor sees image/jpeg instead of text/plain.
+    expect(photo!.item.content.mediaType).toBe('image/jpeg');
+    expect(photo!.item.classification).toBe('media');
+    expect((await photo!.item.content.data!()).length).toBeGreaterThan(0);
+  });
+
+  it('skips a media entry whose file is not in the export instead of minting a phantom photo', async () => {
+    const { pipeline, drops } = await runImport();
+
+    expect(byId(pipeline, 'instagram:profile_photos.html#1')).toBeUndefined();
+    expect(drops).toContainEqual(['missing_media', 'instagram:profile_photos.html#1']);
+    // Nothing at all reaches the pipeline as a media/photo item without bytes.
+    for (const g of pipeline) {
+      if (g.item.classification === 'media' || g.item.classification === 'photo') {
+        expect(g.item.intermediateLocation).toBeTruthy();
+        expect(g.item.content.mediaType).not.toBe('text/plain');
+      }
+    }
+  });
+
+  it('emits every surviving entry exactly once with a stable, unique id', async () => {
+    const { pipeline } = await runImport();
+    const ids = pipeline.map((g) => g.item.id!);
+
+    // 2 likes + 1 saved post + 1 saved collection + 1 profile photo + 1 repost.
+    expect(ids).toHaveLength(6);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });

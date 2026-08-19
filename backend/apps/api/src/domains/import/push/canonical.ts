@@ -224,7 +224,18 @@ export function kindFor(classification: string | null, mediaType: string | null)
       return 'capture.audio';
     }
 
-    return 'capture.photo'; // no/unknown MIME → default to photo (prior behavior)
+    // A MIME that is present and is NOT media contradicts the classification,
+    // and the classification loses: it is a coarse label an importer chose,
+    // while the mimetype is a statement about the bytes. The Instagram HTML
+    // importer used to stamp 'media' on text/plain entries that carried no file
+    // at all, and this branch's photo default turned every one of them into a
+    // capture.photo event with no photo behind it. 'import.archive_item' is the
+    // same kind classification 'file' gets — the honest "a document" answer.
+    if (mediaType && !mediaType.startsWith('image/')) {
+      return 'import.archive_item';
+    }
+
+    return 'capture.photo'; // image/* or no MIME at all → photo (prior behavior)
   }
 
   if (classification && KIND_BY_CLASSIFICATION[classification]) {
@@ -270,8 +281,9 @@ export type Destination =
  * (`BACKFILLABLE_ENTITIES` in CI-Server maintenance/SearchIndexBackfillService).
  * These are the bulk-ingest tables whose `createMany()` no longer emits a per-row
  * `*CreatedEvent`, so their rows must be swept into `ci_search.embeddings` after a
- * push. This is the CI-Import-Tools-side mirror of that closed set — keep the two
- * in sync when CI-Server adds a backfillable type.
+ * push. Until CI-Import-Tools' retirement this was that repo's own mirror of the
+ * closed set, kept in sync by hand; now that the importer is native, keep this
+ * list in sync with `BACKFILLABLE_ENTITIES` directly instead.
  */
 export type BackfillEntityType =
   | 'communication'
@@ -327,6 +339,69 @@ export function backfillEntityTypesFor(destinations: Iterable<Destination>): Bac
   ];
 
   return ORDER.filter((e) => seen.has(e));
+}
+
+/**
+ * The `DeterministicEdgeSource` values the graph-edge projection sweeps by —
+ * the source-table vocabulary `promote.edge_*` legs are keyed on
+ * (`EDGE_STAGES_BY_SOURCE` in the pipeline domain's
+ * `GraphEdgeSweepRequestListener`, itself the matrix's own `source` field).
+ *
+ * Declared as a local union rather than imported for the same reason
+ * {@link BackfillEntityType} is: this file is the import domain's canonical
+ * routing table and must not depend on the pipeline or maintenance domains.
+ * The wire strings are the contract; the listener validates and drops anything
+ * it does not recognise.
+ */
+export type EdgeProjectionSource = 'communications' | 'events' | 'content' | 'inventory' | 'positions';
+
+/**
+ * Map an import {@link Destination} to the edge-projection source its rows land
+ * under, so a push can ask for exactly the `promote.edge_*` legs whose input it
+ * just wrote.
+ *
+ * `browser_activity` maps to nothing on purpose: `ci.browser_activity` has no
+ * rule in the deterministic-edge matrix, so requesting a leg for it would be a
+ * sweep that can only ever find zero candidates.
+ *
+ * Note `positions` — plural, the matrix's spelling — against the `position`
+ * destination. The two vocabularies were named independently and this function
+ * is the seam; getting it wrong is a silently-dropped source at the listener,
+ * which is why `canonical.edgeSources.test.ts` pins every pair.
+ */
+const DESTINATION_TO_EDGE_SOURCE: Record<Destination, EdgeProjectionSource | null> = {
+  events: 'events',
+  content: 'content',
+  communications: 'communications',
+  inventory: 'inventory',
+  browser_activity: null,
+  position: 'positions',
+};
+
+/**
+ * Reduce the destinations a push actually wrote to into the distinct, ordered
+ * list of edge-projection sources to sweep. Deduplicated and stably ordered so
+ * requests are deterministic, exactly as {@link backfillEntityTypesFor} is.
+ *
+ * An empty result is a real answer and the caller must treat it as one: a push
+ * that wrote only browser activity has no edges to project, and requesting
+ * "every source" in that case would turn a narrow import into a full-corpus
+ * pass.
+ */
+export function edgeProjectionSourcesFor(destinations: Iterable<Destination>): EdgeProjectionSource[] {
+  const seen = new Set<EdgeProjectionSource>();
+  for (const dest of destinations) {
+    const source = DESTINATION_TO_EDGE_SOURCE[dest];
+    if (source) {
+      seen.add(source);
+    }
+  }
+
+  // Stable order mirroring the matrix's own rule order for deterministic
+  // requests and tests.
+  const ORDER: EdgeProjectionSource[] = ['communications', 'events', 'content', 'inventory', 'positions'];
+
+  return ORDER.filter((s) => seen.has(s));
 }
 
 /**
@@ -471,6 +546,73 @@ export function discordAttachmentFilename(url: string): string | undefined {
  */
 export function isDiscordAttachmentOnly(rec: CanonicalRecord): boolean {
   return rec.sourceSystem === 'discord' && !str(rec.metadata.Text) && discordAttachmentUrls(rec).length > 0;
+}
+
+/**
+ * The metadata keys `descriptionFor` draws a body from, in its exact order —
+ * so a placeholder check can inspect the RAW value the body would have come
+ * from, before sanitizeText() strips U+FFFC out of it.
+ */
+const BODY_METADATA_KEYS = [
+  'Text',
+  'Body',
+  'Message',
+  'Description',
+  'Notes',
+  'Note',
+  'Highlight',
+  'Comment',
+  'Caption',
+] as const;
+
+/**
+ * A body that consists ENTIRELY of placeholder glyphs and whitespace — no
+ * letters, no digits, no punctuation the user typed.
+ *
+ * U+FFFC (OBJECT REPLACEMENT CHARACTER) is what macOS stores in
+ * `message.text` where an inline attachment sits, so an attachment sent with
+ * no caption has a body of exactly "\uFFFC". U+FFFD (REPLACEMENT CHARACTER)
+ * is what a mis-decoded byte run collapses to; a body that is nothing but
+ * those carries no recoverable text either.
+ */
+const PLACEHOLDER_ONLY_BODY = /^[\uFFFC\uFFFD\s]+$/;
+
+/**
+ * A record whose source body existed but held nothing except attachment /
+ * mojibake placeholder glyphs.
+ *
+ * Same contract as {@link isDiscordAttachmentOnly}, generalised: the row is
+ * still worth keeping (its attachments, participants and timestamp are the
+ * payload) but `content` must stay EMPTY. Without this, `toCommunicationInput`
+ * falls through `rec.description ?? rec.title`, and `titleFor` synthesizes
+ * "Message — <sender>" (or, with no sender, the `message_<id>.txt` source
+ * filename) — a label the user never wrote, presented as the message they
+ * sent. A live appliance database held 21,781 iMessage rows whose entire
+ * `content` was a single U+FFFC, plus 313 that were only U+FFFD.
+ *
+ * Two cases, in this order:
+ *
+ *  - the description SURVIVED sanitization but is still nothing but glyphs —
+ *    that is the U+FFFD mojibake case, which sanitizeText deliberately leaves
+ *    alone (it mints U+FFFD itself for lone surrogates);
+ *  - the description came back null, and a raw body key held only U+FFFC —
+ *    the attachment case, invisible after the fact because sanitizeText has
+ *    already stripped the glyph, so it has to be read off the raw metadata.
+ *
+ * Checking the description FIRST is what keeps a record with real prose under
+ * a lower-priority key (Text a placeholder, Body actual text) from being
+ * blanked.
+ */
+export function isAttachmentPlaceholderOnly(rec: CanonicalRecord): boolean {
+  if (rec.description !== null) {
+    return PLACEHOLDER_ONLY_BODY.test(rec.description);
+  }
+
+  return BODY_METADATA_KEYS.some((k) => {
+    const raw = rec.metadata[k];
+
+    return typeof raw === 'string' && PLACEHOLDER_ONLY_BODY.test(raw);
+  });
 }
 
 /** A Reddit comment (a reply authored on a post, or a saved one). */
@@ -668,12 +810,21 @@ export function destinationsFor(rec: CanonicalRecord): Destination[] {
     return ['content'];
   }
 
-  if (kind.startsWith('capture.') && rec.coordinates) {
-    // Any geotagged capture — photo, video, or audio — keeps its home in events
-    // (where its media file is linked) and also donates a position row so the
-    // estimator can interpolate nearby coordinate-less events. A geotagged phone
-    // video is as good a GPS donor as a photo.
-    return ['events', 'position'];
+  if (kind.startsWith('capture.')) {
+    // A dated photo/video/audio ALWAYS takes a content row alongside its event
+    // — same pattern as media.play/watch/listen/read above, and for the same
+    // reason: EventMediaLoader resolves an event's thumbnail/attachment by
+    // INNER-JOINing ci.content on ci.events through the shared (source_type,
+    // source_system, source_id) triple (see ContentService.findMediaFilesByEventIds).
+    // A destination list of just ['events'] never creates that content row, so
+    // the join finds nothing — every dated capture rendered as a blank tile,
+    // gallery-wide, regardless of how many files MediaStage actually uploaded.
+    // Verified on a real import: 2,098 photo/video events (Apple Photos,
+    // WhatsApp, Instagram, Facebook), 0 with a linked content row.
+    //
+    // Geotagged captures keep donating a position row too, same as before —
+    // this only adds 'content' to what was already being returned.
+    return rec.coordinates ? ['events', 'content', 'position'] : ['events', 'content'];
   }
 
   return ['events'];
@@ -694,12 +845,30 @@ function sanitizeText(s: string): string {
   // Drop NUL + C0 control chars (keep tab/newline/CR); replace lone UTF-16
   // surrogates with U+FFFD. Otherwise Postgres TEXT/JSONB ingest fails with
   // "invalid byte sequence for encoding UTF8" on real mbox/SMS cruft.
+  //
+  // U+FFFC OBJECT REPLACEMENT CHARACTER goes too. It is not text — it is the
+  // placeholder macOS writes into `message.text` at the position an inline
+  // attachment sits, so a photo sent with no caption arrives as a body of
+  // exactly "\uFFFC" and a captioned one as "\uFFFC look at this". Keeping it
+  // put a bare control glyph in `ci.communications.content` for 21,781 iMessage
+  // rows (and a leading glyph on ~6k captioned ones). Stripping it here —
+  // rather than at one importer — means every str()/descriptionFor()/titleFor()
+  // caller sees the caption alone, and an attachment-only body collapses to
+  // null so isAttachmentPlaceholderOnly can blank the content outright.
+  //
+  // U+FFFD is deliberately NOT stripped: the two replaces below MINT it for
+  // lone surrogates, so removing it would undo the repair this function
+  // exists to do. Bodies that are nothing BUT U+FFFD are handled by
+  // isAttachmentPlaceholderOnly instead, which reads the raw value.
   return (
     s
       // eslint-disable-next-line no-control-regex -- stripping control bytes is the point
       .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
       .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, '\uFFFD')
       .replace(/(^|[^\uD800-\uDBFF])([\uDC00-\uDFFF])/g, '$1\uFFFD')
+      // Last, so removing it can never splice two lone surrogates into a
+      // valid pair and fabricate a character that was not in the source.
+      .replace(/\uFFFC/g, '')
   );
 }
 

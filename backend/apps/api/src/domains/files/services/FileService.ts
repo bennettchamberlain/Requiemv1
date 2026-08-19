@@ -286,6 +286,31 @@ export class FileService implements OnModuleInit {
     return rows.map((row) => ({ id: row.id, type: 'file' as IndexableEntity }));
   }
 
+  /**
+   * True total of files matching the same filters {@link getEntitiesForFiles} applies (minus
+   * the pagination-only `limit`/`order`/`afterTime`/`afterId`) — a real `COUNT(*)`, not the
+   * length of one `limit`-bounded page of identifiers. See EventService.countEntitiesForEvents.
+   */
+  async countEntitiesForFiles(
+    context: ServiceContext,
+    options: { startTime?: Date; endTime?: Date },
+  ): Promise<number> {
+    let query = this.fileRepository
+      .createQueryBuilder('file')
+      .where('file.user_id = :userId', { userId: context.userId })
+      .andWhere('file.variant = :variant', { variant: FileVariant.ORIGINAL });
+
+    if (options.startTime) {
+      query = query.andWhere('file.created_at >= :startTime', { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere('file.created_at <= :endTime', { endTime: options.endTime });
+    }
+
+    return query.getCount();
+  }
+
   async findByHash(context: UserServiceContext, fileHash: string): Promise<SignedFile | null> {
     const result = await this.fileRepository.findOne({
       where: {
@@ -588,5 +613,35 @@ export class FileService implements OnModuleInit {
       .getRawMany();
 
     return rows.map((row) => ({ userId: row.user_id, bucketStart: row.bucket_start, count: row.count }));
+  }
+
+  /**
+   * Originals that are still missing a description but already have a PREVIEW
+   * child — candidates to re-fire {@link PreviewGeneratedEvent} after the user
+   * turns image description back on.
+   */
+  async findUndescribedImagePreviews(
+    userId: string,
+    limit: number,
+  ): Promise<Array<{ previewId: string; parentFileId: string }>> {
+    const rows: Array<{ preview_id: string; parent_file_id: string }> = await this.fileRepository
+      .createQueryBuilder('preview')
+      .innerJoin(
+        FileEntity,
+        'original',
+        'original.id = preview.parentId AND original.userId = preview.userId',
+      )
+      .select('preview.id', 'preview_id')
+      .addSelect('original.id', 'parent_file_id')
+      .where('preview.userId = :userId', { userId })
+      .andWhere('preview.variant = :previewVariant', { previewVariant: FileVariant.PREVIEW })
+      .andWhere('original.variant = :originalVariant', { originalVariant: FileVariant.ORIGINAL })
+      .andWhere('original.contentType LIKE :imagePrefix', { imagePrefix: 'image/%' })
+      .andWhere("(original.description IS NULL OR btrim(original.description) = '')")
+      .orderBy('original.createdAt', 'DESC')
+      .limit(Math.max(1, Math.min(limit, 2000)))
+      .getRawMany();
+
+    return rows.map((row) => ({ previewId: row.preview_id, parentFileId: row.parent_file_id }));
   }
 }

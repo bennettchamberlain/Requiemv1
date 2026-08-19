@@ -138,12 +138,67 @@ describe('EventService CTI aggregate', () => {
     expect(result?.title).toBe('Renamed');
   });
 
-  it('remove deletes via the BASE row (FK cascades the detail)', async () => {
+  it('remove tombstones the detail row instead of destroying the aggregate', async () => {
     repo.findOne.mockResolvedValueOnce(Object.assign(new EventEntity(), { id: 'e1', userId: 'user-1' }));
 
     const removed = await service.remove({ userId: 'user-1' } as ServiceContext, 'e1');
 
     expect(removed).toBe(true);
-    expect(baseRepo.delete).toHaveBeenCalledWith({ id: 'e1' });
+    expect(repo.update).toHaveBeenCalledWith({ id: 'e1' }, { isDeleted: true });
+    // The base row must survive — deleting it would cascade the detail away and
+    // make the deletion irreversible.
+    expect(baseRepo.delete).not.toHaveBeenCalled();
+  });
+
+  it('remove refuses an already-deleted event (its authorizing load skips tombstones)', async () => {
+    repo.findOne.mockResolvedValueOnce(null);
+
+    const removed = await service.remove({ userId: 'user-1' } as ServiceContext, 'e1');
+
+    expect(removed).toBe(false);
+    expect(repo.findOne).toHaveBeenCalledWith({
+      where: expect.objectContaining({ id: 'e1', isDeleted: false }),
+    });
+    expect(repo.update).not.toHaveBeenCalled();
+  });
+
+  it('restore clears the tombstone and returns the event', async () => {
+    repo.findOne
+      // The tombstoned row the restore is authorized against …
+      .mockResolvedValueOnce(
+        Object.assign(new EventEntity(), { id: 'e1', userId: 'user-1', isDeleted: true }),
+      )
+      // … and the reload after the flag is cleared.
+      .mockResolvedValueOnce(
+        Object.assign(new EventEntity(), { id: 'e1', userId: 'user-1', isDeleted: false }),
+      );
+
+    const restored = await service.restore({ userId: 'user-1' } as ServiceContext, 'e1');
+
+    expect(repo.findOne.mock.calls[0][0]).toEqual({
+      where: expect.objectContaining({ id: 'e1', isDeleted: true }),
+    });
+    expect(repo.update).toHaveBeenCalledWith({ id: 'e1' }, { isDeleted: false });
+    expect(restored?.id).toBe('e1');
+  });
+
+  it('restore is a no-op when nothing with that id was deleted', async () => {
+    repo.findOne.mockResolvedValueOnce(null);
+
+    const restored = await service.restore({ userId: 'user-1' } as ServiceContext, 'e1');
+
+    expect(restored).toBeNull();
+    expect(repo.update).not.toHaveBeenCalled();
+  });
+
+  it('findById hides a tombstoned event from readers', async () => {
+    repo.findOne.mockResolvedValueOnce(null);
+
+    const found = await service.findById({ userId: 'user-1' } as ServiceContext, 'e1');
+
+    expect(found).toBeNull();
+    expect(repo.findOne).toHaveBeenCalledWith({
+      where: expect.objectContaining({ id: 'e1', isDeleted: false }),
+    });
   });
 });

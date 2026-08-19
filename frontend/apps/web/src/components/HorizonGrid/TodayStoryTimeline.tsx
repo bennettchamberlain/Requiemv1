@@ -1,35 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { gql, useQuery } from '@apollo/client';
+import timelineCssUrl from '@knight-lab/timelinejs/dist/css/timeline.css?url';
+import timelineLocaleUrl from '@knight-lab/timelinejs/dist/js/locale/en.json?url';
 import timelineJsUrl from '@knight-lab/timelinejs/dist/js/timeline.js?url';
-import '@knight-lab/timelinejs/dist/css/timeline.css';
 
 import type { ScheduleEvent } from '@/api/useScheduleService';
 
 import { buildTimelineData, eventFallsOnDay } from './scheduleToTimeline';
+import {
+  TIMELINE_HEIGHT_PX,
+  inertTimeline,
+  syncTimeaxisLabelCollision,
+  timelineDeckKey,
+  timelineJsOptions,
+} from './timelineRuntime';
 import './timelineTheme.css';
-
-const TIMELINE_LOOKBACK_DAYS = 14;
-const TIMELINE_LOOKAHEAD_DAYS = 21;
-
-const GET_TIMELINE_EVENTS = gql(`
-  query GetTimelineEvents($from: DateTime!, $to: DateTime!) {
-    eventsInRange(from: $from, to: $to) {
-      id
-      title
-      description
-      startTime
-      endTime
-      isAllDay
-      status
-      category
-      locationName
-      sourceSystem
-      externalSyncStatus
-      metadata
-    }
-  }
-`);
 
 interface TodayStoryTimelineProps {
   events: readonly ScheduleEvent[];
@@ -41,12 +26,39 @@ type TimelineCtor = new (
   data: unknown,
   options?: Record<string, unknown>,
 ) => {
+  ready?: boolean;
+  config?: unknown | null;
+  animator_storyslider?: { stop?: () => void };
+  animator_menubar?: { stop?: () => void };
   destroy?: () => void;
+  on?: (event: string, callback: () => void) => void;
 };
 
 type Rgb = { r: number; g: number; b: number };
 
 let timelineLoad: Promise<TimelineCtor> | null = null;
+
+function ensureTimelineCss(): Promise<void> {
+  const existing = document.querySelector<HTMLLinkElement>('link[data-timelinejs-css]');
+  if (existing) {
+    return existing.sheet
+      ? Promise.resolve()
+      : new Promise((resolve) => {
+          existing.addEventListener('load', () => resolve(), { once: true });
+          existing.addEventListener('error', () => resolve(), { once: true });
+        });
+  }
+
+  return new Promise((resolve) => {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = timelineCssUrl;
+    link.dataset.timelinejsCss = '1';
+    link.onload = () => resolve();
+    link.onerror = () => resolve();
+    document.head.appendChild(link);
+  });
+}
 
 /**
  * Load TimelineJS as a classic script (not an ESM import).
@@ -54,46 +66,55 @@ let timelineLoad: Promise<TimelineCtor> | null = null;
  * The dist file is a UMD IIFE that assigns `window.TL`. Vite's ESM transform of
  * that file keeps `TL` module-local, so `globalThis.TL` stays undefined and the
  * story strip mounts empty — which is exactly the blank panel we hit.
+ *
+ * CSS is injected here too, instead of a static import, so the rest of Today
+ * does not wait on Knight Lab's 96kb stylesheet.
  */
 function loadTimelineCtor(): Promise<TimelineCtor> {
   if (typeof window !== 'undefined' && window.TL?.Timeline) {
-    return Promise.resolve(window.TL.Timeline);
+    const Timeline = window.TL.Timeline;
+
+    return ensureTimelineCss().then(() => Timeline);
   }
 
   if (!timelineLoad) {
-    timelineLoad = new Promise<TimelineCtor>((resolve, reject) => {
-      const existing = document.querySelector<HTMLScriptElement>('script[data-timelinejs]');
-      if (existing && window.TL?.Timeline) {
-        resolve(window.TL.Timeline);
-
-        return;
-      }
-
-      const script = existing ?? document.createElement('script');
-      script.dataset.timelinejs = '1';
-      script.src = timelineJsUrl;
-      script.async = true;
-      script.onload = () => {
-        if (window.TL?.Timeline) {
-          resolve(window.TL.Timeline);
-        } else {
-          timelineLoad = null;
-          reject(new Error('TimelineJS loaded without window.TL.Timeline'));
-        }
-      };
-
-      script.onerror = () => {
-        timelineLoad = null;
-        reject(new Error('Failed to load TimelineJS script'));
-      };
-
-      if (!existing) {
-        document.head.appendChild(script);
-      }
-    });
+    timelineLoad = Promise.all([ensureTimelineCss(), loadTimelineScript()]).then(([, Timeline]) => Timeline);
   }
 
   return timelineLoad;
+}
+
+function loadTimelineScript(): Promise<TimelineCtor> {
+  return new Promise<TimelineCtor>((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>('script[data-timelinejs]');
+    if (existing && window.TL?.Timeline) {
+      resolve(window.TL.Timeline);
+
+      return;
+    }
+
+    const script = existing ?? document.createElement('script');
+    script.dataset.timelinejs = '1';
+    script.src = timelineJsUrl;
+    script.async = true;
+    script.onload = () => {
+      if (window.TL?.Timeline) {
+        resolve(window.TL.Timeline);
+      } else {
+        timelineLoad = null;
+        reject(new Error('TimelineJS loaded without window.TL.Timeline'));
+      }
+    };
+
+    script.onerror = () => {
+      timelineLoad = null;
+      reject(new Error('Failed to load TimelineJS script'));
+    };
+
+    if (!existing) {
+      document.head.appendChild(script);
+    }
+  });
 }
 
 /** Resolve a CSS color (incl. theme tokens) to RGB for TimelineJS options. */
@@ -125,78 +146,86 @@ function timelineBgFromTheme(): Rgb {
   return cssColorToRgb('var(--card)', isDark ? { r: 20, g: 28, b: 32 } : { r: 250, g: 250, b: 248 });
 }
 
-function startOfLocalDay(date: Date): Date {
-  const day = new Date(date);
-  day.setHours(0, 0, 0, 0);
-
-  return day;
-}
-
-function addDays(date: Date, days: number): Date {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-
-  return next;
-}
-
 /**
  * TimelineJS3 storytelling strip — sits above the week grid.
  *
- * Hidden when the focused day has nothing on it. When a day with events is
- * opened, the deck is the surrounding schedule so the TimelineJS nav can walk
- * forward and back from that day.
+ * Hidden when the focused day has nothing on it. Uses the week already loaded
+ * for the grid — a second 35-day query was rebuilding a wide time-nav canvas
+ * on every cache-and-network pass.
  */
 export function TodayStoryTimeline({ events, day }: TodayStoryTimelineProps) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
+  const instanceRef = useRef<InstanceType<TimelineCtor> | null>(null);
   const dayHasEvents = useMemo(() => events.some((event) => eventFallsOnDay(event, day)), [events, day]);
-  const range = useMemo(() => {
-    const start = startOfLocalDay(day);
-
-    return {
-      from: addDays(start, -TIMELINE_LOOKBACK_DAYS).toISOString(),
-      to: addDays(start, TIMELINE_LOOKAHEAD_DAYS).toISOString(),
-    };
-  }, [day]);
-
-  const { data: fetched } = useQuery<{ eventsInRange?: ScheduleEvent[] | null }>(GET_TIMELINE_EVENTS, {
-    variables: range,
-    skip: !dayHasEvents,
-    fetchPolicy: 'cache-and-network',
-    errorPolicy: 'all',
-  });
-
-  const storyEvents = fetched?.eventsInRange ?? events;
-  const { data, startAtSlide } = useMemo(() => buildTimelineData(storyEvents, day), [storyEvents, day]);
+  const { data, startAtSlide } = useMemo(() => buildTimelineData(events, day), [events, day]);
+  const deckKey = useMemo(() => timelineDeckKey(data, startAtSlide), [data, startAtSlide]);
+  const payloadRef = useRef({ data, startAtSlide });
+  payloadRef.current = { data, startAtSlide };
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
-  const [themeKey, setThemeKey] = useState(() =>
-    typeof document !== 'undefined' && document.documentElement.classList.contains('dark') ? 'dark' : 'light',
-  );
+  const [shouldMount, setShouldMount] = useState(false);
+  const [inView, setInView] = useState(false);
+  const inViewRef = useRef(false);
+  inViewRef.current = inView;
 
-  // Rebuild when light/dark flips — TimelineJS bakes default_bg_color at construct.
   useEffect(() => {
-    const root = document.documentElement;
-    const sync = () => setThemeKey(root.classList.contains('dark') ? 'dark' : 'light');
-    const observer = new MutationObserver(sync);
-    observer.observe(root, { attributes: true, attributeFilter: ['class'] });
+    const section = sectionRef.current;
+    if (!section) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setInView(entry.isIntersecting);
+        if (entry.isIntersecting) {
+          setShouldMount(true);
+        }
+      },
+      { rootMargin: '80px', threshold: 0 },
+    );
+    observer.observe(section);
 
     return () => observer.disconnect();
-  }, []);
+  }, [dayHasEvents, data.events.length]);
+
+  useEffect(() => {
+    const instance = instanceRef.current;
+    if (!instance) {
+      return;
+    }
+
+    instance.ready = inView && !document.hidden;
+  }, [inView]);
 
   useEffect(() => {
     const host = hostRef.current;
-    if (!host || data.events.length === 0) {
+    const { data: deck, startAtSlide: landing } = payloadRef.current;
+    if (!shouldMount || !host || deck.events.length === 0) {
       return;
     }
 
     let cancelled = false;
     setError(null);
     setReady(false);
+    inertTimeline(instanceRef.current);
+    instanceRef.current = null;
     host.replaceChildren();
     const mount = document.createElement('div');
     mount.style.width = '100%';
-    mount.style.height = '360px';
+    mount.style.height = `${TIMELINE_HEIGHT_PX}px`;
     host.appendChild(mount);
+
+    const onVisibility = () => {
+      const instance = instanceRef.current;
+      if (!instance) {
+        return;
+      }
+
+      instance.ready = inViewRef.current && !document.hidden;
+    };
+
+    document.addEventListener('visibilitychange', onVisibility);
 
     void loadTimelineCtor()
       .then((Timeline) => {
@@ -212,19 +241,27 @@ export function TodayStoryTimeline({ events, day }: TodayStoryTimelineProps) {
           }
 
           try {
-            new Timeline(mount, data, {
-              height: 360,
-              width: mount.clientWidth || host.clientWidth || undefined,
-              timenav_height: 120,
-              timenav_height_percentage: 35,
-              marker_height_min: 24,
-              marker_padding: 3,
-              // Title is slide 0; land on the first event of the focused day.
-              start_at_slide: startAtSlide + 1,
-              hash_bookmark: false,
-              default_bg_color: timelineBgFromTheme(),
-              font: 'Default',
+            const instance = new Timeline(
+              mount,
+              deck,
+              timelineJsOptions({
+                width: mount.clientWidth || host.clientWidth || undefined,
+                startAtSlide: landing,
+                bg: timelineBgFromTheme(),
+                languageUrl: timelineLocaleUrl,
+              }),
+            );
+            instanceRef.current = instance;
+            instance.ready = inViewRef.current && !document.hidden;
+            const syncAxis = () => syncTimeaxisLabelCollision(mount);
+            instance.on?.('zoom_in', syncAxis);
+            instance.on?.('zoom_out', syncAxis);
+            mount.addEventListener('click', (event) => {
+              if (event.target instanceof Element && event.target.closest('.tl-menubar-button')) {
+                requestAnimationFrame(syncAxis);
+              }
             });
+            requestAnimationFrame(syncAxis);
             setReady(true);
           } catch (cause) {
             setError(cause instanceof Error ? cause.message : 'TimelineJS failed to start');
@@ -239,9 +276,17 @@ export function TodayStoryTimeline({ events, day }: TodayStoryTimelineProps) {
 
     return () => {
       cancelled = true;
+      document.removeEventListener('visibilitychange', onVisibility);
+      inertTimeline(instanceRef.current);
+      instanceRef.current = null;
       host.replaceChildren();
     };
-  }, [data, startAtSlide, themeKey]);
+    // inView is read at construct and via visibilitychange; remounting on scroll would be worse.
+    // (react-hooks/exhaustive-deps isn't registered in this repo's eslint config, so the disable
+    // comment that used to sit here was dead weight — flat-config eslint errors on a disable
+    // directive for an unknown rule. The intent it documented still holds: shouldMount + deckKey
+    // are deliberately the only two dependencies.)
+  }, [deckKey, shouldMount]);
 
   if (!dayHasEvents || data.events.length === 0) {
     return null;
@@ -251,6 +296,7 @@ export function TodayStoryTimeline({ events, day }: TodayStoryTimelineProps) {
 
   return (
     <section
+      ref={sectionRef}
       aria-label={`${heading} as a story`}
       className="schedule-today-timeline overflow-hidden rounded-lg border border-border/80 bg-card/40 shadow-sm"
     >

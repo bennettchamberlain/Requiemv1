@@ -1,4 +1,4 @@
-import type { GraphEntityInputDto } from '@ci/domains/graph';
+import { type GraphEntityInputDto, isNonNameParticipant } from '@ci/domains/graph';
 
 import type { StagedEntity } from '../entities/StagedEntityEntity';
 
@@ -90,8 +90,8 @@ export function naturalKeyFor(staged: StagedEntity): string | null {
  * empty, `participantsFor` then found no participants for any record, and a real
  * import silently dropped all 613 of its item→entity edges.
  *
- * `GraphIngestService` is the server's answer to this exact problem — it
- * describes itself as ingest for the CI-Import-Tools timeline. It derives
+ * `GraphIngestService` is the server's answer to this exact problem — it is
+ * bulk ingest for the archive importer's own knowledge graph. It derives
  * `linked_id` as `uuidv5(key)`, so a natural key is a legal identity; it files
  * rows under `import:<sourceSystem>`; and it indexes emails and phones into
  * `ci.entity_identifiers`, which is what lets communication participants and
@@ -126,15 +126,34 @@ export function toGraphEntity(staged: StagedEntity): GraphEntityInputDto | null 
     }
   }
 
-  if (staged.name?.trim()) {
-    properties.names = [staged.name.trim()];
+  const entityType = entityTypeFor(staged);
+  const stagedName = staged.name?.trim();
+
+  // A Person's display name is the one field a user READS, and a parser that
+  // fumbles its label puts that fumble in the address book: 2,353 `Person` rows
+  // on a real appliance were named with a Google Voice call-log heading, minted
+  // straight through this function from `staged.name`. When the name is
+  // structurally not a name, the handle is the honest answer — it is what
+  // identifies this contact anyway — and the garbage never reaches
+  // `properties.names`, which is the array `GraphIngestService` indexes into
+  // `ci.entity_identifiers`.
+  //
+  // Person-only. A `Concept` legitimately named "invoice.pdf" is a thing the
+  // export really did contain, and the filename rule would delete it.
+  const nameIsGarbage = entityType === 'Person' && isNonNameParticipant(stagedName, 'import.toGraphEntity');
+
+  if (stagedName && !nameIsGarbage) {
+    properties.names = [stagedName];
   }
 
   return {
     key,
-    entityType: entityTypeFor(staged),
+    entityType,
     // Not the display name as identity — only what this sighting called them.
-    name: staged.name ?? handle ?? null,
+    // A garbage display name falls back to the handle rather than being shown;
+    // with no handle there is nothing better, and the staged row keeps the
+    // parser's honest record of what it saw.
+    name: (nameIsGarbage ? (handle ?? staged.name) : staged.name) ?? handle ?? null,
     sourceSystem: staged.dataSource ?? 'unknown',
     properties,
   };

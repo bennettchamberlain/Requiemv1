@@ -59,3 +59,6 @@ export { ActionEntity, AnswerEntity, QuestionEntity };
 export { ActionService, AnswerService, QuestionService };
 
 export type { Action, Answer, Question };
+
+// Shared visibility rules for ci.questions
+export { excludeForkedOriginsSql } from './questionScope';

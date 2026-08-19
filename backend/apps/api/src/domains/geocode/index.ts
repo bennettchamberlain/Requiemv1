@@ -38,6 +38,20 @@ import { GoogleGeocodeProvider } from './services/GoogleGeocodeProvider';
 import { PortalGeocodeProvider } from './services/PortalGeocodeProvider';
 
 /**
+ * Picks which provider class backs {@link GEOCODE_PROVIDER}. Portal by default:
+ * the appliance must not hold a provider key or call Google directly. `google`
+ * stays reachable via GEOCODING_PROVIDER for a box that cannot reach Portal.
+ * Pulled out to a pure function (rather than inlined in the `providers` array
+ * below) so the real DI wiring's selection logic is unit-testable without
+ * booting Nest.
+ */
+export function selectGeocodeProviderClass(
+  provider: string,
+): typeof GoogleGeocodeProvider | typeof PortalGeocodeProvider {
+  return provider === 'google' ? GoogleGeocodeProvider : PortalGeocodeProvider;
+}
+
+/**
  * @internal
  */
 @Module({
@@ -52,10 +66,7 @@ import { PortalGeocodeProvider } from './services/PortalGeocodeProvider';
     PortalGeocodeProvider,
     {
       provide: GEOCODE_PROVIDER,
-      // Portal by default: the appliance must not hold a provider key or call
-      // Google directly. `google` stays reachable via GEOCODING_PROVIDER for a
-      // box that cannot reach Portal.
-      useExisting: config.geocoding.provider === 'google' ? GoogleGeocodeProvider : PortalGeocodeProvider,
+      useExisting: selectGeocodeProviderClass(config.geocoding.provider),
     },
   ],
   exports: [GeocodeService],
@@ -67,4 +78,4 @@ export { GeocodeCacheEntity } from './entities/GeocodeCacheEntity';
 export { GEOCODE_PROVIDER } from './services/GeocodeProvider';
 export type { GeocodePoint, GeocodeProvider, GeocodeProviderResult } from './services/GeocodeProvider';
 export { PortalGeocodeProvider } from './services/PortalGeocodeProvider';
-export { isVirtualLocation } from './util/virtualLocations';
+export { isVirtualLocation, isUriLocation } from './util/virtualLocations';

@@ -32,6 +32,22 @@ D_FF = 128
 DROPOUT = 0.1
 
 
+def hierarchical_src_mask(
+    level_ids: torch.Tensor, n_heads: int = N_HEADS
+) -> torch.Tensor:
+    """
+    Paper §3.2 structured attention: no upward information flow.
+
+    Query i may attend to key j iff ``level[j] <= level[i]``
+    (L0↔L0; L1→L0+L1; L2→L0+L1+L2). Boolean True = blocked.
+    Shape ``(B * n_heads, T, T)`` for ``nn.TransformerEncoder``.
+    """
+    qi = level_ids.unsqueeze(2)  # (B, T, 1)
+    kj = level_ids.unsqueeze(1)  # (B, 1, T)
+    blocked = kj > qi
+    return blocked.repeat_interleave(n_heads, dim=0)
+
+
 class L0MAEModel(nn.Module):
     """
     Masked Autoencoder for L0 token sequences.
@@ -148,6 +164,7 @@ class HMTModel(nn.Module):
 
         x = tok_emb + self.pos_emb(bucket_idxs) + self.level_emb(level_ids)
         x = self.dropout(x)
-        x = self.encoder(x, src_key_padding_mask=padding_mask)
+        src_mask = hierarchical_src_mask(level_ids, n_heads=N_HEADS)
+        x = self.encoder(x, mask=src_mask, src_key_padding_mask=padding_mask)
 
         return self.l0_head(x), self.l1_head(x)  # (B,T,V_l0), (B,T,V_l1)

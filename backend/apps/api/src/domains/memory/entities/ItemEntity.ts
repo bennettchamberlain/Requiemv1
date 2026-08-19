@@ -1,5 +1,9 @@
 import { AfterLoad, Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn, Point } from 'typeorm';
 
+import type { AcquisitionMethod, UnitSystem } from '../physicalProperties';
+
+import { numericMeasurementTransformer } from './numericMeasurement';
+
 export type InventoryCondition = 'new' | 'like_new' | 'good' | 'fair' | 'poor' | 'broken' | 'n/a';
 
 /**
@@ -191,6 +195,109 @@ export class ItemEntity {
   @Column('uuid', { name: 'merged_into_object_id', nullable: true })
   mergedIntoObjectId!: string | null;
 
+  // ---------------------------------------------------------------------------
+  // Physical properties (migration 20260818020839_expand_inventory_physical_properties)
+  //
+  // What the object IS, as opposed to what it cost. Every measurement is stored
+  // in one canonical unit and is strictly positive — NULL is the only way to
+  // say "unmeasured". Callers never convert: `normalizePhysicalProperties` in
+  // ../physicalProperties.ts is the single place units are resolved, and it
+  // enforces the same bounds as the CHECK constraints.
+  //
+  // NUMERIC comes back from node-postgres as a string, so these carry
+  // numericMeasurementTransformer to make the declared `number` true — see the
+  // purchasePrice/currentValue columns above, which predate it and still lie.
+  // ---------------------------------------------------------------------------
+
+  /** Longest dimension in MILLIMETRES. */
+  @Column('numeric', {
+    name: 'length_mm',
+    precision: 14,
+    scale: 3,
+    nullable: true,
+    transformer: numericMeasurementTransformer,
+  })
+  lengthMm!: number | null;
+
+  /** Width in MILLIMETRES. */
+  @Column('numeric', {
+    name: 'width_mm',
+    precision: 14,
+    scale: 3,
+    nullable: true,
+    transformer: numericMeasurementTransformer,
+  })
+  widthMm!: number | null;
+
+  /** Height in MILLIMETRES. */
+  @Column('numeric', {
+    name: 'height_mm',
+    precision: 14,
+    scale: 3,
+    nullable: true,
+    transformer: numericMeasurementTransformer,
+  })
+  heightMm!: number | null;
+
+  /** As-owned mass in GRAMS. */
+  @Column('numeric', {
+    name: 'mass_g',
+    precision: 16,
+    scale: 3,
+    nullable: true,
+    transformer: numericMeasurementTransformer,
+  })
+  massG!: number | null;
+
+  /** Capacity — what it HOLDS — in MILLILITRES, not the bounding volume. */
+  @Column('numeric', {
+    name: 'volume_ml',
+    precision: 16,
+    scale: 3,
+    nullable: true,
+    transformer: numericMeasurementTransformer,
+  })
+  volumeMl!: number | null;
+
+  /** Display preference the measurements were entered in. Presentation only. */
+  @Column('text', { name: 'unit_system', nullable: true })
+  unitSystem!: UnitSystem | null;
+
+  /** Lowercase colour names, dominant first. */
+  @Column('text', { name: 'colors', array: true, nullable: true })
+  colors!: string[] | null;
+
+  /** Dominant colour as lowercase `#rrggbb`, for UI swatches. */
+  @Column('text', { name: 'color_hex', nullable: true })
+  colorHex!: string | null;
+
+  /** Lowercase material names — what the object is made of. */
+  @Column('text', { name: 'materials', array: true, nullable: true })
+  materials!: string[] | null;
+
+  /** `{material: fraction}`, fractions in (0,1] summing to at most 1. `{}` = proportions unknown. */
+  @Column('jsonb', { name: 'composition', default: {} })
+  composition!: Record<string, number>;
+
+  /** How it came to be owned — a purchase and a gift mean different things by `acquiredAt`. */
+  @Column('text', { name: 'acquisition_method', nullable: true })
+  acquisitionMethod!: AcquisitionMethod | null;
+
+  /** Seller/giver as free text, for counterparties not (yet) resolved to a graph entity. */
+  @Column('text', { name: 'acquired_from', nullable: true })
+  acquiredFrom!: string | null;
+
+  @Column('uuid', { name: 'acquired_from_entity_id', nullable: true })
+  acquiredFromEntityId!: string | null;
+
+  /** When the object was made — the start of its physical life, not of ownership. */
+  @Column('timestamptz', { name: 'manufactured_at', nullable: true })
+  manufacturedAt!: Date | null;
+
+  /** When it stops being usable. Distinct from warrantyExpiresAt, which is a contract. */
+  @Column('timestamptz', { name: 'expires_at', nullable: true })
+  expiresAt!: Date | null;
+
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date;
 
@@ -263,6 +370,22 @@ export class ItemEntity {
       lastSeenAt: entity.lastSeenAt,
       lastSeenPlaceEntityId: entity.lastSeenPlaceEntityId,
       mergedIntoObjectId: entity.mergedIntoObjectId,
+
+      lengthMm: entity.lengthMm,
+      widthMm: entity.widthMm,
+      heightMm: entity.heightMm,
+      massG: entity.massG,
+      volumeMl: entity.volumeMl,
+      unitSystem: entity.unitSystem,
+      colors: entity.colors,
+      colorHex: entity.colorHex,
+      materials: entity.materials,
+      composition: entity.composition ?? {},
+      acquisitionMethod: entity.acquisitionMethod,
+      acquiredFrom: entity.acquiredFrom,
+      acquiredFromEntityId: entity.acquiredFromEntityId,
+      manufacturedAt: entity.manufacturedAt,
+      expiresAt: entity.expiresAt,
 
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,

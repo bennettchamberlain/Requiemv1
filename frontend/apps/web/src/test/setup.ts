@@ -93,3 +93,21 @@ if (!window.PointerEvent) {
 
   vi.stubGlobal('PointerEvent', PointerEventPolyfill);
 }
+
+// jsdom has PointerEvent (via the polyfill above) but no pointer-capture API on
+// Element — Radix Select's item-selection handler calls `target.hasPointerCapture`
+// unconditionally, so without this every click on an option throws
+// "hasPointerCapture is not a function" and the select can never be driven in a
+// test. Stubbed as a permanently-uncaptured pointer, which is enough for Radix's
+// own logic (it only branches on release when capture is currently held).
+if (!Element.prototype.hasPointerCapture) {
+  Element.prototype.hasPointerCapture = () => false;
+}
+
+if (!Element.prototype.setPointerCapture) {
+  Element.prototype.setPointerCapture = () => {};
+}
+
+if (!Element.prototype.releasePointerCapture) {
+  Element.prototype.releasePointerCapture = () => {};
+}

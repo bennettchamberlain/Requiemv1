@@ -166,6 +166,21 @@ export function intentToolName(intentName: string): string {
 }
 
 /**
+ * Map names Qwen invents onto the executable catalog. `memory_create_relationships`
+ * is not a tool; the write path is still `memory_remember`.
+ */
+export function canonicalizeExecutableToolName(name: string): string {
+  const underscored = intentToolName(name);
+  const mashed = name.replace(/[_.-]/g, '').toLowerCase();
+
+  if (mashed === 'memoryremember' || mashed === 'memorycreaterelationships') {
+    return 'memory_remember';
+  }
+
+  return underscored;
+}
+
+/**
  * Standardized error information for tools
  */
 export interface ToolError {

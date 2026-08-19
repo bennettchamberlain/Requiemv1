@@ -27,6 +27,8 @@
   color-scheme: light;
   /* --input is the input border token; --input-fill is the opaque fill counterpart. */
   --input-fill: var(--input);
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
 
   /* Activity palette — categorical identity for the schedule surface. Seven
      hues in a fixed, validated order (see HorizonGrid/activityPalette.ts);
@@ -122,6 +124,29 @@
   .scrollbar-none::-webkit-scrollbar {
     display: none;
   }
+
+  /* Keep content clear of the notch / status bar / home indicator on native. */
+  .safe-area-inset {
+    padding-top: max(2rem, var(--safe-area-top));
+    padding-bottom: max(2rem, var(--safe-area-bottom));
+    padding-left: max(1rem, env(safe-area-inset-left, 0px));
+    padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  }
+
+  /* Fixed phone chrome (rail toggle, connection chip). `top-2` sits under the
+     status bar because those nodes are viewport-fixed, not in the padded column. */
+  .ci-mobile-chrome-top {
+    top: max(0.5rem, var(--safe-area-top));
+  }
+}
+
+/*
+ * Capacitor WKWebView is edge-to-edge (`overlaysWebView: true`) but can report
+ * safe-area-inset-top as 0. Dynamic Island / notch is ~59px; home indicator ~34px.
+ */
+html.ci-native {
+  --safe-area-top: max(env(safe-area-inset-top, 0px), 59px);
+  --safe-area-bottom: max(env(safe-area-inset-bottom, 0px), 34px);
 }
 
 .ci-primary-surface {
@@ -156,96 +181,56 @@
   box-shadow: var(--ci-button-shadow);
 }
 
+
 /*
- * The warp core — the home control's permanent glow.
+ * The animated background — CI-Portal's, so the platform reads as one product.
  *
- * A reactor does not light up on hover; it is lit because it is running. So
- * this is unconditional: a radial bloom behind the mark and the wordmark that
- * never fully dims, breathing between a floor and a peak rather than fading
- * in and out. The floor is what makes it read as "powered" rather than as an
- * animation that happens to be playing.
+ * A fixed layer BEHIND everything (`z-index: 0`, and the app shell sits above
+ * it), painting the same base gradient the body already carried plus one glow
+ * that tracks the pointer. `AnimatedBackground` writes `--glow-x`/`--glow-y`;
+ * the gradient below is what turns two numbers into light, so a settled spring
+ * costs nothing — no animation is running, the custom properties simply stop
+ * changing.
  *
- * Painted with ::before at z-index 0 rather than a negative z-index: an
- * element's own background paints beneath ALL its children, negative ones
- * included, so `z-index: -1` would put the bloom behind the button's own hover
- * fill and make it vanish exactly when the button is being used. Lifting the
- * real children to z-index 1 keeps the mark and the text above the bloom.
+ * `pointer-events: none` throughout: this is scenery, and it covers the whole
+ * viewport. Anything else would swallow every click in the app.
  */
-.warp-core {
-  position: relative;
-}
-
-.warp-core > * {
-  position: relative;
-  z-index: 1;
-}
-
-.warp-core::before {
-  content: "";
-  position: absolute;
+.animated-bg {
+  position: fixed;
+  inset: 0;
   z-index: 0;
-  /* Bleeds past the button so the falloff is not clipped into a hard edge. */
-  inset: -30% -10%;
-  border-radius: 9999px;
-  background: radial-gradient(
-    closest-side,
-    color-mix(in srgb, var(--primary) 30%, transparent),
-    color-mix(in srgb, var(--phthalo-hover) 20%, transparent) 52%,
-    transparent 76%
-  );
-  filter: blur(5px);
-  animation: warp-core-pulse 3.6s ease-in-out infinite;
-  /* The bloom is decoration; it must never eat the click. */
   pointer-events: none;
+  overflow: hidden;
 }
 
-/* The mark itself is the emitter: a tighter, brighter halo in phase with the
-   bloom, so the light reads as coming FROM the logo rather than sitting behind
-   it as a rectangle. */
-.warp-core-emitter {
-  animation: warp-core-emit 3.6s ease-in-out infinite;
-}
-
-@keyframes warp-core-pulse {
-  0%,
-  100% {
-    opacity: 0.6;
-    transform: scale(0.95);
-  }
-
-  50% {
-    opacity: 1;
-    transform: scale(1.05);
-  }
-}
-
-@keyframes warp-core-emit {
-  0%,
-  100% {
-    filter: drop-shadow(0 0 3px color-mix(in srgb, var(--primary) 45%, transparent));
-  }
-
-  50% {
-    filter: drop-shadow(0 0 7px color-mix(in srgb, var(--primary) 75%, transparent));
-  }
+.animated-bg__glow {
+  position: absolute;
+  inset: 0;
+  /* Wide, overlapping stops so the falloff reads as light in a room rather than
+     as a disc with an edge. The colour is the app's own primary, not a literal,
+     so a theme change moves the glow with it. */
+  /* `color-mix`, not `hsl(var(--primary) / …)`: these tokens are hex literals
+     (`--primary: #c5e8dc`), so the hsl() form parses as invalid and drops the
+     whole gradient to `none` — silently, since an invalid background-image is
+     simply not painted. */
+  background: radial-gradient(
+    900px circle at var(--glow-x, -9999px) var(--glow-y, -9999px),
+    color-mix(in srgb, var(--primary) 8%, transparent) 0%,
+    color-mix(in srgb, var(--primary) 5.5%, transparent) 18%,
+    color-mix(in srgb, var(--primary) 3%, transparent) 38%,
+    color-mix(in srgb, var(--primary) 1.25%, transparent) 60%,
+    transparent 80%
+  );
 }
 
 /*
- * Reduced motion takes away the PULSE, not the glow. The reactor still reads as
- * powered — it simply stops breathing, holding at the midpoint. Removing the
- * light entirely would make this a different design for those users rather than
- * the same one, calmer.
+ * Reduced motion keeps the surface, drops the tracking. The component stops
+ * writing coordinates, so the glow parks off-screen and this layer is simply
+ * the base gradient — the same design, holding still.
  */
 @media (prefers-reduced-motion: reduce) {
-  .warp-core::before {
-    animation: none;
-    opacity: 0.8;
-    transform: none;
-  }
-
-  .warp-core-emitter {
-    animation: none;
-    filter: drop-shadow(0 0 5px color-mix(in srgb, var(--primary) 60%, transparent));
+  .animated-bg__glow {
+    display: none;
   }
 }
 

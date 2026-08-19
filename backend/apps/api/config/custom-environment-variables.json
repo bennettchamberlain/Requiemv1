@@ -45,7 +45,8 @@
       },
       "issuer": "PORTAL_OIDC_ISSUER",
       "jwksUri": "PORTAL_OIDC_JWKS_URI",
-      "audience": "PORTAL_OIDC_AUDIENCE"
+      "audience": "PORTAL_OIDC_AUDIENCE",
+      "pushRelayUrl": "PORTAL_PUSH_RELAY_URL"
     },
     "hubForwardAuth": {
       "enabled": {
@@ -158,6 +159,12 @@
         "__name": "CI_ENRICHMENT_USERS_PER_TURN",
         "__format": "json"
       }
+    }
+  },
+  "reflection": {
+    "minAnswerConfidence": {
+      "__name": "CI_REFLECTION_MIN_ANSWER_CONFIDENCE",
+      "__format": "json"
     }
   },
   "features": {

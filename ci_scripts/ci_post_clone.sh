@@ -5,7 +5,7 @@
 # ─ Why this file has to exist ──────────────────────────────────────────────────
 #
 # Xcode Cloud clones the repository and goes straight to `xcodebuild` against
-# `frontend/apps/mobile/ios/App/App.xcworkspace`. That workspace references
+# `frontend/apps/ios/ios/App/App.xcworkspace`. That workspace references
 # `Pods/Pods.xcodeproj`, and `App.xcodeproj` names
 # `Pods/Target Support Files/Pods-App/Pods-App.debug.xcconfig` as its base
 # configuration — but `ios/.gitignore` excludes `App/Pods`, correctly, because
@@ -45,7 +45,7 @@
 # Apple documents `ci_scripts/` as living beside the Xcode project or workspace,
 # but repository-root placement is also widely used and Xcode Cloud's own
 # checkout layout differs between workflow configurations. The real script is
-# here at the repository root; `frontend/apps/mobile/ios/App/ci_scripts/` holds a
+# here at the repository root; `frontend/apps/ios/ios/App/ci_scripts/` holds a
 # forwarder to it. Whichever location this workflow honours, exactly one of them
 # runs and both reach this code. If you later confirm which one Xcode Cloud picks
 # up for this workflow, delete the other.
@@ -70,10 +70,10 @@ export LC_ALL="${LC_ALL:-en_US.UTF-8}"
 # Xcode Cloud sets CI_PRIMARY_REPOSITORY_PATH to the clone root. Fall back to
 # git so the script is runnable by hand for debugging.
 REPO_ROOT="${CI_PRIMARY_REPOSITORY_PATH:-$(cd "$(dirname "$0")/.." && git rev-parse --show-toplevel)}"
-MOBILE_DIR="$REPO_ROOT/frontend/apps/mobile"
+MOBILE_DIR="$REPO_ROOT/frontend/apps/ios"
 
 if [ ! -d "$MOBILE_DIR" ]; then
-  echo "✗ expected the mobile app at $MOBILE_DIR — is CI_PRIMARY_REPOSITORY_PATH right?" >&2
+  echo "✗ expected the iOS app at $MOBILE_DIR — is CI_PRIMARY_REPOSITORY_PATH right?" >&2
   exit 1
 fi
 
@@ -123,7 +123,7 @@ fi
 echo "▸ pod $(pod --version)"
 
 # ── Install and build ────────────────────────────────────────────────────────
-# The mobile app is deliberately NOT a Yarn workspace (see its package.json): it
+# The iOS app is deliberately NOT a Yarn workspace (see its package.json): it
 # sets `nodeLinker: node-modules` because the Capacitor CLI and CocoaPods walk a
 # real node_modules tree, while the root install stays PnP. So it carries its own
 # lockfile and needs its own install.

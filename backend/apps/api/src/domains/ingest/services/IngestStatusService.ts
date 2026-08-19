@@ -71,7 +71,9 @@ function count(rows: number, matched: number): CoverageCount {
 export class IngestStatusService {
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
 
-  async snapshot(options: { userId?: string; scope?: 'user' | 'appliance' } = {}): Promise<IngestStatusSnapshot> {
+  async snapshot(
+    options: { userId?: string; scope?: 'user' | 'appliance' } = {},
+  ): Promise<IngestStatusSnapshot> {
     const appliance = options.scope === 'appliance' || !options.userId;
     const userId = appliance ? null : options.userId;
 

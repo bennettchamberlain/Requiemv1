@@ -16,8 +16,9 @@ import {
   buildDisclosedAnswer,
   disclosureCeiling,
   inferAnswerForm,
-  type TrustTier,
+  isAnswerable,
   type GrantMode,
+  type TrustTier,
 } from '@ci/domains/asks';
 import { OutboundAskService, type PeerAskRequest, PeerLinkService } from '@ci/domains/peers';
 
@@ -82,7 +83,7 @@ export class AskResolver {
       },
     });
 
-    return { success: true, ask: AskType.toType(ask), decision };
+    return { success: true, ask: AskType.toType(ask, serviceContext.userId), decision };
   }
 
   @Mutation(() => AskPayload)
@@ -98,7 +99,7 @@ export class AskResolver {
     const id = GlobalUID.parse('ask', gid);
     const ask = await this.askService.approve(serviceContext, id);
 
-    return { success: true, ask: AskType.toType(ask) };
+    return { success: true, ask: AskType.toType(ask, serviceContext.userId) };
   }
 
   @Mutation(() => AskPayload)
@@ -114,7 +115,7 @@ export class AskResolver {
     const id = GlobalUID.parse('ask', gid);
     const ask = await this.askService.decline(serviceContext, id);
 
-    return { success: true, ask: AskType.toType(ask) };
+    return { success: true, ask: AskType.toType(ask, serviceContext.userId) };
   }
 
   /**
@@ -150,14 +151,12 @@ export class AskResolver {
       throw new ForbiddenException('Only the responder may run this ask');
     }
 
-    // CHECK BEFORE ACT. `complete()` validates the lifecycle, but it runs at the
-    // END — so without this gate an ask that was `declined` (or is still in
-    // `under_review`) would still have its query executed and its answer
-    // PERSISTED, and only then be rejected. There is no transaction, so that
-    // row survives the thrown error and is readable by the asker via
-    // `askAnswer`, which is visible to either participant. Refusing up front is
-    // what keeps the grant decision authoritative.
-    if (!isAnswerable(ask)) {
+    // The lifecycle gate runs HERE, before any side effect. `complete()` below
+    // enforces it too, but it used to be the ONLY enforcement — and it ran after
+    // `answerService.create`, so a declined ask still persisted an answer the
+    // asker could read, with no audit row, before the throw. Checking first also
+    // means a declined or already-answered ask never runs the search at all.
+    if (!isAnswerable(ask.status, ask.consentBasis)) {
       throw new BadRequestException(`Ask ${gid} is not ready to answer (status: ${ask.status})`);
     }
 
@@ -189,8 +188,9 @@ export class AskResolver {
 
     return {
       success: true,
-      ask: AskType.toType(completed),
-      answer: AskAnswerType.toType(savedAnswer),
+      ask: AskType.toType(completed, serviceContext.userId),
+      // The responder just ran this — they get their own true numbers.
+      answer: AskAnswerType.toType(savedAnswer, true),
       disclosedCount: answer.disclosedCount,
       withheldCount: answer.withheldCount,
     };
@@ -224,16 +224,24 @@ export class AskResolver {
       return null;
     }
 
+    const serviceContext = toServiceContext(context);
     const id = GlobalUID.parse('ask', gid);
     // Enforce visibility via the parent ask (asker or responder only).
-    const ask = await this.askService.findById(toServiceContext(context), id);
+    const ask = await this.askService.findById(serviceContext, id);
     if (ask == null) {
+      return null;
+    }
+
+    // Participation is not enough. An answer row can exist for an ask that never
+    // reached a terminal answered state — that is exactly what the ordering bug
+    // above produced — so the status is what decides whether it may be read.
+    if (ask.status !== 'answered') {
       return null;
     }
 
     const answer = await this.answerService.findByAskId(id);
 
-    return answer ? AskAnswerType.toType(answer) : null;
+    return answer ? AskAnswerType.toType(answer, ask.responderUserId === serviceContext.userId) : null;
   }
 
   /**
@@ -319,9 +327,10 @@ export class AskResolver {
       return [];
     }
 
-    const rows = await this.askService.listInbox(toServiceContext(context));
+    const serviceContext = toServiceContext(context);
+    const rows = await this.askService.listInbox(serviceContext);
 
-    return rows.map(AskType.toType);
+    return rows.map((row) => AskType.toType(row, serviceContext.userId));
   }
 
   /** The asker's outbox (asks I have sent). */
@@ -331,9 +340,10 @@ export class AskResolver {
       return [];
     }
 
-    const rows = await this.askService.listOutbox(toServiceContext(context));
+    const serviceContext = toServiceContext(context);
+    const rows = await this.askService.listOutbox(serviceContext);
 
-    return rows.map(AskType.toType);
+    return rows.map((row) => AskType.toType(row, serviceContext.userId));
   }
 
   @Query(() => AskType, { nullable: true })
@@ -345,10 +355,11 @@ export class AskResolver {
       return null;
     }
 
+    const serviceContext = toServiceContext(context);
     const id = GlobalUID.parse('ask', gid);
-    const found = await this.askService.findById(toServiceContext(context), id);
+    const found = await this.askService.findById(serviceContext, id);
 
-    return found ? AskType.toType(found) : null;
+    return found ? AskType.toType(found, serviceContext.userId) : null;
   }
 
   /** Standing grants owned by the caller (the Grant Manager). */
@@ -428,8 +439,4 @@ function toPeerAskRequest(input: SendPeerAskInput): PeerAskRequest {
     default:
       throw new BadRequestException(`Unsupported ask archetype: ${input.archetype}`);
   }
-}
-
-function isAnswerable(ask: Ask): boolean {
-  return ask.status === 'answering' || (ask.status === 'delivered' && ask.consentBasis != null);
 }

@@ -53,6 +53,7 @@ import { PipelineShardEntity } from './entities/PipelineShardEntity';
 import { PipelineStateEntity } from './entities/PipelineStateEntity';
 import { RecordRejectionEntity } from './entities/RecordRejectionEntity';
 import { DeadLetterReaperListener } from './listeners/DeadLetterReaperListener';
+import { GraphEdgeSweepRequestListener } from './listeners/GraphEdgeSweepRequestListener';
 import { PipelineSliceListener } from './listeners/PipelineSliceListener';
 import { PIPELINE_TICK, PipelineTickCron } from './listeners/PipelineTickCron';
 import { SearchIndexSweepRequestListener } from './listeners/SearchIndexSweepRequestListener';
@@ -103,7 +104,9 @@ import {
   ReceiptEdgePromoteStage,
 } from './stages/promote/EdgePromoteStage';
 import { ObjectPromoteStage } from './stages/promote/ObjectPromoteStage';
+import { ObservationPromoteStage } from './stages/promote/ObservationPromoteStage';
 import { PlacePromoteStage } from './stages/promote/PlacePromoteStage';
+import { PositionPlacePromoteStage } from './stages/promote/PositionPlacePromoteStage';
 
 /**
  * Stage implementations, bound to the tokens declared in `STAGE_REGISTRY`.
@@ -161,7 +164,12 @@ const stageProviders: Provider[] = [
   { provide: STAGE_REGISTRY[STAGE_IDS.CLEAN_DUPLICATE_DETECT], useClass: DuplicateDetectStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE], useClass: IdentifierNormalizeStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_PLACE], useClass: PlacePromoteStage },
+  // The same promotion over `ci.position` — a second id because a Stage has
+  // exactly one `source` and this is a different table. It is the only writer
+  // `ci.position.location_entity_id` has ever had.
+  { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_PLACE_POSITION], useClass: PositionPlacePromoteStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_OBJECT], useClass: ObjectPromoteStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_OBSERVATION], useClass: ObservationPromoteStage },
   // Two ids, one implementation family — see `EdgePromoteStage.ts`. Both
   // delegate the projection to DeterministicEdgeBackfillService, exported by
   // MaintenanceModule (imported below).
@@ -248,6 +256,11 @@ const stageProviders: Provider[] = [
     // next sweep re-derives it, so there is no deferral queue to leak.
     StageArrivalListener,
     SearchIndexSweepRequestListener,
+    // Its graph-side twin. An import used to kick only the index legs, so
+    // pushed rows were searchable in seconds and unreachable in the graph
+    // until a scheduled sweep — `ci.relationships` is the only table a
+    // traversal reads, and nothing was telling it a corpus had landed.
+    GraphEdgeSweepRequestListener,
     PipelineTickCron,
     // The cron owns the schedule and the cluster-safe advisory lock; the control
     // service owns what a tick DOES. Binding by token rather than importing the
@@ -280,7 +293,11 @@ export {
 };
 export type { IdentifierClaim } from './entities/IdentifierClaimEntity';
 export { PipelineStateService } from './services/PipelineStateService';
-export type { RetryBackoff } from './services/PipelineStateService';
+export type {
+  ReleaseQuarantinedInput,
+  ReleaseQuarantinedResult,
+  RetryBackoff,
+} from './services/PipelineStateService';
 export { PipelineDispatchService } from './services/PipelineDispatchService';
 export type { StartSweepInput, SweepHopResult } from './services/PipelineDispatchService';
 export { StageRegistry, STAGE_REGISTRY, assertStageRegistryComplete } from './services/StageRegistry';
@@ -294,6 +311,8 @@ export {
   PIPELINE_QUEUE_NAMES,
   STAGE_ID_LIST,
   STAGE_IDS,
+  TRANSIENT_FAILURE_REASONS,
+  isTransientFailureReason,
 } from './constants';
 export type { PipelineQueue, StageId } from './constants';
 export { STAGE_VERSIONS, stageVersion } from './versions';

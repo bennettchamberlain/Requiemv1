@@ -1,4 +1,4 @@
-import { localDateInTZ, todayInTZ } from '@ci/domains/planning';
+import { localDateInTZ, todayInTZ } from '@ci/common/time/zoned';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 

@@ -27,7 +27,7 @@ import { PowerSyncTokenService } from '../services/PowerSyncTokenService';
 
 interface DecodedToken {
   header: { kid?: string; alg?: string };
-  payload: { sub?: string; aud?: string };
+  payload: { sub?: string; aud?: string; parameters?: { cutoff?: string } };
 }
 
 describe('PowerSyncTokenService', () => {
@@ -62,5 +62,16 @@ describe('PowerSyncTokenService', () => {
     expect(decoded.payload.aud).toBe('powersync');
     expect(decoded.header.kid).toBe('ci-powersync-hs256');
     expect(decoded.header.alg).toBe('HS256');
+    expect(decoded.payload.parameters?.cutoff).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('embeds a client-supplied cutoff in JWT parameters', () => {
+    mockPowersync.url = 'https://ps.test';
+    mockPowersync.jwtSecret = 'shh-secret';
+
+    const { token } = service.issueToken('user-1', '2026-01-01T00:00:00.000Z');
+    const decoded = new JwtService({}).decode(token, { complete: true }) as unknown as DecodedToken;
+
+    expect(decoded.payload.parameters?.cutoff).toBe('2026-01-01T00:00:00.000Z');
   });
 });

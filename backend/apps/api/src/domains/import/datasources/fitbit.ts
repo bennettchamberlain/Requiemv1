@@ -18,6 +18,7 @@
    an export here used to import nothing and still report success.
 */
 import fs from 'node:fs';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { GoogleFitFileImporter } from './google_fit';
@@ -45,10 +46,10 @@ interface SleepRecord {
   duration?: number;
 }
 
-function readJson(fpath: string): unknown {
+async function readJson(fpath: string): Promise<unknown> {
   let raw: string;
   try {
-    raw = fs.readFileSync(fpath, 'utf8');
+    raw = await readFile(fpath, 'utf8');
   } catch {
     return undefined;
   }
@@ -82,14 +83,14 @@ function isSleepExport(parsed: unknown): boolean {
 }
 
 // Find sleep-*.json files by name within a directory tree (bounded depth).
-function findSleepFiles(dir: string, depth: number, out: string[]): void {
+async function findSleepFiles(dir: string, depth: number, out: string[]): Promise<void> {
   if (depth > MAX_DEPTH) {
     return;
   }
 
   let entries: fs.Dirent[];
   try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
+    entries = await readdir(dir, { withFileTypes: true });
   } catch {
     return;
   }
@@ -97,7 +98,7 @@ function findSleepFiles(dir: string, depth: number, out: string[]): void {
   for (const e of entries) {
     const full = path.join(dir, e.name);
     if (e.isDirectory()) {
-      findSleepFiles(full, depth + 1, out);
+      await findSleepFiles(full, depth + 1, out);
     } else if (e.isFile() && SLEEP_FILE_RE.test(e.name)) {
       out.push(full);
     }
@@ -145,26 +146,26 @@ export class FitbitFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       if (!SLEEP_FILE_RE.test(path.basename(root))) {
         return { confidence: 0 };
       }
 
-      return isSleepExport(readJson(root)) ? { confidence: 0.95 } : { confidence: 0 };
+      return isSleepExport(await readJson(root)) ? { confidence: 0.95 } : { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       const found: string[] = [];
-      findSleepFiles(root, 0, found);
+      await findSleepFiles(root, 0, found);
       for (const f of found) {
-        if (isSleepExport(readJson(f))) {
+        if (isSleepExport(await readJson(f))) {
           return { confidence: 0.9 };
         }
       }
@@ -202,7 +203,7 @@ export class FitbitFileImporter implements FileImporter {
         files.push(root);
       }
     } else if (stat.isDirectory()) {
-      findSleepFiles(root, 0, files);
+      await findSleepFiles(root, 0, files);
     }
 
     for (const fpath of files) {
@@ -249,16 +250,16 @@ export class FitbitFileImporter implements FileImporter {
       return;
     }
 
-    for (const rec of parsed) {
+    parsed.forEach((rec, index) => {
       try {
-        this.pushRecord(rec as SleepRecord, params);
+        this.pushRecord(rec as SleepRecord, base, index, params);
       } catch (e) {
         params.log?.('error', `Failed to import sleep record in ${base}`, { error: (e as Error).message });
       }
-    }
+    });
   }
 
-  private pushRecord(rec: SleepRecord, params: ImportParams): void {
+  private pushRecord(rec: SleepRecord, base: string, index: number, params: ImportParams): void {
     if (!rec || typeof rec !== 'object') {
       return;
     }
@@ -283,6 +284,15 @@ export class FitbitFileImporter implements FileImporter {
 
     params.pipeline.push({
       item: {
+        // Prefer Fitbit's own logId — a genuinely unique per-record id — and
+        // fall back to a source-file + per-file row index only when it's
+        // missing. Without either, hashItem's fallback hash is
+        // dataSource+classification+ISO(timestamp) alone (content.filename is
+        // the constant 'sleep.txt'), so two sleep entries sharing a recorded
+        // start second (multi-source exports, e.g. a paired Fitbit + phone
+        // app both logging sleep) would collide under the staging table's ON
+        // CONFLICT and one would be silently dropped.
+        id: `fitbit:sleep:${rec.logId ?? `${base}:${index}`}`,
         classification: 'sleep',
         timestamp: ts,
         content: { filename: 'sleep.txt', mediaType: 'text/plain', data: async () => Buffer.from(summary) },

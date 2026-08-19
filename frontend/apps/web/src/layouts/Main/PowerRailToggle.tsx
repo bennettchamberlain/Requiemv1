@@ -16,11 +16,11 @@ export function PowerRailToggle() {
   const label = expanded ? t('NAV_RAIL_COLLAPSE') : t('NAV_RAIL_EXPAND');
 
   return (
-    // This sits directly above the drawer, in the same grid column, so it has
-    // to be exactly as wide and exactly as inset — otherwise the boundary
-    // between the two shows as a step. `p-2` and the width pair are copied
-    // from the rail deliberately: they are one edge, drawn twice.
-    <div className={cn('flex items-center p-2 transition-[width] duration-200', pinned ? 'w-56' : 'w-14')}>
+    // Width matches the drawer (`w-14` / `w-56`). Vertical inset is only `px-2`
+    // so this box does not grow the header; the parent cell centers it, which
+    // keeps padding above and below the mark the same. Pinning must not add
+    // extra padding — that used to shove the rail down.
+    <div className={cn('flex items-center px-2 transition-[width] duration-200', pinned ? 'w-56' : 'w-14')}>
       <Tooltip delayDuration={600}>
         <Tooltip.Content>{label}</Tooltip.Content>
         <Tooltip.Trigger asChild>
@@ -30,28 +30,30 @@ export function PowerRailToggle() {
             aria-expanded={expanded}
             aria-controls="power-rail"
             onClick={toggle}
-            // Collapsed, the mark is CENTRED in the rail rather than sharing
-            // NavLink's left inset. Matching that inset aligns the two left
-            // EDGES, which only centres things when the icons are the same
-            // width — the mark is 34px against the nav icons' 26px, so it sat
-            // 19px from the left against 7px on the right and read as a logo
-            // nudged out of its slot. Measured, not eyeballed. The transparent
-            // left border goes with it: it is NavLink's active-state gutter,
-            // and it only ever pushed this button 2px further off centre.
+            // Glass capsule: `p-1` + a 32px disc = 40px. Max-width is what
+            // opens and closes it — same property both ways, so closing is
+            // the reverse of opening instead of unmounting the wordmark.
             className={cn(
-              'warp-core flex items-center rounded-md p-2 transition hover:bg-accent hover:text-accent-foreground',
-              pinned ? 'w-full gap-2 border-l-2 border-transparent' : 'w-full justify-center',
+              'inline-flex h-10 items-center overflow-hidden rounded-full border border-white/55 bg-white/30 p-1 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.7),0_1px_2px_rgba(0,0,0,0.08)] backdrop-blur-md transition-[max-width,padding,gap] duration-200 ease-in-out hover:bg-white/45 dark:border-white/20 dark:bg-white/10 dark:hover:bg-white/20',
+              pinned ? 'max-w-52 gap-2 pr-3' : 'max-w-10 gap-0',
             )}
           >
-            <img src={logo} alt="" className="warp-core-emitter h-8 w-8 shrink-0" />
+            {/* Full-size mark on a white disc. `max-w-none` defeats Tailwind
+              preflight `img { max-width: 100% }` so it stays round. */}
+            <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-full bg-white -translate-x-[1px]">
+              <img src={logo} alt="" className="size-8 max-w-none rounded-full -translate-x-[0px]" />
+            </span>
             {/* PINNED, not merely expanded. This button sits in the same `auto`
               grid column as the rail, so a wordmark appearing here widens the
               column and shoves the header and page content sideways — which is
               exactly what a hover-opened drawer must never do. Pinning is the
               one case where a reflow is intended, and permanent. */}
-            {pinned && (
-              <span className="truncate text-left text-sm font-semibold leading-tight">Companion Memory</span>
-            )}
+            <span
+              aria-hidden={!pinned}
+              className="overflow-hidden whitespace-nowrap text-left text-sm font-semibold leading-tight"
+            >
+              Companion Memory
+            </span>
           </button>
         </Tooltip.Trigger>
       </Tooltip>

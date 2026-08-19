@@ -14,9 +14,7 @@ interface Props {
 export function PageContent({ children, className, relativeBoundary = true, ref }: Props) {
   const { isMobile } = useDeviceLayout();
 
-  const spacing = isMobile
-    ? 'p-2 gap-2 pt-[max(0.5rem,env(safe-area-inset-top))]'
-    : 'p-6 gap-6 pt-[max(1.5rem,env(safe-area-inset-top))]';
+  const spacing = isMobile ? 'p-2 gap-2' : 'p-6 gap-6 pt-[max(1.5rem,env(safe-area-inset-top))]';
 
   return (
     <div

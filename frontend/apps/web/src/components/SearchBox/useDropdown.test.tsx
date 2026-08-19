@@ -1,10 +1,16 @@
 import { type ReactNode } from 'react';
 
 import { act, renderHook } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 
-import { AVAILABLE_ENTITY_TYPES, DropdownProvider, useDropdown } from './useDropdown';
+import {
+  AVAILABLE_ENTITY_TYPES,
+  DropdownProvider,
+  excludedEntityTypesFor,
+  HIDDEN_ENTITY_TYPES,
+  useDropdown,
+} from './useDropdown';
 
 function makeWrapper(changeSearchParams = true, initialEntries: string[] = ['/']) {
   return ({ children }: { children: ReactNode }) => (
@@ -58,6 +64,31 @@ describe('useDropdown', () => {
 
     act(() => result.current[1].selectOnlyEntityType('Event'));
     expect(result.current[0].selectedEntityTypes).toEqual(AVAILABLE_ENTITY_TYPES);
+  });
+
+  it('excludes the hidden types (Answers, Concepts) whenever a What filter narrows the set', () => {
+    const { result } = renderHook(() => ({ dropdown: useDropdown(), search: useLocation().search }), {
+      wrapper: makeWrapper(),
+    });
+
+    act(() => result.current.dropdown[1].selectOnlyEntityType('Person'));
+
+    const excluded = new URLSearchParams(result.current.search).get('excludedEntityTypes')?.split(',');
+    expect(excluded).toEqual(expect.arrayContaining(HIDDEN_ENTITY_TYPES));
+    expect(excluded).not.toContain('Person');
+
+    // Toggling a type off narrows too, so answers stay excluded there as well.
+    act(() => result.current.dropdown[1].clearEntityTypes());
+    act(() => result.current.dropdown[1].toggleEntityType('Note'));
+
+    expect(new URLSearchParams(result.current.search).get('excludedEntityTypes')?.split(',')).toEqual(
+      expect.arrayContaining(['Note', 'Answer']),
+    );
+  });
+
+  it('drops the param entirely when nothing is narrowed', () => {
+    expect(excludedEntityTypesFor(AVAILABLE_ENTITY_TYPES)).toEqual([]);
+    expect(excludedEntityTypesFor(['Person'])).toEqual(expect.arrayContaining(HIDDEN_ENTITY_TYPES));
   });
 
   it('clearEntityTypes resets to all selected', () => {

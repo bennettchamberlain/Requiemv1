@@ -239,10 +239,14 @@ describeWithDatabase(`the import spine (${importDatabase.target})`, () => {
       const { run, stages } = await startRun(await stageDrop());
 
       await service.beginStage(stages[0].id);
+      // `partial` is a SIBLING of `detail` on `StageOutcome` — the shape every
+      // real stage runner returns (UnpackStage, ParseStage, MediaStage,
+      // PushStage all set the top-level field, never a nested `detail.partial`).
       await service.completeStage(stages[0].id, {
         processed: 1,
         total: 1,
-        detail: { partial: true, rejected: [{ archive: 'part-2.zip', reason: 'truncated' }] },
+        partial: true,
+        detail: { rejected: [{ archive: 'part-2.zip', reason: 'truncated' }] },
       });
       await service.beginStage(stages[1].id);
       await service.completeStage(stages[1].id, { processed: 3, total: 3, detail: {} });
@@ -255,6 +259,28 @@ describeWithDatabase(`the import spine (${importDatabase.target})`, () => {
 
       expect(finished.status).toBe('partial');
       expect(finished.percent).toBe(100);
+    });
+
+    it('leaves a run completed when no stage reported partial', async () => {
+      // The other half of the wiring: a stage's own `detail` fields must not be
+      // mistaken for the sibling `partial` flag `finishRun` actually rolls up
+      // on. Regression guard for the bug where `completeStage` never persisted
+      // `outcome.partial` anywhere `finishRun` read it, so this always passed
+      // for the wrong reason — nothing ever reported partial at all.
+      const { run, stages } = await startRun(await stageDrop());
+
+      await service.beginStage(stages[0].id);
+      await service.completeStage(stages[0].id, { processed: 1, total: 1, detail: { rejected: [] } });
+      await service.beginStage(stages[1].id);
+      await service.completeStage(stages[1].id, { processed: 3, total: 3, detail: {} });
+      await service.finishRun(run.id);
+
+      const [finished] = await dataSource.query<Array<{ status: string }>>(
+        `SELECT status FROM ci_import.import_runs WHERE id = $1::uuid`,
+        [run.id],
+      );
+
+      expect(finished.status).toBe('completed');
     });
 
     it('fails the run when a stage fails', async () => {
@@ -385,6 +411,81 @@ describeWithDatabase(`the import spine (${importDatabase.target})`, () => {
       await service.resumeInterrupted();
 
       expect(sendsFor(run.id).map((payload) => payload.stageId)).toEqual([stages[1].id]);
+    });
+
+    it('keys every stage job on its stage id, so a waiting stage cannot collect duplicates', async () => {
+      // The staleness gate above cannot actually distinguish "waiting its turn"
+      // from "its job was lost": both look like a queued stage nothing has
+      // touched, because nothing touches a stage while it waits. Stage jobs run
+      // at localConcurrency 1 appliance-wide, so on a real multi-source import
+      // that wait is long — a measured 13-source run had a single Google Takeout
+      // parse hold the worker for 45 minutes, and the twelve stages queued
+      // behind it had accumulated 107 pending jobs across 16 stage ids.
+      //
+      // pg-boss refuses the duplicate at insert time when the send carries a
+      // singletonKey, which is why the key is asserted here rather than the
+      // sweep being taught a distinction it has no data for.
+      const { run, stages } = await startRun(await stageDrop());
+
+      events.send.mockClear();
+      await age(stages[0].id);
+      await service.resumeInterrupted();
+
+      const call = events.send.mock.calls.find(
+        (each) => (each[1] as Record<string, unknown>).runId === run.id,
+      );
+
+      expect(call).toBeDefined();
+      expect(call?.[2]).toMatchObject({ singletonKey: stages[0].id });
+    });
+
+    it('never enqueues past a stage that is still RUNNING', async () => {
+      // The data-loss regression this exists to stop, observed on a real
+      // 13-source import of a full personal-data corpus:
+      //
+      //   unpack  completed 03:34:53
+      //   parse   started   03:45:08   <- waited ten minutes for its queue slot
+      //   media   started   03:45:40   completed 0/0
+      //   push    started   03:49:00   completed 0/0
+      //   run     completed, percent 100, finished 03:49:00 — while parse ran on
+      //
+      // `media` and `push` had been queued since 03:34:50, so by the time parse
+      // finally started they were long past STALE_STAGE_MINUTES. parse going
+      // RUNNING removed it from the queued set, `media` became the first queued
+      // stage, and the sweep enqueued it. The Google Takeout run reported
+      // success and landed ZERO of its 703,956 items.
+      //
+      // Waiting for the stage in front of you is indistinguishable from a lost
+      // job if you only look at staleness — nothing touches a waiting stage.
+      const { run, stages } = await startRun(await stageDrop());
+
+      // Stage 0 is executing; stages 1..n are queued and long stale.
+      expect(await service.beginStage(stages[0].id)).toBe(true);
+      for (const stage of stages.slice(1)) {
+        await age(stage.id);
+      }
+
+      events.send.mockClear();
+
+      await service.resumeInterrupted();
+
+      // Nothing enqueued, and above all the run is NOT closed out.
+      expect(sendsFor(run.id)).toEqual([]);
+
+      const [row] = await dataSource.query<Array<{ finished_at: string | null; status: string }>>(
+        `SELECT finished_at, status FROM ci_import.import_runs WHERE id = $1::uuid`,
+        [run.id],
+      );
+
+      expect(row.finished_at).toBeNull();
+
+      // And the running stage is untouched — still claimed by its owner.
+      const [live] = await dataSource.query<Array<{ status: string }>>(
+        `SELECT status FROM ci_import.import_stages WHERE id = $1::uuid`,
+        [stages[0].id],
+      );
+
+      expect(live.status).toBe('running');
     });
 
     it('closes out a run whose last stage completed but never finished', async () => {
@@ -677,6 +778,180 @@ describeWithDatabase(`the import spine (${importDatabase.target})`, () => {
 
         expect(count).toBe('0');
       }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // The data-loss guard and its neighbours
+  // -------------------------------------------------------------------------
+
+  describe('hasUnstoredMedia', () => {
+    /**
+     * Stages one raw `ci_import.staged_items` row with exactly the columns
+     * `hasUnstoredMedia`'s predicate reads, so each case controls precisely one
+     * of them. Bypasses `StagedWriter` on purpose — this is a test of the SQL
+     * predicate itself, hand-duplicated from `MediaStage.mediaPredicate()`
+     * (see ImportRunService.ts, `hasUnstoredMedia`'s doc comment: "Mirrors
+     * MediaStage.mediaPredicate()"). A drift between the two — a classification
+     * added to `FILE_CLASSIFICATIONS` that this copy forgets, a metadata key
+     * renamed on one side only — is exactly what this proves does not exist,
+     * against the real column types and the real `~` regex operator.
+     */
+    async function stageRow(
+      runId: string,
+      overrides: {
+        mediaType?: string | null;
+        classification?: string | null;
+        intermediateLocation?: string | null;
+        originalLocation?: string | null;
+        metadata?: Record<string, unknown>;
+      } = {},
+    ): Promise<void> {
+      await dataSource.query(
+        `INSERT INTO ci_import.staged_items
+           (run_id, user_id, data_source, classification, content_hash, media_type,
+            intermediate_location, original_location, metadata)
+         VALUES ($1::uuid, $2::uuid, 'apple_photos', $3, $4, $5, $6, $7, $8::jsonb)`,
+        [
+          runId,
+          userId,
+          overrides.classification ?? null,
+          randomUUID(),
+          overrides.mediaType ?? null,
+          'intermediateLocation' in overrides ? overrides.intermediateLocation : '/scratch/IMG_0001.jpg',
+          overrides.originalLocation ?? null,
+          JSON.stringify(overrides.metadata ?? {}),
+        ],
+      );
+    }
+
+    it('is false for a run that has staged nothing yet', async () => {
+      const { run } = await startRun(await stageDrop());
+
+      expect(await service.hasUnstoredMedia(run.id)).toBe(false);
+    });
+
+    it('is true for an image on disk with no FileId yet', async () => {
+      const { run } = await startRun(await stageDrop());
+
+      await stageRow(run.id, { mediaType: 'image/jpeg' });
+
+      expect(await service.hasUnstoredMedia(run.id)).toBe(true);
+    });
+
+    it('is true for a file-backed classification even with no media MIME', async () => {
+      // FILE_CLASSIFICATIONS carries 'file' for exactly this case: a
+      // drive-walk document MediaStage still has to upload, whose MIME the
+      // parser never determined.
+      const { run } = await startRun(await stageDrop());
+
+      await stageRow(run.id, { mediaType: null, classification: 'file' });
+
+      expect(await service.hasUnstoredMedia(run.id)).toBe(true);
+    });
+
+    it('turns false once MediaStage stamps FileId', async () => {
+      const { run } = await startRun(await stageDrop());
+
+      await stageRow(run.id, { mediaType: 'image/jpeg', metadata: { FileId: randomUUID() } });
+
+      expect(await service.hasUnstoredMedia(run.id)).toBe(false);
+    });
+
+    it('turns false once MediaStage stamps FileMediaError instead', async () => {
+      // A row MediaStage tried and gave up on is SETTLED, not pending — the
+      // stage's own skip query reads the same way (see MediaStage's row
+      // selection), so a permanently-broken file must not wedge the reclaim
+      // guard forever.
+      const { run } = await startRun(await stageDrop());
+
+      await stageRow(run.id, { mediaType: 'image/jpeg', metadata: { FileMediaError: 'ENOENT' } });
+
+      expect(await service.hasUnstoredMedia(run.id)).toBe(false);
+    });
+
+    it('is false for a media row with no path on disk to lose', async () => {
+      // Neither intermediate_location nor original_location: there are no
+      // bytes on disk for the reclaim to destroy, so nothing is at risk.
+      const { run } = await startRun(await stageDrop());
+
+      await stageRow(run.id, {
+        mediaType: 'image/jpeg',
+        intermediateLocation: null,
+        originalLocation: null,
+      });
+
+      expect(await service.hasUnstoredMedia(run.id)).toBe(false);
+    });
+
+    it('is false for a plain text row that is neither media MIME nor a file classification', async () => {
+      const { run } = await startRun(await stageDrop());
+
+      await stageRow(run.id, { mediaType: 'text/plain', classification: 'email' });
+
+      expect(await service.hasUnstoredMedia(run.id)).toBe(false);
+    });
+
+    it('does not see another run’s unstored media', async () => {
+      const { run: runA } = await startRun(await stageDrop());
+      const { run: runB } = await startRun(await stageDrop());
+
+      await stageRow(runB.id, { mediaType: 'image/jpeg' });
+
+      expect(await service.hasUnstoredMedia(runA.id)).toBe(false);
+      expect(await service.hasUnstoredMedia(runB.id)).toBe(true);
+    });
+  });
+
+  describe('pulledRecords', () => {
+    it('is false for a run that has staged neither an item nor an entity', async () => {
+      const { run } = await startRun(await stageDrop());
+
+      expect(await service.pulledRecords(run.id)).toBe(false);
+    });
+
+    it('is true once the run has staged an item', async () => {
+      const { writer, runId } = await harness.writerFor('gmail');
+
+      writer.push({ item: { id: 'msg-1', classification: 'email' } });
+      await writer.settled();
+
+      expect(await service.pulledRecords(runId)).toBe(true);
+    });
+
+    it('is true for an entity-only run, e.g. a contact list with no items', async () => {
+      // The same asymmetry rankDataSources guards against on the naming side:
+      // a source that produced only entities is still something the run
+      // pulled, not an empty run.
+      const { writer, runId } = await harness.writerFor('contact_list');
+
+      writer.push({ entity: { name: 'Alice', attributes: [{ name: 'email', value: 'alice@example.com' }] } });
+      await writer.settled();
+
+      expect(await service.pulledRecords(runId)).toBe(true);
+    });
+  });
+
+  describe('runBelongsTo', () => {
+    it('is true for the run’s own owner', async () => {
+      const { run } = await startRun(await stageDrop());
+
+      expect(await service.runBelongsTo(run.id, userId)).toBe(true);
+    });
+
+    it('rejects a different user’s id — the check a worker makes before executing a stage', async () => {
+      // The tenancy guard itself: ImportStageListener trusts this before
+      // running a stage against payload.userId, precisely so a payload that
+      // disagreed with the run row could not file one account's data under
+      // another's. A test that only proves the true case cannot catch that.
+      const { run } = await startRun(await stageDrop());
+      const stranger = randomUUID();
+
+      expect(await service.runBelongsTo(run.id, stranger)).toBe(false);
+    });
+
+    it('is false for a run id that does not exist at all', async () => {
+      expect(await service.runBelongsTo(randomUUID(), userId)).toBe(false);
     });
   });
 });

@@ -25,7 +25,9 @@ import { DerivedRelationshipService } from './services/DerivedRelationshipServic
 import { DeterministicEdgeBackfillService } from './services/DeterministicEdgeBackfillService';
 import { EmbedCoverageTelemetryService } from './services/EmbedCoverageTelemetryService';
 import { EventParticipantBackfillService } from './services/EventParticipantBackfillService';
+import { ExternalIdKindIntegrityService } from './services/ExternalIdKindIntegrityService';
 import { GraphEnrichmentService } from './services/GraphEnrichmentService';
+import { HealSelfCollationService } from './services/HealSelfCollationService';
 import { IndexDeferralService } from './services/IndexDeferralService';
 import { IngestResetService } from './services/IngestResetService';
 import { InventoryReverseService } from './services/InventoryReverseService';
@@ -55,6 +57,7 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
   controllers: [MaintenanceController],
   providers: [
     IndexDeferralService,
+    ExternalIdKindIntegrityService,
     IngestResetService,
     CommunicationLinkBackfillService,
     PersonStubBackfillService,
@@ -64,6 +67,7 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
     DerivedRelationshipService,
     NoteContentFoldService,
     GraphEnrichmentService,
+    HealSelfCollationService,
     SearchIndexBackfillService,
     EmbedCoverageTelemetryService,
     LocationEstimateService,
@@ -74,6 +78,7 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
   ],
   exports: [
     IndexDeferralService,
+    ExternalIdKindIntegrityService,
     CommunicationLinkBackfillService,
     PersonStubBackfillService,
     EventParticipantBackfillService,
@@ -82,6 +87,7 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
     DerivedRelationshipService,
     NoteContentFoldService,
     GraphEnrichmentService,
+    HealSelfCollationService,
     SearchIndexBackfillService,
     EmbedCoverageTelemetryService,
     LocationEstimateService,
@@ -105,6 +111,12 @@ export {
   type DeterministicEdgeBackfillOptions,
   type DeterministicEdgeBackfillResult,
 } from './services/DeterministicEdgeBackfillService';
+export {
+  ExternalIdKindIntegrityService,
+  VIOLATION_SAMPLE_LIMIT,
+  type ExternalIdKindIntegrityReport,
+  type ExternalIdKindViolation,
+} from './services/ExternalIdKindIntegrityService';
 export { RelationshipNormalizeService } from './services/RelationshipNormalizeService';
 export { DerivedRelationshipService } from './services/DerivedRelationshipService';
 export { NoteContentFoldService } from './services/NoteContentFoldService';
@@ -126,4 +138,7 @@ export {
   SearchIndexBackfillRequestEvent,
   SEARCH_INDEX_BACKFILL_QUEUE,
   type SearchIndexBackfillRequestPayload,
+  GraphEdgeBackfillRequestEvent,
+  GRAPH_EDGE_BACKFILL_QUEUE,
+  type GraphEdgeBackfillRequestPayload,
 } from './events';

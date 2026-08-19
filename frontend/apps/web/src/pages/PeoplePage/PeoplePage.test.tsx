@@ -1,10 +1,10 @@
-import { act, fireEvent, screen } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { gql } from '@/graphql';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
-import { PAGE_SIZE, PeoplePage } from './PeoplePage';
+import { CANDIDATE_PAGE_SIZE, DUPLICATE_PAGE_SIZE, PAGE_SIZE, PeoplePage } from './PeoplePage';
 
 const navigate = vi.fn();
 
@@ -40,6 +40,7 @@ const GET_PEOPLE = gql(`
           identifiers {
             kind
             value
+            rawValue
             label
           }
           interactionStats {
@@ -54,20 +55,139 @@ const GET_PEOPLE = gql(`
 `);
 
 const GET_PERSON_DUPLICATES = gql(`
-  query GetPersonDuplicates {
-    personDuplicates {
-      reason
-      value
-      people {
-        id
-        name
-        description
-        avatarUrl
-        isSelf
+  query GetPersonDuplicates($limit: Int, $offset: Int, $reasons: [String!]) {
+    personDuplicates(limit: $limit, offset: $offset, reasons: $reasons) {
+      totalCount
+      hasMore
+      groups {
+        reason
+        value
+        totalPeople
+        people {
+          id
+          name
+          description
+          avatarUrl
+          isSelf
+        }
       }
     }
   }
 `);
+
+const GET_MERGED_PERSON = gql(`
+  query GetMergedPerson($id: ID!) {
+    person(id: $id) {
+      id
+      name
+      description
+      firstName
+      lastName
+      avatarUrl
+      birthDate
+      isSelf
+      identifiers {
+        kind
+        value
+        rawValue
+        label
+      }
+      interactionStats {
+        eventCount
+        communicationCount
+        lastInteractionAt
+      }
+    }
+  }
+`);
+
+const GET_MERGE_CANDIDATES = gql(`
+  query GetMergeCandidates($first: Int, $after: String) {
+    mergeCandidates(first: $first, after: $after) {
+      totalCount
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      edges {
+        cursor
+        node {
+          id
+          score
+          status
+          detectedBy
+          createdAt
+          evidence {
+            kind
+            value
+            score
+          }
+          people {
+            id
+            name
+            description
+            avatarUrl
+            isSelf
+          }
+        }
+      }
+    }
+  }
+`);
+
+const MERGE_PEOPLE = gql(`
+  mutation MergePeople($input: MergePeopleInput!) {
+    mergePeople(input: $input) {
+      success
+      person {
+        id
+        name
+      }
+    }
+  }
+`);
+
+const DUPLICATE_VARIABLES = { limit: DUPLICATE_PAGE_SIZE, offset: 0, reasons: null };
+
+function duplicatesResult(groups: unknown[], { totalCount = groups.length, hasMore = false } = {}) {
+  return {
+    data: {
+      personDuplicates: {
+        __typename: 'PersonDuplicatesPayload' as const,
+        totalCount,
+        hasMore,
+        groups,
+      },
+    },
+  };
+}
+
+function candidatesResult(
+  edges: unknown[],
+  { totalCount = edges.length, hasNextPage = false, endCursor = null as string | null } = {},
+) {
+  return {
+    data: {
+      mergeCandidates: {
+        __typename: 'MergeCandidateConnection' as const,
+        totalCount,
+        pageInfo: { __typename: 'PageInfo' as const, hasNextPage, endCursor },
+        edges,
+      },
+    },
+  };
+}
+
+function duplicateGroup(people: unknown[], overrides: Record<string, unknown> = {}) {
+  return {
+    __typename: 'PersonDuplicateGroupType' as const,
+    reason: 'email',
+    value: 'ada@example.com',
+    totalPeople: people.length,
+    people,
+    ...overrides,
+  };
+}
 
 /**
  * `/people/:id` carries the RAW uuid — `PersonPage` re-encodes it with
@@ -164,7 +284,7 @@ function captureIntersectionObserver({ fireOnObserve = false } = {}) {
   };
 }
 
-function mocks({ duplicates = [] as unknown[] } = {}) {
+function mocks({ duplicates = [] as unknown[], candidates = [] as unknown[] } = {}) {
   return [
     {
       request: { query: GET_PEOPLE, variables: { query: null, first: PAGE_SIZE } },
@@ -180,8 +300,12 @@ function mocks({ duplicates = [] as unknown[] } = {}) {
       },
     },
     {
-      request: { query: GET_PERSON_DUPLICATES },
-      result: { data: { personDuplicates: duplicates } },
+      request: { query: GET_PERSON_DUPLICATES, variables: DUPLICATE_VARIABLES },
+      result: duplicatesResult(duplicates),
+    },
+    {
+      request: { query: GET_MERGE_CANDIDATES, variables: { first: CANDIDATE_PAGE_SIZE } },
+      result: candidatesResult(candidates),
     },
   ];
 }
@@ -201,29 +325,24 @@ describe('PeoplePage', () => {
     renderWithProviders(<PeoplePage />, {
       mocks: mocks({
         duplicates: [
-          {
-            __typename: 'PersonDuplicateGroupType' as const,
-            reason: 'email',
-            value: 'ada@example.com',
-            people: [
-              {
-                __typename: 'PersonType' as const,
-                id: PERSON_GLOBAL_ID,
-                name: 'Ada Lovelace',
-                description: null,
-                avatarUrl: null,
-                isSelf: false,
-              },
-              {
-                __typename: 'PersonType' as const,
-                id: DUPLICATE_GLOBAL_ID,
-                name: 'A. Lovelace',
-                description: null,
-                avatarUrl: null,
-                isSelf: false,
-              },
-            ],
-          },
+          duplicateGroup([
+            {
+              __typename: 'PersonType' as const,
+              id: PERSON_GLOBAL_ID,
+              name: 'Ada Lovelace',
+              description: null,
+              avatarUrl: null,
+              isSelf: false,
+            },
+            {
+              __typename: 'PersonType' as const,
+              id: DUPLICATE_GLOBAL_ID,
+              name: 'A. Lovelace',
+              description: null,
+              avatarUrl: null,
+              isSelf: false,
+            },
+          ]),
         ],
       }),
     });
@@ -293,8 +412,12 @@ describe('PeoplePage', () => {
           },
         },
         {
-          request: { query: GET_PERSON_DUPLICATES },
-          result: { data: { personDuplicates: [] } },
+          request: { query: GET_PERSON_DUPLICATES, variables: DUPLICATE_VARIABLES },
+          result: duplicatesResult([]),
+        },
+        {
+          request: { query: GET_MERGE_CANDIDATES, variables: { first: CANDIDATE_PAGE_SIZE } },
+          result: candidatesResult([]),
         },
       ],
     });
@@ -312,6 +435,102 @@ describe('PeoplePage', () => {
     } finally {
       observer.restore();
     }
+  });
+
+  /**
+   * PersonService.findAll ranks a name that looks implausible — a bare digit
+   * string, a phone number, a call-log heading like "Missed call from" — behind
+   * real names, as its PRIMARY sort key (see commit 451f13e13). That fix exists
+   * because these garbage-named rows are exactly the ones most likely to carry
+   * fresh interactionStats: they are typically call-log stubs, so they have
+   * recent communications while a freshly-imported real contact may have none
+   * at all. A client-side re-sort keyed on interaction recency would put the
+   * garbage name right back on top — reintroducing the bug the backend fix
+   * corrected. The page must trust the server's order, not fight it.
+   */
+  it('keeps the server-provided order instead of re-sorting by interaction recency', async () => {
+    const DIGIT_UUID = '019fd7c0-641c-76dd-8ed7-a5053faff700';
+    const DIGIT_GLOBAL_ID = btoa(`person:${DIGIT_UUID}`);
+    const BEATRICE_UUID = '019fd7c0-641c-76dd-8ed7-a5053faff701';
+    const BEATRICE_GLOBAL_ID = btoa(`person:${BEATRICE_UUID}`);
+
+    renderWithProviders(<PeoplePage />, {
+      mocks: [
+        {
+          request: { query: GET_PEOPLE, variables: { query: null, first: PAGE_SIZE } },
+          result: {
+            data: {
+              people: {
+                __typename: 'PersonConnection' as const,
+                totalCount: 3,
+                pageInfo: pageInfo(),
+                edges: [
+                  // Server order after the name-plausibility fix: real names
+                  // first, regardless of interaction recency.
+                  {
+                    __typename: 'PersonEdge' as const,
+                    cursor: PERSON_GLOBAL_ID,
+                    node: personNode(), // Ada Lovelace, no interaction at all
+                  },
+                  {
+                    __typename: 'PersonEdge' as const,
+                    cursor: BEATRICE_GLOBAL_ID,
+                    node: personNode({
+                      id: BEATRICE_GLOBAL_ID,
+                      name: 'Beatrice Clarke',
+                      firstName: 'Beatrice',
+                      lastName: 'Clarke',
+                      interactionStats: {
+                        __typename: 'PersonInteractionStatsType' as const,
+                        eventCount: 0,
+                        communicationCount: 2,
+                        lastInteractionAt: '2026-01-01T00:00:00Z',
+                      },
+                    }),
+                  },
+                  // Garbage name ranked LAST by the server despite having the
+                  // most recent interaction of the three — the call-log-stub
+                  // shape the backend fix specifically demotes.
+                  {
+                    __typename: 'PersonEdge' as const,
+                    cursor: DIGIT_GLOBAL_ID,
+                    node: personNode({
+                      id: DIGIT_GLOBAL_ID,
+                      name: '1003',
+                      firstName: null,
+                      lastName: null,
+                      interactionStats: {
+                        __typename: 'PersonInteractionStatsType' as const,
+                        eventCount: 0,
+                        communicationCount: 9,
+                        lastInteractionAt: '2026-08-18T00:00:00Z',
+                      },
+                    }),
+                  },
+                ],
+              },
+            },
+          },
+        },
+        {
+          request: { query: GET_PERSON_DUPLICATES, variables: DUPLICATE_VARIABLES },
+          result: duplicatesResult([]),
+        },
+        {
+          request: { query: GET_MERGE_CANDIDATES, variables: { first: CANDIDATE_PAGE_SIZE } },
+          result: candidatesResult([]),
+        },
+      ],
+    });
+
+    await screen.findByText('Ada Lovelace');
+
+    const names = ['Ada Lovelace', 'Beatrice Clarke', '1003'];
+    const rows = screen
+      .getAllByRole('button')
+      .filter((button) => names.some((name) => button.textContent?.includes(name)));
+
+    expect(rows.map((row) => names.find((name) => row.textContent?.includes(name)))).toEqual(names);
   });
 
   /**
@@ -357,8 +576,12 @@ describe('PeoplePage', () => {
           // and start logging "No more mocked responses".
           failingPage,
           {
-            request: { query: GET_PERSON_DUPLICATES },
-            result: { data: { personDuplicates: [] } },
+            request: { query: GET_PERSON_DUPLICATES, variables: DUPLICATE_VARIABLES },
+            result: duplicatesResult([]),
+          },
+          {
+            request: { query: GET_MERGE_CANDIDATES, variables: { first: CANDIDATE_PAGE_SIZE } },
+            result: candidatesResult([]),
           },
         ],
       });
@@ -382,5 +605,361 @@ describe('PeoplePage', () => {
     } finally {
       observer.restore();
     }
+  });
+
+  it('offers Merge into one person and Use as the kept person on duplicate groups', async () => {
+    renderWithProviders(<PeoplePage />, {
+      mocks: mocks({
+        duplicates: [
+          duplicateGroup([
+            {
+              __typename: 'PersonType' as const,
+              id: PERSON_GLOBAL_ID,
+              name: 'Ada Lovelace',
+              description: null,
+              avatarUrl: null,
+              isSelf: true,
+            },
+            {
+              __typename: 'PersonType' as const,
+              id: DUPLICATE_GLOBAL_ID,
+              name: 'A. Lovelace',
+              description: null,
+              avatarUrl: null,
+              isSelf: false,
+            },
+          ]),
+        ],
+      }),
+    });
+
+    expect(await screen.findByRole('button', { name: 'Merge into one person' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Use as the kept person' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Keep this one' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Merge into one person' }));
+
+    expect(await screen.findByText('Merge into one person?')).toBeInTheDocument();
+    expect(screen.getByText(/Events, messages, and contact methods/)).toBeInTheDocument();
+    expect(screen.getByText(/\(You\)/)).toBeInTheDocument();
+  });
+
+  /**
+   * Regression: the page used to call refetch() after a merge. refetch replays
+   * the hook's ORIGINAL variables (first: PAGE_SIZE, no cursor), so it
+   * overwrote the cache entry fetchMore had been appending to and collapsed the
+   * list back to page one — on 21k people, throwing the user back to row 30 on
+   * every merge of a 2,947-group backlog.
+   */
+  it('keeps scrolled-in pages after a merge instead of collapsing back to page one', async () => {
+    const BEATRICE_UUID = '019fd7c0-641c-76dd-8ed7-a5053faff710';
+    const BEATRICE_GLOBAL_ID = btoa(`person:${BEATRICE_UUID}`);
+    const observer = captureIntersectionObserver();
+
+    const group = duplicateGroup([
+      {
+        __typename: 'PersonType' as const,
+        id: PERSON_GLOBAL_ID,
+        name: 'Ada Lovelace',
+        description: null,
+        avatarUrl: null,
+        isSelf: true,
+      },
+      {
+        __typename: 'PersonType' as const,
+        id: DUPLICATE_GLOBAL_ID,
+        name: 'A. Lovelace',
+        description: null,
+        avatarUrl: null,
+        isSelf: false,
+      },
+    ]);
+
+    try {
+      renderWithProviders(<PeoplePage />, {
+        mocks: [
+          {
+            request: { query: GET_PEOPLE, variables: { query: null, first: PAGE_SIZE } },
+            result: {
+              data: {
+                people: {
+                  __typename: 'PersonConnection' as const,
+                  totalCount: 3,
+                  pageInfo: pageInfo({ hasNextPage: true, endCursor: PERSON_GLOBAL_ID }),
+                  edges: [
+                    { __typename: 'PersonEdge' as const, cursor: PERSON_GLOBAL_ID, node: personNode() },
+                    {
+                      __typename: 'PersonEdge' as const,
+                      cursor: DUPLICATE_GLOBAL_ID,
+                      node: personNode({ id: DUPLICATE_GLOBAL_ID, name: 'A. Lovelace' }),
+                    },
+                  ],
+                },
+              },
+            },
+          },
+          {
+            request: {
+              query: GET_PEOPLE,
+              variables: { query: null, first: PAGE_SIZE, after: PERSON_GLOBAL_ID },
+            },
+            result: {
+              data: {
+                people: {
+                  __typename: 'PersonConnection' as const,
+                  totalCount: 3,
+                  pageInfo: pageInfo(),
+                  edges: [
+                    {
+                      __typename: 'PersonEdge' as const,
+                      cursor: BEATRICE_GLOBAL_ID,
+                      node: personNode({ id: BEATRICE_GLOBAL_ID, name: 'Beatrice Clarke' }),
+                    },
+                  ],
+                },
+              },
+            },
+          },
+          {
+            request: { query: GET_PERSON_DUPLICATES, variables: DUPLICATE_VARIABLES },
+            result: duplicatesResult([group]),
+          },
+          {
+            request: { query: GET_MERGE_CANDIDATES, variables: { first: CANDIDATE_PAGE_SIZE } },
+            result: candidatesResult([]),
+          },
+          {
+            request: {
+              query: MERGE_PEOPLE,
+              variables: { input: { targetId: PERSON_GLOBAL_ID, sourceIds: [DUPLICATE_GLOBAL_ID] } },
+            },
+            result: {
+              data: {
+                mergePeople: {
+                  __typename: 'MergePeoplePayload' as const,
+                  success: true,
+                  person: {
+                    __typename: 'PersonType' as const,
+                    id: PERSON_GLOBAL_ID,
+                    name: 'Ada Lovelace',
+                  },
+                },
+              },
+            },
+          },
+          // The one row whose aggregates the merge changed is re-read on its
+          // own — NOT by re-running the list query.
+          {
+            request: { query: GET_MERGED_PERSON, variables: { id: PERSON_GLOBAL_ID } },
+            result: {
+              data: {
+                person: personNode({
+                  interactionStats: {
+                    __typename: 'PersonInteractionStatsType' as const,
+                    eventCount: 7,
+                    communicationCount: 4,
+                    lastInteractionAt: null,
+                  },
+                }),
+              },
+            },
+          },
+          // Both suggestion sources are re-read after the merge; neither
+          // re-runs the people list.
+          {
+            request: { query: GET_PERSON_DUPLICATES, variables: DUPLICATE_VARIABLES },
+            result: duplicatesResult([]),
+          },
+          {
+            request: { query: GET_MERGE_CANDIDATES, variables: { first: CANDIDATE_PAGE_SIZE } },
+            result: candidatesResult([]),
+          },
+        ],
+      });
+
+      expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument();
+
+      await observer.scrollSentinelIntoView();
+      expect(await screen.findByText('Beatrice Clarke')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Merge into one person' }));
+      // The dialog's confirm carries the same label as the card's trigger; the
+      // last match is the one inside the dialog.
+      await screen.findByText('Merge into one person?');
+      const confirmButtons = screen.getAllByRole('button', { name: 'Merge into one person' });
+      fireEvent.click(confirmButtons[confirmButtons.length - 1]!);
+
+      // The merged-away row goes; the page-two row that refetch() used to wipe
+      // out stays, and the kept row picks up its new aggregates.
+      await waitFor(() => expect(screen.queryByText('A. Lovelace')).not.toBeInTheDocument());
+      expect(screen.getByText('Beatrice Clarke')).toBeInTheDocument();
+      expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
+      await screen.findByText(/7 events · 4 messages/);
+      // totalCount is decremented too, so the footer does not claim a row it dropped.
+      expect(screen.getByText(/loaded/).textContent).toContain('2 of 2 loaded');
+    } finally {
+      observer.restore();
+    }
+  });
+
+  /**
+   * `ci.merge_candidates` was write-only: the pipeline scored pairs nobody could
+   * read. The queue has to render the score and the evidence, because that is
+   * the only thing distinguishing it from the cruder recomputed groups.
+   */
+  it('renders the scored merge-candidate queue with its evidence', async () => {
+    renderWithProviders(<PeoplePage />, {
+      mocks: mocks({
+        candidates: [
+          {
+            __typename: 'MergeCandidateEdge' as const,
+            cursor: 'cursor-1',
+            node: {
+              __typename: 'MergeCandidateType' as const,
+              id: 'candidate-1',
+              score: 0.85,
+              status: 'pending',
+              detectedBy: 'clean.duplicate_detect',
+              createdAt: '2026-08-18T00:00:00Z',
+              evidence: [
+                {
+                  __typename: 'MergeCandidateEvidenceType' as const,
+                  kind: 'phone',
+                  value: '9145826767',
+                  score: 0.85,
+                },
+              ],
+              people: [
+                {
+                  __typename: 'PersonType' as const,
+                  id: PERSON_GLOBAL_ID,
+                  name: 'Ada Lovelace',
+                  description: null,
+                  avatarUrl: null,
+                  isSelf: false,
+                },
+                {
+                  __typename: 'PersonType' as const,
+                  id: DUPLICATE_GLOBAL_ID,
+                  name: '+19145826767',
+                  description: null,
+                  avatarUrl: null,
+                  isSelf: false,
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    });
+
+    expect(await screen.findByText('Suggested merges')).toBeInTheDocument();
+    expect(screen.getByText('85% match')).toBeInTheDocument();
+    expect(screen.getByText('9145826767')).toBeInTheDocument();
+    expect(screen.getByText(/Detected by clean.duplicate_detect/)).toBeInTheDocument();
+  });
+
+  /**
+   * The four call-log-heading groups (899 "Missed call from" rows and friends)
+   * used to be dropped from the queue entirely. They are surfaced truncated now,
+   * so the card must say what fraction a merge would actually cover.
+   */
+  it('discloses that an oversized duplicate group is truncated', async () => {
+    renderWithProviders(<PeoplePage />, {
+      mocks: mocks({
+        duplicates: [
+          duplicateGroup(
+            [
+              {
+                __typename: 'PersonType' as const,
+                id: PERSON_GLOBAL_ID,
+                name: 'Missed call from',
+                description: null,
+                avatarUrl: null,
+                isSelf: false,
+              },
+              {
+                __typename: 'PersonType' as const,
+                id: DUPLICATE_GLOBAL_ID,
+                name: 'Missed call from',
+                description: null,
+                avatarUrl: null,
+                isSelf: false,
+              },
+            ],
+            { reason: 'name', value: 'missed call from', totalPeople: 899 },
+          ),
+        ],
+      }),
+    });
+
+    expect(await screen.findByText(/Showing 2 of 899 people sharing this name/)).toBeInTheDocument();
+  });
+
+  it('re-queries with a reason filter when one is picked', async () => {
+    renderWithProviders(<PeoplePage />, {
+      mocks: [
+        ...mocks({
+          duplicates: [
+            duplicateGroup([
+              {
+                __typename: 'PersonType' as const,
+                id: PERSON_GLOBAL_ID,
+                name: 'Ada Lovelace',
+                description: null,
+                avatarUrl: null,
+                isSelf: false,
+              },
+              {
+                __typename: 'PersonType' as const,
+                id: DUPLICATE_GLOBAL_ID,
+                name: 'A. Lovelace',
+                description: null,
+                avatarUrl: null,
+                isSelf: false,
+              },
+            ]),
+          ],
+        }),
+        {
+          request: {
+            query: GET_PERSON_DUPLICATES,
+            variables: { limit: DUPLICATE_PAGE_SIZE, offset: 0, reasons: ['name'] },
+          },
+          result: duplicatesResult(
+            [
+              duplicateGroup(
+                [
+                  {
+                    __typename: 'PersonType' as const,
+                    id: PERSON_GLOBAL_ID,
+                    name: 'Missed call from',
+                    description: null,
+                    avatarUrl: null,
+                    isSelf: false,
+                  },
+                  {
+                    __typename: 'PersonType' as const,
+                    id: DUPLICATE_GLOBAL_ID,
+                    name: 'Missed call from',
+                    description: null,
+                    avatarUrl: null,
+                    isSelf: false,
+                  },
+                ],
+                { reason: 'name', value: 'missed call from', totalPeople: 899 },
+              ),
+            ],
+            { totalCount: 2286, hasMore: true },
+          ),
+        },
+      ],
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Name' }));
+
+    expect(await screen.findByText('missed call from')).toBeInTheDocument();
+    expect(screen.getByText(/of 2286 groups shown/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Load more duplicate groups' })).toBeInTheDocument();
   });
 });

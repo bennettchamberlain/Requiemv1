@@ -98,7 +98,7 @@ describe('AnomalyEngine.scan', () => {
       repo as never,
       dataSource as never,
       metricsService as unknown as DailyMetricsService,
-      { create } as unknown as ActionService,
+      { create, countDerivedOnLocalDay: jest.fn().mockResolvedValue(0) } as unknown as ActionService,
       { isFeatureEnabled: jest.fn().mockResolvedValue(false) } as unknown as FeatureService,
       logger(),
     );
@@ -144,7 +144,7 @@ describe('AnomalyEngine.scan', () => {
       repo as never,
       { query: jest.fn().mockRejectedValue(Object.assign(new Error('missing'), { code: '42P01' })) } as never,
       metricsService as unknown as DailyMetricsService,
-      { create } as unknown as ActionService,
+      { create, countDerivedOnLocalDay: jest.fn().mockResolvedValue(0) } as unknown as ActionService,
       { isFeatureEnabled: jest.fn().mockResolvedValue(true) } as unknown as FeatureService,
       logger(),
     );
@@ -154,5 +154,41 @@ describe('AnomalyEngine.scan', () => {
     expect(create.mock.calls.length).toBeGreaterThan(0);
     expect(create.mock.calls.length).toBeLessThanOrEqual(3);
     expect(create.mock.calls.every((call) => call[1].source === 'anomaly')).toBe(true);
+  });
+
+  it('does not enqueue when the shared derived-action budget is already full', async () => {
+    const yesterday = shiftIso(todayIsoInTimezone('UTC'), -1);
+    const repo = memoryRepo();
+    const create = jest.fn().mockResolvedValue({ id: 'action-1' });
+    const metricsService = {
+      getRange: jest.fn(async (_context: UserServiceContext, from: string, to: string) => {
+        const rows: DailyMetrics[] = [];
+        let date = from;
+        let index = 0;
+        while (date <= to) {
+          rows.push(day(date, { n_conversations: date === yesterday ? 40 : 10 + (index % 3) * 0.2 }));
+          date = shiftIso(date, 1);
+          index += 1;
+        }
+
+        return rows;
+      }),
+    };
+
+    const engine = new AnomalyEngine(
+      repo as never,
+      { query: jest.fn().mockRejectedValue(Object.assign(new Error('missing'), { code: '42P01' })) } as never,
+      metricsService as unknown as DailyMetricsService,
+      {
+        create,
+        countDerivedOnLocalDay: jest.fn().mockResolvedValue(3),
+      } as unknown as ActionService,
+      { isFeatureEnabled: jest.fn().mockResolvedValue(true) } as unknown as FeatureService,
+      logger(),
+    );
+
+    await engine.scan(CONTEXT, 'UTC');
+
+    expect(create).not.toHaveBeenCalled();
   });
 });

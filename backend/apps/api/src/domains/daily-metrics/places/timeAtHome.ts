@@ -1,4 +1,10 @@
-import { DEFAULT_STAY_RADIUS_M, detectStays, haversineMeters, type PositionFix, type StayPoint } from './stayPoints';
+import {
+  DEFAULT_STAY_RADIUS_M,
+  detectStays,
+  haversineMeters,
+  type PositionFix,
+  type StayPoint,
+} from './stayPoints';
 
 export interface HomePoint {
   lat: number;

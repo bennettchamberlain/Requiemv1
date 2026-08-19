@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime
+import json
 import sys
 import uuid
 from pathlib import Path
@@ -42,6 +43,7 @@ from ci.hbpe.pipeline.scoring import (  # noqa: E402
 
 WORK = "WORK"
 LEISURE = "LEISURE"
+SLEEP = "SLEEP"
 UNIFORM = {c: 0.125 for c in scoring.L0_CLASSES}  # 8 classes → 1/8 each
 
 
@@ -164,6 +166,10 @@ def test_score_mixed_accuracy():
     r = score_predictions(rows)
     assert r.n_l0 == 4
     assert r.l0_top1_acc == pytest.approx(0.5)
+    assert r.per_class[WORK]["support"] == 4
+    assert r.per_class[WORK]["recall"] == pytest.approx(0.5)
+    assert r.per_class[SLEEP]["support"] == 0
+    assert r.per_class[SLEEP]["recall"] is None
 
 
 def test_score_l1_top3():
@@ -438,8 +444,12 @@ def test_score_and_store_persists_metrics(monkeypatch):
     assert cur.insert_params["n_buckets"] == 25
     assert cur.insert_params["l0_top1_acc"] == pytest.approx(1.0)
     assert cur.insert_params["drift_flag"] is False
-    # reliability_json is serialized JSON of the 10-bin table
-    assert '"bin": 9' in cur.insert_params["reliability_json"]
+    assert cur.insert_params["model_version"] == "hmt"
+    # reliability_json is ECE bins + per-class recall (no extra column)
+    payload = json.loads(cur.insert_params["reliability_json"])
+    assert payload["bins"][-1]["bin"] == 9
+    assert payload["per_class"][WORK]["support"] == 25
+    assert payload["per_class"][WORK]["recall"] == pytest.approx(1.0)
 
 
 def test_score_and_store_detects_drift(monkeypatch):

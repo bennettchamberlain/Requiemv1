@@ -225,8 +225,8 @@ brew services start ollama
 Test that Ollama is running using:
 
 ```bash
-ollama pull gemma3:1b
-ollama run gemma3:1b "say hello"
+ollama pull gemma4:e4b
+ollama run gemma4:e4b "say hello"
 
 ollama pull nomic-embed-text
 ollama run nomic-embed-text "embed this"

@@ -50,6 +50,7 @@ const FOCUS_SUBGRAPH = {
 const useNodeGraphServiceMock = vi.fn();
 const useGraphDotsMock = vi.fn();
 const setActiveEntityMock = vi.fn();
+const resolveNodeEntityMock = vi.fn();
 
 vi.mock('@/hooks', () => ({
   useAuth: () => [{ authToken: 'test-token' }],
@@ -86,6 +87,10 @@ vi.mock('@/api/useNodeGraphService', () => ({
 
 vi.mock('@/api/useGraphDots', () => ({
   useGraphDots: (_token: unknown, options: { skip?: boolean }) => useGraphDotsMock(options),
+}));
+
+vi.mock('./useGraphNodeEntity', () => ({
+  useGraphNodeEntity: () => ({ resolveNodeEntity: resolveNodeEntityMock, resolving: false }),
 }));
 
 // The 3D renderer needs WebGL, which jsdom does not have. The stub records the graph it was
@@ -150,6 +155,14 @@ describe('GraphTabPanel (webbed-feet spike)', () => {
       counts: {},
       truncated: false,
     });
+
+    // The resolver hands back the node's REAL entity — a typed PersonType, not the graph's
+    // name-and-type stub. Its own contract (and the fallback) is covered in useGraphNodeEntity.
+    resolveNodeEntityMock.mockImplementation(async (node: GraphNode) => ({
+      __typename: 'PersonType',
+      id: `person-${node.id}`,
+      tags: [],
+    }));
   });
 
   afterEach(() => {
@@ -158,6 +171,7 @@ describe('GraphTabPanel (webbed-feet spike)', () => {
     useNodeGraphServiceMock.mockReset();
     useGraphDotsMock.mockReset();
     setActiveEntityMock.mockReset();
+    resolveNodeEntityMock.mockReset();
     localStorage.removeItem('ci-graph-view-dimension');
   });
 
@@ -186,15 +200,48 @@ describe('GraphTabPanel (webbed-feet spike)', () => {
     expect(dialog).toHaveTextContent('Colm Colleague');
   });
 
-  it('hands off to the shared entity details sheet from the dialog', async () => {
+  // A graph node used to reach the drawer as a synthetic `GenericEntity` carrying only its name
+  // and type, which rendered a stub with nothing to browse to. It now resolves to the real typed
+  // entity first, so the sheet shows the same body List and Gallery show.
+  it('resolves the node to its real entity before opening the shared details sheet', async () => {
     renderShell();
 
     fireEvent.click(await nodeGroup('Frida Friend'));
     fireEvent.click(await screen.findByRole('button', { name: /details/i }));
 
-    expect(setActiveEntityMock).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'friend-1', name: 'Frida Friend' }),
+    await waitFor(() => {
+      expect(resolveNodeEntityMock).toHaveBeenCalledWith(expect.objectContaining({ id: 'friend-1' }));
+      expect(setActiveEntityMock).toHaveBeenCalledWith(
+        expect.objectContaining({ __typename: 'PersonType', id: 'person-friend-1' }),
+      );
+    });
+
+    // The stub is no longer what the drawer receives.
+    expect(setActiveEntityMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ __typename: 'GenericEntity' }),
     );
+  });
+
+  it('falls back to the graph node card when the entity cannot be resolved', async () => {
+    resolveNodeEntityMock.mockImplementation(async (node: GraphNode) => ({
+      __typename: 'GenericEntity',
+      id: node.id,
+      name: node.name,
+      entityType: node.entity_type,
+      description: node.description,
+      properties: node.properties,
+    }));
+
+    renderShell();
+
+    fireEvent.click(await nodeGroup('Frida Friend'));
+    fireEvent.click(await screen.findByRole('button', { name: /details/i }));
+
+    await waitFor(() => {
+      expect(setActiveEntityMock).toHaveBeenCalledWith(
+        expect.objectContaining({ __typename: 'GenericEntity', id: 'friend-1', name: 'Frida Friend' }),
+      );
+    });
   });
 
   it('enters focus mode from the dialog and returns to the overview', async () => {
@@ -311,6 +358,69 @@ describe('GraphTabPanel (webbed-feet spike)', () => {
     });
   });
 
+  /**
+   * Graph search used to ask for 10 nodes and re-slice to 20 with nothing said about the rest,
+   * so a query that matched thousands answered with a dozen dots. It now asks for the full
+   * canvas budget and says so when the corpus had more.
+   */
+  describe('search mode', () => {
+    const realFetch = globalThis.fetch;
+
+    function mockSearchResponse(payload: Record<string, unknown>) {
+      const fetchMock = vi.fn(async (input: RequestInfo | URL) => ({
+        url: String(input),
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => payload,
+      }));
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+      return fetchMock;
+    }
+
+    afterEach(() => {
+      globalThis.fetch = realFetch;
+    });
+
+    it('requests the full canvas budget rather than a token page', async () => {
+      const fetchMock = mockSearchResponse({
+        success: true,
+        nodes: [{ entity_id: 'friend-1', entity_type: 'Person', name: 'Frida Friend' }],
+        links: [],
+        limit: 150,
+        truncated: false,
+      });
+
+      renderShell(['/?search=frida']);
+
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalled();
+      });
+
+      const url = String(fetchMock.mock.calls[0]?.[0]);
+
+      expect(url).toContain('/api/graph/search');
+      expect(url).toContain('limit=150');
+      expect(await screen.findByTestId('graph-search-chip')).toHaveTextContent('frida');
+      expect(screen.queryByTestId('graph-search-truncated')).not.toBeInTheDocument();
+    });
+
+    it('tells the user when the query matched more than the canvas drew', async () => {
+      mockSearchResponse({
+        success: true,
+        nodes: [{ entity_id: 'friend-1', entity_type: 'Person', name: 'Frida Friend' }],
+        links: [],
+        limit: 150,
+        truncated: true,
+      });
+
+      renderShell(['/?search=frida']);
+
+      expect(await screen.findByTestId('graph-search-truncated')).toBeInTheDocument();
+    });
+  });
+
   describe('dots overview (no restrictive filters)', () => {
     const DOT_NODES = [
       { ...node('user-1', 'Owner Person'), degree: 5 },
@@ -340,6 +450,53 @@ describe('GraphTabPanel (webbed-feet spike)', () => {
       expect(useGraphDotsMock).toHaveBeenCalledWith(expect.objectContaining({ skip: false }));
       // No edges ship with the dots payload; they arrive via focus/section fetches.
       expect(screen.queryAllByTestId('force-link')).toHaveLength(0);
+    });
+
+    it('preloads edges among busy dots when switching to 3D overview', async () => {
+      // `init` is declared even though the mock ignores it: the assertion below
+      // reads `edgeCall[1]` to check the POSTed body, and vi.fn types its
+      // `mock.calls` from this signature — a one-parameter mock makes that a
+      // 1-tuple and the read a type error.
+      const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+
+        if (url.includes('/api/graph/edges')) {
+          return {
+            ok: true,
+            json: async () => ({
+              data: { links: [link('rel-dot', 'user-1', 'friend-1')] },
+            }),
+          };
+        }
+
+        return { ok: false, json: async () => ({}) };
+      });
+      const previousFetch = globalThis.fetch;
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+      try {
+        renderShell(['/']);
+        fireEvent.click(screen.getByTestId('graph-dimension-toggle'));
+
+        const canvas3d = await screen.findByTestId('graph-canvas-3d');
+        expect(canvas3d).toBeInTheDocument();
+
+        await waitFor(() => {
+          expect(fetchMock).toHaveBeenCalled();
+          expect(screen.getByTestId('graph-canvas-3d')).toHaveAttribute('data-link-count', '1');
+        });
+
+        const edgeCall = fetchMock.mock.calls.find(([input]) => {
+          const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+
+          return url.includes('/api/graph/edges');
+        });
+        expect(edgeCall).toBeDefined();
+        const body = JSON.parse(String(edgeCall![1]?.body)) as { ids: string[] };
+        expect(body.ids[0]).toBe('user-1');
+      } finally {
+        globalThis.fetch = previousFetch;
+      }
     });
 
     it('expands a clicked dot straight into focus mode', async () => {

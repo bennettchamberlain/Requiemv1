@@ -20,6 +20,7 @@ function ChatPageContent() {
   const resolvedThreadId = useRef<string | null>(null);
   const hasSetInitialMessages = useRef(false);
   const lastProcessedResponseRef = useRef<string>('');
+  const threadTitleRefreshTimeoutRef = useRef<number | null>(null);
 
   const navigate = useNavigate();
 
@@ -56,7 +57,13 @@ function ChatPageContent() {
 
   const [
     { stream, loading: chatRequestLoading, streaming: chatRequestStreaming, hasStartedReceiving },
-    { submit: submitChatRequest, stop: stopChatRequest },
+    {
+      submit: submitChatRequest,
+      stop: stopChatRequest,
+      attach: attachChatStream,
+      detach: detachChatStream,
+      cancel: cancelGeneration,
+    },
   ] = useChatRequester({
     threadId: resolvedThreadId.current,
     onNewThread: handleNewThread,
@@ -64,10 +71,10 @@ function ChatPageContent() {
 
   const navigateToChatList = useCallback(() => {
     incrementNewThreadCount();
-    stopChatRequest();
+    detachChatStream();
     resolvedThreadId.current = null;
     navigate('/chat');
-  }, [incrementNewThreadCount]);
+  }, [incrementNewThreadCount, detachChatStream, navigate]);
 
   useEffect(() => {
     setInitialMessages([]);
@@ -97,30 +104,44 @@ function ChatPageContent() {
 
   useEffect(() => {
     if (thread && !hasSetInitialMessages.current) {
-      setInitialMessages(thread.messages ?? []);
+      const generating = thread.generationStatus === 'queued' || thread.generationStatus === 'running';
+      const loaded = thread.messages ?? [];
+      const last = loaded[loaded.length - 1];
+      const messages = generating && last?.role === 'assistant' ? loaded.slice(0, -1) : loaded;
+
+      setInitialMessages(messages);
       hasSetInitialMessages.current = true;
+
+      if (generating && thread.id) {
+        void attachChatStream(thread.id).then((attached) => {
+          if (!attached) {
+            setInitialMessages(loaded);
+          }
+        });
+      }
     }
-  }, [thread]);
+  }, [thread, attachChatStream]);
 
   const handleSelectThread = useCallback(
     (threadId: string) => {
       if (resolvedThreadId.current !== threadId) {
-        stopChatRequest();
+        detachChatStream();
         navigate(`/chat/${threadId}`);
       }
     },
-    [navigate],
+    [navigate, detachChatStream],
   );
 
   const handleDeleteThread = useCallback(
     (threadId: string) => {
+      cancelGeneration(threadId);
       deleteThread(threadId);
 
       if (resolvedThreadId.current === threadId) {
         navigateToChatList();
       }
     },
-    [deleteThread, navigateToChatList],
+    [cancelGeneration, deleteThread, navigateToChatList],
   );
 
   const handleSubmit = useCallback(
@@ -132,14 +153,31 @@ function ChatPageContent() {
     [submitChatRequest],
   );
 
-  const handleResponseFinished = useCallback((text: string) => {
-    if (text.trim()) {
-      // Only process new responses
-      if (text !== lastProcessedResponseRef.current) {
+  useEffect(() => {
+    return () => {
+      if (threadTitleRefreshTimeoutRef.current != null) {
+        window.clearTimeout(threadTitleRefreshTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleResponseFinished = useCallback(
+    (text: string) => {
+      if (text.trim() && text !== lastProcessedResponseRef.current) {
         lastProcessedResponseRef.current = text;
       }
-    }
-  }, []);
+
+      refetchThreads();
+      if (threadTitleRefreshTimeoutRef.current != null) {
+        window.clearTimeout(threadTitleRefreshTimeoutRef.current);
+      }
+
+      threadTitleRefreshTimeoutRef.current = window.setTimeout(() => {
+        refetchThreads();
+      }, 5000);
+    },
+    [refetchThreads],
+  );
 
   const handlePersonaCompose = useCallback(async () => {
     const trimmed = personaTask.trim();

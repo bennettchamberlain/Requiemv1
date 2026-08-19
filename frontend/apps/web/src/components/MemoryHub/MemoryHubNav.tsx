@@ -1,40 +1,17 @@
+import type { ReactNode } from 'react';
+
 import { cn } from '@ci/shadcn';
 import { Link, useLocation } from 'react-router-dom';
 
 import { useFeatures } from '@/common/feature';
 
-type HubSection = {
-  to: string;
-  label: string;
-  match: (path: string) => boolean;
-  flag?: string;
-};
+import { MEMORY_HUB_SECTIONS } from './memoryHubSections';
 
-const SECTIONS: HubSection[] = [
-  { to: '/memory', label: 'Events', match: (p) => p === '/memory' },
-  { to: '/memory/people', label: 'People', match: (p) => p === '/memory/people' || p.startsWith('/people/') },
-  { to: '/memory/places', label: 'Places', match: (p) => p === '/memory/places' || p.startsWith('/places/') },
-  {
-    to: '/memory/things',
-    label: 'Things',
-    match: (p) => p === '/memory/things' || p.startsWith('/inventory'),
-    flag: 'enable.inventory.page',
-  },
-  { to: '/memory/content', label: 'Content', match: (p) => p === '/memory/content', flag: 'files.page' },
-  { to: '/memory/tags', label: 'Tags', match: (p) => p === '/memory/tags', flag: 'tags.page' },
-  {
-    to: '/memory/questions',
-    label: 'Questions',
-    match: (p) => p === '/memory/questions',
-    flag: 'insights.page',
-  },
-];
-
-export function MemoryHubNav() {
+export function MemoryHubNav({ actions }: { actions?: ReactNode }) {
   const { pathname } = useLocation();
   const { isFeatureEnabled } = useFeatures();
 
-  const visible = SECTIONS.filter((section) => !section.flag || isFeatureEnabled(section.flag));
+  const visible = MEMORY_HUB_SECTIONS.filter((section) => !section.flag || isFeatureEnabled(section.flag));
 
   return (
     <nav
@@ -59,6 +36,8 @@ export function MemoryHubNav() {
           </Link>
         );
       })}
+
+      {actions && <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div>}
     </nav>
   );
 }

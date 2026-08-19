@@ -23,11 +23,13 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { JobsController } from './controllers/JobsController';
+import { CronRunEntity } from './entities/CronRunEntity';
 import { JobMetricEntity } from './entities/JobMetricEntity';
 import { PgBossArchiveEntity } from './entities/PgBossArchiveEntity';
 import { PgBossJobEntity } from './entities/PgBossJobEntity';
 import { PgBossQueueEntity } from './entities/PgBossQueueEntity';
 import { PgBossScheduleEntity } from './entities/PgBossScheduleEntity';
+import { CronRunTracker } from './services/CronRunTracker';
 import { EventService } from './services/EventService';
 import { JobMetricsCollector } from './services/JobMetricsCollector';
 import { JobMonitorService } from './services/JobMonitorService';
@@ -46,6 +48,7 @@ import { PGBossEventService } from './services/PGBossEventService';
       PgBossScheduleEntity,
       PgBossQueueEntity,
       JobMetricEntity,
+      CronRunEntity,
     ]),
   ],
   providers: [
@@ -56,6 +59,7 @@ import { PGBossEventService } from './services/PGBossEventService';
     JobMonitorService,
     JobQueryService,
     JobMetricsCollector,
+    CronRunTracker,
   ],
   controllers: [JobsController],
   exports: [EventService],
@@ -72,4 +76,7 @@ export type { Acknowledgement, EventSendOptions, QueueOptions } from './types';
 // backfill. Exporting them here keeps callers off `events/constants` directly,
 // which the no-cross-domain-internals dependency rule forbids.
 export { DEFAULT_JOB_PRIORITY, INTERACTIVE_JOB_PRIORITY, BACKFILL_JOB_PRIORITY } from './constants';
-export { defineEvent } from './event-registration';
+// EventListenerRegistry is the live record of `@OnEvent` queue declarations.
+// Other domains' tests assert policy/role off it; exporting here keeps them
+// off `events/event-registration` internals (no-cross-domain-internals).
+export { defineEvent, EventListenerRegistry } from './event-registration';

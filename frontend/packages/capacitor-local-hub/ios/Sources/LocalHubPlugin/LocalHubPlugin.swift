@@ -1,5 +1,6 @@
 import Capacitor
 import Foundation
+import UIKit
 
 /// iOS native half of the Local Hub sidecar. See `src/definitions.ts` for the
 /// JS-facing contract this implements and this package's root `README.md` for the
@@ -26,7 +27,8 @@ public class LocalHubPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getStatus", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "secureGet", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "secureSet", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "secureRemove", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "secureRemove", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openUrl", returnType: CAPPluginReturnPromise)
     ]
 
     private let server = LocalHubServer()
@@ -129,6 +131,26 @@ public class LocalHubPlugin: CAPPlugin, CAPBridgedPlugin {
             call.resolve()
         } catch {
             call.reject(error.localizedDescription, nil, error)
+        }
+    }
+
+    /// Opens a URL in the system browser (Safari), not SFSafariViewController.
+    /// Capacitor Browser presents in-app Safari from the bridge VC, which never
+    /// appears under our UIScene `SceneDelegate`. Portal PKCE needs the real Safari
+    /// so `companion://auth/callback` can bounce back into the app.
+    @objc func openUrl(_ call: CAPPluginCall) {
+        guard let urlString = call.getString("url"), let url = URL(string: urlString) else {
+            call.reject("A valid 'url' is required")
+            return
+        }
+        DispatchQueue.main.async {
+            UIApplication.shared.open(url, options: [:]) { success in
+                if success {
+                    call.resolve()
+                } else {
+                    call.reject("Could not open URL in Safari")
+                }
+            }
         }
     }
 }

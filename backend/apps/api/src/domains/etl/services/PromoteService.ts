@@ -63,74 +63,98 @@ export class PromoteService {
 
     const taskMap = new Map<string, Promise<Person>>();
 
-    const tasks = participants.map(async (participant) => {
+    // Populate one resolution task per UNIQUE (lowercased) email synchronously
+    // in this for-loop, before any of them get a chance to run past their
+    // first `await`. This is deliberately NOT `participants.map(async ...)`:
+    // calling N async callbacks back-to-back via .map() runs every callback's
+    // synchronous prefix (including a `taskMap.has(email)` cache check) before
+    // ANY of them resumes past its first await — so two participants sharing
+    // an email would both see a cache miss and both race their own
+    // search-then-create call, defeating the cache entirely regardless of key
+    // casing. Building the map in a plain synchronous loop first means the
+    // second occurrence of an email always finds the first occurrence's
+    // already-registered (still in-flight) promise.
+    for (const participant of participants) {
       const email = participant.email.toLowerCase();
 
       if (taskMap.has(email)) {
-        return taskMap.get(email) as Promise<Person>;
+        continue;
       }
 
-      if (email === user.email.toLowerCase()) {
-        const person = await this.personService.findById(context, userNode.entityId);
-
-        if (person == null) {
-          throw new Error('User graph node could not be obtained');
-        }
-
-        const task = Promise.resolve(person);
-
-        taskMap.set(email, task);
-
-        return task;
-      }
-
-      const existingPeople = await this.personService.search(context, {
-        properties: {
-          email,
-          owner_user_id: context.userId,
-        },
-      });
-
-      if (existingPeople.length > 0) {
-        const task = Promise.resolve(existingPeople[0]);
-
-        taskMap.set(email, task);
-
-        return task;
-      }
-
-      const id = uuid7();
-      const [firstName, ...restName] = participant.name.trim().split(/\s+/).filter(Boolean);
-      const lastName = restName.length > 0 ? restName.join(' ') : null;
-
-      const properties: Record<string, unknown> = {
+      taskMap.set(
         email,
-        first_name: firstName || participant.name,
-        last_name: lastName,
-        contact_type: source,
-        owner_user_id: context.userId,
-        connection_id: connectionId,
-      };
+        this.resolvePerson(context, participant, email, user, userNode, connectionId, source),
+      );
+    }
 
-      const task = this.personService.create(context, {
-        id,
-        name: participant.name,
-        description: `Contact from ${source}`,
-        properties,
-      });
-
-      taskMap.set(participant.email, task);
-
-      return task;
-    });
-
-    const entities = await Promise.all(tasks);
+    const entities = await Promise.all(
+      participants.map((participant) => taskMap.get(participant.email.toLowerCase())!),
+    );
     const relationships = entities.map((entity) => (entity.id === userNode.entityId ? null : entity));
 
     return {
       entities,
       relationships,
     };
+  }
+
+  /**
+   * Resolves a single participant to a Person: the caller's own graph node if
+   * the email matches them, an existing Person found by email search, or a
+   * newly created one. Split out of {@link upsertPeopleFromParticipants} so
+   * that loop can register the returned promise in `taskMap` synchronously,
+   * before this function's first `await` — see the comment there for why that
+   * ordering is what makes the in-request dedup cache actually work.
+   */
+  private async resolvePerson(
+    context: UserServiceContext,
+    participant: ParticipantInfo,
+    email: string,
+    user: NonNullable<Awaited<ReturnType<UserService['findById']>>>,
+    userNode: NonNullable<Awaited<ReturnType<NodeService['findNodeByUserId']>>>,
+    connectionId: string,
+    source: string,
+  ): Promise<Person> {
+    if (email === user.email.toLowerCase()) {
+      const person = await this.personService.findById(context, userNode.entityId);
+
+      if (person == null) {
+        throw new Error('User graph node could not be obtained');
+      }
+
+      return person;
+    }
+
+    const existingPeople = await this.personService.search(context, {
+      properties: {
+        email,
+        owner_user_id: context.userId,
+      },
+    });
+
+    if (existingPeople.length > 0) {
+      return existingPeople[0];
+    }
+
+    const id = uuid7();
+    const [firstName, ...restName] = participant.name.trim().split(/\s+/).filter(Boolean);
+    const lastName = restName.length > 0 ? restName.join(' ') : null;
+
+    const properties: Record<string, unknown> = {
+      email,
+      first_name: firstName || participant.name,
+      last_name: lastName,
+      contact_type: source,
+      owner_user_id: context.userId,
+      connection_id: connectionId,
+    };
+
+    return this.personService.create(context, {
+      id,
+      name: participant.name,
+      description: `Contact from ${source}`,
+      properties,
+    });
   }
 
   /**

@@ -29,6 +29,7 @@ const GET_FORECAST_EXTRAS = gql`
         l0Top1Acc
         ece
         driftFlag
+        modelVersion
       }
     }
     forecastHistory(days: 5) {

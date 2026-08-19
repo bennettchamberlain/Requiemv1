@@ -8,6 +8,7 @@ import { FeatureService } from '@ci/common/feature';
 import { LoggerService } from '@ci/common/logging';
 import { ActionService } from '@ci/domains/intelligence';
 
+import { MAX_DERIVED_ACTIONS_PER_DAY } from '../coldStart';
 import { shiftIso, todayIsoInTimezone } from '../dateUtil';
 import { MetricAnomalyEntity, type MetricAnomaly } from '../entities/MetricAnomalyEntity';
 import { DailyMetricsService } from '../services/DailyMetricsService';
@@ -24,7 +25,6 @@ import {
 
 const HISTORY_DAYS = 90;
 const HBPE_N_BUCKETS_FLOOR = 50;
-const MAX_ANOMALY_ACTIONS_PER_DAY = 3;
 
 @Injectable()
 export class AnomalyEngine {
@@ -75,7 +75,7 @@ export class AnomalyEngine {
 
     const promote = await this.featureService.isFeatureEnabled('derivation.engines');
     if (promote) {
-      await this.promote(context, persisted, yesterday);
+      await this.promote(context, persisted, yesterday, timezone);
     }
 
     this.logger.log('Anomaly scan complete', {
@@ -184,13 +184,20 @@ export class AnomalyEngine {
     context: UserServiceContext,
     anomalies: MetricAnomaly[],
     yesterday: string,
+    timezone: string,
   ): Promise<void> {
     const recent = anomalies
       .filter((row) => row.date === yesterday && !row.actionId)
-      .sort((left, right) => right.score * right.coverage - left.score * left.coverage)
-      .slice(0, MAX_ANOMALY_ACTIONS_PER_DAY);
+      .sort((left, right) => right.score * right.coverage - left.score * left.coverage);
 
-    for (const anomaly of recent) {
+    const used = await this.actionService.countDerivedOnLocalDay(
+      context,
+      todayIsoInTimezone(timezone),
+      timezone,
+    );
+    const remaining = Math.max(0, MAX_DERIVED_ACTIONS_PER_DAY - used);
+
+    for (const anomaly of recent.slice(0, remaining)) {
       const action = await this.actionService.create(context, {
         title: anomalyTitle(anomaly),
         text: anomalyText(anomaly),

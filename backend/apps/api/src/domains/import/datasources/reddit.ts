@@ -1,5 +1,6 @@
 /* Reddit — GDPR CSV export (posts.csv, comments.csv, saved_*, votes, subs, purchases). */
 import fs from 'node:fs';
+import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseCSV } from './csv';
@@ -138,10 +139,10 @@ const REQUIRED_HEADERS: Record<string, readonly string[]> = {
 };
 
 /** Name on the signature list AND header carrying the parsed columns. */
-function isRedditFile(fpath: string): boolean {
+async function isRedditFile(fpath: string): Promise<boolean> {
   const required = REQUIRED_HEADERS[path.basename(fpath).toLowerCase()];
 
-  return required != null && csvHeaderHas(fpath, required);
+  return required != null && (await csvHeaderHas(fpath, required));
 }
 
 export class RedditFileImporter implements FileImporter {
@@ -151,26 +152,30 @@ export class RedditFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
-      return isRedditFile(root) ? { confidence: 0.9 } : { confidence: 0 };
+    if (st.isFile()) {
+      return (await isRedditFile(root)) ? { confidence: 0.9 } : { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       try {
         // Count only files whose HEADER passes, not whose name does — a
         // directory holding someone else's comments.csv + posts.csv would
         // otherwise clear the two-hit bar on names alone.
-        const names = fs.readdirSync(root);
-        const hits = names.filter(
-          (name) => REDDIT_FILES.includes(name.toLowerCase()) && isRedditFile(path.join(root, name)),
-        ).length;
+        const names = await readdir(root);
+        let hits = 0;
+        for (const name of names) {
+          if (REDDIT_FILES.includes(name.toLowerCase()) && (await isRedditFile(path.join(root, name)))) {
+            hits++;
+          }
+        }
+
         if (hits >= 2) {
           return { confidence: 0.95 };
         }

@@ -340,7 +340,7 @@ These are deliberate follow-up slices, not oversights:
   bound socket, a real on-disk SQLCipher database, and the real AndroidKeyStore on an
   API-35 emulator.
   ```
-  cd frontend/apps/mobile/android
+  cd frontend/apps/android/android
   ./gradlew :ci-capacitor-local-hub:connectedDebugAndroidTest
   ```
   - `LocalHubServerTest` (30) — enqueue/list/counts/capacity, FIFO ordering (including a
@@ -407,14 +407,14 @@ ios/
 The Android and iOS stores share no code -- the schema, status vocabulary, `MAX_ATTEMPTS`,
 and capacity policy are duplicated by hand and must be changed together.
 
-> **Build gotcha:** `frontend/apps/mobile/node_modules/@ci/capacitor-local-hub` is a real
+> **Build gotcha:** `frontend/apps/android/node_modules/@ci/capacitor-local-hub` is a real
 > *copy* of this package on a `node-modules`-linker install (not a symlink), and Gradle
 > builds that copy. Editing a file here does not reach the build until `yarn install` is
-> re-run inside `frontend/apps/mobile` -- and Gradle will still report `BUILD SUCCESSFUL`
+> re-run inside `frontend/apps/android` -- and Gradle will still report `BUILD SUCCESSFUL`
 > against the stale copy, so it looks like it worked. Re-run `yarn install` after every
 > edit to this package.
 
-Consumed by `frontend/apps/mobile` via `"@ci/capacitor-local-hub": "file:../../packages/capacitor-local-hub"`,
+Consumed by `frontend/apps/ios` and `frontend/apps/android` via `"@ci/capacitor-local-hub": "portal:../../packages/capacitor-local-hub"`,
 picked up by `npx cap sync` on the Android side (`capacitor.settings.gradle` /
 `capacitor.build.gradle`, generated from that dependency). On iOS, `cap sync` does not
 manage CocoaPods dependencies the way it manages Android Gradle modules -- but it does
@@ -435,7 +435,7 @@ build at all**; it is now `CiCapacitorLocalHub.podspec`. Do not rename it back.
 
 The iOS side (`CiCapacitorLocalHub.podspec`, `ios/Sources/LocalHubPlugin/*.swift`) was
 originally written by close reading of the `@capacitor/ios@7.6.7` source vendored in
-`frontend/apps/mobile/node_modules/@capacitor/ios` and of GCDWebServer's public headers.
+`frontend/apps/ios/node_modules/@capacitor/ios` and of GCDWebServer's public headers.
 It has since been built and run on a real Mac. **Reading the source got the API spelling
 right and the runtime behaviour wrong** -- everything below that was found by building was
 invisible to code review:
@@ -506,7 +506,7 @@ the most important one.
   caller is JS in the WKWebView or native code. This reasoning is grounded in Apple's
   documented ATS behavior, not in having tested it against this exact loopback
   server. If a real device build shows an ATS block, the fix is almost certainly a
-  narrow addition to `frontend/apps/mobile/ios/App/App/Info.plist`'s existing
+  narrow addition to `frontend/apps/ios/ios/App/App/Info.plist`'s existing
   `NSAppTransportSecurity` block, not a blanket exception.
 - **GCDWebServer API surface confidence**: high for the specific symbols used
   (verified against the library's actual header files, not general/possibly-stale

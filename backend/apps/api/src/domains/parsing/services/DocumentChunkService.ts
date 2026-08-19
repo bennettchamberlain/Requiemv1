@@ -117,4 +117,29 @@ export class DocumentChunkService {
 
     return rows.map((row) => ({ id: row.id, type: 'file-chunk' as IndexableEntity }));
   }
+
+  /**
+   * True total of document chunks matching the same filters {@link getEntitiesForFileChunks}
+   * applies (minus the pagination-only `limit`/`order`/`afterTime`/`afterId`) — a real
+   * `COUNT(*)`, not the length of one `limit`-bounded page of identifiers. See
+   * EventService.countEntitiesForEvents.
+   */
+  async countEntitiesForFileChunks(
+    context: ServiceContext,
+    options: { startTime?: Date; endTime?: Date },
+  ): Promise<number> {
+    let query = this.chunkRepository
+      .createQueryBuilder('chunk')
+      .where('chunk.user_id = :userId', { userId: context.userId });
+
+    if (options.startTime) {
+      query = query.andWhere('chunk.created_at >= :startTime', { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere('chunk.created_at <= :endTime', { endTime: options.endTime });
+    }
+
+    return query.getCount();
+  }
 }

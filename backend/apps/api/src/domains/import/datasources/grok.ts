@@ -30,6 +30,7 @@
 */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { hasGrokChats, importGrokChats, GROK_CHAT_STORE } from './_x_archive';
@@ -58,10 +59,10 @@ interface GrokConversation {
   conversation?: unknown;
 }
 
-function readJSON(fpath: string): unknown {
+async function readJSON(fpath: string): Promise<unknown> {
   let raw: string;
   try {
-    raw = fs.readFileSync(fpath, 'utf8');
+    raw = await readFile(fpath, 'utf8');
   } catch {
     return undefined;
   }
@@ -242,34 +243,46 @@ export class GrokFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       const base = path.basename(root).toLowerCase();
       if (path.extname(base) !== '.json') {
         return { confidence: 0 };
       }
 
-      const parsed = readJSON(root);
+      const parsed = await readJSON(root);
       if (!isGrokExport(parsed)) {
         return { confidence: 0 };
       }
 
-      // Strong filename signal (grok*.json) beats a generic shape match.
-      return base.startsWith('grok') ? { confidence: 0.97 } : { confidence: 0.85 };
+      // The filename is REQUIRED, not merely a bonus.
+      //
+      // `isGrokExport` matches any array whose first object has a title/name and
+      // a messages/responses/conversation array — and as the header says, no
+      // xAI export is known to produce this shape at all. So a JSON file that
+      // merely fits it is not evidence of Grok; it is evidence of JSON. Scoring
+      // it 0.85 let this importer outrank real ones on their own archives.
+      return base.startsWith('grok') ? { confidence: 0.97 } : { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
-      const found = this.findExport(root, 2);
-      if (found) {
-        const base = path.basename(found).toLowerCase();
-
-        return base.startsWith('grok') ? { confidence: 0.95 } : { confidence: 0.85 };
+    if (st.isDirectory()) {
+      // Same rule as the file branch, and this is the one that actually bit.
+      //
+      // A real X archive of 6,997 files was claimed by THIS importer at 0.85,
+      // because `findExport` reached some unrelated JSON of the tolerant shape
+      // within two levels and the non-grok-named branch scored it above
+      // twitter's 0.9. The import produced 17 messages out of 1.1GB — precisely
+      // the outcome the comment below warns about. Requiring the filename keeps
+      // the deliberate 0.3 X-archive ranking underneath in charge.
+      const found = await this.findExport(root, 2);
+      if (found && path.basename(found).toLowerCase().startsWith('grok')) {
+        return { confidence: 0.95 };
       }
 
       // An X archive. Deliberately LOW, and deliberately not zero.
@@ -282,7 +295,7 @@ export class GrokFileImporter implements FileImporter {
       // of an X archive should go to the twitter importer (0.9+), which imports
       // the whole archive INCLUDING these chats. Ranking above it would silently
       // reduce a Twitter import to Grok messages alone.
-      if (hasGrokChats(root)) {
+      if (await hasGrokChats(root)) {
         return { confidence: 0.3 };
       }
 
@@ -306,7 +319,7 @@ export class GrokFileImporter implements FileImporter {
       if (stat.isFile()) {
         fpath = root;
       } else if (isDir) {
-        fpath = this.findExport(root, 2);
+        fpath = await this.findExport(root, 2);
       }
     } catch {
       return;
@@ -315,7 +328,7 @@ export class GrokFileImporter implements FileImporter {
     // An X archive: import ONLY the Grok chats out of it. The user picked the
     // Grok card, so tweets and DMs are not what they asked for — the Twitter
     // card is what imports the rest of the same .zip.
-    if (isDir && hasGrokChats(root)) {
+    if (isDir && (await hasGrokChats(root))) {
       importGrokChats(root, params);
 
       return;
@@ -414,10 +427,10 @@ export class GrokFileImporter implements FileImporter {
   // Locate the export JSON. Prefers a grok*.json filename, then falls back to
   // any *.json whose contents look like a Grok export. Recurses up to `depth`
   // directory levels because real exports may nest the file in a subfolder.
-  private findExport(dir: string, depth: number): string | undefined {
+  private async findExport(dir: string, depth: number): Promise<string | undefined> {
     let names: string[];
     try {
-      names = fs.readdirSync(dir);
+      names = await readdir(dir);
     } catch {
       return undefined;
     }
@@ -426,7 +439,7 @@ export class GrokFileImporter implements FileImporter {
     for (const name of names) {
       if (name.toLowerCase().startsWith('grok') && name.toLowerCase().endsWith('.json')) {
         const full = path.join(dir, name);
-        if (isGrokExport(readJSON(full))) {
+        if (isGrokExport(await readJSON(full))) {
           return full;
         }
       }
@@ -439,7 +452,7 @@ export class GrokFileImporter implements FileImporter {
       }
 
       const full = path.join(dir, name);
-      if (isGrokExport(readJSON(full))) {
+      if (isGrokExport(await readJSON(full))) {
         return full;
       }
     }
@@ -449,8 +462,8 @@ export class GrokFileImporter implements FileImporter {
       for (const name of names) {
         const full = path.join(dir, name);
         try {
-          if (fs.statSync(full).isDirectory()) {
-            const sub = this.findExport(full, depth - 1);
+          if ((await stat(full)).isDirectory()) {
+            const sub = await this.findExport(full, depth - 1);
             if (sub) {
               return sub;
             }

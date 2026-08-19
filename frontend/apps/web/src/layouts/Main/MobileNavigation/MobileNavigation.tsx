@@ -1,75 +1,95 @@
-import { type MouseEvent, useCallback } from 'react';
+import { useEffect, useRef } from 'react';
 
-import { Portal } from '@ci/common';
-import { Camera, CalendarRange, MonitorCog, Search, type LucideIcon } from '@ci/shadcn/icons';
-import { Link } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 
-import logo from '@/assets/logo.svg';
-import { useFeatures } from '@/common/feature';
-import { CaptureModal } from '@/components/modals/CaptureModal';
-import { useCaptureModal } from '@/hooks';
+import { usePowerRail } from '../PowerRailContext';
+import { SecondaryNavigation } from '../SecondaryNavigation';
 
+const EDGE_PX = 28;
+const THRESHOLD_PX = 48;
+
+/**
+ * Phone chrome around the glass Power Rail.
+ *
+ * Closed: a chevron in the top bar and a swipe right from the left edge.
+ * Open: the same rail as desktop, glassed. Search lives in the top bar.
+ */
 export function MobileNavigation() {
-  const { isFeatureEnabled } = useFeatures();
-  const [{ isOpen }, { open, close }] = useCaptureModal();
+  const { expanded, openOverlay, closeOverlay } = usePowerRail();
+  const { pathname } = useLocation();
+  const start = useRef<{ x: number; y: number; tracking: boolean } | null>(null);
 
-  const handleCaptureClick = useCallback(
-    (e: MouseEvent) => {
-      e.preventDefault();
-      open();
-    },
-    [open],
-  );
+  useEffect(() => {
+    closeOverlay();
+  }, [pathname, closeOverlay]);
+
+  useEffect(() => {
+    const onStart = (event: TouchEvent) => {
+      const touch = event.touches[0];
+
+      if (!touch) {
+        return;
+      }
+
+      const fromEdge = touch.clientX <= EDGE_PX;
+      const fromRail = expanded && touch.clientX <= 224;
+
+      start.current = {
+        x: touch.clientX,
+        y: touch.clientY,
+        tracking: expanded ? fromRail : fromEdge,
+      };
+    };
+
+    const onEnd = (event: TouchEvent) => {
+      const origin = start.current;
+      start.current = null;
+
+      if (!origin?.tracking) {
+        return;
+      }
+
+      const touch = event.changedTouches[0];
+
+      if (!touch) {
+        return;
+      }
+
+      const dx = touch.clientX - origin.x;
+      const dy = touch.clientY - origin.y;
+
+      if (Math.abs(dy) > Math.abs(dx)) {
+        return;
+      }
+
+      if (!expanded && dx >= THRESHOLD_PX) {
+        openOverlay();
+      } else if (expanded && dx <= -THRESHOLD_PX) {
+        closeOverlay();
+      }
+    };
+
+    document.addEventListener('touchstart', onStart, { passive: true });
+    document.addEventListener('touchend', onEnd, { passive: true });
+
+    return () => {
+      document.removeEventListener('touchstart', onStart);
+      document.removeEventListener('touchend', onEnd);
+    };
+  }, [expanded, openOverlay, closeOverlay]);
 
   return (
     <>
-      {isOpen && (
-        <Portal.Slot id="content-modal">
-          <CaptureModal open onClose={close} />
-        </Portal.Slot>
+      {expanded && (
+        <button
+          type="button"
+          aria-label="Dismiss menu"
+          className="fixed inset-0 z-30 bg-black/25"
+          onClick={closeOverlay}
+        />
       )}
 
-      <div className="flex flex-col border-t bg-secondary pb-[env(safe-area-inset-bottom)]">
-        <div className="flex flex-row items-center justify-between">
-          <NavButton to="/today" icon={CalendarRange} label="Today" />
-          <NavButton to="/search" icon={Search} label="Search" />
-          {isFeatureEnabled('chat.page') ? (
-            <Link
-              to="/chat"
-              aria-label="Chat"
-              className="flex self-stretch p-2 px-4 items-center justify-center"
-            >
-              <img src={logo} alt="" className="h-12 w-12" />
-            </Link>
-          ) : (
-            <div className="flex self-stretch p-2 px-4 items-center justify-center">
-              <img src={logo} alt="" className="h-12 w-12" />
-            </div>
-          )}
-          <NavButton icon={Camera} label="Capture" onClick={handleCaptureClick} />
-          <NavButton to="/system" icon={MonitorCog} label="System" />
-        </div>
-      </div>
+      <SecondaryNavigation />
     </>
-  );
-}
-
-interface NavButtonProps {
-  to?: string;
-  icon: LucideIcon;
-  label: string;
-  onClick?: (e: MouseEvent) => void;
-}
-
-export function NavButton({ to, icon: Icon, label, onClick }: NavButtonProps) {
-  return (
-    <Link
-      to={to ?? ''}
-      className="flex flex-1 flex-col gap-0.5 justify-center items-center p-4 select-none"
-      onClick={onClick}
-    >
-      <Icon className="h-6 w-6" strokeWidth={1} />
-      <span className="text-xxs">{label}</span>
-    </Link>
   );
 }

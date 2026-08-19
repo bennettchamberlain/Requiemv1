@@ -1,6 +1,8 @@
 export const ENTITY_TYPE_REVERSE_MAP = {
+  answer: 'Answer',
   'browser-activity': 'Browser',
   communication: 'Communication',
+  concept: 'Concept',
   content: 'Content',
   event: 'Event',
   file: 'File',
@@ -11,8 +13,12 @@ export const ENTITY_TYPE_REVERSE_MAP = {
 };
 
 export const ENTITY_TYPE_MAP = {
+  // Answers and Concepts have no What picker; they ride along on exclude-lists
+  // (see HIDDEN_ENTITY_TYPES) so a narrowed browse doesn't leak them into results.
+  Answer: 'answer',
   Browser: 'browser-activity',
   Communication: 'communication',
+  Concept: 'concept',
   Content: 'content',
   Event: 'event',
   File: 'file',

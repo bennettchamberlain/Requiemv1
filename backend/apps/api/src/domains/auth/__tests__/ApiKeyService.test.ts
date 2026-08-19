@@ -1,7 +1,7 @@
 import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { IsNull } from 'typeorm';
 
-import { type UserServiceContext } from '@ci/common/context';
+import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/common/context';
 
 import { ApiKeyService } from '../services/ApiKeyService';
 
@@ -461,5 +461,151 @@ describe('ApiKeyService.validateKey', () => {
 
     expect(await service.validateKey('not-hex')).toBeNull();
     expect(repo.findOne).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * findAllByUser / findOneByUser / remove all share the same tenancy gate:
+ *
+ *   ...(context.userId !== SYSTEM_USER && { user_id: context.userId })
+ *
+ * which is meant to scope every ordinary caller to their own rows while
+ * letting only the trusted system caller (SYSTEM_USER — never reachable from
+ * a request; only internal callers construct that context) see across
+ * owners. If that condition were ever inverted or dropped, an ordinary
+ * authenticated user could list, read, or delete another user's API keys
+ * through GET/DELETE /keys/:id — a direct tenancy leak on credential
+ * material.
+ *
+ * Unlike the tests above (which only assert the `where`/criteria shape
+ * against a repo mock that echoes back whatever it's given), these use a
+ * small in-memory repo that actually FILTERS by the criteria it receives —
+ * so a regression that dropped or inverted the `user_id` filter would make
+ * these tests fail by returning/deleting the wrong owner's row, not just by
+ * mismatching the call it happened to be given.
+ */
+function makeTenantScopedRepo(rows: Array<Record<string, unknown>>) {
+  const table = [...rows];
+
+  const matches = (row: Record<string, unknown>, where?: Record<string, unknown>) =>
+    !where || Object.entries(where).every(([key, value]) => row[key] === value);
+
+  return {
+    find: jest.fn(async ({ where }: { where?: Record<string, unknown> } = {}) =>
+      table.filter((row) => matches(row, where)),
+    ),
+    findOne: jest.fn(async ({ where }: { where?: Record<string, unknown> }) => {
+      return table.find((row) => matches(row, where)) ?? null;
+    }),
+    delete: jest.fn(async (criteria: Record<string, unknown>) => {
+      const before = table.length;
+      const survivors = table.filter((row) => !matches(row, criteria));
+
+      table.length = 0;
+      table.push(...survivors);
+
+      return { affected: before - survivors.length };
+    }),
+  };
+}
+
+function makeKeyRow(id: string, userId: string) {
+  return {
+    id,
+    user_id: userId,
+    name: `key-${id}`,
+    prefix: 'aaaaa',
+    scopes: [] as string[],
+    capability: 'write' as const,
+    expires_at: null,
+    last_used_at: null,
+    created_at: new Date(),
+    updated_at: new Date(),
+    managed_by: null,
+  };
+}
+
+describe('ApiKeyService tenancy scoping (findAllByUser / findOneByUser / remove)', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  describe('findOneByUser', () => {
+    it('rejects an ordinary user reading another user’s key by id', async () => {
+      const repo = makeTenantScopedRepo([makeKeyRow('key-1', 'user-1'), makeKeyRow('key-2', 'user-2')]);
+      const service = makeService(repo as never);
+
+      const result = await service.findOneByUser({ userId: 'user-1' } as ServiceContext, 'key-2');
+
+      expect(result).toBeNull();
+      expect(repo.findOne).toHaveBeenCalledWith({ where: { id: 'key-2', user_id: 'user-1' } });
+    });
+
+    it('lets the owning user read their own key', async () => {
+      const repo = makeTenantScopedRepo([makeKeyRow('key-1', 'user-1'), makeKeyRow('key-2', 'user-2')]);
+      const service = makeService(repo as never);
+
+      const result = await service.findOneByUser({ userId: 'user-1' } as ServiceContext, 'key-1');
+
+      expect(result?.id).toBe('key-1');
+    });
+
+    it('lets the trusted SYSTEM_USER context bypass the owner filter', async () => {
+      const repo = makeTenantScopedRepo([makeKeyRow('key-1', 'user-1'), makeKeyRow('key-2', 'user-2')]);
+      const service = makeService(repo as never);
+
+      const result = await service.findOneByUser({ userId: SYSTEM_USER } as ServiceContext, 'key-2');
+
+      expect(result?.id).toBe('key-2');
+      expect(repo.findOne).toHaveBeenCalledWith({ where: { id: 'key-2' } });
+    });
+  });
+
+  describe('findAllByUser', () => {
+    it('never returns another user’s keys to an ordinary caller', async () => {
+      const repo = makeTenantScopedRepo([makeKeyRow('key-1', 'user-1'), makeKeyRow('key-2', 'user-2')]);
+      const service = makeService(repo as never);
+
+      const results = await service.findAllByUser({ userId: 'user-1' } as ServiceContext);
+
+      expect(results.map((k) => k.id)).toEqual(['key-1']);
+    });
+
+    it('lists across all owners for the trusted SYSTEM_USER context', async () => {
+      const repo = makeTenantScopedRepo([makeKeyRow('key-1', 'user-1'), makeKeyRow('key-2', 'user-2')]);
+      const service = makeService(repo as never);
+
+      const results = await service.findAllByUser({ userId: SYSTEM_USER } as ServiceContext);
+
+      expect(results.map((k) => k.id).sort()).toEqual(['key-1', 'key-2']);
+    });
+  });
+
+  describe('remove', () => {
+    it('refuses to delete another user’s key, and it survives untouched', async () => {
+      const repo = makeTenantScopedRepo([makeKeyRow('key-1', 'user-1'), makeKeyRow('key-2', 'user-2')]);
+      const service = makeService(repo as never);
+
+      const removed = await service.remove({ userId: 'user-1' } as ServiceContext, 'key-2');
+
+      expect(removed).toBe(false);
+      expect(repo.delete).toHaveBeenCalledWith({ id: 'key-2', user_id: 'user-1' });
+      // Prove it by reading it back, not just by the delete-criteria shape.
+      const survivor = await service.findOneByUser({ userId: 'user-2' } as ServiceContext, 'key-2');
+      expect(survivor?.id).toBe('key-2');
+    });
+
+    it('lets the owning user delete their own key', async () => {
+      const repo = makeTenantScopedRepo([makeKeyRow('key-1', 'user-1'), makeKeyRow('key-2', 'user-2')]);
+      const service = makeService(repo as never);
+
+      expect(await service.remove({ userId: 'user-1' } as ServiceContext, 'key-1')).toBe(true);
+    });
+
+    it('lets the trusted SYSTEM_USER context delete any user’s key', async () => {
+      const repo = makeTenantScopedRepo([makeKeyRow('key-1', 'user-1'), makeKeyRow('key-2', 'user-2')]);
+      const service = makeService(repo as never);
+
+      expect(await service.remove({ userId: SYSTEM_USER } as ServiceContext, 'key-2')).toBe(true);
+      expect(repo.delete).toHaveBeenCalledWith({ id: 'key-2' });
+    });
   });
 });

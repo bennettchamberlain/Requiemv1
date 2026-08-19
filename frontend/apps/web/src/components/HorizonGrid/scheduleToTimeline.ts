@@ -8,9 +8,21 @@ import { isBrowserCapture } from './scheduleClusters';
  * TimelineJS is a storytelling slideshow, not a dense calendar: feeding it every
  * capture tick makes an unreadable novel. We keep calendar blocks, then sample
  * the best browser visits (longer / unique titles), capped at MAX_SLIDES.
+ *
+ * Keep the cap modest: TimelineJS mounts every slide and every axis tick in the
+ * DOM. 48 slides over a 35-day range was a wide, expensive time-nav canvas.
  */
 
-const MAX_SLIDES = 48;
+const MAX_SLIDES = 12;
+
+/**
+ * TimelineJS pads major ticks by `_scaled_padding * major.factor` and minor by
+ * `* minor.factor`. Day labels therefore reach further left/right than hour
+ * marks. When every slide sits on the focus day, zooming out shows yesterday's
+ * major tick with no minor ruler behind it. An era expands earliest/latest so
+ * both axes share the same navigable span (eras are hidden in CSS).
+ */
+export const TIMELINE_AXIS_PAD_DAYS = 2;
 
 export interface TimelineDateParts {
   year: string;
@@ -31,9 +43,16 @@ export interface TimelineSlide {
   autolink?: boolean;
 }
 
+export interface TimelineEra {
+  start_date: TimelineDateParts;
+  end_date: TimelineDateParts;
+  text: { headline: string };
+}
+
 export interface TimelineJsData {
   title: TimelineSlide;
   events: TimelineSlide[];
+  eras?: TimelineEra[];
   scale: 'human';
 }
 
@@ -45,6 +64,47 @@ function partsOf(date: Date): TimelineDateParts {
     hour: String(date.getHours()),
     minute: String(date.getMinutes()),
     second: String(date.getSeconds()),
+  };
+}
+
+function startOfLocalDay(date: Date): Date {
+  const day = new Date(date);
+  day.setHours(0, 0, 0, 0);
+
+  return day;
+}
+
+function endOfLocalDay(date: Date): Date {
+  const day = new Date(date);
+  day.setHours(23, 59, 59, 0);
+
+  return day;
+}
+
+function addLocalDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+
+  return next;
+}
+
+/**
+ * Hidden era that pulls the TimeNav axis through neighbouring days so minor
+ * ticks exist wherever major day labels already appear when zoomed out.
+ */
+export function axisPadEra(events: readonly ScheduleEvent[], focusDay: Date): TimelineEra {
+  let earliest = startOfLocalDay(focusDay).getTime();
+  let latest = endOfLocalDay(focusDay).getTime();
+
+  for (const event of events) {
+    earliest = Math.min(earliest, new Date(event.startTime).getTime());
+    latest = Math.max(latest, new Date(event.endTime ?? event.startTime).getTime());
+  }
+
+  return {
+    start_date: partsOf(startOfLocalDay(addLocalDays(new Date(earliest), -TIMELINE_AXIS_PAD_DAYS))),
+    end_date: partsOf(endOfLocalDay(addLocalDays(new Date(latest), TIMELINE_AXIS_PAD_DAYS))),
+    text: { headline: '' },
   };
 }
 
@@ -72,7 +132,6 @@ function toSlide(event: ScheduleEvent): TimelineSlide {
   const start = new Date(event.startTime);
   const end = event.endTime ? new Date(event.endTime) : null;
   const url = eventUrl(event);
-  const group = isBrowserCapture(event) ? 'Browsing' : (event.sourceSystem ?? event.category ?? 'Schedule');
   const when = start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const bodyBits = [
     when,
@@ -88,40 +147,19 @@ function toSlide(event: ScheduleEvent): TimelineSlide {
       headline: event.title || 'Untitled',
       text: bodyBits.join(' · '),
     },
-    group: String(group),
     unique_id: event.id,
-    autolink: true,
+    autolink: false,
   };
 
   if (end && !event.isAllDay) {
     slide.end_date = partsOf(end);
   }
 
-  // Only hand TimelineJS media it can embed. Arbitrary page URLs make it try
-  // (and often fail) to iframe random sites, which blanks the story panel.
-  if (url && isEmbeddableMedia(url)) {
-    slide.media = { url, link: url, caption: event.title };
-  }
+  // Do not attach media. TimelineJS iframes YouTube/Vimeo/Twitter and those
+  // embeds keep a compositor thread busy on a page that already has a week grid.
+  // The URL still appears in the slide text when present.
 
   return slide;
-}
-
-function isEmbeddableMedia(url: string): boolean {
-  try {
-    const host = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
-
-    return (
-      host === 'youtube.com' ||
-      host === 'youtu.be' ||
-      host === 'vimeo.com' ||
-      host === 'twitter.com' ||
-      host === 'x.com' ||
-      host === 'wikipedia.org' ||
-      /\.(jpe?g|png|gif|webp|svg)(\?|$)/i.test(url)
-    );
-  } catch {
-    return false;
-  }
 }
 
 export function localDayKey(date: Date): string {
@@ -166,8 +204,8 @@ function sampleDay(eventsOnDay: ScheduleEvent[]): ScheduleEvent[] {
 }
 
 /**
- * Story slides around `focusDay`: that day's events stay complete, then
- * neighbours fill in so TimelineJS can walk forward and back.
+ * Story slides around `focusDay`: that day's events are kept first (capped),
+ * then neighbours fill remaining slots so TimelineJS can walk forward and back.
  */
 export function selectStoryEvents(
   events: readonly ScheduleEvent[],
@@ -190,7 +228,7 @@ export function selectStoryEvents(
     return { events: [], startAtSlide: 0 };
   }
 
-  const chosen: ScheduleEvent[] = [...sampled[focusIndex]];
+  const chosen: ScheduleEvent[] = [...sampled[focusIndex].slice(0, max)];
   let before = focusIndex - 1;
   let after = focusIndex + 1;
   while (chosen.length < max && (before >= 0 || after < sampled.length)) {
@@ -250,6 +288,7 @@ export function buildTimelineData(
         },
       },
       events: selected.events.map(toSlide),
+      eras: [axisPadEra(selected.events, day)],
     },
   };
 }

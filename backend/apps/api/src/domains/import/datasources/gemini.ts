@@ -16,6 +16,7 @@
    (_ai_media.ts), unresolved ones land in the drop ledger. */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { insideRoot, mediaAttachmentsFor, mediaItemForAsset } from './_ai_media';
@@ -65,10 +66,10 @@ function isSavedInfoFilename(name: string): boolean {
   return name.toLowerCase().replace(/[ _-]/g, '') === 'savedinfo.json';
 }
 
-function firstRecordHeader(fpath: string): string | undefined {
+async function firstRecordHeader(fpath: string): Promise<string | undefined> {
   let raw: string;
   try {
-    raw = fs.readFileSync(fpath, 'utf8');
+    raw = await readFile(fpath, 'utf8');
   } catch {
     return undefined;
   }
@@ -89,10 +90,10 @@ function firstRecordHeader(fpath: string): string | undefined {
   return first && typeof first === 'object' ? first.header : undefined;
 }
 
-function savedInfoParses(fpath: string): boolean {
+async function savedInfoParses(fpath: string): Promise<boolean> {
   let raw: string;
   try {
-    raw = fs.readFileSync(fpath, 'utf8');
+    raw = await readFile(fpath, 'utf8');
   } catch {
     return false;
   }
@@ -114,39 +115,39 @@ export class GeminiFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       const base = path.basename(root);
       if (base.toLowerCase() === 'myactivity.json') {
-        const header = firstRecordHeader(root);
+        const header = await firstRecordHeader(root);
 
         return header && GEMINI_HEADERS.includes(header) ? { confidence: 0.9 } : { confidence: 0 };
       }
 
       if (isSavedInfoFilename(base)) {
-        return savedInfoParses(root) ? { confidence: 0.85 } : { confidence: 0 };
+        return (await savedInfoParses(root)) ? { confidence: 0.85 } : { confidence: 0 };
       }
 
       return { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
-      const found = this.findFile(root, (n) => n.toLowerCase() === 'myactivity.json');
-      if (found && GEMINI_HEADERS.includes(firstRecordHeader(found) ?? '')) {
+    if (st.isDirectory()) {
+      const found = await this.findFile(root, (n) => n.toLowerCase() === 'myactivity.json');
+      if (found && GEMINI_HEADERS.includes((await firstRecordHeader(found)) ?? '')) {
         return { confidence: 0.9 };
       }
 
       // A Takeout "Gemini" product folder may hold only Gems + Saved Info,
       // with the chat activity exported (or not) under a separate My Activity
       // tree — recognize the memory file on its own.
-      const savedInfo = this.findFile(root, isSavedInfoFilename);
-      if (savedInfo && savedInfoParses(savedInfo)) {
+      const savedInfo = await this.findFile(root, isSavedInfoFilename);
+      if (savedInfo && (await savedInfoParses(savedInfo))) {
         return { confidence: 0.85 };
       }
 
@@ -174,8 +175,8 @@ export class GeminiFileImporter implements FileImporter {
           activityPath = root;
         }
       } else if (stat.isDirectory()) {
-        activityPath = this.findFile(root, (n) => n.toLowerCase() === 'myactivity.json');
-        savedInfoPath = this.findFile(root, isSavedInfoFilename);
+        activityPath = await this.findFile(root, (n) => n.toLowerCase() === 'myactivity.json');
+        savedInfoPath = await this.findFile(root, isSavedInfoFilename);
       }
     } catch {
       return;
@@ -241,7 +242,7 @@ export class GeminiFileImporter implements FileImporter {
           .update(`${record.titleUrl ?? ''}\0${record.time ?? ''}\0${title}\0${i}`)
           .digest('hex')
           .slice(0, 24);
-      const media = this.mediaForRecord(record, root, ts, title, params);
+      const media = await this.mediaForRecord(record, root, ts, title, params);
       // Media accompanying a prompt rides the message itself (the comms media
       // lane) — attachment sub-items minted duplicate ci.events rows.
       const mediaAttachments = mediaAttachmentsFor(media);
@@ -268,13 +269,13 @@ export class GeminiFileImporter implements FileImporter {
   /** Media items for one record's attachedFiles. Each name resolves by direct
       path under the MyActivity.json folder, then a recursive basename search
       (Takeout has staged Gemini media both flat and under subfolders). */
-  private mediaForRecord(
+  private async mediaForRecord(
     record: ActivityRecord,
     root: string,
     ts: Date | undefined,
     title: string,
     params: ImportParams,
-  ): Item[] {
+  ): Promise<Item[]> {
     const media: Item[] = [];
     for (const name of attachedFileNames(record)) {
       const rel = name.replace(/\\/g, '/');
@@ -289,7 +290,7 @@ export class GeminiFileImporter implements FileImporter {
       }
 
       if (!onDisk) {
-        abs = rel.includes('/') ? undefined : this.findFile(root, (n) => n === rel);
+        abs = rel.includes('/') ? undefined : await this.findFile(root, (n) => n === rel);
       }
 
       if (!abs) {
@@ -357,10 +358,10 @@ export class GeminiFileImporter implements FileImporter {
     });
   }
 
-  private findFile(dir: string, wanted: (name: string) => boolean): string | undefined {
+  private async findFile(dir: string, wanted: (name: string) => boolean): Promise<string | undefined> {
     let entries: string[];
     try {
-      entries = fs.readdirSync(dir);
+      entries = await readdir(dir);
     } catch {
       return undefined;
     }
@@ -374,8 +375,8 @@ export class GeminiFileImporter implements FileImporter {
     for (const name of entries) {
       const full = path.join(dir, name);
       try {
-        if (fs.statSync(full).isDirectory()) {
-          const sub = this.findFile(full, wanted);
+        if ((await stat(full)).isDirectory()) {
+          const sub = await this.findFile(full, wanted);
           if (sub) {
             return sub;
           }

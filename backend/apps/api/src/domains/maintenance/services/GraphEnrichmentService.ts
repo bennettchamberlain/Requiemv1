@@ -214,6 +214,30 @@ interface SampledRecord {
   text: string;
 }
 
+/** sourceSystem stamped on Person stubs minted from LLM-extracted relations (see {@link GraphEnrichmentService.resolveOrStubPerson}). */
+const RELATION_STUB_SOURCE_SYSTEM = 'graph-enrichment:person';
+
+/**
+ * Conservative shape check for a name the LLM extracted from free text, before
+ * it's allowed to become a Person node. The prompt asks for "full names where
+ * available," but nothing stops a noisy extraction from handing back a
+ * pronoun, a title, or a stray phrase — and an ungated stub is exactly the
+ * "garbage-named contact" class of bug this app has already shipped once (see
+ * the People-page default-sort fix). Rejects anything that isn't 1-4
+ * capitalized words (letters, apostrophes, hyphens only) — permissive enough
+ * for "Mom", "Dad", or a full name, strict enough to reject "the person I
+ * emailed", "2pm", or an empty/oversized string.
+ */
+function isPlausiblePersonName(name: string): boolean {
+  const trimmed = name.trim();
+
+  return (
+    trimmed.length >= 2 &&
+    trimmed.length <= 60 &&
+    /^[A-Z][A-Za-z'-]*(\s+[A-Z][A-Za-z'-]*){0,3}$/.test(trimmed)
+  );
+}
+
 const PROMPT_HEADER = `You analyze a person's own messages and calendar events to extract their personal preferences and close relationships.
 
 Return STRICT JSON only (no markdown, no prose) with this exact shape:
@@ -600,53 +624,61 @@ export class GraphEnrichmentService {
   }
 
   /**
-   * Resolve the named people in each family relation to EXISTING Person nodes
-   * and build a bulkIngestGraph batch of edges referencing those ids directly
-   * (via the pre-resolved fromEntityId/toEntityId fields). A relation is skipped
-   * when either person can't be resolved — this service never creates Person
-   * nodes. No entities are emitted (both endpoints already exist).
+   * Resolve the named people in each family relation to a Person node —
+   * an existing one where possible, else a stub minted via
+   * {@link resolveOrStubPerson} (gated on {@link isPlausiblePersonName} and,
+   * upstream, on this batch's confidence via `ingestWithPersonalization`) —
+   * and build a bulkIngestGraph batch of edges referencing them. A relation
+   * is skipped only when a person truly can't be resolved OR stubbed (name
+   * doesn't look real), or both sides land on the same node.
    */
   private async buildFamilyInput(
     userId: string,
     family: FamilyRelationItem[],
   ): Promise<{ entities: GraphEntityInputDto[]; relationships: GraphRelationshipInputDto[] }> {
     const relationships: GraphRelationshipInputDto[] = [];
-    const cache = new Map<string, string | null>();
+    const pendingEntities = new Map<string, GraphEntityInputDto>();
+    const cache = new Map<string, { id: string } | { key: string } | null>();
 
-    const resolve = async (name: string): Promise<string | null> => {
+    const resolve = async (name: string): Promise<{ id: string } | { key: string } | null> => {
       const cacheKey = name.toLowerCase();
       if (cache.has(cacheKey)) {
         return cache.get(cacheKey) ?? null;
       }
 
-      const id = await this.resolvePersonId(userId, name);
-      cache.set(cacheKey, id);
+      const resolved = await this.resolveOrStubPerson(userId, name, pendingEntities);
+      cache.set(cacheKey, resolved);
 
-      return id;
+      return resolved;
     };
 
     for (const rel of family) {
-      const fromId = await resolve(rel.person);
-      const toId = await resolve(rel.relatedPerson);
+      const from = await resolve(rel.person);
+      const to = await resolve(rel.relatedPerson);
 
-      if (fromId == null || toId == null || fromId === toId) {
+      if (from == null || to == null) {
+        continue;
+      }
+
+      const fromToken = 'id' in from ? from.id : from.key;
+      const toToken = 'id' in to ? to.id : to.key;
+      if (fromToken === toToken) {
         continue;
       }
 
       relationships.push({
-        // fromKey/toKey are informational only here — the pre-resolved ids win.
-        fromKey: rel.person,
-        toKey: rel.relatedPerson,
+        // fromKey/toKey win when either side is a fresh stub (no id yet);
+        // fromEntityId/toEntityId win for an already-resolved Person.
+        fromKey: 'key' in from ? from.key : rel.person,
+        toKey: 'key' in to ? to.key : rel.relatedPerson,
         type: rel.relationship,
-        fromEntityId: fromId,
-        fromEntityType: 'Person',
-        toEntityId: toId,
-        toEntityType: 'Person',
+        ...('id' in from ? { fromEntityId: from.id, fromEntityType: 'Person' as const } : {}),
+        ...('id' in to ? { toEntityId: to.id, toEntityType: 'Person' as const } : {}),
         properties: { source: SOURCE_SYSTEM },
       });
     }
 
-    return { entities: [], relationships };
+    return { entities: [...pendingEntities.values()], relationships };
   }
 
   private async buildGeneralInput(
@@ -654,41 +686,46 @@ export class GraphEnrichmentService {
     general: GeneralRelationItem[],
   ): Promise<{ entities: GraphEntityInputDto[]; relationships: GraphRelationshipInputDto[] }> {
     const relationships: GraphRelationshipInputDto[] = [];
-    const cache = new Map<string, string | null>();
+    const pendingEntities = new Map<string, GraphEntityInputDto>();
+    const cache = new Map<string, { id: string } | { key: string } | null>();
 
-    const resolve = async (name: string): Promise<string | null> => {
+    const resolve = async (name: string): Promise<{ id: string } | { key: string } | null> => {
       const cacheKey = name.toLowerCase();
       if (cache.has(cacheKey)) {
         return cache.get(cacheKey) ?? null;
       }
 
-      const id = await this.resolvePersonId(userId, name);
-      cache.set(cacheKey, id);
+      const resolved = await this.resolveOrStubPerson(userId, name, pendingEntities);
+      cache.set(cacheKey, resolved);
 
-      return id;
+      return resolved;
     };
 
     for (const rel of general) {
-      const fromId = await resolve(rel.person);
-      const toId = await resolve(rel.relatedPerson);
+      const from = await resolve(rel.person);
+      const to = await resolve(rel.relatedPerson);
 
-      if (fromId == null || toId == null || fromId === toId) {
+      if (from == null || to == null) {
+        continue;
+      }
+
+      const fromToken = 'id' in from ? from.id : from.key;
+      const toToken = 'id' in to ? to.id : to.key;
+      if (fromToken === toToken) {
         continue;
       }
 
       relationships.push({
-        fromKey: rel.person,
-        toKey: rel.relatedPerson,
+        fromKey: 'key' in from ? from.key : rel.person,
+        toKey: 'key' in to ? to.key : rel.relatedPerson,
         type: rel.relationship,
-        fromEntityId: fromId,
-        fromEntityType: 'Person',
-        toEntityId: toId,
-        toEntityType: 'Person',
+        ...('id' in from ? { fromEntityId: from.id, fromEntityType: 'Person' as const } : {}),
+        ...('id' in to ? { toEntityId: to.id, toEntityType: 'Person' as const } : {}),
         properties: { source: SOURCE_SYSTEM, confidence: rel.confidence, evidence: rel.evidence },
       });
     }
 
-    return { entities: [], relationships };
+    return { entities: [...pendingEntities.values()], relationships };
   }
 
   private async ingestWithPersonalization(
@@ -747,6 +784,50 @@ export class GraphEnrichmentService {
     const exact = candidates.find((node) => (node.name ?? '').toLowerCase() === lower);
 
     return (exact ?? candidates[0]).entity_id;
+  }
+
+  /**
+   * Like {@link resolvePersonId}, but when no existing Person matches, mints a
+   * stub entity instead of giving up — provided the name passes
+   * {@link isPlausiblePersonName}. The stub isn't written here: it's appended
+   * to `pendingEntities` so the caller ingests it in the SAME batch as the
+   * relationship edge, through `ingestWithPersonalization`'s confidence gate
+   * (a low-confidence extraction sends the whole batch — stub included — to
+   * review instead of auto-creating a new person). The stub's key is
+   * per-user, name-normalized, and stable across runs
+   * (`graph-enrichment:person:<userId>:<lower-cased name>`), so re-running
+   * extraction resolves onto the same stub rather than minting a duplicate.
+   *
+   * Returns `{ id }` for an existing match, `{ key }` for a fresh stub queued
+   * in `pendingEntities`, or `null` when neither applies (unresolved AND the
+   * name doesn't look like a real person) — the caller skips the relation.
+   */
+  private async resolveOrStubPerson(
+    userId: string,
+    name: string,
+    pendingEntities: Map<string, GraphEntityInputDto>,
+  ): Promise<{ id: string } | { key: string } | null> {
+    const existing = await this.resolvePersonId(userId, name);
+    if (existing != null) {
+      return { id: existing };
+    }
+
+    const trimmed = name.trim();
+    if (!isPlausiblePersonName(trimmed)) {
+      return null;
+    }
+
+    const key = `graph-enrichment:person:${userId}:${trimmed.toLowerCase()}`;
+    if (!pendingEntities.has(key)) {
+      pendingEntities.set(key, {
+        key,
+        entityType: 'Person',
+        name: trimmed,
+        sourceSystem: RELATION_STUB_SOURCE_SYSTEM,
+      });
+    }
+
+    return { key };
   }
 
   /**

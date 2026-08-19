@@ -1,5 +1,12 @@
 import type { RunDetail, StageSummary } from '../../controllers/ImportRunsController';
-import { waitForRuns, WaitTimeoutError, TERMINAL_RUN_STATUSES } from '../wait';
+import { ApiError, UnreachableError } from '../client';
+import {
+  waitForRuns,
+  WaitTimeoutError,
+  WaitUnreachableError,
+  TERMINAL_RUN_STATUSES,
+  MAX_CONSECUTIVE_POLL_FAILURES,
+} from '../wait';
 
 import { harness } from './support/harness';
 
@@ -8,7 +15,7 @@ const detail = (status: string, percent: number, stages: Array<Partial<StageSumm
   label: null,
   source: 'cli',
   dataSources: [],
-      declaredSources: null,
+  declaredSources: null,
   status,
   percent,
   requestedStages: [],
@@ -95,13 +102,65 @@ describe('waitForRuns', () => {
   it('stops following a run that disappears rather than spinning forever', async () => {
     const ctx = harness({
       getRun: async () => {
-        throw new Error('404');
+        throw new ApiError(404, 'not found', '/api/import/runs/gone');
       },
     });
 
     await expect(
       waitForRuns(ctx.client, ctx.term, ['gone'], { sleep: async () => undefined }),
     ).resolves.toEqual([]);
+  });
+
+  it('rides out a restart instead of calling the run finished', async () => {
+    // The appliance refuses connections for a few polls — a deploy, a worker
+    // recycling — and then answers again. The run was never in doubt.
+    const answers: Array<() => RunDetail> = [
+      () => detail('running', 40),
+      () => {
+        throw new UnreachableError('http://localhost:3030', new Error('ECONNREFUSED'));
+      },
+      () => {
+        throw new UnreachableError('http://localhost:3030', new Error('ECONNREFUSED'));
+      },
+      () => detail('completed', 100),
+    ];
+    const ctx = harness({ getRun: async () => (answers.shift() ?? (() => detail('completed', 100)))() });
+
+    const finished = await waitForRuns(ctx.client, ctx.term, ['run-1'], { sleep: async () => undefined });
+
+    expect(finished).toHaveLength(1);
+    expect(finished[0].status).toBe('completed');
+  });
+
+  it('raises rather than reporting success when the appliance stops answering', async () => {
+    // THE incident: every poll failure was swallowed, the run was dropped from
+    // the wait set, and `import --wait` exited 0 while the push was at 14%.
+    const ctx = harness({
+      getRun: async () => {
+        throw new UnreachableError('http://localhost:3030', new Error('ECONNREFUSED'));
+      },
+    });
+
+    await expect(
+      waitForRuns(ctx.client, ctx.term, ['run-1'], { sleep: async () => undefined }),
+    ).rejects.toBeInstanceOf(WaitUnreachableError);
+  });
+
+  it('gives the appliance every retry before it gives up', async () => {
+    let polls = 0;
+    const ctx = harness({
+      getRun: async () => {
+        polls += 1;
+
+        throw new ApiError(502, 'bad gateway', '/api/import/runs/run-1');
+      },
+    });
+
+    await expect(
+      waitForRuns(ctx.client, ctx.term, ['run-1'], { sleep: async () => undefined }),
+    ).rejects.toBeInstanceOf(WaitUnreachableError);
+
+    expect(polls).toBe(MAX_CONSECUTIVE_POLL_FAILURES);
   });
 
   it('prefixes lines with a run id when following more than one', async () => {

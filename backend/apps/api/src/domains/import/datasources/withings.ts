@@ -5,6 +5,7 @@
    signature is generic (*.csv) so recognition sniffs the header to avoid
    false-matching other CSV importers. */
 import fs from 'node:fs';
+import { open, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseCSV } from './csv';
@@ -20,6 +21,28 @@ function headerLine(text: string): string {
   return (nl === -1 ? text : text.slice(0, nl)).replace(/\r$/, '');
 }
 
+// A statistic ABOUT a measurement is not a measurement.
+//
+// Google Fit's aggregate `Daily activity metrics.csv` begins with "Date," and
+// carries "Average weight (kg)", "Max weight (kg)" and "Min weight (kg)" — which
+// is all the old `header.includes('(kg)')` needed. A Google Takeout's Fit data
+// therefore staged as 1,661 rows of `data_source='withings'` carrying
+// `Source: "Withings"`, and Withings appeared in the run's services as though
+// the user had exported from it. Withings names its columns outright
+// ("Weight (kg)", "Fat mass (kg)"); no Withings export prefixes one with an
+// aggregate.
+const AGGREGATE_COLUMN = /^(average|max|min|total|mean|median)\b/i;
+
+function isMeasurementColumn(column: string): boolean {
+  const name = column.trim();
+
+  if (AGGREGATE_COLUMN.test(name)) {
+    return false;
+  }
+
+  return name.includes('(kg)') || name.includes('Weight');
+}
+
 // A Withings CSV header begins with "Date," and carries a body-measurement
 // column such as "(kg)" or "Weight". This is specific enough to avoid matching
 // other CSV importers (e.g. Netflix's "Start Time,...").
@@ -28,17 +51,17 @@ function headerLooksLikeWithings(header: string): boolean {
     return false;
   }
 
-  return header.includes('(kg)') || header.includes('Weight');
+  return header.split(',').some(isMeasurementColumn);
 }
 
 // Read the first ~4KB and inspect the CSV header row.
-function sniffHeader(fpath: string): string | undefined {
-  let fd: number | undefined;
+async function sniffHeader(fpath: string): Promise<string | undefined> {
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {
-    fd = fs.openSync(fpath, 'r');
+    handle = await open(fpath, 'r');
     const buf = Buffer.alloc(4096);
-    const n = fs.readSync(fd, buf, 0, 4096, 0);
-    let text = buf.toString('utf8', 0, n);
+    const { bytesRead } = await handle.read(buf, 0, 4096, 0);
+    let text = buf.toString('utf8', 0, bytesRead);
     if (text.charCodeAt(0) === 0xfeff) {
       text = text.slice(1);
     }
@@ -47,18 +70,12 @@ function sniffHeader(fpath: string): string | undefined {
   } catch {
     return undefined;
   } finally {
-    if (fd !== undefined) {
-      try {
-        fs.closeSync(fd);
-      } catch {
-        /* ignore */
-      }
-    }
+    await handle?.close().catch(() => undefined);
   }
 }
 
-function csvMatches(fpath: string): boolean {
-  const header = sniffHeader(fpath);
+async function csvMatches(fpath: string): Promise<boolean> {
+  const header = await sniffHeader(fpath);
 
   return header !== undefined && headerLooksLikeWithings(header);
 }
@@ -96,14 +113,14 @@ export class WithingsFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       const base = path.basename(root).toLowerCase();
       if (path.extname(base) !== '.csv') {
         return { confidence: 0 };
@@ -113,12 +130,12 @@ export class WithingsFileImporter implements FileImporter {
         return { confidence: 0.95 };
       }
 
-      return csvMatches(root) ? { confidence: 0.85 } : { confidence: 0 };
+      return (await csvMatches(root)) ? { confidence: 0.85 } : { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       try {
-        const names = fs.readdirSync(root);
+        const names = await readdir(root);
         if (names.some((n) => n.toLowerCase() === 'weight.csv')) {
           return { confidence: 0.95 };
         }
@@ -128,7 +145,7 @@ export class WithingsFileImporter implements FileImporter {
             continue;
           }
 
-          if (csvMatches(path.join(root, name))) {
+          if (await csvMatches(path.join(root, name))) {
             return { confidence: 0.85 };
           }
         }
