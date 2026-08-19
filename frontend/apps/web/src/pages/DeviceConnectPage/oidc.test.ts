@@ -149,7 +149,7 @@ describe('loginWithPortalOidc', () => {
     await vi.waitFor(() => expect(urlHandler).toBeTruthy());
     urlHandler?.('companion://oidc/callback?code=appliance');
     expect(fetch).not.toHaveBeenCalled();
-    const url = new URL(openExternalUrl.mock.calls[0]?.[0] as string);
+    const url = openedAuthorizeUrl();
     urlHandler?.(`${OIDC_REDIRECT_URI}?code=real&state=${url.searchParams.get('state')}`);
     await expect(promise).resolves.toMatchObject({ accessToken: 'AT' });
   });

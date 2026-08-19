@@ -83,6 +83,7 @@ export function useNativeShell(): void {
     }
 
     void hideSplashScreen();
+    document.documentElement.classList.add('ci-native');
 
     // Mirror the API base URL into the keystore so native App Intents can reach the
     // server — now (covers the configured server from a previous session) and whenever
@@ -129,6 +130,7 @@ export function useNativeShell(): void {
       themeObserver.disconnect();
       disposeAppState();
       unsubscribe();
+      document.documentElement.classList.remove('ci-native');
     };
   }, [navigate]);
 }

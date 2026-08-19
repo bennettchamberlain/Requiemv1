@@ -101,6 +101,7 @@ describe('useNativeShell — native mount', () => {
 
     expect(h.hideSplashScreen).toHaveBeenCalledTimes(1);
     expect(h.syncNativeIntentConfig).toHaveBeenCalledTimes(1);
+    expect(document.documentElement.classList.contains('ci-native')).toBe(true);
   });
 
   it('re-syncs the App Intent config every time the app returns to the foreground', async () => {
@@ -234,6 +235,7 @@ describe('useNativeShell — cleanup', () => {
 
     expect(appState.unsubscribe).toHaveBeenCalledTimes(1);
     expect(backButton.unsubscribe).toHaveBeenCalledTimes(1);
+    expect(document.documentElement.classList.contains('ci-native')).toBe(false);
   });
 
   it('unsubscribes the back-button listener immediately once it resolves after an early unmount', async () => {

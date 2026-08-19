@@ -20,14 +20,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- OIDC deep-link return (companion://oidc/callback). Keep the scheme in
-                 sync with iOS Info.plist CFBundleURLTypes, @ci/common OIDC_NATIVE_SCHEME,
-                 and auth.oidc.nativeRedirectScheme. -->
+            <!-- OIDC deep-link return. Keep the scheme in sync with iOS Info.plist
+                 CFBundleURLTypes, @ci/common OIDC_NATIVE_SCHEME, and
+                 auth.oidc.nativeRedirectScheme.
+                 host=oidc is CI-Server appliance login (companion://oidc/callback).
+                 host=auth is Portal cloud-connect PKCE (companion://auth/callback). -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="companion" android:host="oidc" />
+                <data android:scheme="companion" android:host="auth" />
             </intent-filter>
         </activity>
 

@@ -26,7 +26,9 @@ const config: CapacitorConfig = {
     StatusBar: {
       style: 'DARK',
       backgroundColor: '#ffffff',
-      overlaysWebView: false,
+      // Edge-to-edge so `env(safe-area-inset-*)` is non-zero. CSS `.safe-area-inset`
+      // then pads the notch / home indicator the way Hub does on iOS.
+      overlaysWebView: true,
     },
     CapacitorSQLite: {
       iosDatabaseLocation: 'Library/LocalDatabase',
