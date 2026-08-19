@@ -843,14 +843,37 @@ select r.label, r.status, r.percent, s.seq, s.kind, s.status, s.phase,
  order by r.started_at, s.seq;
 ```
 
-Healthy shape: exactly one stage `running` appliance-wide (§1.4); `error` null
-everywhere; and `processed = total` on every `completed` stage. That last one
+Healthy shape: exactly one stage `running` per consuming worker process — one,
+in every topology this repo ships (§1.4); `error` null everywhere; and
+`processed = total` on every `completed` stage. That last one
 holds by construction for `parse` and `push` (both derive `total` from their own
 final counts), so a mismatch there means the stage never reached its own return
 statement. `media` is the honest exception — it computes `total` up front as
 `remaining + alreadyUploaded` and counts uploads, dedups and failures into
 `processed`, so the two agree even when `detail.failed > 0`. Read `detail`, not
 the counters, to find out whether a media stage lost anything.
+
+**Before you conclude the invariant is broken, check whether the rows are real.**
+`ci_import.import_runs` and `import_stages` are ordinary tables, and on a shared
+dev appliance the UI work seeds them directly. Two tells, both code-backed:
+
+- **A run with zero stage rows was not created by `startRun`.** That method
+  inserts the run and materializes its stages in **one** transaction, so the two
+  cannot exist apart. Observed on this appliance while writing this document:
+  21 `completed` run rows with no stages at all, seeded for progress-UI work
+  alongside the 13 real ones.
+- **A `running` stage whose `updated_at` is minutes old is not running.** A live
+  stage is touched by progress writes up to once a second and heartbeated every
+  30 (§1.5). Several simultaneously-`running` stages with frozen `updated_at`
+  are seeded rows or abandoned claims, not a concurrency violation — and the
+  recovery sweep will reclaim the abandoned ones after ten minutes.
+
+```sql
+-- Real, live work only.
+select left(run_id::text, 8) as run, kind, status, phase, processed,
+       now() - updated_at as silent_for
+  from ci_import.import_stages where status = 'running' order by updated_at;
+```
 
 ### 6.2 What did it drop? — the single most useful query here
 
