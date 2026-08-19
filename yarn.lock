@@ -3152,10 +3152,12 @@ __metadata:
     "@ci/common": "workspace:*"
     "@ci/shadcn": "workspace:*"
     "@tiptap/core": "npm:^3.15.3"
+    "@tiptap/extension-mention": "npm:3.15.3"
     "@tiptap/extension-text-style": "npm:^3.15.3"
     "@tiptap/pm": "npm:^3.15.3"
     "@tiptap/react": "npm:^3.15.3"
     "@tiptap/starter-kit": "npm:^3.15.3"
+    "@tiptap/suggestion": "npm:3.15.3"
     "@types/react": "npm:^19.1.5"
     "@types/react-dom": "npm:^19.1.5"
     react: "npm:^19.1.0"
@@ -11294,6 +11296,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@tiptap/extension-mention@npm:3.15.3":
+  version: 3.15.3
+  resolution: "@tiptap/extension-mention@npm:3.15.3"
+  peerDependencies:
+    "@tiptap/core": ^3.15.3
+    "@tiptap/pm": ^3.15.3
+    "@tiptap/suggestion": ^3.15.3
+  checksum: 10c0/29463578dc9a2a976254f46719cb7abd946a71408549d39256ae36eeeab7367efe36d0fba675f52c85b5244a9dcdb23b074651263e86e43729b6d032019c42f1
+  languageName: node
+  linkType: hard
+
 "@tiptap/extension-ordered-list@npm:^3.15.3":
   version: 3.15.3
   resolution: "@tiptap/extension-ordered-list@npm:3.15.3"
@@ -11438,6 +11451,16 @@ __metadata:
     "@tiptap/extensions": "npm:^3.15.3"
     "@tiptap/pm": "npm:^3.15.3"
   checksum: 10c0/a4bc80c4196964bb4cbb1fec0c5ce6d67e2c5b183067b0403bb615f38a3cb686469b399a311b83d243d3bce1a8008963c2ff58ae8f71a307ea4da35016cb2fbf
+  languageName: node
+  linkType: hard
+
+"@tiptap/suggestion@npm:3.15.3":
+  version: 3.15.3
+  resolution: "@tiptap/suggestion@npm:3.15.3"
+  peerDependencies:
+    "@tiptap/core": ^3.15.3
+    "@tiptap/pm": ^3.15.3
+  checksum: 10c0/a746e9b53f7db5d4f5f007e0aef99a582e0a72ceb58fa618cf7966125cd9b4fdd832dfd3d201e99ea1e89280711ebc6f3f1439cb60a2e082195bcedcc9ec7d66
   languageName: node
   linkType: hard
 
