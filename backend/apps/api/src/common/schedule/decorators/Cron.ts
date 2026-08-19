@@ -5,6 +5,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { ContextService } from '@ci/common/context';
 import { serves, type ServedRole } from '@ci/common/roles';
 
+import { CronRunStore } from '../CronRunStore';
+
 /**
  * Diagnosability, not containment.
  *
@@ -21,6 +23,11 @@ import { serves, type ServedRole } from '@ci/common/roles';
  * where the class, the method and the traceId are all in scope — turns it into
  * one. The rethrow-free return matches the framework's existing behaviour: the
  * tick is lost, the schedule keeps running.
+ *
+ * Each tick also stamps `ci.cron_runs` so the Jobs dashboard's "Last run"
+ * survives API restarts. The registry name (explicit `name:` option, else
+ * `Class.method`) is the key — same string SchedulerRegistry and the dashboard
+ * use.
  */
 const cronLogger = new Logger('Cron');
 
@@ -42,9 +49,14 @@ export function Cron(expression: string, options?: CiCronOptions) {
     const originalMethod = descriptor.value;
 
     const label = `${(target as { constructor?: { name?: string } }).constructor?.name ?? 'Cron'}.${propertyName}`;
+    const runName =
+      typeof cronOptions.name === 'string' && cronOptions.name.length > 0 ? cronOptions.name : label;
 
     descriptor.value = async function (...args: unknown[]) {
       const traceId = uuidv4();
+      // Stamp before the body so a long or failing tick still counts as "ran"
+      // — matching SchedulerRegistry lastDate() semantics.
+      CronRunStore.record(runName);
 
       try {
         return await ContextService.run({ traceId }, () => originalMethod.apply(this, args));
@@ -53,7 +65,7 @@ export function Cron(expression: string, options?: CiCronOptions) {
         // otherwise catch this one frame further out and log it without saying
         // which schedule produced it.
         cronLogger.error(
-          `Scheduled job ${label} failed (traceId=${traceId})`,
+          `Scheduled job ${runName} failed (traceId=${traceId})`,
           err instanceof Error ? err.stack : String(err),
         );
 
