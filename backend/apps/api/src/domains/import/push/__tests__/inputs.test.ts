@@ -897,3 +897,73 @@ describe('toEventInput', () => {
     expect(toEventInput(inPerson).location_name).toBe('Golden Gate Park, San Francisco, CA');
   });
 });
+
+/**
+ * `Conversation` — the per-chat key eleven datasources stamp — reaching
+ * thread_id.
+ *
+ * The chain read ThreadId/Thread/MessageID only, so any source that spelled the
+ * conversation `Conversation` (LinkedIn, Instagram, Claude, Google Voice,
+ * WhatsApp, Discord, Telegram, Grok, …) had its grouping dropped here and its
+ * rows landed with ci.communications.thread_id NULL — 4,840 LinkedIn, 228
+ * Instagram and 4 Claude rows on the live database, plus every Google Voice
+ * message. Both special-case mappers in this file already read `Conversation`
+ * themselves, which is the tell that the generic chain should have.
+ */
+describe('the conversation key reaching thread_id', () => {
+  it('threads a LinkedIn message on its conversation title', () => {
+    const linkedin = recordFor({
+      classification: 'message',
+      dataSource: 'linkedin',
+      metadata: { Conversation: 'Ada Lovelace', Sender: 'Ada Lovelace', Text: 'hello' },
+    });
+
+    expect(toCommunicationInput(linkedin).thread_id).toBe('Ada Lovelace');
+  });
+
+  it('threads an Instagram DM on its thread title', () => {
+    const instagram = recordFor({
+      classification: 'message',
+      dataSource: 'instagram',
+      metadata: { Conversation: 'grace.hopper', Sender: 'grace.hopper', Text: 'hi' },
+    });
+
+    expect(toCommunicationInput(instagram).thread_id).toBe('grace.hopper');
+  });
+
+  it('prefers an explicit ThreadId when the source states both', () => {
+    // A source that stamps both means the explicit key — Claude stamps the
+    // conversation UUID as ThreadId and its renameable title as Conversation.
+    const claude = recordFor({
+      classification: 'message',
+      dataSource: 'claude',
+      metadata: { ThreadId: 'conv-uuid', Conversation: 'A renameable title', Text: 'hi' },
+    });
+
+    expect(toCommunicationInput(claude).thread_id).toBe('conv-uuid');
+  });
+
+  it('prefers the conversation over MessageID, which is a per-message id', () => {
+    // MessageID makes every message its own thread — it is the last resort,
+    // so a real conversation key has to beat it.
+    const both = recordFor({
+      classification: 'message',
+      metadata: { Conversation: 'the chat', MessageID: '<one-message@example.com>' },
+    });
+
+    expect(toCommunicationInput(both).thread_id).toBe('the chat');
+  });
+
+  it('still falls back to MessageID for email, which has no Conversation', () => {
+    const email = recordFor({
+      classification: 'email',
+      metadata: { MessageID: '<one-message@example.com>' },
+    });
+
+    expect(toCommunicationInput(email).thread_id).toBe('<one-message@example.com>');
+  });
+
+  it('leaves thread_id unset when the source names no conversation at all', () => {
+    expect(toCommunicationInput(recordFor({ classification: 'message' })).thread_id).toBeUndefined();
+  });
+});

@@ -235,6 +235,102 @@ describe('Google Voice datasource', () => {
     expect(voicemail!.metadata.Source).toBe('GoogleVoice');
   });
 
+  // Regression: metadata.Conversation (the per-file contact/number label —
+  // Google Voice exports one HTML file per conversation) was only ever used
+  // for display. The generic communications mapper (push/inputs.ts
+  // toCommunicationInput) reads metadata.ThreadId, not Conversation, to
+  // populate ci.communications.thread_id — so every Google Voice message and
+  // call/voicemail record landed with thread_id NULL despite the file itself
+  // being a perfectly good per-conversation grouping key. This asserts
+  // ThreadId now mirrors Conversation on both paths.
+  it('mirrors Conversation onto ThreadId for a properly-named message file', async () => {
+    // Use a realistic Google Voice filename ("<contact> - Text - <ts>.html")
+    // rather than the shared google-voice-export fixture's conversation-1.html
+    // — that name carries no contact prefix at all, so `conversation` is
+    // correctly `undefined` there (see the "call-log headings are not names"
+    // describe block above for why a filename that names nobody must not be
+    // used as one) and would not exercise the mirroring this test is after.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gv-thread-'));
+    fs.mkdirSync(path.join(dir, 'Calls'));
+    fs.writeFileSync(
+      path.join(dir, 'Calls', 'Jane Doe - Text - 2025-03-01T10_00_00Z.html'),
+      `<html><body><div class="message">
+         <abbr class="dt" title="2025-03-01T10:00:00.000Z">Mar 1</abbr>:
+         <cite class="sender vcard"><a class="tel" href="tel:+15551230099"><span class="fn">Jane Doe</span></a></cite>:
+         <q>hi there</q>
+       </div></body></html>`,
+    );
+
+    const pipeline: EmittedGraph[] = [];
+    await new GoogleVoiceFileImporter().fileImport({}, { filename: path.basename(dir), fullPath: dir }, {
+      pipeline,
+      timeframe: {},
+      log: () => {},
+    } as unknown as ImportParams);
+
+    const msg = pipeline.find((p) => p.item?.metadata?.Text === 'hi there')!;
+    expect(msg).toBeDefined();
+    expect(msg.item.metadata!.Conversation).toBe('Jane Doe');
+    expect(msg.item.metadata!.ThreadId).toBe('Jane Doe');
+  });
+
+  it('mirrors Conversation onto ThreadId for call/voicemail records', async () => {
+    const callsExportDir = path.join(FIXTURES_DIR, 'google-voice-export-calls');
+    const fiCalls = new GoogleVoiceFileImporter();
+    const callsPipeline: EmittedGraph[] = [];
+    await fiCalls.fileImport({}, { filename: 'google-voice-export-calls', fullPath: callsExportDir }, {
+      pipeline: callsPipeline,
+      timeframe: {},
+      log: () => {},
+    } as unknown as ImportParams);
+
+    const calls = callsPipeline.filter((p) => p.item?.classification === 'call').map((p) => p.item.metadata);
+    expect(calls.length).toBeGreaterThan(0);
+    for (const c of calls) {
+      expect(c.ThreadId).toBeDefined();
+      expect(c.ThreadId).toBe(c.Conversation);
+    }
+  });
+
+  // The shared fixture's conversation-1.html has no contact prefix in its
+  // filename, so `conversation` is honestly undefined for its messages (see
+  // above).
+  //
+  // An earlier revision asserted ThreadId mirrored that — undefined — on the
+  // grounds that a fabricated contact name would be a lie. It would be, but a
+  // NULL thread_id is also a lie: it says "this message belongs to no
+  // conversation" when the export has one file per conversation and every
+  // message in this file demonstrably shares one. `threadKeyFor` resolves it by
+  // deriving a SYNTHETIC key from the file, prefixed `googlevoice:file:` so it
+  // cannot be mistaken for a contact. Group conversations and unnamed call logs
+  // group correctly; nothing claims to know who the counterpart is.
+  it('derives a stable synthetic ThreadId when the filename names no contact', async () => {
+    const exportDir = path.join(FIXTURES_DIR, 'google-voice-export');
+    const fi = new GoogleVoiceFileImporter();
+    const pipeline: EmittedGraph[] = [];
+    await fi.fileImport({}, { filename: 'google-voice-export', fullPath: exportDir }, {
+      pipeline,
+      timeframe: {},
+      log: () => {},
+    } as unknown as ImportParams);
+
+    const msgs = pipeline
+      .filter((p) => p.item?.classification === 'message' && p.item.metadata?.Text !== undefined)
+      .map((p) => p.item.metadata);
+    expect(msgs.length).toBeGreaterThan(0);
+    const threadIds = new Set<unknown>();
+
+    for (const m of msgs) {
+      expect(m.Conversation).toBeUndefined();
+      expect(m.ThreadId).toEqual(expect.stringContaining('googlevoice:file:'));
+      threadIds.add(m.ThreadId);
+    }
+
+    // Every message in one conversation file shares one thread — that is the
+    // whole point of synthesizing the key rather than leaving it NULL.
+    expect(threadIds.size).toBe(1);
+  });
+
   it('does not corrupt metadata.To to a stray "\\r" when Phones.vcf is CRLF-terminated with a blank FN line', async () => {
     // A spec-compliant vCard uses CRLF line endings. The owner's own card in
     // this real-world shape has a blank "FN:\r\n" line. The original parser
@@ -256,5 +352,118 @@ describe('Google Voice datasource', () => {
     expect(inbound!.item.metadata.Direction).toBe('incoming');
     expect(inbound!.item.metadata.To).toBe('+15559998888');
     expect(inbound!.item.metadata.To).not.toBe('\r');
+  });
+});
+
+/**
+ * The grouping key, which is NOT the same question as "who is this contact".
+ *
+ * `Conversation` doubles as the contact name, so it has to stay undefined when
+ * the filename names nobody — that is what stopped 241 Person entities being
+ * minted from .html filenames. But a thread id has no such constraint, and
+ * leaving it undefined too meant 12,962 items across 1,655 "Group
+ * Conversation" files (up to 265 messages each) landed with
+ * ci.communications.thread_id NULL and no grouping at all.
+ */
+describe('Google Voice thread ids', () => {
+  const importDir = async (dir: string): Promise<EmittedGraph[]> => {
+    const pipeline: EmittedGraph[] = [];
+    await new GoogleVoiceFileImporter().fileImport({}, { filename: path.basename(dir), fullPath: dir }, {
+      pipeline,
+      timeframe: {},
+      log: () => {},
+    } as unknown as ImportParams);
+
+    return pipeline;
+  };
+
+  const writeConversation = (filename: string, body: string): string => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gv-thread-'));
+    fs.mkdirSync(path.join(dir, 'Calls'));
+    fs.writeFileSync(path.join(dir, 'Calls', filename), `<html><body>${body}</body></html>`);
+
+    return dir;
+  };
+
+  const messageBlock = (text: string, name: string): string =>
+    `<div class="message">
+       <abbr class="dt" title="2025-03-01T10:00:00.000Z">Mar 1</abbr>:
+       <cite class="sender vcard"><a class="tel" href="tel:+15551230099"><span class="fn">${name}</span></a></cite>:
+       <q>${text}</q>
+     </div>`;
+
+  it('threads a contact-named file on the contact, the same value as Conversation', async () => {
+    const dir = writeConversation(
+      'Jane Doe - Text - 2025-03-01T10_00_00Z.html',
+      messageBlock('hi', 'Jane Doe'),
+    );
+
+    const msg = (await importDir(dir)).find((p) => p.item?.metadata?.Text === 'hi')!;
+
+    expect(msg.item.metadata.Conversation).toBe('Jane Doe');
+    expect(msg.item.metadata.ThreadId).toBe('Jane Doe');
+  });
+
+  it('threads a group file on the file, since its name identifies nobody', async () => {
+    // Every message in one exported group file is one conversation, so they
+    // must share a thread id — while Conversation stays undefined, because the
+    // filename is not a person and downstream reads Conversation as one.
+    const dir = writeConversation(
+      'Group Conversation - 2019-11-11T23_27_25Z.html',
+      messageBlock('first', 'Nima Zeighami') + messageBlock('second', 'Shaw Walters'),
+    );
+
+    const msgs = (await importDir(dir)).filter((p) => p.item?.metadata?.Text);
+
+    expect(msgs).toHaveLength(2);
+    for (const m of msgs) {
+      expect(m.item.metadata.Conversation).toBeUndefined();
+      expect(m.item.metadata.ThreadId).toBe('googlevoice:file:Group Conversation - 2019-11-11T23_27_25Z');
+    }
+  });
+
+  it('gives two different group files two different threads', async () => {
+    const a = writeConversation('Group Conversation - 2019-11-11T23_27_25Z.html', messageBlock('a', 'Ann'));
+    const b = writeConversation('Group Conversation - 2020-08-07T00_05_26Z.html', messageBlock('b', 'Bob'));
+
+    const threadOf = async (dir: string): Promise<unknown> =>
+      (await importDir(dir)).find((p) => p.item?.metadata?.Text)!.item.metadata.ThreadId;
+
+    expect(await threadOf(a)).not.toBe(await threadOf(b));
+  });
+
+  it('threads an MMS attachment with its parent conversation, not with itself', async () => {
+    // The attachment item carried neither Conversation nor ThreadId, so all
+    // 7,427 attachment rows on the live database were detached from the
+    // conversation they belong to. Its own filename carries a per-message
+    // index suffix ("… -1-1.jpg"), which would mint one thread per attachment
+    // — the key has to come from the parent HTML file.
+    const dir = writeConversation(
+      'Group Conversation - 2019-11-11T23_27_25Z.html',
+      `${messageBlock('look', 'Ann')}<img src="Group Conversation - 2019-11-11T23_27_25Z-1-1" />`,
+    );
+    fs.writeFileSync(
+      path.join(dir, 'Calls', 'Group Conversation - 2019-11-11T23_27_25Z-1-1.jpg'),
+      Buffer.from([0xff, 0xd8, 0xff]),
+    );
+
+    const attachment = (await importDir(dir)).find((p) => p.item?.metadata?.Attachment === 'image')!;
+
+    expect(attachment).toBeDefined();
+    expect(attachment.item.metadata.ThreadId).toBe(
+      'googlevoice:file:Group Conversation - 2019-11-11T23_27_25Z',
+    );
+  });
+
+  it('threads a call record too, so a call and its texts are not orphaned', async () => {
+    const dir = writeConversation(
+      'Steven Stone - Missed - 2025-01-15T09_30_00Z.html',
+      `<div class="haudio"><span class="fn">Missed call from <a class="tel" href="tel:+15551110000"><span class="fn">Steven Stone</span></a></span>
+         <abbr class="published" title="2025-01-15T09:30:00.000Z">Jan 15</abbr></div>`,
+    );
+
+    const call = (await importDir(dir)).find((p) => p.item?.classification === 'call')!;
+
+    expect(call.item.metadata.ThreadId).toBe('Steven Stone');
   });
 });
