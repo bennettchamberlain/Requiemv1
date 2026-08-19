@@ -594,8 +594,13 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
     remedy:
       'Quarantine is the state that makes a stage LOOK healthy while doing nothing: claim() skips these ' +
       'rows, so the job runs, reports green, and writes nothing. Replaying the dead letters does not ' +
-      'clear it — the quarantine outlives them. Read `reason`, fix the cause, then clear the rows for ' +
-      'that stage explicitly before re-running the leg.',
+      'clear it — the quarantine outlives them. Read `reason` first: it is the selector for the fix. ' +
+      'Once the cause is dealt with, POST /api/pipeline/quarantine/release with {"reasons":[...]} sends ' +
+      'exactly those rows back to the sweep with a full attempt budget — the alternative, bumping the ' +
+      'stage version, re-opens the ENTIRE corpus, which on a metered stage is a bill. ' +
+      'A pre-2026-08 appliance may show a large `provider_unavailable` or `ollama_unreachable` count ' +
+      'here: those were a defect (a transient outage spent the quarantine budget in ~15 minutes) and ' +
+      'migration 20260819054505 releases them on upgrade.',
     mirrors: null,
     sql: String.raw`
       WITH bad AS (

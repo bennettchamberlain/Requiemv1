@@ -178,8 +178,11 @@ export function embedStageVersion(
  * connection failures as ordinary `Error`s with these codes embedded, and the
  * distinction is worth keeping: an unreachable host is an appliance-level
  * incident affecting every row, while a model-level rejection is about the
- * request. Both are `failed` — only the recorded reason differs, and the reason
- * is what an operator groups by.
+ * request. Both are `failed`, and the recorded reason is what an operator groups
+ * by AND what the ledger classifies on: `ollama_unreachable` is declared in
+ * `TRANSIENT_FAILURE_REASONS`, so an Ollama restart refunds the attempt and
+ * backs off on the long schedule, while `embed_call_failed` spends the
+ * quarantine budget exactly as before.
  */
 const UNREACHABLE_PATTERNS = [
   'ECONNREFUSED',

@@ -16,6 +16,7 @@ import {
   type PipelineRunSummary,
   PipelineRunService,
 } from '../services/PipelineRunService';
+import { PipelineStateService, type ReleaseQuarantinedResult } from '../services/PipelineStateService';
 import type { StageCoverage } from '../types';
 
 /**
@@ -99,6 +100,26 @@ const replayDeadLettersSchema = z
 
 type ReplayDeadLettersBody = z.infer<typeof replayDeadLettersSchema>;
 
+/**
+ * `POST /api/pipeline/quarantine/release` — un-park quarantined rows by reason.
+ *
+ * Both fields are optional and they are not the same kind of optional. Omitting
+ * `stage` genuinely means "every stage", because a reason means the same thing
+ * wherever it is written. Omitting `reasons` falls back to
+ * `TRANSIENT_FAILURE_REASONS` — a DECLARED list, reviewable in a diff, not
+ * "everything" — so the default call is exactly "undo what a provider outage did
+ * under the old policy" and nothing wider. There is deliberately no spelling
+ * that releases every quarantined row: that re-runs whatever is actually broken
+ * across the whole ledger, and the reasons the operator can see in
+ * `GET /api/pipeline/state` are the ones they can act on.
+ */
+const releaseQuarantineSchema = z.object({
+  reasons: z.array(z.string().min(1).max(256)).min(1).max(50).optional(),
+  stage: z.string().min(1).max(128).optional(),
+});
+
+type ReleaseQuarantineBody = z.infer<typeof releaseQuarantineSchema>;
+
 /** `GET /api/pipeline/state`. */
 export interface PipelineStateResponse {
   stages: StageCoverage[];
@@ -116,6 +137,9 @@ export interface PipelineDeadLettersResponse {
 
 /** `POST /api/pipeline/dead-letters/replay`. */
 export type PipelineDeadLettersReplayResponse = DeadLetterBulkReplayResult;
+
+/** `POST /api/pipeline/quarantine/release`. */
+export type PipelineQuarantineReleaseResponse = ReleaseQuarantinedResult;
 
 /**
  * The operator's window onto the pipeline: what has been processed, what is
@@ -159,7 +183,14 @@ export type PipelineDeadLettersReplayResponse = DeadLetterBulkReplayResult;
 @Controller('api/pipeline')
 @UseGuards(JwtOrApiKeyAuthGuard)
 export class PipelineController {
-  constructor(private readonly pipelineRunService: PipelineRunService) {}
+  constructor(
+    private readonly pipelineRunService: PipelineRunService,
+    // The ledger itself, injected alongside the run service because
+    // `PipelineStateService` is the ONLY writer of `ci.pipeline_state` and the
+    // quarantine release is a ledger write. Routing it through the run service
+    // would put a second writer one delegation away from that invariant.
+    private readonly pipelineStateService: PipelineStateService,
+  ) {}
 
   /**
    * Per-stage ledger coverage: `done` / `skipped` / `failed` / `pending`
@@ -330,5 +361,39 @@ export class PipelineController {
     @Param('id') letterId: string,
   ): Promise<DeadLetterReplayResult> {
     return this.pipelineRunService.replayDeadLetter(toServiceContext(context), letterId);
+  }
+
+  /**
+   * Send quarantined rows back to the sweep, selected by the reason they carry.
+   *
+   * Quarantine's only other exit is a stage-version bump, which re-opens the
+   * entire corpus — on a metered stage, a bill for every row in the table in
+   * order to retry a few thousand. This releases exactly the rows whose recorded
+   * reason the operator names, which is the difference between "the geocode
+   * provider was down for twenty minutes last night" costing one retry per
+   * affected fix and costing nothing at all because nobody could justify the
+   * bump.
+   *
+   * `write`, not `full`: a released row goes back to `failed` with a due gate —
+   * the ordinary state of a row awaiting retry — and if the cause is still there
+   * it re-quarantines on its own. Nothing is deleted and nothing is
+   * irreversible, so the blast radius of a wrong call is one more attempt per
+   * row.
+   *
+   * 200 with a count, never a 404 for "nothing matched": zero released is a
+   * legitimate and common answer (the reason was already clean), and it is a
+   * different thing from a request that could not be understood.
+   */
+  @Post('quarantine/release')
+  @HttpCode(200)
+  @RequireCapability(WRITE_CAPABILITY)
+  releaseQuarantine(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(releaseQuarantineSchema)) body: ReleaseQuarantineBody,
+  ): Promise<PipelineQuarantineReleaseResponse> {
+    return this.pipelineStateService.releaseQuarantined(toServiceContext(context).userId, {
+      reasons: body.reasons,
+      stage: body.stage,
+    });
   }
 }
