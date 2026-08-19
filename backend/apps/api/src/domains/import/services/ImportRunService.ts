@@ -418,6 +418,7 @@ export class ImportRunService {
         stageId: string | null;
         stageStale: boolean | null;
         hasLive: boolean;
+        hasRunning: boolean;
         allStale: boolean;
       }>
     >(
@@ -427,6 +428,11 @@ export class ImportRunService {
               q.updated_at < now() - make_interval(mins => $1::int) AS "stageStale",
               EXISTS (SELECT 1 FROM ci_import.import_stages x
                        WHERE x.run_id = r.id AND x.status IN ('queued', 'running')) AS "hasLive",
+              -- A stage of this run is EXECUTING right now. The queued stage
+              -- below is therefore waiting for it BY DESIGN, however long it has
+              -- sat there, and enqueuing it would run the pipeline out of order.
+              EXISTS (SELECT 1 FROM ci_import.import_stages x
+                       WHERE x.run_id = r.id AND x.status = 'running') AS "hasRunning",
               COALESCE((SELECT bool_and(x.updated_at < now() - make_interval(mins => $1::int))
                           FROM ci_import.import_stages x
                          WHERE x.run_id = r.id), true) AS "allStale"
@@ -446,10 +452,26 @@ export class ImportRunService {
     let finished = 0;
 
     for (const run of unfinished) {
-      if (run.stageId != null && run.stageStale === true) {
+      if (run.stageId != null && run.stageStale === true && !run.hasRunning) {
         // A queued stage nobody has touched in the staleness window is a stage
         // whose job was lost — a FRESH queued stage is just waiting its turn in
         // the queue and must not collect a duplicate job every sweep.
+        //
+        // `!hasRunning` is the ORDERING guard, and it is not defensive: without
+        // it this sweep runs the pipeline past a stage that is still working.
+        // Observed on a real 13-source import — unpack finished 03:34:53, parse
+        // waited for its queue and only started 03:45:08, by which time `media`
+        // and `push` had been queued for ten minutes and were "stale" by this
+        // rule. The moment parse went RUNNING it stopped being the first queued
+        // stage, so the next sweep enqueued `media` instead. media completed
+        // 0/0, advance() enqueued push, push completed 0/0, advance() found
+        // nothing queued and called finishRun — while parse was still parsing.
+        // The Google Takeout run reported `completed`, percent 100, and landed
+        // ZERO of its 703,956 items.
+        //
+        // Staleness cannot distinguish "my job was lost" from "I am waiting for
+        // the stage in front of me", because nothing touches a waiting stage.
+        // Whether a sibling is executing can be asked directly, so it is.
         await this.enqueueStage(run.userId, run.runId, { id: run.stageId } as ImportStage);
         enqueued += 1;
       } else if (!run.hasLive && run.allStale) {

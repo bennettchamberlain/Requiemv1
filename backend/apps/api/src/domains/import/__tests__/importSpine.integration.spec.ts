@@ -439,6 +439,54 @@ describeWithDatabase(`the import spine (${importDatabase.target})`, () => {
       expect(call?.[2]).toMatchObject({ singletonKey: stages[0].id });
     });
 
+    it('never enqueues past a stage that is still RUNNING', async () => {
+      // The data-loss regression this exists to stop, observed on a real
+      // 13-source import of a full personal-data corpus:
+      //
+      //   unpack  completed 03:34:53
+      //   parse   started   03:45:08   <- waited ten minutes for its queue slot
+      //   media   started   03:45:40   completed 0/0
+      //   push    started   03:49:00   completed 0/0
+      //   run     completed, percent 100, finished 03:49:00 — while parse ran on
+      //
+      // `media` and `push` had been queued since 03:34:50, so by the time parse
+      // finally started they were long past STALE_STAGE_MINUTES. parse going
+      // RUNNING removed it from the queued set, `media` became the first queued
+      // stage, and the sweep enqueued it. The Google Takeout run reported
+      // success and landed ZERO of its 703,956 items.
+      //
+      // Waiting for the stage in front of you is indistinguishable from a lost
+      // job if you only look at staleness — nothing touches a waiting stage.
+      const { run, stages } = await startRun(await stageDrop());
+
+      // Stage 0 is executing; stages 1..n are queued and long stale.
+      expect(await service.beginStage(stages[0].id)).toBe(true);
+      for (const stage of stages.slice(1)) {
+        await age(stage.id);
+      }
+      events.send.mockClear();
+
+      await service.resumeInterrupted();
+
+      // Nothing enqueued, and above all the run is NOT closed out.
+      expect(sendsFor(run.id)).toEqual([]);
+
+      const [row] = await dataSource.query<Array<{ finished_at: string | null; status: string }>>(
+        `SELECT finished_at, status FROM ci_import.import_runs WHERE id = $1::uuid`,
+        [run.id],
+      );
+
+      expect(row.finished_at).toBeNull();
+
+      // And the running stage is untouched — still claimed by its owner.
+      const [live] = await dataSource.query<Array<{ status: string }>>(
+        `SELECT status FROM ci_import.import_stages WHERE id = $1::uuid`,
+        [stages[0].id],
+      );
+
+      expect(live.status).toBe('running');
+    });
+
     it('closes out a run whose last stage completed but never finished', async () => {
       const { run, stages } = await startRun(await stageDrop());
 
