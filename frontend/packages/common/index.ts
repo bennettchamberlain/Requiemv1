@@ -10,7 +10,9 @@ export {
   getApiBaseUrl,
   initApiBaseUrl,
   isIosPlatform,
+  isLocalApplianceOrigin,
   isNativePlatform,
+  needsNativeCloudConnect,
   persistApiBaseUrl,
   setApiBaseUrl,
 } from './src/utils/apiBase';
@@ -53,7 +55,7 @@ export type {
   PositionRecord,
   PositionRecordOptions,
 } from './src/utils/deviceSources';
-export { FetchJsonError, fetchJson, type FetchJsonIssue } from './src/utils/fetchJson';
+export { FetchJsonError, apiFetch, fetchJson, type FetchJsonIssue } from './src/utils/fetchJson';
 export { localHubPlugin, localHubSession, type LocalHubSession } from './src/utils/localHub';
 export {
   OUTBOX_MAX_ATTEMPTS,
@@ -119,6 +121,7 @@ export {
   OIDC_NATIVE_CALLBACK_URL,
   OIDC_NATIVE_CLIENT_FLAG,
   OIDC_NATIVE_SCHEME,
+  claimNativeOidcCode,
   parseOidcCallbackUrl,
 } from './src/utils/oidcNative';
 export type { OidcCallbackParams } from './src/utils/oidcNative';

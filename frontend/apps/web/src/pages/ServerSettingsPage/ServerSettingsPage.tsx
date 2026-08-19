@@ -4,6 +4,8 @@ import { buildApiUrl, getApiBaseUrl, persistApiBaseUrl } from '@ci/common';
 import { Button, Card, Input, Label } from '@ci/shadcn';
 import { useNavigate } from 'react-router-dom';
 
+import { probeMemoryOrigin } from '@/pages/DeviceConnectPage/portal-client';
+
 type Status = 'idle' | 'testing' | 'error';
 
 /**
@@ -56,20 +58,10 @@ export function ServerSettingsPage() {
     setStatus('testing');
     setError(null);
 
-    // Health-check the candidate origin directly (not via buildApiUrl, since we are
-    // validating a URL the user has not committed to yet). `/api/health` is
-    // unauthenticated, so a 2xx confirms reachability before we save.
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
-
+    // Probe via native HTTP (same as cloud-connect). WKWebView fetch is CORS-bound
+    // and fails with TypeError "Load failed" against a Hub-published appliance.
     try {
-      const response = await fetch(`${candidate}/api/health`, {
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(`Memory Server responded with ${response.status}`);
-      }
+      await probeMemoryOrigin(candidate);
 
       persistApiBaseUrl(candidate);
 
@@ -82,9 +74,6 @@ export function ServerSettingsPage() {
           ? 'Could not reach your Companion Memory (timed out). Check the URL and your network.'
           : `Could not reach your Companion Memory. ${err instanceof Error ? err.message : ''}`.trim(),
       );
-    } finally {
-      // Always clear the abort timer, including the network-error path.
-      clearTimeout(timeout);
     }
   };
 

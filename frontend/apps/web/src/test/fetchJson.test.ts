@@ -1,6 +1,6 @@
 import { setApiKey } from '@ci/common/src/utils/apiAuth';
 import { setApiBaseUrl } from '@ci/common/src/utils/apiBase';
-import { fetchJson } from '@ci/common/src/utils/fetchJson';
+import { apiFetch, fetchJson } from '@ci/common/src/utils/fetchJson';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 function stubFetch(body: unknown = {}) {
@@ -139,6 +139,32 @@ describe('fetchJson — native CapacitorHttp', () => {
         url: 'https://memory.example.com/api/authenticate/oidc/native/exchange',
         method: 'POST',
         data: { code: 'otc-1' },
+      }),
+    );
+  });
+
+  it('apiFetch sends GraphQL through CapacitorHttp against the live origin', async () => {
+    const fetchMock = stubFetch();
+    const request = vi.fn(async () => ({ status: 200, data: { data: { me: { id: 'u1' } } } }));
+
+    (window as unknown as { Capacitor?: unknown }).Capacitor = {
+      isNativePlatform: () => true,
+      Plugins: { CapacitorHttp: { request } },
+    };
+
+    setApiBaseUrl('https://memory.example.com');
+    const res = await apiFetch('https://memory.example.com/api/graphql', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: '{ me { id } }' }),
+    });
+
+    expect(res.ok).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: 'https://memory.example.com/api/graphql',
+        method: 'POST',
       }),
     );
   });

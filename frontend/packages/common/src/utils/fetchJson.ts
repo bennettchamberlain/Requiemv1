@@ -187,11 +187,32 @@ function capacitorHttp(): CapacitorHttpPlugin | undefined {
     return undefined;
   }
 
-  return (
+  const cap = (
     window as unknown as {
-      Capacitor?: { Plugins?: { CapacitorHttp?: CapacitorHttpPlugin } };
+      Capacitor?: {
+        Plugins?: { CapacitorHttp?: CapacitorHttpPlugin };
+        registerPlugin?: (name: string) => CapacitorHttpPlugin;
+      };
     }
-  ).Capacitor?.Plugins?.CapacitorHttp;
+  ).Capacitor;
+
+  const existing = cap?.Plugins?.CapacitorHttp;
+
+  if (existing?.request) {
+    return existing;
+  }
+
+  try {
+    const registered = cap?.registerPlugin?.('CapacitorHttp');
+
+    if (registered?.request) {
+      return registered;
+    }
+  } catch {
+    /* native binary does not expose the plugin */
+  }
+
+  return undefined;
 }
 
 function flattenHeaders(headers?: HeadersInit): Record<string, string> {
@@ -253,6 +274,23 @@ async function nativeAwareFetch(input: RequestInfo, init: RequestInit, timeout?:
   const body = typeof result.data === 'string' ? result.data : JSON.stringify(result.data ?? {});
 
   return new Response(body, { status: result.status, headers: result.headers });
+}
+
+/**
+ * `fetch` that uses CapacitorHttp on native (no CORS) and resolves string
+ * paths against the current Memory origin. Apollo and other callers that need
+ * a Response — not parsed JSON — should use this instead of `window.fetch`.
+ */
+export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  if (typeof input === 'string') {
+    return nativeAwareFetch(buildApiUrl(input), init ?? {});
+  }
+
+  if (input instanceof URL) {
+    return nativeAwareFetch(input.toString(), init ?? {});
+  }
+
+  return nativeAwareFetch(input, init ?? {});
 }
 
 export async function fetchJson<T>(input: RequestInfo, init?: Opts): Promise<T | undefined> {

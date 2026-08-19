@@ -16,6 +16,12 @@ const config: CapacitorConfig = {
     ...(process.env.CAP_SERVER_URL ? { url: process.env.CAP_SERVER_URL, cleartext: true } : {}),
   },
   plugins: {
+    // Patch window.fetch / XHR onto URLSession. WKWebView fetch is CORS-bound;
+    // Memory (core3) answers /api/health without Access-Control-Allow-Origin, which
+    // the webview reports as TypeError "Load failed".
+    CapacitorHttp: {
+      enabled: true,
+    },
     SplashScreen: {
       launchAutoHide: false,
       backgroundColor: '#ffffff',
