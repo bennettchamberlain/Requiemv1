@@ -19,6 +19,7 @@ import { useEntityService } from '@/pages/MemoryPage/useEntityService';
 
 import { ConnectionThreadDialog } from './ConnectionThreadDialog';
 import { EntityInfoDialog, type EntityRelation } from './EntityInfoDialog';
+import { useGraphNodeEntity } from './useGraphNodeEntity';
 
 // The 3D renderer pulls in three.js and react-three-fiber; loaded only when 3D is switched on.
 const GraphCanvas3D = lazy(() => import('./GraphCanvas3D'));
@@ -42,7 +43,18 @@ const GraphCanvas3D = lazy(() => import('./GraphCanvas3D'));
 const MAX_OVERVIEW_NODES = 150;
 /** How many viewport node ids the zoomed-in section-edge fetch sends (the endpoint's own cap). */
 const SECTION_EDGE_ID_LIMIT = 300;
-const SEARCH_RESULT_LIMIT = 20;
+/**
+ * Search cap — the same canvas budget as {@link MAX_OVERVIEW_NODES}, and the cap
+ * /api/graph/search enforces server-side (GRAPH_SEARCH_LIMIT). It used to be 20, applied twice
+ * (a `limit=10` request re-sliced to 20 here), which quietly answered a search with a dozen dots.
+ *
+ * It stays smaller than the explorer's search, and over a different corpus: List/Gallery/Map page
+ * through the whole `ci_search.vectors` result set (file chunks, answers and semantic hits
+ * included), while the graph can only show entities that carry edges — and only as many as the
+ * force layout can place. The response reports `truncated` so the canvas can say when a query
+ * matched more than it drew, rather than passing a slice off as the answer.
+ */
+const SEARCH_RESULT_LIMIT = 150;
 /** Focus-mode expansion bounds forwarded to /api/graph/node (client-side caps applied on top). */
 const FOCUS_NODE_LIMIT = 60;
 /**
@@ -153,6 +165,8 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchNodes, setSearchNodes] = useState<GraphNode[]>([]);
   const [searchLinks, setSearchLinks] = useState<GraphLink[]>([]);
+  /** The query matched more nodes than the canvas cap draws (server-reported). */
+  const [searchTruncated, setSearchTruncated] = useState(false);
 
   const [{ authToken }] = useAuth();
 
@@ -228,6 +242,7 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
 
   const isFilterActive = filterScope.tags || filterScope.events;
   const [, { setActiveEntity }] = useEntityService();
+  const { resolveNodeEntity, resolving: detailsResolving } = useGraphNodeEntity(authToken);
 
   // Focus mode: one entity's neighbourhood from GET /api/graph/node, bounded server- and
   // client-side by useNodeGraphService.
@@ -325,6 +340,7 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
       setSearchNodes([]);
       setSearchError(null);
       setSearchLinks([]);
+      setSearchTruncated(false);
       setSearchLoading(false);
 
       return;
@@ -334,6 +350,7 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
       setSearchError('Authentication required for graph search.');
       setSearchNodes([]);
       setSearchLinks([]);
+      setSearchTruncated(false);
 
       return;
     }
@@ -346,7 +363,10 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
         setSearchLoading(true);
         setSearchError(null);
 
-        const params = new URLSearchParams({ query: trimmedSearchQuery, limit: '10' });
+        const params = new URLSearchParams({
+          query: trimmedSearchQuery,
+          limit: String(SEARCH_RESULT_LIMIT),
+        });
         if (explorerIncludeTypes !== undefined) {
           params.set('includeTypes', explorerIncludeTypes.join(','));
         }
@@ -429,6 +449,9 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
         const allowedIds = new Set(mapped.map((node) => node.id));
 
         setSearchNodes(mapped);
+        // The server applies the same cap, so it — not this slice — is the authority on whether
+        // the query matched more than is on screen.
+        setSearchTruncated(payload?.truncated === true || nodesPayload.length > SEARCH_RESULT_LIMIT);
 
         const mappedLinks: GraphLink[] = linksPayload
           .map((link): GraphLink | null => {
@@ -466,6 +489,7 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
         setSearchError(message);
         setSearchNodes([]);
         setSearchLinks([]);
+        setSearchTruncated(false);
       } finally {
         if (!cancelled) {
           setSearchLoading(false);
@@ -672,18 +696,19 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
     setSelectedLinkId(null);
   }, []);
 
+  /**
+   * "Details" opens the SAME drawer List and Gallery open — the node is resolved to its real
+   * typed entity first (see useGraphNodeEntity), so the sheet shows the memory itself: its date,
+   * its thumbnail, its tags. It used to hand over a synthetic stub carrying only the node's name
+   * and type, which in the dots overview is all the canvas has (description/properties ship
+   * empty there), making every node a browse dead end. Unresolvable nodes still fall back to
+   * that card, so the button always opens something.
+   */
   const handleOpenDetails = useCallback(
-    (node: GraphNode) => {
-      setActiveEntity({
-        __typename: 'GenericEntity',
-        id: node.id,
-        name: node.name,
-        entityType: node.entity_type,
-        description: node.description,
-        properties: node.properties,
-      });
+    async (node: GraphNode) => {
+      setActiveEntity(await resolveNodeEntity(node));
     },
-    [setActiveEntity],
+    [resolveNodeEntity, setActiveEntity],
   );
 
   // Full-bleed canvas: the shell owns whatever height the memory hub hands it, measured live so
@@ -839,8 +864,22 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
         )}
         {mode === 'focus' && focusLoading && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
         {mode === 'search' && (
-          <span className="rounded-md border bg-background/90 px-2 py-1 text-xs text-muted-foreground shadow-sm">
+          <span
+            data-testid="graph-search-chip"
+            className="pointer-events-auto rounded-md border bg-background/90 px-2 py-1 text-xs text-muted-foreground shadow-sm"
+            title={
+              'Graph search matches entities that carry connections. The List, Gallery and Map ' +
+              'views search the full memory index — including file contents — so their results ' +
+              'can differ.'
+            }
+          >
             Search: “{trimmedSearchQuery}”
+            {searchTruncated && (
+              <span data-testid="graph-search-truncated">
+                {' '}
+                · closest {SEARCH_RESULT_LIMIT} of more — narrow the query or use List
+              </span>
+            )}
           </span>
         )}
       </div>
@@ -941,7 +980,8 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
           relations={selectedNodeRelations}
           isFocused={mode === 'focus' && focusEntityId === selectedNode.id}
           onFocus={() => handleFocus(selectedNode.id)}
-          onOpenDetails={() => handleOpenDetails(selectedNode)}
+          onOpenDetails={() => void handleOpenDetails(selectedNode)}
+          openDetailsPending={detailsResolving}
           onSelectNode={handleNodeSelect}
           onSelectLink={handleLinkSelect}
           onClose={() => setSelectedNodeId(null)}
