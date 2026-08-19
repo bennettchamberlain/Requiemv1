@@ -484,6 +484,7 @@ function useAuth(): ReturnValue {
     }
 
     let unsubscribe = () => {};
+
     let cancelled = false;
     const seenCodes = new Set<string>();
 

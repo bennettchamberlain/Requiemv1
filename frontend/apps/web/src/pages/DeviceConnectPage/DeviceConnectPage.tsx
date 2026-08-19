@@ -108,6 +108,7 @@ export function DeviceConnectPage() {
         void finish();
       }
     };
+
     document.addEventListener('visibilitychange', onVisible);
 
     return () => {
