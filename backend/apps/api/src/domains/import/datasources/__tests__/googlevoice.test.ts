@@ -94,6 +94,37 @@ describe('call-log headings are not names', () => {
     const content = await item.content.data?.();
     expect(content?.toString('utf8')).toBe('Missed call from Steven Stone');
   });
+
+  // processCallLog derives CallType from a FIVE-way alternation
+  // (Missed|Placed|Received|Voicemail|Recorded), but the first repair covered
+  // only three verbs — so "Voicemail from" and "Recorded call with" were still
+  // reaching contact names and content. 2,891 + 188 live rows read
+  // "Voicemail call from Voicemail from\nJudy Collins" /
+  // "Recorded call from Recorded call with".
+  it.each([
+    ['Voicemail', 'Voicemail from', 'Voicemail call from Judy Collins'],
+    ['Recorded', 'Recorded call with', 'Recorded call from Judy Collins'],
+  ])('strips the %s heading too, so it is never doubled', async (type, heading, description) => {
+    const item = await callLogFile(
+      `<span class="fn">${heading} \nJudy Collins</span>`,
+      `Judy Collins - ${type} - 2025-01-15T09_30_00Z.html`,
+    );
+
+    expect(item?.metadata?.Contact).toBe('Judy Collins');
+    expect(item?.metadata?.Description).toBe(description);
+
+    const content = await item.content.data?.();
+    expect(content?.toString('utf8')).toBe(description);
+  });
+
+  it('files no contact at all when a Voicemail heading names nobody', async () => {
+    const item = await callLogFile(
+      '<span class="fn">Voicemail from \n</span>',
+      'Voicemail - 2025-01-15T09_30_00Z.html',
+    );
+
+    expect(item?.metadata?.Contact).toBeUndefined();
+  });
 });
 
 describe('Google Voice datasource', () => {

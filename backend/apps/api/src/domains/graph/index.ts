@@ -139,6 +139,14 @@ export {
   splitPersonName,
 } from './utils/normalizeIdentifier';
 export {
+  type NonNameParticipantReason,
+  CALL_LOG_HEADING,
+  isNonNameParticipant,
+  nonNameParticipantReason,
+  resetNonNameParticipantLog,
+  stripCallLogHeading,
+} from './utils/participantSanity';
+export {
   type NormalizedObjectIdentifier,
   type ObjectIdentifierNamespace,
   computeQualifier,

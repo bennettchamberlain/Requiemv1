@@ -52,9 +52,13 @@ describe('GPX & KMLGX datasources', () => {
     expect(item.location!.longitude).toBeCloseTo(56.78);
     expect(item.metadata.Source).toBe('KMLGX');
     expect(item.metadata.Altitude).toBe(15.0);
-    // title-bearing key so titleFor doesn't fall back to the bare 'track.kml' filename
-    expect(item.metadata.Name).toBe('Location 12.34000,56.78000');
-    expect(item.metadata.Name).not.toBe(item.content.filename);
+    // No fabricated `Name`. A gx:Track coord carries no name, and the
+    // `Location 12.34000,56.78000` this used to emit was never rendered as a
+    // title (raw-GPS location.fix routes to `position` only) — it only ever
+    // landed in ci.position.name. A null name is what makes the row a
+    // reverse-geocode candidate.
+    expect(item.metadata.Name).toBeUndefined();
+    expect(item.metadata.Title).toBeUndefined();
   });
 
   it('KMLGX: malformed XML does not throw and emits nothing', async () => {

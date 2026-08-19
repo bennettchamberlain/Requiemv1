@@ -10,6 +10,9 @@ import { serves } from '@ci/common/roles';
 import { PythonFunctionService } from '../services/PythonFunctionService';
 import type { PythonFunctionTarget } from '../types';
 
+/** Window the dossier prompt reads back over. Mirrors the Python default. */
+const DOSSIER_LOOKBACK_DAYS = 30;
+
 /**
  * The scheduler half of the Temporal replacement. These crons replicate the
  * former Temporal Schedules (summary system_schedules.py + HBPE schedule.py):
@@ -117,7 +120,16 @@ export class PythonFunctionCrons implements OnApplicationBootstrap {
       return;
     }
 
-    await this.fanOut('summary', 'dossier_refresh', hourKey(), { lookback_days: 30 });
+    // Narrower audience than every onboarded user: dossier_refresh reads the
+    // last `DOSSIER_LOOKBACK_DAYS` of hourly/daily summaries and has nothing
+    // to build without them. Hourly summaries run at :05 and this at :12, so
+    // an appliance in a quiet hour used to enqueue a job per user per hour
+    // that could only end in "No summaries found for dossier generation".
+    // The Python side now reports that as a skip rather than raising, so this
+    // gate is an optimisation, not the fix — it stops the pointless dispatch.
+    await this.fanOut('summary', 'dossier_refresh', hourKey(), { lookback_days: DOSSIER_LOOKBACK_DAYS }, () =>
+      this.listUsersWithDossierInput(DOSSIER_LOOKBACK_DAYS),
+    );
   }
 
   @Cron('0 30 */3 * * *', { name: 'PythonFunctionCrons.insights' })
@@ -153,8 +165,12 @@ export class PythonFunctionCrons implements OnApplicationBootstrap {
     functionName: string,
     windowKey: string,
     args: Record<string, unknown> = {},
+    // Defaults to every onboarded user. A function with a hard input
+    // precondition passes a narrower audience so the cron does not enqueue
+    // work that can only no-op (see dossierRefresh).
+    audience: () => Promise<string[]> = () => this.listOnboardedUserIds(),
   ): Promise<void> {
-    const userIds = await this.listOnboardedUserIds();
+    const userIds = await audience();
 
     if (userIds.length === 0) {
       return;
@@ -192,6 +208,35 @@ export class PythonFunctionCrons implements OnApplicationBootstrap {
     type Row = { id: string };
 
     const rows = (await this.dataSource.query('SELECT id FROM ci.users WHERE onboarded = true')) as Row[];
+
+    return rows.map((row) => String(row.id));
+  }
+
+  /**
+   * Onboarded users with at least one summary `dossier_refresh` could read.
+   *
+   * Deliberately a superset of what the function actually consumes (it takes
+   * daily summaries over the whole lookback but hourly ones only from the
+   * last 24h): the gate must never withhold a user the function would have
+   * had input for. Over-selecting costs one dispatch that returns skipped;
+   * under-selecting would silently stop dossiers from ever refreshing.
+   */
+  private async listUsersWithDossierInput(lookbackDays: number): Promise<string[]> {
+    type Row = { id: string };
+
+    const rows = (await this.dataSource.query(
+      `SELECT u.id
+         FROM ci.users u
+        WHERE u.onboarded = true
+          AND EXISTS (
+                SELECT 1
+                  FROM ci.summaries s
+                 WHERE s.user_id = u.id
+                   AND s.period_type IN ('hourly', 'daily')
+                   AND s.period_start >= now() - make_interval(days => $1)
+              )`,
+      [lookbackDays],
+    )) as Row[];
 
     return rows.map((row) => String(row.id));
   }

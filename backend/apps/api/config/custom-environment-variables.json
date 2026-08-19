@@ -160,6 +160,12 @@
       }
     }
   },
+  "reflection": {
+    "minAnswerConfidence": {
+      "__name": "CI_REFLECTION_MIN_ANSWER_CONFIDENCE",
+      "__format": "json"
+    }
+  },
   "features": {
     "scheduled.answer.inferencing": "ENABLE_SCHEDULED_ANSWER_INFERENCING",
     "scheduled.connection.sync": "ENABLE_SCHEDULED_CONNECTION_SYNC",

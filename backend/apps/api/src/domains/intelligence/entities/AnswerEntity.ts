@@ -20,8 +20,22 @@ export class AnswerEntity {
   @Column({ name: 'answer_text' })
   answer!: string;
 
+  /**
+   * How sure the writer was, in [0,1]. NULL means "no machine ever scored this":
+   * a user-authored answer, an imported one, or an inferred row written before
+   * confidence was captured. See domains/llm/inferredAnswerConfidence.ts for the
+   * scale, and AnswerService.update for why a user edit clears it.
+   */
   @Column({ type: 'double precision', nullable: true, name: 'answer_confidence' })
-  answerConfidence!: number;
+  answerConfidence!: number | null;
+
+  /**
+   * The model's one-line account of what evidence produced an inferred answer,
+   * emitted in the same structured generation as the text and the score. Shown
+   * beside the confidence so a number is an explanation rather than a shrug.
+   */
+  @Column({ type: 'text', nullable: true, name: 'answer_rationale' })
+  answerRationale!: string | null;
 
   @Column({ default: 'user_input', name: 'answer_source' })
   answerSource!: string;
@@ -75,6 +89,7 @@ export class AnswerEntity {
       id: entity.id,
       answer: entity.answer,
       answerConfidence: entity.answerConfidence,
+      answerRationale: entity.answerRationale,
       answerSource: entity.answerSource,
       answerMethod: entity.answerMethod,
       answeredAt: entity.answeredAt,

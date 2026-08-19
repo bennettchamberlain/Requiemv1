@@ -7,7 +7,12 @@ import { BACKFILL_JOB_PRIORITY, type EventService } from '@ci/domains/events';
 
 import { DEAD_LETTER_QUEUE, STAGE_ID_LIST } from '../../constants';
 import { stageVersion } from '../../versions';
-import { MAX_SHARDS_PER_RUN, PipelineRunService } from '../PipelineRunService';
+import {
+  DEFAULT_DEAD_LETTER_PAGE,
+  MAX_DEAD_LETTER_PAGE,
+  MAX_SHARDS_PER_RUN,
+  PipelineRunService,
+} from '../PipelineRunService';
 
 // `isWrite`, not `startsWith('UPDATE')`: the writes are CTE-wrapped so TypeORM
 // returns plain rows instead of `[rows, rowCount]`, which means the outer command
@@ -840,5 +845,236 @@ describe('PipelineRunService.replayDeadLetter', () => {
 
     await expect(harness.service.replayDeadLetter(CTX, LETTER_ID)).rejects.toThrow('pg-boss is down');
     expect(harness.logger.error).toHaveBeenCalled();
+  });
+});
+
+describe('PipelineRunService.replayDeadLetters (bulk)', () => {
+  const LETTER_2 = '00000000-0000-7000-8000-0000000000d2';
+  const LETTER_3 = '00000000-0000-7000-8000-0000000000d3';
+
+  const claimRow = (id: string, overrides: Record<string, unknown> = {}) => ({
+    id,
+    queue: DEAD_LETTER_QUEUE,
+    event_name: 'infer.question.answer',
+    payload: { questionId: 'q-1', ownerId: USER },
+    replayed_at: new Date('2026-08-18T12:00:00Z'),
+    ...overrides,
+  });
+
+  it('claims the whole batch in ONE statement, and only rows still un-replayed', async () => {
+    // This is the double-submit guard. It has to be the database's, not the
+    // caller's: two operators pressing the button at once are the case a
+    // client-side check cannot cover.
+    const harness = makeHarness(() => [claimRow(LETTER_ID), claimRow(LETTER_2)]);
+
+    await harness.service.replayDeadLetters(CTX, { ids: [LETTER_ID, LETTER_2] });
+
+    const claims = harness.matching(/UPDATE ci\.pipeline_dead_letters/);
+
+    expect(claims).toHaveLength(1);
+    expect(claims[0].sql).toContain('SET replayed_at = now()');
+    expect(claims[0].sql).toContain('replayed_at IS NULL');
+    // Locked for the claim, and skipped rather than blocked when another caller
+    // already holds the row.
+    expect(claims[0].sql).toContain('FOR UPDATE SKIP LOCKED');
+    expect(claims[0].params[0]).toBe(USER);
+    expect(claims[0].params[1]).toEqual([LETTER_ID, LETTER_2]);
+  });
+
+  it('a double submit claims nothing the second time and re-emits nothing', async () => {
+    // First call claims both; second call's claim matches zero rows because
+    // `replayed_at IS NULL` no longer holds. Nothing goes back on the bus twice.
+    let call = 0;
+    const harness = makeHarness(() => (call++ === 0 ? [claimRow(LETTER_ID), claimRow(LETTER_2)] : []));
+
+    const first = await harness.service.replayDeadLetters(CTX, { ids: [LETTER_ID, LETTER_2] });
+    const second = await harness.service.replayDeadLetters(CTX, { ids: [LETTER_ID, LETTER_2] });
+
+    expect(first.replayed).toHaveLength(2);
+    expect(second.claimed).toBe(0);
+    expect(second.replayed).toHaveLength(0);
+    expect(second.skipped).toEqual([LETTER_ID, LETTER_2]);
+    expect(harness.send).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports named ids that claimed nothing as skipped, not as an error', async () => {
+    // "Already replayed" is the guard working. A 409 for the batch would strand
+    // the letters that DID claim.
+    const harness = makeHarness(() => [claimRow(LETTER_ID)]);
+
+    const result = await harness.service.replayDeadLetters(CTX, { ids: [LETTER_ID, LETTER_2, LETTER_3] });
+
+    expect(result.requested).toBe(3);
+    expect(result.claimed).toBe(1);
+    expect(result.skipped).toEqual([LETTER_2, LETTER_3]);
+    expect(result.failed).toHaveLength(0);
+  });
+
+  it('scans every named id — the page size is not a second, quieter cap', async () => {
+    // The controller accepts up to MAX_DEAD_LETTER_PAGE ids, but the claim used
+    // to default its LIMIT to DEFAULT_DEAD_LETTER_PAGE (50). A 60-id request
+    // therefore replayed 50 and reported the other 10 as `skipped`, which the
+    // Jobs card renders as "10 already replayed" — the one reading under which
+    // an operator would never retry them.
+    const ids = Array.from(
+      { length: DEFAULT_DEAD_LETTER_PAGE + 10 },
+      (_unused, index) => `00000000-0000-7000-8000-${String(index).padStart(12, '0')}`,
+    );
+    const harness = makeHarness(() => []);
+
+    const result = await harness.service.replayDeadLetters(CTX, { ids });
+
+    // The LIMIT bind is the last parameter of the claim statement.
+    const claim = harness.matching(/UPDATE ci\.pipeline_dead_letters/)[0];
+
+    expect(claim.params[claim.params.length - 1]).toBe(ids.length);
+    expect(result.limit).toBe(ids.length);
+    expect(result.notAttempted).toEqual([]);
+    expect(result.skipped).toHaveLength(ids.length);
+  });
+
+  it('reports ids beyond an explicit smaller limit as not attempted, never as skipped', async () => {
+    // `skipped` means "looked at, nothing to claim" — settled. An id the ceiling
+    // cut off is unsettled and the caller must ask again. Collapsing the two
+    // loses exactly the distinction the operator acts on.
+    const harness = makeHarness(() => [claimRow(LETTER_ID)]);
+
+    const result = await harness.service.replayDeadLetters(CTX, {
+      ids: [LETTER_ID, LETTER_2, LETTER_3],
+      limit: 1,
+    });
+
+    expect(result.limit).toBe(1);
+    expect(result.skipped).toEqual([]);
+    expect(result.notAttempted).toEqual([LETTER_2, LETTER_3]);
+  });
+
+  it('deduplicates ids so one letter cannot be requested twice in a batch', async () => {
+    const harness = makeHarness(() => [claimRow(LETTER_ID)]);
+
+    const result = await harness.service.replayDeadLetters(CTX, {
+      ids: [LETTER_ID, LETTER_ID, LETTER_ID],
+    });
+
+    expect(harness.statements[0].params[1]).toEqual([LETTER_ID]);
+    expect(result.requested).toBe(1);
+    expect(result.skipped).toEqual([]);
+  });
+
+  it('binds the eventName and failedAfter selectors, leaving ids NULL', async () => {
+    // The "replay this one failure class" form: 36 of the live appliance's 94
+    // letters were a single bad model id under infer.question.answer.
+    const failedAfter = new Date('2026-08-18T00:00:00Z');
+    const harness = makeHarness(() => []);
+
+    await harness.service.replayDeadLetters(CTX, {
+      eventName: 'infer.question.answer',
+      failedAfter,
+    });
+
+    expect(harness.statements[0].params).toEqual([
+      USER,
+      null,
+      'infer.question.answer',
+      failedAfter,
+      DEFAULT_DEAD_LETTER_PAGE,
+    ]);
+  });
+
+  it('scopes to the caller, including the NULL-user letters the list shows', async () => {
+    const harness = makeHarness(() => []);
+
+    await harness.service.replayDeadLetters(CTX, { eventName: 'file.uploaded' });
+
+    expect(harness.statements[0].sql).toContain('user_id = $1::uuid OR user_id IS NULL');
+    expect(harness.statements[0].params[0]).toBe(USER);
+  });
+
+  it('clamps the batch ceiling, because every claimed letter re-emits a verbatim payload', async () => {
+    const harness = makeHarness(() => []);
+
+    await harness.service.replayDeadLetters(CTX, { eventName: 'file.uploaded', limit: 5000 });
+
+    expect(harness.statements[0].params[4]).toBe(MAX_DEAD_LETTER_PAGE);
+  });
+
+  it('re-emits each claimed payload verbatim, at backfill priority', async () => {
+    const payload = { questionId: 'q-9', ownerId: USER, nested: { deep: [1, 2] } };
+    const harness = makeHarness(() => [claimRow(LETTER_ID, { payload })], ['job-7']);
+
+    const result = await harness.service.replayDeadLetters(CTX, { ids: [LETTER_ID] });
+
+    // `dead-letter` is pg-boss's parking queue: routed by listener registration
+    // instead, exactly as the single-id path does it.
+    expect(harness.send).toHaveBeenCalledWith('infer.question.answer', payload, {
+      priority: BACKFILL_JOB_PRIORITY,
+    });
+    expect(result.replayed[0]).toMatchObject({ id: LETTER_ID, jobIds: ['job-7'], queue: null });
+  });
+
+  it('one letter that cannot be re-emitted does not strand the rest of the batch', async () => {
+    const harness = makeHarness(() => [claimRow(LETTER_ID), claimRow(LETTER_2), claimRow(LETTER_3)]);
+
+    harness.send
+      .mockResolvedValueOnce(['job-1'])
+      .mockRejectedValueOnce(new Error('pg-boss is down'))
+      .mockResolvedValueOnce(['job-3']);
+
+    const result = await harness.service.replayDeadLetters(CTX, {
+      ids: [LETTER_ID, LETTER_2, LETTER_3],
+    });
+
+    expect(result.claimed).toBe(3);
+    expect(result.replayed.map((entry) => entry.id)).toEqual([LETTER_ID, LETTER_3]);
+    expect(result.failed).toEqual([
+      { id: LETTER_2, eventName: 'infer.question.answer', reason: 'pg-boss is down' },
+    ]);
+  });
+
+  it('releases the claim on every letter that failed, so it stays replayable', async () => {
+    // A letter marked replayed that was never re-emitted is worse than one never
+    // touched — the payload is frequently the only surviving copy.
+    const harness = makeHarness(() => [claimRow(LETTER_ID), claimRow(LETTER_2)]);
+
+    harness.send.mockRejectedValueOnce(new Error('pg-boss is down')).mockResolvedValueOnce(['job-2']);
+
+    await harness.service.replayDeadLetters(CTX, { ids: [LETTER_ID, LETTER_2] });
+
+    const releases = harness.matching(/SET replayed_at = NULL/);
+
+    expect(releases).toHaveLength(1);
+    expect(releases[0].params).toEqual([LETTER_ID]);
+  });
+
+  it('treats an empty send() as a failure for that letter, not as a replay', async () => {
+    // `send()` returns [] — it does not throw — for an event with no registered
+    // listener. Counting that as success would retire the row having run nothing.
+    const harness = makeHarness(() => [claimRow(LETTER_ID)], []);
+
+    const result = await harness.service.replayDeadLetters(CTX, { ids: [LETTER_ID] });
+
+    expect(result.replayed).toHaveLength(0);
+    expect(result.failed[0].reason).toMatch(/produced no job/);
+    expect(harness.matching(/SET replayed_at = NULL/)).toHaveLength(1);
+  });
+
+  it('refuses an unattributable letter and releases it, without failing the batch', async () => {
+    const harness = makeHarness(() => [claimRow(LETTER_ID, { event_name: 'unknown' }), claimRow(LETTER_2)]);
+
+    const result = await harness.service.replayDeadLetters(CTX, { ids: [LETTER_ID, LETTER_2] });
+
+    expect(result.failed[0]).toMatchObject({ id: LETTER_ID });
+    expect(result.failed[0].reason).toMatch(/carries no event name/);
+    expect(result.replayed.map((entry) => entry.id)).toEqual([LETTER_2]);
+    expect(harness.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('emits nothing at all when the claim matched nothing', async () => {
+    const harness = makeHarness(() => []);
+
+    const result = await harness.service.replayDeadLetters(CTX, { eventName: 'nothing.matches' });
+
+    expect(result).toMatchObject({ requested: null, claimed: 0, skipped: [] });
+    expect(harness.send).not.toHaveBeenCalled();
   });
 });

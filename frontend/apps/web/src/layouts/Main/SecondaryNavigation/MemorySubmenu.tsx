@@ -125,7 +125,7 @@ export function MemorySubmenu() {
                     className="grid size-6 shrink-0 place-items-center [&>svg]:!h-4 [&>svg]:!w-4"
                     aria-hidden
                   >
-                    <Icon colorized={false} />
+                    <Icon colorized={false} className="dark:text-muted-foreground" />
                   </span>
                   <span className="truncate">{section.label}</span>
                 </Link>

@@ -227,6 +227,25 @@ export const STAGE_IDS = {
   PROMOTE_PLACE: 'promote.place',
 
   /**
+   * The same promotion over `ci.position`: a reverse-geocoded GPS fix that
+   * carries a venue NAME becomes a first-class place, and the fix is linked to
+   * it via `ci.position.location_entity_id`.
+   *
+   * A SECOND id rather than a second entity type, for the reason
+   * `enrich.event_person_link` is one: a `Stage` declares exactly one `source`,
+   * and this is a different table with a different primary key.
+   *
+   * It is also the writer `ci.position.location_entity_id` never had. The
+   * column has read paths — `promote.edge_position` selects on it, and the
+   * `position.visited` rule projects owner Person −VISITED→ Place from it — but
+   * measured on the legacy corpus after a full enrichment pass: 5,005
+   * `ci.geocode_cache` rows, 2,815 named fixes, and 0 fixes carrying a place.
+   * Reads the reverse-geocode cache by primary key, so it costs nothing
+   * metered.
+   */
+  PROMOTE_PLACE_POSITION: 'promote.place_position',
+
+  /**
    * Promote purchases into `ci.inventory` with real identity — the first writer
    * the rich object model has ever had.
    */

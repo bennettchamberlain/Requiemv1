@@ -142,6 +142,36 @@ export class GeocodeService {
   }
 
   /**
+   * Cache key for a REVERSE lookup: the coordinate pair rounded to 4 decimals
+   * (~11 m, so nearby pins share a cached label) under a `reverse:` namespace
+   * that cannot collide with a forward address hash.
+   *
+   * Extracted from {@link reverseGeocode} so that a READER of those rows —
+   * `promote.place_position` reads them by primary key for the address
+   * components `enrich.position_reverse` already paid for — computes the same
+   * key rather than re-deriving it. A second copy of this expression is a
+   * silent cache miss on the day one of them changes, and a silent cache miss
+   * reads as "this place has no hierarchy", not as a bug.
+   */
+  static reverseCacheKey(lat: number, lng: number): string {
+    return `reverse:${lat.toFixed(4)},${lng.toFixed(4)}`;
+  }
+
+  /**
+   * `ci.geocode_cache.query_hash` for a reverse lookup.
+   *
+   * Hashes the structured key DIRECTLY — do NOT route it through
+   * {@link hashQuery}, whose `canonicalize()` strips '-', '.' and ',' (it is
+   * built for free-text addresses). That would collapse all four coordinate
+   * quadrants into one cache row (37.42,-122.08 vs -37.42,122.08 vs ...), so
+   * the first quadrant to resolve poisons the others with a wrong-hemisphere
+   * place name.
+   */
+  static hashReverseQuery(lat: number, lng: number): string {
+    return createHash('sha256').update(GeocodeService.reverseCacheKey(lat, lng)).digest('hex');
+  }
+
+  /**
    * Build the PostGIS geography Point from a (lat, lng) pair. PostGIS / GeoJSON
    * order coordinates [lng, lat] (X, Y) — the same axis order EventService and
    * TransformGoogleCalendar write. Guarded so an accidental swap can't silently
@@ -267,13 +297,10 @@ export class GeocodeService {
       return { status: 'INVALID_REQUEST', placeName: null, cached: false, retryable: false };
     }
 
-    const cacheKey = `reverse:${lat.toFixed(4)},${lng.toFixed(4)}`;
-    // Hash the structured key DIRECTLY — do NOT route it through hashQuery, whose
-    // canonicalize() strips '-', '.' and ',' (it's built for free-text addresses).
-    // That would collapse all four coordinate quadrants into one cache row
-    // (37.42,-122.08 vs -37.42,122.08 vs ...), so the first quadrant to resolve
-    // poisons the others with a wrong-hemisphere place name.
-    const queryHash = createHash('sha256').update(cacheKey).digest('hex');
+    // Both from the statics above, so the writer here and the readers of these
+    // rows (`promote.place_position`) can never disagree about the key.
+    const cacheKey = GeocodeService.reverseCacheKey(lat, lng);
+    const queryHash = GeocodeService.hashReverseQuery(lat, lng);
 
     // --- Cache check -------------------------------------------------------
     if (!options.bustCache) {
