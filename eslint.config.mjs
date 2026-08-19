@@ -5,12 +5,17 @@ export default [
     ignores: [
       '.yarn',
       '**/dist/**',
+      // Prettier and oxlint both ignore build output generally; ESLint only
+      // listed dist plus specific native build dirs, so bundled vendor JS
+      // under other build/ trees still got linted with this repo's rules.
+      '**/build/**',
       '**/node_modules/**',
       '.pnp.*',
       // Nested git worktrees are full copies of this repo. ESLint does not read
       // .gitignore, so without this it walks them and re-lints every file with
       // the root config instead of the per-workspace ones.
       '.claude/worktrees/**',
+      '.worktrees/**',
       // Same reason: the uv workspace's virtualenv. Several Python packages
       // ship browser JS inside site-packages (torch and scikit-learn both do),
       // and linting a vendored bundle with this repo's rules is meaningless.
