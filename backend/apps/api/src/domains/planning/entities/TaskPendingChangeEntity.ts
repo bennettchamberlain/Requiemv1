@@ -1,6 +1,6 @@
 import { Entity, PrimaryColumn, Column, CreateDateColumn, Index } from 'typeorm';
 
-export const TASK_PENDING_CHANGE_KINDS = ['mutate', 'complete', 'event_revise'] as const;
+export const TASK_PENDING_CHANGE_KINDS = ['mutate', 'complete', 'event_revise', 'schedule'] as const;
 export type TaskPendingChangeKind = (typeof TASK_PENDING_CHANGE_KINDS)[number];
 
 export const TASK_PENDING_CHANGE_STATUSES = ['pending', 'accepted', 'declined'] as const;

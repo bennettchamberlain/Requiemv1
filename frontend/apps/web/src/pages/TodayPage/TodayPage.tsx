@@ -41,7 +41,7 @@ export function TodayPage() {
   const scheduleEnabled = isFeatureEnabled('schedule.page');
 
   return (
-    <PageContent>
+    <PageContent className="md:pt-[max(0.75rem,env(safe-area-inset-top))]">
       {scheduleEnabled && (
         <>
           <SchedulePage embedded />

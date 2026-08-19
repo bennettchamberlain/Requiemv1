@@ -266,6 +266,67 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
   // `weekOffset` / `selectedDay` survive the host re-rendering.
   const Frame: ElementType = embedded ? 'div' : PageContent;
 
+  // Week chrome: range, legend, activity/source. Lives under the TimelineJS
+  // today strip and immediately above the week so it sits next to schedule /
+  // rhythm instead of floating above the zoomable story.
+  const weekChrome = (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <div className="flex items-center gap-0.5">
+        <IconButton variant="ghost" label={t('SCHEDULE_PREVIOUS_WEEK')} onClick={goBack}>
+          <ChevronLeft className="h-4 w-4" strokeWidth={1.5} />
+        </IconButton>
+        <h2 className="min-w-[9rem] text-center text-base font-semibold text-foreground tabular-nums">
+          {formatRange(start, end)}
+        </h2>
+        <IconButton variant="ghost" label={t('SCHEDULE_NEXT_WEEK')} onClick={goForward}>
+          <ChevronRight className="h-4 w-4" strokeWidth={1.5} />
+        </IconButton>
+      </div>
+
+      {weekOffset !== 0 && (
+        <Button variant="ghost" size="sm" onClick={goToday} className="h-7 text-xs">
+          Back to today
+        </Button>
+      )}
+
+      {/* Hue answers one question at a time; this picks which one. Committed
+          time and rhythm stay told apart by their lanes and by fill weight,
+          so colour is free to carry category instead of certainty. */}
+      <div className="ml-auto flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+        <ScheduleLegend mode={colorMode} events={events} rhythm={rhythm} />
+
+        <div
+          role="radiogroup"
+          aria-label={
+            colorMode === 'type'
+              ? 'Colour by activity type — what kind of activity'
+              : 'Colour by source — which calendar or connector'
+          }
+          title={colorMode === 'type' ? 'What kind of activity' : 'Which calendar or connector'}
+          className="flex shrink-0 items-center rounded-md border border-border p-0.5"
+        >
+          {(['type', 'source'] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              role="radio"
+              aria-checked={colorMode === mode}
+              onClick={() => setColorMode(mode)}
+              className={cn(
+                'rounded-[4px] px-2 py-0.5 text-[11px] leading-none transition-colors',
+                colorMode === mode
+                  ? 'bg-accent text-accent-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {COLOR_MODE_LABEL[mode]}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <>
       <Frame
@@ -275,62 +336,6 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
             : 'gap-3 pt-[max(0.75rem,env(safe-area-inset-top))] md:gap-3'
         }
       >
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <div className="flex items-center gap-0.5">
-            <IconButton variant="ghost" label={t('SCHEDULE_PREVIOUS_WEEK')} onClick={goBack}>
-              <ChevronLeft className="h-4 w-4" strokeWidth={1.5} />
-            </IconButton>
-            <h2 className="min-w-[9rem] text-center text-base font-semibold text-foreground tabular-nums">
-              {formatRange(start, end)}
-            </h2>
-            <IconButton variant="ghost" label={t('SCHEDULE_NEXT_WEEK')} onClick={goForward}>
-              <ChevronRight className="h-4 w-4" strokeWidth={1.5} />
-            </IconButton>
-          </div>
-
-          {weekOffset !== 0 && (
-            <Button variant="ghost" size="sm" onClick={goToday} className="h-7 text-xs">
-              Back to today
-            </Button>
-          )}
-
-          {/* Hue answers one question at a time; this picks which one. Committed
-              time and rhythm stay told apart by their lanes and by fill weight,
-              so colour is free to carry category instead of certainty. */}
-          <div className="ml-auto flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
-            <ScheduleLegend mode={colorMode} events={events} rhythm={rhythm} />
-
-            <div
-              role="radiogroup"
-              aria-label={
-                colorMode === 'type'
-                  ? 'Colour by activity type — what kind of activity'
-                  : 'Colour by source — which calendar or connector'
-              }
-              title={colorMode === 'type' ? 'What kind of activity' : 'Which calendar or connector'}
-              className="flex shrink-0 items-center rounded-md border border-border p-0.5"
-            >
-              {(['type', 'source'] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  role="radio"
-                  aria-checked={colorMode === mode}
-                  onClick={() => setColorMode(mode)}
-                  className={cn(
-                    'rounded-[4px] px-2 py-0.5 text-[11px] leading-none transition-colors',
-                    colorMode === mode
-                      ? 'bg-accent text-accent-foreground'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  {COLOR_MODE_LABEL[mode]}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
         {fetching && !hasAnything && <LoadingPage />}
 
         {actionError && (
@@ -348,23 +353,28 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
         )}
 
         {isTrulyEmpty && (
-          <EmptyState
-            icon={<CalendarRange size={48} strokeWidth={1} />}
-            message="Nothing here yet. Connect a calendar and your week will start to fill in."
-          />
+          <>
+            {weekChrome}
+            <EmptyState
+              icon={<CalendarRange size={48} strokeWidth={1} />}
+              message="Nothing here yet. Connect a calendar and your week will start to fill in."
+            />
+          </>
         )}
 
         {showScheduleSurface && (
           <>
-            {/* Story strip, then the week, then Possibilities. The slate sits
-                under the grid so the week stays the primary surface; drag still
-                works onto a day above. */}
+            {/* TimelineJS today strip, then week chrome, then the week, then
+                Possibilities. The chrome belongs with schedule/rhythm, not
+                above the zoomable story. */}
             <div className="flex flex-col gap-4">
+              <TodayStoryTimeline events={events} day={selectedDay} />
+
+              {weekChrome}
+
               {weekOffset !== 0 && !hasAnything && !fetching && (
                 <p className="text-sm text-muted-foreground">Nothing on the calendar this week.</p>
               )}
-
-              <TodayStoryTimeline events={events} day={selectedDay} />
 
               <HorizonGrid
                 start={start}

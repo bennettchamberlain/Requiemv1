@@ -42,7 +42,7 @@ const SECTION_LABELS: Record<SectionKey, string> = {
   overdue: 'Overdue',
   today: 'Today',
   upcoming: 'Upcoming',
-  someday: 'Someday',
+  someday: 'Potential upcoming',
   done: 'Done',
 };
 

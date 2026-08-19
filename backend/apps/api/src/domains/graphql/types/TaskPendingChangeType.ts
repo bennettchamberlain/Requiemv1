@@ -10,6 +10,7 @@ export enum TaskPendingChangeKindEnum {
   mutate = 'mutate',
   complete = 'complete',
   event_revise = 'event_revise',
+  schedule = 'schedule',
 }
 
 registerEnumType(TaskPendingChangeKindEnum, {

@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
 import { RequestContext } from '@ci/common/context';
+import { CronRunStore } from '@ci/common/schedule';
 
 import { DEAD_LETTER_QUEUE } from '../constants';
 import { PgBossArchiveEntity } from '../entities/PgBossArchiveEntity';
@@ -86,6 +87,10 @@ export interface JobScheduleDto {
  * scheduler fires from — so what the dashboard lists is exactly what is
  * registered in THIS process, including the `role` gating that keeps
  * worker-only crons out of the web process.
+ *
+ * `lastRunAt` is read from `ci.cron_runs` (durable across restarts), not from
+ * the in-memory SchedulerRegistry `lastDate()` alone — otherwise a two-week
+ * outage would look like "never run" after boot.
  */
 export interface CronScheduleDto {
   /** Registration key — `ClassName.methodName` unless the cron was named. */
@@ -97,7 +102,7 @@ export interface CronScheduleDto {
   readonly running: boolean;
   /** Next fire time, ISO-8601, or null if the job is stopped. */
   readonly nextRunAt: string | null;
-  /** Previous fire time, ISO-8601, or null if it has not run yet this boot. */
+  /** Previous fire time, ISO-8601, or null if it has never been recorded. */
   readonly lastRunAt: string | null;
 }
 
@@ -211,6 +216,7 @@ export class JobMonitorService {
       activeDistribution,
       queueDistribution,
       smartRotationDistribution,
+      crons,
     ] = await Promise.all([
       this.jobRepository.find({
         order: { createdOn: 'DESC' },
@@ -227,10 +233,11 @@ export class JobMonitorService {
       this.getActiveDistribution(),
       this.getQueueDistribution(),
       this.getSmartRotationDistribution(),
+      this.getCronSchedules(),
     ]);
 
     return {
-      crons: this.getCronSchedules(),
+      crons,
       summary,
       archiveDistribution,
       activeDistribution,
@@ -241,6 +248,105 @@ export class JobMonitorService {
       schedules: schedules.map((schedule) => this.toScheduleDto(schedule)),
       queues: queues.map((queue) => this.toQueueDto(queue)),
     } satisfies JobDashboardDto;
+  }
+
+  /**
+   * Kick registered Nest cron jobs once (same path the scheduler uses).
+   *
+   * Useful after downtime or a deploy so operators do not wait for every
+   * cadence. Each tick still stamps `ci.cron_runs` via the `@Cron` wrapper.
+   *
+   * `fireOnTick` does not await async cron bodies; work continues in the
+   * background and lands on pg-boss like a normal tick.
+   */
+  fireCronJobs(names?: readonly string[]): {
+    fired: string[];
+    skipped: string[];
+    errors: { name: string; error: string }[];
+  } {
+    const fired: string[] = [];
+    const skipped: string[] = [];
+    const errors: { name: string; error: string }[] = [];
+
+    if (!this.schedulerRegistry) {
+      return {
+        fired,
+        skipped,
+        errors: [{ name: '*', error: 'SchedulerRegistry is not available in this process' }],
+      };
+    }
+
+    const allow = names && names.length > 0 ? new Set(names) : null;
+
+    for (const [name, job] of this.schedulerRegistry.getCronJobs()) {
+      if (allow && !allow.has(name)) {
+        skipped.push(name);
+        continue;
+      }
+
+      try {
+        job.fireOnTick();
+        fired.push(name);
+      } catch (err: unknown) {
+        errors.push({
+          name,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    return { fired, skipped, errors };
+  }
+
+  /**
+   * The recurring jobs registered with Nest's scheduler in THIS process.
+   *
+   * `nextRunAt` comes from the live registry. `lastRunAt` prefers the durable
+   * `ci.cron_runs` row (survives restarts) and falls back to in-memory
+   * `lastDate()` for the rare tick that has not flushed yet.
+   */
+  private async getCronSchedules(): Promise<CronScheduleDto[]> {
+    const schedules: CronScheduleDto[] = [];
+    const persisted = await CronRunStore.lastRunByName();
+
+    if (!this.schedulerRegistry) {
+      return schedules;
+    }
+
+    for (const [name, job] of this.schedulerRegistry.getCronJobs()) {
+      let nextRunAt: string | null = null;
+      let memoryLastRunAt: string | null = null;
+      const durable = persisted.get(name);
+
+      try {
+        nextRunAt = job.nextDate()?.toISO() ?? null;
+      } catch {
+        // A stopped job throws rather than returning nothing. Not an error —
+        // the dashboard just shows no next run for it.
+      }
+
+      try {
+        memoryLastRunAt = job.lastDate()?.toISOString() ?? null;
+      } catch {
+        // Never fired since boot.
+      }
+
+      const times = [
+        durable?.getTime(),
+        memoryLastRunAt ? Date.parse(memoryLastRunAt) : Number.NaN,
+      ].filter((value): value is number => Number.isFinite(value));
+
+      schedules.push({
+        name,
+        cron: String(job.cronTime?.source ?? ''),
+        timezone: job.cronTime?.timeZone ?? null,
+        running: Boolean(job.isActive),
+        nextRunAt,
+        lastRunAt: times.length > 0 ? new Date(Math.max(...times)).toISOString() : null,
+      });
+    }
+
+    return schedules.sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /**
@@ -298,52 +404,6 @@ export class JobMonitorService {
       deadLettered,
       scheduled: await this.scheduleRepository.count(),
     };
-  }
-
-  /**
-   * The recurring jobs registered with Nest's scheduler in THIS process.
-   *
-   * Synchronous and in-memory — the registry is the same map the scheduler
-   * fires from, so this costs nothing and cannot be stale. `nextDate()` /
-   * `lastDate()` come from the underlying `cron` job; both are defensive here
-   * because a stopped job has no next date, and a job that has not fired since
-   * boot has no last date.
-   */
-  private getCronSchedules(): CronScheduleDto[] {
-    const schedules: CronScheduleDto[] = [];
-
-    if (!this.schedulerRegistry) {
-      return schedules;
-    }
-
-    for (const [name, job] of this.schedulerRegistry.getCronJobs()) {
-      let nextRunAt: string | null = null;
-      let lastRunAt: string | null = null;
-
-      try {
-        nextRunAt = job.nextDate()?.toISO() ?? null;
-      } catch {
-        // A stopped job throws rather than returning nothing. Not an error —
-        // the dashboard just shows no next run for it.
-      }
-
-      try {
-        lastRunAt = job.lastDate()?.toISOString() ?? null;
-      } catch {
-        // Never fired since boot.
-      }
-
-      schedules.push({
-        name,
-        cron: String(job.cronTime?.source ?? ''),
-        timezone: job.cronTime?.timeZone ?? null,
-        running: Boolean(job.isActive),
-        nextRunAt,
-        lastRunAt,
-      });
-    }
-
-    return schedules.sort((a, b) => a.name.localeCompare(b.name));
   }
 
   private jobHandlerGroupExpression(entityAlias: 'job' | 'archive'): string {

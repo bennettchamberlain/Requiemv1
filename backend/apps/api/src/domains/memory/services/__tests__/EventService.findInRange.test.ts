@@ -165,7 +165,9 @@ describe('EventService.findInRange — the calendar read path', () => {
     expect(clauseWith('event.event_type IN (:...scheduleEventTypes)')).toBeDefined();
 
     const params = (qb.calls.andWhere ?? []).map(([, bind]) => bind);
-    expect(params).toContainEqual({ scheduleEventTypes: ['calendar_event', 'meeting', 'appointment'] });
+    expect(params).toContainEqual({
+      scheduleEventTypes: ['calendar_event', 'meeting', 'appointment', 'planned_block'],
+    });
   });
 
   it('keeps events with no event_type — user-created and accepted schedule candidates', async () => {

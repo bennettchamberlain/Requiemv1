@@ -192,7 +192,7 @@ export class EventResolver {
    */
   @Query(() => [EventType], {
     description:
-      'Events overlapping [from, to) — calendar read path. Excludes cancelled/no-show; keeps tentative. Limited to calendar event types (see SCHEDULE_EVENT_TYPES) plus events with no event_type, which is how user-created and accepted-suggestion events arrive.',
+      'Events overlapping [from, to) — calendar read path. Excludes cancelled/no-show; keeps tentative. Allowlisted types: calendar_event, meeting, appointment, planned_block, plus events with no event_type (user-created and accepted suggestions).',
   })
   async eventsInRange(
     @Context() context: RequestContext,
