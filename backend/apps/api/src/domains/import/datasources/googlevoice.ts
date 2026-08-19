@@ -2,6 +2,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { stripCallLogHeading } from '@ci/domains/graph';
+
 import type { FileImporter, Recognition, DirEntry } from './registry';
 import { registerDataSource } from './registry';
 import type { ImportParams, EntityAttribute } from './timeline';
@@ -443,19 +445,6 @@ function decodeHtml(h: string): string {
     .replace(/&quot;/g, '"');
 }
 
-/**
- * A call-log heading, which is NOT a person's name.
- *
- * Call records wrap the contact in a heading — "Missed call from", "Received
- * call from", "Placed call to" — and in some exports the phrase and the name
- * share one `fn` span, separated by a newline. Taking that span verbatim made
- * the CONTACT NAME the whole heading: a real import produced 2,025 Person
- * entities called "Missed call from" (900 of them with no name after the
- * phrase at all), which is 30% of everyone in the address book.
- */
-const CALL_LOG_HEADING =
-  /^\s*(?:missed|placed|received|recorded|voicemail)\b[^\n]*?\b(?:call\s+)?(?:from|to|with)\b\s*/i;
-
 function extractSender(block: string): GVEntity {
   // Real Google Voice exports wrap the OUTBOUND sender ("Me") in
   // <abbr class="fn" title="">Me</abbr> and the INBOUND contact in
@@ -475,7 +464,11 @@ function extractSender(block: string): GVEntity {
   // Strip the heading and collapse the whitespace it leaves behind. What
   // remains is either the real name or nothing — and nothing is the honest
   // answer, since a caller the export does not name has no name to record.
-  const raw = nameMatch ? decodeHtml(nameMatch[1]).replace(CALL_LOG_HEADING, '').trim() : undefined;
+  // `stripCallLogHeading` is the graph domain's shared rule (participantSanity),
+  // not a private copy: the same pattern that strips the heading HERE is the one
+  // that refuses it downstream if a heading ever reaches a Person minter, and
+  // two copies would drift the moment either side gained a verb.
+  const raw = nameMatch ? stripCallLogHeading(decodeHtml(nameMatch[1])) : undefined;
 
   return { name: raw ? raw : undefined, phone: telMatch?.[1] };
 }

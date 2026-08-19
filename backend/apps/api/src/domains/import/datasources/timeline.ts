@@ -14,9 +14,17 @@ import { lookup } from 'mime-types';
  * both ids into the communication's `attachments` column. See
  * ci-server/graphql.ts withCommunicationMedia.
  */
-export interface MediaAttachment {
-  /** Local path to the bytes to upload. */
-  path: string;
+export interface AttachmentDescriptor {
+  /**
+   * Local path to the bytes to upload — ABSENT when the export names an
+   * attachment whose bytes it does not ship (an iMessage attachment purged from
+   * the Mac, a chat.db row whose file was never backed up). The descriptor is
+   * still recorded: `guid`/`filename`/`mimetype` say WHAT was attached, which is
+   * the difference between a message that reads as empty and one that reads as
+   * "a photo was here". The upload lane skips path-less entries — see
+   * push/canonical.ts communicationMediaAttachments.
+   */
+  path?: string;
   /** Original filename, for the content row's title. */
   filename?: string;
   /** Content row type bucket ('file' for non-media attachments, e.g. a PDF). */
@@ -24,7 +32,15 @@ export interface MediaAttachment {
   mimetype?: string;
   /** The media's URL on the source service, when the export records one. */
   url?: string;
+  /**
+   * The source's own stable id for this attachment (iMessage `attachment.guid`).
+   * The only durable handle on an attachment whose bytes are missing.
+   */
+  guid?: string;
 }
+
+/** An {@link AttachmentDescriptor} whose bytes resolved to a local file. */
+export type MediaAttachment = AttachmentDescriptor & { path: string };
 
 /**
  * A structured metadata entry: a flat record of primitives. Used by accumulating
@@ -44,7 +60,7 @@ export type MetadataValue =
   | number[]
   | string[]
   | MetadataRecord[]
-  | MediaAttachment[];
+  | AttachmentDescriptor[];
 export type Metadata = Record<string, MetadataValue>;
 
 export interface Location {

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
 import { JobsPage } from './JobsPage';
+import type { DeadLetterGroup } from './useDeadLetters';
 import type { JobHistoryResponse } from './useJobHistory';
 import type { JobsDashboardResponse } from './useJobsDashboard';
 import type { JobListItem, JobListResponse } from './useJobsList';
@@ -39,6 +40,18 @@ const historyState = {
   loading: false,
   error: null as string | null,
   refresh: vi.fn(),
+};
+
+// `useDeadLetters` reads the auth context, which `renderWithProviders`
+// deliberately does not supply (see its docblock). The card has its own test
+// file; what the PAGE owes is mounting it and refreshing it with everything else.
+const deadLetterState = {
+  groups: [] as DeadLetterGroup[],
+  total: 0,
+  loading: false,
+  error: null as string | null,
+  refresh: vi.fn(),
+  replay: vi.fn(async () => null),
 };
 
 /** Filters the page handed the list hook on its most recent render. */
@@ -87,6 +100,12 @@ vi.mock('./useJobTypes', async (importOriginal) => {
       loading: false,
     }),
   };
+});
+
+vi.mock('./useDeadLetters', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./useDeadLetters')>();
+
+  return { ...actual, useDeadLetters: () => deadLetterState };
 });
 
 vi.mock('./useJobHistory', async (importOriginal) => {
@@ -182,6 +201,7 @@ function render(
     history?: JobHistoryResponse;
     staleSince?: Date | null;
     error?: string | null;
+    deadLetters?: DeadLetterGroup[];
   } = {},
 ) {
   Object.assign(dashboardState, {
@@ -194,6 +214,12 @@ function render(
 
   Object.assign(listState, { data: options.list ?? list(), loading: false, error: null });
   Object.assign(historyState, { data: options.history ?? null, loading: false, error: null });
+  Object.assign(deadLetterState, {
+    groups: options.deadLetters ?? [],
+    total: (options.deadLetters ?? []).reduce((sum, group) => sum + group.count, 0),
+    loading: false,
+    error: null,
+  });
 
   return renderWithProviders(<JobsPage />);
 }
@@ -415,5 +441,42 @@ describe('JobsPage staleness', () => {
     renderWithProviders(<JobsPage />);
 
     expect(screen.getByRole('alert')).toHaveTextContent('Network down');
+  });
+});
+
+describe('JobsPage dead letters', () => {
+  /**
+   * `ci.pipeline_dead_letters` is a DIFFERENT table from the `pgboss.job` rows
+   * the rest of this page reads: pg-boss archives and eventually deletes its
+   * rows, while a dead letter keeps the payload forever so the work can be
+   * re-run. Before this card nothing in the product read it at all.
+   */
+  const group = (overrides: Partial<DeadLetterGroup> = {}): DeadLetterGroup => ({
+    key: 'infer.question.answer Invalid model specified: qwen/qwen3-vl-30b',
+    eventName: 'infer.question.answer',
+    error: 'Invalid model specified: qwen/qwen3-vl-30b',
+    detail: 'Invalid model specified: qwen/qwen3-vl-30b\n    at OllamaService.validateModel',
+    count: 36,
+    ids: Array.from({ length: 36 }, (_, i) => `letter-${i}`),
+    firstFailedAt: new Date('2026-08-17T00:00:00.000Z').getTime(),
+    lastFailedAt: new Date('2026-08-18T14:49:12.525Z').getTime(),
+    ...overrides,
+  });
+
+  it('mounts the dead-letter card with its causes', () => {
+    render({ deadLetters: [group()] });
+
+    expect(screen.getByText('Dead letters')).toBeInTheDocument();
+    expect(screen.getByText('Invalid model specified: qwen/qwen3-vl-30b')).toBeInTheDocument();
+    expect(screen.getByText(/36 un-replayed across 1 cause/)).toBeInTheDocument();
+  });
+
+  it('refreshes dead letters along with everything else', () => {
+    render({ deadLetters: [group()] });
+
+    deadLetterState.refresh.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: /Refresh/ }));
+
+    expect(deadLetterState.refresh).toHaveBeenCalled();
   });
 });

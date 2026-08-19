@@ -357,10 +357,28 @@ Full payload for a replay:
 SELECT jsonb_pretty(payload), error FROM ci.pipeline_dead_letters WHERE id = '<letter-id>';
 ```
 
-> **There is no replay endpoint.** `replayed_at` exists so a replay-all can be
-> idempotent, but the code that re-emits a letter is Phase 2. Today a replay is:
-> read the payload, re-enqueue it by hand ([§9c](#9c-hand-enqueue-a-job)), then
-> `UPDATE ci.pipeline_dead_letters SET replayed_at = now() WHERE id = …`.
+> **Replay is an endpoint now**, single and bulk, and the Jobs page (`/jobs`)
+> exposes it as a card that groups the un-replayed letters by cause:
+>
+> ```bash
+> # One letter.
+> curl -XPOST -H "Authorization: Bearer $TOKEN" \
+>   ci-server.localhost/api/pipeline/dead-letters/<letter-id>/replay
+>
+> # A whole failure class. A selector is REQUIRED — there is no "replay
+> # everything", because most of a backlog is one config error and re-emitting
+> # it just re-fails and writes a fresh letter per attempt.
+> curl -XPOST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+>   -d '{"eventName":"file.uploaded","failedAfter":"2026-08-18T00:00:00Z"}' \
+>   ci-server.localhost/api/pipeline/dead-letters/replay
+> ```
+>
+> Both claim `replayed_at` BEFORE emitting, with `replayed_at IS NULL` in the
+> predicate, so a double submit re-emits nothing. The bulk form returns 200 with
+> `replayed` / `failed` / `skipped` — partial failure is the normal outcome, and
+> a letter that could not be re-emitted has its claim released so it stays
+> replayable. **Read the error before replaying**: a stack in
+> `OllamaService.validateModel` is a config error and will fail identically.
 
 ### 4c. Force a dead-letter harvest
 
@@ -806,12 +824,12 @@ Verified against the tree; do not go looking for these.
 
 | Missing | Reality today |
 |---------|---------------|
-| `GET /api/pipeline/state`, `/dead-letters` | **No pipeline controller exists.** Source comments referring to them describe Phase 2. Use §1–§4 |
+| ~~`GET /api/pipeline/state`, `/dead-letters`~~ | **These exist.** `PipelineController` serves `state`, `runs`, `runs/:id`, pause/resume/cancel, `dead-letters` and both replay routes |
 | Operator UI / pipeline page | The Jobs page (`/jobs`). `"jobs.page"` is `true` in `config/default.json` |
 | Pause / resume / cancel | `ci.pipeline_runs.desired_state` is the intended channel and nothing reads or writes it. Today pausing is [§9](#9-emergency-stop) and reviving is [§6c](#6c-revive-quarantined-rows) — DB operations |
 | Runs and shards | `ci.pipeline_runs` / `ci.pipeline_shards` are migrated and permanently empty; no code writes them. Sweeps are ad-hoc (`runId: null, shardId: null`) |
 | Record rejections | `ci.record_rejections` is migrated and empty; no writer yet |
-| Dead-letter replay | `replayed_at` exists; the re-emit path does not. Replay by hand ([§9c](#9c-hand-enqueue-a-job)) |
+| ~~Dead-letter replay~~ | **Exists.** `POST /api/pipeline/dead-letters/:id/replay` and the bulk `POST /api/pipeline/dead-letters/replay`, plus the Jobs page card. See [§4b](#4b-every-failure-for-one-record) |
 | Bound stage implementations | **Check before trusting a sweep.** `stageProviders` in `backend/apps/api/src/domains/pipeline/index.ts` is an empty array at the time of writing, so `enrich.media_dimensions` is declared but **unbound** — every slice fails with `no provider is bound to token "PipelineStage:enrich.media_dimensions"`. `EmbedStage` exists but its id `index.embed` is absent from `STAGE_IDS` / `STAGE_VERSIONS` / `STAGE_REGISTRY`, so `index.embed` is not sweepable at all. Confirm with the grep below before diagnosing anything else |
 
 ```bash

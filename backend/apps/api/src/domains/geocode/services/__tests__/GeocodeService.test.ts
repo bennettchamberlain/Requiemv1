@@ -313,6 +313,23 @@ describe('GeocodeService.reverseGeocode', () => {
     expect(repo.findOne).toHaveBeenCalledWith({ where: { queryHash: expectedHash } });
   });
 
+  it('exposes that key as a STATIC, and looks up exactly what the static computes', async () => {
+    // The contract `promote.place_position` depends on: it reads these cache
+    // rows by primary key for their address components, and computes the key
+    // with `GeocodeService.hashReverseQuery` rather than re-deriving it. A
+    // second copy of the expression would be a silent cache miss on the day one
+    // of them changes — which reads as "this place has no hierarchy", not as a
+    // bug. So the writer and the reader must be provably the same function.
+    const repo = makeCacheRepo();
+
+    await makeService(repo, makeProvider(ROOFTOP_OK)).reverseGeocode(37.422, -122.084);
+
+    expect(GeocodeService.reverseCacheKey(37.422, -122.084)).toBe('reverse:37.4220,-122.0840');
+    expect(repo.findOne).toHaveBeenCalledWith({
+      where: { queryHash: GeocodeService.hashReverseQuery(37.422, -122.084) },
+    });
+  });
+
   it('gives all four coordinate quadrants distinct cache keys (no sign collapse)', async () => {
     const hashFor = async (lat: number, lng: number): Promise<string> => {
       const repo = makeCacheRepo();

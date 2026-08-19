@@ -156,3 +156,62 @@ describe('toGraphEntity', () => {
     expect(toGraphEntity(staged({ name: null, identityKey: null }))).toBeNull();
   });
 });
+
+describe('a Person is never named with a parser leak', () => {
+  // 2,353 live Person rows reached ci.entities through THIS function named
+  // "Missed call from" / "Placed call to\nJudy Collins" — the display name a
+  // user actually reads, minted from staged.name without a single check.
+  it('falls back to the handle when the staged name is a call-log heading', () => {
+    const dto = toGraphEntity(
+      staged({
+        type: 'contact',
+        name: 'Missed call from',
+        identityKey: '4155550100',
+        dataSource: 'google_voice',
+      }),
+    );
+
+    expect(dto?.name).toBe('4155550100');
+    expect(dto?.properties?.names).toBeUndefined();
+    expect(dto?.properties?.phones).toEqual(['4155550100']);
+  });
+
+  it('does the same for an export filename and for a name carrying a newline', () => {
+    const filename = toGraphEntity(
+      staged({ name: 'Group Conversation - 2024-09-25T01_45_41Z.html', identityKey: '4155550100' }),
+    );
+    expect(filename?.name).toBe('4155550100');
+    expect(filename?.properties?.names).toBeUndefined();
+
+    const newline = toGraphEntity(
+      staged({ name: 'Placed call to \nJudy Collins', identityKey: '4155550100' }),
+    );
+    expect(newline?.name).toBe('4155550100');
+    expect(newline?.properties?.names).toBeUndefined();
+  });
+
+  it('leaves a real name exactly as it was', () => {
+    const dto = toGraphEntity(staged({ name: 'Judy Collins', identityKey: '4155550100' }));
+
+    expect(dto?.name).toBe('Judy Collins');
+    expect(dto?.properties?.names).toEqual(['Judy Collins']);
+  });
+
+  it('does not apply the rule to non-Person types — a Concept may be named after a file', () => {
+    const dto = toGraphEntity(staged({ type: 'document', name: 'invoice.pdf', identityKey: null }));
+
+    expect(dto?.entityType).toBe('Concept');
+    expect(dto?.name).toBe('invoice.pdf');
+    expect(dto?.properties?.names).toEqual(['invoice.pdf']);
+  });
+
+  it('keeps the staged record when there is no handle to fall back to', () => {
+    // Nothing better exists, and dropping the entity would silently delete an
+    // edge endpoint. The identifier index is still protected — properties.names
+    // is empty, so nothing claims the string.
+    const dto = toGraphEntity(staged({ name: 'Missed call from', identityKey: null }));
+
+    expect(dto?.name).toBe('Missed call from');
+    expect(dto?.properties?.names).toBeUndefined();
+  });
+});

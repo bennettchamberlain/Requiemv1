@@ -609,12 +609,14 @@ export class PositionReverseStage implements Stage {
    * letter replayed weeks later, and re-scoping is the difference between "this
    * id is not yours" and geocoding — and billing — someone else's movements.
    *
-   * PERFORMANCE: `ci.position.id` carries no index (see
-   * `20260807071631_departition_position`), so this predicate scans every chunk.
-   * The staleness sweep has the same problem, harder — it also `ORDER BY s.id`.
-   * `CREATE INDEX position_id_idx ON ci.position (id)` is a prerequisite for
-   * sweeping this stage over a real history; it is a migration and belongs with
-   * the change that owns one.
+   * PERFORMANCE: `ci.position.id` carried no index until
+   * `20260819000439_add_position_id_index` (it was omitted by
+   * `20260807071631_departition_position`, which recreated every other secondary
+   * index), so before that migration this predicate — and the staleness sweep,
+   * which has the same problem harder because it also `ORDER BY s.id` — scanned
+   * every chunk on every hop. That is why a `perRunCap` never drained: the cap
+   * bounds the rows returned, not the rows read. The migration landed with
+   * `promote.place_position`, the second stage sourced from this table.
    */
   private loadRows(userId: string, ids: string[]): Promise<CandidateRow[]> {
     return this.dataSource.query<CandidateRow[]>(

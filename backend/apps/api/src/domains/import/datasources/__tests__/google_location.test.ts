@@ -72,13 +72,22 @@ describe('Google Location History (Legacy) MVP', () => {
     expect(items.length).toBe(0);
   });
 
-  it('titles each fix from its coordinates, not the bare filename', async () => {
+  it('does not invent a name for a fix that has none', async () => {
+    // This parser used to stamp `Title: 'Location 37.42212, -122.08399'` so the
+    // item would not be titled by the synthetic `location.txt` filename. That
+    // title is never rendered: a raw-GPS `location.fix` routes to `position`
+    // ONLY (destinationsFor), so the string's single effect was landing in
+    // `ci.position.name` — a coordinate pair where a place name belongs, which
+    // then reads as "already named" in the Places view. A fix with NO name is
+    // what makes the row a reverse-geocode candidate.
     const items = await importRecords([
       { latitudeE7: 374221234, longitudeE7: -1220839876, timestamp: '2024-11-02T00:26:40Z' },
     ]);
     expect(items.length).toBe(1);
-    expect(items[0].item.metadata.Title).toBe('Location 37.42212, -122.08399');
-    expect(items[0].item.metadata.Title).not.toBe('location.txt');
+    expect(items[0].item.metadata.Title).toBeUndefined();
+    expect(items[0].item.metadata.Name).toBeUndefined();
+    // The geometry is still there — only the fabricated label is gone.
+    expect(items[0].item.location).toEqual({ latitude: 37.4221234, longitude: -122.0839876 });
   });
 
   it('keeps duplicate timestamp+coord stationary samples distinct (no dedup collapse)', async () => {

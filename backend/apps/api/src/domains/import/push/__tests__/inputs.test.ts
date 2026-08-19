@@ -5,6 +5,9 @@ import { toCanonical, type CanonicalRecord } from '../canonical';
 import {
   communicationTypeFor,
   discordAttachmentContentInputs,
+  isCoordinateText,
+  isMediaFilename,
+  isNotAPlaceName,
   toBrowserActivityInput,
   toCommunicationInput,
   toContentInput,
@@ -350,6 +353,68 @@ describe('toCommunicationInput', () => {
       expect(toCommunicationInput(captioned).content).toBe('look at this');
     });
   });
+
+  // macOS puts U+FFFC OBJECT REPLACEMENT CHARACTER in `message.text` where an
+  // inline attachment sits, so an uncaptioned photo arrives with a body of
+  // exactly that one glyph. Storing it verbatim is what left 21,781 iMessage
+  // rows in a live appliance database whose entire content was a control
+  // character; falling through to the title fallbacks instead would be worse,
+  // because titleFor synthesizes "Message — <sender>" — words the user never
+  // wrote, presented as their message.
+  describe('iMessage attachment placeholders', () => {
+    it('blanks a body that is only the U+FFFC placeholder, and sets no preview', () => {
+      const attachmentOnly = recordFor({
+        classification: 'message',
+        dataSource: 'imessage',
+        metadata: { Text: '\uFFFC', Sender: '+15551234567' },
+      });
+
+      const input = toCommunicationInput(attachmentOnly);
+
+      expect(input.content).toBe('');
+      expect(input.preview).toBeUndefined();
+    });
+
+    it('does not fall back to the synthesized "Message — sender" label', () => {
+      const attachmentOnly = recordFor({
+        classification: 'message',
+        dataSource: 'imessage',
+        metadata: { Text: '\uFFFC', Sender: '+15551234567' },
+      });
+
+      expect(toCommunicationInput(attachmentOnly).content).not.toContain('Message —');
+    });
+
+    it('blanks a body that is only U+FFFD mojibake', () => {
+      const mojibake = recordFor({
+        classification: 'message',
+        dataSource: 'imessage',
+        metadata: { Text: '\uFFFD\uFFFD', Sender: '+15551234567' },
+      });
+
+      expect(toCommunicationInput(mojibake).content).toBe('');
+    });
+
+    it('keeps the CAPTION of a captioned attachment, minus the placeholder', () => {
+      const captioned = recordFor({
+        classification: 'message',
+        dataSource: 'imessage',
+        metadata: { Text: '\uFFFC look at this', Sender: '+15551234567' },
+      });
+
+      expect(toCommunicationInput(captioned).content).toBe('look at this');
+    });
+
+    it('strips a placeholder that sits INSIDE an otherwise real message', () => {
+      const trailing = recordFor({
+        classification: 'message',
+        dataSource: 'imessage',
+        metadata: { Text: 'Also, what is this thing called?\uFFFC\uFFFC' },
+      });
+
+      expect(toCommunicationInput(trailing).content).toBe('Also, what is this thing called?');
+    });
+  });
 });
 
 describe('discordAttachmentContentInputs', () => {
@@ -464,6 +529,56 @@ describe('toPositionInput', () => {
     expect(typeof fix?.time).toBe('string');
   });
 
+  it.each([
+    ['google_location', 'location.txt'],
+    ['kmlgx', 'Takeout Timeline.kml'],
+    ['nmea', 'drive-2024-03-02.nmea'],
+    ['gpx', 'track.gpx'],
+  ])('refuses %s\u2019s own staged filename as a place name', (dataSource, filename) => {
+    // The trap that made the source-side half of this fix a regression: these
+    // importers used to manufacture "Location <lat>, <lon>" as a title. Removing
+    // that does NOT leave the name empty — `titleFor` falls through to
+    // `basename(row.filename)` (canonical.ts), so the file's own name slides into
+    // the slot the pseudo-name vacated, and `ci.position.name` reads
+    // "location.txt" instead of "Location 33.51469, -117.72169". Strictly worse:
+    // it is not even recognisable as a coordinate any more.
+    //
+    // An extension allowlist cannot catch this class — .txt/.kml/.nmea/.gpx are
+    // not media extensions, and widening the list to "anything with a dot" eats
+    // "St. Louis". Comparing against the staged filename is what makes it
+    // structural.
+    const fix = toPositionInput(
+      recordFor({
+        dataSource,
+        classification: 'location',
+        latitude: 33.51469,
+        longitude: -117.72169,
+        filename,
+        metadata: {},
+      }),
+    );
+
+    expect(fix).not.toBeNull();
+    expect(fix?.name).toBeUndefined();
+  });
+
+  it('still keeps a real place name on a record that also has a filename', () => {
+    // The other side of the same rule: rejecting the filename must not reject a
+    // genuine waypoint name that happens to ride in the same record.
+    const fix = toPositionInput(
+      recordFor({
+        dataSource: 'kmlgx',
+        classification: 'location',
+        latitude: 33.51469,
+        longitude: -117.72169,
+        filename: 'Takeout Timeline.kml',
+        metadata: { Name: 'Las Vegas Convention Center' },
+      }),
+    );
+
+    expect(fix?.name).toBe('Las Vegas Convention Center');
+  });
+
   it('refuses a coordinate pair as a place name', () => {
     // google_fit titles a trackpoint with its own coordinates when it has no
     // waypoint name. Stored as `name`, that makes the row look already-named to
@@ -486,6 +601,63 @@ describe('toPositionInput', () => {
     expect(fix?.location).toEqual({ x: -117.72169, y: 33.51469 });
   });
 
+  it('refuses a LABELLED coordinate pair as a place name', () => {
+    // The original predicate was anchored `^\s*[-+]?\d`, so a coordinate pair
+    // carrying a label sailed straight through. google_location, kmlgx and nmea
+    // each emitted exactly that shape. They no longer mint it (fixed at the
+    // source), but the guard is the backstop for producers we do not own.
+    for (const label of [
+      'Location 33.51469, -117.72169',
+      'Location 33.51469,-117.72169',
+      'position: 33.51469, -117.72169',
+      'GPS 33.51469, -117.72169',
+      'Waypoint 33.51469, -117.72169',
+      'Coordinates 33.51469, -117.72169',
+    ]) {
+      const fix = toPositionInput(
+        recordFor({
+          classification: 'location',
+          latitude: 33.51469,
+          longitude: -117.72169,
+          metadata: { Name: label },
+        }),
+      );
+
+      expect(fix?.name).toBeUndefined();
+      expect(fix?.location).toEqual({ x: -117.72169, y: 33.51469 });
+    }
+  });
+
+  it('refuses a media filename as a place name', () => {
+    // Every GPS-bearing photo donates a position row, and a capture item's
+    // display title is its filename — right for a title, wrong for a place.
+    // 2,085 rows on a real appliance read "IMG_0139.JPG" where the place goes.
+    const photo = toPositionInput(
+      recordFor({
+        classification: 'photo',
+        latitude: 33.51469,
+        longitude: -117.72169,
+        filename: 'IMG_0139.JPG',
+      }),
+    );
+
+    expect(photo?.name).toBeUndefined();
+    expect(photo?.location).toEqual({ x: -117.72169, y: 33.51469 });
+  });
+
+  it('refuses a URI as a place name', () => {
+    const link = toPositionInput(
+      recordFor({
+        classification: 'location',
+        latitude: 1,
+        longitude: 2,
+        metadata: { Name: 'https://us02web.zoom.us/j/8842952968' },
+      }),
+    );
+
+    expect(link?.name).toBeUndefined();
+  });
+
   it('keeps a real place name, including one that contains numbers', () => {
     const named = toPositionInput(
       recordFor({
@@ -503,6 +675,129 @@ describe('toPositionInput', () => {
     );
 
     expect(waypoint?.name).toBe('Summit');
+  });
+});
+
+/**
+ * The three structural rejects for a place NAME, tested together because they
+ * are one rule (isNotAPlaceName) applied in one place. Each is deliberately a
+ * grammar rather than a per-importer denylist, so what matters most is the
+ * NEGATIVE side: a real place name must survive all three.
+ */
+describe('isNotAPlaceName and its three arms', () => {
+  describe('isCoordinateText', () => {
+    it('matches a bare coordinate pair', () => {
+      expect(isCoordinateText('33.51469, -117.72169')).toBe(true);
+      expect(isCoordinateText('33.51469,-117.72169')).toBe(true);
+      expect(isCoordinateText('  +12.34 , 56.78  ')).toBe(true);
+      expect(isCoordinateText('0,0')).toBe(true);
+    });
+
+    it('matches the pair behind a generic geo label', () => {
+      // The unfixed variant: anchored at `^\s*[-+]?\d`, every one of these was
+      // read as a real name and written to ci.position.name.
+      expect(isCoordinateText('Location 33.51469, -117.72169')).toBe(true);
+      expect(isCoordinateText('Location 33.51469,-117.72169')).toBe(true);
+      expect(isCoordinateText('location: 12.34, 56.78')).toBe(true);
+      expect(isCoordinateText('Position 12.34, 56.78')).toBe(true);
+      expect(isCoordinateText('Coordinates 12.34, 56.78')).toBe(true);
+      expect(isCoordinateText('Coords 12.34, 56.78')).toBe(true);
+      expect(isCoordinateText('Point 12.34, 56.78')).toBe(true);
+      expect(isCoordinateText('Waypoint 12.34, 56.78')).toBe(true);
+      expect(isCoordinateText('Fix 12.34, 56.78')).toBe(true);
+      expect(isCoordinateText('GPS 12.34, 56.78')).toBe(true);
+    });
+
+    it('reproduces exactly what the three offending datasources used to emit', () => {
+      const lat = 37.4221234;
+      const lon = -122.0839876;
+
+      // google_location.ts and nmea.ts (", " separator), kmlgx.ts ("," only).
+      expect(isCoordinateText(`Location ${lat.toFixed(5)}, ${lon.toFixed(5)}`)).toBe(true);
+      expect(isCoordinateText(`Location ${lat.toFixed(5)},${lon.toFixed(5)}`)).toBe(true);
+    });
+
+    it('keeps a real place name that merely contains numbers', () => {
+      // The label vocabulary is generic geo nouns ONLY — no venue words — so a
+      // place whose name happens to be followed by numbers survives.
+      expect(isCoordinateText('Cafe 40.7, 74.0')).toBe(false);
+      expect(isCoordinateText('Pier 39, 94133')).toBe(false);
+      expect(isCoordinateText('Studio 54, New York')).toBe(false);
+      expect(isCoordinateText('12 Avenue & West 23 St')).toBe(false);
+      expect(isCoordinateText('1011-7')).toBe(false);
+      expect(isCoordinateText('Location Barn')).toBe(false);
+      expect(isCoordinateText('')).toBe(false);
+    });
+
+    it('does not match a coordinate pair with trailing text', () => {
+      expect(isCoordinateText('33.51469, -117.72169 (approx)')).toBe(false);
+    });
+  });
+
+  describe('isMediaFilename', () => {
+    it('matches the media extensions a camera roll produces', () => {
+      expect(isMediaFilename('IMG_0139.JPG')).toBe(true);
+      expect(isMediaFilename('20140710_170940.jpg')).toBe(true);
+      expect(isMediaFilename('IMAG0459.jpeg')).toBe(true);
+      expect(isMediaFilename('A20CEAAC-8F30-403E-A17B-E60DBC744DBB_3.mov')).toBe(true);
+      expect(isMediaFilename('clip.MP4')).toBe(true);
+      expect(isMediaFilename('shot.heic')).toBe(true);
+      expect(isMediaFilename('shot.heif')).toBe(true);
+      expect(isMediaFilename('raw.dng')).toBe(true);
+      expect(isMediaFilename('scan.tif')).toBe(true);
+      expect(isMediaFilename('scan.tiff')).toBe(true);
+      expect(isMediaFilename('  IMG_0139.PNG  ')).toBe(true);
+    });
+
+    it('matches a bare UUID stem, with or without a burst suffix', () => {
+      expect(isMediaFilename('A20CEAAC-8F30-403E-A17B-E60DBC744DBB')).toBe(true);
+      expect(isMediaFilename('a20ceaac-8f30-403e-a17b-e60dbc744dbb_3')).toBe(true);
+    });
+
+    it('keeps a real place name, including one with a dot in it', () => {
+      expect(isMediaFilename('A.G. Bartlett Building')).toBe(false);
+      expect(isMediaFilename('St. Louis')).toBe(false);
+      expect(isMediaFilename('Las Vegas Convention Center')).toBe(false);
+      expect(isMediaFilename('Pico / Figueroa')).toBe(false);
+      expect(isMediaFilename('75 Amherst St, Cambridge, MA 02139, USA')).toBe(false);
+      expect(isMediaFilename('')).toBe(false);
+    });
+
+    it('does not match a non-media file extension', () => {
+      // Out of scope on purpose: this arm is about camera-roll filenames, and
+      // widening it to "anything with a dot and 2-4 chars" would eat "St. Louis".
+      // These ARE still rejected as position names — by the staged-filename rule
+      // in toPositionInput, not by an extension list. See the round-trip tests
+      // in the toPositionInput describe block.
+      expect(isMediaFilename('track.gpx')).toBe(false);
+      expect(isMediaFilename('location.txt')).toBe(false);
+    });
+  });
+
+  describe('isNotAPlaceName', () => {
+    it('is the union of the three arms', () => {
+      expect(isNotAPlaceName('Location 33.51469, -117.72169')).toBe(true);
+      expect(isNotAPlaceName('33.51469, -117.72169')).toBe(true);
+      expect(isNotAPlaceName('IMG_0139.JPG')).toBe(true);
+      expect(isNotAPlaceName('https://us02web.zoom.us/j/8842952968')).toBe(true);
+      expect(isNotAPlaceName('altspace://account.altvr.com/api/events/1629227784846967373')).toBe(true);
+    });
+
+    it('lets every real place name observed on a live appliance through', () => {
+      for (const name of [
+        'Las Vegas Convention Center',
+        'Pico / Figueroa',
+        'A.G. Bartlett Building',
+        'On Jane Stanford Way @ Main Quad',
+        'Irvine Spectrum Center - Nordstrom Parking (South Garage)',
+        '75 Amherst St, Cambridge, MA 02139, USA',
+        'Cafe 40.7, 74.0',
+        '1011-7',
+        'Gym',
+      ]) {
+        expect(isNotAPlaceName(name)).toBe(false);
+      }
+    });
   });
 });
 

@@ -19,6 +19,30 @@ const FEED_QUESTION_QUEUE_LIMIT = 3;
 /** Unanswered front-of-queue questions rotate after this long on the feed. */
 export const FEED_QUESTION_STALE_MS = 30 * 60 * 1000;
 
+/**
+ * Ask the functional questions first.
+ *
+ * `ci.questions.answer_tier` splits the catalogue into questions that settle a
+ * fact ("What foods are you allergic to?"), questions that record a taste
+ * ("Window or aisle?"), and questions that ask for a story ("How did you end up
+ * in the city you live in now?"). A memory system earns the third kind by
+ * getting the first two right, so every selector orders by this rank before it
+ * applies its own tie-break.
+ *
+ * NULL sorts last, not first: an untiered row is a legacy question from the
+ * pre-catalogue era, and those are exactly the abstract ones we do not want to
+ * lead with. (Postgres defaults NULLs FIRST on DESC and LAST on ASC; spelling
+ * the rank out as an integer avoids depending on that.)
+ */
+const TIER_RANK_SQL = `
+  CASE q.answer_tier
+    WHEN 'factual'    THEN 0
+    WHEN 'preference' THEN 1
+    WHEN 'narrative'  THEN 2
+    ELSE 3
+  END
+`;
+
 const GAP_AWARE_CANDIDATE_SQL = `
   WITH category_coverage AS (
     SELECT
@@ -53,7 +77,7 @@ const GAP_AWARE_CANDIDATE_SQL = `
       WHERE fq.user_id = $1
         AND fq.question_id = q.question_id
     )
-  ORDER BY COALESCE(cc.answered_count, 0) ASC, RANDOM()
+  ORDER BY ${TIER_RANK_SQL} ASC, COALESCE(cc.answered_count, 0) ASC, RANDOM()
   LIMIT 1;
 `;
 
@@ -374,7 +398,7 @@ export class QuestionService {
           q.created_at,
           ROW_NUMBER() OVER (
             PARTITION BY COALESCE(q.is_private_to, u.user_id)
-            ORDER BY q.created_at ASC
+            ORDER BY ${TIER_RANK_SQL} ASC, q.created_at ASC
           ) AS rn
         FROM ci.questions q
         CROSS JOIN (SELECT DISTINCT id AS user_id FROM ci.users WHERE id IS NOT NULL) u

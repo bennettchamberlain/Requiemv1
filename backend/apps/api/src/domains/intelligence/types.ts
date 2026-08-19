@@ -21,7 +21,8 @@ export interface CreateAnswerDto {
   question: {
     id: string;
   };
-  answerConfidence?: number;
+  answerConfidence?: number | null;
+  answerRationale?: string | null;
   answerSource?: string;
   answerMethod?: string;
   answeredAt?: Date;
@@ -37,7 +38,8 @@ export interface CreateAnswerDto {
 
 export interface UpdateAnswerDto {
   text?: string;
-  answerConfidence?: number;
+  answerConfidence?: number | null;
+  answerRationale?: string | null;
   answerSource?: string;
   answerMethod?: string;
   answeredAt?: Date;

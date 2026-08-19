@@ -9,7 +9,7 @@ import Database from 'better-sqlite3';
 import { attachmentMediaKind } from './attachment_extract';
 import type { FileImporter, Recognition, DirEntry } from './registry';
 import { registerDataSource } from './registry';
-import type { Entity, Graph, ImportParams, Item } from './timeline';
+import type { AttachmentDescriptor, Entity, Graph, ImportParams, Item } from './timeline';
 import { timeframeContains } from './timeline';
 
 interface iMessageOptions {
@@ -27,6 +27,78 @@ function parseCocoaDate(cocoaTimestamp: number): Date {
   const unixSeconds = COCOA_EPOCH_OFFSET + seconds;
 
   return new Date(unixSeconds * 1000);
+}
+
+/** The store-relative key inside an `Attachments/` tree, e.g. `ab/12/<UUID>/IMG_0042.HEIC`. */
+const ATTACHMENTS_SEGMENT = 'Attachments/';
+
+/**
+ * Every on-disk path an `attachment.filename` from chat.db could plausibly
+ * name, most specific first. The caller takes the first one that exists.
+ *
+ * chat.db does NOT store a bare basename: it stores the path the file had on
+ * the Mac that wrote it, which is tilde-rooted
+ * (`~/Library/Messages/Attachments/ab/12/<UUID>/IMG_0042.HEIC`) on every
+ * modern macOS, and absolute (`/Users/<name>/Library/...`) on older ones. The
+ * previous code joined that whole value onto `<chat.db dir>/Attachments/`,
+ * yielding `<dir>/Attachments/~/Library/Messages/Attachments/ab/12/...` — a
+ * path that exists nowhere. `existsSync` was therefore false for essentially
+ * every attachment in a real export, and the descriptor was silently dropped,
+ * which is how 21,781 messages ended up recording neither their text (a bare
+ * U+FFFC) nor the attachment that replaced it.
+ *
+ * The candidates, in order:
+ *  1. tilde form resolved against the EXPORT ROOT — the export mirrors the home
+ *     directory, so `~/Library/...` lives at `<root>/Library/...`;
+ *  2. an absolute path as-is (only hits when importing on the same Mac);
+ *  3. the store-relative tail joined onto `<chat.db dir>/Attachments/` — the
+ *     layout-independent fallback, and the one that works for a flat export
+ *     where chat.db sits next to its own `Attachments/` tree;
+ *  4. the same tail under `<export root>/Attachments/`;
+ *  5. a genuinely relative value under the export root, then under
+ *     `<chat.db dir>/Attachments/` (the historical behaviour, kept so a bare
+ *     `photo.jpg` still resolves).
+ */
+export function imessageAttachmentCandidates(
+  rawFilename: string,
+  exportRoot: string,
+  chatDbPath: string,
+): string[] {
+  const raw = rawFilename.trim();
+  if (!raw) {
+    return [];
+  }
+
+  const attachmentsDir = path.join(path.dirname(chatDbPath), 'Attachments');
+  const out: string[] = [];
+  const add = (candidate: string): void => {
+    if (!out.includes(candidate)) {
+      out.push(candidate);
+    }
+  };
+
+  const tilde = raw.startsWith('~/');
+  const absolute = path.isAbsolute(raw);
+
+  if (tilde) {
+    add(path.join(exportRoot, raw.slice(2)));
+  } else if (absolute) {
+    add(raw);
+  }
+
+  const at = raw.lastIndexOf(ATTACHMENTS_SEGMENT);
+  const tail = at === -1 ? null : raw.slice(at + ATTACHMENTS_SEGMENT.length);
+  if (tail) {
+    add(path.join(attachmentsDir, tail));
+    add(path.join(exportRoot, 'Attachments', tail));
+  }
+
+  if (!tilde && !absolute) {
+    add(path.join(exportRoot, raw));
+    add(path.join(attachmentsDir, raw));
+  }
+
+  return out;
 }
 
 class iMessageFileImporter implements FileImporter {
@@ -238,6 +310,12 @@ class iMessageFileImporter implements FileImporter {
         attachment_mime_type?: string | null;
       }
       const pending: Record<number, Graph> = {};
+      // Resolution rate for the attachment bytes. Reported once at the end
+      // rather than per row: a real export joins tens of thousands of
+      // attachments, and a silently-zero rate is exactly the failure this
+      // importer had before imessageAttachmentCandidates existed.
+      let attachmentsSeen = 0;
+      let attachmentsResolved = 0;
 
       for (const row of stmt.iterate() as Iterable<Row>) {
         const cocoa = row.message_date;
@@ -335,20 +413,37 @@ class iMessageFileImporter implements FileImporter {
         // a duplicate ci.events row per attachment at the message's timestamp.
         // A message with several attachments arrives as several joined rows,
         // so descriptors append to the existing array.
-        if (row.attachment_guid && row.attachment_filename) {
+        //
+        // The descriptor is recorded whether or not the BYTES resolve. chat.db
+        // knows the guid, the filename and the MIME type of every attachment it
+        // ever carried, including ones whose files were long since purged off
+        // the Mac; throwing all three away because `existsSync` said no left the
+        // row recording neither the message text (macOS replaced it with a bare
+        // U+FFFC placeholder) nor what had replaced it. A path-less descriptor
+        // is skipped by the upload lane (push/canonical.ts
+        // communicationMediaAttachments drops entries with no `path`), so this
+        // costs nothing downstream and keeps the fact of the attachment.
+        if (row.attachment_guid || row.attachment_filename) {
           try {
-            const attachPath = path.join(path.dirname(chatDbPath), 'Attachments', row.attachment_filename);
-            if (fs.existsSync(attachPath)) {
-              const meta = graph.item!.metadata as Record<string, unknown>;
-              const atts = (meta.MediaAttachments as unknown[] | undefined) ?? [];
-              atts.push({
-                path: attachPath,
-                filename: path.basename(row.attachment_filename),
-                type: attachmentMediaKind(row.attachment_mime_type ?? undefined),
-                mimetype: row.attachment_mime_type ?? undefined,
-              });
-              meta.MediaAttachments = atts;
+            const meta = graph.item!.metadata as Record<string, unknown>;
+            const atts = (meta.MediaAttachments as AttachmentDescriptor[] | undefined) ?? [];
+            const rawName = row.attachment_filename ?? '';
+            const resolved = rawName
+              ? imessageAttachmentCandidates(rawName, baseDir, chatDbPath).find((c) => fs.existsSync(c))
+              : undefined;
+            attachmentsSeen += 1;
+            if (resolved) {
+              attachmentsResolved += 1;
             }
+
+            atts.push({
+              ...(resolved ? { path: resolved } : {}),
+              ...(row.attachment_guid ? { guid: row.attachment_guid } : {}),
+              ...(rawName ? { filename: path.basename(rawName) } : {}),
+              type: attachmentMediaKind(row.attachment_mime_type ?? undefined),
+              ...(row.attachment_mime_type ? { mimetype: row.attachment_mime_type } : {}),
+            });
+            meta.MediaAttachments = atts;
           } catch (e) {
             params.log?.('debug', 'attachment read failed', { error: (e as Error).message });
           }
@@ -380,6 +475,14 @@ class iMessageFileImporter implements FileImporter {
           graph.item!.metadata!.ReplyTo = row.reply_to_guid;
           graph.item!.metadata!.ThreadOriginator = row.thread_originator_guid;
         }
+      }
+
+      if (attachmentsSeen > 0) {
+        params.log?.('info', 'imessage attachments', {
+          seen: attachmentsSeen,
+          bytesResolved: attachmentsResolved,
+          descriptorOnly: attachmentsSeen - attachmentsResolved,
+        });
       }
 
       // Push accumulated graphs
