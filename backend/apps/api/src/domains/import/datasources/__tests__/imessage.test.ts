@@ -549,6 +549,125 @@ describe('imessage importer', () => {
       { name: 'email', value: 'someone@icloud.com', identity: true },
     ]);
   });
+
+  // Regression (defect F2): 16,325 outbound iMessages reached
+  // ci.communications with from_entity_id NULL *and* to_entity_ids empty —
+  // messages the owner sent, connected to nobody, with no way to tell who the
+  // conversation was with.
+  //
+  // Two separate holes, both exercised here.
+  //
+  // 1. The `To` fallback was gated on `!chat`. A chat row that EXISTS but whose
+  //    chat_handle_join rows do not (a partial export, an iOS backup that
+  //    dropped the join table) gives `recipients = []` — so the Recipients
+  //    branch does not fire — and `!chat` blocked the fallback, leaving the
+  //    message with neither.
+  // 2. Participant edges were staged only off `row.contact_id`, which is NULL
+  //    on outbound (self has no handle row). Even when the chat DID list its
+  //    members, an outbound message staged zero edges, so PushStage's
+  //    resolveCorrespondents had nothing to resolve.
+  it('names the recipient on outbound messages whose chat lists no participants', async () => {
+    const importer = getImporter('imessage');
+    const dir = await fs.promises.mkdtemp(path.join(tmpdir(), 'imsg-'));
+    const db = new Database(path.join(dir, 'chat.db'));
+    db.exec(`
+      CREATE TABLE handle (ROWID INTEGER PRIMARY KEY, id TEXT);
+      CREATE TABLE message (ROWID INTEGER PRIMARY KEY, guid TEXT, date INTEGER, text TEXT, is_from_me INTEGER, service TEXT, handle_id INTEGER);
+      CREATE TABLE attachment (ROWID INTEGER PRIMARY KEY, guid TEXT, filename TEXT, mime_type TEXT);
+      CREATE TABLE message_attachment_join (message_id INTEGER, attachment_id INTEGER);
+      CREATE TABLE chat (ROWID INTEGER PRIMARY KEY, chat_identifier TEXT, display_name TEXT);
+      CREATE TABLE chat_message_join (chat_id INTEGER, message_id INTEGER);
+      CREATE TABLE chat_handle_join (chat_id INTEGER, handle_id INTEGER);
+    `);
+    db.prepare('INSERT INTO handle (ROWID, id) VALUES (?, ?)').run(1, '+15551110001');
+    // The chat exists and the message is joined to it, but its membership rows
+    // are missing — exactly the shape that produced the 16,325 orphans.
+    db.prepare('INSERT INTO chat (ROWID, chat_identifier, display_name) VALUES (?, ?, ?)').run(
+      100,
+      null,
+      null,
+    );
+    db.prepare(
+      'INSERT INTO message (ROWID, guid, date, text, is_from_me, service, handle_id) VALUES (?,?,?,?,?,?,?)',
+    ).run(10, 'memberless-guid', 600000000, 'you around?', 1, 'iMessage', 1);
+    db.prepare('INSERT INTO chat_message_join (chat_id, message_id) VALUES (?, ?)').run(100, 10);
+    db.close();
+
+    const pushed: Graph[] = [];
+    await importer.fileImport(
+      {},
+      { filename: dir, fullPath: dir } as DirEntry,
+      { pipeline: { push: (g: Graph) => pushed.push(g as EmittedGraph) } } as unknown as ImportParams,
+    );
+
+    const msg = pushed.find((g) => g.item?.id === 'memberless-guid')!;
+    expect(msg).toBeDefined();
+    expect(msg.item!.metadata!['Recipients']).toBeUndefined();
+    expect(msg.item!.metadata!['To']).toBe('+15551110001');
+
+    const edges = msg.edges?.filter((e: Relationship) => e.relation === 'participant') ?? [];
+    expect(edges).toHaveLength(1);
+    expect(edges[0].to.entity?.name).toBe('+15551110001');
+    expect(edges[0].metadata?.direction).toBe('outgoing');
+  });
+
+  it('stages one outgoing participant edge per recipient of an outbound group message', async () => {
+    const importer = getImporter('imessage');
+    const dir = await fs.promises.mkdtemp(path.join(tmpdir(), 'imsg-'));
+    const db = new Database(path.join(dir, 'chat.db'));
+    db.exec(`
+      CREATE TABLE handle (ROWID INTEGER PRIMARY KEY, id TEXT);
+      CREATE TABLE message (ROWID INTEGER PRIMARY KEY, guid TEXT, date INTEGER, text TEXT, is_from_me INTEGER, service TEXT, handle_id INTEGER);
+      CREATE TABLE attachment (ROWID INTEGER PRIMARY KEY, guid TEXT, filename TEXT, mime_type TEXT);
+      CREATE TABLE message_attachment_join (message_id INTEGER, attachment_id INTEGER);
+      CREATE TABLE chat (ROWID INTEGER PRIMARY KEY, chat_identifier TEXT, display_name TEXT);
+      CREATE TABLE chat_message_join (chat_id INTEGER, message_id INTEGER);
+      CREATE TABLE chat_handle_join (chat_id INTEGER, handle_id INTEGER);
+    `);
+    db.prepare('INSERT INTO handle (ROWID, id) VALUES (?, ?)').run(1, '+15551110001');
+    db.prepare('INSERT INTO handle (ROWID, id) VALUES (?, ?)').run(2, '+15551110002');
+    db.prepare('INSERT INTO chat (ROWID, chat_identifier, display_name) VALUES (?, ?, ?)').run(
+      200,
+      'chat200',
+      'Lunch Crew',
+    );
+    db.prepare('INSERT INTO chat_handle_join (chat_id, handle_id) VALUES (?, ?)').run(200, 1);
+    db.prepare('INSERT INTO chat_handle_join (chat_id, handle_id) VALUES (?, ?)').run(200, 2);
+    // Outbound: handle_id is NULL, the way chat.db records the owner's own row.
+    db.prepare(
+      'INSERT INTO message (ROWID, guid, date, text, is_from_me, service, handle_id) VALUES (?,?,?,?,?,?,?)',
+    ).run(20, 'group-out-guid', 600000002, 'lunch?', 1, 'iMessage', null);
+    db.prepare('INSERT INTO chat_message_join (chat_id, message_id) VALUES (?, ?)').run(200, 20);
+    // Inbound from handle 1 — the sender must still be the ONLY participant
+    // edge, because PushStage reads participants[0] as the sender.
+    db.prepare(
+      'INSERT INTO message (ROWID, guid, date, text, is_from_me, service, handle_id) VALUES (?,?,?,?,?,?,?)',
+    ).run(21, 'group-in-guid', 600000003, 'yes', 0, 'iMessage', 1);
+    db.prepare('INSERT INTO chat_message_join (chat_id, message_id) VALUES (?, ?)').run(200, 21);
+    db.close();
+
+    const pushed: Graph[] = [];
+    await importer.fileImport(
+      {},
+      { filename: dir, fullPath: dir } as DirEntry,
+      { pipeline: { push: (g: Graph) => pushed.push(g as EmittedGraph) } } as unknown as ImportParams,
+    );
+
+    const out = pushed.find((g) => g.item?.id === 'group-out-guid')!;
+    const outEdges = out.edges?.filter((e: Relationship) => e.relation === 'participant') ?? [];
+    expect(outEdges.map((e) => e.to.entity?.name)).toEqual(['+15551110001', '+15551110002']);
+    expect(outEdges.every((e) => e.metadata?.direction === 'outgoing')).toBe(true);
+    // Every recipient carries an identity attribute, or it can never be joined
+    // to the same number arriving from a vCard.
+    expect(outEdges[0].to.entity?.attributes).toEqual([
+      { name: 'phone', value: '+15551110001', identity: true },
+    ]);
+
+    const inb = pushed.find((g) => g.item?.id === 'group-in-guid')!;
+    const inEdges = inb.edges?.filter((e: Relationship) => e.relation === 'participant') ?? [];
+    expect(inEdges.map((e) => e.to.entity?.name)).toEqual(['+15551110001']);
+    expect(inEdges[0].metadata?.direction).toBe('incoming');
+  });
 });
 
 /**

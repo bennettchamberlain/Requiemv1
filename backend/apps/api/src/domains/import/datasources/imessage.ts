@@ -371,11 +371,23 @@ class iMessageFileImporter implements FileImporter {
               ...(senderHandle && { Sender: senderHandle }),
               // Prefer the resolved chat participant list (handles group chats
               // and outbound recipients). Fall back to the row-level partner
-              // handle only when chat tables are missing, so older / stripped
+              // handle whenever that list came back EMPTY, so older / stripped
               // dumps still record the 1:1 recipient on outbound messages.
+              //
+              // The fallback used to be gated on `!chat` as well, which made it
+              // unreachable in the case it most needed to cover: a chat row that
+              // exists but whose `chat_handle_join` rows do not (a partial
+              // export, an iOS backup that dropped the join table, a chat whose
+              // membership Apple never wrote). `recipients` is then `[]`, the
+              // first branch does not fire, and `!chat` blocked the second — so
+              // the message reached ci.communications naming nobody at all.
+              // `recipients.length` already encodes "the chat told us nothing",
+              // so the extra clause only ever suppressed a recipient we had.
+              // The branches stay mutually exclusive, so `To` can never
+              // duplicate a handle already listed in `Recipients`.
               ...(recipients.length
                 ? { Recipients: recipients }
-                : !chat && row.is_from_me === 1 && row.contact_id
+                : row.is_from_me === 1 && row.contact_id
                   ? { To: row.contact_id }
                   : {}),
               ...(chat?.identifier && { ChatId: chat.identifier }),
@@ -394,13 +406,39 @@ class iMessageFileImporter implements FileImporter {
           graph = { item, edges: [] };
           pending[row.message_id] = graph;
 
-          // Link the message to its conversation partner so the graph view has a
-          // real item↔entity edge. handle.id is the other party (phone/email)
-          // regardless of direction; direction is recorded on the edge metadata.
-          if (row.contact_id) {
+          // Link the message to its conversation counterpart(s) so the graph
+          // view has a real item↔entity edge, and so PushStage's
+          // `resolveCorrespondents` can fill from_entity_id / to_entity_ids at
+          // push time instead of leaving the row to a later linking sweep.
+          //
+          // `handle.id` is the OTHER party — but only on inbound. Outbound rows
+          // have `message.handle_id` NULL (the owner has no handle row), so
+          // `row.contact_id` is usually null there and staging edges off it
+          // alone left every message the owner ever sent pointing at nobody:
+          // 16,325 outbound iMessages in the live corpus reached
+          // ci.communications with from_entity_id NULL *and* to_entity_ids
+          // empty. On outbound the recipients are the chat participants — the
+          // same list `Recipients` already carries — so stage one edge each.
+          //
+          // Deliberately only the outbound side fans out. On inbound the SENDER
+          // must be the first `participant` edge (resolveCorrespondents reads
+          // `others[0]` as the sender), and the rest of a group's membership are
+          // this message's recipients, which `Recipients` already reports.
+          const counterparts =
+            row.is_from_me === 1
+              ? // Union, deduped: `recipients` is authoritative, and
+                // `row.contact_id` is the 1:1 partner some exports still put on
+                // the outbound row. Both are handles read straight from
+                // chat.db, so neither invents a participant.
+                Array.from(new Set([...recipients, ...(row.contact_id ? [row.contact_id] : [])]))
+              : row.contact_id
+                ? [row.contact_id]
+                : [];
+
+          for (const handle of counterparts) {
             graph.edges!.push({
               relation: 'participant',
-              to: { entity: contactEntity(row.contact_id) },
+              to: { entity: contactEntity(handle) },
               metadata: { direction: row.is_from_me === 1 ? 'outgoing' : 'incoming' },
             });
           }
