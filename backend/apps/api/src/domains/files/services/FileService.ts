@@ -614,4 +614,34 @@ export class FileService implements OnModuleInit {
 
     return rows.map((row) => ({ userId: row.user_id, bucketStart: row.bucket_start, count: row.count }));
   }
+
+  /**
+   * Originals that are still missing a description but already have a PREVIEW
+   * child — candidates to re-fire {@link PreviewGeneratedEvent} after the user
+   * turns image description back on.
+   */
+  async findUndescribedImagePreviews(
+    userId: string,
+    limit: number,
+  ): Promise<Array<{ previewId: string; parentFileId: string }>> {
+    const rows: Array<{ preview_id: string; parent_file_id: string }> = await this.fileRepository
+      .createQueryBuilder('preview')
+      .innerJoin(
+        FileEntity,
+        'original',
+        'original.id = preview.parentId AND original.userId = preview.userId',
+      )
+      .select('preview.id', 'preview_id')
+      .addSelect('original.id', 'parent_file_id')
+      .where('preview.userId = :userId', { userId })
+      .andWhere('preview.variant = :previewVariant', { previewVariant: FileVariant.PREVIEW })
+      .andWhere('original.variant = :originalVariant', { originalVariant: FileVariant.ORIGINAL })
+      .andWhere('original.contentType LIKE :imagePrefix', { imagePrefix: 'image/%' })
+      .andWhere("(original.description IS NULL OR btrim(original.description) = '')")
+      .orderBy('original.createdAt', 'DESC')
+      .limit(Math.max(1, Math.min(limit, 2000)))
+      .getRawMany();
+
+    return rows.map((row) => ({ previewId: row.preview_id, parentFileId: row.parent_file_id }));
+  }
 }
