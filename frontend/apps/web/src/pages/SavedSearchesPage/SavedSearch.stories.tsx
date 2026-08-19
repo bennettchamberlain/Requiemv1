@@ -5,9 +5,9 @@ import { mockSavedSearch } from './_storyHelpers';
 import { SavedSearch } from './SavedSearch';
 
 const meta: Meta<typeof SavedSearch> = {
-  title: 'Saved Search/Card',
+  title: 'Saved Search/Row',
   component: SavedSearch,
-  parameters: { layout: 'centered' },
+  parameters: { layout: 'padded' },
   args: {
     openSavedSearchEditModal: fn(),
     openSavedSearchShareModal: fn(),
@@ -15,7 +15,7 @@ const meta: Meta<typeof SavedSearch> = {
   },
   decorators: [
     (Story) => (
-      <div className="h-[300px] w-[400px]">
+      <div className="w-full max-w-4xl border-t border-border/50">
         <Story />
       </div>
     ),

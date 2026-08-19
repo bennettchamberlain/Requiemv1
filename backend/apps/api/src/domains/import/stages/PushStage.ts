@@ -8,7 +8,12 @@ import { EventService as SignallingEventService } from '@ci/domains/events';
 import { type GraphEntityInputDto, GraphIngestService } from '@ci/domains/graph';
 // The events leaf, NOT the maintenance barrel: the barrel would close the
 // module cycle maintenance → llm → tools → import.
-import { SEARCH_INDEX_BACKFILL_QUEUE, SearchIndexBackfillRequestEvent } from '@ci/domains/maintenance/events';
+import {
+  GRAPH_EDGE_BACKFILL_QUEUE,
+  GraphEdgeBackfillRequestEvent,
+  SEARCH_INDEX_BACKFILL_QUEUE,
+  SearchIndexBackfillRequestEvent,
+} from '@ci/domains/maintenance/events';
 import { CommunicationService, ContentService, EventService, ItemService } from '@ci/domains/memory';
 import { PositionService } from '@ci/domains/position';
 
@@ -17,6 +22,7 @@ import type { StagedItem } from '../entities/StagedItemEntity';
 import {
   backfillEntityTypesFor,
   destinationsFor,
+  edgeProjectionSourcesFor,
   toCanonical,
   type CanonicalRecord,
   type Destination,
@@ -293,6 +299,12 @@ export class PushStage implements ImportStageRunner {
     // per-row *CreatedEvent, so without this kick they wait for the pipeline's
     // hourly index sweeps.
     const searchIndex = await this.kickSearchIndexBackfill(context, counts, entities.resolved);
+    // …and make it REACHABLE. Searchable and reachable are two different
+    // properties with two different writers, and for a long time only the first
+    // one was kicked: a graph traversal reads `ci.relationships` and nothing
+    // else, so until the edge legs project the linkage columns this push just
+    // wrote, every row here is an island.
+    const graphEdges = await this.kickGraphEdgeProjection(context, counts);
 
     return {
       // Every staged row is RESOLVED one way or another, and this stage's work
@@ -335,6 +347,10 @@ export class PushStage implements ImportStageRunner {
         // What the post-push search-index kick did (absent when nothing was
         // written, so there was nothing to index).
         ...(searchIndex ? { searchIndex } : {}),
+        // Same, for the graph-edge projection. Absent when the push wrote
+        // nothing the deterministic-edge matrix has a rule for — a
+        // browser-activity-only import is the ordinary case.
+        ...(graphEdges ? { graphEdges } : {}),
         // Additive. `pushed`, `deduped`, `failed`, `destinations` and
         // `entities` above are read by RunPipeline and ImportRunService and
         // keep their exact meaning; this is the per-data-source, reconciled
@@ -561,6 +577,79 @@ export class PushStage implements ImportStageRunner {
       });
 
       return { requested: entityTypes, error: message };
+    }
+  }
+
+  /**
+   * Post-push GRAPH-EDGE kick: request pipeline sweeps of the `promote.edge_*`
+   * legs for exactly the source tables this push wrote, so imported rows are
+   * reachable in the graph rather than merely findable in search.
+   *
+   * ── Why it is a separate kick from the search one ──────────────────────────
+   *
+   * They answer different questions and they fail independently. Search asks
+   * "can I find this row?" and is served by `ci_search.*`; the graph asks "what
+   * is this row connected to?" and is served by `ci.relationships`, which the
+   * traversal reads and nothing else writes but these legs. Until this existed,
+   * a push kicked only the first, and the result was exactly what you would
+   * predict: a corpus that was 100% searchable and 0.3% connected.
+   *
+   * The linkage columns the legs project from — `communications.from_entity_id`
+   * / `to_entity_ids`, `content.event_id`, `events.location_entity_id` — are
+   * written by THIS STAGE at ingest, not by a nightly linker. That is what makes
+   * the kick worth having rather than redundant: the input is complete the
+   * moment the push commits.
+   *
+   * ── Scope, and the empty case ──────────────────────────────────────────────
+   *
+   * {@link edgeProjectionSourcesFor} maps only the destinations the matrix has a
+   * rule for, so a push that wrote nothing but browser activity requests
+   * nothing — and requests nothing EXPLICITLY, by returning early, rather than
+   * sending a scope-less payload that the listener would read as "every source".
+   *
+   * Same delivery and same failure policy as its sibling: over pg-boss (a direct
+   * `PipelineDispatchService` injection would close the module cycle maintenance
+   * → llm → tools → import, and the queued job survives a process killed between
+   * the push committing and the sweep starting), and fail-soft — the rows are
+   * safely in `ci.*` and the sweep is idempotent, so a failure to enqueue must
+   * not fail or retry the push. It is reported in the stage detail instead, and
+   * the hourly cadence on these legs picks up whatever the kick did not.
+   */
+  private async kickGraphEdgeProjection(
+    context: StageRunContext,
+    counts: DestinationCounts,
+  ): Promise<Record<string, unknown> | null> {
+    const wrote = (Object.entries(counts) as Array<[Destination, number]>)
+      .filter(([, count]) => count > 0)
+      .map(([destination]) => destination);
+
+    const sources = edgeProjectionSourcesFor(wrote);
+
+    if (sources.length === 0) {
+      return null;
+    }
+
+    try {
+      await this.signals.send(
+        GraphEdgeBackfillRequestEvent,
+        { userId: context.userId, sources, requestedBy: `import-run:${context.runId}` },
+        { queue: GRAPH_EDGE_BACKFILL_QUEUE },
+      );
+      this.logger.log('Post-push graph-edge projection requested', {
+        runId: context.runId,
+        sources,
+      });
+
+      return { requested: sources };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn('Post-push graph-edge request failed; edges remain for the next sweep', {
+        runId: context.runId,
+        sources,
+        error: message,
+      });
+
+      return { requested: sources, error: message };
     }
   }
 

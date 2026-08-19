@@ -746,7 +746,7 @@ export class OllamaService implements OnModuleInit {
       resolvedTools = hasVisualContent ? false : true;
       await this.validateModel(context, resolvedModel);
     } else {
-      resolvedModel = await this.resolveServedChatModel(requestedModel);
+      resolvedModel = await this.resolveServedChatModel(requestedModel, messages);
     }
 
     return {
@@ -761,12 +761,44 @@ export class OllamaService implements OnModuleInit {
    * OpenAI-compat, or Ollama). Config defaults like `gemma3:1b` are only used
    * when that id is in the served list — title jobs and background inference
    * must not fail because the compile-time default is not loaded.
+   *
+   * When the turn carries images and the backend is native Ollama, prefer a
+   * served model that reports the `vision` capability. The stash version still
+   * sent images to `PROMPT_MODEL` whenever that id was loaded (usually a
+   * text-only chat model). OpenAI-compat backends (vLLM) expose a single chat
+   * id — keep that; listeners complete on a non-multimodal 400 rather than
+   * inventing `llava:7b`.
    */
-  private async resolveServedChatModel(requestedModel?: string | null): Promise<string> {
+  private async resolveServedChatModel(
+    requestedModel?: string | null,
+    messages: OllamaMessage[] = [],
+  ): Promise<string> {
     const served = await this.listServedChatModelIds();
 
     if (served.length === 0) {
       throw new Error('No chat model is currently loaded on vLLM or Ollama');
+    }
+
+    const hasVisualContent = messages.some((message) => message.images && message.images.length > 0);
+
+    if (hasVisualContent && !this.llmEndpointService.getOpenAiDriver()) {
+      const requested = requestedModel?.trim();
+
+      if (requested && served.includes(requested)) {
+        const requestedCaps = await this.fetchModelCapabilities(requested, { throwOnError: false });
+
+        if (requestedCaps.includes('vision')) {
+          return requested;
+        }
+      }
+
+      for (const id of served) {
+        const capabilities = await this.fetchModelCapabilities(id, { throwOnError: false });
+
+        if (capabilities.includes('vision')) {
+          return id;
+        }
+      }
     }
 
     const candidates = [requestedModel, PROMPT_MODEL].filter((model): model is string =>

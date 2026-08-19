@@ -76,6 +76,7 @@ import { GraphUtilityService } from './services/GraphUtilityService';
 import { ItemService } from './services/ItemService';
 import { KnownPlacesService } from './services/KnownPlacesService';
 import { LifeStatsService } from './services/LifeStatsService';
+import { MergeCandidateService } from './services/MergeCandidateService';
 import { ObjectObservationService } from './services/ObjectObservationService';
 import { PersonActivityService } from './services/PersonActivityService';
 import { PersonDuplicateService } from './services/PersonDuplicateService';
@@ -135,6 +136,7 @@ import { UserContextService } from './services/UserContextService';
     PersonActivityService,
     EntityMergeBlockService,
     PersonDuplicateService,
+    MergeCandidateService,
     PersonMergeService,
     ConceptService,
     FileService,
@@ -155,6 +157,7 @@ import { UserContextService } from './services/UserContextService';
     PersonActivityService,
     EntityMergeBlockService,
     PersonDuplicateService,
+    MergeCandidateService,
     PersonMergeService,
     ConceptService,
     UserContextService,
@@ -206,6 +209,7 @@ export {
   PersonActivityService,
   EntityMergeBlockService,
   PersonDuplicateService,
+  MergeCandidateService,
   PersonMergeService,
   ConceptService,
   UserContextService,
@@ -219,12 +223,28 @@ export {
 };
 
 export type { Content } from './entities/ContentEntity';
+export type { MapPin } from './services/EventService';
 export type { PlaceKind } from './entities/PlaceEntity';
 export type { PlaceVisitStats } from './services/PlaceService';
 export { EntityMergeBlockEntity, orderPair, pairKey } from './entities/EntityMergeBlockEntity';
 export { previewFromContent } from './entities/CommunicationEntity';
 export type { BlockReason } from './services/EntityMergeBlockService';
-export type { PersonDuplicateGroup, DuplicateReason } from './services/PersonDuplicateService';
+export type {
+  PersonDuplicateGroup,
+  PersonDuplicatePage,
+  DuplicateReason,
+} from './services/PersonDuplicateService';
+export type {
+  MergeCandidate,
+  MergeCandidateEvidence,
+  MergeCandidatePage,
+  MergeCandidateStatus,
+} from './services/MergeCandidateService';
+export {
+  encodeMergeCandidateCursor,
+  isMergeCandidateStatus,
+  MERGE_CANDIDATE_STATUSES,
+} from './services/MergeCandidateService';
 export type { PersonInteractionStats } from './services/PersonActivityService';
 export type { MergeCounts } from './services/PersonMergeService';
 export type { CreateEventDto, UpdateEventDto, CreateContentDto, UpdateContentDto } from './types';

@@ -54,6 +54,48 @@ export const IMPORT_STAGE_KINDS = ['unpack', 'parse', 'media', 'push'] as const;
 export type ImportStageKindName = (typeof IMPORT_STAGE_KINDS)[number];
 
 /**
+ * One queue per stage KIND, so the pipeline overlaps across runs: while one
+ * run's 350GB unpack holds the unpack slot, every other run's parse, media
+ * and push proceed in their own slots. A run's own stages still execute
+ * strictly in order — chaining is by re-emission, each stage enqueueing its
+ * successor — so per-kind queues change only CROSS-run scheduling.
+ *
+ * {@link IMPORT_QUEUE} stays registered as a drain: jobs are durable, and a
+ * deploy of this split must still consume whatever an older release left
+ * queued under the shared name.
+ */
+export const IMPORT_STAGE_QUEUE_BY_KIND: Record<ImportStageKindName, string> = {
+  unpack: 'import-unpack',
+  parse: 'import-parse',
+  media: 'import-media',
+  push: 'import-push',
+};
+
+/**
+ * Slot counts per kind. `parse` stays at 1 — parsers still run long
+ * synchronous stretches, and two abreast is how the event loop starved.
+ * `push` stays at 1 — concurrent pushes into the shared `ci.*` tables is an
+ * untested dedup path (two runs resolving the same person at once), and push
+ * is fast enough that serial costs nothing. `media` is I/O-bound against the
+ * object store, so two overlap fine. `unpack` stays at 1 so two archives'
+ * disk preflights cannot both pass and then jointly fill the volume.
+ *
+ * The progress UI reads these and states them — the active-import snapshot
+ * reports them as `queue.concurrency`, and the region pinned to the import and
+ * jobs pages turns them into a sentence. Thirteen runs against one parse slot
+ * is what makes "queued for 51 minutes" the NORMAL state of a batch import
+ * rather than a stall, and nobody can tell those two apart unless the surface
+ * says how many stages of that kind run at once. A UI holding its own copy
+ * would go on claiming the old number after someone changed one here.
+ */
+export const IMPORT_STAGE_CONCURRENCY: Record<ImportStageKindName, number> = {
+  unpack: 1,
+  parse: 1,
+  media: 2,
+  push: 1,
+};
+
+/**
  * Relative weight of each kind in the run's percent rollup.
  *
  * Wall-clock proportions from real imports, not equal thirds: unpacking a

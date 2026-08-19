@@ -53,6 +53,7 @@ import { PipelineShardEntity } from './entities/PipelineShardEntity';
 import { PipelineStateEntity } from './entities/PipelineStateEntity';
 import { RecordRejectionEntity } from './entities/RecordRejectionEntity';
 import { DeadLetterReaperListener } from './listeners/DeadLetterReaperListener';
+import { GraphEdgeSweepRequestListener } from './listeners/GraphEdgeSweepRequestListener';
 import { PipelineSliceListener } from './listeners/PipelineSliceListener';
 import { PIPELINE_TICK, PipelineTickCron } from './listeners/PipelineTickCron';
 import { SearchIndexSweepRequestListener } from './listeners/SearchIndexSweepRequestListener';
@@ -255,6 +256,11 @@ const stageProviders: Provider[] = [
     // next sweep re-derives it, so there is no deferral queue to leak.
     StageArrivalListener,
     SearchIndexSweepRequestListener,
+    // Its graph-side twin. An import used to kick only the index legs, so
+    // pushed rows were searchable in seconds and unreachable in the graph
+    // until a scheduled sweep — `ci.relationships` is the only table a
+    // traversal reads, and nothing was telling it a corpus had landed.
+    GraphEdgeSweepRequestListener,
     PipelineTickCron,
     // The cron owns the schedule and the cluster-safe advisory lock; the control
     // service owns what a tick DOES. Binding by token rather than importing the

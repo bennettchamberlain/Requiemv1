@@ -109,10 +109,24 @@ describe('ContentService CTI aggregate', () => {
     );
   });
 
-  it('findById composes title from the base row', async () => {
-    repo.findOne.mockResolvedValue(
+  it('findById composes title from the base row, and skips media whose event was deleted', async () => {
+    const wheres: string[] = [];
+    const qb: Record<string, unknown> = {};
+    qb.where = jest.fn((sql: string) => {
+      wheres.push(sql);
+
+      return qb;
+    });
+    qb.andWhere = jest.fn((sql: string) => {
+      wheres.push(sql);
+
+      return qb;
+    });
+    qb.leftJoin = jest.fn(() => qb);
+    qb.getOne = jest.fn(async () =>
       Object.assign(new ContentEntity(), { id: 'c1', userId: 'user-1', type: 'web-page' }),
     );
+    repo.createQueryBuilder.mockReturnValue(qb);
     baseRepo.find.mockResolvedValue([
       Object.assign(new ContentBaseEntity(), { id: 'c1', name: 'Example page', description: null }),
     ]);
@@ -120,5 +134,8 @@ describe('ContentService CTI aggregate', () => {
     const content = await service.findById({ userId: 'user-1' } as ServiceContext, 'c1');
 
     expect(content?.title).toBe('Example page');
+    // A media row whose event was tombstoned is unreachable, so it must not be
+    // served on its own (see EventService's soft delete).
+    expect(wheres).toContain('(content.event_id IS NULL OR content_event.is_deleted = false)');
   });
 });

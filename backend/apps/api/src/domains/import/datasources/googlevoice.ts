@@ -1,5 +1,6 @@
 /* Google Voice datasource (simplified TypeScript port) */
 import fs from 'node:fs';
+import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { stripCallLogHeading } from '@ci/domains/graph';
@@ -64,9 +65,16 @@ export class GoogleVoiceFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    if (fs.existsSync(full) && fs.statSync(full).isDirectory()) {
+    let isDir = false;
+    try {
+      isDir = (await stat(full)).isDirectory();
+    } catch {
+      isDir = false;
+    }
+
+    if (isDir) {
       let score = 0;
-      const entries = fs.readdirSync(full);
+      const entries = await readdir(full);
       if (entries.includes('Phones.vcf')) {
         score += 0.4;
       } // phonebook vCard
@@ -82,11 +90,9 @@ export class GoogleVoiceFileImporter implements FileImporter {
       // boost if any HTML conversation files exist under Calls (partial export)
       try {
         const callsPath = path.join(full, 'Calls');
-        if (fs.existsSync(callsPath)) {
-          const hasHtml = fs.readdirSync(callsPath).some((f) => f.toLowerCase().endsWith('.html'));
-          if (hasHtml) {
-            score += 0.1;
-          }
+        const hasHtml = (await readdir(callsPath)).some((f) => f.toLowerCase().endsWith('.html'));
+        if (hasHtml) {
+          score += 0.1;
         }
       } catch {
         /* ignore */

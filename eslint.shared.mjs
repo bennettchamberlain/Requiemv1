@@ -64,7 +64,13 @@ export default [
       // codebase already uses the pattern (TaskService.ts, TodoProcessService.ts)
       // and was one preset version bump away from every instance of it failing
       // lint.
-      '@typescript-eslint/no-unused-vars': ['error', { ignoreRestSiblings: true }],
+      //
+      // `argsIgnorePattern` matches what TypeScript itself already does: the
+      // compiler's `noUnusedParameters` (on in tsconfig.base.json) exempts
+      // `_`-prefixed parameters, so without this the two checks disagree and a
+      // parameter you must declare — to fix a signature's arity — is
+      // unfixable: unprefixed fails tsc, prefixed fails eslint.
+      '@typescript-eslint/no-unused-vars': ['error', { ignoreRestSiblings: true, argsIgnorePattern: '^_' }],
     },
   },
 ];

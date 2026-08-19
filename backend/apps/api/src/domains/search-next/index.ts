@@ -13,7 +13,7 @@ import { EmbeddingModule } from '@ci/common/embeddings';
 import { type EntityTag, EntityTagEntity } from './entities/EntityTagEntity';
 import { type Tag, type TimestampedTag, TagEntity } from './entities/TagEntity';
 import { SearchService } from './services/SearchService';
-import { TagService } from './services/TagService';
+import { type RemoveTagResult, TagService, type UpdateTagResult } from './services/TagService';
 
 /**
  * @internal
@@ -26,6 +26,6 @@ import { TagService } from './services/TagService';
 export class SearchNextModule {}
 
 export { SearchService, TagService };
-export type { EntityTag, Tag, TimestampedTag };
+export type { EntityTag, RemoveTagResult, Tag, TimestampedTag, UpdateTagResult };
 export { INDEXABLE_ENTITIES, TAGGABLE_ENTITIES } from './types';
 export type { EntityIdentifier, IndexableEntity, TaggableEntity } from './types';

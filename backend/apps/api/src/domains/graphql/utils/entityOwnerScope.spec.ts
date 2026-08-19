@@ -61,6 +61,37 @@ describe('entityOwnerScope', () => {
     expect(() => entityOwnerScope(anonymousContext, null)).toThrow(UnauthorizedException);
   });
 
+  /**
+   * Identity, not just equality. `Loader.getLoader` caches one DataLoader per
+   * service context in a WeakMap keyed by object identity, so a fresh literal
+   * per call silently disables every GraphQL DataLoader on the owner-scoped
+   * path (a batch of one per field per row). These pin the memo.
+   */
+  it('returns the SAME object for the same (request, owner) pair', () => {
+    const viewerContext = { userId: 'viewer-1' } as unknown as RequestContext;
+
+    expect(entityOwnerScope(viewerContext, 'owner-2')).toBe(entityOwnerScope(viewerContext, 'owner-2'));
+  });
+
+  it('returns the same object for the viewer-fallback branch too', () => {
+    const viewerContext = { userId: 'viewer-1' } as unknown as RequestContext;
+
+    expect(entityOwnerScope(viewerContext, null)).toBe(entityOwnerScope(viewerContext, undefined));
+  });
+
+  it('gives different owners on one request distinct scopes', () => {
+    const viewerContext = { userId: 'viewer-1' } as unknown as RequestContext;
+
+    expect(entityOwnerScope(viewerContext, 'owner-2')).not.toBe(entityOwnerScope(viewerContext, 'owner-3'));
+  });
+
+  it('does not share a scope object across requests', () => {
+    const requestA = { userId: 'viewer-1' } as unknown as RequestContext;
+    const requestB = { userId: 'viewer-1' } as unknown as RequestContext;
+
+    expect(entityOwnerScope(requestA, 'owner-2')).not.toBe(entityOwnerScope(requestB, 'owner-2'));
+  });
+
   it('does not widen scope when a null/undefined ownerId is combined with a real viewer', () => {
     // Regression guard for the inverse mistake: falling back to a fixed or
     // system scope instead of the actual viewer.

@@ -138,4 +138,7 @@ export {
   SearchIndexBackfillRequestEvent,
   SEARCH_INDEX_BACKFILL_QUEUE,
   type SearchIndexBackfillRequestPayload,
+  GraphEdgeBackfillRequestEvent,
+  GRAPH_EDGE_BACKFILL_QUEUE,
+  type GraphEdgeBackfillRequestPayload,
 } from './events';

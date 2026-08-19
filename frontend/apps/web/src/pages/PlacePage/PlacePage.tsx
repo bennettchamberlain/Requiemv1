@@ -6,6 +6,7 @@ import { Card } from '@ci/shadcn';
 import { useParams } from 'react-router-dom';
 
 import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
+import { EntityFieldsCard } from '@/components/EntityFields';
 import { EntityGraph } from '@/components/EntityGraph';
 import { EntityRelationshipCards } from '@/components/EntityRelationshipCards/EntityRelationshipCards';
 import { EntityEditToggle, EntityTagsDescriptionCard } from '@/components/EntityTagsDescriptionCard';
@@ -29,14 +30,24 @@ const GET_PLACE = gql(`
   }
 `);
 
-const UPDATE_PLACE_DESCRIPTION = gql(`
-  mutation UpdatePlaceDescription($input: UpdatePlaceInput!) {
+// Same write the memory drawer makes (UpdatePlaceDetail), so the page can edit
+// the name and address instead of the description alone.
+const UPDATE_PLACE_FIELDS = gql(`
+  mutation UpdatePlacePageFields($input: UpdatePlaceInput!) {
     updatePlace(input: $input) {
       id
+      name
       description
+      properties
     }
   }
 `);
+
+type PlaceProperties = {
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+};
 
 export function PlacePage() {
   const { id } = useParams<{ id: string }>();
@@ -47,10 +58,11 @@ export function PlacePage() {
     },
   });
 
-  const [updatePlaceDescription] = useMutation(UPDATE_PLACE_DESCRIPTION);
+  const [updatePlaceFields] = useMutation(UPDATE_PLACE_FIELDS);
 
   const place = data?.place;
   const [editMode, setEditMode] = useState(false);
+  const properties = (place?.properties ?? {}) as PlaceProperties;
 
   usePageTitle(place?.name ? `${place.name} - Companion Intelligence` : 'Place - Companion Intelligence');
 
@@ -72,7 +84,45 @@ export function PlacePage() {
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div className="md:col-span-2">
+          <div className="flex flex-col gap-4 md:col-span-2">
+            {/* The drawer's field set, so "Open full page" does not silently drop
+                the name and address editors. */}
+            <EntityFieldsCard
+              title="Place"
+              resetKey={place.id}
+              editMode={editMode}
+              onEditModeChange={setEditMode}
+              fields={[
+                { key: 'name', label: 'Name', value: place.name ?? '' },
+                { key: 'address', label: 'Address', value: properties.address ?? '' },
+              ]}
+              metaItems={[
+                {
+                  label: 'Where',
+                  value:
+                    properties.latitude != null && properties.longitude != null
+                      ? `${properties.latitude}, ${properties.longitude}`
+                      : null,
+                },
+              ]}
+              onSave={async (values) => {
+                const result = await updatePlaceFields({
+                  variables: {
+                    input: {
+                      id: place.id,
+                      name: values.name,
+                      properties: { ...properties, address: values.address },
+                    },
+                  },
+                });
+
+                // updatePlace resolves to the place itself, or null when the write was rejected.
+                if (!result.data?.updatePlace) {
+                  throw new Error('Update was rejected');
+                }
+              }}
+            />
+
             <EntityTagsDescriptionCard
               entityType="place"
               entityId={id!}
@@ -90,7 +140,7 @@ export function PlacePage() {
                 // The `?? ''` only fires when the stored name is genuinely null — the query selects
                 // `name`, so it is not a projection gap — and null and '' both render as 'Unnamed'.
                 // Omitting the field instead is not an option: it is non-null on the input.
-                const result = await updatePlaceDescription({
+                const result = await updatePlaceFields({
                   variables: { input: { id: place.id, name: place.name ?? '', description: value } },
                 });
 

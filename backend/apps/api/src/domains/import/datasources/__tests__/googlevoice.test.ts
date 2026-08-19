@@ -3,9 +3,6 @@ import os from 'os';
 import path from 'path';
 
 import { GoogleVoiceFileImporter } from '../googlevoice';
-// `Relationship` was used below without being imported, which breaks
-// `yarn workspace @ci/be-api typecheck` on main and therefore the pre-commit
-// gate for every branch. One-line fix, unrelated to this change.
 import type { ImportParams, Relationship } from '../timeline';
 
 import type { EmittedGraph } from './support/emitted';
