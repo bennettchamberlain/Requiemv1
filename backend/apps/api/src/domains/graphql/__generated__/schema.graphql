@@ -1563,12 +1563,12 @@ type Mutation {
   Mark a suggested duplicate group as distinct people, so it is never re-proposed
   """
   rejectPersonDuplicates(personIds: [ID!]!): Boolean!
-  removeAnswer(id: String!): Boolean!
-  removeContent(id: String!): Boolean!
-  removeEvent(id: String!): Boolean!
+  removeAnswer(id: ID!): Boolean!
+  removeContent(id: ID!): Boolean!
+  removeEvent(id: ID!): Boolean!
   removePersonIdentifier(input: RemovePersonIdentifierInput!): [PersonIdentifierType!]!
-  removePlace(id: String!): Boolean!
-  removeQuestion(id: String!): Boolean!
+  removePlace(id: ID!): Boolean!
+  removeQuestion(id: ID!): Boolean!
 
   """Move a completed task back to open."""
   reopenTask(id: ID!): TaskType
@@ -2463,7 +2463,7 @@ type ThreadType implements Node & Taggable {
 
 input UpdateAnswerInput {
   answer: String!
-  id: String!
+  id: ID!
 }
 
 input UpdateBrowserActivityInput {
@@ -2724,7 +2724,7 @@ input UpdateProviderKeyInput {
 
 input UpdateQuestionInput {
   category: String!
-  id: String!
+  id: ID!
   text: String!
 }
 
