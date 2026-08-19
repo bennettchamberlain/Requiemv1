@@ -5,11 +5,7 @@ import { serves } from '@ci/common/roles';
 import { Cron } from '@ci/common/schedule';
 import { OnEvent } from '@ci/domains/events';
 
-import {
-  IMPORT_QUEUE,
-  IMPORT_STAGE_CONCURRENCY,
-  IMPORT_STAGE_QUEUE_BY_KIND,
-} from '../constants';
+import { IMPORT_QUEUE, IMPORT_STAGE_CONCURRENCY, IMPORT_STAGE_QUEUE_BY_KIND } from '../constants';
 import { ImportStageEvent } from '../events';
 import { ImportRunService } from '../services/ImportRunService';
 import { ImportScratchService } from '../services/ImportScratchService';
@@ -134,7 +130,7 @@ export class ImportStageListener implements OnApplicationBootstrap {
   // stutter the web process serving buttons.
   @OnEvent(ImportStageEvent, {
     queue: IMPORT_STAGE_QUEUE_BY_KIND.unpack,
-    queueOptions: { role: 'worker', localConcurrency: IMPORT_STAGE_CONCURRENCY.unpack },
+    queueOptions: { policy: 'short', role: 'worker', localConcurrency: IMPORT_STAGE_CONCURRENCY.unpack },
   })
   async handleUnpackStage(payload: unknown): Promise<void> {
     await this.runStage(payload);
@@ -142,7 +138,7 @@ export class ImportStageListener implements OnApplicationBootstrap {
 
   @OnEvent(ImportStageEvent, {
     queue: IMPORT_STAGE_QUEUE_BY_KIND.parse,
-    queueOptions: { role: 'worker', localConcurrency: IMPORT_STAGE_CONCURRENCY.parse },
+    queueOptions: { policy: 'short', role: 'worker', localConcurrency: IMPORT_STAGE_CONCURRENCY.parse },
   })
   async handleParseStage(payload: unknown): Promise<void> {
     await this.runStage(payload);
@@ -150,7 +146,7 @@ export class ImportStageListener implements OnApplicationBootstrap {
 
   @OnEvent(ImportStageEvent, {
     queue: IMPORT_STAGE_QUEUE_BY_KIND.media,
-    queueOptions: { role: 'worker', localConcurrency: IMPORT_STAGE_CONCURRENCY.media },
+    queueOptions: { policy: 'short', role: 'worker', localConcurrency: IMPORT_STAGE_CONCURRENCY.media },
   })
   async handleMediaStage(payload: unknown): Promise<void> {
     await this.runStage(payload);
@@ -158,7 +154,7 @@ export class ImportStageListener implements OnApplicationBootstrap {
 
   @OnEvent(ImportStageEvent, {
     queue: IMPORT_STAGE_QUEUE_BY_KIND.push,
-    queueOptions: { role: 'worker', localConcurrency: IMPORT_STAGE_CONCURRENCY.push },
+    queueOptions: { policy: 'short', role: 'worker', localConcurrency: IMPORT_STAGE_CONCURRENCY.push },
   })
   async handlePushStage(payload: unknown): Promise<void> {
     await this.runStage(payload);

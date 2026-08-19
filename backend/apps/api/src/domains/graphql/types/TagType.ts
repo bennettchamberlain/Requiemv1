@@ -1,4 +1,4 @@
-import { Field, ID, ObjectType } from '@nestjs/graphql';
+import { Field, ID, Int, ObjectType } from '@nestjs/graphql';
 
 import { type Tag } from '@ci/domains/search-next';
 
@@ -20,6 +20,10 @@ export class TagType {
   @Field(() => String, { nullable: true })
   description!: string | null;
 
+  /** Resolved by TagResolver.entityCount; the placeholder is never served. */
+  @Field(() => Int)
+  entityCount!: number;
+
   static toType(tag: Tag): TagType {
     return {
       __typename: TagType.name,
@@ -27,6 +31,7 @@ export class TagType {
       id: GlobalUID.encode('tag', tag.id),
       label: tag.label,
       description: tag.description,
+      entityCount: 0,
     };
   }
 }

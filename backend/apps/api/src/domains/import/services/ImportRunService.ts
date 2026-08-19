@@ -24,6 +24,24 @@ import type { StageOutcome } from '../types';
 import { StagedSourceService } from './StagedSourceService';
 
 /**
+ * Unfinished runs the active snapshot will report on.
+ *
+ * A ceiling rather than a page: the snapshot is polled every two seconds while
+ * an import runs, and one Takeout session has produced ~150 runs (oversized
+ * media exports arrive as loose files, one run each). Sixty covers every batch
+ * import the appliance actually performs — 13 top-level sources is the big one
+ * — while capping what a pathological account can make the poll fetch.
+ */
+const ACTIVE_RUN_LIMIT = 60;
+
+/**
+ * Finished runs of the same batch carried alongside, so the header can say
+ * "3 of 13 done" instead of watching its own denominator shrink as runs finish.
+ * Beyond this the tail is dropped and `truncated` says so; History has them all.
+ */
+const FINISHED_SIBLING_LIMIT = 40;
+
+/**
  * An inbox unit this run will consume in place of an uploaded drop. The path
  * must already be resolved through `resolveWithinInbox` — this service trusts
  * its callers on containment because the batch surface is the only code that
@@ -418,6 +436,7 @@ export class ImportRunService {
         stageId: string | null;
         stageStale: boolean | null;
         hasLive: boolean;
+        hasRunning: boolean;
         allStale: boolean;
       }>
     >(
@@ -427,6 +446,11 @@ export class ImportRunService {
               q.updated_at < now() - make_interval(mins => $1::int) AS "stageStale",
               EXISTS (SELECT 1 FROM ci_import.import_stages x
                        WHERE x.run_id = r.id AND x.status IN ('queued', 'running')) AS "hasLive",
+              -- A stage of this run is EXECUTING right now. The queued stage
+              -- below is therefore waiting for it BY DESIGN, however long it has
+              -- sat there, and enqueuing it would run the pipeline out of order.
+              EXISTS (SELECT 1 FROM ci_import.import_stages x
+                       WHERE x.run_id = r.id AND x.status = 'running') AS "hasRunning",
               COALESCE((SELECT bool_and(x.updated_at < now() - make_interval(mins => $1::int))
                           FROM ci_import.import_stages x
                          WHERE x.run_id = r.id), true) AS "allStale"
@@ -446,10 +470,26 @@ export class ImportRunService {
     let finished = 0;
 
     for (const run of unfinished) {
-      if (run.stageId != null && run.stageStale === true) {
+      if (run.stageId != null && run.stageStale === true && !run.hasRunning) {
         // A queued stage nobody has touched in the staleness window is a stage
         // whose job was lost — a FRESH queued stage is just waiting its turn in
         // the queue and must not collect a duplicate job every sweep.
+        //
+        // `!hasRunning` is the ORDERING guard, and it is not defensive: without
+        // it this sweep runs the pipeline past a stage that is still working.
+        // Observed on a real 13-source import — unpack finished 03:34:53, parse
+        // waited for its queue and only started 03:45:08, by which time `media`
+        // and `push` had been queued for ten minutes and were "stale" by this
+        // rule. The moment parse went RUNNING it stopped being the first queued
+        // stage, so the next sweep enqueued `media` instead. media completed
+        // 0/0, advance() enqueued push, push completed 0/0, advance() found
+        // nothing queued and called finishRun — while parse was still parsing.
+        // The Google Takeout run reported `completed`, percent 100, and landed
+        // ZERO of its 703,956 items.
+        //
+        // Staleness cannot distinguish "my job was lost" from "I am waiting for
+        // the stage in front of me", because nothing touches a waiting stage.
+        // Whether a sibling is executing can be asked directly, so it is.
         await this.enqueueStage(run.userId, run.runId, { id: run.stageId } as ImportStage);
         enqueued += 1;
       } else if (!run.hasLive && run.allStale) {
@@ -577,17 +617,11 @@ export class ImportRunService {
     // entity resolutions that are not records at all. `detail.pushed` is the
     // count of rows this run actually wrote.
     //
-    // One extra query for the whole page, not one per run.
-    const rows = await this.dataSource.query<Array<{ run_id: string; records: string | null }>>(
-      `SELECT run_id, SUM((detail->>'pushed')::bigint)::bigint AS records
-         FROM ci_import.import_stages
-        WHERE run_id = ANY($1::uuid[]) AND kind = 'push'
-          AND detail ? 'pushed'
-        GROUP BY run_id`,
-      [runs.map((run) => run.id)],
-    );
-
-    const recordsByRun = new Map(rows.map((row) => [row.run_id, Number(row.records ?? 0)]));
+    // One extra query for the whole page, not one per run. Extracted to
+    // `recordsFor` so the active snapshot reports the same number by the same
+    // rule rather than growing a second, subtly different definition of
+    // "records imported".
+    const recordsByRun = await this.recordsFor(runs.map((run) => run.id));
 
     return runs.map((run) => ({ ...run, records: recordsByRun.get(run.id) ?? 0 }));
   }
@@ -604,6 +638,152 @@ export class ImportRunService {
     }
 
     return { run, stages: await this.stagesFor(runId) };
+  }
+
+  /**
+   * Everything this user has in flight, with its stages, in one round trip.
+   *
+   * ## Why an endpoint of its own
+   *
+   * The alternative — the surfaces poll `GET /import/runs/:id` per run — is what
+   * the wizard did, and it is unusable on the shape people actually run. A batch
+   * import of an inbox is one run per top-level folder: the 13-source corpus
+   * this was built against meant 13 detail requests every two seconds, each with
+   * its own re-render clock. `useRunsProgress` already fixed the same problem
+   * for the wizard's summary cards by collapsing many polls into one list call;
+   * this does it for the DETAILED view, which the list endpoint cannot serve
+   * because it carries no stages.
+   *
+   * ## What counts as "in flight"
+   *
+   * Every unfinished run, plus the runs finished since the OLDEST unfinished one
+   * was created. The second half is what lets a caller say "1 of 13 done" — a
+   * finished run is no longer in flight, but it is still part of the batch a
+   * person is watching, and dropping it would make the counter read "1 of 12"
+   * and then "1 of 11" as the batch drains, which is worse than useless.
+   *
+   * ## Cost
+   *
+   * Four queries, and only while something is unfinished — the first one returns
+   * empty on an idle appliance and the rest are skipped, so a page left open
+   * overnight costs one indexed lookup per idle poll. The unfinished lookup
+   * rides `import_runs_active_idx` (partial, `WHERE finished_at IS NULL`); the
+   * finished tail rides `import_runs_user_created_idx`.
+   */
+  async activeBatch(
+    ctx: UserServiceContext,
+    options: { finishedLimit?: number } = {},
+  ): Promise<{
+    runs: ImportRun[];
+    stages: ImportStage[];
+    units: Map<string, string>;
+    records: Map<string, number>;
+    truncated: boolean;
+  } | null> {
+    const repository = this.dataSource.getRepository(ImportRunEntity);
+
+    // Oldest first: under a single execution slot that is also the order they
+    // will finish, so it is the order to show them in.
+    const unfinished = await repository
+      .createQueryBuilder('run')
+      .where('run.user_id = :userId', { userId: ctx.userId })
+      .andWhere('run.finished_at IS NULL')
+      .orderBy('run.created_at', 'ASC')
+      .take(ACTIVE_RUN_LIMIT)
+      .getMany();
+
+    if (unfinished.length === 0) {
+      return null;
+    }
+
+    // The batch's floor. `createdAt`, not `startedAt`: a run that is still
+    // `queued` has no start, and it is unambiguously part of the batch.
+    const since = unfinished[0].createdAt;
+    const finishedLimit = options.finishedLimit ?? FINISHED_SIBLING_LIMIT;
+    const finished = await repository
+      .createQueryBuilder('run')
+      .where('run.user_id = :userId', { userId: ctx.userId })
+      .andWhere('run.finished_at IS NOT NULL')
+      .andWhere('run.created_at >= :since', { since })
+      // Newest first for the CAP — if a batch overflows, the recently-finished
+      // runs are the ones somebody is still looking at. Re-sorted into
+      // execution order by the snapshot builder.
+      .orderBy('run.created_at', 'DESC')
+      .take(finishedLimit + 1)
+      .getMany();
+
+    const truncated = finished.length > finishedLimit;
+    const runs = [...unfinished, ...finished.slice(0, finishedLimit)];
+    const runIds = runs.map((run) => run.id);
+
+    const [stages, units, records] = await Promise.all([
+      this.dataSource.getRepository(ImportStageEntity).find({ where: { runId: In(runIds) } }),
+      this.unitsFor(runIds),
+      this.recordsFor(runIds),
+    ]);
+
+    return { runs, stages, units, records, truncated };
+  }
+
+  /**
+   * Run id → the staged upload or inbox folder it is importing.
+   *
+   * The name that tells thirteen runs of one batch apart. Every one of them
+   * carries the same `label` (the batch name the caller passed) and an empty
+   * `dataSources` until its parse finishes, so before this the run list showed
+   * thirteen rows reading "qa-full-corpus" with no way to tell which was the
+   * 700k-item Takeout and which was the 298-item Lyft export.
+   *
+   * `original_filename` first (an upload knows what the user called it),
+   * falling back to the source path, which the caller reduces to a basename —
+   * inbox units have no `original_filename` and their path IS their name.
+   *
+   * DISTINCT ON because a run consumes exactly one staged source today, and a
+   * future one consuming several should still get a stable answer rather than
+   * whichever row the planner happened to emit first.
+   */
+  async unitsFor(runIds: readonly string[]): Promise<Map<string, string>> {
+    if (runIds.length === 0) {
+      return new Map();
+    }
+
+    const rows = await this.dataSource.query<Array<{ run_id: string; unit: string | null }>>(
+      `SELECT DISTINCT ON (run_id) run_id, COALESCE(original_filename, source_path) AS unit
+         FROM ci_import.staged_sources
+        WHERE run_id = ANY($1::uuid[])
+        ORDER BY run_id, created_at ASC`,
+      [[...runIds]],
+    );
+
+    return new Map(
+      rows
+        .filter((row): row is { run_id: string; unit: string } => row.unit != null)
+        .map((row) => [row.run_id, row.unit]),
+    );
+  }
+
+  /**
+   * Run id → rows actually written into `ci.*`.
+   *
+   * `detail.pushed`, NOT the push stage's `processed` — see the long note in
+   * {@link listRuns}, which this was lifted out of so the active snapshot could
+   * report the same number by the same rule instead of inventing a second one.
+   */
+  async recordsFor(runIds: readonly string[]): Promise<Map<string, number>> {
+    if (runIds.length === 0) {
+      return new Map();
+    }
+
+    const rows = await this.dataSource.query<Array<{ run_id: string; records: string | null }>>(
+      `SELECT run_id, SUM((detail->>'pushed')::bigint)::bigint AS records
+         FROM ci_import.import_stages
+        WHERE run_id = ANY($1::uuid[]) AND kind = 'push'
+          AND detail ? 'pushed'
+        GROUP BY run_id`,
+      [[...runIds]],
+    );
+
+    return new Map(rows.map((row) => [row.run_id, Number(row.records ?? 0)]));
   }
 
   /**
@@ -1246,6 +1426,17 @@ export class ImportRunService {
    *
    * Splitting the queues narrows the window; it does not close it, because a
    * kind's queue is still ordered and a big parse still makes its siblings wait.
+   * CORRECTION: the key alone did nothing. pg-boss 10 makes de-duplication a
+   * QUEUE property, and its unique index on (name, singleton_key) is partial —
+   * `WHERE state='created' AND policy='short'` — while every queue here is
+   * created with the default `standard` policy, under which a singletonKey is
+   * stored and never enforced. `SyncOrchestrator.ts:299` already said so, and
+   * `select policy from pgboss.queue` on a live appliance returned `standard`
+   * for all 32. The four per-kind stage queues are now declared
+   * `policy: 'short'` (ImportStageListener), which is what makes this key bite.
+   * The legacy shared drain queue stays `standard`, because the deleted-stage
+   * fallback below targets it without a key.
+   *
    * Keying on the stage id lets pg-boss refuse the duplicate at insert time.
    * Crash recovery is unaffected: the key only suppresses a job while one is
    * pending, so once a lost job has left the queue the sweep enqueues again.

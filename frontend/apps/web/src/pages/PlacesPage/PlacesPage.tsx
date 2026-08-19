@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useMemo, useState } from 'react';
 
 import { useMutation, useQuery } from '@apollo/client';
 import { EmptyState, GlobalUID, LoadingPage, usePageTitle } from '@ci/common';
@@ -6,6 +6,7 @@ import { Badge, Button, Card, Input } from '@ci/shadcn';
 import { MapPin, Plus } from '@ci/shadcn/icons';
 import { useNavigate } from 'react-router-dom';
 
+import { InfiniteListFooter } from '@/components/InfiniteList';
 import { PageContent } from '@/components/layout';
 import { Map } from '@/components/Map';
 import { MemoryHubShell } from '@/components/MemoryHub';
@@ -14,12 +15,31 @@ import { PLACE_KIND_LABELS } from '@/components/PlaceForm';
 import { gql } from '@/graphql';
 import type { GetPlacesQuery } from '@/graphql/graphql';
 import { useModalControls } from '@/hooks';
+import { useInfiniteConnection } from '@/hooks/useInfiniteConnection';
+
+/**
+ * Each row costs a `visitStats` aggregate, so this stays well under the old
+ * fixed `first: 500` — the rest now arrives by scrolling instead of being
+ * silently withheld.
+ */
+export const PAGE_SIZE = 200;
+
+/**
+ * Leaflet degrades badly past a few hundred individual markers. The cap stays,
+ * but the page now says so instead of quietly dropping pins.
+ */
+const MAX_MAP_MARKERS = 300;
 
 const GET_PLACES = gql(`
-  query GetPlaces($query: String) {
-    places(query: $query, first: 500) {
+  query GetPlaces($query: String, $first: Int, $after: String) {
+    places(query: $query, first: $first, after: $after) {
       totalCount
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
       edges {
+        cursor
         node {
           id
           name
@@ -254,8 +274,9 @@ export function PlacesPage() {
 
   const [{ isOpen: isAddPlaceOpen }, { open: openAddPlace, close: closeAddPlace }] = useModalControls();
 
-  const { data, previousData, loading, error, refetch } = useQuery(GET_PLACES, {
-    variables: { query: searchQuery.trim() === '' ? null : searchQuery.trim() },
+  const { data, previousData, loading, error, refetch, fetchMore } = useQuery(GET_PLACES, {
+    variables: { query: searchQuery.trim() === '' ? null : searchQuery.trim(), first: PAGE_SIZE },
+    notifyOnNetworkStatusChange: true,
   });
 
   // Keep the previous result rendered while a new query variable is in flight;
@@ -263,6 +284,36 @@ export function PlacesPage() {
   // focus on the first keystroke of every new query.
   const view = data ?? previousData;
   const places = useMemo(() => (view?.places.edges ?? []).map((edge) => edge.node), [view]);
+
+  const fetchNextPage = useCallback(
+    (after: string) =>
+      fetchMore({
+        variables: { after },
+        updateQuery: (prev, { fetchMoreResult }) => {
+          if (!fetchMoreResult?.places) {
+            return prev;
+          }
+
+          const prevEdges = prev.places?.edges ?? [];
+          const seen = new Set(prevEdges.map((edge) => edge.cursor));
+          const nextEdges = fetchMoreResult.places.edges.filter((edge) => !seen.has(edge.cursor));
+
+          return {
+            places: {
+              ...fetchMoreResult.places,
+              edges: [...prevEdges, ...nextEdges],
+            },
+          };
+        },
+      }),
+    [fetchMore],
+  );
+
+  const pagination = useInfiniteConnection({
+    connection: view?.places,
+    loadedCount: places.length,
+    fetchNextPage,
+  });
 
   const locatedPlaces = useMemo(
     () =>
@@ -292,7 +343,7 @@ export function PlacesPage() {
     content = <EmptyState message={`Couldn't load places: ${error.message}`} />;
   } else {
     content = (
-      <PageContent className="gap-4 p-0">
+      <PageContent ref={pagination.scrollRef} className="gap-4 p-0">
         <MemoryHubShell
           actions={
             <Button size="sm" onClick={openAddPlace}>
@@ -306,27 +357,39 @@ export function PlacesPage() {
               <Input
                 placeholder="Search places by name..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  // New query, new cursor space — a stale failure must not gate it.
+                  pagination.reset();
+                }}
                 className="max-w-xl flex-1"
               />
-              <div className="text-sm text-muted-foreground">{view?.places.totalCount ?? 0} places</div>
+              <div className="text-sm text-muted-foreground">{pagination.totalCount} places</div>
             </div>
 
             <KnownPlacesCard />
 
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
               {locatedPlaces.length > 0 && (
-                <div className="h-72 flex-1 overflow-hidden rounded-md border lg:sticky lg:top-4 lg:h-[calc(100vh-12rem)] lg:min-h-72">
-                  <Map center={mapCenter} zoom={locatedPlaces.length === 1 ? 13 : 3}>
-                    {locatedPlaces.slice(0, 300).map((place) => (
-                      <Map.Marker
-                        key={place.id}
-                        variant="place"
-                        position={[place.latitude, place.longitude]}
-                        onClick={() => navigate(`/places/${GlobalUID.parse('place', place.id)}`)}
-                      />
-                    ))}
-                  </Map>
+                <div className="flex-1 lg:sticky lg:top-4">
+                  <div className="h-72 overflow-hidden rounded-md border lg:h-[calc(100vh-14rem)] lg:min-h-72">
+                    <Map center={mapCenter} zoom={locatedPlaces.length === 1 ? 13 : 3}>
+                      {locatedPlaces.slice(0, MAX_MAP_MARKERS).map((place) => (
+                        <Map.Marker
+                          key={place.id}
+                          variant="place"
+                          position={[place.latitude, place.longitude]}
+                          onClick={() => navigate(`/places/${GlobalUID.parse('place', place.id)}`)}
+                        />
+                      ))}
+                    </Map>
+                  </div>
+
+                  {locatedPlaces.length > MAX_MAP_MARKERS && (
+                    <div className="pt-1 text-xs text-muted-foreground">
+                      Map shows the first {MAX_MAP_MARKERS} of {locatedPlaces.length} places with coordinates.
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -334,13 +397,17 @@ export function PlacesPage() {
                 {places.length === 0 ? (
                   <EmptyState message="No places found" />
                 ) : (
-                  places.map((place) => (
-                    <PlaceRow
-                      key={place.id}
-                      place={place}
-                      onOpen={() => navigate(`/places/${GlobalUID.parse('place', place.id)}`)}
-                    />
-                  ))
+                  <>
+                    {places.map((place) => (
+                      <PlaceRow
+                        key={place.id}
+                        place={place}
+                        onOpen={() => navigate(`/places/${GlobalUID.parse('place', place.id)}`)}
+                      />
+                    ))}
+
+                    <InfiniteListFooter pagination={pagination} noun="places" />
+                  </>
                 )}
               </div>
             </div>
@@ -356,11 +423,15 @@ export function PlacesPage() {
 
       {/* A created place has no connection for Apollo to write into — the list
           is a fresh `places(query:)` result — so refetch rather than trying to
-          patch the cache. */}
+          patch the cache. refetch replays the hook's original variables
+          (`first: PAGE_SIZE`, no cursor), so the accumulated list goes back to
+          its first page; reset() clears any latched load-more failure with it,
+          otherwise the sentinel would stay gated over a brand-new cursor space. */}
       <AddPlaceModal
         open={isAddPlaceOpen}
         onClose={closeAddPlace}
         onCreated={() => {
+          pagination.reset();
           void refetch();
         }}
       />

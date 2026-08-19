@@ -11,6 +11,8 @@ import { BrowserActivityConnection } from '../types/BrowserActivityConnection';
 import { BrowserActivityEdge } from '../types/BrowserActivityEdge';
 import { BrowserActivityType } from '../types/BrowserActivityType';
 import { CreateBrowserActivityInput } from '../types/CreateBrowserActivityInput';
+import { DeleteByIdInput } from '../types/DeleteByIdInput';
+import { DeleteByIdPayload } from '../types/DeleteByIdPayload';
 import { EntityTagType } from '../types/EntityTagType';
 import { GlobalUID } from '../types/GlobalUID';
 import { PaginationArgs } from '../types/PaginationArgs';
@@ -132,6 +134,33 @@ export class BrowserActivityResolver {
     });
 
     return entity ? BrowserActivityType.toType(entity) : null;
+  }
+
+  /**
+   * Deletes a browsing record addressed by its global id. A HARD delete — the
+   * visit and its `ci.entities` base row are destroyed and cannot be restored.
+   */
+  @Mutation(() => DeleteByIdPayload)
+  async deleteBrowserActivity(
+    @Context() context: RequestContext,
+    @Args('input') input: DeleteByIdInput,
+  ): Promise<DeleteByIdPayload> {
+    const serviceContext = toServiceContext(context);
+
+    const id = GlobalUID.parse('browser-activity', input.id);
+
+    const success = await this.browserActivityService.remove(serviceContext, id);
+
+    if (!success) {
+      return {
+        success: false,
+      };
+    }
+
+    return {
+      success,
+      deletedId: input.id,
+    };
   }
 
   @ResolveField(() => [EntityTagType])

@@ -21,6 +21,20 @@ export type Acknowledgement = {
  * by LocalEventService.
  */
 export type QueueOptions = {
+  /**
+   * pg-boss queue de-duplication policy. Defaults to `standard`, under which a
+   * send's `singletonKey` is STORED AND NEVER ENFORCED — pg-boss 10 makes
+   * de-duplication a queue property, and its unique index on
+   * (name, singleton_key) is partial: `WHERE state='created' AND policy='short'`.
+   * A queue that wants a singletonKey to actually refuse duplicates must say so
+   * here; `SyncOrchestrator` documents the same trap from the other side.
+   *
+   * `short` is queue-WIDE and collapses keyless sends together under
+   * COALESCE(singleton_key,''), so only declare it on a queue whose every send
+   * carries a key.
+   */
+  policy?: 'standard' | 'short' | 'singleton' | 'stately';
+
   /** Seconds an `active` job may run before pg-boss expires (and retries) it. */
   expireInSeconds?: number;
 

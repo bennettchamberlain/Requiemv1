@@ -453,7 +453,11 @@ describe('GraphTabPanel (webbed-feet spike)', () => {
     });
 
     it('preloads edges among busy dots when switching to 3D overview', async () => {
-      const fetchMock = vi.fn(async (input: RequestInfo) => {
+      // `init` is declared even though the mock ignores it: the assertion below
+      // reads `edgeCall[1]` to check the POSTed body, and vi.fn types its
+      // `mock.calls` from this signature — a one-parameter mock makes that a
+      // 1-tuple and the read a type error.
+      const fetchMock = vi.fn(async (input: RequestInfo, _init?: RequestInit) => {
         const url = typeof input === 'string' ? input : input.url;
 
         if (url.includes('/api/graph/edges')) {
@@ -486,7 +490,7 @@ describe('GraphTabPanel (webbed-feet spike)', () => {
           String(typeof input === 'string' ? input : (input as Request).url).includes('/api/graph/edges'),
         );
         expect(edgeCall).toBeDefined();
-        const body = JSON.parse((edgeCall![1] as RequestInit).body as string) as { ids: string[] };
+        const body = JSON.parse(String(edgeCall![1]?.body)) as { ids: string[] };
         expect(body.ids[0]).toBe('user-1');
       } finally {
         globalThis.fetch = previousFetch;

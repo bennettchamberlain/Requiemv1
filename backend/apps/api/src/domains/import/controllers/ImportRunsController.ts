@@ -20,6 +20,11 @@ import { allDataSources } from '../datasources/registry';
 import type { ImportRun } from '../entities/ImportRunEntity';
 import type { ImportStage } from '../entities/ImportStageEntity';
 import {
+  buildActiveSnapshot,
+  idleSnapshot,
+  type ActiveImportSnapshot,
+} from '../services/activeImportSnapshot';
+import {
   DataSourceCatalogService,
   type DataSourceSummary,
   type SourceCatalogEntry,
@@ -74,10 +79,28 @@ export interface StageSummary {
   /** Null means "not yet countable" — the UI must draw an indeterminate bar, not 0%. */
   total: number | null;
   weight: number;
+  /**
+   * Throughput the runner measured, in units of `processed` per second.
+   *
+   * Written to `import_stages.items_per_sec` since the table was created and
+   * dropped by this mapper until now, so no surface could show it — which is
+   * why "is that parse slow, or is it just big?" had no answer short of a psql
+   * session. The observed 13-source batch spanned 6/s (a contact list), 250/s
+   * (Facebook), 366/s (a push) and 555/s (a 704k-item Takeout parse): a range
+   * that says a great deal about where an import's hour went, for one number.
+   */
+  itemsPerSec: number | null;
   etaSeconds: number | null;
   durationMs: number | null;
   error: string | null;
   detail: Record<string, unknown>;
+  /**
+   * Also dropped until now. Without them "how long has this stage been going?"
+   * is unanswerable for anything still RUNNING — `durationMs` is only written
+   * when a stage finishes, so a stage in its 46th minute reported null.
+   */
+  startedAt: Date | null;
+  finishedAt: Date | null;
 }
 
 export interface RunDetail extends RunSummary {
@@ -269,7 +292,50 @@ export class ImportRunsController {
     }));
   }
 
-  /** One run, with its stage bar. The poll target while an import is in flight. */
+  /**
+   * Everything in flight right now, with stages, queue positions and errors.
+   *
+   * THE endpoint to poll while an import runs, and the one to curl when an
+   * import looks wrong. It exists because per-run detail polling does not scale
+   * to the shape people actually run — a batch import of an inbox is one run per
+   * top-level folder, so the 13-source corpus this was built against meant 13
+   * requests every two seconds, each with its own re-render clock, and still no
+   * answer to "why has that one not moved in an hour?"
+   *
+   * What it adds over `runs/:runId` × N, all of it computed rather than guessed:
+   *
+   *  - `runs[].unit` — WHICH source each run is importing. Thirteen runs of one
+   *    batch share a label and have empty `dataSources` until they parse, so
+   *    until now the list showed thirteen identical rows.
+   *  - `stages[].queueState` — `waiting` (enqueued, needs the slot) against
+   *    `blocked` (its own run has not got there yet). Both are `status:
+   *    'queued'` in the database, and conflating them is exactly why a normal
+   *    51-minute wait is indistinguishable from a stall.
+   *  - `stages[].queuePosition` / `queue.concurrency` — how many are ahead of it
+   *    and how many can run at once.
+   *  - `elapsedMs` everywhere, live.
+   *
+   * MUST stay declared above `runs/:runId`: route registration follows
+   * declaration order, and below it Express matches `active` as a run id — the
+   * same trap `runs/unpushed` documents.
+   */
+  @UseGuards(JwtOrApiKeyAuthGuard)
+  @Get('runs/active')
+  async active(@Context() context: RequestContext): Promise<ActiveImportSnapshot> {
+    const userId = requireUserId(context);
+    const batch = await this.runs.activeBatch({ userId });
+
+    // Not a 404 and not an empty array: "nothing is importing" is a state every
+    // caller renders (by rendering nothing), and making it an error would put an
+    // error banner on a page whose only sin is that the import already finished.
+    if (batch == null) {
+      return idleSnapshot();
+    }
+
+    return buildActiveSnapshot(batch);
+  }
+
+  /** One run, with its stage bar. The poll target for ONE run someone opened. */
   @UseGuards(JwtOrApiKeyAuthGuard)
   @Get('runs/:runId')
   async get(@Context() context: RequestContext, @Param('runId') runId: string): Promise<RunDetail> {
@@ -557,9 +623,12 @@ function toStageSummary(stage: ImportStage): StageSummary {
     processed: Number(stage.processed),
     total: stage.total == null ? null : Number(stage.total),
     weight: stage.weight,
+    itemsPerSec: stage.itemsPerSec,
     etaSeconds: stage.etaSeconds,
     durationMs: stage.durationMs == null ? null : Number(stage.durationMs),
     error: stage.error,
     detail: stage.detail ?? {},
+    startedAt: stage.startedAt,
+    finishedAt: stage.finishedAt,
   };
 }

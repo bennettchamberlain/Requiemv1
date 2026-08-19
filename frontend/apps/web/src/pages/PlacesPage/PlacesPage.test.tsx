@@ -1,10 +1,10 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { gql } from '@/graphql';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
-import { PlacesPage } from './PlacesPage';
+import { PAGE_SIZE, PlacesPage } from './PlacesPage';
 
 const navigate = vi.fn();
 
@@ -19,10 +19,15 @@ vi.mock('@/components/MemoryHub', () => ({
 }));
 
 const GET_PLACES = gql(`
-  query GetPlaces($query: String) {
-    places(query: $query, first: 500) {
+  query GetPlaces($query: String, $first: Int, $after: String) {
+    places(query: $query, first: $first, after: $after) {
       totalCount
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
       edges {
+        cursor
         node {
           id
           name
@@ -82,16 +87,54 @@ const CONFIRM_KNOWN_PLACE = gql(`
   }
 `);
 
-/** An empty places list — these tests exercise KnownPlacesCard, not the list/map below it. */
-function emptyPlacesMock() {
+/** See PeoplePage.test.tsx — the suite stubs IntersectionObserver with a no-op. */
+function captureIntersectionObserver() {
+  const callbacks: IntersectionObserverCallback[] = [];
+  const original = globalThis.IntersectionObserver;
+
+  class CapturingObserver {
+    constructor(callback: IntersectionObserverCallback) {
+      callbacks.push(callback);
+    }
+
+    observe() {}
+
+    unobserve() {}
+
+    disconnect() {}
+
+    takeRecords() {
+      return [];
+    }
+  }
+
+  globalThis.IntersectionObserver = CapturingObserver as unknown as typeof IntersectionObserver;
+
   return {
-    request: { query: GET_PLACES, variables: { query: null } },
-    result: {
-      data: {
-        places: { __typename: 'PlaceConnection' as const, totalCount: 0, edges: [] },
-      },
+    scrollSentinelIntoView: async () => {
+      await act(async () => {
+        for (const callback of callbacks) {
+          callback([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+        }
+      });
+    },
+    restore: () => {
+      globalThis.IntersectionObserver = original;
     },
   };
+}
+
+function pageInfo(overrides: { hasNextPage?: boolean; endCursor?: string | null } = {}) {
+  return {
+    __typename: 'PageInfo' as const,
+    hasNextPage: overrides.hasNextPage ?? false,
+    endCursor: overrides.endCursor ?? null,
+  };
+}
+
+/** An empty places list — these tests exercise KnownPlacesCard, not the list/map below it. */
+function emptyPlacesMock() {
+  return placesMock({ totalCount: 0, edges: [] });
 }
 
 function knownPlacesMock(overrides: { knownPlaces?: unknown[]; knownPlaceCandidates?: unknown[] } = {}) {
@@ -143,44 +186,59 @@ function knownPlace(overrides: Record<string, unknown> = {}) {
 const PLACE_UUID = '019fd7c0-641c-76dd-8ed7-a5053faff6fd';
 const PLACE_GLOBAL_ID = btoa(`place:${PLACE_UUID}`);
 
-const mocks = [
-  {
-    request: { query: GET_PLACES, variables: { query: null } },
+function placeEdge({ id = PLACE_GLOBAL_ID, name = 'Bletchley Park' } = {}) {
+  return {
+    __typename: 'PlaceEdge' as const,
+    cursor: id,
+    node: {
+      __typename: 'PlaceType' as const,
+      id,
+      name,
+      description: null,
+      placeKind: null,
+      latitude: null,
+      longitude: null,
+      parent: null,
+      visitStats: {
+        __typename: 'PlaceVisitStatsType' as const,
+        visitCount: 0,
+        firstVisitAt: null,
+        lastVisitAt: null,
+      },
+    },
+  };
+}
+
+function placesMock({
+  totalCount = 1,
+  hasNextPage = false,
+  after,
+  edges = [placeEdge()],
+}: {
+  totalCount?: number;
+  hasNextPage?: boolean;
+  after?: string;
+  edges?: ReturnType<typeof placeEdge>[];
+} = {}) {
+  return {
+    request: {
+      query: GET_PLACES,
+      variables: { query: null, first: PAGE_SIZE, ...(after == null ? {} : { after }) },
+    },
     result: {
       data: {
         places: {
           __typename: 'PlaceConnection' as const,
-          totalCount: 1,
-          edges: [
-            {
-              __typename: 'PlaceEdge' as const,
-              node: {
-                __typename: 'PlaceType' as const,
-                id: PLACE_GLOBAL_ID,
-                name: 'Bletchley Park',
-                description: null,
-                placeKind: null,
-                latitude: null,
-                longitude: null,
-                parent: null,
-                visitStats: {
-                  __typename: 'PlaceVisitStatsType' as const,
-                  visitCount: 0,
-                  firstVisitAt: null,
-                  lastVisitAt: null,
-                },
-              },
-            },
-          ],
+          totalCount,
+          pageInfo: pageInfo({ hasNextPage, endCursor: hasNextPage ? edges.at(-1)?.cursor : null }),
+          edges,
         },
       },
     },
-  },
-  {
-    request: { query: GET_KNOWN_PLACES },
-    result: { data: { knownPlaces: [], knownPlaceCandidates: [] } },
-  },
-];
+  };
+}
+
+const mocks = [placesMock(), knownPlacesMock()];
 
 describe('PlacesPage', () => {
   it('routes to the decoded uuid, not the global id, when a place row is opened', async () => {
@@ -191,6 +249,53 @@ describe('PlacesPage', () => {
 
     expect(navigate).toHaveBeenCalledWith(`/places/${PLACE_UUID}`);
     expect(navigate).not.toHaveBeenCalledWith(`/places/${PLACE_GLOBAL_ID}`);
+  });
+
+  /**
+   * Regression: the query asked for a fixed `first: 500` while the header
+   * rendered `totalCount`, so on 1,179 places the page announced a number and
+   * then withheld 679 of them with no "load more" and no explanation.
+   */
+  it('says how many of the counted places are actually listed', async () => {
+    renderWithProviders(<PlacesPage />, {
+      mocks: [placesMock({ totalCount: 1179, hasNextPage: true }), knownPlacesMock()],
+    });
+
+    expect(await screen.findByText('Bletchley Park')).toBeInTheDocument();
+    expect(screen.getByText('1179 places')).toBeInTheDocument();
+    // The header count no longer stands alone — the footer says what is loaded.
+    expect(screen.getByText(/loaded/).textContent).toContain('1 of 1179 loaded');
+  });
+
+  it('appends the next page when the sentinel scrolls into view', async () => {
+    const SECOND_UUID = '019fd7c0-641c-76dd-8ed7-a5053faff6fe';
+    const SECOND_GLOBAL_ID = btoa(`place:${SECOND_UUID}`);
+    const observer = captureIntersectionObserver();
+
+    try {
+      renderWithProviders(<PlacesPage />, {
+        mocks: [
+          placesMock({ totalCount: 2, hasNextPage: true }),
+          placesMock({
+            totalCount: 2,
+            after: PLACE_GLOBAL_ID,
+            edges: [placeEdge({ id: SECOND_GLOBAL_ID, name: 'Enigma Cottage' })],
+          }),
+          knownPlacesMock(),
+        ],
+      });
+
+      expect(await screen.findByText('Bletchley Park')).toBeInTheDocument();
+      expect(screen.queryByText('Enigma Cottage')).not.toBeInTheDocument();
+
+      await observer.scrollSentinelIntoView();
+
+      expect(await screen.findByText('Enigma Cottage')).toBeInTheDocument();
+      expect(screen.getByText('Bletchley Park')).toBeInTheDocument();
+      expect(screen.getByText(/loaded/).textContent).toContain('2 of 2 loaded · end');
+    } finally {
+      observer.restore();
+    }
   });
 
   describe('KnownPlacesCard', () => {

@@ -1,5 +1,7 @@
 import config from '@ci/configuration';
 
+import { IMPORT_QUEUE, IMPORT_STAGE_QUEUE_BY_KIND } from '../../constants';
+import { EventListenerRegistry } from '@ci/domains/events/event-registration';
 import { ImportStageListener } from '../ImportStageListener';
 
 /**
@@ -53,5 +55,39 @@ describe('ImportStageListener bootstrap sweep role gating', () => {
     expect(await bootUnderRole('worker')).toBe(1);
     expect(await bootUnderRole('all')).toBe(1);
     expect(await bootUnderRole('web')).toBe(0);
+  });
+});
+
+/**
+ * The de-duplication that PR #2101 thought it had.
+ *
+ * pg-boss 10 makes de-duplication a QUEUE property: its unique index on
+ * (name, singleton_key) is partial, `WHERE state='created' AND policy='short'`.
+ * Under the default `standard` policy a send's singletonKey is stored and NEVER
+ * enforced — `SyncOrchestrator.ts` documents the same trap, and
+ * `select policy from pgboss.queue` on a live appliance returned `standard` for
+ * all 32 queues while the "de-dupe" was supposedly in force.
+ *
+ * The original test asserted the KEY was on the send, against a mocked
+ * `events.send`. That can never observe whether the queue enforces it, which is
+ * exactly how an inert fix passed review. This asserts the queue DECLARATION,
+ * which is the half that was missing.
+ */
+describe('ImportStageListener queue policy', () => {
+  it('declares policy "short" on every per-kind stage queue, so singletonKey bites', () => {
+    const perKind = Object.values(IMPORT_STAGE_QUEUE_BY_KIND);
+
+    expect(perKind.length).toBeGreaterThan(0);
+
+    for (const queue of perKind) {
+      expect(EventListenerRegistry.getQueueOptions(queue)?.policy).toBe('short');
+    }
+  });
+
+  it('leaves the legacy shared drain queue on the default policy', () => {
+    // `short` is queue-wide and collapses KEYLESS sends together under
+    // COALESCE(singleton_key,''). enqueueStage falls back to this queue without
+    // a key when a stage's kind cannot be read, so it must not be `short`.
+    expect(EventListenerRegistry.getQueueOptions(IMPORT_QUEUE)?.policy).toBeUndefined();
   });
 });

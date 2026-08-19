@@ -8,7 +8,7 @@ const summary = (overrides = {}) => ({
   label: 'takeout.zip',
   source: 'cli',
   dataSources: ['google_photos'],
-      declaredSources: null,
+  declaredSources: null,
   status: 'running',
   percent: 42,
   requestedStages: ['unpack', 'parse', 'media', 'push'],
@@ -28,10 +28,13 @@ const stage = (overrides = {}) => ({
   processed: 10,
   total: 10,
   weight: 20,
+  itemsPerSec: 2,
   etaSeconds: null,
   durationMs: 5000,
   error: null,
   detail: {},
+  startedAt: new Date('2026-08-16T10:00:05Z'),
+  finishedAt: new Date('2026-08-16T10:00:10Z'),
   ...overrides,
 });
 
