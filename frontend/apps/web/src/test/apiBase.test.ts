@@ -27,10 +27,11 @@ function installFakeWindow(opts: {
     store.set('ci.apiBaseUrl', opts.stored);
   }
 
+  const platform = opts.platform;
   const fakeWindow: FakeWindow = {
     Capacitor: {
       isNativePlatform: () => opts.native,
-      ...(opts.platform ? { getPlatform: () => opts.platform } : {}),
+      ...(platform ? { getPlatform: () => platform } : {}),
     },
     localStorage: {
       getItem: (key) => store.get(key) ?? null,

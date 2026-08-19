@@ -453,8 +453,8 @@ describe('GraphTabPanel (webbed-feet spike)', () => {
     });
 
     it('preloads edges among busy dots when switching to 3D overview', async () => {
-      const fetchMock = vi.fn(async (input: RequestInfo) => {
-        const url = typeof input === 'string' ? input : input.url;
+      const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
 
         if (url.includes('/api/graph/edges')) {
           return {
@@ -482,11 +482,13 @@ describe('GraphTabPanel (webbed-feet spike)', () => {
           expect(screen.getByTestId('graph-canvas-3d')).toHaveAttribute('data-link-count', '1');
         });
 
-        const edgeCall = fetchMock.mock.calls.find(([input]) =>
-          String(typeof input === 'string' ? input : (input as Request).url).includes('/api/graph/edges'),
-        );
+        const edgeCall = fetchMock.mock.calls.find(([input]) => {
+          const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+
+          return url.includes('/api/graph/edges');
+        });
         expect(edgeCall).toBeDefined();
-        const body = JSON.parse((edgeCall![1] as RequestInit).body as string) as { ids: string[] };
+        const body = JSON.parse(String(edgeCall![1]?.body)) as { ids: string[] };
         expect(body.ids[0]).toBe('user-1');
       } finally {
         globalThis.fetch = previousFetch;
